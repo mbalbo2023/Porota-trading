@@ -1,0 +1,1327 @@
+{
+  "schema": "RC6_CONVERGENCE_INPUT_MANIFEST_V1",
+  "captured_at_utc": "2026-10-05T00:14:46.267Z",
+  "user_scope_dates_art": [
+    "2026-10-03",
+    "2026-10-04"
+  ],
+  "mode": "READ_ONLY_HANDOFF",
+  "repository": "mbalbo2023/Porota-trading",
+  "product": {
+    "branch": "deploy/rc6-pr69-isolated-20260915",
+    "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+    "tree": "96a112a55ed779df3f7056b1e30d81aac8d0b791",
+    "runtime_current": "NO_VERIFICADO"
+  },
+  "sources": [
+    {
+      "pr": 447,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/447",
+      "head": "fix/rc6-paper-blockers-authority-20261002",
+      "head_sha": "251fac4cf73981a4fd3feb123c97a37bf10ad02d",
+      "base_sha": "e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f",
+      "state": "closed",
+      "merged": false,
+      "created_at": "2026-10-03T01:53:11Z",
+      "updated_at": "2026-10-03T15:26:49Z",
+      "changed_files": 3,
+      "classification": "BASELINE_PRESERVE_NO_REAPPLY"
+    },
+    {
+      "pr": 448,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/448",
+      "head": "fix/rc6-paper-option-contract-20261002",
+      "head_sha": "3e7819963f65de443421152f0f5614ef1356fb41",
+      "base_sha": "e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f",
+      "state": "closed",
+      "merged": false,
+      "created_at": "2026-10-03T02:26:42Z",
+      "updated_at": "2026-10-03T15:27:07Z",
+      "changed_files": 3,
+      "classification": "BASELINE_PRESERVE_NO_REAPPLY"
+    },
+    {
+      "pr": 449,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/449",
+      "head": "integration/rc6-paper-blockers-20261003",
+      "head_sha": "9ca8cb13bfc6664597e313e5d1874710e3263ec4",
+      "base_sha": "e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f",
+      "state": "closed",
+      "merged": true,
+      "created_at": "2026-10-03T13:08:23Z",
+      "updated_at": "2026-10-03T13:14:44Z",
+      "changed_files": 6,
+      "classification": "BASELINE_PRESERVE_NO_REAPPLY"
+    },
+    {
+      "pr": 450,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/450",
+      "head": "fix/rc6-preopen-not-due-20261003",
+      "head_sha": "0311dcc10139777f8be988f4fe8c3efabc86d1a9",
+      "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "state": "open",
+      "merged": false,
+      "created_at": "2026-10-03T14:58:10Z",
+      "updated_at": "2026-10-03T15:27:45Z",
+      "changed_files": 4,
+      "classification": "RECONCILED_BY_CONTENT_DO_NOT_REAPPLY_WHOLE_PR"
+    },
+    {
+      "pr": 451,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/451",
+      "head": "docs/codex-agent-bootstrap-20261003",
+      "head_sha": "c4e939eea7aab4d662a268c98e0fb8282520b92d",
+      "base_sha": "1607b3e887d1dfe088de66ce22d815e701ca1150",
+      "state": "closed",
+      "merged": true,
+      "created_at": "2026-10-03T16:17:12Z",
+      "updated_at": "2026-10-03T16:19:35Z",
+      "changed_files": 1,
+      "classification": "UNIQUE_DOCUMENTATION_DELTA_MAIN"
+    },
+    {
+      "pr": 453,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/453",
+      "head": "fix/rc6-futures-paper-dlr-20261003",
+      "head_sha": "2b36429013ec5e3accf4176cf3beaabfd5e33232",
+      "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "state": "open",
+      "merged": false,
+      "created_at": "2026-10-03T16:36:14Z",
+      "updated_at": "2026-10-04T02:04:56Z",
+      "changed_files": 12,
+      "classification": "RECONCILED_BY_CONTENT_DO_NOT_REAPPLY_WHOLE_PR"
+    },
+    {
+      "pr": 454,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/454",
+      "head": "perf/ws-perf-01-rc6-20261003",
+      "head_sha": "ee1b22996907f282f77d3c31956104bd52cba858",
+      "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "state": "open",
+      "merged": false,
+      "created_at": "2026-10-03T17:20:07Z",
+      "updated_at": "2026-10-03T19:32:19Z",
+      "changed_files": 21,
+      "classification": "RECONCILED_BY_CONTENT_DO_NOT_REAPPLY_WHOLE_PR"
+    },
+    {
+      "pr": 455,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/455",
+      "head": "audit/rc6-residual-ops-closure-20261003",
+      "head_sha": "84528216cd85060075b63be25e71876e1b742b0c",
+      "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "state": "open",
+      "merged": false,
+      "created_at": "2026-10-03T17:52:36Z",
+      "updated_at": "2026-10-03T18:07:57Z",
+      "changed_files": 4,
+      "classification": "RECONCILED_BY_CONTENT_DO_NOT_REAPPLY_WHOLE_PR"
+    },
+    {
+      "pr": 456,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/456",
+      "head": "perf/ws-perf-02-lineage-scanner-20261003",
+      "head_sha": "b8c95c10459cb8ede2925da491730f5988b29561",
+      "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "state": "open",
+      "merged": false,
+      "created_at": "2026-10-03T19:19:03Z",
+      "updated_at": "2026-10-03T19:32:20Z",
+      "changed_files": 25,
+      "classification": "RECONCILED_BY_CONTENT_DO_NOT_REAPPLY_WHOLE_PR"
+    },
+    {
+      "pr": 457,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/457",
+      "head": "fix/rc6-audit-guards-20261003",
+      "head_sha": "77c4e13768b252a8e7a614a0653b0b0dabb1ed02",
+      "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "state": "open",
+      "merged": false,
+      "created_at": "2026-10-03T19:51:43Z",
+      "updated_at": "2026-10-03T20:15:42Z",
+      "changed_files": 8,
+      "classification": "RECONCILED_BY_CONTENT_DO_NOT_REAPPLY_WHOLE_PR"
+    },
+    {
+      "pr": 459,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/459",
+      "head": "perf/ws-perf-03-dynamic-universe-20261003",
+      "head_sha": "c48960e105640c385d94ac03461b0c936ebf95a7",
+      "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "state": "open",
+      "merged": false,
+      "created_at": "2026-10-03T21:53:02Z",
+      "updated_at": "2026-10-03T22:42:49Z",
+      "changed_files": 20,
+      "classification": "RECONCILED_BY_CONTENT_DO_NOT_REAPPLY_WHOLE_PR"
+    },
+    {
+      "pr": 461,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/461",
+      "head": "integration/ws-integ-perf-04-runtime-shadow-20261003",
+      "head_sha": "fa3a8d64f74fa45181808bd46d8a75131d5450cf",
+      "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "state": "open",
+      "merged": false,
+      "created_at": "2026-10-04T00:40:10Z",
+      "updated_at": "2026-10-04T01:06:50Z",
+      "changed_files": 69,
+      "classification": "RECONCILED_BY_CONTENT_DO_NOT_REAPPLY_WHOLE_PR"
+    },
+    {
+      "pr": 463,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/463",
+      "head": "integration/ws-close-programming-05-final-20261004",
+      "head_sha": "caf9bc94b4a1f436ad01a84a9e9e9e7a4a9e9423",
+      "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "state": "open",
+      "merged": false,
+      "created_at": "2026-10-04T03:51:25Z",
+      "updated_at": "2026-10-04T14:07:52Z",
+      "changed_files": 101,
+      "classification": "RECONCILED_BY_CONTENT_DO_NOT_REAPPLY_WHOLE_PR"
+    },
+    {
+      "pr": 466,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/466",
+      "head": "integration/ws-fix-audit-08-reaudit-20261004",
+      "head_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+      "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "state": "open",
+      "merged": false,
+      "created_at": "2026-10-04T19:56:59Z",
+      "updated_at": "2026-10-04T21:59:47Z",
+      "changed_files": 140,
+      "classification": "MOTOR_REQUIRES_FIX_AND_REAUDIT",
+      "tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2"
+    },
+    {
+      "pr": 470,
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/470",
+      "head": "work/ws-dash-trader-terminal-08-20261004",
+      "head_sha": "4a5fc6384260b31f9a07e791093add6ee83102a1",
+      "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "state": "open",
+      "merged": false,
+      "created_at": "2026-10-04T23:13:11Z",
+      "updated_at": "2026-10-04T23:32:23Z",
+      "changed_files": 30,
+      "classification": "UX_SEPARATE_INPUT_REQUIRES_INTERFACE_RECONCILIATION",
+      "tree": "b60929752d6a769e5876493486064e7c3c13a258"
+    }
+  ],
+  "activity_window": [
+    {
+      "number": 467,
+      "title": "WS-DASH-TRADER-TERMINAL-08: reconstrucción integral UX Trader del dashboard RC6",
+      "created_at": "2026-10-04T22:03:24Z",
+      "updated_at": "2026-10-04T23:31:05Z",
+      "type": "ISSUE"
+    },
+    {
+      "number": 471,
+      "title": "RC6 ORCHESTRATOR CHECKPOINT — convergence #468/#469/#466/#467 — READ_ONLY",
+      "created_at": "2026-10-04T23:17:39Z",
+      "updated_at": "2026-10-04T23:28:30Z",
+      "type": "ISSUE"
+    },
+    {
+      "number": 470,
+      "title": "RC6: terminal Trader integral de 8 destinos (WS-DASH-TRADER-TERMINAL-08)",
+      "created_at": "2026-10-04T23:13:11Z",
+      "updated_at": "2026-10-04T23:32:23Z",
+      "type": "PR"
+    },
+    {
+      "number": 469,
+      "title": "WS-REAUDIT-09: independent adversarial re-audit of RC6 candidate #466",
+      "created_at": "2026-10-04T22:17:26Z",
+      "updated_at": "2026-10-04T22:17:26Z",
+      "type": "ISSUE"
+    },
+    {
+      "number": 468,
+      "title": "AUDIT — Full adversarial audit of history, candles, scalping and quantitative data consumption",
+      "created_at": "2026-10-04T22:04:39Z",
+      "updated_at": "2026-10-04T22:04:39Z",
+      "type": "ISSUE"
+    },
+    {
+      "number": 466,
+      "title": "RC6: remediation adversarial #465 y provenance exacta para reauditoría",
+      "created_at": "2026-10-04T19:56:59Z",
+      "updated_at": "2026-10-04T21:59:47Z",
+      "type": "PR"
+    },
+    {
+      "number": 465,
+      "title": "WS-FIX-AUDIT-08: remediate #464 findings and produce re-audit candidate",
+      "created_at": "2026-10-04T14:22:03Z",
+      "updated_at": "2026-10-04T21:57:52Z",
+      "type": "ISSUE"
+    },
+    {
+      "number": 463,
+      "title": "FINAL PROGRAMMING CANDIDATE — READY_FOR_INDEPENDENT_AUDIT — NO DEPLOY",
+      "created_at": "2026-10-04T03:51:25Z",
+      "updated_at": "2026-10-04T14:07:52Z",
+      "type": "PR"
+    },
+    {
+      "number": 464,
+      "title": "WS-AUDIT-07: adversarial independent audit of final RC6 candidate #463",
+      "created_at": "2026-10-04T13:22:17Z",
+      "updated_at": "2026-10-04T13:22:17Z",
+      "type": "ISSUE"
+    },
+    {
+      "number": 462,
+      "title": "WS-CLOSE-PROGRAMMING-05: finish FUTURES + final 100% GREEN candidate before audit",
+      "created_at": "2026-10-04T01:15:15Z",
+      "updated_at": "2026-10-04T04:25:11Z",
+      "type": "ISSUE"
+    },
+    {
+      "number": 446,
+      "title": "RC6 #449 VALIDADO_RUNTIME — ownership liberado; guard #450 y residuales PAPER pendientes",
+      "created_at": "2026-10-03T01:24:58Z",
+      "updated_at": "2026-10-04T04:19:23Z",
+      "type": "ISSUE"
+    },
+    {
+      "number": 453,
+      "title": "WS-MOTOR-FUTURES-PAPER-16: complete durable DLR PAPER lifecycle — NO DEPLOY",
+      "created_at": "2026-10-03T16:36:14Z",
+      "updated_at": "2026-10-04T02:04:56Z",
+      "type": "PR"
+    },
+    {
+      "number": 461,
+      "title": "WS-INTEG-PERF-04: canonical runtime SHADOW, consolidated candidate (blocked by #453)",
+      "created_at": "2026-10-04T00:40:10Z",
+      "updated_at": "2026-10-04T01:06:50Z",
+      "type": "PR"
+    },
+    {
+      "number": 460,
+      "title": "WS-INTEG-PERF-04: wire dynamic runtime SHADOW and build one GREEN candidate",
+      "created_at": "2026-10-03T23:46:27Z",
+      "updated_at": "2026-10-04T01:05:03Z",
+      "type": "ISSUE"
+    },
+    {
+      "number": 459,
+      "title": "WS-PERF-03: causal multi-engine SHADOW universe and factual PPI capacity",
+      "created_at": "2026-10-03T21:53:02Z",
+      "updated_at": "2026-10-03T22:42:49Z",
+      "type": "PR"
+    },
+    {
+      "number": 458,
+      "title": "WS-PERF-03: multi-engine dynamic universe, scalping density and factual PPI capacity",
+      "created_at": "2026-10-03T20:48:12Z",
+      "updated_at": "2026-10-03T22:38:08Z",
+      "type": "ISSUE"
+    },
+    {
+      "number": 457,
+      "title": "RC6: preopen, limpieza segura tras fallos y frescura intradiaria",
+      "created_at": "2026-10-03T19:51:43Z",
+      "updated_at": "2026-10-03T20:15:42Z",
+      "type": "PR"
+    },
+    {
+      "number": 456,
+      "title": "perf(rc6): native spot lineage, feasible scanner basket and shared costs",
+      "created_at": "2026-10-03T19:19:03Z",
+      "updated_at": "2026-10-03T19:32:20Z",
+      "type": "PR"
+    },
+    {
+      "number": 454,
+      "title": "RC6: bounded performance evidence and causal PAPER SHADOW framework",
+      "created_at": "2026-10-03T17:20:07Z",
+      "updated_at": "2026-10-03T19:32:19Z",
+      "type": "PR"
+    },
+    {
+      "number": 452,
+      "title": "WS_PERF_01 RC6: economic evidence and SHADOW evaluation — no deploy",
+      "created_at": "2026-10-03T16:27:25Z",
+      "updated_at": "2026-10-03T19:31:33Z",
+      "type": "ISSUE"
+    },
+    {
+      "number": 455,
+      "title": "RC6 host control plane: classify and retire residual legacy units",
+      "created_at": "2026-10-03T17:52:36Z",
+      "updated_at": "2026-10-03T18:07:57Z",
+      "type": "PR"
+    },
+    {
+      "number": 451,
+      "title": "Docs: make Codex enter through current RC6 operational truth",
+      "created_at": "2026-10-03T16:17:12Z",
+      "updated_at": "2026-10-03T16:19:35Z",
+      "type": "PR"
+    },
+    {
+      "number": 450,
+      "title": "Deploy V2: accept verified non-operational preopen without claiming readiness",
+      "created_at": "2026-10-03T14:58:10Z",
+      "updated_at": "2026-10-03T15:27:45Z",
+      "type": "PR"
+    },
+    {
+      "number": 448,
+      "title": "RC6 PAPER options: derive exact standard long-option contracts from PPI + BYMA",
+      "created_at": "2026-10-03T02:26:42Z",
+      "updated_at": "2026-10-03T15:27:07Z",
+      "type": "PR"
+    },
+    {
+      "number": 447,
+      "title": "RC6 PAPER: recover stale internal reviews and prove legacy ON identity without bypass",
+      "created_at": "2026-10-03T01:53:11Z",
+      "updated_at": "2026-10-03T15:26:49Z",
+      "type": "PR"
+    },
+    {
+      "number": 449,
+      "title": "RC6 PAPER: integrated blocker authority + exact option contracts",
+      "created_at": "2026-10-03T13:08:23Z",
+      "updated_at": "2026-10-03T13:14:44Z",
+      "type": "PR"
+    }
+  ],
+  "expected_source_paths": {
+    "466": [
+      {
+        "path": ".github/workflows/porota-deploy-v2-promote.yml",
+        "blob": "652fa239108a60b35bec15550fe73bdda3c6ed30",
+        "status": "modified"
+      },
+      {
+        "path": ".github/workflows/porota-predeploy-v2.yml",
+        "blob": "fe4e59cab7a7cc8b722b290a353e46078637876a",
+        "status": "modified"
+      },
+      {
+        "path": ".github/workflows/rc6-ppi-capacity-shadow.yml",
+        "blob": "b9de3e6e2539cf7bcb4556be8292a581f0c6bc6c",
+        "status": "added"
+      },
+      {
+        "path": "AUDITORIA_IMPLEMENTACION_PERFORMANCE_RC6.md",
+        "blob": "c2bec4cca0469689676261dfd54f2340dbd512ea",
+        "status": "added"
+      },
+      {
+        "path": "HANDOFF_WS_PERF_01.md",
+        "blob": "fed066a1dd3d073122485dfad1585438573a58fe",
+        "status": "added"
+      },
+      {
+        "path": "PERFORMANCE_TRUTH_MATRIX_RC6.json",
+        "blob": "d63e44d0f02764efc7dfc490463b7ee22ac5915f",
+        "status": "added"
+      },
+      {
+        "path": "bd_ppi_readonly_guard.py",
+        "blob": "50969d67b2e7dedd87ed786477acd5f1314db957",
+        "status": "modified"
+      },
+      {
+        "path": "be_paper_engine.py",
+        "blob": "d186691be64ffd7d55a1e60638f1588dc8acdddb",
+        "status": "modified"
+      },
+      {
+        "path": "bf_production_paper_observer.py",
+        "blob": "a442fe62d799905d24aeb2baf8df51381d510f65",
+        "status": "modified"
+      },
+      {
+        "path": "bm_exit_supervisor.py",
+        "blob": "a82bba596966365ad92181b5f13118950905343b",
+        "status": "modified"
+      },
+      {
+        "path": "bv_paper_runtime.py",
+        "blob": "6eddabf60e455f72114835fabbc14862138f252b",
+        "status": "modified"
+      },
+      {
+        "path": "bw_daily_risk.py",
+        "blob": "ee30eb28c9c519e4cdf645054f336890914371e2",
+        "status": "modified"
+      },
+      {
+        "path": "cf_intraday_scalping.py",
+        "blob": "2e3a6c276dd57c0e33151aee2508cfa235556b84",
+        "status": "modified"
+      },
+      {
+        "path": "cr_contract_evidence_v2_mass_hf6.py",
+        "blob": "22026f807dd67d3f4321c4ee31879dd011118dbf",
+        "status": "modified"
+      },
+      {
+        "path": "dh_paper_dynamic_risk_gate_hf6.py",
+        "blob": "515fb7743088ff9f4801880d3b4332fb6c2f1ca7",
+        "status": "modified"
+      },
+      {
+        "path": "docs/audits/ISSUE465_20SESSION_PACKAGE.md",
+        "blob": "c8de108f3839fb6ffdcf5b5f98677167b161c117",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_F01.md",
+        "blob": "6164163cf9f53d74d82eaf6f32a79aae37b66c51",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_F02.md",
+        "blob": "59e968ea45831b1eada3e4a48e981ed53cecfa80",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_F03.md",
+        "blob": "b3d75202c847861779d6b9c0b25dbe4ce8a4e6d6",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_F04_F05.json",
+        "blob": "27ca6711bcc30b835dcaced9ef0bea283c4c5041",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_F04_F05.md",
+        "blob": "329063742157dbbe80ad59f67a3e24ee41ebdead",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_F04_F05_RED.log",
+        "blob": "a62dddf06fe94e7d3f3ce6064b336cb487364f28",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_F04_F05_RED.xml",
+        "blob": "9d30e2e8811d21430609d71750d39d280330d68b",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_F04_F05_RED_REPLAY.py",
+        "blob": "5453c4d205b5eb98fb61daf22e81e00b0e29e334",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_F05_CONTROL_RED.log",
+        "blob": "3744d8c982bda6aa231352c908f5441d0a928748",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_F05_CONTROL_RED.xml",
+        "blob": "82bad22957855bdfc4135f0e889c38bdac6bf95c",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_PROVENANCE.md",
+        "blob": "76dbc98e2ddc718848297669704e19738d227578",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_REAUDIT.json",
+        "blob": "c6046d306c31df9eae6e80cac05d77b1b4364aef",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_REAUDIT.md",
+        "blob": "4c2df5b3478c4171297b9e218f0e83670cf3ef1e",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_REAUDIT_FOCAL.json",
+        "blob": "b6b1bebc318ae66bec97860f93604f266ec81ce9",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_REAUDIT_ORIGINAL_REPORT.md",
+        "blob": "0a4c714e45ab6e7083a420e9391d49592e8327ac",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_REAUDIT_RED.json",
+        "blob": "0d9daf3d6c853c482517134cf52851a1d227ebb7",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/ISSUE465_STRESS.md",
+        "blob": "25deaa063236f049bf4b7dfe8822560204428f8e",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/RC6_RESIDUAL_OPS_CLOSURE_2026-10-03.md",
+        "blob": "78aabb028ec737bfecd238ad553177774fb0d535",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/WS_CLOSE_PROGRAMMING_05_FINAL_MATRIX.json",
+        "blob": "3a7bb0d959b4925e83a8b99654309b077d1e6173",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/WS_CLOSE_PROGRAMMING_05_FINAL_MATRIX.md",
+        "blob": "eb56e7a1202e7e553eb9def48e767b8afe33b07c",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/WS_INTEG_PERF_04_PROVENANCE.json",
+        "blob": "253ef4670720c1db87796d87922b5aca4401a48e",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/WS_INTEG_PERF_04_RUNTIME_SHADOW.md",
+        "blob": "9965eff7a6bccee98815939b19701dbc7c783006",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/WS_MOTOR_16_PROGRAMMING_COMPLETION.md",
+        "blob": "19383ddb0d412139d22e8e5e865b1f37c30d4a9a",
+        "status": "added"
+      },
+      {
+        "path": "docs/audits/WS_PERF_03_DYNAMIC_UNIVERSE.md",
+        "blob": "09d82e6afa07e6d7418cc5410bdefd0e7bde978f",
+        "status": "added"
+      },
+      {
+        "path": "docs/runbooks/ISSUE465_RETENTION.md",
+        "blob": "d4de229ce6ce47366938197791f2c18eb6bf0334",
+        "status": "added"
+      },
+      {
+        "path": "ops/policy/host-control-plane-reconciliation-v2.json",
+        "blob": "d8a194a40cac9cc85f55899b0799e9fe8d5ad019",
+        "status": "modified"
+      },
+      {
+        "path": "ops/policy/rc6-dynamic-capacity-v1.json",
+        "blob": "9ae4fdff6a710ec43861952e27bee98c924fc5cb",
+        "status": "added"
+      },
+      {
+        "path": "rc6_audit_evidence/__init__.py",
+        "blob": "70c35b88f02ba9e115bbc5b3b2491bd47d75747a",
+        "status": "added"
+      },
+      {
+        "path": "rc6_audit_evidence/package.py",
+        "blob": "dc08167c55e92a462434cc8e3795eece5331f0e9",
+        "status": "added"
+      },
+      {
+        "path": "rc6_audit_evidence/recompute.py",
+        "blob": "67bf80577236c4eeb397638507d3f00d41b3af1e",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/__init__.py",
+        "blob": "167d0d38c62952badeea9de0cc140a12c0c40062",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/benchmark.py",
+        "blob": "af8bb81b074e195af1813f1faefda1612b780d09",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/capacity.py",
+        "blob": "767eb0781c21e19c34ca2406dac1ab8bf890672a",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/common.py",
+        "blob": "188773be195a823c8d879b8270cec3a04de6af61",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/economics.py",
+        "blob": "8ec214b50c762c9121c66cadc8259280069f5783",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/live.py",
+        "blob": "3006a732e264db824cdbb597ca54d1b0e0633d5f",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/orchestrator.py",
+        "blob": "40081be9d5a4495ae52272519bd79ba90e3f48c3",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/promotion.py",
+        "blob": "6633305e3e40c3fcd141f504bf1bbf40aeb8397d",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/routing.py",
+        "blob": "f22159b38cc885b5b12b879170cc21829846a55e",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/runtime.py",
+        "blob": "d8bebdcbf3e13476f555a1cd4cd45b85e109838e",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/sources.py",
+        "blob": "b0a87d18ea74be9baeb6b28d284ebb75d209c1b6",
+        "status": "added"
+      },
+      {
+        "path": "rc6_dynamic_universe/tradeability.py",
+        "blob": "52e37e8d81e09495395968e048f35ce37e0856f5",
+        "status": "added"
+      },
+      {
+        "path": "rc6_paper_family_lifecycle.py",
+        "blob": "7f2827b602d4c03d5b17fa30871af91df2c57d97",
+        "status": "modified"
+      },
+      {
+        "path": "rc6_performance/__init__.py",
+        "blob": "aba730e7c5276128bfc2f20cf2f2e0c96d61f646",
+        "status": "added"
+      },
+      {
+        "path": "rc6_performance/capture.py",
+        "blob": "67265b37b019e2335dace4d9a8017d6836cafb75",
+        "status": "added"
+      },
+      {
+        "path": "rc6_performance/common.py",
+        "blob": "edeb8e0c4b5b581f5fc045d3c081498a43b5f23b",
+        "status": "added"
+      },
+      {
+        "path": "rc6_performance/costs.py",
+        "blob": "cd02d8d40212c6f6e9cdf5cb983b1acd1d82d65a",
+        "status": "added"
+      },
+      {
+        "path": "rc6_performance/counterfactuals.py",
+        "blob": "e799e99a97adbf3631af202e02e061695b009a79",
+        "status": "added"
+      },
+      {
+        "path": "rc6_performance/lineage.py",
+        "blob": "e1d72cd9c5209100ed1d88afe475ad53a0fb9f57",
+        "status": "added"
+      },
+      {
+        "path": "rc6_performance/metrics.py",
+        "blob": "0298b8b09e6f1274fbe57b7df51f1296327d9df8",
+        "status": "added"
+      },
+      {
+        "path": "rc6_performance/replay.py",
+        "blob": "b3ad2773164077ef28f3a104528786c9ba86abb8",
+        "status": "added"
+      },
+      {
+        "path": "rc6_performance/report.py",
+        "blob": "7b5773c390770c8618b354f204a89947f3400be8",
+        "status": "added"
+      },
+      {
+        "path": "rc6_performance/scanner.py",
+        "blob": "f32326a3bb47e1614d35f9783535cfc1fe9b974e",
+        "status": "added"
+      },
+      {
+        "path": "rc6_performance/shadow.py",
+        "blob": "cf0d5786c68ff27ad8ab1c6ad4a6c2eb14a41171",
+        "status": "added"
+      },
+      {
+        "path": "rc6_ppi_future_contract_policy.py",
+        "blob": "d9dd7251e91a5e561ada7aaedef3e00be2e07d34",
+        "status": "added"
+      },
+      {
+        "path": "rc6_ppi_global_budget.py",
+        "blob": "361519c45c2b485535663cdf0139a1930fb74eec",
+        "status": "added"
+      },
+      {
+        "path": "rc6_ppi_iol_reconciliation_rc6.py",
+        "blob": "ed39d3389e27e2fc6200c037fe944a1e3d07af8f",
+        "status": "modified"
+      },
+      {
+        "path": "rc6_shadow_runtime/__init__.py",
+        "blob": "dcee6dc6f50c9ee3153e7fb18ec01951ea217e1b",
+        "status": "added"
+      },
+      {
+        "path": "rc6_shadow_runtime/entry_signals.py",
+        "blob": "11c398fdba302a165b2458fe941261e9089edb75",
+        "status": "added"
+      },
+      {
+        "path": "rc6_shadow_runtime/families.py",
+        "blob": "93a84c79fe76fc62ff225348429402835b989a74",
+        "status": "added"
+      },
+      {
+        "path": "rc6_shadow_runtime/funnel.py",
+        "blob": "2e37f205108b73328a0bd304d10834ecb0e542d0",
+        "status": "added"
+      },
+      {
+        "path": "rc6_shadow_runtime/lab.py",
+        "blob": "2902063696822d26d9db88fdeed6a6247dd3e031",
+        "status": "added"
+      },
+      {
+        "path": "rc6_shadow_runtime/persistence.py",
+        "blob": "c31d57353f951463f46ca9dafdfa632f0c0ce2c5",
+        "status": "added"
+      },
+      {
+        "path": "rc6_shadow_runtime/preopen.py",
+        "blob": "85fcb549062a1a36be5018f4b270acef852a3ccf",
+        "status": "added"
+      },
+      {
+        "path": "rc6_shadow_runtime/retention.py",
+        "blob": "e16c1d7f73c84c23b1705284da6d8917393bb9d8",
+        "status": "added"
+      },
+      {
+        "path": "rc6_shadow_runtime/source_authority.py",
+        "blob": "5230f3c27ea117d4faacdfb8f8441fd7068c755d",
+        "status": "added"
+      },
+      {
+        "path": "rc6_shadow_runtime/stages.py",
+        "blob": "5023a162a8e53002317c339b9fe5df68bbafa0a5",
+        "status": "added"
+      },
+      {
+        "path": "rc6_shadow_runtime/worker.py",
+        "blob": "800cc0e48779e5c7026e8e7e7f2fce925e4fd88a",
+        "status": "added"
+      },
+      {
+        "path": "rc6_source_consolidation.py",
+        "blob": "40a2a923b4e3e43a3a84ff8536411ad421565aa4",
+        "status": "modified"
+      },
+      {
+        "path": "scripts/porota_apply_host_control_plane_v2.py",
+        "blob": "2bd2342957f847af19e58e0603654eb955b19373",
+        "status": "modified"
+      },
+      {
+        "path": "scripts/porota_artifact_provenance.py",
+        "blob": "e10ee028c390fb61213ad376d9708d4fcb6bce72",
+        "status": "added"
+      },
+      {
+        "path": "scripts/porota_build_deploy_bundle_v2.py",
+        "blob": "a57ec6652a3e078fd9d950f66c5d1efee1dea756",
+        "status": "modified"
+      },
+      {
+        "path": "scripts/porota_validate_deploy_artifact.py",
+        "blob": "0282dd1fc8a17645088f9c499a1ac24a88e108e4",
+        "status": "modified"
+      },
+      {
+        "path": "scripts/rc6_20session_evidence.py",
+        "blob": "7ee2a34bca4dec91ff0cdac95ca96f45297df094",
+        "status": "added"
+      },
+      {
+        "path": "scripts/rc6_deploy_failure_cleanup.py",
+        "blob": "381f6d280d23e1cb2f7e56f6c0ff61bf26e689d7",
+        "status": "added"
+      },
+      {
+        "path": "scripts/rc6_deploy_preopen_gate.py",
+        "blob": "a3d3c4f75d43bbf39606e10effbb9a254c960588",
+        "status": "added"
+      },
+      {
+        "path": "scripts/rc6_dynamic_universe_shadow.py",
+        "blob": "ca508cd37b2eb6ee9dcab0b17a14b8436d5fcdae",
+        "status": "added"
+      },
+      {
+        "path": "scripts/rc6_full_universe_evidence.py",
+        "blob": "f276dee9fa7f883a1d99b0e1fa6b3ae441fac37c",
+        "status": "modified"
+      },
+      {
+        "path": "scripts/rc6_iol_shadow_collect.py",
+        "blob": "68a3da2e2abf9c675c8bf5c025e2427878709419",
+        "status": "modified"
+      },
+      {
+        "path": "scripts/rc6_issue465_audit_gate.py",
+        "blob": "d4df53c17ed1723b837f52e8eb7417cd1a068d20",
+        "status": "added"
+      },
+      {
+        "path": "scripts/rc6_issue465_stress.py",
+        "blob": "1eab84678a640eaf21a64461abd5322438c05cf6",
+        "status": "added"
+      },
+      {
+        "path": "scripts/rc6_performance_audit.py",
+        "blob": "52d94d5f5784eee920c5c3a288e429d09e57f7a0",
+        "status": "added"
+      },
+      {
+        "path": "scripts/rc6_performance_report.py",
+        "blob": "c6178d9042932d2483c6241eb3569376da0d3284",
+        "status": "added"
+      },
+      {
+        "path": "scripts/rc6_ppi_capacity_benchmark.py",
+        "blob": "3c4e0a544c42599374b89fef3f1ff7a7ef33de55",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_intraday_scalping_hf3.py",
+        "blob": "29773d3eb4fa79237c2fbe63bee955ae71b82dde",
+        "status": "modified"
+      },
+      {
+        "path": "tests/test_issue465_budget_adversarial.py",
+        "blob": "756eaa7a799b8a81ce383ea9b2fd2fc545735b6a",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_issue465_capability_cache.py",
+        "blob": "6044532e04f498545f60d88ad158295ef9d01d0e",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_issue465_generations.py",
+        "blob": "f113847f83542d57a1a8a7cff863a44e6b1009ff",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_issue465_historical_package.py",
+        "blob": "f7b0040eb83d02112d9d27a6681bf8361be5876f",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_issue465_provenance.py",
+        "blob": "82454fee9b226c3f3938cc5718ea33a1d2252832",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_issue465_source_retention_audit.py",
+        "blob": "aab3794fd85ee51ad73b701945617a629cb72a13",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_issue465_source_retention_policy.py",
+        "blob": "1b81acefd7b2781a6ef7c7c8be9dfe438011801a",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_issue465_stress.py",
+        "blob": "6d74557da155e4c9bdd47409bed5a2261896dd53",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_issue465_stress_audit_gate.py",
+        "blob": "e5edf60c5259c3f3469f60fa54075eca05656f88",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_porota_apply_host_control_plane_v2.py",
+        "blob": "183dedb643b8859f4d411c5ef8426716c35c15f4",
+        "status": "modified"
+      },
+      {
+        "path": "tests/test_rc6_approved_factual_callers.py",
+        "blob": "9876e51e3bbc6be5ca006a9b63b7d46f61723abd",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_capacity_promotion.py",
+        "blob": "3f6a6e84705a9b1ccdbda5ee78d42818a519fdcc",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_deploy_failure_cleanup.py",
+        "blob": "62115b4843761c49a36c024b78a84209767de249",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_deploy_preopen_gate.py",
+        "blob": "feea6ec0a0ceb011e14edae1a908732e59a89a62",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_deploy_runtime_completeness.py",
+        "blob": "83cacb8d80f51cb66089d91ed462f3a1e49c146b",
+        "status": "modified"
+      },
+      {
+        "path": "tests/test_rc6_dynamic_orchestrator.py",
+        "blob": "0ac1dd2138113f837f42a6967f6eaef65b511623",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_dynamic_sources.py",
+        "blob": "ecfcd75d9420d4e2a4d45284bdfa023a668294b0",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_dynamic_tradeability.py",
+        "blob": "e7e44b3e425dc33328d4e17f29bdba0aeeb789b1",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_final_family_source_policy.py",
+        "blob": "44712497a0f66033a4db652c5af3a04eef5e017d",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_final_programming_runtime.py",
+        "blob": "76c2d8164eba799716b93e1a107f0c4ef3695ea9",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_final_shared_risk.py",
+        "blob": "42fee1bbf266dcb67c53ffed415d974d1a26c774",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_future_contract_policy.py",
+        "blob": "13e9dd6c83d179e82b093800c9dbc28e279520e0",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_future_paper_engine.py",
+        "blob": "818e9c282c4b438f2b368c1da2938c1580ea65c1",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_future_paper_lifecycle.py",
+        "blob": "b390cf8364231c31662c71a10d99f66edc3fedde",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_future_programming_complete.py",
+        "blob": "ae45ee4cbc51e25dc712bc96eef678b5890b40be",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_intraday_freshness.py",
+        "blob": "13b91e391cb69dc401c38c8e7381f54176df279d",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_performance_capture.py",
+        "blob": "54de91980867c38e7c8d56441dede5b68d50acbe",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_performance_costs.py",
+        "blob": "7e26692db8d96b8404c1d8def05f8b9827b1a060",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_performance_report.py",
+        "blob": "f2867db40660eb97b82b64c6218db8ce92b8f8b8",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_performance_runtime.py",
+        "blob": "1bcae3abcb6c94020df97d2e14990c90b99c09d9",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_performance_shadow.py",
+        "blob": "9a36cdfbb8683cffcc59f163dc61eeafe3a42a93",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_ppi_capacity_benchmark.py",
+        "blob": "650c19581464d72e6ecde169579768086092065d",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_ppi_global_budget.py",
+        "blob": "d2a8c30f559684bb0f59e60d860928f155a37138",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_shadow_entry_signals.py",
+        "blob": "ca5653cc8a4dfa02fcdbc125f78ee2974c41e572",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_shadow_family_runtime.py",
+        "blob": "bcd3ec0affd18025fcb8fd160c464baa4949b06e",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_shadow_lab_runtime.py",
+        "blob": "920f7734310ed916cd6e02cfe8f94cb8fd1cbe35",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_shadow_operational_funnel.py",
+        "blob": "ded0f0f66674558ada7aeef2440fad44b564a03d",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_shadow_preopen_runtime.py",
+        "blob": "fa7ebbbe9996b688fef8e1419625e9fb174385cc",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_rc6_shadow_runtime_wiring.py",
+        "blob": "73add2b396f423df7dd659748aebd68877939f4f",
+        "status": "added"
+      }
+    ],
+    "470": [
+      {
+        "path": "DASHBOARD_TRUTH_MATRIX_RC6.json",
+        "blob": "a82202d99dec95dbe262d072513b491ee91b6048",
+        "status": "modified"
+      },
+      {
+        "path": "docs/dashboard/WS_DASH_TRADER_TERMINAL_08_ACCEPTANCE.json",
+        "blob": "fff28ca8db98009d28b39d9d40d16135af5b4ac8",
+        "status": "added"
+      },
+      {
+        "path": "docs/dashboard/WS_DASH_TRADER_TERMINAL_08_ARCHITECTURE_2026-10-04.md",
+        "blob": "3289bf21e3cf7231e397fe3a86e0bac390cd197d",
+        "status": "added"
+      },
+      {
+        "path": "docs/dashboard/WS_DASH_TRADER_TERMINAL_08_HANDOFF.md",
+        "blob": "9012d4dcd056339e8fa4b422ef0141183c073457",
+        "status": "added"
+      },
+      {
+        "path": "docs/dashboard/evidence/ws08-browser-gate.json",
+        "blob": "57cdacd4d77019118f202ae2dc9120ac653fdba3",
+        "status": "added"
+      },
+      {
+        "path": "docs/dashboard/evidence/ws08-instrumentos-1440.png",
+        "blob": "f0cbc665dfe220e67cdff755eddf9058224d75c1",
+        "status": "added"
+      },
+      {
+        "path": "docs/dashboard/evidence/ws08-instrumentos-360.png",
+        "blob": "db6b9eae6f291a34d7115fe48e67458b8ca4460b",
+        "status": "added"
+      },
+      {
+        "path": "docs/dashboard/evidence/ws08-local-gates.json",
+        "blob": "69921ac9fc63e40347e81343a45519d7c0b8eeb2",
+        "status": "added"
+      },
+      {
+        "path": "o_dashboard.py",
+        "blob": "e26fcc6c38d26c73cf00bf694fae9ffd0285421f",
+        "status": "modified"
+      },
+      {
+        "path": "rc6_trader_dashboard/__init__.py",
+        "blob": "23146b341c161195ae2fd7961f789d605384e9ce",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/components.py",
+        "blob": "715fd9e30edffaf904b7647c6b56fce432c82a42",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/datasets.py",
+        "blob": "f0eccd22f7f2515f5f71d2e034de384c8258c236",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/design_system.py",
+        "blob": "7fd8a07142b0ef2947244ba55e63fe83289728b7",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/generation.py",
+        "blob": "adf84cf0ad10449e530a0cd9e6fde966eb00d23a",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/navigation.py",
+        "blob": "5b84629d1e96ece395131464c6409d0612e2b165",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/projection.py",
+        "blob": "1aa29f9f4ab2c52c84a2f60e878f9a6c24015b4d",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/routes.py",
+        "blob": "f8f173b11ce23c29422057ca77fa24b5caadc3fa",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/shell.py",
+        "blob": "bccdc989b8e28870c1ab6c278519d2279d79234a",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/view_common.py",
+        "blob": "a9223cfa205b7d821e4e39fa607ff6ebcba66290",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/views_analytics.py",
+        "blob": "ea7955f51ca25c2d984f8b82c9a0ff73e8d365f6",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/views_home.py",
+        "blob": "46f981662a0d1563c38f1131c12b536e36a09990",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/views_instruments.py",
+        "blob": "a9d0d0b9d563a66e2bcd4a7338679fa40706fb8d",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/views_live.py",
+        "blob": "5b1d66ff09ed37a05ad2004f20520995e6c03ff5",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/views_risk.py",
+        "blob": "84ed4b9960215285ef423795ae55d9bbd06de4de",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/views_system.py",
+        "blob": "d8d33fdf4e71f33286b710e4fc10cd0affaf0b95",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/views_trading.py",
+        "blob": "4ffbd80298bd7767b9d2e71d97b51c7b2fea67d7",
+        "status": "added"
+      },
+      {
+        "path": "rc6_trader_dashboard/views_universe.py",
+        "blob": "ea34087b7f3dd077ae88c09b2d2bf93743350301",
+        "status": "added"
+      },
+      {
+        "path": "scripts/rc6_dashboard_route_inventory.py",
+        "blob": "6a48b16ce3840d11891749cace662a400d18d0db",
+        "status": "modified"
+      },
+      {
+        "path": "tests/ci_trader_terminal_browser.py",
+        "blob": "4646b4f9c8738cfaf77f544190b72246c56020b9",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_ws_dash_trader_terminal_08.py",
+        "blob": "cf5b8ecc4a4f6495bf9f0cd7cd26c609dd008bca",
+        "status": "added"
+      }
+    ]
+  },
+  "textual_intersection_count": 0,
+  "expected_source_union_count": 170,
+  "interpretation": "Path/blob preservation is not independent functional validation. Final path provenance must explain evolved content and tests. AGENTS.md unique intent from #451 also required.",
+  "ownership": {
+    "audit469": "READ_ONLY_COMPLETE",
+    "dashboard467": "RELEASED_AS_OF_5985609600_REVALIDATE_BEFORE_WRITE",
+    "integration_owner": "NOT_ACQUIRED_BY_AUDITOR",
+    "deploy_owner": "NOT_ACQUIRED"
+  },
+  "final_integrated_candidate": "NOT_CREATED",
+  "final_artifact": "NOT_CREATED",
+  "denylist_final_artifacts": [
+    {
+      "source_pr": 466,
+      "run": 37234866451,
+      "artifact": 11315198085,
+      "zip_sha256": "6514bfdef175d31044a0f204c799ebc2029722cce77f44724909a7069a2ed552",
+      "verification": "ROOT_BYTES_VERIFIED_STATIC_CLOSURE_ONLY"
+    },
+    {
+      "source_pr": 470,
+      "run": 37243206476,
+      "artifact": 11317509383,
+      "zip_sha256": "6d5afb8463af7acb763eb34cc2db0218773c5ef739fb7f830f2ffbfd7cb2e948",
+      "verification": "ROOT_NATIVE_RUN_ARTIFACT_METADATA_VERIFIED_NOT_ZIP_BYTES"
+    },
+    {
+      "source_pr": 463,
+      "run": 37175265248,
+      "artifact": 11293625514,
+      "zip_sha256": "c2b4a12d53245fe6a8e57ebf179358249f1db2834fe9afbc8823582a192df767",
+      "verification": "HISTORICAL_ONLY"
+    }
+  ],
+  "history468": {
+    "zip_sha256": "aa78ad688c11c6e54f02ae9139554ab274e5210d704abd208ffcff37c5b6c7ce",
+    "zip_size": 459158,
+    "findings": 21,
+    "exact_stale_tail_fixture_fixed_in466": 1,
+    "remaining_not_closed_end_to_end": 20,
+    "runtime_cut": "2026-10-03T15:16:00Z",
+    "census_cut": "2026-10-03T15:39:00Z"
+  },
+  "audit469": {
+    "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "verdict": "GO_TO_FIX_AND_REAUDIT",
+    "finding_count": 29,
+    "severities": {
+      "P1": 12,
+      "P2": 14,
+      "P3": 3
+    },
+    "scenarios": 80,
+    "deliverables": 20
+  },
+  "integration_ux_findings": [
+    "UX470-I01",
+    "UX470-I02",
+    "UX470-I03",
+    "UX470-I04",
+    "UX470-I05"
+  ],
+  "prohibitions": [
+    "NO_FIXES_BY_AUDITOR",
+    "NO_MERGE",
+    "NO_DEPLOY",
+    "NO_RUNTIME_MUTATION",
+    "NO_PPI_WATCH",
+    "NO_BYMA_API",
+    "PAPER_SHADOW_ONLY",
+    "REAL_ORDERS_SENT_0"
+  ]
+}

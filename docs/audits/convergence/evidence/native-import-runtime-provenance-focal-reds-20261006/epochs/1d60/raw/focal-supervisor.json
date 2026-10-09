@@ -1,0 +1,221 @@
+{
+  "actual_child_pid": 244565,
+  "actual_wait4_reaped": true,
+  "artifact_validated": false,
+  "classification": "SCOPED_FOCAL_NOT_GREEN",
+  "deployed": false,
+  "final_input_provenance": null,
+  "final_raw_captures_allowed": true,
+  "infrastructure_after": {
+    "runner": {
+      "bytes": 16990,
+      "custody": "NOATIME_NOFOLLOW_NONBLOCK_ALL11_WITHIN_CAPTURE",
+      "path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-runner.py",
+      "physical_stat11": {
+        "st_atime_ns": 1791249436970681275,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791249436973891912,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 310097,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791249436973891912,
+        "st_nlink": 1,
+        "st_size": 16990,
+        "st_uid": 1000
+      },
+      "sha256": "f1d575a996ed693f25ed99246748aab6b7c37924eac113b6bf657b256284baa5"
+    },
+    "supervisor": {
+      "bytes": 22347,
+      "custody": "NOATIME_NOFOLLOW_NONBLOCK_ALL11_WITHIN_CAPTURE",
+      "path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-supervisor-v3.py",
+      "physical_stat11": {
+        "st_atime_ns": 1791249492698291079,
+        "st_blocks": 48,
+        "st_ctime_ns": 1791249436981224267,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 310182,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791249436981224267,
+        "st_nlink": 1,
+        "st_size": 22347,
+        "st_uid": 1000
+      },
+      "sha256": "ec4147f01baebcc1654e8e933b56f8cf35061672adb01eb28053f01457f371b4"
+    }
+  },
+  "infrastructure_before": {
+    "runner": {
+      "bytes": 16990,
+      "custody": "NOATIME_NOFOLLOW_NONBLOCK_ALL11_WITHIN_CAPTURE",
+      "path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-runner.py",
+      "physical_stat11": {
+        "st_atime_ns": 1791249436970681275,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791249436973891912,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 310097,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791249436973891912,
+        "st_nlink": 1,
+        "st_size": 16990,
+        "st_uid": 1000
+      },
+      "sha256": "f1d575a996ed693f25ed99246748aab6b7c37924eac113b6bf657b256284baa5"
+    },
+    "supervisor": {
+      "bytes": 22347,
+      "custody": "NOATIME_NOFOLLOW_NONBLOCK_ALL11_WITHIN_CAPTURE",
+      "path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-supervisor-v3.py",
+      "physical_stat11": {
+        "st_atime_ns": 1791249492698291079,
+        "st_blocks": 48,
+        "st_ctime_ns": 1791249436981224267,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 310182,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791249436981224267,
+        "st_nlink": 1,
+        "st_size": 22347,
+        "st_uid": 1000
+      },
+      "sha256": "ec4147f01baebcc1654e8e933b56f8cf35061672adb01eb28053f01457f371b4"
+    }
+  },
+  "launcher_pid": 244564,
+  "limits": [
+    "Management watchdog180 covers main launch through actual wait4 observation, not product caps or final custody/emission.",
+    "Staged termination/reap/adopted cleanup and subreaper restore are recorded separately; residual/unknown children prevent GREEN.",
+    "No current BIG, horizon, image, runtime or final governed authority is conferred by scoped guard success."
+  ],
+  "managed_child": {
+    "actual_child_reaped": true,
+    "actual_launch_to_pid_reap_wall_seconds": 17.357661433998146,
+    "adopted_descendants_reaped": [
+      {
+        "cpu_system_seconds": 0.00789,
+        "cpu_user_seconds": 0.034991999999999995,
+        "exit_code": 0,
+        "kernel_lifetime_peak_rss_bytes": 74059776,
+        "pid": 244616
+      }
+    ],
+    "child_exit_code": 1,
+    "cpu_system_seconds": 2.555912,
+    "cpu_user_seconds": 14.414247,
+    "elapsed_wall_seconds": 17.410888133992557,
+    "group_signaling_disabled_after_esrch": true,
+    "kernel_lifetime_peak_rss_bytes": 109010944,
+    "kernel_owned_child_observations": [
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "before_popen_after_subreaper_activation"
+      },
+      {
+        "cpu_system_seconds": 0.00789,
+        "cpu_user_seconds": 0.034991999999999995,
+        "exit_code": 0,
+        "kernel_lifetime_peak_rss_bytes": 74059776,
+        "outcome": "PID_REAPED",
+        "phase": "after_main_pid_reap",
+        "pid": 244616
+      },
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "after_main_pid_reap"
+      }
+    ],
+    "kernel_pre_popen_echild_verified": true,
+    "kernel_wait4_zero_observed_irreversible_red": false,
+    "owned_children_exhaustion_verified": true,
+    "owned_children_proc_path": "/proc/244564/task/244564/children",
+    "pid": 244565,
+    "proc_children_facility": "PROC_TASK_CHILDREN_ABSENT; KERNEL_WAIT4_WNOHANG_REQUIRED",
+    "process_group_absent_after_reap": true,
+    "remaining_owned_children": [],
+    "residual_descendants_observed": [],
+    "subreaper_activated": true,
+    "subreaper_previous_state": 0,
+    "subreaper_restore_attempted": true,
+    "subreaper_restore_verified": true,
+    "subreaper_retained_on_unverified_cleanup": false,
+    "supervisor_errors": [],
+    "supervisor_kernel_identity_before_spawn": {
+      "Pid": "244564",
+      "Tgid": "244564",
+      "Uid": "1000\t1000\t1000\t1000"
+    },
+    "supervisor_native_tid": 244564,
+    "supervisor_pid": 244564,
+    "supervisor_task_path": "/proc/244564/task/244564",
+    "termination_reap_restore_cleanup_seconds": 0.050273091008421034,
+    "timed_out": false,
+    "wait4_reaped_pid": 244565
+  },
+  "management_watchdog_exhausted": false,
+  "management_watchdog_seconds": 180.0,
+  "native_big_executions": 0,
+  "native_horizon_executions": 0,
+  "native_receipt_custody": {
+    "bytes": 256403,
+    "custody": "NOATIME_NOFOLLOW_NONBLOCK_ALL11_WITHIN_CAPTURE",
+    "path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "physical_stat11": {
+      "st_atime_ns": 1791249509978169236,
+      "st_blocks": 504,
+      "st_ctime_ns": 1791249509983229754,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 941056,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791249509983229754,
+      "st_nlink": 1,
+      "st_size": 256403,
+      "st_uid": 1000
+    },
+    "sha256": "26d8d0932f61bbae545f9a02369e31a8ecb4a513f8da404a483901e6b1f2c3ce"
+  },
+  "native_receipt_sha256": "26d8d0932f61bbae545f9a02369e31a8ecb4a513f8da404a483901e6b1f2c3ce",
+  "phase": "INTERMEDIATE_OWN_SOURCE_CONTROLLED_FOCAL_NOT_FINAL_CANDIDATE",
+  "post_reap_custody_error": null,
+  "post_reap_custody_scope": "NO_FINAL_RAW_READS_WHEN_MAIN_OR_OWNED_CHILD_EXHAUSTION_OR_GROUP_ABSENCE_UNVERIFIED",
+  "proven_supervisor_source": {
+    "adaptation": "managed_child baseline; mandatory kernel ECHILD on every host, final post-drain PGID probe, ESRCH signal suppression and safe verified subreaper restore; no business/resource/GC change",
+    "path": "/workspace/rc6-publication-1e2fddc1-controlled-preparation-20261006/runner.py",
+    "sha256": "210c510c80274280085c3d53ae5d64e16fbb02223cc7d0be5cda062b19cfb47b"
+  },
+  "raw_log_custody": {
+    "bytes": 1606,
+    "custody": "NOATIME_NOFOLLOW_NONBLOCK_ALL11_WITHIN_CAPTURE",
+    "path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-157-raw/focal.log",
+    "physical_stat11": {
+      "st_atime_ns": 1791249492730290853,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791249509983229754,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 940901,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791249509983229754,
+      "st_nlink": 1,
+      "st_size": 1606,
+      "st_uid": 1000
+    },
+    "sha256": "069ed6df25f51e84a31ca2d1029612f58026304c2596859026cb6b45f0bb48ca"
+  },
+  "resource_scope": "ACTUAL_REAPED_MAIN_AND_ADOPTED_DESCENDANTS_KERNEL_RUSAGE_MAXIMUM_NOT_PER_CALL_PROFILING",
+  "returncode": 1,
+  "runner_sha256": "f1d575a996ed693f25ed99246748aab6b7c37924eac113b6bf657b256284baa5",
+  "runtime_validated": false,
+  "schema": "rc6.native-import-focal-management-receipt.v2",
+  "source_sha": "1d60ec2ced05ce7793028f5a04f707cb66fa5cda",
+  "source_tree": "a21e16b7d365b202996c835eda6baebbc8b0ffb4",
+  "supervisor_sha256": "ec4147f01baebcc1654e8e933b56f8cf35061672adb01eb28053f01457f371b4",
+  "wait4_main_and_adopted_max_rss_bytes": 109010944
+}

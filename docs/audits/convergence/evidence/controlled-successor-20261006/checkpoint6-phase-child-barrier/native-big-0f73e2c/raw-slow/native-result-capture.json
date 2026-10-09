@@ -1,0 +1,19 @@
+{
+  "bytes": 1593778,
+  "native_data_read_by_parent": false,
+  "native_result_not_rewritten": true,
+  "sha256": "5088043ec19f480c0ad51dd63669e038b746abf08bb47b1c78ae0b1a494ed66f",
+  "stat_fields": {
+    "st_atime_ns": 1791318099872079820,
+    "st_blocks": 3120,
+    "st_ctime_ns": 1791318099875916661,
+    "st_dev": 27,
+    "st_gid": 1000,
+    "st_ino": 1706446,
+    "st_mode": 33188,
+    "st_mtime_ns": 1791318099875916661,
+    "st_nlink": 1,
+    "st_size": 1593778,
+    "st_uid": 1000
+  }
+}

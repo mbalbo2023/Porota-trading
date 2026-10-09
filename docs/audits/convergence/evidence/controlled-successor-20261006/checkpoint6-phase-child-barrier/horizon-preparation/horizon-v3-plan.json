@@ -1,0 +1,300 @@
+{
+  "argv_templates": {
+    "original_driver_sys_argv_same_PID": [
+      "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/source/docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source",
+      "--source-repo",
+      "<FRESH_GITHUB_OBJECT_REPOSITORY_FOR_FINAL_SHA>",
+      "--source-root",
+      "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/source",
+      "--source-sha",
+      "<FINAL_FROZEN_GITHUB_SHA>",
+      "--source-tree",
+      "<FINAL_FROZEN_GITHUB_TREE>",
+      "--source-index",
+      "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/export/source.index.json",
+      "--raw-root",
+      "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/native-raw",
+      "--data-root",
+      "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/native-data",
+      "--python",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+      "--python-version",
+      "3.11.16",
+      "--watchdog-seconds",
+      "21600",
+      "--terminate-grace-seconds",
+      "2",
+      "--progress-poll-seconds",
+      "5"
+    ],
+    "original_native_child_command": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+      "-I",
+      "-B",
+      "-u",
+      "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/source/docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
+      "--source-repo",
+      "<FRESH_GITHUB_OBJECT_REPOSITORY_FOR_FINAL_SHA>",
+      "--source-root",
+      "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/source",
+      "--source-sha",
+      "<FINAL_FROZEN_GITHUB_SHA>",
+      "--source-tree",
+      "<FINAL_FROZEN_GITHUB_TREE>",
+      "--source-index",
+      "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/export/source.index.json",
+      "--root",
+      "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/native-data",
+      "--catalog-count",
+      "1200",
+      "--ticks",
+      "1201"
+    ],
+    "wrapper_code_preparation": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+      "-I",
+      "-B",
+      "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/control/horizon_owned_launch.py",
+      "prepare-code"
+    ],
+    "wrapper_same_PID_launch": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+      "-I",
+      "-B",
+      "-u",
+      "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/control/horizon_owned_launch.py",
+      "launch"
+    ]
+  },
+  "cost": {
+    "logical_business_as_of_span_hours": 10,
+    "logical_span_is_not_wall_estimate": true,
+    "management_cap_hours": 6,
+    "measured_wall_estimate": null,
+    "reason": "No comparable qualified native full1201 walltime for finalSHA was examined; no trial/benchmark permitted."
+  },
+  "coverage_scope": {
+    "does_not_qualify": [
+      "BIG12000x5",
+      "10hcontinuousOPEN/realprovider session",
+      "Govcomplete3.11/3.12",
+      "BrowserLARGE",
+      "finalartifact/manifest/image/runtime",
+      "binary/kernel/transitive network isolation",
+      "realorders/livecapabilities"
+    ],
+    "focal_contract_file": "tests/test_rc6_native_archive_horizon_wrapper.py",
+    "focals_not_rerun_now_and_not_gate_substitute": true,
+    "no_final_candidate_eligibility_inferred_from_Horizon_alone": true,
+    "original_contract_sources": {
+      "driver": {
+        "bytes": 55671,
+        "git_blob_id": "2c5709b25cc4548651e9e85aba50eba0eb5121cf",
+        "scope": "READ_ONLY_GIT_OBJECT_NOT_SOURCE_EXPORT_OR_EXECUTION",
+        "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+        "source_member": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source",
+        "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd"
+      },
+      "offline_capability": {
+        "bytes": 63436,
+        "git_blob_id": "49fa9278b51bf16e3b0aa966e9f7a6412704e685",
+        "scope": "READ_ONLY_GIT_OBJECT_NOT_SOURCE_EXPORT_OR_EXECUTION",
+        "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+        "source_member": "scripts/rc6_controlled_governed_runner.py",
+        "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd"
+      },
+      "producer": {
+        "bytes": 61798,
+        "git_blob_id": "b5ee0d93b51dc985085d553d79ad9ef4d803a538",
+        "scope": "READ_ONLY_GIT_OBJECT_NOT_SOURCE_EXPORT_OR_EXECUTION",
+        "sha256": "cd39d440b36e5f35fbc23ad210fdf7370b728b761ce36020c9c88de3fa75f8da",
+        "source_member": "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
+        "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd"
+      }
+    },
+    "positive_if_all_original_assertions_pass": "Local synthetic canonical COMPONENT_V3 full1201postPRE+PRE wheel and byte-exact archive recovery under original budgets."
+  },
+  "final_pin_prerequisites": [
+    "Wait for the active exact Predeploy to finish; reread candidate/successor/product refs, PR,471,473,ops owners/lease. Do not update/cancel/duplicate the running candidate.",
+    "Root selects one final frozen GitHub SHA/tree after any Sourceguardfix; this observed0f73 plan is not a launch pin. Re-read and hash the selected driver/producer/filter blobs from that final rawGit authority.",
+    "Acquire no competing ownership; retain PAPER/SHADOW,real_orders_sent=0,no live routes,PPI Watch untouched,no472,no host/deploy. Root posts durable exactSHA/action/argv/CPUslot before launch.",
+    "After explicit authorization only, create one fresh owned0700 epoch and independent canonical SOURCE/EXPORT/CONTROL/RAW/DATA paths. RAW and DATA must remain absent through CODE preparation and both original environment qualifications.",
+    "Export the complete final rawGit tree as immutable literal SOURCE: hashes,modes,blob IDs,implicitdirectories,rawcommit/alltrees,tar,index,durability receipt,overlay0,no replace refs/lazy fetch/overlays. Derive file count from final rawGit; do not assume the old3192 count.",
+    "Prepare a NEW external copy of the reviewed8d442 wrapper O_EXCL, preserving the old file. Change only finalSHA/tree/REPO/namespace references; review/hash diff before launch. No Source/module/function replacements or nested supervisor.",
+    "Check exact external PRODUCT3113.11.16 normal venv157 by original preflight, source-pinned locks/platform metadata. Keep PRODUCT bytes untouched; metadata proof is not wheel/artifact/image proof.",
+    "Use the original reviewed native IPv6 creation constraint and kernel EAFNOSUPPORT witness,AF_UNIX functional. Do not override urllib3/module globals or relax original guards. Any attempted guarded transport/DENIED counter remainsRED.",
+    "Record canonical disk scratch admission with original policy; no tmpfs,aliases,wrong owner,quota change or fs metadata reset. Fresh external LOG_DIR may be declared for eager logs; no DATA/DB/archive reads or priming."
+  ],
+  "future_Sourceguard_a2_fix_may_change_target": true,
+  "native_contract": {
+    "actual_native_calls_expected": 1202,
+    "catalog_count": 1200,
+    "expired_deletion": "Report actual native deletion outcome; zero deletions never becomes positive deletion proof.",
+    "final_recovery": "Public restore first operational cutindex1 at final horizon, hash match to original cut; final CURRENT/fingerprint/head match last actual cut.",
+    "first_to_last_operational_as_of_seconds": 36000,
+    "fixed_business_source": "Synthetic immutable snapshot; no refresh/provider session/entry authority. Intraday contract must be stale after120seconds,entry_authorized_observations0.",
+    "input_observation_rows": 6000,
+    "native_phases": "Actual phase/UNKNOWN/stale facts preserved; not forced toOPEN.",
+    "native_positive_maintenance": [
+      "Real fsync calls>0",
+      "scratch native measure calls>0",
+      "archive-generation counters>=1202; entered==completed andfailed0 for all observed maintenance",
+      "native rotations>0 andack compactions>0",
+      "no additional GC/rotation/pin calls injected"
+    ],
+    "observations_per_identity": 5,
+    "original_members": [
+      "report.json.gz",
+      "checkpoint.json.gz",
+      "status.json",
+      "manifest.json",
+      "projection.sqlite"
+    ],
+    "per_cut_recovery": "Archive_generation and restore_generation for each1202cuts, exact5original bytes/manifests/CURRENT/receipt binding, original-generation custody preserved.",
+    "postPRE_as_of_step_seconds": 30,
+    "preopen_seed_ticks": 1,
+    "recovery_margin_seconds": 3600,
+    "restart_scope": "Same-process canonical factory reconstruction, real committed-checkpoint reuse; notSIGKILL recovery. Clock starts before constructor/recovery.",
+    "restarts": [
+      361,
+      841
+    ],
+    "retention_seconds": 32400,
+    "ticks_requested": 1201
+  },
+  "observed_Git_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "observed_Git_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "observed_Predeploy_run": 37522988940,
+  "old_or_current_SHA_not_implicitly_authorized": true,
+  "original_budgets": {
+    "PRE_seed_30s_exclusion": "Original code applies30s only to indices1..1201; do not move/reset/extend those clocks.",
+    "TERM_grace_seconds": 2,
+    "archive_bytes": 536870912,
+    "archive_entries_excluding_root": 32768,
+    "failed_owned_cleanup_seconds": 5,
+    "free_bytes_reserve": 2147483648,
+    "live_bytes": 134217728,
+    "live_entries_excluding_root": 512,
+    "minimum_free_inode_percent": 10,
+    "native_producer_management_watchdog_seconds": 21600,
+    "no_budget_change": true,
+    "original_supervisor_progress_poll_seconds": 5,
+    "postPRE_full_cycle_includes": [
+      "factory/restart/checkpoint recovery",
+      "worker.tick",
+      "archive/restore/original bytes verification",
+      "source and import custody checks",
+      "result publication",
+      "cleanup/GC already present in original producer"
+    ],
+    "postPRE_full_cycle_wall_seconds_max": 30,
+    "rss_native_and_owned_kernel_max_bytes_strictly_below": 2147483648,
+    "scratch_max_bytes": 536870912
+  },
+  "paths_template": {
+    "control": "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/control",
+    "epoch": "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>",
+    "export": "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/export",
+    "native_data": "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/native-data",
+    "native_raw": "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/native-raw",
+    "native_result": "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/native-data/result.json",
+    "repository": "<FRESH_GITHUB_OBJECT_REPOSITORY_FOR_FINAL_SHA>",
+    "source": "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/source",
+    "source_commit_raw": "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/export/source.commit.raw",
+    "source_export_durability": "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/export/source.export-durability.json",
+    "source_index": "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/export/source.index.json",
+    "source_tar": "<NEW_CANONICAL_OWNED_HORIZON_EPOCH_AFTER_AUTHORIZATION>/export/source.tar"
+  },
+  "post_FIN_original_acceptance": [
+    "Root reads unchanged native-result bytes only after realFIN; verifies original driver inspect_native assertions and driver-final native_horizon_validated=true plus errors[].",
+    "Native execution/horizon/complete/acceptance/code/db/import/index-tar flags alltrue,1202distinct cuts,1202native reads,1202archive restores,restarts361/841 checkpoint_reusedtrue,30s allpostPRE fullcycles.",
+    "All five original members andactual CURRENT/manifest/receipt/as_of/hash bindings percut; final public first-operational restore retains original bytes and verified9h+1h head.",
+    "NativeDB all11stat+sha MAIN/WAL/SHM/journal baseline equalsfinal plus independent driver NOATIME capture; separate CODE/source pin/source controls preserved, no DATA atime exemption.",
+    "Source rawGit authority andphysical hashes/modes/blob IDs/exactnamespace beforeafter, sourcecontrols all11+hash; wrapper fullSource all11 unchanged after legitimateCODEprep.",
+    "Actual native import graph initial/percut/final onlypinnedSource,realstdlib,actualvenv; actual__main__ is original Sourceproducer. No wrapper alias/module override or globalsimpersonation.",
+    "Environment exact157 andsourcehashlocks are metadata/module-origin proof, not completeinstalledbinary or image proof. Allnativeguard rejected/network counters0,primarySQLite sealed afterfixture,real_orders_sent0,realroutesNOT_CALLED.",
+    "Canonical policies/temp peaks/FSreserve/RSS/scratch/positive native maintenance counters unchanged; actual deletion/phase facts remain factual.",
+    "Retain lossless driver,tar/index/rawcommit,source/controlcustody,fullnativeJSON/log,source memberhashes,clock/cut/recovery/resource evidence,RAWsize/digests afterFIN."
+  ],
+  "prebaseline_CODE_preparation": {
+    "CODE10_bytes_modes_blobs_namespace_must_match": true,
+    "atime_changes_factual_and_disclosed": true,
+    "before_after_all11_recorded": true,
+    "if_final_Sourceguard_changes_contract": "Review final producer/driver/wrapper compatibility before launch; do not silently weaken comparisons to manufactureGREEN.",
+    "native_epoch_starts_after_preparation": true,
+    "no_DATA_DB_archive_priming": true,
+    "no_utime_chown_chmod_restoration": true,
+    "only_CODE_ordinary_real_reads": true,
+    "source": "reviewed external wrapper8d442 prep_code",
+    "wrapper_launch_current_all11_comparison_remains_strict": true
+  },
+  "preparation_completed": {
+    "SQL_probes": 0,
+    "Source_exports_created": 0,
+    "Source_modified": false,
+    "browser_host_deploy_operations": 0,
+    "clones_or_fixtures_created": 0,
+    "native_or_legacy4cut_runs": 0,
+    "only_new_external_plan_text_files_O_EXCL": true,
+    "only_small_readonly_Git_objects_and_prior_wrapper_reads": true,
+    "permissions": "WAIT_FOR_ROOT_REVIEW_AND_NEW_EXPLICIT_LAUNCH_AUTHORIZATION"
+  },
+  "progress_and_checkpoints": {
+    "allowed_while_native_active": [
+      "Only original supervisor-owned native-raw/driver-progress.json or driver-started.json",
+      "Own process/kernel identities and original supervisor log-FD fstat byte count already published in progress"
+    ],
+    "communication_max_gap_seconds": 60,
+    "durable_GitHub_checkpoints": [
+      "Root publishes exact sourceSHA/tree/action/argv before native launch",
+      "Periodic supervisor-status checkpoints reference sourceSHA/PID/time/log bytes/deadline remaining, no business payload claims",
+      "Any material error/UNKNOWN with actual evidence and owned cleanup result",
+      "Post-FIN full result/manifest/hash handoff; no silent retry"
+    ],
+    "each_progress_checkpointable": "Capture stable supervisor-owned progress JSON to a new O_EXCL control checkpoint with time,PID,SHA,member hash; retain samples losslessly. Partial/racing status reads remain IN_PROGRESS and never infer completion/cut count from log size.",
+    "forbidden_while_native_active": [
+      "SOURCE/index/tar payload rereads",
+      "native-data/result.json andpartial cuts",
+      "native1201.log producer payload",
+      "DB/WAL/SHM/journal",
+      "archive/live members",
+      "linecache/traceback formatting that readsSource"
+    ],
+    "no_extra_inner_or_outer_deadline_allowance": true,
+    "no_monitor_owned_child_added_to_native_supervisor": true,
+    "original_progress_values": [
+      "native_pid",
+      "management_elapsed_seconds",
+      "management_seconds_remaining",
+      "native_stdout_bytes",
+      "process_reaped=false",
+      "classification=IN_PROGRESS_NOT_ACCEPTED"
+    ]
+  },
+  "real_FIN_barrier": {
+    "RED_persists": [
+      "main nonzero exit",
+      "timeout",
+      "late observed main reap",
+      "post-main wait4zero/live-owned-child observation",
+      "residual descendants",
+      "TERM/KILL observations",
+      "supervisor errors",
+      "failed adopted child exit"
+    ],
+    "RSS_scope": "Actual main/adopted wait4 lifetime maximum, not sum of simultaneousRSS or child-report metadata.",
+    "before_POSTREAD": "Original managed_custody_closed: exact nativePID wait4 reap, preECHILD, owned child exhaustion, no remaining children, PGIDabsent, subreaper activation+restoration actualreadbacks. Wrapper additionally actual ownECHILD and original subreaper restored before reading final receipt.",
+    "before_SOURCE_IO": "Actual own wait4(-1,WNOHANG) ECHILD and unchanged subreaper readback before preparation/driver source capture.",
+    "documentary_after_closed_RED": "Closed physicalFIN permits honestRED evidence only; cleanup never turns historical failureGREEN.",
+    "no_Popen_poll_as_reap_proof": true,
+    "no_read_on_UNKNOWN": "If ownedFIN not closed, no Source/RAW/DATA/index/tar/log/database postcapture; retain supervisor status and release ownership according to root procedure."
+  },
+  "root_sole_writer_and_future_launcher": true,
+  "schema": "rc6.full-native-horizon-v3.launch-plan.v1",
+  "source_metadata_receipt": {
+    "bytes": 1828,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-horizon-v3-plan-0f73-jstv3pj9/read-only-source-metadata.json",
+    "sha256": "779093c1c60d70de7e1eda1c9ff6e2435f4c01a85394bae1d6cbd0b329e06226"
+  },
+  "status": "PREPARATION_ONLY_NOT_AUTHORIZED_TO_LAUNCH"
+}

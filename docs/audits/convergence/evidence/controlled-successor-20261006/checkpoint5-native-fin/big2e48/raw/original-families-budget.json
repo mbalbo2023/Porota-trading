@@ -1,0 +1,8 @@
+{
+  "deadline_line": 201,
+  "family_reports_aggregate_is_not_point_five_gate": true,
+  "query_budget_seconds": 0.5,
+  "read_function_line": 198,
+  "scope": "LITERAL_PINNED_PER_CAPTURE_DEADLINE; NATIVE_FULL_PIPELINE_AND_IMPORT_PROOF_REQUIRED",
+  "source_file_sha256": "75634ed7a6fec86e03b47420012d7144693393029de85389cfa631ccd5fc3398"
+}

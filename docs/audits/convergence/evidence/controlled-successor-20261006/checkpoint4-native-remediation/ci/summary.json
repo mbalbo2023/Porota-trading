@@ -1,0 +1,1766 @@
+{
+  "actual_real_fixtures": [
+    {
+      "control_files": [
+        {
+          "name": "porota-pytest-collection-cli-control.json",
+          "sha256": "1b5219c0912ab7df5009437cb9680e0f32015840ebd55877ff31a44d896afa11",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/porota-pytest-collection-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-collection-launch-intent.json",
+          "sha256": "83202a672979337d6b8e0e8d051b3e2ead32f1c54113f4fd2471e918224b564d",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/porota-pytest-collection-launch-intent.json"
+        },
+        {
+          "name": "porota-pytest-collection-owned-fin.json",
+          "sha256": "ae4cea42fa66869de1f9fc06aec68343d10003559e69ec274b5505d9a0cec4b9",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/porota-pytest-collection-owned-fin.json"
+        },
+        {
+          "name": "porota-pytest-collection-postread.json",
+          "sha256": "47b20b5f1d2ebeddcadec0d45ba343e0c2271adeeab1119f2e067f05941046ed",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/porota-pytest-collection-postread.json"
+        },
+        {
+          "name": "porota-pytest-collection-progress.json",
+          "sha256": "f7e3bb0785984eaf357a950933eafdc97da98e6ad005c72ecffeaf10b589cea7",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/porota-pytest-collection-progress.json"
+        },
+        {
+          "name": "porota-pytest-collection-retained.json",
+          "sha256": "cf74587b02d9c3562f33086ff675866e1ef87a0ed03476fa3c566692d4beae6c",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/porota-pytest-collection-retained.json"
+        },
+        {
+          "name": "porota-pytest-execution-cli-control.json",
+          "sha256": "3c3d0471545abadc708674a0c4b88fbc29f7c968b885e4d745090f0409758a5b",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/porota-pytest-execution-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-postread.json",
+          "sha256": "777bbecd5a5b987221cec86c74147a69cba6282aa9baeb967eace6a205c6efed",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/porota-pytest-postread.json"
+        },
+        {
+          "name": "porota-pytest-producers-postread.json",
+          "sha256": "42d76534b515823ed65808c622c1deaa31093f7e00d09ed243a75d011006b069",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/porota-pytest-producers-postread.json"
+        },
+        {
+          "name": "porota-pytest-selected-fixture.json",
+          "sha256": "cb2eff8822c9586ae24c3abb90854dcf25f33420b3130a8d9901eb2468aebc59",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/porota-pytest-selected-fixture.json"
+        },
+        {
+          "name": "porota-test-collection.txt",
+          "sha256": "fe6a4fb5d44c249424ec31c4732992b20417d9df7c0984f2547635c01d2b8f80",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/porota-test-collection.txt"
+        }
+      ],
+      "copied_fixture": {
+        "classification": "COPIED_LOCKED_CURRENT_INSTALLED_BYTES_NOT_WHEEL_BYTE_ATTESTATION",
+        "copy_manifest_sha256": "cb2eff8822c9586ae24c3abb90854dcf25f33420b3130a8d9901eb2468aebc59",
+        "file_count": 501,
+        "five_distribution_versions": {
+          "iniconfig": "2.3.0",
+          "packaging": "26.3",
+          "pluggy": "1.6.0",
+          "pygments": "2.21.0",
+          "pytest": "9.1.1"
+        },
+        "pytest_owned_compatibility_member": {
+          "bytes": 329,
+          "distribution": "pytest",
+          "private_destination": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch311/pytest/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119/venv/lib/python3.11/site-packages/py.py",
+          "record_hash": "txZ1tdmEW6CBTp6Idn-I2sOzzA0xKNoCi9Re27Uj6HE",
+          "record_hash_mode": "sha256",
+          "relative_path": "py.py",
+          "sha256": "b71675b5d9845ba0814e9e88767f88dac3b3cc0d3128da028bd45edbb523e871",
+          "source_record_matches_copied_bytes": true,
+          "version": "9.1.1"
+        }
+      },
+      "epoch": "311",
+      "execution_never_launched": true,
+      "fixture": "test_real_collection_failure_h0",
+      "phases": {
+        "collection": {
+          "fin_original_sha256": "ae4cea42fa66869de1f9fc06aec68343d10003559e69ec274b5505d9a0cec4b9",
+          "kernel_echild": true,
+          "management_acceptance": false,
+          "management_seconds": 60,
+          "native_pid": 12334,
+          "owned_fin_closed": true,
+          "pgid_at_main": true,
+          "pgid_post": true,
+          "phase_green": false,
+          "post_fin_errors": [],
+          "returncode": 2,
+          "signals": [],
+          "supervisor_pid": 12330,
+          "timed_out": false,
+          "wait4_reaped_pid": 12334,
+          "wall_seconds": 0.5046119470007397
+        }
+      },
+      "private": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch311/pytest/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-4aca7081d7864e87b6726659c2aa4119"
+    },
+    {
+      "control_files": [
+        {
+          "name": "native-owned-junit.xml",
+          "sha256": "5701795c74fc95be2295ea802c77247010db4cb1ccaa48ff3c5ffbc6d1a2337f",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/native-owned-junit.xml"
+        },
+        {
+          "name": "porota-pytest-collection-cli-control.json",
+          "sha256": "934048283e8d51bfd581539d023bba0e39eed66d56c5966ab7b2207a06f952dd",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-collection-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-collection-launch-intent.json",
+          "sha256": "cfa8c77d87e57a8680557b5e9928947c91bd8e83209f73a20189c632cf0fd897",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-collection-launch-intent.json"
+        },
+        {
+          "name": "porota-pytest-collection-owned-fin.json",
+          "sha256": "99fd8d44b4fc843ed221ff1a057b9d4a626c5347df5a90358bf4318332e58b9f",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-collection-owned-fin.json"
+        },
+        {
+          "name": "porota-pytest-collection-postread.json",
+          "sha256": "a95ddfec7e2e18526628c021ace04a5dce46207d4e1393edfcdee19c0009a087",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-collection-postread.json"
+        },
+        {
+          "name": "porota-pytest-collection-progress.json",
+          "sha256": "d33b8eb55634a7111e4eaacaf63777e2a09cbf2d05bac66acbbdf9c8923851e7",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-collection-progress.json"
+        },
+        {
+          "name": "porota-pytest-collection-retained.json",
+          "sha256": "f6a24740558e63392bc2468b2afe464de09dceea569b15133b28dc5651ab9445",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-collection-retained.json"
+        },
+        {
+          "name": "porota-pytest-execution-cli-control.json",
+          "sha256": "8b156cae61ef034d54cda6186ac22c5b3888bbf4defa5cc178ea4378c883e78d",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-execution-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-launch-intent.json",
+          "sha256": "d98ea87e406f39f7dee39e4248469d5f117f0619963aa38c8a722b9cab16babb",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-launch-intent.json"
+        },
+        {
+          "name": "porota-pytest-native.log",
+          "sha256": "4bcefcc9f6c645923b9993ccf73ad92e6b400ca25458ea14e095857fc2131342",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-native.log"
+        },
+        {
+          "name": "porota-pytest-owned-fin.json",
+          "sha256": "72682240c4db594dc99dbd8373cffa826119752690a218a214f831c05a2e9b2f",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-owned-fin.json"
+        },
+        {
+          "name": "porota-pytest-postread.json",
+          "sha256": "e205bf095887e85d1a1b94612faa9bd0128fca20c0a48b819977196c3dabfaec",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-postread.json"
+        },
+        {
+          "name": "porota-pytest-producers-postread.json",
+          "sha256": "f3135c426f998ee37f8e4154be39289983707e97b25da821c69593d768881de3",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-producers-postread.json"
+        },
+        {
+          "name": "porota-pytest-progress.json",
+          "sha256": "b81617a0d335ebdc8b8048fee4687d48a57bdadbdf42824775381aa2c88c2c3d",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-progress.json"
+        },
+        {
+          "name": "porota-pytest-retained.json",
+          "sha256": "03e64b2b8dc12395cf1d5fba5056c8dadc4bda7ded65e5037bcc5cababf7a343",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-retained.json"
+        },
+        {
+          "name": "porota-pytest-selected-fixture.json",
+          "sha256": "37c9bca15b7f018a3f57121fdee50d93464d48cf6b1f5476c2737d1450c85b23",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-pytest-selected-fixture.json"
+        },
+        {
+          "name": "porota-test-collection.txt",
+          "sha256": "bc023c916c0de543db3e55aaabcc3bc9928c8cf7fd9a9a3134a81184c89afd0b",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/porota-test-collection.txt"
+        }
+      ],
+      "copied_fixture": {
+        "classification": "COPIED_LOCKED_CURRENT_INSTALLED_BYTES_NOT_WHEEL_BYTE_ATTESTATION",
+        "copy_manifest_sha256": "37c9bca15b7f018a3f57121fdee50d93464d48cf6b1f5476c2737d1450c85b23",
+        "file_count": 501,
+        "five_distribution_versions": {
+          "iniconfig": "2.3.0",
+          "packaging": "26.3",
+          "pluggy": "1.6.0",
+          "pygments": "2.21.0",
+          "pytest": "9.1.1"
+        },
+        "pytest_owned_compatibility_member": {
+          "bytes": 329,
+          "distribution": "pytest",
+          "private_destination": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch311/pytest/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c/venv/lib/python3.11/site-packages/py.py",
+          "record_hash": "txZ1tdmEW6CBTp6Idn-I2sOzzA0xKNoCi9Re27Uj6HE",
+          "record_hash_mode": "sha256",
+          "relative_path": "py.py",
+          "sha256": "b71675b5d9845ba0814e9e88767f88dac3b3cc0d3128da028bd45edbb523e871",
+          "source_record_matches_copied_bytes": true,
+          "version": "9.1.1"
+        }
+      },
+      "epoch": "311",
+      "fixture": "test_real_owned_pytest_direct_0",
+      "phases": {
+        "collection": {
+          "fin_original_sha256": "99fd8d44b4fc843ed221ff1a057b9d4a626c5347df5a90358bf4318332e58b9f",
+          "kernel_echild": true,
+          "management_acceptance": true,
+          "management_seconds": 60,
+          "native_pid": 12280,
+          "owned_fin_closed": true,
+          "pgid_at_main": true,
+          "pgid_post": true,
+          "phase_green": true,
+          "post_fin_errors": [],
+          "returncode": 0,
+          "signals": [],
+          "supervisor_pid": 12276,
+          "timed_out": false,
+          "wait4_reaped_pid": 12280,
+          "wall_seconds": 0.40304978499989375
+        },
+        "execution": {
+          "fin_original_sha256": "72682240c4db594dc99dbd8373cffa826119752690a218a214f831c05a2e9b2f",
+          "kernel_echild": true,
+          "management_acceptance": true,
+          "management_seconds": 60,
+          "native_pid": 12285,
+          "owned_fin_closed": true,
+          "pgid_at_main": true,
+          "pgid_post": true,
+          "phase_green": true,
+          "post_fin_errors": [],
+          "returncode": 0,
+          "signals": [],
+          "supervisor_pid": 12281,
+          "timed_out": false,
+          "wait4_reaped_pid": 12285,
+          "wall_seconds": 0.40249032999963674
+        }
+      },
+      "private": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch311/pytest/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-0326fcdbfe0347b79b2a67a38bfb904c"
+    },
+    {
+      "control_files": [
+        {
+          "name": "porota-pytest-collection-cli-control.json",
+          "sha256": "e14d5b42894046e1b26f052571ba450bfd21ef53691e63db390551d7a1d4c917",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-collection-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-collection-launch-intent.json",
+          "sha256": "817db7eec634f8bd3a1adc21ceeadc5aba928a5b5106e6576d48bcf23f4d2fc1",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-collection-launch-intent.json"
+        },
+        {
+          "name": "porota-pytest-collection-owned-fin.json",
+          "sha256": "58cd1eb4980cf5817d141c791e03f44c38c4191f454c7eeab83add2aba5b8d92",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-collection-owned-fin.json"
+        },
+        {
+          "name": "porota-pytest-collection-postread.json",
+          "sha256": "fb94c05752ee47c058a0458b40180c827056337ad7212db3c20cadd63c5e9891",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-collection-postread.json"
+        },
+        {
+          "name": "porota-pytest-collection-progress.json",
+          "sha256": "895730999a8ca27f821d4c6e3c7bb0d80056a6a6cd4e9a25893842c00e2b691f",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-collection-progress.json"
+        },
+        {
+          "name": "porota-pytest-collection-retained.json",
+          "sha256": "2af680e194dfd42ed0c1d45a23654b15ba46348817e5b4e140388ace5577fd7c",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-collection-retained.json"
+        },
+        {
+          "name": "porota-pytest-execution-cli-control.json",
+          "sha256": "f7d012d7369869b17cb53284b6245aa73992fdbbba44d31f39539a7f738b59dd",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-execution-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-launch-intent.json",
+          "sha256": "a73f6fc6a107ade0b082b96ca090d34d31ffe385b20fe4bc746513c3bcfab15b",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-launch-intent.json"
+        },
+        {
+          "name": "porota-pytest-native.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-native.log"
+        },
+        {
+          "name": "porota-pytest-owned-fin.json",
+          "sha256": "edcfc3a5ced2da3e67c41fb8a3c11c42ea38151057f5e5b89ec0f2084e797133",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-owned-fin.json"
+        },
+        {
+          "name": "porota-pytest-postread.json",
+          "sha256": "933d288ea10c89a3846af4b7bd23fd492d3a9fb0032f31b47798bd295246dc5f",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-postread.json"
+        },
+        {
+          "name": "porota-pytest-producers-postread.json",
+          "sha256": "4ce430dc79c8ce7ce16e794760f4a4e3accb073ff050860fee0def5540479bd4",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-producers-postread.json"
+        },
+        {
+          "name": "porota-pytest-progress.json",
+          "sha256": "c13f771e1f2699925fe702cf6668627e64a5014fab2cd0144f7383b7a7afffd5",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-progress.json"
+        },
+        {
+          "name": "porota-pytest-retained.json",
+          "sha256": "6c3760e3edbe7dc9eb3b82d057082f6c7a4386bb2ebff0e05f40eccd97782ee4",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-retained.json"
+        },
+        {
+          "name": "porota-pytest-selected-fixture.json",
+          "sha256": "faf10996f150fb42e9268d775b3552fb738ddab4e3aa53d5271b5752bb8ac981",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-selected-fixture.json"
+        },
+        {
+          "name": "porota-test-collection.txt",
+          "sha256": "f4a7ec5c7e47f2e4b156c5be9898649784af69003b22eb9db9b555780911b20f",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-test-collection.txt"
+        }
+      ],
+      "copied_fixture": {
+        "classification": "COPIED_LOCKED_CURRENT_INSTALLED_BYTES_NOT_WHEEL_BYTE_ATTESTATION",
+        "copy_manifest_sha256": "faf10996f150fb42e9268d775b3552fb738ddab4e3aa53d5271b5752bb8ac981",
+        "file_count": 501,
+        "five_distribution_versions": {
+          "iniconfig": "2.3.0",
+          "packaging": "26.3",
+          "pluggy": "1.6.0",
+          "pygments": "2.21.0",
+          "pytest": "9.1.1"
+        },
+        "pytest_owned_compatibility_member": {
+          "bytes": 329,
+          "distribution": "pytest",
+          "private_destination": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch311/pytest/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/venv/lib/python3.11/site-packages/py.py",
+          "record_hash": "txZ1tdmEW6CBTp6Idn-I2sOzzA0xKNoCi9Re27Uj6HE",
+          "record_hash_mode": "sha256",
+          "relative_path": "py.py",
+          "sha256": "b71675b5d9845ba0814e9e88767f88dac3b3cc0d3128da028bd45edbb523e871",
+          "source_record_matches_copied_bytes": true,
+          "version": "9.1.1"
+        }
+      },
+      "epoch": "311",
+      "fixture": "test_real_owned_pytest_timeout0",
+      "phases": {
+        "collection": {
+          "fin_original_sha256": "58cd1eb4980cf5817d141c791e03f44c38c4191f454c7eeab83add2aba5b8d92",
+          "kernel_echild": true,
+          "management_acceptance": true,
+          "management_seconds": 60,
+          "native_pid": 12305,
+          "owned_fin_closed": true,
+          "pgid_at_main": true,
+          "pgid_post": true,
+          "phase_green": true,
+          "post_fin_errors": [],
+          "returncode": 0,
+          "signals": [],
+          "supervisor_pid": 12301,
+          "timed_out": false,
+          "wait4_reaped_pid": 12305,
+          "wall_seconds": 0.4022081879993493
+        },
+        "execution": {
+          "fin_original_sha256": "edcfc3a5ced2da3e67c41fb8a3c11c42ea38151057f5e5b89ec0f2084e797133",
+          "kernel_echild": true,
+          "management_acceptance": false,
+          "management_seconds": 60,
+          "native_pid": 12310,
+          "owned_fin_closed": true,
+          "pgid_at_main": true,
+          "pgid_post": true,
+          "phase_green": false,
+          "post_fin_errors": [],
+          "returncode": -15,
+          "signals": [
+            {
+              "outcome": "SENT",
+              "pgid": 12310,
+              "signal": 15
+            }
+          ],
+          "supervisor_pid": 12306,
+          "timed_out": true,
+          "wait4_reaped_pid": 12310,
+          "wall_seconds": 60.08775449699897
+        }
+      },
+      "private": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch311/pytest/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e",
+      "real_timeout_remains_red": true
+    },
+    {
+      "control_files": [
+        {
+          "name": "porota-pytest-collection-cli-control.json",
+          "sha256": "d5c9d8c83b12460a356a3a8d3444d75804e12173a68a3e84e0474a8ad8311559",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/porota-pytest-collection-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-collection-launch-intent.json",
+          "sha256": "03e551cc68ba660586c7ba7e73313ff6bf44a06f0e2907bab99af44811d73cc8",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/porota-pytest-collection-launch-intent.json"
+        },
+        {
+          "name": "porota-pytest-collection-owned-fin.json",
+          "sha256": "5b5f4ea189ba3c065dab7818b8594da154454314be69bf2616cfffc3df680e70",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/porota-pytest-collection-owned-fin.json"
+        },
+        {
+          "name": "porota-pytest-collection-postread.json",
+          "sha256": "eb2e36175359688403ceb314749ed03bd68c17fde59b0e2eb27895881c1a97df",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/porota-pytest-collection-postread.json"
+        },
+        {
+          "name": "porota-pytest-collection-progress.json",
+          "sha256": "6578f597900ef7ab6996d2297ff000e9bde7e4040d2f1fe592f5217e8f9e899c",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/porota-pytest-collection-progress.json"
+        },
+        {
+          "name": "porota-pytest-collection-retained.json",
+          "sha256": "6ef94100b5a46bbbd8e8983b8e830be9a89578ea89ff63dfa6ff283557e365de",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/porota-pytest-collection-retained.json"
+        },
+        {
+          "name": "porota-pytest-execution-cli-control.json",
+          "sha256": "0c76ca6820126835500b4e2a75b31a484a1a2e8edca4c6507c58913c0be09e19",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/porota-pytest-execution-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-postread.json",
+          "sha256": "99dc8b16ef38b03d01aefcf371e9f4286165942b340c7d1a52d1226d611525e8",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/porota-pytest-postread.json"
+        },
+        {
+          "name": "porota-pytest-producers-postread.json",
+          "sha256": "7a0cda097587a355a43964fd0a7dab4d05e3be9a13b374e7c9e72a4a612518aa",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/porota-pytest-producers-postread.json"
+        },
+        {
+          "name": "porota-pytest-selected-fixture.json",
+          "sha256": "7d364f0814a86e38809f26062f4600d1533d6319962dec25ed43c922a3a8cc41",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/porota-pytest-selected-fixture.json"
+        },
+        {
+          "name": "porota-test-collection.txt",
+          "sha256": "f6ffd50a5dba00143c5f473b794ea198a56928ec162eb35398e26a956b9b6b0f",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/porota-test-collection.txt"
+        }
+      ],
+      "copied_fixture": {
+        "classification": "COPIED_LOCKED_CURRENT_INSTALLED_BYTES_NOT_WHEEL_BYTE_ATTESTATION",
+        "copy_manifest_sha256": "7d364f0814a86e38809f26062f4600d1533d6319962dec25ed43c922a3a8cc41",
+        "file_count": 501,
+        "five_distribution_versions": {
+          "iniconfig": "2.3.0",
+          "packaging": "26.3",
+          "pluggy": "1.6.0",
+          "pygments": "2.21.0",
+          "pytest": "9.1.1"
+        },
+        "pytest_owned_compatibility_member": {
+          "bytes": 329,
+          "distribution": "pytest",
+          "private_destination": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9/venv/lib/python3.12/site-packages/py.py",
+          "record_hash": "txZ1tdmEW6CBTp6Idn-I2sOzzA0xKNoCi9Re27Uj6HE",
+          "record_hash_mode": "sha256",
+          "relative_path": "py.py",
+          "sha256": "b71675b5d9845ba0814e9e88767f88dac3b3cc0d3128da028bd45edbb523e871",
+          "source_record_matches_copied_bytes": true,
+          "version": "9.1.1"
+        }
+      },
+      "epoch": "312",
+      "execution_never_launched": true,
+      "fixture": "test_real_collection_failure_h0",
+      "phases": {
+        "collection": {
+          "fin_original_sha256": "5b5f4ea189ba3c065dab7818b8594da154454314be69bf2616cfffc3df680e70",
+          "kernel_echild": true,
+          "management_acceptance": false,
+          "management_seconds": 60,
+          "native_pid": 12481,
+          "owned_fin_closed": true,
+          "pgid_at_main": true,
+          "pgid_post": true,
+          "phase_green": false,
+          "post_fin_errors": [],
+          "returncode": 2,
+          "signals": [],
+          "supervisor_pid": 12477,
+          "timed_out": false,
+          "wait4_reaped_pid": 12481,
+          "wall_seconds": 0.5027464760005387
+        }
+      },
+      "private": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-bdf44058b18e47a09148f7caf88546c9"
+    },
+    {
+      "control_files": [
+        {
+          "name": "native-owned-junit.xml",
+          "sha256": "5fb35fb7ae04bb3cb6c899d6e0bccb2ab56703cbc35f6f49f23e0dafaae175ec",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/native-owned-junit.xml"
+        },
+        {
+          "name": "porota-pytest-collection-cli-control.json",
+          "sha256": "095a1b111d83becb2f5e5ad9ff3c239191d29558dceba8083e8ce0d4a5a0f702",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-collection-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-collection-launch-intent.json",
+          "sha256": "954d792e6a6036e2865e30fe886c10daf2f8223f4d692483249e74df27f5e205",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-collection-launch-intent.json"
+        },
+        {
+          "name": "porota-pytest-collection-owned-fin.json",
+          "sha256": "e8bede1a34f3d56075d7d89b8a5e2c7305b67929876025a6d643dd3f407b8055",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-collection-owned-fin.json"
+        },
+        {
+          "name": "porota-pytest-collection-postread.json",
+          "sha256": "972c3a69fd84895d540479045ee1356a94252a365e65323c9a6db6cb6ee04bff",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-collection-postread.json"
+        },
+        {
+          "name": "porota-pytest-collection-progress.json",
+          "sha256": "471e278a448e49e830fff54f66b3733f7c68e3ff783084fbd8550efaa3da6252",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-collection-progress.json"
+        },
+        {
+          "name": "porota-pytest-collection-retained.json",
+          "sha256": "883df2fd21c6757b5d20087533cce836181ef5fd9edf077e12c9cd7bf12758e5",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-collection-retained.json"
+        },
+        {
+          "name": "porota-pytest-execution-cli-control.json",
+          "sha256": "7ba659d3bb6710ef586c62ffbc411a39bc0d8b494e0ac6927406b4913fc56f3c",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-execution-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-launch-intent.json",
+          "sha256": "526fe3f4bb9ebf1c01f49f1f282f49b03ed91e57c718c5518d0facec3ed32a56",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-launch-intent.json"
+        },
+        {
+          "name": "porota-pytest-native.log",
+          "sha256": "4bcefcc9f6c645923b9993ccf73ad92e6b400ca25458ea14e095857fc2131342",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-native.log"
+        },
+        {
+          "name": "porota-pytest-owned-fin.json",
+          "sha256": "b854620b400d296c23af9d5fe3f196e8390db9a75cf96e5c4bcf818b431ec18c",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-owned-fin.json"
+        },
+        {
+          "name": "porota-pytest-postread.json",
+          "sha256": "703a00953054e80b0aa3938ac2b5564ffd45029e88eaab561dcf5280d9c3e5ea",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-postread.json"
+        },
+        {
+          "name": "porota-pytest-producers-postread.json",
+          "sha256": "4b49a7189bfbf5f0f7b2ef866682c4c32bbfe6a841acc3c6458dc3a9dccc3d33",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-producers-postread.json"
+        },
+        {
+          "name": "porota-pytest-progress.json",
+          "sha256": "03abfd32be09b343d2718489c65d42c3da2e70e6a03d483c3dad214ce4db7df9",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-progress.json"
+        },
+        {
+          "name": "porota-pytest-retained.json",
+          "sha256": "061c6986141d21465502a39194b0f5a95ea59dcd800a66b8805ce3f214799770",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-retained.json"
+        },
+        {
+          "name": "porota-pytest-selected-fixture.json",
+          "sha256": "76a2d6d9f4e7ccc707351dff3741609ff1ff29b19bc1d7284c7c84f63d9974cd",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-pytest-selected-fixture.json"
+        },
+        {
+          "name": "porota-test-collection.txt",
+          "sha256": "bc023c916c0de543db3e55aaabcc3bc9928c8cf7fd9a9a3134a81184c89afd0b",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/porota-test-collection.txt"
+        }
+      ],
+      "copied_fixture": {
+        "classification": "COPIED_LOCKED_CURRENT_INSTALLED_BYTES_NOT_WHEEL_BYTE_ATTESTATION",
+        "copy_manifest_sha256": "76a2d6d9f4e7ccc707351dff3741609ff1ff29b19bc1d7284c7c84f63d9974cd",
+        "file_count": 501,
+        "five_distribution_versions": {
+          "iniconfig": "2.3.0",
+          "packaging": "26.3",
+          "pluggy": "1.6.0",
+          "pygments": "2.21.0",
+          "pytest": "9.1.1"
+        },
+        "pytest_owned_compatibility_member": {
+          "bytes": 329,
+          "distribution": "pytest",
+          "private_destination": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35/venv/lib/python3.12/site-packages/py.py",
+          "record_hash": "txZ1tdmEW6CBTp6Idn-I2sOzzA0xKNoCi9Re27Uj6HE",
+          "record_hash_mode": "sha256",
+          "relative_path": "py.py",
+          "sha256": "b71675b5d9845ba0814e9e88767f88dac3b3cc0d3128da028bd45edbb523e871",
+          "source_record_matches_copied_bytes": true,
+          "version": "9.1.1"
+        }
+      },
+      "epoch": "312",
+      "fixture": "test_real_owned_pytest_direct_0",
+      "phases": {
+        "collection": {
+          "fin_original_sha256": "e8bede1a34f3d56075d7d89b8a5e2c7305b67929876025a6d643dd3f407b8055",
+          "kernel_echild": true,
+          "management_acceptance": true,
+          "management_seconds": 60,
+          "native_pid": 12404,
+          "owned_fin_closed": true,
+          "pgid_at_main": true,
+          "pgid_post": true,
+          "phase_green": true,
+          "post_fin_errors": [],
+          "returncode": 0,
+          "signals": [],
+          "supervisor_pid": 12400,
+          "timed_out": false,
+          "wait4_reaped_pid": 12404,
+          "wall_seconds": 0.5030358570002136
+        },
+        "execution": {
+          "fin_original_sha256": "b854620b400d296c23af9d5fe3f196e8390db9a75cf96e5c4bcf818b431ec18c",
+          "kernel_echild": true,
+          "management_acceptance": true,
+          "management_seconds": 60,
+          "native_pid": 12409,
+          "owned_fin_closed": true,
+          "pgid_at_main": true,
+          "pgid_post": true,
+          "phase_green": true,
+          "post_fin_errors": [],
+          "returncode": 0,
+          "signals": [],
+          "supervisor_pid": 12405,
+          "timed_out": false,
+          "wait4_reaped_pid": 12409,
+          "wall_seconds": 0.503021999998964
+        }
+      },
+      "private": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-ff241b0dfaab47cf955ff5ff009afc35"
+    },
+    {
+      "control_files": [
+        {
+          "name": "porota-pytest-collection-cli-control.json",
+          "sha256": "9a0ab96b043acda03fef7968d086d6d6b97a566c934d39007d8a97e3b6de488f",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-collection-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-collection-launch-intent.json",
+          "sha256": "2e0f7a7c4bd6532eba9606a0816a48ad30f664d98349836aef70c14be123a383",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-collection-launch-intent.json"
+        },
+        {
+          "name": "porota-pytest-collection-owned-fin.json",
+          "sha256": "b746a1f386c4fdd194408ba215ac2acbc8911027574f0e89b4f53d6dabaa677c",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-collection-owned-fin.json"
+        },
+        {
+          "name": "porota-pytest-collection-postread.json",
+          "sha256": "0f92383e60e6022b19b2fda9e8eb2fe6a6f72342dedd6f9d3ad33101e447b9c8",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-collection-postread.json"
+        },
+        {
+          "name": "porota-pytest-collection-progress.json",
+          "sha256": "086e4eb5a6260bd0a19696ca8cef8cc923a7954c242190e63881c6a092470e43",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-collection-progress.json"
+        },
+        {
+          "name": "porota-pytest-collection-retained.json",
+          "sha256": "1849f1ac245558f220815352f95540d8f277d187d2051b26957e401c56c95f11",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-collection-retained.json"
+        },
+        {
+          "name": "porota-pytest-execution-cli-control.json",
+          "sha256": "4c54c6e77e2f6043e41114eedb0f44352048d804c8fea23946df13c9e479a863",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-execution-cli-control.json"
+        },
+        {
+          "name": "porota-pytest-launch-intent.json",
+          "sha256": "3e1a2be1a0e7b28aa2567f88784cd88bfca051942e8f910a4375ebad88e7719b",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-launch-intent.json"
+        },
+        {
+          "name": "porota-pytest-native.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-native.log"
+        },
+        {
+          "name": "porota-pytest-owned-fin.json",
+          "sha256": "aeaed90c631d1b2b66d3284aa0db8a44379d5e3c331ba90c27b0738d8dc121a9",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-owned-fin.json"
+        },
+        {
+          "name": "porota-pytest-postread.json",
+          "sha256": "0da9e6630e768183657a672546bfec3256088a2694d11918b07043586ea678dd",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-postread.json"
+        },
+        {
+          "name": "porota-pytest-producers-postread.json",
+          "sha256": "6d253eb3c8860f44d4eb853f622b10076641f79332fcf3b06e32f4e6015bbc77",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-producers-postread.json"
+        },
+        {
+          "name": "porota-pytest-progress.json",
+          "sha256": "2715a65b67f02510012f4a4d4e91c8884a01270e0ef9143673bfafb95e3c3ef3",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-progress.json"
+        },
+        {
+          "name": "porota-pytest-retained.json",
+          "sha256": "1b49ffcd5c0a3df5fdcb341535fac0e86f651791064c231b82d8df549d78c10b",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-retained.json"
+        },
+        {
+          "name": "porota-pytest-selected-fixture.json",
+          "sha256": "119aeebc97b27469e18fce450e34b9505680f24cc7c9bc4eeaa5768f1a17789a",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-selected-fixture.json"
+        },
+        {
+          "name": "porota-test-collection.txt",
+          "sha256": "f4a7ec5c7e47f2e4b156c5be9898649784af69003b22eb9db9b555780911b20f",
+          "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-test-collection.txt"
+        }
+      ],
+      "copied_fixture": {
+        "classification": "COPIED_LOCKED_CURRENT_INSTALLED_BYTES_NOT_WHEEL_BYTE_ATTESTATION",
+        "copy_manifest_sha256": "119aeebc97b27469e18fce450e34b9505680f24cc7c9bc4eeaa5768f1a17789a",
+        "file_count": 501,
+        "five_distribution_versions": {
+          "iniconfig": "2.3.0",
+          "packaging": "26.3",
+          "pluggy": "1.6.0",
+          "pygments": "2.21.0",
+          "pytest": "9.1.1"
+        },
+        "pytest_owned_compatibility_member": {
+          "bytes": 329,
+          "distribution": "pytest",
+          "private_destination": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/venv/lib/python3.12/site-packages/py.py",
+          "record_hash": "txZ1tdmEW6CBTp6Idn-I2sOzzA0xKNoCi9Re27Uj6HE",
+          "record_hash_mode": "sha256",
+          "relative_path": "py.py",
+          "sha256": "b71675b5d9845ba0814e9e88767f88dac3b3cc0d3128da028bd45edbb523e871",
+          "source_record_matches_copied_bytes": true,
+          "version": "9.1.1"
+        }
+      },
+      "epoch": "312",
+      "fixture": "test_real_owned_pytest_timeout0",
+      "phases": {
+        "collection": {
+          "fin_original_sha256": "b746a1f386c4fdd194408ba215ac2acbc8911027574f0e89b4f53d6dabaa677c",
+          "kernel_echild": true,
+          "management_acceptance": true,
+          "management_seconds": 60,
+          "native_pid": 12429,
+          "owned_fin_closed": true,
+          "pgid_at_main": true,
+          "pgid_post": true,
+          "phase_green": true,
+          "post_fin_errors": [],
+          "returncode": 0,
+          "signals": [],
+          "supervisor_pid": 12425,
+          "timed_out": false,
+          "wait4_reaped_pid": 12429,
+          "wall_seconds": 0.40253994799968495
+        },
+        "execution": {
+          "fin_original_sha256": "aeaed90c631d1b2b66d3284aa0db8a44379d5e3c331ba90c27b0738d8dc121a9",
+          "kernel_echild": true,
+          "management_acceptance": false,
+          "management_seconds": 60,
+          "native_pid": 12434,
+          "owned_fin_closed": true,
+          "pgid_at_main": true,
+          "pgid_post": true,
+          "phase_green": false,
+          "post_fin_errors": [],
+          "returncode": -15,
+          "signals": [
+            {
+              "outcome": "SENT",
+              "pgid": 12434,
+              "signal": 15
+            }
+          ],
+          "supervisor_pid": 12430,
+          "timed_out": true,
+          "wait4_reaped_pid": 12434,
+          "wall_seconds": 60.0706417399997
+        }
+      },
+      "private": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f",
+      "real_timeout_remains_red": true
+    }
+  ],
+  "classification": "LOCAL_FOCAL_FIXTURE_AND_CI_CUSTODY_EVIDENCE_ONLY",
+  "copied_venvs_db_data_or_whole_source_tar": false,
+  "created_utc": "2026-10-06T16:55:31.035421+00:00",
+  "deleted_resources": 0,
+  "distinct_corrected_scenarios_not_124": 62,
+  "distinct_initial_scenarios_not_102": 51,
+  "epochs": {
+    "corrected62_311": {
+      "actual_pid": 12232,
+      "actual_supervisor_pid": 12229,
+      "case_set_sha256": "4adc52d1592b12aadc1f064109233f5ae211b13c231b69faf92928410e8f650b",
+      "cases": 62,
+      "duplicates": 0,
+      "error": 0,
+      "fail": 0,
+      "junit_sha256": "7637988cfd7e84854a145380199b19dd0947d4a12a334be3a77dbd410957b254",
+      "kernel_echild": true,
+      "kernel_peak_max_not_sum_rss_bytes": 80601088,
+      "original_phase_green": true,
+      "original_receipt_sha256": "472b00f34d799e424466ee0ad8d81341ffc1333177ebd89d4b21f646aa774661",
+      "pass": 62,
+      "pgid_absent_after_reap": true,
+      "pgid_absent_at_main": true,
+      "physical_fin_closed": true,
+      "retained_namespace_measurement": {
+        "aliases_retained": 43,
+        "allocated_bytes_nofollow_deduplicated": 595886080,
+        "entries": 15278,
+        "floor_10pct_inodes_ok": true,
+        "floor_2GiB_ok": true,
+        "free_bytes": 25128939520,
+        "free_inodes": 1944805,
+        "free_inodes_fraction": 0.9273552894592285,
+        "hardlinked_regular_entries_retained": 8,
+        "logical_bytes_nofollow_deduplicated": 565520566,
+        "removed": false,
+        "root": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch311",
+        "scope": "THIS_NEW_DIAGNOSTIC_NAMESPACE_ONLY_NOT_GLOBAL_CLEANUP_GREEN",
+        "special_entries_retained": 2,
+        "unique_inodes": 15274
+      },
+      "skip": 0,
+      "source_bytes_unchanged": true,
+      "stored_receipt": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/receipt.json",
+      "wall_seconds": 85.99439026500113
+    },
+    "corrected62_312": {
+      "actual_pid": 12345,
+      "actual_supervisor_pid": 12342,
+      "case_set_sha256": "4adc52d1592b12aadc1f064109233f5ae211b13c231b69faf92928410e8f650b",
+      "cases": 62,
+      "duplicates": 0,
+      "error": 0,
+      "fail": 0,
+      "junit_sha256": "75e8e7673956d6d0b74c177cb6460ed2b428c1b83b678bacd9ab852535eedb7a",
+      "kernel_echild": true,
+      "kernel_peak_max_not_sum_rss_bytes": 75300864,
+      "original_phase_green": true,
+      "original_receipt_sha256": "7ad9c8a36deb8fa9a325e2c7776ca3d35ad78d676a6f0f3e60ace4e0eeaadaed",
+      "pass": 62,
+      "pgid_absent_after_reap": true,
+      "pgid_absent_at_main": true,
+      "physical_fin_closed": true,
+      "retained_namespace_measurement": {
+        "aliases_retained": 43,
+        "allocated_bytes_nofollow_deduplicated": 666259456,
+        "entries": 8192,
+        "floor_10pct_inodes_ok": true,
+        "floor_2GiB_ok": true,
+        "free_bytes": 24462667776,
+        "free_inodes": 1936615,
+        "free_inodes_fraction": 0.9234499931335449,
+        "hardlinked_regular_entries_retained": 8,
+        "logical_bytes_nofollow_deduplicated": 650456204,
+        "removed": false,
+        "root": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312",
+        "scope": "THIS_NEW_DIAGNOSTIC_NAMESPACE_ONLY_NOT_GLOBAL_CLEANUP_GREEN",
+        "special_entries_retained": 2,
+        "unique_inodes": 8188
+      },
+      "skip": 0,
+      "source_bytes_unchanged": true,
+      "stored_receipt": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/receipt.json",
+      "wall_seconds": 79.87340605099962
+    },
+    "initial51_311": {
+      "actual_pid": 10675,
+      "actual_supervisor_pid": 10672,
+      "case_set_sha256": "1d08c40061063c1281c2179162c79f7e4819fda65a5d1842ccfbcf7cdcbc81d7",
+      "cases": 51,
+      "duplicates": 0,
+      "error": 0,
+      "fail": 0,
+      "junit_sha256": "df1cce5978673413f06451fab007d95e7491702544a8b28bf470b52d7d22ae28",
+      "kernel_echild": true,
+      "kernel_peak_max_not_sum_rss_bytes": 80744448,
+      "original_phase_green": true,
+      "original_receipt_sha256": "e3915828b817dfb4902866ef18d515552fb8c3aad9a9fa6db057ec8ac6bd76a5",
+      "pass": 51,
+      "pgid_absent_after_reap": true,
+      "pgid_absent_at_main": true,
+      "physical_fin_closed": true,
+      "retained_namespace_measurement": {
+        "aliases_retained": 32,
+        "allocated_bytes_nofollow_deduplicated": 96378880,
+        "entries": 2544,
+        "floor_10pct_inodes_ok": true,
+        "floor_2GiB_ok": true,
+        "free_bytes": 26486095872,
+        "free_inodes": 1977476,
+        "free_inodes_fraction": 0.9429340362548828,
+        "hardlinked_regular_entries_retained": 4,
+        "logical_bytes_nofollow_deduplicated": 91486039,
+        "removed": false,
+        "root": "/workspace/scratch/rc6-ci-workspace-focals-mz4yoedv/epoch311",
+        "scope": "THIS_NEW_DIAGNOSTIC_NAMESPACE_ONLY_NOT_GLOBAL_CLEANUP_GREEN",
+        "special_entries_retained": 2,
+        "unique_inodes": 2542
+      },
+      "skip": 0,
+      "source_bytes_unchanged": true,
+      "stored_receipt": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/initial51/epoch311/receipt.json",
+      "wall_seconds": 6.667428304001078
+    },
+    "initial51_312": {
+      "actual_pid": 10703,
+      "actual_supervisor_pid": 10700,
+      "case_set_sha256": "1d08c40061063c1281c2179162c79f7e4819fda65a5d1842ccfbcf7cdcbc81d7",
+      "cases": 51,
+      "duplicates": 0,
+      "error": 0,
+      "fail": 0,
+      "junit_sha256": "12e8e2c1cac0163356e357db92e0c85b03848a0ada675f87055305cdca7b2508",
+      "kernel_echild": true,
+      "kernel_peak_max_not_sum_rss_bytes": 74989568,
+      "original_phase_green": true,
+      "original_receipt_sha256": "ef5db1b6cd44c4b3203f234d064037260d026d0a78c793694e9237a4e439bf07",
+      "pass": 51,
+      "pgid_absent_after_reap": true,
+      "pgid_absent_at_main": true,
+      "physical_fin_closed": true,
+      "retained_namespace_measurement": {
+        "aliases_retained": 32,
+        "allocated_bytes_nofollow_deduplicated": 108101632,
+        "entries": 1363,
+        "floor_10pct_inodes_ok": true,
+        "floor_2GiB_ok": true,
+        "free_bytes": 26377981952,
+        "free_inodes": 1976113,
+        "free_inodes_fraction": 0.942284107208252,
+        "hardlinked_regular_entries_retained": 4,
+        "logical_bytes_nofollow_deduplicated": 105648164,
+        "removed": false,
+        "root": "/workspace/scratch/rc6-ci-workspace-focals-mz4yoedv/epoch312",
+        "scope": "THIS_NEW_DIAGNOSTIC_NAMESPACE_ONLY_NOT_GLOBAL_CLEANUP_GREEN",
+        "special_entries_retained": 2,
+        "unique_inodes": 1361
+      },
+      "skip": 0,
+      "source_bytes_unchanged": true,
+      "stored_receipt": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/initial51/epoch312/receipt.json",
+      "wall_seconds": 4.860823842998798
+    },
+    "red62_311": {
+      "actual_pid": 11917,
+      "actual_supervisor_pid": 11914,
+      "case_set_sha256": "4adc52d1592b12aadc1f064109233f5ae211b13c231b69faf92928410e8f650b",
+      "cases": 62,
+      "duplicates": 0,
+      "error": 0,
+      "fail": 3,
+      "junit_sha256": "42897147ed3c26924de875cc97c297926433f983bbe86f1fceb97c113fb6cbed",
+      "kernel_echild": true,
+      "kernel_peak_max_not_sum_rss_bytes": 80769024,
+      "original_phase_green": false,
+      "original_receipt_sha256": "f4f049c4cbd1f08c6c7c4e21996d866b4a4977afa56a0695c36511137b701ba2",
+      "pass": 59,
+      "pgid_absent_after_reap": true,
+      "pgid_absent_at_main": true,
+      "physical_fin_closed": true,
+      "retained_namespace_measurement": {
+        "aliases_retained": 41,
+        "allocated_bytes_nofollow_deduplicated": 595492864,
+        "entries": 15219,
+        "floor_10pct_inodes_ok": true,
+        "floor_2GiB_ok": true,
+        "free_bytes": 25725952000,
+        "free_inodes": 1960124,
+        "free_inodes_fraction": 0.9346599578857422,
+        "hardlinked_regular_entries_retained": 6,
+        "logical_bytes_nofollow_deduplicated": 565236947,
+        "removed": false,
+        "root": "/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311",
+        "scope": "THIS_NEW_DIAGNOSTIC_NAMESPACE_ONLY_NOT_GLOBAL_CLEANUP_GREEN",
+        "special_entries_retained": 2,
+        "unique_inodes": 15216
+      },
+      "skip": 0,
+      "source_bytes_unchanged": true,
+      "stored_receipt": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/red62/epoch311/receipt.json",
+      "wall_seconds": 22.150954147000448
+    }
+  },
+  "frozen_source_hashes": {
+    ".github/workflows/porota-predeploy-v2.yml": "45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125",
+    "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+    "scripts/porota_predeploy_cleanup.py": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f",
+    "scripts/porota_predeploy_test_workspace.py": "86678b88af863b3e45e6eac686b73514dee4f107ed1d9d9c9d92eba8868edf56",
+    "tests/test_ci_productive_predeploy_contract.py": "18e0840717256861c2f9a187aac88a96e36252339a6b854da2a29bb328c3c1f2",
+    "tests/test_rc6_predeploy_scoped_cleanup.py": "b4cf138a76c247fef54bfd00d936a00973d169d10aeebcb91e9cc74ed1d497e2"
+  },
+  "full_gov_predeploy_artifact_runtime_attested": false,
+  "global_cleanup_green_asserted": false,
+  "metadata_current_installed_bytes_not_wheel_attestation": [
+    {
+      "epoch": "311",
+      "five_distributions": {
+        "iniconfig": "2.3.0",
+        "packaging": "26.3",
+        "pluggy": "1.6.0",
+        "pygments": "2.21.0",
+        "pytest": "9.1.1"
+      },
+      "py_bytes": 329,
+      "py_sha256": "b71675b5d9845ba0814e9e88767f88dac3b3cc0d3128da028bd45edbb523e871",
+      "pytest_owned_py_member": "py.py",
+      "record_hash": "txZ1tdmEW6CBTp6Idn-I2sOzzA0xKNoCi9Re27Uj6HE",
+      "record_hash_mode": "sha256",
+      "record_matches_source_bytes": true
+    },
+    {
+      "epoch": "312",
+      "five_distributions": {
+        "iniconfig": "2.3.0",
+        "packaging": "26.3",
+        "pluggy": "1.6.0",
+        "pygments": "2.21.0",
+        "pytest": "9.1.1"
+      },
+      "py_bytes": 329,
+      "py_sha256": "b71675b5d9845ba0814e9e88767f88dac3b3cc0d3128da028bd45edbb523e871",
+      "pytest_owned_py_member": "py.py",
+      "record_hash": "txZ1tdmEW6CBTp6Idn-I2sOzzA0xKNoCi9Re27Uj6HE",
+      "record_hash_mode": "sha256",
+      "record_matches_source_bytes": true
+    }
+  ],
+  "namespace": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4",
+  "new_test_runs": 0,
+  "normal_native_origin_scope": "PASSED_SOURCE_PINNED_ISOLATED_IMPORT_ASSERTIONS; PREFLIGHT_STDOUT_NOT_PERSISTED_BY_ORIGINAL_TEST; NO_INVENTED_OUTPUT",
+  "original_red_reclassified": false,
+  "raw_original_files_count": 219,
+  "real_orders_sent": 0,
+  "same_scenario_sets_each_epoch": true,
+  "source_edits": 0,
+  "source_qualification": "UNCOMMITTED_DIAGNOSTIC_ONLY",
+  "unit_safe_postread_controls": [
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_aliased_fin_is_never_foll0",
+      "safe_postread": true,
+      "sha256": "800e7f43b4be4b227342452e29c09df735f820a2c654ef26b280eda344e00c1a",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_aliased_fin_is_never_foll0/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "OSError"
+      ],
+      "fixture": "test_aliased_fin_is_never_foll0",
+      "safe_postread": false,
+      "sha256": "82ecc2a9bcae7d132df5c73bd23b9a8e61c2d6d92238eab4eb9c2898a6ddcec9",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_aliased_fin_is_never_foll0/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "OSError"
+      ],
+      "fixture": "test_aliased_fin_is_never_foll0",
+      "safe_postread": false,
+      "sha256": "67088e350f08d31cc7a174e7a5dcf841007595370eb3daf09a01b0a97610619d",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_aliased_fin_is_never_foll0/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_aliased_fin_is_never_foll1",
+      "safe_postread": true,
+      "sha256": "3fde1ea01987073303cf5ac968eb9adbfd7eae649eb7cef2e8f65b29f3c88e7a",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_aliased_fin_is_never_foll1/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "RESOURCE_HARDLINK"
+      ],
+      "fixture": "test_aliased_fin_is_never_foll1",
+      "safe_postread": false,
+      "sha256": "b6904d3430efb486697035c37eed2ff3e7f17f8c62a4c54683b4ad59409d49b4",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_aliased_fin_is_never_foll1/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "RESOURCE_HARDLINK"
+      ],
+      "fixture": "test_aliased_fin_is_never_foll1",
+      "safe_postread": false,
+      "sha256": "a998aa26b2c523888b7207e9ba92bd9172003ae5d16d3dcc2b76b72f36174726",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_aliased_fin_is_never_foll1/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_exclusive_launch_intent_w0",
+      "safe_postread": true,
+      "sha256": "2ef45bf2caca7bae98228470236832be6ab96669f7f8c871bbc4f45d61762939",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_exclusive_launch_intent_w0/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_LAUNCH_WITHOUT_CLOSED_FIN"
+      ],
+      "fixture": "test_exclusive_launch_intent_w0",
+      "safe_postread": false,
+      "sha256": "97f3054f3b19f6756762a08053b1d348eacf133eda5114e38af3873ccedf5d90",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_exclusive_launch_intent_w0/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_LAUNCH_WITHOUT_CLOSED_FIN"
+      ],
+      "fixture": "test_exclusive_launch_intent_w0",
+      "safe_postread": false,
+      "sha256": "5af49d8899cec08feb7b1e98337e954ba97b1e9d35f3b1cff4c6936eeb6f85d4",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_exclusive_launch_intent_w0/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_no_pytest_launch_has_no_p0",
+      "safe_postread": true,
+      "sha256": "09049f4af2d797dec8115e90bc45d4502af112c103d917f3fbe4fd642090544e",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_no_pytest_launch_has_no_p0/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_no_pytest_launch_has_no_p0",
+      "safe_postread": true,
+      "sha256": "b691f34615efccb5be6e3735185314e8c9f70014f493f520d4ebb8e35156e7f3",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_no_pytest_launch_has_no_p0/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_no_pytest_launch_has_no_p0",
+      "safe_postread": true,
+      "sha256": "c3b905dab1d06b4d936950771a2e5c44e4b1c43aa0a2ddef602eb2702959fd2d",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_no_pytest_launch_has_no_p0/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "FIN_REAL_CLOSED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_real_collection_failure_h0",
+      "safe_postread": true,
+      "sha256": "47b20b5f1d2ebeddcadec0d45ba343e0c2271adeeab1119f2e067f05941046ed",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_real_collection_failure_h0",
+      "safe_postread": true,
+      "sha256": "777bbecd5a5b987221cec86c74147a69cba6282aa9baeb967eace6a205c6efed",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "FIN_REAL_CLOSED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_real_collection_failure_h0",
+      "safe_postread": true,
+      "sha256": "42d76534b515823ed65808c622c1deaa31093f7e00d09ed243a75d011006b069",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "FIN_REAL_CLOSED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_real_owned_pytest_direct_0",
+      "safe_postread": true,
+      "sha256": "a95ddfec7e2e18526628c021ace04a5dce46207d4e1393edfcdee19c0009a087",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "FIN_REAL_CLOSED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_real_owned_pytest_direct_0",
+      "safe_postread": true,
+      "sha256": "e205bf095887e85d1a1b94612faa9bd0128fca20c0a48b819977196c3dabfaec",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "FIN_REAL_CLOSED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_real_owned_pytest_direct_0",
+      "safe_postread": true,
+      "sha256": "f3135c426f998ee37f8e4154be39289983707e97b25da821c69593d768881de3",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_LAUNCH_INTENT_INVALID"
+      ],
+      "fixture": "test_real_owned_pytest_timeout0",
+      "safe_postread": false,
+      "sha256": "312137240d429a294bae8c7b7a2e70379ec82524406d2f71e04c56cc386e9bdc",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_LAUNCH_INTENT_INVALID"
+      ],
+      "fixture": "test_real_owned_pytest_timeout0",
+      "safe_postread": false,
+      "sha256": "f90a37ef26f542323d717233f6fa1defd20cb5c7c9df6a28695a5bd66c4cb8f6",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_LAUNCH_INTENT_INVALID",
+        "PYTEST_LAUNCH_INTENT_INVALID",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_real_owned_pytest_timeout0",
+      "safe_postread": false,
+      "sha256": "2d23923a2cfcbf0f330ff10766a9f0452694dfa4faa8b539a075210613ac859b",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_LAUNCH_WITHOUT_CLOSED_FIN",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_unknown_collection_blocks0",
+      "safe_postread": false,
+      "sha256": "d5ddfec638d81190c025009cdd2a1a0b01fe481ec535a2df7d6582e0151ee159",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_collection_blocks0/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_unknown_collection_blocks0",
+      "safe_postread": true,
+      "sha256": "b78e76738971137b7197e67d4fdb55ff4370aa87da9d111f5516e1916da209c9",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_collection_blocks0/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_LAUNCH_WITHOUT_CLOSED_FIN",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_unknown_collection_blocks0",
+      "safe_postread": false,
+      "sha256": "3dada024b467decf03bf498140c37fbdb448766803658cef62b0f354b44ea519",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_collection_blocks0/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_unknown_pytest_trace_neve0",
+      "safe_postread": true,
+      "sha256": "0d552089aef652564807f8b1f6974f678aae54302c48fa1ea123abf82a91ef57",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_pytest_trace_neve0/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve0",
+      "safe_postread": false,
+      "sha256": "d2fec2a9281a658b4a9440ac20dfda57c04d62209040e3b2e23c6bd775625ba3",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_pytest_trace_neve0/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve0",
+      "safe_postread": false,
+      "sha256": "b194c440716578ea95785cc7c4be8e04a4f461068dc74468ecba23362febcddb",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_pytest_trace_neve0/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_unknown_pytest_trace_neve1",
+      "safe_postread": true,
+      "sha256": "3e55bfb05388be9950e77f782e7bb11fc8151ef694d828adb1ec72f3e0a2ea98",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_pytest_trace_neve1/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve1",
+      "safe_postread": false,
+      "sha256": "b0c0e2337a62472129be96ad810ad5f42130aa8f2439516cdd724ae2f6dcd4cc",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_pytest_trace_neve1/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve1",
+      "safe_postread": false,
+      "sha256": "ee162e5636a12eed7c8ae59e88827efca2bf6c34d533c432481ea1d1277be01b",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_pytest_trace_neve1/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "311",
+      "errors": [],
+      "fixture": "test_unknown_pytest_trace_neve2",
+      "safe_postread": true,
+      "sha256": "14d30c944f0fcb55cad466e4c0e595c8836b79548358b3e2baa0146935188430",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_pytest_trace_neve2/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve2",
+      "safe_postread": false,
+      "sha256": "af97a3b05194d65df6a4a9b416b5d95589e4bef5759bea3307173935f4a9f8e5",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_pytest_trace_neve2/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "311",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve2",
+      "safe_postread": false,
+      "sha256": "e7475888c8804aadb545b8ed08f53097f5a0841d2ca9cb437494c90cddadae4a",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch311/fixtures/test_unknown_pytest_trace_neve2/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_aliased_fin_is_never_foll0",
+      "safe_postread": true,
+      "sha256": "895fd8cb432181d2e6f3c2ef5460afd202bca4391ae55407afc3fa5d4b021b74",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_aliased_fin_is_never_foll0/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "OSError"
+      ],
+      "fixture": "test_aliased_fin_is_never_foll0",
+      "safe_postread": false,
+      "sha256": "0a63215aadb576bd543191121e630571ddb0764b86cf8b8e6c1bf229bb0d3f33",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_aliased_fin_is_never_foll0/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "OSError"
+      ],
+      "fixture": "test_aliased_fin_is_never_foll0",
+      "safe_postread": false,
+      "sha256": "0be6c2d7f99b01e85c06c80a981c4ed4a8e67690f9ddb7ba3bc4c58e035ffb87",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_aliased_fin_is_never_foll0/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_aliased_fin_is_never_foll1",
+      "safe_postread": true,
+      "sha256": "327fd26a5a006172aeacde59cccfc25b6d5ee885e4d8615e3bb6a404f02567e8",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_aliased_fin_is_never_foll1/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "RESOURCE_HARDLINK"
+      ],
+      "fixture": "test_aliased_fin_is_never_foll1",
+      "safe_postread": false,
+      "sha256": "89147002a2df1cfada3d56132e56b2d58fb94bb4f4af3a0f727045c22fd578c3",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_aliased_fin_is_never_foll1/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "RESOURCE_HARDLINK"
+      ],
+      "fixture": "test_aliased_fin_is_never_foll1",
+      "safe_postread": false,
+      "sha256": "adcbb71ac5ae6785a39c47fc3411db019b6566c376ccb8b82314a225955e0f4e",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_aliased_fin_is_never_foll1/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_exclusive_launch_intent_w0",
+      "safe_postread": true,
+      "sha256": "a0d1d553d07beb433ee160d0b1615601cb8fd65fb193ee053c55b96715121937",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_exclusive_launch_intent_w0/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_LAUNCH_WITHOUT_CLOSED_FIN"
+      ],
+      "fixture": "test_exclusive_launch_intent_w0",
+      "safe_postread": false,
+      "sha256": "b935cd70642273f2ad001381a0fec406391984f204f1aefb70d10ba0208afcd2",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_exclusive_launch_intent_w0/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_LAUNCH_WITHOUT_CLOSED_FIN"
+      ],
+      "fixture": "test_exclusive_launch_intent_w0",
+      "safe_postread": false,
+      "sha256": "74b323792cc5236b3057cb09e1251b4fa85aeba39eb34aab9b5801b0c14b8ab1",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_exclusive_launch_intent_w0/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_no_pytest_launch_has_no_p0",
+      "safe_postread": true,
+      "sha256": "4d95808420a274c4c00b48c7939d40c1101ef0f6b269716300864e50b6c20cc4",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_no_pytest_launch_has_no_p0/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_no_pytest_launch_has_no_p0",
+      "safe_postread": true,
+      "sha256": "2b300611960f7192a4e463ea6bfbb0fbb0d52167df669171d308236fcfeb9ecf",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_no_pytest_launch_has_no_p0/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_no_pytest_launch_has_no_p0",
+      "safe_postread": true,
+      "sha256": "417ff73f2e9ea2994d77ad765f3e439dd865f5acbf4538e4f60364eb8ea216f2",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_no_pytest_launch_has_no_p0/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "FIN_REAL_CLOSED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_real_collection_failure_h0",
+      "safe_postread": true,
+      "sha256": "eb2e36175359688403ceb314749ed03bd68c17fde59b0e2eb27895881c1a97df",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_real_collection_failure_h0",
+      "safe_postread": true,
+      "sha256": "99dc8b16ef38b03d01aefcf371e9f4286165942b340c7d1a52d1226d611525e8",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "FIN_REAL_CLOSED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_real_collection_failure_h0",
+      "safe_postread": true,
+      "sha256": "7a0cda097587a355a43964fd0a7dab4d05e3be9a13b374e7c9e72a4a612518aa",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "FIN_REAL_CLOSED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_real_owned_pytest_direct_0",
+      "safe_postread": true,
+      "sha256": "972c3a69fd84895d540479045ee1356a94252a365e65323c9a6db6cb6ee04bff",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "FIN_REAL_CLOSED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_real_owned_pytest_direct_0",
+      "safe_postread": true,
+      "sha256": "703a00953054e80b0aa3938ac2b5564ffd45029e88eaab561dcf5280d9c3e5ea",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "FIN_REAL_CLOSED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_real_owned_pytest_direct_0",
+      "safe_postread": true,
+      "sha256": "4b49a7189bfbf5f0f7b2ef866682c4c32bbfe6a841acc3c6458dc3a9dccc3d33",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_LAUNCH_INTENT_INVALID"
+      ],
+      "fixture": "test_real_owned_pytest_timeout0",
+      "safe_postread": false,
+      "sha256": "7409756166111df8d09062e4f275289fa734dba5ea0c74903b546de635425835",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_LAUNCH_INTENT_INVALID"
+      ],
+      "fixture": "test_real_owned_pytest_timeout0",
+      "safe_postread": false,
+      "sha256": "27dd01305e5371181a26a1a1df6c5ffe78621c7ad26f26370b6b44da8084adc6",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_LAUNCH_INTENT_INVALID",
+        "PYTEST_LAUNCH_INTENT_INVALID",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_real_owned_pytest_timeout0",
+      "safe_postread": false,
+      "sha256": "e8751acb5160c77f26bb0c656e30c05dd401e566086458e56bc3f266cf874d20",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_LAUNCH_WITHOUT_CLOSED_FIN",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_unknown_collection_blocks0",
+      "safe_postread": false,
+      "sha256": "b1a8ac91872c8bb564c65bb4c409b69c10df0e9214d4d9676b17af3413f28bf8",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_collection_blocks0/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_unknown_collection_blocks0",
+      "safe_postread": true,
+      "sha256": "79aeb43ce6352a45d906a88573bd0d70b5959a9b448eb14d99213b5c130e85e6",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_collection_blocks0/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_LAUNCH_WITHOUT_CLOSED_FIN",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_unknown_collection_blocks0",
+      "safe_postread": false,
+      "sha256": "05b97584e04b6b5c74634282dfb1cf285b8f8906b72930353537552565049a58",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_collection_blocks0/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_unknown_pytest_trace_neve0",
+      "safe_postread": true,
+      "sha256": "555d522bbf740e8254fd6c739950b45904c84d905e15b324a003bcde40aca002",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_pytest_trace_neve0/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve0",
+      "safe_postread": false,
+      "sha256": "36b0f9ac22dd68af38e23b80547aac111d0d6772c6c7bcffe4a22fa1fcd6dc2a",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_pytest_trace_neve0/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve0",
+      "safe_postread": false,
+      "sha256": "8e65bc85b0b071ed149446a7a4ed70feb144a9af160474034366ca97583d5218",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_pytest_trace_neve0/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_unknown_pytest_trace_neve1",
+      "safe_postread": true,
+      "sha256": "5aea7dfbae55d8f1c7b1cb96a7b650dd78fe7d31785258ea49303b6805036962",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_pytest_trace_neve1/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve1",
+      "safe_postread": false,
+      "sha256": "3f876471c0e851f9d55b0d78c9008cd420d2a3862da219ce41ca67b63a22bcae",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_pytest_trace_neve1/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve1",
+      "safe_postread": false,
+      "sha256": "7117f1f29f9292f5f40dcd03b726ee396d4e87476179ddcf3c1a769787655243",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_pytest_trace_neve1/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    },
+    {
+      "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+      "epoch": "312",
+      "errors": [],
+      "fixture": "test_unknown_pytest_trace_neve2",
+      "safe_postread": true,
+      "sha256": "95ad4f486e176251a889e69ede9e46a30c2453139a5684d4e0453ef640bef7d0",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_pytest_trace_neve2/runner/porota-predeploy-471-2.pytest-collection-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve2",
+      "safe_postread": false,
+      "sha256": "2b938ba1f8a2863be7491b6c2cf731a8e213732bddb07d83f266963ffe786858",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_pytest_trace_neve2/runner/porota-predeploy-471-2.pytest-postread.json"
+    },
+    {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "epoch": "312",
+      "errors": [
+        "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT",
+        "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+      ],
+      "fixture": "test_unknown_pytest_trace_neve2",
+      "safe_postread": false,
+      "sha256": "788847265e97bb0688bf48d22cb17e5b3e2dc290a56bf6787a48b5daf2ddc7ce",
+      "stored": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4/corrected62/epoch312/fixtures/test_unknown_pytest_trace_neve2/runner/porota-predeploy-471-2.pytest-producers-postread.json"
+    }
+  ]
+}

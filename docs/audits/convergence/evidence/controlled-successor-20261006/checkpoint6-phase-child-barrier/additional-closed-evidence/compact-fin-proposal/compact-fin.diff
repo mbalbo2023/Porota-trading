@@ -1,0 +1,26 @@
+--- a/scripts/porota_predeploy_cleanup.py
++++ b/scripts/porota_predeploy_cleanup.py
+@@ -155,9 +155,10 @@
+             os.close(descriptor)
+ 
+ 
+-def publish(path, value, *, previous=None):
++def publish(path, value, *, previous=None, compact=False):
+     path = safe_absolute(path)
+-    raw = canonical(value)
++    raw = ((json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
++           if compact else canonical(value))
+     with directory(path.parent) as parent:
+         if previous is not None:
+             require(identity(os.stat(path.name, dir_fd=parent, follow_symlinks=False))
+--- a/scripts/porota_predeploy_test_workspace.py
++++ b/scripts/porota_predeploy_test_workspace.py
+@@ -764,7 +764,7 @@
+         custody["post_fin_errors"].append(str(error) if isinstance(error, cleanup.CleanupRejected)
+                                           else type(error).__name__)
+     finally:
+-        cleanup.publish(private / names["fin"], custody)
++        cleanup.publish(private / names["fin"], custody, compact=True)
+     print(json.dumps({"owned_fin_closed": custody["owned_fin_closed"],
+                       "pytest_phase_green": custody["phase_green"],
+                       "phase": phase, "retained_fixtures_removed": False,

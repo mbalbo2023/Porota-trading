@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="43" time="12.948" timestamp="2026-10-06T01:07:31.929693+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_retained_pinned_module_origin_is_reported" time="0.217" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_exec_of_alien_module_deleted_after_import_remains_blocked" time="0.192" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_opaque_exec_is_unverified_without_generic_allowlist" time="0.198" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_unresolved_filename_none_is_not_treated_as_a_closed_import" time="0.184" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_bounded_audit_overflow_keeps_complete_counter_and_refuses_closure" time="0.200" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_audit_hook_deactivation_does_not_contaminate_next_observer" time="0.246" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_snapshot_failure_unconditionally_deactivates_owned_hook" time="0.188" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_stress_early_failure_deactivates_hook_before_next_observer[root_abort]" time="0.384" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_stress_early_failure_deactivates_hook_before_next_observer[fixture_abort]" time="0.427" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_child_startup_base_exception_deactivates_owned_hook[child_initial_abort]" time="0.338" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_child_startup_base_exception_deactivates_owned_hook[child_queue_abort]" time="0.338" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_nonzero_actual_child_preserves_initial_and_failure_proof_in_typed_evidence" time="0.498" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_partial_source_cli_is_rejected_before_fixture_or_business_import" time="0.066" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_wrong_source_pin_rejects_before_environment_or_fixture" time="0.002" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_wrong_actual_parent_pid_reports_incomplete_before_product_startup" time="0.001" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_late_proof_allocation_is_covered_by_actual_reaped_children_peak" time="0.082" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_unreaped_child_does_not_claim_a_lifetime_rss" time="0.002" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_callback_source_has_no_hash_io_profile_or_gc_operation" time="0.013" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_exact_typing_public_aliases_are_classified_without_pretending_module_type" time="0.299" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_audit_hook_installation_requires_unique_owned_sentinel_and_restores_after_failure[audit_hook_veto-0-ValueError]" time="0.353" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_audit_hook_installation_requires_unique_owned_sentinel_and_restores_after_failure[audit_hook_duplicate-2-ValueError]" time="0.365" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_audit_hook_installation_requires_unique_owned_sentinel_and_restores_after_failure[audit_hook_error-0-KeyboardInterrupt]" time="0.370" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_false_typing_alias_with_real_metaclass_and_matching_name_stays_unverified[false_typing_alias]" time="0.287" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_false_typing_alias_with_real_metaclass_and_matching_name_stays_unverified[false_typing_metadata]" time="0.297" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_loader_metaclass_descriptors_are_not_invoked_by_observer_and_original_delegation_survives[foreign_loader_result]" time="0.288" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_loader_metaclass_descriptors_are_not_invoked_by_observer_and_original_delegation_survives[foreign_loader_abort]" time="0.288" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_real_language_factory_exec_has_exact_code_and_callsite_evidence[namedtuple-collections.namedtuple]" time="0.283" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_real_language_factory_exec_has_exact_code_and_callsite_evidence[dataclass-dataclasses._create_fn]" time="0.285" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_cloned_factory_with_same_code_but_foreign_globals_is_rejected" time="0.273"><failure message="subprocess.CalledProcessError: Command '['/workspace/venv_rc6_frozen311/bin/python', '-I', '-B', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-source/tests/test_rc6_native_big_import_provenance.py', '--runtime-provenance-control', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-source', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/fixtures/pytest/test_cloned_factory_with_same_0', 'lookalike_factory']' returned non-zero exit status 1.">tmp_path = PosixPath('/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/fixtures/pytest/test_cloned_factory_with_same_0')
+
+    def test_cloned_factory_with_same_code_but_foreign_globals_is_rejected(tmp_path):
+&gt;       result = _physical_runtime_control(tmp_path, 'lookalike_factory')
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../../rc6-budget-runtime-provenance-ce932-focal-157-source/tests/test_rc6_native_big_import_provenance.py:680: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../rc6-budget-runtime-provenance-ce932-focal-157-source/tests/test_rc6_native_big_import_provenance.py:614: in _physical_runtime_control
+    completed = subprocess.run([sys.executable,'-I','-B',str(Path(__file__).resolve()),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = 20, check = True
+popenargs = (['/workspace/venv_rc6_frozen311/bin/python', '-I', '-B', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-so...ovenance.py', '--runtime-provenance-control', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-source', ...],)
+kwargs = {'cwd': PosixPath('/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/fixtures/pytest/test_cloned_factory_wi...XEC_SERVER_REMOTE_BASE_URL': 'https://codex-cloud-environments.chatgpt.com/api', ...}, 'text': True, 'stdout': -1, ...}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output &amp; stderr attributes if those streams
+        were captured.
+    
+        If timeout is given, and the process takes too long, a TimeoutExpired
+        exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+&gt;               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['/workspace/venv_rc6_frozen311/bin/python', '-I', '-B', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-source/tests/test_rc6_native_big_import_provenance.py', '--runtime-provenance-control', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-source', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/fixtures/pytest/test_cloned_factory_with_same_0', 'lookalike_factory']' returned non-zero exit status 1.
+
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:571: CalledProcessError</failure></testcase><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_valid_language_generation_over_text_bound_does_not_raise_provenance_cap" time="0.290" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_frozen_filename_requires_actual_interpreter_code_reference[real_frozen-True]" time="0.296" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_frozen_filename_requires_actual_interpreter_code_reference[fake_frozen-False]" time="0.280" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_optional_missing_outcome_is_bounded_and_distinct_from_final_absence[optional_missing-1]" time="0.293" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_optional_missing_outcome_is_bounded_and_distinct_from_final_absence[missing_repeated-100]" time="0.285" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_fabricated_missing_audit_event_has_no_actual_import_outcome" time="0.286" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_user_finder_constructed_module_not_found_is_not_core_optional_absence" time="0.311" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_pinned_transient_module_is_joined_to_loader_and_execution_after_deletion" time="0.294" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_private_alien_loader_and_base_exception_preserve_evidence_and_restore_protocol[transient_alien]" time="0.286" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_private_alien_loader_and_base_exception_preserve_evidence_and_restore_protocol[loader_abort]" time="0.292" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage" time="0.297"><failure message="KeyError: 'cython_runtime'">tmp_path = PosixPath('/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0')
+
+    def test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage(tmp_path):
+        result = _physical_runtime_control(tmp_path, 'cython_extension')
+        for name in result['control']['actual_cython_modules']:
+&gt;           row = result['boundary_after']['modules'][name][0]
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'cython_runtime'
+
+../../rc6-budget-runtime-provenance-ce932-focal-157-source/tests/test_rc6_native_big_import_provenance.py:747: KeyError</failure></testcase><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_replaced_or_unknown_native_runtime_module_has_no_name_based_exemption[false_cython_after-cython_runtime]" time="0.295" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_replaced_or_unknown_native_runtime_module_has_no_name_based_exemption[unknown_runtime_module-rc6_unknown_extension_runtime]" time="0.283" /><testcase classname="tests.test_issue465_stress" name="test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint" time="1.847" /></testsuite></testsuites>

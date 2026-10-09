@@ -1,0 +1,1501 @@
+{
+  "acceptance_complete": false,
+  "alien_product_imports": [],
+  "argv": [
+    "/tmp/rc6-packed-capture-0b380438-157-raw/run_focal.py"
+  ],
+  "artifact_validated": false,
+  "cwd": "/workspace/rc6-packed-capture-0b380438-157-source",
+  "distribution_count": 157,
+  "elapsed_seconds": 23.909071896996466,
+  "environment": {
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONHOME": null,
+    "PYTHONPATH": ""
+  },
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "junit_sha256": "156deecb21745b67840de1e7be429bc06b28ef3576c8e296c2919d068a82e6db",
+  "native_cases": [
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[typed-5]",
+      "seconds": "0.021",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[typed-17]",
+      "seconds": "0.013",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[typed-64]",
+      "seconds": "0.014",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[typed-65536]",
+      "seconds": "0.011",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[volatile-5]",
+      "seconds": "0.020",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[volatile-17]",
+      "seconds": "0.016",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[volatile-64]",
+      "seconds": "0.023",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[volatile-65536]",
+      "seconds": "0.017",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[named-5]",
+      "seconds": "0.002",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[named-17]",
+      "seconds": "0.003",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[named-64]",
+      "seconds": "0.002",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[named-65536]",
+      "seconds": "0.002",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[large_token-5]",
+      "seconds": "0.002",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[large_token-17]",
+      "seconds": "0.001",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[large_token-64]",
+      "seconds": "0.001",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[large_token-65536]",
+      "seconds": "0.007",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_volatile_root_sections_remain_single_exact_literal_capture[as_of]",
+      "seconds": "0.000",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_volatile_root_sections_remain_single_exact_literal_capture[payload]",
+      "seconds": "0.000",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_volatile_root_sections_remain_single_exact_literal_capture[elapsed_seconds]",
+      "seconds": "0.000",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_volatile_root_sections_remain_single_exact_literal_capture[known_at]",
+      "seconds": "0.000",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_plain_token_allocations_are_bounded_by_output_chunks_not_json_tokens",
+      "seconds": "0.128",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_prepared_capture_freezes_static_bytes_and_recaptures_mutable_headers",
+      "seconds": "0.002",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_nonfinite_rejection[nan]",
+      "seconds": "0.000",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_nonfinite_rejection[inf]",
+      "seconds": "0.000",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_preserves_nonfinite_rejection[-inf]",
+      "seconds": "0.000",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_keeps_shape_limits_before_recursion[cycle]",
+      "seconds": "0.000",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_keeps_shape_limits_before_recursion[depth]",
+      "seconds": "0.001",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_keeps_shape_limits_before_recursion[nodes]",
+      "seconds": "0.001",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_direct_capture_keeps_shape_limits_before_recursion[key]",
+      "seconds": "0.000",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_capture_allocations",
+      "name": "test_native_worker_publication_full_reader_and_projection_keep_the_same_cut",
+      "seconds": "3.868",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
+      "seconds": "0.197",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
+      "seconds": "0.316",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_dual_reader_reports_the_actual_storage_schema[rc6.lossless-json-storage.v1]",
+      "seconds": "0.096",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_dual_reader_reports_the_actual_storage_schema[rc6.lossless-json-storage.v2]",
+      "seconds": "0.097",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-False-rc6.lossless-json-storage.v1]",
+      "seconds": "0.008",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-False-rc6.lossless-json-storage.v2]",
+      "seconds": "0.014",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-True-rc6.lossless-json-storage.v1]",
+      "seconds": "0.008",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-True-rc6.lossless-json-storage.v2]",
+      "seconds": "0.008",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-False-rc6.lossless-json-storage.v1]",
+      "seconds": "0.008",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-False-rc6.lossless-json-storage.v2]",
+      "seconds": "0.009",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-True-rc6.lossless-json-storage.v1]",
+      "seconds": "0.008",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-True-rc6.lossless-json-storage.v2]",
+      "seconds": "0.010",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[False-rc6.lossless-json-storage.v1]",
+      "seconds": "0.095",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[False-rc6.lossless-json-storage.v2]",
+      "seconds": "0.093",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[True-rc6.lossless-json-storage.v1]",
+      "seconds": "0.091",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[True-rc6.lossless-json-storage.v2]",
+      "seconds": "0.079",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[digest]",
+      "seconds": "0.040",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[boolean_size]",
+      "seconds": "0.042",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[small_size]",
+      "seconds": "0.039",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[template_count_bool]",
+      "seconds": "0.073",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[bindings_none]",
+      "seconds": "0.063",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[bindings_list]",
+      "seconds": "0.044",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[packet_crc]",
+      "seconds": "0.066",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[packet_base64]",
+      "seconds": "0.036",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[packet_cid]",
+      "seconds": "0.037",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[array_crc]",
+      "seconds": "0.042",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[array_count_bool]",
+      "seconds": "0.040",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[ref_oob]",
+      "seconds": "0.043",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[ref_reorder]",
+      "seconds": "0.046",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[binding_oob]",
+      "seconds": "0.036",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[directory_overlap]",
+      "seconds": "0.036",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[directory_extra]",
+      "seconds": "0.038",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[instance_duplicate]",
+      "seconds": "0.037",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[unknown_key]",
+      "seconds": "0.037",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[unknown_codec]",
+      "seconds": "0.046",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[unknown_schema]",
+      "seconds": "0.034",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[trailing_packet]",
+      "seconds": "0.037",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[directory_kind]",
+      "seconds": "0.038",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire[{ \"x\": 1 }]",
+      "seconds": "0.001",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire[{\"x\":1,\"x\":2}]",
+      "seconds": "0.001",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire[{\"x\":NaN}]",
+      "seconds": "0.001",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      "seconds": "0.001",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+      "seconds": "0.000",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_wire_validates_each_template_plan_once_and_hashes_every_reference",
+      "seconds": "0.054",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
+      "seconds": "0.038",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_deadline_is_checked_inside_packets_and_references",
+      "seconds": "0.044",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
+      "seconds": "0.040",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_packed_storage",
+      "name": "test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
+      "seconds": "0.169",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_lossless_storage_preserves_types_escaped_keys_every_row_and_logical_digest",
+      "seconds": "0.094",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[digest]",
+      "seconds": "0.034",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[smaller_expansion]",
+      "seconds": "0.034",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[boolean_size]",
+      "seconds": "0.034",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[base64]",
+      "seconds": "0.033",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[crc]",
+      "seconds": "0.040",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[duplicate_logical_key]",
+      "seconds": "0.034",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[future_schema]",
+      "seconds": "0.032",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[noncanonical_json]",
+      "seconds": "0.031",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[depth]",
+      "seconds": "0.033",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[nodes]",
+      "seconds": "0.059",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_native_funnel_large_metadata_roundtrip_restarts_with_identical_complete_outputs",
+      "seconds": "2.018",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_prepared_storage_is_exact_for_unicode_aliases_and_mutable_root_headers",
+      "seconds": "0.117",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_shape_memo_counts_logical_alias_expansion_and_rejects_cycles",
+      "seconds": "0.001",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_bulk_shape_counts_every_scalar_and_enforces_depth_at_leaf_boundary",
+      "seconds": "0.001",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[None]",
+      "seconds": "0.034",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[logical_digest]",
+      "seconds": "0.035",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[crc]",
+      "seconds": "0.036",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[deadline]",
+      "seconds": "0.033",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[expansion]",
+      "seconds": "0.043",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[base64]",
+      "seconds": "0.056",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_funnel_storage_codec",
+      "name": "test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
+      "seconds": "0.108",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_checkpoint_compression_disk_failure_cannot_publish_new_report_with_old_checkpoint",
+      "seconds": "0.321",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_every_commit_failure_boundary_exposes_only_one_valid_cut[after_report]",
+      "seconds": "0.096",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_every_commit_failure_boundary_exposes_only_one_valid_cut[after_checkpoint]",
+      "seconds": "0.095",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_every_commit_failure_boundary_exposes_only_one_valid_cut[after_status]",
+      "seconds": "0.107",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_every_commit_failure_boundary_exposes_only_one_valid_cut[before_fsync]",
+      "seconds": "0.112",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_every_commit_failure_boundary_exposes_only_one_valid_cut[after_fsync]",
+      "seconds": "0.160",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_every_commit_failure_boundary_exposes_only_one_valid_cut[before_commit_pointer]",
+      "seconds": "0.124",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_every_commit_failure_boundary_exposes_only_one_valid_cut[after_commit_pointer]",
+      "seconds": "0.116",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_real_sigkill_at_every_boundary_never_exposes_staging_as_current[after_report]",
+      "seconds": "0.147",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_real_sigkill_at_every_boundary_never_exposes_staging_as_current[after_checkpoint]",
+      "seconds": "0.138",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_real_sigkill_at_every_boundary_never_exposes_staging_as_current[after_status]",
+      "seconds": "0.137",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_real_sigkill_at_every_boundary_never_exposes_staging_as_current[before_fsync]",
+      "seconds": "0.122",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_real_sigkill_at_every_boundary_never_exposes_staging_as_current[after_fsync]",
+      "seconds": "0.142",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_real_sigkill_at_every_boundary_never_exposes_staging_as_current[before_commit_pointer]",
+      "seconds": "0.161",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_real_sigkill_at_every_boundary_never_exposes_staging_as_current[after_commit_pointer]",
+      "seconds": "0.146",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_canonical_worker_restart_after_kill_reuses_only_committed_checkpoint",
+      "seconds": "0.497",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_enospc_from_real_fsync_does_not_change_current",
+      "seconds": "0.056",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_actual_read_only_directory_permission_failure_preserves_current",
+      "seconds": "0.059",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_truncated_gzip_rejected_even_with_individual_wire_hash_rebound",
+      "seconds": "0.051",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_individually_valid_checkpoint_cannot_be_mixed_into_generation[<lambda>-MEMBER_MISMATCH0]",
+      "seconds": "0.058",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_individually_valid_checkpoint_cannot_be_mixed_into_generation[<lambda>-CROSS_HASH_MISMATCH]",
+      "seconds": "0.053",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_individually_valid_checkpoint_cannot_be_mixed_into_generation[<lambda>-MEMBER_MISMATCH1]",
+      "seconds": "0.045",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_individually_valid_checkpoint_cannot_be_mixed_into_generation[<lambda>-MEMBER_MISMATCH2]",
+      "seconds": "0.070",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_corrupt_file_and_manifest_hash_each_fail_closed",
+      "seconds": "0.055",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_stale_current_is_rejected_by_durable_high_water_without_borrowing_newer_members",
+      "seconds": "0.082",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_current_pointing_to_missing_generation_fails_closed",
+      "seconds": "0.044",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_clock_rollback_never_reuses_generation_id_or_future_worker_checkpoint",
+      "seconds": "0.324",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_failure_health_does_not_overwrite_committed_status_and_recovery_is_forward",
+      "seconds": "0.095",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_legacy_independent_latest_cannot_bypass_committed_generation_reader",
+      "seconds": "0.040",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_shared_reader_lock_is_nonblocking_and_does_not_create_files",
+      "seconds": "0.042",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_hostile_aliases_fail_closed_without_modifying_external_inputs[member_hardlink]",
+      "seconds": "0.037",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_hostile_aliases_fail_closed_without_modifying_external_inputs[member_symlink]",
+      "seconds": "0.036",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_hostile_aliases_fail_closed_without_modifying_external_inputs[directory_symlink]",
+      "seconds": "0.053",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_hostile_aliases_fail_closed_without_modifying_external_inputs[current_symlink]",
+      "seconds": "0.041",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_manifest_path_traversal_cannot_select_any_external_input",
+      "seconds": "0.040",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_compressed_payload_expansion_is_bounded_even_when_hashes_match",
+      "seconds": "0.043",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_all_three_roles_are_verified_by_the_actual_capacity_consumer",
+      "seconds": "0.047",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_status_cannot_link_a_report_outside_the_committed_cut",
+      "seconds": "0.040",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_source_audit_digest_is_bound_to_actual_source_reports_before_commit",
+      "seconds": "0.047",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_uuid_collision_cannot_overwrite_existing_generation",
+      "seconds": "0.066",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_canonical_worker_soft_pressure_is_committed_and_hard_pressure_never_rewrites_cut",
+      "seconds": "0.514",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_513_files_and_over_128mib_preserve_committed_evidence",
+      "seconds": "0.146",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_canonical_loop_records_explicit_backpressure_and_does_not_overwrite_status",
+      "seconds": "0.367",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_failure_diagnostics_never_persist_exception_message_secrets",
+      "seconds": "0.041",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_radar_counter_memory_is_bounded_even_when_old_points_have_expired",
+      "seconds": "0.147",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_received_native_sources_are_audited_even_before_initial_watermark_or_without_preopen[at0]",
+      "seconds": "0.247",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_received_native_sources_are_audited_even_before_initial_watermark_or_without_preopen[at1]",
+      "seconds": "0.273",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_issue465_generations",
+      "name": "test_durability_order_precedes_current_and_root_fsync_failure_keeps_whole_new_cut",
+      "seconds": "0.150",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_worker_real_runtime_calls_framework_freezes_and_restarts_without_source_writes",
+      "seconds": "1.198",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens",
+      "seconds": "2.897",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_closed_worker_never_claims_open_capacity_or_calls_provider",
+      "seconds": "0.364",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_missing_inwheel_preopen_fail_closed_never_backdated",
+      "seconds": "0.212",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_readonly_worker_does_not_wait_for_trading_write_lock",
+      "seconds": "0.390",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_source_or_configuration_invalidates_checkpoint_and_future_rejected",
+      "seconds": "0.674",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_exclusive_evidence_lock_alias_and_quota_never_overwrite_input",
+      "seconds": "0.010",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_canonical_child_entry_never_constructs_trading_store",
+      "seconds": "0.108",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_canonical_supervisor_installs_shadow_child_with_existing_restart_control",
+      "seconds": "0.124",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_audited_session_uses_next_operational_day_and_previous_close",
+      "seconds": "0.001",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_opened_priority_and_scoped_native_ppi_failure_survive_runtime_capacity_loss",
+      "seconds": "0.314",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_existing_byma_scraper_cache_is_observe_only_and_cannot_backfill_on_config_restart",
+      "seconds": "0.608",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_atomic_replacement_quota_bounds_peak_and_preserves_prior_audit_file",
+      "seconds": "0.007",
+      "state": "PASS"
+    },
+    {
+      "classname": "tests.test_rc6_shadow_runtime_wiring",
+      "name": "test_configured_iol_cache_is_reused_and_protected_as_an_input",
+      "seconds": "0.281",
+      "state": "PASS"
+    }
+  ],
+  "network_attempts": 0,
+  "overlay_count": 0,
+  "preflight_exact_names_versions": true,
+  "product_imports": [
+    {
+      "module": "_version",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/_version.py",
+      "sha256": "17a594100f02a0f4e7a36b8bb95ae88d2b85c21b93f68678da60c687d4a691b4"
+    },
+    {
+      "module": "ak_byma_calendar",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/ak_byma_calendar.py",
+      "sha256": "0b8aefc432fd05431bf44b4f419ca5f902ca64136518700ede018cdddb88d02a"
+    },
+    {
+      "module": "al_historical_ingest",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/al_historical_ingest.py",
+      "sha256": "700f133c74a59a88d47cbb7a7d93e7a52ca0143e5bd3a03adc70f41dfee9c141"
+    },
+    {
+      "module": "am_us_equity_calendar_rc6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/am_us_equity_calendar_rc6.py",
+      "sha256": "dfe64bcd4a90a77c510aa71fa7a08f92cdde32ded86e9317de3c521b84e3a612"
+    },
+    {
+      "module": "au_fee_schedule",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/au_fee_schedule.py",
+      "sha256": "836912ad4c6a68fdbc7f8ef6bfe750ab13834c9220829dc7ad7a9937764a7acb"
+    },
+    {
+      "module": "bd_ppi_readonly_guard",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bd_ppi_readonly_guard.py",
+      "sha256": "9f59c0797d9beb72d804c2c80076e27e290124832bd40178dfdbd7369a6203d4"
+    },
+    {
+      "module": "be_paper_engine",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/be_paper_engine.py",
+      "sha256": "b7edde695875c49a75da2d125b276ea19e53350b650ee5a4c3dbba3ff1791283"
+    },
+    {
+      "module": "bf_production_paper_observer",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bf_production_paper_observer.py",
+      "sha256": "29b08bf1d5853e51c722913f7dae25dfb27ae92ca343eb93531084f7d3c463d7"
+    },
+    {
+      "module": "bi_operational_services",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bi_operational_services.py",
+      "sha256": "4be7d696eb4c4292a44535fb0bf6e64b8abb2ac37c009e94192f72b989a66c8f"
+    },
+    {
+      "module": "bl_candle_engine",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bl_candle_engine.py",
+      "sha256": "bc2f3ae2b743847acc979896b97197584756ae16e5bb62171064f60944697750"
+    },
+    {
+      "module": "bm_exit_supervisor",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bm_exit_supervisor.py",
+      "sha256": "77a9964f865aa528340f9a6f20a5e5c3f78094e583bd94670f58ed7e79ad2c20"
+    },
+    {
+      "module": "bn_telegram_bus",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bn_telegram_bus.py",
+      "sha256": "3e64b7641999aff82f31b7a6ebbf7a101fc29f04d9c0e4b5157083d316369d66"
+    },
+    {
+      "module": "bq_exit_policy",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bq_exit_policy.py",
+      "sha256": "fa57a5fe456c1c7c2d20282365c343632bac00808624312da4805f249cf4eb11"
+    },
+    {
+      "module": "bs_instrument_contracts",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bs_instrument_contracts.py",
+      "sha256": "41db66209f810bb7a90363928774dc6b299d17d009e7c5775a42ba4cb141deff"
+    },
+    {
+      "module": "bt_caucion_paper",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bt_caucion_paper.py",
+      "sha256": "d552755ec8330c026d4e6d2698ef003e8cec14c67eb092940508e829e879b942"
+    },
+    {
+      "module": "bu_instrument_catalog",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bu_instrument_catalog.py",
+      "sha256": "e1a2961ad6f1ed2b39a24cc68c35f0389078d5599ba15cdd357a4095f79ffa3c"
+    },
+    {
+      "module": "bv_paper_runtime",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bv_paper_runtime.py",
+      "sha256": "8f190b4f328f6cb4e4842553304f4e9e4c2eaf8da3b5df50a01b28c74988dd82"
+    },
+    {
+      "module": "bw_daily_risk",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/bw_daily_risk.py",
+      "sha256": "7f652f5c14ac16c849a19a9864826070437341be26f5d09a5c23ba1421fe16a2"
+    },
+    {
+      "module": "cc_spot_liquidity",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/cc_spot_liquidity.py",
+      "sha256": "fecaf8ecbe31fea5091bdf328ac96d1fb22782441c89fa8395ed3f25a050c3e0"
+    },
+    {
+      "module": "cd_spot_ledger",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/cd_spot_ledger.py",
+      "sha256": "e90b5a1c5964f987f8cea6ef0b9ff38e4bec0f9632ca985a2129f0f3bf5329b2"
+    },
+    {
+      "module": "cf_intraday_scalping",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/cf_intraday_scalping.py",
+      "sha256": "b9ab0e1bb42083f80743b0dcc71028cbdd808bfc3e902f627c09795f04680e8c"
+    },
+    {
+      "module": "cf_sale_settlement",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/cf_sale_settlement.py",
+      "sha256": "45ecfa70351d86bab486947406bd896f96c1c5db5049aa0ee8e536f9a2e85655"
+    },
+    {
+      "module": "cg_paper_workspace",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/cg_paper_workspace.py",
+      "sha256": "722bfffe99c39667b435eb7f642bd167cea04fa3716f736f6aee19e8aae216fa"
+    },
+    {
+      "module": "ch_empirical_learning",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/ch_empirical_learning.py",
+      "sha256": "fa80da0cbb597aeccca5aa12d5cb1be1437278557cf0426bad9d63ad0b01d0c4"
+    },
+    {
+      "module": "ci_operational_context",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/ci_operational_context.py",
+      "sha256": "9e9d55337859f5fec5ceafda879ce8dc5c7b7e3599b5fe06d6e80da8799911b8"
+    },
+    {
+      "module": "ck_policy_gate_hf6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/ck_policy_gate_hf6.py",
+      "sha256": "8fd3073938929f8b2c6f94bedbd2ad98d3b03ed7355499b4296c7369084d6bcc"
+    },
+    {
+      "module": "co_market_sessions_hf6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/co_market_sessions_hf6.py",
+      "sha256": "2531dab976afbba98cb9c2f5f1d98697b4f8a8dae125b1735caa26d0d22cac8e"
+    },
+    {
+      "module": "cp_history_ingest_policy_hf6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/cp_history_ingest_policy_hf6.py",
+      "sha256": "86364b770f1d0349ac425f1ecf160167d3acda23748a3bda9ee3f5e2c163b204"
+    },
+    {
+      "module": "cu_history_store_v2_hf6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/cu_history_store_v2_hf6.py",
+      "sha256": "890de82a33a59dbee06bd776c5d7e41cd6554b703ab486a52b43f3a571d4b987"
+    },
+    {
+      "module": "cv_history_store_adapter_hf6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/cv_history_store_adapter_hf6.py",
+      "sha256": "625a94f690144d61e9e00ea15400cbc3865e2f9eb6b67e0fa3ab3a823ad598d4"
+    },
+    {
+      "module": "cy_market_source_arbitration_hf6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/cy_market_source_arbitration_hf6.py",
+      "sha256": "4dc6b6a1364a28574dc9d8106f0590f9af1d474fa3f4bd2a1fa596280af5f26a"
+    },
+    {
+      "module": "de_concurrent_risk_capacity_hf6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/de_concurrent_risk_capacity_hf6.py",
+      "sha256": "dc1e21eef3172ec031f86bc3dd86c2df404bced17daa9dbcc73804dbf4329945"
+    },
+    {
+      "module": "dh_paper_dynamic_risk_gate_hf6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/dh_paper_dynamic_risk_gate_hf6.py",
+      "sha256": "c1b1af0f2a060ff62ed3f1d61620fb30818fac75072e98cf045bb0985adcd576"
+    },
+    {
+      "module": "es_policy_context_rc6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/es_policy_context_rc6.py",
+      "sha256": "40787d382716fc2df04e4244349cbe6c14fb71178b37e9ad12067acae702723a"
+    },
+    {
+      "module": "eu_telegram_policy_rc6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/eu_telegram_policy_rc6.py",
+      "sha256": "37511844ded2927ee6ce25e7e409ecdc755cc455ee14a9e2cf4193e337f40d24"
+    },
+    {
+      "module": "fe_fixed_income_nominal_contract_rc6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/fe_fixed_income_nominal_contract_rc6.py",
+      "sha256": "dd139cdbd50c00f052d0912b0c5d1cfa0b49d2e3164d5c6cc94eb779c833de4e"
+    },
+    {
+      "module": "fg_intraday_contract_policy_rc6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/fg_intraday_contract_policy_rc6.py",
+      "sha256": "2099d323fa19ea1c4be76306245dbc06d8ca10ae653834d7b6dfd2c30a42b83d"
+    },
+    {
+      "module": "historical_candle_shadow_rc6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/historical_candle_shadow_rc6.py",
+      "sha256": "5ee61594d568064379cf3d655a95ceb836e38985266d73e2dc7cbb3986d4c5f5"
+    },
+    {
+      "module": "iol_shadow_decision_input_rc6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/iol_shadow_decision_input_rc6.py",
+      "sha256": "7c783ec8ea9087c727e1b9d82ca572fea4dedffe2e19defd98e4f28381d92fa5"
+    },
+    {
+      "module": "iol_shadow_observation_rc6",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/iol_shadow_observation_rc6.py",
+      "sha256": "b12f858f45858505d67c24ef20062b8a640c20d99d2aaf8b28ee3894e6c5b96d"
+    },
+    {
+      "module": "rc6_audit_evidence",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_audit_evidence/__init__.py",
+      "sha256": "13e421a4ba86a9adef3bc4706128096c59d59694837f0cd01a66742875944498"
+    },
+    {
+      "module": "rc6_audit_evidence.package",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_audit_evidence/package.py",
+      "sha256": "177262456183b489138e2552507d743b8199040096ed266357e297402d8b12b7"
+    },
+    {
+      "module": "rc6_audit_evidence.recompute",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_audit_evidence/recompute.py",
+      "sha256": "25ff214765bb79f1f0390dc3e4097090759ce7ae74f16444c18db98dd72ece8b"
+    },
+    {
+      "module": "rc6_audit_evidence.sqlite_scratch",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_audit_evidence/sqlite_scratch.py",
+      "sha256": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8"
+    },
+    {
+      "module": "rc6_audit_evidence.sqlite_snapshot",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_audit_evidence/sqlite_snapshot.py",
+      "sha256": "c4cb17481d678c1d1b1e05cffb6ed6762e09d26032bc30d245d1b033df5319ea"
+    },
+    {
+      "module": "rc6_cost_settlement_takeprofit_shadow",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_cost_settlement_takeprofit_shadow.py",
+      "sha256": "51523dae2eb19e3e239e8366196ec822e58c5d6d44f24982dfef213e680bfb7f"
+    },
+    {
+      "module": "rc6_dynamic_universe",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_dynamic_universe/__init__.py",
+      "sha256": "509d7cc6e5378e62e80f19e7cb91090eb2c1395766697fbe28342e0d0a4b7b0d"
+    },
+    {
+      "module": "rc6_dynamic_universe.capacity",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_dynamic_universe/capacity.py",
+      "sha256": "1babc3215dcd2138f813620da1d4e746f0cceb62d23b6e58d2ae61c519e84850"
+    },
+    {
+      "module": "rc6_dynamic_universe.common",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_dynamic_universe/common.py",
+      "sha256": "c825d64bde0d1814536dfd82d45bb1d39987918d16dc6aa8df063d0a12adb21f"
+    },
+    {
+      "module": "rc6_dynamic_universe.economics",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_dynamic_universe/economics.py",
+      "sha256": "f949214240d3607897a017c0bf994d8a07ae29a1a7269efae326c9ca6b8df07f"
+    },
+    {
+      "module": "rc6_dynamic_universe.live",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_dynamic_universe/live.py",
+      "sha256": "0b6f3ceb51fd565f4343e03c06b5a1c73443d09ed6c3444db185ac9c59dd1f94"
+    },
+    {
+      "module": "rc6_dynamic_universe.orchestrator",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_dynamic_universe/orchestrator.py",
+      "sha256": "3fb552c3768a43c673c2d3f0d4194048a8d79b8ffe147639e1ca34d3906ae3f1"
+    },
+    {
+      "module": "rc6_dynamic_universe.promotion",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_dynamic_universe/promotion.py",
+      "sha256": "e79152faa786bdf90eb7700aa4543aec280ecc6fa01b2b882ee05b7f83ab4ae4"
+    },
+    {
+      "module": "rc6_dynamic_universe.routing",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_dynamic_universe/routing.py",
+      "sha256": "cbc83dbcaaee20b207fd76cf8fa0cb0ec354515eba05d6a761efb9a906965487"
+    },
+    {
+      "module": "rc6_dynamic_universe.runtime",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_dynamic_universe/runtime.py",
+      "sha256": "2083df31f6c03848f4bfa70abb90e6dbdd04b44e4b0a84779b119b305e25b07f"
+    },
+    {
+      "module": "rc6_dynamic_universe.sources",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_dynamic_universe/sources.py",
+      "sha256": "9f472b9b96f333c9db4d84daf6f2922298c16a52c5c53b6e814b297029f35cd6"
+    },
+    {
+      "module": "rc6_dynamic_universe.tradeability",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_dynamic_universe/tradeability.py",
+      "sha256": "56dac75865748ca2051183a7333977cca1faf446f98aa9be0db2b41a3968a776"
+    },
+    {
+      "module": "rc6_multisource_discovery",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_multisource_discovery.py",
+      "sha256": "562ad536751316068e03ade030d529fd0692a9f6b33971dc8f4598c39bb0aa68"
+    },
+    {
+      "module": "rc6_paper_family_lifecycle",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_paper_family_lifecycle.py",
+      "sha256": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44"
+    },
+    {
+      "module": "rc6_performance",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_performance/__init__.py",
+      "sha256": "f14e98aad51984f3ac156a60d200e0eb2ac728367e48b1ec58e9ccbbfed2dcd0"
+    },
+    {
+      "module": "rc6_performance.common",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_performance/common.py",
+      "sha256": "d0f2a1f69e441ae260511e57f147d8edd6b797217afcd04cff2bfb281934cc3e"
+    },
+    {
+      "module": "rc6_performance.costs",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_performance/costs.py",
+      "sha256": "79430166f8ceb410b2771d91f67ac71f6965a4d31f9f3943a2981b5a7844dec7"
+    },
+    {
+      "module": "rc6_performance.lineage",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_performance/lineage.py",
+      "sha256": "065328c196ada5792af428a1f5f6b40e890154292b350d92e7df2c0879c8e1f8"
+    },
+    {
+      "module": "rc6_performance.metrics",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_performance/metrics.py",
+      "sha256": "972a081084b5aa244b93feed741f81611bff2e9c636c0ee49180b859df1ada03"
+    },
+    {
+      "module": "rc6_performance.replay",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_performance/replay.py",
+      "sha256": "bd853aa7b07c5245c51ae704c20f1661245d45c0df19c71aac628f5018eb58ec"
+    },
+    {
+      "module": "rc6_performance.shadow",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_performance/shadow.py",
+      "sha256": "e7d4038bf3b3e8b88d0f182b684db80d65e05c264d8370fe6b72b22d294afa90"
+    },
+    {
+      "module": "rc6_ppi_future_contract_policy",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_ppi_future_contract_policy.py",
+      "sha256": "f8783dd04ada1ce486d5cae1ae921c0bc6eb4dd52ebcebaa90133acb1ad0c6db"
+    },
+    {
+      "module": "rc6_shadow_runtime",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/__init__.py",
+      "sha256": "38de867a361db0f93625c3beb8d4a6f31e772e66db5af076a7fcc87a62cf3051"
+    },
+    {
+      "module": "rc6_shadow_runtime.archive_namespace",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/archive_namespace.py",
+      "sha256": "38dfc2b991135a098acf5c56fbe35ec9b93634f1f5056c3b1ca1d9b3eae62595"
+    },
+    {
+      "module": "rc6_shadow_runtime.entry_signals",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/entry_signals.py",
+      "sha256": "a0849451d153a541f42a69219900b9349da4e7f3efeaa3717cbae0fb620443bc"
+    },
+    {
+      "module": "rc6_shadow_runtime.families",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/families.py",
+      "sha256": "b4e5f90225a322923fd9cd4052db23268f59fe2efac26d2057f4ed4b2fb77b82"
+    },
+    {
+      "module": "rc6_shadow_runtime.funnel",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/funnel.py",
+      "sha256": "de5b922bc1c98b38cf50dcdcaf4698f381435eff947426e7224d996002aa534b"
+    },
+    {
+      "module": "rc6_shadow_runtime.lab",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/lab.py",
+      "sha256": "a410b49d4b025d4128cf461ec0a99b785cf50d69c3665f1ca2c9dadf9f57776d"
+    },
+    {
+      "module": "rc6_shadow_runtime.packed_storage",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/packed_storage.py",
+      "sha256": "096347674c3bcf15a7aaada41be1c852b29af4ce99b42e01d47b8ee50f470e8a"
+    },
+    {
+      "module": "rc6_shadow_runtime.persistence",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/persistence.py",
+      "sha256": "685f0f61cd6e32de124533f1998f31ab0f9e7793e0a68a819ac76d7e8fba0510"
+    },
+    {
+      "module": "rc6_shadow_runtime.preopen",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/preopen.py",
+      "sha256": "cc53d69a2caab28c1b12124da3787903ad58a4786ee453b18360a16d31ad4c96"
+    },
+    {
+      "module": "rc6_shadow_runtime.projection",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/projection.py",
+      "sha256": "a34fe0b34330a0243fce8aef97a58c3247ed339032f0d605a9cc8a562b2e1b07"
+    },
+    {
+      "module": "rc6_shadow_runtime.retention",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/retention.py",
+      "sha256": "e2e152f63da55cbcc2873e2239b332afd85edc384f79b38bcdab963280fd15cc"
+    },
+    {
+      "module": "rc6_shadow_runtime.serialization",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/serialization.py",
+      "sha256": "d5808446a1c4b964d10a4a5be6e52ab5ef8a69dc12171259df97b187b0e4fc99"
+    },
+    {
+      "module": "rc6_shadow_runtime.source_authority",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/source_authority.py",
+      "sha256": "b9277923784464adf61b9f78cd1f7952bcba97e7e6fe6a4bfcdc4f724eadfe35"
+    },
+    {
+      "module": "rc6_shadow_runtime.source_reads",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/source_reads.py",
+      "sha256": "731c2ab234e3534a0f1bcddf5cd2a8156c9bafbcf458e236c3e781561b14e189"
+    },
+    {
+      "module": "rc6_shadow_runtime.stages",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/stages.py",
+      "sha256": "19cdcbacec6c1345d0e02f7f0d256596d558a758f45f2f174ba5f9b3cf1dee48"
+    },
+    {
+      "module": "rc6_shadow_runtime.worker",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_shadow_runtime/worker.py",
+      "sha256": "1cb017bc1a5c4e80bc4445602170e5467c9f9c174a405c223fbc9f486be279e3"
+    },
+    {
+      "module": "rc6_signal_contracts",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_signal_contracts.py",
+      "sha256": "b53481cd898ea14b2fab2a9c91388e4e86d158a1423f608174b0b8bb80a01230"
+    },
+    {
+      "module": "rc6_source_consolidation",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/rc6_source_consolidation.py",
+      "sha256": "77374e57706ee490d36c3ab8111274b8129a3e1847d6a8d6dba87cfcbcbeb9c4"
+    },
+    {
+      "module": "test_issue465_generations",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/tests/test_issue465_generations.py",
+      "sha256": "72a976d1321daf085747d07429e3364d3505106409779e3012d763fa42353026"
+    },
+    {
+      "module": "test_rc6_funnel_storage_codec",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/tests/test_rc6_funnel_storage_codec.py",
+      "sha256": "154a86fc26a62990bce4d5ebd71c6a792066f43169d75b3fc351ca20ec207eb1"
+    },
+    {
+      "module": "test_rc6_packed_capture_allocations",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/tests/test_rc6_packed_capture_allocations.py",
+      "sha256": "47ed5576e3d0a72583700a2484489a4b93a0a6945556d217a8f4056dc4aba47a"
+    },
+    {
+      "module": "test_rc6_packed_storage",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/tests/test_rc6_packed_storage.py",
+      "sha256": "ed291efe9c1be1c405fd823ca722453677399a3d6eec830532107b542e5c60e4"
+    },
+    {
+      "module": "test_rc6_shadow_runtime_wiring",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/tests/test_rc6_shadow_runtime_wiring.py",
+      "sha256": "5f28f937442743acabe13bb56c1853d6d49fb64e593f7a34933b4335f8af7db7"
+    },
+    {
+      "module": "tests.rc6_dashboard_native_fixture",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/tests/rc6_dashboard_native_fixture.py",
+      "sha256": "440e72c65cd4f2ef971e20c38749ebdf96ebfe54e3ac507271bbd5fc47a3bd5d"
+    },
+    {
+      "module": "tests.test_issue465_generations",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/tests/test_issue465_generations.py",
+      "sha256": "72a976d1321daf085747d07429e3364d3505106409779e3012d763fa42353026"
+    },
+    {
+      "module": "tests.test_rc6_future_programming_complete",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/tests/test_rc6_future_programming_complete.py",
+      "sha256": "61910cc7e02d18d129b591ac36c1a6e81288ae4b6e511caaa5855f24ba1885f6"
+    },
+    {
+      "module": "tests.test_rc6_shadow_operational_funnel",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/tests/test_rc6_shadow_operational_funnel.py",
+      "sha256": "8ae730e5942c56d6508732d33f43ce7823c289510ad1155278a8ce3dcc0f4afb"
+    },
+    {
+      "module": "tests.test_rc6_shadow_runtime_wiring",
+      "path": "/workspace/rc6-packed-capture-0b380438-157-source/tests/test_rc6_shadow_runtime_wiring.py",
+      "sha256": "5f28f937442743acabe13bb56c1853d6d49fb64e593f7a34933b4335f8af7db7"
+    }
+  ],
+  "pytest_arguments": [
+    "tests/test_rc6_packed_capture_allocations.py",
+    "tests/test_rc6_packed_storage.py",
+    "tests/test_rc6_funnel_storage_codec.py",
+    "tests/test_issue465_generations.py",
+    "tests/test_rc6_shadow_runtime_wiring.py",
+    "-q",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "--basetemp=/workspace/rc6-packed-capture-0b380438-157-fixtures",
+    "--junitxml=/tmp/rc6-packed-capture-0b380438-157-raw/native-focal.xml"
+  ],
+  "python": "3.11.16",
+  "returncode": 0,
+  "runner_sha256": "6f8e0dcee98748149a899fb0233c8d2c60c5ceedef748ad915e06a8f29e0905a",
+  "runtime_validated": false,
+  "schema": "rc6.packed-capture-allocation-whole-source-focal.v1",
+  "scope": "OWN_0b380438_NATIVE_FOCAL_NOT_FINAL_ARTIFACT_OR_BIG_ACCEPTANCE",
+  "source_files": 1650,
+  "source_index_sha256": "821bf4654b9437deeb9d942cd8447e461527e0fc32f5024ab72bdcc1354ba16d",
+  "source_sha": "0b3804388d1071959d16a0f382827aaf018b6429",
+  "source_tar_sha256": "507368015340790093c4260959d018fb483b8761bb043f4837729d609ae3d413",
+  "source_tree": "191ff6b66a69fad2234db6c50ff743c91fa45c6f",
+  "sqlite": "3.53.1",
+  "umask": "022",
+  "whole_source_sha_modes_git_blobs_unchanged": true
+}

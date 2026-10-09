@@ -1,0 +1,862 @@
+{
+  "ALIEN": true,
+  "DIAGNOSTIC_ONLY": true,
+  "PPI_Watch": "UNTOUCHED",
+  "Source10_atime_disclosure": [
+    {
+      "changes": [],
+      "variant": "ROW_control"
+    },
+    {
+      "changes": [],
+      "variant": "TUPLE_component"
+    }
+  ],
+  "errors": [],
+  "final_candidate_eligible": false,
+  "full_kernel_postread_barriers": {
+    "ROW_control": true,
+    "TUPLE_component": true
+  },
+  "gate_qualified": false,
+  "lossless_comparison": {
+    "both_metadata_private_identity_contracts_verified": true,
+    "covers": "All returned columns, SQL types, binary float bits, ordered keys/rows, metadata, quotes, cash, errors and truncation; no default=str",
+    "lossless_full_ordered_typed_bytes_equal": true,
+    "mutations_or_canonical_resource_savings_proven": false,
+    "per_variant_sha256": {
+      "ROW_control": "e40b6b68ba00d75f442ce9f33361bd3260be3a4f8d5c43c40fe0d4553c3b97e7",
+      "TUPLE_component": "e40b6b68ba00d75f442ce9f33361bd3260be3a4f8d5c43c40fe0d4553c3b97e7"
+    }
+  },
+  "material_gates_closed": [],
+  "maximum_evidence_bytes": 134217728,
+  "maximum_rss_bytes": 2147483648,
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "native_finalization_control_postread_barriers": {
+    "ROW_control": true,
+    "TUPLE_component": true
+  },
+  "network_scope": "Original process-local DENIED observations and offline IPv6 capability; no binary/kernel-transitive networking attestation",
+  "no_full_BIG_retry_or_Source_edit": true,
+  "observed_raw_evidence_bytes": 35742695,
+  "one_each_no_retries": true,
+  "original_database_sha256": "d0268e7d50c7509c14c5f77e6f5bed7c00b3552aac619b450c8df391528ac2a5",
+  "original_kernel_manager_unchanged": true,
+  "per_variant_observed_closed_results": {
+    "ROW_control": {
+      "raw_sha256": "bf1fdf71153807410c7029feee220533aa94b9aca24dd7d044483376cbfcb46d",
+      "raw_stat11": {
+        "st_atime_ns": 1791322244638482251,
+        "st_blocks": 32,
+        "st_ctime_ns": 1791322244639766274,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1706859,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791322244639766274,
+        "st_nlink": 1,
+        "st_size": 14217,
+        "st_uid": 1000
+      },
+      "summary": {
+        "ALIEN": true,
+        "DIAGNOSTIC_ONLY": true,
+        "Data11_preserved": true,
+        "PPI_Watch": "UNTOUCHED",
+        "Source10_and_rawGit_preserved": true,
+        "canonical_BIG_qualified": false,
+        "capability": {
+          "af_unix_ipc_functional": true,
+          "architecture": "x86_64",
+          "creation_denial_witnesses": [
+            {
+              "errno": 97,
+              "family": 10,
+              "operation": "socket_creation",
+              "socket_created": false
+            }
+          ],
+          "ipv4_creation_grants_operation_authority": false,
+          "kernel_errno": 97,
+          "native_socket_creation_denied_families": [
+            10
+          ],
+          "no_new_privileges": true,
+          "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+          "status": "INSTALLED_AND_KERNEL_WITNESSED",
+          "transitive_kernel_network_attestation": false
+        },
+        "child_cleanup": {
+          "errors": [],
+          "finalization_thread_finished": true,
+          "forced_termination": false,
+          "forced_termination_attempted": false,
+          "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+          "inherited_tracker_preserved": false,
+          "initial": {
+            "forkserver_alive_fd": null,
+            "forkserver_pid": null,
+            "resource_tracker_fd": null,
+            "resource_tracker_pid": null
+          },
+          "joined_children": [],
+          "kernel_echild_before_phase_return": true,
+          "management_bound_seconds": 5,
+          "protocol_steps": [
+            {
+              "completed": true,
+              "stage": "nonnegative_stdlib_finalizers",
+              "wall_seconds": 1.0766001651063561e-05
+            },
+            {
+              "completed": true,
+              "stage": "join_owned_children",
+              "wall_seconds": 4.986999556422234e-06
+            },
+            {
+              "completed": true,
+              "stage": "stop_owned_forkserver",
+              "wall_seconds": 1.972999598365277e-06
+            },
+            {
+              "completed": true,
+              "stage": "remaining_stdlib_finalizers",
+              "wall_seconds": 3.254001057939604e-06
+            },
+            {
+              "completed": true,
+              "stage": "stop_owned_resource_tracker",
+              "wall_seconds": 2.3430002329405397e-06
+            },
+            {
+              "completed": true,
+              "stage": "verify_kernel_echild",
+              "wall_seconds": 2.7500998839968815e-05
+            }
+          ],
+          "signal_guard_installed_and_witnessed": true,
+          "signal_vetoed": false,
+          "status": "GREEN",
+          "stopped_owned_infrastructure": [],
+          "termination_signal_attempts": [],
+          "unexpected_kernel_children": [],
+          "wall_seconds": 0.00044411199996829964
+        },
+        "counts": {
+          "cash": 0,
+          "errors": 0,
+          "metadata": 12000,
+          "quotes": 0,
+          "truncated": 0
+        },
+        "errors": [],
+        "external_entry_module": "__main__",
+        "gate_qualified": false,
+        "inet_observations": {
+          "inet_socket_attempts": [],
+          "inet_socket_constructor_requests": [],
+          "subprocess_executable_counts": {
+            "git": 4
+          }
+        },
+        "inet_operation_audit_witness": true,
+        "isolated_fresh_process_does_not_reproduce_canonical_500MB_heap_context": true,
+        "mode": "PRODUCTION_PAPER / SIMULATION",
+        "native_import_proof_qualified": false,
+        "native_original_read_deadline_seconds": 0.5,
+        "native_result_returned": true,
+        "network_observation_scope": "THIS_PYTHON_PROCESS_ONLY_NO_BINARY_KERNEL_OR_TRANSITIVE_ATTESTATION",
+        "no_GC_policy_callbacks_profile_trace_dummy_heap_extra_SQL_or_cache": true,
+        "normal_source_imports_no_alias_rebinding": true,
+        "observed_instrumented_read_cpu_seconds": 0.11440319100000007,
+        "observed_instrumented_read_wall_seconds": 0.11440449100336991,
+        "observer_body_times_are_lower_bounds_never_subtracted_for_qualification": true,
+        "original_helpers_after": {
+          "families._fresh": {
+            "code_identity": 139794943452592,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 71,
+            "function_identity": 139794933469472,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "families._mapping": {
+            "code_identity": 139794962384336,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 52,
+            "function_identity": 139794944611232,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "families._read": {
+            "code_identity": 94685079061936,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 198,
+            "function_identity": 139794933470272,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "source_reads.source_connection": {
+            "code_identity": 94685079772944,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/source_reads.py",
+            "first_line": 23,
+            "function_identity": 139794933471872,
+            "module": "rc6_shadow_runtime.source_reads"
+          },
+          "sqlite_snapshot.readonly_copy": {
+            "code_identity": 94685078729696,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_audit_evidence/sqlite_snapshot.py",
+            "first_line": 89,
+            "function_identity": 139794933480032,
+            "module": "rc6_audit_evidence.sqlite_snapshot"
+          }
+        },
+        "original_helpers_before": {
+          "families._fresh": {
+            "code_identity": 139794943452592,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 71,
+            "function_identity": 139794933469472,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "families._mapping": {
+            "code_identity": 139794962384336,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 52,
+            "function_identity": 139794944611232,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "families._read": {
+            "code_identity": 94685079061936,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 198,
+            "function_identity": 139794933470272,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "source_reads.source_connection": {
+            "code_identity": 94685079772944,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/source_reads.py",
+            "first_line": 23,
+            "function_identity": 139794933471872,
+            "module": "rc6_shadow_runtime.source_reads"
+          },
+          "sqlite_snapshot.readonly_copy": {
+            "code_identity": 94685078729696,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_audit_evidence/sqlite_snapshot.py",
+            "first_line": 89,
+            "function_identity": 139794933480032,
+            "module": "rc6_audit_evidence.sqlite_snapshot"
+          }
+        },
+        "original_source_database_never_opened_by_SQLite": true,
+        "parent_pid": 38424,
+        "pid": 38431,
+        "post_read_native_process_peak_rss_bytes": 119959552,
+        "private_identity_facts": {
+          "metadata_rows_are_exact_distinct_dicts": true,
+          "metadata_values_are_exact_distinct_private_dicts": true
+        },
+        "read_finished_monotonic": 32412.307756147,
+        "read_started_monotonic": 32412.193351656,
+        "real_orders_sent": 0,
+        "source_atime_changes_disclosed": [],
+        "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+        "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+        "sparse_phase_events": [
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.193359467,
+            "process_cpu": 2.019692689,
+            "recording_body_cpu_lower_bound": 2.4729999998918117e-06,
+            "recording_body_wall_lower_bound": 1.6429985407739878e-06,
+            "stage": "deadline_created"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.232683388,
+            "process_cpu": 2.059017876,
+            "recording_body_cpu_lower_bound": 3.7260000000927107e-06,
+            "recording_body_wall_lower_bound": 3.4850017982535064e-06,
+            "stage": "private_snapshot_acquired"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.233450053,
+            "process_cpu": 2.059784534,
+            "recording_body_cpu_lower_bound": 2.924999999986966e-06,
+            "recording_body_wall_lower_bound": 3.2749994716141373e-06,
+            "stage": "select_enter",
+            "table": "financial_instrument_catalog"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.240844389,
+            "process_cpu": 2.06717916,
+            "recording_body_cpu_lower_bound": 4.446000000157824e-06,
+            "recording_body_wall_lower_bound": 4.205998266115785e-06,
+            "stage": "select_execute_return",
+            "table": "financial_instrument_catalog"
+          },
+          {
+            "count": 12000,
+            "deadline": 32412.693358345,
+            "first_native_row_type": "Row",
+            "monotonic": 32412.276074279,
+            "per_cursor_row_factory": "Row",
+            "process_cpu": 2.10240988,
+            "recording_body_cpu_lower_bound": 6.899999999809836e-06,
+            "recording_body_wall_lower_bound": 6.8499975895974785e-06,
+            "stage": "rows_materialized",
+            "table": "financial_instrument_catalog"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.29193691,
+            "process_cpu": 2.118272524,
+            "recording_body_cpu_lower_bound": 6.029000000129514e-06,
+            "recording_body_wall_lower_bound": 5.018002411816269e-06,
+            "stage": "rows_transformed",
+            "table": "financial_instrument_catalog"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.292043809,
+            "process_cpu": 2.11837744,
+            "recording_body_cpu_lower_bound": 1.5019999999310585e-06,
+            "recording_body_wall_lower_bound": 9.110008249990642e-07,
+            "stage": "select_enter",
+            "table": "market_snapshots"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.292178738,
+            "process_cpu": 2.11851237,
+            "recording_body_cpu_lower_bound": 2.0229999999621384e-06,
+            "recording_body_wall_lower_bound": 8.72001692187041e-07,
+            "stage": "select_execute_return",
+            "table": "market_snapshots"
+          },
+          {
+            "count": 0,
+            "deadline": 32412.693358345,
+            "first_native_row_type": null,
+            "monotonic": 32412.292860968,
+            "per_cursor_row_factory": "Row",
+            "process_cpu": 2.119195534,
+            "recording_body_cpu_lower_bound": 2.534000000053993e-06,
+            "recording_body_wall_lower_bound": 3.2850002753548324e-06,
+            "stage": "rows_materialized",
+            "table": "market_snapshots"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.292867478,
+            "process_cpu": 2.119201032,
+            "recording_body_cpu_lower_bound": 9.00999999942087e-07,
+            "recording_body_wall_lower_bound": 5.410001904238015e-07,
+            "stage": "rows_transformed",
+            "table": "market_snapshots"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.292899095,
+            "process_cpu": 2.119232659,
+            "recording_body_cpu_lower_bound": 7.909999997224304e-07,
+            "recording_body_wall_lower_bound": 5.010006134398282e-07,
+            "stage": "select_enter",
+            "table": "ppi_intraday_points"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.303226412,
+            "process_cpu": 2.129561409,
+            "recording_body_cpu_lower_bound": 5.679000000036183e-06,
+            "recording_body_wall_lower_bound": 4.135999915888533e-06,
+            "stage": "select_execute_return",
+            "table": "ppi_intraday_points"
+          },
+          {
+            "count": 0,
+            "deadline": 32412.693358345,
+            "first_native_row_type": null,
+            "monotonic": 32412.303242436,
+            "per_cursor_row_factory": "Row",
+            "process_cpu": 2.129576021,
+            "recording_body_cpu_lower_bound": 1.2719999999966092e-06,
+            "recording_body_wall_lower_bound": 9.81002813205123e-07,
+            "stage": "rows_materialized",
+            "table": "ppi_intraday_points"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.303246712,
+            "process_cpu": 2.129580287,
+            "recording_body_cpu_lower_bound": 1.5019999999310585e-06,
+            "recording_body_wall_lower_bound": 4.90999809699133e-07,
+            "stage": "rows_transformed",
+            "table": "ppi_intraday_points"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.303291158,
+            "process_cpu": 2.129624763,
+            "recording_body_cpu_lower_bound": 8.209999999841955e-07,
+            "recording_body_wall_lower_bound": 5.209985829424113e-07,
+            "stage": "select_enter",
+            "table": "paper_equity_by_currency"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.303368873,
+            "process_cpu": 2.129702629,
+            "recording_body_cpu_lower_bound": 1.0409999999794195e-06,
+            "recording_body_wall_lower_bound": 6.810005288571119e-07,
+            "stage": "select_execute_return",
+            "table": "paper_equity_by_currency"
+          },
+          {
+            "count": 0,
+            "deadline": 32412.693358345,
+            "first_native_row_type": null,
+            "monotonic": 32412.303371557,
+            "per_cursor_row_factory": "Row",
+            "process_cpu": 2.129705273,
+            "recording_body_cpu_lower_bound": 1.0710000002411846e-06,
+            "recording_body_wall_lower_bound": 1.1619995348155499e-06,
+            "stage": "rows_materialized",
+            "table": "paper_equity_by_currency"
+          },
+          {
+            "deadline": 32412.693358345,
+            "monotonic": 32412.30337365,
+            "process_cpu": 2.129707196,
+            "recording_body_cpu_lower_bound": 7.910000001665196e-07,
+            "recording_body_wall_lower_bound": 3.710010787472129e-07,
+            "stage": "rows_transformed",
+            "table": "paper_equity_by_currency"
+          }
+        ],
+        "sqlite_open_observations": [
+          {
+            "original_source_sqlite_opened": false,
+            "path": "/workspace/rc6gov-oyjdy4oy/rc6-sqlite-copy-xf2te6os/snapshot.sqlite",
+            "private_scratch_only": true,
+            "uri_query": "mode=ro"
+          }
+        ],
+        "status": "DIAGNOSTIC_RED",
+        "typed_native_result_bytes": 8592168,
+        "typed_native_result_sha256": "e40b6b68ba00d75f442ce9f33361bd3260be3a4f8d5c43c40fe0d4553c3b97e7",
+        "variant": "ROW_control"
+      }
+    },
+    "TUPLE_component": {
+      "raw_sha256": "cd5b0cdbc7155a56cd313d341f028e61dbb0efedbf77bfbbc95e1ddeb84476c5",
+      "raw_stat11": {
+        "st_atime_ns": 1791322249190476472,
+        "st_blocks": 32,
+        "st_ctime_ns": 1791322249195364596,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1706883,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791322249195364596,
+        "st_nlink": 1,
+        "st_size": 14237,
+        "st_uid": 1000
+      },
+      "summary": {
+        "ALIEN": true,
+        "DIAGNOSTIC_ONLY": true,
+        "Data11_preserved": true,
+        "PPI_Watch": "UNTOUCHED",
+        "Source10_and_rawGit_preserved": true,
+        "canonical_BIG_qualified": false,
+        "capability": {
+          "af_unix_ipc_functional": true,
+          "architecture": "x86_64",
+          "creation_denial_witnesses": [
+            {
+              "errno": 97,
+              "family": 10,
+              "operation": "socket_creation",
+              "socket_created": false
+            }
+          ],
+          "ipv4_creation_grants_operation_authority": false,
+          "kernel_errno": 97,
+          "native_socket_creation_denied_families": [
+            10
+          ],
+          "no_new_privileges": true,
+          "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+          "status": "INSTALLED_AND_KERNEL_WITNESSED",
+          "transitive_kernel_network_attestation": false
+        },
+        "child_cleanup": {
+          "errors": [],
+          "finalization_thread_finished": true,
+          "forced_termination": false,
+          "forced_termination_attempted": false,
+          "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+          "inherited_tracker_preserved": false,
+          "initial": {
+            "forkserver_alive_fd": null,
+            "forkserver_pid": null,
+            "resource_tracker_fd": null,
+            "resource_tracker_pid": null
+          },
+          "joined_children": [],
+          "kernel_echild_before_phase_return": true,
+          "management_bound_seconds": 5,
+          "protocol_steps": [
+            {
+              "completed": true,
+              "stage": "nonnegative_stdlib_finalizers",
+              "wall_seconds": 1.9879000319633633e-05
+            },
+            {
+              "completed": true,
+              "stage": "join_owned_children",
+              "wall_seconds": 6.328999006655067e-06
+            },
+            {
+              "completed": true,
+              "stage": "stop_owned_forkserver",
+              "wall_seconds": 4.417001036927104e-06
+            },
+            {
+              "completed": true,
+              "stage": "remaining_stdlib_finalizers",
+              "wall_seconds": 3.555000148480758e-06
+            },
+            {
+              "completed": true,
+              "stage": "stop_owned_resource_tracker",
+              "wall_seconds": 3.5849989217240363e-06
+            },
+            {
+              "completed": true,
+              "stage": "verify_kernel_echild",
+              "wall_seconds": 3.6804998671868816e-05
+            }
+          ],
+          "signal_guard_installed_and_witnessed": true,
+          "signal_vetoed": false,
+          "status": "GREEN",
+          "stopped_owned_infrastructure": [],
+          "termination_signal_attempts": [],
+          "unexpected_kernel_children": [],
+          "wall_seconds": 0.0006339920000755228
+        },
+        "counts": {
+          "cash": 0,
+          "errors": 0,
+          "metadata": 12000,
+          "quotes": 0,
+          "truncated": 0
+        },
+        "errors": [],
+        "external_entry_module": "__main__",
+        "gate_qualified": false,
+        "inet_observations": {
+          "inet_socket_attempts": [],
+          "inet_socket_constructor_requests": [],
+          "subprocess_executable_counts": {
+            "git": 4
+          }
+        },
+        "inet_operation_audit_witness": true,
+        "isolated_fresh_process_does_not_reproduce_canonical_500MB_heap_context": true,
+        "mode": "PRODUCTION_PAPER / SIMULATION",
+        "native_import_proof_qualified": false,
+        "native_original_read_deadline_seconds": 0.5,
+        "native_result_returned": true,
+        "network_observation_scope": "THIS_PYTHON_PROCESS_ONLY_NO_BINARY_KERNEL_OR_TRANSITIVE_ATTESTATION",
+        "no_GC_policy_callbacks_profile_trace_dummy_heap_extra_SQL_or_cache": true,
+        "normal_source_imports_no_alias_rebinding": true,
+        "observed_instrumented_read_cpu_seconds": 0.10529129699999995,
+        "observed_instrumented_read_wall_seconds": 0.10532725399752962,
+        "observer_body_times_are_lower_bounds_never_subtracted_for_qualification": true,
+        "original_helpers_after": {
+          "families._fresh": {
+            "code_identity": 139623052977584,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 71,
+            "function_identity": 139623043010688,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "families._mapping": {
+            "code_identity": 139623071794640,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 52,
+            "function_identity": 139623054136064,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "families._read": {
+            "code_identity": 94734500434992,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 198,
+            "function_identity": 139623043011488,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "source_reads.source_connection": {
+            "code_identity": 94734501513840,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/source_reads.py",
+            "first_line": 23,
+            "function_identity": 139623043013088,
+            "module": "rc6_shadow_runtime.source_reads"
+          },
+          "sqlite_snapshot.readonly_copy": {
+            "code_identity": 94734507996944,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_audit_evidence/sqlite_snapshot.py",
+            "first_line": 89,
+            "function_identity": 139623043021248,
+            "module": "rc6_audit_evidence.sqlite_snapshot"
+          }
+        },
+        "original_helpers_before": {
+          "families._fresh": {
+            "code_identity": 139623052977584,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 71,
+            "function_identity": 139623043010688,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "families._mapping": {
+            "code_identity": 139623071794640,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 52,
+            "function_identity": 139623054136064,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "families._read": {
+            "code_identity": 94734500434992,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+            "first_line": 198,
+            "function_identity": 139623043011488,
+            "module": "rc6_shadow_runtime.families"
+          },
+          "source_reads.source_connection": {
+            "code_identity": 94734501513840,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/source_reads.py",
+            "first_line": 23,
+            "function_identity": 139623043013088,
+            "module": "rc6_shadow_runtime.source_reads"
+          },
+          "sqlite_snapshot.readonly_copy": {
+            "code_identity": 94734507996944,
+            "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_audit_evidence/sqlite_snapshot.py",
+            "first_line": 89,
+            "function_identity": 139623043021248,
+            "module": "rc6_audit_evidence.sqlite_snapshot"
+          }
+        },
+        "original_source_database_never_opened_by_SQLite": true,
+        "parent_pid": 38424,
+        "pid": 38437,
+        "post_read_native_process_peak_rss_bytes": 128069632,
+        "private_identity_facts": {
+          "metadata_rows_are_exact_distinct_dicts": true,
+          "metadata_values_are_exact_distinct_private_dicts": true
+        },
+        "read_finished_monotonic": 32416.915784797,
+        "read_started_monotonic": 32416.810457543,
+        "real_orders_sent": 0,
+        "source_atime_changes_disclosed": [],
+        "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+        "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+        "sparse_phase_events": [
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.810466015,
+            "process_cpu": 2.034333071,
+            "recording_body_cpu_lower_bound": 2.133000000181795e-06,
+            "recording_body_wall_lower_bound": 1.3919998309575021e-06,
+            "stage": "deadline_created"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.847619381,
+            "process_cpu": 2.071488138,
+            "recording_body_cpu_lower_bound": 3.3250000002205127e-06,
+            "recording_body_wall_lower_bound": 3.8860016502439976e-06,
+            "stage": "private_snapshot_acquired"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.848529712,
+            "process_cpu": 2.072397607,
+            "recording_body_cpu_lower_bound": 3.2649999996969825e-06,
+            "recording_body_wall_lower_bound": 3.0750015866942704e-06,
+            "stage": "select_enter",
+            "table": "financial_instrument_catalog"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.855863077,
+            "process_cpu": 2.079731012,
+            "recording_body_cpu_lower_bound": 3.305000000342062e-06,
+            "recording_body_wall_lower_bound": 3.044002369279042e-06,
+            "stage": "select_execute_return",
+            "table": "financial_instrument_catalog"
+          },
+          {
+            "count": 12000,
+            "deadline": 32417.310464924,
+            "first_native_row_type": "tuple",
+            "monotonic": 32416.875873007,
+            "per_cursor_row_factory": "None",
+            "process_cpu": 2.099730126,
+            "recording_body_cpu_lower_bound": 6.559000000017079e-06,
+            "recording_body_wall_lower_bound": 7.692000508541241e-06,
+            "stage": "rows_materialized",
+            "table": "financial_instrument_catalog"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.90490604,
+            "process_cpu": 2.128742998,
+            "recording_body_cpu_lower_bound": 6.4700000002027025e-06,
+            "recording_body_wall_lower_bound": 7.421000191243365e-06,
+            "stage": "rows_transformed",
+            "table": "financial_instrument_catalog"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.905052828,
+            "process_cpu": 2.128886511,
+            "recording_body_cpu_lower_bound": 1.982999999761148e-06,
+            "recording_body_wall_lower_bound": 1.5220030036289245e-06,
+            "stage": "select_enter",
+            "table": "market_snapshots"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.905199225,
+            "process_cpu": 2.129032658,
+            "recording_body_cpu_lower_bound": 1.9030000002473457e-06,
+            "recording_body_wall_lower_bound": 9.90999978967011e-07,
+            "stage": "select_execute_return",
+            "table": "market_snapshots"
+          },
+          {
+            "count": 0,
+            "deadline": 32417.310464924,
+            "first_native_row_type": null,
+            "monotonic": 32416.905821549,
+            "per_cursor_row_factory": "None",
+            "process_cpu": 2.129655613,
+            "recording_body_cpu_lower_bound": 2.0929999999808047e-06,
+            "recording_body_wall_lower_bound": 2.3229986254591495e-06,
+            "stage": "rows_materialized",
+            "table": "market_snapshots"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.905827547,
+            "process_cpu": 2.12966078,
+            "recording_body_cpu_lower_bound": 1.0619999999406105e-06,
+            "recording_body_wall_lower_bound": 5.609981599263847e-07,
+            "stage": "rows_transformed",
+            "table": "market_snapshots"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.905862319,
+            "process_cpu": 2.129695552,
+            "recording_body_cpu_lower_bound": 7.810000002272943e-07,
+            "recording_body_wall_lower_bound": 4.5100023271515965e-07,
+            "stage": "select_enter",
+            "table": "ppi_intraday_points"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.914841567,
+            "process_cpu": 2.138676141,
+            "recording_body_cpu_lower_bound": 4.51700000025923e-06,
+            "recording_body_wall_lower_bound": 3.956000000471249e-06,
+            "stage": "select_execute_return",
+            "table": "ppi_intraday_points"
+          },
+          {
+            "count": 0,
+            "deadline": 32417.310464924,
+            "first_native_row_type": null,
+            "monotonic": 32416.914853284,
+            "per_cursor_row_factory": "None",
+            "process_cpu": 2.138686577,
+            "recording_body_cpu_lower_bound": 1.2119999999171682e-06,
+            "recording_body_wall_lower_bound": 1.2019991117995232e-06,
+            "stage": "rows_materialized",
+            "table": "ppi_intraday_points"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.914856399,
+            "process_cpu": 2.138689621,
+            "recording_body_cpu_lower_bound": 8.819999997022876e-07,
+            "recording_body_wall_lower_bound": 4.2000101529993117e-07,
+            "stage": "rows_transformed",
+            "table": "ppi_intraday_points"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.914895006,
+            "process_cpu": 2.138728239,
+            "recording_body_cpu_lower_bound": 1.0509999999186448e-06,
+            "recording_body_wall_lower_bound": 4.809990059584379e-07,
+            "stage": "select_enter",
+            "table": "paper_equity_by_currency"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.914959622,
+            "process_cpu": 2.138792915,
+            "recording_body_cpu_lower_bound": 1.0710000002411846e-06,
+            "recording_body_wall_lower_bound": 5.509973561856896e-07,
+            "stage": "select_execute_return",
+            "table": "paper_equity_by_currency"
+          },
+          {
+            "count": 0,
+            "deadline": 32417.310464924,
+            "first_native_row_type": null,
+            "monotonic": 32416.914962045,
+            "per_cursor_row_factory": "None",
+            "process_cpu": 2.138795278,
+            "recording_body_cpu_lower_bound": 1.5019999999310585e-06,
+            "recording_body_wall_lower_bound": 1.4529978216160089e-06,
+            "stage": "rows_materialized",
+            "table": "paper_equity_by_currency"
+          },
+          {
+            "deadline": 32417.310464924,
+            "monotonic": 32416.914964639,
+            "process_cpu": 2.138797832,
+            "recording_body_cpu_lower_bound": 6.80999999946863e-07,
+            "recording_body_wall_lower_bound": 4.1100065573118627e-07,
+            "stage": "rows_transformed",
+            "table": "paper_equity_by_currency"
+          }
+        ],
+        "sqlite_open_observations": [
+          {
+            "original_source_sqlite_opened": false,
+            "path": "/workspace/rc6gov-1wpxjcv0/rc6-sqlite-copy-trp2tmja/snapshot.sqlite",
+            "private_scratch_only": true,
+            "uri_query": "mode=ro"
+          }
+        ],
+        "status": "DIAGNOSTIC_RED",
+        "typed_native_result_bytes": 8592168,
+        "typed_native_result_sha256": "e40b6b68ba00d75f442ce9f33361bd3260be3a4f8d5c43c40fe0d4553c3b97e7",
+        "variant": "TUPLE_component"
+      }
+    }
+  },
+  "performance_scope": "Instrumented fresh isolated components only; no reproduction of prior canonical 500MB heap, no proved canonical saving/cause",
+  "real_orders_sent": 0,
+  "schema": "rc6.row-tuple.exact-isolated-component-diagnostic.v1",
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "status": "DIAGNOSTIC_RED"
+}

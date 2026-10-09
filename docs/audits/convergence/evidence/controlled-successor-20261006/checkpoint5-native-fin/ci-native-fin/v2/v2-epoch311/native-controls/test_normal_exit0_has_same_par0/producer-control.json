@@ -1,0 +1,29 @@
+{
+  "all100_verified_zombie_before_producer_exit": false,
+  "case": "simpleExit",
+  "child_reaps_by_producer": 0,
+  "children": [],
+  "classification": "PROCESS_CONTROL_ONLY_NOT_GOV_BIG_IMAGE_RUNTIME_QUALIFICATION",
+  "live6_does_not_change_cleanup5_or_phase_budget": true,
+  "live_detached_seconds": null,
+  "network_operations": false,
+  "producer": {
+    "pgid": 22946,
+    "pid": 22946,
+    "ppid": 22945,
+    "session": 22946,
+    "state": "R",
+    "uid": [
+      1000,
+      1000,
+      1000,
+      1000
+    ]
+  },
+  "producer_exit_code": 0,
+  "schema": "rc6.real-owned-process-control.v1",
+  "separate_session": false,
+  "source_or_data_reads": false,
+  "termination_signals_sent": [],
+  "waitid_wnowait_witnesses": []
+}

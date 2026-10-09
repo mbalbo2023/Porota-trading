@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="8" skipped="0" tests="12" time="2.298" timestamp="2026-10-05T12:20:13.629979+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_packed_storage" name="test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-False-rc6.lossless-json-storage.v1]" time="0.035" /><testcase classname="tests.test_rc6_packed_storage" name="test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-False-rc6.lossless-json-storage.v2]" time="0.046" /><testcase classname="tests.test_rc6_packed_storage" name="test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-True-rc6.lossless-json-storage.v1]" time="0.036" /><testcase classname="tests.test_rc6_packed_storage" name="test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-True-rc6.lossless-json-storage.v2]" time="0.041" /><testcase classname="tests.test_rc6_packed_storage" name="test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-False-rc6.lossless-json-storage.v1]" time="0.042"><failure message="ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH">tests/test_rc6_packed_storage.py:106: in test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types
+    restored = serialization.decode_storage(encoded, **LIMITS, share_subtrees=share_subtrees)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/serialization.py:373: in decode_storage
+    raise ValueError("SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH")
+E   ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH</failure></testcase><testcase classname="tests.test_rc6_packed_storage" name="test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-False-rc6.lossless-json-storage.v2]" time="0.041"><failure message="ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH">tests/test_rc6_packed_storage.py:106: in test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types
+    restored = serialization.decode_storage(encoded, **LIMITS, share_subtrees=share_subtrees)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/serialization.py:373: in decode_storage
+    raise ValueError("SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH")
+E   ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH</failure></testcase><testcase classname="tests.test_rc6_packed_storage" name="test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-True-rc6.lossless-json-storage.v1]" time="0.024"><failure message="ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH">tests/test_rc6_packed_storage.py:106: in test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types
+    restored = serialization.decode_storage(encoded, **LIMITS, share_subtrees=share_subtrees)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/serialization.py:373: in decode_storage
+    raise ValueError("SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH")
+E   ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH</failure></testcase><testcase classname="tests.test_rc6_packed_storage" name="test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-True-rc6.lossless-json-storage.v2]" time="0.011"><failure message="ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH">tests/test_rc6_packed_storage.py:106: in test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types
+    restored = serialization.decode_storage(encoded, **LIMITS, share_subtrees=share_subtrees)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/serialization.py:373: in decode_storage
+    raise ValueError("SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH")
+E   ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH</failure></testcase><testcase classname="tests.test_rc6_packed_storage" name="test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[False-rc6.lossless-json-storage.v1]" time="0.587"><failure message="ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH">tests/test_rc6_packed_storage.py:130: in test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests
+    restored = read_committed_generation(files.root)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:966: in read_committed_generation
+    value = EvidenceFiles(root, payload_limit=payload_limit).read_generation(roles=roles)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:498: in read_generation
+    value, proof = self._payload(name, member, details=True)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:310: in _payload
+    payload = decode_storage(envelope.get("payload"), durable_limit=self.payload_limit,
+rc6_shadow_runtime/serialization.py:373: in decode_storage
+    raise ValueError("SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH")
+E   ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH</failure></testcase><testcase classname="tests.test_rc6_packed_storage" name="test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[False-rc6.lossless-json-storage.v2]" time="0.041"><failure message="ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH">tests/test_rc6_packed_storage.py:130: in test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests
+    restored = read_committed_generation(files.root)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:966: in read_committed_generation
+    value = EvidenceFiles(root, payload_limit=payload_limit).read_generation(roles=roles)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:498: in read_generation
+    value, proof = self._payload(name, member, details=True)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:310: in _payload
+    payload = decode_storage(envelope.get("payload"), durable_limit=self.payload_limit,
+rc6_shadow_runtime/serialization.py:373: in decode_storage
+    raise ValueError("SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH")
+E   ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH</failure></testcase><testcase classname="tests.test_rc6_packed_storage" name="test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[True-rc6.lossless-json-storage.v1]" time="0.052"><failure message="ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH">tests/test_rc6_packed_storage.py:130: in test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests
+    restored = read_committed_generation(files.root)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:966: in read_committed_generation
+    value = EvidenceFiles(root, payload_limit=payload_limit).read_generation(roles=roles)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:498: in read_generation
+    value, proof = self._payload(name, member, details=True)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:310: in _payload
+    payload = decode_storage(envelope.get("payload"), durable_limit=self.payload_limit,
+rc6_shadow_runtime/serialization.py:373: in decode_storage
+    raise ValueError("SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH")
+E   ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH</failure></testcase><testcase classname="tests.test_rc6_packed_storage" name="test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[True-rc6.lossless-json-storage.v2]" time="0.038"><failure message="ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH">tests/test_rc6_packed_storage.py:130: in test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests
+    restored = read_committed_generation(files.root)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:966: in read_committed_generation
+    value = EvidenceFiles(root, payload_limit=payload_limit).read_generation(roles=roles)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:498: in read_generation
+    value, proof = self._payload(name, member, details=True)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/persistence.py:310: in _payload
+    payload = decode_storage(envelope.get("payload"), durable_limit=self.payload_limit,
+rc6_shadow_runtime/serialization.py:373: in decode_storage
+    raise ValueError("SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH")
+E   ValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH</failure></testcase></testsuite></testsuites>

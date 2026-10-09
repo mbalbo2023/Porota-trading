@@ -1,0 +1,28 @@
+{
+  "command311": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-B",
+    "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/control/run_focals.py",
+    "311"
+  ],
+  "command312": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python",
+    "-B",
+    "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/control/run_focals.py",
+    "312"
+  ],
+  "frozen_paths": {
+    ".github/workflows/porota-predeploy-v2.yml": "45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125",
+    "scripts/porota_predeploy_cleanup.py": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f",
+    "scripts/porota_predeploy_test_workspace.py": "86678b88af863b3e45e6eac686b73514dee4f107ed1d9d9c9d92eba8868edf56",
+    "tests/test_ci_productive_predeploy_contract.py": "18e0840717256861c2f9a187aac88a96e36252339a6b854da2a29bb328c3c1f2",
+    "tests/test_rc6_predeploy_scoped_cleanup.py": "b4cf138a76c247fef54bfd00d936a00973d169d10aeebcb91e9cc74ed1d497e2"
+  },
+  "parent_approved_durable_receipt": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6021005723",
+  "real_orders_sent": 0,
+  "root": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr",
+  "script": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/control/run_focals.py",
+  "script_sha256": "af45ea349bc43a468dfed87d321911df0be82a8942ee1c4c969f070a2e159ceb",
+  "source_qualification": "UNCOMMITTED_DIAGNOSTIC_ONLY",
+  "utc": "2026-10-06T16:45:11.059624+00:00"
+}

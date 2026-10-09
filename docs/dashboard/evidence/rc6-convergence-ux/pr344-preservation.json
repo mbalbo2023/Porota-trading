@@ -1,0 +1,89 @@
+{
+  "count": 12,
+  "files": [
+    {
+      "baseline_sha256": "d05d5cf1321c239274e81610e2357aec8c7325f71d97f197abd1de0fc2e5efff",
+      "current_sha256": "167790e4fe3f1b07c7c064930860654232c0b1998f86eba5aa9fcea3c73339fc",
+      "exception_commit": "770fcf30",
+      "owner": "ROOT_CORE",
+      "path": "tests/test_candle_archive_v17.py",
+      "reason": "HISTORY_MARKET_IDENTITY_MISSING \u2192 HISTORY_FULL_IDENTITY_MISSING; native assertions retained",
+      "unchanged": false
+    },
+    {
+      "baseline_sha256": "334f71567f2b29fa73c051d0b6a4c05fbbba6123b7bc4773940dab177d36f8f9",
+      "current_sha256": "334f71567f2b29fa73c051d0b6a4c05fbbba6123b7bc4773940dab177d36f8f9",
+      "path": "tests/test_dashboard_daily_responsive_hf6.py",
+      "unchanged": true
+    },
+    {
+      "baseline_sha256": "e233dd94dcf15c0a29cec787ef4ed8dad69b30991db11e51f0930f564315e5dc",
+      "current_sha256": "e233dd94dcf15c0a29cec787ef4ed8dad69b30991db11e51f0930f564315e5dc",
+      "path": "tests/test_dashboard_decision_evidence_rc6.py",
+      "unchanged": true
+    },
+    {
+      "baseline_sha256": "dba3c38526a164086c4dc2a5997e613426b903e6a94a4989997b90ae2400cfa2",
+      "current_sha256": "dba3c38526a164086c4dc2a5997e613426b903e6a94a4989997b90ae2400cfa2",
+      "path": "tests/test_dashboard_live_policy_hf2.py",
+      "unchanged": true
+    },
+    {
+      "baseline_sha256": "b5cb521653b5f4a9be5b5ce420a5d22022d4854b2bfbab5c9a8d441caba4487a",
+      "current_sha256": "b5cb521653b5f4a9be5b5ce420a5d22022d4854b2bfbab5c9a8d441caba4487a",
+      "path": "tests/test_dashboard_paper_v1634.py",
+      "unchanged": true
+    },
+    {
+      "baseline_sha256": "1c92dac9264187534be936d1b5a987bdfdc88d3ae4daaed453e662dd03f5f66f",
+      "current_sha256": "1c92dac9264187534be936d1b5a987bdfdc88d3ae4daaed453e662dd03f5f66f",
+      "path": "tests/test_dashboard_session.py",
+      "unchanged": true
+    },
+    {
+      "baseline_sha256": "0b3daf92452c3b59d04465c3c9713af140b058833c801dc144be9723a0ff7ff6",
+      "current_sha256": "0b3daf92452c3b59d04465c3c9713af140b058833c801dc144be9723a0ff7ff6",
+      "path": "tests/test_dashboard_v17_rc3.py",
+      "unchanged": true
+    },
+    {
+      "baseline_sha256": "ea525479a4c9f06992bbe64c458456c40d8ba9bbbc2c1e0a327923e6071c9e83",
+      "current_sha256": "ea525479a4c9f06992bbe64c458456c40d8ba9bbbc2c1e0a327923e6071c9e83",
+      "path": "tests/test_history_freshness_metrics_rc5.py",
+      "unchanged": true
+    },
+    {
+      "baseline_sha256": "c2ee8cff11aac83f853a0b60538839d320c2c02b15aaa55321dcc25cdcac72c9",
+      "current_sha256": "c2ee8cff11aac83f853a0b60538839d320c2c02b15aaa55321dcc25cdcac72c9",
+      "path": "tests/test_hotfix_rc3_hf6.py",
+      "unchanged": true
+    },
+    {
+      "baseline_sha256": "b4f838aea2a5df1b682842dd410420b2138b55282344aa503a54e518a5f09997",
+      "current_sha256": "ceb7ac44e9da2a3f14dfb6d9df9fc6d5e91097b732ffb9e76973d569225036c4",
+      "exception_commit": "7de2d68b",
+      "owner": "HISTORY",
+      "path": "tests/test_rc4_acceptance.py",
+      "reason": "Synthetic Candle metadata declares ARS; deduplication assertions retained",
+      "unchanged": false
+    },
+    {
+      "baseline_sha256": "f2b667bf81fcc0aba8f0e5e1212739022fe61becc9f3259f2d7e33f58aca5a75",
+      "current_sha256": "f2b667bf81fcc0aba8f0e5e1212739022fe61becc9f3259f2d7e33f58aca5a75",
+      "path": "tests/test_rc4_hf2_consolidation.py",
+      "unchanged": true
+    },
+    {
+      "baseline_sha256": "6f970cecab5925eafe385fd578273c8da2ffeeb17a9155df2ed670e88c5632c6",
+      "current_sha256": "6f970cecab5925eafe385fd578273c8da2ffeeb17a9155df2ed670e88c5632c6",
+      "path": "tests/test_rc6_table_headers_visible_sticky.py",
+      "unchanged": true
+    }
+  ],
+  "literal_unchanged_count": 10,
+  "protected_pr": 344,
+  "schema": "rc6.ux-protected-tests.v2",
+  "seed_sha": "0f810c168b0bfb5362148b804f3e15ffd1855610",
+  "status": "PRESERVED_WITH_EXPLICIT_PRODUCER_EXCEPTIONS",
+  "ux_changed_protected_files": []
+}

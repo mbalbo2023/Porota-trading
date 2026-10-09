@@ -1,0 +1,137 @@
+.................................F.F.................................... [ 81%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+_____ test_economics_model_consumes_only_new_completed_prospective_labels ______
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-319/test_economics_model_consumes_0')
+
+    def test_economics_model_consumes_only_new_completed_prospective_labels(tmp_path):
+        """Thirty fresh synthetic sessions exercise the runtime's OOS model path.
+    
+        No history import/model bundle is supplied to the worker. The only source
+        of its model is labels that this same API collected after preregistration.
+        """
+        path = source(tmp_path)
+        _, checkpoint = tick(path, clock(0))
+        for day in range(31):
+            base = START+timedelta(days=day)
+            for seconds, price in ((30, "99"), (90, "100"), (150, "99.5"), (210, "100.5"), (270, "99.8"), (330, "100.1")):
+                at = (base+timedelta(seconds=seconds)).isoformat()
+                add_quote(path, quote(at, price))
+                _, checkpoint = tick(path, at, checkpoint)
+            opened = (base+timedelta(seconds=390)).isoformat()
+            add_entry(path, paper_id=f"PAPER-{day}", opened=opened)
+            registration = (base+timedelta(seconds=391)).isoformat()
+            report, checkpoint = tick(path, registration, checkpoint)
+            current = next(entry for entry in report["entries"] if entry["entry"]["paper_id"] == f"PAPER-{day}")
+            if day < 30:
+                assert current["economics_shadow"]["status"] == "NO_VERIFICADO"
+            else:
+                economics = current["economics_shadow"]
+                assert economics["status"] == "EVALUATED"
+                assert economics["model_observations"] == 30
+                assert datetime.fromisoformat(economics["training_cutoff"]) < datetime.fromisoformat(current["entry"]["decision_at"])
+                assert economics["expected_gross_move"] == "0.06"
+                assert not economics["economic_edge_validated"]
+                assert current["entry"]["score"] == ".7"
+                assert economics["decision_effect"] == "NONE"
+                assert economics["real_order_routes"] == []
+                break
+            target = (base+timedelta(seconds=390+900)).isoformat()
+            add_quote(path, quote(target, "106"))
+>           report, checkpoint = tick(path, target, checkpoint)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_shadow_lab_runtime.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_rc6_shadow_lab_runtime.py:93: in tick
+    return evaluate_runtime_lab(path, as_of=at, previous=previous, runtime_config=CONFIG, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/lab.py:665: in evaluate_runtime_lab
+    source_key, tails, rows, existing, truncated = _read(database, at, prior, row_limit)
+                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/lab.py:109: in _read
+    with source_connection(path, deadline=deadline) as (connection, source_info):
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+rc6_shadow_runtime/source_reads.py:28: in source_connection
+    with readonly_copy(path, deadline=deadline, validate=False) as connection:
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+rc6_audit_evidence/sqlite_snapshot.py:138: in readonly_copy
+    if _read(Path(str(path) + suffix), info, deadline=deadline) != digests[suffix]:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+member = PosixPath('/tmp/pytest-of-agent/pytest-319/test_economics_model_consumes_0/paper.sqlite')
+expected = (33, 2902249, 33188, 1, 28672, 1791205822388363008, ...)
+deadline = 45222.296871349, destination = None, scratch_guard = None
+
+    def _read(member, expected, *, deadline, destination=None, scratch_guard=None):
+        # Preserve source atime too. If the caller cannot obtain O_NOATIME, a
+        # source-owner capture is required; silently degrading would change it.
+        if not hasattr(os,'O_NOFOLLOW') or not hasattr(os,'O_NOATIME'):
+            raise SnapshotError('SOURCE_OWNER_CAPTURE_REQUIRED')
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
+        digest = hashlib.sha256()
+        try:
+            descriptor = os.open(member, flags)
+            with os.fdopen(descriptor, "rb") as stream:
+                if _metadata(os.fstat(stream.fileno())) != expected:
+>                   raise SnapshotError("SOURCE_SNAPSHOT_BUSY")
+E                   rc6_audit_evidence.sqlite_scratch.SnapshotError: SOURCE_SNAPSHOT_BUSY
+
+rc6_audit_evidence/sqlite_snapshot.py:61: SnapshotError
+_ test_hold_candidate_feature_does_not_override_native_action_and_nullable_buy_preserved _
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-319/test_hold_candidate_feature_do0')
+
+    def test_hold_candidate_feature_does_not_override_native_action_and_nullable_buy_preserved(tmp_path):
+>       store, cp = boot(tmp_path)
+                    ^^^^^^^^^^^^^^
+
+tests/test_rc6_shadow_entry_signals.py:108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_rc6_shadow_entry_signals.py:72: in boot
+    first, checkpoint = entry.evaluate_runtime_entry_signals(store.path, as_of=FREEZE,
+rc6_shadow_runtime/entry_signals.py:553: in evaluate_runtime_entry_signals
+    source = _read_rows(database, as_of=at, tables=("decision_evidence_snapshots", "market_snapshots"),
+rc6_shadow_runtime/entry_signals.py:128: in _read_rows
+    with source_connection(path, deadline=deadline) as (c, source_info):
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+rc6_shadow_runtime/source_reads.py:28: in source_connection
+    with readonly_copy(path, deadline=deadline, validate=False) as connection:
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+rc6_audit_evidence/sqlite_snapshot.py:138: in readonly_copy
+    if _read(Path(str(path) + suffix), info, deadline=deadline) != digests[suffix]:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+member = PosixPath('/tmp/pytest-of-agent/pytest-319/test_hold_candidate_feature_do0/source.db')
+expected = (33, 2902342, 33188, 1, 4096, 1791205822585497365, ...)
+deadline = 45222.445926019, destination = None, scratch_guard = None
+
+    def _read(member, expected, *, deadline, destination=None, scratch_guard=None):
+        # Preserve source atime too. If the caller cannot obtain O_NOATIME, a
+        # source-owner capture is required; silently degrading would change it.
+        if not hasattr(os,'O_NOFOLLOW') or not hasattr(os,'O_NOATIME'):
+            raise SnapshotError('SOURCE_OWNER_CAPTURE_REQUIRED')
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
+        digest = hashlib.sha256()
+        try:
+            descriptor = os.open(member, flags)
+            with os.fdopen(descriptor, "rb") as stream:
+                if _metadata(os.fstat(stream.fileno())) != expected:
+>                   raise SnapshotError("SOURCE_SNAPSHOT_BUSY")
+E                   rc6_audit_evidence.sqlite_scratch.SnapshotError: SOURCE_SNAPSHOT_BUSY
+
+rc6_audit_evidence/sqlite_snapshot.py:61: SnapshotError
+=========================== short test summary info ============================
+FAILED tests/test_rc6_shadow_lab_runtime.py::test_economics_model_consumes_only_new_completed_prospective_labels
+FAILED tests/test_rc6_shadow_entry_signals.py::test_hold_candidate_feature_does_not_override_native_action_and_nullable_buy_preserved

@@ -1,0 +1,599 @@
+{
+  "details": {
+    "canonical_viewport_checks_completed": 55,
+    "findings": [
+      {
+        "elapsed_seconds": 1.0145641839990276,
+        "filters": {},
+        "gate": "RENDER_EXCEEDS_REQUEST_BUDGET",
+        "html_bytes": 18515,
+        "path": "/en-vivo/capacidad",
+        "process_cpu_seconds": 1.7375682979999993,
+        "queries": 1,
+        "server_timing": "projection;dur=1014.37",
+        "width": 1280
+      },
+      {
+        "gate": "RENDER_DISCARDED_VERIFIED_CUT",
+        "path": "/en-vivo/capacidad"
+      }
+    ],
+    "renders_measured": [
+      {
+        "elapsed_seconds": 0.7044202219985891,
+        "filters": {},
+        "html_bytes": 23128,
+        "path": "/",
+        "process_cpu_seconds": 1.317889547,
+        "queries": 39,
+        "server_timing": "projection;dur=704.08",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.9691351849978673,
+        "filters": {},
+        "html_bytes": 26822,
+        "path": "/en-vivo",
+        "process_cpu_seconds": 1.468932735,
+        "queries": 40,
+        "server_timing": "projection;dur=968.77",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6199784739983443,
+        "filters": {},
+        "html_bytes": 93087,
+        "path": "/en-vivo/oportunidades",
+        "process_cpu_seconds": 1.1512765399999996,
+        "queries": 2,
+        "server_timing": "projection;dur=619.57",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6394397900003241,
+        "filters": {},
+        "html_bytes": 19576,
+        "path": "/en-vivo/decisiones",
+        "process_cpu_seconds": 1.1880967919999987,
+        "queries": 5,
+        "server_timing": "projection;dur=639.18",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6015268810006091,
+        "filters": {},
+        "html_bytes": 63804,
+        "path": "/en-vivo/posiciones",
+        "process_cpu_seconds": 1.1521301719999997,
+        "queries": 23,
+        "server_timing": "projection;dur=601.25",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5623354769995785,
+        "filters": {},
+        "html_bytes": 20457,
+        "path": "/en-vivo/cierres",
+        "process_cpu_seconds": 1.0750294999999994,
+        "queries": 6,
+        "server_timing": "projection;dur=562.04",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6052128549999907,
+        "filters": {},
+        "html_bytes": 38402,
+        "path": "/en-vivo/capacidad",
+        "process_cpu_seconds": 1.0986494359999988,
+        "queries": 2,
+        "server_timing": "projection;dur=604.81",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6620416699988709,
+        "filters": {},
+        "html_bytes": 47822,
+        "path": "/en-vivo/workers",
+        "process_cpu_seconds": 1.2636948970000006,
+        "queries": 11,
+        "server_timing": "projection;dur=661.80",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6522448169998825,
+        "filters": {},
+        "html_bytes": 29485,
+        "path": "/en-vivo/fuentes",
+        "process_cpu_seconds": 1.2374679299999993,
+        "queries": 5,
+        "server_timing": "projection;dur=651.99",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5813479969983746,
+        "filters": {},
+        "html_bytes": 46780,
+        "path": "/trading",
+        "process_cpu_seconds": 1.1253017070000002,
+        "queries": 2,
+        "server_timing": "projection;dur=580.99",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6186949460025062,
+        "filters": {},
+        "html_bytes": 61855,
+        "path": "/trading/equity-spot",
+        "process_cpu_seconds": 1.1730944869999984,
+        "queries": 6,
+        "server_timing": "projection;dur=618.41",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6363840759986488,
+        "filters": {},
+        "html_bytes": 57992,
+        "path": "/trading/scalping",
+        "process_cpu_seconds": 1.2285877989999996,
+        "queries": 6,
+        "server_timing": "projection;dur=635.65",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5764854219996778,
+        "filters": {},
+        "html_bytes": 20566,
+        "path": "/trading/renta-fija",
+        "process_cpu_seconds": 1.120181328000001,
+        "queries": 6,
+        "server_timing": "projection;dur=575.96",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5912711809978646,
+        "filters": {},
+        "html_bytes": 20583,
+        "path": "/trading/derivados",
+        "process_cpu_seconds": 1.0950607259999998,
+        "queries": 6,
+        "server_timing": "projection;dur=591.01",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5937247539986856,
+        "filters": {},
+        "html_bytes": 20588,
+        "path": "/trading/tesoreria",
+        "process_cpu_seconds": 1.1396278459999998,
+        "queries": 6,
+        "server_timing": "projection;dur=593.48",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5660553189991333,
+        "filters": {},
+        "html_bytes": 21624,
+        "path": "/universo",
+        "process_cpu_seconds": 1.0948064670000015,
+        "queries": 9,
+        "server_timing": "projection;dur=565.76",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5865579679993971,
+        "filters": {},
+        "html_bytes": 91137,
+        "path": "/universo/discovery",
+        "process_cpu_seconds": 1.1053731290000002,
+        "queries": 2,
+        "server_timing": "projection;dur=585.91",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5592930880011409,
+        "filters": {},
+        "html_bytes": 91161,
+        "path": "/universo/tradeability",
+        "process_cpu_seconds": 1.1005674929999998,
+        "queries": 2,
+        "server_timing": "projection;dur=558.75",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6057168610022927,
+        "filters": {},
+        "html_bytes": 38290,
+        "path": "/universo/coverage",
+        "process_cpu_seconds": 1.1866839939999991,
+        "queries": 2,
+        "server_timing": "projection;dur=605.21",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6090636669978267,
+        "filters": {},
+        "html_bytes": 91137,
+        "path": "/universo/excluidos",
+        "process_cpu_seconds": 1.1517815690000006,
+        "queries": 2,
+        "server_timing": "projection;dur=608.52",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6394914390002668,
+        "filters": {},
+        "html_bytes": 48979,
+        "path": "/universo/familias",
+        "process_cpu_seconds": 1.2194667559999992,
+        "queries": 2,
+        "server_timing": "projection;dur=638.97",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.609571966000658,
+        "filters": {},
+        "html_bytes": 49328,
+        "path": "/instrumentos",
+        "process_cpu_seconds": 1.1867162729999983,
+        "queries": 6,
+        "server_timing": "projection;dur=608.75",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6222378210004536,
+        "filters": {},
+        "html_bytes": 49337,
+        "path": "/instrumentos/ficha",
+        "process_cpu_seconds": 1.207665304999999,
+        "queries": 6,
+        "server_timing": "projection;dur=621.42",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.594140781002352,
+        "filters": {},
+        "html_bytes": 40277,
+        "path": "/instrumentos/contrato",
+        "process_cpu_seconds": 1.1213551809999984,
+        "queries": 6,
+        "server_timing": "projection;dur=593.86",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6233028500028013,
+        "filters": {},
+        "html_bytes": 19488,
+        "path": "/instrumentos/mercado",
+        "process_cpu_seconds": 1.1438464529999983,
+        "queries": 6,
+        "server_timing": "projection;dur=623.01",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5984865320024255,
+        "filters": {},
+        "html_bytes": 40305,
+        "path": "/instrumentos/evidencia",
+        "process_cpu_seconds": 1.141146005000003,
+        "queries": 6,
+        "server_timing": "projection;dur=598.14",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5818105510006717,
+        "filters": {},
+        "html_bytes": 19575,
+        "path": "/riesgo",
+        "process_cpu_seconds": 1.1144625040000022,
+        "queries": 7,
+        "server_timing": "projection;dur=581.45",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6460296279983595,
+        "filters": {},
+        "html_bytes": 65971,
+        "path": "/riesgo/exposicion",
+        "process_cpu_seconds": 1.1957357470000005,
+        "queries": 23,
+        "server_timing": "projection;dur=645.75",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6154384990004473,
+        "filters": {},
+        "html_bytes": 19517,
+        "path": "/riesgo/limites",
+        "process_cpu_seconds": 1.1805524839999961,
+        "queries": 5,
+        "server_timing": "projection;dur=615.03",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.726319371999125,
+        "filters": {},
+        "html_bytes": 65967,
+        "path": "/riesgo/posiciones",
+        "process_cpu_seconds": 1.33518076,
+        "queries": 23,
+        "server_timing": "projection;dur=726.01",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6460476319989539,
+        "filters": {},
+        "html_bytes": 66009,
+        "path": "/riesgo/liquidez",
+        "process_cpu_seconds": 1.2614907630000047,
+        "queries": 23,
+        "server_timing": "projection;dur=645.55",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5834364669972274,
+        "filters": {},
+        "html_bytes": 19602,
+        "path": "/riesgo/pnl",
+        "process_cpu_seconds": 1.1145747999999998,
+        "queries": 6,
+        "server_timing": "projection;dur=582.81",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5768936360000225,
+        "filters": {},
+        "html_bytes": 19564,
+        "path": "/riesgo/event-risk",
+        "process_cpu_seconds": 1.1164644559999957,
+        "queries": 2,
+        "server_timing": "projection;dur=576.44",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5833778839987644,
+        "filters": {},
+        "html_bytes": 19690,
+        "path": "/analitica",
+        "process_cpu_seconds": 1.1256071059999968,
+        "queries": 6,
+        "server_timing": "projection;dur=582.90",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6051662469981238,
+        "filters": {},
+        "html_bytes": 19634,
+        "path": "/analitica/senales",
+        "process_cpu_seconds": 1.153614970999996,
+        "queries": 2,
+        "server_timing": "projection;dur=604.91",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5712991799991869,
+        "filters": {},
+        "html_bytes": 19747,
+        "path": "/analitica/salidas",
+        "process_cpu_seconds": 1.101026276000006,
+        "queries": 6,
+        "server_timing": "projection;dur=570.97",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6157729759979702,
+        "filters": {},
+        "html_bytes": 19847,
+        "path": "/analitica/historico",
+        "process_cpu_seconds": 1.1623997879999948,
+        "queries": 3,
+        "server_timing": "projection;dur=615.50",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5829601869991166,
+        "filters": {},
+        "html_bytes": 19638,
+        "path": "/analitica/experimentos",
+        "process_cpu_seconds": 1.1255286760000018,
+        "queries": 2,
+        "server_timing": "projection;dur=582.70",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6297104549994401,
+        "filters": {},
+        "html_bytes": 21356,
+        "path": "/analitica/cierre-diario",
+        "process_cpu_seconds": 1.1717441579999957,
+        "queries": 11,
+        "server_timing": "projection;dur=629.44",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6516481819999171,
+        "filters": {},
+        "html_bytes": 19364,
+        "path": "/analitica/reportes",
+        "process_cpu_seconds": 1.1845388769999943,
+        "queries": 5,
+        "server_timing": "projection;dur=651.29",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.7391423879998911,
+        "filters": {},
+        "html_bytes": 48495,
+        "path": "/sistema",
+        "process_cpu_seconds": 1.2668774520000028,
+        "queries": 11,
+        "server_timing": "projection;dur=738.02",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.7945259939988318,
+        "filters": {},
+        "html_bytes": 30019,
+        "path": "/sistema/salud",
+        "process_cpu_seconds": 1.362651991,
+        "queries": 5,
+        "server_timing": "projection;dur=794.17",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6051200799993239,
+        "filters": {},
+        "html_bytes": 53025,
+        "path": "/sistema/workers",
+        "process_cpu_seconds": 1.1546496949999963,
+        "queries": 13,
+        "server_timing": "projection;dur=604.81",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.580302684000344,
+        "filters": {},
+        "html_bytes": 30043,
+        "path": "/sistema/integraciones",
+        "process_cpu_seconds": 1.095055662,
+        "queries": 5,
+        "server_timing": "projection;dur=580.00",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5893185589993664,
+        "filters": {},
+        "html_bytes": 19599,
+        "path": "/sistema/scheduler",
+        "process_cpu_seconds": 1.0899022279999997,
+        "queries": 2,
+        "server_timing": "projection;dur=589.03",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5737646470006439,
+        "filters": {},
+        "html_bytes": 22448,
+        "path": "/sistema/evidencia",
+        "process_cpu_seconds": 1.0777134860000004,
+        "queries": 2,
+        "server_timing": "projection;dur=573.43",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6395155600002909,
+        "filters": {},
+        "html_bytes": 19425,
+        "path": "/sistema/backups",
+        "process_cpu_seconds": 1.171513449999999,
+        "queries": 2,
+        "server_timing": "projection;dur=638.31",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5793036960021709,
+        "filters": {},
+        "html_bytes": 19373,
+        "path": "/sistema/logs",
+        "process_cpu_seconds": 1.084061368999997,
+        "queries": 2,
+        "server_timing": "projection;dur=579.00",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.5948617790018034,
+        "filters": {},
+        "html_bytes": 32140,
+        "path": "/sistema/configuracion",
+        "process_cpu_seconds": 1.1239869860000056,
+        "queries": 2,
+        "server_timing": "projection;dur=594.31",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6319623360031983,
+        "filters": {},
+        "html_bytes": 49328,
+        "path": "/instrumentos",
+        "process_cpu_seconds": 1.1503719540000006,
+        "queries": 6,
+        "server_timing": "projection;dur=631.67",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.6694483470018895,
+        "filters": {},
+        "html_bytes": 23128,
+        "path": "/",
+        "process_cpu_seconds": 1.2446700659999976,
+        "queries": 39,
+        "server_timing": "projection;dur=669.08",
+        "width": 1280
+      },
+      {
+        "elapsed_seconds": 0.6794894240010763,
+        "filters": {},
+        "html_bytes": 26822,
+        "path": "/en-vivo",
+        "process_cpu_seconds": 1.2673400690000065,
+        "queries": 40,
+        "server_timing": "projection;dur=679.01",
+        "width": 1280
+      },
+      {
+        "elapsed_seconds": 0.6931572399989818,
+        "filters": {},
+        "html_bytes": 93087,
+        "path": "/en-vivo/oportunidades",
+        "process_cpu_seconds": 1.2231935009999972,
+        "queries": 2,
+        "server_timing": "projection;dur=692.71",
+        "width": 1280
+      },
+      {
+        "elapsed_seconds": 0.617547686000762,
+        "filters": {},
+        "html_bytes": 19576,
+        "path": "/en-vivo/decisiones",
+        "process_cpu_seconds": 1.1476392279999885,
+        "queries": 5,
+        "server_timing": "projection;dur=617.27",
+        "width": 1280
+      },
+      {
+        "elapsed_seconds": 0.6419522940013849,
+        "filters": {},
+        "html_bytes": 63804,
+        "path": "/en-vivo/posiciones",
+        "process_cpu_seconds": 1.2231714080000131,
+        "queries": 23,
+        "server_timing": "projection;dur=641.38",
+        "width": 1280
+      },
+      {
+        "elapsed_seconds": 0.8636354740010574,
+        "filters": {},
+        "html_bytes": 20457,
+        "path": "/en-vivo/cierres",
+        "process_cpu_seconds": 1.4707707749999912,
+        "queries": 6,
+        "server_timing": "projection;dur=863.16",
+        "width": 1280
+      },
+      {
+        "elapsed_seconds": 1.0145641839990276,
+        "filters": {},
+        "html_bytes": 18515,
+        "path": "/en-vivo/capacidad",
+        "process_cpu_seconds": 1.7375682979999993,
+        "queries": 1,
+        "server_timing": "projection;dur=1014.37",
+        "width": 1280
+      }
+    ]
+  },
+  "error_class": "GateFailure",
+  "gate": "BROWSER_RENDER_FAILED",
+  "recorded_at": "2026-10-05T08:51:01.815579+00:00",
+  "schema": "rc6.dashboard-native-large-browser-proof.v1",
+  "status": "RED"
+}

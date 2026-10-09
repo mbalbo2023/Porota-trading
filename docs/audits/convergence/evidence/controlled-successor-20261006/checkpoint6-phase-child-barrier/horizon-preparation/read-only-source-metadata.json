@@ -1,0 +1,38 @@
+{
+  "members": {
+    "driver": {
+      "bytes": 55671,
+      "git_blob_id": "2c5709b25cc4548651e9e85aba50eba0eb5121cf",
+      "scope": "READ_ONLY_GIT_OBJECT_NOT_SOURCE_EXPORT_OR_EXECUTION",
+      "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+      "source_member": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source",
+      "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd"
+    },
+    "offline_capability": {
+      "bytes": 63436,
+      "git_blob_id": "49fa9278b51bf16e3b0aa966e9f7a6412704e685",
+      "scope": "READ_ONLY_GIT_OBJECT_NOT_SOURCE_EXPORT_OR_EXECUTION",
+      "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+      "source_member": "scripts/rc6_controlled_governed_runner.py",
+      "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd"
+    },
+    "producer": {
+      "bytes": 61798,
+      "git_blob_id": "b5ee0d93b51dc985085d553d79ad9ef4d803a538",
+      "scope": "READ_ONLY_GIT_OBJECT_NOT_SOURCE_EXPORT_OR_EXECUTION",
+      "sha256": "cd39d440b36e5f35fbc23ad210fdf7370b728b761ce36020c9c88de3fa75f8da",
+      "source_member": "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
+      "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd"
+    }
+  },
+  "no_Source_clones_exports_or_fixtures_created": true,
+  "no_native_execution": true,
+  "observed_source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "observed_source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "prior_external_wrapper": {
+    "bytes": 19172,
+    "old_constants_are_86615_NOT_REUSABLE_AS_FINAL_PIN": true,
+    "path": "/workspace/scratch/rc6-horizon-86615bd-d80uyf2f/control/horizon_owned_launch.py",
+    "sha256": "8d44213895d2c49fd7a685c76f295ac7e3911c3155e8de3ea12892fe9dee73a4"
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "acceptance_complete": false,
+  "focal_fixture_dependent_cases_deferred_to_complete": 18,
+  "fresh_big_browser_acceptance": "PENDING",
+  "git_dir_readonly_control": "/workspace/porota_rc6_convergence/.git/worktrees/ux-browser-coverage",
+  "launcher": "/tmp/rc6-ux-prepared-small-34294523-raw/functional-run.py",
+  "launcher_ast_valid": true,
+  "launcher_native_product_or_playwright_imports": false,
+  "launcher_sha256": "f0e9828a630282183582a89be412c0f4f684b96fcb45eb023b8cb1449478e414",
+  "native_or_browser_executed": false,
+  "original_65_7_scope": "6d2a9f144da872b9066cc1ffb531386d5dba56da",
+  "overlay_count": 0,
+  "planned_commands": {
+    "311": {
+      "complete": [
+        "/workspace/venv_rc6_frozen311/bin/python",
+        "-I",
+        "-B",
+        "/tmp/rc6-ux-prepared-small-34294523-raw/functional-run.py",
+        "--phase",
+        "complete"
+      ],
+      "focal": [
+        "/workspace/venv_rc6_frozen311/bin/python",
+        "-I",
+        "-B",
+        "/tmp/rc6-ux-prepared-small-34294523-raw/functional-run.py",
+        "--phase",
+        "focal"
+      ]
+    },
+    "312": {
+      "complete": [
+        "/workspace/venv_rc6_py312/bin/python",
+        "-I",
+        "-B",
+        "/tmp/rc6-ux-prepared-small-34294523-raw/functional-run.py",
+        "--phase",
+        "complete"
+      ],
+      "focal": [
+        "/workspace/venv_rc6_py312/bin/python",
+        "-I",
+        "-B",
+        "/tmp/rc6-ux-prepared-small-34294523-raw/functional-run.py",
+        "--phase",
+        "focal"
+      ]
+    }
+  },
+  "planned_complete_cases_per_interpreter": 95,
+  "planned_complete_modules": [
+    "tests/test_rc6_browser_product_ipc.py",
+    "tests/test_rc6_projection_large_browser.py",
+    "tests/test_rc6_projection_browser_diagnostic.py",
+    "tests/test_rc6_browser_family_health_coverage.py",
+    "tests/test_rc6_browser_prepared.py"
+  ],
+  "planned_focal_cases_per_interpreter": 5,
+  "planned_focal_nodes": [
+    "tests/test_rc6_browser_prepared.py::test_multifamily_rpc_cannot_generate_fixture_before_its_twenty_second_request",
+    "tests/test_rc6_browser_prepared.py::test_native_preparation_cli_rejects_output_before_fixture_or_source_write",
+    "tests/test_rc6_browser_prepared.py::test_native_preparation_wrong_interpreter_rejects_before_any_fixture_output"
+  ],
+  "raw": "/tmp/rc6-ux-prepared-small-34294523-raw",
+  "raw_commit_sha256": "260e4d0266eebe1bb62f8eb6d6e8b7b97943c48a1039ae2c0503b50aa5c7b254",
+  "schema": "rc6.ux-prepared-small-whole-source-preparation.v1",
+  "scope": "SOURCE_ONLY_NOT_NATIVE_EXECUTION",
+  "source": "/workspace/rc6-ux-prepared-small-34294523-whole",
+  "source_files": 1792,
+  "source_index_sha256": "609bcc28d2e5fc84af490f9c679c2cad55641645c01dbb45d73c462ab559536b",
+  "source_sha": "34294523f057abfb308db12c57a74bf0c0dd5eb8",
+  "source_tar_sha256": "f2810ab4a4d472f277604db33bf6574173953b221a8e2088d5026e508e3cffde",
+  "source_tree": "088f804a6aa72d3db1a11246ba185a7140207bb4"
+}

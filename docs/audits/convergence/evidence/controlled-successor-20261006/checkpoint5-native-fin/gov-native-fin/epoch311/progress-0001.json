@@ -1,0 +1,9 @@
+{
+  "management_deadline": 25694.92028216,
+  "owned_log_bytes_fstat_only": 0,
+  "phase": "execution",
+  "pid": 23573,
+  "scope": "LOCAL_FOCAL_PARENT_ONLY_NOT_GLOBAL_FIN",
+  "stage": "started",
+  "wall_seconds": 0.0016631719990982674
+}

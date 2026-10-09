@@ -28,8 +28,10 @@ def test_deploy_storage_audit_and_allowlisted_image_retention_are_safe():
     assert "DISK_BEFORE=" in body
     assert "DISK_AFTER=" in body
     assert "SPACE_RECOVERED=" in body
-    assert "docker image prune -f" in body
-    assert "docker builder prune -af" in body
+    assert "rc6_deploy_scoped_cleanup.py" in body
+    assert "docker image prune" not in body
+    assert "docker builder prune" not in body
+    assert "docker buildx prune" not in body
     assert "PPI_WATCH_UNTOUCHED=GREEN" in body
     assert "docker system prune" not in body
     assert "docker volume prune" not in body
@@ -41,7 +43,10 @@ def test_deploy_storage_audit_and_allowlisted_image_retention_are_safe():
 
 def test_release_gate_installs_test_dependencies_and_covers_governed_deploy_contracts():
     body = PREDEPLOY.read_text(encoding="utf-8")
-    assert "--requirement requirements.lock.txt" in body
+    assert "--require-hashes" in body
+    assert "-r requirements.build.lock.txt" in body
+    assert "-r requirements.lock.txt" in body
+    assert "--no-build-isolation" in body
     assert "--collect-only" in body
     assert "ops/policy/test-policy.yaml" in body
     assert "POROTA_TEST_DISCOVERED" in body

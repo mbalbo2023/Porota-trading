@@ -1,0 +1,109 @@
+{
+  "actual_child_reaped": true,
+  "actual_launch_to_pid_reap_wall_seconds": 33.871879546000855,
+  "adopted_descendants_reaped": [],
+  "all_eleven_source_stats_unchanged_claimed": false,
+  "child_exit_code": 1,
+  "cpu_system_seconds": 1.678665,
+  "cpu_user_seconds": 31.369438,
+  "elapsed_wall_seconds": 33.87499638600275,
+  "execution_id": "a8fe13670c8049f0ac5f1676aa6b76bd",
+  "external_focal_rss_cap_bytes": 2147483648,
+  "kernel_lifetime_peak_rss_bytes": 269414400,
+  "management_timeout_seconds": 180,
+  "native_complete_receipt_verified": false,
+  "native_receipt_sha256": "099fc3381953e4bf30a66a1fe308bca855c370f0db71aaaf64673386c0aaae1b",
+  "observed_source_code_atime_changes": [
+    {
+      "after": 1791242252672085534,
+      "before": 1791242251372095819,
+      "kind": "directory",
+      "path": "."
+    },
+    {
+      "after": 1791242265759984307,
+      "before": 1791242251712093129,
+      "kind": "directory",
+      "path": "rc6_audit_evidence"
+    },
+    {
+      "after": 1791242257020051704,
+      "before": 1791242251716093098,
+      "kind": "directory",
+      "path": "rc6_dynamic_universe"
+    },
+    {
+      "after": 1791242256668054356,
+      "before": 1791242251720093066,
+      "kind": "directory",
+      "path": "rc6_performance"
+    },
+    {
+      "after": 1791242256172058093,
+      "before": 1791242251721416442,
+      "kind": "directory",
+      "path": "rc6_shadow_runtime"
+    },
+    {
+      "after": 1791242252672085534,
+      "before": 1791242251728093002,
+      "kind": "directory",
+      "path": "scripts"
+    },
+    {
+      "after": 1791242255612062314,
+      "before": 1791242251740276354,
+      "kind": "directory",
+      "path": "tests"
+    }
+  ],
+  "overlay_count": 0,
+  "parent_preserved_source_tar": {
+    "bytes": 79964160,
+    "commit": "e24bc025edc8bf72b272cb3546ce722dd97c10c8",
+    "directories": 111,
+    "files": 2158,
+    "sha256": "754f34d63ef86c7fd8076f3f1ae265ce8ba99dd5e587d0a745d61a68326e07aa",
+    "stat_fields": {
+      "st_atime_ns": 1791242252764084807,
+      "st_blocks": 156184,
+      "st_ctime_ns": 1791242253056082497,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 925588,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791242253056082497,
+      "st_nlink": 1,
+      "st_size": 79964160,
+      "st_uid": 1000
+    }
+  },
+  "parent_raw_collection_call_phase_junit_join": null,
+  "pid": 235147,
+  "post_reap_custody_validation_seconds": 1.235451597996871,
+  "process_group_absent_after_reap": true,
+  "product_deadlines_unchanged": true,
+  "publisher_performance_or_big_completion_claimed": false,
+  "raw_log_sha256": "8c6abe76293b721bce7ed5952d85c070ae2e00716cb9716e27069b825948cc44",
+  "remaining_owned_children": [],
+  "residual_descendants_observed": [],
+  "resource_scope": "ACTUAL_SINGLE_CHILD_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT_CONCURRENT_RSS_SUM",
+  "schema": "rc6.private-publication-controlled-focal-kernel.v1",
+  "scope": "SEVEN_SELECTED_MODULES_PRIVATE_PUBLICATION_CAPTURE_EQUIVALENCE_AND_NATIVE_SMALL_WRITER_FULL_READER_PROJECTION; NOT_BIG_PERFORMANCE_OR_FULL_GOV",
+  "source_bytes_modes_blobs_stable_ten_stats_dirs_mounts_unchanged": true,
+  "source_files": 2158,
+  "source_sha": "e24bc025edc8bf72b272cb3546ce722dd97c10c8",
+  "source_tree": "79d1e849f44cc433283fbfcadf2680615c9684a5",
+  "status": "RED",
+  "subreaper_restore_attempted_on_all_activated_paths": true,
+  "supervisor_errors": [
+    {
+      "class": "FileNotFoundError",
+      "phase": "termination_or_reap",
+      "reason": "[Errno 2] No such file or directory: '/proc/self/task/235112/children'"
+    }
+  ],
+  "termination_reap_restore_cleanup_seconds": 0.0006350940093398094,
+  "timed_out": false,
+  "wait4_reaped_pid": 235147
+}

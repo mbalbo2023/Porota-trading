@@ -1,0 +1,63 @@
+{
+  "anchor_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+  "fetch_executed": false,
+  "original_governed_exclusions": [
+    "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+  ],
+  "original_matrix_git_blob": "c6046d306c31df9eae6e80cac05d77b1b4364aef",
+  "original_matrix_sha256": "e5a991729eadbf6f2673f90cfdf6ebe0e4d17492f1da6a89417bfd31860bb16c",
+  "prior_fronts": [
+    {
+      "expected_tree": "cbd8815257897d874a6c24fdcdb2b654d6089647",
+      "head_sha": "c3a73a0e7eb328787f2fe218a02c1926f400f6ea",
+      "id": "A",
+      "locally_available": true,
+      "tree_matches": true
+    },
+    {
+      "expected_tree": "54fcf4a0401f34f214edc30d3d20e84d415c8c06",
+      "head_sha": "87cb8442d7a07eaeeed2d8171d2e91f3a839387d",
+      "id": "B",
+      "locally_available": true,
+      "tree_matches": true
+    },
+    {
+      "expected_tree": "9dc5c2c44dac5e9e7620a83d712431c4dafb1aed",
+      "head_sha": "84380e6be52634c73c08ad5f317756882200da1e",
+      "id": "C",
+      "locally_available": true,
+      "tree_matches": true
+    },
+    {
+      "expected_tree": "464e6e966ab453e9c6d637719b4da8fef8b81ad7",
+      "head_sha": "301cc9b0d1ec46fdb246c29a531aff0a43a115ba",
+      "id": "D",
+      "locally_available": true,
+      "tree_matches": true
+    },
+    {
+      "expected_tree": "cfbf4ced302a0a47cafe82306f3b74aba1871bb1",
+      "head_sha": "02da06be024e0e5132a6f00d199dfaaf0f9ce372",
+      "id": "E",
+      "locally_available": true,
+      "tree_matches": true
+    },
+    {
+      "expected_tree": "6eae14f00f6b582a7bfb15577aa1c74be716ca41",
+      "head_sha": "d1169a4a5d88d0eaca2f022c4a6be19121d67e19",
+      "id": "F",
+      "locally_available": true,
+      "tree_matches": true
+    },
+    {
+      "expected_tree": "06d7354f7ff402b21c5697e15e644d0fe71e9f0e",
+      "head_sha": "03dc4f7821f6c2ab2d32ea8bc9f5a64ba5a0342f",
+      "id": "G",
+      "locally_available": true,
+      "tree_matches": true
+    }
+  ],
+  "schema": "rc6.gov-prior-front-source-availability-readonly.v1",
+  "source_sha": "d05078845cd40b37ef75744ea80a1695c2b37dbb",
+  "verifier_executed": false
+}

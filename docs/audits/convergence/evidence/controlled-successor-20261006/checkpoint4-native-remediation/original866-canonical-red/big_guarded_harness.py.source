@@ -1,0 +1,260 @@
+"""Declared external supervisor/bootstrap for one exact canonical BIG CLI."""
+from __future__ import annotations
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import resource
+import runpy
+import stat
+import sys
+import time
+
+EPOCH = Path(__file__).absolute().parent
+SOURCE = EPOCH/"source"
+REPOSITORY = EPOCH/"repository"
+PIN = EPOCH/"pin"/"source.index.json"
+TAR = EPOCH/"pin"/"source.tar"
+RAW = EPOCH/"raw-slow"
+DATA = EPOCH/"data-slow"
+SHA = "86615bd8c669209e8d391d114016d923fe084dc0"
+TREE = "ad192bb7f707b082e680a699e1f00f9efabc755f"
+INDEX_SHA256 = "614c7d6d18818008ca4db15f8741ba4336a40a1b1d6587c6b9552d734f6bf779"
+TAR_SHA256 = "2814a980b3a6daa5763b587d5e3c7843cb489763bae21b4abdbed0c1ba20143f"
+PYTHON = "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python"
+CLI = SOURCE/"scripts"/"rc6_issue465_stress.py"
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(SOURCE))
+from scripts import rc6_controlled_governed_runner as gov
+
+
+def native_argv():
+    return [str(CLI), "--root", str(DATA), "--out", str(RAW/"native-big-result.json"),
+        "--catalog-count", "12000", "--observations-per-identity", "5",
+        "--canonical-runtime", "--slow-disk", "--source-root", str(SOURCE),
+        "--source-repo", str(REPOSITORY), "--source-sha", SHA, "--source-tree", TREE,
+        "--source-index", str(PIN)]
+
+
+def publish(name, value):
+    gov.publish(RAW/name, gov.canonical(value))
+
+
+def safe_failure(error, stage):
+    """Retain literal guard reason codes, never paths, argv, env or metadata."""
+    row = {"class": type(error).__name__, "stage": stage}
+    reason = str(error).partition(":")[0]
+    if re.fullmatch(r"[A-Z][A-Z0-9_]{0,191}", reason):
+        row["reason"] = reason
+    elif isinstance(error, OSError) and type(error.errno) is int:
+        row.update(reason="OS_ERROR", errno=error.errno)
+    else:
+        row["reason"] = "NON_LITERAL_GUARD_EXCEPTION"
+    return row
+
+
+def source_snapshot():
+    """Only called before launch or after actual main PID/kernel reap."""
+    from scripts.rc6_native_import_provenance import prepare_binding
+    index_wire, index_stat = gov.capture(PIN)
+    gov.require(hashlib.sha256(index_wire).hexdigest() == INDEX_SHA256, "EXACT_SOURCE_INDEX_REQUIRED")
+    index = json.loads(index_wire)
+    binding = prepare_binding(source_root=str(SOURCE), source_repo=str(REPOSITORY),
+        source_sha=SHA, source_tree=TREE, source_index=str(PIN))
+    physical_before = gov.physical_namespace(SOURCE)
+    files = {}
+    for name, expected in binding["files"].items():
+        wire, attributes = gov.capture(SOURCE/name)
+        record = {"bytes": len(wire), "sha256": hashlib.sha256(wire).hexdigest(),
+            "git_blob": hashlib.sha1(b"blob "+str(len(wire)).encode()+b"\0"+wire).hexdigest(),
+            "git_mode": "100"+format(stat.S_IMODE(attributes["st_mode"]), "03o"),
+            "stat_fields": attributes}
+        gov.require(record["sha256"] == expected["sha256"]
+            and record["git_blob"] == expected["blob_id"]
+            and record["git_mode"] == expected["mode"], "PHYSICAL_SOURCE_PIN_MISMATCH")
+        files[name] = record
+    physical_after = gov.physical_namespace(SOURCE)
+    gov.require(physical_before == physical_after and set(physical_after["files"]) == set(files),
+        "PHYSICAL_NAMESPACE_CHANGED_OR_NONLITERAL")
+    for name, row in files.items():
+        gov.require(row["stat_fields"] == physical_after["files"][name], "PHYSICAL_STAT_CAPTURE_MISMATCH")
+    fd = os.open(TAR, os.O_RDONLY | os.O_NOATIME | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        before = os.fstat(fd)
+        hasher = hashlib.sha256()
+        count = 0
+        while block := os.read(fd, 1024*1024):
+            hasher.update(block)
+            count += len(block)
+        attributes = {name: getattr(before, name) for name in gov.FIELDS}
+        gov.require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_uid == os.geteuid()
+            and count == before.st_size and hasher.hexdigest() == TAR_SHA256 == index["tar_sha256"]
+            and all(getattr(before, name) == getattr(os.fstat(fd), name) == getattr(TAR.lstat(), name)
+                for name in gov.FIELDS), "SOURCE_TAR_CUSTODY_OR_HASH_CHANGED")
+    finally:
+        os.close(fd)
+    return {"source_sha": SHA, "source_tree": TREE, "files": files, "overlay_count": 0,
+        "physical_directories": physical_after["directories"],
+        "git_metadata": {"source_repo": str(REPOSITORY), "source_index_sha256": INDEX_SHA256,
+            "raw_git_commit_sha256": index["raw_git_commit_sha256"], "index_stat": index_stat,
+            "tar_sha256": TAR_SHA256, "tar_stat": attributes},
+        "scope": "LITERAL_RAW_GIT_WHOLE_SOURCE; CODE10STABLE_FIELDS_AND_SEPARATE_ATIME; NO_DATA_ACCESS"}
+
+
+def child():
+    gov.require(sys.executable == PYTHON and platform.python_version() == "3.11.16", "EXACT_FROZEN311_REQUIRED")
+    namespace = gov.phase_namespace(SOURCE, RAW, "execution")
+    publish("child-namespace.json", namespace)
+    capability = gov.restrict_inet_creation()
+    publish("child-offline-capability.json", capability)
+    initial = gov.child_infrastructure_snapshot()
+    gov.require(all(value is None for value in initial.values()), "FRESH_CHILD_INFRASTRUCTURE_REQUIRED")
+    publish("child-infrastructure-before.json", initial)
+    closure = gov.installed_closure(SOURCE)
+    publish("child-installed-closure.json", closure)
+    observations = {"inet_socket_attempts": [], "subprocess_executable_counts": {},
+        "actual_product_imports": [], "unexpected_product_imports": [],
+        "inet_socket_constructor_requests": []}
+    gov.install_phase_audit(observations)
+    cli_code = None
+    invocation_error = None
+    sys.argv = native_argv()
+    publish("child-cli-before.json", {"pid": os.getpid(), "parent_pid": os.getppid(),
+        "argv": list(sys.argv), "source_sha": SHA, "source_tree": TREE,
+        "invocation": "runpy.run_path(EXACT_PINNED_CLI, run_name=__main__); NO_SOURCE_OVERLAY",
+        "guard_scope": "THIS_LAUNCHER_PYTHON_AUDIT; INHERITED_IPV6_SECCOMP; NO_TRANSITIVE_INET_ATTESTATION"})
+    try:
+        runpy.run_path(str(CLI), run_name="__main__")
+        cli_code = 0
+    except SystemExit as error:
+        cli_code = error.code if type(error.code) is int else 1
+    except BaseException as error:
+        cli_code = 1
+        invocation_error = safe_failure(error, "exact_native_cli")
+    finally:
+        finalization = gov.finalize_child_infrastructure(initial, limit=5)
+        publish("child-finalization.json", finalization)
+    infrastructure_green = (finalization["status"] == "GREEN"
+        and finalization["finalization_thread_finished"] is True
+        and finalization["kernel_echild_before_phase_return"] is True
+        and finalization["signal_guard_installed_and_witnessed"] is True
+        and not finalization["termination_signal_attempts"]
+        and finalization["forced_termination_attempted"] is False
+        and finalization["signal_vetoed"] is False and finalization["wall_seconds"] <= 5
+        and not finalization["errors"])
+    exit_code = cli_code if cli_code else (0 if infrastructure_green and not observations["inet_socket_attempts"] else 1)
+    publish("child-final-receipt.json", {"source_sha": SHA, "source_tree": TREE,
+        "pid": os.getpid(), "parent_pid": os.getppid(), "native_cli_exit_code": cli_code,
+        "final_exit_code": exit_code, "invocation_error": invocation_error,
+        "child_infrastructure_finalized_before_main_exit": infrastructure_green,
+        "inet_observation_scope": "THIS_LAUNCHER_ONLY; NO_TRANSITIVE_CHILD_NETWORK_ATTESTATION",
+        "ipv6_creation_policy": capability, **observations})
+    return exit_code
+
+
+def parent():
+    gov.require(sys.executable == PYTHON and platform.python_version() == "3.11.16", "EXACT_FROZEN311_REQUIRED")
+    for path in (EPOCH, SOURCE, REPOSITORY, PIN, TAR, Path(__file__)):
+        gov.safe_path(path)
+    gov.require(not RAW.exists() and not DATA.exists(), "FRESH_RAW_AND_DATA_REQUIRED")
+    RAW.mkdir(mode=0o700)
+    before = source_snapshot()
+    publish("source-before.json", before)
+    closure = gov.installed_closure(SOURCE)
+    publish("parent-installed-closure.json", closure)
+    harness_wire, harness_attributes = gov.capture(Path(__file__))
+    command = [PYTHON, "-I", "-B", str(Path(__file__).absolute()), "--child"]
+    safe_env = {"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1", "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8", "TZ": "UTC"}
+    publish("launch.json", {"source_sha": SHA, "source_tree": TREE, "source_index_sha256": INDEX_SHA256,
+        "source_tar_sha256": TAR_SHA256, "source_files": len(before["files"]),
+        "harness_sha256": hashlib.sha256(harness_wire).hexdigest(), "harness_stat": harness_attributes,
+        "command": command, "native_cli_argv": native_argv(), "cwd": str(SOURCE),
+        "child_environment_scope": "MINIMAL_DECLARED_NO_CREDENTIALS_OR_SOURCE_WRITABLE_PATHS",
+        "original_gates": {"catalog": 12000, "observations_materialized": 60000, "cycle_seconds": 90,
+            "families_read_seconds": 0.5, "evidence_bytes": 128*1024**2,
+            "rss_strict_bytes": 2*1024**3, "factual_paper_exits": 5,
+            "slow_fsync_release_seconds": 15, "child_finalization_seconds": 5},
+        "outer_management_watchdog_seconds": 300, "outer_watchdog_changes_native90s": False,
+        "gc_tuning": False, "profiler": False, "stack_sampler": False,
+        "acceptance_complete": False, "runtime_validated": False, "artifact_validated": False})
+    kernel = gov.subprocess_phase(command, SOURCE, RAW/"native.log", safe_env, limit=300)
+    kernel["execution_subject"] = "EXACT_CANONICAL_BIG_CLI_WITH_DECLARED_TRACKED_GOV_GUARD_AND_FINALIZATION"
+    kernel["native_cycle_deadline_seconds"] = 90
+    kernel["outer_management_watchdog_is_not_native_acceptance_deadline"] = True
+    publish("kernel-supervision.json", kernel)
+    errors = []
+    after = None
+    code_atime_changes = None
+    if kernel["actual_child_reaped"]:
+        try:
+            after = source_snapshot()
+            code_atime_changes = gov.compare_source(before, after)
+            publish("source-after.json", after)
+        except BaseException as error:
+            errors.append(safe_failure(error, "postreap_source"))
+    else:
+        errors.append({"stage": "postreap_source", "reason": "NOT_OBSERVED_UNREAPED_CHILD"})
+    native = None
+    child_receipt = None
+    try:
+        native = json.loads(gov.capture(RAW/"native-big-result.json")[0])
+        child_receipt = json.loads(gov.capture(RAW/"child-final-receipt.json")[0])
+    except BaseException as error:
+        errors.append(safe_failure(error, "native_or_child_receipt"))
+    kernel_green = (kernel["actual_child_reaped"] and kernel["returncode"] == 0 and not kernel["timed_out"]
+        and kernel["wait4_reaped_pid"] == kernel["pid"]
+        and kernel["kernel_pre_popen_echild_verified"] and kernel["owned_children_exhaustion_verified"]
+        and kernel["process_group_absent_at_main_reap"] and kernel["process_group_absent_after_reap"]
+        and not kernel["kernel_wait4_zero_observed_irreversible_red"]
+        and not kernel["late_observed_main_reap_irreversible_red"]
+        and kernel["actual_launch_to_pid_reap_wall_seconds"] <= 300
+        and kernel["subreaper_restore_attempted_on_all_activated_paths"] is True
+        and not kernel["residual_descendants_observed"]
+        and not kernel["owned_group_signal_observations"] and not kernel["supervisor_errors"]
+        and not kernel["adopted_descendants_reaped"] and not kernel["remaining_owned_children"]
+        and type(kernel["peak_rss_bytes"]) is int and kernel["peak_rss_bytes"] < 2*1024**3)
+    native_green = False
+    if native is not None and child_receipt is not None:
+        proof = native.get("import_provenance", {})
+        shadow = native.get("shadow", {})
+        native_green = (native.get("business_resource_complete") is True and native.get("import_proof_complete") is True
+            and native.get("catalog_count") == 12000 and native.get("observations_materialized") == 60000
+            and native.get("cycle_deadline_seconds") == 90 and native.get("diagnostic_only") is False
+            and native.get("canonical_runtime_requested") is True and native.get("slow_fsync_exit_isolation_proven") is True
+            and native.get("source_database_unchanged") is True
+            and native.get("source_custody_before") == native.get("source_custody_after")
+            and shadow.get("cycle_completion") is True and shadow.get("child_cleanup_completed") is True
+            and shadow.get("committed_sequence") == 2 and "OPEN_CYCLE_COMPLETED" in shadow.get("phases", [])
+            and proof.get("source_sha") == SHA and proof.get("source_tree") == TREE
+            and proof.get("source_index_sha256") == INDEX_SHA256
+            and proof.get("launcher_pid") == kernel["pid"] and proof.get("launcher_parent_pid") == os.getpid()
+            and proof.get("worker_pid_source_binding_verified") is True
+            and proof.get("worker_exitcode") == 0 and proof.get("worker_cleanup_completed") is True
+            and child_receipt.get("child_infrastructure_finalized_before_main_exit") is True
+            and not child_receipt.get("inet_socket_attempts"))
+    complete = kernel_green and native_green and after is not None and not errors
+    report = {"schema": "rc6.recovery.canonical-big-declared-harness.v1", "status": "GREEN" if complete else "RED",
+        "source_sha": SHA, "source_tree": TREE, "source_index_sha256": INDEX_SHA256,
+        "canonical_big_and_import_gates_closed": bool(complete), "final_candidate_eligible": False,
+        "artifact_validated": False, "runtime_validated": False,
+        "kernel_protocol_green": bool(kernel_green), "native_business_and_import_green": bool(native_green),
+        "source_code10stable_stats_and_bytes_modes_rawgit_unchanged": after is not None and not errors,
+        "observed_code_atime_changes": code_atime_changes, "errors": errors,
+        "data_root_preserved": str(DATA), "raw_root_preserved": str(RAW), "real_orders_sent": 0,
+        "native_import_scope": "OBSERVED_NATIVE_LAUNCHER_AND_WORKER_WINDOWS; BOOTSTRAP_AND_POSTBOUNDARY_FINALIZATION_OUTSIDE",
+        "network_scope": "TRACKED_LAUNCHER_PYTHON_AUDIT_AND_IPV6_CREATION_SECCOMP; NO_TRANSITIVE_NETWORK_ATTESTATION"}
+    publish("harness-final.json", report)
+    print(json.dumps({key: report[key] for key in ("status", "source_sha", "source_tree",
+        "canonical_big_and_import_gates_closed", "raw_root_preserved", "data_root_preserved")}), flush=True)
+    return 0 if complete else 1
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--child", action="store_true")
+    options = parser.parse_args()
+    raise SystemExit(child() if options.child else parent())

@@ -1,0 +1,206 @@
+--- immutable-exporter4ff
++++ source-only-exporter-v2
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ import argparse
++from contextlib import contextmanager
+ import hashlib
+ import json
+ import os
+@@ -8,6 +9,131 @@
+ import stat
+ import subprocess
+ import tarfile
++
++FIELDS = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_uid', 'st_gid',
++          'st_size', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns', 'st_blocks')
++MAX_SOURCE_ARCHIVE = 512 * 1024**2
++
++
++def require(condition, reason):
++    if not condition:
++        raise ValueError(reason)
++
++
++def details(value):
++    return {name: getattr(value, name) for name in FIELDS}
++
++
++@contextmanager
++def directory(path):
++    path = Path(path).absolute()
++    require('..' not in path.parts, 'OUTPUT_PATH_TRAVERSAL')
++    fd = os.open('/', os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
++    try:
++        for name in path.parts[1:]:
++            child = os.open(name, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
++                            dir_fd=fd)
++            os.close(fd)
++            fd = child
++        yield fd
++    finally:
++        os.close(fd)
++
++
++@contextmanager
++def owned_file(path, writable=False):
++    path = Path(path)
++    with directory(path.parent) as parent:
++        access = os.O_RDWR if writable else os.O_RDONLY
++        fd = os.open(path.name, access | os.O_NOFOLLOW | os.O_NOATIME
++                     | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
++        try:
++            initial = os.fstat(fd)
++            require(stat.S_ISREG(initial.st_mode) and initial.st_nlink == 1
++                    and initial.st_uid == os.geteuid()
++                    and stat.S_IMODE(initial.st_mode) == 0o644
++                    and initial.st_dev == os.fstat(parent).st_dev,
++                    'OWN_EXPORT_REGULAR_FILE_CUSTODY_REQUIRED')
++            require(details(initial) == details(os.stat(path.name, dir_fd=parent,
++                                                       follow_symlinks=False)),
++                    'EXPORT_FILE_ALIAS_OR_IDENTITY_CHANGED')
++            yield fd, parent
++        finally:
++            os.close(fd)
++
++
++def fsync_parent(parent):
++    fd = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
++                 dir_fd=parent)
++    try:
++        actual, expected = os.fstat(fd), os.fstat(parent)
++        require((actual.st_dev, actual.st_ino) == (expected.st_dev, expected.st_ino),
++                'EXPORT_PARENT_IDENTITY_CHANGED')
++        os.fsync(fd)
++    finally:
++        os.close(fd)
++
++
++def synchronize_archive(path):
++    with owned_file(path, writable=True) as (fd, parent):
++        before = details(os.fstat(fd))
++        require(0 < before['st_size'] <= MAX_SOURCE_ARCHIVE, 'SOURCE_ARCHIVE_BOUND')
++        os.fsync(fd)
++        fsync_parent(parent)
++        after = details(os.fstat(fd))
++        identity = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_uid', 'st_gid', 'st_size')
++        require(all(before[name] == after[name] for name in identity),
++                'SOURCE_ARCHIVE_IDENTITY_CHANGED_DURING_OWN_FSYNC')
++        require(after == details(os.stat(Path(path).name, dir_fd=parent,
++                                         follow_symlinks=False)),
++                'SOURCE_ARCHIVE_PATH_CHANGED_AFTER_OWN_FSYNC')
++        return {'schema': 'rc6.owned-source-archive-fsync.v1',
++                'before_own_fsync_stat_fields': before, 'after_own_fsync_stat_fields': after,
++                'file_fsync_completed': True, 'parent_fsync_completed': True,
++                'scope': 'OWN_EXPORT_PREPARATION_BEFORE_EXTERNAL_BASELINE_NOT_NATIVE_CUSTODY'}
++
++
++def capture_owned(path, maximum=MAX_SOURCE_ARCHIVE):
++    with owned_file(path) as (fd, parent):
++        before = details(os.fstat(fd))
++        require(0 <= before['st_size'] <= maximum, 'SOURCE_EXPORT_FILE_BOUND')
++        sha = hashlib.sha256()
++        remaining = before['st_size']
++        while remaining:
++            block = os.read(fd, min(1048576, remaining))
++            require(bool(block), 'SOURCE_EXPORT_FILE_TRUNCATED')
++            sha.update(block)
++            remaining -= len(block)
++        require(not os.read(fd, 1), 'SOURCE_EXPORT_FILE_GREW')
++        after = details(os.fstat(fd))
++        location = details(os.stat(Path(path).name, dir_fd=parent, follow_symlinks=False))
++        require(before == after == location, 'SOURCE_EXPORT_ALL11_CHANGED_DURING_NOATIME_CAPTURE')
++        return {'sha256': sha.hexdigest(), 'bytes': before['st_size'],
++                'stat_fields': before, 'all_eleven_fields_stable_during_capture': True}
++
++
++def write_new_owned(path, data):
++    path = Path(path)
++    with directory(path.parent) as parent:
++        require(os.fstat(parent).st_uid == os.geteuid(), 'OWN_OUTPUT_PARENT_REQUIRED')
++        fd = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL
++                     | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=parent)
++        try:
++            offset = 0
++            while offset < len(data):
++                written = os.write(fd, data[offset:])
++                require(written > 0, 'SOURCE_EXPORT_SHORT_WRITE')
++                offset += written
++            os.fchmod(fd, 0o644)
++            os.fsync(fd)
++        finally:
++            os.close(fd)
++        fsync_parent(parent)
++    result = capture_owned(path, maximum=max(len(data), 1))
++    require(result['sha256'] == hashlib.sha256(data).hexdigest()
++            and result['bytes'] == len(data), 'SOURCE_EXPORT_PUBLISHED_BYTES_CHANGED')
++    return result
++
+ 
+ 
+ def main():
+@@ -45,11 +171,14 @@
+         assert name not in members
+         members[name] = {'mode': mode, 'blob_id': blob}
+     os.umask(0o022)
+-    raw.mkdir(mode=0o700)
++    with directory(source.parent), directory(raw.parent):
++        raw.mkdir(mode=0o700)
++    commit_capture = write_new_owned(raw/'source.commit.raw', commit)
+     archive = raw/'source.tar'
+     subprocess.run(['git', '--no-replace-objects', '-C', str(repo), 'archive', '--format=tar',
+                     '--output='+str(archive), args.sha], check=True)
+-    with tarfile.open(archive, 'r:') as tar:
++    archive_sync = synchronize_archive(archive)
++    with owned_file(archive) as (archive_fd, _parent), os.fdopen(os.dup(archive_fd), 'rb') as archive_stream, tarfile.open(fileobj=archive_stream, mode='r:') as tar:
+         files = [member for member in tar.getmembers() if member.isfile()]
+         assert len(files) == len(members) and {member.name for member in files} == set(members)
+         assert all(member.isfile() or member.isdir() for member in tar.getmembers())
+@@ -80,16 +209,43 @@
+     assert not git('for-each-ref', '--format=%(refname)', 'refs/replace').strip()
+     assert not git('status', '--porcelain').strip()
+     assert git('rev-parse', 'HEAD').decode().strip() == args.sha
+-    archive_sha = hashlib.sha256(archive.read_bytes()).hexdigest()
++    archive_capture = capture_owned(archive)
++    require(archive_capture['stat_fields'] == archive_sync['after_own_fsync_stat_fields'],
++            'SOURCE_ARCHIVE_ALL11_CHANGED_AFTER_FSYNC_BEFORE_EXPORT_BASELINE')
++    archive_sha = archive_capture['sha256']
+     index = {'schema': 'rc6.complete-archive-source-pin.v1', 'source_sha': args.sha, 'source_tree': tree,
+              'overlay_count': 0, 'tar_sha256': archive_sha, 'files': files, 'modes': modes,
+              'blob_ids': blobs, 'raw_git_commit_sha256': hashlib.sha256(commit).hexdigest(),
+              'scope': 'ALL_COMMITTED_GIT_BLOBS_AND_MODES_NOT_EXECUTION_OR_ARTIFACT_PROOF'}
+     index_path = raw/'source.index.json'
+-    index_path.write_text(json.dumps(index, sort_keys=True, indent=2)+'\n')
++    index_raw = (json.dumps(index, sort_keys=True, indent=2)+'\n').encode()
++    index_capture = write_new_owned(index_path, index_raw)
++    commit_final = capture_owned(raw/'source.commit.raw', maximum=32*1024**2)
++    require(commit_final == commit_capture, 'SOURCE_RAW_COMMIT_ALL11_CHANGED_BEFORE_EXPORT_BASELINE')
++    require(commit_final['sha256'] == index['raw_git_commit_sha256'],
++            'SOURCE_RAW_COMMIT_BYTE_BINDING_CHANGED')
++    archive_final = capture_owned(archive)
++    require(archive_final == archive_capture, 'SOURCE_ARCHIVE_ALL11_CHANGED_BEFORE_EXPORT_BASELINE')
++    require(capture_owned(index_path, maximum=32*1024**2) == index_capture,
++            'SOURCE_INDEX_ALL11_CHANGED_BEFORE_EXPORT_BASELINE')
++    durability = {'schema': 'rc6.complete-archive-source-export-durability.v1',
++        'source_sha': args.sha, 'source_tree': tree, 'source_files': len(files), 'overlay_count': 0,
++        'scope': 'OWN_EXPORT_FILE_AND_PARENT_FSYNC_BEFORE_EXTERNAL_BASELINE_NOT_NATIVE_ACCEPTANCE',
++        'archive_own_fsync': archive_sync,
++        'tar': archive_final, 'source_commit_raw': commit_final, 'source_index': index_capture,
++        'native_or_browser_acceptance': False, 'all11_fields_include_st_blocks': True}
++    durability_capture = write_new_owned(raw/'source.export-durability.json',
++        (json.dumps(durability, sort_keys=True, indent=2)+'\n').encode())
++    require(capture_owned(archive) == archive_final
++            and capture_owned(raw/'source.commit.raw', maximum=32*1024**2) == commit_final
++            and capture_owned(index_path, maximum=32*1024**2) == index_capture,
++            'SOURCE_EXPORT_CONTROL_FILES_ALL11_CHANGED_AFTER_READY_PUBLICATION')
+     print(json.dumps({'source_sha': args.sha, 'source_tree': tree, 'source_files': len(files),
+-                      'tar_sha256': archive_sha, 'source_index_sha256': hashlib.sha256(index_path.read_bytes()).hexdigest(),
+-                      'source': str(source), 'source_index': str(index_path), 'overlay_count': 0}))
++                      'tar_sha256': archive_sha, 'source_index_sha256': index_capture['sha256'],
++                      'source_commit_raw_sha256': commit_final['sha256'],
++                      'source_export_durability_sha256': durability_capture['sha256'],
++                      'source': str(source), 'source_index': str(index_path),
++                      'source_commit_raw': str(raw/'source.commit.raw'), 'overlay_count': 0}))
+ 
+ 
+ if __name__ == '__main__':

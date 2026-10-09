@@ -1,0 +1,1127 @@
+--- a/.github/workflows/rc6-unified-candidate-tests.yml
++++ b/.github/workflows/rc6-unified-candidate-tests.yml
+@@ -1,26 +1,114 @@
+-name: RC6 legacy candidate tests pointer
++name: RC6 supplemental material evidence
++run-name: RC6 material ${{ inputs.gate }} @ ${{ inputs.source_sha }}
+ 
+-# Automatic candidate testing is canonical in porota-predeploy-v2.yml. This
+-# historical workflow remains manually inspectable but cannot publish a second,
+-# partial GREEN signal from a hand-maintained test allowlist.
++# Canonical Predeploy V2 alone builds/tests the promotable immutable artifact.
++# This registered carrier produces supplementary source-gate evidence only.
+ on:
+   workflow_dispatch:
++    inputs:
++      source_sha:
++        description: Exact frozen PR476 source commit (40 lowercase hex)
++        required: true
++        type: string
++      source_tree:
++        description: Exact source Git tree (40 lowercase hex)
++        required: true
++        type: string
++      gate:
++        description: Supplementary gate; never an artifact/deploy approval
++        required: true
++        type: choice
++        options:
++          - focal
++          - full-gov311
++          - full-gov312
++          - BIG-browser
++          - Horizon
++      launch_receipt_url:
++        description: Durable issue471 authorization including this SHA and successor branch
++        required: true
++        type: string
++      owner_session:
++        description: Exact SESSION_SUCCESSOR in the durable launch receipt
++        required: true
++        type: string
+ 
+ permissions:
+   contents: read
++  actions: read
++
++concurrency:
++  group: rc6-supplementary-material-${{ inputs.source_sha }}-${{ inputs.gate }}
++  cancel-in-progress: false
+ 
+ jobs:
+-  canonical-predeploy-pointer:
++  supplemental-evidence:
+     runs-on: ubuntu-24.04
++    timeout-minutes: 360
++    env:
++      PYTHONDONTWRITEBYTECODE: "1"
+     steps:
+-      - uses: actions/checkout@v4
+-      - name: Verify canonical governed test policy
++      - name: Checkout exact reviewed source
++        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 reviewed2026-10-05
++        with:
++          ref: ${{ inputs.source_sha }}
++          fetch-depth: 0
++          persist-credentials: false
++      - name: Verify canonical governed test policy pointer
+         shell: bash
+         run: |
+           set -Eeuo pipefail
+           test -f .github/workflows/porota-predeploy-v2.yml
+           test -f ops/policy/test-policy.yaml
+-          grep -Fq 'Governed automatic test discovery and execution' .github/workflows/porota-predeploy-v2.yml
+-          grep -Fq 'automatic_discovery_required: true' ops/policy/test-policy.yaml
+-          echo 'POROTA_LEGACY_CANDIDATE_PIPELINE=RETIRED_TO_CANONICAL_PREDEPLOY_V2'
+-          echo 'TEST_RESULT_CLAIM=NONE'
++          rg -F 'Governed automatic test discovery and execution' .github/workflows/porota-predeploy-v2.yml
++          rg -F 'automatic_discovery_required: true' ops/policy/test-policy.yaml
++          echo 'POROTA_CANONICAL_ARTIFACT_PIPELINE=PREDEPLOY_V2_ONLY'
++          echo 'SUPPLEMENTARY_TEST_RESULT_CLAIM=SELECTED_GATE_ONLY'
++          echo 'DEPLOY_OWNER=NOT_ACQUIRED'
++          echo 'real_orders_sent=0'
++      - name: Prepare reviewed CPython311 tooling
++        id: py311
++        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 reviewed2026-10-05
++        with:
++          python-version: "3.11.16"
++      - name: Prepare reviewed CPython312 tooling
++        id: py312
++        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 reviewed2026-10-05
++        with:
++          python-version: "3.12.14"
++      - name: Run declared supplementary gate with owned custody
++        id: gate
++        shell: bash
++        env:
++          RC6_SOURCE_SHA: ${{ inputs.source_sha }}
++          RC6_SOURCE_TREE: ${{ inputs.source_tree }}
++          RC6_GATE: ${{ inputs.gate }}
++          RC6_LAUNCH_RECEIPT: ${{ inputs.launch_receipt_url }}
++          RC6_OWNER_SESSION: ${{ inputs.owner_session }}
++          RC6_PYTHON311: ${{ steps.py311.outputs.python-path }}
++          RC6_PYTHON312: ${{ steps.py312.outputs.python-path }}
++          GH_TOKEN: ${{ github.token }}
++        run: |
++          set -Eeuo pipefail
++          umask 022
++          "$RC6_PYTHON311" -I -B scripts/rc6_material_carrier.py \
++            --repo-root "$GITHUB_WORKSPACE" \
++            --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
++            --gate "$RC6_GATE" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" --owner-session "$RC6_OWNER_SESSION" \
++            --python311 "$RC6_PYTHON311" --python312 "$RC6_PYTHON312"
++      - name: Preserve only owned custody controls on every terminal path
++        if: always() && steps.gate.outputs.control_root != ''
++        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 reviewed2026-10-05
++        with:
++          name: rc6-supplementary-controls-${{ inputs.source_sha }}-${{ inputs.gate }}-${{ github.run_id }}-${{ github.run_attempt }}
++          if-no-files-found: error
++          retention-days: 14
++          path: ${{ steps.gate.outputs.control_root }}/*.json
++      - name: Preserve supplementary RAW only after every native FIN
++        if: always() && steps.gate.outputs.safe_payload_upload == 'true'
++        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 reviewed2026-10-05
++        with:
++          name: rc6-supplementary-raw-${{ inputs.source_sha }}-${{ inputs.gate }}-${{ github.run_id }}-${{ github.run_attempt }}
++          if-no-files-found: error
++          retention-days: 14
++          path: ${{ steps.gate.outputs.payload_root }}
+--- a/scripts/rc6_issue465_stress.py
++++ b/scripts/rc6_issue465_stress.py
+@@ -50,6 +50,12 @@
+     def __init__(self, evidence):
+         self.evidence = evidence
+         super().__init__("NATIVE_IMPORT_PROVENANCE_NOT_VERIFIED")
++
++
++def _require_reaped_shadow_producer(child):
++    """Veto payload postreads until the owned stress worker is actually reaped."""
++    if child.is_alive() or type(child.exitcode) is not int:
++        raise RuntimeError("SHADOW_PRODUCER_NOT_REAPED_NO_PAYLOAD_POSTREAD")
+ 
+ 
+ def _reaped_child_lifetime_rss(child):
+@@ -428,6 +434,10 @@
+         started.set()
+     try:
+         data = read_runtime(database, as_of=AT, row_limit=20000, query_budget_seconds=2)
++        observation_count = len(data["observations"])
++        catalog_count = len(data["catalog"])
++        observation_read_truncated = data["observation_read_truncated"]
++        del data
+         phases.append("BOUNDED_READ")
+         if canonical_runtime:
+             worker = ShadowRuntime.from_environment(database, maximum_bytes=maximum_bytes)
+@@ -445,8 +455,8 @@
+         assert report["provider_requests"] == report["real_orders_sent"] == 0
+         assert report["real_routes"] == "NOT_CALLED"
+         assert report["source_database_effect"] == "READ_ONLY"
+-        assert len(data["observations"]) <= 40000
+-        assert len(data["catalog"]) <= 20000
++        assert observation_count <= 40000
++        assert catalog_count <= 20000
+         committed = persistence.read_committed_projection(output, deadline=time.monotonic()+1)
+         assert committed["report"]["as_of"] == report["as_of"]
+         assert committed["pointer"]["generation_id"] == report["generation_id"]
+@@ -456,8 +466,8 @@
+                   "full_pipeline_exercised": True,
+                   "family_reports": len(report["family_routing"] if isinstance(report["family_routing"], list)
+                                         else report["family_routing"]["families"]),
+-                  "observations_returned": len(data["observations"]),
+-                  "observation_read_truncated": data["observation_read_truncated"],
++                  "observations_returned": observation_count,
++                  "observation_read_truncated": observation_read_truncated,
+                   "source_database_effect": "READ_ONLY", "committed_sequence": committed["pointer"]["sequence"],
+                   "generation_schema": committed["manifest"]["schema"],
+                   "configuration_fingerprint": committed["manifest"]["configuration_fingerprint"],
+@@ -582,7 +592,8 @@
+ 
+ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
+                slow_disk=False, maximum_bytes=128*1024**2, allow_fail_closed=False,
+-               canonical_runtime=False, diagnostic_stacks=None, source_provenance=None):
++               canonical_runtime=False, diagnostic_stacks=None, source_provenance=None,
++               _native_postread_barrier=None):
+     binding, parent_observer, parent_before = None, None, None
+     if source_provenance is not None:
+         if not canonical_runtime or not isinstance(source_provenance,dict):
+@@ -596,14 +607,16 @@
+         return _run_stress(root,catalog_count=catalog_count,observations_per_identity=observations_per_identity,
+             slow_disk=slow_disk,maximum_bytes=maximum_bytes,allow_fail_closed=allow_fail_closed,
+             canonical_runtime=canonical_runtime,diagnostic_stacks=diagnostic_stacks,
+-            binding=binding,parent_observer=parent_observer,parent_before=parent_before)
++            binding=binding,parent_observer=parent_observer,parent_before=parent_before,
++            native_postread_barrier=_native_postread_barrier)
+     finally:
+         if parent_observer is not None:
+             parent_observer.deactivate()
+ 
+ 
+ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, maximum_bytes,
+-                allow_fail_closed, canonical_runtime, diagnostic_stacks, binding, parent_observer, parent_before):
++                allow_fail_closed, canonical_runtime, diagnostic_stacks, binding, parent_observer, parent_before,
++                native_postread_barrier=None):
+     root = Path(root)
+     root.mkdir(parents=True, exist_ok=True)
+     if any(root.iterdir()):
+@@ -721,6 +734,9 @@
+             child.join(5)
+         queue.close()
+         queue.join_thread()
++    _require_reaped_shadow_producer(child)
++    if native_postread_barrier is not None:
++        native_postread_barrier()
+     lifetime_rss = _reaped_child_lifetime_rss(child) if binding is not None else None
+     shadow.setdefault("evidence_bytes", sum(p.stat().st_size for p in output.rglob("*") if p.is_file()))
+     shadow.setdefault("evidence_files", sum(p.is_file() for p in output.rglob("*")))
+@@ -804,6 +820,65 @@
+     return result
+ 
+ 
++
++def _native_cleanup_complete(report):
++    """All original six protocols and physical facts, never metadata alone."""
++    stages = ('nonnegative_stdlib_finalizers', 'join_owned_children', 'stop_owned_forkserver',
++              'remaining_stdlib_finalizers', 'stop_owned_resource_tracker', 'verify_kernel_echild')
++    return bool(isinstance(report, dict) and report.get('status') == 'GREEN'
++        and report.get('finalization_thread_finished') is True
++        and report.get('kernel_echild_before_phase_return') is True
++        and report.get('signal_guard_installed_and_witnessed') is True
++        and report.get('forced_termination_attempted') is False
++        and report.get('signal_vetoed') is False and report.get('forced_termination') is False
++        and report.get('termination_signal_attempts') == [] and report.get('errors') == []
++        and report.get('management_bound_seconds') == 5 and report.get('wall_seconds', 6) <= 5
++        and tuple(row.get('stage') for row in report.get('protocol_steps', ())) == stages
++        and all(row.get('completed') is True for row in report['protocol_steps']))
++
++
++def _aggregate_native_cleanup(attempts, entered, deadline, terminal_blocked):
++    """Keep terminal six-stage schema and every earlier RED under one deadline."""
++    receipts = [row['receipt'] for row in attempts if row.get('receipt') is not None]
++    if not receipts:
++        return None
++    elapsed = time.monotonic()-entered
++    aggregate = {**receipts[-1]}
++    # protocol_steps stays the terminal original six-stage report. Earlier
++    # complete receipts remain lossless under native_cli_finalization_passes.
++    for name in ('joined_children', 'stopped_owned_infrastructure', 'termination_signal_attempts',
++                 'unexpected_kernel_children', 'errors'):
++        aggregate[name] = [value for receipt in receipts for value in receipt[name]]
++    for row in attempts:
++        if row.get('error') is not None:
++            aggregate['errors'].append({'stage': row['stage'], **row['error']})
++    if terminal_blocked:
++        aggregate['errors'].append({'stage': 'before_main_exit', 'class': 'RuntimeError',
++                                    'reason': 'PRIOR_CHILD_FINALIZATION_NOT_OBSERVED_COMPLETE'})
++    all_returned = len(receipts) == len(attempts)
++    aggregate['finalization_thread_finished'] = all_returned and all(
++        row['finalization_thread_finished'] is True for row in receipts)
++    aggregate['signal_guard_installed_and_witnessed'] = all_returned and all(
++        row['signal_guard_installed_and_witnessed'] is True for row in receipts)
++    aggregate['forced_termination_attempted'] = any(row['forced_termination_attempted'] for row in receipts)
++    aggregate['signal_vetoed'] = any(row['signal_vetoed'] for row in receipts)
++    aggregate['forced_termination'] = False if aggregate['finalization_thread_finished'] and all(
++        row['forced_termination'] is False for row in receipts) else None
++    aggregate['kernel_echild_before_phase_return'] = all_returned and all(
++        row['kernel_echild_before_phase_return'] is True for row in receipts)
++    aggregate['inherited_tracker_preserved'] = any(row['inherited_tracker_preserved'] for row in receipts)
++    aggregate['management_bound_seconds'] = 5
++    aggregate['wall_seconds'] = elapsed  # Includes the gap, not a second five-second allowance.
++    aggregate['native_cli_cleanup_entered_at_monotonic'] = entered
++    aggregate['native_cli_cleanup_deadline_monotonic'] = deadline
++    aggregate['native_cli_finalization_passes'] = attempts
++    aggregate['native_cli_terminal_cleanup_blocked'] = terminal_blocked
++    terminal_attempted = bool(attempts and attempts[-1]['stage'] == 'before_main_exit')
++    aggregate['status'] = ('GREEN' if all_returned and terminal_attempted and not terminal_blocked
++        and not aggregate['errors'] and all(_native_cleanup_complete(row) for row in receipts)
++        and elapsed <= 5 and time.monotonic() <= deadline else 'RED')
++    return aggregate
++
+ def main(argv=None):
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("--root", required=True)
+@@ -822,13 +897,56 @@
+     source_provenance = source_values if all(value is not None for value in source_values.values()) else None
+     from scripts import rc6_controlled_governed_runner as lifecycle
+     output = lifecycle.safe_path(args.out)
+-    lifecycle.require(not output.exists() and not output.is_relative_to(ROOT),
++    fin_output = lifecycle.safe_path(str(output)+".owned-fin.json")
++    lifecycle.require(not output.exists() and not fin_output.exists() and not output.is_relative_to(ROOT),
+                       "FRESH_EXTERNAL_NATIVE_CLI_RECEIPT_REQUIRED")
+     observations = {"inet_socket_attempts": [], "inet_socket_constructor_requests": [],
+                     "subprocess_executable_counts": {}}
+     initial = capability = finalization = result = unexpected = None
+     fresh_infrastructure = audit_witness_verified = False
++    finalized_before_payload_postreads = False
++    cleanup_entered = cleanup_deadline = None
++    cleanup_attempts = []
++    terminal_cleanup_blocked = False
+     code = 0
++
++    def attempt_child_cleanup(stage):
++        nonlocal cleanup_entered, cleanup_deadline, finalization
++        if cleanup_entered is None:
++            # Irreversible before the attempted call: an exception cannot buy
++            # another five seconds, reset the clock or permit a blind retry.
++            cleanup_entered = time.monotonic()
++            cleanup_deadline = cleanup_entered+5
++        attempt = {"stage": stage, "attempted_at_monotonic": time.monotonic(),
++                   "cleanup_deadline_monotonic": cleanup_deadline,
++                   "receipt": None, "error": None}
++        cleanup_attempts.append(attempt)
++        try:
++            attempt["receipt"] = lifecycle.finalize_child_infrastructure(initial, limit=5,
++                                                                        cleanup_deadline=cleanup_deadline)
++        except BaseException as error:
++            import re
++            literal = str(error).partition(":")[0]
++            attempt["error"] = {"class": type(error).__name__, "reason": literal
++                if re.fullmatch(r"[A-Z][A-Z0-9_]{0,191}", literal) else "CHILD_FINALIZATION_PROTOCOL_ERROR"}
++            raise
++        finally:
++            finalization = _aggregate_native_cleanup(cleanup_attempts, cleanup_entered,
++                                                     cleanup_deadline, terminal_cleanup_blocked)
++        return attempt["receipt"]
++
++    def require_native_postread_fin():
++        nonlocal finalized_before_payload_postreads
++        if not cleanup_attempts:
++            attempt_child_cleanup("before_payload_postreads")
++        # An early pass is required before Source/DATA reads, but does not
++        # attest to infrastructure or real finalizers created after return.
++        lifecycle.require(len(cleanup_attempts) == 1
++            and _native_cleanup_complete(cleanup_attempts[0]["receipt"])
++            and time.monotonic() <= cleanup_deadline,
++            "NATIVE_CLI_FIN_REQUIRED_BEFORE_PAYLOAD_POSTREAD")
++        finalized_before_payload_postreads = True
++
+     try:
+         initial = lifecycle.child_infrastructure_snapshot()
+         lifecycle.require(all(value is None for value in initial.values()),
+@@ -840,6 +958,7 @@
+         result = run_stress(args.root, catalog_count=args.catalog_count,
+                             observations_per_identity=args.observations_per_identity, slow_disk=args.slow_disk,
+                             canonical_runtime=args.canonical_runtime, diagnostic_stacks=args.diagnostic_stacks,
++                            _native_postread_barrier=require_native_postread_fin,
+                             **({"source_provenance":source_provenance} if source_provenance is not None else {}))
+     except (StressResourceLimit,StressImportProofLimit) as error:
+         result, code = error.evidence, 1
+@@ -847,12 +966,22 @@
+         unexpected, code = error, 1
+     finally:
+         if fresh_infrastructure:
+-            try:
+-                finalization = lifecycle.finalize_child_infrastructure(initial, limit=5)
+-            except BaseException as error:
+-                if unexpected is None:
+-                    unexpected = error
++            # Recheck after actual run_stress return: it may have registered
++            # genuine finalizers/children after the early physical barrier.
++            # Never overlap an unobserved or incomplete first daemon thread.
++            if cleanup_attempts and any(row["receipt"] is None or
++                    row["receipt"]["finalization_thread_finished"] is not True for row in cleanup_attempts):
++                terminal_cleanup_blocked = True
++                finalization = _aggregate_native_cleanup(cleanup_attempts, cleanup_entered,
++                                                         cleanup_deadline, terminal_cleanup_blocked)
+                 code = 1
++            else:
++                try:
++                    attempt_child_cleanup("before_main_exit")
++                except BaseException as error:
++                    if unexpected is None:
++                        unexpected = error
++                    code = 1
+     error_receipt = None
+     if unexpected is not None:
+         import re
+@@ -864,13 +993,9 @@
+             error_receipt.update(reason="OS_ERROR", errno=unexpected.errno)
+         else:
+             error_receipt["reason"] = "NON_LITERAL_GUARD_EXCEPTION"
+-    infrastructure_complete = bool(finalization is not None
+-        and finalization["status"] == "GREEN" and finalization["finalization_thread_finished"] is True
+-        and finalization["kernel_echild_before_phase_return"] is True
+-        and finalization["signal_guard_installed_and_witnessed"] is True
+-        and finalization["forced_termination_attempted"] is False and finalization["signal_vetoed"] is False
+-        and not finalization["termination_signal_attempts"] and not finalization["errors"]
+-        and finalization["wall_seconds"] <= 5)
++    infrastructure_complete = bool(_native_cleanup_complete(finalization)
++        and cleanup_attempts and cleanup_attempts[-1]["stage"] == "before_main_exit"
++        and not terminal_cleanup_blocked and time.monotonic() <= cleanup_deadline)
+     lifecycle_complete = bool(capability is not None
+         and capability["status"] == "INSTALLED_AND_KERNEL_WITNESSED" and audit_witness_verified is True
+         and infrastructure_complete and not observations["inet_socket_attempts"] and unexpected is None)
+@@ -889,9 +1014,27 @@
+         "original_inet_operation_audit_registration_witness_verified": audit_witness_verified,
+         "operation_audit_scope": "THIS_NATIVE_CLI_PYTHON_PROCESS_ONLY; NO_TRANSITIVE_CHILD_NETWORK_ATTESTATION",
+         "child_infrastructure_finalization": finalization,
++        "child_finalization_attempts": cleanup_attempts,
++        "child_finalization_single_deadline_monotonic": cleanup_deadline,
++        "terminal_cleanup_blocked_by_prior_unknown": terminal_cleanup_blocked,
+         "child_infrastructure_finalized_before_main_exit": infrastructure_complete,
++        "child_infrastructure_finalized_before_payload_postreads": finalized_before_payload_postreads,
++        "owned_fin_control_path": str(fin_output),
+         "unexpected_error": error_receipt, **observations,
+         "scope": "NATIVE_CLI_LAUNCHER_GUARD_AND_STDLIB_FINALIZATION_ONLY; BUSINESS_IMPORT_AND_RUNTIME_GATES_SEPARATE"}}
++    # Control-only receipt precedes the business payload. A closed physical FIN
++    # never converts a business/resource failure into GREEN or changes 90/5.
++    fin_control = {"schema": "rc6.issue465.native-cli-owned-fin.v1",
++        "pid": os.getpid(), "parent_pid": os.getppid(), "entry_module": __name__,
++        "source_binding": {**source_values,
++            "source_index_sha256": result.get("import_provenance", {}).get("source_index_sha256")},
++        "payload_path": str(output), "native_cli_lifecycle": result["native_cli_lifecycle"],
++        "physical_fin_closed": infrastructure_complete,
++        "finalized_before_payload_postreads": finalized_before_payload_postreads,
++        "native_resource_exit_code": native_code, "cli_exit_code": code,
++        "business_GREEN_inferred_from_FIN": False, "original_child_finalization_seconds": 5,
++        "cycle_deadline_seconds": 90, "real_orders_sent": 0}
++    lifecycle.publish(fin_output, lifecycle.canonical(fin_control))
+     lifecycle.publish(output, lifecycle.canonical(result))
+     print("ISSUE465_STRESS_EVIDENCE="+str(output))
+     if unexpected is not None:
+@@ -899,5 +1042,6 @@
+     return code
+ 
+ 
++
+ if __name__ == "__main__":
+     raise SystemExit(main())
+--- a/scripts/rc6_controlled_governed_runner.py
++++ b/scripts/rc6_controlled_governed_runner.py
+@@ -42,9 +42,21 @@
+     require(not private.exists() and not private.is_relative_to(root),
+             'FRESH_EXTERNAL_PHASE_NAMESPACE_REQUIRED')
+     private.mkdir(mode=0o700)
+-    paths = {name: private/name for name in ('hypothesis', 'logs')}
++    paths = {name: private/name for name in ('hypothesis', 'logs', 'legacy-persistence')}
+     for path in paths.values():
+         path.mkdir(mode=0o700)
++    # These supported product configurations must precede collection imports:
++    # a legacy status read, session or startup trace can persist real files.
++    legacy = safe_path(paths['legacy-persistence'])
++    legacy_identity = legacy.lstat()
++    require(stat.S_ISDIR(legacy_identity.st_mode) and legacy_identity.st_uid == os.geteuid()
++            and stat.S_IMODE(legacy_identity.st_mode) == 0o700
++            and legacy_identity.st_dev == output.lstat().st_dev == os.lstat(root).st_dev,
++            'EXTERNAL_OWNED_SAME_FILESYSTEM_LEGACY_PERSISTENCE_REQUIRED')
++    legacy_paths = {'DB_PATH': str(legacy/'trading_system.db'),
++        'HIST_DB_PATH': str(legacy/'market_history.db'),
++        'TESTING_LOG_PATH': str(legacy/'testing_trace.jsonl'),
++        'DASHBOARD_SESSION_STORE': str(legacy/'dashboard_sessions.json')}
+     # multiprocessing's concrete AF_UNIX listener paths have a native length
+     # bound. Choose a fresh private sibling on this same filesystem, rather
+     # than moving fixtures onto tmpfs or hiding a path in the source tree.
+@@ -63,12 +75,16 @@
+             'SHORT_TEMPORARY_NAMESPACE_CUSTODY_REQUIRED')
+     os.environ.update({'TMPDIR': str(paths['tmp']), 'RUNNER_TEMP': str(private),
+         'HYPOTHESIS_STORAGE_DIRECTORY': str(paths['hypothesis']), 'LOG_DIR': str(paths['logs']),
+-        'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1', 'PYTHONDONTWRITEBYTECODE': '1'})
++        'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1', 'PYTHONDONTWRITEBYTECODE': '1', **legacy_paths})
+     tempfile.tempdir = str(paths['tmp'])
+     sys.dont_write_bytecode = True
+     return {'root': str(private), 'tmpdir': str(paths['tmp']),
+             'hypothesis_storage_directory': str(paths['hypothesis']), 'log_dir': str(paths['logs']),
+             'tmpdir_device': tmp_identity.st_dev, 'tmpdir_owner_uid': tmp_identity.st_uid,
++            'legacy_persistence_directory': str(legacy), 'legacy_persistence_paths': legacy_paths,
++            'legacy_persistence_device': legacy_identity.st_dev,
++            'legacy_persistence_owner_uid': legacy_identity.st_uid,
++            'legacy_persistence_mode': stat.S_IMODE(legacy_identity.st_mode),
+             'tmpdir_retained_for_diagnostics': True,
+             'pytest_cache_provider_disabled': True, 'writable_source_exclusions_added': []}
+ 
+@@ -142,7 +158,7 @@
+             'forkserver_pid': server._forkserver_pid, 'forkserver_alive_fd': server._forkserver_alive_fd}
+ 
+ 
+-def finalize_child_infrastructure(initial, limit=5):
++def finalize_child_infrastructure(initial, limit=5, *, cleanup_deadline=None):
+     """Finish actual stdlib lifecycle before the parent observes main-PID exit.
+ 
+     Known children are joined. Python os.kill/os.killpg nonzero signals are
+@@ -157,7 +173,15 @@
+     require(limit == 5, 'ORIGINAL_CHILD_FINALIZATION_BOUND_REQUIRED')
+     entered = time.monotonic()
+     deadline = entered+limit
++    if cleanup_deadline is not None:
++        import math
++        require(type(cleanup_deadline) in (int, float) and math.isfinite(cleanup_deadline)
++                and entered <= cleanup_deadline <= deadline,
++                'ORIGINAL_ABSOLUTE_CHILD_FINALIZATION_DEADLINE_REQUIRED')
++        deadline = cleanup_deadline
+     report = {'status': 'RED', 'management_bound_seconds': limit, 'forced_termination': None,
++              'entered_at_monotonic': entered, 'cleanup_deadline_monotonic': deadline,
++              'available_management_seconds': deadline-entered,
+               'forced_termination_attempted': False, 'signal_vetoed': False,
+               'termination_signal_attempts': [], 'signal_guard_installed_and_witnessed': False,
+               'forced_termination_observation_scope':
+@@ -914,7 +938,8 @@
+             and output.parent.is_dir() and output.parent.lstat().st_dev == root.lstat().st_dev,
+             'FRESH_EXTERNAL_DISK_BACKED_OUTPUT_ON_CHECKOUT_FILESYSTEM_REQUIRED')
+     require(not (root/'.env').exists() and not any(name.startswith(('POROTA_', 'PAPER_')) or name in
+-            ('DATA_DIR', 'HIST_DB_PATH') for name in os.environ), 'OPERATIONAL_ENVIRONMENT_FORBIDDEN')
++            ('DATA_DIR', 'DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_STORE')
++            for name in os.environ), 'OPERATIONAL_ENVIRONMENT_FORBIDDEN')
+     output.mkdir(mode=0o700)
+     runner_raw, runner_stat = capture(__file__)
+     publish(output/'external-runner.py', runner_raw)
+--- a/tests/test_rc6_stress_native_cli_lifecycle.py
++++ b/tests/test_rc6_stress_native_cli_lifecycle.py
+@@ -93,6 +93,17 @@
+     if slow:
+         assert result['slow_fsync_exit_isolation_proven'] and result['shadow']['fsync']['fsync_completed']
+     lifecycle = result['native_cli_lifecycle']
++    control_path = tmp_path/'result.json.owned-fin.json'
++    control = json.loads(control_path.read_text())
++    assert control['schema'] == 'rc6.issue465.native-cli-owned-fin.v1'
++    assert control['pid'] == kernel['pid'] and control['entry_module'] == '__main__'
++    assert control['native_cli_lifecycle'] == lifecycle
++    assert control['physical_fin_closed'] and control['finalized_before_payload_postreads']
++    assert control['original_child_finalization_seconds'] == 5 and control['cycle_deadline_seconds'] == 90
++    assert control['business_GREEN_inferred_from_FIN'] is False and control['real_orders_sent'] == 0
++    assert control['payload_path'] == str(tmp_path/'result.json')
++    assert control_path.stat().st_mtime_ns <= (tmp_path/'result.json').stat().st_mtime_ns
++    assert lifecycle['child_infrastructure_finalized_before_payload_postreads']
+     assert lifecycle['status'] == 'GREEN' and lifecycle['entry_module'] == '__main__'
+     assert lifecycle['pid'] == kernel['pid'] and lifecycle['cli_exit_code'] == 0
+     assert lifecycle['native_resource_exit_code'] == 0 and lifecycle['fresh_infrastructure_verified']
+@@ -113,8 +124,9 @@
+     assert any(row['kind'] == 'resource_tracker' for row in finalization['stopped_owned_infrastructure'])
+ 
+ 
+-def test_existing_native_receipt_is_never_overwritten_and_no_fixture_starts(tmp_path):
+-    receipt = tmp_path/'result.json'
++@pytest.mark.parametrize('existing', ('result.json', 'result.json.owned-fin.json'))
++def test_existing_native_receipt_is_never_overwritten_and_no_fixture_starts(tmp_path, existing):
++    receipt = tmp_path/existing
+     receipt.write_bytes(b'KEEP_ORIGINAL_RECEIPT\n')
+     kernel = native_phase(tmp_path, [sys.executable, '-I', '-B', str(CLI), *cli_arguments(tmp_path)])
+     assert_kernel_closed(kernel, 1)
+@@ -248,3 +260,249 @@
+     assert finalization['termination_signal_attempts'] == [{'event': 'os.kill',
+         'pid_or_pgid': observed['child_pid'], 'signal': signal.SIGTERM, 'vetoed_before_syscall': True}]
+     assert any(row['reason'] == 'CHILD_FINALIZATION_SIGNAL_ATTEMPT_DENIED' for row in finalization['errors'])
++
++
++
++def test_actual_initial_read_payload_is_released_before_both_native_ticks(tmp_path):
++    command = control_process(tmp_path, """
++        import json, queue, threading, weakref
++        from pathlib import Path
++        from cg_paper_workspace import artifact_root
++        from rc6_dynamic_universe import runtime
++        from rc6_shadow_runtime.worker import ShadowRuntime
++        from scripts import rc6_issue465_stress as stress
++        from scripts import rc6_controlled_governed_runner as runner
++        initial = runner.child_infrastructure_snapshot()
++        assert all(value is None for value in initial.values())
++        capability = runner.restrict_inet_creation()
++        observations = {'inet_socket_attempts': [], 'inet_socket_constructor_requests': [],
++                        'subprocess_executable_counts': {}}
++        assert runner.install_phase_audit(observations) is True
++        class WeakResult(dict):
++            pass
++        class WeakList(list):
++            pass
++        original_read, original_tick = runtime.read_runtime, ShadowRuntime.tick
++        references, scalars, ticks = [], {}, []
++        def tracked_initial_read(database, **options):
++            assert not references
++            assert options == {'as_of': stress.AT, 'row_limit': 20000, 'query_budget_seconds': 2}
++            actual = original_read(database, **options)
++            scalars.update(observation_count=len(actual['observations']),
++                catalog_count=len(actual['catalog']),
++                observation_read_truncated=actual['observation_read_truncated'])
++            payload = WeakResult(actual)
++            payload['observations'] = WeakList(actual['observations'])
++            payload['catalog'] = WeakList(actual['catalog'])
++            assert payload == actual
++            references.extend(weakref.ref(value) for value in
++                (payload, payload['observations'], payload['catalog']))
++            return payload
++        def checked_tick(worker, at):
++            assert len(references) == 3 and all(reference() is None for reference in references)
++            ticks.append(at.isoformat())
++            return original_tick(worker, at)
++        database = Path("""+repr(str(tmp_path/'data'/'paper_v17'/'observer_v17.db'))+""")
++        database.parent.mkdir(mode=0o700, parents=True)
++        stress.fixture_database(database, catalog_count=20, observations_per_identity=5)
++        source_before = stress.source_custody_snapshot(database)
++        output = artifact_root(database)/'dynamic-shadow'
++        messages = queue.Queue()
++        runtime.read_runtime, ShadowRuntime.tick = tracked_initial_read, checked_tick
++        try:
++            stress._shadow_child_work(str(database), str(output), threading.Event(),
++                threading.Event(), messages, False, 128*1024**2, True, None, None, None)
++        finally:
++            runtime.read_runtime, ShadowRuntime.tick = original_read, original_tick
++            finalization = runner.finalize_child_infrastructure(initial, limit=5)
++        assert finalization['status'] == 'GREEN' and finalization['finalization_thread_finished']
++        assert finalization['kernel_echild_before_phase_return'] and finalization['wall_seconds'] <= 5
++        assert not finalization['forced_termination_attempted'] and not finalization['signal_vetoed']
++        assert finalization['termination_signal_attempts'] == finalization['errors'] == []
++        assert observations['inet_socket_attempts'] == []
++        records = []
++        while not messages.empty():
++            records.append(messages.get_nowait())
++        finals = [record for record in records if record.get('_probe_event') == 'FINAL']
++        assert len(finals) == 1
++        shadow = finals[0]
++        assert shadow['cycle_completion'] and shadow['committed_sequence'] == 2
++        assert ticks == [stress.PRE.isoformat(), stress.AT.isoformat()]
++        assert scalars == {'observation_count': 100, 'catalog_count': 20,
++                          'observation_read_truncated': False}
++        assert shadow['observations_returned'] == scalars['observation_count']
++        assert shadow['observation_read_truncated'] is scalars['observation_read_truncated']
++        assert shadow['catalog_ready_count'] == scalars['catalog_count']
++        source_after = stress.source_custody_snapshot(database)
++        assert source_before == source_after
++        evidence = {'schema': 'rc6.issue465.initial-read-lifetime-control.v1',
++            'scope': 'NATIVE20_COMPONENT_LIFETIME_ONLY_NOT_FULL_STRESS_OR_BIG',
++            'initial_payload_and_both_lists_released': all(reference() is None for reference in references),
++            'scalars': scalars, 'tick_cutoffs': ticks, 'shadow': shadow,
++            'source_custody_before': source_before, 'source_custody_after': source_after,
++            'child_infrastructure_finalization': finalization,
++            'offline_ipv6_creation_capability': capability, 'operation_audit': observations,
++            'big_qualified': False, 'import_proof_complete': False}
++        with Path("""+repr(str(tmp_path/'lifetime.json'))+""").open('x') as stream:
++            json.dump(evidence, stream, sort_keys=True)
++    """)
++    kernel = native_phase(tmp_path, command)
++    assert_kernel_closed(kernel, 0)
++    evidence = json.loads((tmp_path/'lifetime.json').read_text())
++    assert evidence['initial_payload_and_both_lists_released']
++    assert evidence['shadow']['cycle_completion'] and evidence['shadow']['committed_sequence'] == 2
++    assert evidence['shadow']['real_orders_sent'] == evidence['shadow']['provider_requests'] == 0
++    assert evidence['shadow']['real_routes'] == 'NOT_CALLED'
++    assert not evidence['big_qualified'] and not evidence['import_proof_complete']
++
++
++def test_real_live_shadow_producer_vetoes_payload_postreads_until_actual_reap(tmp_path):
++    command = control_process(tmp_path, """
++        import json, multiprocessing as mp
++        from pathlib import Path
++        from scripts import rc6_issue465_stress as stress
++        from scripts import rc6_controlled_governed_runner as runner
++        initial = runner.child_infrastructure_snapshot()
++        assert all(value is None for value in initial.values())
++        capability = runner.restrict_inet_creation()
++        observations = {'inet_socket_attempts': [], 'inet_socket_constructor_requests': [],
++                        'subprocess_executable_counts': {}}
++        assert runner.install_phase_audit(observations) is True
++        database = Path("""+repr(str(tmp_path/'data'/'source.db'))+""")
++        database.parent.mkdir(mode=0o700, parents=True)
++        stress.fixture_database(database, catalog_count=20, observations_per_identity=5)
++        source_before = stress.source_custody_snapshot(database)
++        context = mp.get_context('fork')
++        started, release = context.Event(), context.Event()
++        def real_live_producer():
++            started.set()
++            assert release.wait(5)
++        child = context.Process(target=real_live_producer)
++        child.start()
++        postread_calls, veto = [], None
++        try:
++            assert started.wait(5) and child.is_alive()
++            try:
++                stress._require_reaped_shadow_producer(child)
++                postread_calls.append('SOURCE_AFTER')
++                stress.source_custody_snapshot(database)
++            except RuntimeError as error:
++                veto = str(error)
++            assert veto == 'SHADOW_PRODUCER_NOT_REAPED_NO_PAYLOAD_POSTREAD'
++            assert child.is_alive() and child.exitcode is None and postread_calls == []
++        finally:
++            release.set()
++            child.join(5)
++            finalization = runner.finalize_child_infrastructure(initial, limit=5)
++        assert not child.is_alive() and child.exitcode == 0
++        assert finalization['status'] == 'GREEN' and finalization['finalization_thread_finished']
++        assert finalization['kernel_echild_before_phase_return'] and finalization['wall_seconds'] <= 5
++        assert not finalization['forced_termination_attempted'] and not finalization['signal_vetoed']
++        assert finalization['termination_signal_attempts'] == finalization['errors'] == []
++        assert observations['inet_socket_attempts'] == []
++        stress._require_reaped_shadow_producer(child)
++        source_after = stress.source_custody_snapshot(database)
++        assert source_before == source_after
++        evidence = {'schema': 'rc6.issue465.live-producer-postread-veto-control.v1',
++            'scope': 'REAL_LIVE_PRODUCER_NEGATIVE_GUARD_ONLY_NOT_STRESS_RESOURCE_QUALIFICATION',
++            'producer_pid': child.pid, 'producer_exitcode_after_natural_reap': child.exitcode,
++            'veto_reason': veto, 'payload_postread_calls_while_live': postread_calls,
++            'source_custody_before': source_before, 'source_custody_after': source_after,
++            'child_infrastructure_finalization': finalization,
++            'offline_ipv6_creation_capability': capability, 'operation_audit': observations,
++            'big_qualified': False, 'cycle_deadline_seconds_changed': False,
++            'original_cleanup_deadline_can_be_reclassified': False}
++        with Path("""+repr(str(tmp_path/'postread-veto.json'))+""").open('x') as stream:
++            json.dump(evidence, stream, sort_keys=True)
++    """)
++    kernel = native_phase(tmp_path, command)
++    assert_kernel_closed(kernel, 0)
++    evidence = json.loads((tmp_path/'postread-veto.json').read_text())
++    assert evidence['veto_reason'] == 'SHADOW_PRODUCER_NOT_REAPED_NO_PAYLOAD_POSTREAD'
++    assert evidence['payload_postread_calls_while_live'] == []
++    assert evidence['producer_exitcode_after_natural_reap'] == 0
++    assert not evidence['big_qualified'] and not evidence['cycle_deadline_seconds_changed']
++
++
++def test_native_absolute_cleanup_deadline_rejects_extra_budget_before_real_finalizer(tmp_path):
++    command = control_process(tmp_path, """
++        import errno, json, math, os, time
++        from multiprocessing import util
++        from pathlib import Path
++        from scripts import rc6_controlled_governed_runner as runner
++        initial = runner.child_infrastructure_snapshot()
++        assert all(value is None for value in initial.values())
++        calls, denials = [], []
++        finalizer = util.Finalize(None, lambda: calls.append('ACTUAL_FINALIZER'), exitpriority=1)
++        for deadline in (time.monotonic()+60, time.monotonic()-1, math.inf, math.nan, True):
++            try:
++                runner.finalize_child_infrastructure(initial, limit=5, cleanup_deadline=deadline)
++            except ValueError as error:
++                assert str(error) == 'ORIGINAL_ABSOLUTE_CHILD_FINALIZATION_DEADLINE_REQUIRED'
++                denials.append(type(deadline).__name__)
++            else:
++                raise AssertionError('ABSOLUTE_DEADLINE_EXTENSION_OR_INVALID_CLOCK_ACCEPTED')
++            assert finalizer.still_active() and calls == []
++        finalizer.cancel()
++        try:
++            os.wait4(-1, os.WNOHANG)
++        except ChildProcessError as error:
++            assert error.errno == errno.ECHILD
++        else:
++            raise AssertionError('KERNEL_ECHILD_NOT_OBSERVED')
++        Path("""+repr(str(tmp_path/'deadline-api.json'))+""").write_text(json.dumps({
++            'denials': denials, 'finalizer_executed': calls,
++            'management_bound_seconds': 5, 'gate_qualified': False}))
++    """)
++    kernel = native_phase(tmp_path, command)
++    assert_kernel_closed(kernel, 0)
++    result = json.loads((tmp_path/'deadline-api.json').read_text())
++    assert len(result['denials']) == 5 and result['finalizer_executed'] == []
++    assert result['management_bound_seconds'] == 5 and not result['gate_qualified']
++
++
++def test_real_early_finalization_exception_never_retries_or_resets_deadline(tmp_path):
++    command = control_process(tmp_path, """
++        import json
++        from pathlib import Path
++        from scripts import rc6_issue465_stress as stress
++        from scripts import rc6_controlled_governed_runner as runner
++        original = runner.finalize_child_infrastructure
++        attempts, actual = [], []
++        def real_finalization_then_failure(initial, limit=5, *, cleanup_deadline=None):
++            attempts.append({'limit': limit, 'deadline': cleanup_deadline})
++            receipt = original(initial, limit=limit, cleanup_deadline=cleanup_deadline)
++            assert receipt['status'] == 'GREEN' and receipt['finalization_thread_finished']
++            actual.append(receipt)
++            raise RuntimeError('REAL_EARLY_FINALIZATION_RECEIPT_NOT_RETURNED')
++        runner.finalize_child_infrastructure = real_finalization_then_failure
++        try:
++            stress.main("""+repr(cli_arguments(tmp_path))+""")
++        except RuntimeError as error:
++            assert str(error) == 'REAL_EARLY_FINALIZATION_RECEIPT_NOT_RETURNED'
++        else:
++            raise AssertionError('UNKNOWN_EARLY_FINALIZATION_REPORTED_GREEN')
++        assert len(attempts) == 1 and attempts[0]['limit'] == 5
++        assert actual[0]['cleanup_deadline_monotonic'] == attempts[0]['deadline']
++        Path("""+repr(str(tmp_path/'attempts.json'))+""").write_text(json.dumps({
++            'attempts': attempts, 'actual_receipt': actual[0], 'gate_qualified': False}))
++        raise SystemExit(1)
++    """)
++    kernel = native_phase(tmp_path, command)
++    assert_kernel_closed(kernel, 1)
++    result = json.loads((tmp_path/'result.json').read_text())
++    control = json.loads((tmp_path/'result.json.owned-fin.json').read_text())
++    observed = json.loads((tmp_path/'attempts.json').read_text())
++    lifecycle = result['native_cli_lifecycle']
++    assert lifecycle['status'] == 'RED' and lifecycle['cli_exit_code'] == 1
++    assert not lifecycle['child_infrastructure_finalized_before_payload_postreads']
++    assert not lifecycle['child_infrastructure_finalized_before_main_exit']
++    assert lifecycle['terminal_cleanup_blocked_by_prior_unknown']
++    assert len(lifecycle['child_finalization_attempts']) == len(observed['attempts']) == 1
++    attempt = lifecycle['child_finalization_attempts'][0]
++    assert attempt['stage'] == 'before_payload_postreads' and attempt['receipt'] is None
++    assert attempt['error']['reason'] == 'REAL_EARLY_FINALIZATION_RECEIPT_NOT_RETURNED'
++    assert attempt['cleanup_deadline_monotonic'] == lifecycle['child_finalization_single_deadline_monotonic']
++    assert not control['physical_fin_closed'] and not control['finalized_before_payload_postreads']
++    assert observed['actual_receipt']['management_bound_seconds'] == 5
++    assert not observed['gate_qualified']
+--- a/tests/test_rc6_controlled_governed_runner.py
++++ b/tests/test_rc6_controlled_governed_runner.py
+@@ -396,3 +396,175 @@
+     assert report['actual_child_reaped'] and report['owned_children_exhaustion_verified']
+     assert report['phase_acceptance_deadline_seconds'] == .2
+     assert report['owned_cleanup_management_bound_seconds'] == 5
++
++
++@pytest.mark.parametrize('phase', ('collection', 'execution'))
++def test_real_legacy_persistence_writers_leave_literal_and_product_source_unchanged(literal_tree, tmp_path, phase):
++    root, sha, tree = literal_tree
++    output = tmp_path/('legacy-output-'+phase)
++    output.mkdir(mode=0o700)
++    report = native("""
++from pathlib import Path
++import json, os, stat
++from scripts import rc6_controlled_governed_runner as r
++root, output, phase = Path(sys.argv[2]), Path(sys.argv[5]), sys.argv[6]
++source = Path(sys.argv[1]).absolute()
++source_sha = r.git(source, 'rev-parse', 'HEAD').decode().strip()
++source_tree = r.git(source, 'rev-parse', 'HEAD^{tree}').decode().strip()
++before = r.source_pin(root, sys.argv[3], sys.argv[4])
++# Canonical Predeploy may publish its own provenance outside this focal's
++# tiny literal Source. Bind the four real modules to raw HEAD blobs and Code
++# fields, rather than claiming a whole-product physical namespace here.
++product_before = {}
++for name in ('ac_db', 'al_historical_ingest', 'ao_startup_gate', 'ay_dashboard_auth'):
++    member = name+'.py'
++    path = r.safe_path(source/member)
++    raw, attributes = r.capture(path)
++    entry = r.git(source, 'ls-tree', '-z', source_sha, '--', member).split(bytes((0,)))
++    assert len(entry) == 2 and entry[1] == b''
++    header, encoded_member = entry[0].split(bytes((9,)), 1)
++    mode, kind, identifier = header.decode().split()
++    assert encoded_member.decode() == member and kind == 'blob' and mode in ('100644', '100755')
++    blob = r.git(source, 'cat-file', 'blob', identifier)
++    assert raw == blob and r.hashlib.sha1(b'blob '+str(len(raw)).encode()+bytes((0,))+raw).hexdigest() == identifier
++    assert stat.S_IMODE(attributes['st_mode']) == (0o644 if mode == '100644' else 0o755)
++    product_before[name] = {'sha256': r.digest(raw), 'git_blob': identifier,
++        'git_mode': mode, 'stat_fields': attributes}
++# The regression must exercise the new phase configurations, independently
++# of any namespace inherited from the surrounding whole-Gov process.
++for name in ('DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_STORE', 'DATA_DIR'):
++    os.environ.pop(name, None)
++os.environ['DASHBOARD_ACCESS_TOKEN'] = 'offline-native-persistence-fixture-'+('x'*40)
++os.chdir(root)
++namespace = r.phase_namespace(root, output, phase)
++capability = r.restrict_inet_creation()
++observations = {'inet_socket_attempts': [], 'inet_socket_constructor_requests': [],
++    'subprocess_executable_counts': {}}
++r.install_phase_audit(observations)
++# Original product writers, imported normally after namespace publication.
++# No function, module, SQLite connection, session store or trace is replaced.
++import ac_db
++import al_historical_ingest as history
++import ao_startup_gate as gate
++import ay_dashboard_auth as auth
++configurations = {'DB_PATH': ac_db.DB_PATH, 'HIST_DB_PATH': history.HIST_DB_PATH,
++    'TESTING_LOG_PATH': gate.TESTING_LOG_PATH, 'DASHBOARD_SESSION_STORE': auth.SESSION_STORE_PATH}
++assert configurations == namespace['legacy_persistence_paths']
++connection = ac_db.connect_raw()
++try:
++    connection.execute('CREATE TABLE namespace_control(value TEXT NOT NULL)')
++    connection.execute('INSERT INTO namespace_control VALUES(?)', ('PAPER',))
++    connection.commit()
++    assert connection.execute('SELECT value FROM namespace_control').fetchall() == [('PAPER',)]
++finally:
++    connection.close()
++history.init_db()
++connection = history._conn()
++try:
++    assert connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?",
++        ('market_historical_ohlcv',)).fetchone() == ('market_historical_ohlcv',)
++finally:
++    connection.close()
++gate.registrar_paso('NAMESPACE_CONTROL', 'Original offline writer retained', 'PAPER')
++session = auth.crear_sesion_desde_token(os.environ['DASHBOARD_ACCESS_TOKEN'])
++assert session is not None and auth.sesion_valida(session)
++trace = json.loads(r.capture(Path(configurations['TESTING_LOG_PATH']))[0])
++sessions = json.loads(r.capture(Path(configurations['DASHBOARD_SESSION_STORE']))[0])
++assert trace['etapa'] == 'NAMESPACE_CONTROL' and trace['resultado'] == 'PAPER'
++assert session in sessions['sessions'] and len(sessions['sessions']) == 1
++# Never include session IDs, tokens or persisted content in the receipt.
++legacy = Path(namespace['legacy_persistence_directory'])
++files = {}
++for name, value in configurations.items():
++    path = r.safe_path(value)
++    attributes = path.lstat()
++    assert path.is_absolute() and path.parent == legacy and not path.is_relative_to(root)
++    assert stat.S_ISREG(attributes.st_mode) and attributes.st_nlink == 1
++    assert attributes.st_uid == os.geteuid() and attributes.st_dev == root.lstat().st_dev
++    files[name] = {'path': str(path), 'bytes': attributes.st_size,
++        'mode': stat.S_IMODE(attributes.st_mode), 'nlink': attributes.st_nlink}
++origins = {}
++for name, module in (('ac_db', ac_db), ('al_historical_ingest', history),
++                     ('ao_startup_gate', gate), ('ay_dashboard_auth', auth)):
++    path = Path(module.__file__).absolute()
++    raw, _attributes = r.capture(path)
++    assert path == source/(name+'.py')
++    assert r.digest(raw) == product_before[name]['sha256']
++    origins[name] = {'path': str(path), 'sha256': r.digest(raw),
++        'git_blob': product_before[name]['git_blob']}
++after = r.source_pin(root, sys.argv[3], sys.argv[4])
++assert r.git(source, 'rev-parse', 'HEAD').decode().strip() == source_sha
++assert r.git(source, 'rev-parse', 'HEAD^{tree}').decode().strip() == source_tree
++product_atime = []
++for name, original in product_before.items():
++    raw, attributes = r.capture(source/(name+'.py'))
++    assert r.digest(raw) == original['sha256']
++    assert all(attributes[key] == original['stat_fields'][key] for key in r.STABLE_CODE_FIELDS)
++    if attributes['st_atime_ns'] != original['stat_fields']['st_atime_ns']:
++        product_atime.append({'path': name+'.py', 'before': original['stat_fields']['st_atime_ns'],
++            'after': attributes['st_atime_ns']})
++assert observations['inet_socket_attempts'] == []
++print(json.dumps({'namespace': namespace, 'four_real_writer_files': files,
++    'literal_source_atime': r.compare_source(before, after),
++    'product_module_atime': product_atime,
++    'literal_source_exact': after['physical_namespace_exact_to_literal_tree'],
++    'product_module_bytes_and_original10_unchanged': True, 'whole_product_namespace_attested': False,
++    'product_origins': origins, 'inet_operations': observations['inet_socket_attempts'],
++    'inet_constructor_requests': observations['inet_socket_constructor_requests'],
++    'offline_capability_installed': capability['status'] == 'INSTALLED_AND_KERNEL_WITNESSED'}))
++""", root, sha, tree, output, phase)
++    namespace = report['namespace']
++    legacy = Path(namespace['legacy_persistence_directory'])
++    assert legacy == output/(phase+'-private')/'legacy-persistence'
++    assert namespace['legacy_persistence_mode'] == 0o700
++    assert namespace['legacy_persistence_owner_uid'] == os.geteuid()
++    assert namespace['legacy_persistence_device'] == root.lstat().st_dev
++    assert set(report['four_real_writer_files']) == {
++        'DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_STORE'}
++    assert all(Path(row['path']).parent == legacy and row['bytes'] > 0 and row['nlink'] == 1
++               for row in report['four_real_writer_files'].values())
++    assert report['four_real_writer_files']['DASHBOARD_SESSION_STORE']['mode'] == 0o600
++    assert report['literal_source_exact'] and report['product_module_bytes_and_original10_unchanged']
++    assert report['whole_product_namespace_attested'] is False
++    assert set(report['product_origins']) == {'ac_db', 'al_historical_ingest', 'ao_startup_gate', 'ay_dashboard_auth'}
++    assert namespace['writable_source_exclusions_added'] == []
++    assert report['inet_operations'] == [] and report['offline_capability_installed']
++    assert not (root/'data').exists()
++
++
++@pytest.mark.parametrize('name', ('DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_STORE', 'DATA_DIR'))
++def test_foreign_persistence_environment_rejected_before_any_output(literal_tree, tmp_path, name):
++    root, sha, tree = literal_tree
++    output = tmp_path/('foreign-output-'+name)
++    report = native("""
++from pathlib import Path
++from types import SimpleNamespace
++import json, os
++from scripts import rc6_controlled_governed_runner as r
++root, output, name = Path(sys.argv[2]), Path(sys.argv[5]), sys.argv[6]
++before = r.source_pin(root, sys.argv[3], sys.argv[4])
++# Isolate the selected foreign variable so an inherited phase configuration
++# cannot make a missing rejection of this variable appear to pass.
++for key in tuple(os.environ):
++    if key.startswith(('POROTA_', 'PAPER_')) or key in (
++            'DATA_DIR', 'DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_STORE'):
++        del os.environ[key]
++# Presence is forbidden even for an empty DB_PATH, which would select a
++# relative product fallback. Other controls point directly inside Source.
++os.environ[name] = '' if name == 'DB_PATH' else str(root/'data'/'foreign-persistence')
++args = SimpleNamespace(repo_root=str(root), output_root=str(output),
++    source_sha=sys.argv[3], source_tree=sys.argv[4], timeout_seconds=5400)
++try:
++    r.main(args)
++except ValueError as error:
++    reason = str(error)
++else:
++    raise AssertionError('FOREIGN_PERSISTENCE_CONFIGURATION_WAS_ACCEPTED')
++after = r.source_pin(root, sys.argv[3], sys.argv[4])
++print(json.dumps({'reason': reason, 'output_created': output.exists(),
++    'source_exact': after['physical_namespace_exact_to_literal_tree'],
++    'atime': r.compare_source(before, after)}))
++""", root, sha, tree, output, name)
++    assert report['reason'] == 'OPERATIONAL_ENVIRONMENT_FORBIDDEN'
++    assert report['output_created'] is False and report['source_exact']
++    assert not output.exists() and not (root/'data').exists()
+--- a/tests/test_deploy_v2_frozen_artifact_contract.py
++++ b/tests/test_deploy_v2_frozen_artifact_contract.py
+@@ -1,4 +1,5 @@
+ from pathlib import Path
++import shlex
+ 
+ 
+ WORKFLOW = Path(".github/workflows/porota-predeploy-v2.yml").read_text(encoding="utf-8")
+@@ -30,6 +31,21 @@
+ 
+ 
+ def test_governed_pytest_isolated_from_runner_entrypoints():
+-    assert WORKFLOW.count(
+-        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest"
+-    ) == 2
++    commands = [line.strip() for line in WORKFLOW.splitlines()
++                if "scripts/porota_predeploy_test_workspace.py supervise-pytest" in line]
++    assert len(commands) == 2
++    collection, execution = map(shlex.split, commands)
++    for command in (collection, execution):
++        assert command[0] == "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"
++        assert command[1] == "$BOOTSTRAP_PYTHON"
++        assert command[2:4] == ["scripts/porota_predeploy_test_workspace.py", "supervise-pytest"]
++        child = command[command.index("--") + 1:]
++        assert child[:3] == ["python", "-m", "pytest"]
++        assert child[child.index("-p") + 1] == "no:cacheprovider"
++    assert collection[collection.index("--phase") + 1] == "collection"
++    assert "--collect-only" in collection and "--collect-only" not in execution
++    assert "--phase" not in execution  # The supervisor's default phase is execution.
++    collection_fin = WORKFLOW.index("require-owned-fin --phase collection")
++    execution_fin = WORKFLOW.index('require-owned-fin --scope "$POROTA_PREDEPLOY_OWNER"')
++    assert WORKFLOW.index(commands[0]) < collection_fin < WORKFLOW.index(commands[1])
++    assert WORKFLOW.index(commands[1]) < execution_fin < WORKFLOW.index("junit_bytes =")
+--- a/tests/test_rc6_controlled_native_child_manager.py
++++ b/tests/test_rc6_controlled_native_child_manager.py
+@@ -3,6 +3,8 @@
+ import json
+ import os
+ from pathlib import Path
++import stat
++import subprocess
+ import sys
+ 
+ import pytest
+@@ -15,6 +17,8 @@
+ LEGACY_SHA256 = 'ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec'
+ PRODUCER_SOURCE = '"""Owned native process controls only; no product/source/data/network operations."""\nfrom __future__ import annotations\nimport argparse\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport stat\nimport time\n\n\ndef proc_identity(pid):\n    proc = Path(\'/proc\') / str(pid)\n    fields = {key: value.strip() for key, value in\n              (line.split(\':\', 1) for line in (proc/\'status\').read_text().splitlines() if \':\' in line)}\n    tail = (proc/\'stat\').read_text().rsplit(\')\', 1)[1].split()\n    return {\'pid\': int(fields[\'Pid\']), \'ppid\': int(fields[\'PPid\']),\n            \'state\': fields[\'State\'].split()[0], \'uid\': [int(x) for x in fields[\'Uid\'].split()],\n            \'pgid\': int(tail[2]), \'session\': int(tail[3])}\n\n\ndef publish_control(path, receipt):\n    assert path.parent.is_dir() and stat.S_IMODE(path.parent.stat().st_mode) == 0o700\n    data = (json.dumps(receipt, sort_keys=True, indent=2)+\'\\n\').encode()\n    fd = os.open(path, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600)\n    with os.fdopen(fd, \'wb\') as stream:\n        stream.write(data)\n    assert path.stat().st_nlink == 1\n\n\ndef main():\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument(\'--case\', choices=(\'ready100\', \'liveDetached6\', \'simpleExit\'), required=True)\n    parser.add_argument(\'--receipt\', type=Path, required=True)\n    parser.add_argument(\'--exit-code\', type=int, choices=(0, 1), required=True)\n    parser.add_argument(\'--separate-session\', action=\'store_true\')\n    args = parser.parse_args()\n    assert os.getuid() == os.geteuid() != 0\n    assert not args.receipt.exists()\n    rows = []\n    witnesses = []\n    producer = proc_identity(os.getpid())\n    if args.case == \'ready100\':\n        pids = []\n        for unused in range(100):\n            pid = os.fork()\n            if pid == 0:\n                try:\n                    if args.separate_session:\n                        os.setsid()\n                except BaseException:\n                    os._exit(95)\n                os._exit(0)\n            pids.append(pid)\n        for pid in pids:\n            result = os.waitid(os.P_PID, pid, os.WEXITED|os.WNOWAIT)\n            assert result.si_pid == pid and result.si_code == os.CLD_EXITED and result.si_status == 0\n            identity = proc_identity(pid)\n            assert identity[\'pid\'] == pid and identity[\'ppid\'] == os.getpid()\n            assert identity[\'state\'] == \'Z\' and identity[\'uid\'] == producer[\'uid\']\n            if args.separate_session:\n                assert identity[\'pgid\'] == identity[\'session\'] == pid\n            else:\n                assert identity[\'pgid\'] == producer[\'pgid\'] and identity[\'session\'] == producer[\'session\']\n            rows.append(identity)\n            witnesses.append({\'pid\': pid, \'si_code\': result.si_code, \'si_status\': result.si_status,\n                              \'flags\': \'WEXITED|WNOWAIT\', \'reaped\': False})\n        assert len(rows) == 100 and len({row[\'pid\'] for row in rows}) == 100\n    elif args.case == \'liveDetached6\':\n        assert not args.separate_session\n        reader, writer = os.pipe()\n        pid = os.fork()\n        if pid == 0:\n            os.close(reader)\n            os.setsid()\n            os.write(writer, b\'R\')\n            os.close(writer)\n            time.sleep(6)\n            os._exit(0)\n        os.close(writer)\n        assert os.read(reader, 1) == b\'R\'\n        os.close(reader)\n        identity = proc_identity(pid)\n        assert identity[\'pid\'] == pid and identity[\'ppid\'] == os.getpid()\n        assert identity[\'state\'] not in (\'Z\', \'X\') and identity[\'uid\'] == producer[\'uid\']\n        assert identity[\'pgid\'] == identity[\'session\'] == pid\n        rows.append(identity)\n    else:\n        assert not args.separate_session\n    receipt = {\'schema\': \'rc6.real-owned-process-control.v1\',\n               \'classification\': \'PROCESS_CONTROL_ONLY_NOT_GOV_BIG_IMAGE_RUNTIME_QUALIFICATION\',\n               \'case\': args.case, \'producer\': producer, \'children\': rows,\n               \'waitid_wnowait_witnesses\': witnesses,\n               \'separate_session\': args.separate_session,\n               \'all100_verified_zombie_before_producer_exit\': args.case == \'ready100\',\n               \'live_detached_seconds\': 6 if args.case == \'liveDetached6\' else None,\n               \'live6_does_not_change_cleanup5_or_phase_budget\': True,\n               \'producer_exit_code\': args.exit_code, \'child_reaps_by_producer\': 0,\n               \'termination_signals_sent\': [], \'source_or_data_reads\': False,\n               \'network_operations\': False}\n    publish_control(args.receipt, receipt)\n    os._exit(args.exit_code)\n\n\nif __name__ == \'__main__\':\n    main()\n'
+ SUPERVISOR_SOURCE = "import ctypes\nimport errno\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport runpy\nimport sys\nimport time\n\nmanager_path, expected_sha, producer_path, case, output_root = sys.argv[1:]\noutput_root = Path(output_root)\nraw = Path(manager_path).read_bytes()\nassert hashlib.sha256(raw).hexdigest() == expected_sha\nmanager = runpy.run_path(manager_path)\nkillpg_requests = []\ndef observe_killpg(event, arguments):\n    if event == 'os.killpg':\n        killpg_requests.append({'pgid': arguments[0], 'signal': arguments[1]})\nsys.addaudithook(observe_killpg)\ninitial = manager['pre_capture_kernel_state']()\ncommand = [sys.executable, '-I', '-B', producer_path, '--case', case,\n           '--receipt', str(output_root / 'producer-control.json'),\n           '--exit-code', '0' if case == 'simpleExit' else '1']\nkernel = manager['managed_native_child'](command, output_root,\n    output_root / 'producer.log', dict(os.environ, PYTHONDONTWRITEBYTECODE='1'),\n    60, terminate_grace=2, progress_poll=5)\nclosed = manager['managed_custody_closed'](kernel)\nphase_green = manager['managed_phase_green'](kernel)\nfollowup = None\nif closed:\n    final = manager['pre_capture_kernel_state']()\n    assert final['subreaper_state_after'] == initial['subreaper_state_after']\nelse:\n    # This is a separate failed-control diagnostic by the SAME supervisor.\n    # It never amends, accepts or converts the original phase's UNKNOWN/RED.\n    assert kernel['actual_child_reaped'] and kernel['wait4_reaped_pid'] == kernel['pid']\n    assert kernel['kernel_pre_popen_echild_verified']\n    assert kernel['subreaper_activation_readback_verified']\n    assert kernel['supervisor_pid'] == os.getpid()\n    libc = ctypes.CDLL(None, use_errno=True)\n    state = ctypes.c_int()\n    assert libc.prctl(37, ctypes.byref(state), 0, 0, 0) == 0 and state.value == 1\n    started = time.monotonic()\n    deadline = started + 5\n    observations = []\n    exhausted = False\n    while len(observations) < 1024 and time.monotonic() < deadline:\n        try:\n            pid, status, usage = os.wait4(-1, os.WNOHANG)\n        except ChildProcessError as error:\n            assert error.errno == errno.ECHILD\n            observations.append({'outcome': 'ECHILD', 'errno': error.errno})\n            exhausted = True\n            break\n        if pid:\n            observations.append({'outcome': 'PID_REAPED', 'pid': pid,\n                'exit_code': os.waitstatus_to_exitcode(status),\n                'kernel_lifetime_peak_rss_bytes': usage.ru_maxrss * 1024})\n        else:\n            observations.append({'outcome': 'LIVE_OWN_CHILD', 'pid': 0})\n            time.sleep(.05)\n    assert exhausted\n    try:\n        os.killpg(kernel['pid'], 0)\n    except ProcessLookupError:\n        absent = True\n    else:\n        absent = False\n    assert absent\n    assert libc.prctl(36, kernel['subreaper_previous_state'], 0, 0, 0) == 0\n    restored = ctypes.c_int()\n    assert libc.prctl(37, ctypes.byref(restored), 0, 0, 0) == 0\n    assert restored.value == kernel['subreaper_previous_state'] == initial['subreaper_state_before']\n    final = manager['pre_capture_kernel_state']()\n    followup = {'scope': 'SEPARATE_SAME_PID_FAILED_CONTROL_DIAGNOSTIC_NOT_PHASE_ACCEPTANCE',\n        'supervisor_pid': os.getpid(), 'original_phase_result_changed': False,\n        'original_phase_owned_fin_closed': closed, 'original_phase_green': phase_green,\n        'diagnostic_bound_seconds': 5, 'diagnostic_wall_seconds': time.monotonic()-started,\n        'kernel_observations': observations, 'ECHILD_verified': exhausted,\n        'original_owned_PGID_absent': absent, 'subreaper_restored': True,\n        'producer_payload_reads_before_diagnostic_FIN': 0, 'termination_signals_sent': []}\n# No Source/producer/log reads between launch and physical kernel FIN.\npath = output_root / 'producer-control.json'\nfd = os.open(path, os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC)\nwith os.fdopen(fd, 'rb') as stream:\n    before = os.fstat(stream.fileno())\n    fields = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_uid', 'st_gid',\n              'st_size', 'st_blocks', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')\n    before11 = {name: getattr(before, name) for name in fields}\n    assert before.st_uid == os.geteuid() and before.st_nlink == 1\n    assert before.st_mode & 0o777 == 0o600 and before.st_size <= 65536\n    assert before.st_dev == output_root.lstat().st_dev\n    control_raw = stream.read(65537)\n    assert len(control_raw) == before.st_size\n    assert before11 == {name: getattr(os.fstat(stream.fileno()), name) for name in fields}\n    assert before11 == {name: getattr(path.lstat(), name) for name in fields}\ncontrol = json.loads(control_raw)\nprint(json.dumps({'supervisor_pid': os.getpid(), 'manager_sha256': expected_sha,\n    'initial_kernel': initial, 'main_phase_kernel': kernel,\n    'main_phase_owned_fin_closed': closed, 'main_phase_green': phase_green,\n    'diagnostic_followup': followup, 'final_kernel': final,\n    'producer_control_sha256': hashlib.sha256(control_raw).hexdigest(),\n    'producer_control': control, 'producer_control_11stat': before11,\n    'python_killpg_requests': killpg_requests,\n    'producer_or_log_reads_while_owned_child_active': 0}, sort_keys=True))\n"
++
++OUTER_SUPERVISOR_SOURCE = "import ctypes, errno, hashlib, json, os, runpy, stat, sys\nfrom pathlib import Path\nmanager_path, manager_sha, supervisor, source, expected, producer, case, root = sys.argv[1:]\nroot = Path(root)\nos.umask(0o077)\n# Bootstrap obtains actual own ECHILD before manager Source IO.\ntry:\n    found, status, usage = os.wait4(-1, os.WNOHANG)\nexcept ChildProcessError as error:\n    assert error.errno == errno.ECHILD\nelse:\n    raise AssertionError('PRE_SOURCE_OWN_CHILD_PRESENT:' + str(found))\nfd = os.open(manager_path, os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC)\nwith os.fdopen(fd, 'rb') as stream:\n    raw = stream.read()\nassert hashlib.sha256(raw).hexdigest() == manager_sha\nnative = runpy.run_path(manager_path)\nbefore = native['pre_capture_kernel_state']()\ncommand = [sys.executable, '-I', '-B', supervisor, source, expected, producer, case, str(root)]\nouter = native['managed_native_child'](command, root, root/'supervisor.log',\n    dict(os.environ, PYTHONDONTWRITEBYTECODE='1'), 60)\nfd = os.open(root/'outer-kernel.json', os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC, 0o600)\nwith os.fdopen(fd, 'w') as stream:\n    stream.write(json.dumps(outer, sort_keys=True)+'\\n')\nassert native['managed_custody_closed'](outer) and native['managed_phase_green'](outer)\nafter = native['pre_capture_kernel_state']()\nassert after['subreaper_state_after'] == before['subreaper_state_after']\nfd = os.open(root/'supervisor.log', os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC)\nwith os.fdopen(fd, 'rb') as stream:\n    value = os.fstat(stream.fileno())\n    fields = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink', 'st_size',\n              'st_blocks', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')\n    pinned = {field:getattr(value,field) for field in fields}\n    assert stat.S_ISREG(value.st_mode) and value.st_nlink == 1\n    assert value.st_uid == os.geteuid() and stat.S_IMODE(value.st_mode) == 0o600\n    assert value.st_dev == root.lstat().st_dev and value.st_size <= 1048576\n    payload = stream.read(1048577)\n    assert len(payload) == value.st_size\n    assert pinned == {field:getattr(os.fstat(stream.fileno()),field) for field in fields}\n    assert pinned == {field:getattr((root/'supervisor.log').lstat(),field) for field in fields}\nprint(json.dumps({'outer':outer, 'before':before, 'after':after,\n                  'result':json.loads(payload)}, sort_keys=True))\n"
+ 
+ def exclusive_file(path, raw):
+     fd = os.open(path, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC, 0o600)
+@@ -31,16 +35,40 @@
+     exclusive_file(supervisor, SUPERVISOR_SOURCE.encode())
+     source = LEGACY if legacy else ROOT / workspace.DRIVER
+     expected = LEGACY_SHA256 if legacy else workspace.ORIGINAL_DRIVER_SHA256
+-    command = [sys.executable, '-I', '-B', str(supervisor), str(source), expected,
+-               str(producer), case, str(output)]
+-    # The outer manager also obtains actual FIN before reading its own log.
+-    before = native.pre_capture_kernel_state()
+-    outer = native.managed_native_child(command, output, output / 'supervisor.log',
+-        dict(os.environ, PYTHONDONTWRITEBYTECODE='1'), 60)
+-    exclusive_file(output / 'outer-kernel.json', (json.dumps(outer, sort_keys=True)+'\n').encode())
++    outer_supervisor = output / 'outer-supervisor.py'
++    exclusive_file(outer_supervisor, OUTER_SUPERVISOR_SOURCE.encode())
++    command = [sys.executable, '-I', '-B', str(outer_supervisor),
++               str(ROOT / workspace.DRIVER), workspace.ORIGINAL_DRIVER_SHA256,
++               str(supervisor), str(source), expected, str(producer), case, str(output)]
++    # Pytest may own unrelated live children. The native supervisor receives
++    # its own fresh process and retains its strict ECHILD / five-second checks.
++    log = output / 'outer-supervisor.log'
++    fd = os.open(log, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC, 0o600)
++    with os.fdopen(fd, 'wb') as stream:
++        process = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT,
++            stdin=subprocess.DEVNULL, start_new_session=True,
++            env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'))
++        returncode = process.wait()  # Reap this exact supervisor before log reads.
++    assert returncode == 0
++    fd = os.open(log, os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC)
++    with os.fdopen(fd, 'rb') as stream:
++        before_log = os.fstat(stream.fileno())
++        assert stat.S_ISREG(before_log.st_mode) and before_log.st_nlink == 1
++        assert before_log.st_uid == os.geteuid() and stat.S_IMODE(before_log.st_mode) == 0o600
++        assert before_log.st_dev == output.lstat().st_dev and before_log.st_size <= 1048576
++        raw = stream.read(1048577)
++        fields = workspace.FIELDS
++        before_stat = {field: getattr(before_log, field) for field in fields}
++        assert len(raw) == before_log.st_size
++        assert before_stat == {field: getattr(os.fstat(stream.fileno()), field) for field in fields}
++        assert before_stat == {field: getattr(log.lstat(), field) for field in fields}
++    bundle = json.loads(raw)
++    outer = bundle['outer']
+     assert native.managed_custody_closed(outer) and native.managed_phase_green(outer)
+-    assert native.pre_capture_kernel_state()['subreaper_state_after'] == before['subreaper_state_after']
+-    result = json.loads((output / 'supervisor.log').read_bytes())
++    assert outer['supervisor_pid'] == process.pid
++    assert bundle['before']['kernel_echild_verified'] is bundle['after']['kernel_echild_verified'] is True
++    assert bundle['before']['subreaper_state_after'] == bundle['after']['subreaper_state_after']
++    result = bundle['result']
+     assert result['manager_sha256'] == expected
+     assert result['supervisor_pid'] == outer['pid']
+     assert result['initial_kernel']['kernel_echild_verified'] is True
+@@ -134,3 +162,58 @@
+     reaps = [row for row in followup['kernel_observations'] if row['outcome'] == 'PID_REAPED']
+     assert len(reaps) == 1 and reaps[0]['pid'] == result['producer_control']['children'][0]['pid']
+     assert reaps[0]['exit_code'] == 0
++
++
++def test_exclusive_native_control_coexists_with_unrelated_live_pytest_child(tmp_path):
++    unrelated = subprocess.Popen([sys.executable, '-I', '-B', '-c',
++        "import os; os.read(0, 1)"], stdin=subprocess.PIPE,
++        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
++    try:
++        assert unrelated.poll() is None
++        result = native_control(tmp_path, legacy=False, case='simpleExit')
++        assert result['main_phase_owned_fin_closed'] is result['main_phase_green'] is True
++        assert unrelated.poll() is None
++    finally:
++        unrelated.stdin.close()  # Natural EOF, no signal and no unrelated reap.
++        assert unrelated.wait() == 0
++
++
++def test_native_guard_still_rejects_a_real_live_own_child():
++    # This negative control is itself exclusive; it does not inspect or mutate
++    # the pytest process's other children or weaken wait4(-1, WNOHANG).
++    code = r"""
++import json, os, runpy, sys
++manager = runpy.run_path(sys.argv[1])
++initial = manager['pre_capture_kernel_state']()
++reader, writer = os.pipe()
++ready_reader, ready_writer = os.pipe()
++pid = os.fork()
++if pid == 0:
++    os.close(writer); os.close(ready_reader)
++    os.write(ready_writer, b'R'); os.close(ready_writer)
++    os.read(reader, 1); os.close(reader)
++    os._exit(0)
++os.close(reader); os.close(ready_writer)
++assert os.read(ready_reader, 1) == b'R'; os.close(ready_reader)
++try:
++    try:
++        manager['pre_capture_kernel_state']()
++    except ValueError as error:
++        assert str(error) == 'PRE_SOURCE_OWN_CHILD_PRESENT:0'
++        rejected = True
++    else:
++        raise AssertionError('LIVE_OWN_CHILD_MUST_REMAIN_FORBIDDEN')
++finally:
++    os.close(writer)
++    reaped, status, usage = os.wait4(pid, 0)
++    assert reaped == pid and os.waitstatus_to_exitcode(status) == 0
++final = manager['pre_capture_kernel_state']()
++assert final['subreaper_state_after'] == initial['subreaper_state_after']
++print(json.dumps({'live_own_child_rejected': rejected, 'child_reaped': reaped == pid,
++                  'kernel_echild_verified': final['kernel_echild_verified']}))
++"""
++    completed = subprocess.run([sys.executable, '-I', '-B', '-c', code,
++        str(ROOT / workspace.DRIVER)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
++        text=True, check=True, env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'))
++    assert json.loads(completed.stdout) == {'live_own_child_rejected': True,
++        'child_reaped': True, 'kernel_echild_verified': True}

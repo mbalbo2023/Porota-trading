@@ -1,0 +1,121 @@
+{
+  "acceptance_complete": false,
+  "actual_slow_fsync_exit_isolation_proven": true,
+  "artifact_validated": false,
+  "browser_validated": false,
+  "cycle_complete": false,
+  "distribution_count": 157,
+  "horizon_validated": false,
+  "native_resource_gates": {
+    "actual_evidence_bytes": 36884222,
+    "actual_rss_bytes": 1650683904,
+    "actual_slow_fsync_exit_isolation": true,
+    "child_cleanup_completed": false,
+    "complete_committed_cycle": false,
+    "evidence_within_quota": true,
+    "maximum_evidence_bytes": 134217728,
+    "maximum_rss_bytes": 2147483648,
+    "rss_within_two_gib": true,
+    "source_database_unchanged": true
+  },
+  "native_returncode": 1,
+  "optional_diagnostic_gc_observer_enabled": false,
+  "original_cycle_deadline_seconds": 90,
+  "raw_git_commit_sha256": "7e6bbe8b00b552691e29d3e6e40defa4fbaad1970fe60ad4fc7b4eaea2410caf",
+  "raw_records": [
+    {
+      "bytes": 11412,
+      "capture_path": "/tmp/rc6-canonical-400a677c-big-raw/entry-preflight.json",
+      "encoding": "identity",
+      "original_bytes": 11412,
+      "original_sha256": "031de6e95e1ab204bf099bb9adf0dec7f4e9b14fe3119ca9284aaaee3144d549",
+      "path": "docs/audits/convergence/evidence/native-big-400a677c-157/entry-preflight.json",
+      "sha256": "031de6e95e1ab204bf099bb9adf0dec7f4e9b14fe3119ca9284aaaee3144d549"
+    },
+    {
+      "bytes": 12290,
+      "capture_path": "/tmp/rc6-canonical-400a677c-big-raw/wrapper-before.json",
+      "encoding": "identity",
+      "original_bytes": 12290,
+      "original_sha256": "97be0fb5adebce6032129dbea7f76bda818bb1146bac6cad0d0514eb87eabcdf",
+      "path": "docs/audits/convergence/evidence/native-big-400a677c-157/wrapper-before.json",
+      "sha256": "97be0fb5adebce6032129dbea7f76bda818bb1146bac6cad0d0514eb87eabcdf"
+    },
+    {
+      "bytes": 12593,
+      "capture_path": "/tmp/rc6-canonical-400a677c-big-raw/wrapper-final.json",
+      "encoding": "identity",
+      "original_bytes": 12593,
+      "original_sha256": "1bb07374a80c62d6d86ade83437a6db0ca60524fcd47bd2ba4e3a14bac21f283",
+      "path": "docs/audits/convergence/evidence/native-big-400a677c-157/wrapper-final.json",
+      "sha256": "1bb07374a80c62d6d86ade83437a6db0ca60524fcd47bd2ba4e3a14bac21f283"
+    },
+    {
+      "bytes": 30612,
+      "capture_path": "/tmp/rc6-canonical-400a677c-big-raw/native-big-result.json",
+      "encoding": "identity",
+      "original_bytes": 30612,
+      "original_sha256": "f3cb21c05ffc9a10f009c0e0add42680ef3981f78dd567adeaef3d329d6a60b8",
+      "path": "docs/audits/convergence/evidence/native-big-400a677c-157/native-big-result.json",
+      "sha256": "f3cb21c05ffc9a10f009c0e0add42680ef3981f78dd567adeaef3d329d6a60b8"
+    },
+    {
+      "bytes": 99,
+      "capture_path": "/tmp/rc6-canonical-400a677c-big-raw/big.log",
+      "encoding": "gzip-mtime0",
+      "original_bytes": 84,
+      "original_sha256": "7659867c0f7c93de65f34560341a8e5360a6ed740528ef3a36eb6f6a5c93d19c",
+      "path": "docs/audits/convergence/evidence/native-big-400a677c-157/big.log.gz",
+      "sha256": "8b1b6ee79b301b7212528b82059a8aff5ee698a76be6e16362a230b1a69b8394"
+    },
+    {
+      "bytes": 165791,
+      "capture_path": "/tmp/rc6-whole-source-20261005-packed400-raw/source.index.json",
+      "encoding": "gzip-mtime0",
+      "original_bytes": 504468,
+      "original_sha256": "aea4eab2c78efd607a15fd3d40701122fc9d0dee384b334012e040533d89e28c",
+      "path": "docs/audits/convergence/evidence/native-big-400a677c-157/source.index.json.gz",
+      "sha256": "9eae70082695fb89cce88c28db1eb8af7d5c0581c1f1c318ebeb94085472d58e"
+    },
+    {
+      "bytes": 8717,
+      "capture_path": "/tmp/rc6-canonical-400a677c-big-wrapper.py",
+      "encoding": "identity",
+      "original_bytes": 8717,
+      "original_sha256": "0586336d251588d8e57e296e44d311c257526f1e775fe90fcc4efbd493fd1f8e",
+      "path": "docs/audits/convergence/evidence/native-big-400a677c-157/run-wrapper.py",
+      "sha256": "0586336d251588d8e57e296e44d311c257526f1e775fe90fcc4efbd493fd1f8e"
+    },
+    {
+      "bytes": 3075,
+      "capture_path": "/tmp/rc6_prepare_native_big_wrapper.py",
+      "encoding": "identity",
+      "original_bytes": 3075,
+      "original_sha256": "9321000122729053b59687d4f03e9319d0029d2b6fba3ccf6df1a405e0fe2458",
+      "path": "docs/audits/convergence/evidence/native-big-400a677c-157/prepare-wrapper.py",
+      "sha256": "9321000122729053b59687d4f03e9319d0029d2b6fba3ccf6df1a405e0fe2458"
+    },
+    {
+      "bytes": 4874,
+      "capture_path": "/tmp/rc6_export_whole_git_source.py",
+      "encoding": "identity",
+      "original_bytes": 4874,
+      "original_sha256": "4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa",
+      "path": "docs/audits/convergence/evidence/native-big-400a677c-157/export-whole-source.py",
+      "sha256": "4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa"
+    }
+  ],
+  "remaining_blocker": "SHADOW_CONSERVATIVE_CYCLE_DEADLINE_AFTER_PUBLICATION_ENTER_CHECKPOINT_RESTORE",
+  "runtime_validated": false,
+  "schema": "rc6.native-big-whole-source-witness-custody.v1",
+  "scope": "ROOT_SOURCE_ONLY_UNINSTRUMENTED_CANONICAL_BIG_NOT_FINAL_GOV_IMAGE_HORIZON_BROWSER_OR_RUNTIME",
+  "source_files": 1703,
+  "source_index_sha256": "aea4eab2c78efd607a15fd3d40701122fc9d0dee384b334012e040533d89e28c",
+  "source_overlay_count": 0,
+  "source_sha": "400a677c7a2d94e52fcc7e1c598f94a66862253c",
+  "source_tar_capture_path": "/tmp/rc6-whole-source-20261005-packed400-raw/source.tar",
+  "source_tar_sha256": "49ae6d8fb99ff719833f653b22ea92168b60506c0ab4f9f6da2064ad468d8bfd",
+  "source_tree": "4694f053baf294c324e4cea7f66500b22b4c3004",
+  "timer_scope": "Only completed handler spans and last progress; unfinished final checkpoint restore is not zero CPU or total elapsed.",
+  "whole_source_bytes_modes_blobs_unchanged": true
+}

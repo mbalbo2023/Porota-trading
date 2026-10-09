@@ -1,0 +1,24 @@
+{
+  "conclusion": "No false completion or new financial authority found; GREEN follows browser/interactions and unchanged custody.",
+  "positive_large_browser_status": "PENDING_COMPLETED_NATIVE_OPEN_CUT_AND_FROZEN_ROOT_PIN",
+  "recorded_at": "2026-10-05T06:48:33.981567+00:00",
+  "review_level": "READ_ONLY_SOURCE_REVIEW; NO_PYTEST_OR_CHROMIUM_EXECUTED",
+  "reviewed_runner_source_sha256": "96989f9d97f0da9b388f62ebe2c806c18fe2db4aeea8cc03e9f7327fbc3304cb",
+  "reviewed_source_commit": "b85a9c465bb3e83efb25aba7133055c6cb61646b",
+  "reviewer_role": "finance_review",
+  "schema": "rc6.dashboard-native-large-browser-source-review.v1",
+  "scope_limit": {
+    "canonical_fixture": "scripts/rc6_issue465_stress.py::fixture_database",
+    "catalog_size": 12000,
+    "family_cohort_denominator_requires_single_family_fixture": true,
+    "fixture_source_blob": "a239bc601d145e7881419d80e02ad9b0c564df23",
+    "general_mixed_catalog_acceptance_claimed": false,
+    "identity_dimensions": {
+      "currency": "ARS",
+      "family": "ACCIONES",
+      "market": "BYMA",
+      "settlement": "A-24HS"
+    },
+    "symbols": "S00000..S11999"
+  }
+}

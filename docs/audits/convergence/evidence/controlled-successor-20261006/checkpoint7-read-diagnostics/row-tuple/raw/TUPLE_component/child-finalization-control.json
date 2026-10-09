@@ -1,0 +1,66 @@
+{
+  "CONTROL_ONLY": true,
+  "DIAGNOSTIC_ONLY": true,
+  "child_pid": 38437,
+  "gate_qualified": false,
+  "original_finalization_report": {
+    "errors": [],
+    "finalization_thread_finished": true,
+    "forced_termination": false,
+    "forced_termination_attempted": false,
+    "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+    "inherited_tracker_preserved": false,
+    "initial": {
+      "forkserver_alive_fd": null,
+      "forkserver_pid": null,
+      "resource_tracker_fd": null,
+      "resource_tracker_pid": null
+    },
+    "joined_children": [],
+    "kernel_echild_before_phase_return": true,
+    "management_bound_seconds": 5,
+    "protocol_steps": [
+      {
+        "completed": true,
+        "stage": "nonnegative_stdlib_finalizers",
+        "wall_seconds": 1.9879000319633633e-05
+      },
+      {
+        "completed": true,
+        "stage": "join_owned_children",
+        "wall_seconds": 6.328999006655067e-06
+      },
+      {
+        "completed": true,
+        "stage": "stop_owned_forkserver",
+        "wall_seconds": 4.417001036927104e-06
+      },
+      {
+        "completed": true,
+        "stage": "remaining_stdlib_finalizers",
+        "wall_seconds": 3.555000148480758e-06
+      },
+      {
+        "completed": true,
+        "stage": "stop_owned_resource_tracker",
+        "wall_seconds": 3.5849989217240363e-06
+      },
+      {
+        "completed": true,
+        "stage": "verify_kernel_echild",
+        "wall_seconds": 3.6804998671868816e-05
+      }
+    ],
+    "signal_guard_installed_and_witnessed": true,
+    "signal_vetoed": false,
+    "status": "GREEN",
+    "stopped_owned_infrastructure": [],
+    "termination_signal_attempts": [],
+    "unexpected_kernel_children": [],
+    "wall_seconds": 0.0006339920000755228
+  },
+  "original_manager_sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "variant": "TUPLE_component"
+}

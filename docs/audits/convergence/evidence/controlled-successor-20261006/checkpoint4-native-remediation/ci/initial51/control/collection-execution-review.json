@@ -1,0 +1,88 @@
+{
+  "control_matrix": [
+    {
+      "case": "both phases not attempted",
+      "kernel_witness": "NONE; explicitly no pytest producer witness",
+      "original_scoped_cleanup": true,
+      "payload_postread": true,
+      "result": "NO_PYTEST_LAUNCH_ATTEMPTED"
+    },
+    {
+      "case": "collection own FIN closed GREEN then execution own FIN closed GREEN",
+      "kernel_witness": "rawactual wait4/ECHILD/PGID/readback perdeclared supervisor; neither is globalFIN",
+      "original_scoped_cleanup": true,
+      "payload_postread": true,
+      "result": "FIN_REAL_CLOSED"
+    },
+    {
+      "case": "collection own FIN closed RED",
+      "kernel_witness": "collection actualFIN only; noexecution/GovGREEN",
+      "original_scoped_cleanup": true,
+      "payload_postread": true,
+      "result": "failure evidence only; execution neverlaunched"
+    },
+    {
+      "case": "collection intent but missing/aliased/unclosed FIN",
+      "kernel_witness": "NONE accepted; noSourceprep/exec launch",
+      "original_scoped_cleanup": false,
+      "payload_postread": false,
+      "result": "UNKNOWN_OR_UNCLOSED irreversible RED"
+    },
+    {
+      "case": "execution intent but missing/aliased/unclosed FIN",
+      "kernel_witness": "NONE accepted; onlyboundedcontrolartifact",
+      "original_scoped_cleanup": false,
+      "payload_postread": false,
+      "result": "UNKNOWN_OR_UNCLOSED irreversible RED"
+    },
+    {
+      "case": "5400 expected budget differs from actual60fixture record",
+      "kernel_witness": "receipt rejected forwrongdeclaredbudget evenifphysicalFIN exists",
+      "original_scoped_cleanup": false,
+      "payload_postread": false,
+      "result": "UNKNOWN_OR_UNCLOSED irreversible RED"
+    },
+    {
+      "case": "realexecution timeout60/signals",
+      "kernel_witness": "actualsameSupervisor proof after original5s boundedfailurecleanup; noGREEN",
+      "original_scoped_cleanup": true,
+      "payload_postread": true,
+      "result": "physicalFIN permitsRED evidence;phaseGREEN remainsfalse"
+    }
+  ],
+  "github_mutations_by_agent": 0,
+  "original_cleanup_sha256": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f",
+  "original_v2_manager_sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+  "paths": [
+    {
+      "bytes": 50951,
+      "path": "scripts/porota_predeploy_test_workspace.py",
+      "sha256": "86678b88af863b3e45e6eac686b73514dee4f107ed1d9d9c9d92eba8868edf56"
+    },
+    {
+      "bytes": 42690,
+      "path": ".github/workflows/porota-predeploy-v2.yml",
+      "sha256": "45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125"
+    },
+    {
+      "bytes": 10274,
+      "path": "tests/test_ci_productive_predeploy_contract.py",
+      "sha256": "18e0840717256861c2f9a187aac88a96e36252339a6b854da2a29bb328c3c1f2"
+    },
+    {
+      "bytes": 51274,
+      "path": "tests/test_rc6_predeploy_scoped_cleanup.py",
+      "sha256": "55aeaaebce161ac2ec34a6826f58c5deaede42f6394e331c1324b5c02d68ee50"
+    }
+  ],
+  "planned_focals": "Both2CI files sequential311/312 afterparentreview, expected62cases/epoch incl realminiGit+CLIumask077/newnativevenv+normalcopied5lockedpackages/collectionsuccess+failure/real60stimeout; noPRODUCT157changes/INET/wheelattestation",
+  "previous_variant_focals_preserved": "51/51PASS samecases both311/312 at separateepochreceipt; not currentvariant qualification",
+  "real_orders_sent": 0,
+  "schema": "rc6.local-predeploy-pytest-two-phase-review.v1",
+  "scope_diff": {
+    "path": "/workspace/scratch/rc6-ci-workspace-focals-mz4yoedv/control/collection-execution-reviewed-scope.diff",
+    "sha256": "d2a1658757c49739b48b5961953a923f52c2c4b81ceaf48d0fed72ac8c1fd339"
+  },
+  "source_frozen_for_review": true,
+  "status": "STATIC_READY_NOT_YET_TESTED"
+}

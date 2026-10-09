@@ -1,0 +1,391 @@
+{
+  "actual_subreaper_restore_after_echild_and_pgid": {
+    "attempted": true,
+    "get_state_returncode": 0,
+    "kernel_readback_after": 0,
+    "original_prior_state_restored": true,
+    "returncode": 0
+  },
+  "kernel_echild": true,
+  "kernel_subreaper_before_followup": 0,
+  "kernel_subreaper_expected_prior_state": 0,
+  "management_seconds": 20,
+  "observations": [
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "pid": 0
+    },
+    {
+      "exitcode": 0,
+      "outcome": "PID_REAPED",
+      "pid": 25129
+    },
+    {
+      "errno": 10,
+      "outcome": "ECHILD"
+    }
+  ],
+  "original_cleanup_seconds": 5,
+  "original_phase_receipt_reclassified": false,
+  "phase_pgid_absent_after_followup": true,
+  "same_actual_parent_pid": 24848,
+  "schema": "rc6.control.separate-natural-fin-observer.v1",
+  "signals_sent": [],
+  "wall_seconds": 0.9099782529992808
+}

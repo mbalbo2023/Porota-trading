@@ -1,0 +1,776 @@
+{
+  "branch": "integration/rc6-convergence-468-469-470-20261005",
+  "candidate": {
+    "executed_focal_source_sha": "9a9b0f3860453ce47bee520d70b1957201679966",
+    "executed_focal_source_tree": "96f7ae24d75abc2a6c27866bb7e3fdfad6e9f18a",
+    "final_frozen_sha": null,
+    "final_frozen_tree": null,
+    "final_pr": "NOT_VERIFIED_BY_THIS_PACKET",
+    "historical_local_reference_is_current_head": false,
+    "later_local_test_path_updates_qualified_by_this_packet": false,
+    "later_uncommitted_fixes_require_final_actual_sha_qualification": true,
+    "no_new_candidate_created_by_preserver": true,
+    "observed_remote_sha": "9a9b0f3860453ce47bee520d70b1957201679966",
+    "observed_remote_tree": "96f7ae24d75abc2a6c27866bb7e3fdfad6e9f18a",
+    "root_reported_historical_local_sha_prefix": "85c03c8",
+    "root_reported_historical_local_tree_prefix": "c913",
+    "source_file_count_recorded": 2630
+  },
+  "canonical_big_9a9b": {
+    "business_resource_complete": false,
+    "catalog_count": 12000,
+    "classification": "BUSINESS_RED_WITH_LOCAL_IMPORT_PROOF_GREEN",
+    "cycle_deadline_seconds": 90,
+    "elapsed_seconds_recorded": 13.505453975000364,
+    "error_class": "SnapshotError",
+    "error_context": {
+      "frames": [
+        {
+          "function": "_shadow_child_work",
+          "line": 434,
+          "module": "__mp_main__"
+        },
+        {
+          "function": "tick",
+          "line": 366,
+          "module": "rc6_shadow_runtime.worker"
+        },
+        {
+          "function": "measured",
+          "line": 327,
+          "module": "__mp_main__"
+        },
+        {
+          "function": "family_reports",
+          "line": 497,
+          "module": "rc6_shadow_runtime.families"
+        },
+        {
+          "function": "_read",
+          "line": 202,
+          "module": "rc6_shadow_runtime.families"
+        },
+        {
+          "function": "__exit__",
+          "line": 144,
+          "module": "contextlib"
+        },
+        {
+          "function": "source_connection",
+          "line": 28,
+          "module": "rc6_shadow_runtime.source_reads"
+        },
+        {
+          "function": "__exit__",
+          "line": 144,
+          "module": "contextlib"
+        },
+        {
+          "function": "readonly_copy",
+          "line": 164,
+          "module": "rc6_audit_evidence.sqlite_snapshot"
+        },
+        {
+          "function": "_check",
+          "line": 24,
+          "module": "rc6_audit_evidence.sqlite_snapshot"
+        }
+      ],
+      "sqlite_errorcode": null,
+      "sqlite_errorname": null
+    },
+    "factual_exits": {
+      "closed": 5,
+      "cpu_seconds": 0.05783032399999999,
+      "elapsed_seconds": 0.06558622599959563,
+      "finished_at_monotonic": 2105.381433639,
+      "io": {
+        "cancelled_write_bytes": 0,
+        "input_blocks": 0,
+        "output_blocks": 984,
+        "rchar": 2638453,
+        "read_bytes": 0,
+        "syscr": 691,
+        "syscw": 218,
+        "wchar": 449080,
+        "write_bytes": 503808
+      },
+      "real_orders_sent": 0,
+      "sell_fills": 5,
+      "stale_current_fresh_book": true,
+      "started_at_monotonic": 2105.315710311
+    },
+    "factual_exits_after_failure_not_fsync_isolation": true,
+    "families_elapsed_seconds_recorded": 0.5422399569997651,
+    "families_original_deadline_seconds": 0.5,
+    "fsync": {
+      "blocked_seconds": 0.0,
+      "fsync_completed": false,
+      "fsync_entered": false,
+      "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"
+    },
+    "import_proof_complete": true,
+    "local_interpreter_window_not_binary_authentication_or_runtime_acceptance": true,
+    "observations_materialized": 60000,
+    "original_log": "raw/big-9a9b/native-big.log",
+    "original_result": "raw/big-9a9b/native-big-result.json",
+    "phases": [
+      "BOUNDED_READ"
+    ],
+    "reason": "TIME_BUDGET_EXHAUSTED",
+    "resource_gates": {
+      "actual_evidence_bytes": 516293,
+      "actual_rss_bytes": 501366784,
+      "actual_slow_fsync_exit_isolation": false,
+      "child_cleanup_completed": true,
+      "complete_committed_cycle": false,
+      "evidence_within_quota": true,
+      "maximum_evidence_bytes": 134217728,
+      "maximum_rss_bytes": 2147483648,
+      "reported_worker_rss_bytes": 501366784,
+      "rss_scope": "PARENT_RUSAGE_CHILDREN_MAXIMUM_OF_ALL_REAPED_CHILDREN_INCLUDING_GIT_PREFLIGHT",
+      "rss_within_two_gib": true,
+      "source_database_unchanged": true
+    },
+    "slow_fsync_exit_isolation_proven": false,
+    "source_custody_scope_recorded": "MAIN_WAL_SHM_JOURNAL_BYTES_AND_ALL_CUSTODY_STATS_NOATIME",
+    "source_database_unchanged_recorded": true
+  },
+  "current_focal": {
+    "classification": "SCOPED_NATIVE_FOCAL_SOURCE_9A9B_IN_TWO_INTERPRETERS_NOT_FULL_GOV",
+    "counts_added_across_interpreters_or_epochs": false,
+    "epochs": [
+      {
+        "collected_unique": 93,
+        "epoch": "9a9b-311",
+        "error_cases": 0,
+        "executed_unique": 93,
+        "exit_code": 0,
+        "failed_cases": 0,
+        "installed_total_recorded": 157,
+        "junit_path": "raw/focals/9a9b-311/focal.xml",
+        "junit_sha256": "dd9e482e2ddd6865129b9d4755caae7db814d7a7e6ae91600ae0697cab6cbcb8",
+        "original_scope": "SCOPED_NATIVE_FOCAL_WITH_PHYSICAL_GIT_BLOBS_MODES_AND_STABLE_CODE_STATS; NOT_FULL_GOV_BIG_HORIZON_IMAGE_OR_RUNTIME",
+        "passed_cases": 93,
+        "python": "3.11.16",
+        "receipt_path": "raw/focals/9a9b-311/receipt.json",
+        "receipt_sha256": "0068fd11f54598ef3bff725b645f1133c307dad0a3ebd0228d7578ede71ae308",
+        "skipped_cases": 0,
+        "source_sha": "9a9b0f3860453ce47bee520d70b1957201679966",
+        "source_tree": "96f7ae24d75abc2a6c27866bb7e3fdfad6e9f18a",
+        "source_unchanged_recorded": true,
+        "verification_performed_here": "DOCUMENTARY_PARSE_AND_DIGEST_JOIN_NO_NATIVE_TEST_EXECUTION",
+        "wall_seconds_recorded": 18.976675169999908
+      },
+      {
+        "collected_unique": 93,
+        "epoch": "9a9b-312",
+        "error_cases": 0,
+        "executed_unique": 93,
+        "exit_code": 0,
+        "failed_cases": 0,
+        "installed_total_recorded": 157,
+        "junit_path": "raw/focals/9a9b-312/focal.xml",
+        "junit_sha256": "1ee892fa57784900583c55f1afac398662cd4bcbfe8ff12fb651bdb78f95410f",
+        "original_scope": "SCOPED_NATIVE_FOCAL_WITH_PHYSICAL_GIT_BLOBS_MODES_AND_STABLE_CODE_STATS; NOT_FULL_GOV_BIG_HORIZON_IMAGE_OR_RUNTIME",
+        "passed_cases": 93,
+        "python": "3.12.14",
+        "receipt_path": "raw/focals/9a9b-312/receipt.json",
+        "receipt_sha256": "f655d418c4f27baf2ee707fe773373e9b78e6fbed2fd2b87815e7aaec9ea43fc",
+        "skipped_cases": 0,
+        "source_sha": "9a9b0f3860453ce47bee520d70b1957201679966",
+        "source_tree": "96f7ae24d75abc2a6c27866bb7e3fdfad6e9f18a",
+        "source_unchanged_recorded": true,
+        "verification_performed_here": "DOCUMENTARY_PARSE_AND_DIGEST_JOIN_NO_NATIVE_TEST_EXECUTION",
+        "wall_seconds_recorded": 19.980491894999886
+      }
+    ],
+    "final_candidate_acceptance": false,
+    "independent_scenario_count_claim": null,
+    "installed_metadata_versions_not_binary_authentication": true,
+    "same_93_case_scope_repeated_by_interpreter": true
+  },
+  "documentary_preservation": {
+    "active_governed_outputs_copied": false,
+    "byte_exact_originals": true,
+    "custody_scope": "CURRENT_COPY_TIME_ONLY_NOT_EXECUTION_TO_COPY_CONTINUITY",
+    "db_datadirs_or_full_source_inventory_copied": false,
+    "file_stat_fields": 11,
+    "helper_source_execution_or_exact_historical_helper_byte_identity_attested": false,
+    "manifest": "MANIFEST.json",
+    "metadata_restored_or_backdated": false,
+    "native_tests_executed_by_preserver": 0,
+    "original_bytes_copied": 10774238,
+    "original_files_copied": 61,
+    "source_open_flags": [
+      "O_RDONLY",
+      "O_NOATIME",
+      "O_NOFOLLOW",
+      "O_NONBLOCK"
+    ],
+    "terminal_governed_originals_copied": true
+  },
+  "external_inventory": {
+    "bytes": 77651021,
+    "classification_recorded": "INVENTORY_NOT_EXECUTED",
+    "copied": false,
+    "copy_limit_bytes": 2097152,
+    "external_anchor_manifest_member": true,
+    "final_candidate_eligible_recorded": false,
+    "independent_artifact_attestation": false,
+    "material_programming_gates_closed_recorded": false,
+    "root_reported_pending_material_gate_ids": [
+      "U14",
+      "UX470-I01",
+      "UX470-I02",
+      "UX470-I03",
+      "UX470-I05"
+    ],
+    "sha256": "a9cb5ea44a34938cb50c2b3467b28b8f649907d00812487ecd53519d46ddc4de",
+    "source_path": "/workspace/scratch/porota-recovery-input-inventory-9a9b.json"
+  },
+  "final_eligibility": {
+    "artifact_validated": false,
+    "deployed": false,
+    "final_artifact_digest": null,
+    "final_candidate_eligible": false,
+    "final_governed_junit_sha256": null,
+    "final_input_provenance_sha256": null,
+    "runtime_validated": false,
+    "status": "BLOCKED"
+  },
+  "generated_at_utc": "2026-10-06T10:57:52.225900+00:00",
+  "governed_current": {
+    "acceptance_inferred": false,
+    "approved_installed_metadata_total_recorded": 157,
+    "archived_external_runner_sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313",
+    "archived_external_runner_source": "helpers/porota-governed311-external-runner.py.source",
+    "canonical_final_acceptance_complete": false,
+    "collection_kernel": {
+      "actual_child_reaped": true,
+      "owned_children_exhaustion_verified": true,
+      "returncode": 0
+    },
+    "execution_id": "038c1c47bc274ad1abf9cce271905653",
+    "execution_kernel": {
+      "actual_child_reaped": true,
+      "actual_launch_to_pid_reap_wall_seconds": 2081.00466046,
+      "owned_children_exhaustion_verified": false,
+      "owned_cleanup_management_bound_seconds": 5,
+      "peak_rss_bytes": 1725100032,
+      "phase_acceptance_deadline_seconds": 5400,
+      "process_group_absent_after_reap": false,
+      "process_group_absent_at_main_reap": false,
+      "supervisor_errors": [
+        {
+          "class": "RuntimeError",
+          "phase": "kernel_owned_child_cleanup",
+          "reason": "OWN_CHILD_EXHAUSTION_NOT_PROVED_WITHIN_BOUND"
+        }
+      ],
+      "termination_reap_restore_cleanup_seconds": 5.019218104999709,
+      "timed_out": false
+    },
+    "execution_log_path": "raw/governed311-9a9b/execution.log",
+    "execution_to_copy_source_or_runner_metadata_continuity_attested": false,
+    "external_output_root": "/workspace/scratch/porota-governed311-9a9b",
+    "final_result_included": true,
+    "governed_error_path": "raw/governed311-9a9b/governed-error.json",
+    "installed_distribution_bytes_authenticated": false,
+    "later_source_and_python312_require_new_terminal_qualification": true,
+    "native_scope_recorded": "repository-root automatic pytest discovery",
+    "outputs_copied": true,
+    "physical_source_namespace": {
+      "exception_class": "ValueError",
+      "raw_logs_preserved": true,
+      "reason": "PHYSICAL_SOURCE_EXTRA_MISSING_IGNORED_OR_EMPTY_DIRECTORY_FORBIDDEN",
+      "status": "RED"
+    },
+    "post_execution_diagnostic": {
+      "acceptance_complete": false,
+      "all_recorded_tracked_stat_drifts_are_atime_only": true,
+      "classification": "POST_EXECUTION_COMPARISON_WITH_EXISTING_BEFORE_INDEX_NOT_SUCCESSFUL_GOV_SOURCE_AFTER_RECEIPT",
+      "code_atime_scope_recorded": "GOV_V3_COMPARES_TEN_STABLE_CODE_FIELDS_AND_REPORTS_CODE_ATIME_SEPARATELY; DATA_ALL_ELEVEN_UNCHANGED_NOT_CLAIMED",
+      "custody_claim_scope_recorded": "CURRENT_POST_EXECUTION_COMPARISON_WITH_EXISTING_BEFORE_INDEX; NOT A SUCCESSFUL_GOV_SOURCE_AFTER_RECEIPT",
+      "diagnostic_only": true,
+      "error_groups_recorded": [
+        {
+          "count": 110,
+          "message": "failed on setup with \"scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:.dockerignore\""
+        },
+        {
+          "count": 10,
+          "message": "failed on setup with \"ValueError: NATIVE_PROFILE_CODE_DIRECTORY_MODE_MISMATCH\""
+        }
+      ],
+      "extra_directory_count": 6,
+      "extra_file_count": 331,
+      "local_fix_executed_or_qualified_by_preserver": false,
+      "original_governed_red_reclassified": false,
+      "other_open_failures_recorded": [
+        "BIG_CONSERVATIVE_CYCLE_DEADLINE",
+        "TINY_SMOKE_RSS_LIMIT",
+        "SQLITE_SOURCE_SNAPSHOT_BUSY",
+        "GOV_OWNED_CHILD_EXHAUSTION_NOT_PROVED",
+        "FROZEN_NAMESPACE_DATA_AND_HYPOTHESIS_EXTRA"
+      ],
+      "physical_namespace_exact": false,
+      "raw_path": "raw/governed311-9a9b/post-execution-diagnostic.json",
+      "root_cause_recorded": "diagnostic.main set umask077 before rejected preflight without restoring; subsequent controlled checkout files600 and source dirs700 fail their strict custody checks",
+      "root_reported_local_fix": "diagnostic.main RESTORES_PREVIOUS_UMASK_IN_TRY_FINALLY_AND_PERMANENT_GUARD_TEST_USES_SAME_TEST_ID",
+      "sha256": "e9ab2f0b52a00cd839c68f51a63abb24a3d0fabc83033921d7bbfb8b22953281",
+      "source_sha": "9a9b0f3860453ce47bee520d70b1957201679966",
+      "source_tree": "96f7ae24d75abc2a6c27866bb7e3fdfad6e9f18a",
+      "tracked_atime_only_drift_count": 172,
+      "tracked_bytes_or_modes_changed_count": 0,
+      "tracked_files_recorded": 2630
+    },
+    "pytest": {
+      "documentary_xml_parse_counts_match": true,
+      "junit_errors": 120,
+      "junit_failures": 23,
+      "junit_path": "raw/governed311-9a9b/porota-governed-tests.xml",
+      "junit_sha256": "966f6f3561fc93af35de4dbe4d923053db7f8deee281fb193e47014ee410de49",
+      "junit_skipped": 0,
+      "junit_testcase_elements": 5890,
+      "junit_tests": 5890,
+      "junit_wall_seconds_recorded": 2075.7,
+      "native_tests_executed_by_preserver": false,
+      "returncode_recorded": 1
+    },
+    "python": "3.11.16",
+    "raw_output_directory": "raw/governed311-9a9b",
+    "root_reported_local_test_assertion_and_tmp_path_corrections": "LOCAL_TEST_SIDE_ASSERTIONS_CHANGED_AFTER_THIS_SOURCE_9A9_EXECUTION_NO_NEW_QUALIFICATION_TRANSFERRED",
+    "runner_sha256_matches_original_launch_record": true,
+    "source_sha": "9a9b0f3860453ce47bee520d70b1957201679966",
+    "source_tree": "96f7ae24d75abc2a6c27866bb7e3fdfad6e9f18a",
+    "status_at_packet_preparation": "TERMINAL_RED_ORIGINAL_OUTPUTS_PRESERVED_NOT_FINAL_ACCEPTANCE"
+  },
+  "historical_focals": {
+    "b6c2_312_v2_failure_root_attribution": "ROOTOWNED_STDLIB_O_NOATIME_CUSTODY_REJECTION; ORIGINAL_JUNIT_7PASS_43FAIL_REMAINS_RED",
+    "epochs": [
+      {
+        "collected_unique": 50,
+        "epoch": "b6c2-initial-311",
+        "error_cases": 0,
+        "executed_unique": 50,
+        "exit_code": 1,
+        "failed_cases": 1,
+        "installed_total_recorded": 157,
+        "junit_path": "raw/focals/b6c2-initial-311/focal.xml",
+        "junit_sha256": "66733ef53a54415a3cbab81f998de226f6ef936ba7e236822adefbf43e5b1017",
+        "original_scope": "SCOPED_NATIVE_FOCAL_WITH_PHYSICAL_GIT_BLOBS_MODES_AND_STABLE_CODE_STATS; NOT_FULL_GOV_BIG_HORIZON_IMAGE_OR_RUNTIME",
+        "passed_cases": 49,
+        "python": "3.11.16",
+        "receipt_path": "raw/focals/b6c2-initial-311/receipt.json",
+        "receipt_sha256": "b93de8ffc92f0b311b9a42bc6969ed496ea4b47bad214572197426579695cbcc",
+        "skipped_cases": 0,
+        "source_sha": "b6c2e2a3a9f43e0b1e4dad8133455b319fd1bc2a",
+        "source_tree": "050cc575e9bea27112fd7ed33ed0b33c59c74cf8",
+        "source_unchanged_recorded": true,
+        "verification_performed_here": "DOCUMENTARY_PARSE_AND_DIGEST_JOIN_NO_NATIVE_TEST_EXECUTION",
+        "wall_seconds_recorded": 101.51893367499997
+      },
+      {
+        "collected_unique": 50,
+        "epoch": "b6c2-successor-311",
+        "error_cases": 0,
+        "executed_unique": 50,
+        "exit_code": 0,
+        "failed_cases": 0,
+        "installed_total_recorded": 157,
+        "junit_path": "raw/focals/b6c2-successor-311/focal.xml",
+        "junit_sha256": "a1359d85b95aaa4b5107fc8b116f9938bc5b19daafe5f2b098e76e488908bea6",
+        "original_scope": "SCOPED_NATIVE_FOCAL_WITH_PHYSICAL_GIT_BLOBS_MODES_AND_STABLE_CODE_STATS; NOT_FULL_GOV_BIG_HORIZON_IMAGE_OR_RUNTIME",
+        "passed_cases": 50,
+        "python": "3.11.16",
+        "receipt_path": "raw/focals/b6c2-successor-311/receipt.json",
+        "receipt_sha256": "2b0ed9cf2d8e8704aa2943f427277e19c71e6efb32faea8f6911e03de48e5e8f",
+        "skipped_cases": 0,
+        "source_sha": "b6c2e2a3a9f43e0b1e4dad8133455b319fd1bc2a",
+        "source_tree": "050cc575e9bea27112fd7ed33ed0b33c59c74cf8",
+        "source_unchanged_recorded": true,
+        "verification_performed_here": "DOCUMENTARY_PARSE_AND_DIGEST_JOIN_NO_NATIVE_TEST_EXECUTION",
+        "wall_seconds_recorded": 14.074044279999953
+      },
+      {
+        "collected_unique": 50,
+        "epoch": "b6c2-successor-312",
+        "error_cases": 0,
+        "executed_unique": 50,
+        "exit_code": 1,
+        "failed_cases": 43,
+        "installed_total_recorded": 157,
+        "junit_path": "raw/focals/b6c2-successor-312/focal.xml",
+        "junit_sha256": "06996dea702c6d110d984aa71eca2de8479fc5bc0566a36b288748c805421561",
+        "original_scope": "SCOPED_NATIVE_FOCAL_WITH_PHYSICAL_GIT_BLOBS_MODES_AND_STABLE_CODE_STATS; NOT_FULL_GOV_BIG_HORIZON_IMAGE_OR_RUNTIME",
+        "passed_cases": 7,
+        "python": "3.12.14",
+        "receipt_path": "raw/focals/b6c2-successor-312/receipt.json",
+        "receipt_sha256": "da47ae65572870b1b896566c06ef7f1fe8a43a2557ddabe1d7fca11f18a82a97",
+        "skipped_cases": 0,
+        "source_sha": "b6c2e2a3a9f43e0b1e4dad8133455b319fd1bc2a",
+        "source_tree": "050cc575e9bea27112fd7ed33ed0b33c59c74cf8",
+        "source_unchanged_recorded": true,
+        "verification_performed_here": "DOCUMENTARY_PARSE_AND_DIGEST_JOIN_NO_NATIVE_TEST_EXECUTION",
+        "wall_seconds_recorded": 11.493671228999915
+      },
+      {
+        "collected_unique": 92,
+        "epoch": "d56a-311",
+        "error_cases": 0,
+        "executed_unique": 92,
+        "exit_code": 0,
+        "failed_cases": 0,
+        "installed_total_recorded": 157,
+        "junit_path": "raw/focals/d56a-311/focal.xml",
+        "junit_sha256": "a28d8c223bc60379ec03104f4ad91c288b7b3812a28fc186cd0fad4a45f641e2",
+        "original_scope": "SCOPED_NATIVE_FOCAL_WITH_PHYSICAL_GIT_BLOBS_MODES_AND_STABLE_CODE_STATS; NOT_FULL_GOV_BIG_HORIZON_IMAGE_OR_RUNTIME",
+        "passed_cases": 92,
+        "python": "3.11.16",
+        "receipt_path": "raw/focals/d56a-311/receipt.json",
+        "receipt_sha256": "fdd626c703559c2fea3c2e668ac06b6b7707321ef693c0966164cfeb7f06e0ce",
+        "skipped_cases": 0,
+        "source_sha": "d56ac8300dca68ec9d2e9f39e338cca117df9622",
+        "source_tree": "d47f1448a76f26be17e0faf07a6475ba901528b4",
+        "source_unchanged_recorded": true,
+        "verification_performed_here": "DOCUMENTARY_PARSE_AND_DIGEST_JOIN_NO_NATIVE_TEST_EXECUTION",
+        "wall_seconds_recorded": 19.133840273000033
+      },
+      {
+        "collected_unique": 92,
+        "epoch": "d56a-312",
+        "error_cases": 0,
+        "executed_unique": 92,
+        "exit_code": 0,
+        "failed_cases": 0,
+        "installed_total_recorded": 157,
+        "junit_path": "raw/focals/d56a-312/focal.xml",
+        "junit_sha256": "c998c321f878e47a18c7eacd2102c72db00b0534682e625f8fc50f0bcfe77d26",
+        "original_scope": "SCOPED_NATIVE_FOCAL_WITH_PHYSICAL_GIT_BLOBS_MODES_AND_STABLE_CODE_STATS; NOT_FULL_GOV_BIG_HORIZON_IMAGE_OR_RUNTIME",
+        "passed_cases": 92,
+        "python": "3.12.14",
+        "receipt_path": "raw/focals/d56a-312/receipt.json",
+        "receipt_sha256": "c2ff26d9dc72350face882b2dd8eca310d930a59819c9a36d9238ada331ae9f7",
+        "skipped_cases": 0,
+        "source_sha": "d56ac8300dca68ec9d2e9f39e338cca117df9622",
+        "source_tree": "d47f1448a76f26be17e0faf07a6475ba901528b4",
+        "source_unchanged_recorded": true,
+        "verification_performed_here": "DOCUMENTARY_PARSE_AND_DIGEST_JOIN_NO_NATIVE_TEST_EXECUTION",
+        "wall_seconds_recorded": 21.485767893000002
+      },
+      {
+        "collected_unique": 93,
+        "epoch": "92c3-311",
+        "error_cases": 0,
+        "executed_unique": 93,
+        "exit_code": 0,
+        "failed_cases": 0,
+        "installed_total_recorded": 157,
+        "junit_path": "raw/focals/92c3-311/focal.xml",
+        "junit_sha256": "21378e4dc2aae5312674c86b7c94e03a9090b835376deb6bf84dd579fa5cf3ec",
+        "original_scope": "SCOPED_NATIVE_FOCAL_WITH_PHYSICAL_GIT_BLOBS_MODES_AND_STABLE_CODE_STATS; NOT_FULL_GOV_BIG_HORIZON_IMAGE_OR_RUNTIME",
+        "passed_cases": 93,
+        "python": "3.11.16",
+        "receipt_path": "raw/focals/92c3-311/receipt.json",
+        "receipt_sha256": "e6c6625ea451ae0994928e3f8b3ffc7343ec317b34b6f9c0a48994f48cf60f2a",
+        "skipped_cases": 0,
+        "source_sha": "92c3d57481bd960650afe31fd3b007a58b20b21f",
+        "source_tree": "cc91087de87b93ce4d1b82f6b9a0f3e5bb301bec",
+        "source_unchanged_recorded": true,
+        "verification_performed_here": "DOCUMENTARY_PARSE_AND_DIGEST_JOIN_NO_NATIVE_TEST_EXECUTION",
+        "wall_seconds_recorded": 20.728856319999977
+      },
+      {
+        "collected_unique": 93,
+        "epoch": "763e-311",
+        "error_cases": 0,
+        "executed_unique": 93,
+        "exit_code": 0,
+        "failed_cases": 0,
+        "installed_total_recorded": 157,
+        "junit_path": "raw/focals/763e-311/focal.xml",
+        "junit_sha256": "c6c7c2ee2f71ed194b46f745a3575c4385c5b7948f302b6ad7625b2709e3b231",
+        "original_scope": "SCOPED_NATIVE_FOCAL_WITH_PHYSICAL_GIT_BLOBS_MODES_AND_STABLE_CODE_STATS; NOT_FULL_GOV_BIG_HORIZON_IMAGE_OR_RUNTIME",
+        "passed_cases": 93,
+        "python": "3.11.16",
+        "receipt_path": "raw/focals/763e-311/receipt.json",
+        "receipt_sha256": "63c5429879a6c17f51e5a97b5ade806bc5774b42043953843efdce18eef07f2d",
+        "skipped_cases": 0,
+        "source_sha": "763e1f7018a47bd05930a7a338de1fa8e709ff01",
+        "source_tree": "96f7ae24d75abc2a6c27866bb7e3fdfad6e9f18a",
+        "source_unchanged_recorded": true,
+        "verification_performed_here": "DOCUMENTARY_PARSE_AND_DIGEST_JOIN_NO_NATIVE_TEST_EXECUTION",
+        "wall_seconds_recorded": 18.73138265700004
+      }
+    ],
+    "initial_b6c2_311_failure_root_attribution": "HARNESS_MAIN_GUARD_MISSING; ORIGINAL_JUNIT_49PASS_1FAIL_REMAINS_RED",
+    "initial_b6c2_312_preparation": {
+      "classification": "ROOT_REPORTED_PREPARATION_FAILURE_NO_FILE_RECEIPT_AVAILABLE_NOT_FOCAL_OR_PRODUCT_OUTCOME",
+      "copied_raw_files": 0,
+      "directory_observed_empty": true,
+      "path": "/workspace/scratch/porota-native-focal312-b6c2",
+      "root_reported_reason": "SOURCE_MODES_0600_0700_DID_NOT_MATCH_GIT_0644_0755",
+      "root_reported_stage": "PREPARATION_RED_BEFORE_TEST_EXECUTION"
+    },
+    "red_bytes_preserved_without_outcome_upgrade": true
+  },
+  "import_only_diagnostic": {
+    "acceptance_complete": false,
+    "archived_helper_sha256": "8f2124e33f32726ea93b7be4578f6efe47c07e936a88a2fc885aa97260f7cd97",
+    "archived_helper_source": "helpers/porota_rc6_import_probe.py.source",
+    "classification": "TERMINAL_IMPORT_ONLY_DIAGNOSTIC_WITH_ACTUAL_DENIED_INET_BIND_NOT_NATIVE_FIXTURE_GOV_OR_ACCEPTANCE",
+    "diagnostic_only": true,
+    "elapsed_seconds_recorded": 0.04376788799982023,
+    "environment_python_recorded": "3.11.16",
+    "environment_scope_recorded": "INSTALLED_METADATA_AND_SOURCE_HASH_LOCKS_NOT_WHEEL_BYTES_OR_IMAGE",
+    "fixtures_created": false,
+    "gov_green_recovered": false,
+    "gov_guard_changed": false,
+    "gov_override_or_acceptance_authority": false,
+    "imported_module_in_archived_helper": "ba_data912_history",
+    "imports_completed": true,
+    "installed_total_recorded": 157,
+    "observed_denied_event_count": 1,
+    "observed_denied_events": [
+      {
+        "denied_before_syscall": true,
+        "event": "socket.bind",
+        "frames": [
+          {
+            "filename": "<frozen importlib._bootstrap>",
+            "function": "_find_and_load_unlocked",
+            "line": 1126
+          },
+          {
+            "filename": "<frozen importlib._bootstrap>",
+            "function": "_call_with_frames_removed",
+            "line": 241
+          },
+          {
+            "filename": "<frozen importlib._bootstrap>",
+            "function": "_find_and_load",
+            "line": 1176
+          },
+          {
+            "filename": "<frozen importlib._bootstrap>",
+            "function": "_find_and_load_unlocked",
+            "line": 1147
+          },
+          {
+            "filename": "<frozen importlib._bootstrap>",
+            "function": "_load_unlocked",
+            "line": 690
+          },
+          {
+            "filename": "<frozen importlib._bootstrap_external>",
+            "function": "exec_module",
+            "line": 940
+          },
+          {
+            "filename": "<frozen importlib._bootstrap>",
+            "function": "_call_with_frames_removed",
+            "line": 241
+          },
+          {
+            "filename": "/workspace/porota-rc6-venv311/lib/python3.11/site-packages/urllib3/util/__init__.py",
+            "function": "<module>",
+            "line": 4
+          },
+          {
+            "filename": "<frozen importlib._bootstrap>",
+            "function": "_find_and_load",
+            "line": 1176
+          },
+          {
+            "filename": "<frozen importlib._bootstrap>",
+            "function": "_find_and_load_unlocked",
+            "line": 1147
+          },
+          {
+            "filename": "<frozen importlib._bootstrap>",
+            "function": "_load_unlocked",
+            "line": 690
+          },
+          {
+            "filename": "<frozen importlib._bootstrap_external>",
+            "function": "exec_module",
+            "line": 940
+          },
+          {
+            "filename": "<frozen importlib._bootstrap>",
+            "function": "_call_with_frames_removed",
+            "line": 241
+          },
+          {
+            "filename": "/workspace/porota-rc6-venv311/lib/python3.11/site-packages/urllib3/util/connection.py",
+            "function": "<module>",
+            "line": 137
+          },
+          {
+            "filename": "/workspace/porota-rc6-venv311/lib/python3.11/site-packages/urllib3/util/connection.py",
+            "function": "_has_ipv6",
+            "line": 127
+          }
+        ]
+      }
+    ],
+    "original_result": "raw/import-probe-9a9b/urllib3-import-probe.json",
+    "original_result_sha256": "108b932b8a5823a4eb0b701ddf8fcd237390ace2d1438ba7cf812272ea66c247",
+    "real_orders_sent": 0,
+    "schema_recorded": "rc6.import-only-denied-inet-diagnosis.v1",
+    "source_or_dependency_binary_authentication_attested": false,
+    "source_root_recorded": "/workspace/scratch/porota-source-9a9b0f3",
+    "source_sha_or_tree_field_present_in_raw": false,
+    "source_sha_supplied_by_root": "9a9b0f3860453ce47bee520d70b1957201679966"
+  },
+  "local_fixture_cleanup": {
+    "acceptance_or_namespace_red_reclassified": false,
+    "cleanup_performed_by_preserver": false,
+    "copied_governed_raw_hashes_match_cleanup_receipt": true,
+    "free_bytes_reclaimed_recorded": 20658622464,
+    "frozen_source_preserved_recorded": true,
+    "raw_files_unchanged_recorded": true,
+    "raw_path": "raw/governed311-9a9b/local-fixture-cleanup.json",
+    "receipt_sha256": "8ed0f75cb64632b4f955101efca7a0bf18efabd6dcc4ad200a8d31719ab1041d",
+    "runtime_cleanup_recorded": false,
+    "scope_kind_recorded": "OWN_TERMINAL_GOVERNED_EPHEMERAL_PRIVATE_TEST_FIXTURES_ONLY",
+    "scope_recorded": "/workspace/scratch/porota-governed311-9a9b/pytest-private"
+  },
+  "ownership": {
+    "checkpoint_comment": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6014551029",
+    "coordination_issue": 471,
+    "original_hung_session_id": "01a1097d-b864-7649-b326-05657cbe101a",
+    "recovery_comment": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6014000727",
+    "references_supplied_by": "ROOT",
+    "release_status": "NOT_RELEASED_BY_THIS_PACKET_ROOT_FINAL_EXPLICIT_COMMENT_REQUIRED",
+    "remote_operations_performed_by_preserver": false,
+    "role": "INTEGRATION_OWNER_WRITE_OWNER_RECOVERED_BY_ROOT",
+    "supervision_issue": 473
+  },
+  "pending_before_final_acceptance": [
+    "Complete canonical BIG PREOPEN+OPEN within unchanged deadlines with actual slow-fsync five-EXIT isolation",
+    "Complete native V3 full horizon and recovery with original quotas and source custody",
+    "Complete LARGE native OPEN browser under original 1s/4MiB render and 2s health budgets",
+    "Terminal exact-source governed root executions for CPython311 and312 with approved157 installed metadata and complete collection/JUnit binding",
+    "Rebind source and documentary S-D-C evidence after every relevant source change",
+    "One final PredeployV2 FIP and immutable build/artifact/digest bound to the final source; no Codex merge or deploy"
+  ],
+  "safety": {
+    "deploy_authorized": false,
+    "force_push_authorized": false,
+    "merge_authorized": false,
+    "mode": "PAPER_SHADOW_ONLY",
+    "ppi_watch": "NOT_TOUCHED",
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "rollback_authorized": false
+  },
+  "schema": "rc6.controlled-recovery-status.v1",
+  "status": "CONTROLLED_RECOVERY_CONTINUITY_PRESERVED_MATERIAL_ACCEPTANCE_BLOCKED",
+  "uncommitted_diagnostic_focals": {
+    "case_totals_added_across_epochs": false,
+    "classification": "THREE_SEPARATE_LOCAL_UNCOMMITTED_DIAGNOSTIC_EPOCHS_NOT_FINAL_GIT_SOURCE_QUALIFICATION_OR_GOV",
+    "epochs": [
+      {
+        "candidate_sha": null,
+        "candidate_tree": null,
+        "canonical_final_acceptance_complete": false,
+        "documentary_parse_counts_match": true,
+        "epoch": "INITIAL_FULL_TWO_MODULE_UNCOMMITTED_311_RED",
+        "error_cases": 181,
+        "failed_cases": 3,
+        "failure_attribution_original_manifest": [
+          "Two frozen-disk-mode mismatches: private Git checkout inherited umask 077 and produced 0600 fronts.",
+          "Frozen historical audit gate imports the current derived producer but expects inline guard_nodes; requires fixture-local representation bridge.",
+          "181 setup errors after private clone accumulation exhausted disk space; initial private basetemp removed after terminal run only."
+        ],
+        "failure_text_extraction_is_original_stdout": false,
+        "failure_text_extraction_path": "raw/path-guards-uncommitted311/failures-from-junit.log",
+        "git_source_authenticated": false,
+        "initial_four_file_hashes_captured": false,
+        "junit_path": "raw/path-guards-uncommitted311/focal-red.xml",
+        "junit_sha256": "59ca112df472df78d938a57c62dafe2555907a283c11a480c76f54ece256153f",
+        "junit_tests": 234,
+        "junit_wall_seconds_recorded": 88.368,
+        "native_tests_executed_by_preserver": false,
+        "passed_cases": 50,
+        "skipped_cases": 0,
+        "stdout_original_captured": false
+      },
+      {
+        "candidate_sha": null,
+        "candidate_tree": null,
+        "canonical_final_acceptance_complete": false,
+        "complete_combined_stdout_stderr_path": "raw/path-guards-uncommitted311/fixed.stdout.log",
+        "continuous_scoped_source_immutability_attested": false,
+        "documentary_parse_counts_match": true,
+        "epoch": "REDUCED_FIXED_REPRESENTATION_UNCOMMITTED_311_DIAGNOSTIC_PASS",
+        "error_cases": 0,
+        "execution_record_path": "raw/path-guards-uncommitted311/fixed.execution.json",
+        "execution_wall_seconds_recorded": 31.347689867019653,
+        "failed_cases": 0,
+        "four_scoped_source_before_after_hashes_match_original_receipt": true,
+        "git_source_authenticated": false,
+        "junit_path": "raw/path-guards-uncommitted311/fixed.xml",
+        "junit_sha256": "c9ba6a48eba8a01b3836feb46a09f11a0a4027437636ebc33d87124e5af02494",
+        "junit_tests": 143,
+        "junit_wall_seconds_recorded": 31.102,
+        "module_case_counts": {
+          "tests.test_issue465_stress_audit_gate": 110,
+          "tests.test_rc6_convergence_provenance": 33
+        },
+        "native_tests_executed_by_preserver": false,
+        "passed_cases": 143,
+        "scope_original_execution": "RED retained; reduced representation focal only, not Gov or eligibility",
+        "selected_cases_only": true,
+        "skipped_cases": 0
+      },
+      {
+        "candidate_sha": null,
+        "candidate_tree": null,
+        "canonical_final_acceptance_complete": false,
+        "documentary_parse_counts_match": true,
+        "epoch": "SCOPED_RECOVERY_REGRESSIONS_UNCOMMITTED_311_DIAGNOSTIC_PASS",
+        "error_cases": 0,
+        "failed_cases": 0,
+        "git_source_authenticated": false,
+        "junit_path": "raw/regressions-uncommitted311/focal.xml",
+        "junit_sha256": "bd41c59201a8df2e282b8d03117b2eaf95f1a64180b5b72e02c51607a0375878",
+        "junit_tests": 12,
+        "junit_wall_seconds_recorded": 9.882,
+        "native_tests_executed_by_preserver": false,
+        "passed_cases": 12,
+        "root_reported_scope": [
+          "umask restoration",
+          "public wire decode API spies and adversarial invalidation",
+          "root-atime archive custody",
+          "IOL quiescent fixture",
+          "portable actual managed Predeploy path assertion"
+        ],
+        "skipped_cases": 0,
+        "stdout_path": "raw/regressions-uncommitted311/stdout.log",
+        "test_names_recorded": [
+          "tests.test_rc6_capture_restore_diagnostic::test_preflight_rejects_wrong_interpreter_before_private_fixture_creation",
+          "tests.test_rc6_committed_projection::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
+          "tests.test_rc6_committed_projection::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
+          "tests.test_rc6_committed_projection::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure[member]",
+          "tests.test_rc6_committed_projection::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure[hardlink]",
+          "tests.test_rc6_committed_projection::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure[authority]",
+          "tests.test_rc6_committed_projection::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure[deadline]",
+          "tests.test_rc6_committed_projection::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure[limit]",
+          "tests.test_rc6_committed_projection::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure[failure]",
+          "tests.test_rc6_archive_namespace::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+          "tests.test_rc6_shadow_runtime_wiring::test_configured_iol_cache_is_reused_and_protected_as_an_input",
+          "tests.test_issue465_provenance::test_predeploy_executes_strict_provenance_in_final_single_build"
+        ]
+      }
+    ],
+    "final_candidate_eligible": false,
+    "material_programming_gates_closed": false,
+    "new_candidate_fip_recomputed": false,
+    "representation_epoch_manifest": "raw/path-guards-uncommitted311/epoch-manifest.json"
+  },
+  "updated_at_utc": "2026-10-06T11:43:21.185657+00:00",
+  "workstream_id": "RC6_CONVERGENCE_468_469_470_20261005"
+}

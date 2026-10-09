@@ -237,11 +237,16 @@ def _record_exact(observer_store, identity, payload, start: date, attempted_at: 
 def _ingest(observer_store, history_store, identity, payload, start: date, *, source: str,
             observed_at: str) -> tuple[int, str | None]:
     import ct_ppi_history_salvage_hf6 as salvage
+    import bu_instrument_catalog as catalog
 
     bounded = _filtered(payload, start)
+    metadata=catalog.lookup(observer_store,identity[0],identity[1],identity[3])
+    if not metadata or metadata.get('market')!=identity[2] or not metadata.get('currency'):
+        raise ValueError('HISTORY_REPAIR_FULL_IDENTITY_UNVERIFIED')
     result = salvage.ingest_ppi_payload(
         observer_store, symbol=identity[0], instrument_type=identity[1],
         market=identity[2], settlement=identity[3], payload=bounded,
+        currency=metadata['currency'],
         requested_from=start, requested_to=CUTOFF, attempted_at=observed_at,
         history_store=history_store,
     )

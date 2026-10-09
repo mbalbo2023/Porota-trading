@@ -1,0 +1,6 @@
+tree b984539931a25a5f77eae55116c4fa9543d53748
+parent 72ec2a1d137416d36596f592b9b59e73015c2377
+author Codex <codex@openai.com> 1791247141 +0000
+committer Codex <codex@openai.com> 1791247141 +0000
+
+test(rc6): mutate visited targets during the original count phase

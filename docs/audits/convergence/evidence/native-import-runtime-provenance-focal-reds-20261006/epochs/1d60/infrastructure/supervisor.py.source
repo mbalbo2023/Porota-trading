@@ -1,0 +1,363 @@
+"""Exact scoped focal management; source-only until Root assigns Native SLOT.
+
+Adapted from the proven 1e2 controlled supervisor's managed_child function.
+Management180 is separate from unchanged product caps. Source/log/receipt
+captures occur only after actual main reap and owned-child exhaustion.
+"""
+import argparse
+import ctypes
+import errno
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import stat
+import subprocess
+import sys
+import threading
+import time
+
+SOURCE_SHA = "1d60ec2ced05ce7793028f5a04f707cb66fa5cda"
+SOURCE_TREE = "a21e16b7d365b202996c835eda6baebbc8b0ffb4"
+INTERPRETER = "/workspace/venv_rc6_frozen311/bin/python"
+RAW = Path("/workspace/rc6-budget-runtime-provenance-1d60-focal-157-raw")
+SOURCE = Path("/workspace/rc6-budget-runtime-provenance-1d60-focal-157-source")
+RUNNER = Path("/workspace/rc6-budget-runtime-provenance-1d60-focal-runner.py")
+RUNNER_SHA256 = "f1d575a996ed693f25ed99246748aab6b7c37924eac113b6bf657b256284baa5"
+STATS = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
+         "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
+
+class Support:
+    @staticmethod
+    def require(condition, reason):
+        if not condition:
+            raise ValueError(reason)
+
+
+def raw_read(path, limit):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    try:
+        parts, total = [], 0
+        while True:
+            part = os.read(descriptor, min(65536, limit + 1 - total))
+            if not part:
+                break
+            total += len(part)
+            if total > limit:
+                raise ValueError("FOCAL_BOUNDED_FILE_READ_EXCEEDED")
+            parts.append(part)
+        return b"".join(parts)
+    finally:
+        os.close(descriptor)
+
+
+def capture(path, limit):
+    location = Path(path).absolute()
+    if location.resolve(strict=True) != location or any(parent.is_symlink() for parent in location.parents):
+        raise ValueError("FOCAL_CUSTODY_CANONICAL_FILE_REQUIRED")
+    descriptor = os.open(location, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    try:
+        before = os.fstat(descriptor)
+        values = tuple(getattr(before, key) for key in STATS)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_uid != os.geteuid() or before.st_size > limit:
+            raise ValueError("FOCAL_CUSTODY_REGULAR_OWNED_BOUNDED_FILE_REQUIRED")
+        parts, size = [], 0
+        while True:
+            block = os.read(descriptor, min(65536, limit + 1 - size))
+            if not block:
+                break
+            size += len(block)
+            if size > limit:
+                raise ValueError("FOCAL_CUSTODY_FILE_BOUND_EXCEEDED")
+            parts.append(block)
+        if (size != before.st_size or tuple(getattr(os.fstat(descriptor), key) for key in STATS) != values
+                or tuple(getattr(location.lstat(), key) for key in STATS) != values):
+            raise ValueError("FOCAL_CUSTODY_ALL11_CHANGED_DURING_READ")
+        wire = b"".join(parts)
+        return wire, {"path":str(location), "sha256":hashlib.sha256(wire).hexdigest(),
+                      "bytes":len(wire), "physical_stat11":dict(zip(STATS, values)),
+                      "custody":"NOATIME_NOFOLLOW_NONBLOCK_ALL11_WITHIN_CAPTURE"}
+    finally:
+        os.close(descriptor)
+
+
+def managed_child(support, command, source, output, raw, environment, timeout_seconds, source_files):
+    """Adopt/reap only this runner's descendants, including error paths."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    previous = ctypes.c_int()
+    process, waited, usage, reap_wall = None, 0, None, None
+    started, cleanup_started = time.monotonic(), None
+    timed_out, active, group_absent = False, False, False
+    group_signaling_disabled, restore_attempted, restore_verified = False, False, False
+    pending, residual, descendants, errors = [], [], [], []
+    supervisor_pid, supervisor_tid = os.getpid(), threading.get_native_id()
+    task_root = f"/proc/{supervisor_pid}/task/{supervisor_tid}"
+    children_path = task_root + "/children"
+    identity = {}
+    children_facility, pre_spawn_echild = "UNVERIFIED", False
+    owned_children_exhausted, wait4_zero_observed = False, False
+    kernel_owned_child_observations = []
+    def error_record(label, error):
+        errors.append({"phase": label, "class": type(error).__name__, "reason": str(error)})
+    def signal_group(number):
+        nonlocal group_absent, group_signaling_disabled
+        if process is not None and not group_signaling_disabled:
+            try:
+                os.killpg(process.pid, number)
+            except ProcessLookupError:
+                group_absent, group_signaling_disabled = True, True
+            except BaseException as error:
+                error_record("signal_process_group", error)
+    def reap_main():
+        nonlocal waited, usage, reap_wall
+        found, child_status, child_usage = os.wait4(process.pid, os.WNOHANG)
+        if found:
+            waited, usage, reap_wall = found, child_usage, time.monotonic() - started
+            process.returncode = os.waitstatus_to_exitcode(child_status)
+        return found
+    try:
+        status = raw_read(task_root + "/status", 65536).decode().splitlines()
+        identity = {line.partition(":")[0]: line.partition(":")[2].strip()
+                    for line in status if line.startswith(("Pid:", "Tgid:", "Uid:"))}
+        support.require(identity.get("Pid") == str(supervisor_tid) and identity.get("Tgid") == str(supervisor_pid)
+                        and identity.get("Uid", "").split()[:2] == [str(os.getuid()), str(os.geteuid())],
+                        "EXPLICIT_SUPERVISOR_KERNEL_PID_TID_UID_BINDING_REQUIRED")
+        support.require(libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0,
+                        "LINUX_OWN_SUBREAPER_INITIAL_STATE_REQUIRED")
+        support.require(libc.prctl(36, 1, 0, 0, 0) == 0, "LINUX_OWN_CHILD_SUBREAPER_REQUIRED")
+        active = True
+        # The supervisor is exclusive: no helper process may survive into the
+        # native spawn. ECHILD is kernel evidence, not an absent proc-file.
+        try:
+            pre_pid, pre_status, pre_usage = os.wait4(-1, os.WNOHANG)
+        except ChildProcessError as error:
+            if error.errno != errno.ECHILD:
+                raise
+            pre_spawn_echild = True
+            kernel_owned_child_observations.append({"phase": "before_popen_after_subreaper_activation",
+                "outcome": "ECHILD", "errno": error.errno})
+        else:
+            kernel_owned_child_observations.append({"phase": "before_popen_after_subreaper_activation",
+                "outcome": "PID_REAPED" if pre_pid else "ACTIVE_OWN_CHILD_WITHOUT_PID", "pid": pre_pid,
+                "exit_code": os.waitstatus_to_exitcode(pre_status) if pre_pid else None,
+                "cpu_user_seconds": pre_usage.ru_utime if pre_pid else None,
+                "cpu_system_seconds": pre_usage.ru_stime if pre_pid else None,
+                "kernel_lifetime_peak_rss_bytes": pre_usage.ru_maxrss * 1024 if pre_pid else None})
+            raise RuntimeError("EXCLUSIVE_SUPERVISOR_REQUIRES_PRESPAWN_KERNEL_ECHILD")
+        try:
+            raw_read(children_path, 65536)
+            children_facility = "PROC_TASK_CHILDREN"
+        except FileNotFoundError:
+            children_facility = "PROC_TASK_CHILDREN_ABSENT; KERNEL_WAIT4_WNOHANG_REQUIRED"
+        descriptor = os.open(raw / "focal.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        with os.fdopen(descriptor, "wb", buffering=0) as stream:
+            started = time.monotonic()
+            process = subprocess.Popen(command, cwd=source, env=environment, stdout=stream,
+                                       stderr=subprocess.STDOUT, start_new_session=True)
+            print(json.dumps({"event": "NATIVE_START", "pid": process.pid, "source_sha": SOURCE_SHA,
+                              "source_tree": SOURCE_TREE, "interpreter": INTERPRETER, "output": str(output),
+                              "command": command, "source_files": source_files}, sort_keys=True), flush=True)
+            terminated_at = None
+            while not reap_main():
+                now = time.monotonic()
+                if now - started >= timeout_seconds and not timed_out:
+                    timed_out, terminated_at = True, now
+                    signal_group(signal.SIGTERM)
+                elif timed_out and now - terminated_at >= 5:
+                    signal_group(signal.SIGKILL)
+                    if now - terminated_at >= 6:
+                        error_record("watchdog_reap", RuntimeError("KILLED_CHILD_NOT_YET_REAPED_AT_MANAGEMENT_BOUND"))
+                        break
+                time.sleep(0.05)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException as error:
+        error_record("spawn_tracking_or_log", error)
+    finally:
+        # This finally starts before activation/spawn and also covers stdout
+        # failures, signal races and log finalization failures.
+        cleanup_started = time.monotonic()
+        try:
+            if process is not None and not waited:
+                signal_group(signal.SIGTERM)
+                stop_at = time.monotonic() + 5
+                while not reap_main() and time.monotonic() < stop_at:
+                    if time.monotonic() - cleanup_started >= 1:
+                        signal_group(signal.SIGKILL)
+                    time.sleep(0.05)
+                if not waited:
+                    signal_group(signal.SIGKILL)
+                    error_record("main_reap", RuntimeError("OWN_CHILD_NOT_REAPED_WITHIN_CLEANUP_BOUND"))
+            if active:
+                support.require(pre_spawn_echild and (process is None or waited == process.pid),
+                    "KERNEL_CHILD_EXHAUSTION_REQUIRES_EXCLUSIVE_SUBREAPER_AND_REAPED_MAIN")
+                descendant_started = time.monotonic()
+                # Kernel ECHILD is mandatory even when /proc children exists.
+                # A proc-file empty read is not equivalent exhaustion evidence.
+                while True:
+                    try:
+                        found, child_status, child_usage = os.wait4(-1, os.WNOHANG)
+                    except ChildProcessError as error:
+                        if error.errno != errno.ECHILD:
+                            raise
+                        kernel_owned_child_observations.append({"phase": "after_main_pid_reap",
+                            "outcome": "ECHILD", "errno": error.errno})
+                        owned_children_exhausted, pending = True, []
+                        break
+                    if found:
+                        row = {"pid": found, "exit_code": os.waitstatus_to_exitcode(child_status),
+                            "cpu_user_seconds": child_usage.ru_utime, "cpu_system_seconds": child_usage.ru_stime,
+                            "kernel_lifetime_peak_rss_bytes": child_usage.ru_maxrss * 1024}
+                        descendants.append(row)
+                        kernel_owned_child_observations.append({"phase": "after_main_pid_reap",
+                            "outcome": "PID_REAPED", **row})
+                    else:
+                        pending = ["KERNEL_ACTIVE_OWN_CHILD_WITHOUT_PID"]
+                        if not wait4_zero_observed:
+                            residual.append("KERNEL_WAIT4_ZERO_OBSERVED")
+                            kernel_owned_child_observations.append({"phase": "after_main_pid_reap",
+                                "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID", "pid": 0})
+                        wait4_zero_observed = True  # Irreversible RED even after successful cleanup.
+                        signal_group(signal.SIGKILL if time.monotonic() - descendant_started >= 1 else signal.SIGTERM)
+                    if len(kernel_owned_child_observations) > 1024 or time.monotonic() - descendant_started >= 5:
+                        error_record("kernel_owned_child_cleanup", RuntimeError("OWN_CHILD_EXHAUSTION_NOT_PROVED_WITHIN_BOUND"))
+                        break
+                    time.sleep(0.05)
+        except BaseException as error:
+            error_record("termination_or_reap", error)
+        finally:
+            # Probe after the adopted-child drain, so the final group assertion
+            # is not the earlier state. ESRCH disables all later group signals.
+            if process is not None:
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    group_absent, group_signaling_disabled = True, True
+                except BaseException as error:
+                    group_absent = False
+                    error_record("final_process_group_probe", error)
+                else:
+                    group_absent = False
+            if active:
+                if owned_children_exhausted and (process is None or group_absent):
+                    restore_attempted = True
+                    try:
+                        current = ctypes.c_int()
+                        if (libc.prctl(36, previous.value, 0, 0, 0) != 0
+                                or libc.prctl(37, ctypes.byref(current), 0, 0, 0) != 0
+                                or current.value != previous.value):
+                            raise RuntimeError("OWN_SUBREAPER_STATE_NOT_RESTORED")
+                        restore_verified = True
+                    except BaseException as error:
+                        error_record("subreaper_restore", error)
+                else:
+                    error_record("subreaper_restore_deferred", RuntimeError(
+                        "OWN_CHILD_EXHAUSTION_AND_FINAL_GROUP_ABSENCE_REQUIRED_BEFORE_RESTORE"))
+    return {"pid": process.pid if process is not None else None, "wait4_reaped_pid": waited,
+            "supervisor_pid": supervisor_pid, "supervisor_native_tid": supervisor_tid,
+            "supervisor_task_path": task_root, "owned_children_proc_path": children_path,
+            "supervisor_kernel_identity_before_spawn": identity,
+            "proc_children_facility": children_facility,
+            "kernel_pre_popen_echild_verified": pre_spawn_echild,
+            "owned_children_exhaustion_verified": owned_children_exhausted,
+            "kernel_wait4_zero_observed_irreversible_red": wait4_zero_observed,
+            "kernel_owned_child_observations": kernel_owned_child_observations,
+            "actual_child_reaped": process is not None and waited == process.pid,
+            "child_exit_code": process.returncode if process is not None else None,
+            "process_group_absent_after_reap": group_absent, "timed_out": timed_out,
+            "elapsed_wall_seconds": time.monotonic() - started,
+            "actual_launch_to_pid_reap_wall_seconds": reap_wall,
+            "termination_reap_restore_cleanup_seconds": time.monotonic() - cleanup_started,
+            "residual_descendants_observed": residual, "adopted_descendants_reaped": descendants,
+            "remaining_owned_children": pending, "supervisor_errors": errors,
+            "cpu_user_seconds": usage.ru_utime if usage is not None else None,
+            "cpu_system_seconds": usage.ru_stime if usage is not None else None,
+            "kernel_lifetime_peak_rss_bytes": usage.ru_maxrss * 1024 if usage is not None else None,
+            "subreaper_activated":active,"subreaper_previous_state":previous.value,
+            "subreaper_restore_attempted":restore_attempted,"subreaper_restore_verified":restore_verified,
+            "subreaper_retained_on_unverified_cleanup":active and not restore_verified,
+            "group_signaling_disabled_after_esrch":group_signaling_disabled}
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--watchdog-seconds", required=True, type=float)
+args = parser.parse_args()
+if (args.watchdog_seconds != 180 or os.getenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD") != "1"
+        or os.getenv("PYTHONDONTWRITEBYTECODE") != "1" or os.getenv("PYTEST_ADDOPTS")
+        or sys.executable != INTERPRETER or sys.version_info[:3] != (3,11,16)
+        or not sys.flags.isolated or not sys.dont_write_bytecode or os.getuid() != os.geteuid()
+        or os.geteuid() == 0 or not RAW.is_dir() or not SOURCE.is_dir()
+        or (RAW/"focal.log").exists() or (RAW/"focal-supervisor.json").exists()):
+    raise ValueError("EXACT_FROZEN31116_ENV_FRESH_RAW_AND_MANAGEMENT180_REQUIRED")
+SCRIPT, runner_custody = capture(RUNNER, 1024**2)
+if runner_custody["sha256"] != RUNNER_SHA256:
+    raise ValueError("EXACT_REVIEWED_FOCAL_RUNNER_PIN_REQUIRED")
+supervisor_wire, supervisor_custody = capture(Path(__file__), 1024**2)
+command = [INTERPRETER, "-I", "-B", "-c",
+    "exec(compile("+repr(SCRIPT)+", '<rc6-controlled-budget-import-focal>', 'exec'))"]
+environment = {**os.environ, "PYTHONPATH":"", "PYTHONDONTWRITEBYTECODE":"1", "PYTEST_DISABLE_PLUGIN_AUTOLOAD":"1"}
+managed = managed_child(Support(), command, SOURCE, RAW, RAW, environment, args.watchdog_seconds, None)
+reaped = managed["actual_child_reaped"]
+owned_exhausted = managed["owned_children_exhaustion_verified"]
+resources = [managed["kernel_lifetime_peak_rss_bytes"],
+    *[row["kernel_lifetime_peak_rss_bytes"] for row in managed["adopted_descendants_reaped"]]]
+peak = max(value for value in resources if value is not None) if any(value is not None for value in resources) else None
+safe_final_custody = (reaped and owned_exhausted and managed["process_group_absent_after_reap"]
+    and not managed["remaining_owned_children"])
+post_error, native, native_custody, log_custody = None, None, None, None
+runner_after, supervisor_after = None, None
+if safe_final_custody:
+    try:
+        runner_wire_after, runner_after = capture(RUNNER, 1024**2)
+        supervisor_wire_after, supervisor_after = capture(Path(__file__), 1024**2)
+        if runner_custody != runner_after or supervisor_custody != supervisor_after:
+            raise ValueError("FOCAL_INFRASTRUCTURE_BYTES_ALL11_CHANGED")
+        result_path = RAW/"native-import-provenance-focal-receipt.json"
+        if result_path.exists():
+            native_wire, native_custody = capture(result_path, 32*1024**2)
+            native = json.loads(native_wire)
+        log_wire, log_custody = capture(RAW/"focal.log", 128*1024**2)
+    except BaseException as error:
+        post_error = {"class":type(error).__name__,"reason":str(error)}
+elapsed = managed["actual_launch_to_pid_reap_wall_seconds"]
+green = (safe_final_custody and managed["kernel_pre_popen_echild_verified"]
+    and managed["subreaper_restore_verified"] and not managed["kernel_wait4_zero_observed_irreversible_red"]
+    and not managed["residual_descendants_observed"] and not managed["supervisor_errors"]
+    and not managed["timed_out"] and elapsed is not None and elapsed < args.watchdog_seconds
+    and managed["child_exit_code"] == 0 and peak is not None and peak < 2*1024**3
+    and post_error is None and type(native) is dict
+    and native.get("classification") == "SCOPED_IMPORT_GUARDS_AND_ORIGINAL_CANONICAL_FACTORY_GREEN"
+    and native.get("source_sha") == SOURCE_SHA and native.get("source_tree") == SOURCE_TREE
+    and native.get("native_pid") == managed["pid"] and native.get("native_parent_pid") == os.getpid()
+    and native.get("junit",{}).get("tests") == 43
+    and native.get("actual_collection_execution_junit_join",{}).get("exact_collection_call_junit_bijection") is True)
+receipt = {"schema":"rc6.native-import-focal-management-receipt.v2",
+    "classification":"SCOPED_FOCAL_MANAGEMENT_AND_NATIVE_GUARDS_GREEN" if green else "SCOPED_FOCAL_NOT_GREEN",
+    "phase":"INTERMEDIATE_OWN_SOURCE_CONTROLLED_FOCAL_NOT_FINAL_CANDIDATE",
+    "source_sha":SOURCE_SHA,"source_tree":SOURCE_TREE,"launcher_pid":os.getpid(),
+    "actual_child_pid":managed["pid"],"actual_wait4_reaped":reaped,"returncode":managed["child_exit_code"],
+    "management_watchdog_seconds":args.watchdog_seconds,
+    "management_watchdog_exhausted":managed["timed_out"] or elapsed is not None and elapsed >= args.watchdog_seconds,
+    "managed_child":managed,"wait4_main_and_adopted_max_rss_bytes":peak,
+    "resource_scope":"ACTUAL_REAPED_MAIN_AND_ADOPTED_DESCENDANTS_KERNEL_RUSAGE_MAXIMUM_NOT_PER_CALL_PROFILING",
+    "runner_sha256":runner_custody["sha256"],"supervisor_sha256":supervisor_custody["sha256"],
+    "infrastructure_before":{"runner":runner_custody,"supervisor":supervisor_custody},
+    "infrastructure_after":{"runner":runner_after,"supervisor":supervisor_after},
+    "final_raw_captures_allowed":safe_final_custody,"post_reap_custody_error":post_error,
+    "native_receipt_custody":native_custody,"raw_log_custody":log_custody,
+    "native_receipt_sha256":native_custody["sha256"] if native_custody else None,
+    "post_reap_custody_scope":"NO_FINAL_RAW_READS_WHEN_MAIN_OR_OWNED_CHILD_EXHAUSTION_OR_GROUP_ABSENCE_UNVERIFIED",
+    "proven_supervisor_source":{"path":"/workspace/rc6-publication-1e2fddc1-controlled-preparation-20261006/runner.py",
+        "sha256":"210c510c80274280085c3d53ae5d64e16fbb02223cc7d0be5cda062b19cfb47b",
+        "adaptation":"managed_child baseline; mandatory kernel ECHILD on every host, final post-drain PGID probe, ESRCH signal suppression and safe verified subreaper restore; no business/resource/GC change"},
+    "native_big_executions":0,"native_horizon_executions":0,"artifact_validated":False,
+    "runtime_validated":False,"deployed":False,"final_input_provenance":None,
+    "limits":["Management watchdog180 covers main launch through actual wait4 observation, not product caps or final custody/emission.",
+        "Staged termination/reap/adopted cleanup and subreaper restore are recorded separately; residual/unknown children prevent GREEN.",
+        "No current BIG, horizon, image, runtime or final governed authority is conferred by scoped guard success."]}
+(RAW/"focal-supervisor.json").write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+print(json.dumps({"classification":receipt["classification"],"reaped":reaped,
+    "owned_children_exhausted":owned_exhausted,"group_absent":managed["process_group_absent_after_reap"],
+    "returncode":receipt["returncode"],"watchdog_exhausted":receipt["management_watchdog_exhausted"],
+    "native_receipt_sha256":receipt["native_receipt_sha256"],"peak_rss_bytes":peak}),flush=True)
+raise SystemExit(0 if green else 1)

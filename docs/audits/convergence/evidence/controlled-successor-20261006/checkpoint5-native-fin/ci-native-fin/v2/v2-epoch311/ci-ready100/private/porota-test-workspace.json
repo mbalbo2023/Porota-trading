@@ -1,0 +1,91 @@
+{
+  "context": {
+    "candidate_sha": "649a4e90468598f679c63b6ac71516b0e2cab9f7",
+    "candidate_tree": "4a39a21dc8e7bf76a69a2cff1b4c6b0fc7079467",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "2",
+    "run_id": "471",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "fixture_root": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch311/pytest/test_real_owned_pytest_failed_0/native-runner/porota-pytest-471-2-af243396ab394adeba719cd094071a19",
+  "fixture_root_identity": [
+    27,
+    1093393,
+    1000,
+    1000,
+    448
+  ],
+  "fixture_root_mount_id": 52,
+  "fixture_root_removed": false,
+  "link_targets_followed": false,
+  "marker_identity": [
+    27,
+    1093719,
+    1000,
+    1000,
+    384,
+    1,
+    2929,
+    1791314769010680250,
+    1791314769010680250
+  ],
+  "marker_sha256": "56b1f3657053ee030994d167095e9c53b0627f5c0567cb6de9c3c0d0413d6a2b",
+  "owner_uid": 1000,
+  "owner_uuid": "af243396ab394adeba719cd094071a19",
+  "pytest_basetemp": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch311/pytest/test_real_owned_pytest_failed_0/native-runner/porota-pytest-471-2-af243396ab394adeba719cd094071a19/pytest",
+  "pytest_phases": [
+    "collection",
+    "execution"
+  ],
+  "real_orders_sent": 0,
+  "retention_policy": "EXPLICIT_RETAINED_FOR_EPHEMERAL_RUNNER_TEARDOWN",
+  "runner_temp": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch311/pytest/test_real_owned_pytest_failed_0/native-runner",
+  "schema": "rc6.predeploy-test-workspace.v1",
+  "strict_private_root": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch311/pytest/test_real_owned_pytest_failed_0/native-runner/porota-predeploy-471-2-af243396ab394adeba719cd094071a19",
+  "venv": {
+    "fresh_directory_identity": [
+      27,
+      1093711,
+      1000,
+      1000,
+      493
+    ],
+    "native_envbuilder_copies": true,
+    "native_lib64": {
+      "alias_after_own_read_before_unlink": {
+        "st_atime_ns": 1791314768972140147,
+        "st_blocks": 0,
+        "st_ctime_ns": 1791314766382344744,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093715,
+        "st_mode": 41471,
+        "st_mtime_ns": 1791314766382344744,
+        "st_nlink": 1,
+        "st_size": 3,
+        "st_uid": 1000
+      },
+      "alias_before_own_read": {
+        "st_atime_ns": 1791314766382344744,
+        "st_blocks": 0,
+        "st_ctime_ns": 1791314766382344744,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093715,
+        "st_mode": 41471,
+        "st_mtime_ns": 1791314766382344744,
+        "st_nlink": 1,
+        "st_size": 3,
+        "st_uid": 1000
+      },
+      "existing_environment_modified": false,
+      "lib_directory_all11_unchanged": true,
+      "removed_only_native_link_from_this_new_construction": true,
+      "target": "lib"
+    },
+    "original_strict_inventory_accepted": true,
+    "path": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch311/pytest/test_real_owned_pytest_failed_0/native-runner/porota-predeploy-471-2-af243396ab394adeba719cd094071a19/venv",
+    "strict_entries": 2154
+  }
+}

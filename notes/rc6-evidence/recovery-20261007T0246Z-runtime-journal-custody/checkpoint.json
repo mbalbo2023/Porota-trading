@@ -1,0 +1,224 @@
+{
+  "schema": "rc6.controlled-recovery-fix-forward-checkpoint.v1",
+  "workstream": "WS-RC6-CONVERGENCE-468-469-470-20261005",
+  "session": "CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC",
+  "repo": "mbalbo2023/Porota-trading",
+  "repo_id": 1338680554,
+  "pr": 476,
+  "branch": "recovery/rc6-material-fix-forward-3091e93-20261006",
+  "parent_sha": "5a0fd6ce181f23b508778000c4fe6b9616d8a024",
+  "parent_tree": "7559bc64bd091bbe446fe93bf5562b1ece0a8a9f",
+  "binding": "This checkpoint is bound by its containing Git commit. Exact successor SHA/tree are verified after object creation and recorded in immutable issue471/473 prepush launch receipts before nonforced successor-ref publication.",
+  "status": "DEVELOPED_CONTROLS_PREPARED_EXACT_SOURCE_NATIVE_GATES_PENDING",
+  "FINAL_CANDIDATE_ELIGIBLE": false,
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "real_orders_sent": 0,
+  "DEPLOY_OWNER": "NOT_ACQUIRED",
+  "protected_refs": {
+    "product": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+    "frozen_candidate": "3091e93c05cf89f9a0c16ca912d0af98f036ff17",
+    "ops": "171684266d5e9d3ad7b79aaa2a00f4a5e00da91a"
+  },
+  "actual_parent_canonical_predeploy": {
+    "run_id": 37556660054,
+    "attempt": 1,
+    "event": "pull_request",
+    "job_id": 112584373527,
+    "conclusion": "failure",
+    "completed": "2026-10-07T02:08:30Z",
+    "python": "3.11.16",
+    "discovered_executed_junit_unique": 6019,
+    "pass": 6017,
+    "fail": 2,
+    "error": 0,
+    "skip": 0,
+    "duplicates": 0,
+    "source_unchanged": true,
+    "artifact_image_build_export": "SKIPPED",
+    "artifact_id": 11456950635,
+    "actual_zip_bytes": 1836882,
+    "actual_zip_sha256": "ea91f1e8497b11748618c96ebfb7f6ff73dc425a7caa1750c7aef616418f687d",
+    "actual_zip_members": 32,
+    "actual_member_raw_bytes": 10390699,
+    "actual_junit_bytes": 5258905,
+    "actual_junit_sha256": "b7995ba3f9571516585b2567f4a3a138dd539e05c39be2d457c786880c9c9dc6",
+    "actual_typed_stress_bytes": 33114,
+    "actual_typed_stress_sha256": "4812f068d7ffacab27cae7d25a88e8737861a45b1ede5652b93c1536bf94757e",
+    "custody": {
+      "pytest_pid": 3022,
+      "returncode": 1,
+      "wall_seconds": 2607.21902823,
+      "adopted_descendants_reaped": 762,
+      "original_management_bound_seconds": 5400,
+      "original_cleanup_bound_seconds": 5,
+      "cleanup_seconds": 0.007100847,
+      "owned_fin_closed": true,
+      "kernel_echild_verified": true,
+      "process_group_absent_after_reap": true,
+      "subreaper_restoration_verified": true,
+      "wait4_zero_irreversible_red": false,
+      "late_main_reap_irreversible_red": false,
+      "phase_green": false,
+      "management_acceptance": false,
+      "post_fin_errors": [
+        "RETAINED_TEST_NAMESPACE_LIMIT"
+      ],
+      "retention_receipt_present": false,
+      "safe_negative_postread": true,
+      "full_Gov_custody_certificate": false
+    }
+  },
+  "actual_causes": [
+    {
+      "nodeid": "tests.test_issue465_stress::test_10x_catalog_5x_observations_exercises_all_shadow_labs_and_five_factual_exits",
+      "observed": "OPEN read_runtime original0.5-second source capture expired POST_YIELD (_shadow_child_work453 -> worker.tick264 -> read_runtime19 -> source_connection28 -> readonly_copy164 -> _check24). metadata0.15/families are not this site.",
+      "final_wall_seconds": 74.711426806,
+      "complete_cycle": false,
+      "publication_pre_seconds": 46.676688341,
+      "storage_prepare_seconds": 36.618711248,
+      "storage_prepare_calls": 4,
+      "timing_rule": "Prepare4 comprises one standalone funnel and three publication roles; not all prepare time is nested inside publication. Do not sum these timings or predict OPEN/90 PASS."
+    },
+    {
+      "nodeid": "tests.test_rc6_budget_source_custody::test_committed_native_exit_follower_does_not_compete_with_writer_or_use_uncertain_state[IMMEDIATE]",
+      "observed": "Transient global.sqlite-journal path guard PPI_BUDGET_PATH_ALIAS -> PPI_BUDGET_STATE_UNAVAILABLE. Rejected mode/nlink were not recorded; zero-link race remains an evidenced structural possibility, not observed metadata."
+    },
+    {
+      "observed": "Original aggregate retained namespace MAX_FILES100000 guard rejected finalGov custody; exact crossing directory/count/construction were not recorded.",
+      "remediation": "Partial after-FIN diagnostic only; quota failure and incomplete inventory remain RED until actual construction cause is measured and repaired."
+    }
+  ],
+  "changes": [
+    {
+      "paths": [
+        "rc6_dynamic_universe/runtime.py",
+        "tests/test_rc6_runtime_row_decode.py"
+      ],
+      "description": "Same nine execute AST/SQL/parameter/order calls, default0.5 deadline, Source connection/doublehash/limits and output. Cursor-local tuple/description decoding; immutable per-row source/timestamp reuse. Six independent real-SQLite/legacy-oracle/alias/freshness controls prepared; no performance PASS claimed."
+    },
+    {
+      "paths": [
+        "rc6_ppi_global_budget.py",
+        "tests/test_rc6_budget_source_custody.py"
+      ],
+      "description": "One bounded lstat confirmation only for a regular owned same-device zero-link exact journal path. ENOENT means absent; every existing replacement must still be regular singlelink. Original lock0.05/deadline/clock/flight authority and protected/nonjournal/alias/error guards unchanged;17 new controls appended with declared scheduling seams. Original test prefix unchanged."
+    },
+    {
+      "paths": [
+        "scripts/porota_predeploy_test_workspace.py",
+        "tests/test_rc6_predeploy_scoped_cleanup.py",
+        "scripts/rc6_material_focal.py"
+      ],
+      "description": "Publish bounded partial metadata only after same parent actual native FIN/ECHILD/restoration. Preserve original aggregate100000 and literal quota require predicates; no tail traversal, removal, payload access, or full inventory/PASS claim. Three real-kernel fault/positive/create-only controls appended; original119 focal cohort retained plus whole pertinent runtime/budget/scoped-cleanup modules."
+    },
+    {
+      "paths": [
+        "scripts/rc6_material_carrier.py",
+        ".github/workflows/rc6-unified-candidate-tests.yml",
+        "scripts/rc6_material_pr_admission.py"
+      ],
+      "description": "Registered read-only PR476 exact-SHA supplemental orchestration, immutable authentic prepush authority, fresh20-minute source lease, paginated updated-comment/foreign-owner and duplicate-run veto. Focal311/312 precedes separately admitted fullGov311/312,BIG/browser,Horizon on fresh Actions runners. Typed stress negative evidence now retained only after all real FIN. Canonical Predeploy alone can produce the promotable artifact; no new one-off workflow, network guard relaxation or deploy."
+    }
+  ],
+  "unexecuted_controls": "Preparation used only byte/hash/AST/compile checks. Native/resource gates never executed on RAM; new admission-specific unit extras remain pending. Existing actual helper controls and next canonical governed automatic discovery must qualify all new Source.",
+  "pending": [
+    "U14",
+    "UX470-I01",
+    "UX470-I02",
+    "UX470-I03",
+    "UX470-I05",
+    "Complete BIG original budgets/cycle/slow-fsync",
+    "Final complete Gov311/Gov312 and physical custody",
+    "Horizon V3 1201cycles/recovery",
+    "Browser LARGE complete OPEN",
+    "Exact successor source/artifact/manifest/digest/image binding",
+    "Supervisor-only subsequent runtime PAPER binding"
+  ],
+  "matrix_preservation": "All original55 requirements/scenarios/statuses and existing path mappings preserved. Only actual changed-path reason append and new-path mappings added. Typographical requirements-matrix.json path in receipt6029773660/6029773799 is corrected: existing canonical file is docs/audits/convergence/REQUIREMENT_CLOSURE_MATRIX.json; no requirements-matrix.json is created or changed.",
+  "evidence_urls": [
+    "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6029435175",
+    "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6029560793",
+    "https://github.com/mbalbo2023/Porota-trading/actions/runs/37556660054",
+    "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6029773660"
+  ],
+  "source_input_blobs": [
+    {
+      "path": "rc6_dynamic_universe/runtime.py",
+      "bytes": 7378,
+      "sha256": "0d04919ec3f2ed86d0e1938b64ccbe2aac6cc66798bff8da26eb7fe608d34aa9",
+      "git_blob": "f14bc9d1e3d224499b3c95b9040337330d021d59",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_rc6_runtime_row_decode.py",
+      "bytes": 17828,
+      "sha256": "21562a0e6cee194f908cb989ab7d56f51eeac48de1a51cf082fb77178a04f52b",
+      "git_blob": "c68d3dd1c425663723e0e0359c1c17e75ee96eed",
+      "mode": "100644"
+    },
+    {
+      "path": "rc6_ppi_global_budget.py",
+      "bytes": 125275,
+      "sha256": "b25c1932a7410499074f6c9917f772e7ec86ef622f4a6596dfd59da3b8fdaa25",
+      "git_blob": "9a29eb9fff833b4e375980734bada909764fc4f0",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_rc6_budget_source_custody.py",
+      "bytes": 54999,
+      "sha256": "b5731a2651f704c66fc4256bd77c7862b261c5e1d26e33efec533c24fc7f1486",
+      "git_blob": "fa4e9057b326bc61393f62f4373f94b4ef5b56ad",
+      "mode": "100644"
+    },
+    {
+      "path": "scripts/porota_predeploy_test_workspace.py",
+      "bytes": 58383,
+      "sha256": "b9a2f2a30fb9c4caaca8a59331566915a6160cc0a45e3b8c87c34c235eb061e8",
+      "git_blob": "5d634732fc804e3bce5751dc7842a3cbd04b4cb3",
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_rc6_predeploy_scoped_cleanup.py",
+      "bytes": 66352,
+      "sha256": "bfc9d084a6794ab03a831006aacd44753e2d2f06eb459cd305998577002e7226",
+      "git_blob": "b54e0787b6ff7f88d0f08f1266db61ee031835b1",
+      "mode": "100644"
+    },
+    {
+      "path": "scripts/rc6_material_focal.py",
+      "bytes": 5530,
+      "sha256": "5ad3f9bad49957192231c75fc554276a3ca82f3e2314781abc77d191041fab64",
+      "git_blob": "7612793ea702b39e1823b7e2e0896a1c01bab4bc",
+      "mode": "100644"
+    },
+    {
+      "path": "scripts/rc6_material_carrier.py",
+      "bytes": 39466,
+      "sha256": "e1001d9321c055043352a5ef033771fb8003f037b3199fb2c4d925ebb26b6515",
+      "git_blob": "902cb5a7969ff12c1ca7e8edf311907e3b2375d7",
+      "mode": "100644"
+    },
+    {
+      "path": ".github/workflows/rc6-unified-candidate-tests.yml",
+      "bytes": 16337,
+      "sha256": "a2c909492c25a7687b60900463a3068c21367747a36caca0a438a542274385d1",
+      "git_blob": "aa1cdb30b59f222e21cd79006cf356d29cb60a89",
+      "mode": "100644"
+    },
+    {
+      "path": "scripts/rc6_material_pr_admission.py",
+      "bytes": 25931,
+      "sha256": "8ff58fd6a4046f172042fdb214ca6a6553a012cf1980ef0cab1601a300e15411",
+      "git_blob": "581d9da49b2ed6eeff56dcaded4be702e8567b99",
+      "mode": "100644"
+    }
+  ],
+  "excluded_changes": [
+    "serialization/storage algorithms without new measured cause",
+    "No product/frozen/ops/PPI Watch/#472 writes",
+    "No original fixture/RAW/history/helper deletion",
+    "No live routes/capability",
+    "No root deploy/merge/host/force/rollback/branch deletion/sourcePR closure/hourly automation activation"
+  ],
+  "handoff_rule": "One successor PR; exact verified new source gates/artifact evidence then release integration/write ownership to supervisor473. Root does not acquire deploy ownership."
+}

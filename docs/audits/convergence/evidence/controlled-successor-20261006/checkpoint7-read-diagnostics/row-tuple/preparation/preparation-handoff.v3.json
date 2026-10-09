@@ -1,0 +1,29 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "SQL_or_DB_copy_hash_open_at_preparation": 0,
+  "Source_writes": 0,
+  "components_unchanged_sha256": "c79ac44ab2c4eb9316abfd42df008bfcf6c50e9aac5689dd6f5a53ac5df73029",
+  "cwd": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8",
+  "gate_qualified": false,
+  "launcher": {
+    "bytes": 29990,
+    "sha256": "16e21114ce5965cf0a93b2525a45a211c108fbf9ed4f6dd3b1bbb837b516f479"
+  },
+  "launcher_diff": {
+    "bytes": 9537,
+    "sha256": "f3a862b650b7780161323dd7838bd25b5ef7e79b402c4bcd843dd2d9b133fdb9"
+  },
+  "native_execution_count": 0,
+  "parent_argv": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/pair_owned_launch_v3.py"
+  ],
+  "plan": {
+    "bytes": 18789,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/plan.v3.json",
+    "sha256": "3f97b21f418164eefe4c391c86cfe9619ce636b5d6315f49f470e138726881c4"
+  },
+  "status": "PREPARED_NOT_EXECUTED"
+}

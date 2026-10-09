@@ -1,0 +1,9 @@
+{
+  "schema": "rc6.supply-chain-installer-negative.v1",
+  "status": "GREEN",
+  "negative": "REQUESTS_DISTRIBUTION_HASH_CHANGED",
+  "installer_exit_code": 1,
+  "real_orders_sent": 0,
+  "provider_requests": 0,
+  "production_effects": "NOT_CALLED"
+}

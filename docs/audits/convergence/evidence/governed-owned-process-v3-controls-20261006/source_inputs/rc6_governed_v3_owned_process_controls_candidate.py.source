@@ -1,0 +1,440 @@
+#!/usr/bin/env python3
+"""Bounded, synthetic stdlib process-custody controls; no Gov or product tests.
+
+This source is preparation until Root separately grants a control execution.
+The immutable candidate's two real acceptance gates are extracted as AST, along
+with require/subprocess_phase only. The old f4 baseline runs under an exclusive
+owned subreaper and tracked PGID cleanup; it cannot leave an unmanaged orphan.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import ctypes
+import errno
+import hashlib
+import json
+import os
+from pathlib import Path
+import resource
+import signal
+import stat
+import subprocess
+import sys
+import threading
+import time
+from types import SimpleNamespace
+
+
+CANDIDATE = Path('/tmp/rc6_run_frozen_governed_v3_candidate.py')
+CANDIDATE_SHA256 = 'c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313'
+BASELINE = Path('/tmp/rc6_run_frozen_governed_v2.py')
+BASELINE_SHA256 = 'f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21'
+FIELDS = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink',
+          'st_size', 'st_blocks', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')
+SCOPE = 'SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION'
+MAX_TOTAL_SECONDS = 20
+PREEMPT_SECONDS = 15
+CLEANUP_SECONDS = 5
+CHILD_ENV = {'PATH': os.defpath, 'LANG': 'C.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1'}
+NORMAL = 'import time; time.sleep(.005)'
+EXIT_ONE = 'raise SystemExit(1)'
+TIMEOUT = 'import time; time.sleep(5)'
+ORPHAN = ('import subprocess,sys; subprocess.Popen([sys.executable,"-I","-B","-S","-c",'
+          '"import time; time.sleep(5)"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)')
+SCRIPTS = {NORMAL, EXIT_ONE, TIMEOUT, ORPHAN}
+
+
+def require(condition, reason):
+    if not condition:
+        raise AssertionError(reason)
+
+
+def safe_path(value):
+    path = Path(os.path.abspath(value))
+    for parent in (path, *path.parents):
+        require(not parent.is_symlink(), 'CONTROL_PATH_ALIAS_FORBIDDEN')
+    return path
+
+
+def capture(path, expected=None):
+    path = safe_path(path)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    try:
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_uid == os.geteuid()
+                and before.st_nlink == 1 and before.st_size <= 128 * 1024,
+                'CONTROL_SOURCE_PRIVATE_REGULAR_BOUND_REQUIRED')
+        pieces, length = [], 0
+        while True:
+            part = os.read(descriptor, min(65536, 128 * 1024 + 1 - length))
+            if not part:
+                break
+            pieces.append(part)
+            length += len(part)
+            require(length <= 128 * 1024, 'CONTROL_SOURCE_BYTE_BOUND_EXCEEDED')
+        after, location = os.fstat(descriptor), path.lstat()
+        require(length == before.st_size and all(getattr(before, key) == getattr(after, key)
+                == getattr(location, key) for key in FIELDS), 'CONTROL_SOURCE_CHANGED_DURING_CAPTURE')
+        data = b''.join(pieces)
+        digest = hashlib.sha256(data).hexdigest()
+        require(expected is None or digest == expected, 'CONTROL_SOURCE_REVIEWED_PIN_CHANGED')
+        return data, {'path': str(path), 'sha256': digest, 'bytes': len(data),
+                      'stat_fields': {key: getattr(before, key) for key in FIELDS}}
+    finally:
+        os.close(descriptor)
+
+
+def canonical(value):
+    return (json.dumps(value, sort_keys=True, indent=2, allow_nan=False) + '\n').encode()
+
+
+def publish(path, data):
+    descriptor = os.open(safe_path(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, 'wb') as stream:
+        stream.write(data)
+        stream.flush()
+        os.fchmod(stream.fileno(), 0o644)
+        os.fsync(stream.fileno())
+
+
+def extracted_phase(data, path):
+    """Compile only pinned definitions and exact real main-gate statements."""
+    parsed = ast.parse(data, filename=str(path))
+    functions = {node.name: node for node in parsed.body if isinstance(node, ast.FunctionDef)}
+    require({'require', 'subprocess_phase', 'main'} <= set(functions), 'CONTROL_EXTRACTED_DEFINITIONS_MISSING')
+    selected = ast.Module(body=[functions['require'], functions['subprocess_phase']], type_ignores=[])
+    namespace = {'__builtins__': __builtins__, 'ctypes': ctypes, 'errno': errno, 'os': os,
+                 'threading': threading, 'time': time, 'signal': signal, 'subprocess': subprocess}
+    exec(compile(selected, str(path), 'exec'), namespace)
+    reasons = ('ACTUAL_GOVERNED_PHASE_NOT_GREEN:', 'ACTUAL_GOVERNED_PHASE_OWNED_CHILD_CUSTODY_NOT_CLOSED:')
+    gates = []
+    for node in ast.walk(functions['main']):
+        if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name) and node.value.func.id == 'require'):
+            continue
+        if any(isinstance(value, ast.Constant) and value.value in reasons for value in ast.walk(node)):
+            gates.append(node)
+    expected = 2 if path == CANDIDATE else 1
+    require(len(gates) == expected, 'CONTROL_REAL_MAIN_GATE_COUNT_CHANGED')
+    gate = compile(ast.Module(body=gates, type_ignores=[]), str(path), 'exec')
+    return namespace['subprocess_phase'], namespace['require'], gate
+
+
+def gate_accepts(gate, phase_require, receipt, limit):
+    try:
+        exec(gate, {'__builtins__': __builtins__, 'require': phase_require,
+                    'phases': {'controlled': receipt}, 'phase': 'controlled',
+                    'args': SimpleNamespace(timeout_seconds=limit)})
+    except ValueError as error:
+        return False, str(error)
+    return True, None
+
+
+def prctl_state(libc):
+    value = ctypes.c_int()
+    require(libc.prctl(37, ctypes.byref(value), 0, 0, 0) == 0, 'CONTROL_SUBREAPER_STATE_REQUIRED')
+    return value.value
+
+
+def assert_kernel_empty(observations, phase):
+    try:
+        found, status, usage = os.wait4(-1, os.WNOHANG)
+    except ChildProcessError as error:
+        require(error.errno == errno.ECHILD, 'CONTROL_UNEXPECTED_KERNEL_WAIT4_ERROR')
+        observations.append({'phase': phase, 'outcome': 'ECHILD', 'errno': error.errno})
+        return
+    observations.append({'phase': phase, 'outcome': 'PID_REAPED' if found else 'ACTIVE_OWN_CHILD_WITHOUT_PID',
+                         'pid': found, 'exit_code': os.waitstatus_to_exitcode(status) if found else None,
+                         'cpu_user_seconds': usage.ru_utime if found else None,
+                         'cpu_system_seconds': usage.ru_stime if found else None,
+                         'peak_rss_bytes': usage.ru_maxrss * 1024 if found else None})
+    raise AssertionError('CONTROL_KERNEL_EXCLUSIVITY_NOT_EXHAUSTED')
+
+
+def finish_owned(records, observations):
+    """No individual PID signals or global scans; only actual Popen PGIDs."""
+    begun, deadline = time.monotonic(), time.monotonic() + CLEANUP_SECONDS
+    exhausted = False
+    while time.monotonic() < deadline:
+        for row in records:
+            if row['group_absent']:
+                continue
+            try:
+                os.killpg(row['pid'], 0)
+            except ProcessLookupError:
+                row['group_absent'] = True
+                continue
+            number = signal.SIGKILL if time.monotonic() - begun >= 1 else signal.SIGTERM
+            try:
+                os.killpg(row['pid'], number)
+            except ProcessLookupError:
+                row['group_absent'] = True
+            else:
+                observations.append({'phase': 'owned_control_cleanup', 'pgid': row['pid'],
+                                     'signal': number, 'outcome': 'SENT'})
+        try:
+            found, status, usage = os.wait4(-1, os.WNOHANG)
+        except ChildProcessError as error:
+            require(error.errno == errno.ECHILD, 'CONTROL_CLEANUP_UNEXPECTED_WAIT4_ERROR')
+            exhausted = True
+            observations.append({'phase': 'owned_control_cleanup', 'outcome': 'ECHILD', 'errno': error.errno})
+        else:
+            observations.append({'phase': 'owned_control_cleanup',
+                'outcome': 'PID_REAPED' if found else 'ACTIVE_OWN_CHILD_WITHOUT_PID', 'pid': found,
+                'exit_code': os.waitstatus_to_exitcode(status) if found else None,
+                'cpu_user_seconds': usage.ru_utime if found else None,
+                'cpu_system_seconds': usage.ru_stime if found else None,
+                'peak_rss_bytes': usage.ru_maxrss * 1024 if found else None})
+            if found:
+                for row in records:
+                    if row['pid'] == found:
+                        row['process'].returncode = os.waitstatus_to_exitcode(status)
+        if exhausted:
+            for row in records:
+                if row['group_absent']:
+                    continue
+                try:
+                    os.killpg(row['pid'], 0)
+                except ProcessLookupError:
+                    row['group_absent'] = True
+            if all(row['group_absent'] for row in records):
+                break
+        require(len(observations) <= 1024, 'CONTROL_CLEANUP_OBSERVATION_BOUND_EXCEEDED')
+        time.sleep(.01)
+    require(exhausted and all(row['group_absent'] for row in records), 'CONTROL_OWNED_RESIDUAL_NOT_CLEARED_WITHIN_BOUND')
+
+
+class ExitFailureSink:
+    def __init__(self, path):
+        self.path = path
+
+    def open(self, mode):
+        stream = self.path.open(mode)
+        class Context:
+            def __enter__(self):
+                return stream
+
+            def __exit__(self, kind, value, trace):
+                stream.close()
+                raise OSError(errno.EIO, 'CONTROLLED_LOG_EXIT_FAILURE')
+        return Context()
+
+
+def run_case(name, directory, phase, phase_require, gate, libc, baseline=False):
+    directory.mkdir(mode=0o700)
+    original_popen, original_killpg = subprocess.Popen, os.killpg
+    records, cleanup, injected = [], [], []
+    resources, accepted, gate_reason, baseline_gap = None, None, None, None
+    script = EXIT_ONE if name == 'EXIT_ONE' else TIMEOUT if name in ('TIMEOUT', 'SIGNAL_ERROR') else ORPHAN if name in ('ADOPTED_ALIVE', 'BASELINE_F4_ORPHAN') else NORMAL
+    limit = .05 if name in ('LATE_OBSERVED_REAP', 'TIMEOUT', 'SIGNAL_ERROR') else 1
+    command = [sys.executable, '-I', '-B', '-S', '-c', script]
+    def tracked_popen(*args, **kwargs):
+        require(args[0] == command or (name == 'PRESPAWN_OWN_CHILD' and args[0] ==
+                [sys.executable, '-I', '-B', '-S', '-c', TIMEOUT]), 'CONTROL_UNKNOWN_CHILD_COMMAND')
+        require(kwargs.get('start_new_session') is True, 'CONTROL_OWN_POPEN_SESSION_REQUIRED')
+        if name == 'SPAWN_ERROR':
+            injected.append('CONTROLLED_SPAWN_FAILURE')
+            raise OSError(errno.EIO, 'CONTROLLED_SPAWN_FAILURE')
+        process = original_popen(*args, **kwargs)
+        records.append({'pid': process.pid, 'process': process, 'group_absent': False})
+        require(process.pid != os.getpid() and os.getpgid(process.pid) == process.pid,
+                'CONTROL_POPEN_PID_PGID_IDENTITY_REQUIRED')
+        return process
+    def injected_killpg(pgid, number):
+        require(any(row['pid'] == pgid for row in records), 'CONTROL_FOREIGN_GROUP_SIGNAL_FORBIDDEN')
+        if name == 'SIGNAL_ERROR' and number == signal.SIGINT and not injected:
+            injected.append('CONTROLLED_SIGINT_FAILURE')
+            raise OSError(errno.EIO, 'CONTROLLED_SIGINT_FAILURE')
+        return original_killpg(pgid, number)
+    assert_kernel_empty(cleanup, 'before_control_case')
+    try:
+        subprocess.Popen, os.killpg = tracked_popen, injected_killpg
+        if name == 'PRESPAWN_OWN_CHILD':
+            tracked_popen([sys.executable, '-I', '-B', '-S', '-c', TIMEOUT], cwd=directory,
+                          env=CHILD_ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          start_new_session=True)
+        sink = ExitFailureSink(directory/'phase.log') if name == 'LOG_EXIT_ERROR' else directory/'phase.log'
+        resources = phase(command, directory, sink, CHILD_ENV, limit)
+        accepted, gate_reason = gate_accepts(gate, phase_require, resources, limit)
+        require(prctl_state(libc) == 1, 'CONTROL_PHASE_DID_NOT_RESTORE_PREVIOUS_SUBREAPER')
+        if not baseline and resources['process_group_absent_after_reap'] is True:
+            for row in records:
+                if row['pid'] == resources['pid']:
+                    row['group_absent'] = True
+        if baseline:
+            require(accepted is True and resources['returncode'] == 0 and resources['timed_out'] is False,
+                    'CONTROL_BASELINE_DID_NOT_REACH_ORIGINAL_ACCEPTANCE')
+            try:
+                original_killpg(resources['pid'], 0)
+            except ProcessLookupError:
+                raise AssertionError('CONTROL_BASELINE_OWNED_ORPHAN_NOT_OBSERVED')
+            found, status, usage = os.wait4(-1, os.WNOHANG)
+            require(found == 0, 'CONTROL_BASELINE_ALIVE_ADOPTED_CHILD_WITNESS_REQUIRED')
+            baseline_gap = {'old_gate_accepted': True, 'main_returncode': 0,
+                            'owned_group_present_after_main_return': True,
+                            'kernel_wait4_zero_alive_adopted_child': True,
+                            'scope': 'ACTUAL_SYNTHETIC_F4_PROCESS_CUSTODY_GAP_NOT_GOV_OR_PRODUCT_NATIVE_RED'}
+        else:
+            require(accepted is (name == 'NORMAL_ZERO'), 'CONTROL_ACTUAL_REAL_GATE_OUTCOME_MISMATCH')
+            if name == 'NORMAL_ZERO':
+                require(resources['kernel_pre_popen_echild_verified'] is True
+                        and resources['owned_children_exhaustion_verified'] is True
+                        and resources['actual_child_reaped'] is True
+                        and resources['supervisor_errors'] == [], 'CONTROL_NORMAL_KERNEL_CUSTODY_INCOMPLETE')
+            elif name == 'EXIT_ONE':
+                require(resources['returncode'] == 1 and resources['actual_child_reaped'] is True,
+                        'CONTROL_EXIT_ONE_NOT_ACTUALLY_REAPED')
+            elif name == 'LATE_OBSERVED_REAP':
+                require(resources['returncode'] == 0 and resources['timed_out'] is True
+                        and resources['late_observed_main_reap_irreversible_red'] is True
+                        and resources['actual_launch_to_pid_reap_wall_seconds'] > limit,
+                        'CONTROL_LATE_EXIT_ZERO_NOT_OBSERVED')
+            elif name == 'TIMEOUT':
+                require(resources['timed_out'] is True and resources['actual_child_reaped'] is True
+                        and resources['owned_group_signal_observations'], 'CONTROL_TIMEOUT_NOT_SIGNALLED_AND_REAPED')
+            elif name == 'ADOPTED_ALIVE':
+                require(resources['kernel_wait4_zero_observed_irreversible_red'] is True
+                        and resources['residual_descendants_observed']
+                        and resources['adopted_descendants_reaped']
+                        and resources['owned_children_exhaustion_verified'] is True,
+                        'CONTROL_ADOPTED_ZERO_RED_OR_ACTUAL_REAP_MISSING')
+            elif name in ('SIGNAL_ERROR', 'SPAWN_ERROR', 'LOG_EXIT_ERROR'):
+                marker = {'SIGNAL_ERROR': 'CONTROLLED_SIGINT_FAILURE', 'SPAWN_ERROR': 'CONTROLLED_SPAWN_FAILURE',
+                          'LOG_EXIT_ERROR': 'CONTROLLED_LOG_EXIT_FAILURE'}[name]
+                require(any(marker in row['reason'] for row in resources['supervisor_errors']),
+                        'CONTROL_EXPLICIT_INJECTED_FAILURE_NOT_RECORDED')
+                if name != 'SPAWN_ERROR':
+                    require(resources['actual_child_reaped'] is True, 'CONTROL_ERROR_PATH_MAIN_REAP_MISSING')
+                else:
+                    require(resources['pid'] is None and resources['actual_child_reaped'] is False,
+                            'CONTROL_SPAWN_FAILURE_CANNOT_CLAIM_MAIN_REAP')
+            elif name == 'PRESPAWN_OWN_CHILD':
+                require(resources['kernel_pre_popen_echild_verified'] is False
+                        and resources['pid'] is None and any(row.get('pid') == 0 for row in
+                            resources['kernel_owned_child_observations']), 'CONTROL_PRESPAWN_ZERO_NOT_REJECTED')
+    finally:
+        subprocess.Popen, os.killpg = original_popen, original_killpg
+        finish_owned(records, cleanup)
+        assert_kernel_empty(cleanup, 'after_control_case')
+        require(prctl_state(libc) == 1, 'CONTROL_OUTER_SUBREAPER_CUSTODY_CHANGED')
+        publish(directory/'actual-phase.resources.json', canonical({'actual_source_function_receipt': resources,
+            'actual_extracted_main_gate_accepted': accepted, 'actual_gate_rejection_reason': gate_reason,
+            'owned_popen_registry': [{'pid': row['pid'], 'group_absent': row['group_absent'],
+                                      'returncode': row['process'].returncode} for row in records],
+            'controlled_injections': injected, 'driver_own_cleanup_observations': cleanup,
+            'baseline_gap': baseline_gap}))
+    return {'control': name, 'expected': 'BASELINE_GAP_REPRODUCED' if baseline else
+            'ACCEPTED' if name == 'NORMAL_ZERO' else 'REJECTED',
+            'actual_main_gate_accepted': accepted, 'owned_resources_cleared': True,
+            'actual_phase_receipt_relative_path': name+'/actual-phase.resources.json', 'scope': SCOPE}
+
+
+def main(args):
+    require(sys.platform == 'linux' and sys.version_info[:2] in ((3, 11), (3, 12))
+            and os.getuid() == os.geteuid() != 0 and hasattr(os, 'wait4'), 'CONTROL_LINUX_NONROOT_PYTHON_REQUIRED')
+    output = safe_path(args.output_root)
+    require(not output.exists() and output.parent.is_dir() and output.parent.stat().st_uid == os.geteuid(),
+            'CONTROL_FRESH_EXTERNAL_OWNED_OUTPUT_REQUIRED')
+    started, watchdog_fired = time.monotonic(), False
+    before, source_bytes = {}, {}
+    for label, path, expected in (('candidate', CANDIDATE, CANDIDATE_SHA256),
+                                  ('baseline', BASELINE, BASELINE_SHA256), ('driver', Path(__file__), None)):
+        data, before[label] = capture(path, expected)
+        source_bytes[label] = data
+    output.mkdir(mode=0o700)
+    for label, data in source_bytes.items():
+        publish(output/(label+'.py.source'), data)
+    publish(output/'source-before.json', canonical(before))
+    candidate = extracted_phase(source_bytes['candidate'], CANDIDATE)
+    baseline = extracted_phase(source_bytes['baseline'], BASELINE)
+    audit = {'network_attempts': [], 'sqlite_attempts': [], 'popen_commands': []}
+    def observe(event, arguments):
+        if event.startswith('socket.'):
+            audit['network_attempts'].append(event)
+            raise RuntimeError('CONTROL_NETWORK_OPERATION_FORBIDDEN')
+        if event == 'sqlite3.connect':
+            audit['sqlite_attempts'].append(event)
+            raise RuntimeError('CONTROL_SQLITE_OPERATION_FORBIDDEN')
+        if event == 'subprocess.Popen':
+            argv = arguments[1]
+            require(arguments[0] == sys.executable and type(argv) is list
+                    and argv[:5] == [sys.executable, '-I', '-B', '-S', '-c']
+                    and len(argv) == 6 and argv[5] in SCRIPTS, 'CONTROL_UNKNOWN_EXECUTABLE_OR_SCRIPT_FORBIDDEN')
+            audit['popen_commands'].append({'executable': sys.executable, 'script_sha256': hashlib.sha256(argv[5].encode()).hexdigest()})
+    sys.addaudithook(observe)
+    libc = ctypes.CDLL(None, use_errno=True)
+    previous, active, results, outer = prctl_state(libc), False, [], []
+    old_alarm = signal.getsignal(signal.SIGALRM)
+    def alarm(number, frame):
+        nonlocal watchdog_fired
+        watchdog_fired = True
+        raise TimeoutError('CONTROL_WATCHDOG_PREEMPTED_FOR_OWNED_CLEANUP')
+    error = None
+    try:
+        require(libc.prctl(36, 1, 0, 0, 0) == 0, 'CONTROL_OWN_SUBREAPER_REQUIRED')
+        active = True
+        assert_kernel_empty(outer, 'before_first_control_spawn')
+        signal.signal(signal.SIGALRM, alarm)
+        require(time.monotonic()-started < PREEMPT_SECONDS, 'CONTROL_PREPARATION_BUDGET_EXCEEDED')
+        signal.setitimer(signal.ITIMER_REAL, PREEMPT_SECONDS-(time.monotonic()-started))
+        cases = ('NORMAL_ZERO', 'EXIT_ONE', 'LATE_OBSERVED_REAP', 'TIMEOUT', 'ADOPTED_ALIVE',
+                 'SIGNAL_ERROR', 'SPAWN_ERROR', 'LOG_EXIT_ERROR', 'PRESPAWN_OWN_CHILD', 'BASELINE_F4_ORPHAN')
+        for name in cases:
+            require(not watchdog_fired and time.monotonic()-started < PREEMPT_SECONDS,
+                    'CONTROL_TOTAL_PREEMPT_BUDGET_EXCEEDED')
+            selected = baseline if name == 'BASELINE_F4_ORPHAN' else candidate
+            results.append(run_case(name, output/name, *selected, libc, baseline=name == 'BASELINE_F4_ORPHAN'))
+        assert_kernel_empty(outer, 'after_last_control_spawn')
+    except BaseException as failure:
+        error = {'class': type(failure).__name__, 'reason': str(failure)}
+    finally:
+        if active:
+            if libc.prctl(36, previous, 0, 0, 0) != 0:
+                error = {'class': 'RuntimeError', 'reason': 'CONTROL_SUBREAPER_INITIAL_STATE_NOT_RESTORED'}
+        restored = prctl_state(libc)
+    try:
+        after = {}
+        for label, path, expected in (('candidate', CANDIDATE, CANDIDATE_SHA256),
+                                      ('baseline', BASELINE, BASELINE_SHA256), ('driver', Path(__file__), None)):
+            _, after[label] = capture(path, expected)
+        require(before == after, 'CONTROL_SOURCE_ALL_ELEVEN_FIELDS_CHANGED')
+        publish(output/'source-after.json', canonical(after))
+        require(restored == previous, 'CONTROL_SUBREAPER_RESTORATION_NOT_VERIFIED')
+        complete = error is None and not watchdog_fired and len(results) == 10 and not audit['network_attempts'] and not audit['sqlite_attempts']
+        require(time.monotonic()-started <= MAX_TOTAL_SECONDS, 'CONTROL_END_TO_END_WALL_BOUND_EXCEEDED')
+        report = {'schema': 'rc6.governed-owned-process-controls.v1', 'scope': SCOPE,
+            'status': 'GREEN' if complete else 'RED', 'uid': os.geteuid(), 'pid': os.getpid(),
+            'interpreter': sys.executable, 'python': sys.version, 'results': results,
+            'executed_synthetic_process_controls': len(results), 'expected_controls': 10,
+            'source_before': before, 'source_after': after, 'all_eleven_source_fields_unchanged': True,
+            'subreaper_previous_state': previous, 'subreaper_restored_state': restored,
+            'outer_kernel_observations': outer, 'driver_audit': audit,
+            'audit_scope': 'THIS_STDLIB_DRIVER_PROCESS; CHILD_COMMANDS_ARE_FIXED_SYNTHETIC_SOURCE_NOT_A_KERNEL_NETWORK_NAMESPACE',
+            'watchdog_preempt_seconds': PREEMPT_SECONDS, 'cleanup_management_seconds': CLEANUP_SECONDS,
+            'end_to_end_acceptance_wall_limit_seconds': MAX_TOTAL_SECONDS,
+            'wall_seconds_before_final_publish': time.monotonic()-started,
+            'driver_peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
+            'error': error, 'product_imports': 0, 'pytest_collection_or_tests_executed': 0,
+            'full_gov_executed': False, 'artifact_or_runtime_qualified': False}
+        publish(output/'controlled-process.receipt.json', canonical(report))
+        require(time.monotonic()-started <= MAX_TOTAL_SECONDS and not watchdog_fired,
+                'CONTROL_PUBLICATION_OUTSIDE_END_TO_END_WALL_BOUND')
+        print(json.dumps({'status': report['status'], 'synthetic_process_controls': len(results),
+                          'scope': SCOPE, 'output_root': str(output)}, sort_keys=True), flush=True)
+        require(time.monotonic()-started <= MAX_TOTAL_SECONDS and not watchdog_fired,
+                'CONTROL_STDOUT_OUTSIDE_END_TO_END_WALL_BOUND')
+        return 0 if complete else 1
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_alarm)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output-root', required=True)
+    old_umask = os.umask(0o022)
+    try:
+        raise SystemExit(main(parser.parse_args()))
+    finally:
+        os.umask(old_umask)

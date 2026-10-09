@@ -1,0 +1,671 @@
+{
+  "schema": "rc6.persistence-requirement-matrix.v1",
+  "programming_requirements": [
+    {
+      "id": "U14",
+      "original_condition": "Retención sirve una rueda completa y recuperación con cadencia real sin autoagotarse.",
+      "original_closure": "Caller full tick: repetir frontera soft 40,5 m/hard 50,5 m y una rueda+recovery; sin borrar evidencia no archivada.",
+      "rca": "Cadencia30s y cuota512 sin lifecycle cubrían sólo50.5min.",
+      "fix": "Generation lifecycle/ACK/recovery with the original fixed512 files/128MiB live quota restored; canonical private512MiB archive V3 wired and fingerprinted; native1200 full-wheel physical capacity remains an active programming gate.",
+      "fixpaths": [
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/worker.py",
+        "rc6_shadow_runtime/retention.py",
+        "rc6_shadow_runtime/archive_namespace.py"
+      ],
+      "native_caller": "ShadowRuntime.tick / EvidenceFiles.commit_generation+read_generation / EvidenceRetention APIs, synthetic PAPER/offline actual syscall faults",
+      "pytest_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart"
+      ],
+      "status_on_previous_committed_candidate": "PASS",
+      "previous_source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+      "final_candidate_status": "PENDING_EXACT_INTEGRATED_REPLAY_AND_GATE_CLOSURE",
+      "remaining_uncertainty": [
+        "Historical three-role5ID ten-hour horizon is preserved separately, not four-role/current configured-source proof",
+        "Native normal1200 actual four cuts:3.07/5.01/4.77/5.44CPU seconds, archive1.557/1.832/1.846/1.845MB; no complete9h512MiB proof",
+        "Rejected original-compressedtar window/bit-alignment delta is exact-byte lossless but has no sufficient savings; no production delta implementation claimed",
+        "The final integrated configured-archive12k/60k two-cycle resource gate remains pending;18e prior native gatePASS is exact and separately attached",
+        "A static five-identity horizon does not certify12000 identities or dynamic quote arrival footprint",
+        "Contingent8192 default was never supported by the required full-wheel proof; original512 default is restored before final acceptance. The107a normal4 receipt uses8192 and is diagnostic only.",
+        "Normal4 exact107a nativeV3 bytes are restored, but source main atime/SHM metadata change through direct mode=ro connections; original source guard is RED until all native readers use a verified private NoAtime copy."
+      ],
+      "external": [],
+      "checkpoint_status": "OPEN_MEASURED_ARCHIVE_CAPACITY_PROGRAMMING_BLOCKER",
+      "checkpoint_source_sha": "732b1e513848090263a1e879e7b7b3fffe217153",
+      "historical_three_role_pytest_node": "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart"
+    },
+    {
+      "id": "U15",
+      "original_condition": "ACK ledger con compactación/checkpoint seguro y cuota sostenible.",
+      "original_closure": "Archiver ideal, >506 ACKs y miles de ciclos; reinicio y prueba de continuidad del anclaje.",
+      "rca": "ACKs durables se acumulaban dentro de livequota.",
+      "fix": "Checkpoint externo, cadena de receipts reales, compact sólo tras inclusión/verificación; retry ACK viejo tras avance no rewinds.",
+      "fixpaths": [
+        "rc6_shadow_runtime/retention.py"
+      ],
+      "native_caller": "ShadowRuntime.tick / EvidenceFiles.commit_generation+read_generation / EvidenceRetention APIs, synthetic PAPER/offline actual syscall faults",
+      "pytest_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain",
+        "tests/test_rc6_convergence_persistence.py::test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rewinding_chain"
+      ],
+      "status_on_previous_committed_candidate": "PASS",
+      "previous_source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+      "final_candidate_status": "PENDING_EXACT_INTEGRATED_REPLAY_AND_GATE_CLOSURE",
+      "remaining_uncertainty": [
+        "Integrated exact candidate replay remains pending",
+        "Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved"
+      ],
+      "external": [],
+      "checkpoint_status": "NATIVE_FOCAL_PASS_187; FULL_INTEGRATED_REPLAY_PENDING",
+      "checkpoint_source_sha": "732b1e513848090263a1e879e7b7b3fffe217153"
+    },
+    {
+      "id": "U16",
+      "original_condition": "Sanitizar errores de fuentes antes de cache/report/archive.",
+      "original_closure": "Marcadores de tokens, headers/URLs/PII sintéticos; taxonomía allowlisted, no mero truncado.",
+      "rca": "Texto arbitrario en errores de source se copiaba downstream.",
+      "fix": "Taxonomía cerrada antes cache/resume/ingreso compartido; ningún texto raw como reason.",
+      "fixpaths": [
+        "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/worker.py"
+      ],
+      "native_caller": "ShadowRuntime.tick / EvidenceFiles.commit_generation+read_generation / EvidenceRetention APIs, synthetic PAPER/offline actual syscall faults",
+      "pytest_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_u16_real_collector_cache_checkpoint_and_full_tick_members_never_retain_error_text"
+      ],
+      "status_on_previous_committed_candidate": "PASS",
+      "previous_source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+      "final_candidate_status": "PENDING_EXACT_INTEGRATED_REPLAY_AND_GATE_CLOSURE",
+      "remaining_uncertainty": [
+        "Integrated exact candidate replay remains pending"
+      ],
+      "external": [],
+      "checkpoint_status": "NATIVE_FOCAL_PASS_187; FULL_INTEGRATED_REPLAY_PENDING",
+      "checkpoint_source_sha": "732b1e513848090263a1e879e7b7b3fffe217153",
+      "independent_original_red": "Finance native collector/cache/checkpoint/tick originalc27 replay, doccommit5415340b; only synthetic marker and no entry authority"
+    },
+    {
+      "id": "U17",
+      "original_condition": "Definir trust boundary y comprobar safety semántico entre report/status.",
+      "original_closure": "Rehash integral con orders7/status0, writer/reader y promoción; autenticidad requiere anclaje independiente, no más hashes en la misma raíz.",
+      "rca": "Hashes autocontenidos sin anclaje y safety crossrole inconsistente.",
+      "fix": "Safety JSON tipada allroles más highwater durable fuera de restored root, autenticidad local limitada explícitamente.",
+      "fixpaths": [
+        "rc6_shadow_runtime/persistence.py"
+      ],
+      "native_caller": "ShadowRuntime.tick / EvidenceFiles.commit_generation+read_generation / EvidenceRetention APIs, synthetic PAPER/offline actual syscall faults",
+      "pytest_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_u17_writer_and_fully_rehashed_cross_role_safety_fail_closed",
+        "tests/test_rc6_convergence_persistence.py::test_u17_production_limit_declarations_must_agree_across_roles",
+        "tests/test_rc6_convergence_persistence.py::test_u17_consistent_full_root_rewrite_requires_the_separate_custody_anchor"
+      ],
+      "status_on_previous_committed_candidate": "PASS",
+      "previous_source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+      "final_candidate_status": "PENDING_EXACT_INTEGRATED_REPLAY_AND_GATE_CLOSURE",
+      "remaining_uncertainty": [
+        "Integrated exact candidate replay remains pending"
+      ],
+      "external": [
+        "Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification"
+      ],
+      "checkpoint_status": "NATIVE_FOCAL_PASS_187; FULL_INTEGRATED_REPLAY_PENDING",
+      "checkpoint_source_sha": "732b1e513848090263a1e879e7b7b3fffe217153"
+    },
+    {
+      "id": "U18",
+      "original_condition": "ACK unido a objeto durable realmente verificado e identidad de archivador.",
+      "original_closure": "URI inexistente, digest inventado/replay y archivo inaccesible no habilitan borrar; documentar límite de confianza.",
+      "rca": "ACK autoproclamado autorizaba deletion sin bytes archivados.",
+      "fix": "Objeto tar/gzip real, CRC/members/hash exactos, archiverID allowlisted y receipt independiente ligado a cadena.",
+      "fixpaths": [
+        "rc6_shadow_runtime/retention.py"
+      ],
+      "native_caller": "ShadowRuntime.tick / EvidenceFiles.commit_generation+read_generation / EvidenceRetention APIs, synthetic PAPER/offline actual syscall faults",
+      "pytest_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
+        "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
+      ],
+      "status_on_previous_committed_candidate": "PASS",
+      "previous_source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+      "final_candidate_status": "PENDING_EXACT_INTEGRATED_REPLAY_AND_GATE_CLOSURE",
+      "remaining_uncertainty": [
+        "Integrated exact candidate replay remains pending"
+      ],
+      "external": [
+        "Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification"
+      ],
+      "checkpoint_status": "NATIVE_FOCAL_PASS_187; FULL_INTEGRATED_REPLAY_PENDING",
+      "checkpoint_source_sha": "732b1e513848090263a1e879e7b7b3fffe217153"
+    },
+    {
+      "id": "U19",
+      "original_condition": "Rotación reanudable e idempotente ante borrado parcial.",
+      "original_closure": "EIO en cada unlink/rename/fsync, kill/restart y reintento; ninguna evidencia íntegra no archivada perdida.",
+      "rca": "Borrar directamente gen completa dejaba retry inválido con member faltante.",
+      "fix": "Durable deleteintent/tombstone y limpieza reanudable, checkpoint y compact después verificación.",
+      "fixpaths": [
+        "rc6_shadow_runtime/retention.py"
+      ],
+      "native_caller": "ShadowRuntime.tick / EvidenceFiles.commit_generation+read_generation / EvidenceRetention APIs, synthetic PAPER/offline actual syscall faults",
+      "pytest_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_u19_real_sigkill_every_rotation_boundary_recovers_without_losing_archived_evidence",
+        "tests/test_rc6_convergence_persistence.py::test_u19_eio_every_rotation_boundary_is_reentrant_after_restart",
+        "tests/test_rc6_convergence_persistence.py::test_u19_actual_fsync_replace_rmdir_and_intent_unlink_syscalls_resume"
+      ],
+      "status_on_previous_committed_candidate": "PASS",
+      "previous_source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+      "final_candidate_status": "PENDING_EXACT_INTEGRATED_REPLAY_AND_GATE_CLOSURE",
+      "remaining_uncertainty": [
+        "Integrated exact candidate replay remains pending"
+      ],
+      "external": [],
+      "checkpoint_status": "NATIVE_FOCAL_PASS_187; FULL_INTEGRATED_REPLAY_PENDING",
+      "checkpoint_source_sha": "732b1e513848090263a1e879e7b7b3fffe217153"
+    },
+    {
+      "id": "U20",
+      "original_condition": "High-water/lineage durable frente a rollback de CURRENT.",
+      "original_closure": "Volver a pointer válido viejo y commit: no sequence duplicada/fork; recuperación explícita y freshness independiente.",
+      "rca": "Secuencia tomada de CURRENT restaurable; fork/duplicación tras rollback.",
+      "fix": "Highwater externo y sealed publication PREPARED/PUBLISHING/COMMITTED, reader no repair, writer forward-only exact prepared cut.",
+      "fixpaths": [
+        "rc6_shadow_runtime/persistence.py"
+      ],
+      "native_caller": "ShadowRuntime.tick / EvidenceFiles.commit_generation+read_generation / EvidenceRetention APIs, synthetic PAPER/offline actual syscall faults",
+      "pytest_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_u20_old_current_and_missing_current_cannot_create_a_duplicate_sequence",
+        "tests/test_rc6_convergence_persistence.py::test_u20_sigkill_during_publication_seal_rejects_readers_and_recovers_forward_even_after_pointer_restore",
+        "tests/test_rc6_convergence_persistence.py::test_legacy_v1_real_historical_writer_only_bootstraps_forward_to_v2"
+      ],
+      "status_on_previous_committed_candidate": "PASS",
+      "previous_source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+      "final_candidate_status": "PENDING_EXACT_INTEGRATED_REPLAY_AND_GATE_CLOSURE",
+      "remaining_uncertainty": [
+        "Integrated exact candidate replay remains pending"
+      ],
+      "external": [
+        "Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification"
+      ],
+      "checkpoint_status": "NATIVE_FOCAL_PASS_187; FULL_INTEGRATED_REPLAY_PENDING",
+      "checkpoint_source_sha": "732b1e513848090263a1e879e7b7b3fffe217153"
+    },
+    {
+      "id": "U21",
+      "original_condition": "Audit de fuentes semánticamente ligado a reports del mismo corte.",
+      "original_closure": "Digest correcto pero audit vacío/ghost/count/status/asof incompatibles debe fallar; recomputación canónica.",
+      "rca": "Digest de reports no imponía significado de audit.",
+      "fix": "Recomputa audit canónico zero/N con schema/asof/count/status/pointers/perreport digest exactos.",
+      "fixpaths": [
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_dynamic_universe/sources.py"
+      ],
+      "native_caller": "ShadowRuntime.tick / EvidenceFiles.commit_generation+read_generation / EvidenceRetention APIs, synthetic PAPER/offline actual syscall faults",
+      "pytest_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_u21_canonical_semantics_reject_correct_digest_but_false_audit_in_writer_and_reader",
+        "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked"
+      ],
+      "status_on_previous_committed_candidate": "PASS",
+      "previous_source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+      "final_candidate_status": "PENDING_EXACT_INTEGRATED_REPLAY_AND_GATE_CLOSURE",
+      "remaining_uncertainty": [
+        "Integrated exact candidate replay remains pending"
+      ],
+      "external": [],
+      "checkpoint_status": "NATIVE_FOCAL_PASS_187; FULL_INTEGRATED_REPLAY_PENDING",
+      "checkpoint_source_sha": "732b1e513848090263a1e879e7b7b3fffe217153"
+    },
+    {
+      "id": "U26",
+      "original_condition": "Report duplicado no infla cardinalidad sin semántica declarada.",
+      "original_closure": "Exact duplicate y duplicado conflictivo; conteo/digest/identidad coherentes.",
+      "rca": "Duplicados exactos/conflictivos contaban como report diferente.",
+      "fix": "Rechaza duplicate digest/report identity conflict/exact row sin duplicar warmup ni cardinalidad.",
+      "fixpaths": [
+        "rc6_dynamic_universe/sources.py"
+      ],
+      "native_caller": "ShadowRuntime.tick / EvidenceFiles.commit_generation+read_generation / EvidenceRetention APIs, synthetic PAPER/offline actual syscall faults",
+      "pytest_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts"
+      ],
+      "status_on_previous_committed_candidate": "PASS",
+      "previous_source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+      "final_candidate_status": "PENDING_EXACT_INTEGRATED_REPLAY_AND_GATE_CLOSURE",
+      "remaining_uncertainty": [
+        "Integrated exact candidate replay remains pending",
+        "Natural caller producing duplicate reports was not demonstrated; public-API duplicate cardinality and failclosed guards are demonstrated"
+      ],
+      "external": [],
+      "checkpoint_status": "NATIVE_FOCAL_PASS_187; FULL_INTEGRATED_REPLAY_PENDING",
+      "checkpoint_source_sha": "732b1e513848090263a1e879e7b7b3fffe217153",
+      "independent_original_red": "Finance originalc27 normalizer/audit/publisher duplicate count2 vscontrol1, conflict/rowdup accepted; doccommit5415340b"
+    }
+  ],
+  "original_clause_authorities": [
+    "docs/audits/ISSUE465_F03.md#mapa-programable-de-fault-injection",
+    "docs/audits/ISSUE465_F04_F05.md",
+    "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md"
+  ],
+  "original_clause_numbering": "Exact original 35 table rows and names retained; no invented requirement IDs",
+  "original_fronts": {
+    "F-03": [
+      "U17",
+      "U20"
+    ],
+    "F-04": [
+      "U16",
+      "U21",
+      "U26"
+    ],
+    "F-05": [
+      "U14",
+      "U15",
+      "U18",
+      "U19"
+    ]
+  },
+  "new_large_cut_remaining": [
+    "Exact18e large native2tick COMPLETE87.099s/CPU86.651s/RSS1.374GiB, actualfsync entered/completed with5EXIT and immutable DB proven separately; final integrated configured-archive factory replay pending",
+    "Browser large1s gate remains pending:594/af71 failures preserved;88df UX overlap run in progress",
+    "Canonical factory changes archive path/quota fingerprint; health actual factory matched to new nativecut pending",
+    "Four-role5ID full-nine-hour horizon and2000archive/recovery exact final replay pending",
+    "Native1200 observed1.832/1.846/1.845MB perOPEN archive;512MiB nine-hour sustainable realcadence programming remediation and proof pending; rejected compressedbyte delta gives insufficient saving"
+  ],
+  "safety": {
+    "scope": "OFFLINE_SYNTHETIC_PAPER_SHADOW",
+    "real_orders_sent": 0,
+    "provider_requests": 0,
+    "ppi_watch": "UNTOUCHED"
+  },
+  "checkpoint_source_sha": "732b1e513848090263a1e879e7b7b3fffe217153",
+  "checkpoint_source_tree_sha": "76301f3b12caca931fb38c72f7b154cbd14c37a0",
+  "original_35_clauses": [
+    {
+      "original_scenario": "F-03 baseline ENOSPC entre archivos #463",
+      "original_type": "PROBE",
+      "original_expected": "reproducir mixed cut viejo",
+      "original_observed": "latest t; checkpoint/status t−30s",
+      "original_guard_reference": "`historical_f03_mixed_snapshot`",
+      "original_gap": "histórico, no actual",
+      "original_verdict": "RED histórico",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 332
+    },
+    {
+      "original_scenario": "7 fronteras report→checkpoint→status→fsync→CURRENT",
+      "original_type": "PROBE",
+      "original_expected": "sólo old/new completo",
+      "original_observed": "7/7 coherentes; post-pointer=new",
+      "original_guard_reference": "`atomic_faults_and_locking`",
+      "original_gap": "exception, no power-cut físico",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 333
+    },
+    {
+      "original_scenario": "SIGKILL real en fronteras de commit",
+      "original_type": "NATIVE",
+      "original_expected": "staging nunca CURRENT",
+      "original_observed": "test pasa en todos los points",
+      "original_guard_reference": "`test_real_sigkill_at_every_boundary...`",
+      "original_gap": "host/fs real no probado",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 334
+    },
+    {
+      "original_scenario": "restart worker tras kill",
+      "original_type": "NATIVE",
+      "original_expected": "reusar sólo checkpoint committed",
+      "original_observed": "test pasa",
+      "original_guard_reference": "`test_canonical_worker_restart_after_kill...`",
+      "original_gap": "fixture local",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 335
+    },
+    {
+      "original_scenario": "ENOSPC de `fsync`",
+      "original_type": "NATIVE",
+      "original_expected": "CURRENT anterior intacto",
+      "original_observed": "pasa",
+      "original_guard_reference": "`test_enospc_from_real_fsync...`",
+      "original_gap": "FS real no agotado",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 336
+    },
+    {
+      "original_scenario": "EACCES/directorio read-only",
+      "original_type": "NATIVE",
+      "original_expected": "preservar CURRENT",
+      "original_observed": "pasa",
+      "original_guard_reference": "`test_actual_read_only_directory...`",
+      "original_gap": "depende permisos Unix",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 337
+    },
+    {
+      "original_scenario": "gzip truncado/zip expansion",
+      "original_type": "NATIVE",
+      "original_expected": "reject bounded",
+      "original_observed": "ambos pasan",
+      "original_guard_reference": "tests `truncated_gzip`, `compressed_payload`",
+      "original_gap": "—",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 338
+    },
+    {
+      "original_scenario": "member symlink/hardlink/FIFO",
+      "original_type": "NATIVE",
+      "original_expected": "reject antes de usar",
+      "original_observed": "pasa",
+      "original_guard_reference": "`test_hostile_aliases...`",
+      "original_gap": "races hostiles no exhaustivas",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 339
+    },
+    {
+      "original_scenario": "manifest traversal",
+      "original_type": "NATIVE",
+      "original_expected": "nunca leer path externo",
+      "original_observed": "pasa",
+      "original_guard_reference": "`test_manifest_path_traversal...`",
+      "original_gap": "—",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 340
+    },
+    {
+      "original_scenario": "UUID collision/clock rollback",
+      "original_type": "NATIVE",
+      "original_expected": "no overwrite",
+      "original_observed": "pasa",
+      "original_guard_reference": "`test_uuid_collision...`; clock test",
+      "original_gap": "rollback de CURRENT distinto",
+      "original_verdict": "PASS parcial",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 341
+    },
+    {
+      "original_scenario": "dos writers + reader durante writer",
+      "original_type": "PROBE",
+      "original_expected": "deny nonblocking",
+      "original_observed": "ambos `DENIED_NONBLOCKING`",
+      "original_guard_reference": "`atomic_faults_and_locking`",
+      "original_gap": "reemplazo hostil de lock no probado",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 342
+    },
+    {
+      "original_scenario": "rehash integral malicioso",
+      "original_type": "PROBE",
+      "original_expected": "evidencia adulterada no válida",
+      "original_observed": "aceptada; report orders 7/status 0",
+      "original_guard_reference": "`fully_rehashed_forgery`",
+      "original_gap": "sin auth anchor",
+      "original_verdict": "**FAIL P2**",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 343
+    },
+    {
+      "original_scenario": "rollback CURRENT + nuevo commit",
+      "original_type": "PROBE",
+      "original_expected": "lineage monotónico/no fork",
+      "original_observed": "sequence 2 duplicada, IDs distintos",
+      "original_guard_reference": "`current_rollback_fork`",
+      "original_gap": "older cut completo por diseño",
+      "original_verdict": "**FAIL P2**",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 344
+    },
+    {
+      "original_scenario": "PPI único y counts",
+      "original_type": "PROBE/NATIVE",
+      "original_expected": "seen1/useful1",
+      "original_observed": "exacto",
+      "original_guard_reference": "`source_audit_probes`; F04 tests",
+      "original_gap": "—",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 345
+    },
+    {
+      "original_scenario": "PPI vs IOL contradictorios",
+      "original_type": "NATIVE",
+      "original_expected": "clocks/units/conflict, no authority",
+      "original_observed": "pasa",
+      "original_guard_reference": "`test_ppi_iol_disagreement...`",
+      "original_gap": "sin provider live",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 346
+    },
+    {
+      "original_scenario": "BYMA scraper",
+      "original_type": "NATIVE",
+      "original_expected": "`OBSERVE_ONLY`, link real",
+      "original_observed": "pasa",
+      "original_guard_reference": "`test_byma_scraper...`",
+      "original_gap": "sin rueda live",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 347
+    },
+    {
+      "original_scenario": "provider clock missing/stale/future",
+      "original_type": "PROBE/NATIVE",
+      "original_expected": "rechazo explícito",
+      "original_observed": "razones correctas",
+      "original_guard_reference": "`source_audit_probes`; parametrizado",
+      "original_gap": "—",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 348
+    },
+    {
+      "original_scenario": "IOL parcial",
+      "original_type": "PROBE/NATIVE",
+      "original_expected": "partial, availability unknown",
+      "original_observed": "`PARTIAL_SOURCE_ERRORS`, None",
+      "original_guard_reference": "test/probe",
+      "original_gap": "texto libre separado",
+      "original_verdict": "PASS parcial",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 349
+    },
+    {
+      "original_scenario": "texto arbitrario en error IOL",
+      "original_type": "PROBE full tick",
+      "original_expected": "sanitizado/allowlist",
+      "original_observed": "persiste committed",
+      "original_guard_reference": "`source_secret_full_tick_probe.py`",
+      "original_gap": "no se usó secreto real",
+      "original_verdict": "**FAIL P2**",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 350
+    },
+    {
+      "original_scenario": "report counts/cutoff/row shape falsos",
+      "original_type": "NATIVE",
+      "original_expected": "reject",
+      "original_observed": "reject",
+      "original_guard_reference": "`test_incoherent_source_reports...`",
+      "original_gap": "no cubre audit semantics",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 351
+    },
+    {
+      "original_scenario": "report no vacío + audit vacío/misleading",
+      "original_type": "PROBE",
+      "original_expected": "reject",
+      "original_observed": "commit/read aceptan",
+      "original_guard_reference": "`source_audit_probes`",
+      "original_gap": "digest de lista sí coincide",
+      "original_verdict": "**FAIL P2**",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 352
+    },
+    {
+      "original_scenario": "reports vacíos + audit ghost",
+      "original_type": "PROBE",
+      "original_expected": "canonical NO_SOURCE_REPORTS",
+      "original_observed": "audit ghost aceptado",
+      "original_guard_reference": "`source_audit_probes`",
+      "original_gap": "guard condicional",
+      "original_verdict": "**FAIL P2**",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 353
+    },
+    {
+      "original_scenario": "report duplicado",
+      "original_type": "PROBE",
+      "original_expected": "reject/dedupe explícito",
+      "original_observed": "count=2",
+      "original_guard_reference": "`source_audit_probes`",
+      "original_gap": "caller natural no demostrado",
+      "original_verdict": "**FAIL P3**",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 354
+    },
+    {
+      "original_scenario": "bounds 64 reports/100k rows",
+      "original_type": "NATIVE",
+      "original_expected": "fail sin truncar",
+      "original_observed": "pasa",
+      "original_guard_reference": "`test_source_audit_capacity...`",
+      "original_gap": "no benchmark extremo",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 355
+    },
+    {
+      "original_scenario": "cuota files 512→513",
+      "original_type": "NATIVE/PROBE",
+      "original_expected": "512 admite; 513 niega",
+      "original_observed": "exacto",
+      "original_guard_reference": "policy test; ACK probe",
+      "original_gap": "lifecycle insuficiente",
+      "original_verdict": "PASS local / FAIL sistema",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 356
+    },
+    {
+      "original_scenario": "bytes lógicos >128MiB/sparse",
+      "original_type": "NATIVE",
+      "original_expected": "deny, no evasión sparse",
+      "original_observed": "pasa",
+      "original_guard_reference": "`test_logical_bytes_above...`",
+      "original_gap": "—",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 357
+    },
+    {
+      "original_scenario": "no ACK bajo presión",
+      "original_type": "NATIVE",
+      "original_expected": "nunca borrar",
+      "original_observed": "preserva y degrada",
+      "original_guard_reference": "`test_no_ack_never_rotates...`",
+      "original_gap": "causa hard <1h",
+      "original_verdict": "PASS safety / FAIL liveness",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 358
+    },
+    {
+      "original_scenario": "ACK válido + pin/current",
+      "original_type": "NATIVE",
+      "original_expected": "rota sólo unpinned",
+      "original_observed": "pasa",
+      "original_guard_reference": "rotation/pin/current tests",
+      "original_gap": "auth externa ausente",
+      "original_verdict": "PASS local",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 359
+    },
+    {
+      "original_scenario": "ACK autoafirmado/URI inexistente",
+      "original_type": "PROBE",
+      "original_expected": "no borrar sin receipt real",
+      "original_observed": "borra gen; 0 archive calls",
+      "original_guard_reference": "`self_asserted_archive_ack`",
+      "original_gap": "trust delegado",
+      "original_verdict": "**FAIL P2 cond.**",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 360
+    },
+    {
+      "original_scenario": "temporales propios/unknown",
+      "original_type": "NATIVE",
+      "original_expected": "limpia allowlist; conserva unknown",
+      "original_observed": "pasa",
+      "original_guard_reference": "temp cleanup tests",
+      "original_gap": "—",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 361
+    },
+    {
+      "original_scenario": "low disk/ENOSPC/EACCES/EIO",
+      "original_type": "NATIVE",
+      "original_expected": "motivo explícito, preserve",
+      "original_observed": "pasa",
+      "original_guard_reference": "no-space/permission parametrizados",
+      "original_gap": "hardware no probado",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 362
+    },
+    {
+      "original_scenario": "concurrent retention durante writer",
+      "original_type": "NATIVE",
+      "original_expected": "`RETENTION_WRITER_BUSY`",
+      "original_observed": "pasa",
+      "original_guard_reference": "active-writer staging test",
+      "original_gap": "multiprocess stress acotado",
+      "original_verdict": "PASS",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 363
+    },
+    {
+      "original_scenario": "EIO tras primer unlink de rotación",
+      "original_type": "PROBE",
+      "original_expected": "retry idempotente",
+      "original_observed": "partial gen; retry hard",
+      "original_guard_reference": "`retention_crash_during_rotation`",
+      "original_gap": "SIGKILL exacto NO EJEC.",
+      "original_verdict": "**FAIL P2**",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 364
+    },
+    {
+      "original_scenario": "caller real sin archivo",
+      "original_type": "PROBE full tick",
+      "original_expected": "horizonte ≥ rueda",
+      "original_observed": "soft 40,5m; hard 50,5m",
+      "original_guard_reference": "`full_tick_retention_probe.py`",
+      "original_gap": "fixture, no runtime prod",
+      "original_verdict": "**FAIL P2**",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 365
+    },
+    {
+      "original_scenario": "ACK ledger post-rotación",
+      "original_type": "PROBE",
+      "original_expected": "no agotar cuota activa",
+      "original_observed": "ACK506 proyecta513",
+      "original_guard_reference": "`retained_ack_ledger_capacity`",
+      "original_gap": "fixture favorable",
+      "original_verdict": "**FAIL P2**",
+      "authority_file": "/workspace/porota_rc6_handoff_468_469_470/front_reports/RA_A_F03_F05.md",
+      "authority_line": 366
+    }
+  ],
+  "evidence_status": "PROVISIONAL_CHECKPOINT; final root integration and unresolved gates remain explicit",
+  "checkpoint_evidence": "checkpoint_native_evidence.json"
+}

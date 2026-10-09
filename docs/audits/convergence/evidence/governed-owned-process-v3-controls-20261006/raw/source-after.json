@@ -1,0 +1,56 @@
+{
+  "baseline": {
+    "bytes": 31518,
+    "path": "/tmp/rc6_run_frozen_governed_v2.py",
+    "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21",
+    "stat_fields": {
+      "st_atime_ns": 1791226398642026887,
+      "st_blocks": 64,
+      "st_ctime_ns": 1791226398374029969,
+      "st_dev": 33,
+      "st_gid": 1000,
+      "st_ino": 3037265,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791226398374029969,
+      "st_nlink": 1,
+      "st_size": 31518,
+      "st_uid": 1000
+    }
+  },
+  "candidate": {
+    "bytes": 43365,
+    "path": "/tmp/rc6_run_frozen_governed_v3_candidate.py",
+    "sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313",
+    "stat_fields": {
+      "st_atime_ns": 1791247550292317629,
+      "st_blocks": 88,
+      "st_ctime_ns": 1791247439485790596,
+      "st_dev": 33,
+      "st_gid": 1000,
+      "st_ino": 3092363,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791247439485790596,
+      "st_nlink": 1,
+      "st_size": 43365,
+      "st_uid": 1000
+    }
+  },
+  "driver": {
+    "bytes": 29521,
+    "path": "/tmp/rc6_governed_v3_owned_process_controls_candidate_v2.py",
+    "sha256": "c262ebcc57184b839e15b2023f1b12b8eb8064d864902d2b01f9aa2a5852d623",
+    "stat_fields": {
+      "st_atime_ns": 1791248583324715256,
+      "st_blocks": 64,
+      "st_ctime_ns": 1791248530559994909,
+      "st_dev": 33,
+      "st_gid": 1000,
+      "st_ino": 3099538,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791248530559994909,
+      "st_nlink": 1,
+      "st_size": 29521,
+      "st_uid": 1000
+    }
+  }
+}

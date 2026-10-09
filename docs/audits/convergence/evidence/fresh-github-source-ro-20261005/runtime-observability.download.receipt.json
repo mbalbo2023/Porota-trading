@@ -1,0 +1,24 @@
+{
+  "byte_bound": 33554432,
+  "bytes": 29557023,
+  "command": [
+    "gh",
+    "api",
+    "--method",
+    "GET",
+    "-H",
+    "Accept: application/vnd.github.raw+json",
+    "repos/mbalbo2023/Porota-trading/contents/runtime/evidence/latest.json?ref=51154cb8686a59eeb1a45d4963db3abe823e715f"
+  ],
+  "commit_pin": "51154cb8686a59eeb1a45d4963db3abe823e715f",
+  "elapsed_download_seconds": 6.216175391993602,
+  "failure": null,
+  "fetched_at": "2026-10-05T20:32:31.208616+00:00",
+  "git_blob": "57c7b8e65c97fab82b1a4ae4138649d29494c698",
+  "observed_git_blob": "57c7b8e65c97fab82b1a4ae4138649d29494c698",
+  "runtime_currently_validated": false,
+  "schema": "rc6.machine-runtime-channel-github-ro-byte-receipt.v1",
+  "scope": "READONLY_GITHUB_PINNED_CHANNEL_BYTES; NO_HOST_QUERY_OR_PRODUCER_EXECUTION",
+  "sha256": "33cf7619b798807b229c0dada5b3a8f567438fc51d7eced9e3b0304d2d05d1c4",
+  "status": "GIT_BYTES_VERIFIED"
+}

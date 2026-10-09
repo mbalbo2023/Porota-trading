@@ -1,0 +1,76 @@
+from importlib import metadata
+import base64,csv,hashlib,importlib,io,json,os,pathlib,platform,re,subprocess,sys
+OUT=pathlib.Path('/workspace/scratch/rc6driver-kba25cdt')
+DRIVER=OUT/'driver-env'
+PLAN=pathlib.Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb')
+def norm(name):return re.sub(r'[-_.]+','-',name).lower()
+def read(path):
+ fd=os.open(path,os.O_RDONLY|os.O_NOATIME|os.O_NOFOLLOW|os.O_NONBLOCK)
+ with os.fdopen(fd,'rb') as f:return f.read()
+def digest(path):return hashlib.sha256(read(path)).hexdigest()
+def publish(name,obj):
+ raw=(json.dumps(obj,sort_keys=True,indent=2)+'\n').encode();path=OUT/'receipts'/name
+ with path.open('xb') as f:f.write(raw)
+ path.chmod(0o600);return hashlib.sha256(raw).hexdigest()
+try:
+ assert pathlib.Path(sys.prefix).resolve()==DRIVER.resolve()
+ assert os.path.abspath(sys.executable)==str(DRIVER/'bin/python')
+ assert platform.python_version()=='3.11.16'
+ rows=json.loads(read(PLAN/'selected-wheel-metadata.json'))['selected']
+ expected={norm(r['name']):r['version'] for r in rows}
+ installed={};distributions={}
+ for dist in metadata.distributions():
+  name=norm(dist.metadata['Name']);assert name not in installed
+  installed[name]=dist.version;distributions[name]=dist
+ assert len(installed)==4 and installed==expected
+ record_inventory=[];installed_metadata=[];hashless=[]
+ for row in rows:
+  name=norm(row['name']);dist=distributions[name];distpath=pathlib.Path(dist._path).resolve()
+  assert distpath.is_relative_to(DRIVER)
+  metapath=distpath/'METADATA';actualmeta=digest(metapath)
+  assert actualmeta==row['metadata_sha256'],name
+  assert read(metapath)==read(pathlib.Path(row['metadata_path']))
+  installed_metadata.append({'name':name,'version':dist.version,'dist_info':str(distpath),'metadata_path':str(metapath),'sha256':actualmeta,'official_metadata_sha256':row['metadata_sha256'],'record_sha256':digest(distpath/'RECORD')})
+  for relative,encoded,size in csv.reader(io.StringIO(read(distpath/'RECORD').decode())):
+   path=pathlib.Path(dist.locate_file(relative)).resolve();assert path.is_relative_to(DRIVER)
+   st=path.lstat();assert path.is_file() and not path.is_symlink() and st.st_nlink==1
+   data=read(path)
+   if encoded:
+    algorithm,value=encoded.split('=',1);assert algorithm=='sha256'
+    assert base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip('=')==value
+    assert len(data)==int(size)
+   else:
+    assert path==distpath/'RECORD' and not size
+    hashless.append(str(path))
+   record_inventory.append({'distribution':name,'path':str(path),'relative_record_path':relative,'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data),'mode':st.st_mode,'nlink':st.st_nlink,'record_hash_verified':bool(encoded)})
+ inventory_digest=publish('driver-record-inventory.json',record_inventory)
+ bypath={x['path']:x for x in record_inventory}
+ module_rows=[]
+ for name in ('playwright','pyee','greenlet','typing_extensions','greenlet._greenlet'):
+  module=importlib.import_module(name);path=pathlib.Path(module.__file__).resolve()
+  assert path.is_relative_to(DRIVER) and str(path) in bypath
+  assert digest(path)==bypath[str(path)]['sha256']
+  module_rows.append({'module':name,'file':str(path),'sha256':digest(path),'installed_record_match':True})
+ from playwright._impl._driver import compute_driver_executable
+ node,cli=map(pathlib.Path,compute_driver_executable())
+ node=node.resolve();cli=cli.resolve()
+ assert node.is_relative_to(DRIVER) and cli.is_relative_to(DRIVER)
+ assert node==DRIVER/'lib/python3.11/site-packages/playwright/driver/node'
+ assert str(node) in bypath and str(cli) in bypath
+ package=cli.parent
+ actual_browsers=package/'browsers.json';expected_browsers=PLAN/'playwright-browsers.json'
+ assert read(actual_browsers)==read(expected_browsers)
+ core=json.loads(read(package/'package.json'));assert core['version']=='1.62.0'
+ browser_entries=json.loads(read(actual_browsers))['browsers']
+ normal=[x for x in browser_entries if x['name'] in ('chromium','chromium-headless-shell','ffmpeg')]
+ assert all(x['revision']=='1234' and x['browserVersion']=='151.0.7922.34' for x in normal if x['name']!='ffmpeg')
+ assert next(x for x in normal if x['name']=='ffmpeg')['revision']=='1011'
+ node_run=subprocess.run([str(node),'--version'],cwd=OUT,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,check=True)
+ node_version=node_run.stdout.decode().strip();assert re.fullmatch(r'v\d+\.\d+\.\d+',node_version) and int(node_version[1:].split('.')[0])>=20
+ result={'status':'GREEN_DRIVER_BYTES_ONLY','role':'BROWSER_DRIVER','gate_qualified':False,'browser_gate_run':False,'product_modules_imported':False,'python':platform.python_version(),'sys_executable':sys.executable,'sys_prefix':sys.prefix,'sys_base_prefix':sys.base_prefix,'installed_count':len(installed),'installed':installed,'installed_metadata':installed_metadata,'record_inventory_sha256':inventory_digest,'record_entries':len(record_inventory),'only_unhashed_record_self_files':hashless,'module_origins':module_rows,'normal_node':{'path':str(node),'sha256':digest(node),'mode':node.stat().st_mode,'version':node_version,'version_process_returncode':node_run.returncode,'normal_default_lookup':True},'normal_cli':{'path':str(cli),'sha256':digest(cli)},'actual_installed_browsers_json':{'path':str(actual_browsers),'sha256':digest(actual_browsers),'byte_equal_official_pinned_json':True,'payloads':normal},'actual_installed_core_package':{'path':str(package/'package.json'),'sha256':digest(package/'package.json'),'version':core['version']},'provider_network_or_order_paths_called':False}
+ receipt=publish('driver-validation.json',result)
+ print(json.dumps({'status':result['status'],'installed':installed,'record_entries':len(record_inventory),'node_version':node_version,'node_sha256':result['normal_node']['sha256'],'browsers_json_sha256':digest(actual_browsers),'receipt_sha256':receipt}),flush=True)
+except BaseException as error:
+ receipt=publish('driver-validation-red.json',{'status':'RED','exception_class':type(error).__name__,'browser_gate_run':False,'guard_relaxed':False})
+ print(json.dumps({'status':'RED','exception_class':type(error).__name__,'receipt_sha256':receipt}),flush=True)
+ raise

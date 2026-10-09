@@ -1,0 +1,2259 @@
+{
+  "acceptance_complete": false,
+  "actual_alias_count": 22,
+  "actual_canonical_matrix_count": 294,
+  "aliases": [
+    {
+      "actual_recorded_hits": 1,
+      "path": "/inicio",
+      "target": [
+        "inicio",
+        "resumen"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/vivo",
+      "target": [
+        "en-vivo",
+        "resumen"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/universo-operativo",
+      "target": [
+        "universo",
+        "resumen"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/scalping",
+      "target": [
+        "trading",
+        "scalping"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/motor-trading",
+      "target": [
+        "trading",
+        "resumen"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/validacion",
+      "target": [
+        "analitica",
+        "experimentos"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/historicos",
+      "target": [
+        "analitica",
+        "historico"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/analisis",
+      "target": [
+        "analitica",
+        "performance"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/aprendizaje",
+      "target": [
+        "analitica",
+        "experimentos"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/reportes",
+      "target": [
+        "analitica",
+        "reportes"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/postcierre",
+      "target": [
+        "analitica",
+        "cierre-diario"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/salud",
+      "target": [
+        "sistema",
+        "salud"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/sre",
+      "target": [
+        "sistema",
+        "salud"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/infra",
+      "target": [
+        "sistema",
+        "resumen"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/scheduler",
+      "target": [
+        "sistema",
+        "scheduler"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/dashboard/logs",
+      "target": [
+        "sistema",
+        "logs"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/config",
+      "target": [
+        "sistema",
+        "configuracion"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/testing",
+      "target": [
+        "sistema",
+        "evidencia"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/observacion",
+      "target": [
+        "universo",
+        "discovery"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/telegram",
+      "target": [
+        "sistema",
+        "workers"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/informacion-financiera",
+      "target": [
+        "instrumentos",
+        "evidencia"
+      ],
+      "widths": [
+        800
+      ]
+    },
+    {
+      "actual_recorded_hits": 1,
+      "path": "/ai-decisions",
+      "target": [
+        "en-vivo",
+        "decisiones"
+      ],
+      "widths": [
+        800
+      ]
+    }
+  ],
+  "big_acceptance_complete": false,
+  "canonical_matrix": [
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.24678850099735428,
+      "path": "/",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.15379665099317208,
+      "path": "/en-vivo",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12498477099870797,
+      "path": "/en-vivo/oportunidades",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1508760659926338,
+      "path": "/en-vivo/decisiones",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11943411600077525,
+      "path": "/en-vivo/posiciones",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11996781500056386,
+      "path": "/en-vivo/cierres",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12829392500862014,
+      "path": "/en-vivo/capacidad",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12081365199992433,
+      "path": "/en-vivo/workers",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.16686709198984317,
+      "path": "/en-vivo/fuentes",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.129243375005899,
+      "path": "/trading",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.15018697099003475,
+      "path": "/trading/equity-spot",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14093700199737214,
+      "path": "/trading/scalping",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11714090500026941,
+      "path": "/trading/renta-fija",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14660745300352573,
+      "path": "/trading/derivados",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12945163699623663,
+      "path": "/trading/tesoreria",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11603949801065028,
+      "path": "/universo",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.130830665002577,
+      "path": "/universo/discovery",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1254597380029736,
+      "path": "/universo/tradeability",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1432640350103611,
+      "path": "/universo/coverage",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1216507010103669,
+      "path": "/universo/excluidos",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1264827649865765,
+      "path": "/universo/familias",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 2,
+      "max_seconds": 0.12010554999869782,
+      "path": "/instrumentos",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12442343200382311,
+      "path": "/instrumentos/ficha",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13014692500291858,
+      "path": "/instrumentos/contrato",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11751372899743728,
+      "path": "/instrumentos/mercado",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11962658900301903,
+      "path": "/instrumentos/evidencia",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11150166900188196,
+      "path": "/riesgo",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11820417499984615,
+      "path": "/riesgo/exposicion",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13275773900386412,
+      "path": "/riesgo/limites",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12317978600913193,
+      "path": "/riesgo/posiciones",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11669430900656153,
+      "path": "/riesgo/liquidez",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.10837360299774446,
+      "path": "/riesgo/pnl",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11807331599993631,
+      "path": "/riesgo/event-risk",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13356205899617635,
+      "path": "/analitica",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11885886699019466,
+      "path": "/analitica/senales",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1398821799957659,
+      "path": "/analitica/salidas",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12825958299799822,
+      "path": "/analitica/historico",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12307625399262179,
+      "path": "/analitica/experimentos",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13819252399844117,
+      "path": "/analitica/cierre-diario",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12045214600220788,
+      "path": "/analitica/reportes",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1202052730077412,
+      "path": "/sistema",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1233260400040308,
+      "path": "/sistema/salud",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11109734799538273,
+      "path": "/sistema/workers",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14096812800562475,
+      "path": "/sistema/integraciones",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12303585400513839,
+      "path": "/sistema/scheduler",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11872170699643902,
+      "path": "/sistema/evidencia",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11909610299335327,
+      "path": "/sistema/backups",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11539073700259905,
+      "path": "/sistema/logs",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1281489029934164,
+      "path": "/sistema/configuracion",
+      "width": 1440
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13397360099770594,
+      "path": "/",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11832985300861765,
+      "path": "/en-vivo",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1196553199988557,
+      "path": "/en-vivo/oportunidades",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14060792500094976,
+      "path": "/en-vivo/decisiones",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13094002699654084,
+      "path": "/en-vivo/posiciones",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11863523999636527,
+      "path": "/en-vivo/cierres",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12645940999209415,
+      "path": "/en-vivo/capacidad",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12624790699919686,
+      "path": "/en-vivo/workers",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1400585790106561,
+      "path": "/en-vivo/fuentes",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12279491398658138,
+      "path": "/trading",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14457288100675214,
+      "path": "/trading/equity-spot",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1237474349909462,
+      "path": "/trading/scalping",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1304764890082879,
+      "path": "/trading/renta-fija",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14357114299491514,
+      "path": "/trading/derivados",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12629503100470174,
+      "path": "/trading/tesoreria",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11458062699239235,
+      "path": "/universo",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1253069800004596,
+      "path": "/universo/discovery",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11900181100645568,
+      "path": "/universo/tradeability",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1672281130013289,
+      "path": "/universo/coverage",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12428242800524458,
+      "path": "/universo/excluidos",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11734479501319584,
+      "path": "/universo/familias",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 2,
+      "max_seconds": 0.12209719300153665,
+      "path": "/instrumentos",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12193729300634004,
+      "path": "/instrumentos/ficha",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12318209699878935,
+      "path": "/instrumentos/contrato",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.15979659699951299,
+      "path": "/instrumentos/mercado",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1204515139979776,
+      "path": "/instrumentos/evidencia",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11987697400036268,
+      "path": "/riesgo",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12021607100905385,
+      "path": "/riesgo/exposicion",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14128011299180798,
+      "path": "/riesgo/limites",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.15318341300007887,
+      "path": "/riesgo/posiciones",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14926391599874478,
+      "path": "/riesgo/liquidez",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.153744449999067,
+      "path": "/riesgo/pnl",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11738311299995985,
+      "path": "/riesgo/event-risk",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12843060100567527,
+      "path": "/analitica",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12027207799837925,
+      "path": "/analitica/senales",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1378212249983335,
+      "path": "/analitica/salidas",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12253476199111901,
+      "path": "/analitica/historico",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13600186600524466,
+      "path": "/analitica/experimentos",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1238499400060391,
+      "path": "/analitica/cierre-diario",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14072746099554934,
+      "path": "/analitica/reportes",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13757912800065242,
+      "path": "/sistema",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12059521899209358,
+      "path": "/sistema/salud",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1303391730034491,
+      "path": "/sistema/workers",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1317132519907318,
+      "path": "/sistema/integraciones",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13094653299776837,
+      "path": "/sistema/scheduler",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14653319500212092,
+      "path": "/sistema/evidencia",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12457604099472519,
+      "path": "/sistema/backups",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11865733099693898,
+      "path": "/sistema/logs",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11671699699945748,
+      "path": "/sistema/configuracion",
+      "width": 1280
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14687836699886248,
+      "path": "/",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.2336219830031041,
+      "path": "/en-vivo",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11997233600413892,
+      "path": "/en-vivo/oportunidades",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12037129100644961,
+      "path": "/en-vivo/decisiones",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12417779800307471,
+      "path": "/en-vivo/posiciones",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12848510099865962,
+      "path": "/en-vivo/cierres",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11816174599516671,
+      "path": "/en-vivo/capacidad",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11827337500290014,
+      "path": "/en-vivo/workers",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13137028299388476,
+      "path": "/en-vivo/fuentes",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1279806410020683,
+      "path": "/trading",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1229708080063574,
+      "path": "/trading/equity-spot",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12880587599647697,
+      "path": "/trading/scalping",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12172068300424144,
+      "path": "/trading/renta-fija",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11805590099538676,
+      "path": "/trading/derivados",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11743545299395919,
+      "path": "/trading/tesoreria",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1206715229927795,
+      "path": "/universo",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13548486700165085,
+      "path": "/universo/discovery",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13159630799782462,
+      "path": "/universo/tradeability",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12312582999584265,
+      "path": "/universo/coverage",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1255873500049347,
+      "path": "/universo/excluidos",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11821722499735188,
+      "path": "/universo/familias",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 2,
+      "max_seconds": 0.13731073700182606,
+      "path": "/instrumentos",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12317141100356821,
+      "path": "/instrumentos/ficha",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1222582059999695,
+      "path": "/instrumentos/contrato",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11692977900383994,
+      "path": "/instrumentos/mercado",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1215727800008608,
+      "path": "/instrumentos/evidencia",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1397488240036182,
+      "path": "/riesgo",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12006749199645128,
+      "path": "/riesgo/exposicion",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11630651299492456,
+      "path": "/riesgo/limites",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12082010399899445,
+      "path": "/riesgo/posiciones",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1477282669948181,
+      "path": "/riesgo/liquidez",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1197000329993898,
+      "path": "/riesgo/pnl",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11839736600813922,
+      "path": "/riesgo/event-risk",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11423612099315505,
+      "path": "/analitica",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13532393099740148,
+      "path": "/analitica/senales",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14509406899742316,
+      "path": "/analitica/salidas",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12958439899375662,
+      "path": "/analitica/historico",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11721633900015149,
+      "path": "/analitica/experimentos",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.16947819798951969,
+      "path": "/analitica/cierre-diario",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13186824398871977,
+      "path": "/analitica/reportes",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14030779399035964,
+      "path": "/sistema",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1137046819931129,
+      "path": "/sistema/salud",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11684531799983233,
+      "path": "/sistema/workers",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11563705699518323,
+      "path": "/sistema/integraciones",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1180914269934874,
+      "path": "/sistema/scheduler",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.130121655005496,
+      "path": "/sistema/evidencia",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11018249001062941,
+      "path": "/sistema/backups",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12190255599853117,
+      "path": "/sistema/logs",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11761239999032114,
+      "path": "/sistema/configuracion",
+      "width": 1024
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14472631599346641,
+      "path": "/",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 52,
+      "max_seconds": 0.43349270199541934,
+      "path": "/en-vivo",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12288300499494653,
+      "path": "/en-vivo/oportunidades",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12186256700078957,
+      "path": "/en-vivo/decisiones",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 2,
+      "max_seconds": 0.12549878199934028,
+      "path": "/en-vivo/posiciones",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13078229999518953,
+      "path": "/en-vivo/cierres",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 2,
+      "max_seconds": 0.12348693200328853,
+      "path": "/en-vivo/capacidad",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11580409199814312,
+      "path": "/en-vivo/workers",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1155556349986,
+      "path": "/en-vivo/fuentes",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11654928799543995,
+      "path": "/trading",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.15081734300474636,
+      "path": "/trading/equity-spot",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12548080600390676,
+      "path": "/trading/scalping",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1145775320037501,
+      "path": "/trading/renta-fija",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11275156699412037,
+      "path": "/trading/derivados",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.15386092598782852,
+      "path": "/trading/tesoreria",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13115668398677371,
+      "path": "/universo",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12133646399888676,
+      "path": "/universo/discovery",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12076496699592099,
+      "path": "/universo/tradeability",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11610955600917805,
+      "path": "/universo/coverage",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11921806199825369,
+      "path": "/universo/excluidos",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.10737867999705486,
+      "path": "/universo/familias",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 7,
+      "max_seconds": 0.1411215129919583,
+      "path": "/instrumentos",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13168063000193797,
+      "path": "/instrumentos/ficha",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11734322499250993,
+      "path": "/instrumentos/contrato",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12188523900113069,
+      "path": "/instrumentos/mercado",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11578483099583536,
+      "path": "/instrumentos/evidencia",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13680541099165566,
+      "path": "/riesgo",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1326447030005511,
+      "path": "/riesgo/exposicion",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12375589601288084,
+      "path": "/riesgo/limites",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12206548900576308,
+      "path": "/riesgo/posiciones",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12846586300292984,
+      "path": "/riesgo/liquidez",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14857669500634074,
+      "path": "/riesgo/pnl",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12339007599803153,
+      "path": "/riesgo/event-risk",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11875848998897709,
+      "path": "/analitica",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11862713999289554,
+      "path": "/analitica/senales",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 2,
+      "max_seconds": 0.12003896200621966,
+      "path": "/analitica/salidas",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1272957440087339,
+      "path": "/analitica/historico",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 2,
+      "max_seconds": 0.11703115899581462,
+      "path": "/analitica/experimentos",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11017857200931758,
+      "path": "/analitica/cierre-diario",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11503768200054765,
+      "path": "/analitica/reportes",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12464051900315098,
+      "path": "/sistema",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13226019199646544,
+      "path": "/sistema/salud",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.17965698000625707,
+      "path": "/sistema/workers",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13304485099797603,
+      "path": "/sistema/integraciones",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12586161399667617,
+      "path": "/sistema/scheduler",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14960368898755405,
+      "path": "/sistema/evidencia",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11706073100504,
+      "path": "/sistema/backups",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13126334799744654,
+      "path": "/sistema/logs",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1151504970039241,
+      "path": "/sistema/configuracion",
+      "width": 800
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12064368699793704,
+      "path": "/",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12290855898754671,
+      "path": "/en-vivo",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14229232000070624,
+      "path": "/en-vivo/oportunidades",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13920681099989451,
+      "path": "/en-vivo/decisiones",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12725672699161805,
+      "path": "/en-vivo/posiciones",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11339851599768735,
+      "path": "/en-vivo/cierres",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11721680700429715,
+      "path": "/en-vivo/capacidad",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14908000199648086,
+      "path": "/en-vivo/workers",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1320523649919778,
+      "path": "/en-vivo/fuentes",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.16462350499932654,
+      "path": "/trading",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1300616429944057,
+      "path": "/trading/equity-spot",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13176850500167347,
+      "path": "/trading/scalping",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14153616299154237,
+      "path": "/trading/renta-fija",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.143065520998789,
+      "path": "/trading/derivados",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12253899298957549,
+      "path": "/trading/tesoreria",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12854100500408094,
+      "path": "/universo",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.16944692299875896,
+      "path": "/universo/discovery",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.162710808988777,
+      "path": "/universo/tradeability",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.192758054996375,
+      "path": "/universo/coverage",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.23540837698965333,
+      "path": "/universo/excluidos",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13934507498925086,
+      "path": "/universo/familias",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 2,
+      "max_seconds": 0.1387412449985277,
+      "path": "/instrumentos",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.125775023989263,
+      "path": "/instrumentos/ficha",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1533538889925694,
+      "path": "/instrumentos/contrato",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1837183760071639,
+      "path": "/instrumentos/mercado",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13015410098887514,
+      "path": "/instrumentos/evidencia",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1340259779972257,
+      "path": "/riesgo",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11938493201159872,
+      "path": "/riesgo/exposicion",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1497136339894496,
+      "path": "/riesgo/limites",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1293505249923328,
+      "path": "/riesgo/posiciones",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13341644499450922,
+      "path": "/riesgo/liquidez",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14423055900260806,
+      "path": "/riesgo/pnl",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12237987600383349,
+      "path": "/riesgo/event-risk",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1846588499902282,
+      "path": "/analitica",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13436915900092572,
+      "path": "/analitica/senales",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.15739660400140565,
+      "path": "/analitica/salidas",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.127050518989563,
+      "path": "/analitica/historico",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13147753299563192,
+      "path": "/analitica/experimentos",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14736858899414074,
+      "path": "/analitica/cierre-diario",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1316408610000508,
+      "path": "/analitica/reportes",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1803232800011756,
+      "path": "/sistema",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12142734900407959,
+      "path": "/sistema/salud",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1664391060039634,
+      "path": "/sistema/workers",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13447663899569307,
+      "path": "/sistema/integraciones",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12517770599515643,
+      "path": "/sistema/scheduler",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1317582550109364,
+      "path": "/sistema/evidencia",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11787483798980247,
+      "path": "/sistema/backups",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11610307899536565,
+      "path": "/sistema/logs",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12238455399347004,
+      "path": "/sistema/configuracion",
+      "width": 600
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12264942699403036,
+      "path": "/",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1216925509943394,
+      "path": "/en-vivo",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12356955200084485,
+      "path": "/en-vivo/oportunidades",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1309120710066054,
+      "path": "/en-vivo/decisiones",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12582350400043651,
+      "path": "/en-vivo/posiciones",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11871570699440781,
+      "path": "/en-vivo/cierres",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12251488599576987,
+      "path": "/en-vivo/capacidad",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11909223499242216,
+      "path": "/en-vivo/workers",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11661770100181457,
+      "path": "/en-vivo/fuentes",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.14429360399662983,
+      "path": "/trading",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12269758598995395,
+      "path": "/trading/equity-spot",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11657180200563744,
+      "path": "/trading/scalping",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1367030910041649,
+      "path": "/trading/renta-fija",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12474629101052415,
+      "path": "/trading/derivados",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1414462640095735,
+      "path": "/trading/tesoreria",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1388063170015812,
+      "path": "/universo",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11192755000956822,
+      "path": "/universo/discovery",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12274597100622486,
+      "path": "/universo/tradeability",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1436086290050298,
+      "path": "/universo/coverage",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.18674498100881465,
+      "path": "/universo/excluidos",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12432387999433558,
+      "path": "/universo/familias",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 2,
+      "max_seconds": 0.13961316300265025,
+      "path": "/instrumentos",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12541746599890757,
+      "path": "/instrumentos/ficha",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11902590800309554,
+      "path": "/instrumentos/contrato",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12844113999744877,
+      "path": "/instrumentos/mercado",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1264456839999184,
+      "path": "/instrumentos/evidencia",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1206619069998851,
+      "path": "/riesgo",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11735120000957977,
+      "path": "/riesgo/exposicion",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11929203500039876,
+      "path": "/riesgo/limites",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13318425399484113,
+      "path": "/riesgo/posiciones",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12091167300241068,
+      "path": "/riesgo/liquidez",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12032147801073734,
+      "path": "/riesgo/pnl",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11512926999421325,
+      "path": "/riesgo/event-risk",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11443313799099997,
+      "path": "/analitica",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.13823723499081098,
+      "path": "/analitica/senales",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11812707300123293,
+      "path": "/analitica/salidas",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12002385601226706,
+      "path": "/analitica/historico",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1142976120027015,
+      "path": "/analitica/experimentos",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11595090800256003,
+      "path": "/analitica/cierre-diario",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1371405859972583,
+      "path": "/analitica/reportes",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11681233599665575,
+      "path": "/sistema",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11848116300825495,
+      "path": "/sistema/salud",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11872422600572463,
+      "path": "/sistema/workers",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11538256700441707,
+      "path": "/sistema/integraciones",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.1355917210021289,
+      "path": "/sistema/scheduler",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.12008910899749026,
+      "path": "/sistema/evidencia",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.10912590700900182,
+      "path": "/sistema/backups",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11659000800864305,
+      "path": "/sistema/logs",
+      "width": 360
+    },
+    {
+      "actual_recorded_hits": 1,
+      "max_seconds": 0.11711169799673371,
+      "path": "/sistema/configuracion",
+      "width": 360
+    }
+  ],
+  "catalog_currencies": {
+    "ARS": 318
+  },
+  "external_source_custody": "RED unchanged /archive/stat/blocks",
+  "family_observation": [
+    {
+      "canonical_selected_full5": [
+        "T010",
+        "ACCIONES",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "catalog_rows": 35,
+      "channel": "UNIVERSE_SHADOW",
+      "complete_native_cohort_total": 74,
+      "currency": "ARS",
+      "currency_channel_scope_total": 1,
+      "family": "ACCIONES",
+      "full_page_traversal_claimed": false,
+      "observed_page_offsets": [
+        0,
+        10,
+        64
+      ],
+      "observed_unique_cohorts": 30,
+      "selected_exact_cohort_in_last_page": true
+    },
+    {
+      "canonical_selected_full5": [
+        "BONO015",
+        "BONOS",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "catalog_rows": 35,
+      "channel": "UNIVERSE_SHADOW",
+      "complete_native_cohort_total": 70,
+      "currency": "ARS",
+      "currency_channel_scope_total": 1,
+      "family": "BONOS",
+      "full_page_traversal_claimed": false,
+      "observed_page_offsets": [
+        0,
+        10,
+        60
+      ],
+      "observed_unique_cohorts": 30,
+      "selected_exact_cohort_in_last_page": true
+    },
+    {
+      "canonical_selected_full5": [
+        "CAUC024",
+        "CAUCIONES",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "catalog_rows": 35,
+      "channel": "UNIVERSE_SHADOW",
+      "complete_native_cohort_total": 70,
+      "currency": "ARS",
+      "currency_channel_scope_total": 1,
+      "family": "CAUCIONES",
+      "full_page_traversal_claimed": false,
+      "observed_page_offsets": [
+        0,
+        10,
+        60
+      ],
+      "observed_unique_cohorts": 30,
+      "selected_exact_cohort_in_last_page": true
+    },
+    {
+      "canonical_selected_full5": [
+        "CEDE012",
+        "CEDEARS",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "catalog_rows": 35,
+      "channel": "UNIVERSE_SHADOW",
+      "complete_native_cohort_total": 70,
+      "currency": "ARS",
+      "currency_channel_scope_total": 1,
+      "family": "CEDEARS",
+      "full_page_traversal_claimed": false,
+      "observed_page_offsets": [
+        0,
+        10,
+        60
+      ],
+      "observed_unique_cohorts": 30,
+      "selected_exact_cohort_in_last_page": true
+    },
+    {
+      "canonical_selected_full5": [
+        "ETFS004",
+        "ETFS",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "catalog_rows": 35,
+      "channel": "UNIVERSE_SHADOW",
+      "complete_native_cohort_total": 70,
+      "currency": "ARS",
+      "currency_channel_scope_total": 1,
+      "family": "ETFS",
+      "full_page_traversal_claimed": false,
+      "observed_page_offsets": [
+        0,
+        10,
+        60
+      ],
+      "observed_unique_cohorts": 30,
+      "selected_exact_cohort_in_last_page": true
+    },
+    {
+      "canonical_selected_full5": [
+        "FCI020",
+        "FCI",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "catalog_rows": 35,
+      "channel": "UNIVERSE_SHADOW",
+      "complete_native_cohort_total": 70,
+      "currency": "ARS",
+      "currency_channel_scope_total": 1,
+      "family": "FCI",
+      "full_page_traversal_claimed": false,
+      "observed_page_offsets": [
+        0,
+        10,
+        60
+      ],
+      "observed_unique_cohorts": 30,
+      "selected_exact_cohort_in_last_page": true
+    },
+    {
+      "canonical_selected_full5": [
+        "DLR/DIC26",
+        "FUTUROS",
+        "A3",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "catalog_rows": 3,
+      "channel": "UNIVERSE_SHADOW",
+      "complete_native_cohort_total": 7,
+      "currency": "ARS",
+      "currency_channel_scope_total": 1,
+      "family": "FUTUROS",
+      "full_page_traversal_claimed": true,
+      "observed_page_offsets": [
+        0
+      ],
+      "observed_unique_cohorts": 7,
+      "selected_exact_cohort_in_last_page": true
+    },
+    {
+      "canonical_selected_full5": [
+        "LETR005",
+        "LETRAS",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "catalog_rows": 35,
+      "channel": "UNIVERSE_SHADOW",
+      "complete_native_cohort_total": 70,
+      "currency": "ARS",
+      "currency_channel_scope_total": 1,
+      "family": "LETRAS",
+      "full_page_traversal_claimed": false,
+      "observed_page_offsets": [
+        0,
+        10,
+        60
+      ],
+      "observed_unique_cohorts": 30,
+      "selected_exact_cohort_in_last_page": true
+    },
+    {
+      "canonical_selected_full5": [
+        "OBLI019",
+        "OBLIGACIONES",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "catalog_rows": 35,
+      "channel": "UNIVERSE_SHADOW",
+      "complete_native_cohort_total": 70,
+      "currency": "ARS",
+      "currency_channel_scope_total": 1,
+      "family": "OBLIGACIONES",
+      "full_page_traversal_claimed": false,
+      "observed_page_offsets": [
+        0,
+        10,
+        60
+      ],
+      "observed_unique_cohorts": 30,
+      "selected_exact_cohort_in_last_page": true
+    },
+    {
+      "canonical_selected_full5": [
+        "OPCI016",
+        "OPCIONES",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "catalog_rows": 35,
+      "channel": "UNIVERSE_SHADOW",
+      "complete_native_cohort_total": 70,
+      "currency": "ARS",
+      "currency_channel_scope_total": 1,
+      "family": "OPCIONES",
+      "full_page_traversal_claimed": false,
+      "observed_page_offsets": [
+        0,
+        10,
+        60
+      ],
+      "observed_unique_cohorts": 30,
+      "selected_exact_cohort_in_last_page": true
+    }
+  ],
+  "full_native_cohort_total": 641,
+  "gate_sha256": "50663ca72613e74330421a27cd35ac1a8df1e55b71ca8b7211fc7a012a880da6",
+  "native_executions_by_review": 0,
+  "navigation_source_sha256": "29193381d9b826881ffee4af1acccb8d0b39e1c59c3626af7ab557455daf8b04",
+  "observed_distinct_page_cohorts": 277,
+  "schema": "rc6.ux-browser-actual-route-matrix-readonly.v1",
+  "scope": "Read-only verification of actual existing browser receipt. All49x6 routes/22aliases recorded,3 sample pages per large family and all7 FUT groups; not every641cohort observed.",
+  "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df"
+}

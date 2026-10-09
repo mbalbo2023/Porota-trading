@@ -1,0 +1,6 @@
+tree 36227e546cb311546f08b80880064dde86a6f630
+parent 2e48f6f005f38f68b9dd9a75677fb67e52f23a18
+author Martin Balbo <mbalbo@gmail.com> 1791316465 +0000
+committer Martin Balbo <mbalbo@gmail.com> 1791316465 +0000
+
+RC6: close ready-child custody without extending original bounds

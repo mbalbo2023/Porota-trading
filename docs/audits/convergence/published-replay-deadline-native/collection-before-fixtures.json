@@ -1,0 +1,232 @@
+{
+  "count": 45,
+  "execution_id": "2afaadf83346467ba60b4a58842341ac",
+  "items": [
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_native_urllib_redirect_does_not_forward_authorization",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_native_urllib_redirect_does_not_forward_authorization"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[none]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[none]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[changed_bytes]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[changed_bytes]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[oversize]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[oversize]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[truncated]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[truncated]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[deadline]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[deadline]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_existing_download_file_is_never_deleted_or_overwritten",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_existing_download_file_is_never_deleted_or_overwritten"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_metadata_response_is_bounded_and_uses_fixed_repository_url",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_metadata_response_is_bounded_and_uses_fixed_repository_url"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_current_upload_binding_is_evidence_only_until_completed_success",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_current_upload_binding_is_evidence_only_until_completed_success"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_real_saved_layer_replay_matches_git_bytes_and_all_modes",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_real_saved_layer_replay_matches_git_bytes_and_all_modes"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[same_bytes_writable]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[same_bytes_writable]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[changed_bytes]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[changed_bytes]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[deleted_file]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[deleted_file]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[parent_alias]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[parent_alias]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[extra_source]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[extra_source]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_opaque_whiteouts_and_repeated_compressed_layers_replay_native_order",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_opaque_whiteouts_and_repeated_compressed_layers_replay_native_order"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[False]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[False]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[True]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[True]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_load_and_import_use_total_budget_while_http_and_codec_keep_thirty_seconds",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_load_and_import_use_total_budget_while_http_and_codec_keep_thirty_seconds"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[expired]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[expired]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[exact-boundary]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[exact-boundary]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[nan]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[nan]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[infinite]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[infinite]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_completed_load_past_total_deadline_cannot_start_image_or_emit_green",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_completed_load_past_total_deadline_cannot_start_image_or_emit_green"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_codec_uses_remaining_total_budget_and_expiry_cleans_only_its_private_container",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_codec_uses_remaining_total_budget_and_expiry_cleans_only_its_private_container"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_import_timeout_cleans_only_its_private_container_without_starting_codec",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_import_timeout_cleans_only_its_private_container_without_starting_codec"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[1]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[1]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[False]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[False]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_rejects_total_expiry_during_context_cleanup_and_preserves_emitted_raw",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_rejects_total_expiry_during_context_cleanup_and_preserves_emitted_raw"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_completes_cleanup_and_flushed_result_within_original_total_budget",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_completes_cleanup_and_flushed_result_within_original_total_budget"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_write]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_write]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_flush]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_flush]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_write]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_write]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_flush]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_flush]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[nonzero]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[nonzero]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[missing_json]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[missing_json]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[red]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[red]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[foreign_image]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[foreign_image]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[source_drift]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[source_drift]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[oversize]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[oversize]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[timeout]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[timeout]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_evidence_only_is_small_and_contains_no_image_or_bundle",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_evidence_only_is_small_and_contains_no_image_or_bundle"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_secondary_preserves_downloaded_primary_final_input_provenance_bytes",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_secondary_preserves_downloaded_primary_final_input_provenance_bytes"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_errors_do_not_disclose_signed_urls_headers_or_tokens",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_errors_do_not_disclose_signed_urls_headers_or_tokens"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_workflow_secondary_cannot_replace_primary_or_trigger_another_build",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_workflow_secondary_cannot_replace_primary_or_trigger_another_build"
+    }
+  ],
+  "phase": "pytest_collection_finish_before_fixtures"
+}

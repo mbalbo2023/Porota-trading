@@ -1,0 +1,248 @@
+{
+  "canonical_latest": "2026-09-28",
+  "canonical_rows": 439833,
+  "coverage_by_family": {
+    "ACCIONES": {
+      "ready": 153,
+      "with_history": 111,
+      "without_history": 42
+    },
+    "BONOS": {
+      "ready": 2044,
+      "with_history": 36,
+      "without_history": 2008
+    },
+    "CEDEARS": {
+      "ready": 1145,
+      "with_history": 865,
+      "without_history": 280
+    },
+    "FCI": {
+      "ready": 1013,
+      "with_history": 962,
+      "without_history": 51
+    },
+    "LETRAS": {
+      "ready": 37,
+      "with_history": 14,
+      "without_history": 23
+    },
+    "OBLIGACIONES": {
+      "ready": 3330,
+      "with_history": 0,
+      "without_history": 3330
+    },
+    "OPCIONES": {
+      "ready": 6,
+      "with_history": 1,
+      "without_history": 5
+    }
+  },
+  "observer": {
+    "heartbeat_at": "2026-10-01T19:36:44.968788+00:00",
+    "mode": "PRODUCTION_PAPER",
+    "process_state": "RUNNING",
+    "real_orders_sent": 0,
+    "session_state": "MARKET_OPEN"
+  },
+  "rc6_history_cutoff_repair": {
+    "columns": [
+      "cutoff",
+      "symbol",
+      "instrument_type",
+      "market",
+      "settlement",
+      "state",
+      "source",
+      "requested_from",
+      "requested_to",
+      "valid_rows",
+      "latest_date",
+      "error_class",
+      "updated_at"
+    ],
+    "count": 1105,
+    "max_updated_at": "2026-10-01T02:51:26.507828+00:00",
+    "states": [
+      {
+        "cutoff": "2026-09-21",
+        "error_class": null,
+        "instrument_type": "CEDEARS",
+        "latest_date": "2026-09-21",
+        "market": "BYMA",
+        "requested_from": "2026-01-16",
+        "requested_to": "2026-09-21",
+        "settlement": "A-24HS",
+        "source": "PPI",
+        "state": "COMPLETE",
+        "symbol": "TQQQD",
+        "updated_at": "2026-10-01T02:47:14.683450+00:00",
+        "valid_rows": 156
+      },
+      {
+        "cutoff": "2026-09-21",
+        "error_class": null,
+        "instrument_type": "CEDEARS",
+        "latest_date": "2026-09-17",
+        "market": "BYMA",
+        "requested_from": "2026-01-05",
+        "requested_to": "2026-09-21",
+        "settlement": "A-24HS",
+        "source": "PPI",
+        "state": "COMPLETE",
+        "symbol": "TQQQC",
+        "updated_at": "2026-10-01T02:47:12.686398+00:00",
+        "valid_rows": 127
+      },
+      {
+        "cutoff": "2026-09-21",
+        "error_class": null,
+        "instrument_type": "CEDEARS",
+        "latest_date": "2026-09-21",
+        "market": "BYMA",
+        "requested_from": null,
+        "requested_to": "2026-09-21",
+        "settlement": "A-24HS",
+        "source": "PPI_CANONICAL",
+        "state": "ALREADY_COVERED",
+        "symbol": "TQQQ",
+        "updated_at": "2026-10-01T02:19:53.768159+00:00",
+        "valid_rows": 240
+      },
+      {
+        "cutoff": "2026-09-21",
+        "error_class": null,
+        "instrument_type": "CEDEARS",
+        "latest_date": "2026-09-21",
+        "market": "BYMA",
+        "requested_from": "2026-05-14",
+        "requested_to": "2026-09-21",
+        "settlement": "A-24HS",
+        "source": "PPI",
+        "state": "COMPLETE",
+        "symbol": "QQQD",
+        "updated_at": "2026-10-01T02:41:51.351270+00:00",
+        "valid_rows": 88
+      },
+      {
+        "cutoff": "2026-09-21",
+        "error_class": null,
+        "instrument_type": "CEDEARS",
+        "latest_date": "2026-09-21",
+        "market": "BYMA",
+        "requested_from": "2026-01-02",
+        "requested_to": "2026-09-21",
+        "settlement": "A-24HS",
+        "source": "PPI",
+        "state": "COMPLETE",
+        "symbol": "QQQC",
+        "updated_at": "2026-10-01T02:41:49.577768+00:00",
+        "valid_rows": 149
+      },
+      {
+        "cutoff": "2026-09-21",
+        "error_class": null,
+        "instrument_type": "CEDEARS",
+        "latest_date": "2026-09-21",
+        "market": "BYMA",
+        "requested_from": null,
+        "requested_to": "2026-09-21",
+        "settlement": "A-24HS",
+        "source": "PPI_CANONICAL",
+        "state": "ALREADY_COVERED",
+        "symbol": "QQQ",
+        "updated_at": "2026-10-01T02:18:35.269391+00:00",
+        "valid_rows": 257
+      },
+      {
+        "cutoff": "2026-09-21",
+        "error_class": null,
+        "instrument_type": "CEDEARS",
+        "latest_date": "2026-09-21",
+        "market": "BYMA",
+        "requested_from": "2026-02-02",
+        "requested_to": "2026-09-21",
+        "settlement": "A-24HS",
+        "source": "PPI",
+        "state": "COMPLETE",
+        "symbol": "IWMD",
+        "updated_at": "2026-10-01T02:36:13.415322+00:00",
+        "valid_rows": 143
+      },
+      {
+        "cutoff": "2026-09-21",
+        "error_class": null,
+        "instrument_type": "CEDEARS",
+        "latest_date": "2026-09-18",
+        "market": "BYMA",
+        "requested_from": "2026-01-07",
+        "requested_to": "2026-09-21",
+        "settlement": "A-24HS",
+        "source": "PPI",
+        "state": "COMPLETE",
+        "symbol": "IWMC",
+        "updated_at": "2026-10-01T02:36:11.506517+00:00",
+        "valid_rows": 87
+      },
+      {
+        "cutoff": "2026-09-21",
+        "error_class": null,
+        "instrument_type": "CEDEARS",
+        "latest_date": "2026-09-21",
+        "market": "BYMA",
+        "requested_from": "2026-07-29",
+        "requested_to": "2026-09-21",
+        "settlement": "A-24HS",
+        "source": "PPI",
+        "state": "COMPLETE",
+        "symbol": "IWM",
+        "updated_at": "2026-10-01T02:36:08.773083+00:00",
+        "valid_rows": 37
+      },
+      {
+        "cutoff": "2026-09-21",
+        "error_class": null,
+        "instrument_type": "ACCIONES",
+        "latest_date": null,
+        "market": "BYMA",
+        "requested_from": "2025-09-21",
+        "requested_to": "2026-09-21",
+        "settlement": "A-24HS",
+        "source": "PPI",
+        "state": "NO_NEW_VALID_ROWS",
+        "symbol": "ZOND",
+        "updated_at": "2026-10-01T02:51:26.507828+00:00",
+        "valid_rows": 0
+      }
+    ]
+  },
+  "rc6_history_cutoff_repair_runs": {
+    "columns": [
+      "cutoff",
+      "state",
+      "targets",
+      "archive_imports",
+      "ppi_queries",
+      "complete",
+      "failed",
+      "updated_at"
+    ],
+    "count": 1,
+    "max_updated_at": "2026-10-01T02:51:27.438792+00:00",
+    "states": [
+      {
+        "archive_imports": 0,
+        "complete": 899,
+        "cutoff": "2026-09-21",
+        "failed": 195,
+        "ppi_queries": 726,
+        "state": "PARTIAL",
+        "targets": 1094,
+        "updated_at": "2026-10-01T02:51:27.438792+00:00"
+      }
+    ]
+  },
+  "ready_total": 7728,
+  "ready_with_history_total": 1989,
+  "ready_without_history_total": 5739
+}

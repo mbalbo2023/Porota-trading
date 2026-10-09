@@ -1,0 +1,148 @@
+{
+  "actual_child_reaped": true,
+  "actual_launch_to_pid_reap_wall_seconds": 94.71485432899863,
+  "adopted_descendants_reaped": [
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000206,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 536576,
+      "pid": 22970
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000629,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 536576,
+      "pid": 22998
+    },
+    {
+      "cpu_system_seconds": 0.000224,
+      "cpu_user_seconds": 0.0,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 536576,
+      "pid": 23023
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000203,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 536576,
+      "pid": 23060
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000283,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 536576,
+      "pid": 23087
+    }
+  ],
+  "command": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_ci_productive_predeploy_contract.py",
+    "tests/test_rc6_predeploy_scoped_cleanup.py",
+    "tests/test_rc6_controlled_native_child_manager.py",
+    "-p",
+    "no:cacheprovider",
+    "--basetemp=/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest",
+    "--junitxml=/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/junit.xml"
+  ],
+  "cpu_system_seconds": 2.277475,
+  "cpu_user_seconds": 19.686899,
+  "kernel_owned_child_observations": [
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "before_popen_after_subreaper_activation"
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000206,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 536576,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 22970
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000629,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 536576,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 22998
+    },
+    {
+      "cpu_system_seconds": 0.000224,
+      "cpu_user_seconds": 0.0,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 536576,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 23023
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000203,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 536576,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 23060
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000283,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 536576,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 23087
+    },
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "after_main_pid_reap"
+    }
+  ],
+  "kernel_pre_popen_echild_verified": true,
+  "kernel_wait4_zero_observed_irreversible_red": false,
+  "late_observed_main_reap_irreversible_red": false,
+  "launcher_management_deadline_seconds": 300,
+  "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+  "owned_children_exhaustion_verified": true,
+  "owned_cleanup_management_bound_seconds": 5,
+  "owned_group_signal_observations": [],
+  "peak_rss_bytes": 75390976,
+  "pid": 22965,
+  "proc_task_children_examined": false,
+  "process_group_absent_after_reap": true,
+  "process_group_absent_at_main_reap": true,
+  "remaining_owned_children": [],
+  "residual_descendants_observed": [],
+  "returncode": 0,
+  "scope": "EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS",
+  "sigint_failure_grace_seconds": 0,
+  "subreaper_activation_readback_verified": true,
+  "subreaper_previous_state": 0,
+  "subreaper_restoration_readback_verified": true,
+  "subreaper_restore_attempted": true,
+  "supervisor_errors": [],
+  "supervisor_kernel_identity_before_spawn": {
+    "Pid": "22959",
+    "Tgid": "22959",
+    "Uid": "1000\t1000\t1000\t1000"
+  },
+  "supervisor_native_tid": 22959,
+  "supervisor_pid": 22959,
+  "termination_reap_restore_cleanup_seconds": 0.2512635310013138,
+  "timed_out": false,
+  "wait4_reaped_pid": 22965,
+  "wall_seconds": 94.96635104500092
+}

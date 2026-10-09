@@ -58,7 +58,7 @@ def test_cem_settlement_price_is_metadata_not_identity():
     }
     with pytest.raises(ValueError,match="SETTLEMENT_IDENTITY_REQUIRED"):
         cem.closing_to_candle(row,instrument_type="FUTUROS",market="A3",settlement_identity="")
-    candle=cem.closing_to_candle(row,instrument_type="FUTUROS",market="A3",settlement_identity="DAILY_ADJUSTMENT")
+    candle=cem.closing_to_candle(row,instrument_type="FUTUROS",market="A3",currency="ARS",settlement_identity="DAILY_ADJUSTMENT")
     assert candle.settlement == "DAILY_ADJUSTMENT"
     assert candle.metadata["cem_settlement_price"] == 1450.5
     assert candle.source == "A3_CEM_CLOSING"

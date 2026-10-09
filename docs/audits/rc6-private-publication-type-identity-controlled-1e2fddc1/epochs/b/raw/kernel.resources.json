@@ -1,0 +1,140 @@
+{
+  "actual_child_reaped": true,
+  "actual_launch_to_pid_reap_wall_seconds": 31.364678056997946,
+  "adopted_descendants_reaped": [],
+  "all_eleven_source_stats_unchanged_claimed": false,
+  "child_exit_code": 0,
+  "cpu_system_seconds": 1.808663,
+  "cpu_user_seconds": 28.733226,
+  "elapsed_wall_seconds": 31.366342551002163,
+  "execution_id": "c7527b2208484ff8a55f1ca7aeaf8db0",
+  "external_focal_rss_cap_bytes": 2147483648,
+  "kernel_lifetime_peak_rss_bytes": 455413760,
+  "kernel_owned_child_observations": [
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "before_popen_after_subreaper_activation"
+    },
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "after_main_pid_reap"
+    }
+  ],
+  "kernel_pre_popen_echild_verified": true,
+  "kernel_wait4_zero_observed_irreversible_red": false,
+  "management_timeout_seconds": 180,
+  "native_complete_receipt_verified": true,
+  "native_receipt_sha256": "6c4bec108579d07123e058cb6eb1d11f1e86f42b1fd95292420b0be13617cf1d",
+  "observed_source_code_atime_changes": [
+    {
+      "after": 1791247574204128372,
+      "before": 1791247572376143335,
+      "kind": "directory",
+      "path": "."
+    },
+    {
+      "after": 1791247587012023502,
+      "before": 1791247572820139722,
+      "kind": "directory",
+      "path": "rc6_audit_evidence"
+    },
+    {
+      "after": 1791247579552084362,
+      "before": 1791247572824139689,
+      "kind": "directory",
+      "path": "rc6_dynamic_universe"
+    },
+    {
+      "after": 1791247579480084955,
+      "before": 1791247572828139657,
+      "kind": "directory",
+      "path": "rc6_performance"
+    },
+    {
+      "after": 1791247579192087325,
+      "before": 1791247572829401657,
+      "kind": "directory",
+      "path": "rc6_shadow_runtime"
+    },
+    {
+      "after": 1791247574204128372,
+      "before": 1791247572836562791,
+      "kind": "directory",
+      "path": "scripts"
+    },
+    {
+      "after": 1791247578888089826,
+      "before": 1791247572848139494,
+      "kind": "directory",
+      "path": "tests"
+    }
+  ],
+  "overlay_count": 0,
+  "owned_children_exhaustion_verified": true,
+  "owned_children_proc_path": "/proc/240094/task/240094/children",
+  "parent_preserved_source_tar": {
+    "bytes": 171868160,
+    "commit": "1e2fddc10d0e313bc5a6298e8fa60fe7c9f560f8",
+    "directories": 126,
+    "files": 2254,
+    "sha256": "f2be7f9cc804d11af2618a5cd21979aaa8a083b1e96a90e6a0fc2fe5020d1f4e",
+    "stat_fields": {
+      "st_atime_ns": 1791247574296127615,
+      "st_blocks": 335680,
+      "st_ctime_ns": 1791247574976122019,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 438247,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791247574976122019,
+      "st_nlink": 1,
+      "st_size": 171868160,
+      "st_uid": 1000
+    }
+  },
+  "parent_raw_collection_call_phase_junit_join": {
+    "bytes": 119544,
+    "call_phase_unique_nodes": 478,
+    "cases": 478,
+    "counts": {
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "tests": 478
+    },
+    "exact_classname_name_join": true,
+    "sha256": "445b330e9a9fbba5158cf1d242b387403b58591d8973f8c5fd7fb8f4c2318c96"
+  },
+  "pid": 240143,
+  "post_reap_custody_validation_seconds": 1.8243897440115688,
+  "proc_children_facility": "PROC_TASK_CHILDREN_ABSENT; KERNEL_WAIT4_WNOHANG_REQUIRED",
+  "process_group_absent_after_reap": true,
+  "product_deadlines_unchanged": true,
+  "publisher_performance_or_big_completion_claimed": false,
+  "raw_log_sha256": "adf22549b9938ff6d24fcd31ed62e257640ac15c6b83815b8787caf6198d8560",
+  "remaining_owned_children": [],
+  "residual_descendants_observed": [],
+  "resource_scope": "ACTUAL_SINGLE_CHILD_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT_CONCURRENT_RSS_SUM",
+  "schema": "rc6.private-publication-controlled-focal-kernel.v1",
+  "scope": "EIGHT_SELECTED_MODULES_PRIVATE_CAPTURE_TYPE_IDENTITY_ORIGINAL8764_EQUIVALENCE_AND_NATIVE_SMALL_WRITER_FULL_READER_PROJECTION; NOT_BIG_PERFORMANCE_OR_FULL_GOV",
+  "source_bytes_modes_blobs_stable_ten_stats_dirs_mounts_unchanged": true,
+  "source_files": 2254,
+  "source_sha": "1e2fddc10d0e313bc5a6298e8fa60fe7c9f560f8",
+  "source_tree": "b984539931a25a5f77eae55116c4fa9543d53748",
+  "status": "GREEN",
+  "subreaper_restore_attempted_on_all_activated_paths": true,
+  "supervisor_errors": [],
+  "supervisor_kernel_identity_before_spawn": {
+    "Pid": "240094",
+    "Tgid": "240094",
+    "Uid": "1000\t1000\t1000\t1000"
+  },
+  "supervisor_native_tid": 240094,
+  "supervisor_pid": 240094,
+  "supervisor_task_path": "/proc/240094/task/240094",
+  "termination_reap_restore_cleanup_seconds": 0.00014520500553771853,
+  "timed_out": false,
+  "wait4_reaped_pid": 240143
+}

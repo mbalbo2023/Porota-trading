@@ -1,0 +1,77 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "boundary": "Byte-preserved external helper/parser/ref/Git/XML preparation, not native market cases, Gov, current source execution or final material acceptance. Original210 objects must remain literal; original scopes/counts are not summed.",
+  "controlled_documentary_parser_cases": 30,
+  "final_compact_generation_pending": true,
+  "final_source_S_pending": true,
+  "native_tests_executed": 0,
+  "raw_records": [
+    {
+      "bytes": 80175,
+      "capture_path": "/tmp/rc6_remediation_register_generate.py",
+      "encoding": "identity",
+      "path": "docs/audits/convergence/evidence/register-helper-source-only-preparation/rc6_remediation_register_generate.py",
+      "sha256": "f893ac183aff42f7be1241aa03ae51123fc12089706643d073ac779662e7c7b8"
+    },
+    {
+      "bytes": 23227,
+      "capture_path": "/tmp/rc6_root_supplemental_named_findings_generate.py",
+      "encoding": "identity",
+      "path": "docs/audits/convergence/evidence/register-helper-source-only-preparation/rc6_root_supplemental_named_findings_generate.py",
+      "sha256": "ca32227c837d26281d880c7c90988c81ee1bd616c87a777d04a82a68740f37b3"
+    },
+    {
+      "bytes": 12384,
+      "capture_path": "/tmp/rc6_remediation_register_generate_README.md",
+      "encoding": "identity",
+      "path": "docs/audits/convergence/evidence/register-helper-source-only-preparation/rc6_remediation_register_generate_README.md",
+      "sha256": "42fac39de9ff6b2c627ef73948c8b3f01a736c2fd847149ab68870f9608bb145"
+    },
+    {
+      "bytes": 14811,
+      "capture_path": "/tmp/rc6_register_derived_refs_source_only_controls.py",
+      "encoding": "identity",
+      "path": "docs/audits/convergence/evidence/register-helper-source-only-preparation/rc6_register_derived_refs_source_only_controls.py",
+      "sha256": "6a3789851d632de3f64c5755a7a6619429710a89480f6bdc39c0e8fa174013e4"
+    },
+    {
+      "bytes": 4007,
+      "capture_path": "/tmp/rc6_register_derived_refs_source_only_controls.json",
+      "encoding": "identity",
+      "path": "docs/audits/convergence/evidence/register-helper-source-only-preparation/rc6_register_derived_refs_source_only_controls.json",
+      "sha256": "316c2982032520e97721f5dd1fc3a06ea7a8e67bd30a18526bc90ad6123a6883"
+    },
+    {
+      "bytes": 5393,
+      "capture_path": "/tmp/rc6_register_derived_refs_source_only_plan.json",
+      "encoding": "identity",
+      "path": "docs/audits/convergence/evidence/register-helper-source-only-preparation/rc6_register_derived_refs_source_only_plan.json",
+      "sha256": "6911c5e4f8d8777e4648d9838db96a84f410fc8ee0cc6b5c823e1bc6f3df5288"
+    },
+    {
+      "bytes": 3310,
+      "capture_path": "/tmp/rc6_known_gzip_receipts_source_only.py",
+      "encoding": "identity",
+      "path": "docs/audits/convergence/evidence/register-helper-source-only-preparation/rc6_known_gzip_receipts_source_only.py",
+      "sha256": "3cf9d558af3a01c9de686e6ff6e8c66b542e5ad8505d8a45f53d953f42ad07ad"
+    },
+    {
+      "bytes": 7185,
+      "capture_path": "/tmp/rc6_known_gzip_receipts_d9_source_only.json",
+      "encoding": "identity",
+      "path": "docs/audits/convergence/evidence/register-helper-source-only-preparation/rc6_known_gzip_receipts_d9_source_only.json",
+      "sha256": "c175ed0149e85503191af63b1b77873657ac7aa45c3d7b75a947d3fcd9e4ecd2"
+    },
+    {
+      "bytes": 1980,
+      "capture_path": "/tmp/rc6_external_register_helpers_source_only_packet.json",
+      "encoding": "identity",
+      "path": "docs/audits/convergence/evidence/register-helper-source-only-preparation/SOURCE_ONLY_PACKET.json",
+      "sha256": "06f80a6be6e3219c2982ba655243eb16590c8f3070ec3276ca9e325535a602ac"
+    }
+  ],
+  "runtime_validated": false,
+  "schema": "rc6.register-helper-source-only-preparation-custody.v1",
+  "scope": "EXTERNAL_SOURCE_GIT_JSON_XML_CONTROLLED_DIAGNOSTIC_ONLY_NOT_NATIVE_GOV_FINANCIAL_RUNTIME_OR_FINAL_SOURCE_EXECUTION"
+}

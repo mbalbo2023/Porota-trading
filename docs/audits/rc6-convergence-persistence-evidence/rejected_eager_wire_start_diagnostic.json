@@ -1,0 +1,30 @@
+{
+  "diagnostic_only": true,
+  "deadline_disabled_only_for_profiling": true,
+  "gate_claim": false,
+  "roles": [
+    {
+      "logical_bytes": 105216231,
+      "compressed_base64_bytes": 10417688,
+      "retain": false,
+      "wall_seconds": 0.30444427199836355,
+      "cpu_seconds": 0.713809375
+    },
+    {
+      "logical_bytes": 292783805,
+      "compressed_base64_bytes": 5448912,
+      "retain": false,
+      "wall_seconds": 0.8865188880008645,
+      "cpu_seconds": 1.561081728
+    }
+  ],
+  "wall_seconds": 0.9994239459992968,
+  "cpu_seconds": 1.6738951229999999,
+  "generation_id": "8fca0b4616da43f1b96a475f2efaad3c",
+  "verified_roles": [
+    "report",
+    "checkpoint",
+    "status",
+    "projection"
+  ]
+}

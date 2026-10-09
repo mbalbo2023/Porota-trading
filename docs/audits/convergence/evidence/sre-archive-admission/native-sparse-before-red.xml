@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="0.285" timestamp="2026-10-05T09:38:57.641379+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_convergence_sre_archive" name="test_native_sparse_namespace_cannot_discount_unallocated_logical_bytes_from_future_growth[archive]" time="0.017"><failure message="assert 4194304 &lt;= (0 * 512)&#10; +  where 0 = os.stat_result(st_mode=33152, st_ino=552493, st_dev=27, st_nlink=1, st_uid=1000, st_gid=1000, st_size=4194304, st_atime=1791193137, st_mtime=1791193137, st_ctime=1791193137).st_blocks">disk_path = PosixPath('/workspace/porota_rc6_worktrees/rc6-native-disk-5f1symkn')
+namespace = 'archive'
+
+    @pytest.mark.parametrize("namespace", ["archive", "live"])
+    def test_native_sparse_namespace_cannot_discount_unallocated_logical_bytes_from_future_growth(disk_path, namespace):
+        data, primary = layout(disk_path)
+        root = artifact_root(primary) / ("dynamic-shadow-archive" if namespace == "archive" else "dynamic-shadow")
+        root.mkdir(parents=True, mode=0o700)
+        _member(root, "archive.lock" if namespace == "archive" else "writer.lock")
+        path = _member(root, "a" * 32 + ".tar.gz" if namespace == "archive" else "status.json")
+        with path.open("r+b") as handle:
+            handle.truncate(4 * 1024**2)
+        info = path.stat()
+        assert info.st_size == 4 * 1024**2 and info.st_blocks * 512 &lt; info.st_size
+        before, source = _metadata(root), identity(primary)
+        report = probe(primary, data)
+        assert report[namespace + "_namespace"]["occupied_bytes"] == info.st_size
+&gt;       assert report[namespace + "_occupied_bytes"] &lt;= info.st_blocks * 512
+E       assert 4194304 &lt;= (0 * 512)
+E        +  where 0 = os.stat_result(st_mode=33152, st_ino=552493, st_dev=27, st_nlink=1, st_uid=1000, st_gid=1000, st_size=4194304, st_atime=1791193137, st_mtime=1791193137, st_ctime=1791193137).st_blocks
+
+tests/test_rc6_convergence_sre_archive.py:300: AssertionError</failure></testcase><testcase classname="tests.test_rc6_convergence_sre_archive" name="test_native_sparse_namespace_cannot_discount_unallocated_logical_bytes_from_future_growth[live]" time="0.014"><failure message="assert 4194304 &lt;= (0 * 512)&#10; +  where 0 = os.stat_result(st_mode=33152, st_ino=552493, st_dev=27, st_nlink=1, st_uid=1000, st_gid=1000, st_size=4194304, st_atime=1791193137, st_mtime=1791193137, st_ctime=1791193137).st_blocks">disk_path = PosixPath('/workspace/porota_rc6_worktrees/rc6-native-disk-vzt7bf0j')
+namespace = 'live'
+
+    @pytest.mark.parametrize("namespace", ["archive", "live"])
+    def test_native_sparse_namespace_cannot_discount_unallocated_logical_bytes_from_future_growth(disk_path, namespace):
+        data, primary = layout(disk_path)
+        root = artifact_root(primary) / ("dynamic-shadow-archive" if namespace == "archive" else "dynamic-shadow")
+        root.mkdir(parents=True, mode=0o700)
+        _member(root, "archive.lock" if namespace == "archive" else "writer.lock")
+        path = _member(root, "a" * 32 + ".tar.gz" if namespace == "archive" else "status.json")
+        with path.open("r+b") as handle:
+            handle.truncate(4 * 1024**2)
+        info = path.stat()
+        assert info.st_size == 4 * 1024**2 and info.st_blocks * 512 &lt; info.st_size
+        before, source = _metadata(root), identity(primary)
+        report = probe(primary, data)
+        assert report[namespace + "_namespace"]["occupied_bytes"] == info.st_size
+&gt;       assert report[namespace + "_occupied_bytes"] &lt;= info.st_blocks * 512
+E       assert 4194304 &lt;= (0 * 512)
+E        +  where 0 = os.stat_result(st_mode=33152, st_ino=552493, st_dev=27, st_nlink=1, st_uid=1000, st_gid=1000, st_size=4194304, st_atime=1791193137, st_mtime=1791193137, st_ctime=1791193137).st_blocks
+
+tests/test_rc6_convergence_sre_archive.py:300: AssertionError</failure></testcase></testsuite></testsuites>

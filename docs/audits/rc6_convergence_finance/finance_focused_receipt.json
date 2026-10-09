@@ -1,0 +1,91 @@
+{
+  "account_terms": "NO_VERIFICADO",
+  "command": [
+    "/workspace/venv_rc6/bin/python",
+    "-m",
+    "pytest",
+    "-o",
+    "addopts=",
+    "-q",
+    "tests/test_rc6_convergence_finance.py",
+    "tests/test_ws_motor_11_paper_lifecycle.py",
+    "tests/test_rc6_future_paper_lifecycle.py",
+    "tests/test_rc6_future_contract_policy.py",
+    "tests/test_rc6_performance_costs.py",
+    "--junitxml=/workspace/porota_rc6_worktrees/finance/docs/audits/rc6_convergence_finance/finance_focused_tests.xml"
+  ],
+  "configuration": {
+    "bytecode_writes": false,
+    "cut": "2026-10-05T13:00:00.000000-03:00",
+    "fixture_authority": {
+      "tests/test_rc6_convergence_finance.py": "f6172fb07ccc519e232e4b982ada6a1bd30910c5a1bf0ff744bd65cd0fcb3458",
+      "tests/test_rc6_future_contract_policy.py": "904b92db1c8eee5044233f2a559d33710bc5c454e3e91d0238805a89f8480047",
+      "tests/test_rc6_future_paper_lifecycle.py": "92934156b75aec7892f4de8f1fc5c07ed53b0f9c833f3d0ec2c9a9e4e18548bc",
+      "tests/test_rc6_performance_costs.py": "062c7b9a7f66539d8b5f664416408349b0c2e0e6ba9272fb8b4046e0840c6d6b",
+      "tests/test_ws_motor_11_paper_lifecycle.py": "693ab83416a8345222309b47db423d42e5df24e942d062bde790a90346292f3b"
+    },
+    "fixture_kind": "OFFLINE_SYNTHETIC_NATIVE_TESTS",
+    "pytest_plugin_autoload": false,
+    "schema_version": 1,
+    "seed": "SYNTHETIC_CONVERGENCE_FINANCE_V1"
+  },
+  "configuration_sha256": "1b939d3a04cc26bc1e81349645491bf14273a04c774b627fc5c35414905f805a",
+  "economic_edge": "EDGE_NO_DEMOSTRADO",
+  "environment": {
+    "python": "3.11.16",
+    "sqlite": "3.53.1"
+  },
+  "exit_code": 0,
+  "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
+  "finished_at": "2026-10-05T02:15:53.510413+00:00",
+  "network_evidence": "PROBE_SEPARATELY_BLOCKS_NETWORK;_NATIVE_RUN_NO_PROVIDER_IO",
+  "real_orders_sent": 0,
+  "real_routes_used": [],
+  "schema_version": 1,
+  "scope": "OFFLINE_SYNTHETIC_PAPER_ONLY",
+  "source_changed_during_run": false,
+  "source_files_after_sha256": {
+    "be_paper_engine.py": "d4a765b8a5c082683755f489fd62e3921b923a341b1fda561aac68b677aa407e",
+    "bs_instrument_contracts.py": "41db66209f810bb7a90363928774dc6b299d17d009e7c5775a42ba4cb141deff",
+    "bw_daily_risk.py": "2409efce2d3eff41c8c7ca350dca6be275a69f6126b7b80edd6bd00088393532",
+    "dh_paper_dynamic_risk_gate_hf6.py": "c1b1af0f2a060ff62ed3f1d61620fb30818fac75072e98cf045bb0985adcd576",
+    "rc6_contract_bridge.py": "9018ac1501a3d81bae2ff6dce98cab289ee39678caacf4361f22066e733bcb8e",
+    "rc6_paper_family_lifecycle.py": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44",
+    "rc6_performance/costs.py": "79430166f8ceb410b2771d91f67ac71f6965a4d31f9f3943a2981b5a7844dec7",
+    "rc6_ppi_future_contract_policy.py": "f8783dd04ada1ce486d5cae1ae921c0bc6eb4dd52ebcebaa90133acb1ad0c6db",
+    "tests/test_rc6_convergence_finance.py": "f6172fb07ccc519e232e4b982ada6a1bd30910c5a1bf0ff744bd65cd0fcb3458",
+    "tests/test_rc6_future_contract_policy.py": "904b92db1c8eee5044233f2a559d33710bc5c454e3e91d0238805a89f8480047",
+    "tests/test_rc6_future_paper_lifecycle.py": "92934156b75aec7892f4de8f1fc5c07ed53b0f9c833f3d0ec2c9a9e4e18548bc",
+    "tests/test_rc6_performance_costs.py": "062c7b9a7f66539d8b5f664416408349b0c2e0e6ba9272fb8b4046e0840c6d6b",
+    "tests/test_ws_motor_11_paper_lifecycle.py": "693ab83416a8345222309b47db423d42e5df24e942d062bde790a90346292f3b"
+  },
+  "source_files_sha256": {
+    "be_paper_engine.py": "d4a765b8a5c082683755f489fd62e3921b923a341b1fda561aac68b677aa407e",
+    "bs_instrument_contracts.py": "41db66209f810bb7a90363928774dc6b299d17d009e7c5775a42ba4cb141deff",
+    "bw_daily_risk.py": "2409efce2d3eff41c8c7ca350dca6be275a69f6126b7b80edd6bd00088393532",
+    "dh_paper_dynamic_risk_gate_hf6.py": "c1b1af0f2a060ff62ed3f1d61620fb30818fac75072e98cf045bb0985adcd576",
+    "rc6_contract_bridge.py": "9018ac1501a3d81bae2ff6dce98cab289ee39678caacf4361f22066e733bcb8e",
+    "rc6_paper_family_lifecycle.py": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44",
+    "rc6_performance/costs.py": "79430166f8ceb410b2771d91f67ac71f6965a4d31f9f3943a2981b5a7844dec7",
+    "rc6_ppi_future_contract_policy.py": "f8783dd04ada1ce486d5cae1ae921c0bc6eb4dd52ebcebaa90133acb1ad0c6db",
+    "tests/test_rc6_convergence_finance.py": "f6172fb07ccc519e232e4b982ada6a1bd30910c5a1bf0ff744bd65cd0fcb3458",
+    "tests/test_rc6_future_contract_policy.py": "904b92db1c8eee5044233f2a559d33710bc5c454e3e91d0238805a89f8480047",
+    "tests/test_rc6_future_paper_lifecycle.py": "92934156b75aec7892f4de8f1fc5c07ed53b0f9c833f3d0ec2c9a9e4e18548bc",
+    "tests/test_rc6_performance_costs.py": "062c7b9a7f66539d8b5f664416408349b0c2e0e6ba9272fb8b4046e0840c6d6b",
+    "tests/test_ws_motor_11_paper_lifecycle.py": "693ab83416a8345222309b47db423d42e5df24e942d062bde790a90346292f3b"
+  },
+  "source_sha": "736795c139bca1faedd32884b8072d5ce5d17152",
+  "source_state": "COMMITTED_FINANCE_CODE_AND_FIXTURES",
+  "source_tree": "c6993ed7fa1c3eba1d71a23380dbd56fcd75e26e",
+  "started_at": "2026-10-05T02:15:51.956784+00:00",
+  "tests": {
+    "errors": "0",
+    "failures": "0",
+    "hostname": "9905252a2cbf",
+    "name": "pytest",
+    "skipped": "0",
+    "tests": "113",
+    "time": "0.924",
+    "timestamp": "2026-10-05T02:15:52.473588+00:00"
+  }
+}

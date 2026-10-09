@@ -1,0 +1,42 @@
+{
+  "CONTROL_ONLY": true,
+  "Source_DATA_log_result_typed_readback_attempts_before_native_control": 0,
+  "actual_main_pid": 38431,
+  "missing_RED_UNKNOWN_control_never_allows_second_variant_or_payload": true,
+  "native_finalization_postread_allowed": true,
+  "original_CONTROL_capture": {
+    "bytes": 2090,
+    "sha256": "ce85541fe5d137dfd859667c2b6681e59ead655b850b1f79017cb50486162ee3",
+    "stat11": {
+      "st_atime_ns": 1791322243178488709,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791322243180294821,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706853,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791322243180294821,
+      "st_nlink": 1,
+      "st_size": 2090,
+      "st_uid": 1000
+    }
+  },
+  "revalidated_original_predicates": {
+    "CONTROL_only_actual_variant_PID_Source_binding": true,
+    "actual_wall_bounded5": true,
+    "all_six_original_protocol_steps_completed": true,
+    "finalization_thread_finished": true,
+    "fresh_original_infrastructure_not_inherited": true,
+    "native_kernel_ECHILD_before_phase_return": true,
+    "no_forced_termination_attempt": true,
+    "no_original_finalization_error": true,
+    "no_reported_forced_termination": true,
+    "no_signal_veto": true,
+    "no_termination_signal_attempts": true,
+    "no_unexpected_kernel_child": true,
+    "original_bound_exact5": true,
+    "original_report_GREEN": true,
+    "signal_guard_installed_and_witnessed": true,
+    "signal_observation_scope_original_literal": true
+  }
+}

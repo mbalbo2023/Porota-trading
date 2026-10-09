@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-05T01:22:23.819350+00:00",
+  "command": "native math European put price\u2192solver\u2192wrapper and annual _render_report(BONOS 100\u219295.25)",
+  "kind": "executed native caller offline",
+  "scenarios": {
+    "AUD-468-14": {
+      "price": 6.671575834616235,
+      "reason": "La prima no tiene valor temporal: est\u00e1 en o por debajo de su valor intr\u00ednseco. No hay volatilidad que despejar. Suele indicar un dato viejo o una punta sin profundidad real.",
+      "solver_iv": 0.1000000461935997,
+      "status": "RED",
+      "wrapper_convergio": false
+    },
+    "AUD-468-15": {
+      "flows_excluded_label": false,
+      "performance_label": true,
+      "status": "RED"
+    }
+  },
+  "schema": "rc6.ux-convergence-red.v1",
+  "source_sha": "0f810c168b0bfb5362148b804f3e15ffd1855610",
+  "source_tree": "764229fb8807d15022834fc422f9d6baf56437ad"
+}

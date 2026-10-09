@@ -1,0 +1,55 @@
+{
+  "schema": "rc6.opaque-helper-forward-documentary-preservation-plan.v1",
+  "classification": "CONTROLLED_HELPER_AND_ACTUAL_COMMITTED_BYTE_CUSTODY_ONLY_NOT_NATIVE_PRODUCT_OR_FINAL_D",
+  "root_reported_dispatch": {
+    "session_id": 48962,
+    "cli_exit_code": 0,
+    "stdout_and_stderr_captured_from_launch": true,
+    "authority_boundary": "CLI result reported by Root; exact captured RAW receipts and dispatch declaration preserved independently"
+  },
+  "reviewed_and_executed_helper_pins": {
+    "register": "60bd126002caf324ed9a3f42d45f21a9dd7591d162f3501d168d02ee10d35dfc",
+    "supplement": "76ece1725ca2696bbffba6bb5ebba7b7d6d8edd722d5b6f3ab42ac6afeafc696"
+  },
+  "controlled_scope": {
+    "driver_sha256": "d7768060214cfdc6eba671ddaa36ca4676f9c6c5fe887782fdd67cca6ce35d66",
+    "stdout_sha256": "cbf4360820f101065d8654576892bcdc3e24612c1ea99fa209130fd0d514f37b",
+    "stdout_bytes": 17554,
+    "stderr_bytes": 0,
+    "unique_helper_control_invocations": 70,
+    "preserved": 12,
+    "rejected": 58,
+    "constructor_scope": "OWN_REGISTER_SOURCE_AND_OWN_SUPPLEMENT_GITSOURCE_ON_PRIVATE_CONTROLLED_GIT_BYTES",
+    "combined_stage_scope": "REAL_BUILDER_METADATA_DECLARED_PERS_COMPACT_RESOLVER_METHODS_WITHOUT_WHOLE_REGISTER_CONSTRUCTOR_OR_D_GENERATION",
+    "caps": "Production stored32MiB/expandedSource512MiB/metadata32MiB unchanged; boundary controls substitute256 for512MiB and257 actual fixture bytes",
+    "overlap_boundary": "New helper compatibility controls, not new market scenarios. Earlier64/168 scopes and repeats remain distinct; do not add totals as independent financial executions."
+  },
+  "actual_capsule_scope": {
+    "driver_sha256": "ad968c7545e7d4c642be9cec246ba3f2c34339cc32d5f877ca0d8e4cdebc995a",
+    "stdout_sha256": "8bdca660d1509538b0f6e9d39b863185290d818ccacf824967bb4f82ab111a99",
+    "stdout_bytes": 54046,
+    "stderr_bytes": 0,
+    "immutable_publication_source_sha": "b477779cd7123e03fc09845da93095fe25c90ab5",
+    "immutable_publication_source_tree": "c0b8b8814a9051517ae3e7d471a356eccaabd88d",
+    "observed_repo_head_before_and_after": "cb94fe1511001b4f919eea7d4d1fd6b1b513b2b2",
+    "observed_tracked_status_before_and_after": [],
+    "original_member_count": 91,
+    "derived_controls_separate": 2,
+    "same_opaque_archives_checked_by_each_adapter": 4,
+    "encoded_original_bytes_single_inventory": 91628406,
+    "expanded_original_bytes_single_inventory": 348865223,
+    "status": "SOURCE_BYTE_CUSTODY_COMPATIBLE_ONLY",
+    "counting_boundary": "Same91 members/four archives checked by two own adapters, not182 originals/eight archives; archived test outcomes are preserved literal receipts, not executed or requalified by this diagnostic.",
+    "a_authority": "EXACT_PREPARATION_RED_ZERO_NATIVE_AND_ORIGINAL_TAR_SHA_FROM_CUSTODY_NOT_INVENTED_SOURCE_TAR_JSON",
+    "bcd_authority": "EXACT_SMALL_SOURCE_TAR_DECLARED_COMMIT_SHA_LENGTH_STAT_JOIN_ONLY",
+    "historical_data_custody": "NOT_VERIFIED_NO_DATA_READ"
+  },
+  "later_identity_capsule": "PENDING_EXACT_LITERAL_SCHEMA_AND_PUBLICATION_PIN_NOT_QUALIFIED_BY_THIS_OLD91_RECEIPT; NEW_TAR_BODY_WILL_NOT_BE_STORED_IN_GIT_AND_EXTERNAL_SOURCE_ARCHIVE_IS_REFERENCE_ONLY_NOT_BYTE_VERIFIED_BY_DOCUMENTARY_HELPER",
+  "original_earlier_capsules_and_receipts_unchanged": true,
+  "tar_entries_parsed_or_extracted": false,
+  "local_original_origins_or_data_opened": false,
+  "product_imports_or_native_or_gov_executions_added": 0,
+  "final_register_generated": false,
+  "source_S_document_D_final_freeze_C": "PENDING_STABLE_SOURCE_SEPARATE_FROM_THIS_DOCUMENTARY_EPOCH",
+  "copy_time_custody": "TO_BE_CAPTURED_BY_ROOT_PRESERVER_NOT_AN_EXECUTION_TIME_FILESYSTEM_ATTESTATION"
+}

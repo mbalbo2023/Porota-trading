@@ -1,0 +1,415 @@
+{
+  "PAPER_SHADOW_ONLY": true,
+  "actual_same_parent_kernel_after": {
+    "kernel_echild_verified": true,
+    "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+    "subreaper_state_after": 0,
+    "subreaper_state_before": 0
+  },
+  "component_control_conditions_observed": 3,
+  "epoch": "311",
+  "no_namespace_deleted": true,
+  "real_installed_metadata157_equal_before_after": true,
+  "real_orders_sent": 0,
+  "results": [
+    {
+      "actual_same_parent_kernel_after": {
+        "kernel_echild_verified": true,
+        "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+        "subreaper_state_after": 0,
+        "subreaper_state_before": 0
+      },
+      "case": "old_unknown5",
+      "component_expected_condition_observed": true,
+      "component_receipt_sha256": "22508427fef460530cc2a968af98d511edc768e0a2b5d5413d5c636c81b6da4e",
+      "original_phase_RED_reclassified": false,
+      "original_phase_status": "RED",
+      "outer_kernel": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 6.51547451299848,
+        "adopted_descendants_reaped": [],
+        "command": [
+          "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+          "-I",
+          "-B",
+          "/workspace/scratch/rc6-phase-fin-postread-control-v2-9d_vv3am/control/phase_component.py",
+          "--epoch",
+          "311",
+          "--case",
+          "old_unknown5",
+          "--case-root",
+          "/workspace/scratch/rc6-phase-fin-postread-control-v2-9d_vv3am/epoch311/old_unknown5"
+        ],
+        "cpu_system_seconds": 0.040035,
+        "cpu_user_seconds": 0.48141399999999995,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "launcher_management_deadline_seconds": 60,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 40361984,
+        "pid": 33285,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "scope": "EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS",
+        "sigint_failure_grace_seconds": 0,
+        "subreaper_activation_readback_verified": true,
+        "subreaper_previous_state": 0,
+        "subreaper_restoration_readback_verified": true,
+        "subreaper_restore_attempted": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "33282",
+          "Tgid": "33282",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 33282,
+        "supervisor_pid": 33282,
+        "termination_reap_restore_cleanup_seconds": 7.135499981814064e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 33285,
+        "wall_seconds": 6.515728158999991
+      },
+      "source_postattempts": 1
+    },
+    {
+      "actual_same_parent_kernel_after": {
+        "kernel_echild_verified": true,
+        "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+        "subreaper_state_after": 0,
+        "subreaper_state_before": 0
+      },
+      "case": "new_unknown5",
+      "component_expected_condition_observed": true,
+      "component_receipt_sha256": "f3c0b7b38b53660cb608683bb86e56c45501bc3beb1115c9a05b396bf9394834",
+      "original_phase_RED_reclassified": false,
+      "original_phase_status": "RED",
+      "outer_kernel": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 6.515483364000829,
+        "adopted_descendants_reaped": [],
+        "command": [
+          "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+          "-I",
+          "-B",
+          "/workspace/scratch/rc6-phase-fin-postread-control-v2-9d_vv3am/control/phase_component.py",
+          "--epoch",
+          "311",
+          "--case",
+          "new_unknown5",
+          "--case-root",
+          "/workspace/scratch/rc6-phase-fin-postread-control-v2-9d_vv3am/epoch311/new_unknown5"
+        ],
+        "cpu_system_seconds": 0.047992,
+        "cpu_user_seconds": 0.472252,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "launcher_management_deadline_seconds": 60,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 39809024,
+        "pid": 33290,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "scope": "EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS",
+        "sigint_failure_grace_seconds": 0,
+        "subreaper_activation_readback_verified": true,
+        "subreaper_previous_state": 0,
+        "subreaper_restoration_readback_verified": true,
+        "subreaper_restore_attempted": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "33282",
+          "Tgid": "33282",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 33282,
+        "supervisor_pid": 33282,
+        "termination_reap_restore_cleanup_seconds": 7.147599899326451e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 33290,
+        "wall_seconds": 6.515774563999003
+      },
+      "source_postattempts": 0
+    },
+    {
+      "actual_same_parent_kernel_after": {
+        "kernel_echild_verified": true,
+        "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+        "subreaper_state_after": 0,
+        "subreaper_state_before": 0
+      },
+      "case": "new_positive",
+      "component_expected_condition_observed": true,
+      "component_receipt_sha256": "98497fa2a22fee44bf4a7f618b1910c92314472fca6bc38fd04c62e7767e8268",
+      "original_phase_RED_reclassified": false,
+      "original_phase_status": "GREEN",
+      "outer_kernel": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 0.602816778999113,
+        "adopted_descendants_reaped": [],
+        "command": [
+          "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+          "-I",
+          "-B",
+          "/workspace/scratch/rc6-phase-fin-postread-control-v2-9d_vv3am/control/phase_component.py",
+          "--epoch",
+          "311",
+          "--case",
+          "new_positive",
+          "--case-root",
+          "/workspace/scratch/rc6-phase-fin-postread-control-v2-9d_vv3am/epoch311/new_positive"
+        ],
+        "cpu_system_seconds": 0.032729999999999995,
+        "cpu_user_seconds": 0.5058659999999999,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "launcher_management_deadline_seconds": 60,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 39780352,
+        "pid": 33293,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "scope": "EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS",
+        "sigint_failure_grace_seconds": 0,
+        "subreaper_activation_readback_verified": true,
+        "subreaper_previous_state": 0,
+        "subreaper_restoration_readback_verified": true,
+        "subreaper_restore_attempted": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "33282",
+          "Tgid": "33282",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 33282,
+        "supervisor_pid": 33282,
+        "termination_reap_restore_cleanup_seconds": 6.518599911942147e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 33293,
+        "wall_seconds": 0.6030591880007705
+      },
+      "source_postattempts": 1
+    }
+  ],
+  "schema": "rc6.phase-child-source-barrier-components-epoch.v1",
+  "whole_Git_source_qualification": false,
+  "whole_Gov_gate": false,
+  "working_code_atime_evolution": {
+    "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": [
+      1791290621389225996,
+      1791290621389225996
+    ],
+    "ops/policy/rc6-supply-chain-v1.json": [
+      1791290621657224726,
+      1791290621657224726
+    ],
+    "scripts/rc6_controlled_governed_runner.py": [
+      1791311078418540742,
+      1791311078418540742
+    ],
+    "scripts/rc6_controlled_native_child_manager.py": [
+      1791311058202551068,
+      1791311058202551068
+    ]
+  },
+  "working_source_after": {
+    "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": {
+      "bytes": 55671,
+      "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+      "stat": {
+        "st_atime_ns": 1791290621389225996,
+        "st_blocks": 112,
+        "st_ctime_ns": 1791290621081430034,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1050460,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791290621081430034,
+        "st_nlink": 1,
+        "st_size": 55671,
+        "st_uid": 1000
+      }
+    },
+    "ops/policy/rc6-supply-chain-v1.json": {
+      "bytes": 103636,
+      "sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462",
+      "stat": {
+        "st_atime_ns": 1791290621657224726,
+        "st_blocks": 208,
+        "st_ctime_ns": 1791290621244478296,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1050957,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791290621244478296,
+        "st_nlink": 1,
+        "st_size": 103636,
+        "st_uid": 1000
+      }
+    },
+    "scripts/rc6_controlled_governed_runner.py": {
+      "bytes": 63436,
+      "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+      "stat": {
+        "st_atime_ns": 1791311078418540742,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791311078218541649,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1084469,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791311078218541649,
+        "st_nlink": 1,
+        "st_size": 63436,
+        "st_uid": 1000
+      }
+    },
+    "scripts/rc6_controlled_native_child_manager.py": {
+      "bytes": 18113,
+      "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+      "stat": {
+        "st_atime_ns": 1791311058202551068,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791311058201532560,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1092371,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791311058201532560,
+        "st_nlink": 1,
+        "st_size": 18113,
+        "st_uid": 1000
+      }
+    }
+  },
+  "working_source_before": {
+    "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": {
+      "bytes": 55671,
+      "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+      "stat": {
+        "st_atime_ns": 1791290621389225996,
+        "st_blocks": 112,
+        "st_ctime_ns": 1791290621081430034,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1050460,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791290621081430034,
+        "st_nlink": 1,
+        "st_size": 55671,
+        "st_uid": 1000
+      }
+    },
+    "ops/policy/rc6-supply-chain-v1.json": {
+      "bytes": 103636,
+      "sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462",
+      "stat": {
+        "st_atime_ns": 1791290621657224726,
+        "st_blocks": 208,
+        "st_ctime_ns": 1791290621244478296,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1050957,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791290621244478296,
+        "st_nlink": 1,
+        "st_size": 103636,
+        "st_uid": 1000
+      }
+    },
+    "scripts/rc6_controlled_governed_runner.py": {
+      "bytes": 63436,
+      "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+      "stat": {
+        "st_atime_ns": 1791311078418540742,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791311078218541649,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1084469,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791311078218541649,
+        "st_nlink": 1,
+        "st_size": 63436,
+        "st_uid": 1000
+      }
+    },
+    "scripts/rc6_controlled_native_child_manager.py": {
+      "bytes": 18113,
+      "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+      "stat": {
+        "st_atime_ns": 1791311058202551068,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791311058201532560,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1092371,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791311058201532560,
+        "st_nlink": 1,
+        "st_size": 18113,
+        "st_uid": 1000
+      }
+    }
+  },
+  "working_source_bytes10_stable": true
+}

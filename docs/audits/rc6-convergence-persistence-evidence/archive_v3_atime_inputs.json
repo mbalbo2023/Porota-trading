@@ -1,0 +1,14 @@
+{
+  "native_external_guard": "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
+  "new_inputs": {
+    "rc6_shadow_runtime/archive_components.py": "d26ff0a1d542215ba38f63c7793bba518d0498a14c2eeedeeb656b684d3f338a",
+    "rc6_shadow_runtime/retention.py": "758a8313181f57908782743ce3410554df758ff71d99cd01c1741a2755636a88",
+    "tests/test_rc6_component_archive.py": "acc2854820bd705a935e4232a0a6c5eed3bed2ef197476ed84a25f60d6de7281"
+  },
+  "old_source": {
+    "rc6_shadow_runtime/archive_components.py": "230ac322835bcc1eb076b9ed8da7270df14b68b213f8ce3455859492ba933219",
+    "rc6_shadow_runtime/retention.py": "328dfcb8e8a6beaca5df39319d3b18437b535b7f4bf9ae832f1018ae41c6bb39",
+    "tests/test_rc6_component_archive.py": "c8cb3e0d76f003df8934e875582f996dd921d92a2d7c41a3ef14e01acacbf23a"
+  },
+  "source_sha": "7e9425e202b9e67e87aad67dd59218c509a01721"
+}

@@ -1,0 +1,245 @@
+{
+  "actual_control_driver": {
+    "bytes": 29521,
+    "mode_octal": "0644",
+    "path": "/tmp/rc6_governed_v3_owned_process_controls_candidate_v2.py",
+    "sha256": "c262ebcc57184b839e15b2023f1b12b8eb8064d864902d2b01f9aa2a5852d623"
+  },
+  "actual_qualification": {
+    "baseline_partial_acceptance_reproduced_and_own_cleanup_verified": 1,
+    "case_ids": [
+      "NORMAL_ZERO",
+      "EXIT_ONE",
+      "LATE_OBSERVED_REAP",
+      "TIMEOUT",
+      "ADOPTED_ALIVE",
+      "SIGNAL_ERROR",
+      "SPAWN_ERROR",
+      "LOG_EXIT_ERROR",
+      "PRESPAWN_OWN_CHILD",
+      "BASELINE_F4_ORPHAN"
+    ],
+    "coverage": "EXTRACTED_PINNED_SUBPROCESS_PHASE_REQUIRE_AND_ACTUAL_MANDATORY_MAIN_GATES_ONLY; WHOLE_C430_MODULE_NOT_EXECUTED",
+    "dispatch_executions": 1,
+    "exact157_closure_qualified_by_stdlib_process_controls": false,
+    "full_gov_executed": false,
+    "image_artifact_runtime_qualified": false,
+    "kernel": {
+      "actual_main_reaped": true,
+      "actual_outer_peak_rss_bytes": 25264128,
+      "actual_outer_wall_seconds": 1.2304758140089689,
+      "exit_code": 0,
+      "kernel_post_echild": true,
+      "main_pid": 243403,
+      "own_group_absent": true,
+      "residual_descendants": []
+    },
+    "negative_candidate_rejections": 8,
+    "network_and_sql_observation_scope": "THIS_STDLIB_DRIVER_PROCESS; CHILD_COMMANDS_ARE_FIXED_SYNTHETIC_SOURCE_NOT_A_KERNEL_NETWORK_NAMESPACE",
+    "normal_candidate_acceptance": 1,
+    "outer_wait4": {
+      "bytes": 639,
+      "mode_octal": "0600",
+      "path": "/workspace/rc6-governed-v3-process-controls-20261006-dispatch/kernel.wait4.json",
+      "sha256": "1e9810b02488f0cc67abc5310cc6ba761db6a98fcf6b4ac04bb34809189493ac"
+    },
+    "product_tests_executed": 0,
+    "receipt": {
+      "bytes": 12192,
+      "mode_octal": "0644",
+      "path": "/workspace/rc6-governed-v3-process-controls-20261006-raw/controlled-process.receipt.json",
+      "sha256": "0628062ffe21a11b4107fa4a3d41474d6f2ae80f5ffb0614d0de0c02ab69e3f5"
+    },
+    "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+    "transitive_kernel_network_attestation": false,
+    "unique_synthetic_process_controls": 10
+  },
+  "before_one_final_build": "ROOT_RECOMPUTES_CURRENT_FINAL_FIP_WITH_ONE_ACTUAL_RAW_JUNIT_AND_JOINS_FIP_GOV_JUNIT_SHA_TREE_HASH_BYTES_COUNTS_ORIGINAL_EXCLUSION_SOURCE_AND_MATERIAL_ELIGIBILITY_USING_CURRENT_final_material_receipt_binding",
+  "created_at_utc": "2026-10-06T01:22:37Z",
+  "custody_incident_preserved": {
+    "bytes_or_mode_mutated": false,
+    "execution_source_three_all11_witness_unaffected": true,
+    "may_have_advanced_RAW_receipt_atime": true,
+    "native_control_byte_and_kernel_qualification_not_invalidated": true,
+    "observer": "SRE",
+    "operation": "Path.read_bytes before this NOATIME inventory",
+    "path": "/workspace/rc6-governed-v3-process-controls-20261006-raw/controlled-process.receipt.json",
+    "precise_previous_atime_or_execution_end_stats_not_inferred": true
+  },
+  "expected_raw_outputs": [
+    "external-runner.py",
+    "launch.json",
+    "source-before.index.json",
+    "convergence-inventory.json",
+    "collection.log",
+    "collection.kernel.json",
+    "collection.parent-source-before.index.json",
+    "collection.parent-source-after.index.json",
+    "collection.source-before.index.json",
+    "collection.source-after.index.json",
+    "collection.observations.json",
+    "execution.log",
+    "execution.kernel.json",
+    "execution.parent-source-before.index.json",
+    "execution.parent-source-after.index.json",
+    "execution.source-before.index.json",
+    "execution.source-after.index.json",
+    "execution.observations.json",
+    "porota-governed-tests.xml",
+    "porota-governed-tests.json",
+    "source-after.index.json",
+    "governed-execution.receipt.json",
+    "raw-output.manifest.json"
+  ],
+  "failed_execution": "PRESERVE_governed-error.json_AND_ALL_EXISTING_LOGS_KERNEL_SOURCE_RAW_NO_RED_OVERWRITE_OR_SILENT_RERUN",
+  "future_invocation_not_executed": {
+    "argv": [
+      "<approved_frozen_311_or_312_interpreter>",
+      "-I",
+      "-B",
+      "/tmp/rc6_run_frozen_governed_v3_candidate.py",
+      "--repo-root",
+      "<fresh_clean_complete_Git_Source_C>",
+      "--source-sha",
+      "<literal_final_commit_40hex>",
+      "--source-tree",
+      "<literal_final_tree_40hex>",
+      "--output-root",
+      "<new_external_output_same_filesystem_as_Source_C>",
+      "--timeout-seconds",
+      "5400"
+    ],
+    "bounded_failure_cleanup_management_seconds": 5,
+    "command_executed_by_recipe": false,
+    "cwd": "<fresh_clean_complete_Git_Source_C>",
+    "deadline_scope": "EACH_PHASE_LAUNCH_TO_ACTUAL_SPECIFIC_PID_REAP_NOT_GLOBAL_TWO_PHASE_5400_SECOND_ACCEPTANCE",
+    "failure_grace_and_cleanup_do_not_extend_phase_acceptance": true,
+    "future_explicit_slot_required": true,
+    "original_cli_phase_limit_range_seconds": [
+      60,
+      5400
+    ],
+    "original_sigint_failure_grace_seconds": 20,
+    "per_interpreter": "SEPARATE_FRESH_OUTPUT_AND_KERNEL_RAW_FOR_311_AND_312_NO_REUSED_EXECUTION_NO_ADDED_CASE_COUNTS",
+    "phase_limit_seconds": 5400
+  },
+  "future_preconditions": [
+    "ROOT_FREEZES_FINAL_SOURCE_C_SHA_TREE_AFTER_OWNED_MATERIAL_GATES; INTERMEDIATE_EFA_IS_NOT_RELABELED_FINAL",
+    "WHOLE_GIT_CHECKOUT_HEAD_AND_RAW_COMMIT_TREE_MATCH_LITERAL_SOURCE_C; ORIGINAL_CLOSED_REFS_AND_BLOBS_PRESENT_WITHOUT_NETWORK_OR_LAZY_FETCH",
+    "NO_REPLACE_REFS_GIT_ENV_AUTHORITY_OVERRIDES_OVERLAYS_SYMLINKS_EXTRA_IGNORED_OR_UNTRACKED_FILES_OR_EMPTY_DIRECTORIES; EXCLUDE_ONLY_REAL_GIT_METADATA",
+    "ALL_SOURCE_C_BYTES_CANONICAL100644_100755_MODES_BLOB_IDS_AND_PHYSICAL_NAMESPACE_EXACT_TO_LITERAL_HEAD",
+    "NONROOT_LINUX_UID_EQUALS_EUID_APPROVED_PYTHON311_OR312_WAIT4; EXACT157_NAMES_VERSIONS_NO_DUPLICATES_BEFORE_COLLECTION_AND_FIXTURES",
+    "CURRENT_HASH_LOCK_ACTION_PLATFORM_AUDIT_GREEN_BEFORE_COLLECTION_AND_FIXTURES; METADATA_PREFLIGHT_IS_NOT_DISTRIBUTION_BYTE_AUTHENTICATION",
+    "NEW_PRIVATE_OUTPUT_SAME_FILESYSTEM_AS_CHECKOUT_OUTPUT_VENV_BASETEMP_OUTSIDE_SOURCE; EXECUTOR_PROVES_FREE_SPACE_INODES_AND_NO_OTHER_NATIVE_CHILD_BEFORE_DISPATCH",
+    "NO_SOURCE_DOTENV_OR_OPERATIONAL_POROTA_PAPER_DATA_DIR_HIST_DB_PATH_ENV; NO_NEW_TEST_IGNORE_ALLOWLIST_NODE_THRESHOLD_OR_POLICY_CHANGE",
+    "PINNED_ORIGINAL_MANIFEST_AND_RAW_PR466_MATRIX_GIT_AUTHORITY_DERIVE_SINGLE_ORIGINAL_A3_EXCLUSION_NOT_THIS_RECIPE",
+    "EXTERNAL_RUNNER_BYTES_EQUAL_C430_PIN_BEFORE_AFTER; RAW_STDOUT_STDERR_EXIT_AND_OUTER_KERNEL_CUSTODY_CAPTURE_FROM_LAUNCH_WITHOUT_PIPE_MASKING"
+  ],
+  "immutable_baseline": {
+    "bytes": 31518,
+    "mode_octal": "0644",
+    "path": "/tmp/rc6_run_frozen_governed_v2.py",
+    "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+  },
+  "new_mandatory_kernel_gate": [
+    "PRE_POPEN_ECHILD_ACTIVE_OWN_SUBREAPER",
+    "ACTUAL_SPECIFIC_MAIN_PID_WAIT4_REAP_EXIT0_WITHIN_ORIGINAL_PHASE_CAP_NO_LATE_OR_TIMED_OUT",
+    "POST_MAIN_ECHILD_POSITIVE_ADOPTED_PID_STATUS_RUSAGE_RECORDED_SEPARATELY",
+    "WAIT4_ZERO_IRREVERSIBLE_RED_MISSING_PROC_CHILDREN_NEVER_EMPTY",
+    "KNOWN_OWNED_PGID_ABSENT_AT_MAIN_REAP_AND_FINAL_NO_SIGNALS_AFTER_OBSERVED_ABSENCE",
+    "PREVIOUS_SUBREAPER_RESTORED_NO_ERRORS_RESIDUALS_OR_PENDING_OWNED_CHILDREN",
+    "MAIN_AND_ADOPTED_RSS_SEPARATE_NO_SUMMED_RSS_CLAIM"
+  ],
+  "no_root_or_git_writes_or_new_execution": true,
+  "original_source_plan_preserved": {
+    "bytes": 6037,
+    "mode_octal": "0644",
+    "path": "/tmp/rc6_run_frozen_governed_v3_source_plan.json",
+    "sha256": "08bf3ee04165e01306942ce57416e7b9b61411484c25292452593f8223702a11"
+  },
+  "packet_inventory_source_only": {
+    "bytes": 51460,
+    "copy_performed": false,
+    "mode_octal": "0644",
+    "original_input_files": 42,
+    "original_payload_bytes": 386070,
+    "path": "/tmp/rc6_governed_v3_control_packet_source_inventory.json",
+    "sha256": "e31dd75e8d60a3cb7cc8ac22551a7c97fd0dbe28f06ff1ca7b65fca4210ac7c2"
+  },
+  "pending": [
+    "FINAL_SOURCE_C_PIN",
+    "ACTUAL_FINAL_311_AND_312_FULL_GOV",
+    "ROOT_OWNED_MATERIAL_GATES",
+    "ONE_FINAL_IMAGE_ARTIFACT_AND_INDEPENDENT_REPLAY",
+    "OPERATIONAL_DEPLOY_AUTHORIZATION"
+  ],
+  "preserved_gov_contract": {
+    "all_eleven_code_or_database_stats_claimed_by_gov": false,
+    "basetemp_external": true,
+    "cache_provider_disabled": true,
+    "collection_execution_node_ids_equal": true,
+    "exclusion_literal_for_review_only": [
+      "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+    ],
+    "junit_legacy_family_preserved": true,
+    "module_import_scope": "PRODUCT_MODULES_PRESENT_AT_PHASE_EXIT_BOUND_TO_SOURCE_C_NESTED_GUARDS_BIND_OWN_SOURCES",
+    "native_data_custody": "ONLY_ACTUALLY_EXECUTED_NATIVE_GUARDS_WITH_THEIR_OWN_DATA_WITNESSES",
+    "network_scope": "THIS_PYTEST_PYTHON_PROCESS_DNS_INET_SOCKET_AUDIT_AND_KNOWN_CLIENT_EXECUTABLES_NOT_KERNEL_OR_TRANSITIVE_CHILD_ATTESTATION",
+    "only_exclusion_authority": "RAW_PR466_MATRIX_FROM_PINNED_ORIGINAL_INPUT_MANIFEST",
+    "original_assertions_and_node_thresholds_unchanged": true,
+    "parser": "CURRENT_SOURCE_C_rc6_convergence_provenance.capture_junit/governed_junit_cases/executed_cases",
+    "physical_source_namespace_checked_before_each_phase_and_after": true,
+    "pytest_plugin_autoload_disabled": true,
+    "pythonpath_dot_explicit_source_guarded": true,
+    "raw_junit_case_identity_and_count_equal_collection": true,
+    "scope": "repository-root automatic pytest discovery",
+    "source_atime_observed_separately_never_restored": true,
+    "source_bytes_modes_git_blob_ids_stable_custody_fields_unchanged_required": true,
+    "zero_fail_error_skip_xfail_required": true
+  },
+  "schema": "rc6.frozen-governed-successor-source-recipe.v1",
+  "source_delta": {
+    "added_imports": [
+      "ctypes",
+      "errno",
+      "threading"
+    ],
+    "baseline_f4_support_usages_unchanged": true,
+    "changed_top_level_definitions": [
+      "subprocess_phase",
+      "main"
+    ],
+    "exact_source_review_closed_by_root_and_finance": true,
+    "fourteen_original_top_level_definitions_ast_preserved": [
+      "require",
+      "digest",
+      "canonical",
+      "safe_path",
+      "capture",
+      "publish",
+      "git",
+      "git_metadata",
+      "physical_namespace",
+      "source_pin",
+      "compare_source",
+      "installed_closure",
+      "approved_scope",
+      "phase_child"
+    ],
+    "main_delta": "ONE_ADDITIONAL_MANDATORY_KERNEL_CUSTODY_REQUIRE_ALL_ORIGINAL_STATEMENTS_AND_GATE_RETAINED",
+    "source_review_is_not_full_gov_acceptance": true
+  },
+  "source_preparation_publication_incident": {
+    "failed_before_output_creation": true,
+    "first_attempt": "O_NOATIME_ON_ROOT_OWNED_TMP_DIRECTORY_RETURNED_EPERM_TO_UID1000",
+    "forward": "OPEN_PARENT_DIRECTORY_NOFOLLOW_WITHOUT_NOATIME_NO_DIRECTORY_ENUMERATION; INPUTS_REMAIN_NOATIME; ONLY_NEW_EXCLUSIVE_DOCUMENTS",
+    "product_or_gov_executed": false
+  },
+  "source_successor": {
+    "bytes": 43365,
+    "mode_octal": "0644",
+    "path": "/tmp/rc6_run_frozen_governed_v3_candidate.py",
+    "sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313"
+  },
+  "status": "SOURCE_RECIPE_WITH_ACTUAL_SYNTHETIC_10_KERNEL_CONTROL_EVIDENCE_FULL_GOV_PENDING"
+}

@@ -1,0 +1,12 @@
+{
+  "denied": [],
+  "registered_and_witnessed": true,
+  "requests": [
+    {
+      "original_or_cloned_source": false,
+      "private_derived_copy": true
+    }
+  ],
+  "scope": "PYTHON_SQLITE3_CONNECT_AUDIT_ONLY",
+  "source_sqlite_opened": false
+}

@@ -1,0 +1,76 @@
+{
+  "B_actual_bind_caller": "UNKNOWN; SOURCE_INFERENCE_NOT_RETROSPECTIVE_PROOF",
+  "B_status": "468_ACTUAL_PASS; OVERALL_HARNESS_RED",
+  "C_native_status": "NOT_EXECUTED",
+  "all_physical_network_operations_remain_denied": true,
+  "environment": {
+    "GIT_NO_LAZY_FETCH": "1",
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "exports": 0,
+  "fixtures": 0,
+  "management_timeout_seconds": 180,
+  "narrow_probe_code_digest_domain": "EXACT_CPYTHON311_CODE_FIELDS_AND_TYPED_CONSTANTS_V1",
+  "narrow_probe_source_sha256": "2633bbdb69731e5ccb5cf4e4afd65605d86c7979cc5633126f50c92d5ad74a74",
+  "planned_argv": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/rc6-publication-e24bc025-controlled-preparation-c/runner.py",
+    "--git-repo",
+    "/workspace/porota_rc6_worktrees/persistence_publication_capture",
+    "--output-root",
+    "/workspace/rc6-publication-e24bc025-controlled-focal-20261005-c",
+    "--support",
+    "/workspace/rc6-publication-e24bc025-controlled-preparation-c/source_support.py",
+    "--timeout-seconds",
+    "180"
+  ],
+  "product_bounds_changed": false,
+  "product_imports": 0,
+  "protocol_epoch": "C",
+  "pytest_invocations": 0,
+  "recorded_at": "2026-10-05T23:32:19.866173+00:00",
+  "schema": "rc6.private-publication-controlled-harness-source-c.v1",
+  "scope": "SEVEN_SELECTED_MODULES; ACTUAL_COLLECTION_COUNT_PENDING_C",
+  "source": {
+    "runner.py": {
+      "bytes": 52714,
+      "sha256": "4b9101f04439edf53cb040ba4677632370ec0ed060f2a73e7453db855c2fb58a",
+      "stat_fields": {
+        "st_atime_ns": 1791243113434271331,
+        "st_blocks": 104,
+        "st_ctime_ns": 1791243114594264453,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 925715,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791243114594264453,
+        "st_nlink": 1,
+        "st_size": 52714,
+        "st_uid": 1000
+      }
+    },
+    "source_support.py": {
+      "bytes": 31518,
+      "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21",
+      "stat_fields": {
+        "st_atime_ns": 1791242821237209482,
+        "st_blocks": 64,
+        "st_ctime_ns": 1791242821240477817,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 925716,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791242821240477817,
+        "st_nlink": 1,
+        "st_size": 31518,
+        "st_uid": 1000
+      }
+    }
+  },
+  "source_only_compile_ast": true,
+  "source_sha": "e24bc025edc8bf72b272cb3546ce722dd97c10c8",
+  "source_tree": "79d1e849f44cc433283fbfcadf2680615c9684a5"
+}

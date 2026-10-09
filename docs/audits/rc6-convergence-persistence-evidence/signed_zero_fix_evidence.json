@@ -1,0 +1,50 @@
+{
+  "final_source_sha256": {
+    "rc6_shadow_runtime/serialization.py": "d5808446a1c4b964d10a4a5be6e52ab5ef8a69dc12171259df97b187b0e4fc99",
+    "tests/test_rc6_packed_storage.py": "ed291efe9c1be1c405fd823ca722453677399a3d6eec830532107b542e5c60e4"
+  },
+  "fix": "Typed float atom keys use float.hex, preserving signed zero and all exact finite IEEE values; bool/int/float type domains remain distinct. Hash, wire, canonical, shape, duplicate and nonfinite guards are unchanged.",
+  "guard_nodes": [
+    "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
+    "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests"
+  ],
+  "native_callers": [
+    "serialization.decode_storage with share_subtrees True/False",
+    "EvidenceFiles.commit_generation then read_committed_generation"
+  ],
+  "original_source_inputs": "docs/audits/rc6-convergence-persistence-evidence/signed_zero_original_native_inputs.json",
+  "predecessor_sha": "0dc8a520d8af7cbdc9485eaceb3b037d897eeb7e",
+  "rca": "JSON subtree interning used Python float equality, equating -0.0 and +0.0 and collapsing different dictionaries/lists. A valid wire then failed its unchanged canonical logical digest.",
+  "results": [
+    {
+      "errors": "0",
+      "failures": "8",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "path": "docs/audits/rc6-convergence-persistence-evidence/signed_zero_original_red.junit.xml",
+      "sha256": "b094f9d54dffcb70621a7f7ad9e13c7bc1e213d9d0903acf2dc609523be1fece",
+      "skipped": "0",
+      "tests": "12",
+      "time": "2.298",
+      "timestamp": "2026-10-05T12:20:13.629979+00:00"
+    },
+    {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "path": "docs/audits/rc6-convergence-persistence-evidence/signed_zero_fixed.junit.xml",
+      "sha256": "676ad363c1cc22f4370ddfa662eab14fc9a6ab473155a7eda4a8b380e1a0c070",
+      "skipped": "0",
+      "tests": "70",
+      "time": "7.085",
+      "timestamp": "2026-10-05T12:20:51.537367+00:00"
+    }
+  ],
+  "schema": "rc6.native-signed-zero-storage-fix.v1",
+  "scope": "SOURCE_NATIVE_V1_V2_CODEC_AND_FULL_COMMITTED_READER_OFFLINE",
+  "scope_limits": [
+    "No archive horizon, large producer or UI/health deadline claim",
+    "No provider, real route, operational source or PPI Watch access"
+  ]
+}

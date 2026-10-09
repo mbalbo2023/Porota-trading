@@ -1,0 +1,122 @@
+{
+  "active_closure_no_extra_311_312": [
+    "pytest",
+    "iniconfig",
+    "packaging",
+    "pluggy",
+    "pygments"
+  ],
+  "cause": "modules[pytest] permitted only pytest/_pytest and dist-info, omitting actual pytest RECORD member py.py required by _pytest.compat",
+  "classification": "ROOTCAUSE_CONFIRMED_FIXTURE_SELECTION_OMITTED_PYTEST_OWNED_MODULE",
+  "closed_fixture_observations": [
+    {
+      "collection_intent_absent": true,
+      "execution_intent_absent": true,
+      "expected_distributions": {
+        "iniconfig": "2.3.0",
+        "packaging": "26.3",
+        "pluggy": "1.6.0",
+        "pygments": "2.21.0",
+        "pytest": "9.1.1"
+      },
+      "fixture_root": "/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-8315c4a16a934de89c0b4bfa90a2d0a7",
+      "member_manifest_count": 500,
+      "py_py_absent_in_private_standard_site_packages": true,
+      "pytest_members": 90,
+      "pytest_py_py_member_selected": false
+    },
+    {
+      "collection_intent_absent": true,
+      "execution_intent_absent": true,
+      "expected_distributions": {
+        "iniconfig": "2.3.0",
+        "packaging": "26.3",
+        "pluggy": "1.6.0",
+        "pygments": "2.21.0",
+        "pytest": "9.1.1"
+      },
+      "fixture_root": "/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-af76ee8ac2d34a599c77e3123e880138",
+      "member_manifest_count": 500,
+      "py_py_absent_in_private_standard_site_packages": true,
+      "pytest_members": 90,
+      "pytest_py_py_member_selected": false
+    },
+    {
+      "collection_intent_absent": true,
+      "execution_intent_absent": true,
+      "expected_distributions": {
+        "iniconfig": "2.3.0",
+        "packaging": "26.3",
+        "pluggy": "1.6.0",
+        "pygments": "2.21.0",
+        "pytest": "9.1.1"
+      },
+      "fixture_root": "/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-003aafbde7ac4b5db5d6ec4e22227a1b",
+      "member_manifest_count": 500,
+      "py_py_absent_in_private_standard_site_packages": true,
+      "pytest_members": 90,
+      "pytest_py_py_member_selected": false
+    }
+  ],
+  "docker_real_calls": 0,
+  "epoch311_preserved": {
+    "duplicate": 0,
+    "error": 0,
+    "fail": 3,
+    "junit_sha256": "42897147ed3c26924de875cc97c297926433f983bbe86f1fceb97c113fb6cbed",
+    "log_sha256": "794c3a642f692dffb2ed41b1de61e5630a6c33d52d16684179c5a17d61c83830",
+    "pass": 59,
+    "physical_fin_closed": true,
+    "receipt_path": "/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/receipt.json",
+    "receipt_sha256": "f4f049c4cbd1f08c6c7c4e21996d866b4a4977afa56a0695c36511137b701ba2",
+    "skip": 0,
+    "tests": 62
+  },
+  "epoch312_launched": false,
+  "failures": [
+    {
+      "failed_before_owned_collection": true,
+      "failure_site": "tests/test_rc6_predeploy_scoped_cleanup.py:757",
+      "literal_rootcause": "_pytest/compat.py:20 import py; ModuleNotFoundError: No module named 'py'",
+      "nodeid": "tests.test_rc6_predeploy_scoped_cleanup::test_real_owned_pytest_direct_execution_has_fin_and_retained_adversarial_fixtures"
+    },
+    {
+      "failed_before_owned_collection": true,
+      "failure_site": "tests/test_rc6_predeploy_scoped_cleanup.py:757",
+      "literal_rootcause": "_pytest/compat.py:20 import py; ModuleNotFoundError: No module named 'py'",
+      "nodeid": "tests.test_rc6_predeploy_scoped_cleanup::test_real_owned_pytest_timeout_keeps_red_and_rejects_another_management_budget"
+    },
+    {
+      "failed_before_owned_collection": true,
+      "failure_site": "tests/test_rc6_predeploy_scoped_cleanup.py:757",
+      "literal_rootcause": "_pytest/compat.py:20 import py; ModuleNotFoundError: No module named 'py'",
+      "nodeid": "tests.test_rc6_predeploy_scoped_cleanup::test_real_collection_failure_has_fin_and_execution_is_never_launched"
+    }
+  ],
+  "host_calls": 0,
+  "inet_calls": 0,
+  "metadata_receipts": [
+    {
+      "epoch": "311",
+      "path": "/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/control/rca-pytest-fixture-omitted-py-311-metadata.json",
+      "sha256": "b8ce57ba46f24cf15270ad391b7047f71238458cd82d6b100727d4154866c88d"
+    },
+    {
+      "epoch": "312",
+      "path": "/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/control/rca-pytest-fixture-omitted-py-312-metadata.json",
+      "sha256": "dfa94088f57b3e432c14b861ad5c56955cbafb3d0bde6a24c6b0f12124cf036d"
+    }
+  ],
+  "original_red_reclassified": false,
+  "proposal": "Include the exact pytest-owned py.py member in regular owned NOFOLLOW/nlink1 copy; verify source RECORD digest and copied bytes/origin under new standard private prefix. Keep exact five locked distribution versions and all existing prefix/origin/guard/budget assertions. No PRODUCT environment or helper/workflow changes.",
+  "proposed_only_path": "tests/test_rc6_predeploy_scoped_cleanup.py",
+  "py_owned_distribution": "pytest",
+  "py_py_bytes": 329,
+  "py_py_record_hash_actual_verified_both_epochs": true,
+  "py_py_sha256": "b71675b5d9845ba0814e9e88767f88dac3b3cc0d3128da028bd45edbb523e871",
+  "real_orders_sent": 0,
+  "retries_performed": 0,
+  "scope": "READ_ONLY_CLOSED_RAW_NO_SOURCE_EDIT_NO_RETRY",
+  "source_edits_performed": false,
+  "typing_extensions_active_dependency": false
+}

@@ -1,0 +1,1384 @@
+{
+  "all_owned_focal_component_processes_have_actual_final_echild_pgid_closed": true,
+  "artifact_validated": false,
+  "authorized_launch": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6023951007",
+  "closed_programmatic_causes": [
+    "Positive wait4 slept per already-ready adopted PID and exhausted cleanup5 before proving ECHILD",
+    "Govmain could reach Sourcepost before exact phase/kernel custody predicates"
+  ],
+  "collection_nodeids": [
+    "tests/test_rc6_controlled_governed_runner.py::test_actual_hypothesis_and_eager_logging_outputs_use_fresh_external_namespace",
+    "tests/test_rc6_controlled_governed_runner.py::test_filter_installation_denied_by_kernel_cannot_report_capability_installed",
+    "tests/test_rc6_controlled_governed_runner.py::test_inherited_tracker_is_preserved_and_never_reaped_as_owned",
+    "tests/test_rc6_controlled_governed_runner.py::test_kernel_creation_denial_prevents_optional_ipv6_bind_without_overriding_modules",
+    "tests/test_rc6_controlled_governed_runner.py::test_kernel_live_orphan_stays_irreversibly_red_even_after_cleanup",
+    "tests/test_rc6_controlled_governed_runner.py::test_native_watchdog_does_not_accept_a_phase_that_reaps_after_its_deadline",
+    "tests/test_rc6_controlled_governed_runner.py::test_owned_forkserver_protocol_finishes_before_main_pid_return",
+    "tests/test_rc6_controlled_governed_runner.py::test_owned_tracker_and_child_are_really_finished_before_main_pid_return",
+    "tests/test_rc6_controlled_governed_runner.py::test_physical_alias_and_code_atime_claims_remain_distinct",
+    "tests/test_rc6_controlled_governed_runner.py::test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[.hypothesis/constants/generated]",
+    "tests/test_rc6_controlled_governed_runner.py::test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[.pytest_cache]",
+    "tests/test_rc6_controlled_governed_runner.py::test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[data/logs/trading_bot.log]",
+    "tests/test_rc6_controlled_governed_runner.py::test_raw_git_pin_rejects_same_names_with_changed_bytes",
+    "tests/test_rc6_controlled_governed_runner.py::test_reached_bind_connect_and_dns_stay_denied_and_red_even_with_kernel_filter",
+    "tests/test_rc6_controlled_governed_runner.py::test_swallowed_stdlib_finalizer_signal_cannot_terminate_child_to_obtain_green"
+  ],
+  "collection_nodeids_sha256": "611b486e80e974549f195571f4de6214d9ec4d2186147db730de224dcc390779",
+  "component_ids": [
+    "new::liveDetached6",
+    "new::mainUnknown",
+    "new::ready100Red",
+    "new::simpleExit0",
+    "old::mainUnknown",
+    "old::ready100Red"
+  ],
+  "component_ids_sha256": "48132eccdf8a364f18c72c2540f7329345464a19e9c62790fe618f9f87decd7f",
+  "cpu_io_exclusive_slot_released": true,
+  "epoch311": {
+    "actual15_junit_no_fail_error_skip_duplicates": true,
+    "actual6_control_outcomes": [
+      {
+        "actual_original_cleanup_seconds": 5.019820707002509,
+        "actual_phase_returncode": 1,
+        "adopted_phase_count": 100,
+        "case": "ready100Red",
+        "control_result_sha256": "a1b15525eea968e562416f69aa43bef99c08374586a4956cb6d1d01630875c3e",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": null,
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": false,
+        "phase_execution_green": false,
+        "phase_fin_closed": false,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": false,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 0,
+        "signals": [],
+        "source_spy_before_phase": 0,
+        "sourcepost_attempts": 0,
+        "variant": "old"
+      },
+      {
+        "actual_original_cleanup_seconds": 0.0006496120004158001,
+        "actual_phase_returncode": 1,
+        "adopted_phase_count": 100,
+        "case": "ready100Red",
+        "control_result_sha256": "5952b4d5b39d5bdbee6c1f57730e356b830b9afdf140e3c3138c6c719a14230d",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": null,
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": true,
+        "phase_execution_green": false,
+        "phase_fin_closed": true,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": false,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 0,
+        "signals": [],
+        "source_spy_before_phase": 0,
+        "sourcepost_attempts": 0,
+        "variant": "new"
+      },
+      {
+        "actual_original_cleanup_seconds": 7.487100083380938e-05,
+        "actual_phase_returncode": 0,
+        "adopted_phase_count": 0,
+        "case": "simpleExit0",
+        "control_result_sha256": "44e0af2a2cb4bef3f08d31b3338f324afff38e9d5d4d627dde552f79305040f8",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": null,
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": true,
+        "phase_execution_green": true,
+        "phase_fin_closed": true,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": false,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 0,
+        "signals": [],
+        "source_spy_before_phase": 0,
+        "sourcepost_attempts": 0,
+        "variant": "new"
+      },
+      {
+        "actual_original_cleanup_seconds": 5.018322897001781,
+        "actual_phase_returncode": 0,
+        "adopted_phase_count": 0,
+        "case": "liveDetached6",
+        "control_result_sha256": "968fe0d42a4391d4186821ed51031ab03b8c7148b4827db6be842ee944273ebb",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": null,
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": false,
+        "phase_execution_green": false,
+        "phase_fin_closed": false,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": true,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 1,
+        "signals": [],
+        "source_spy_before_phase": 0,
+        "sourcepost_attempts": 0,
+        "variant": "new"
+      },
+      {
+        "actual_original_cleanup_seconds": 5.018786289998388,
+        "actual_phase_returncode": 0,
+        "adopted_phase_count": 0,
+        "case": "mainUnknown",
+        "control_result_sha256": "b7eb89dc8d293c5528c13ee1bee4223fa72300f8c1f7d5a204fdc7d4ab2850bf",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": {
+          "class": "RuntimeError",
+          "literal_reason": "TEST_OBSERVER_VETO_SOURCE_POSTREAD_BEFORE_PHYSICAL_READ"
+        },
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": false,
+        "phase_execution_green": false,
+        "phase_fin_closed": false,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": true,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 1,
+        "signals": [],
+        "source_spy_before_phase": 2,
+        "sourcepost_attempts": 1,
+        "variant": "old"
+      },
+      {
+        "actual_original_cleanup_seconds": 5.016029146998335,
+        "actual_phase_returncode": 0,
+        "adopted_phase_count": 0,
+        "case": "mainUnknown",
+        "control_result_sha256": "18161ddc2c145b35a0c12cf20fa66a7b20eb2be60a603d3206b2567ea16d4144",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": {
+          "class": "ValueError",
+          "literal_reason": "ACTUAL_GOVERNED_PHASE_OWNED_CHILD_CUSTODY_NOT_CLOSED"
+        },
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": false,
+        "phase_execution_green": false,
+        "phase_fin_closed": false,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": true,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 1,
+        "signals": [],
+        "source_spy_before_phase": 2,
+        "sourcepost_attempts": 0,
+        "variant": "new"
+      }
+    ],
+    "actual_metadata157_unchanged": true,
+    "diagnostic_namespace_retained": {
+      "aliases_retained": 10,
+      "allocated_bytes_nofollow_deduplicated": 26886144,
+      "entries": 377,
+      "floor_10pct_inodes_ok": true,
+      "floor_2GiB_ok": true,
+      "free_bytes": 20393144320,
+      "free_inodes": 1887418,
+      "free_inodes_fraction": 0.8999910354614258,
+      "hardlinked_regular_entries_retained": 2,
+      "logical_bytes_nofollow_deduplicated": 26117057,
+      "removed": false,
+      "root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/epoch311",
+      "scope": "THIS_NEW_DIAGNOSTIC_NAMESPACE_ONLY_NOT_GLOBAL_CLEANUP_GREEN",
+      "special_entries_retained": 0,
+      "unique_inodes": 376
+    },
+    "epoch": "311",
+    "git_after": {
+      "sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+      "tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33"
+    },
+    "git_before": {
+      "sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+      "tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33"
+    },
+    "git_unchanged": true,
+    "junit": {
+      "case_identity_sha256": "e48e918409e20a9f87d026352bed09f49f21cc4874523429468fa05970ee2278",
+      "cases": 15,
+      "collection_and_junit_set_equal": true,
+      "duplicate_case_ids": 0,
+      "errors": 0,
+      "failures": 0,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/epoch311/junit.xml",
+      "sha256": "fce684639c563d51f028035360abc35a816cf938455a8108f8ee8199741db86b",
+      "skipped": 0
+    },
+    "real_kernel_after_focals": {
+      "kernel_echild_verified": true,
+      "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+      "subreaper_state_after": 0,
+      "subreaper_state_before": 0
+    },
+    "real_kernel_before": {
+      "kernel_echild_verified": true,
+      "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+      "subreaper_state_after": 0,
+      "subreaper_state_before": 0
+    },
+    "receipt_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/epoch311/receipt.json",
+    "receipt_sha256": "b2cbade1093fed51a642546caf1eb67824890eb1942e3f602203e8b431470fa9",
+    "source_after": {
+      ".github/workflows/porota-predeploy-v2.yml": {
+        "bytes": 42690,
+        "sha256": "45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125",
+        "stat": {
+          "st_atime_ns": 1791303517485763014,
+          "st_blocks": 88,
+          "st_ctime_ns": 1791303295418691756,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1048755,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791303295418691756,
+          "st_nlink": 1,
+          "st_size": 42690,
+          "st_uid": 1000
+        }
+      },
+      "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": {
+        "bytes": 55671,
+        "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+        "stat": {
+          "st_atime_ns": 1791290621389225996,
+          "st_blocks": 112,
+          "st_ctime_ns": 1791290621081430034,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1050460,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791290621081430034,
+          "st_nlink": 1,
+          "st_size": 55671,
+          "st_uid": 1000
+        }
+      },
+      "scripts/porota_predeploy_cleanup.py": {
+        "bytes": 36582,
+        "sha256": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f",
+        "stat": {
+          "st_atime_ns": 1791290621669224668,
+          "st_blocks": 72,
+          "st_ctime_ns": 1791290621257680846,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051199,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791290621257680846,
+          "st_nlink": 1,
+          "st_size": 36582,
+          "st_uid": 1000
+        }
+      },
+      "scripts/porota_predeploy_test_workspace.py": {
+        "bytes": 50909,
+        "sha256": "e768b5ca51df5646cac1c2739fecb35aa394cbcedecc6d428ddf8f47b7b21e85",
+        "stat": {
+          "st_atime_ns": 1791311078410540778,
+          "st_blocks": 104,
+          "st_ctime_ns": 1791311077526544779,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1087992,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791311077526544779,
+          "st_nlink": 1,
+          "st_size": 50909,
+          "st_uid": 1000
+        }
+      },
+      "scripts/rc6_controlled_governed_runner.py": {
+        "bytes": 63436,
+        "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+        "stat": {
+          "st_atime_ns": 1791311078418540742,
+          "st_blocks": 128,
+          "st_ctime_ns": 1791311078218541649,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1084469,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791311078218541649,
+          "st_nlink": 1,
+          "st_size": 63436,
+          "st_uid": 1000
+        }
+      },
+      "scripts/rc6_controlled_native_child_manager.py": {
+        "bytes": 18113,
+        "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "stat": {
+          "st_atime_ns": 1791311058202551068,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791311058201532560,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1092371,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311058201532560,
+          "st_nlink": 1,
+          "st_size": 18113,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_ci_productive_predeploy_contract.py": {
+        "bytes": 10274,
+        "sha256": "18e0840717256861c2f9a187aac88a96e36252339a6b854da2a29bb328c3c1f2",
+        "stat": {
+          "st_atime_ns": 1791303744632742605,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791303580948664729,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051374,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791303580948664729,
+          "st_nlink": 1,
+          "st_size": 10274,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_controlled_governed_runner.py": {
+        "bytes": 20374,
+        "sha256": "81e47a0760d9ec0b31c9061d85ddc4f0489df914adad0b60ab217cd0242d9afe",
+        "stat": {
+          "st_atime_ns": 1791299170704987213,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791299170500988192,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1087285,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791299170500988192,
+          "st_nlink": 1,
+          "st_size": 20374,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_controlled_native_child_manager.py": {
+        "bytes": 18293,
+        "sha256": "c91be232136465265fc3971d0516d8c503620f402c20a9aacf4bf06aa2cdff33",
+        "stat": {
+          "st_atime_ns": 1791314241076653872,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791311510461694110,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1092396,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311510461694110,
+          "st_nlink": 1,
+          "st_size": 18293,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_predeploy_scoped_cleanup.py": {
+        "bytes": 56752,
+        "sha256": "6443a48ad2ca5a68ee281062c392ff97c27eec836638707eb8556228e31e727f",
+        "stat": {
+          "st_atime_ns": 1791311510506710408,
+          "st_blocks": 112,
+          "st_ctime_ns": 1791311510500750557,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051614,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311510500750557,
+          "st_nlink": 1,
+          "st_size": 56752,
+          "st_uid": 1000
+        }
+      }
+    },
+    "source_atime_evolution_declared": {
+      ".github/workflows/porota-predeploy-v2.yml": [
+        1791303517485763014,
+        1791303517485763014
+      ],
+      "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": [
+        1791290621389225996,
+        1791290621389225996
+      ],
+      "scripts/porota_predeploy_cleanup.py": [
+        1791290621669224668,
+        1791290621669224668
+      ],
+      "scripts/porota_predeploy_test_workspace.py": [
+        1791311078410540778,
+        1791311078410540778
+      ],
+      "scripts/rc6_controlled_governed_runner.py": [
+        1791311078418540742,
+        1791311078418540742
+      ],
+      "scripts/rc6_controlled_native_child_manager.py": [
+        1791311058202551068,
+        1791311058202551068
+      ],
+      "tests/test_ci_productive_predeploy_contract.py": [
+        1791303744632742605,
+        1791303744632742605
+      ],
+      "tests/test_rc6_controlled_governed_runner.py": [
+        1791299170704987213,
+        1791299170704987213
+      ],
+      "tests/test_rc6_controlled_native_child_manager.py": [
+        1791314241076653872,
+        1791314241076653872
+      ],
+      "tests/test_rc6_predeploy_scoped_cleanup.py": [
+        1791311510506710408,
+        1791311510506710408
+      ]
+    },
+    "source_before": {
+      ".github/workflows/porota-predeploy-v2.yml": {
+        "bytes": 42690,
+        "sha256": "45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125",
+        "stat": {
+          "st_atime_ns": 1791303517485763014,
+          "st_blocks": 88,
+          "st_ctime_ns": 1791303295418691756,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1048755,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791303295418691756,
+          "st_nlink": 1,
+          "st_size": 42690,
+          "st_uid": 1000
+        }
+      },
+      "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": {
+        "bytes": 55671,
+        "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+        "stat": {
+          "st_atime_ns": 1791290621389225996,
+          "st_blocks": 112,
+          "st_ctime_ns": 1791290621081430034,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1050460,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791290621081430034,
+          "st_nlink": 1,
+          "st_size": 55671,
+          "st_uid": 1000
+        }
+      },
+      "scripts/porota_predeploy_cleanup.py": {
+        "bytes": 36582,
+        "sha256": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f",
+        "stat": {
+          "st_atime_ns": 1791290621669224668,
+          "st_blocks": 72,
+          "st_ctime_ns": 1791290621257680846,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051199,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791290621257680846,
+          "st_nlink": 1,
+          "st_size": 36582,
+          "st_uid": 1000
+        }
+      },
+      "scripts/porota_predeploy_test_workspace.py": {
+        "bytes": 50909,
+        "sha256": "e768b5ca51df5646cac1c2739fecb35aa394cbcedecc6d428ddf8f47b7b21e85",
+        "stat": {
+          "st_atime_ns": 1791311078410540778,
+          "st_blocks": 104,
+          "st_ctime_ns": 1791311077526544779,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1087992,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791311077526544779,
+          "st_nlink": 1,
+          "st_size": 50909,
+          "st_uid": 1000
+        }
+      },
+      "scripts/rc6_controlled_governed_runner.py": {
+        "bytes": 63436,
+        "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+        "stat": {
+          "st_atime_ns": 1791311078418540742,
+          "st_blocks": 128,
+          "st_ctime_ns": 1791311078218541649,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1084469,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791311078218541649,
+          "st_nlink": 1,
+          "st_size": 63436,
+          "st_uid": 1000
+        }
+      },
+      "scripts/rc6_controlled_native_child_manager.py": {
+        "bytes": 18113,
+        "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "stat": {
+          "st_atime_ns": 1791311058202551068,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791311058201532560,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1092371,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311058201532560,
+          "st_nlink": 1,
+          "st_size": 18113,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_ci_productive_predeploy_contract.py": {
+        "bytes": 10274,
+        "sha256": "18e0840717256861c2f9a187aac88a96e36252339a6b854da2a29bb328c3c1f2",
+        "stat": {
+          "st_atime_ns": 1791303744632742605,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791303580948664729,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051374,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791303580948664729,
+          "st_nlink": 1,
+          "st_size": 10274,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_controlled_governed_runner.py": {
+        "bytes": 20374,
+        "sha256": "81e47a0760d9ec0b31c9061d85ddc4f0489df914adad0b60ab217cd0242d9afe",
+        "stat": {
+          "st_atime_ns": 1791299170704987213,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791299170500988192,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1087285,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791299170500988192,
+          "st_nlink": 1,
+          "st_size": 20374,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_controlled_native_child_manager.py": {
+        "bytes": 18293,
+        "sha256": "c91be232136465265fc3971d0516d8c503620f402c20a9aacf4bf06aa2cdff33",
+        "stat": {
+          "st_atime_ns": 1791314241076653872,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791311510461694110,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1092396,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311510461694110,
+          "st_nlink": 1,
+          "st_size": 18293,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_predeploy_scoped_cleanup.py": {
+        "bytes": 56752,
+        "sha256": "6443a48ad2ca5a68ee281062c392ff97c27eec836638707eb8556228e31e727f",
+        "stat": {
+          "st_atime_ns": 1791311510506710408,
+          "st_blocks": 112,
+          "st_ctime_ns": 1791311510500750557,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051614,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311510500750557,
+          "st_nlink": 1,
+          "st_size": 56752,
+          "st_uid": 1000
+        }
+      }
+    },
+    "source_bytes_modes_original10_unchanged": true,
+    "source_qualification": "UNCOMMITTED_DIAGNOSTIC_ONLY_SOURCE_SHA_QUALIFICATION_PENDING"
+  },
+  "epoch312": {
+    "actual15_junit_no_fail_error_skip_duplicates": true,
+    "actual6_control_outcomes": [
+      {
+        "actual_original_cleanup_seconds": 5.017886121000629,
+        "actual_phase_returncode": 1,
+        "adopted_phase_count": 100,
+        "case": "ready100Red",
+        "control_result_sha256": "d2dc32b21c85ba0befef17619dcfbec8297df79cf022c8f55d9663618be6ca73",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": null,
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": false,
+        "phase_execution_green": false,
+        "phase_fin_closed": false,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": false,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 0,
+        "signals": [],
+        "source_spy_before_phase": 0,
+        "sourcepost_attempts": 0,
+        "variant": "old"
+      },
+      {
+        "actual_original_cleanup_seconds": 0.0007565900014014915,
+        "actual_phase_returncode": 1,
+        "adopted_phase_count": 100,
+        "case": "ready100Red",
+        "control_result_sha256": "152c62be26a00e33739ef9c81b69f54abc72e21c1cd6deae0792436c8468af40",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": null,
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": true,
+        "phase_execution_green": false,
+        "phase_fin_closed": true,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": false,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 0,
+        "signals": [],
+        "source_spy_before_phase": 0,
+        "sourcepost_attempts": 0,
+        "variant": "new"
+      },
+      {
+        "actual_original_cleanup_seconds": 6.577799649676308e-05,
+        "actual_phase_returncode": 0,
+        "adopted_phase_count": 0,
+        "case": "simpleExit0",
+        "control_result_sha256": "c3456d80c05bd782000e6fe27fe285c8f5ce0fcbf62daa38dd1cdc2671b8843b",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": null,
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": true,
+        "phase_execution_green": true,
+        "phase_fin_closed": true,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": false,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 0,
+        "signals": [],
+        "source_spy_before_phase": 0,
+        "sourcepost_attempts": 0,
+        "variant": "new"
+      },
+      {
+        "actual_original_cleanup_seconds": 5.015620731999661,
+        "actual_phase_returncode": 0,
+        "adopted_phase_count": 0,
+        "case": "liveDetached6",
+        "control_result_sha256": "7cb4c34b26e10c934ebeb98b4b7f29977e9a0900d94972650d006ab0a249aef4",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": null,
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": false,
+        "phase_execution_green": false,
+        "phase_fin_closed": false,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": true,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 1,
+        "signals": [],
+        "source_spy_before_phase": 0,
+        "sourcepost_attempts": 0,
+        "variant": "new"
+      },
+      {
+        "actual_original_cleanup_seconds": 5.01539332700122,
+        "actual_phase_returncode": 0,
+        "adopted_phase_count": 0,
+        "case": "mainUnknown",
+        "control_result_sha256": "f0f4427bb909c3796a322f938c65becca402209a2f25849481ca20cab4075ea0",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": {
+          "class": "RuntimeError",
+          "literal_reason": "TEST_OBSERVER_VETO_SOURCE_POSTREAD_BEFORE_PHYSICAL_READ"
+        },
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": false,
+        "phase_execution_green": false,
+        "phase_fin_closed": false,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": true,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 1,
+        "signals": [],
+        "source_spy_before_phase": 2,
+        "sourcepost_attempts": 1,
+        "variant": "old"
+      },
+      {
+        "actual_original_cleanup_seconds": 5.017699527001241,
+        "actual_phase_returncode": 0,
+        "adopted_phase_count": 0,
+        "case": "mainUnknown",
+        "control_result_sha256": "d29e94c2e908ad678d02b4ecc54669e9fc3aaca5028fd4fc8af607f76aa789ad",
+        "followup_echild": true,
+        "followup_pgid_absent": true,
+        "followup_subreaper_actual": {
+          "attempted": true,
+          "get_state_returncode": 0,
+          "kernel_readback_after": 0,
+          "original_prior_state_restored": true,
+          "returncode": 0
+        },
+        "main_error": {
+          "class": "ValueError",
+          "literal_reason": "ACTUAL_GOVERNED_PHASE_OWNED_CHILD_CUSTODY_NOT_CLOSED"
+        },
+        "original_cleanup_bound": 5,
+        "original_phase_bound": 5400,
+        "original_unknown_or_red_not_reclassified": true,
+        "outer_kernel_owned_closed": true,
+        "outer_pgid_absent_after": true,
+        "phase_echild": false,
+        "phase_execution_green": false,
+        "phase_fin_closed": false,
+        "phase_pgid_absent_after": true,
+        "phase_pgid_absent_at_main": true,
+        "phase_wait4zero_irreversible_red": true,
+        "physical_sourcepost_reads": 0,
+        "separate_followup_reaps": 1,
+        "signals": [],
+        "source_spy_before_phase": 2,
+        "sourcepost_attempts": 0,
+        "variant": "new"
+      }
+    ],
+    "actual_metadata157_unchanged": true,
+    "diagnostic_namespace_retained": {
+      "aliases_retained": 10,
+      "allocated_bytes_nofollow_deduplicated": 26886144,
+      "entries": 377,
+      "floor_10pct_inodes_ok": true,
+      "floor_2GiB_ok": true,
+      "free_bytes": 20365897728,
+      "free_inodes": 1887037,
+      "free_inodes_fraction": 0.8998093605041504,
+      "hardlinked_regular_entries_retained": 2,
+      "logical_bytes_nofollow_deduplicated": 26117238,
+      "removed": false,
+      "root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/epoch312",
+      "scope": "THIS_NEW_DIAGNOSTIC_NAMESPACE_ONLY_NOT_GLOBAL_CLEANUP_GREEN",
+      "special_entries_retained": 0,
+      "unique_inodes": 376
+    },
+    "epoch": "312",
+    "git_after": {
+      "sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+      "tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33"
+    },
+    "git_before": {
+      "sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+      "tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33"
+    },
+    "git_unchanged": true,
+    "junit": {
+      "case_identity_sha256": "e48e918409e20a9f87d026352bed09f49f21cc4874523429468fa05970ee2278",
+      "cases": 15,
+      "collection_and_junit_set_equal": true,
+      "duplicate_case_ids": 0,
+      "errors": 0,
+      "failures": 0,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/epoch312/junit.xml",
+      "sha256": "c6034c3ea7307732667ff83495e16e80b163a08917b07641b7e266cffe383d61",
+      "skipped": 0
+    },
+    "real_kernel_after_focals": {
+      "kernel_echild_verified": true,
+      "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+      "subreaper_state_after": 0,
+      "subreaper_state_before": 0
+    },
+    "real_kernel_before": {
+      "kernel_echild_verified": true,
+      "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+      "subreaper_state_after": 0,
+      "subreaper_state_before": 0
+    },
+    "receipt_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/epoch312/receipt.json",
+    "receipt_sha256": "ae814e7334ce199f23e14bb76d410eb748a8b635cdc74667b69ab33389079339",
+    "source_after": {
+      ".github/workflows/porota-predeploy-v2.yml": {
+        "bytes": 42690,
+        "sha256": "45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125",
+        "stat": {
+          "st_atime_ns": 1791303517485763014,
+          "st_blocks": 88,
+          "st_ctime_ns": 1791303295418691756,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1048755,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791303295418691756,
+          "st_nlink": 1,
+          "st_size": 42690,
+          "st_uid": 1000
+        }
+      },
+      "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": {
+        "bytes": 55671,
+        "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+        "stat": {
+          "st_atime_ns": 1791290621389225996,
+          "st_blocks": 112,
+          "st_ctime_ns": 1791290621081430034,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1050460,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791290621081430034,
+          "st_nlink": 1,
+          "st_size": 55671,
+          "st_uid": 1000
+        }
+      },
+      "scripts/porota_predeploy_cleanup.py": {
+        "bytes": 36582,
+        "sha256": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f",
+        "stat": {
+          "st_atime_ns": 1791290621669224668,
+          "st_blocks": 72,
+          "st_ctime_ns": 1791290621257680846,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051199,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791290621257680846,
+          "st_nlink": 1,
+          "st_size": 36582,
+          "st_uid": 1000
+        }
+      },
+      "scripts/porota_predeploy_test_workspace.py": {
+        "bytes": 50909,
+        "sha256": "e768b5ca51df5646cac1c2739fecb35aa394cbcedecc6d428ddf8f47b7b21e85",
+        "stat": {
+          "st_atime_ns": 1791311078410540778,
+          "st_blocks": 104,
+          "st_ctime_ns": 1791311077526544779,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1087992,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791311077526544779,
+          "st_nlink": 1,
+          "st_size": 50909,
+          "st_uid": 1000
+        }
+      },
+      "scripts/rc6_controlled_governed_runner.py": {
+        "bytes": 63436,
+        "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+        "stat": {
+          "st_atime_ns": 1791311078418540742,
+          "st_blocks": 128,
+          "st_ctime_ns": 1791311078218541649,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1084469,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791311078218541649,
+          "st_nlink": 1,
+          "st_size": 63436,
+          "st_uid": 1000
+        }
+      },
+      "scripts/rc6_controlled_native_child_manager.py": {
+        "bytes": 18113,
+        "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "stat": {
+          "st_atime_ns": 1791311058202551068,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791311058201532560,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1092371,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311058201532560,
+          "st_nlink": 1,
+          "st_size": 18113,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_ci_productive_predeploy_contract.py": {
+        "bytes": 10274,
+        "sha256": "18e0840717256861c2f9a187aac88a96e36252339a6b854da2a29bb328c3c1f2",
+        "stat": {
+          "st_atime_ns": 1791303744632742605,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791303580948664729,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051374,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791303580948664729,
+          "st_nlink": 1,
+          "st_size": 10274,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_controlled_governed_runner.py": {
+        "bytes": 20374,
+        "sha256": "81e47a0760d9ec0b31c9061d85ddc4f0489df914adad0b60ab217cd0242d9afe",
+        "stat": {
+          "st_atime_ns": 1791299170704987213,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791299170500988192,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1087285,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791299170500988192,
+          "st_nlink": 1,
+          "st_size": 20374,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_controlled_native_child_manager.py": {
+        "bytes": 18293,
+        "sha256": "c91be232136465265fc3971d0516d8c503620f402c20a9aacf4bf06aa2cdff33",
+        "stat": {
+          "st_atime_ns": 1791314241076653872,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791311510461694110,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1092396,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311510461694110,
+          "st_nlink": 1,
+          "st_size": 18293,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_predeploy_scoped_cleanup.py": {
+        "bytes": 56752,
+        "sha256": "6443a48ad2ca5a68ee281062c392ff97c27eec836638707eb8556228e31e727f",
+        "stat": {
+          "st_atime_ns": 1791311510506710408,
+          "st_blocks": 112,
+          "st_ctime_ns": 1791311510500750557,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051614,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311510500750557,
+          "st_nlink": 1,
+          "st_size": 56752,
+          "st_uid": 1000
+        }
+      }
+    },
+    "source_atime_evolution_declared": {
+      ".github/workflows/porota-predeploy-v2.yml": [
+        1791303517485763014,
+        1791303517485763014
+      ],
+      "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": [
+        1791290621389225996,
+        1791290621389225996
+      ],
+      "scripts/porota_predeploy_cleanup.py": [
+        1791290621669224668,
+        1791290621669224668
+      ],
+      "scripts/porota_predeploy_test_workspace.py": [
+        1791311078410540778,
+        1791311078410540778
+      ],
+      "scripts/rc6_controlled_governed_runner.py": [
+        1791311078418540742,
+        1791311078418540742
+      ],
+      "scripts/rc6_controlled_native_child_manager.py": [
+        1791311058202551068,
+        1791311058202551068
+      ],
+      "tests/test_ci_productive_predeploy_contract.py": [
+        1791303744632742605,
+        1791303744632742605
+      ],
+      "tests/test_rc6_controlled_governed_runner.py": [
+        1791299170704987213,
+        1791299170704987213
+      ],
+      "tests/test_rc6_controlled_native_child_manager.py": [
+        1791314241076653872,
+        1791314241076653872
+      ],
+      "tests/test_rc6_predeploy_scoped_cleanup.py": [
+        1791311510506710408,
+        1791311510506710408
+      ]
+    },
+    "source_before": {
+      ".github/workflows/porota-predeploy-v2.yml": {
+        "bytes": 42690,
+        "sha256": "45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125",
+        "stat": {
+          "st_atime_ns": 1791303517485763014,
+          "st_blocks": 88,
+          "st_ctime_ns": 1791303295418691756,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1048755,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791303295418691756,
+          "st_nlink": 1,
+          "st_size": 42690,
+          "st_uid": 1000
+        }
+      },
+      "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": {
+        "bytes": 55671,
+        "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+        "stat": {
+          "st_atime_ns": 1791290621389225996,
+          "st_blocks": 112,
+          "st_ctime_ns": 1791290621081430034,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1050460,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791290621081430034,
+          "st_nlink": 1,
+          "st_size": 55671,
+          "st_uid": 1000
+        }
+      },
+      "scripts/porota_predeploy_cleanup.py": {
+        "bytes": 36582,
+        "sha256": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f",
+        "stat": {
+          "st_atime_ns": 1791290621669224668,
+          "st_blocks": 72,
+          "st_ctime_ns": 1791290621257680846,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051199,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791290621257680846,
+          "st_nlink": 1,
+          "st_size": 36582,
+          "st_uid": 1000
+        }
+      },
+      "scripts/porota_predeploy_test_workspace.py": {
+        "bytes": 50909,
+        "sha256": "e768b5ca51df5646cac1c2739fecb35aa394cbcedecc6d428ddf8f47b7b21e85",
+        "stat": {
+          "st_atime_ns": 1791311078410540778,
+          "st_blocks": 104,
+          "st_ctime_ns": 1791311077526544779,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1087992,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791311077526544779,
+          "st_nlink": 1,
+          "st_size": 50909,
+          "st_uid": 1000
+        }
+      },
+      "scripts/rc6_controlled_governed_runner.py": {
+        "bytes": 63436,
+        "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+        "stat": {
+          "st_atime_ns": 1791311078418540742,
+          "st_blocks": 128,
+          "st_ctime_ns": 1791311078218541649,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1084469,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791311078218541649,
+          "st_nlink": 1,
+          "st_size": 63436,
+          "st_uid": 1000
+        }
+      },
+      "scripts/rc6_controlled_native_child_manager.py": {
+        "bytes": 18113,
+        "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "stat": {
+          "st_atime_ns": 1791311058202551068,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791311058201532560,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1092371,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311058201532560,
+          "st_nlink": 1,
+          "st_size": 18113,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_ci_productive_predeploy_contract.py": {
+        "bytes": 10274,
+        "sha256": "18e0840717256861c2f9a187aac88a96e36252339a6b854da2a29bb328c3c1f2",
+        "stat": {
+          "st_atime_ns": 1791303744632742605,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791303580948664729,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051374,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791303580948664729,
+          "st_nlink": 1,
+          "st_size": 10274,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_controlled_governed_runner.py": {
+        "bytes": 20374,
+        "sha256": "81e47a0760d9ec0b31c9061d85ddc4f0489df914adad0b60ab217cd0242d9afe",
+        "stat": {
+          "st_atime_ns": 1791299170704987213,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791299170500988192,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1087285,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791299170500988192,
+          "st_nlink": 1,
+          "st_size": 20374,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_controlled_native_child_manager.py": {
+        "bytes": 18293,
+        "sha256": "c91be232136465265fc3971d0516d8c503620f402c20a9aacf4bf06aa2cdff33",
+        "stat": {
+          "st_atime_ns": 1791314241076653872,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791311510461694110,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1092396,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311510461694110,
+          "st_nlink": 1,
+          "st_size": 18293,
+          "st_uid": 1000
+        }
+      },
+      "tests/test_rc6_predeploy_scoped_cleanup.py": {
+        "bytes": 56752,
+        "sha256": "6443a48ad2ca5a68ee281062c392ff97c27eec836638707eb8556228e31e727f",
+        "stat": {
+          "st_atime_ns": 1791311510506710408,
+          "st_blocks": 112,
+          "st_ctime_ns": 1791311510500750557,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1051614,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791311510500750557,
+          "st_nlink": 1,
+          "st_size": 56752,
+          "st_uid": 1000
+        }
+      }
+    },
+    "source_bytes_modes_original10_unchanged": true,
+    "source_qualification": "UNCOMMITTED_DIAGNOSTIC_ONLY_SOURCE_SHA_QUALIFICATION_PENDING"
+  },
+  "final_candidate_eligible": false,
+  "image_validated": false,
+  "junit_identity_digest_same_as_original15": "e48e918409e20a9f87d026352bed09f49f21cc4874523429468fa05970ee2278",
+  "material_gates_closed": [],
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "new_source_sha_still_requires_new_exact_full_gates": true,
+  "no_fixture_child_or_source_payload_reads_before_real_fin": true,
+  "no_gov_full_or_predeploy_or_big_qualification": true,
+  "no_previous_red_or_unknown_reclassified": true,
+  "not_closed_by_these_focals": [
+    "BIG_ORIGINAL0.5_90_FULL_PRE_OPEN_SLOW_FSYNC",
+    "GOV_FULL_FINAL311_312",
+    "HORIZON1201_RECOVERY",
+    "BROWSER_LARGE_FULL_OPEN",
+    "PREDEPLOY_NEW_EXACT_SHA_ARTIFACT_DIGEST_IMAGE_RUNTIME"
+  ],
+  "original_cleanup5_phase5400_caps_and_guards_preserved": true,
+  "ppi_watch": "UNTOUCHED",
+  "prepared_gov_git19_modified": false,
+  "real_orders_sent": 0,
+  "runtime_validated": false,
+  "same15_focal_scenario_set_per_epoch": true,
+  "same21_scenarios_not42_distinct": true,
+  "same6_component_scenario_set_per_epoch": true,
+  "schema": "rc6.gov.wait4-remediation.focal-handoff.v1",
+  "selected_raw_index": {
+    "bytes": 37925,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/selected-raw-index.json",
+    "sha256": "78fae122c351656050f1e50f91594991334b47caf75543d420e82d284eff8d6c"
+  },
+  "source_changes_during_runs": false,
+  "source_qualification": "UNCOMMITTED_COMPONENT_DIAGNOSTIC_ONLY_SOURCE_SHA_QUALIFICATION_PENDING",
+  "status": "15FOCALS_PLUS6ACTUAL_KERNEL_COMPONENT_SCENARIOS_PASS_IN_BOTH_EPOCHS",
+  "summary_utc": "2026-10-06T19:40:22.479689+00:00",
+  "unknown_sourcepost_guard_proven_with_actual_native6s_child": true
+}

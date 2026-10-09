@@ -1,0 +1,56 @@
+{
+  "all_payload_reads_after_sameparent_echild_and_pgid_only": true,
+  "cases": [
+    {
+      "case": "ready100Red",
+      "expected": "Original5s bound RED/noECHILD witness despite100 actualreadyZ reap; later independent realFIN never relabels",
+      "variant": "old"
+    },
+    {
+      "case": "ready100Red",
+      "expected": "Actual100readyZ drain+ECHILD/PGID underoriginal5; return1 remains phaseRED",
+      "variant": "new"
+    },
+    {
+      "case": "simpleExit0",
+      "expected": "Actualkernelclosed andreturn0",
+      "variant": "new"
+    },
+    {
+      "case": "liveDetached6",
+      "expected": "Original5 expires andwait4zero permanentRED; natural6s child then separate observerECHILD withoutsignals",
+      "variant": "new"
+    },
+    {
+      "case": "mainUnknown",
+      "expected": "RealUNKNOWN5 + Sourcepostattempt vetoed BEFORE anyphysicalread; no Sourcepostindex",
+      "variant": "old"
+    },
+    {
+      "case": "mainUnknown",
+      "expected": "SameRealUNKNOWN5, exactcustodyrequirefails BEFORE Sourcepostspycall; zeroattempt/noindex",
+      "variant": "new"
+    }
+  ],
+  "classification": "PREPARED_NOT_EXECUTED_NO_SOURCE_EDITS",
+  "control_source_root_template": "Fresh exact2e48 Gitworktree, no source writes, external output names unique",
+  "driver": {
+    "bytes": 11348,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/real_gov_component_control.py",
+    "sha256": "ae8ea3a9464ed478cb1bfe3acbc1493bd6a237720db24117c0b140ca94e450ad"
+  },
+  "existing_focal_suite_untouched": "tests/test_rc6_controlled_governed_runner.py (same15 scenarios)",
+  "gov100_separate_session_explicit_and_differs_from_ci100_inherited": true,
+  "no_tests_or_fixture_processes_started": true,
+  "observer_management20_does_not_change_original5_5400": true,
+  "producer": {
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/owned_process_control.py",
+    "sha256": "797447a2d44f48813639a0d22be91aebdbdb4fb630415144422c4d55775aba43"
+  },
+  "python_epochs": [
+    "3.11.16 locked157",
+    "3.12.14 locked157"
+  ],
+  "schema": "rc6.gov.wait4-controls.proposed-run-plan.v1",
+  "spy_is_read_observer_not_fake_kernel_pass": true
+}

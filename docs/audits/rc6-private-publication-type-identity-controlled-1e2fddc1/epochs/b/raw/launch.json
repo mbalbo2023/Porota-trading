@@ -1,0 +1,237 @@
+{
+  "command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/rc6-publication-1e2fddc1-controlled-focal-20261006-b/raw/runner.py",
+    "--child",
+    "--git-repo",
+    "/workspace/porota_rc6_worktrees/persistence_publication_capture",
+    "--source-root",
+    "/workspace/rc6-publication-1e2fddc1-controlled-focal-20261006-b/source",
+    "--output-root",
+    "/workspace/rc6-publication-1e2fddc1-controlled-focal-20261006-b",
+    "--support",
+    "/workspace/rc6-publication-1e2fddc1-controlled-focal-20261006-b/raw/source_support.py",
+    "--timeout-seconds",
+    "180"
+  ],
+  "euid": 1000,
+  "execution_id": "c7527b2208484ff8a55f1ca7aeaf8db0",
+  "git_clone_command": [
+    "git",
+    "--no-replace-objects",
+    "-c",
+    "protocol.file.allow=always",
+    "-c",
+    "protocol.http.allow=never",
+    "-c",
+    "protocol.https.allow=never",
+    "-c",
+    "protocol.ssh.allow=never",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "clone",
+    "--shared",
+    "--no-checkout",
+    "/workspace/porota_rc6_worktrees/persistence_publication_capture",
+    "/workspace/rc6-publication-1e2fddc1-controlled-focal-20261006-b/source"
+  ],
+  "infrastructure": [
+    {
+      "bytes": 57773,
+      "path": "/workspace/rc6-publication-1e2fddc1-controlled-focal-20261006-b/raw/runner.py",
+      "sha256": "210c510c80274280085c3d53ae5d64e16fbb02223cc7d0be5cda062b19cfb47b"
+    },
+    {
+      "bytes": 31518,
+      "path": "/workspace/rc6-publication-1e2fddc1-controlled-focal-20261006-b/raw/source_support.py",
+      "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+    }
+  ],
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "libraries_distribution_bytes_authenticated": false,
+  "management_cap_is_not_product_deadline": true,
+  "native_fixture_started": false,
+  "preflight157": {
+    "duplicate_names": [],
+    "expected_total": 157,
+    "installed_distribution_bytes_authenticated": false,
+    "installed_total": 157,
+    "installer_executed_by_this_runner": false,
+    "metadata_names_versions_exact": true,
+    "schema": "rc6.frozen-governed-installed-preflight.v1",
+    "source_hash_lock_action_platform_audit": {
+      "action_commit_gaps": [],
+      "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+      "base_image_digest_pinned": true,
+      "binary_distribution_policy_enforced": true,
+      "build_distribution_hash_gaps": [],
+      "build_isolation_disabled": true,
+      "build_tools_require_hashes": true,
+      "build_tools_total": 3,
+      "docker_requires_hashes": true,
+      "docker_uses_lock": true,
+      "hermetic_build": false,
+      "lock_distribution_hash_gaps": [],
+      "lock_exact_requirements": 154,
+      "lock_hashed_requirements": 154,
+      "lock_non_exact_requirements": [],
+      "lock_requirements_total": 154,
+      "platform": {
+        "architecture": "x86_64",
+        "libc_name": "glibc",
+        "libc_version": "2.41",
+        "os": "linux",
+        "python_minor": "3.11"
+      },
+      "platform_supported": true,
+      "reproducibility_scope": "APPROVED_ACTION_COMMITS_AND_HASHED_PYTHON_DISTRIBUTIONS",
+      "residual_boundaries": [
+        "ubuntu-24.04 hosted runner and kernel are externally managed",
+        "apt repository package bytes are not snapshot/hash locked",
+        "source-only packages compile under the pinned image/runtime and hash-locked build backends",
+        "pip resolver and installed closure are checked at Predeploy; same version does not guarantee equal wheel bytes"
+      ],
+      "schema_version": 3,
+      "source_requirements_total": 24,
+      "status": "GREEN",
+      "supply_chain_schema_valid": true
+    },
+    "status": "GREEN"
+  },
+  "preserved_witnesses": [
+    {
+      "bytes": 262,
+      "name": "literal-commit.raw",
+      "sha256": "c381b76d25af4cd0eeedd867a4dbe9b7211e2903692727c29516ca4a33138f7d",
+      "stat_fields": {
+        "st_atime_ns": 1791247574280127747,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791247574282098365,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 438245,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791247574282098365,
+        "st_nlink": 1,
+        "st_size": 262,
+        "st_uid": 1000
+      }
+    },
+    {
+      "bytes": 23012,
+      "name": "literal-tree.raw",
+      "sha256": "38d2b76bc4d3b28f79a2a432d21e8533c22df9e2c3f557918a87f016f00bd593",
+      "stat_fields": {
+        "st_atime_ns": 1791247574288127681,
+        "st_blocks": 48,
+        "st_ctime_ns": 1791247574292429321,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 438246,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791247574292429321,
+        "st_nlink": 1,
+        "st_size": 23012,
+        "st_uid": 1000
+      }
+    },
+    {
+      "bytes": 1913574,
+      "name": "parent.source-before.index.json",
+      "sha256": "d55a3866bd8987d218a6f4a9cb866c8269a2eb05b2fe122661a462b766e7fe74",
+      "stat_fields": {
+        "st_atime_ns": 1791247574268127845,
+        "st_blocks": 3744,
+        "st_ctime_ns": 1791247574270069858,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 438243,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791247574270069858,
+        "st_nlink": 1,
+        "st_size": 1913574,
+        "st_uid": 1000
+      }
+    },
+    {
+      "bytes": 1806,
+      "name": "parent.prefixture157.json",
+      "sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439",
+      "stat_fields": {
+        "st_atime_ns": 1791247574272127812,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791247574276151920,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 438244,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791247574276151920,
+        "st_nlink": 1,
+        "st_size": 1806,
+        "st_uid": 1000
+      }
+    },
+    {
+      "bytes": 515,
+      "name": "source-tar.json",
+      "sha256": "22d93f4ac59d16bba4411f25bcf24eea9fb5e6f1c6c46f65eda560071effbd15",
+      "stat_fields": {
+        "st_atime_ns": 1791247575948114021,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791247575951568364,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 438248,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791247575951568364,
+        "st_nlink": 1,
+        "st_size": 515,
+        "st_uid": 1000
+      }
+    }
+  ],
+  "python_version": [
+    3,
+    11,
+    16
+  ],
+  "schema": "rc6.private-publication-controlled-focal-launch.v1",
+  "scope": "EIGHT_SELECTED_MODULES_PRIVATE_CAPTURE_TYPE_IDENTITY_ORIGINAL8764_EQUIVALENCE_AND_NATIVE_SMALL_WRITER_FULL_READER_PROJECTION; NOT_BIG_PERFORMANCE_OR_FULL_GOV",
+  "selected_modules": [
+    "tests/test_rc6_publication_storage.py",
+    "tests/test_rc6_packed_scalar_dispatch.py",
+    "tests/test_rc6_packed_volatile_scalars.py",
+    "tests/test_rc6_packed_small_container.py",
+    "tests/test_rc6_packed_capture_allocations.py",
+    "tests/test_rc6_packed_storage.py",
+    "tests/test_rc6_funnel_storage_codec.py",
+    "tests/test_rc6_publication_type_identity.py"
+  ],
+  "source_files": 2254,
+  "source_sha": "1e2fddc10d0e313bc5a6298e8fa60fe7c9f560f8",
+  "source_tar": {
+    "bytes": 171868160,
+    "commit": "1e2fddc10d0e313bc5a6298e8fa60fe7c9f560f8",
+    "directories": 126,
+    "files": 2254,
+    "sha256": "f2be7f9cc804d11af2618a5cd21979aaa8a083b1e96a90e6a0fc2fe5020d1f4e",
+    "stat_fields": {
+      "st_atime_ns": 1791247574296127615,
+      "st_blocks": 335680,
+      "st_ctime_ns": 1791247574976122019,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 438247,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791247574976122019,
+      "st_nlink": 1,
+      "st_size": 171868160,
+      "st_uid": 1000
+    }
+  },
+  "source_tree": "b984539931a25a5f77eae55116c4fa9543d53748",
+  "timeout_seconds": 180,
+  "uid": 1000
+}

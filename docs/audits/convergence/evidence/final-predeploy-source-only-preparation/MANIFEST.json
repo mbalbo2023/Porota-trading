@@ -1,0 +1,150 @@
+{
+  "files": {
+    "README.md": {
+      "bytes": 1353,
+      "mode": 420,
+      "sha256": "0528b09566695558a6579456d82aff4ae74bc1a9db8876b45bb1e47b8d7d3bb4"
+    },
+    "REVIEW_RECIPE.md": {
+      "bytes": 13667,
+      "mode": 420,
+      "sha256": "b1ef1f5aac4829ad4c94295db87513b437e4e52e651cf3c8c6d3244a967850d0"
+    },
+    "SOURCE_PLAN.json": {
+      "bytes": 16566,
+      "mode": 420,
+      "sha256": "bf98948bfe92a4f89829ddb6739b6665daf993f8b59599a06ebf5aea3ec1704b"
+    },
+    "historical-reference/rc6_run_frozen_governed.py": {
+      "bytes": 4422,
+      "mode": 420,
+      "sha256": "cf48a223423d073844d7512a44d3adc7b0904325c2472a7ccc3baa90f51e963a"
+    },
+    "prior-source-only/rc6_run_frozen_governed_v2_prior_31cef48c.py": {
+      "bytes": 23505,
+      "mode": 420,
+      "sha256": "31cef48cc9140ef79fe77700014c2cd4b50498765cab6011ef0f6af90541c128"
+    },
+    "rc6_run_frozen_governed_v2.py": {
+      "bytes": 31518,
+      "mode": 420,
+      "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+    },
+    "reviewed-source/.github/workflows/porota-deploy-v2-promote.yml": {
+      "bytes": 63031,
+      "mode": 420,
+      "sha256": "412cd87ae493401723b26fecca645d7af5f8f9d44c236d23481d4d5ba5c5bf5e"
+    },
+    "reviewed-source/.github/workflows/porota-predeploy-v2.yml": {
+      "bytes": 35177,
+      "mode": 420,
+      "sha256": "278df57e7a40815cc3bfda2878dc4c35f18028e25ece9dd78e498f7fd823dd19"
+    },
+    "reviewed-source/AGENTS.md": {
+      "bytes": 9952,
+      "mode": 420,
+      "sha256": "86f9f5fc60b7d98eb1547e18a02bc2734c64b97b0d889c52a25a6dff8483fad2"
+    },
+    "reviewed-source/Dockerfile": {
+      "bytes": 3753,
+      "mode": 420,
+      "sha256": "7267932d5262e8da3f7c05b3b834fad242e0e2e286d1c03a68fde62475bc63a3"
+    },
+    "reviewed-source/docs/audits/convergence/INPUT_MANIFEST_RC6_CONVERGENCIA.json": {
+      "bytes": 43745,
+      "mode": 420,
+      "sha256": "3295e3d001e6a28e21fb227f5aed98a5119337d68abb5c2c1b50ee8e528d1ec4"
+    },
+    "reviewed-source/ops/policy/rc6-supply-chain-v1.json": {
+      "bytes": 103636,
+      "mode": 420,
+      "sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462"
+    },
+    "reviewed-source/ops/policy/test-policy.yaml": {
+      "bytes": 1556,
+      "mode": 420,
+      "sha256": "1fe33e6137bc0a6769ce390d0c4fbf584624bbec36d97254bf54ab85cc75a7e9"
+    },
+    "reviewed-source/requirements.build.lock.txt": {
+      "bytes": 458,
+      "mode": 420,
+      "sha256": "99580ecdbe0eda85a1894ddd4d8cd41aab94da5c40035668c67092c28092344b"
+    },
+    "reviewed-source/requirements.lock.txt": {
+      "bytes": 20883,
+      "mode": 420,
+      "sha256": "c521c7503b2930290aa7acb7e549750d761ba36d74849d0981d91dc5e285d6ce"
+    },
+    "reviewed-source/requirements.txt": {
+      "bytes": 3017,
+      "mode": 420,
+      "sha256": "9d44145d9faabe720f19280adc7aeb3fe04fdf820e12fe3f289b8d2ac29fcb74"
+    },
+    "reviewed-source/scripts/fixtures/rc6_archive_legacy_v2.json": {
+      "bytes": 555190,
+      "mode": 420,
+      "sha256": "1e8d0b1150909eda33ccd168e3f37eba3345ba2aaad0837a340e9daa684fc3be"
+    },
+    "reviewed-source/scripts/fixtures/rc6_codec_legacy_v1.json": {
+      "bytes": 3725,
+      "mode": 420,
+      "sha256": "8d21e988caee08b405725a2f8b73e8b87e0d90c3e21db0a8cc11a715dbe0966c"
+    },
+    "reviewed-source/scripts/porota_artifact_http.py": {
+      "bytes": 4398,
+      "mode": 420,
+      "sha256": "de6cb2837e679b398d943346087830860c653a3e936a6872fedf52760273e0c5"
+    },
+    "reviewed-source/scripts/porota_artifact_provenance.py": {
+      "bytes": 33757,
+      "mode": 420,
+      "sha256": "266ce536cb98bba30bba9fb3f78cbd60f51bbe606d346ef4b3f9529e3f5c9a54"
+    },
+    "reviewed-source/scripts/porota_dependency_repro_audit.py": {
+      "bytes": 10570,
+      "mode": 420,
+      "sha256": "206c9659a7a788eeabeeead9642ce98ec3a391c17d5c70b89fe084cfb1d88488"
+    },
+    "reviewed-source/scripts/porota_predeploy_binding.py": {
+      "bytes": 31183,
+      "mode": 420,
+      "sha256": "0b89a14b4f845d90064c57d48c3dfdcb568677442fffd34925b70cc9c8c02c62"
+    },
+    "reviewed-source/scripts/porota_published_artifact_evidence.py": {
+      "bytes": 21025,
+      "mode": 420,
+      "sha256": "12d2d5d3fa3996db6352d1ed8fbcb7ab7c0b4e2cc3fddbaa95e29e809601205f"
+    },
+    "reviewed-source/scripts/rc6_archive_maximum_member_probe.py": {
+      "bytes": 55709,
+      "mode": 420,
+      "sha256": "8b41c1eb18c6da181d2dd349f286d78f17f97ac2ae74b8206352ae17b792fabf"
+    },
+    "reviewed-source/scripts/rc6_archive_v3_image_smoke.py": {
+      "bytes": 49162,
+      "mode": 420,
+      "sha256": "5f3b1cfad1b6dd7853fc15066e73049d54f981c6e6e8126e3e070304526705ac"
+    },
+    "reviewed-source/scripts/rc6_convergence_provenance.py": {
+      "bytes": 37593,
+      "mode": 420,
+      "sha256": "f49035101e611b012f0b3910e27b75921486829e3849d740b78c72337149564d"
+    },
+    "reviewed-source/scripts/rc6_issue465_audit_gate.py": {
+      "bytes": 22069,
+      "mode": 420,
+      "sha256": "2285434317c22e4f29abcdf662e857b99128eb533431f6ba437775120467acdc"
+    },
+    "reviewed-source/tests/test_rc6_archive_maximum_member_guard.py": {
+      "bytes": 9114,
+      "mode": 420,
+      "sha256": "4c80b2435cbd955034f3d423d539c5a091d62b9e6676e9c837f4193a89ff8dd6"
+    }
+  },
+  "payload_bytes": 1209734,
+  "reviewed_git_sha": "d9333065a306dc59bc5a58d7b5604d52daf9ff9f",
+  "reviewed_git_tree": "316ad539f2690842e2fb1df4637811826897d6a0",
+  "schema": "rc6.source-preparation-packet-manifest.v1",
+  "self_included": false,
+  "status": "SOURCE_ONLY_NOT_EXECUTED"
+}

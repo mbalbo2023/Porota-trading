@@ -1,0 +1,30 @@
+{
+  "files": {
+    "INPUT_MANIFEST_RC6_CONVERGENCIA.json": {
+      "bytes": 43745,
+      "sha256": "3295e3d001e6a28e21fb227f5aed98a5119337d68abb5c2c1b50ee8e528d1ec4"
+    },
+    "ISSUE469_REAUDITORIA_INDEPENDIENTE_466_C27DFD9.md": {
+      "bytes": 226902,
+      "sha256": "270630106697702935da3aeeca7fd936afd48471fb746c2cd56a9089b63a25fb"
+    },
+    "ORDEN_UNICA_CODEX_RC6_CONVERGENCIA_468_469_470.md": {
+      "bytes": 49660,
+      "sha256": "d41e404d893a2fedfb10017b5f5732282f6e695220305e9b9cf1049b7c310731"
+    },
+    "REGISTRO_CONVERGENCIA_RC6.csv": {
+      "bytes": 13596,
+      "sha256": "9c1432c006516d23418bf059adf8c4f8d37e869186cb0ef15e3bb6768c86df21"
+    },
+    "ORIGINAL_RA_A_F01_F02.md": {
+      "sha256": "74d2d852c9c62754cd185dfb41e86b144c450c31b155d955348e16dce47c84c9",
+      "bytes": 27241
+    },
+    "ORIGINAL_RA_A_F03_F05.md": {
+      "sha256": "289f7a89ce48e56a7c3770ece9195d9c58f9d1ea9d23a2004552621c2d7bd87b",
+      "bytes": 26432
+    }
+  },
+  "handoff_zip_sha256": "636889daf6e84ea89dee8679a472ffb5d66c9600afac311a48b18035dcdbcfd7",
+  "schema": "rc6.convergence-original-input-digests.v1"
+}

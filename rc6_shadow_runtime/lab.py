@@ -1,0 +1,797 @@
+"""Prospective, bounded runtime bridge to the existing causal SHADOW laboratory.
+
+The source is opened read-only, never through PaperStore.  The caller durably
+stores the returned JSON checkpoint outside the trading database.  A new
+checkpoint starts at current tails: old positions and quotes are not replayed.
+Only entries observed after that watermark can be registered; only observations
+received after registration can change their exit comparison.  No broker,
+provider, factual parameter, score, or order route has authority in this module.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sqlite3
+from collections import Counter
+from dataclasses import asdict
+from datetime import datetime, time, timedelta
+from decimal import Decimal
+from pathlib import Path
+from statistics import median, stdev
+from time import monotonic
+
+from rc6_dynamic_universe.economics import preregister_exit_variants, shadow_economics
+from rc6_performance.common import canonical, digest, identity, number, stamp
+from rc6_performance.costs import FeeModel, ledger_leg_cost, paper_fee_model
+from rc6_performance.replay import ExitPolicy, ExitReplay
+from rc6_performance.shadow import fit_movement, forward_labels, usable_book
+
+SCHEMA = "rc6.runtime-shadow-lab.v2"
+from .read_contract import DEFAULT_READ_CONTRACT, query_budget_seconds
+QUERY_SECONDS = DEFAULT_READ_CONTRACT.query_budget_seconds("lab")
+MAX_ACTIVE = 16
+MAX_ARCHIVED = 64
+MAX_IDENTITIES = 100
+HISTORY_POINTS = 32
+MAX_ROW_BYTES = 65536
+MAX_CHECKPOINT_BYTES = 2 * 1024 * 1024
+MODEL_HORIZON_SECONDS = 900
+MIN_MODEL_LABELS = 30
+HYPOTHESES = {"target_sigma": 2, "stop_sigma": 1, "max_hold_seconds": 1800,
+              "trailing_fraction": "0.008", "minimum_net_lock": "0.002"}
+TABLES = ("paper_positions", "market_snapshots", "decision_evidence_snapshots")
+READ_COLUMNS = {
+    "paper_positions": ("paper_id", "source", "symbol", "asset_class", "settlement", "currency", "market",
+        "status", "quantity", "entry_price", "entry_cost", "stop_price", "target_price", "opened_at", "features_json"),
+    "market_snapshots": ("source", "metadata_source", "symbol", "asset_class", "settlement", "currency", "market",
+        "observed_at", "book_at", "trade_at", "last_kind", "last", "bid", "ask", "bid_size", "ask_size"),
+    "decision_evidence_snapshots": ("decision_key", "captured_at", "payload_sha256", "payload_json"),
+}
+REPLAY_FIELDS = ("remaining", "high", "last_at", "reason", "detected_at", "fills",
+                 "used_depth", "last_rejection", "break_even_armed")
+
+
+def _json(value):
+    return json.loads(canonical(value))
+
+
+def _settings(runtime_config):
+    # These are the actual canonical runtime constructor defaults. They are
+    # frozen prospectively, never attributed to a historical factual entry.
+    from bq_exit_policy import PaperSessionPolicy, SESSION_SOURCE
+    policy = PaperSessionPolicy()
+    settings = {"session_policy": _json(asdict(policy)), "session_source": SESSION_SOURCE,
+                "max_age_seconds": int(os.getenv("PAPER_BOOK_MAX_AGE_SECONDS", "120")),
+                "max_hold_minutes": int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360")),
+                "slippage": "0.0002", "participation": "0.10",
+                "eod_policy": os.getenv("PAPER_EOD_POLICY", "FORCE_CLOSE").upper(),
+                "intraday_fee_rebate": os.getenv("PAPER_INTRADAY_FEE_REBATE", "true").lower()
+                   in {"1", "true", "yes", "si", "sí"},
+                "source": "bv_paper_runtime.broker_from_environment+PaperBroker.defaults"}
+    if runtime_config is not None:
+        if not isinstance(runtime_config, dict) or set(runtime_config) - set(settings):
+            raise ValueError("UNKNOWN_SHADOW_RUNTIME_SETTINGS")
+        settings.update(_json(runtime_config))
+    if (isinstance(settings["max_age_seconds"], bool) or
+            not 1 <= int(settings["max_age_seconds"]) <= 3600 or
+            isinstance(settings["max_hold_minutes"], bool) or
+            not 1 <= int(settings["max_hold_minutes"]) <= 1440 or
+            not isinstance(settings["intraday_fee_rebate"], bool)):
+        raise ValueError("INVALID_SHADOW_RUNTIME_SETTINGS")
+    if not 0 < number(settings["participation"]) <= 1 or not 0 <= number(settings["slippage"]) < 1:
+        raise ValueError("INVALID_SHADOW_EXECUTION_MODEL")
+    values = settings["session_policy"]
+    policy = PaperSessionPolicy(**{**values, "open_time": time.fromisoformat(values["open_time"]),
+                                  "close_time": time.fromisoformat(values["close_time"])})
+    settings["session_policy"] = _json(asdict(policy))
+    return settings, policy
+
+
+def _checkpoint_hash(checkpoint):
+    return digest({key: value for key, value in checkpoint.items() if key != "checkpoint_sha256"})
+
+
+def _book(row):
+    # An absent native clock is never replaced by observation/capture time.
+    if not isinstance(row, dict):
+        raise ValueError("ENTRY_BOOK_PAYLOAD_INVALID")
+    keys = ("symbol", "asset_class", "settlement", "currency", "market", "bid", "ask",
+            "bid_size", "ask_size", "observed_at", "book_at", "trade_at", "last", "last_kind")
+    book = {key: row.get(key) for key in keys}
+    book["source"] = row.get("metadata_source") or row.get("source")
+    return book
+
+
+def _read(database, at, previous, row_limit):
+    from .source_reads import original_source_path, source_connection
+    deadline = monotonic() + query_budget_seconds("lab")
+    path = original_source_path(database)
+    with source_connection(path, deadline=deadline, consumer="lab") as (connection, source_info):
+        source_key = digest([str(path), source_info.st_dev, source_info.st_ino])
+        connection.execute("PRAGMA query_only=ON")
+        connection.execute("PRAGMA busy_timeout=5")
+        connection.set_progress_handler(lambda: int(monotonic() > deadline), 200)
+        if connection.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
+            raise ValueError("SHADOW_SOURCE_WAL_REQUIRED")
+        connection.execute("BEGIN")
+        state = connection.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+        if not state or tuple(state) != ("PRODUCTION_PAPER", 0):
+            raise ValueError("SHADOW_PAPER_SAFETY_REQUIRED")
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1000")}
+        if not set(TABLES) <= tables:
+            raise ValueError("SHADOW_LAB_SOURCE_TABLES_UNAVAILABLE")
+        tails = {table: connection.execute(f'SELECT COALESCE(MAX(rowid),0) FROM "{table}"').fetchone()[0]
+                 for table in TABLES}
+        valid_previous = previous if previous and previous.get("source_key") == source_key else None
+        if valid_previous and any(tails[key] < valid_previous["cursors"][key] for key in TABLES):
+            valid_previous = None
+        if valid_previous is None:
+            existing = list(connection.execute("SELECT paper_id FROM paper_positions WHERE status='OPEN' LIMIT ?",
+                                               (row_limit + 1,)))
+            return source_key, tails, {}, len(existing[:row_limit]), len(existing) > row_limit
+        rows, truncated = {}, False
+        for table in TABLES:
+            columns = {row[1] for row in connection.execute(f'PRAGMA table_info("{table}")')}
+            selected = ["rowid AS _rowid"]
+            for column in READ_COLUMNS[table]:
+                if column not in columns:
+                    selected.append(f'NULL AS "{column}"')
+                else:
+                    # Do not materialize an unbounded source JSON/blob into
+                    # the worker. Oversize rows retain their cursor/rejection.
+                    selected.append(f'CASE WHEN length(CAST("{column}" AS BLOB))>{MAX_ROW_BYTES} '
+                                    f'THEN NULL ELSE "{column}" END AS "{column}"')
+            size_terms = [f'COALESCE(length(CAST("{column}" AS BLOB)),0)' for column in READ_COLUMNS[table]
+                          if column in columns]
+            selected.append(f'({"+".join(size_terms)}>{MAX_ROW_BYTES}) AS _oversize')
+            batch = list(connection.execute(f'SELECT {",".join(selected)} FROM "{table}" WHERE rowid>? '
+                                            'ORDER BY rowid LIMIT ?', (valid_previous["cursors"][table], row_limit + 1)))
+            rows[table] = [dict(row) for row in batch[:row_limit]]
+            truncated |= len(batch) > row_limit
+        return source_key, tails, rows, 0, truncated
+
+
+def _known_input_policy(policy, admission):
+    if policy is None:
+        return
+    if not isinstance(policy, dict):
+        raise ValueError("ENTRY_INPUT_POLICY_INVALID")
+    clocks = [stamp(policy[key]) for key in
+              ("effective_at", "known_at", "available_at", "registered_at", "checked_at")
+              if policy.get(key) is not None]
+    if any(clock > admission for clock in clocks):
+        raise ValueError("ENTRY_INPUT_POLICY_NOT_KNOWN_AT_ADMISSION")
+    return max(clocks) if clocks else None
+
+
+def _signal_vector(inputs, quote, signal, admission, *, required):
+    vector = inputs.get("entry_signal_inputs")
+    if vector is None and not required:
+        return "LEGACY_VECTOR_UNAVAILABLE", None
+    if not isinstance(vector, dict):
+        raise ValueError("ENTRY_NATIVE_SIGNAL_VECTOR_UNAVAILABLE")
+    samples = vector.get("price_samples")
+    count = vector.get("samples")
+    if (vector.get("schema") != "rc6.native-entry-signal-input.v1"
+            or vector.get("price_sample_status") not in {None, "NATIVE_EXACT_VECTOR"}
+            or not isinstance(samples, list) or not samples
+            or isinstance(count, bool) or not isinstance(count, int) or count != len(samples)):
+        raise ValueError("ENTRY_NATIVE_SIGNAL_VECTOR_INVALID")
+    if vector.get("available_at") is not None and stamp(vector["available_at"]) > signal:
+        raise ValueError("ENTRY_SIGNAL_INPUT_NOT_KNOWN_AT_SIGNAL")
+    prior = None
+    ident = identity(quote)
+    for sample in samples:
+        if not isinstance(sample, dict) or not isinstance(sample.get("source"), str) or not sample["source"]:
+            raise ValueError("ENTRY_NATIVE_SIGNAL_SOURCE_UNAVAILABLE")
+        number(sample.get("price"), positive=True)
+        source, received = stamp(sample["source_at"]), stamp(sample["received_at"])
+        known = stamp(sample.get("known_at") or sample["received_at"])
+        first = stamp(sample.get("first_received_at") or sample["received_at"])
+        if not source <= first <= received <= known <= signal:
+            raise ValueError("ENTRY_SIGNAL_INPUT_NOT_KNOWN_AT_SIGNAL")
+        if prior is not None and source <= prior:
+            raise ValueError("ENTRY_NATIVE_SIGNAL_EVENTS_NOT_DISTINCT")
+        prior = source
+        if any(key in sample for key in ("symbol", "asset_class", "settlement", "currency", "market")):
+            if identity(sample) != ident:
+                raise ValueError("ENTRY_SIGNAL_IDENTITY_MISMATCH")
+    for name in ("temporal_contract", "volume_contract"):
+        _known_input_policy(vector.get(name), signal)
+    _known_input_policy(vector.get("eod_policy"), admission)
+    return "NATIVE_EXACT_VECTOR", digest(vector)
+
+
+def _native_evidence(row, at):
+    text = row["payload_json"]
+    if not isinstance(text, str) or len(text.encode()) > MAX_ROW_BYTES:
+        raise ValueError("IMMUTABLE_DECISION_OVERSIZE")
+    if hashlib.sha256(text.encode()).hexdigest() != row["payload_sha256"]:
+        raise ValueError("IMMUTABLE_DECISION_HASH_MISMATCH")
+    value = json.loads(text)
+    if not isinstance(value, dict):
+        raise ValueError("IMMUTABLE_ENTRY_EVIDENCE_INVALID")
+    decision, runtime, inputs = (value.get(key) or {} for key in ("decision", "runtime", "inputs_used"))
+    if not all(isinstance(item, dict) for item in (decision, runtime, inputs)):
+        raise ValueError("IMMUTABLE_ENTRY_EVIDENCE_INVALID")
+    phase = value.get("capture_phase")
+    if phase == "ATOMIC_PAPER_ADMISSION":
+        from rc6_performance.common import decision_snapshot_phase
+        decision_snapshot_phase(value)
+    elif phase not in {None, "NATIVE_DECISION"}:
+        raise ValueError("IMMUTABLE_DECISION_CAPTURE_PHASE_INVALID")
+    paper_id = decision.get("paper_id")
+    if not paper_id or decision.get("final_result") != "OPENED_SIMULATED":
+        return None
+    key = value.get("decision_key")
+    key_limit = 1024 + (len("PAPER_ADMISSION:") if phase == "ATOMIC_PAPER_ADMISSION" else 0)
+    if (not isinstance(key, str) or not key or len(key.encode()) > key_limit
+            or key != row.get("decision_key")):
+        raise ValueError("IMMUTABLE_DECISION_KEY_MISMATCH")
+    if not isinstance(paper_id, str):
+        raise ValueError("IMMUTABLE_ENTRY_PAPER_ID_INVALID")
+    captured = stamp(value["captured_at"])
+    if captured != stamp(row["captured_at"]):
+        raise ValueError("IMMUTABLE_DECISION_CAPTURE_MISMATCH")
+    frozen_inputs = {name: inputs.get(name) for name in
+                     ("exit_policy", "execution_style", "scalping_max_hold_minutes",
+                      "contract_cash_multiplier", "contract_quantity_step",
+                      "economics", "financial_contract")}
+    clocks = {key: value.get(key) or runtime.get(key) for key in
+              ("signal_at", "decision_at", "intent_at", "entry_fill_committed_at")}
+    if phase == "ATOMIC_PAPER_ADMISSION":
+        admission, recorded = stamp(value["admission_at"]), stamp(value["entry_fill_recorded_at"])
+        native_key = value.get("native_decision_key")
+        if (recorded != captured or not admission <= recorded <= at
+                or value.get("entry_fill_committed_at") is not None
+                or (native_key is not None and inputs.get("native_decision_key") != native_key)):
+            raise ValueError("IMMUTABLE_FINANCIAL_ADMISSION_INVALID")
+        present = [stamp(clocks[name]) for name in ("signal_at", "decision_at", "intent_at") if clocks[name]]
+        if present != sorted(present) or any(clock > recorded for clock in present):
+            raise ValueError("ENTRY_FUTURE_OR_REVERSED_CLOCKS")
+        quote = _book(value.get("quote_used") or {})
+        vector = inputs.get("entry_signal_inputs")
+        return {"capture_phase": phase, "paper_id": paper_id, "decision_key": key,
+                "native_decision_key": native_key, "payload_sha256": row["payload_sha256"],
+                "admission_at": value["admission_at"], "entry_fill_recorded_at": value["entry_fill_recorded_at"],
+                "captured_at": value["captured_at"], "clocks": clocks,
+                "quote_sha256": digest(quote), "signal_input_sha256": digest(vector) if vector is not None else None,
+                "inputs_used": frozen_inputs}
+    if inputs.get("native_decision_key") is not None and inputs["native_decision_key"] != key:
+        raise ValueError("IMMUTABLE_DECISION_KEY_MISMATCH")
+    if runtime.get("clock_mode") != "NATIVE" or any(not clocks[key] for key in clocks):
+        raise ValueError("ENTRY_NATIVE_CLOCKS_UNAVAILABLE")
+    parsed = [stamp(clocks[key]) for key in clocks]
+    # Capture is receipt of the immutable decision, not the native signal's
+    # source time. Atomic admission captures it under the fill transaction.
+    # The typed atomic phase has a recorded clock, never a fabricated commit
+    # clock. A native decision is registered only after its actual commit.
+    if parsed != sorted(parsed) or parsed[-1] > at or captured > parsed[-1]:
+        raise ValueError("ENTRY_FUTURE_OR_REVERSED_CLOCKS")
+    if runtime.get("signal_at") and stamp(runtime["signal_at"]) != parsed[0]:
+        raise ValueError("ENTRY_SIGNAL_CLOCK_MISMATCH")
+    if runtime.get("signal_started_at") and stamp(runtime["signal_started_at"]) > parsed[0]:
+        raise ValueError("ENTRY_FUTURE_OR_REVERSED_CLOCKS")
+    if runtime.get("decision_at") and stamp(runtime["decision_at"]) > parsed[1]:
+        raise ValueError("ENTRY_FUTURE_OR_REVERSED_CLOCKS")
+    quote = _book(value.get("quote_used") or {})
+    error = usable_book(quote, parsed[1])
+    if error:
+        raise ValueError("ENTRY_BOOK_" + error.upper())
+    if any(stamp(quote[name]) > parsed[0] for name in ("observed_at", "book_at", "trade_at")):
+        raise ValueError("ENTRY_SIGNAL_INPUT_NOT_KNOWN_AT_SIGNAL")
+    late_capture = captured > parsed[0]
+    if late_capture and inputs.get("native_decision_key") != key:
+        raise ValueError("IMMUTABLE_DECISION_KEY_UNAVAILABLE")
+    vector_status, vector_hash = _signal_vector(inputs, quote, parsed[0], parsed[-1], required=late_capture or phase == "NATIVE_DECISION")
+    economics = inputs.get("economics") or {}
+    if not isinstance(economics, dict):
+        raise ValueError("ENTRY_INPUT_POLICY_INVALID")
+    vector = inputs.get("entry_signal_inputs") or {}
+    known = [_known_input_policy(policy, parsed[-1]) for policy in
+             (economics.get("cost_contract"), inputs.get("financial_contract"), inputs.get("exit_policy"), vector.get("eod_policy"))]
+    policy_cut = max((clock for clock in known if clock is not None), default=None)
+    admission_key, admission_hash = (inputs.get(name) for name in
+                                    ("financial_admission_snapshot_key", "financial_admission_snapshot_sha256"))
+    if phase == "NATIVE_DECISION" and (admission_key != "PAPER_ADMISSION:"+key
+            or not isinstance(admission_hash, str) or len(admission_hash) != 64):
+        raise ValueError("IMMUTABLE_FINANCIAL_ADMISSION_LINK_INVALID")
+    return {"capture_phase": phase or "LEGACY_NATIVE_DECISION", "paper_id": str(paper_id), "clocks": clocks, "quote": quote,
+            "score": decision.get("score"), "strategy_id": runtime.get("strategy_id"),
+            "decision_key": key, "captured_at": value["captured_at"], "payload_sha256": row["payload_sha256"],
+            "signal_vector_status": vector_status, "signal_input_sha256": vector_hash,
+            "financial_admission_snapshot_key": admission_key, "financial_admission_snapshot_hash": admission_hash,
+            "policy_clock_upper_bound": policy_cut.isoformat() if policy_cut else None,
+            "configuration_fingerprint": runtime.get("configuration_fingerprint"),
+            "inputs_used": frozen_inputs}
+
+
+def _linked_admission(evidence, admissions):
+    key = evidence.get("financial_admission_snapshot_key")
+    if not key:
+        return None
+    admission = admissions.get(key)
+    if admission is None:
+        raise ValueError("IMMUTABLE_FINANCIAL_ADMISSION_UNAVAILABLE")
+    if (admission["payload_sha256"] != evidence["financial_admission_snapshot_hash"]
+            or admission["paper_id"] != evidence["paper_id"]
+            or admission["native_decision_key"] != evidence["decision_key"]
+            or admission["quote_sha256"] != digest(evidence["quote"])
+            or admission["signal_input_sha256"] != evidence["signal_input_sha256"]
+            or admission["inputs_used"] != evidence["inputs_used"]):
+        raise ValueError("IMMUTABLE_FINANCIAL_ADMISSION_LINK_MISMATCH")
+    for name in ("signal_at", "decision_at", "intent_at"):
+        if not admission["clocks"][name] or stamp(admission["clocks"][name]) != stamp(evidence["clocks"][name]):
+            raise ValueError("IMMUTABLE_FINANCIAL_ADMISSION_CLOCK_MISMATCH")
+    if stamp(admission["entry_fill_recorded_at"]) > stamp(evidence["clocks"]["entry_fill_committed_at"]):
+        raise ValueError("ENTRY_FUTURE_OR_REVERSED_CLOCKS")
+    if (evidence["policy_clock_upper_bound"]
+            and stamp(evidence["policy_clock_upper_bound"]) > stamp(admission["admission_at"])):
+        raise ValueError("ENTRY_INPUT_POLICY_NOT_KNOWN_AT_ADMISSION")
+    return admission
+
+
+def _volatility(history, entry, decision_at):
+    points = history.get(digest(identity(entry)), [])
+    decision = stamp(decision_at)
+    eligible, seen = [], set()
+    for point in points:
+        book = point["book"]
+        try:
+            sourced = stamp(book["trade_at"])
+            if not sourced <= stamp(book["observed_at"]) <= stamp(point["available_at"]) < decision:
+                continue
+            if book["last_kind"] != "TRADE" or sourced in seen or (decision-sourced).total_seconds() > 5400:
+                continue
+            eligible.append((sourced, number(book["last"], positive=True), point))
+            seen.add(sourced)
+        except (ValueError, TypeError, KeyError):
+            continue
+    eligible.sort(key=lambda item: item[0])
+    if len(eligible) < 6:
+        return None, "PRE_ENTRY_DISTINCT_VOLATILITY_UNAVAILABLE"
+    intervals = [(b[0]-a[0]).total_seconds() for a, b in zip(eligible, eligible[1:])]
+    horizon = median(intervals)
+    if horizon < 1 or max(intervals) > 2 * horizon:
+        return None, "PRE_ENTRY_VOLATILITY_HORIZON_UNVERIFIED"
+    returns = [float(b[1]/a[1]-1) for a, b in zip(eligible, eligible[1:])]
+    value = stdev(returns)
+    if value < .0000001:
+        return None, "PRE_ENTRY_VOLATILITY_RANGE_UNVERIFIED"
+    return {"value": value, "horizon_seconds": horizon,
+            "available_at": max(stamp(item[2]["available_at"]) for item in eligible).isoformat(),
+            "observations": len(eligible), "input_sha256": digest([item[2] for item in eligible]),
+            "method": "preregistered sample stdev of distinct native-trade returns; no directional forecast"}, None
+
+
+def _restore(entry, policy, fees, kwargs, state=None):
+    laboratory = ExitReplay(entry, ExitPolicy(**policy), FeeModel(**fees), **kwargs)
+    if state:
+        for key in REPLAY_FIELDS:
+            value = state[key]
+            if key in {"remaining", "high"}:
+                value = number(value)
+            elif key == "last_at":
+                value = stamp(value)
+            elif key == "used_depth":
+                value = {clock: number(quantity) for clock, quantity in value.items()}
+            elif key == "fills":
+                value = [{key: number(value) if key in {"quantity", "price", "gross", "costs", "net"} else value
+                          for key, value in fill.items()} for fill in value]
+            setattr(laboratory, key, value)
+    return laboratory
+
+
+def _freeze_replay(laboratory):
+    result = {key: getattr(laboratory, key) for key in REPLAY_FIELDS}
+    # Native book timestamps are strictly increasing before replay. Only the
+    # last budget can be revisited; discarded old depth cannot be re-executed.
+    used = result["used_depth"]
+    result["used_depth"] = {max(used, key=stamp): used[max(used, key=stamp)]} if used else {}
+    return _json(result)
+
+
+def _model(checkpoint, entry, decision_at):
+    labels = [record.get("movement_label", {}) for record in checkpoint["archive"]]
+    cutoff = min(stamp(checkpoint["last_as_of"]), stamp(decision_at)-timedelta(microseconds=1))
+    labels = [label for label in labels if label.get("status") != "MEDIDO" or stamp(label["label_available_at"]) <= cutoff]
+    try:
+        return fit_movement(labels, training_cutoff=cutoff.isoformat(),
+                            horizon_seconds=MODEL_HORIZON_SECONDS, family=entry["asset_class"],
+                            currency=entry["currency"], minimum_observations=MIN_MODEL_LABELS)
+    except ValueError:
+        return None
+
+
+def _register(row, evidence, checkpoint, settings, session_policy, at):
+    features_text = row.get("features_json") or "{}"
+    if len(features_text.encode()) > MAX_ROW_BYTES:
+        raise ValueError("ENTRY_FEATURES_OVERSIZE")
+    # Factual policy and sizing inputs come from the sealed decision below;
+    # mutable position features cannot replace that first capture.
+    ident = identity(row)
+    if ident[1] not in {"ACCIONES", "CEDEARS", "ETFS"}:
+        raise ValueError("SPECIALIZED_LIFECYCLE_OUTSIDE_EXIT_LAB")
+    if row.get("source") != "PRODUCTION_PAPER" or not str(row["paper_id"]).startswith("PAPER-"):
+        raise ValueError("FACTUAL_PAPER_ENTRY_REQUIRED")
+    opened = stamp(row["opened_at"])
+    if not stamp(checkpoint["started_at"]) < opened <= at:
+        raise ValueError("ENTRY_BEFORE_WATERMARK_OR_IN_FUTURE")
+    if evidence is None:
+        raise ValueError("IMMUTABLE_NATIVE_ENTRY_EVIDENCE_UNAVAILABLE")
+    if evidence["paper_id"] != row["paper_id"]:
+        raise ValueError("ENTRY_PAPER_ID_MISMATCH")
+    admission = _linked_admission(evidence, checkpoint.get("pending_admissions", {}))
+    if identity(evidence["quote"]) != ident:
+        raise ValueError("ENTRY_IDENTITY_MISMATCH")
+    if not opened <= stamp(evidence["clocks"]["intent_at"]) <= stamp(evidence["clocks"]["entry_fill_committed_at"]):
+        raise ValueError("ENTRY_LEDGER_CLOCK_MISMATCH")
+    frozen_inputs = evidence["inputs_used"]
+    exit_policy = frozen_inputs.get("exit_policy") or {}
+    if exit_policy.get("mode") != "SIMULATED" or not exit_policy.get("end_of_day"):
+        raise ValueError("FACTUAL_EOD_POLICY_UNAVAILABLE")
+    if settings["eod_policy"] != "FORCE_CLOSE" or not session_policy.close_at_eod:
+        raise ValueError("FACTUAL_EOD_POLICY_UNSUPPORTED")
+    if not settings["intraday_fee_rebate"]:
+        raise ValueError("SHARED_REPLAY_REBATE_CONFIGURATION_UNSUPPORTED")
+    if not session_policy.supports(row):
+        raise ValueError("FACTUAL_SESSION_NOT_SUPPORTED")
+    _, close = session_policy.bounds(opened, row)
+    eod = stamp(close - timedelta(minutes=session_policy.exit_minutes))
+    if eod <= at:
+        raise ValueError("REGISTRATION_AFTER_FACTUAL_EOD")
+    price = number(row["entry_price"], positive=True)
+    stop, target = number(row["stop_price"], positive=True), number(row["target_price"], positive=True)
+    if not stop < price < target:
+        raise ValueError("FACTUAL_ENTRY_LEVELS_INVALID")
+    if (number(exit_policy.get("stop_loss_price"), positive=True) != stop or
+            number(exit_policy.get("take_profit_price"), positive=True) != target):
+        raise ValueError("FACTUAL_EXIT_POLICY_CONTRADICTION")
+    hold = exit_policy.get("max_hold_minutes")
+    if isinstance(hold, bool) or hold is None or number(hold, positive=True) != int(hold):
+        raise ValueError("FACTUAL_MAX_HOLD_UNAVAILABLE")
+    # The live supervisor takes the effective minimum for scalping.
+    hold = min(int(hold), settings["max_hold_minutes"])
+    if frozen_inputs.get("execution_style") == "SCALPING_PAPER":
+        limit = frozen_inputs.get("scalping_max_hold_minutes")
+        if limit is None or isinstance(limit, bool) or number(limit, positive=True) != int(limit):
+            raise ValueError("FACTUAL_SCALPING_MAX_HOLD_UNAVAILABLE")
+        hold = min(hold, int(limit))
+    entry = {key: row[key] for key in ("symbol", "asset_class", "settlement", "currency", "market",
+                                     "opened_at", "entry_price", "quantity")}
+    entry.update(id=row["paper_id"], paper_id=row["paper_id"],
+                 contract_cash_multiplier=str(number(1 if frozen_inputs.get("contract_cash_multiplier") is None
+                                                      else frozen_inputs["contract_cash_multiplier"], positive=True)),
+                 quantity_step=str(number(1 if frozen_inputs.get("contract_quantity_step") is None
+                                           else frozen_inputs["contract_quantity_step"], positive=True)),
+                 score=evidence["score"], strategy_id=evidence["strategy_id"],
+                 decision_at=evidence["clocks"]["decision_at"], intent_at=evidence["clocks"]["intent_at"])
+    if number(entry["contract_cash_multiplier"]) != 1:
+        raise ValueError("EQUITY_CASH_MULTIPLIER_UNVERIFIED")
+    expected_entry = (number(evidence["quote"]["ask"], positive=True)*(1+number(settings["slippage"]))).quantize(Decimal(".0001"))
+    if expected_entry != price:
+        raise ValueError("EXECUTED_ENTRY_COST_ANCHOR_MISMATCH")
+    if number(row.get("entry_cost"), nonnegative=True) != ledger_leg_cost(price, entry["quantity"], ident[1]):
+        raise ValueError("FACTUAL_ENTRY_COST_AUTHORITY_MISMATCH")
+    fees = paper_fee_model(ident[1])
+    baseline = ExitPolicy("FACTUAL_BASELINE", 1-stop/price, target/price-1, hold*60)
+    volatility, missing = _volatility(checkpoint["history"], entry, entry["decision_at"])
+    policies, hypotheses, fingerprint = [baseline], {}, digest(asdict(baseline))
+    if volatility:
+        preregistration = preregister_exit_variants(baseline, as_of=at, eod_at=eod,
+            volatility=volatility["value"], volatility_available_at=volatility["available_at"],
+            horizon_seconds=volatility["horizon_seconds"], **HYPOTHESES)
+        policies, hypotheses, fingerprint = (preregistration["policies"], preregistration["hypotheses"],
+                                             preregistration["configuration_fingerprint"])
+    kwargs = {"eod_at": eod.isoformat(), "session_close_at": stamp(close).isoformat(),
+              "participation": settings["participation"], "slippage": settings["slippage"],
+              "max_age_seconds": settings["max_age_seconds"]}
+    model = _model(checkpoint, entry, entry["decision_at"])
+    economics = shadow_economics(evidence["quote"], decision_at=entry["decision_at"], eod_at=eod,
+        quantity=entry["quantity"], multiplier=entry["contract_cash_multiplier"], model=model, fees=fees,
+        participation=settings["participation"], entry_slippage=settings["slippage"],
+        exit_slippage=settings["slippage"], max_age_seconds=settings["max_age_seconds"])
+    record = {"entry": entry, "registered_at": at.isoformat(), "baseline": _json(asdict(baseline)),
+              "fees": _json(asdict(fees)), "replay_kwargs": kwargs, "policies": {}, "path_observations": 0,
+              "path_sha256": digest([]), "last_book_at": None, "volatility": volatility,
+              "unverified_reasons": [missing] if missing else [], "economics_shadow": _json(economics),
+              "economics_input_sha256": digest(evidence["quote"]),
+              "entry_evidence_sha256": evidence["payload_sha256"], "native_clocks": evidence["clocks"],
+              "native_decision_key": evidence["decision_key"], "evidence_captured_at": evidence["captured_at"],
+              "signal_vector_status": evidence["signal_vector_status"], "signal_input_sha256": evidence["signal_input_sha256"],
+              "financial_admission_snapshot_key": evidence["financial_admission_snapshot_key"],
+              "financial_admission_snapshot_hash": evidence["financial_admission_snapshot_hash"],
+              "admission_at": admission["admission_at"] if admission else None,
+              "entry_fill_recorded_at": admission["entry_fill_recorded_at"] if admission else None,
+              "entry_configuration_fingerprint": evidence["configuration_fingerprint"],
+              "configuration_fingerprint": fingerprint, "hypotheses": hypotheses,
+              "score_calibration_oos": "NO_VERIFICADO", "labels": {}, "last_rejection": None}
+    for policy in policies:
+        definition = _json(asdict(policy))
+        laboratory = _restore(entry, definition, record["fees"], kwargs)
+        record["policies"][policy.name] = {"definition": definition, "state": _freeze_replay(laboratory),
+            "sampled_entry_level_touches": {"target_at": None, "stop_at": None}}
+    return record
+
+
+def _retain_label(record, book, at):
+    opened, eod = stamp(record["entry"]["opened_at"]), stamp(record["replay_kwargs"]["eod_at"])
+    for name, target in (("eod", eod), ("movement", opened + timedelta(seconds=MODEL_HORIZON_SECONDS))):
+        label = record["labels"].setdefault(name, {"target_at": target.isoformat(), "low": None, "high": None,
+                                                  "endpoint": None, "observations": 0})
+        received = stamp(book["observed_at"])
+        if opened < received <= target:
+            label["observations"] += 1
+            for key, operation in (("low", min), ("high", max)):
+                old = label[key]
+                if old is None or operation(number(old["bid"]), number(book["bid"])) == number(book["bid"]):
+                    label[key] = book
+        if target <= received <= target + timedelta(seconds=120) and label["endpoint"] is None:
+            label["endpoint"] = book
+
+
+def _advance(record, books, at, rejections):
+    registration = stamp(record["registered_at"])
+    for book in books:
+        if identity(book) != identity(record["entry"]):
+            continue
+        if stamp(book["observed_at"]) < registration:
+            rejections["PRE_REGISTRATION_PATH_NOT_RECONSTRUCTED"] += 1
+            continue
+        source_at = stamp(book["book_at"])
+        if record["last_book_at"] and source_at <= stamp(record["last_book_at"]):
+            rejections["DUPLICATE_OR_REVERSED_NATIVE_BOOK_TIMESTAMP"] += 1
+            continue
+        error = usable_book(book, at, max_age_seconds=record["replay_kwargs"]["max_age_seconds"])
+        if error or source_at < stamp(record["entry"]["opened_at"]):
+            record["last_rejection"] = error or "book_before_entry"
+            rejections[(error or "book_before_entry").upper()] += 1
+            continue
+        record["last_book_at"] = source_at.isoformat()
+        record["path_observations"] += 1
+        record["path_sha256"] = digest([record["path_sha256"], {"as_of": at.isoformat(), "book": book}])
+        record["last_rejection"] = None
+        _retain_label(record, book, at)
+        for policy in record["policies"].values():
+            laboratory = _restore(record["entry"], policy["definition"], record["fees"], record["replay_kwargs"], policy["state"])
+            laboratory.advance(book, as_of=at)
+            policy["state"] = _freeze_replay(laboratory)
+            if stamp(book["observed_at"]) < stamp(record["replay_kwargs"]["eod_at"]):
+                touches, price = policy["sampled_entry_level_touches"], number(record["entry"]["entry_price"])
+                bid = number(book["bid"])
+                if bid >= price*(1+number(policy["definition"]["target_fraction"])):
+                    touches["target_at"] = touches["target_at"] or at.isoformat()
+                if bid <= price*(1-number(policy["definition"]["stop_fraction"])):
+                    touches["stop_at"] = touches["stop_at"] or at.isoformat()
+    for policy in record["policies"].values():
+        laboratory = _restore(record["entry"], policy["definition"], record["fees"], record["replay_kwargs"], policy["state"])
+        laboratory.advance(None, as_of=at)
+        policy["state"] = _freeze_replay(laboratory)
+
+
+def _forward_label(record, name, at):
+    tracking = record["labels"].get(name)
+    if not tracking:
+        return {"status": "NO_VERIFICADO", "censored": True, "reason": "PROSPECTIVE_PATH_UNAVAILABLE"}
+    entry = record["entry"]
+    horizon = int((stamp(tracking["target_at"])-stamp(entry["opened_at"])).total_seconds())
+    distinct = {digest(book): book for book in (tracking["low"], tracking["high"], tracking["endpoint"]) if book}
+    books = sorted(distinct.values(), key=lambda book: stamp(book["observed_at"]))
+    label = forward_labels(dict(entry, decision_at=entry["opened_at"]), books, [horizon], as_of=at)[0]
+    if record.get("path_censoring"):
+        label.update(status="NO_VERIFICADO", reason=record["path_censoring"])
+    # Outcomes start at registration. Retaining extrema is sufficient for the
+    # shared label math and bounded storage, not a reconstructed continuous path.
+    return _json(label) | {"censored": label["status"] != "MEDIDO", "registered_at": record["registered_at"],
+        "observation_basis": "DISTINCT_NATIVE_BOOKS_OBSERVED_PROSPECTIVELY_AFTER_REGISTRATION",
+        "full_entry_to_eod_continuous_coverage": "NO_VERIFICADO",
+        "path_observations": tracking["observations"], "score_calibration_oos": "NO_VERIFICADO"}
+
+
+def _summary(record, at):
+    label = _forward_label(record, "eod", at)
+    variants = []
+    for name, policy in record["policies"].items():
+        laboratory = _restore(record["entry"], policy["definition"], record["fees"], record["replay_kwargs"], policy["state"])
+        result = laboratory.result()
+        variants.append({"policy": name, "definition": policy["definition"], "input_sha256": record["path_sha256"],
+            "result": _json(result), "net_cost_basis": "shared expected_round_trip_cost; execution prices embed spread/slippage",
+            "sampled_entry_level_touches": policy["sampled_entry_level_touches"] |
+                {"coverage": label["status"], "continuous_hit_probability": "NO_VERIFICADO"}})
+    return {key: record[key] for key in ("entry", "registered_at", "baseline", "volatility",
+        "unverified_reasons", "economics_shadow", "economics_input_sha256", "native_clocks",
+        "entry_evidence_sha256", "native_decision_key", "evidence_captured_at", "signal_vector_status",
+        "signal_input_sha256", "entry_configuration_fingerprint", "configuration_fingerprint",
+        "financial_admission_snapshot_key", "financial_admission_snapshot_hash", "admission_at", "entry_fill_recorded_at",
+        "hypotheses", "path_observations", "path_sha256", "last_rejection")} | {
+            "forward_label": label, "movement_label": _forward_label(record, "movement", at), "variants": variants}
+
+
+def _cohorts(records):
+    cohorts = {}
+    for record in records:
+        entry, label = record["entry"], record["forward_label"]
+        hour = stamp(entry["opened_at"]).hour
+        for variant in record["variants"]:
+            key = (entry["asset_class"], entry["currency"], hour, variant["policy"])
+            cohort = cohorts.setdefault(key, {"family": key[0], "currency": key[1], "entry_hour_utc": hour,
+                "policy": key[3], "entries": 0, "complete_eod_labels": 0, "censored_entries": 0,
+                "target_touches_complete": 0, "stop_touches_complete": 0, "net": Decimal(0),
+                "mfe_observed": [], "mae_observed": []})
+            cohort["entries"] += 1
+            cohort["net"] += number(variant["result"]["net"])
+            measured = label["status"] == "MEDIDO"
+            cohort["complete_eod_labels"] += int(measured)
+            cohort["censored_entries"] += int(not measured)
+            if measured:
+                touches = variant["sampled_entry_level_touches"]
+                cohort["target_touches_complete"] += int(touches["target_at"] is not None)
+                cohort["stop_touches_complete"] += int(touches["stop_at"] is not None)
+                cohort["mfe_observed"].append(label["mfe_observed"])
+                cohort["mae_observed"].append(label["mae_observed"])
+    for cohort in cohorts.values():
+        n = cohort["complete_eod_labels"]
+        cohort["sampled_target_touch_fraction"] = cohort["target_touches_complete"]/n if n else None
+        cohort["sampled_stop_touch_fraction"] = cohort["stop_touches_complete"]/n if n else None
+        cohort["continuous_hit_probability"] = "NO_VERIFICADO"
+    return _json(list(cohorts.values()))
+
+
+def evaluate_runtime_lab(database, *, as_of, previous=None, row_limit=200, runtime_config=None):
+    """Return a nonbinding SHADOW report and bounded, JSON-safe checkpoint.
+
+    Caller persists checkpoint atomically under its own exclusive evidence
+    writer. Source failures do not advance cursors. Checkpoint/source/config
+    incompatibility starts a fresh current-tail watermark, never a backfill.
+    """
+    at = stamp(as_of)
+    if isinstance(row_limit, bool) or not isinstance(row_limit, int) or not 1 <= row_limit <= 500:
+        raise ValueError("INVALID_SHADOW_LAB_READ_BUDGET")
+    settings, session_policy = _settings(runtime_config)
+    fingerprint = digest({"schema": SCHEMA, "settings": settings, "hypotheses": HYPOTHESES,
+        "fees": {family: asdict(paper_fee_model(family)) for family in ("ACCIONES", "CEDEARS", "ETFS")},
+        "limits": [row_limit, MAX_ACTIVE, MAX_ARCHIVED, MAX_IDENTITIES, HISTORY_POINTS, MODEL_HORIZON_SECONDS, MIN_MODEL_LABELS]})
+    invalidated = None
+    if previous:
+        if len(canonical(previous).encode()) > MAX_CHECKPOINT_BYTES:
+            invalidated = "CHECKPOINT_CAPACITY_EXCEEDED"
+        elif previous.get("schema") != SCHEMA or previous.get("checkpoint_sha256") != _checkpoint_hash(previous):
+            invalidated = "CHECKPOINT_SCHEMA_OR_DIGEST_INVALID"
+        elif previous.get("configuration_fingerprint") != fingerprint:
+            invalidated = "CONFIGURATION_CHANGED_CHECKPOINT_INVALIDATED"
+        elif stamp(previous["last_as_of"]) > at:
+            raise ValueError("SHADOW_LAB_TIME_REVERSED")
+    prior = None if invalidated else previous
+    source_key, tails, rows, existing, truncated = _read(database, at, prior, row_limit)
+    if not rows:
+        if prior and (source_key != prior.get("source_key") or tails != prior.get("cursors")):
+            invalidated = "SOURCE_CHANGED_OR_CURSORS_REVERSED"
+        checkpoint = {"schema": SCHEMA, "source_key": source_key, "started_at": at.isoformat(),
+            "last_as_of": at.isoformat(), "configuration_fingerprint": fingerprint, "cursors": tails,
+            "history": {}, "active": {}, "archive": [], "pending_positions": {}, "pending_evidence": {}, "pending_admissions": {},
+            "retired_entries": 0, "dropped_entries": 0, "existing_open_entries_unverified": existing}
+        report = {"status": "START_AT_CURRENT_TAIL", "unverified_reason": "EXISTING_ENTRIES_NOT_RECONSTRUCTED",
+                  "existing_open_entries_unverified": existing, "entries": [], "entry_hour_cohorts": []}
+    else:
+        checkpoint = _json(prior)
+        rejections, registered = Counter(), 0
+        for table, batch in rows.items():
+            for row in batch:
+                checkpoint["cursors"][table] = row["_rowid"]
+                if row.get("_oversize") or len(canonical(row).encode()) > MAX_ROW_BYTES:
+                    rejections["SOURCE_ROW_OVERSIZE"] += 1
+                    continue
+                if table == "decision_evidence_snapshots":
+                    try:
+                        evidence = _native_evidence(row, at)
+                        if evidence and evidence["capture_phase"] == "ATOMIC_PAPER_ADMISSION":
+                            if stamp(evidence["entry_fill_recorded_at"]) > stamp(checkpoint["started_at"]):
+                                checkpoint["pending_admissions"][evidence["decision_key"]] = evidence
+                        elif evidence and stamp(evidence["clocks"]["intent_at"]) > stamp(checkpoint["started_at"]):
+                            checkpoint["pending_evidence"][evidence["paper_id"]] = evidence
+                    except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+                        rejections[str(exc) if isinstance(exc, ValueError) else "IMMUTABLE_ENTRY_EVIDENCE_INVALID"] += 1
+                elif table == "paper_positions":
+                    if str(row.get("asset_class")) not in {"ACCIONES", "CEDEARS", "ETFS"}:
+                        rejections["SPECIALIZED_LIFECYCLE_OUTSIDE_EXIT_LAB"] += 1
+                        continue
+                    try:
+                        if not stamp(checkpoint["started_at"]) < stamp(row["opened_at"]) <= at:
+                            raise ValueError("ENTRY_BEFORE_WATERMARK_OR_IN_FUTURE")
+                        checkpoint["pending_positions"][row["paper_id"]] = row
+                    except (ValueError, TypeError, KeyError):
+                        rejections["ENTRY_BEFORE_WATERMARK_OR_IN_FUTURE"] += 1
+        # Register before adding the new quote batch to history. Volatility can
+        # therefore only use evidence previously available to the worker.
+        for paper_id, row in list(checkpoint["pending_positions"].items()):
+            if paper_id in checkpoint["active"]:
+                del checkpoint["pending_positions"][paper_id]
+                continue
+            if len(checkpoint["active"]) >= MAX_ACTIVE:
+                rejections["ACTIVE_LAB_CAPACITY_CENSORED"] += 1
+                checkpoint["dropped_entries"] += 1
+                del checkpoint["pending_positions"][paper_id]
+                continue
+            try:
+                checkpoint["active"][paper_id] = _register(row, checkpoint["pending_evidence"].get(paper_id),
+                                                           checkpoint, settings, session_policy, at)
+                registered += 1
+                del checkpoint["pending_positions"][paper_id]
+                used = checkpoint["pending_evidence"].pop(paper_id, None)
+                if used and used.get("financial_admission_snapshot_key"):
+                    checkpoint["pending_admissions"].pop(used["financial_admission_snapshot_key"], None)
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+                reason = str(exc) if isinstance(exc, ValueError) else "FACTUAL_ENTRY_INPUTS_INVALID"
+                rejections[reason] += 1
+                # Gate persistence can lag the ledger transaction by one tick.
+                # Missing immutable evidence may retry within the bounded window.
+                if reason not in {"IMMUTABLE_NATIVE_ENTRY_EVIDENCE_UNAVAILABLE", "IMMUTABLE_FINANCIAL_ADMISSION_UNAVAILABLE"} or (at-stamp(row["opened_at"])).total_seconds() > 120:
+                    checkpoint["dropped_entries"] += 1
+                    del checkpoint["pending_positions"][paper_id]
+        books = []
+        for row in rows["market_snapshots"]:
+            if row.get("_oversize"):
+                continue
+            try:
+                book = _book(row)
+                ident = identity(book)
+                if ident[1] not in {"ACCIONES", "CEDEARS", "ETFS"}:
+                    continue
+                error = usable_book(book, at, max_age_seconds=settings["max_age_seconds"])
+                if error:
+                    rejections[error.upper()] += 1
+                    continue
+                books.append(book)
+            except (ValueError, TypeError, KeyError):
+                rejections["INVALID_QUOTE"] += 1
+        books.sort(key=lambda book: (stamp(book["observed_at"]), stamp(book["book_at"])))
+        for paper_id, record in list(checkpoint["active"].items()):
+            if truncated:
+                # A bounded read may miss intermediate clocks once the backlog
+                # ages. Never use that incomplete path to claim full labels or
+                # an empirical touch probability denominator.
+                record["path_censoring"] = "SOURCE_READ_TRUNCATED_PATH_CENSORED"
+            _advance(record, books, at, rejections)
+            if at > stamp(record["replay_kwargs"]["eod_at"]) + timedelta(seconds=120):
+                checkpoint["archive"].append(_summary(record, at))
+                del checkpoint["active"][paper_id]
+                checkpoint["retired_entries"] += 1
+        checkpoint["archive"] = checkpoint["archive"][-MAX_ARCHIVED:]
+        for book in books:
+            key = digest(identity(book))
+            history = checkpoint["history"].setdefault(key, [])
+            if history and stamp(book["book_at"]) <= stamp(history[-1]["book"]["book_at"]):
+                continue
+            history.append({"available_at": at.isoformat(), "book": book})
+            checkpoint["history"][key] = history[-HISTORY_POINTS:]
+        # Old inputs never train a new session; no historical refill is attempted.
+        checkpoint["history"] = {key: value for key, value in checkpoint["history"].items()
+            if value and (at-stamp(value[-1]["available_at"])).total_seconds() <= 5400}
+        ordered = sorted(checkpoint["history"], key=lambda key: checkpoint["history"][key][-1]["available_at"], reverse=True)
+        checkpoint["history"] = {key: checkpoint["history"][key] for key in ordered[:MAX_IDENTITIES]}
+        for name in ("pending_positions", "pending_evidence", "pending_admissions"):
+            while len(checkpoint[name]) > MAX_ACTIVE*2:
+                del checkpoint[name][next(iter(checkpoint[name]))]
+                rejections["PENDING_ENTRY_CAPACITY_CENSORED"] += 1
+        entries = checkpoint["archive"] + [_summary(record, at) for record in checkpoint["active"].values()]
+        report = {"status": "SHADOW_RUNTIME_EVALUATED", "new_registrations": registered,
+                  "active_entries": len(checkpoint["active"]), "retired_entries": checkpoint["retired_entries"],
+                  "dropped_entries": checkpoint["dropped_entries"], "rejections": dict(rejections),
+                  "entries": entries, "entry_hour_cohorts": _cohorts(entries)}
+        checkpoint["last_as_of"] = at.isoformat()
+    checkpoint["checkpoint_sha256"] = _checkpoint_hash(checkpoint)
+    if len(canonical(checkpoint).encode()) > MAX_CHECKPOINT_BYTES:
+        raise ValueError("SHADOW_LAB_CHECKPOINT_CAPACITY_EXCEEDED")
+    report.update(schema=SCHEMA, as_of=at.isoformat(), mode="SHADOW", decision_effect="NONE",
+                  real_orders_sent=0, real_order_routes=[], real_routes="NOT_CALLED",
+                  source_database_effect="READ_ONLY", legacy_history_backfill=False,
+                  checkpoint_sha256=checkpoint["checkpoint_sha256"], configuration_fingerprint=fingerprint,
+                  checkpoint_invalidation=invalidated, source_read_truncated=truncated,
+                  source_query_budget_seconds=query_budget_seconds("lab"), row_limit_per_table=row_limit,
+                  economic_edge_validated=False, score_calibration_oos="NO_VERIFICADO",
+                  parameter_promotion=False, factual_exit_policy_effect="NONE", provider_requests=0)
+    report["cohort_scope"] = {"basis": "bounded prospective registered entries only", "maximum_active": MAX_ACTIVE,
+        "maximum_archive": MAX_ARCHIVED, "archived_entries_retained": len(checkpoint["archive"]),
+        "archive_truncated": checkpoint["retired_entries"] > len(checkpoint["archive"])}
+    return report, checkpoint

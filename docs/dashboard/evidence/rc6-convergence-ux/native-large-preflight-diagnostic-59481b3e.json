@@ -1,0 +1,35 @@
+{
+  "schema": "rc6.dashboard-native-large-preflight-diagnostic.v1",
+  "acceptance_claim": false,
+  "source_sha": "59481b3e9e0470850232fb78bbc1f583675e4c8a",
+  "timing_wrappers_only": true,
+  "snapshot_elapsed_seconds": 0.12973751400204492,
+  "inside_elapsed_seconds": 1.115323903002718,
+  "total_elapsed_seconds": 1.1181131320008717,
+  "cut_state": "NO_VERIFICADO",
+  "cut_reason": "COMMITTED_PROJECTION_REJECTED",
+  "error_class": "ValueError",
+  "store_errors": [
+    "SOURCE_SNAPSHOT_REJECTED"
+  ],
+  "calls": [
+    {
+      "call": "_wire_generation",
+      "elapsed_seconds": 0.9819227620027959,
+      "error": {
+        "class": "ValueError",
+        "code": "SHADOW_PROJECTION_QUERY_DEADLINE"
+      }
+    },
+    {
+      "call": "read_committed_projection",
+      "elapsed_seconds": 0.9821146229987789,
+      "error": {
+        "class": "ValueError",
+        "code": "SHADOW_PROJECTION_QUERY_DEADLINE"
+      }
+    }
+  ],
+  "source_sqlite_attempted": false,
+  "output_query_bytes": null
+}

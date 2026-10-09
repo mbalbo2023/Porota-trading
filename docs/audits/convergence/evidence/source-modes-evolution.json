@@ -1,0 +1,65 @@
+{
+  "additional_guard_scope": "Additional integration findings require unique IDs, a genuine original requirement parent and executed native guards. They do not inflate the 80 original scenario IDs.",
+  "after_code_sha256": {
+    "scripts/rc6_convergence_provenance.py": "6838174594e5c670552d97436743cd7679b96f196f8fb5372f9ed52d53df7b1a",
+    "tests/test_rc6_convergence_provenance.py": "5a34166a9655d7b36c6bbebd4ae64b953a16946c54548a52b6ce8940a968dfd6"
+  },
+  "assertion_scope": "Native CLI on isolated actual Git repositories. The supplied fixture XML is synthetic parser input, not factual market or final candidate execution evidence.",
+  "baseline_sha": "8ef58d5c016f4fbae9b6354e141e119521cdcb99",
+  "before_code_sha256": "47e931cefa40771780eaab63888fe9af3114f5a40ab955a3173eaeeb69788dcc",
+  "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /workspace/venv_rc6_frozen311/bin/python -m pytest tests/test_rc6_convergence_provenance.py tests/test_rc6_convergence_scenario_preservation.py --junitxml=/tmp/rc6_source_modes_evolution_green.xml",
+  "fix": "Compare complete Git source records including mode, require a native linked evolution guard, and disclose byte and mode preservation separately.",
+  "invalid_initial_harness": "The first fixture incorrectly searched for a path common to every historical source and stopped before the CLI. Its failure is harness-invalid and is not productive RED evidence.",
+  "native_negative": "An isolated actual Git repository changes 100644 to 100755 with identical blob bytes and removes that path evolution; the same native CLI must reject UNEXPLAINED_SOURCE_EVOLUTION.",
+  "rca": "A clean committed mode-only change to an unchanged original source could receive GREEN without a guarded path-evolution record because the original comparison used blob equality alone.",
+  "receipts": {
+    "green": {
+      "path": "docs/audits/convergence/evidence/source-modes-evolution-green.xml",
+      "sha256": "02c96e3ae64c417792a220997b9d65965500a795b93128383f20f81c9109891c",
+      "summary": {
+        "errors": "0",
+        "failures": "0",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "65",
+        "time": "37.590",
+        "timestamp": "2026-10-05T05:45:39.789742+00:00"
+      }
+    },
+    "invalid_initial_harness": {
+      "path": "docs/audits/convergence/evidence/source-modes-evolution-invalid-harness.xml",
+      "sha256": "8084fc397b927244d432c5c23fb8e46b3723828b4bc49e1d299bf5cd69204d03",
+      "summary": {
+        "errors": "0",
+        "failures": "1",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "1",
+        "time": "1.037",
+        "timestamp": "2026-10-05T05:42:36.468621+00:00"
+      }
+    },
+    "red": {
+      "path": "docs/audits/convergence/evidence/source-modes-evolution-red.xml",
+      "sha256": "e07bf57d6b63d4f1bb439e627ff4990d2848e5d0d6d282171a4c59ee99fae72e",
+      "summary": {
+        "errors": "0",
+        "failures": "1",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "1",
+        "time": "1.642",
+        "timestamp": "2026-10-05T05:44:40.147379+00:00"
+      }
+    }
+  },
+  "schema": "rc6.source-mode-evolution-guard.v1",
+  "scope_limits": [
+    "Final frozen governed execution pending.",
+    "No operational permission changes or deployment authority."
+  ],
+  "status": "PASS_OFFLINE_NATIVE_CLI_NOT_FINAL_FROZEN"
+}

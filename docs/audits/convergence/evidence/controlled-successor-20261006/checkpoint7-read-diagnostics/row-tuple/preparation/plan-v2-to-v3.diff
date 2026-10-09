@@ -1,0 +1,156 @@
+--- plan.json (preserved V2)
++++ plan.v3.json
+@@ -6,6 +6,7 @@
+   "SQL_execute_timing_limit": "execute may prepare and step; list covers later native stepping+materialization. No claim of exclusive SQL/Row allocation cost.",
+   "Source_custody": "RawGit prepare_binding + all3680 physical Source files/dirs, source bytes/modes/blob IDs and original10 stable fields before/after each real FIN; atimes separately disclosed. No exclusions/reset.",
+   "Source_working_root_forbidden": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source",
++  "V3_only_change": "Native finalization CONTROL published immediately upon original return; producer and parent enforce every original lifecycle predicate before any producer postread or parent Source/DATA/log/result/typed postread. Original SQL/cursor/timestamp components unchanged.",
+   "actual_SQL_guard": "Audited sqlite3.connect only file: URI mode=ro physically inside the fresh owned scratch. Original DATA and sidecars never opened by SQLite; normal source_connection/readonly_copy create and close its private copy unchanged.",
+   "artifacts": {
+     "ast-normalization-proof.json": {
+@@ -24,6 +25,10 @@
+       "bytes": 2715,
+       "sha256": "be9998e6a60a4376a29d81e57b2141c4deba5221686b8c62d8c7a78129b5195f"
+     },
++    "launcher-v2-to-v3.diff": {
++      "bytes": 9537,
++      "sha256": "f3a862b650b7780161323dd7838bd25b5ef7e79b402c4bcd843dd2d9b133fdb9"
++    },
+     "original-read.py.txt": {
+       "bytes": 3335,
+       "sha256": "57449f72ed5102b76bd6a0235da600d0d8efe5a1bd86d16989076f8786f00199"
+@@ -47,6 +52,18 @@
+     "pair_owned_launch_v2.py": {
+       "bytes": 24165,
+       "sha256": "3748ed9a1b0d5c1b89841a746338f1eef70cbed6cbf7cbade76bfd6b3ae27c0c"
++    },
++    "pair_owned_launch_v3.py": {
++      "bytes": 29990,
++      "sha256": "16e21114ce5965cf0a93b2525a45a211c108fbf9ed4f6dd3b1bbb837b516f479"
++    },
++    "plan.json": {
++      "bytes": 15027,
++      "sha256": "7d2c9b14e0b77b6374552b3da5124787eda0a8d1db3e227227f7de2834b9701b"
++    },
++    "preparation-handoff.json": {
++      "bytes": 704,
++      "sha256": "16a740b28d239d3bdd808f3dea929b5055159701326036ca8d5be5fa63e02cc0"
+     },
+     "row-control.py.txt": {
+       "bytes": 3915,
+@@ -73,12 +90,13 @@
+     "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+     "-I",
+     "-B",
+-    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/pair_owned_launch_v2.py",
++    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/pair_owned_launch_v3.py",
+     "--child",
+     "ROW_control|TUPLE_component"
+   ],
+   "child_cwd": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source",
+-  "created_utc": "2026-10-06T21:17:15.658223+00:00",
++  "components_unchanged_sha256": "c79ac44ab2c4eb9316abfd42df008bfcf6c50e9aac5689dd6f5a53ac5df73029",
++  "created_utc": "2026-10-06T21:24:01.429166+00:00",
+   "cwd": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8",
+   "driver_browser_Gov_BIG_Horizon_not_launched": true,
+   "durable_handshake": "Root review exact scripts/diff/pin/stat11/hashes and publish SHA/action before launch. After full FIN root archives immutable raw hashes/size/index and exact results. No GitHub/ref/commit/deploy writes from this agent.",
+@@ -97,7 +115,10 @@
+     "ROW_control/parent.source-after.json",
+     "ROW_control/parent.data-after.json",
+     "TUPLE_component/same members",
+-    "pair-final.json"
++    "pair-final.json",
++    "ROW_control/child-finalization-control.json immediately after native finalizer returns",
++    "ROW_control/native-finalization-readback-control.json before any parent producer postread",
++    "TUPLE_component/same lifecycle CONTROL pair if first variant fully closed"
+   ],
+   "frozen_source_existing_export_no_overlays_or_fresh_clone": true,
+   "input_absent_sidecars": [
+@@ -163,11 +184,48 @@
+   "material_gates_closed": [],
+   "mode": "PRODUCTION_PAPER / SIMULATION",
+   "namespace": "Each native PID has fresh0700 same-disk external phase_namespace/HYPOTHESIS/LOG_DIR/tmp, no aliases/hardlinks. No Source clone, overlay, function/global/module replacement or provider call.",
++  "native_finalization_CONTROL": {
++    "CONTROL_capture_bound_bytes": 134217728,
++    "all_original_predicates": [
++      "status GREEN",
++      "management_bound_seconds exactly5",
++      "finite nonnegative wall_seconds<=5",
++      "finalization_thread_finished True",
++      "kernel_echild_before_phase_return True",
++      "signal_guard_installed_and_witnessed True",
++      "forced_termination False in original declared Python scope",
++      "forced_termination_attempted False",
++      "signal_vetoed False",
++      "termination_signal_attempts empty",
++      "errors empty",
++      "unexpected_kernel_children empty",
++      "all six original protocol stages present in original order, completed True and bounded times",
++      "fresh original4 infrastructure fields None and inherited_tracker_preserved False",
++      "original literal signal observation scope preserved"
++    ],
++    "metadata_GREEN_is_only_lifecycle_not_material_qualification": true,
++    "missing_RED_UNKNOWN_malformed_or_PID_mismatch": "No parent Source/DATA/log/result/typed reads, no second variant. Producer no typed serialization or Source/DATA postread. Remains DIAGNOSTIC_RED, never retries.",
++    "parent_order": [
++      "Full original subprocess_phase kernel/resource FIN barrier",
++      "Read ONLY bounded owned NOFOLLOW/NOATIME lifecycle CONTROL, preserving all11 capture fields",
++      "Revalidate actual main PID/variant/Source SHA/tree/manager and all original finalization fields",
++      "Publish native-finalization-readback-control.json",
++      "Only then read Source/DATA/child result/typed payload"
++    ],
++    "producer_order": [
++      "Original finalize_child_infrastructure(initial,limit=5)",
++      "Immediately O_EXCL publish child-finalization-control.json including original report, actual PID, variant, Source SHA/tree/manager hash",
++      "Require every original predicate before typed serialization and Source/DATA postread"
++    ],
++    "producer_payload_readback_before_control": 0,
++    "scope": "Original native Python finalizer/tracker/ECHILD control only; no binary/kernel-transitive no-signal assertion"
++  },
+   "native_import_proof_qualified": false,
+   "necessary_custody_reads_scope": "Future bounded NOATIME hash captures validate input before/after both variants identically; no deliberate DATA cache priming/reset or SQL probe. OS cache/allocation context remains a confound, not reproduced.",
+   "network_claim_scope": "Actual process-local operation observations plus separate kernel IPv6 creation witness; no binary/kernel-transitive isolation or inferred zero constructors.",
+   "no_GC_callbacks_collection_thresholds_profile_trace_dummyheap_extra_SQL_business_cache": true,
+   "no_exit_zero_exception_for_qualification": "Only physical custody allows deliberate ALIEN diagnostic exit1; every material/import qualification remains false",
++  "no_source_SQL_cursor_or_sparse_timestamp_change_from_reviewed_V2": true,
+   "observation": "Sparse clocks only deadline_created/private_snapshot_acquired and execute_return/list_return/transform_end at up to4 tables, actual first native Row type/per-cursor factory. No per-row callback. Recording body cost lower bounds disclosed and never subtracted.",
+   "one_invocation_each_no_retry": true,
+   "original_closed_BIG_remains_RED": true,
+@@ -192,7 +250,7 @@
+     "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+     "-I",
+     "-B",
+-    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/pair_owned_launch_v2.py"
++    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/pair_owned_launch_v3.py"
+   ],
+   "planned_progress": "Print supervisor PID and variant start; before60s report owned kernel status only; print actual main PID/FIN and postread barrier. No producer payload is inspected while active.",
+   "postread_barrier": [
+@@ -215,6 +273,11 @@
+     "actual_reap<=60s",
+     "peak_RSS<2GiB"
+   ],
++  "preserved_previously_reviewed_V2_plan": {
++    "bytes": 15027,
++    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/plan.json",
++    "sha256": "7d2c9b14e0b77b6374552b3da5124787eda0a8d1db3e227227f7de2834b9701b"
++  },
+   "read_limits": {
+     "Source_capture_and_consumer_seconds": 0.5,
+     "all_four_original_specs_and_schemas_retained": true,
+@@ -231,7 +294,7 @@
+   },
+   "real_orders_sent": 0,
+   "resource_and_result_RED_preserved": "Any original deadline/SQL/custody/network/type/cleanup failure remains in RAW; no retry, skip, policy change or PASS promotion.",
+-  "schema": "rc6.row-tuple.original-reader-pair.preparation.v2",
++  "schema": "rc6.row-tuple.original-reader-pair.preparation.v3",
+   "source_functions": {
+     "rc6_audit_evidence/sqlite_snapshot.py": {
+       "bytes": 8516,
+@@ -328,7 +391,7 @@
+   "status": "PREPARED_NOT_EXECUTED_AWAIT_ROOT_REVIEW_AND_EXCLUSIVE_CPU_IO_SLOT",
+   "typed_comparison": "After both full kernel FIN only: exact ordered full typed bytes for None,bool,int,str,float64 binary bits including -0.0/NaN,bytes,list,tuple,dict keys/values; no default=str or JSON graph reconstruction. Private metadata dict identity separately witnessed in each native result.",
+   "typed_comparison_limits": "This fixed native DB covers its actual types/content/alias invariants only. No mutation/oracle suite validation or canonical context/callback compatibility is inferred.",
+-  "unknown_or_any_barrier_RED": "No parent Source/DATA/log/payload reads, no second variant, no retry",
++  "unknown_or_any_barrier_RED": "No parent Source/DATA/log/payload reads, no second variant, no retry; requires BOTH original full outer kernel barrier AND original native-finalization CONTROL predicates.",
+   "variants_in_fixed_sequence": [
+     "ROW_control",
+     "TUPLE_component"

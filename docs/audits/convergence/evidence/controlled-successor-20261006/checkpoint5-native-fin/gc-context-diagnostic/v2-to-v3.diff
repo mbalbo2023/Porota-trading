@@ -1,0 +1,48 @@
+--- contextual_gc_passive_v2.py
++++ contextual_gc_passive_v3.py
+@@ -470,14 +470,26 @@
+                       'source_sha':SHA,'DIAGNOSTIC_ONLY':True,'command':command}),flush=True)
+     kernel=gov.subprocess_phase(command,SOURCE,RAW/'native.log',env,limit=300)
+     publish('kernel-supervision.json',kernel)
++    kernel_closed=(kernel['actual_child_reaped'] and kernel['wait4_reaped_pid']==kernel['pid']
++        and kernel['kernel_pre_popen_echild_verified'] and kernel['owned_children_exhaustion_verified']
++        and kernel['process_group_absent_at_main_reap'] and kernel['process_group_absent_after_reap']
++        and not kernel['kernel_wait4_zero_observed_irreversible_red']
++        and not kernel['late_observed_main_reap_irreversible_red'] and not kernel['timed_out']
++        and kernel['subreaper_restore_attempted_on_all_activated_paths'] is True
++        and not kernel['owned_group_signal_observations'] and not kernel['supervisor_errors']
++        and not kernel['residual_descendants_observed'] and not kernel['remaining_owned_children']
++        and not kernel['adopted_descendants_reaped'] and kernel['termination_reap_restore_cleanup_seconds']<=5
++        and type(kernel['peak_rss_bytes']) is int and kernel['peak_rss_bytes']<RSS_LIMIT)
+     post_echild=any(r.get('phase')=='after_main_pid_reap' and r.get('outcome')=='ECHILD'
+                    for r in kernel['kernel_owned_child_observations'])
+-    postread=(kernel['actual_child_reaped'] is True and kernel['owned_children_exhaustion_verified'] is True
+-              and kernel['process_group_absent_after_reap'] is True and kernel['remaining_owned_children']==[]
+-              and post_echild)
++    # Physical postreads require EVERY original kernel/resource guard, even
++    # if the native main exited RED because this external entry is ALIEN.
++    postread=bool(kernel_closed and post_echild)
+     publish('postread-kernel-barrier.json',{'postread_allowed':bool(postread),'actual_reap':kernel['actual_child_reaped'],
+         'owned_exhaustion':kernel['owned_children_exhaustion_verified'],'PGID_absent':kernel['process_group_absent_after_reap'],
+         'post_main_actual_ECHILD':post_echild,'remaining_children':kernel['remaining_owned_children'],
++        'full_original_kernel_resource_guards_closed':bool(kernel_closed),
++        'subreaper_restore_attempted':kernel['subreaper_restore_attempted_on_all_activated_paths'],
+         'historical_timeout_signal_late_reap_or_residual_RED_never_reset':True})
+     errors=[];atimes={};code_preserved=False;data_preserved=False;native_hash=None;join=None
+     if postread:
+@@ -505,15 +517,6 @@
+             join=closed_raw_join(native);publish('closed-gc-context-join.json',join)
+         except BaseException as error:errors.append(failure(error,'post_real_FIN_source_data_GC'))
+     else:errors.append({'stage':'postread','reason':'KERNEL_NOT_QUIESCENT_NO_SOURCE_DATA_RAW_READ'})
+-    kernel_closed=(kernel['actual_child_reaped'] and kernel['wait4_reaped_pid']==kernel['pid']
+-        and kernel['kernel_pre_popen_echild_verified'] and kernel['owned_children_exhaustion_verified']
+-        and kernel['process_group_absent_at_main_reap'] and kernel['process_group_absent_after_reap']
+-        and not kernel['kernel_wait4_zero_observed_irreversible_red']
+-        and not kernel['late_observed_main_reap_irreversible_red'] and not kernel['timed_out']
+-        and not kernel['owned_group_signal_observations'] and not kernel['supervisor_errors']
+-        and not kernel['residual_descendants_observed'] and not kernel['remaining_owned_children']
+-        and not kernel['adopted_descendants_reaped'] and kernel['termination_reap_restore_cleanup_seconds']<=5
+-        and type(kernel['peak_rss_bytes']) is int and kernel['peak_rss_bytes']<RSS_LIMIT)
+     raw_bytes=(sum(p.lstat().st_size for p in RAW.rglob('*') if p.is_file()) if postread else None)
+     report={'schema':'rc6.passive-contextual-gc-diagnostic.final.v1','status':'RED','DIAGNOSTIC_ONLY':True,
+         'gate_qualified':False,'canonical_BIG_qualified':False,'final_candidate_eligible':False,

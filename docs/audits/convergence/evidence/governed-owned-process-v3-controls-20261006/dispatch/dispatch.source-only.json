@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "-S",
+    "/tmp/rc6_governed_v3_owned_process_controls_candidate_v2.py",
+    "--output-root",
+    "/workspace/rc6-governed-v3-process-controls-20261006-raw"
+  ],
+  "driver_sha256": "c262ebcc57184b839e15b2023f1b12b8eb8064d864902d2b01f9aa2a5852d623",
+  "driver_cap20": true,
+  "outer_main_management_seconds": 30,
+  "product_native": 0,
+  "full_gov": false
+}

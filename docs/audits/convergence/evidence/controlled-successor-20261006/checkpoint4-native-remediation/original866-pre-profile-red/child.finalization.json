@@ -1,0 +1,24 @@
+{
+  "errors": [],
+  "finalization_thread_finished": true,
+  "forced_termination": false,
+  "forced_termination_attempted": false,
+  "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+  "inherited_tracker_preserved": false,
+  "initial": {
+    "forkserver_alive_fd": null,
+    "forkserver_pid": null,
+    "resource_tracker_fd": null,
+    "resource_tracker_pid": null
+  },
+  "joined_children": [],
+  "kernel_echild_before_phase_return": true,
+  "management_bound_seconds": 5,
+  "signal_guard_installed_and_witnessed": true,
+  "signal_vetoed": false,
+  "status": "GREEN",
+  "stopped_owned_infrastructure": [],
+  "termination_signal_attempts": [],
+  "unexpected_kernel_children": [],
+  "wall_seconds": 0.0004079139998793835
+}

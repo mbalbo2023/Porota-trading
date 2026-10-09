@@ -1,0 +1,31 @@
+{
+  "context": {
+    "candidate_sha": "d49d81c22a9b385c404c7a3524d7aaaab233ac23",
+    "candidate_tree": "4a39a21dc8e7bf76a69a2cff1b4c6b0fc7079467",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "2",
+    "run_id": "471",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "image_ref": "porota-predeploy-v2:d49d81c22a9b385c404c7a3524d7aaaab233ac23",
+  "measurement_paths": [
+    "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest/test_real_owned_pytest_failed_0/native-source",
+    "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest/test_real_owned_pytest_failed_0/native-runner",
+    "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest/test_real_owned_pytest_failed_0"
+  ],
+  "owner_uid": 1000,
+  "owner_uuid": "819307d4925940049839f8e54294764c",
+  "private_root": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest/test_real_owned_pytest_failed_0/native-runner/porota-predeploy-471-2-819307d4925940049839f8e54294764c",
+  "receipt_path": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest/test_real_owned_pytest_failed_0/native-runner/porota-predeploy-471-2.cleanup.json",
+  "repo_root": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest/test_real_owned_pytest_failed_0/native-source",
+  "root_identity": [
+    27,
+    1607732,
+    1000,
+    1000
+  ],
+  "root_mount_id": 52,
+  "runner_temp": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest/test_real_owned_pytest_failed_0/native-runner",
+  "schema": "rc6.predeploy-private-owner.v1"
+}

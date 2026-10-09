@@ -1,0 +1,9 @@
+{
+  "management_deadline": 25794.472160171,
+  "owned_log_bytes_fstat_only": 0,
+  "phase": "component-new-simpleExit0",
+  "pid": 24843,
+  "scope": "LOCAL_FOCAL_PARENT_ONLY_NOT_GLOBAL_FIN",
+  "stage": "started",
+  "wall_seconds": 0.0005838139986735769
+}

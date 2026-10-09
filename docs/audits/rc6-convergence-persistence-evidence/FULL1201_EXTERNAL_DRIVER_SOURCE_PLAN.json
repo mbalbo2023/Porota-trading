@@ -1,0 +1,166 @@
+{
+  "driver_proof": {
+    "custody": "Producer baseline/after contain eleven named stats plus SHA for MAIN/WAL/SHM/journal; driver independently captures post-reap source DB files NOATIME/NOFOLLOW/NONBLOCK and compares to that native baseline. Initial baseline is producer-recorded, not a fabricated supervisor before-fixture DB observation.",
+    "environment": "Approved exact Python version selected by CLI, Linux/x86_64/glibc>=2.36 real virtualenv, installed total+unique157 exact policy/lock names/versions/hashsets before fixture creation.",
+    "imports": "Producer records actual child module origins; driver validates that pinned source/stdlib/actual virtualenv graph. Supervisor itself imports stdlib only, aside from Python environment startup behavior.",
+    "maintenance": "No additional worker/GC/restore/SQLite/pin calls. Positive rotations/ACKcompaction required by native full contract; zero GCdeleted/intent is explicitly no positive deletion proof.",
+    "process": "New process session, native PID, actual wait4 status/user+systemCPU/lifetimeRSS/input+outputblocks/reap. Completion must be observed by wait4 strictly before the management deadline; polling cannot infer an earlier exit. Lifetime wait4 RSS must remain within the existing2GiB limit. Watchdog makes one TERM/KILL termination attempt with separately declared grace; unreaped process prevents acceptance and all postcaptures of source/index/tar/database/log.",
+    "progress": "Only native stdout/result.json are producers. Driver reports elapsed/remain/log bytes/PID without interpreting an in-progress result as complete.",
+    "result": "Lossless native JSON/log retained after actual reap. Green requires exact actual1202 cuts with each Source read clock joined to its cut, all flags/metadata/custody/source checks, final CURRENT clock+sequence equal the last cut, normal child exit0 observed before the management deadline, existing2GiB lifetimeRSS, no management timeout/errors and actual reap.",
+    "source": "Independent stdlib raw Git/whole namespace and SHA/mode/blob verification before/after, original index/tar rehash, driver bytes bound to the Git member."
+  },
+  "future_command": "/workspace/venv_rc6_frozen311/bin/python -I -B \"$PREPARED_DRIVER\" --source-repo \"$RC6_HORIZON_REPO\" --source-root \"$RC6_HORIZON_WHOLE\" --source-sha \"$RC6_HORIZON_SHA\" --source-tree \"$RC6_HORIZON_TREE\" --source-index \"$RC6_HORIZON_PREPARED/source.index.json\" --raw-root \"$RC6_HORIZON_RAW_NEW\" --data-root \"$RC6_HORIZON_DATA_NEW\" --python /workspace/venv_rc6_frozen311/bin/python --python-version 3.11.16 --watchdog-seconds \"$RC6_HORIZON_MANAGEMENT_WATCHDOG\"",
+  "historical_boundary": {
+    "guard2_run": "The separate 3bad2/2 native physical custody guard receipt remains its own scoped execution, not full horizon or driver execution.",
+    "normal4_driver": "Existing d933 hardcoded300s/ticks4 original source and RAW remain untouched.",
+    "normal4s_do_not_qualify": "No duration extrapolation from eb17/d933 four-cut witnesses and no reinterpretation of old10stats+SHA as11."
+  },
+  "limits": [
+    "This plan and driver have only AST/compile validation; no import, native child, fixture, benchmark or horizon was executed during preparation.",
+    "Future Source S, tree, raw archive/index, interpreter and explicit management watchdog must be fixed by ROOT after all integration.",
+    "Local pinned source and producer-captured evidence do not supply external ledger/provider/market/account authenticity.",
+    "Python hooks and metadata version checks are not kernel isolation, wheel-byte authentication or an observed Docker ImageID.",
+    "Filesystem allocation/preflight and final capture have no new absolute wall deadline inferred from the native30s gate or the child management watchdog.",
+    "A local horizon green remains separate from finalGov/FIP/browser/build/image/primary/runtime approval."
+  ],
+  "management_cli": {
+    "--progress-poll-seconds": 5,
+    "--terminate-grace-seconds": 2,
+    "scope": "Watchdog applies to child supervision through observed wait4 completion. Native30s postPRE full-cycle gate remains unchanged. Preflight/capture/file IO and final custody/receipt emission are outside this child-management timer; signal/reap cannot guarantee kernel I/O latency. native_completion_observation_elapsed_seconds is the child-supervision clock; supervisor_elapsed_before_final_custody_seconds is explicitly partial and excludes the final Source/log/proof/receipt tail.",
+    "watchdog": "Explicit finite positive caller value; no default borrowed from the historical300s NORMAL4 wrapper."
+  },
+  "namespaces": {
+    "data": "Inexistent private native fixture root with existing canonical parent, separate from raw/whole/repo. Profile creates data/data/paper_v17/observer_v17.db.",
+    "git": "Local raw Git commit/tree/blob authority with no replacement refs or lazy fetch; HEAD may later advance while S objects remain immutable.",
+    "prepared": "Existing source.index.json and adjacent original source.tar. This is separate from new raw-root.",
+    "raw": "Inexistent output directory with existing canonical parent; source/index/native result copies retained losslessly there.",
+    "whole": "Exact full Git archive of S, with all SHA/modes/blobIDs and no overlays/empty dirs/aliases."
+  },
+  "native_contract": {
+    "asof_step_seconds": 30,
+    "business_source": "Fixed synthetic SourceDB; intraday must become unverified after native AT+120s. No data refresh/rewrite/injected marks/entryauthority.",
+    "byte_members": [
+      "report.json.gz",
+      "checkpoint.json.gz",
+      "status.json",
+      "manifest.json",
+      "projection.sqlite"
+    ],
+    "catalog_count": 1200,
+    "factory_restart_indices": [
+      361,
+      841
+    ],
+    "full_cycle_scope": "PostPRE constructor/recovery+tick+CURRENT+archive/publicrestore+source/import/membercleanup+resultpublication; PRE measured separately.",
+    "full_cycle_seconds": 30,
+    "input_observation_rows": 6000,
+    "phases": "Native nonempty phase values are preserved; no continuous OPEN requirement or real PPI session authority is manufactured.",
+    "postpre_asof_span_seconds": 36000,
+    "postpre_calls": 1201,
+    "pre_seed_calls": 1,
+    "quotas": {
+      "archive_bytes": 536870912,
+      "archive_native_recursive_entries": 32768,
+      "filesystem_reserve_bytes": 2147483648,
+      "live_bytes": 134217728,
+      "live_recursive_entries": 512,
+      "minimum_free_inode_percent": 10,
+      "rss_bytes": 2147483648,
+      "scratch_bytes": 536870912
+    },
+    "recovery_seconds": 3600,
+    "restart_kind": "SAME_PROCESS_FACTORY_RECONSTRUCTION_NOT_SIGKILL",
+    "retention_seconds": 32400,
+    "total_calls": 1202
+  },
+  "ownership": {
+    "branch": "work/rc6-source-db-st-blocks-20261005",
+    "owner": "budget_review",
+    "scope": "Only this new external .py.source driver and its source plan; no ROOT/product/profile edits.",
+    "status": "WRITE_OWNER_DELEGATED_SOURCE_ONLY",
+    "workstream_id": "RC6_FULL1201_EXTERNAL_DRIVER_SOURCE"
+  },
+  "phase": {
+    "AST_compile_without_import_or_execution": "PASS",
+    "artifact_validated": false,
+    "deployed": false,
+    "embedded_preflight_AST_compile": "PASS",
+    "final_input_provenance": null,
+    "native_child_executions": 0,
+    "native_horizon_validated": false,
+    "native_worker_ticks": 0,
+    "runtime_validated": false,
+    "source_S": null,
+    "source_T": null,
+    "source_self_commit": null
+  },
+  "receipts": [
+    "driver.py.source",
+    "source.index.json",
+    "driver-before.json",
+    "driver-started.json",
+    "driver-progress.json",
+    "native1201.log",
+    "native-horizon-result.json",
+    "driver-final.json"
+  ],
+  "required_cli": [
+    "--source-repo",
+    "--source-root",
+    "--source-sha",
+    "--source-tree",
+    "--source-index",
+    "--raw-root",
+    "--data-root",
+    "--python",
+    "--python-version",
+    "--watchdog-seconds"
+  ],
+  "schema": "rc6.full1201-external-driver-source-plan.v1",
+  "source_driver": {
+    "authority": "Future Source S must contain this exact .py.source member; external executed bytes are checked against its wholeSource Git binding before fixtures.",
+    "bytes": 35226,
+    "mode": "100644",
+    "path": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v1.py.source",
+    "sha256": "a74215491110d1a2e862cab496d3aaeeec24018db963825a394223f145957d74"
+  },
+  "source_review_corrections": [
+    {
+      "classification": "STATIC_SOURCE_FINDING_CORRECTED_BEFORE_NATIVE",
+      "finding": "Late polling could reap a child after the management deadline while leaving the timeout flag false.",
+      "fix": "Timestamp after wait4 must be strictly before the deadline; later observation remains NOT_ACCEPTED even if normal exit0. The driver never claims an actual exit timestamp from wait4.",
+      "native_reproduction": false
+    },
+    {
+      "classification": "STATIC_SOURCE_FINDING_CORRECTED_BEFORE_NATIVE",
+      "finding": "Final custody could read source/index/tar/log after termination failed to reap the child.",
+      "fix": "Unreaped state skips all postcaptures, records the unobserved custody limit and prevents acceptance; termination is not retried with a fresh grace.",
+      "native_reproduction": false
+    },
+    {
+      "classification": "STATIC_SOURCE_FINDING_CORRECTED_BEFORE_NATIVE",
+      "finding": "A verified final archive HEAD did not independently bind final CURRENT to the last cut.",
+      "fix": "Require producer final_as_of and final_sequence to match cuts[-1].",
+      "native_reproduction": false
+    },
+    {
+      "classification": "STATIC_SOURCE_FINDING_CORRECTED_BEFORE_NATIVE",
+      "finding": "Native RSS was captured before its final JSON serialization.",
+      "fix": "Require actual wait4 lifetime peak_rss_bytes to satisfy the same existing2GiB limit after reap.",
+      "native_reproduction": false
+    },
+    {
+      "classification": "STATIC_SOURCE_FINDING_CORRECTED_BEFORE_NATIVE",
+      "finding": "Source read clocks were not bound to corresponding actual native cuts, so a fixed read clock could preserve apparent freshness at late cuts.",
+      "fix": "Strictly join all1202 Source reads to cuts/clocks by index and as_of; derive staleness from each actual cut clock.",
+      "native_reproduction": false
+    },
+    {
+      "classification": "STATIC_SOURCE_SCOPE_PRECISION_CORRECTED_BEFORE_NATIVE",
+      "finding": "The management_elapsed_wall_seconds field excluded the final Source/log/proof/receipt tail.",
+      "fix": "Rename to supervisor_elapsed_before_final_custody_seconds and explicitly declare the partial scope; retain observed child completion as a separate clock without adding a new deadline.",
+      "native_reproduction": false
+    }
+  ],
+  "status": "SOURCE_ONLY_NOT_EXECUTED"
+}

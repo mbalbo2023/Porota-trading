@@ -1,15 +1,19 @@
-"""Cascada PPI -> IOL -> BYMA para evidencia y promoción SHADOW RC6.
+"""Cascada PPI -> IOL -> BYMA para evidencia comparativa RC6.
 
 La prioridad conserva la trazabilidad: PPI aporta primero, IOL completa sólo
-ausencias y BYMA completa el remanente público. Una coincidencia consistente
-puede habilitar PAPER/SHADOW aun si PPI no entregó un campo. Nunca autoriza una
-orden real ni cambia rutas de broker.
+ausencias y BYMA completa el remanente público. advisory_comparison_ready
+identifica comparaciones consistentes, incluidas referencias sin PPI. Sólo
+selection_eligible evalúa identidad PPI exacta y evidencia fresca; ninguna
+salida concede promoción, entrada ni autoridad live.
 """
 from __future__ import annotations
 from datetime import datetime, timezone
+import math
 from typing import Any
+from rc6_shadow_runtime.source_authority import (VERSION as AUTHORITY_VERSION, authority, native_time, receipt_time, source_rank)
+from rc6_dynamic_universe.sources import FAMILIES, MARKETS, TERMS, _canonical_identity
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 FIELDS = ("last", "bid", "ask", "bid_size", "ask_size", "spread_pct",
           "variation_pct", "cash_volume", "volume", "vwap")
 CRITICAL_FIELDS = frozenset(("last", "bid", "ask"))
@@ -20,7 +24,8 @@ MAX_AGE_SECONDS = 120.0
 
 def _num(value: Any) -> float | None:
     try:
-        return float(value) if value not in (None, "") else None
+        parsed = float(value) if value not in (None, "") and not isinstance(value, bool) else None
+        return parsed if parsed is not None and math.isfinite(parsed) else None
     except (TypeError, ValueError):
         return None
 
@@ -88,20 +93,22 @@ def reconcile(primary: Any, secondary: Any, public: Any | None = None, *, now: d
         pv, sv = p.get(field), s.get(field)
         if pv in (None, "") or sv in (None, ""):
             continue
-        state = "MATCH" if str(pv).upper() == str(sv).upper() else "DIVERGENCE"
+        aliases = MARKETS if field == "market" else TERMS if field == "settlement" else FAMILIES if field == "asset_type" else {}
+        left, right = str(pv).strip().upper(), str(sv).strip().upper()
+        state = "MATCH" if aliases.get(left, left) == aliases.get(right, right) else "DIVERGENCE"
         compared[field] = {"state": state, "primary": pv, "secondary": sv}
         divergences += state == "DIVERGENCE"
         matches += state == "MATCH"
     ref = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     ages = {}
-    ptime = _utc(p.get("provider_observed_at") or p.get("observed_at"))
-    stime = _utc(s.get("provider_observed_at") or s.get("observed_at"))
+    ptime = _utc(native_time(p))
+    stime = _utc(native_time(s))
     for name, value in ((primary_source, ptime), (secondary_source, stime)):
         ages[name] = (ref - value).total_seconds() if value else None
     freshness = {name: ("FRESH" if age is not None and 0 <= age <= MAX_AGE_SECONDS
                         else "STALE" if age is not None else "UNKNOWN")
                  for name, age in ages.items()}
-    btime = _utc(b.get("provider_observed_at") or b.get("observed_at") or b.get("timestamp"))
+    btime = _utc(native_time(b))
     ages[public_source] = (ref - btime).total_seconds() if btime else None
     freshness[public_source] = ("FRESH" if ages[public_source] is not None and 0 <= ages[public_source] <= MAX_AGE_SECONDS
                                 else "STALE" if ages[public_source] is not None else "UNKNOWN")
@@ -122,13 +129,74 @@ def reconcile(primary: Any, secondary: Any, public: Any | None = None, *, now: d
     state = "MATCH" if last_state in {"MATCH", "PPI_ONLY", "COMPLEMENTED_IOL", "COMPLEMENTED_BYMA"} else (
         "PRICE_DIVERGENCE" if last_state == "DIVERGENCE"
         else "BACKGROUND_COMPARISON_INCOMPLETE")
+    raw_sources = {primary_source: p, secondary_source: s, public_source: b}
+    identity_fields = ("ticker", "family", "market", "currency", "settlement")
+    def explicit_identity(value):
+        try:
+            return tuple(_canonical_identity(value))
+        except (ValueError, TypeError):
+            return (None,)*5
+    primary_identity = explicit_identity(p)
+    primary_origin = p.get("source") or primary_source
+    primary_identity_authoritative = all(primary_identity) and source_rank(primary_origin) == 0
+    source_reviews = ([] if source_rank(primary_origin) == 0 else [{
+        "source": primary_origin, "comparison_source": primary_source,
+        "reason": "PRIMARY_SOURCE_AUTHORITY_NOT_PROVEN"}])
+    field_provenance = {}
+    for field, selected in effective.items():
+        source = selected["source"]
+        raw = raw_sources.get(source, {})
+        origin = raw.get("source") or source
+        book_field = field in {"bid", "ask", "bid_size", "ask_size", "spread_pct"}
+        native = _utc(raw.get("book_at") or raw.get("provider_book_at")) if book_field else None
+        if not book_field or source != primary_source:
+            native = native or _utc(native_time(raw))
+        received = _utc(receipt_time(raw))
+        field_provenance[field] = {"source": origin, "comparison_source": source,
+            "source_path": raw.get("source_path") or origin, "authority": authority(origin),
+            "source_at": native.isoformat() if native else None, "received_at": received.isoformat() if received else None,
+            "clock_basis": "PROVIDER_EVENT_TIME", "receipt_is_provider_time": False,
+            "freshness": "FRESH" if native and received and native <= received <= ref
+                and 0 <= (ref-native).total_seconds() <= MAX_AGE_SECONDS
+                and str(raw.get("state") or "READY").upper() in {"READY", "LIVE_FRESH", "FRESH", "OBSERVE_ONLY", "AVAILABLE"}
+                else "NO_VERIFICADO",
+            "comparison_only": True, "entry_authority": False}
+    identity_conflicts = []
+    if all(primary_identity):
+        for source, raw in raw_sources.items():
+            other = explicit_identity(raw)
+            if source != primary_source and any(raw.get(field) is not None for field in FIELDS) and (not all(other) or other != primary_identity):
+                identity_conflicts.append({"source": source, "primary": list(primary_identity), "complement": list(other),
+                                           "reason": "IDENTITY_CONFLICT_REVIEW_REQUIRED" if all(other) else "EXACT_IDENTITY_REQUIRED"})
+    if identity_conflicts:
+        contract_state = "BLOCKED_CONFLICT"
+        rejected_sources = {item["source"] for item in identity_conflicts}
+        for field, item in effective.items():
+            if item["source"] in rejected_sources:
+                effective[field] = {"value": None, "source": None}
+                field_provenance[field]["rejection_reason"] = "IDENTITY_REVIEW_REQUIRED"
+                field_provenance[field]["freshness"] = "NO_VERIFICADO"
+                compared[field].update(effective=None, effective_source=None)
+    selection_eligible = (primary_identity_authoritative and not identity_conflicts and not divergences
+                          and all(effective[field]["value"] is not None and field_provenance[field]["freshness"] == "FRESH"
+                                  and effective[field]["value"] > 0 for field in CRITICAL_FIELDS)
+                          and effective["ask"]["value"] >= effective["bid"]["value"])
     return {"schema_version": SCHEMA_VERSION, "state": state,
             "contract_state": contract_state, "primary_source": primary_source,
             "secondary_source": secondary_source, "public_source": public_source, "matches": matches,
             "divergences": divergences, "missing": missing,
             "complemented": complemented, "freshness": freshness,
+            "source_authority_policy": AUTHORITY_VERSION, "field_provenance": field_provenance,
+            "identity_primary": dict(zip(identity_fields, primary_identity)) if primary_identity_authoritative else None,
+            "identity_binding": "EXPLICIT_PRIMARY_IDENTITY" if primary_identity_authoritative else "REFERENCE_COMPARISON_ONLY",
+            "identity_conflicts": identity_conflicts, "identity_overwritten": False,
+            "source_authority_reviews": source_reviews,
+            "review_status": "CONFLICT_REVIEW_REQUIRED" if divergences or identity_conflicts or source_reviews else "NO_CURRENT_CONFLICT",
+            "provider_available": {primary_source: None, secondary_source: None, public_source: None},
+            "entry_authority": False, "selection_eligible": bool(selection_eligible),
             "fields": compared, "effective_fields": effective, "decision_effect": "OBSERVE_ONLY",
-            "shadow_promotion": contract_state.startswith("READY_SHADOW"), "live_decision_authority": False, "real_money_authorized": False}
+            "advisory_comparison_ready": contract_state.startswith("READY_SHADOW"),
+            "live_decision_authority": False, "real_money_authorized": False}
 
 def summarize_rows(symbols: list[str], rows: dict[str, Any],
                    primary_contract: dict[str, Any] | None = None) -> dict[str, Any]:

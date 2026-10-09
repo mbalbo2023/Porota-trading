@@ -1,0 +1,78 @@
+"""Execute the native launcher/factory in an isolated private DATA fixture."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import sqlite3
+import stat
+import sys
+import tempfile
+import time
+
+
+def identity(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+    with os.fdopen(descriptor, "rb") as handle:
+        value = hashlib.file_digest(handle, "sha256").hexdigest()
+    info = path.stat()
+    return {"dev": info.st_dev, "ino": info.st_ino, "mode": stat.S_IMODE(info.st_mode),
+            "uid": info.st_uid, "gid": info.st_gid, "nlink": info.st_nlink,
+            "size": info.st_size, "atime_ns": info.st_atime_ns,
+            "mtime_ns": info.st_mtime_ns, "ctime_ns": info.st_ctime_ns, "sha256": value}
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--repo-root", required=True, type=Path)
+args = parser.parse_args()
+source = args.repo_root.resolve(strict=True)
+sys.path.insert(0, str(source))
+import porota_mode_manager as manager
+from cg_paper_workspace import DB_ENV, artifact_root
+from rc6_shadow_runtime.worker import ShadowRuntime
+import rc6_shadow_runtime.worker as worker
+
+assert Path(manager.__file__).resolve() == source / "porota_mode_manager.py"
+assert Path(worker.__file__).resolve() == source / "rc6_shadow_runtime/worker.py"
+started = time.monotonic()
+with tempfile.TemporaryDirectory(prefix="rc6-native-factory-", dir="/workspace") as directory:
+    root = Path(directory)
+    primary = root / "data/paper_v17/observer_v17.db"
+    primary.parent.mkdir(parents=True)
+    with sqlite3.connect(primary) as connection:
+        connection.execute("CREATE TABLE preserved_probe_rows(id INTEGER PRIMARY KEY)")
+        connection.execute("INSERT INTO preserved_probe_rows VALUES(1)")
+    primary.chmod(0o600)
+    manager.ROOT, manager.DATA = root, root / "data"
+    values = dict(line.split("=", 1) for line in manager.observer_runtime_env().read_text().splitlines() if "=" in line)
+    for key, value in values.items():
+        if key in {"POROTA_DYNAMIC_SHADOW_ROOT", "POROTA_SHADOW_RUNTIME_ROOT", "POROTA_CAPACITY_SHADOW_PATH",
+                   "POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT", "HIST_DB_PATH"} and value.startswith("/app/"):
+            value = str(root / value.removeprefix("/app/"))
+        os.environ[key] = value
+    os.environ[DB_ENV] = str(primary)
+    os.environ["DATA_DIR"] = str(root / "data")
+    os.environ["POROTA_DYNAMIC_CAPACITY_MODE"] = "OFF"
+    before = identity(primary)
+    runtime = ShadowRuntime.from_environment(primary, source_roots=[])
+    expected = artifact_root(primary) / "dynamic-shadow-archive"
+    actual = runtime.files.archive_root
+    unchanged = before == identity(primary)
+    configured = actual == expected and runtime.files.archive_maximum_bytes == 512 * 1024**2
+    env_present = all(key in values for key in ("POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT", "POROTA_DYNAMIC_SHADOW_ARCHIVE_MAX_BYTES"))
+    status = "GREEN" if configured and env_present and unchanged else "RED"
+    report = {"schema": "rc6.native-canonical-archive-factory-proof.v1", "status": status,
+        "corpus": "EXPLICIT_SYNTHETIC_PRIVATE_DATA_NATIVE_LAUNCHER_AND_FACTORY",
+        "source_root": str(source), "source_files_sha256": {name: hashlib.sha256((source / name).read_bytes()).hexdigest()
+          for name in ("porota_mode_manager.py", "rc6_shadow_runtime/worker.py", "rc6_shadow_runtime/persistence.py")},
+        "launcher_archive_keys_present": env_present, "factory_archive_root": str(actual) if actual is not None else None,
+        "expected_canonical_archive_root": str(expected), "archive_maximum_bytes": runtime.files.archive_maximum_bytes,
+        "source_database_unchanged": unchanged, "database_identity": before,
+        "archive_created": expected.exists(), "live_created": runtime.root.exists(),
+        "configuration_fingerprint_base": runtime.configuration,
+        "elapsed_seconds": time.monotonic() - started, "worker_tick_executed": False,
+        "factory_kwargs": {"source_roots": []}, "production_runtime_executed": False,
+        "archive_semantics": "NOT_EXERCISED", "nine_hour_retention": "PENDING_NATIVE_PRODUCER_PROOF",
+        "health_canonical_cut": "PENDING_FRESH_MATCHING_FACTORY_CUT"}
+    print(json.dumps(report, sort_keys=True, allow_nan=False))
+    raise SystemExit(0 if status == "GREEN" else 42)

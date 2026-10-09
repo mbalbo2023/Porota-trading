@@ -1,0 +1,50 @@
+{
+  "PAPER_SHADOW_ONLY": true,
+  "collection_and_execution_owned": true,
+  "commands": {
+    "311": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+      "-B",
+      "/workspace/scratch/rc6-ci-owned-drain-focals-5hqspu2v/control/run_focals.py",
+      "311"
+    ],
+    "312": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python",
+      "-B",
+      "/workspace/scratch/rc6-ci-owned-drain-focals-5hqspu2v/control/run_focals.py",
+      "312"
+    ]
+  },
+  "expected_cases_per_epoch": 67,
+  "harness": "/workspace/scratch/rc6-ci-owned-drain-focals-5hqspu2v/control/run_focals.py",
+  "harness_sha256": "dc93a5806e82b5e7500855a31b10141a90953d9d6e339bf8c7225b2a96b7d63d",
+  "mode": "PREPARED_ONLY_NOT_LAUNCHED",
+  "new_native_controls": 4,
+  "new_real_ci_failed_burst": 1,
+  "original_failed_cleanup_seconds": 5,
+  "original_management_seconds": 300,
+  "original_progress_seconds": 5,
+  "original_term_seconds": 2,
+  "outer_manager": "PRESERVED_AC9_V2_EXACT_TRACKED_BYTES",
+  "real_orders_sent": 0,
+  "retention": "EXPLICIT_NEW_PRIVATE_NAMESPACE_ONLY_NO_CLEANUP_CLAIM",
+  "root": "/workspace/scratch/rc6-ci-owned-drain-focals-5hqspu2v",
+  "same_previous_set": 62,
+  "schema": "rc6.local-owned-ready-drain-focals.v1",
+  "source_base_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "source_edits": 0,
+  "source_expected_hashes": {
+    ".github/workflows/porota-predeploy-v2.yml": "45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125",
+    "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+    "scripts/porota_predeploy_cleanup.py": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f",
+    "scripts/porota_predeploy_test_workspace.py": "e768b5ca51df5646cac1c2739fecb35aa394cbcedecc6d428ddf8f47b7b21e85",
+    "scripts/rc6_controlled_governed_runner.py": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+    "scripts/rc6_controlled_native_child_manager.py": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+    "tests/test_ci_productive_predeploy_contract.py": "18e0840717256861c2f9a187aac88a96e36252339a6b854da2a29bb328c3c1f2",
+    "tests/test_rc6_controlled_native_child_manager.py": "c91be232136465265fc3971d0516d8c503620f402c20a9aacf4bf06aa2cdff33",
+    "tests/test_rc6_predeploy_scoped_cleanup.py": "6443a48ad2ca5a68ee281062c392ff97c27eec836638707eb8556228e31e727f"
+  },
+  "source_qualification": "UNCOMMITTED_DIAGNOSTIC_ONLY_SOURCE_SHA_QUALIFICATION_PENDING",
+  "tests_launched": 0,
+  "unknown_source_junit_log_retention_reads": 0
+}

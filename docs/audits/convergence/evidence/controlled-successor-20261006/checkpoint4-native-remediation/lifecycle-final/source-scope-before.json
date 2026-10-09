@@ -1,0 +1,6 @@
+{
+  "scripts/rc6_controlled_governed_runner.py": "b86a04368c92607eeb3eb6fc4b04393312de69a1d5a80ed7e2564025a41ec404",
+  "scripts/rc6_issue465_stress.py": "11212f6534759b2b7483b5aaf2fdf367b819ce428b04cd565791dbed8d732456",
+  "tests/test_rc6_controlled_governed_runner.py": "81e47a0760d9ec0b31c9061d85ddc4f0489df914adad0b60ab217cd0242d9afe",
+  "tests/test_rc6_stress_native_cli_lifecycle.py": "e1565c5274111b5ec9b3aebe57fa86fb354baf8b4fb00791ff8baa9e0b1e326b"
+}
