@@ -1,0 +1,126 @@
+{
+  "audited_code_sha": "ecad18b6010e3b7e874a00edc72644b3dcc78790",
+  "audited_code_tree": "7054a76efc0a22e56605af435f0b4502474783ad",
+  "base_sha": "215169ecd0f71d3b293304c7976be2593efdc043",
+  "base_tree": "9b2ea2b7cfed724fe828eb4ec2f129b17f27d89f",
+  "commit_tree_binding": "Authenticated final receipt in issues471/473 plus GitHub commit parent/tree/blob reads; no self-referential SHA in this manifest.",
+  "excluded_self": "MANIFEST.json",
+  "input_index_files_at_base": [
+    {
+      "bytes": 26920,
+      "path": "../rc6-systemic-review-20261008/RCA.md",
+      "sha256": "f698943524dab43660b3cd3c60788aa7a9be8a39244b49080d4c02a9208b6a76"
+    },
+    {
+      "bytes": 11621,
+      "path": "../rc6-systemic-review-20261008/ERROR_MATRIX.md",
+      "sha256": "f6db029ca77d584cf8ef5007687acb95c5942ce67267d588357c49c6507c7e8e"
+    },
+    {
+      "bytes": 7670,
+      "path": "../rc6-systemic-review-20261008/QUALIFICATION_PLAN.md",
+      "sha256": "dfbc934a2598c8c7c70a5622cae4f15823fa54188c98570a7c51c35f8c029f33"
+    },
+    {
+      "bytes": 2455,
+      "path": "../rc6-systemic-review-20261008/repository-footprint.json",
+      "sha256": "c7ef656013567cae9b135bdef7ce73e72043b7c54c855da31950bfdf76a3bae3"
+    },
+    {
+      "bytes": 4849,
+      "path": "../rc6-systemic-review-20261008/horizon-analysis.json",
+      "sha256": "eefeb7aff5cf667088ee065dc5735522009979a4feb31adb36f4b7c0b7de2520"
+    },
+    {
+      "bytes": 133899,
+      "path": "../rc6-systemic-review-20261008/horizon-measured-cuts.csv",
+      "sha256": "d4f43f10d920aa7d610dc7c7aae8783f8ad4f6265d41f68d58475b5fe9e1e536"
+    },
+    {
+      "bytes": 627215,
+      "path": "../rc6-systemic-review-20261008/pr476-complete-inventory.csv",
+      "sha256": "2d03f7486b35c14c6a5b287ff568632d87097e81252ef0aa40ba90ea22e65375"
+    },
+    {
+      "bytes": 15152,
+      "path": "../rc6-systemic-review-20261008/evidence-index.json",
+      "sha256": "82194824c8a14685e05e7992e4e08fcfb8fc0b1f4c4656274bb7a04f9f2fdaf8"
+    },
+    {
+      "bytes": 265644,
+      "path": "../rc6-systemic-review-20261008/artifact-members.csv",
+      "sha256": "8f5d00d424f7e1fcf1fd5948f54e0e033d63a19fea496b9b0d58d26440b521cb"
+    }
+  ],
+  "qualification_claimed": false,
+  "raw_evidence_copied": false,
+  "schema": "rc6.controlled-delivery-manifest.v1",
+  "scope": "docs/governance/rc6-controlled-architecture-20261009/",
+  "scope_files": [
+    {
+      "bytes": 10133,
+      "path": "ERROR_MATRIX.md",
+      "sha256": "a948d1204bc2b13f847cd8f371b634a78cbc45d7ebc7c0f5e88aefccc117d9d0"
+    },
+    {
+      "bytes": 8587,
+      "path": "EVIDENCE_CUSTODY.md",
+      "sha256": "9cbe9ee970055218d9db4738fbad27c2b1e3f7ce991ec24e9415886d7d0cc40e"
+    },
+    {
+      "bytes": 6198,
+      "path": "G0_ARCHITECTURE.md",
+      "sha256": "b9cda7a821bfd8b10c11e83a077a915d8744c6a5c433190f5e51353ab1d7f80f"
+    },
+    {
+      "bytes": 8666,
+      "path": "G5_MODEL.md",
+      "sha256": "f38a1ab7608231d26344bc225114fda2b6e3d5fef758d2ff197e06072c7b3739"
+    },
+    {
+      "bytes": 8853,
+      "path": "HANDOFF.md",
+      "sha256": "8eb1b3b3b9c0279204783f38215c6d53352eaf7c089b28c656c55fcfaed766f3"
+    },
+    {
+      "bytes": 3643,
+      "path": "analysis.json",
+      "sha256": "392f133341327c2c7f069391f51cc0bf220724af3ac8d8092df0e8db1274fbfb"
+    },
+    {
+      "bytes": 1860,
+      "path": "cheap-validation.json",
+      "sha256": "28628c5fdb8ffe7d49bae85d59a222d484850b1fda7cb874267e848147d83726"
+    },
+    {
+      "bytes": 16656,
+      "path": "evidence-roots.json",
+      "sha256": "24652faf87e87f213887c1098b4e198f67a896da65c5e10820604619e335cf81"
+    },
+    {
+      "bytes": 88576,
+      "path": "horizon-schedule.csv",
+      "sha256": "9fb0fb3e28064722332b0718915d16048047fcef72786fd7f1c9a7d49cc0dc47"
+    },
+    {
+      "bytes": 304020,
+      "path": "pr476-blob-sha256.csv",
+      "sha256": "d055eb1ebf0f931bbd1900b64900037039b9411b7416b303fd5ed0d06ba76aad"
+    },
+    {
+      "bytes": 1036,
+      "path": "publication-trigger-audit.json",
+      "sha256": "ae205c85902bec9e7c5383a17a97dad2656212c10cd7cc3b2c6e8706d3c7a416"
+    },
+    {
+      "bytes": 14681,
+      "path": "reproduce.py",
+      "sha256": "348289fccf0491abce42f0f1a9286d13a243b9c4af3f4f20f8749c4ad0670139"
+    },
+    {
+      "bytes": 13471,
+      "path": "source-provenance.json",
+      "sha256": "358e182a6000861baa2fc811fe292adee39d5c7570e87ca9df67d670253a67e8"
+    }
+  ]
+}

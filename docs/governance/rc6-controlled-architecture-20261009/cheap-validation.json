@@ -1,0 +1,42 @@
+{
+  "G0": "BLOQUEADO_PREREQUISITES",
+  "G5": "BLOQUEADO_GLOBAL_BOUND",
+  "ROOT_Docker_SQLite_backends_called": false,
+  "actions_gate_validated": false,
+  "all_owned_paths_prospective_guard": {
+    "deletion_authorized": false,
+    "installed_in_CI": false,
+    "is_material_gate": false,
+    "paths_requiring_custody_instead_of_new_git_payload": [],
+    "status": "PASS"
+  },
+  "captured_result": "PASS_ARITHMETIC_AND_STATIC_ONLY",
+  "command": "python -B docs/governance/rc6-controlled-architecture-20261009/reproduce.py --output-dir docs/governance/rc6-controlled-architecture-20261009 --hash-pr476 --check-prospective-base 215169ecd0f71d3b293304c7976be2593efdc043",
+  "dual_python_validated": false,
+  "execution_count": 1,
+  "exit_code": 0,
+  "financial_workload_executed": false,
+  "initial_guard_HEAD_diff_empty_before_commit": true,
+  "ledger_join_all3127_paths": "PASS",
+  "note": "The initial CLI --check-prospective-base saw HEAD==BASE. Role examples were evaluated in-memory; this subsequent check validates the actual complete owned path set. It does not re-execute calculate() or hash_original_blobs().",
+  "number_unique_head_blobs": 2683,
+  "ppi_watch": "UNTOUCHED",
+  "python": "3.12.14",
+  "qualification_claimed": false,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "reproduce_script_sha256": "348289fccf0491abce42f0f1a9286d13a243b9c4af3f4f20f8749c4ad0670139",
+  "schema": "rc6.controlled-cheap-validation.v1",
+  "scope": [
+    "original1202_schedule_arithmetic",
+    "1049_native_cut_CSV_consistency",
+    "strict_10h_retention_cutoff",
+    "boundary772_773",
+    "conditional_anchor_margin_counterexample",
+    "per_page_catalog_bound_counterexample",
+    "PR476_original_tree_blob_sha1_and_sha256_stream",
+    "native_bundle_context_matchers36paths",
+    "prospective_guard_three_role_examples"
+  ],
+  "syntax_AST": "PASS"
+}

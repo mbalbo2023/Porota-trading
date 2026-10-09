@@ -1,0 +1,25 @@
+{
+  "changed_scope": "docs/governance/rc6-controlled-architecture-20261009/",
+  "checkpoint_is_metadata_only": true,
+  "default_matching_PR_metadata_only": [
+    {
+      "event": "pull_request",
+      "file": ".github/workflows/checkpoint-attestation.yml",
+      "name": "Checkpoint attestation"
+    }
+  ],
+  "default_sha": "183a0be3f6c443d8fab48b1c0f52dcc80b1b88d1",
+  "default_workflow_inventory_sha256": "a470ba92ca7187d603989728f72f8d7328bc09c55969279fc0614aa22d0df442",
+  "default_workflows_inspected": 6,
+  "draft_pr_base": "review/rc6-systemic-rca-ecad18b6-20261008",
+  "heavy_dispatch_called": false,
+  "matching_PR_source_opened": [],
+  "matching_push": [],
+  "other_automatic_events": [],
+  "qualification_claimed": false,
+  "review_branch": "review/rc6-controlled-architecture-20261009",
+  "source_sha": "215169ecd0f71d3b293304c7976be2593efdc043",
+  "source_workflow_inventory_sha256": "0d335884b862d94acc4b32b233d58d1bcdb3707a9d82c357923ae284e8c0aa23",
+  "source_workflows_inspected": 166,
+  "workflow_run_dependents": []
+}
