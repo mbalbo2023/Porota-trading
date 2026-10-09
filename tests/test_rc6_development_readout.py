@@ -49,6 +49,26 @@ def test_original_readout_rejects_rebound_or_unsealed_controls(change):
         readout.inspect_sealed(raw,origin)
 
 
+def test_long_original_traceback_keeps_terminal_exception_without_unbounded_log():
+    raw,origin,_=container()
+    with zipfile.ZipFile(io.BytesIO(raw)) as original:
+        files={i.filename:original.read(i) for i in original.infolist()}
+    xml=files['311/0001.raw'].replace(b'original failure</failure>',
+        b'ORIGINAL_TRACEBACK_START'+b'x'*9000+b'TERMINAL_ORIGINAL_EXCEPTION</failure>')
+    files['311/0001.raw']=xml
+    result=json.loads(files['result.json']);result['epochs'][0]['junit']['sha256']=digest(xml)
+    files['result.json']=canonical(result)
+    manifest=json.loads(files['311/manifest.json']);manifest['files'][0].update(bytes=len(xml),sha256=digest(xml))
+    files['311/manifest.json']=canonical(manifest)
+    stream=io.BytesIO()
+    with zipfile.ZipFile(stream,'w') as archive:
+        for name,body in files.items():archive.writestr(name,body)
+    wire=stream.getvalue();origin.update(bytes=len(wire),sha256=digest(wire))
+    text=readout.inspect_sealed(wire,origin)['epochs'][0]['failures'][0]['text']
+    assert 'ORIGINAL_TRACEBACK_START' in text and text.endswith('TERMINAL_ORIGINAL_EXCEPTION')
+    assert '[TRACEBACK_MIDDLE_OMITTED]' in text and len(text)<3600
+
+
 @pytest.mark.parametrize('key',['bytes','sha256'])
 def test_artifact_container_rebound_is_rejected_before_parsing(key):
     raw,origin,_=container();origin[key]=0 if key=='bytes' else '0'*64

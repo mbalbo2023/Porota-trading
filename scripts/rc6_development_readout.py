@@ -62,7 +62,9 @@ def inspect_sealed(raw, origin):
                             message = (failure.get('message', '') + '\n' + (failure.text or ''))
                             message = re.sub(r'https?://\S+', '[URL_REDACTED]', message)
                             entry['failures'].append({'classname': case.get('classname'),
-                                'name': case.get('name'), 'kind': kind, 'text': message[:3500]})
+                                'name': case.get('name'), 'kind': kind,
+                                'text': message if len(message) <= 3500 else
+                                    message[:1000] + '\n[TRACEBACK_MIDDLE_OMITTED]\n' + message[-2500:]})
         summary['epochs'].append(entry)
     if result.get('fullSource_unchanged') is False:
         from scripts.rc6_controlled_governed_runner import compare_source
