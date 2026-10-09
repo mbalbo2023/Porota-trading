@@ -65,8 +65,13 @@ class Github:
         parsed = urllib.parse.urlparse(url)
         require(parsed.netloc in ('api.github.com', 'uploads.github.com') and parsed.scheme == 'https',
                 'CUSTODY_AUTHENTICATED_ENDPOINT_REQUIRED')
+        # `binary` selects byte decoding, not REST negotiation. Actions ZIP
+        # endpoints require the normal GitHub media type before redirecting;
+        # only a release-asset GET negotiates octet-stream. Uploads return JSON.
+        asset_get = (method == 'GET' and parsed.netloc == 'api.github.com'
+                     and parsed.path.startswith('/repos/' + REPO + '/releases/assets/'))
         headers = {'Authorization': 'Bearer ' + self.token, 'X-GitHub-Api-Version': '2022-11-28',
-                   'Accept': 'application/octet-stream' if binary else 'application/vnd.github+json'}
+                   'Accept': 'application/octet-stream' if asset_get else 'application/vnd.github+json'}
         if body is not None:
             headers['Content-Type'] = 'application/zip' if binary else 'application/json'
         request = urllib.request.Request(url, data=body, headers=headers, method=method)
@@ -257,9 +262,23 @@ def main():
     owner_check = lambda: verify_owner(github, args.launch_receipt_url, sha=args.source_sha,
                                       tree=args.source_tree, owner=args.owner_session,
                                       plan_sha256=digest(plan_raw))
-    owner_check()
-    plan = json.loads(plan_raw)
-    result = archive_plan(github, plan, owner_check=owner_check)
+    try:
+        owner_check()
+        plan = json.loads(plan_raw)
+        result = archive_plan(github, plan, owner_check=owner_check)
+    except Exception as error:
+        # Preserve the terminal native failure without claiming a verified
+        # destination or leaking signed redirect URLs from an exception.
+        reason = str(error)
+        if not re.fullmatch(r'[A-Z][A-Z0-9_:,.-]{0,255}', reason):
+            reason = type(error).__name__
+        args.output.write_bytes(canonical({'schema': 'porota.rc6.actions-custody-attempt.v1',
+            'status': 'RED', 'source_sha': args.source_sha, 'source_tree': args.source_tree,
+            'plan_sha256': digest(plan_raw), 'owner_session': args.owner_session,
+            'error_type': type(error).__name__, 'reason': reason,
+            'complete_custody_verified': False, 'G0_G8_qualification': False,
+            'artifact_validated': False, 'deployed': False, 'real_orders_sent': 0}))
+        raise
     result.update(source_sha=args.source_sha, source_tree=args.source_tree, plan_sha256=digest(plan_raw),
                   owner_session=args.owner_session, launch_receipt_url=args.launch_receipt_url)
     args.output.write_bytes(canonical(result))

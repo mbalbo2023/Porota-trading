@@ -347,6 +347,10 @@ def test_development_ci_stays_manual_owner_admitted_and_distinct_from_product_ga
     assert 'workflow_dispatch' in job['if'] and "inputs.gate == 'evidence-custody'" in job['if']
     steps=job['steps']; names=[step['name'] for step in steps]
     assert names.index('Admit bounded development checks before tooling') < names.index('Prepare bounded Python311 development tooling')
+    assert next(step for step in steps if step.get('id')=='development_admission')['if']=='always()'
+    for step in steps:
+        if step.get('id') in ('dev311','dev312') or step['name'].startswith('Install only the fourteen'):
+            assert "steps.development_admission.outcome == 'success'" in step['if']
     install=next(step['run'] for step in steps if step['name'].startswith('Install only the fourteen'))
     assert '--require-hashes' in install and '--only-binary=:all:' in install
     plan=json.loads((root/'ops/policy/rc6-development-checks-v1.json').read_text())
@@ -406,3 +410,48 @@ def test_development_retirement_error_preserves_native_red_controls_and_blocks_n
         assert not (output/'312').exists()
     finally:
         for args,kwargs in held:original_cleanup(*args,**kwargs)
+
+
+@pytest.mark.parametrize('route', ['actions_zip', 'asset_get', 'asset_upload'])
+def test_binary_decoding_keeps_endpoint_specific_github_rest_negotiation(route):
+    raw,artifact,index=sample()
+    calls=[]
+    class Boundary:
+        def open(self,request,timeout):
+            calls.append(request)
+            return io.BytesIO(raw if route!='asset_upload' else b'{"id":7}')
+    github=custody.Github('synthetic-unit-only');github.opener=Boundary()
+    if route=='actions_zip':
+        result=github.request('/actions/artifacts/7/zip',binary=True)
+        assert result==raw and custody.verify_zip(result,artifact,index)
+    elif route=='asset_get':
+        assert github.request('/releases/assets/7',binary=True)==raw
+    else:
+        result=github.request('https://uploads.github.com/repos/'+custody.REPO+'/releases/7/assets?name=original.zip',
+            method='POST',body=raw,binary=True)
+        assert json.loads(result)=={'id':7}
+        assert calls[0].get_header('Content-type')=='application/zip'
+    assert calls[0].get_header('Accept')==('application/octet-stream' if route=='asset_get'
+        else 'application/vnd.github+json')
+
+
+def test_custody_cli_preserves_native_http_red_without_claiming_recovery(tmp_path,monkeypatch):
+    import sys
+    from pathlib import Path
+    root=Path(__file__).absolute().parents[1]
+    for key,value in {'GITHUB_ACTIONS':'true','GITHUB_REPOSITORY':custody.REPO,
+        'GITHUB_ACTOR':'mbalbo2023','GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_RUN_ATTEMPT':'1'}.items():
+        monkeypatch.setenv(key,value)
+    monkeypatch.setattr(custody,'Github',lambda token:object())
+    monkeypatch.setattr(custody,'verify_owner',lambda *args,**kwargs:'a'*64)
+    def media_type_failure(*args,**kwargs):raise ValueError('CUSTODY_HTTP_415')
+    monkeypatch.setattr(custody,'archive_plan',media_type_failure)
+    output=tmp_path/'original-red.json'
+    monkeypatch.setattr(sys,'argv',['custody','--plan',str(root/'ops/policy/rc6-actions-custody-20261009.json'),
+        '--source-sha','a'*40,'--source-tree','b'*40,'--owner-session','UNIT_ONLY',
+        '--launch-receipt-url','https://example.invalid/unit','--output',str(output)])
+    with pytest.raises(ValueError,match='CUSTODY_HTTP_415'):custody.main()
+    original=json.loads(output.read_bytes())
+    assert original['schema']=='porota.rc6.actions-custody-attempt.v1' and original['status']=='RED'
+    assert original['reason']=='CUSTODY_HTTP_415' and original['complete_custody_verified'] is False
+    assert original['G0_G8_qualification'] is original['artifact_validated'] is original['deployed'] is False
