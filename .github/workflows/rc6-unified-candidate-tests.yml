@@ -31,6 +31,7 @@ on:
           - capacity-probe
           - capacity-calibration
           - evidence-custody
+          - evidence-readout
       launch_receipt_url:
         description: Immutable issue471 single-gate authorization with predecessor artifact manifest
         required: true
@@ -54,7 +55,7 @@ concurrency:
 jobs:
   ordered-source-gate:
     name: RC6 ${{ inputs.gate || 'G0-G1-cheap-dual' }} @ ${{ inputs.source_sha || github.event.pull_request.head.sha }}
-    if: github.event.repository.id == 1338680554 && github.event.sender.login == 'mbalbo2023' && inputs.gate != 'evidence-custody' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'))
+    if: github.event.repository.id == 1338680554 && github.event.sender.login == 'mbalbo2023' && inputs.gate != 'evidence-custody' && inputs.gate != 'evidence-readout' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'))
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
@@ -189,6 +190,42 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: ${{ steps.gate.outputs.payload_root }}
+
+  evidence-readout:
+    name: Read exact sealed development RED without reexecuting tests
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'evidence-readout' && github.repository_id == '1338680554' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact authenticated readout controller
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Read original sealed artifact and emit bounded native facts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC6_SOURCE_SHA: ${{ inputs.source_sha }}
+          RC6_SOURCE_TREE: ${{ inputs.source_tree }}
+          RC6_OWNER_SESSION: ${{ inputs.owner_session }}
+          RC6_LAUNCH_RECEIPT: ${{ inputs.launch_receipt_url }}
+        run: |
+          set -Eeuo pipefail
+          python3 -I -B scripts/rc6_development_readout.py \
+            --plan ops/policy/rc6-development-readout-20261009.json \
+            --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
+            --owner-session "$RC6_OWNER_SESSION" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" \
+            --output "$RUNNER_TEMP/rc6-sealed-readout.json"
+      - name: Preserve bounded original-evidence readout
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-sealed-readout-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-sealed-readout.json
+          retention-days: 90
+          if-no-files-found: error
 
   evidence-custody:
     name: Recover exact historical RAW into verified draft-release assets

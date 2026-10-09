@@ -33,6 +33,15 @@ las obligaciones técnicas todavía sin evidencia completa. El registro históri
 | Transporte REST/custodia; ERR-039 | GITHUB_TOKEN Contents:write recibió403 creando draft release en el target histórico. Tras preparar destino por el propietario, el endpoint ZIP Actions rechazó415 un Accept octet-stream incorrecto. | Destino draft408273199 preparado por API, sin publicación; negociación REST por endpoint separada de decodificación binaria: JSON para Actions ZIP/upload, octet-stream sólo para GET de release asset. | Regresión de headers exactos en los tres endpoints; errores conservan reciboRED sin claim de custodia. Checks económicos admitidos por su autoridad independiente siguen ejecutándose aun si custodia esRED. | `test_rc6_actions_custody`; runs37980865842/37981578210 RED preservados, sin payload copiado ni calificación. | `FIXED_WITH_GUARD` para transporte/RED; readback completo sigue pendiente del control nativo del último SHA. |
 | Host/release | Medición previa bloqueóCPU/RAM. API read-only fresca confirma1vCPU/1GiBRAM/25GiB, no recursos disponibles del proceso/cgroups. | Revalidar hardware actual sin tocar runtime; exigir medición read-only futura contra el candidato real antes de promoción. | CI no demuestra compatibilidad Droplet. Sin G0–G8, artifact exacto, capacidad, ownership de deploy y autorización efectiva no hay promoción. | DigitalOcean594077619 read-only2026-10-09T18:37Z; anterior37656549281 pertenece aaf08. | `NO_VERIFICADO` para capacidad del nuevo candidato; release `BLOQUEADO_EXTERNAL`. PPI Watch intacto. |
 
+El control37983279857 verificó custodia completa de los16 ZIP/2034 miembros y
+recibo durable SHA2564252f9182ad86ca9a7e95ef9a9b70cdb7cf5d094b47a9b90474503022eb5195c
+en asset626018831 de draft release408273199. Sus checks económicos quedaron
+RED, sin atribuirles los PASS locales de otro SHA. ERR-040 corrige la falta de
+resumen verificable en el log y permite leer el artefacto original11642516481,
+SHA25618fcb0070c5e6267db08f5d7cd4d2158b0fe7b39e0f04fefd1a594b12f15a6da,
+con control nativo manual de sólo lectura y sin reejecutar productores. La causa
+concreta del RED permanece desconocida hasta recuperar esos bytes sellados.
+
 ## Resultado operativo y gates
 
 G0 `BLOQUEADO`; G1 completo `NO_VERIFICADO`; G2/G3 focales, G4 BIG,

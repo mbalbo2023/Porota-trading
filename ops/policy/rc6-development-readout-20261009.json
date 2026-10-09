@@ -1,0 +1,16 @@
+{
+  "schema": "porota.rc6.sealed-development-readout-plan.v1",
+  "repository": "mbalbo2023/Porota-trading",
+  "origin": {
+    "artifact_id": 11642516481,
+    "run_id": 37983279857,
+    "source_sha": "deb85bc692c520a12f69e7b9e3108e9a811a9ceb",
+    "source_tree": "8c749e1aac29bc085bae50946984bab19634270f",
+    "bytes": 876154,
+    "sha256": "18fcb0070c5e6267db08f5d7cd4d2158b0fe7b39e0f04fefd1a594b12f15a6da",
+    "conclusion": "failure"
+  },
+  "producer_reexecuted": false,
+  "G0_G8_qualification": false,
+  "real_orders_sent": 0
+}

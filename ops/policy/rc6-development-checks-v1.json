@@ -24,6 +24,7 @@
     "tests/test_porota_build_deploy_bundle_v2.py",
     "tests/test_porota_validate_deploy_artifact.py",
     "tests/test_rc6_actions_custody.py",
+    "tests/test_rc6_development_readout.py",
     "tests/test_rc6_architectural_gate_order.py",
     "tests/test_rc6_archive_grouped_wire.py",
     "tests/test_rc6_archive_physical_model.py",

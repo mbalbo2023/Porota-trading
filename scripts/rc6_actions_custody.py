@@ -88,8 +88,10 @@ class Github:
 def verify_owner(github, url, *, sha, tree, owner, now=None, plan_sha256=None,
                  authorization_field='RC6_EVIDENCE_CUSTODY_AUTHORIZATION'):
     from scripts import rc6_material_pr_admission as admission
-    require(authorization_field in ('RC6_EVIDENCE_CUSTODY_AUTHORIZATION',
-        'RC6_DEVELOPMENT_CHECKS_AUTHORIZATION'), 'CUSTODY_UNKNOWN_CONTROL_OPERATION')
+    plan_keys = {'RC6_EVIDENCE_CUSTODY_AUTHORIZATION': 'CUSTODY_PLAN_SHA256',
+        'RC6_DEVELOPMENT_CHECKS_AUTHORIZATION': 'DEVELOPMENT_PLAN_SHA256',
+        'RC6_EVIDENCE_READOUT_AUTHORIZATION': 'READOUT_PLAN_SHA256'}
+    require(authorization_field in plan_keys, 'CUSTODY_UNKNOWN_CONTROL_OPERATION')
     match = re.fullmatch(r'https://github\.com/' + REPO + r'/issues/471#issuecomment-([0-9]+)', url)
     require(match is not None, 'CUSTODY_OWNER_RECEIPT_URL_REQUIRED')
     receipt = github.request('/issues/comments/' + match[1])
@@ -108,7 +110,7 @@ def verify_owner(github, url, *, sha, tree, owner, now=None, plan_sha256=None,
             and fields.get('DEPLOY_OWNER') == 'NOT_ACQUIRED' and fields.get('RELEASED') == 'false'
             and fields.get('real_orders_sent') == '0', 'CUSTODY_EXACT_SCOPED_AUTHORIZATION_REQUIRED')
     if plan_sha256 is not None:
-        key = 'CUSTODY_PLAN_SHA256' if authorization_field == 'RC6_EVIDENCE_CUSTODY_AUTHORIZATION' else 'DEVELOPMENT_PLAN_SHA256'
+        key = plan_keys[authorization_field]
         require(fields.get(key) == plan_sha256, 'CUSTODY_EXACT_PLAN_AUTHORIZATION_REQUIRED')
     current = now or datetime.now(timezone.utc)
     expires = datetime.fromisoformat(fields['SOURCE_LEASE_EXPIRES_UTC'].replace('Z', '+00:00'))

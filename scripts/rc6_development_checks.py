@@ -85,6 +85,32 @@ def junit_facts(raw):
     return facts
 
 
+def control_summary(result):
+    """Publish facts from the preserved native result, never replace its RAW."""
+    summary={key:result.get(key) for key in ('status','source_sha','source_tree',
+        'identities_equal','fullSource_unchanged','source_validation_error','next_epoch_launched')}
+    summary.update(epochs=[],G0_G8_qualification=False,Product157_qualified=False,deployed=False,real_orders_sent=0)
+    for epoch in result['epochs']:
+        entry={key:epoch.get(key) for key in ('epoch','passed','retirement_error','junit_validation_error')}
+        entry['kernel']={key:epoch.get('kernel',{}).get(key) for key in ('returncode','timed_out','wall_seconds',
+            'peak_rss_bytes','remaining_owned_children','actual_child_reaped','owned_children_exhaustion_verified',
+            'process_group_absent_after_reap','supervisor_errors')}
+        entry['cleanup']={key:(epoch.get('cleanup') or {}).get(key) for key in ('actual_owned_fin_closed',
+            'namespace_removed','original_namespace_removed','foreign_paths_removed','capture_manifest_sha256',
+            'post_fin_owned_directory_owner_write_changes')}
+        entry['junit']={key:epoch['junit'].get(key) for key in ('cases','failures','errors','skipped','sha256')} if epoch.get('junit') else None
+        summary['epochs'].append(entry)
+    return summary
+
+
+def preserve_result(output,result):
+    raw=canonical(result)
+    (output/'result.json').write_bytes(raw)
+    summary=control_summary(result)
+    summary['original_result_sha256']=digest(raw)
+    print('RC6_DEVELOPMENT_NATIVE_RESULT='+canonical(summary).decode().strip(),flush=True)
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--plan',type=Path,required=True)
@@ -167,11 +193,11 @@ def main():
             'cleanup':cleanup,'retirement_error':retirement_error,'junit':facts,'junit_validation_error':validation_error,
             'passed':kernel['returncode']==0 and facts is not None
             and retirement_error is None and not any(facts[key] for key in ('failures','errors','skipped'))})
-        (output/'result.json').write_bytes(canonical(result))
+        preserve_result(output,result)
         if retirement_error is not None:
             result.update(status='RED_CONTROL_RETIREMENT',fullSource_unchanged=None,
                 next_epoch_launched=False,cleanup_credit_claimed=False)
-            (output/'result.json').write_bytes(canonical(result))
+            preserve_result(output,result)
             return 1
     result['identities_equal']=all(e['junit'] is not None for e in result['epochs']) and (
         result['epochs'][0]['junit']['identities']==result['epochs'][1]['junit']['identities'])
@@ -185,7 +211,7 @@ def main():
         result['source_validation_error']=type(error).__name__
     result['status']='PASS_DEVELOPMENT_ONLY' if result['identities_equal'] and result['fullSource_unchanged'] and all(
         e['passed'] for e in result['epochs']) else 'RED'
-    (output/'result.json').write_bytes(canonical(result))
+    preserve_result(output,result)
     return int(result['status']=='RED')
 
 

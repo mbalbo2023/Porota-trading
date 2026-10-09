@@ -70,6 +70,7 @@ G1_REQUIRED_CHEAP_FILES = frozenset({
     'tests/test_rc6_owner_receipts.py',
     'tests/test_rc6_horizon_model_admission.py',
     'tests/test_rc6_actions_custody.py', 'tests/test_rc6_candidate_authorization.py',
+    'tests/test_rc6_development_readout.py',
     'tests/test_rc6_capacity_comparison.py', 'tests/test_rc6_archive_grouped_wire.py',
     'tests/test_rc6_archive_physical_model.py', 'tests/test_rc6_raw_packaging_custody.py',
     'tests/test_rc6_material_focal_evidence.py', 'tests/test_rc6_focal_raw_custody.py',
