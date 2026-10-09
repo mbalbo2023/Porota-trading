@@ -320,6 +320,7 @@ def readonly_source(tmp_path_factory):
          'modes':{'demo.py':mode},'blob_ids':{'demo.py':blob}}
     index=base/'source.index.json'
     index.write_text(json.dumps(row))
+    source.chmod(0o555)
     controls=tmp_path_factory.mktemp('tiny-readonly-source-controls')
     remember(controls)
     return ReadonlyArchive((source,index,tree),ArchiveRegistration(),controls)
@@ -332,6 +333,7 @@ def source_lease(readonly_source,request):
 def test_actual_source_lease_first_module(source_lease,readonly_source):
     from case_state import ROOTS
     assert all(root.is_dir() for root in ROOTS)
+    assert source_lease[0].stat().st_mode & 0o777==0o555
     assert (source_lease[0]/'demo.py').read_bytes()==b'PAPER_SOURCE=1\\n'
 """,
     "test_beta.py": """
@@ -339,6 +341,7 @@ def test_actual_last_source_lease_with_unjoined_child(source_lease,readonly_sour
     from case_state import ROOTS,CHILDREN
     import subprocess,sys
     assert all(root.is_dir() for root in ROOTS)
+    assert source_lease[0].stat().st_mode & 0o777==0o555
     assert readonly_source.sequence==2
     CHILDREN.append(subprocess.Popen([sys.executable,'-c','import time;time.sleep(.3)']))
 """
@@ -458,6 +461,7 @@ report={'pytest_exit_code':int(rc),'before':before,'after':after,
         'owned_child_returncodes_after_original_wait':child_returncodes,
         'control_files':len(list(controls.rglob('*'))),'scope':'CONTROLLED_UNIT_FIXTURE_ONLY',
         'promotion_or_full_governed_claimed':False}
+report['scope_cleanup_receipts']=[scope.receipt for scope in plugin.scopes.values() if scope.receipt is not None]
 if hasattr(case_state,'real_double_finish'):
     report['real_double_finish']=case_state.real_double_finish
     scope=next(scope for scope in plugin.scopes.values()
@@ -572,9 +576,120 @@ def test_real_readonly_Source10_leases_are_closed_and_captured_before_shared_roo
     assert report["preserved_before"] == [True, True]
     assert report["preserved_after"] == [False, False]
     assert report["after"]["closed_and_removed_scopes"] == 2
+    assert sum(row['post_fin_owned_directory_owner_write_changes'] for row in report['scope_cleanup_receipts']) == 1
+    assert all(row['file_modes_changed_for_retirement'] == 0 for row in report['scope_cleanup_receipts'])
     controls = [manifest for manifest in report["capture_manifests"] if "lease-0001.json" in manifest["files"]]
     assert len(controls) == 1 and "lease-0002.json" in controls[0]["files"]
     assert all(manifest["all_payloads_hashed"] for manifest in report["capture_manifests"])
+
+
+def test_nonroot_readonly_directories_retire_only_after_native_FIN_capture_and_full_inventory(tmp_path):
+    code = r"""
+import json,os,stat,sys
+from pathlib import Path
+from unittest import mock
+sys.path.insert(0,sys.argv[1])
+from scripts import rc6_authenticated_fixture_lifecycle as life
+from scripts import porota_predeploy_cleanup as custody
+config=json.loads(sys.argv[2]);parent=Path(config['parent'])
+status=dict(line.split(':',1) for line in Path('/proc/self/status').read_text().splitlines() if ':' in line)
+caps=int(status['CapEff'].strip(),16)
+assert os.getuid()==os.geteuid()!=0 and not caps & ((1<<1)|(1<<2))
+
+def metadata(path):
+    value=path.lstat()
+    return custody.identity(value)+[value.st_atime_ns,value.st_rdev,value.st_blocks,value.st_mode]
+
+results=[]
+for fault in ('none','external_hardlink','unknown_mount','directory_rebound'):
+    namespace=life.create_namespace(parent,config['binding'])
+    source=namespace.path/'own';source.mkdir(mode=0o700)
+    nested=source/'nested';nested.mkdir(mode=0o700)
+    payload=nested/'.dockerignore';payload.write_bytes(b'original readonly owned control\n')
+    payload.chmod(0o444)
+    foreign=parent/('foreign-'+fault);foreign.mkdir(mode=0o700)
+    foreign_file=foreign/'protected.raw';foreign_file.write_bytes(b'foreign control must stay unchanged')
+    foreign_file.chmod(0o444)
+    (nested/'outside-alias').symlink_to(foreign,target_is_directory=True)
+    if fault=='external_hardlink':os.link(foreign_file,nested/'outside-hardlink.raw')
+    foreign.chmod(0o555);nested.chmod(0o555);source.chmod(0o555)
+    original={str(path):metadata(path) for path in (source,nested,payload,foreign,foreign_file)}
+    with mock.patch.object(os,'fchmod',side_effect=AssertionError('MODE_MUTATION_WITHOUT_REAL_FIN')):
+        try:life.cleanup_namespace(namespace,{'actual_owned_fin_closed':True},None)
+        except custody.CleanupRejected as error:assert 'ACTUAL_OWNED_FIN_REQUIRED' in str(error)
+        else:raise AssertionError('A caller FIN JSON must never authorize chmod')
+    assert {name:metadata(Path(name)) for name in original}==original
+    kernel,fin=life.execute_owned(namespace,[sys.executable,'-I','-B','-c',
+        "print('GENUINE_NATIVE_READONLY_RETIREMENT_CONTROL_ONLY')"],
+        cwd=namespace.path,environ=dict(os.environ),timeout_seconds=10)
+    assert kernel['actual_child_reaped'] and kernel['wait4_reaped_pid']==kernel['pid']
+    with mock.patch.object(os,'fchmod',side_effect=AssertionError('MODE_MUTATION_WITHOUT_REAL_CAPTURE')):
+        try:life.cleanup_namespace(namespace,fin,None)
+        except custody.CleanupRejected as error:assert 'CAPTURE_MISSING' in str(error)
+        else:raise AssertionError('FIN without a verified external copy must never authorize chmod')
+    assert {name:metadata(Path(name)) for name in original}==original
+    capture=life.capture_required_evidence(namespace,fin,parent/('sealed-'+fault),
+        ['producer-native.log','own/nested/.dockerignore'])
+    before_names=set(os.listdir(namespace.path))
+    if fault=='none':
+        receipt=life.cleanup_namespace(namespace,fin,capture)
+        assert receipt['actual_owned_fin_closed'] and receipt['phase_green']
+        assert receipt['post_fin_owned_directory_owner_write_changes']==2
+        assert receipt['file_modes_changed_for_retirement']==0 and not namespace.path.exists()
+        assert metadata(foreign)==original[str(foreign)] and metadata(foreign_file)==original[str(foreign_file)]
+        life.verify_capture(namespace,capture)
+        row=next(row for row in capture.files if row['relative_source']=='own/nested/.dockerignore')
+        assert (capture.path/row['capture_file']).read_bytes()==b'original readonly owned control\n'
+        results.append({'fault':fault,'native_FIN':True,'readonly_directories_retired':2,
+            'file_modes_changed':0,'foreign_metadata_unchanged':True,'original_raw_verified':True})
+        continue
+    original_mount=custody.require_member_mount
+    source_observations=0
+    def checked_member(fd,name,mount):
+        global source_observations
+        actual=original_mount(fd,name,mount)
+        if name=='own':
+            source_observations+=1
+            if fault=='unknown_mount':raise custody.CleanupRejected('PRIVATE_NAMESPACE_MOUNT')
+            if fault=='directory_rebound' and source_observations==3:
+                source.rename(namespace.path/'preserved-original-own')
+                source.symlink_to(foreign,target_is_directory=True)
+        return actual
+    with mock.patch.object(custody,'require_member_mount',side_effect=checked_member), \
+            mock.patch.object(os,'fchmod',side_effect=AssertionError('GUARD_MUST_VETO_BEFORE_MODE_MUTATION')):
+        try:life.cleanup_namespace(namespace,fin,capture)
+        except custody.CleanupRejected as error:
+            expected={'external_hardlink':'EXTERNAL_HARDLINK_BLOCKED','unknown_mount':'PRIVATE_NAMESPACE_MOUNT',
+                'directory_rebound':'DIRECTORY_CHANGED_BEFORE_RETIREMENT'}[fault]
+            assert expected in str(error),(fault,str(error))
+        else:raise AssertionError('A foreign, mounted or rebound member must veto retirement')
+    assert before_names <= set(os.listdir(namespace.path))
+    assert (namespace.path/life.MARKER).is_file() and (namespace.path/'producer-native.log').is_file()
+    assert metadata(foreign)==original[str(foreign)] and metadata(foreign_file)==original[str(foreign_file)]
+    preserved_source=namespace.path/'preserved-original-own' if fault=='directory_rebound' else source
+    assert stat.S_IMODE(preserved_source.lstat().st_mode)==0o555
+    assert stat.S_IMODE((preserved_source/'nested').lstat().st_mode)==0o555
+    if fault!='directory_rebound':assert {name:metadata(Path(name)) for name in original}==original
+    life.verify_capture(namespace,capture)
+    results.append({'fault':fault,'native_FIN':True,'mode_mutation_vetoed':True,
+        'first_unlink_vetoed':True,'foreign_metadata_unchanged':True,'original_raw_verified':True})
+Path(config['report']).write_text(json.dumps({'uid':os.geteuid(),'effective_capabilities':caps,
+    'dac_override_or_read_search':False,'results':results}))
+"""
+    parent=tmp_path/'native-readonly-retirement'
+    parent.mkdir(mode=0o700)
+    report=tmp_path/'native-readonly-retirement.report.json'
+    config={'parent':str(parent),'binding':real_binding(),'report':str(report)}
+    completed=subprocess.run([sys.executable,'-I','-B','-c',code,str(ROOT),json.dumps(config)],
+        cwd=ROOT,env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1',PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'),
+        capture_output=True,text=True,timeout=30)
+    assert completed.returncode==0,completed.stdout+completed.stderr
+    observed=json.loads(report.read_text())
+    assert observed['uid']!=0 and observed['dac_override_or_read_search'] is False
+    assert len(observed['results'])==4
+    assert all(row['native_FIN'] and row['foreign_metadata_unchanged'] and row['original_raw_verified']
+        for row in observed['results'])
+    assert all(row['mode_mutation_vetoed'] and row['first_unlink_vetoed'] for row in observed['results'][1:])
 
 
 def test_actual_declared_preparation_raw_is_hash_verified_and_retained_before_scope_cleanup(tmp_path):

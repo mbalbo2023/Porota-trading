@@ -301,6 +301,30 @@ def test_development_admission_runs_real_git_identity_before_any_tooling(tmp_pat
             (root/'requirements.lock.txt').read_text(),sorted(development.DEPENDENCIES))
 
 
+@pytest.mark.parametrize('mask',[0o022,0o077])
+def test_development_mask_admission_observes_actual_native_child_kernel(mask):
+    import subprocess
+    import sys
+    from pathlib import Path
+    root=Path(__file__).absolute().parents[1]
+    code="""
+import os,sys
+sys.path.insert(0,sys.argv[1])
+from scripts.rc6_development_checks import require_canonical_umask
+mask=int(sys.argv[2]);os.umask(mask)
+try:
+    value=require_canonical_umask()
+except ValueError as error:
+    assert mask==0o077 and str(error)=='DEVELOPMENT_CANONICAL_UMASK_0022_REQUIRED'
+else:
+    assert mask==0o022 and value=='0022'
+assert os.umask(mask)==mask
+"""
+    result=subprocess.run([sys.executable,'-I','-B','-c',code,str(root),str(mask)],
+        stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=10)
+    assert result.returncode==0,result.stderr
+
+
 @pytest.mark.parametrize('change',['duplicate','counter','failure','empty'])
 def test_development_junit_facts_never_accept_changed_native_identity_or_headers(change):
     from scripts.rc6_development_checks import junit_facts
@@ -329,3 +353,56 @@ def test_development_ci_stays_manual_owner_admitted_and_distinct_from_product_ga
     assert plan['scope']=='DEVELOPMENT_REGRESSIONS_ONLY_NOT_G0_G8_OR_PRODUCT157'
     assert plan['full_gov_claimed'] is plan['material_gate_launched'] is False
     assert not any('test_real_pytest_central_definition' in item for item in plan['suites'])
+
+
+def test_development_retirement_error_preserves_native_red_controls_and_blocks_next_epoch(tmp_path,monkeypatch):
+    """Real child/FIN/capture; injected EACCES is no native capacity proof."""
+    import errno
+    import subprocess
+    import sys
+    from pathlib import Path
+    from scripts import rc6_development_checks as development
+    product=Path(__file__).absolute().parents[1]
+    repo=tmp_path/'original';repo.mkdir()
+    (repo/'tests').mkdir()
+    (repo/'tests/test_exact_native.py').write_text('def test_original_native_case():\n    assert True\n')
+    (repo/'requirements.lock.txt').write_bytes((product/'requirements.lock.txt').read_bytes())
+    plan=json.loads((product/'ops/policy/rc6-development-checks-v1.json').read_bytes())
+    plan['suites']=['tests/test_exact_native.py']
+    plan_path=repo/'plan.json';plan_path.write_bytes(custody.canonical(plan))
+    def git(*args):
+        return subprocess.check_output(['git','-C',str(repo),*args],text=True).strip()
+    git('init','-q');git('config','user.email','native-unit@example.invalid')
+    git('config','user.name','Native unit fixture');git('add','.')
+    git('commit','-qm','Tiny original native regression')
+    sha=git('rev-parse','HEAD');tree=git('rev-parse','HEAD^{tree}')
+    output=tmp_path/'controls';output.mkdir(mode=0o700)
+    for key,value in {'GITHUB_ACTIONS':'true','GITHUB_REPOSITORY':custody.REPO,
+                      'GITHUB_ACTOR':'mbalbo2023','GITHUB_EVENT_NAME':'workflow_dispatch',
+                      'GITHUB_RUN_ATTEMPT':'1','GITHUB_RUN_ID':'UNIT_NOT_ACTIONS'}.items():
+        monkeypatch.setenv(key,value)
+    monkeypatch.setattr(development,'ROOT',repo)
+    monkeypatch.setattr(development,'Github',lambda token:object())
+    monkeypatch.setattr(development,'verify_owner',lambda *args,**kwargs:'a'*64)
+    monkeypatch.setattr(sys,'argv',['development','--plan',str(plan_path),'--source-sha',sha,
+        '--source-tree',tree,'--owner-session','UNIT_ONLY','--launch-receipt-url','https://example.invalid/unit',
+        '--python311',sys.executable,'--python312',sys.executable,'--output',str(output)])
+    original_cleanup=development.lifecycle.cleanup_namespace
+    held=[]
+    def retirement_denied(*args,**kwargs):
+        held.append((args,kwargs))
+        raise PermissionError(errno.EACCES,'Injected own retirement error')
+    monkeypatch.setattr(development.lifecycle,'cleanup_namespace',retirement_denied)
+    try:
+        assert development.main()==1
+        result=json.loads((output/'result.json').read_bytes())
+        assert result['status']=='RED_CONTROL_RETIREMENT' and len(result['epochs'])==1
+        assert result['next_epoch_launched'] is result['cleanup_credit_claimed'] is False
+        assert result['fullSource_unchanged'] is None and (output/'source-before.index.json').is_file()
+        epoch=result['epochs'][0]
+        assert epoch['kernel']['returncode']==0 and epoch['junit']['cases']==1
+        assert epoch['retirement_error']=={'type':'PermissionError','errno':errno.EACCES}
+        assert epoch['passed'] is False and (output/'311/manifest.json').is_file()
+        assert not (output/'312').exists()
+    finally:
+        for args,kwargs in held:original_cleanup(*args,**kwargs)

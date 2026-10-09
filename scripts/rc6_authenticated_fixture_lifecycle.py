@@ -684,7 +684,68 @@ def cleanup_namespace(namespace, fin, capture, *, on_directory_retired=None):
     before_capacity = capacity.measure_filesystem(namespace.path)
     measured = inventory(namespace)
     custody.require(inventory(namespace) == measured, "FIXTURE_CHANGED_BEFORE_FIRST_UNLINK")
-    rows = measured["rows"]
+    # A readonly owned fixture is still a valid Source while consumers run.
+    # Only this post-FIN retirement may add owner-write to its directories.
+    # Prepare ALL directories before unlinking anything so an unsupported
+    # permission transition cannot leave a half-removed fixture.
+    retirement_inventory = {**measured, "rows": {name: dict(row) for name, row in measured["rows"].items()}}
+    rows = retirement_inventory["rows"]
+    retirement_permission_changes = 0
+    retirement_permission_digest = hashlib.sha256()
+
+    def prepare_directories(fd, relative):
+        nonlocal retirement_permission_changes
+        for name in sorted(os.listdir(fd)):
+            key = name if not relative else relative + "/" + name
+            custody.require(key in rows, "FIXTURE_UNKNOWN_MEMBER_BEFORE_RETIREMENT")
+            row = rows[key]
+            if not row["directory"]:
+                continue
+            expected = list(row["identity"])
+            observed = custody.require_member_mount(fd, name, namespace.mount_id)
+            custody.require(custody.identity(observed) == expected
+                            == custody.identity(os.stat(name, dir_fd=fd, follow_symlinks=False)),
+                            "FIXTURE_DIRECTORY_CHANGED_BEFORE_RETIREMENT")
+            nested = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC,
+                             dir_fd=fd)
+            try:
+                before = os.fstat(nested)
+                custody.require(custody.identity(before) == expected and stat.S_ISDIR(before.st_mode)
+                                and before.st_dev == namespace.identity[0]
+                                and before.st_uid == namespace.identity[2] == os.geteuid()
+                                and custody.mount_id(nested) == namespace.mount_id,
+                                "FIXTURE_DIRECTORY_REBOUND_BEFORE_RETIREMENT")
+                mode = stat.S_IMODE(before.st_mode)
+                if not mode & stat.S_IWUSR:
+                    custody.require(custody.identity(os.stat(name, dir_fd=fd, follow_symlinks=False)) == expected,
+                                    "FIXTURE_DIRECTORY_NAME_REBOUND_BEFORE_RETIREMENT")
+                    os.fchmod(nested, mode | stat.S_IWUSR)
+                    after = os.fstat(nested)
+                    changed = custody.identity(after)
+                    custody.require(changed[:4] == expected[:4]
+                                    and changed[4] == (mode | stat.S_IWUSR)
+                                    and changed[5:8] == expected[5:8] and changed[8] >= expected[8]
+                                    and stat.S_IFMT(after.st_mode) == stat.S_IFMT(before.st_mode)
+                                    and after.st_atime_ns == before.st_atime_ns
+                                    and after.st_blocks == before.st_blocks
+                                    and custody.mount_id(nested) == namespace.mount_id
+                                    and changed == custody.identity(os.stat(name, dir_fd=fd, follow_symlinks=False)),
+                                    "FIXTURE_DIRECTORY_RETIREMENT_MODE_TRANSITION_CHANGED")
+                    row.update(identity=tuple(changed), mode=after.st_mode)
+                    retirement_permission_changes += 1
+                    retirement_permission_digest.update(capacity.canonical({"relative_directory": key,
+                        "before": expected, "after": changed, "mount_id": namespace.mount_id}))
+                prepare_directories(nested, key)
+            finally:
+                os.close(nested)
+
+    with custody.directory(namespace.path, readable=True) as fd:
+        custody.require(stable_identity(os.fstat(fd)) == namespace.identity
+                        and custody.mount_id(fd) == namespace.mount_id,
+                        "FIXTURE_NAMESPACE_REBOUND_BEFORE_RETIREMENT")
+        prepare_directories(fd, "")
+    custody.require(inventory(namespace) == retirement_inventory,
+                    "FIXTURE_CHANGED_AFTER_RETIREMENT_PERMISSIONS_BEFORE_FIRST_UNLINK")
     remaining_link_identities = {}
 
     def remove(fd, relative):
@@ -764,6 +825,9 @@ def cleanup_namespace(namespace, fin, capture, *, on_directory_retired=None):
             "original_path_is_nonexistent": replacement is None,
             "capture_manifest_sha256": capture.manifest_sha256, "capture_path": str(capture.path),
             "retained_entries_before": measured["retained_entries"], "allocated_bytes_before": measured["allocated_bytes"],
+            "post_fin_owned_directory_owner_write_changes": retirement_permission_changes,
+            "post_fin_directory_permission_transitions_sha256": retirement_permission_digest.hexdigest(),
+            "file_modes_changed_for_retirement": 0,
             "capacity_before": before_capacity, "capacity_after": after_capacity,
             "link_targets_followed": False, "foreign_paths_removed": 0, "global_cleanup_claimed": False,
             "runtime_paths_authorized": False, "real_orders_sent": 0}

@@ -21,6 +21,13 @@ DEPENDENCIES = frozenset(('certifi','charset-normalizer','hypothesis','idna','in
                          'pluggy','pygments','pytest','python-dotenv','pyyaml','requests','sortedcontainers','urllib3'))
 
 
+def require_canonical_umask():
+    """Observe the kernel's inherited mask; never normalize Source after freeze."""
+    matches=re.findall(r'^Umask:\s*([0-7]{4})$',Path('/proc/self/status').read_text(),re.MULTILINE)
+    admission.require(matches==['0022'],'DEVELOPMENT_CANONICAL_UMASK_0022_REQUIRED')
+    return matches[0]
+
+
 def short_control_parent(repo):
     """Borrow only a writable short parent on the actually measured mount.
 
@@ -92,6 +99,7 @@ def main():
     admission.require(governed.git(ROOT,'rev-parse','HEAD').decode().strip()==args.source_sha
         and governed.git(ROOT,'rev-parse','HEAD^{tree}').decode().strip()==args.source_tree,
         'DEVELOPMENT_EXACT_FROZEN_SOURCE_REQUIRED')
+    require_canonical_umask()
     raw=args.plan.read_bytes();plan=json.loads(raw)
     admission.require(plan['schema']=='porota.rc6.development-checks-plan.v1'
         and plan['scope']=='DEVELOPMENT_REGRESSIONS_ONLY_NOT_G0_G8_OR_PRODUCT157'
@@ -120,6 +128,7 @@ def main():
         'G0_G8_qualification':False,'Product157_qualified':False,'build_once_artifact_created':False,
         'deployed':False,'real_orders_sent':0}
     before=governed.source_pin(ROOT,args.source_sha,args.source_tree)
+    (output/'source-before.index.json').write_bytes(canonical(before))
     control_parent=short_control_parent(ROOT)
     for epoch,interpreter in (('311',args.python311),('312',args.python312)):
         owner_check()
@@ -142,22 +151,31 @@ def main():
         required=['native.log','producer-owned-fin-development-'+epoch+'.json']
         if (namespace.path/'junit.xml').is_file():required.append('junit.xml')
         captured=lifecycle.capture_required_evidence(namespace,fin,output/epoch,required)
-        cleanup=lifecycle.cleanup_namespace(namespace,fin,captured)
         rows={row['relative_source']:row for row in captured.files}
         facts=None
         validation_error=None
         if 'junit.xml' in rows:
             try: facts=junit_facts((output/epoch/rows['junit.xml']['capture_file']).read_bytes())
             except (ValueError,ET.ParseError) as error:validation_error=type(error).__name__
+        cleanup=None
+        retirement_error=None
+        try:
+            cleanup=lifecycle.cleanup_namespace(namespace,fin,captured)
+        except (ValueError,OSError) as error:
+            retirement_error={'type':type(error).__name__,'errno':getattr(error,'errno',None)}
         result['epochs'].append({'epoch':epoch,'interpreter':interpreter,'kernel':kernel,
-            'cleanup':cleanup,'junit':facts,'junit_validation_error':validation_error,
+            'cleanup':cleanup,'retirement_error':retirement_error,'junit':facts,'junit_validation_error':validation_error,
             'passed':kernel['returncode']==0 and facts is not None
-            and not any(facts[key] for key in ('failures','errors','skipped'))})
+            and retirement_error is None and not any(facts[key] for key in ('failures','errors','skipped'))})
         (output/'result.json').write_bytes(canonical(result))
+        if retirement_error is not None:
+            result.update(status='RED_CONTROL_RETIREMENT',fullSource_unchanged=None,
+                next_epoch_launched=False,cleanup_credit_claimed=False)
+            (output/'result.json').write_bytes(canonical(result))
+            return 1
     result['identities_equal']=all(e['junit'] is not None for e in result['epochs']) and (
         result['epochs'][0]['junit']['identities']==result['epochs'][1]['junit']['identities'])
     after=governed.source_pin(ROOT,args.source_sha,args.source_tree)
-    (output/'source-before.index.json').write_bytes(canonical(before))
     (output/'source-after.index.json').write_bytes(canonical(after))
     try:
         result['source_atime_observations']=governed.compare_source(before,after)

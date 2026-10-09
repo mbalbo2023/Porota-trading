@@ -53,6 +53,8 @@ acceptance and privileged bootstrap/custody are still NO_VERIFICADO. Its
 authentic NOT_STARTED result has genuine outer FIN/cleanup only. Compact indices
 record all ten original artifact members and reject invented inner FIN.
 
+| ERR-RC6-038 | Frozen local development8c98fe8a in the new NONROOT environment inherited0077: original checkout-mode guards rejected160 cases and one artifact-mode assertion; post-FIN own cleanup hit EACCES in a readonly fixture directory after partial retirement. Earlier ROOT execution masked this permission defect. Original JUnit/log/FIN were sealed before failure; no qualification or cleanup credit. | Require actual kernel Umask0022 before development tooling/producer. Only after opaque FIN, capture and complete stable inventory, prepare own readonly directory FDs for retirement with explicit mode transitions, UID/inode/dev/mount checks and complete revalidation before first unlink. A cleanup error retains original sealed controls and blocks the next epoch. Unknown FIN/capture/foreign roots cannot authorize mode change. | Permanent native mask/RED-custody/NONROOT-retirement regressions; full material capacity remains `NO_VERIFICADO`. Historical namespace retained without reconstructing deletion authority from JSON. |
+
 Every closure receipt records UTC, owner/workstream, exact SHA/tree, first failed
 invariant, resources, code/guard paths, semantic invariants and verified artifact
 links/hashes. Raw evidence stays in Actions artifacts with compact reproducibility
