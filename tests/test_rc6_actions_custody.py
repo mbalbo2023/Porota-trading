@@ -419,7 +419,11 @@ def test_development_retirement_error_preserves_native_red_controls_and_blocks_n
         assert result['fullSource_unchanged'] is None and (output/'source-before.index.json').is_file()
         epoch=result['epochs'][0]
         assert epoch['kernel']['returncode']==0 and epoch['junit']['cases']==1
-        assert epoch['retirement_error']=={'type':'PermissionError','errno':errno.EACCES}
+        error=epoch['retirement_error']
+        assert error['type']=='PermissionError' and error['errno']==errno.EACCES
+        assert error['error_signature']=='PermissionError' and error['source_sites']==[]
+        assert error['cleanup_credit_claimed'] is error['retry_authorized'] is False
+        assert 'Injected own retirement error' not in json.dumps(error)
         assert epoch['passed'] is False and (output/'311/manifest.json').is_file()
         assert not (output/'312').exists()
     finally:
