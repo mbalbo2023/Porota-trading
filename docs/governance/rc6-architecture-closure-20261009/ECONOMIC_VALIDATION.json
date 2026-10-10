@@ -1698,6 +1698,74 @@
       "scripts/rc6_archive_v3_image_smoke.py": "198cf6fe24beb003e6b5029bd6688b58a13c18985ba43446a4d00aa4318f98ed",
       "scripts/rc6_cas_original_comparison.py": "0fe56460ccfa76e38d064ce455a45a836ca796723b977e5afcde933949b73b0f",
       "rc6_shadow_runtime/archive_physical_model.py": "0dc7233524f43e29546a03df32b3ef18a31b897fdb7322961ab13ef726394bee"
+    },
+    "successor_economic_RCA": {
+      "source_sha": "18ba722163f6539e68c7a2c1c27b53fb65e9adae",
+      "source_tree": "9ff314b1b1165a0f82008b70b39497728d91ca7e",
+      "run_id": 38046686266,
+      "job_id": 114197535227,
+      "artifact_id": 11667771533,
+      "conclusion": "failure",
+      "zip_bytes": 966426,
+      "zip_members_crc_verified": 22,
+      "zip_sha256": "ab45bd1da324c193cfae156022a70dcc5887cd03b0ab1d3ae86506fa8ba4b868",
+      "cases_per_python": 1584,
+      "passed_cases_per_python": 1577,
+      "setup_errors_per_python": 7,
+      "failures_per_python": 0,
+      "skips_per_python": 0,
+      "unique_cause": "PRIVATE_NATIVE_GIT_FIXTURE_COPIES_IRRELEVANT_HISTORY_AND_PACKS",
+      "observed_Git_fixture_bytes_at_failure": 439734272,
+      "unchanged_private_Git_limit_bytes": 268435456,
+      "fullSource_unchanged": true,
+      "identities_equal": true,
+      "actual_FIN_and_ECHILD_closed": true,
+      "foreign_paths_removed": 0,
+      "epoch_seconds": [
+        101.72986551899999,
+        112.96142007899996
+      ],
+      "epoch_max_RSS_bytes_not_sum": [
+        294928384,
+        297246720
+      ],
+      "history_bootstrap_seconds": 4.972720109000001,
+      "Git_allocated_before_history_bytes": 225427456,
+      "Git_allocated_after_history_bytes": 439791616,
+      "Git_allocated_observation_is_peak_or_quota": false,
+      "fix": "VERIFY_AND_PACK_REQUIRED_SOURCE_RAW_LEGACY_AND_AUTHENTIC_ANCESTRY_OBJECT_CLOSURE_ONLY",
+      "limit_increased": false,
+      "native_started": false,
+      "identical_RED_retry_allowed": false,
+      "G0_G8_qualification": false
+    },
+    "selective_Git_fix_local_regressions": {
+      "scope": "LOCAL_NATIVE_PRIVATE_GIT_ONLY_NOT_HOSTED_OR_G0_G8",
+      "tests_per_python": 25,
+      "original_tests_preserved": 22,
+      "new_guards": [
+        "UNNEEDED_REACHABLE_AND_UNREACHABLE_GIT_BULK_EXCLUDED",
+        "REQUIRED_OBJECT_PRESSURE_REJECTED_BEFORE_HEAD_CREATION",
+        "STALLED_HEADER_READ_NATIVE_DEADLINE"
+      ],
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "seconds_per_python": [
+        21.514,
+        21.32
+      ],
+      "junit_sha256": [
+        "998248496d366e29bd4238844dc51961e695ba79ec1f267c18640f2161e88074",
+        "eb437b8f531b687166928be75bde02566499dbb70d0f31d7d6caa91abb6bc15f"
+      ],
+      "implementation_sha256": "76314d15237dd636e1b4e3d6c9ba5178c2eb33d39ab5166245c27dee0d202c0b",
+      "private_Git_observed_after_checkout_bytes": 235003904,
+      "private_Git_unchanged_limit_bytes": 268435456,
+      "limit_raised": false,
+      "continuous_global_peak_proved": false,
+      "native_ROOT_executed": false,
+      "hosted_exact_successor_status": "PENDING"
     }
   }
 }

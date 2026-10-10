@@ -244,3 +244,13 @@ EACCES por PID ausente requiere revisión explícita; no se aprueba aquí.
 G0–G6, perfil completo1CPU/1GiB y margen total del Droplet permanecen bloqueados;
 G7/G8 esperan esos gates. USD0 recurrente adicional, PAPER/SHADOW, órdenes0,
 PPI intacto, FIX-FORWARD; sin compra, ampliación, merge ni deploy.
+
+Source `18ba722163f6539e68c7a2c1c27b53fb65e9adae` conserva RED económico
+38046686266/artifact11667771533:966426B/22CRC/SHA256
+`ab45bd1da324c193cfae156022a70dcc5887cd03b0ab1d3ae86506fa8ba4b868`.
+Ambos Python:1577 PASS y7 setupErrors del mismo fixtureGit, sin failure/skip;
+Source literal idéntico y FIN/ECHILD/foreignremoved0. El fixture intentó
+copiar439734272B dentro de256MiB: se corrige la duplicación con clausura
+Git verificada de Source/RAW/legacy/ascendencia, conservando el límite.
+No se ejecutó ROOT ni se repite Source18ba. El sucesor exige su propia CI
+positiva antes del diagnóstico nativo; el RED no certifica lectores completos.

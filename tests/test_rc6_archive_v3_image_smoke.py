@@ -1,12 +1,15 @@
 """Native private codec fixtures and receipt guards; never CI image approval."""
 from copy import deepcopy
+import hashlib
 import io
 import json
 import os
 from pathlib import Path
+import select
 import shutil
 import socket
 import stat
+import struct
 import subprocess
 import sys
 import time
@@ -14,6 +17,7 @@ import time
 import pytest
 
 from scripts import rc6_archive_v3_image_smoke as smoke
+from scripts import porota_artifact_provenance as provenance
 from scripts.porota_artifact_provenance import canonical_bytes, create_source_manifest
 
 
@@ -21,49 +25,315 @@ ROOT = Path(__file__).resolve().parents[1]
 MAX_PRIVATE_FULLGIT_BYTES = 256 * 1024**2
 
 
-def copy_native_fullgit(source, target):
-    """Copy bounded complete native Git, including unreachable custody objects.
+def private_git_environment():
+    # An inherited GIT_DIR/common-dir/index/alternate must not redirect any
+    # fixture operation. Source's native objects are the sole input authority.
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(GIT_NO_LAZY_FETCH="1", GIT_OPTIONAL_LOCKS="0",
+                       GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null")
+    return environment
 
-    A local clone from a shallow Source can drop --shared and copy only its
-    reachable subset. The original custody guard requires additional real
-    Git objects. Every read preserves source all11 custody; no aliases/links
-    to Source are left in the private fixture and no fetch is performed.
-    """
-    allocated = 0
-    def visit(origin, destination):
-        nonlocal allocated
+
+def private_git_command(directory, *arguments):
+    return ["git", "--no-replace-objects", "-c", "protocol.allow=never", "-c", "gc.auto=0",
+            "-c", "core.hooksPath=/dev/null", "-c", "pack.writeReverseIndex=false", "--git-dir=" + str(directory),
+            "--work-tree=" + str(directory.parent), *arguments]
+
+
+def private_git_bytes(directory, *arguments):
+    result = subprocess.run(private_git_command(directory, *arguments),
+        env=private_git_environment(), capture_output=True, check=True, timeout=30)
+    assert len(result.stdout) <= 16 * 1024**2, "PRIVATE_FULLGIT_METADATA_BOUND"
+    return result.stdout
+
+
+def private_git_allocated(directory):
+    """Count every owned Git inode without following links or changing atime."""
+    total = 0
+    queue = [directory]
+    while queue:
+        origin = queue.pop()
         descriptor = smoke.directory(origin)
         try:
             info = os.fstat(descriptor)
-            allocated += info.st_blocks * 512
-            assert allocated <= MAX_PRIVATE_FULLGIT_BYTES
-            destination.mkdir(mode=0o755)
+            assert info.st_uid == os.geteuid(), "PRIVATE_FULLGIT_OWNER_REQUIRED"
+            total += info.st_blocks * 512
             for name in sorted(os.listdir(descriptor)):
-                old, new = origin / name, destination / name
-                row = old.lstat()
-                assert not stat.S_ISLNK(row.st_mode), "PRIVATE_FULLGIT_ALIAS_FORBIDDEN"
+                path = origin / name
+                row = path.lstat()
+                assert row.st_uid == os.geteuid(), "PRIVATE_FULLGIT_OWNER_REQUIRED"
                 if stat.S_ISDIR(row.st_mode):
-                    visit(old, new)
+                    queue.append(path)
                 else:
-                    assert stat.S_ISREG(row.st_mode), "PRIVATE_FULLGIT_NONREGULAR_FORBIDDEN"
-                    allocated += row.st_blocks * 512
-                    assert allocated <= MAX_PRIVATE_FULLGIT_BYTES
-                    handle = os.open(old, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
-                    try:
-                        with new.open("xb") as output:
-                            while chunk := os.read(handle, 65536):
-                                output.write(chunk)
-                        assert smoke.identity(os.fstat(handle)) == smoke.identity(row)
-                        assert smoke.identity(old.lstat()) == smoke.identity(row)
-                    finally:
-                        os.close(handle)
-                    new.chmod(stat.S_IMODE(row.st_mode))
+                    assert stat.S_ISREG(row.st_mode) and row.st_nlink == 1, "PRIVATE_FULLGIT_ALIAS_FORBIDDEN"
+                    total += row.st_blocks * 512
             assert smoke.identity(os.fstat(descriptor)) == smoke.identity(info)
         finally:
             os.close(descriptor)
-    visit(source, target)
-    assert not (target / "objects/info/alternates").exists(), "PRIVATE_FULLGIT_FOREIGN_ALTERNATE_FORBIDDEN"
-    return allocated
+    assert total <= MAX_PRIVATE_FULLGIT_BYTES, "PRIVATE_FULLGIT_ALLOCATED_BOUND"
+    return total
+
+
+class PrivateGitStream:
+    """Bounded read buffering with a deadline before every potentially blocking read."""
+    def __init__(self, stream, deadline):
+        self.stream, self.deadline, self.pending = stream, deadline, b""
+
+    def read(self, maximum):
+        if self.pending:
+            chunk, self.pending = self.pending[:maximum], self.pending[maximum:]
+            return chunk
+        remaining = self.deadline - time.monotonic()
+        assert remaining > 0 and select.select([self.stream], [], [], remaining)[0], \
+            "PRIVATE_FULLGIT_READ_DEADLINE"
+        return os.read(self.stream.fileno(), min(65536, maximum))
+
+    def readline(self, maximum):
+        line = bytearray()
+        while len(line) < maximum:
+            chunk = self.read(65536)
+            if not chunk: break
+            end = chunk.find(b"\n")
+            if end >= 0:
+                self.pending = chunk[end + 1:]
+                line.extend(chunk[:end + 1]); break
+            line.extend(chunk)
+        assert len(line) <= maximum, "PRIVATE_FULLGIT_OBJECT_HEADER_BOUND"
+        return bytes(line)
+
+
+def copy_native_fullgit(source, target, *, raw_anchor=provenance.RAW_CUSTODY_SOURCE_SHA,
+                        raw_roots=provenance.RAW_EVIDENCE_ROOTS,
+                        legacy_anchor=smoke.LEGACY_REACHABLE_ANCHOR,
+                        legacy_blobs=smoke.LEGACY_GIT_BLOBS):
+    """Pack the exact native Source/RAW/legacy closure, not all old Git packs.
+
+    All real ancestor commits remain present: no shallow frontier, graft,
+    replacement, alternate or invented commit. Current Source has every tree
+    and blob. Custody's recursive ls-tree requires all its trees, but only RAW
+    blobs; the legacy anchor similarly needs its real trees and pinned blobs.
+    Historical unrelated blobs/trees and unreachable Git bulk are not inputs
+    to these readers. This is not a claim to restore every historical checkout.
+    """
+    assert not target.exists(), "PRIVATE_FULLGIT_EXCLUSIVE_TARGET_REQUIRED"
+    source_fd = smoke.directory(source)
+    os.close(source_fd)
+    assert not (source / "objects/info/alternates").exists() and not (source / "info/grafts").exists(), \
+        "PRIVATE_FULLGIT_FOREIGN_GRAPH_FORBIDDEN"
+    assert private_git_bytes(source, "rev-parse", "--is-shallow-repository").strip() == b"false", \
+        "PRIVATE_FULLGIT_COMPLETE_COMMIT_GRAPH_REQUIRED"
+    assert private_git_bytes(source, "rev-parse", "--show-object-format").strip() == b"sha1"
+    head = private_git_bytes(source, "rev-parse", "HEAD").decode().strip()
+    commits = private_git_bytes(source, "rev-list", head).decode().splitlines()
+    assert 0 < len(commits) <= 50_000 and len(commits) == len(set(commits))
+    assert raw_anchor in commits and legacy_anchor in commits, "PRIVATE_FULLGIT_ANCHOR_NOT_ANCESTOR"
+    objects = {oid: "commit" for oid in commits}
+
+    def listing(anchor, *paths):
+        rows = []
+        arguments = ["ls-tree", "-rtz", "--full-tree", anchor]
+        if paths: arguments += ["--", *paths]
+        for literal in private_git_bytes(source, *arguments).split(b"\0"):
+            if not literal: continue
+            header, name = literal.split(b"\t", 1)
+            mode, kind, oid = header.decode("ascii").split()
+            assert kind in {"tree", "blob"} and mode in {"040000", "100644", "100755"}
+            assert len(oid) == 40 and all(character in "0123456789abcdef" for character in oid)
+            rows.append((name.decode("utf-8"), mode, kind, oid))
+        return rows
+
+    for anchor in {head, raw_anchor, legacy_anchor}:
+        objects[private_git_bytes(source, "rev-parse", anchor + "^{tree}").decode().strip()] = "tree"
+        for _name, _mode, kind, oid in listing(anchor):
+            if kind == "tree" or anchor == head: objects[oid] = kind
+    for _name, _mode, kind, oid in listing(raw_anchor, *raw_roots):
+        objects[oid] = kind
+    legacy = {name: (mode, oid) for name, mode, kind, oid in listing(legacy_anchor, *legacy_blobs)
+              if kind == "blob"}
+    assert legacy == {name: ("100644", oid) for name, oid in legacy_blobs.items()}, \
+        "PRIVATE_FULLGIT_LEGACY_BLOB_REBOUND"
+    objects.update({oid: "blob" for oid in legacy_blobs.values()})
+    assert len(objects) <= 100_000, "PRIVATE_FULLGIT_OBJECT_COUNT_BOUND"
+
+    target.mkdir(mode=0o700)
+    subprocess.run(["git", "init", "--bare", "--quiet", "--template=", str(target)],
+        env=private_git_environment(), check=True, capture_output=True, timeout=30)
+    private_git_bytes(target, "config", "core.bare", "false")
+    private_git_bytes(target, "config", "core.worktree", str(target.parent))
+    pack_root = target / "objects/pack"
+    # Index v2 uses 40 bytes/object plus a bounded header/trailer and optional
+    # 64-bit offsets. Reserve its full physical space before streaming the pack.
+    index_reserve = ((1024 + len(objects) * 40 + 40 + 4095) // 4096) * 4096
+    identifiers = target / "private-object-list"
+    fd = os.open(identifiers, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as output:
+        for oid in sorted(objects): output.write(oid.encode("ascii") + b"\n")
+    initial = private_git_allocated(target)
+    assert initial + index_reserve <= MAX_PRIVATE_FULLGIT_BYTES, "PRIVATE_FULLGIT_ALLOCATED_BOUND"
+    temporary_pack = pack_root / "private-stream.pack"
+    pack_fd = os.open(temporary_pack, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    input_fd = None
+    process = None
+    digest, tail, header, logical = hashlib.sha1(), b"", b"", 0
+    deadline = time.monotonic() + 30
+    try:
+        input_fd = os.open(identifiers, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+        initial = private_git_allocated(target)
+        process = subprocess.Popen(private_git_command(source, "pack-objects", "--stdout",
+            "--quiet", "--window=0", "--threads=1", "--no-reuse-delta"),
+            env=private_git_environment(), stdin=input_fd, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL)
+        packed = PrivateGitStream(process.stdout, deadline)
+        while chunk := packed.read(65536):
+            logical += len(chunk)
+            # Round the growing pack up to an actual allocation unit before
+            # writing. Check actual blocks too: logical/sparse claims grant no credit.
+            unit = os.fstatvfs(pack_fd).f_frsize
+            rounded = ((logical + unit - 1) // unit) * unit
+            assert initial + index_reserve + rounded <= MAX_PRIVATE_FULLGIT_BYTES, \
+                "PRIVATE_FULLGIT_ALLOCATED_BOUND"
+            if len(header) < 12: header = (header + chunk)[:12]
+            pending = tail + chunk
+            digest.update(pending[:-20]); tail = pending[-20:]
+            view = memoryview(chunk)
+            while view:
+                written = os.write(pack_fd, view)
+                assert written > 0, "PRIVATE_FULLGIT_WRITE_TRUNCATED"
+                view = view[written:]
+            assert initial + index_reserve + os.fstat(pack_fd).st_blocks * 512 <= MAX_PRIVATE_FULLGIT_BYTES, \
+                "PRIVATE_FULLGIT_ALLOCATED_BOUND"
+        assert process.wait(timeout=30) == 0, "PRIVATE_FULLGIT_PACK_EXIT_RED"
+        assert header[:4] == b"PACK" and struct.unpack(">II", header[4:]) == (2, len(objects))
+        assert digest.digest() == tail and len(tail) == 20, "PRIVATE_FULLGIT_PACK_DIGEST_MISMATCH"
+    finally:
+        if input_fd is not None: os.close(input_fd)
+        os.close(pack_fd)
+        if process is not None:
+            if process.poll() is None: process.kill(); process.wait(timeout=5)
+            process.stdout.close()
+    pack = pack_root / ("pack-" + tail.hex() + ".pack")
+    assert not pack.exists()
+    temporary_pack.rename(pack)
+    private_git_bytes(target, "index-pack", "--index-version=2", "-o", str(pack.with_suffix(".idx")), str(pack))
+    private_git_allocated(target)
+    identifiers.unlink()  # Only this owned temporary input; no foreign cleanup.
+
+    # Recompute every native imported object ID from streamed exact bytes.
+    # A valid pack trailer or shape-correct Git filename alone grants no custody.
+    reader = subprocess.Popen(private_git_command(target, "cat-file", "--batch"),
+        env=private_git_environment(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    decoded = PrivateGitStream(reader.stdout, time.monotonic() + 30)
+    try:
+        for oid, kind in sorted(objects.items()):
+            reader.stdin.write(oid.encode("ascii") + b"\n"); reader.stdin.flush()
+            fields = decoded.readline(128).decode("ascii").strip().split()
+            assert len(fields) == 3 and fields[:2] == [oid, kind], "PRIVATE_FULLGIT_OBJECT_HEADER_INVALID"
+            remaining = int(fields[2])
+            assert 0 <= remaining <= MAX_PRIVATE_FULLGIT_BYTES, "PRIVATE_FULLGIT_OBJECT_BYTES_BOUND"
+            hashed = hashlib.sha1((kind + " " + str(remaining)).encode("ascii") + b"\0")
+            while remaining:
+                chunk = decoded.read(min(65536, remaining))
+                assert chunk, "PRIVATE_FULLGIT_OBJECT_TRUNCATED"
+                hashed.update(chunk); remaining -= len(chunk)
+            assert decoded.read(1) == b"\n" and hashed.hexdigest() == oid, "PRIVATE_FULLGIT_OBJECT_REBOUND"
+        reader.stdin.close()
+        assert reader.wait(timeout=30) == 0, "PRIVATE_FULLGIT_READER_EXIT_RED"
+    finally:
+        if reader.poll() is None: reader.kill(); reader.wait(timeout=5)
+        for stream in (reader.stdin, reader.stdout):
+            if not stream.closed: stream.close()
+    private_git_bytes(target, "update-ref", "--no-deref", "HEAD", head)
+    assert private_git_bytes(target, "rev-list", head).decode().splitlines() == commits
+    for anchor in (raw_anchor, legacy_anchor):
+        private_git_bytes(target, "merge-base", "--is-ancestor", anchor, head)
+    assert not (target / "objects/info/alternates").exists() and not (target / "shallow").exists()
+    assert not (target / "info/grafts").exists() and not private_git_bytes(target, "for-each-ref", "refs/replace")
+    assert not private_git_bytes(target, "remote")
+    return private_git_allocated(target)
+
+
+def native_git_only_history(tmp_path):
+    """Small Git-format counterexample; no RC6 Source or financial fixture."""
+    repo = tmp_path / "git-only-input"
+    repo.mkdir(mode=0o700)
+    subprocess.run(["git", "init", "--quiet", "--template=", str(repo)],
+                   env=private_git_environment(), check=True, capture_output=True)
+    directory = repo / ".git"
+    private_git_bytes(directory, "config", "user.email", "git-only@example.invalid")
+    private_git_bytes(directory, "config", "user.name", "Git Closure Counterexample")
+    raw_name, legacy_name = "raw/original.txt", "legacy/codec.txt"
+    raw = b"Git custody payload; not a financial workload.\n"
+    legacy = b"Git legacy anchor payload; not a financial workload.\n"
+    for name, content in ((raw_name, raw), (legacy_name, legacy), ("obsolete.bin", os.urandom(1024**2))):
+        path = repo / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
+    private_git_bytes(directory, "add", ".")
+    private_git_bytes(directory, "commit", "--quiet", "-m", "real original Git commit")
+    anchor = private_git_bytes(directory, "rev-parse", "HEAD").decode().strip()
+    legacy_oid = private_git_bytes(directory, "rev-parse", anchor + ":" + legacy_name).decode().strip()
+    old_oid = private_git_bytes(directory, "rev-parse", anchor + ":obsolete.bin").decode().strip()
+    (repo / "obsolete.bin").unlink()
+    private_git_bytes(directory, "add", ".")
+    private_git_bytes(directory, "commit", "--quiet", "-m", "real Source without obsolete blob")
+    # The input has another authentic but unreachable blob. It must not be
+    # packed simply because a Git directory happens to contain it.
+    extra = subprocess.check_output(private_git_command(directory, "hash-object", "-w", "--stdin"),
+        input=os.urandom(1024**2), env=private_git_environment()).decode().strip()
+    return directory, anchor, raw_name, legacy_name, legacy_oid, raw, legacy, (old_oid, extra)
+
+
+def test_native_git_closure_omits_irrelevant_reachable_and_unreachable_bulk_without_losing_custody(tmp_path, monkeypatch):
+    source, anchor, raw_name, legacy_name, legacy_oid, raw, legacy, omitted = native_git_only_history(tmp_path)
+    # The source .git is over 2 MiB; the required native closure fits within
+    # a deliberately smaller test-only budget. The production limit is unchanged.
+    assert MAX_PRIVATE_FULLGIT_BYTES == 256 * 1024**2
+    monkeypatch.setattr(sys.modules[__name__], "MAX_PRIVATE_FULLGIT_BYTES", 256 * 1024)
+    target = tmp_path / "own-git"
+    allocated = copy_native_fullgit(source, target, raw_anchor=anchor, raw_roots=("raw/",),
+        legacy_anchor=anchor, legacy_blobs={legacy_name: legacy_oid})
+    assert allocated < MAX_PRIVATE_FULLGIT_BYTES
+    assert private_git_bytes(target, "rev-parse", "--is-shallow-repository").strip() == b"false"
+    assert private_git_bytes(target, "rev-list", "HEAD") == private_git_bytes(source, "rev-list", "HEAD")
+    assert private_git_bytes(target, "cat-file", "blob", anchor + ":" + raw_name) == raw
+    assert private_git_bytes(target, "cat-file", "blob", anchor + ":" + legacy_name) == legacy
+    assert private_git_bytes(target, "ls-tree", "-rtz", anchor) == private_git_bytes(source, "ls-tree", "-rtz", anchor)
+    assert private_git_bytes(target, "ls-tree", "-rtz", "HEAD") == private_git_bytes(source, "ls-tree", "-rtz", "HEAD")
+    for oid in omitted:
+        assert private_git_bytes(source, "cat-file", "-t", oid).strip() == b"blob"
+        result = subprocess.run(private_git_command(target, "cat-file", "-e", oid),
+            env=private_git_environment(), capture_output=True, timeout=5)
+        assert result.returncode != 0  # Actual missing object, no mocked Git output.
+    assert len(list((target / "objects/pack").iterdir())) == 2
+
+
+def test_native_git_closure_rejects_required_source_bytes_over_unchanged_physical_budget(tmp_path, monkeypatch):
+    source, anchor, raw_name, legacy_name, legacy_oid, *_rest = native_git_only_history(tmp_path)
+    required = source.parent / "required-source.bin"
+    required.write_bytes(os.urandom(512 * 1024))
+    private_git_bytes(source, "add", ".")
+    private_git_bytes(source, "commit", "--quiet", "-m", "required real Source bytes")
+    monkeypatch.setattr(sys.modules[__name__], "MAX_PRIVATE_FULLGIT_BYTES", 256 * 1024)
+    target = tmp_path / "bounded-own-git"
+    with pytest.raises(AssertionError, match="PRIVATE_FULLGIT_ALLOCATED_BOUND"):
+        copy_native_fullgit(source, target, raw_anchor=anchor, raw_roots=("raw/",),
+            legacy_anchor=anchor, legacy_blobs={legacy_name: legacy_oid})
+    assert private_git_allocated(target) <= MAX_PRIVATE_FULLGIT_BYTES
+    assert not (target / "index").exists()
+    result = subprocess.run(private_git_command(target, "rev-parse", "--verify", "HEAD"),
+        env=private_git_environment(), capture_output=True, timeout=5)
+    assert result.returncode != 0  # A pressure failure cannot leave a usable fixture HEAD.
+
+
+def test_native_git_stream_deadline_closes_a_stalled_partial_header_and_reaps_own_child():
+    process = subprocess.Popen([sys.executable, "-I", "-S", "-c",
+        "import os,time;os.write(1,b'x');time.sleep(2)"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    try:
+        stream = PrivateGitStream(process.stdout, time.monotonic() + 0.1)
+        with pytest.raises(AssertionError, match="PRIVATE_FULLGIT_READ_DEADLINE"):
+            stream.readline(128)
+    finally:
+        if process.poll() is None: process.kill()
+        process.wait(timeout=5); process.stdout.close()
+    assert process.returncode is not None
 
 
 def synthetic_receipt(source, frozen):
@@ -134,15 +404,15 @@ def native_private_source(tmp_path_factory):
     """A fresh native Git checkout plus owned new files, without module overlays."""
     temporary = tmp_path_factory.mktemp("native-codec-source")
     repo = temporary / "source"
-    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    env = dict(private_git_environment(), PYTHONDONTWRITEBYTECODE="1")
     previous = os.umask(0o022)
     try:
         repo.mkdir(mode=0o755)
         fullgit_bytes = copy_native_fullgit(ROOT / ".git", repo / ".git")
         assert 0 < fullgit_bytes <= MAX_PRIVATE_FULLGIT_BYTES
-        head = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
-        # The copied index names files absent in this fresh checkout. Reset the
-        # private index/worktree before adding the already developed smoke.
+        head = private_git_bytes(ROOT / ".git", "rev-parse", "HEAD").decode().strip()
+        # The exact Source tree/blobs are in the owned pack. Native reset builds
+        # the fresh private index/worktree; no shared objects or overlay loader.
         subprocess.run(["git", "-C", str(repo), "reset", "--hard", "--quiet", head], check=True,
                        capture_output=True, env=env)
         subprocess.run(["git", "-C", str(repo), "checkout", "--quiet", "--detach", head], check=True,
@@ -160,6 +430,17 @@ def native_private_source(tmp_path_factory):
     finally:
         os.umask(previous)
     manifest = create_source_manifest(repo)
+    final_git_bytes = private_git_allocated(repo / ".git")
+    diagnostic = {"scope": "NATIVE_PRIVATE_GIT_FIXTURE_ONLY_NO_RC6_GATE_QUALIFICATION",
+        "source_head": head, "fixture_head": manifest["candidate_sha"],
+        "source_tree": private_git_bytes(ROOT / ".git", "rev-parse", head + "^{tree}").decode().strip(),
+        "git_allocated_after_verified_import_bytes": fullgit_bytes,
+        "git_allocated_after_private_checkout_commit_bytes": final_git_bytes,
+        "original_git_physical_limit_bytes": MAX_PRIVATE_FULLGIT_BYTES,
+        "original_raw_custody": manifest["raw_evidence_custody"],
+        "all_source_files": manifest["file_count"], "G0_G8_qualification": False,
+        "all_original_1202_horizon_or_droplet_capacity_claimed": False}
+    (temporary / "native-private-git-closure.json").write_bytes(canonical_bytes(diagnostic))
     path = temporary / "source-manifest.json"
     path.write_bytes(canonical_bytes(manifest)); path.chmod(0o644)
     return repo, path, manifest
