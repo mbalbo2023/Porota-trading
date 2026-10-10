@@ -32,6 +32,7 @@ CONTRACT_SCHEMA = "porota.rc6.privileged-custody-contract.v1"
 MEMBER = "scripts/rc6_privileged_custody.py"
 MANAGER_MEMBER = "scripts/rc6_controlled_native_child_manager.py"
 ROOT_SEAL_MEMBER = "scripts/rc6_root_actor_seal.py"
+SYSTEMD_DENIED_FILTER = "~setns ptrace process_vm_readv process_vm_writev bpf open_by_handle_at name_to_handle_at kexec_load kexec_file_load init_module finit_module delete_module reboot swapon swapoff"
 MANAGER_SHA256 = "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
 CONTROL_BOUND = 2 * 1024**2
 SYSTEMD_QUERY_BOUND = 65536
@@ -217,7 +218,7 @@ def service_properties(control_root, runtime_seconds, *, probe_only=False):
             # Actors run inside it; the exact NONROOT plan denies new namespaces.
             "RestrictNamespaces=~cgroup net user ipc uts",
             "InaccessiblePaths=-/run/systemd/private -/run/dbus -/run/docker.sock -/var/run/docker.sock /proc/1 -/dev/shm",
-            "SystemCallFilter=~setns ptrace process_vm_readv process_vm_writev bpf open_by_handle_at name_to_handle_at kexec_load kexec_file_load init_module finit_module delete_module reboot swapon swapoff",
+            "SystemCallFilter=" + SYSTEMD_DENIED_FILTER,
             "SystemCallErrorNumber=EPERM"]
     if probe_only:
         properties.extend(["PrivateDevices=yes", "ProtectHome=read-only"])
@@ -260,7 +261,123 @@ def service_command(source, request_path, *, nonce, control_root, runtime_second
     return command
 
 
-def _unit_file(name):
+UNIT_PATH_KEYS = frozenset(("ReadWritePaths", "ReadOnlyPaths", "InaccessiblePaths", "ExecPaths", "NoExecPaths", "ExtensionDirectories"))
+UNIT_OPAQUE_ADDITIVE_KEYS = frozenset(("Environment", "EnvironmentFile", "UnsetEnvironment", "PassEnvironment",
+    "ExecStart", "ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload"))
+UNIT_SERVICE_ONLY_KEYS = UNIT_PATH_KEYS | UNIT_OPAQUE_ADDITIVE_KEYS | frozenset((
+    "RuntimeMaxSec", "TimeoutStopSec", "KillMode", "SendSIGKILL", "FinalKillSignal", "PrivateMounts",
+    "ProtectSystem", "ProtectControlGroups", "NoNewPrivileges", "RestrictAddressFamilies", "RestrictNamespaces",
+    "SystemCallErrorNumber", "SystemCallFilter", "LogLevelMax", "PrivateDevices", "ProtectHome",
+    "ProtectKernelTunables", "ProtectKernelModules", "ProtectKernelLogs", "RestrictSUIDSGID", "CapabilityBoundingSet", "Restart"))
+
+
+def _unit_path_words(value):
+    """Bounded systemd 255 EXTRACT_UNQUOTE/CUNESCAPE path tokens, not shell."""
+    words, word, quote, entered, index = [], [], None, False, 0
+    escapes = {"a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v",
+               "s": " ", "\\": "\\", '"': '"', "'": "'"}
+    while index < len(value):
+        char = value[index]
+        index += 1
+        if char == "\\":
+            require(index < len(value), "ROOT_CUSTODY_UNIT_PATH_ESCAPE_INVALID")
+            escaped = value[index]
+            index += 1
+            if escaped in escapes:
+                char = escapes[escaped]
+            else:
+                size = {"x": 2, "u": 4, "U": 8}.get(escaped)
+                if size is not None:
+                    digits = value[index:index + size]
+                    require(len(digits) == size and re.fullmatch(r"[0-9a-fA-F]+", digits),
+                            "ROOT_CUSTODY_UNIT_PATH_ESCAPE_INVALID")
+                    index += size
+                    number = int(digits, 16)
+                else:
+                    digits = escaped + value[index:index + 2]
+                    require(len(digits) == 3 and re.fullmatch(r"[0-7]{3}", digits),
+                            "ROOT_CUSTODY_UNIT_PATH_ESCAPE_INVALID")
+                    index += 2
+                    number = int(digits, 8)
+                    require(number <= 255, "ROOT_CUSTODY_UNIT_PATH_ESCAPE_INVALID")
+                require(0 < number <= 0x10FFFF and not 0xD800 <= number <= 0xDFFF,
+                        "ROOT_CUSTODY_UNIT_PATH_ESCAPE_INVALID")
+                char = chr(number)
+            word.append(char)
+            entered = True
+        elif char in ("'", '"'):
+            if quote is None:
+                quote, entered = char, True
+            elif char == quote:
+                quote = None
+            else:
+                word.append(char)
+        elif char.isspace() and quote is None:
+            if entered:
+                words.append("".join(word))
+                word, entered = [], False
+        else:
+            word.append(char)
+            entered = True
+    require(quote is None, "ROOT_CUSTODY_UNIT_PATH_QUOTE_INVALID")
+    if entered:
+        words.append("".join(word))
+    require(len(words) <= 128 and all(word and all(ord(char) >= 32 and ord(char) != 127 for char in word)
+            and re.fullmatch(r"(?:[^%]|%%)*", word) for word in words), "ROOT_CUSTODY_UNIT_PATH_TOKEN_INVALID")
+    return [word.replace("%%", "%") for word in words]
+
+
+def parse_unit_properties(raw):
+    """Decode only the frozen transient-unit grammar; ambiguity is RED."""
+    require(type(raw) is bytes and 0 < len(raw) <= SYSTEMD_QUERY_BOUND and b"\x00" not in raw,
+            "ROOT_CUSTODY_UNIT_RAW_BOUND_OR_INVALID")
+    values, paths, sections, section = {}, {}, {}, None
+    for line in raw.decode("utf-8", errors="strict").splitlines():
+        line = line.strip()
+        if not line or line.startswith(("#", ";")):
+            continue
+        if line.startswith("["):
+            require(line in ("[Unit]", "[Service]", "[Install]"), "ROOT_CUSTODY_UNIT_SECTION_INVALID")
+            section = line[1:-1]
+            continue
+        require(section is not None and "=" in line and not line.endswith("\\"), "ROOT_CUSTODY_UNIT_LINE_INVALID")
+        key, value = line.split("=", 1)
+        require(re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", key) and key not in
+                ("ReadWriteDirectories", "ReadOnlyDirectories", "InaccessibleDirectories"),
+                "ROOT_CUSTODY_UNIT_KEY_INVALID")
+        require(key not in sections or sections[key] == section, "ROOT_CUSTODY_UNIT_CROSS_SECTION_CONFLICT")
+        require(key not in UNIT_SERVICE_ONLY_KEYS or section == "Service", "ROOT_CUSTODY_UNIT_SERVICE_SECTION_REQUIRED")
+        sections[key] = section
+        if key in UNIT_PATH_KEYS:
+            require(section == "Service", "ROOT_CUSTODY_UNIT_PATH_SECTION_INVALID")
+            words = _unit_path_words(value)
+            paths[key] = paths.get(key, []) + words if words else []
+            require(len(paths[key]) <= 128, "ROOT_CUSTODY_UNIT_PATH_TOKEN_INVALID")
+            values[key] = " ".join(paths[key])
+        elif key in UNIT_OPAQUE_ADDITIVE_KEYS:
+            values[key] = (values.get(key, "") + "\n" + value).strip() if value else ""
+        else:
+            require(key not in values or values[key] == value, "ROOT_CUSTODY_UNIT_SINGULAR_CONFLICT")
+            values[key] = value
+    require(section is not None, "ROOT_CUSTODY_UNIT_SECTION_INVALID")
+    return {"properties": values, "path_lists": paths}
+
+
+def unit_source_identity(details):
+    # Reading a new transient unit can update atime under relatime. Content,
+    # metadata and pathname binding must stay stable; atime is not custody.
+    return tuple(getattr(details, key) for key in ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid",
+        "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns"))
+
+
+def exact_system_call_filter(value):
+    if type(value) is not str or not value.startswith("~") or value.startswith("~~"):
+        return False
+    words = value[1:].split()
+    return len(words) == len(set(words)) and set(words) == set(SYSTEMD_DENIED_FILTER[1:].split())
+
+
+def _unit_file(name, *, decode=True):
     require(type(name) is str and re.fullmatch(r"rc6-native-[0-9a-f]{32}(?:-guard)?\.service", name),
             "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
     path = Path("/run/systemd/transient") / name
@@ -268,21 +385,50 @@ def _unit_file(name):
     require(stat.S_ISREG(before.st_mode) and before.st_uid == 0 and before.st_nlink == 1,
             "ROOT_CUSTODY_ROOT_OWNED_TRANSIENT_UNIT_REQUIRED")
     raw = _read(path)
-    values = {}
-    for line in raw.decode().splitlines():
-        if "=" in line and not line.startswith("#"):
-            key, value = line.split("=", 1)
-            values[key] = value
-    return {"path": str(path), "sha256": sha256(raw), "raw_base64": base64.b64encode(raw).decode(), "properties": values,
-            "identity": [before.st_dev, before.st_ino, before.st_uid, before.st_gid, before.st_mode]}
+    require(len(raw) <= SYSTEMD_QUERY_BOUND and unit_source_identity(before) == unit_source_identity(path.lstat()),
+            "ROOT_CUSTODY_UNIT_SOURCE_CHANGED")
+    result = {"path": str(path), "sha256": sha256(raw), "raw_base64": base64.b64encode(raw).decode(),
+              "identity": [before.st_dev, before.st_ino, before.st_uid, before.st_gid, before.st_mode]}
+    return {**result, **parse_unit_properties(raw)} if decode else result
+
+
+def _publish_unit_snapshot(name, namespace, request):
+    original = _unit_file(name, decode=False)
+    snapshot = {"schema": "porota.rc6.root-owned-transient-unit-diagnostic.v1", "unit": name,
+        "binding": request["binding"], "source_sha": request["source_sha"], "source_tree": request["source_tree"],
+        "original_unit": original, "scope": "DIAGNOSTIC_ONLY", "ROOT_custody_qualified": False,
+        "ROOT_FIN_claimed": False}
+    _write_control(namespace / ("guardian-unit-original.json" if name.endswith("-guard.service") else "broker-unit-original.json"),
+        snapshot, request["owner_uid"], request["owner_gid"])
+    return original
 
 
 def _seconds(value):
     require(type(value) is str, "ROOT_CUSTODY_UNIT_DURATION_UNKNOWN")
-    match = re.fullmatch(r"([0-9]+)(us|ms|s|sec)?", value)
-    require(match is not None, "ROOT_CUSTODY_UNIT_DURATION_UNKNOWN")
-    number, unit = match.groups()
-    return int(number) / {"us": 1000000, "ms": 1000, "s": 1, "sec": 1, None: 1}[unit]
+    if re.fullmatch(r"[0-9]+", value):
+        return int(value)
+    require(re.fullmatch(r"[0-9]+(?:h|min|sec|ms|us|s)(?: ?[0-9]+(?:h|min|sec|ms|us|s))*", value),
+            "ROOT_CUSTODY_UNIT_DURATION_UNKNOWN")
+    parts = re.findall(r"([0-9]+)(h|min|sec|ms|us|s)", value)
+    order = {"h": 0, "min": 1, "s": 2, "sec": 2, "ms": 3, "us": 4}
+    ranks = [order[unit] for _, unit in parts]
+    require(ranks == sorted(set(ranks)), "ROOT_CUSTODY_UNIT_DURATION_UNKNOWN")
+    micros = {"h": 3600000000, "min": 60000000, "s": 1000000, "sec": 1000000, "ms": 1000, "us": 1}
+    return sum(int(number) * micros[unit] for number, unit in parts) / 1000000
+
+
+def allowed_namespace_bitmap(value):
+    # systemd 255 serializes the allowed bitmap even when the request used
+    # a blacklist. Compare semantics, never the original CLI spelling.
+    flags = {"cgroup": 0x02000000, "ipc": 0x08000000, "net": 0x40000000,
+             "mnt": 0x00020000, "pid": 0x20000000, "user": 0x10000000, "uts": 0x04000000}
+    require(type(value) is str and bool(value), "ROOT_CUSTODY_UNIT_NAMESPACE_BITMAP_UNKNOWN")
+    invert = value.startswith("~")
+    words = value[1:].split() if invert else value.split()
+    require(bool(words) and len(words) == len(set(words)) and all(word in flags for word in words),
+            "ROOT_CUSTODY_UNIT_NAMESPACE_BITMAP_UNKNOWN")
+    mask = sum(flags[word] for word in words)
+    return sum(flags.values()) ^ mask if invert else mask
 
 
 def require_guard_log_profile(name, properties):
@@ -327,7 +473,7 @@ def controller_snapshot(name, expected_runtime, *, request, mode):
     unit = _unit_file(name)
     properties = unit["properties"]
     require_guard_log_profile(name, properties)
-    require("/proc/1" in properties.get("InaccessiblePaths", "").split()
+    require("/proc/1" in unit.get("path_lists", {}).get("InaccessiblePaths", [])
             and not any("/proc/1/root" in value for value in properties.values()),
             "ROOT_CUSTODY_ACTUAL_SAFE_PID1_MASK_REQUIRED")
     require(mode in ("probe", "quota", "guard-hang"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
@@ -349,9 +495,9 @@ def controller_snapshot(name, expected_runtime, *, request, mode):
             and properties.get("ProtectControlGroups") in ("yes", "true", "1")
             and properties.get("NoNewPrivileges") in ("yes", "true", "1")
             and set(properties.get("RestrictAddressFamilies", "").split()) == {"AF_INET", "AF_INET6"}
-            and set(properties.get("RestrictNamespaces", "").split()) == {"~cgroup", "net", "user", "ipc", "uts"}
+            and allowed_namespace_bitmap(properties.get("RestrictNamespaces")) == 0x20020000
             and properties.get("SystemCallErrorNumber") in ("EPERM", "1")
-            and "setns" in properties.get("SystemCallFilter", "").lstrip("~").split(),
+            and exact_system_call_filter(properties.get("SystemCallFilter")),
             "ROOT_CUSTODY_ACTUAL_UNIT_PROPERTIES_REQUIRED")
     require(actor["capabilities"]["CapEff"] & (1 << 5), "ROOT_CUSTODY_PARENT_CAP_KILL_REQUIRED")
     forbidden = sum(1 << number for number in (16, 17, 19, 22, 25, 30, 38, 39, 40))
@@ -648,6 +794,7 @@ def guardian_main(mode, request_path, name):
     require(os.getuid() == os.geteuid() == 0, "ROOT_CUSTODY_ACTUAL_ROOT_BROKER_REQUIRED")
     request, request_raw, namespace = _request(request_path)
     runtime = request["runtime_seconds"]
+    _publish_unit_snapshot(name, namespace, request)
     controller = controller_snapshot(name, runtime, request=request, mode=mode)
     birth = {"schema": "porota.rc6.root-custody-controller-birth.v1", "binding": request["binding"],
              "request_sha256": sha256(request_raw), "controller": controller}
@@ -919,8 +1066,9 @@ def broker_main(mode, request_path, name):
                   "controller": controller, "cases": rows, "before": before,
                   "after": manager["pre_capture_kernel_state"](), "manager_sha256": MANAGER_SHA256,
                   "ROOT_parent_owns_actual_worker_wait4": True, "native_probe_proved": True,
-                  "backing_allocated": False, "quota_mutations_attempted": False,
-                  "actor_mount_operations_attempted": False, "real_orders_sent": 0}
+                  "backing_allocated": False, "actor_mount_operations_attempted": True,
+                  "actor_mount_operations_succeeded": False, "actor_quota_syscall_probes_attempted": True,
+                  "actor_quota_mutations_succeeded": False, "real_orders_sent": 0}
         result.update(namespace_setup_mounts_executed=True, quota_backing_mounts_attempted=False,
             root_actor_seal_probe_only=True, contract_revision_required=True,
             original_PROC_EACCES_equivalence_approved=False, proof_only_no_G0_qualification=True)
@@ -1588,8 +1736,13 @@ def _preserve_failure(context, destination, error):
             # owned client FIN and exact unit/cgroup absence of all writers.
             require((namespace.path / context["log"]).lstat().st_size <= CONTROL_BOUND,
                     "ROOT_CUSTODY_DIAGNOSTIC_LOG_BYTES_BOUND")
+            snapshot_name = "guardian-unit-original.json" if unit.endswith("-guard.service") else "broker-unit-original.json"
+            snapshot_files = [snapshot_name] if (namespace.path / snapshot_name).exists() else []
+            if snapshot_files:
+                snapshot_raw = _read(namespace.path / snapshot_name, CONTROL_BOUND)
+                diagnostic["unit_snapshot"] = unit_snapshot_origin(snapshot_raw, unit=unit, binding=namespace.binding)
             capture = owned.capture_required_evidence(namespace, query_fin, output / "closed-client-raw",
-                [context["log"], "diagnostic-unit-query.log",
+                [context["log"], "diagnostic-unit-query.log", *snapshot_files,
                  *(["diagnostic-journal-query.log"] if "raw_sha256" in diagnostic["journal"] else []),
                  *(["diagnostic-journal-invocation-query.log"] if "raw_sha256" in diagnostic["journal_invocation"] else [])])
             # Only cgroup state is read again. The single systemd query above
@@ -1611,6 +1764,35 @@ def _preserve_failure(context, destination, error):
             except (ValueError, OSError):
                 pass  # The primary error and UNKNOWN must never be replaced.
     return diagnostic
+
+
+def unit_snapshot_origin(raw, *, unit, binding):
+    """Captured prebirth metadata and bytes are diagnosis, never authority."""
+    result = {"status": "UNKNOWN", "scope": "DIAGNOSTIC_ONLY", "ROOT_FIN_claimed": False,
+              "ROOT_custody_qualified": False, "snapshot_sha256": sha256(raw)}
+    try:
+        from scripts import rc6_capacity_calibration as calibration
+        require(len(raw) <= CONTROL_BOUND, "ROOT_CUSTODY_UNIT_SNAPSHOT_BOUND")
+        value = calibration.decode(raw)
+        require(type(value) is dict and value.get("schema") == "porota.rc6.root-owned-transient-unit-diagnostic.v1"
+                and value.get("unit") == unit and value.get("binding") == binding
+                and value.get("source_sha") == binding["candidate_sha"] and value.get("source_tree") == binding["candidate_tree"]
+                and value.get("scope") == "DIAGNOSTIC_ONLY" and value.get("ROOT_FIN_claimed") is False
+                and value.get("ROOT_custody_qualified") is False, "ROOT_CUSTODY_UNIT_SNAPSHOT_ORIGIN_INVALID")
+        original = value["original_unit"]
+        require(type(original) is dict and original.get("path") == "/run/systemd/transient/" + unit,
+                "ROOT_CUSTODY_UNIT_SNAPSHOT_ORIGIN_INVALID")
+        identity = original["identity"]
+        require(type(identity) is list and len(identity) == 5 and all(type(number) is int and number >= 0 for number in identity)
+                and identity[2] == 0 and stat.S_ISREG(identity[4]), "ROOT_CUSTODY_UNIT_SNAPSHOT_ROOT_SOURCE_INVALID")
+        original_raw = base64.b64decode(original["raw_base64"], validate=True)
+        require(0 < len(original_raw) <= SYSTEMD_QUERY_BOUND and sha256(original_raw) == original["sha256"],
+                "ROOT_CUSTODY_UNIT_SNAPSHOT_ORIGINAL_DIGEST_INVALID")
+        return {**result, "status": "CAPTURED_ROOT_UNIT_METADATA_DIAGNOSTIC_ONLY",
+                "original_unit_sha256": original["sha256"], "original_unit_bytes": len(original_raw),
+                "declared_original_identity": identity}
+    except (ValueError, TypeError, KeyError, UnicodeError) as error:
+        return {**result, "reason": str(error)}
 
 
 def prove_custody(*, source, source_sha, source_tree, code_hashes, parent, binding, progress,
@@ -1689,6 +1871,7 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
                 == ["root-success", "failure-before-drop", "root-hang", "nonroot-hang"],
             "ROOT_CUSTODY_NATIVE_ORIGINAL_PROBE_BYTES_REQUIRED")
     expected = ["custody-request.json", "probe-request.json", "guardian-native.log", "custody-native.log",
+                "guardian-unit-original.json", "broker-unit-original.json",
                 "guardian-birth.json", "guardian-birth.observed.json", "broker-birth.json", "broker-birth.observed.json",
                 "guardian-bridge.json", "broker-bridge.json", "guardian-controller.json", "private-broker-native.log",
                 "private-broker-birth.json", "private-broker.observed.json", "private-parent-seal.json",

@@ -306,7 +306,8 @@ def test_single_proc_mount_rows_and_host_seal_arguments_keep_original_owner_bind
         "source_sha": "1" * 40, "source_tree": "2" * 40}
 
 
-def test_masked_pid1_decoder_never_follows_foreign_proc_or_qualifies_root(tmp_path, monkeypatch):
+@pytest.mark.parametrize("namespaces", [None, "mnt pid", "mnt pid user", "pid", "mnt pid unknown"])
+def test_masked_pid1_decoder_never_follows_foreign_proc_or_qualifies_root(tmp_path, monkeypatch, namespaces):
     # Pure readback decoder fixture: no ROOT process, unit, mount or seal.
     actor = custody.kernel_process(os.getpid())
     actor.update(parent_pid=1, uids=[0] * 4, gids=[0] * 4)
@@ -317,9 +318,17 @@ def test_masked_pid1_decoder_never_follows_foreign_proc_or_qualifies_root(tmp_pa
     host = {key: number + 1 for key, number in custody.host_boundary_snapshot().items()}
     request = {"host_PID1": pid1, "host_boundary": host, "issuer": custody.issuer_snapshot(actor)}
     properties = dict(value.split("=", 1) for value in custody.service_properties(tmp_path, 45, probe_only=True))
+    if namespaces is not None: properties["RestrictNamespaces"] = namespaces
     monkeypatch.setattr(custody, "kernel_process", lambda pid: actor)
     monkeypatch.setattr(custody, "public_kernel_process", lambda *args, **kwargs: pytest.fail("Host PID1 is masked"))
-    monkeypatch.setattr(custody, "_unit_file", lambda unit: {"properties": properties})
+    serialized = [key + "=" + (" ".join('"' + word + '"' for word in value.split()) if key in custody.UNIT_PATH_KEYS else value)
+        for key, value in properties.items()]
+    parsed = custody.parse_unit_properties(("[Service]\n" + "\n".join(serialized)).encode())
+    monkeypatch.setattr(custody, "_unit_file", lambda unit: parsed)
+    if namespaces not in (None, "mnt pid"):
+        with pytest.raises(ValueError, match="UNIT_PROPERTIES_REQUIRED|UNIT_NAMESPACE_BITMAP_UNKNOWN"):
+            custody.controller_snapshot(name, 45, request=request, mode="probe")
+        return
     result = custody.controller_snapshot(name, 45, request=request, mode="probe")
     assert result["external_PID1_identity_pending_live_ACK"] is True
     assert result["ROOT_actor_boundary_certified"] is False
@@ -352,7 +361,10 @@ def test_probe_result_distinguishes_bootstrap_mounts_from_actor_mounts_decoder_o
     assert custody.broker_main("probe", tmp_path / "request.json", custody.unit_name("a" * 32)) == 0
     result = json.loads(capsysbinary.readouterr().out)
     assert result["namespace_setup_mounts_executed"] is True
-    assert result["actor_mount_operations_attempted"] is result["quota_backing_mounts_attempted"] is False
+    assert result["actor_mount_operations_attempted"] is result["actor_quota_syscall_probes_attempted"] is True
+    assert result["actor_mount_operations_succeeded"] is result["actor_quota_mutations_succeeded"] is result["quota_backing_mounts_attempted"] is False
+    assert "actor_mount_operations_executed" not in result and "quota_mutations_executed" not in result
+    assert "quota_mutations_attempted" not in result
     assert "mount_operations_attempted" not in result
     assert result["proof_only_no_G0_qualification"] is result["contract_revision_required"] is True
     assert result["original_PROC_EACCES_equivalence_approved"] is False
@@ -403,10 +415,16 @@ def test_external_pid1_ack_requires_live_double_identity_and_pidfds(tmp_path, mo
                 if state.get(key) is not None: os.close(state[key])
 
 
-@pytest.mark.parametrize("value", [None, "infinity", "1.5s", "1min", "-1s", "1s 1ms"])
+@pytest.mark.parametrize("value", [None, "infinity", "1.5s", "1minute", "-1s", "1s 1h", "1s 1sec", "1s  1ms", "1m"])
 def test_unknown_unit_duration_is_not_native_custody(value):
     with pytest.raises(ValueError, match="ROOT_CUSTODY_UNIT_DURATION_UNKNOWN"):
         custody._seconds(value)
+
+
+@pytest.mark.parametrize("value,seconds", [("6s", 6), ("45s", 45), ("2s", 2), ("4min 50s", 290),
+    ("4min50s", 290), ("2h 59min 50s", 10790), ("1min", 60), ("1s 1ms", 1.001), ("1000000us", 1)])
+def test_systemd255_formatted_timespan_preserves_the_exact_deadline(value, seconds):
+    assert custody._seconds(value) == seconds
 
 
 @pytest.mark.parametrize("value", [{"status": "NATIVE_CUSTODY_PROVED", "proved": True},
@@ -644,6 +662,9 @@ def test_inactive_unit_failure_captures_original_bytes_without_root_credit(tmp_p
         "cgroup_state": "DECODER_FIXTURE_EMPTY", "ROOT_FIN_claimed": False})
     monkeypatch.setattr(custody, "_cgroup_writer_absence", lambda *args: "DECODER_FIXTURE_EMPTY")
     monkeypatch.setattr(owned, "cleanup_namespace", lambda *args: pytest.fail("Diagnostic cannot cleanup"))
+    snapshot = unit_snapshot_fixture(custody.unit_name(namespace.nonce, guard=True))
+    snapshot_raw = custody.wire(snapshot)
+    calibration.publish(namespace.path / "guardian-unit-original.json", snapshot)
     result = custody._preserve_failure({"namespace": namespace, "kernel": kernel, "fin": fin,
         "unit": custody.unit_name(namespace.nonce, guard=True), "log": "guardian-native.log"}, tmp_path / "diagnostic",
         ValueError("ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED"))
@@ -652,12 +673,137 @@ def test_inactive_unit_failure_captures_original_bytes_without_root_credit(tmp_p
     manifest = json.loads((capture / "manifest.json").read_bytes())
     row = next(row for row in manifest["files"] if row["relative_source"] == "guardian-native.log")
     assert (capture / row["capture_file"]).read_bytes() == b"ORIGINAL_STDERR"
+    snapshot_row = next(row for row in manifest["files"] if row["relative_source"] == "guardian-unit-original.json")
+    assert (capture / snapshot_row["capture_file"]).read_bytes() == snapshot_raw
+    assert snapshot_row["sha256"] == hashlib.sha256(snapshot_raw).hexdigest()
+    assert result["unit_snapshot"]["status"] == "CAPTURED_ROOT_UNIT_METADATA_DIAGNOSTIC_ONLY"
+    assert result["unit_snapshot"]["ROOT_FIN_claimed"] is result["unit_snapshot"]["ROOT_custody_qualified"] is False
     assert result["ROOT_FIN"] == "UNKNOWN" and result["ROOT_custody_qualified"] is False
     assert result["reservation_recovery_credited_bytes"] == 0 and namespace.path.is_dir()
     assert result["unit_query_kernel"]["returncode"] == query_exit
     assert result["cgroup_revalidated_after_capture"] is True
     if query_exit == 4:
         assert manifest["phase_green"] is False
+
+
+def unit_snapshot_fixture(unit):
+    raw = b'[Service]\nInaccessiblePaths="/proc/1"\n'
+    return {"schema": "porota.rc6.root-owned-transient-unit-diagnostic.v1", "unit": unit, "binding": binding(),
+        "source_sha": binding()["candidate_sha"], "source_tree": binding()["candidate_tree"],
+        "original_unit": {"path": "/run/systemd/transient/" + unit, "sha256": hashlib.sha256(raw).hexdigest(),
+            "raw_base64": base64.b64encode(raw).decode(), "identity": [1, 2, 0, 0, 0o100644]},
+        "scope": "DIAGNOSTIC_ONLY", "ROOT_FIN_claimed": False, "ROOT_custody_qualified": False}
+
+
+@pytest.mark.parametrize("mutation", [None, "unit", "binding", "uid", "mode", "digest", "raw", "root_claim"])
+def test_prebirth_unit_snapshot_preserves_original_digest_but_never_authorizes_root(mutation):
+    unit = custody.unit_name("a" * 32, guard=True)
+    value = unit_snapshot_fixture(unit)
+    if mutation == "unit": value["unit"] = "foreign.service"
+    elif mutation == "binding": value["binding"] = {}
+    elif mutation == "uid": value["original_unit"]["identity"][2] = os.getuid()
+    elif mutation == "mode": value["original_unit"]["identity"][4] = 0o40700
+    elif mutation == "digest": value["original_unit"]["sha256"] = "0" * 64
+    elif mutation == "raw": value["original_unit"]["raw_base64"] = "invalid base64"
+    elif mutation == "root_claim": value["ROOT_custody_qualified"] = True
+    result = custody.unit_snapshot_origin(custody.wire(value), unit=unit, binding=binding())
+    assert result["status"] == ("UNKNOWN" if mutation else "CAPTURED_ROOT_UNIT_METADATA_DIAGNOSTIC_ONLY")
+    assert result["ROOT_FIN_claimed"] is result["ROOT_custody_qualified"] is False
+    if mutation is None: assert result["original_unit_sha256"] == value["original_unit"]["sha256"]
+    with pytest.raises(ValueError, match="ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+        custody.validate_witness(result, binding=binding())
+
+
+def test_unit_snapshot_is_published_before_controller_validation_decoder_only(tmp_path, monkeypatch):
+    request = {"runtime_seconds": 6}
+    seen = []
+    monkeypatch.setattr(custody.os, "getuid", lambda: 0)
+    monkeypatch.setattr(custody.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(custody, "_request", lambda *args: (request, b"fixture", tmp_path))
+    monkeypatch.setattr(custody, "_publish_unit_snapshot", lambda *args: seen.append("snapshot"))
+    def reject(*args, **kwargs):
+        assert seen == ["snapshot"]
+        raise ValueError("ORIGINAL_VALIDATION_RED")
+    monkeypatch.setattr(custody, "controller_snapshot", reject)
+    with pytest.raises(ValueError, match="ORIGINAL_VALIDATION_RED"):
+        custody.guardian_main("guard-hang", tmp_path / "request.json", custody.unit_name("a" * 32, guard=True))
+
+
+def test_systemd255_quoted_paths_append_reset_and_sections_decode_exactly():
+    raw = b'[Unit]\nDescription=owned\n[Service]\nInaccessiblePaths="-/run/dbus" "/proc/1"\nInaccessiblePaths="-/dev/shm"\nReadWritePaths="/discard"\nReadWritePaths=\nReadWritePaths="/owned\\x20space"\nExecStart=\nExecStart="/usr/bin/python3" "-I"\n'
+    parsed = custody.parse_unit_properties(raw)
+    assert parsed["path_lists"] == {"InaccessiblePaths": ["-/run/dbus", "/proc/1", "-/dev/shm"], "ReadWritePaths": ["/owned space"]}
+    assert "/proc/1" in parsed["path_lists"]["InaccessiblePaths"]
+    assert parsed["properties"]["ExecStart"] == '"/usr/bin/python3" "-I"'
+
+
+@pytest.mark.parametrize("value,expected", [(r'"/a\\b"', "/a\\b"), (r'"/a\040b"', "/a b"),
+    (r'"/a\sb"', "/a b"), (r'"/a\u00E9"', "/aé"), ('"/a%%b"', "/a%b")])
+def test_systemd_path_cunescape_and_literal_specifier(value, expected):
+    assert custody._unit_path_words(value) == [expected]
+
+
+@pytest.mark.parametrize("raw", [b'InaccessiblePaths="/proc/1"', b'[Unit]\nInaccessiblePaths="/proc/1"',
+    b'[Unknown]\nKey=value', b'[Service]\nInaccessiblePaths="/proc/1', b'[Service]\nInaccessiblePaths="/a\\q"',
+    b'[Service]\nInaccessiblePaths="/a\\xZZ"', b'[Service]\nInaccessiblePaths="/a\\000"',
+    b'[Service]\nInaccessiblePaths="/a%n"', b'[Service]\nInaccessiblePaths=""',
+    b'[Service]\nNoNewPrivileges=yes\nNoNewPrivileges=no', b'[Unit]\nKey=a\n[Service]\nKey=a',
+    b'[Service]\nKey=a\\', b'[Service]\nReadWriteDirectories=/a', b'[Service]\nKey=\x00'])
+def test_unknown_or_ambiguous_unit_serialization_fails_closed(raw):
+    with pytest.raises((ValueError, UnicodeError), match="ROOT_CUSTODY_UNIT"):
+        custody.parse_unit_properties(raw)
+
+
+@pytest.mark.parametrize("key", sorted(custody.UNIT_SERVICE_ONLY_KEYS - custody.UNIT_OPAQUE_ADDITIVE_KEYS))
+def test_guard_property_in_wrong_section_never_qualifies_as_service_setting(key):
+    with pytest.raises(ValueError, match="UNIT_SERVICE_SECTION_REQUIRED"):
+        custody.parse_unit_properties(("[Unit]\n" + key + "=yes\n[Service]\nDescription=fixture").encode())
+
+
+@pytest.mark.parametrize("value,expected", [("mnt pid", 0x20020000), ("pid mnt", 0x20020000),
+    ("~cgroup net user ipc uts", 0x20020000), ("mnt pid user", 0x30020000), ("mnt", 0x20000)])
+def test_namespace_serialization_compares_the_exact_allowed_bitmap(value, expected):
+    assert custody.allowed_namespace_bitmap(value) == expected
+    assert (custody.allowed_namespace_bitmap(value) == 0x20020000) is (value in ("mnt pid", "pid mnt", "~cgroup net user ipc uts"))
+
+
+@pytest.mark.parametrize("value", [None, True, "", "yes", "no", "0x20020000", "mnt mnt pid", "mnt pid foreign", "~mnt ~pid"])
+def test_unknown_namespace_serialization_never_passes_readback(value):
+    with pytest.raises(ValueError, match="UNIT_NAMESPACE_BITMAP_UNKNOWN"):
+        custody.allowed_namespace_bitmap(value)
+
+
+@pytest.mark.parametrize("mutation", [None, "whitelist", "omit", "extra", "group", "errno", "double", "duplicate"])
+def test_readback_requires_the_complete_original_systemd_denylist(mutation):
+    value = custody.SYSTEMD_DENIED_FILTER
+    if mutation == "whitelist": value = value[1:]
+    elif mutation == "omit": value = "~setns"
+    elif mutation == "extra": value += " unshare"
+    elif mutation == "group": value = "~@privileged setns"
+    elif mutation == "errno": value = value.replace("ptrace", "ptrace:1")
+    elif mutation == "double": value = "~" + value
+    elif mutation == "duplicate": value += " setns"
+    assert custody.exact_system_call_filter(value) is (mutation is None)
+
+
+@pytest.mark.parametrize("mutation", [None, "content", "mode", "inode"])
+def test_real_nonroot_unit_read_ignores_atime_but_rejects_content_metadata_rebinding(tmp_path, mutation):
+    path = tmp_path / "unit.service"
+    path.write_bytes(b'[Service]\nInaccessiblePaths="/proc/1"\n')
+    initial = path.stat()
+    os.utime(path, ns=(1, initial.st_mtime_ns))
+    before = path.stat()
+    raw = path.read_bytes()
+    after_read = path.stat()
+    assert raw and custody.unit_source_identity(before) == custody.unit_source_identity(after_read)
+    assert before.st_atime_ns <= before.st_mtime_ns
+    if mutation == "content": path.write_bytes(b'CHANGED')
+    elif mutation == "mode": path.chmod(0o400)
+    elif mutation == "inode":
+        replacement = tmp_path / "replacement"
+        replacement.write_bytes(raw)
+        replacement.replace(path)
+    assert (custody.unit_source_identity(before) == custody.unit_source_identity(path.stat())) is (mutation is None)
 
 
 def test_exit4_absent_unit_readback_needs_exact_fields_and_never_claims_fresh_systemd(monkeypatch):

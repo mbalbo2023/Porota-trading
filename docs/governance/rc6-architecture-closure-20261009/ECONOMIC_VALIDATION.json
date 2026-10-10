@@ -1577,11 +1577,11 @@
       "G0_G8_qualification": false,
       "G7_G8_prepared": false,
       "deployed": false,
-      "exact_successor_economic_Actions": "PENDING",
+      "exact_successor_economic_Actions": "NEW_SOURCE_PENDING_PRIOR_9c743_SUCCESS_NOT_INHERITED",
       "material_gate_launched": false,
       "merged": false,
       "mode": "PRODUCTION_PAPER / SIMULATION",
-      "native_ROOT": "NOT_CERTIFIED",
+      "native_ROOT": "NOT_CERTIFIED_9c743_PREBIRTH_GUARD_RED",
       "ppi_watch": "UNTOUCHED",
       "production_mutated": false,
       "real_orders_sent": 0,
@@ -2259,7 +2259,7 @@
       "systemd_observed_package": "255.4-1ubuntu8.17",
       "timeout_each_seconds": 5
     },
-    "recorded_utc": "2026-10-10T12:36:00Z",
+    "recorded_utc": "2026-10-10T13:44:30Z",
     "worker_dumpability_observation": {
       "contract_review_required_before_claiming_all_payload_DUMP0": true,
       "historical_filter_plan_sha256": "9daf64ba999008527b7220b4274e0e7439e27711608ec47b544b8e6e7e42dc2e",
@@ -2436,6 +2436,294 @@
       "ROOT_parent_public_witness_contract_revision_approved": false,
       "G5_preventive_admission_rule_revision_approved": false,
       "material_gates_allowed": false
+    },
+    "authenticated_source_9c743": {
+      "origin": {
+        "artifact_id": 11669964319,
+        "bytes": 964805,
+        "conclusion": "success",
+        "run_id": 38054448912,
+        "sha256": "c9cb666e3d55cfc301a5c2584e3cdfc2fee325b9ac4070fcbfbdc4a9b620332b",
+        "source_sha": "9c74348a0e5b8e3f3bc4761837d579a6ba54f4a5",
+        "source_tree": "0da16e98d7f60e7c78eccbbec0c92978728b1123"
+      },
+      "run": {
+        "job_id": 114219930405,
+        "labels": [
+          "ubuntu-24.04"
+        ],
+        "run_attempt": 1,
+        "run_id": 38054448912,
+        "runner_group_name": "GitHub Actions",
+        "source_sha": "9c74348a0e5b8e3f3bc4761837d579a6ba54f4a5"
+      },
+      "members_crc_verified": 22,
+      "fullSource_unchanged": true,
+      "identities_equal": true,
+      "epochs": [
+        {
+          "epoch": "311",
+          "passed": true,
+          "tests": 1764,
+          "junit_sha256": "2f68ef65229da8a4b72737ecd3626ab228d58ce719c119de0b1b18224ec4ffed",
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "wall_seconds": 116.93700225199998,
+          "max_RSS_bytes_not_sum": 300036096,
+          "own_ECHILD": true,
+          "cleanup": {
+            "actual_owned_fin_closed": true,
+            "allocated_bytes_before": 811159552,
+            "capture_manifest_sha256": "9037aa028063857cd7b678cac52fc8720d79c7308af9a13252d33c62d2a29ac3",
+            "foreign_paths_removed": 0,
+            "namespace_removed": true,
+            "original_namespace_removed": true,
+            "retained_entries_before": 35803
+          },
+          "allocation_scope": "AFTER_OWN_FIN_BEFORE_OWN_CLEANUP_NOT_GLOBAL_PEAK"
+        },
+        {
+          "epoch": "312",
+          "passed": true,
+          "tests": 1764,
+          "junit_sha256": "5078b532cfcdeffa179d097182f065325dfcc72382c342fd79c30e6b90642ea0",
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "wall_seconds": 113.04009881999997,
+          "max_RSS_bytes_not_sum": 301252608,
+          "own_ECHILD": true,
+          "cleanup": {
+            "actual_owned_fin_closed": true,
+            "allocated_bytes_before": 811134976,
+            "capture_manifest_sha256": "f5c69eb3280d0462612211e02b3e62f61568b2465ab9eb208e6e97d42d78e90e",
+            "foreign_paths_removed": 0,
+            "namespace_removed": true,
+            "original_namespace_removed": true,
+            "retained_entries_before": 35798
+          },
+          "allocation_scope": "AFTER_OWN_FIN_BEFORE_OWN_CLEANUP_NOT_GLOBAL_PEAK"
+        }
+      ],
+      "fresh_physical_observation": {
+        "allocation_unit_bytes": 4096,
+        "filesystem_device": 66305,
+        "filesystem_type": "ext4",
+        "free_bytes": 91482693632,
+        "free_inodes": 18422996,
+        "mount_id": 27,
+        "path_identity": [
+          66305,
+          9175069,
+          1001,
+          1001,
+          16832
+        ],
+        "preferred_io_block_bytes": 4096,
+        "total_inodes": 19529728
+      },
+      "history_bootstrap": {
+        "ECHILD": true,
+        "G0_G8_qualification": false,
+        "actual_owned_FIN": true,
+        "foreign_removed": 0,
+        "git_after": {
+          "aggregate_bound_kind": "OBSERVED_SAMPLES_ONLY_NOT_KERNEL_QUOTA",
+          "allocated_bytes": 439844864,
+          "continuous_peak_proved": false,
+          "entries": 55,
+          "maximum_allocated_bytes": 536870912,
+          "maximum_entries": 100000,
+          "maximum_file_bytes": 268435456
+        },
+        "git_before": {
+          "aggregate_bound_kind": "OBSERVED_SAMPLES_ONLY_NOT_KERNEL_QUOTA",
+          "allocated_bytes": 225468416,
+          "continuous_peak_proved": false,
+          "entries": 36,
+          "maximum_allocated_bytes": 536870912,
+          "maximum_entries": 100000,
+          "maximum_file_bytes": 268435456
+        },
+        "manifest_sha256": "c718b940a024db3d30e931ae5ba4a365fb9accc80799bec1b712220704ea2444",
+        "peak_RSS_bytes_not_sum": 229363712,
+        "real_orders_sent": 0,
+        "run_id": 38054448912,
+        "schema": "porota.rc6.authentic-economic-history-readout.v1",
+        "source_sha": "9c74348a0e5b8e3f3bc4761837d579a6ba54f4a5",
+        "source_tree": "0da16e98d7f60e7c78eccbbec0c92978728b1123",
+        "wall_seconds": 8.107798865999996
+      },
+      "readout_sha256": "8dd604050e269323ea4963644b74871750cf519e6a60688a883a90b49813147a",
+      "original_full_case_identities_retained_in_artifact_not_duplicated_in_Source": true,
+      "G0_G8_qualification": false,
+      "whole_Droplet_capacity_proved": false
+    },
+    "authenticated_native_9c743": {
+      "source_sha": "9c74348a0e5b8e3f3bc4761837d579a6ba54f4a5",
+      "source_tree": "0da16e98d7f60e7c78eccbbec0c92978728b1123",
+      "run_id": 38055205582,
+      "job_id": 114222135982,
+      "artifact_id": 11671540153,
+      "artifact_bytes": 58499,
+      "artifact_sha256": "36ebcad1460eb27e8dec67dd000f242e14cb91a5790dbdd763a755e5346a69cc",
+      "members_crc_verified": 33,
+      "status": "RED",
+      "client_exitcode": 1,
+      "error_signature": "ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED",
+      "ROOT_FIN": "UNKNOWN",
+      "ROOT_custody_proved": false,
+      "Root_cases_started": false,
+      "namespace_retained": true,
+      "cleanup_authorized": false,
+      "reserve_credit_bytes": 0,
+      "boot_bound_journal": {
+        "kernel_returncode": 0,
+        "origin": {
+          "ROOT_FIN_claimed": false,
+          "ROOT_custody_qualified": false,
+          "boot_id": "a7390f4c7cf94563a3f246590332f9c8",
+          "origins": [
+            "PID1_UNIT",
+            "PID1_UNIT",
+            "PID1_UNIT",
+            "PID1_UNIT"
+          ],
+          "record_count": 4,
+          "status": "SCOPED_JOURNAL_OBSERVATION_ONLY",
+          "unit": "rc6-native-d5d6b6a21245408daef00faf4c3c80cc-guard.service"
+        },
+        "original_FIN_sha256": "f08ab85ccf84cff4a7c64b64ceb2e32f87f721dc5fcdd41cc26f0a0182641b1d",
+        "raw_bytes": 4081,
+        "raw_sha256": "c1df3963d353e5c242739bf05c640b84ff20629a72bcae37bc19be1b0341d0c7"
+      },
+      "capture_manifests": {
+        "custody-raw/closed-client-raw/manifest.json": {
+          "members": 7,
+          "sha256": "d637101caf082fe61ec9741de30d5d655d7a291c90c265edd2fe7ba6261a7d46"
+        },
+        "filter/manifest.json": {
+          "members": 7,
+          "sha256": "240e6144811a20df07958bba9dd810cfe3e3ad0bd96e8b5114df4189c6fbb115"
+        }
+      },
+      "captured_member_hashes_verified": true,
+      "quota_proved": false,
+      "reserves_proved": false,
+      "material_gate_launched": false,
+      "G0_G8_qualification": false,
+      "filter": {
+        "status": "PASS_NATIVE_FILTER_ONLY",
+        "rules_each_actor": 57,
+        "denials_each_actor": 26,
+        "filters_supervisor_before_after": [
+          0,
+          1
+        ],
+        "filters_worker_before_after": [
+          1,
+          2
+        ],
+        "dumpable_supervisor_worker_observed": [
+          0,
+          1
+        ],
+        "plan_sha256": "9daf64ba999008527b7220b4274e0e7439e27711608ec47b544b8e6e7e42dc2e",
+        "module_sha256": "c6efda60cee1b9d6a899ff27da05993b5287e0082c22f1f5999a1a1e570ac21f",
+        "wall_seconds": 0.20087097800001175,
+        "max_RSS_bytes_not_sum": 103731200,
+        "cleanup": {
+          "actual_owned_fin_closed": true,
+          "allocated_bytes_before": 69632,
+          "foreign_paths_removed": 0,
+          "namespace_removed": true
+        },
+        "capture_manifest_sha256": "240e6144811a20df07958bba9dd810cfe3e3ad0bd96e8b5114df4189c6fbb115"
+      },
+      "readout_sha256": "e6e0ed0fd534495ec5f10993d110de0b9a785b623130d1efebd6612ad0ec2b1a",
+      "causal_prebirth_guard_readout": {
+        "operation": "controller_snapshot: ROOT_CUSTODY_ACTUAL_SAFE_PID1_MASK_REQUIRED",
+        "python_ROOT_reached": true,
+        "failure": "ValueError",
+        "errno": "NOT_APPLICABLE_TO_SOURCE_VALUEERROR",
+        "source_line": 330,
+        "guardian_original_bytes": 1441,
+        "guardian_original_sha256": "db3e9eb12b32acaa25264395ea7f5565e79e585564bcb193bc2b64c7efa8c85c",
+        "own_PID1_journal_exit_status": 1,
+        "own_invocation_id": "acd438f993054198890686213cdf6041",
+        "old_EXIT_NAMESPACE_226_present_in_this_run": false,
+        "historical_final_226_errno": "UNKNOWN",
+        "unit_body_not_captured_in_this_artifact": true,
+        "ROOT_birth_pidfd_cases_seal_FIN": "NOT_PROVED",
+        "identical_native_retry_allowed": false
+      }
+    },
+    "systemd_typed_unit_parser_corrective_review": {
+      "status": "SUCCESSOR_CODE_AND_EXACT_NEW_CI_THEN_NATIVE_REQUIRED",
+      "cause": "SYSTEMD_255_PATH_SERIALIZER_QUOTES_EVERY_TOKEN_BUT_SOURCE_USES_LITERAL_SPLIT",
+      "source_references": [
+        {
+          "url": "https://github.com/systemd/systemd-stable/blob/v255.4/src/core/dbus-execute.c#L3128",
+          "sha256": "bc5359a64611638d0824f1151652b005823d19367fc7889b9fd28a61e0e39d0c",
+          "operation": "PATHS_APPEND_OR_EMPTY_RESET_UNIT_CONCAT_STRV_AND_UNIT_WRITE_SETTING"
+        },
+        {
+          "url": "https://github.com/systemd/systemd-stable/blob/v255.4/src/core/unit.c#L4575",
+          "sha256": "424d429e714bb8c79d06c9da804b81696eea6144b78b03ee36abb394e3177093",
+          "operation": "DOUBLE_QUOTES_AROUND_EACH_ELEMENT_AND_VERBATIM_UNIT_SETTING_WRITE"
+        }
+      ],
+      "installed_package": "255.4-1ubuntu8.17",
+      "Ubuntu_debian_tar_sha256": "4695ff34f83b1f7e6e02bf3cfac2e2a44ac76b6cfc5a38c0081bac6919d547bb",
+      "Ubuntu_patches_inspected": 84,
+      "patches_touching_serializers": 0,
+      "actual_duplicate_directives_proved_in_native_9c743": false,
+      "minimum_fix": "TYPED_PATHS_APPEND_RESET_SERVICE_GUARD_SECTIONS_EXACT_NAMESPACE_BITMAP_EXACT_DENYLIST_STABLE_IDENTITY_EXCEPT_ATIME_AND_CANONICAL_DURATIONS",
+      "namespace_readback": {
+        "upstream_serializer": "dbus-execute.c:1472,1861_NAMESPACE_FLAGS_TO_STRING",
+        "original_service_input": "~cgroup net user ipc uts",
+        "canonical_systemd_unit_output": "mnt pid",
+        "allowed_bitmap_unchanged": "0x20020000",
+        "extra_namespaces_permitted": false,
+        "native_9c743_reached_this_later_guard": false
+      },
+      "permanent_guard": "SAME_SAFE_REAL_PROC1_MASK_REQUIRED_NO_MAGICLINK_OR_ROOT_DESTINATION",
+      "prebirth_RAW": "ROOT_OWNED_UNIT_BYTES_HASH_IDENTITY_SNAPSHOT_BEFORE_GUARD_DIAGNOSTIC_ONLY_CAPTURE_AFTER_OWN_FIN_AND_UNIT_CGROUP_INACTIVE",
+      "unit_properties_restrictions_capabilities_deadlines_original_manager_changed": false,
+      "mount_reporting": "DENIED_ACTOR_SYSCALL_ATTEMPTS_ARE_ATTEMPTS_TRUSTED_NAMESPACE_BOOTSTRAP_IS_SEPARATE_NO_QUOTA_BACKING_CLAIM",
+      "contract_revision_approved": false,
+      "native_custody_qualified": false,
+      "G0_G8_qualification": false,
+      "local_scoped_regressions": [
+        {
+          "python_epoch": "311",
+          "passed": 428,
+          "failures_errors_skips": 0,
+          "junit_sha256": "9ec43269cf9274505a2967e4b2c001c6c923597255789cecbfa66853213379b8",
+          "seconds": 5.409,
+          "scope": "LOCAL_NONROOT_MUTABLE_CHECKPOINT_NOT_NATIVE_ROOT_OR_G0"
+        },
+        {
+          "python_epoch": "312",
+          "passed": 428,
+          "failures_errors_skips": 0,
+          "junit_sha256": "b09d9568838072842b852381a7af1f8ffde39ac70d573c4e312e21382b28945f",
+          "seconds": 5.508,
+          "scope": "LOCAL_NONROOT_MUTABLE_CHECKPOINT_NOT_NATIVE_ROOT_OR_G0"
+        }
+      ],
+      "implementation_sha256": {
+        "scripts/rc6_privileged_custody.py": "92cbf003bafad50998b21867f10ba9ff61b9f1f807fbb23d928cd6ae20295bd3",
+        "tests/test_rc6_privileged_custody.py": "9d4c6c265091d09cf005cf207273de7fdfd7046acc985c92ae40dfde500842b4"
+      },
+      "same_duration_limits_before_after": {
+        "guard_sec": 6,
+        "probe_sec": 45,
+        "TERM_grace_sec": 2,
+        "quota_prerequisite_sec": 290,
+        "quota_bootstrap_sec": 10790
+      }
     }
   }
 }

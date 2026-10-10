@@ -336,3 +336,59 @@ Este Source necesita CI exacta nueva y evidencia nativa; no hereda el PASS
 de2afd. No aprueba la revisión del witness ROOT, EACCES histórico vs
 ausencia del PID privado, cuota agregada ni regla temporal de admisiónG5.
 No Horizon/cuota/reservas/G0–G8/merge/deploy durante los bloqueos.
+
+
+## Source9c743: arranque ROOT auténtico y guard de unidad tipada
+
+Source `9c74348a0e5b8e3f3bc4761837d579a6ba54f4a5`, tree
+`0da16e98d7f60e7c78eccbbec0c92978728b1123`, pasó Actions38054448912,
+job114219930405: **1764 PASS por Python3.11/3.12**, cero fallos/errores/skips,
+identidades iguales, Source literal completo, FIN/ECHILD y cleanup0foreign.
+Original11669964319:964805B/22CRC/SHA256
+`c9cb666e3d55cfc301a5c2584e3cdfc2fee325b9ac4070fcbfbdc4a9b620332b`.
+Wall116.937/113.040s y RSS máximo300036096/301252608B por época.
+Inventario post-FIN811159552/811134976B: **no pico físico global**.
+Ext4/4096 observado con91482693632B libres y18422996 inodos; capacidad
+física de esa ejecución, sin garantía universal, enforcement de cuota ni prueba
+del Droplet. Bootstrap histórico8.108s/RSS229363712B/FIN/ECHILD;
+Git225468416→439844864B observado, conservando el límite histórico512MiB.
+
+La prueba nativa38055205582/job114222135982 conserva un RED nuevo.
+Original11671540153:58499B/33CRC/SHA256
+`36ebcad1460eb27e8dec67dd000f242e14cb91a5790dbdd763a755e5346a69cc`.
+PID1 registró Starting/Started y salida**1**, con boot propio
+`a7390f4c7cf94563a3f246590332f9c8`, unidad nonce
+`rc6-native-d5d6b6a21245408daef00faf4c3c80cc-guard.service` e Invocation
+`acd438f993054198890686213cdf6041`. Python ROOT se ejecutó y alcanzó
+`controller_snapshot:330`. RAW1441B/SHA256
+`db3e9eb12b32acaa25264395ea7f5565e79e585564bcb193bc2b64c7efa8c85c`
+demuestra `ValueError: ROOT_CUSTODY_ACTUAL_SAFE_PID1_MASK_REQUIRED`.
+**El errno no aplica a ese ValueError**. Esta ejecución no falló con226;
+el errno final del fallo226 histórico continúa UNKNOWN. Birth/pidfd, sello
+ROOT y los cuatro casos todavía no están certificados; ROOT_FIN UNKNOWN,
+namespace retenido, cleanupfalse y crédito físico0. No se repite este SHA.
+
+| Bloqueo | Corrección mínima y evidencia | Obligación restante |
+|---|---|---|
+| Parser rechaza máscara real `/proc/1` entre comillas | systemd255.4 `dbus-execute.c:3128–3178` usa `unit_concat_strv`; `unit.c:4575–4604` rodea cada ruta con comillas. Los84 parches Ubuntu8.17 no modifican esos serializadores. `.split()` conserva las comillas. Parser tipado de listas con escapes, append/reset vacío, secciones y conflicto singular fail-closed; conserva RAW y hash. | La unidad RAW no fue capturada en9c743: no se afirma repetición real. Snapshot ROOT-owned antes del guard y captura sólo tras FIN propio y unidad/cgroup inactivos; diagnóstico nunca concede custodia. Nueva CI exacta y después una prueba nativa. |
+| Readback namespaces canónico | systemd255.4 `dbus-execute.c:1472,1861` serializa el bitmap permitido mediante `namespace_flags_to_string`. Entrada original `~cgroup net user ipc uts` corresponde exactamente a salida `mnt pid`, bitmap0x20020000. | Guard compara semántica exacta y rechaza cualquier namespace adicional; propiedades del servicio intactas. Source9c743 no alcanzó este guard posterior: hallazgo de código, no un segundo error nativo atribuido. |
+| Máscara magiclink del root del executor | Source9c743 alcanzó PythonROOT tras sustituir el magiclink por el directorio real y mantener protección. | La operación peligrosa histórica está probada; su errno final226 sigue UNKNOWN. Guard permanente rechaza raíz/magiclinks antes de ROOT. No se quitan restricciones para obtener PASS. |
+| Reporting de mounts | Bootstrap privado realiza mounts confiables. El sello prueba denegaciones con syscalls de mount de operandos inválidos: son intentos denegados, no cero intentos. | Reportar alcance exacto, ausencia de mounts exitosos de actores y backing/cuota no iniciados; ningún flag sustituye evidencia nativa. |
+| Filtro NONROOT supervisor/worker | Native9c743 confirma57reglas y26denegaciones, herencia0→1→2, dumpable real0/1, FIN y cleanup0foreign. Wall0.201s/RSS máximo103731200B, inventario post-FIN69632B. | Es prerrequisito de filtro; no prueba custodia ROOT, perfil PAPER1CPU/1GiB ni presupuesto total del Droplet. |
+| G0, lectores admitidos y G5 original | Los límites20GiB/26GiB/reservas,1202/512MiB/profundidad32/retención y writer productivoV3 permanecen. | Revisión explícita witness ROOT y EACCES vs PID ausente; cuota/reservas físicas; G1 focal dual con reviews auténticos; cota completa y revisión temporal de admisión antes de Horizon original. G7/G8 esperanG0–G6. |
+
+Cierre local del fix tipado: **428 PASS por Python**, cero fallos/errores/skips,
+5.409/5.508s como NONROOT. Helper SHA256
+`92cbf003bafad50998b21867f10ba9ff61b9f1f807fbb23d928cd6ae20295bd3`;
+tests `9d4c6c265091d09cf005cf207273de7fdfd7046acc985c92ae40dfde500842b4`.
+Incluye regresiones de sección[Service], dirección y conjunto completo del
+filtro original, identidad dev/inode/mode/UID/GID/nlink/size/mtime/ctime estable
+sin confundir atime, y tiempos canónicos290s/10790s sin cambiar deadlines.
+El manager, planes, sello, propiedades systemd y drop original permanecen.
+Estos PASS locales no certifican ROOT: el Source congelado necesita CI exacta
+positiva antes de una nueva prueba nativa con RAW de unidad previo a birth.
+
+Se conserva un candidato en PR483 y ancestry de481/482, sin una rama o PR
+documental adicional. USD0 de infraestructura recurrente adicional,
+PAPER/SHADOW, real_orders_sent=0 y PPI Watch intacto. Sin contratación,
+ampliación, infraestructura persistente, merge ni deploy.
