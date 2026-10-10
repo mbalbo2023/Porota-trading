@@ -271,13 +271,20 @@ def validate_cgroup(observation, plan, *, private_cgroup_required=True, current_
     require(0 <= current <= peak <= memory, "RESOURCE_MEMORY_ENVELOPE_ALREADY_EXCEEDED")
     require(type(observation.get("uid")) is int and observation["uid"] > 0
             and observation["uid"] == observation["euid"], "RESOURCE_NONROOT_REQUIRED")
+    require(type(private_cgroup_required) is bool, "RESOURCE_CGROUP_ROLE_REQUIRED")
     current_pid = os.getpid() if current_pid is None else current_pid
     require(type(current_pid) is int and current_pid > 0
             and type(observation["processes"]) is list
-            and all(type(pid) is int and pid > 0 for pid in observation["processes"])
-            and len(set(observation["processes"])) == len(observation["processes"])
-            and current_pid in observation["processes"], "RESOURCE_CURRENT_CGROUP_MEMBERSHIP_REQUIRED")
-    require(type(private_cgroup_required) is bool, "RESOURCE_CGROUP_ROLE_REQUIRED")
+            and all(type(pid) is int and pid >= 0 for pid in observation["processes"]),
+            "RESOURCE_CURRENT_CGROUP_MEMBERSHIP_REQUIRED")
+    visible_pids=[pid for pid in observation['processes'] if pid>0]
+    # cgroup2 task_pid_vnr renders members outside the reader's PID namespace
+    # as 0. These rows remain in the original readback and whole-cgroup limits;
+    # they grant no process identity, ownership or FIN. Only this diagnostic
+    # compute role can retain them. Complete producers keep the strict view.
+    require(len(set(visible_pids))==len(visible_pids) and current_pid in visible_pids
+            and (not private_cgroup_required or len(visible_pids)==len(observation['processes'])),
+            "RESOURCE_CURRENT_CGROUP_MEMBERSHIP_REQUIRED")
     if private_cgroup_required:
         require(observation["membership"] == "0::/" and observation["mount_root"] == "/"
                 and observation["path"] == observation["mountpoint"]
