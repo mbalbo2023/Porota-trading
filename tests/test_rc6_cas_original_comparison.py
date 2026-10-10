@@ -321,6 +321,52 @@ def test_authenticated_case_names_bind_real_parameterized_nodeids_without_invent
         comparison._executed_case_names([{**items[0], "name": "different_test[marker]"}], prefix)
 
 
+def _ack_execution_metadata():
+    from tests.test_rc6_archive_reader_review import _execution_metadata
+    execution = _execution_metadata()  # Unit metadata only, never G1 authority.
+    for name in sorted(comparison.ACK_CASES):
+        node = 'tests/test_rc6_cas_original_comparison.py::' + name
+        execution['items'].append({'nodeid': node, 'name': name})
+        execution['original_pytest_reports'].extend({'nodeid': node, 'when': phase, 'outcome': 'passed'}
+            for phase in ('setup', 'call', 'teardown'))
+    nodes = [row['nodeid'] for row in execution['items']]
+    execution['actual_execution_started_nodeids'] = nodes
+    execution['actual_execution_finished_nodeids'] = list(nodes)
+    return execution
+
+
+def test_private_ack_review_is_recomputed_from_exact_execution_and_never_approves_contract():
+    execution = _ack_execution_metadata()
+    wire = components.canonical(execution) + b'\n'
+    record = comparison.build_private_ack_review(execution, wire, source_sha='a'*40, source_tree='b'*40)
+    assert comparison.validate_private_ack_review(record, execution, wire, source_sha='a'*40, source_tree='b'*40) == record
+    assert record['execution_sha256'] == components.sha(wire)
+    assert record['contract_review_approved'] is record['native_v4_write_enabled'] is record['g5_qualification_allowed'] is False
+
+
+@pytest.mark.parametrize('attack', ('wire', 'source', 'setup', 'teardown', 'skip', 'fin', 'missing_ack', 'reference', 'approval'))
+def test_private_ack_review_rejects_unexecuted_or_rebound_evidence(attack):
+    execution = _ack_execution_metadata()
+    wire = components.canonical(execution)
+    record = comparison.build_private_ack_review(execution, wire, source_sha='a'*40, source_tree='b'*40)
+    if attack == 'wire': wire += b'{}'
+    elif attack == 'source': execution['source_sha'] = 'c'*40
+    elif attack in ('setup', 'teardown', 'skip'):
+        stage = 'call' if attack == 'skip' else attack
+        row = next(r for r in execution['original_pytest_reports'] if r['nodeid'].startswith('tests/test_rc6_cas_original_comparison.py::') and r['when'] == stage)
+        row['outcome'] = 'skipped' if attack == 'skip' else 'failed'
+    elif attack == 'fin': execution['child_infrastructure_finalization']['status'] = 'RED'
+    elif attack == 'missing_ack':
+        execution['items'].pop()
+        nodes = [r['nodeid'] for r in execution['items']]
+        execution['actual_execution_started_nodeids'] = execution['actual_execution_finished_nodeids'] = nodes
+    elif attack == 'reference': record['execution_sha256'] = '0'*64
+    elif attack == 'approval': record['contract_review_approved'] = True
+    if attack != 'wire': wire = components.canonical(execution)
+    with pytest.raises((ValueError, json.JSONDecodeError), match='ACK_REVIEW_|ARCHIVE_REVIEW_|Extra data'):
+        comparison.validate_private_ack_review(record, execution, wire, source_sha='a'*40, source_tree='b'*40)
+
+
 def test_unreviewed_attempt_cannot_bind_native_archive_from_environment_optin(tmp_path, monkeypatch):
     monkeypatch.setenv("RC6_ENABLE_SLICE_WRITE", "true")
     monkeypatch.setenv("RC6_PRIVATE_CANDIDATE_ACK", "true")

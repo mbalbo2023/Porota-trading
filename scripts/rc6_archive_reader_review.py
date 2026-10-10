@@ -18,11 +18,20 @@ import re
 import subprocess
 
 from rc6_shadow_runtime import archive_components as components
+from scripts.rc6_controlled_governed_runner import FIELDS as SOURCE_FIELDS, STABLE_CODE_FIELDS
 
 
 SCHEMA = "rc6.original-cas-reader-review.v2"
 INVENTORY_SCHEMA = "rc6.archive-consumer-source-inventory.v1"
 SCOPE = "PRIVATE_DEVELOPMENT_COMPARISON_NOT_NATIVE_V4_ENABLEMENT"
+CAS_REVIEW_FILES = {
+    "cas_reader_review": "execution.cas-reader-review.json",
+    "cas_private_ack_review": "execution.cas-private-ack-review.json",
+}
+CAS_REVIEW_MODULES = frozenset({
+    "tests/test_rc6_archive_slice_reuse.py", "tests/test_rc6_archive_reader_review.py",
+    "tests/test_rc6_archive_v3_image_smoke.py", "tests/test_rc6_cas_original_comparison.py",
+})
 MAX_SOURCE_FILE = 4 * 1024**2
 MAX_SCAN_BYTES = 64 * 1024**2
 MAX_SCAN_FILES = 8192
@@ -180,6 +189,43 @@ def source_inventory(root, *, source_sha, source_tree):
             and git("rev-parse", "HEAD").decode().strip() == source_sha,
             "ARCHIVE_REVIEW_SOURCE_CHANGED_DURING_CAPTURE")
     return {"source_sha": source_sha, "source_tree": source_tree, **inventory_source_bytes(files)}
+
+
+def inventory_from_source_pin(root, pin, *, capture):
+    """Reuse the original authenticated full Source pin; no Git or Source copy.
+
+    The caller supplies the original NOATIME/all11 capture. This does not
+    authenticate a supplied JSON pin or confer artifact/contract approval.
+    """
+    require(type(pin) is dict and pin.get("physical_namespace_exact_to_literal_tree") is True
+            and pin.get("overlay_count") == 0 and type(pin.get("files")) is dict
+            and bool(pin["files"])
+            and all(isinstance(pin.get(key), str) and re.fullmatch(r"[0-9a-f]{40}", pin[key])
+                    for key in ("source_sha", "source_tree")), "ARCHIVE_REVIEW_ORIGINAL_FULL_SOURCE_PIN_REQUIRED")
+    files, total = {}, 0
+    for path, expected in sorted(pin["files"].items()):
+        require(isinstance(path, str) and Path(path).as_posix() == path and not Path(path).is_absolute()
+                and ".." not in Path(path).parts and "\\" not in path,
+                "ARCHIVE_REVIEW_SOURCE_PIN_PATH_INVALID")
+        if path.startswith(("tests/", "docs/", ".agents/")) or Path(path).suffix not in CODE_SUFFIXES:
+            continue
+        require(len(files) < MAX_SCAN_FILES, "ARCHIVE_REVIEW_SCAN_FILE_BOUND")
+        require(type(expected) is dict and type(expected.get("bytes")) is int
+                and 0 <= expected["bytes"] <= MAX_SOURCE_FILE, "ARCHIVE_REVIEW_SOURCE_PIN_BOUND")
+        total += expected["bytes"]
+        require(total <= MAX_SCAN_BYTES, "ARCHIVE_REVIEW_SCAN_BOUND")
+        raw, fields = capture(Path(root) / path, limit=MAX_SOURCE_FILE)
+        original_fields = expected.get("stat_fields")
+        # Original Source admits/report CODE atime changes caused by imports.
+        # capture itself still proves all11 unchanged during this NOATIME read.
+        require(type(raw) is bytes and len(raw) == expected["bytes"]
+                and components.sha(raw) == expected.get("sha256")
+                and type(original_fields) is dict and set(fields) == set(original_fields) == set(SOURCE_FIELDS)
+                and all(fields[key] == original_fields[key] for key in STABLE_CODE_FIELDS)
+                and hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() == expected.get("git_blob"),
+                "ARCHIVE_REVIEW_SOURCE_PIN_BYTES_OR_STABLE_CUSTODY_CHANGED")
+        files[path] = raw
+    return {"source_sha": pin["source_sha"], "source_tree": pin["source_tree"], **inventory_source_bytes(files)}
 
 
 def executed_reader_nodes(execution, *, source_sha, source_tree):

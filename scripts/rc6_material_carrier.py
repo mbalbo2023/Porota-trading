@@ -811,6 +811,27 @@ def run_gov(a,run,root,prepared,derived,auth_path,auth_sha):
     return code,{'gate':a.gate,'native_phases':phases,'receipt':receipt,'reason':reason,
         'raw_root':str(sealed),'whole_Gov_claim':code==0,'native_FIN_payload_safe':True}
 
+def captured_cas_review_references(destination, *, source, source_pin, execution_wire, capture):
+    """Verify both hash-bound records from captured RAW, never reconstruct RAW."""
+    from scripts import rc6_archive_reader_review as readers
+    from scripts import rc6_cas_original_comparison as comparison
+    execution = document(execution_wire)
+    readers.executed_reader_nodes(execution, source_sha=source_pin['source_sha'], source_tree=source_pin['source_tree'])
+    records, references = {}, {}
+    for role, filename in readers.CAS_REVIEW_FILES.items():
+        relative = 'focal/' + filename
+        wire = read(captured_file(destination, relative), 4 * 1024**2)
+        references[role] = captured_reference(destination, relative)
+        need(digest(wire) == references[role]['sha256'], 'CAS_REVIEW_CAPTURED_REFERENCE_REBOUND')
+        records[role] = document(wire)
+    comparison.validate_private_ack_review(records['cas_private_ack_review'], execution, execution_wire,
+        source_sha=source_pin['source_sha'], source_tree=source_pin['source_tree'])
+    inventory = readers.inventory_from_source_pin(source, source_pin, capture=capture)
+    readers.validate_review(records['cas_reader_review'], inventory, execution, execution_wire,
+        source_sha=source_pin['source_sha'], source_tree=source_pin['source_tree'])
+    return references
+
+
 def seal_generated(a,run,namespace,root,label,required_paths):
     fin=run.fins.get(namespace.nonce)
     need(fin is not None,'ACTUAL_OWNED_GENERATED_FIN_REQUIRED')
@@ -928,6 +949,16 @@ def focal(a,run,root,prepared,interpreters):
         for phase,destination in sealed_phases.items():
             native_evidence[phase+'_kernel']=captured_reference(destination,
                 'producer-owned-fin-focal'+epoch+'-'+phase+'.json')
+        if a.gate == 'cheap':
+            from scripts import rc6_archive_reader_review as readers
+            if readers.CAS_REVIEW_MODULES.issubset(a.cheap_files) and 'execution' in sealed_phases:
+                try:
+                    destination = sealed_phases['execution']
+                    execution_wire = read(captured_file(destination, 'focal/execution.observations.json'))
+                    native_evidence.update(captured_cas_review_references(destination, source=source,
+                        source_pin=before, execution_wire=execution_wire, capture=g['capture']))
+                except (OSError, ValueError, RuntimeError, KeyError, TypeError) as error:
+                    code=1;reason=reason or 'CAS_REVIEW_CAPTURED_RAW_MISSING_OR_REBOUND'
         probe_green=True
         if a.gate=='cheap':
             destination=sealed_phases.get('execution');probe_green=False

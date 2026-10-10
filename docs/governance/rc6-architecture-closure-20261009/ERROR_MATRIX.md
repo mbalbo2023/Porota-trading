@@ -621,3 +621,107 @@ cubren alias/symlinks/hardlinks/FIFO/bounds/owners/mountID/bloques/rebind
 y FIN/ECHILD antesIO. Revisión independiente READ_ONLY sin defecto
 bloqueante, AST/diffPASS, archivos originales de seguridad byte exactos.
 Esto sigue siendo prueba económica NONROOT, sin crédito de custodia ROOT.
+
+
+### Custodia ROOT auténtica, Source d97fe4f4
+
+Source `d97fe4f469aa1f90f5ba36af6adbe2ad899e06c5`, tree
+`81bd261b827c64de8be976f62582d35b9b0fd2df`: CI
+[38065423750](https://github.com/mbalbo2023/Porota-trading/actions/runs/38065423750)
+con **1995 PASS en cada Python 3.11/3.12**, identidades iguales,
+cero errores/fallos/skips, Source intacta y FIN/ECHILD/cleanup propios.
+Artifact11675087792, ZIP original976212B/22CRC/SHA256
+`2c2b243c3738ca2ef3a0f19ee4bfd8d0029f065042875852316dfbb2efe37a29`.
+Wall125.245/134.850s, RSS303624192/307236864B; inventario postFIN
+813998080/813981696B, **no pico físico global**.
+
+Después, una sola prueba nativa de ese SHA:
+[38066365383](https://github.com/mbalbo2023/Porota-trading/actions/runs/38066365383),
+job114254723064, artifact11674874049, ZIP original125481B/46CRC/SHA256
+`5044338f7423d5f73ba6655326f2b8cbac163c740da54d037bedd9d08e379815`.
+Readout autenticado SHA256
+`212c5191ce50f0ba6984e43734797f0848cbe5047b0fda1437630ed39cc274ac`:
+**PASS_SMALL_NATIVE_ONLY**, ROOT_FIN CLOSED_ORIGINAL_NATIVE_AND_PIDFD.
+
+Los cuatro casos originales observaron exit0, fail73 antes del drop,
+ROOT hang y NONROOT hang terminados con TERM→KILL real. En cada caso:
+birth, pidfd, identidad, reap original, ECHILD y FIN; sello heredado y
+denegaciones reales. Parent ROOT conserva máscara483, NNP1, dump0 y
+42 denegaciones; workers UID/GID1001 y las cinco máscaras de capacidades0.
+Los ACK externos se verificaron contra PID1 vivo y pidfds; cgroups propios
+vacíos/removidos, reap real. El JSON del actor no concede custodia.
+Broker privado11.6166s/RSS35065856B; casos0.2007/0.2009/3.0567/3.0566s,
+RSS34918400B máximo por caso, sin sumarlo como pico global.
+
+Cleanup original cerrado:417792B/26entradas antes de retirada, namespace
+propio removido,0rutas ajenas,0cambios de modos o write-owner,0aliases seguidos.
+La observación fresca de ext4/4096 registró91705847808B y18423175inodos libres;
+no es una cuota o reserva. Runner4CPU/16GiBRAM: esto tampoco demuestra
+el Droplet1CPU/1GiBRAM/25GB ni su margen compartido con OS/PPI.
+
+Se cierran en **ese Source** el arranque privado, interoperabilidad CPython,
+lectura de controles sellados y custodia ROOT/NONROOT original. El errno
+final del EXIT_NAMESPACE226 histórico permanece UNKNOWN_NOT_OBSERVED;
+los EBUSY ignorados durante cleanup no se declaran su causa.
+
+**G0 sigue BLOQUEADO**: original issuer-root requiere EACCES con el mismo
+UID; el PID privado puede producir ENOENT/ESRCH o colisión con otro PID.
+Ausencia sola no demuestra equivalencia. El ancestro ROOT que prepara
+cuota también necesita una revisión separada: el sello postsetup deniega
+ioctl/quotactl/montaje, y no se debilita para acomodar preparación.
+Sin revisión contractual explícita, pruebas adversariales propias, cuota
+física20GiB, backing26GiB, ambas reservas4GiB e inodos/preflight frescos
+no hay G0 material. No se declara imposible Actions por su garantía14GB.
+
+Los1.202ciclos,512MiB, profundidad32, retención9h+1h y datos byte exactos
+permanecen originales. El RAW histórico tiene1049metadata,153índices
+faltantes y0juegos completos de cinco payloads; ahorro/cota global G5
+siguen null. Horizon y G7/G8 no se ejecutan antes de sus admisiones.
+Cada Source sucesor requiere CI económica exacta y una prueba nativa nueva;
+este PASS no se hereda por identidad de archivos. USD0 recurrente
+adicional, PAPER/SHADOWreal0, PPI intacto, sin compra/merge/deploy.
+
+
+Revisión contractual mínima propuesta, **no aprobada**: conservar el
+objetivo de negar salida al root del issuer, sustituyendo sólo su observación
+literal del HOSTPID oculto por identidad viva externa+pidfd/ACK, namespace
+privado distinto y ausencia de bridges, junto con prueba positiva y negativa
+contra supervisor propio NONROOT del mismo UID, vivo y DUMPABLE0. El mismo
+nonce debe poder crearse por su ruta canónica propia; por
+`/proc/LOCAL_SUPERVISOR/root` debe EACCES, y fd/1 debe EACCES sin escribirlo.
+Esto exige evidencia nueva y evita certificar ENOENT, EROFS o UID diferente.
+El sello del probe deniega todo ioctl: heredarlo a quota_probe bloquearía
+FSGETXATTR. Se necesita revisar un rol de preparación estrictamente anterior
+a datos mutables, con ioctl/quota sólo sobre el dispositivo/FD propio y
+drop fijo original; no ensanchar globalmente el sello probado. Ambas
+propiedades y sus pruebas pendientes están enumeradas en el JSON existente.
+
+
+### Emisión y custodia de reviews privados CAS
+
+El mismo candidato incorpora siete paths de código/regresiones existentes:
+reader-review v2 desde inventario Source+execution wire original, builder y
+validador recomputado ACK-review v1, emisión cheap/execution después de FIN
+y captura de ambos registros/error en RAW antes de cleanup. El carrier
+verifica los bytes capturados y publica referencias path/SHA256; no reconstruye
+RAW. El inventario reusa el pin fullSource, sin Git adicional ni clones:
+cada captura NOATIME mantiene all11, y vs pin anterior compara los diez
+campos CODE estables originales, incluyendo st_blocks; conserva atime
+admitido y su observación, sin restaurarlo. El bound de8.192files aplica
+sólo al código escaneado, no a documentación.
+
+Freeze local SHA256
+`3880121e4634b38c25110c8519dfc6418113dcc4fae92b6e1a5f439a3d39b4c5`:
+**92 PASS por Python3.11/3.12**,0fallos/errores/skips,71.478/73.000s.
+El positivo ejecuta23casos parametrizados reales de14reader nodeids y
+6ACKfunctions,69reports setup/call/teardown PASS, originalmanager y
+finalizador con FIN/ECHILD. El pin de Source de esa regresión es un fixture
+explícito NO_G1; no certifica equivalencia ni artifact de G1.
+Negativos: FIN incompleto, corpus parcial, skip, setup/teardown RED, Source,
+wire y registros alterados; no producen reviews positivos.
+
+El futuro CHEAP_FILES_JSON conserva el mínimo original y añade los cuatro
+módulos CAS indicados en el JSON. Esa selección se autentica en la admisión
+de G1, no modifica el mínimo contractual automáticamente. G0 aún debe
+certificarse antes de ambos G1 reales. Reviews, ACK y PASS económicos
+mantienen aprobación/V4/G5/runtime false; escritura productiva V3 intacta.

@@ -100,6 +100,33 @@ def _executed_case_names(items, prefix):
     return names
 
 
+def build_private_ack_review(execution, execution_wire, *, source_sha, source_tree):
+    """Evidence of executed private ACK controls, never contract approval."""
+    from scripts import rc6_archive_reader_review as readers
+    require(type(execution_wire) is bytes and components.loads(execution_wire) == execution,
+            "CAS_ACK_REVIEW_EXECUTION_WIRE_REBOUND")
+    readers.executed_reader_nodes(execution, source_sha=source_sha, source_tree=source_tree)
+    prefix = "tests/test_rc6_cas_original_comparison.py::"
+    names = _executed_case_names(execution["items"], prefix)
+    require(ACK_CASES <= names, "CAS_ACK_REVIEW_COMPLETE_EXECUTED_CONTROLS_REQUIRED")
+    nodes = sorted(item["nodeid"] for item in execution["items"] if item["nodeid"].startswith(prefix))
+    return {"schema": ACK_REVIEW_SCHEMA, "scope": ACK_SCOPE,
+        "source_sha": source_sha, "source_tree": source_tree,
+        "execution_sha256": components.sha(execution_wire), "executed_ack_nodeids": nodes,
+        "executed_ack_case_names": sorted(names), "original_contract": components.loads(components.canonical(dict(CONTRACT))),
+        "native_write_recipe_schema": components.RECIPE_SCHEMA,
+        "live_limit_bytes": 128 * 1024**2, "live_limit_entries": 512,
+        "native_fallback_allowed": False, "g5_qualification_allowed": False,
+        "contract_review_approved": False, "native_v4_write_enabled": False,
+        "runtime_validated": False, "real_orders_sent": 0}
+
+
+def validate_private_ack_review(record, execution, execution_wire, *, source_sha, source_tree):
+    expected = build_private_ack_review(execution, execution_wire, source_sha=source_sha, source_tree=source_tree)
+    require(record == expected, "CAS_ACK_REVIEW_EXECUTION_OR_CONTRACT_REBOUND")
+    return record
+
+
 def _read(path, *, maximum):
     """Bounded NOATIME read with the same complete all11 custody comparison."""
     from scripts.rc6_material_horizon import attributes
@@ -636,6 +663,9 @@ def authenticate_comparison(manifest_path, *, source_sha, source_tree, source_ro
         if epoch == review["gate"]:
             readers.validate_review(record, inventory, observed_execution, execution,
                                     source_sha=source_sha, source_tree=source_tree)
+        if epoch == ack_review["gate"]:
+            validate_private_ack_review(ack_record, observed_execution, execution,
+                                        source_sha=source_sha, source_tree=source_tree)
         items = observed_execution["items"]
         names = _executed_case_names(items, "tests/test_rc6_archive_slice_reuse.py::")
         require(READER_CASES <= names, "CAS_COMPARISON_ACTUAL_DUAL_READER_CASES_MISSING")

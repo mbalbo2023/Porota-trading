@@ -240,3 +240,57 @@ def test_image_restore_encoder_guard_covers_original_page_and_binary_aliases():
                         components.encode_page_pack, exact_page_storage.encode_page_pack):
             with pytest.raises(smoke.SmokeError, match="RESTORE_ENCODER_CALLED"):
                 encoder(b"no restored bytes may be reencoded")
+
+
+def _pinned_source(tmp_path):
+    from scripts import rc6_controlled_governed_runner as governed
+    import hashlib
+    raw = b"from rc6_shadow_runtime import archive_components\n"
+    path = tmp_path / 'consumer.py'
+    path.write_bytes(raw)
+    captured, fields = governed.capture(path)
+    pin = {'source_sha': 'a' * 40, 'source_tree': 'b' * 40,
+        'physical_namespace_exact_to_literal_tree': True, 'overlay_count': 0,
+        'files': {'consumer.py': {'bytes': len(raw), 'sha256': components.sha(raw),
+            'git_blob': hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest(),
+            'stat_fields': fields}}}
+    return pin, governed
+
+
+def test_reader_inventory_reuses_original_pin_and_noatime_bytes_without_git_or_source_copy(tmp_path, monkeypatch):
+    pin, governed = _pinned_source(tmp_path)
+    monkeypatch.setattr(review.subprocess, 'check_output', lambda *a, **kw: pytest.fail('DUPLICATE_GIT_FORBIDDEN'))
+    result = review.inventory_from_source_pin(tmp_path, pin, capture=governed.capture)
+    assert result['scanned_files'] == 1 and result['source_sha'] == pin['source_sha']
+    assert governed.capture(tmp_path / 'consumer.py')[1] == pin['files']['consumer.py']['stat_fields']
+
+
+def test_reader_inventory_preserves_original_admitted_code_atime_delta_without_reset(tmp_path):
+    import os
+    pin, governed = _pinned_source(tmp_path)
+    path = tmp_path / 'consumer.py'
+    old = path.stat()
+    os.utime(path, ns=(1, old.st_mtime_ns))
+    pin['files']['consumer.py']['stat_fields'] = governed.capture(path)[1]
+    path.read_bytes()  # Real ordinary code read changes only atime.
+    current = governed.capture(path)[1]
+    assert current['st_atime_ns'] != pin['files']['consumer.py']['stat_fields']['st_atime_ns']
+    review.inventory_from_source_pin(tmp_path, pin, capture=governed.capture)
+    assert governed.capture(path)[1] == current
+
+
+@pytest.mark.parametrize('attack', ('bytes', 'stat', 'blocks', 'sha', 'blob', 'path', 'bound', 'overlay', 'partial_pin'))
+def test_reader_inventory_rejects_changed_or_incomplete_original_pin_before_review(tmp_path, attack):
+    pin, governed = _pinned_source(tmp_path)
+    row = pin['files']['consumer.py']
+    if attack == 'bytes': (tmp_path / 'consumer.py').write_bytes(b'changed\n')
+    elif attack == 'stat': row['stat_fields'] = dict(row['stat_fields'], st_ino=0)
+    elif attack == 'blocks': row['stat_fields'] = dict(row['stat_fields'], st_blocks=row['stat_fields']['st_blocks'] + 1)
+    elif attack == 'sha': row['sha256'] = '0' * 64
+    elif attack == 'blob': row['git_blob'] = '0' * 40
+    elif attack == 'path': pin['files']['../escape.py'] = pin['files'].pop('consumer.py')
+    elif attack == 'bound': row['bytes'] = review.MAX_SOURCE_FILE + 1
+    elif attack == 'overlay': pin['overlay_count'] = 1
+    elif attack == 'partial_pin': pin['physical_namespace_exact_to_literal_tree'] = False
+    with pytest.raises(ValueError, match='ARCHIVE_REVIEW_'):
+        review.inventory_from_source_pin(tmp_path, pin, capture=governed.capture)
