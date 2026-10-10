@@ -366,6 +366,29 @@ def test_mount_parser_authenticates_type_root_options_and_escaped_path():
     assert resource_profile.containing_mount("/source/path/file", rows)["id"] == 61
 
 
+def test_original_cgroup_pressure_file_mount_is_not_a_second_directory():
+    # Original native mount shape from38088700559; parser replay only.
+    rows = resource_profile.mount_rows(
+        '63 61 0:30 / /sys/fs/cgroup ro,nosuid,nodev,noexec,relatime - cgroup2 cgroup2 rw,nsdelegate,memory_recursiveprot\n'
+        '64 63 0:30 /system.slice/unit/memory.pressure /sys/fs/cgroup/system.slice/unit/memory.pressure ro,nosuid,nodev,noexec,relatime - cgroup2 cgroup2 rw,nsdelegate,memory_recursiveprot\n')
+    assert resource_profile.select_cgroup_directory_mount(rows, 63) == rows[0]
+    with pytest.raises(ValueError, match='ACTUAL_CGROUP_DIRECTORY_MOUNT_REQUIRED'):
+        resource_profile.select_cgroup_directory_mount(rows, 64)
+
+
+@pytest.mark.parametrize('defect', ['missing', 'duplicate', 'wrong_type', 'wrong_path', 'writable', 'other_writable'])
+def test_cgroup_fd_selection_refuses_unproved_or_writable_aliases(defect):
+    rows = [{'id': 63, 'filesystem': 'cgroup2', 'mountpoint': '/sys/fs/cgroup', 'options': ['ro'], 'root': '/'}]
+    if defect == 'missing': rows[0]['id'] = 62
+    elif defect == 'duplicate': rows.append(dict(rows[0]))
+    elif defect == 'wrong_type': rows[0]['filesystem'] = 'ext4'
+    elif defect == 'wrong_path': rows[0]['mountpoint'] = '/foreign-cgroup'
+    elif defect == 'writable': rows[0]['options'] = ['rw']
+    elif defect == 'other_writable': rows.append({**rows[0], 'id': 64, 'mountpoint': '/sys/fs/cgroup/memory.pressure', 'options': ['rw']})
+    with pytest.raises(ValueError, match='RESOURCE_(ACTUAL_CGROUP_DIRECTORY_MOUNT_REQUIRED|WRITABLE_CGROUP_MOUNT_FORBIDDEN)'):
+        resource_profile.select_cgroup_directory_mount(rows, 63)
+
+
 def test_overmounted_or_ambiguous_mount_is_not_a_budget():
     rows = [{"mountpoint": "/unit_control", "id": value} for value in (60, 61)]
     with pytest.raises(ValueError, match="OVERMOUNT_OR_AMBIGUOUS"):

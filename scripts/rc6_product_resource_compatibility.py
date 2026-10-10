@@ -303,26 +303,79 @@ def validate_cgroup(observation, plan, *, private_cgroup_required=True, current_
             "interpreter_supervisor_children_cache_and_tmpfs_in_same_memory_budget": True}
 
 
+def select_cgroup_directory_mount(rows, actual_mount_id):
+    """Resolve the visible canonical directory, not a count of file mounts."""
+    require(type(actual_mount_id) is int and actual_mount_id > 0,
+        "RESOURCE_ACTUAL_CGROUP_DIRECTORY_MOUNT_REQUIRED")
+    mounts = [row for row in rows if row['id'] == actual_mount_id]
+    require(len(mounts) == 1 and mounts[0]['filesystem'] == 'cgroup2'
+        and mounts[0]['mountpoint'] == '/sys/fs/cgroup',
+        'RESOURCE_ACTUAL_CGROUP_DIRECTORY_MOUNT_REQUIRED')
+    require(all('ro' in row['options'] and 'rw' not in row['options']
+        for row in rows if row['filesystem'] == 'cgroup2'),
+        'RESOURCE_WRITABLE_CGROUP_MOUNT_FORBIDDEN')
+    return mounts[0]
+
+
+def current_cgroup_directory_mount(rows):
+    from scripts.rc6_capacity_calibration import descriptor_mount_id
+    root = Path('/sys/fs/cgroup')
+    require(not any(path.is_symlink() for path in (root, *root.parents)),
+        'RESOURCE_CGROUP_ALIAS_FORBIDDEN')
+    fd = os.open(root, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        held = os.fstat(fd)
+        mount = select_cgroup_directory_mount(rows, descriptor_mount_id(fd))
+        named = root.stat(follow_symlinks=False)
+        require((held.st_dev, held.st_ino, held.st_mode) == (named.st_dev, named.st_ino, named.st_mode),
+            'RESOURCE_CGROUP_DIRECTORY_REBOUND')
+        return mount
+    finally:
+        os.close(fd)
+
+
 def observe_cgroup():
+    from scripts.rc6_capacity_calibration import descriptor_mount_id
     rows = mount_rows(Path("/proc/self/mountinfo").read_text())
-    mounts = [row for row in rows if row["filesystem"] == "cgroup2"]
-    require(len(mounts) == 1, "RESOURCE_UNAMBIGUOUS_CGROUP_V2_REQUIRED")
+    mounted = current_cgroup_directory_mount(rows)
     membership = Path("/proc/self/cgroup").read_text().strip()
     require(membership.startswith("0::/") and "\n" not in membership,
             "RESOURCE_UNIFIED_CURRENT_CGROUP_REQUIRED")
     visible = Path(membership[3:])
-    mounted_root = Path(mounts[0]["root"])
+    mounted_root = Path(mounted["root"])
     require(visible.is_relative_to(mounted_root), "RESOURCE_CGROUP_NAMESPACE_MAPPING_UNKNOWN")
-    location = Path(mounts[0]["mountpoint"]) / visible.relative_to(mounted_root)
+    location = Path(mounted["mountpoint"]) / visible.relative_to(mounted_root)
     require(not any(path.is_symlink() for path in (location, *location.parents)),
             "RESOURCE_CGROUP_ALIAS_FORBIDDEN")
     files = ("cpu.max", "memory.max", "memory.swap.max", "pids.max",
              "memory.current", "memory.peak", "memory.events", "cpu.stat", "cgroup.procs")
-    values = {name: (location / name).read_text().strip() for name in files}
+    directory = os.open(location, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        require(descriptor_mount_id(directory) == mounted['id'], 'RESOURCE_CGROUP_LEAF_MOUNT_REBOUND')
+        values = {}
+        for name in files:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=directory)
+            try:
+                require(stat.S_ISREG(os.fstat(fd).st_mode) and descriptor_mount_id(fd) == mounted['id'],
+                    'RESOURCE_CGROUP_CONTROL_MOUNT_ALIAS')
+                chunks, total = [], 0
+                while True:
+                    chunk = os.read(fd, 65537 - total)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    require(total <= 65536, 'RESOURCE_CGROUP_CONTROL_READ_BOUND')
+                    chunks.append(chunk)
+                data = b''.join(chunks)
+                values[name] = data.decode('utf-8', errors='strict').strip()
+            finally:
+                os.close(fd)
+    finally:
+        os.close(directory)
     protected = ("cpu.max", "memory.max", "memory.swap.max", "pids.max", "cgroup.procs")
-    values.update({"path": str(location), "membership": membership, "mount_id": mounts[0]["id"],
-                   "mount_root": mounts[0]["root"], "mountpoint": mounts[0]["mountpoint"],
-                   "mount_options": mounts[0]["options"],
+    values.update({"path": str(location), "membership": membership, "mount_id": mounted["id"],
+                   "mount_root": mounted["root"], "mountpoint": mounted["mountpoint"],
+                   "mount_options": mounted["options"],
                    "cgroup_namespace_inode": os.stat("/proc/self/ns/cgroup").st_ino,
                    "mount_namespace_inode": os.stat("/proc/self/ns/mnt").st_ino,
                    "privilege_status": privilege_status(Path("/proc/self/status").read_text()),
