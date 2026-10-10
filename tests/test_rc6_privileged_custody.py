@@ -12,12 +12,220 @@ from pathlib import Path
 import select
 import stat
 import sys
+import subprocess
+import zlib
 from types import SimpleNamespace
 
 import pytest
 
 from scripts import rc6_capacity_calibration as calibration
 from scripts import rc6_privileged_custody as custody
+
+
+@pytest.mark.parametrize("name", sorted(custody.ROOT_POSTSEAL_CONTROL_NAMES))
+def test_postseal_reader_own_nonroot_io_preserves_ten_fields_without_noatime(tmp_path, monkeypatch, name):
+    tmp_path.chmod(0o700)
+    path = tmp_path / name
+    path.write_bytes(b"BYTE_EXACT_NONROOT_IO_ONLY")
+    path.chmod(0o600)
+    os.utime(path, ns=(1, path.stat().st_mtime_ns))
+    before, flags, actual_open = path.stat(), [], os.open
+    def observed_open(target, value, *args, **kwargs):
+        flags.append(value)
+        return actual_open(target, value, *args, **kwargs)
+    monkeypatch.setattr(custody.os, "open", observed_open)
+    assert custody._root_postseal_read(path, custody.CONTROL_BOUND) == b"BYTE_EXACT_NONROOT_IO_ONLY"
+    assert custody.read_identity(before) == custody.read_identity(path.stat())
+    assert len(custody.read_identity(before)) == 10 and "st_blocks" in custody.read_identity(before)
+    assert "st_atime_ns" not in custody.read_identity(before)
+    assert not any(value & os.O_NOATIME for value in flags)
+    assert not custody._root_postseal_read_role()  # IO regression never admits ROOT.
+
+
+@pytest.mark.parametrize("defect", ["name", "parent", "symlink", "hardlink", "fifo", "bound", "writable", "blocks", "rebind"])
+def test_postseal_reader_rejects_untrusted_or_changed_own_nonroot_bytes(tmp_path, monkeypatch, defect):
+    tmp_path.chmod(0o700)
+    path = tmp_path / ("foreign.json" if defect == "name" else "custody-request.json")
+    if defect == "fifo": os.mkfifo(path, 0o600)
+    else:
+        path.write_bytes(b"OWN_IO_ONLY")
+        path.chmod(0o600)
+    if defect == "parent": tmp_path.chmod(0o755)
+    elif defect == "symlink":
+        path.rename(tmp_path / "target")
+        path.symlink_to(tmp_path / "target")
+    elif defect == "hardlink": os.link(path, tmp_path / "alias")
+    elif defect == "writable": path.chmod(0o622)
+    elif defect in ("blocks", "rebind"):
+        actual_read, actual_fstat, seen = os.read, os.fstat, []
+        def changed_read(fd, maximum):
+            raw = actual_read(fd, maximum)
+            if not seen:
+                seen.append(fd)
+                if defect == "rebind":
+                    path.rename(tmp_path / "former")
+                    path.write_bytes(b"OWN_IO_ONLY")
+                    path.chmod(0o600)
+            return raw
+        def changed_fstat(fd):
+            value = actual_fstat(fd)
+            if defect == "blocks" and fd in seen:
+                return SimpleNamespace(**{**calibration.identity(value), "st_blocks": value.st_blocks + 1})
+            return value
+        monkeypatch.setattr(custody.os, "read", changed_read)
+        monkeypatch.setattr(custody.os, "fstat", changed_fstat)
+    with pytest.raises((ValueError, OSError)):
+        custody._root_postseal_read(path, 1 if defect == "bound" else custody.CONTROL_BOUND)
+    if defect in ("blocks", "rebind"):
+        with pytest.raises(OSError) as closed: os.fstat(seen[0])
+        assert closed.value.errno == errno.EBADF
+
+
+@pytest.mark.parametrize("defect", [None, "uids", "groups", "nnp", "seccomp", "caps", "threads"])
+def test_postseal_role_is_live_kernel_readback_not_json_permission(monkeypatch, defect):
+    from scripts import rc6_root_actor_seal as seal
+    values = {"Uid": "0 0 0 0", "Gid": "0 0 0 0", "NoNewPrivs": "1", "Seccomp": "2",
+        "Seccomp_filters": "1", "Threads": "1", "CapInh": "0", "CapAmb": "0",
+        "CapPrm": hex(seal.RETAINED_MASK)[2:], "CapEff": hex(seal.RETAINED_MASK)[2:], "CapBnd": hex(seal.RETAINED_MASK)[2:]}
+    monkeypatch.setattr(custody.os, "getuid", lambda: 0)
+    monkeypatch.setattr(custody.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(custody.os, "getresuid", lambda: (0, 0, 1) if defect == "uids" else (0, 0, 0))
+    monkeypatch.setattr(custody.os, "getresgid", lambda: (0, 0, 0))
+    monkeypatch.setattr(custody.os, "getgroups", lambda: [1] if defect == "groups" else [])
+    if defect == "nnp": values["NoNewPrivs"] = "0"
+    if defect == "seccomp": values["Seccomp"] = "0"
+    if defect == "caps": values["CapBnd"] = "0"
+    if defect == "threads": values["Threads"] = "2"
+    monkeypatch.setattr(custody, "_proc_text", lambda path: "\n".join(k + ": " + v for k, v in values.items()))
+    if defect is None: assert custody._root_postseal_read_role()
+    else:
+        with pytest.raises(ValueError, match="KERNEL_ROLE_REQUIRED"): custody._root_postseal_read_role()
+
+
+@pytest.mark.parametrize("name", custody.ACTOR_RAW_NAMES)
+def test_actor_logs_use_pinned_original_nonroot_fin_before_decode(tmp_path, name):
+    manager = custody._manager(custody.ROOT)
+    manager["pre_capture_kernel_state"]()
+    path = tmp_path / name
+    kernel = manager["managed_native_child"]([sys.executable, "-I", "-B", "-c", "print('ACTUAL_CLOSED_ACTOR_TRACEBACK')"],
+        custody.ROOT, path, {"PATH": "/usr/bin:/bin"}, 5, terminate_grace=2, progress_poll=5)
+    raw = custody._closed_private_broker_raw(manager, kernel, path, owner_uid=os.getuid(), owner_gid=os.getgid())
+    assert kernel["actual_child_reaped"] and kernel["owned_children_exhaustion_verified"]
+    assert raw == path.read_bytes() == b"ACTUAL_CLOSED_ACTOR_TRACEBACK\n"
+    with pytest.raises(json.JSONDecodeError): json.loads(raw)
+
+
+def test_frozen_runpy_actor_command_preserves_fixed_case_and_source(tmp_path):
+    assert custody.actor_command("root-success", tmp_path / "custody-request.json") == [sys.executable, "-I", "-B", "-c",
+        custody.ROOT_ACTOR_RUNPY_LAUNCHER, str(custody.ROOT / custody.MEMBER), "--actor-case", "root-success",
+        "--request", str(tmp_path / "custody-request.json")]
+    with pytest.raises(ValueError): custody.actor_command("foreign", tmp_path / "custody-request.json")
+
+
+@pytest.mark.parametrize("executable", [sys.executable, "/usr/bin/python3"], ids=["selected-python", "system-python"])
+def test_real_nonroot_same_root_bpf_filename_denial_runpy_inheritance_and_three_git_commands(tmp_path, executable, record_testsuite_property):
+    from scripts import rc6_root_actor_seal as seal
+    # Three tiny synthetic Git fixture objects; no copy or mutation of Source.
+    repo = tmp_path / "own-git"
+    (repo / ".git/objects").mkdir(parents=True)
+    def obj(kind, raw):
+        full = kind.encode() + b" " + str(len(raw)).encode() + b"\0" + raw
+        digest = hashlib.sha1(full).hexdigest()
+        folder = repo / ".git/objects" / digest[:2]
+        folder.mkdir(exist_ok=True)
+        (folder / digest[2:]).write_bytes(zlib.compress(full))
+        return digest
+    blob = obj("blob", b"OWN_GIT_ONLY\n")
+    tree = obj("tree", b"100644 README\0" + bytes.fromhex(blob))
+    commit = obj("commit", ("tree " + tree + "\nauthor Fixture <fixture@invalid> 1 +0000\ncommitter Fixture <fixture@invalid> 1 +0000\n\nOwn fixture\n").encode())
+    (repo / ".git/HEAD").write_text(commit + "\n")
+    (repo / ".git/refs").mkdir()
+    (repo / ".git/config").write_text("[core]\nrepositoryformatversion = 0\nbare = false\n")
+    (repo / "README").write_bytes(b"OWN_GIT_ONLY\n")
+    subprocess.run(["git", "-C", str(repo), "read-tree", "HEAD"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), "update-index", "--refresh"], check=True, capture_output=True)
+    stub = tmp_path / "own-worker.py"
+    stub.write_text('''import sys,json,os
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from scripts import rc6_root_actor_seal as s
+from scripts import rc6_privileged_custody as c
+p=json.loads(sys.argv[2])
+r=s.install_nonroot_test_seal(owner_uid=os.getuid(),owner_gid=os.getgid(),inherited=p)
+print(json.dumps({"receipt":r,"file":__file__,"argv":sys.argv,"version":sys.version,"control":c._root_postseal_read(Path(sys.argv[3]),c.CONTROL_BOUND).decode(),"source_hash":c.sha256(c._root_postseal_read(c.ROOT/c.MEMBER,c.CONTROL_BOUND))}))
+''')
+    own_control = tmp_path / "custody-request.json"
+    tmp_path.chmod(0o700)
+    own_control.write_bytes(b"OWN_BYTE_EXACT")
+    own_control.chmod(0o600)
+    code = '''import sys,os,json,ctypes
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from scripts import rc6_root_actor_seal as s
+from scripts import rc6_privileged_custody as c
+from scripts import rc6_capacity_calibration as a
+root=Path(sys.argv[2]);stub=root/'own-worker.py';exe=sys.argv[5]
+m=c._manager(c.ROOT)
+p=s.install_nonroot_test_seal(owner_uid=os.getuid(),owner_gid=os.getgid())
+l=ctypes.CDLL(None,use_errno=True);ctypes.set_errno(0)
+assert l.ioctl(-1,0x5451,0)==-1 and ctypes.get_errno()==1
+env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C.UTF-8'}
+old=m['managed_native_child']([exe,'-I','-B',str(stub)],root,root/'old.log',env,5,terminate_grace=2,progress_poll=5)
+assert m['managed_custody_closed'](old) and old['returncode']==2
+assert b'Operation not permitted' in (root/'old.log').read_bytes()
+argv=[exe,'-I','-B','-c',c.ROOT_ACTOR_RUNPY_LAUNCHER,str(stub),sys.argv[1],json.dumps(p),str(root/'custody-request.json')]
+new=m['managed_native_child'](argv,root,root/'new.log',env,10,terminate_grace=2,progress_poll=5)
+assert m['managed_custody_closed'](new) and m['managed_phase_green'](new),(new,(root/'new.log').read_bytes())
+w=json.loads((root/'new.log').read_bytes())
+s.validate_inheritance_evidence(w['receipt'],p,owner_uid=os.getuid(),owner_gid=os.getgid())
+a.source_pin(root/'own-git',sys.argv[3],sys.argv[4])
+assert s.assert_current_seal(owner_uid=os.getuid(),owner_gid=os.getgid())==p
+helpk=m['managed_native_child']([exe,'-I','-B','-c',c.ROOT_ACTOR_RUNPY_LAUNCHER,str(c.ROOT/c.MEMBER),'--help'],root,root/'help.log',env,5,terminate_grace=2,progress_poll=5)
+assert m['managed_custody_closed'](helpk) and m['managed_phase_green'](helpk),(helpk,(root/'help.log').read_bytes())
+assert b'--actor-case' in (root/'help.log').read_bytes()
+print(json.dumps({'parent':p,'worker':w,'old_kernel':old,'new_kernel':new,'helper_kernel':helpk,'uid':os.getuid(),'gid':os.getgid(),'three_git_commands_passed':True}))
+'''
+    process = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(custody.ROOT), str(tmp_path), commit, tree, executable],
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25, check=False,
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "PYTHONDONTWRITEBYTECODE": "1"})
+    assert process.returncode == 0, process.stderr.decode()
+    assert len(process.stdout) < 128 * 1024
+    result = json.loads(process.stdout)
+    assert result["worker"]["file"] == str(stub) and result["worker"]["argv"][0] == str(stub)
+    assert result["worker"]["control"] == "OWN_BYTE_EXACT" and result["three_git_commands_passed"]
+    for receipt in (result["parent"], result["worker"]["receipt"]):
+        assert receipt["scope"] == "NONROOT_TEST_ONLY" and receipt["ROOT_custody_certified"] is False
+        assert receipt["G0_G8_qualification"] is receipt["quota_bootstrap_allowed"] is False
+    seal.validate_inheritance_evidence(result["worker"]["receipt"], result["parent"], owner_uid=result["uid"], owner_gid=result["gid"])
+    assert result["worker"]["source_hash"] == hashlib.sha256((custody.ROOT / custody.MEMBER).read_bytes()).hexdigest()
+    label = "system" if executable == "/usr/bin/python3" else "epoch"
+    def record_property(key, value): record_testsuite_property(label + "_" + key, value)
+    record_property("actual_child_python_version", result["worker"]["version"])
+    record_property("actual_child_python_binary", str(Path(executable).resolve(strict=True)))
+    record_property("original_helper_FIN", result["helper_kernel"]["actual_child_reaped"])
+    binary = Path(executable).resolve(strict=True)
+    descriptor = os.open(binary, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        before, total, digest = os.fstat(descriptor), 0, hashlib.sha256()
+        record_property("actual_child_python_binary_bytes", before.st_size)
+        if before.st_size <= custody.SYSTEMD_BINARY_BOUND:
+            while True:
+                raw = os.read(descriptor, 65536)
+                if not raw: break
+                total += len(raw)
+                assert total <= custody.SYSTEMD_BINARY_BOUND
+                digest.update(raw)
+            assert total == before.st_size and custody.read_identity(before) == custody.read_identity(os.fstat(descriptor)) == custody.read_identity(binary.lstat())
+            record_property("actual_child_python_binary_sha256", digest.hexdigest())
+        else:
+            record_property("actual_child_python_binary_hash", "UNKNOWN_SIZE_ABOVE_16_MiB_DIAGNOSTIC_BOUND")
+    finally: os.close(descriptor)
+
+
+def test_postseal_reader_rejects_dotdot_alias_before_io(tmp_path, monkeypatch):
+    monkeypatch.setattr(custody.os, "open", lambda *args, **kwargs: pytest.fail("Aliased path opened"))
+    with pytest.raises(ValueError, match="NOFOLLOW_BOUND_REQUIRED"):
+        custody._root_postseal_read(tmp_path / ".." / tmp_path.name / "custody-request.json", custody.CONTROL_BOUND)
 
 
 def hashes():
@@ -896,7 +1104,8 @@ def test_private_raw_is_pinned_after_actual_nonroot_fin_before_secondary_checks(
 
 
 @pytest.mark.parametrize("failure", ["fin", "echild"])
-def test_private_raw_never_opens_or_transfers_before_original_fin_and_echild(tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize("name", ("private-broker-native.log", *custody.ACTOR_RAW_NAMES))
+def test_private_raw_never_opens_or_transfers_before_original_fin_and_echild(tmp_path, monkeypatch, failure, name):
     seen = []
     def closed(kernel):
         seen.append("fin")
@@ -909,7 +1118,7 @@ def test_private_raw_never_opens_or_transfers_before_original_fin_and_echild(tmp
     monkeypatch.setattr(custody.os, "fchown", forbidden)
     with pytest.raises(ValueError):
         custody._closed_private_broker_raw({"managed_custody_closed": closed, "pre_capture_kernel_state": before},
-            {}, tmp_path / "private-broker-native.log", owner_uid=os.getuid(), owner_gid=os.getgid())
+            {}, tmp_path / name, owner_uid=os.getuid(), owner_gid=os.getgid())
     assert seen == (["fin"] if failure == "fin" else ["fin", "echild"])
 
 

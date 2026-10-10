@@ -536,3 +536,88 @@ paths/owners, cierre de FD y custodia del diagnóstico tienen regresiones
 positivas y negativas. La revisión independiente READ_ONLY del orden de
 FDs no halló writers nuevos privados antes del syscall; el kernel puede
 rechazarlo y conservará RED con RAW. No equivale a certificación ROOT.
+
+
+## Source88594fa1: montajes nativos correctos; arranque y lectura sellados
+
+CI exacta `88594fa1435e9ff21c6f2fdb9286ef340e740233`, tree
+`bd850ea2a39d9e20dc013a36182b57bb20344298`: run38062673643,
+job114243949626, **1959 PASS por cada Python3.11/3.12**, cero errores,
+fallos o skips. Artifact11673778033:968082B/22CRC/SHA256
+`64ec2dc8485770b0f1267ba50ac193850db6d7ec5ee93b7b5ba6083a50d490dd`.
+Source literal intacto, FIN/ECHILD y cleanup0foreign; wall95.517/99.029s,
+RSS máximo303906816/305418240B por época. PostFIN813473792/813412352B
+es inventario, no pico global. Ext4/4096:91478032384B e18422994inodos
+libres observados; no equivalen a cuota o reserva. Git histórico
+225492992→439869440B, límite512MiB original intacto/FIN/ECHILD.
+
+La única Native run38063198313/job114245476222/art11673279521 quedó RED:
+69274B/38CRC/SHA256
+`8ebb967c0241325816163684c0f74ca6a0845ff218b073c955f6da3a471b1216`.
+El RAW del montaje22786B/SHA256
+`d5e13e50a0390b045f767f84e764c01ce40d59466ef71ee7cb72df68c079bddb`
+demuestra ambos mount_setattr442 return0/errno0:32montajes RO antes de
+clear, después sólo control propio445RW; dev/inode/UID/GID0700 idénticos
+antes/después. Esto prueba ese algoritmo, no FIN ROOT ni G0.
+
+El actor primero falló antes de abrir el helper. RAW153B/SHA256
+`7684e10284f52165d5bc3ac590f0e9b70355fa61b4cf4f79cccfc541681f9a7a`:
+Python can'topenfile/errno1. Python3.12.3 está observado; su binario Ubuntu
+exacto no está hasheado. CPythonv3.12.3 documenta
+_Py_fopen_obj→set_inheritable→ioctlFIOCLEX0x5451; el sello deniega todo
+ioctl con EPERM y CPython no hace fallback para ese errno. El fix usa un
+launcher -I/-B/-c fijo y runpy para el mismo helper/argv, con atomicCLOEXEC.
+La regresión kernel NONROOT del entorno debe comprobar filenameRED,
+launcherpositivo, denegaciones/herencia y FIN original. No permite ioctl.
+
+El fallo secundario es independiente y está demostrado directamente:
+RAW1674B/SHA256
+`2beef261a5d0736b20e362f1f881f1ccb702ad12eeda0cba4e40f1e36e225bdd`,
+_broker_probe→calibration.read→open(O_NOATIME) devuelve EPERM después
+de chown1001; ROOT ya no es dueño y carece de CAP_FOWNER3 por diseño.
+Se auditaron también request/Source/manager/marker/mapping/parentseal:
+el actor heredado usaría el mismo flag sobre controles del runner.
+Se agrega lector acotado al rol sellado real, sin O_NOATIME, conservando
+NOFOLLOW/noalias/límites y diez campos originales, incluido st_blocks.
+Sólo ignora atime de lectura; calibration.read original y sus once campos
+permanecen byte exactos. Los cuatro logs se leen por FD propio fijado
+únicamente tras FIN/ECHILD, con transferencia de propiedad comprobada.
+No se agrega CAP_FOWNER ni se concede autoridad por JSON o por ese lector.
+
+Una única frontera de custodia sigue en PID1 ROOT privado y su manager
+original: nacimiento/pidfd/wait4/señal/FIN de sus workers. systemd aporta
+watchdog del cgroup y ACK externo, sin sustituir ese FIN. Montajes/proc
+limitan visibilidad, el sello irreversible bloquea escapes y el drop fijo
+protege workers NONROOT. Se conservan controles sin eliminar redundancias
+por sospecha. El rol ROOT de preparación de cuota aún requiere revisión;
+el sello postsetup probado no autoriza ese ancestro privilegiado.
+
+ClientFIN/ECHILD10.517s/RSS100339712B; ROOT_FIN UNKNOWN, namespace
+retenido, cleanupfalse/reservecredit0. Birth/pidfd privado y sello del
+parent se alcanzaron por flujo del Source exacto, pero el helper del actor
+no abrió y no se probaron sus cuatro casos. El errno final del226
+histórico sigue UNKNOWN. Ningún retry del mismo SHA. Source sucesor exige
+CI exacta antes de una única Native nueva. G0/cuota/reservas, equivalencia
+PROC_EACCES, lector dual focal y1202ciclosG5 siguen sin aprobar; Horizon
+no se ejecuta antes de admisión. USD0 adicional recurrente, únicoPR483,
+PAPER/SHADOWreal0, PPI intacto, sin infraestructura/merge/deploy.
+
+
+Freeze Source sellado:560PASS en custodia+calibración por cada Python3.11/3.12,
+10.178/10.658s, cero errores/fallos/skips y nodeIDs iguales. JUnit
+`6266cf5192c3e5a6bfc1a3fb105447100e0184843006c99afd8d73f5ac47f955`/
+`e795781a6e89853b25f06b44f3370ace9747812da81fb5e4fc01accbffa610b4`.
+Helper139818B/SHA256
+`7601b96bf88cf2bdb9e266ba6aee6ddd075326adc59656013a6a52acab21dff0`;
+tests105473B/SHA256
+`211c12cef853fcd119e5fdfe43bd4731cd98b68e1e6e823ee159700c5a62cbcf`.
+Los procesos propios NONROOT con el BPF ROOT real comprobaron filename
+exit2/EPERM frente a launcher fijo positivo, herencia y denegaciónFIOCLEX,
+helper --help/FIN original, Source+control byte exacto y tresGit limpios.
+También se comprobó /usr/bin/python3 local3.13.5:6812336B/SHA256
+`17b78e0a93175e86f9ac03141924fd7a7f0c0c52e66b34bfa0de20ffef989df1`;
+no se confunde con Ubuntu3.12.3 de Actions. Las regresiones negativas
+cubren alias/symlinks/hardlinks/FIFO/bounds/owners/mountID/bloques/rebind
+y FIN/ECHILD antesIO. Revisión independiente READ_ONLY sin defecto
+bloqueante, AST/diffPASS, archivos originales de seguridad byte exactos.
+Esto sigue siendo prueba económica NONROOT, sin crédito de custodia ROOT.

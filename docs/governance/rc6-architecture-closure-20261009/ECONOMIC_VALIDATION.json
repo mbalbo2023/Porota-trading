@@ -1577,11 +1577,11 @@
       "G0_G8_qualification": false,
       "G7_G8_prepared": false,
       "deployed": false,
-      "exact_successor_economic_Actions": "NEW_SOURCE_PENDING_PRIOR_324e4273_SUCCESS_NOT_INHERITED",
+      "exact_successor_economic_Actions": "NEW_SOURCE_PENDING_88594fa1_SUCCESS_NOT_INHERITED",
       "material_gate_launched": false,
       "merged": false,
       "mode": "PRODUCTION_PAPER / SIMULATION",
-      "native_ROOT": "NOT_CERTIFIED_324e4273_PRIVATE_SETUP_READONLY_GUARD_RED",
+      "native_ROOT": "NOT_CERTIFIED_88594fa1_SEALED_PYTHON_STARTUP_AND_NOATIME_RED",
       "ppi_watch": "UNTOUCHED",
       "production_mutated": false,
       "real_orders_sent": 0,
@@ -2259,7 +2259,7 @@
       "systemd_observed_package": "255.4-1ubuntu8.17",
       "timeout_each_seconds": 5
     },
-    "recorded_utc": "2026-10-10T14:59:24.293615Z",
+    "recorded_utc": "2026-10-10T15:38:15.041859Z",
     "worker_dumpability_observation": {
       "contract_review_required_before_claiming_all_payload_DUMP0": true,
       "historical_filter_plan_sha256": "9daf64ba999008527b7220b4274e0e7439e27711608ec47b544b8e6e7e42dc2e",
@@ -3384,6 +3384,568 @@
         "original_Custody_manager_FIN_ECHILD_NONROOT_exercised": true,
         "native_G0_Horizon_launched": false
       }
+    },
+    "authenticated_source_88594fa1": {
+      "origin": {
+        "artifact_id": 11673778033,
+        "bytes": 968082,
+        "conclusion": "success",
+        "run_id": 38062673643,
+        "sha256": "64ec2dc8485770b0f1267ba50ac193850db6d7ec5ee93b7b5ba6083a50d490dd",
+        "source_sha": "88594fa1435e9ff21c6f2fdb9286ef340e740233",
+        "source_tree": "bd850ea2a39d9e20dc013a36182b57bb20344298"
+      },
+      "run": {
+        "job_id": 114243949626,
+        "labels": [
+          "ubuntu-24.04"
+        ],
+        "run_attempt": 1,
+        "run_id": 38062673643,
+        "runner_group_name": "GitHub Actions",
+        "source_sha": "88594fa1435e9ff21c6f2fdb9286ef340e740233"
+      },
+      "members_crc_verified": 22,
+      "fullSource_unchanged": true,
+      "identities_equal": true,
+      "epochs": [
+        {
+          "epoch": "311",
+          "passed": true,
+          "tests": 1959,
+          "junit_sha256": "4929892266ec3f2a5f5b98717ee85045be5fa620d91dd44ba68c23a80557c1e3",
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "wall_seconds": 95.517136169,
+          "max_RSS_bytes_not_sum": 303906816,
+          "own_ECHILD": true,
+          "cleanup": {
+            "actual_owned_fin_closed": true,
+            "allocated_bytes_before": 813473792,
+            "capture_manifest_sha256": "a417cb5b84315833199adfd467a2ba1b3986039c7c996d7c1360def3276fc5b9",
+            "foreign_paths_removed": 0,
+            "namespace_removed": true,
+            "original_namespace_removed": true,
+            "retained_entries_before": 36286
+          },
+          "allocation_scope": "AFTER_OWN_FIN_BEFORE_OWN_CLEANUP_NOT_GLOBAL_PEAK"
+        },
+        {
+          "epoch": "312",
+          "passed": true,
+          "tests": 1959,
+          "junit_sha256": "5cf038b77358214f756ed4b04838050caa546738d3c06213641092edd1f33aa3",
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "wall_seconds": 99.028859189,
+          "max_RSS_bytes_not_sum": 305418240,
+          "own_ECHILD": true,
+          "cleanup": {
+            "actual_owned_fin_closed": true,
+            "allocated_bytes_before": 813412352,
+            "capture_manifest_sha256": "ff9540cd04f4bb9525d07a0a43037c5ed6a4f25ce99a29455744774ac20bc663",
+            "foreign_paths_removed": 0,
+            "namespace_removed": true,
+            "original_namespace_removed": true,
+            "retained_entries_before": 36272
+          },
+          "allocation_scope": "AFTER_OWN_FIN_BEFORE_OWN_CLEANUP_NOT_GLOBAL_PEAK"
+        }
+      ],
+      "fresh_physical_observation": {
+        "allocation_unit_bytes": 4096,
+        "filesystem_device": 66305,
+        "filesystem_type": "ext4",
+        "free_bytes": 91478032384,
+        "free_inodes": 18422994,
+        "mount_id": 27,
+        "path_identity": [
+          66305,
+          9175069,
+          1001,
+          1001,
+          16832
+        ],
+        "preferred_io_block_bytes": 4096,
+        "total_inodes": 19529728
+      },
+      "history_bootstrap": {
+        "ECHILD": true,
+        "G0_G8_qualification": false,
+        "actual_owned_FIN": true,
+        "foreign_removed": 0,
+        "git_after": {
+          "aggregate_bound_kind": "OBSERVED_SAMPLES_ONLY_NOT_KERNEL_QUOTA",
+          "allocated_bytes": 439869440,
+          "continuous_peak_proved": false,
+          "entries": 55,
+          "maximum_allocated_bytes": 536870912,
+          "maximum_entries": 100000,
+          "maximum_file_bytes": 268435456
+        },
+        "git_before": {
+          "aggregate_bound_kind": "OBSERVED_SAMPLES_ONLY_NOT_KERNEL_QUOTA",
+          "allocated_bytes": 225492992,
+          "continuous_peak_proved": false,
+          "entries": 36,
+          "maximum_allocated_bytes": 536870912,
+          "maximum_entries": 100000,
+          "maximum_file_bytes": 268435456
+        },
+        "manifest_sha256": "5f14fab739ba1651a72148d38bdab18d2a15a5d6d70d03fdead1967e3e6167a4",
+        "peak_RSS_bytes_not_sum": 229019648,
+        "real_orders_sent": 0,
+        "run_id": 38062673643,
+        "schema": "porota.rc6.authentic-economic-history-readout.v1",
+        "source_sha": "88594fa1435e9ff21c6f2fdb9286ef340e740233",
+        "source_tree": "bd850ea2a39d9e20dc013a36182b57bb20344298",
+        "wall_seconds": 6.144000879999993
+      },
+      "readout_sha256": "e66a767101c111e51403d00e74e7c39e3c314f4a115229d8dae2984d12872ac3",
+      "original_full_case_identities_retained_in_artifact_not_duplicated_in_Source": true,
+      "G0_G8_qualification": false,
+      "whole_Droplet_capacity_proved": false
+    },
+    "authenticated_native_88594fa1": {
+      "source_sha": "88594fa1435e9ff21c6f2fdb9286ef340e740233",
+      "source_tree": "bd850ea2a39d9e20dc013a36182b57bb20344298",
+      "run_id": 38063198313,
+      "job_id": 114245476222,
+      "artifact_id": 11673279521,
+      "artifact_bytes": 69274,
+      "artifact_sha256": "8ebb967c0241325816163684c0f74ca6a0845ff218b073c955f6da3a471b1216",
+      "members_crc_verified": 38,
+      "status": "RED",
+      "error_signature": "ROOT_CUSTODY_NATIVE_BROKER_PROBE_RED",
+      "ROOT_FIN": "UNKNOWN",
+      "ROOT_custody_proved": false,
+      "namespace_retained": true,
+      "cleanup_authorized": false,
+      "reserve_credit_bytes": 0,
+      "capture_manifests": {
+        "custody-raw/closed-client-raw/manifest.json": {
+          "members": 12,
+          "sha256": "fac6a632b39bba7f88c4bbe4197a3e56fc60350d0b029148d4daf972b5d5a1c6"
+        },
+        "filter/manifest.json": {
+          "members": 7,
+          "sha256": "81a0cc80e81ff65287a9bfb475013513a18a768525daf648099623ff53fca1bc"
+        },
+        "systemd-startup/raw/manifest.json": {
+          "members": 9,
+          "sha256": "5fe9fbb27bfbf4c2e98b3753c8ffd65fa6dd15768b101b2baf165ea0cd408384"
+        }
+      },
+      "captured_member_hashes_verified": true,
+      "quota_proved": false,
+      "reserves_proved": false,
+      "material_gate_launched": false,
+      "G0_G8_qualification": false,
+      "private_broker_RAW": {
+        "ROOT_FIN_claimed": false,
+        "ROOT_custody_qualified": false,
+        "bytes": 1674,
+        "relative_source": "private-broker-native.log",
+        "scope": "DIAGNOSTIC_ONLY",
+        "sha256": "2beef261a5d0736b20e362f1f881f1ccb702ad12eeda0cba4e40f1e36e225bdd",
+        "status": "CAPTURED_PRIVATE_RAW_DIAGNOSTIC_ONLY"
+      },
+      "causal_RAW_members": {
+        "custody-raw/closed-client-raw/manifest.json": {
+          "custody-native.log": {
+            "bytes": 1441,
+            "sha256": "652bf6a297cc7707395333fa518b8dd925bf2ccedbd3cb7908c82ca162265f5d"
+          },
+          "diagnostic-journal-query.log": {
+            "bytes": 4011,
+            "sha256": "3798165cca347a2cd345da20983e4b61237e3f00f43b27b0ef0ff64d24030f09"
+          },
+          "diagnostic-unit-query.log": {
+            "bytes": 147,
+            "sha256": "0fc827820912c2b8aff3e6ea2881c7e4fe262bb8424ddb9d6e9aca34e971e282"
+          },
+          "private-broker-native.log": {
+            "bytes": 1674,
+            "sha256": "2beef261a5d0736b20e362f1f881f1ccb702ad12eeda0cba4e40f1e36e225bdd"
+          },
+          "root-success.native.log": {
+            "bytes": 153,
+            "sha256": "7684e10284f52165d5bc3ac590f0e9b70355fa61b4cf4f79cccfc541681f9a7a"
+          }
+        }
+      },
+      "readout_sha256": "3852c0950364cbe108c5ceef148032b7685ee72b7e7d567c62fc309753d10e8c",
+      "client": {
+        "returncode": 1,
+        "wall_seconds": 10.517480085999992,
+        "peak_rss_bytes": 100339712,
+        "owned_children_exhaustion_verified": true
+      },
+      "namespace_filter": {
+        "actors": {
+          "supervisor": {
+            "denials": 26,
+            "dumpable": 0,
+            "filters_after": 1,
+            "filters_before": 0,
+            "module_sha256": "c6efda60cee1b9d6a899ff27da05993b5287e0082c22f1f5999a1a1e570ac21f",
+            "plan_sha256": "9daf64ba999008527b7220b4274e0e7439e27711608ec47b544b8e6e7e42dc2e",
+            "rule_count": 57
+          },
+          "worker": {
+            "denials": 26,
+            "dumpable": 1,
+            "filters_after": 2,
+            "filters_before": 1,
+            "module_sha256": "c6efda60cee1b9d6a899ff27da05993b5287e0082c22f1f5999a1a1e570ac21f",
+            "plan_sha256": "9daf64ba999008527b7220b4274e0e7439e27711608ec47b544b8e6e7e42dc2e",
+            "rule_count": 57
+          }
+        },
+        "capture_manifest_sha256": "81a0cc80e81ff65287a9bfb475013513a18a768525daf648099623ff53fca1bc",
+        "cleanup": {
+          "actual_owned_fin_closed": true,
+          "allocated_bytes_before": 69632,
+          "binding": {
+            "attempt_id": "38063198313-1",
+            "candidate_sha": "88594fa1435e9ff21c6f2fdb9286ef340e740233",
+            "candidate_tree": "bd850ea2a39d9e20dc013a36182b57bb20344298",
+            "owner_id": "CODEX_RC6_NATIVE_CERTIFICATION_20261010",
+            "producer": "NATIVE_FILTER_PREREQUISITES",
+            "runner_class": "github-hosted/ubuntu-24.04",
+            "workload_fingerprint": "eed874e7d9bc2206afb0408fb654911ab61bd35871e7974b9fd9527d97ff51bd"
+          },
+          "capacity_after": {
+            "allocation_unit_bytes": 4096,
+            "filesystem_device": 2049,
+            "filesystem_type": "ext4",
+            "free_bytes": 91704623104,
+            "free_inodes": 18423175,
+            "mount_id": 27,
+            "path_identity": [
+              2049,
+              1597,
+              1001,
+              1001,
+              16872
+            ],
+            "preferred_io_block_bytes": 4096,
+            "total_inodes": 19529728
+          },
+          "capacity_before": {
+            "allocation_unit_bytes": 4096,
+            "filesystem_device": 2049,
+            "filesystem_type": "ext4",
+            "free_bytes": 91704553472,
+            "free_inodes": 18423166,
+            "mount_id": 27,
+            "path_identity": [
+              2049,
+              9175042,
+              1001,
+              1001,
+              16832
+            ],
+            "preferred_io_block_bytes": 4096,
+            "total_inodes": 19529728
+          },
+          "capture_manifest_sha256": "81a0cc80e81ff65287a9bfb475013513a18a768525daf648099623ff53fca1bc",
+          "capture_path": "/home/runner/work/_temp/rc6-small-native-controls/filter",
+          "directory_inode_removed": true,
+          "file_modes_changed_for_retirement": 0,
+          "foreign_paths_removed": 0,
+          "global_cleanup_claimed": false,
+          "link_targets_followed": false,
+          "namespace_nonce": "60044e5eb4414a1dbe0f7fe3ee4df72d",
+          "namespace_removed": true,
+          "original_namespace_removed": true,
+          "original_path_is_nonexistent": true,
+          "owned_fin_kind": "NATIVE_WAIT4_OWNED_FIN",
+          "path_replaced_by_authenticated_numbering_control": false,
+          "phase_green": true,
+          "post_fin_directory_permission_transitions_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "post_fin_owned_directory_owner_write_changes": 0,
+          "real_orders_sent": 0,
+          "retained_entries_before": 9,
+          "runtime_paths_authorized": false,
+          "schema": "porota.rc6.generated-fixture-scoped-cleanup.v1"
+        },
+        "max_RSS_bytes_not_sum": 100339712,
+        "status": "PASS_NATIVE_FILTER_ONLY",
+        "wall_seconds": 0.20084503900000072
+      },
+      "native_mount_readback": {
+        "status": "SETUP_READBACK_ONLY_NO_ROOT_QUALIFICATION",
+        "scope": "DIAGNOSTIC_ONLY",
+        "bytes": 22786,
+        "sha256": "d5e13e50a0390b045f767f84e764c01ce40d59466ef71ee7cb72df68c079bddb",
+        "operations": [
+          {
+            "errno": 0,
+            "operation": "old_proc_detach",
+            "returncode": 0,
+            "target": "/proc"
+          },
+          {
+            "errno": 0,
+            "operation": "proc_mount",
+            "returncode": 0,
+            "target": "/proc"
+          },
+          {
+            "errno": 0,
+            "operation": "old_devpts_detach",
+            "returncode": 0,
+            "target": "/dev/pts"
+          },
+          {
+            "errno": 0,
+            "operation": "devpts_mount",
+            "returncode": 0,
+            "target": "/dev/pts"
+          },
+          {
+            "attr_clr": 0,
+            "attr_set": 1,
+            "attribute_bytes": 32,
+            "descriptor_scope": "AT_FDCWD",
+            "errno": 0,
+            "flags": 33024,
+            "operation": "mount_setattr",
+            "path": "/",
+            "propagation": 0,
+            "returncode": 0,
+            "syscall_number": 442,
+            "userns_fd": 0
+          },
+          {
+            "attr_clr": 1,
+            "attr_set": 0,
+            "attribute_bytes": 32,
+            "descriptor_scope": "FRESH_PRIVATE_CONTROL",
+            "errno": 0,
+            "flags": 4096,
+            "operation": "mount_setattr",
+            "path": "",
+            "propagation": 0,
+            "returncode": 0,
+            "syscall_number": 442,
+            "userns_fd": 0
+          }
+        ],
+        "private_control_before": {
+          "identity": [
+            2049,
+            9175043,
+            1001,
+            1001,
+            448
+          ],
+          "private_mount_id": 445,
+          "target": "/home/runner/r6-uCYMyiE2SZ28RzEbAwdxGw"
+        },
+        "private_control_after": {
+          "identity": [
+            2049,
+            9175043,
+            1001,
+            1001,
+            448
+          ],
+          "private_mount_id": 445,
+          "target": "/home/runner/r6-uCYMyiE2SZ28RzEbAwdxGw"
+        },
+        "snapshots": {
+          "mountinfo_after": {
+            "bytes": 3792,
+            "rows": 32,
+            "sha256": "812b89669481f28b2fe9135fbecb1258724d833262abead88e428e61d5c1c748",
+            "writable_rows_count": 1
+          },
+          "mountinfo_after_recursive_readonly": {
+            "bytes": 3792,
+            "rows": 32,
+            "sha256": "bc69da05e920ab84675fb84c948e9bae7763407abe24cd95498e70386d64be2a",
+            "writable_rows_count": 0
+          },
+          "mountinfo_before": {
+            "bytes": 4036,
+            "rows": 35,
+            "sha256": "c90edc349825b16cd994cef836741a85699329e845b62a740e9dc65b570b89a1",
+            "writable_rows_count": 16
+          },
+          "mountinfo_before_readonly": {
+            "bytes": 3792,
+            "rows": 32,
+            "sha256": "e6da5d3dea24203b7aa2401d551fe944823bb7ce5f9692d5056e80d13e826e96",
+            "writable_rows_count": 13
+          }
+        },
+        "ALL_rows_readonly_before_control_clear": true,
+        "only_exact_private_control_writable_after_clear": true,
+        "ROOT_FIN_or_quota_granted_by_diagnostic": false
+      },
+      "own_boot_and_unit_journal": {
+        "boot_id": "6ac40ded7cef41bb841f8bd6ecd52cb8",
+        "unit": "rc6-native-b8260cca2136499dbc47311b0307711b.service",
+        "original_unit_bytes": 4266,
+        "original_unit_sha256": "daa49763307034921a0d1912bab8f4c9198d93ea23725644eef32f91db3c542f",
+        "journal_rows": 4,
+        "journal_bytes": 4011,
+        "journal_sha256": "3798165cca347a2cd345da20983e4b61237e3f00f43b27b0ef0ff64d24030f09",
+        "exit": "1/FAILURE",
+        "EXIT_NAMESPACE_226_present": false
+      }
+    },
+    "sealed_python_io_corrective_review": {
+      "status": "SUCCESSOR_EXACT_CI_THEN_ONE_NATIVE_REQUIRED",
+      "primary": {
+        "raw_path": "root-success.native.log",
+        "bytes": 153,
+        "sha256": "7684e10284f52165d5bc3ac590f0e9b70355fa61b4cf4f79cccfc541681f9a7a",
+        "operation": "CPYTHON_FILENAME_STARTUP_BEFORE_HELPER_INSTRUCTIONS",
+        "raw_errno": 1,
+        "raw_error": "OPERATION_NOT_PERMITTED",
+        "observed_python_version": "3.12.3",
+        "ubuntu_python_binary_and_distribution_patch_hash_verified": false,
+        "upstream_path": "pymain_run_file_obj->_Py_fopen_obj->set_inheritable->ioctl(FIOCLEX=0x5451)",
+        "exact_local_nonroot_kernel_replay_required": true,
+        "upstream_sources": [
+          {
+            "url": "https://github.com/python/cpython/blob/v3.12.3/Modules/main.c#L317",
+            "sha256": "bd994fa4a7b9d73c46078dc2a962c423dfd67cfecb8309d43ceb40c3682b64a2"
+          },
+          {
+            "url": "https://github.com/python/cpython/blob/v3.12.3/Python/fileutils.c#L1502",
+            "sha256": "0742dd5d83b9e1b2642feb09de9a4489e84272d96e16309f44362deb278df652"
+          }
+        ],
+        "minimum_fix": "FIXED_ISOLATED_C_LAUNCHER_RUNPY_ATOMIC_CLOEXEC_FOR_FROZEN_HELPER",
+        "ioctl_allowance_added": false,
+        "local_nonroot_kernel_replay": "FILENAME_EPERM_EXIT2_FIXED_C_POSITIVE_EXACT_ROOT_BPF_INHERITANCE_FIOCLEX_DENIED_THREE_GIT_AND_ORIGINAL_FIN"
+      },
+      "secondary": {
+        "raw_path": "private-broker-native.log",
+        "bytes": 1674,
+        "sha256": "2beef261a5d0736b20e362f1f881f1ccb702ad12eeda0cba4e40f1e36e225bdd",
+        "operation": "_broker_probe->_read->calibration.read:open(O_NOATIME) AFTER chown1001",
+        "raw_errno": 1,
+        "condition": "ROOT_NOT_FILE_OWNER_AND_CAP_FOWNER_DROPPED",
+        "kernel_sources": [
+          {
+            "url": "https://github.com/torvalds/linux/blob/v6.17/fs/namei.c#L3491",
+            "sha256": "a812c54a4cdf887c4fdf40dc56c4aa319434fe297c253320707835647e88adc2"
+          },
+          {
+            "url": "https://github.com/torvalds/linux/blob/v6.17/fs/inode.c#L2589",
+            "sha256": "0b8944a2513a2dbaa654bd91df226a43f192057f057a702e69b66d347f864665"
+          }
+        ],
+        "minimum_fix": "ROLE_SCOPED_POSTSEAL_READ_WITHOUT_NOATIME_AND_PINNED_CLOSED_ACTOR_RAW",
+        "postseal_reads_audited": [
+          "request",
+          "helper_and_all_source_hashes",
+          "original_manager",
+          "marker",
+          "private_mapping",
+          "private_parent_seal",
+          "four_actor_logs"
+        ],
+        "original_calibration_read_and_11_field_identity_changed": false,
+        "new_postseal_reader_ignores_only_filesystem_read_atime": true,
+        "new_postseal_reader_retains_other_10_original_fields_including_blocks": true,
+        "CAP_FOWNER_added": false
+      },
+      "original_EXIT_NAMESPACE_226_final_errno": "UNKNOWN_NOT_INFERRED_FROM_IGNORED_EBUSY",
+      "Root_private_birth_pidfd_and_parent_seal_reached_by_exact_source_flow": true,
+      "first_actor_started_python_but_failed_before_helper_open": true,
+      "all_four_original_cases_or_full_ROOT_FIN_qualified": false,
+      "original_manager_root_seal_filter_plans_caps_drop_systemd_limits_changed": false,
+      "identical_Source88594fa1_native_retry_allowed": false,
+      "contract_equivalence_approved": false,
+      "G0_G8_qualification": false,
+      "local_frozen_regressions": {
+        "epoch_case_identities_equal": true,
+        "epochs": {
+          "311": {
+            "errors": 0,
+            "failures": 0,
+            "junit_path": "/workspace/scratch/rc6-custody-source8-311.xml",
+            "properties": {
+              "epoch_actual_child_python_binary": "/workspace/scratch/rc6-python/cpython-3.11.16-linux-x86_64-gnu/bin/python3.11",
+              "epoch_actual_child_python_binary_bytes": "21740504",
+              "epoch_actual_child_python_binary_hash": "UNKNOWN_SIZE_ABOVE_16_MiB_DIAGNOSTIC_BOUND",
+              "epoch_actual_child_python_version": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+              "epoch_original_helper_FIN": "True",
+              "system_actual_child_python_binary": "/usr/bin/python3.13",
+              "system_actual_child_python_binary_bytes": "6812336",
+              "system_actual_child_python_binary_sha256": "17b78e0a93175e86f9ac03141924fd7a7f0c0c52e66b34bfa0de20ffef989df1",
+              "system_actual_child_python_version": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+              "system_original_helper_FIN": "True"
+            },
+            "sha256": "6266cf5192c3e5a6bfc1a3fb105447100e0184843006c99afd8d73f5ac47f955",
+            "skipped": 0,
+            "tests": 560,
+            "time": 10.178
+          },
+          "312": {
+            "errors": 0,
+            "failures": 0,
+            "junit_path": "/workspace/scratch/rc6-custody-source8-312.xml",
+            "properties": {
+              "epoch_actual_child_python_binary": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3.12",
+              "epoch_actual_child_python_binary_bytes": "30894944",
+              "epoch_actual_child_python_binary_hash": "UNKNOWN_SIZE_ABOVE_16_MiB_DIAGNOSTIC_BOUND",
+              "epoch_actual_child_python_version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+              "epoch_original_helper_FIN": "True",
+              "system_actual_child_python_binary": "/usr/bin/python3.13",
+              "system_actual_child_python_binary_bytes": "6812336",
+              "system_actual_child_python_binary_sha256": "17b78e0a93175e86f9ac03141924fd7a7f0c0c52e66b34bfa0de20ffef989df1",
+              "system_actual_child_python_version": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+              "system_original_helper_FIN": "True"
+            },
+            "sha256": "e795781a6e89853b25f06b44f3370ace9747812da81fb5e4fc01accbffa610b4",
+            "skipped": 0,
+            "tests": 560,
+            "time": 10.658
+          }
+        },
+        "files": {
+          "scripts/rc6_privileged_custody.py": {
+            "bytes": 139818,
+            "sha256": "7601b96bf88cf2bdb9e266ba6aee6ddd075326adc59656013a6a52acab21dff0"
+          },
+          "tests/test_rc6_privileged_custody.py": {
+            "bytes": 105473,
+            "sha256": "211c12cef853fcd119e5fdfe43bd4731cd98b68e1e6e823ee159700c5a62cbcf"
+          }
+        },
+        "scope": "NONROOT_ECONOMIC_ONLY_NO_ROOT_G0_CREDIT",
+        "state": "FROZEN_READ_ONLY"
+      },
+      "local_frozen_regressions_report_sha256": "460a01302b65ae23e7e28776eeb24607aee9e5d066f685feaa84b4b988b566c5",
+      "helper_sha256": "7601b96bf88cf2bdb9e266ba6aee6ddd075326adc59656013a6a52acab21dff0",
+      "tests_sha256": "211c12cef853fcd119e5fdfe43bd4731cd98b68e1e6e823ee159700c5a62cbcf",
+      "independent_READ_ONLY_review": "NO_BLOCKING_DEFECT_FOUND_KERNEL_ROOT_CUSTODY_STILL_PENDING"
+    },
+    "custody_layer_roles_and_compatibility_review": {
+      "single_custody_boundary": "PRIVATE_ROOT_PID1_OWNS_ORIGINAL_MANAGER_WAIT4_PIDFD_FOR_ITS_WORKERS",
+      "external_systemd_role": "BOUND_NAMESPACE_CGROUP_WATCHDOG_AND_AUTHENTIC_HOST_PID1_ACK",
+      "external_systemd_substitutes_worker_wait4_or_owned_FIN": false,
+      "private_mount_proc_role": "SINGLE_PRIVATE_PROC_AND_ALL_FOREIGN_MOUNTS_READONLY",
+      "ROOT_postsetup_seal_role": "IRREVERSIBLE_CAPABILITY_MINIMUM_PLUS_NATIVE_ESCAPE_DENIALS",
+      "NONROOT_worker_role": "ORIGINAL_FIXED_ALLGROUPS_DROP_PLUS_NATIVE_NAMESPACE_FILTER",
+      "redundant_controls_removed_without_adversarial_equivalence": false,
+      "demonstrated_interoperability_defects": [
+        "HOST_PROC1_ROOT_MAGICLINK_MASK_REPLACED_WITH_REAL_PROC1_DIRECTORY_MASK",
+        "PATHNAME_REMOUNT_READBACK_REPLACED_WITH_RECURSIVE_PER_MOUNT_RDONLY",
+        "CPYTHON_LEGACY_FOPEN_IOCTL_AND_NOATIME_AFTER_CAP_FOWNER_DROP"
+      ],
+      "quota_ancestor_uses_proved_postsetup_seal": false,
+      "quota_ancestor_and_original_PROC_EACCES_private_namespace_contract_review_required": true,
+      "contract_revision_approved": false
     }
   }
 }

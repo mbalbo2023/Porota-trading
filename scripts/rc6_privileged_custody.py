@@ -36,6 +36,10 @@ SYSTEMD_DENIED_FILTER = "~setns ptrace process_vm_readv process_vm_writev bpf op
 MANAGER_SHA256 = "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
 CONTROL_BOUND = 2 * 1024**2
 PRIVATE_MOUNT_DIAGNOSTIC = "private-mount-setup.native.json"
+ACTOR_RAW_NAMES = ("root-success.native.log", "failure-before-drop.native.log", "root-hang.native.log", "nonroot-hang.native.log")
+ROOT_POSTSEAL_CONTROL_NAMES = frozenset(("custody-request.json", ".porota-generated-fixture-owner.json",
+    "private-broker.observed.json", "private-parent-seal.json"))
+ROOT_ACTOR_RUNPY_LAUNCHER = 'import runpy,sys; p=sys.argv.pop(1); runpy.run_path(p,run_name="__main__")'
 OPTIONAL_FAILURE_RAW_NAMES = ("private-broker-native.log", "root-success.native.log",
     "failure-before-drop.native.log", "root-hang.native.log", "nonroot-hang.native.log", PRIVATE_MOUNT_DIAGNOSTIC)
 SYSTEMD_QUERY_BOUND = 65536
@@ -69,7 +73,82 @@ def sha256(raw):
 
 def _read(path, maximum=CONTROL_BOUND):
     from scripts import rc6_capacity_calibration as calibration
+    if _root_postseal_read_role():
+        return _root_postseal_read(path, maximum)
     return calibration.read(path, maximum)
+
+
+def read_identity(value):
+    """All eleven original identity fields except read-induced atime."""
+    from scripts import rc6_capacity_calibration as calibration
+    return {key: item for key, item in calibration.identity(value).items() if key != "st_atime_ns"}
+
+
+def _root_postseal_read_role():
+    """Kernel IO role only; never authority, boundary or ROOT certification."""
+    if os.getuid() != 0 or os.geteuid() != 0:
+        return False
+    values = dict(row.split(":", 1) for row in _proc_text("/proc/self/status").splitlines() if ":" in row)
+    if int(values["CapEff"].strip(), 16) & (1 << 3):
+        return False  # Unsealed setup retains the original O_NOATIME reader.
+    from scripts import rc6_root_actor_seal as seal
+    caps = {key: int(values[key].strip(), 16) for key in seal.CAP_FIELDS}
+    require(os.getresuid() == (0, 0, 0) and os.getresgid() == (0, 0, 0) and os.getgroups() == []
+            and values["Uid"].split() == ["0"] * 4 and values["Gid"].split() == ["0"] * 4
+            and values["NoNewPrivs"].strip() == "1" and values["Seccomp"].strip() == "2"
+            and int(values["Seccomp_filters"].strip()) > 0 and values["Threads"].strip() == "1"
+            and caps == {"CapInh": 0, "CapAmb": 0, "CapPrm": seal.RETAINED_MASK,
+                         "CapEff": seal.RETAINED_MASK, "CapBnd": seal.RETAINED_MASK},
+            "ROOT_CUSTODY_POSTSEAL_READ_KERNEL_ROLE_REQUIRED")
+    return True
+
+
+def _root_postseal_read(path, maximum):
+    """Bounded fixed-source/control reads without requiring CAP_FOWNER."""
+    from scripts import rc6_capacity_calibration as calibration
+    path = Path(path).absolute()
+    require(type(maximum) is int and 0 <= maximum <= CONTROL_BOUND and ".." not in path.parts
+            and not any(p.is_symlink() for p in (path, *path.parents)), "ROOT_CUSTODY_POSTSEAL_NOFOLLOW_BOUND_REQUIRED")
+    source_paths = {ROOT / member for member in calibration.CODE_MEMBERS}
+    parent = path.parent.lstat()
+    source = ROOT.lstat()
+    require(path in source_paths or (path.name in ROOT_POSTSEAL_CONTROL_NAMES and stat.S_ISDIR(parent.st_mode)
+            and parent.st_uid > 0 and parent.st_gid > 0 and stat.S_IMODE(parent.st_mode) == 0o700),
+            "ROOT_CUSTODY_POSTSEAL_FIXED_PATH_REQUIRED")
+    expected = source if path in source_paths else parent
+    directory = os.open(path.parent, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    descriptor = None
+    try:
+        require(read_identity(parent) == read_identity(os.fstat(directory)), "ROOT_CUSTODY_POSTSEAL_PARENT_REBOUND")
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=directory)
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and not stat.S_IMODE(before.st_mode) & 0o022
+                and before.st_size <= maximum and (before.st_dev, before.st_uid, before.st_gid)
+                == (expected.st_dev, expected.st_uid, expected.st_gid)
+                and calibration.descriptor_mount_id(descriptor) == calibration.descriptor_mount_id(directory)
+                and read_identity(before) == read_identity(path.lstat()), "ROOT_CUSTODY_POSTSEAL_PRIVATE_SOURCE_REQUIRED")
+        chunks, total = [], 0
+        while True:
+            part = os.read(descriptor, min(65536, maximum + 1 - total))
+            if not part:
+                break
+            total += len(part)
+            require(total <= maximum, "ROOT_CUSTODY_POSTSEAL_READ_BOUND")
+            chunks.append(part)
+        require(total == before.st_size and read_identity(before) == read_identity(os.fstat(descriptor))
+                == read_identity(path.lstat()) and read_identity(parent) == read_identity(path.parent.lstat()),
+                "ROOT_CUSTODY_POSTSEAL_READ_CHANGED")
+        return b"".join(chunks)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(directory)
+
+
+def actor_command(case, request_path):
+    require(case + ".native.log" in ACTOR_RAW_NAMES, "ROOT_CUSTODY_FIXED_ACTOR_CASE_REQUIRED")
+    return [sys.executable, "-I", "-B", "-c", ROOT_ACTOR_RUNPY_LAUNCHER, str(ROOT / MEMBER),
+            "--actor-case", case, "--request", str(request_path)]
 
 
 def _proc_text(path):
@@ -757,15 +836,13 @@ def _broker_probe(request, namespace, manager, controller):
     for case in ("root-success", "failure-before-drop", "root-hang", "nonroot-hang"):
         manager["pre_capture_kernel_state"]()
         output = namespace / (case + ".native.log")
-        command = [sys.executable, "-I", "-B", str(ROOT / MEMBER), "--actor-case", case,
-                   "--request", str(namespace / "custody-request.json")]
+        command = actor_command(case, namespace / "custody-request.json")
         kernel = manager["managed_native_child"](command, ROOT, output,
             {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8"},
             1 if "hang" in case else 10, terminate_grace=2, progress_poll=5)
         require(manager["managed_custody_closed"](kernel), "ROOT_CUSTODY_PROBE_ACTUAL_OWN_FIN_REQUIRED")
-        manager["pre_capture_kernel_state"]()
-        os.chown(output, request["owner_uid"], request["owner_gid"], follow_symlinks=False)
-        raw = _read(output)
+        raw = _closed_private_broker_raw(manager, kernel, output,
+            owner_uid=request["owner_uid"], owner_gid=request["owner_gid"])
         actor = json.loads(raw)
         require(actor["case"] == case and actor["root_before_drop"]["uids"] == [0] * 4
                 and actor["ROOT_parent"]["pid"] == os.getpid()
@@ -797,23 +874,33 @@ def _closed_private_broker_raw(manager, kernel, path, *, owner_uid, owner_gid):
     """Preserve closed producer bytes before any secondary pidfd/JSON check."""
     require(manager["managed_custody_closed"](kernel), "ROOT_CUSTODY_PRIVATE_BROKER_ACTUAL_FIN_REQUIRED")
     manager["pre_capture_kernel_state"]()
-    path = Path(path)
-    require(path.name == "private-broker-native.log" and type(owner_uid) is int and owner_uid > 0
-            and type(owner_gid) is int and owner_gid > 0, "ROOT_CUSTODY_PRIVATE_RAW_TARGET_INVALID")
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    path = Path(path).absolute()
+    require(path.name in ("private-broker-native.log", *ACTOR_RAW_NAMES) and type(owner_uid) is int and owner_uid > 0
+            and type(owner_gid) is int and owner_gid > 0 and ".." not in path.parts
+            and not any(p.is_symlink() for p in (path, *path.parents)), "ROOT_CUSTODY_PRIVATE_RAW_TARGET_INVALID")
+    directory = os.open(path.parent, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    descriptor = None
     try:
+        from scripts import rc6_capacity_calibration as calibration
+        parent = os.fstat(directory)
+        require(parent.st_uid == owner_uid and parent.st_gid == owner_gid
+                and read_identity(parent) == read_identity(path.parent.lstat()),
+                "ROOT_CUSTODY_PRIVATE_RAW_PARENT_INVALID")
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=directory)
         before = os.fstat(descriptor)
         require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
                 and before.st_uid in (os.geteuid(), owner_uid)
                 and before.st_gid in (os.getegid(), owner_gid)
                 and not stat.S_IMODE(before.st_mode) & 0o022 and before.st_size <= CONTROL_BOUND
-                and unit_source_identity(before) == unit_source_identity(path.lstat()),
+                and before.st_dev == parent.st_dev
+                and calibration.descriptor_mount_id(descriptor) == calibration.descriptor_mount_id(directory)
+                and read_identity(before) == read_identity(path.lstat()),
                 "ROOT_CUSTODY_PRIVATE_RAW_SOURCE_INVALID")
         # Change only the positively owned, pinned closed-producer descriptor.
         # FIN permits this diagnostic transfer; it grants no ROOT admission.
         os.fchown(descriptor, owner_uid, owner_gid)
         transferred = os.fstat(descriptor)
-        unchanged = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_mtime_ns")
+        unchanged = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_blocks", "st_mtime_ns")
         require(all(getattr(before, key) == getattr(transferred, key) for key in unchanged)
                 and transferred.st_uid == owner_uid and transferred.st_gid == owner_gid,
                 "ROOT_CUSTODY_PRIVATE_RAW_TRANSFER_CHANGED")
@@ -826,11 +913,14 @@ def _closed_private_broker_raw(manager, kernel, path, *, owner_uid, owner_gid):
             total += len(part)
             require(total <= CONTROL_BOUND, "ROOT_CUSTODY_PRIVATE_RAW_BYTES_BOUND")
         require(total == transferred.st_size
-                and unit_source_identity(transferred) == unit_source_identity(os.fstat(descriptor))
-                == unit_source_identity(path.lstat()), "ROOT_CUSTODY_PRIVATE_RAW_CHANGED")
+                and read_identity(transferred) == read_identity(os.fstat(descriptor))
+                == read_identity(path.lstat()) and read_identity(parent) == read_identity(path.parent.lstat()),
+                "ROOT_CUSTODY_PRIVATE_RAW_CHANGED")
         return b"".join(chunks)
     finally:
-        os.close(descriptor)
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(directory)
 
 
 def guardian_main(mode, request_path, name):
