@@ -1,6 +1,6 @@
 # POROTA TRADING — CODEX / AGENT ENTRYPOINT
 
-Version: `2026-10-03/1`
+Version: `2026-10-10/1`
 
 This file is the repository entrypoint for agents that start from the default branch. **`main` is NOT the operational truth for RC6.** Do not derive the current production baseline, runtime state, active workstreams, READY universe, or deploy status from `main`.
 
@@ -177,11 +177,13 @@ In particular, do not treat the old September continuity checkpoint referenced b
 
 ## 10. Starting a new Codex workstream
 
-A new Codex task should normally need only:
-1. this bootstrap;
-2. the current product branch `AGENTS.md` + policy/current evidence;
-3. the task-specific order/specification and attached evidence;
-4. fresh GitHub state.
+A new Codex task must recover context using the [RC6 agent continuity contract](docs/codex/RC6_AGENT_CONTINUITY_V1.md). That document is a recovery procedure, **not** a new source of runtime truth. The minimal sequence is:
+1. read this bootstrap and the continuity contract;
+2. resolve and inspect the **current** product branch `AGENTS.md`, operational policy and runtime/Actions evidence;
+3. read the complete task-specific order/specification and attached evidence;
+4. inspect current GitHub PRs, workstreams, and ownership; declare `READ_ONLY`/`WRITE_OWNER`/`DEPLOY_OWNER` with an exact SHA before any write.
+
+Codex memories and Cloud task environments must never be treated as proof that uncommitted changes, conversation history, current ownership or runtime state were inherited.
 
 The task-specific order is authoritative for scope. This bootstrap is authoritative for safety/governance. When they conflict, stop the conflicting action, preserve safety, and mark the issue `BLOQUEADO` or `NO_VERIFICADO` rather than inventing a resolution.
 
