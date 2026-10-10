@@ -862,8 +862,175 @@ def _closed_service(state):
         state["pidfd"] = None
 
 
+class CustodyFailure(ValueError):
+    """RED diagnostic only; this object is never a ROOT custody witness."""
+    def __init__(self, error, diagnostics):
+        super().__init__(str(error))
+        self.diagnostics = diagnostics
+
+
+def _failure_destination(destination, namespace):
+    path = Path(destination)
+    require(path.is_absolute() and ".." not in path.parts and not os.path.lexists(path)
+            and not path.is_relative_to(namespace.path) and not path.is_relative_to(ROOT)
+            and not namespace.path.is_relative_to(path)
+            and not any(p.is_symlink() for p in (path, *path.parents)),
+            "ROOT_CUSTODY_FRESH_OUTSIDE_CAPTURE_REQUIRED")
+    parent = path.parent.lstat()
+    require(stat.S_ISDIR(parent.st_mode) and parent.st_uid == os.geteuid(),
+            "ROOT_CUSTODY_DIAGNOSTIC_PARENT_CUSTODY_REQUIRED")
+    path.mkdir(mode=0o700)
+    return path
+
+
+def _diagnostic_bytes(path, raw):
+    require(len(raw) <= CONTROL_BOUND, "ROOT_CUSTODY_DIAGNOSTIC_BYTES_BOUND")
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb", closefd=False) as stream:
+            stream.write(raw)
+    finally:
+        os.close(descriptor)
+
+
+def _inactive_unit_readback(unit, raw, returncode):
+    """Read-only absence of writers, never signal/reap or ROOT FIN credit."""
+    require(type(unit) is str and re.fullmatch(r"rc6-native-[0-9a-f]{32}(?:-guard)?\.service", unit),
+            "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
+    expected = "/system.slice/" + unit
+    fields = ("Id", "LoadState", "ActiveState", "SubState", "MainPID", "ControlPID", "ControlGroup")
+    require(len(raw) <= 65536 and type(returncode) is int and returncode in (0, 4),
+            "ROOT_CUSTODY_DIAGNOSTIC_UNIT_QUERY_UNKNOWN")
+    rows = raw.decode("utf-8", errors="strict").splitlines()
+    require(len(rows) == len(fields) and all("=" in row for row in rows),
+            "ROOT_CUSTODY_DIAGNOSTIC_UNIT_FIELDS_UNKNOWN")
+    values = dict(row.split("=", 1) for row in rows)
+    require(set(values) == set(fields) and values["Id"] == unit
+            and values["LoadState"] in ("loaded", "not-found")
+            and values["ActiveState"] in ("inactive", "failed")
+            and values["SubState"] in ("dead", "failed")
+            and values["MainPID"] == values["ControlPID"] == "0"
+            and values["ControlGroup"] in ("", expected),
+            "ROOT_CUSTODY_DIAGNOSTIC_UNIT_STILL_ACTIVE_OR_UNKNOWN")
+    # systemctl returns 4 for an absent/collected unit. This remains a RED
+    # command: only exact not-found metadata plus actual cgroup absence/empty
+    # permits diagnostic RAW capture; it provides no ROOT FIN or phase GREEN.
+    require(returncode == 0 or values["LoadState"] == "not-found"
+            and values["ActiveState"] == "inactive" and values["SubState"] == "dead"
+            and values["ControlGroup"] == "", "ROOT_CUSTODY_DIAGNOSTIC_EXIT4_NOT_EXACT_ABSENCE")
+    state = _cgroup_writer_absence(unit)
+    return {"unit": unit, "properties": values, "cgroup_state": state,
+            "scope": "READONLY_WRITER_ABSENCE_ONLY", "ROOT_FIN_claimed": False,
+            "systemd_query_samples": 1, "fresh_systemd_recheck_after_capture": False}
+
+
+def _cgroup_writer_absence(unit):
+    require(type(unit) is str and re.fullmatch(r"rc6-native-[0-9a-f]{32}(?:-guard)?\.service", unit),
+            "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
+    expected = "/system.slice/" + unit
+    cgroup = Path("/sys/fs/cgroup") / expected.lstrip("/")
+    # A missing directory is usable only beneath a readable actual cgroup2
+    # mount. Absence of /sys/fs/cgroup itself is not proof of no writers.
+    mounts = [row.split() for row in _proc_text("/proc/self/mountinfo").splitlines()]
+    require(any(row[4] == "/sys/fs/cgroup" and row[row.index("-") + 1] == "cgroup2" for row in mounts),
+            "ROOT_CUSTODY_DIAGNOSTIC_CGROUP_MOUNT_UNKNOWN")
+    try:
+        before = cgroup.lstat()
+    except FileNotFoundError:
+        Path("/sys/fs/cgroup").lstat()
+        state = "EXACT_CGROUP_ABSENT"
+    else:
+        require(stat.S_ISDIR(before.st_mode), "ROOT_CUSTODY_DIAGNOSTIC_CGROUP_NOT_DIRECTORY")
+        events = dict(row.split() for row in _proc_text(cgroup / "cgroup.events").splitlines())
+        require(events.get("populated") == "0" and not _proc_text(cgroup / "cgroup.procs").strip()
+                and not _proc_text(cgroup / "cgroup.threads").strip()
+                and before == cgroup.lstat(), "ROOT_CUSTODY_DIAGNOSTIC_CGROUP_WRITERS_UNKNOWN")
+        state = "EXACT_CGROUP_NATIVE_EMPTY"
+    return state
+
+
+def _preserve_failure(context, destination, error):
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    from scripts import rc6_capacity_calibration as calibration
+    diagnostic = {"schema": "porota.rc6.root-custody-failure-diagnostic.v1", "status": "RED",
+        "error_class": type(error).__name__, "error_signature": str(error),
+        "scope": "ORIGINAL_NONROOT_CLIENT_ONLY", "ROOT_FIN": "UNKNOWN",
+        "ROOT_custody_qualified": False, "cleanup_authorized": False, "namespace_removed": False,
+        "reservation_recovery_credited_bytes": 0, "root_producer_RAW_read": False,
+        "writer_absence": "UNKNOWN", "real_orders_sent": 0}
+    namespace, fin = context.get("namespace"), context.get("fin")
+    if namespace is None:
+        return diagnostic
+    diagnostic.update(namespace_retained=str(namespace.path), binding=namespace.binding)
+    if fin is None or destination is None:
+        return diagnostic
+    output = None
+    try:
+        owned.require_fin(namespace, fin)
+        client_fin_raw = _read(namespace.path / fin.control_name, 1024**2)
+        diagnostic.update(client_kernel=context["kernel"], original_client_FIN_sha256=sha256(client_fin_raw),
+            original_client_FIN_control=fin.control_name, original_client_FIN_authenticated=True)
+        output = _failure_destination(destination, namespace)
+        _diagnostic_bytes(output / "client-fin-original.json", client_fin_raw)
+        # Query only the positively owned nonce unit; never enumerate, stop,
+        # signal, reset-failed or mutate any systemd/cgroup state.
+        unit = context["unit"]
+        query_kernel, query_fin = owned.execute_owned(namespace, ["systemctl", "show", "--no-pager",
+            "--property=Id,LoadState,ActiveState,SubState,MainPID,ControlPID,ControlGroup", "--", unit],
+            cwd=ROOT, environ={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, progress=None,
+            timeout_seconds=5, log_relative="diagnostic-unit-query.log", fin_label="diagnostic-unit-query")
+        owned.require_fin(namespace, query_fin)
+        query_raw = _read(namespace.path / "diagnostic-unit-query.log", 65536)
+        diagnostic["unit_query_kernel"] = query_kernel
+        diagnostic["unit_query_sha256"] = sha256(query_raw)
+        _diagnostic_bytes(output / "unit-query-original.log", query_raw)
+        try:
+            require(query_kernel["timed_out"] is False and query_kernel["returncode"] in (0, 4),
+                    "ROOT_CUSTODY_DIAGNOSTIC_QUERY_FIN_RED")
+            before = _inactive_unit_readback(unit, query_raw, query_kernel["returncode"])
+        except (ValueError, OSError, KeyError, UnicodeError) as readback_error:
+            diagnostic["writer_absence_error"] = str(readback_error)
+        else:
+            # The original raw stderr/stdout is opened only after actual
+            # owned client FIN and exact unit/cgroup absence of all writers.
+            require((namespace.path / context["log"]).lstat().st_size <= CONTROL_BOUND,
+                    "ROOT_CUSTODY_DIAGNOSTIC_LOG_BYTES_BOUND")
+            capture = owned.capture_required_evidence(namespace, query_fin, output / "closed-client-raw",
+                [context["log"], "diagnostic-unit-query.log"])
+            # Only cgroup state is read again. The single systemd query above
+            # is retained verbatim and never advertised as a fresh second one.
+            after = _cgroup_writer_absence(unit)
+            require(after == before["cgroup_state"], "ROOT_CUSTODY_DIAGNOSTIC_WRITER_ABSENCE_CHANGED")
+            diagnostic.update(writer_absence=before, root_producer_RAW_read=True,
+                cgroup_revalidated_after_capture=True,
+                diagnostic_capture=str(capture.path), diagnostic_capture_manifest_sha256=capture.manifest_sha256,
+                ROOT_custody_qualified=False)
+        calibration.publish(output / "failure.json", diagnostic)
+        diagnostic["diagnostic_root"] = str(output)
+    except (ValueError, OSError, KeyError, TypeError) as diagnostic_error:
+        diagnostic["preservation_error"] = str(diagnostic_error)
+        if output is not None:
+            try:
+                calibration.publish(output / "failure.json", diagnostic)
+                diagnostic["diagnostic_root"] = str(output)
+            except (ValueError, OSError):
+                pass  # The primary error and UNKNOWN must never be replaced.
+    return diagnostic
+
+
 def prove_custody(*, source, source_sha, source_tree, code_hashes, parent, binding, progress,
                   capture_parent=None):
+    context = {}
+    try:
+        return _prove_custody(source=source, source_sha=source_sha, source_tree=source_tree,
+            code_hashes=code_hashes, parent=parent, binding=binding, progress=progress,
+            capture_parent=capture_parent, failure_context=context)
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        raise CustodyFailure(error, _preserve_failure(context, capture_parent, error)) from error
+
+
+def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, binding, progress,
+                  capture_parent=None, failure_context):
     from scripts import rc6_authenticated_fixture_lifecycle as owned
     from scripts import rc6_capacity_calibration as calibration
     require(os.getuid() == os.geteuid() > 0, "ROOT_CUSTODY_NONROOT_ISSUER_REQUIRED")
@@ -876,6 +1043,7 @@ def prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bindi
             "ROOT_CUSTODY_ISSUER_DUMPABLE_ZERO_REQUIRED")
     native_contract(source_sha, source_tree, code_hashes)
     namespace = owned.create_namespace(parent, binding)
+    failure_context["namespace"] = namespace
     receipt = owned.namespace_receipt(namespace)
     request = {"schema": "porota.rc6.root-custody-request.v1", "source_root": str(Path(source).absolute()),
         "source_sha": source_sha, "source_tree": source_tree, "code_hashes": code_hashes,
@@ -891,6 +1059,7 @@ def prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bindi
         environ={key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL") if key in os.environ},
         log_relative="guardian-native.log", timeout_seconds=20, fin_label="root-guardian-proof",
         progress=_observer(namespace.path / "guardian-birth.json", binding, state, progress))
+    failure_context.update(kernel=kernel, fin=fin, log="guardian-native.log", unit=unit_name(namespace.nonce, guard=True))
     require(kernel["returncode"] != 0 and kernel["timed_out"] is False,
             "ROOT_CUSTODY_PID1_GUARD_TIMEOUT_NOT_NATIVE")
     guardian_fin = _closed_service(state)
@@ -906,6 +1075,7 @@ def prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bindi
         environ={key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL") if key in os.environ},
         log_relative="custody-native.log", timeout_seconds=PROBE_LIMIT, fin_label="root-worker-proof",
         progress=_observer(namespace.path / "broker-birth.json", binding, state, progress))
+    failure_context.update(kernel=kernel, fin=fin, log="custody-native.log", unit=unit_name(namespace.nonce))
     controller_fin = _closed_service(state)
     require(owned._phase_green(fin), "ROOT_CUSTODY_NATIVE_BROKER_PROBE_RED")
     raw = _read(namespace.path / "custody-native.log")

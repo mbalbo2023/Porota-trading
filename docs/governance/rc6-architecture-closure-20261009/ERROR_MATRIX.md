@@ -104,3 +104,38 @@ incluida la comparación Horizon original y el perfil PAPER acotado;
 Un RED tiene causa y fix nuevo antes del siguiente SHA; no se repite la misma
 ejecución ni se transforma un control económico en gate material. USD0 recurrente
 adicional, sin ampliar el Droplet, contratar runners, merge o deploy.
+
+### Evidencia auténtica del candidato PR483 y fix de diagnóstico
+
+El Source `174d7b5d7057e20e5364f9b612b380126bf2cc8d`, tree
+`8de2f40cd8942f5236a093c434f47e82bcd3c3f8`, pasó CI económica38018234467
+en Actions estándar ubuntu-24.04:1386 PASS por Python,0 failures/errors/skips,
+identidades iguales, Source literal completo, FIN/capture/cleanup propios.
+Artefacto11657136542:922398B,16 miembros CRC/SHA verificados,
+SHA256`bce2b30ffc1ff933f027c022e42a8f3695b8d0af541ad6010e3f3fe9e3abcf02`.
+Los managers originales midieron88.117/94.530s y295706624/297369600B de
+peak RSS por época; esto no es suma global de RAM ni prueba del Droplet.
+La observación fresca tuvo91697651712B libres en ext4/4096 y18423012 inodos
+libres. La cuota nativa continúa no probada:CONFIG_QFMT_V2=m, quota_v2 no vivo,
+sin módulos coincidentes observados; capacidad nominal14GB no es techo físico.
+
+El control nativo38018906264 autenticó esa CI antes de actuar. Su filtro real
+pasó instalación, TSYNC, herencia y26 denegaciones por supervisor/worker:
+PASS_NATIVE_FILTER_ONLY,57 reglas, filtro0→1 y1→2, FIN/captura/cleanup propio.
+Artefacto11657187465:23333B,9 miembros CRC/SHA verificados,
+SHA256`cc37f5ea18436ce5c8f5bcfd50693e0161b8ab3208aebd6227de0d8a904fa46d`.
+La custodia ROOT quedó RED enROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED;
+faltó birth/pidfd y no se ejecutaron sus cuatro casos, cuota/backing/material.
+El original queda conservado sin reclasificación ni repetición del mismo SHA.
+
+| Bloqueo | Resultado demostrado | Fix y guard pendiente |
+|---|---|---|
+| Sucesión/CI económica exacta174d7 | Cerrado para ese Source con recibos auténticos, JUnit/FIN/Source completos y Actions estándar. | Un Source sucesor requiere otra CI exacta; no hereda ese PASS. |
+| Filtro supervisor/worker | Cerrado sólo como prerrequisito NONROOT nativo en Actions. | No equivale a perfil PAPER completo ni seguridad ROOT/cuota. |
+| Pérdida de diagnóstico al faltar ROOT birth | Confirmada por el ZIP original: no conservó stderr del arranque. | CustodyFailure preserva error primario y FIN cliente original; sólo lee stderr tras unidad nonce exacta inactiva y cgroup2 vacío/ausente. FIN exit4 sólo sirve al diagnóstico RED de not-found estricto. UNKNOWN retiene namespace; no cleanup/crédito/ROOT FIN. Próxima ejecución sobre un SHA corregido debe entregar causa original. |
+| G0/cuota/reservas;1202 ciclos;perfil productivo | Permanecen bloqueados; no hay dato global ni porcentaje extrapolado. | Mantener revisión `/proc`, grafo físico, Horizon original y Product157 antes de gates materiales; G7/G8 no preparados. |
+
+El fix mantiene manager55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8,
+capacidades, DUMPABLE, límites y todos los holds. No se elimina privacidad para
+obtener un PASS. El próximo Source se valida económicamente antes del siguiente
+control nativo. Coste recurrente adicional USD0; real_orders_sent=0.

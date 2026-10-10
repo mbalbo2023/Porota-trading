@@ -324,6 +324,9 @@ def main():
         reason = str(error)
         result.update(error_class=type(error).__name__,errno=getattr(error,'errno',None),
             error_signature=reason if re.fullmatch('[A-Z][A-Z0-9_]*(?::[0-9]+)?',reason) else type(error).__name__)
+        diagnostics = getattr(error,'diagnostics',None)
+        if diagnostics is not None:
+            result['custody_failure_diagnostics'] = diagnostics
     with (output/'native-prerequisites.json').open('xb') as stream:
         stream.write(canonical(result))
     print(canonical(result).decode(),flush=True)

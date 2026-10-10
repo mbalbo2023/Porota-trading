@@ -253,6 +253,128 @@ def test_issuer_namespace_requires_self_snapshot_and_native_host_mapping():
             custody.issuer_host_namespace({"issuer": altered}, actual)
 
 
+def test_failure_without_authentic_client_fin_never_reads_raw_or_cleans(tmp_path, monkeypatch):
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    namespace = owned.create_namespace(tmp_path, binding())
+    def forbidden(*args, **kwargs):
+        pytest.fail("No log read, service query or cleanup without authentic client FIN")
+    monkeypatch.setattr(custody, "_read", forbidden)
+    monkeypatch.setattr(custody, "execute_service", forbidden)
+    monkeypatch.setattr(owned, "cleanup_namespace", forbidden)
+    result = custody._preserve_failure({"namespace": namespace}, tmp_path / "diagnostic",
+        ValueError("ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED"))
+    assert result["ROOT_FIN"] == result["writer_absence"] == "UNKNOWN"
+    assert result["root_producer_RAW_read"] is False and result["cleanup_authorized"] is False
+    assert result["reservation_recovery_credited_bytes"] == 0 and namespace.path.is_dir()
+    assert not (tmp_path / "diagnostic").exists()
+
+
+@pytest.mark.parametrize("field,value", [("Id", "foreign.service"), ("ActiveState", "active"),
+    ("MainPID", "42"), ("ControlPID", "43"), ("ControlGroup", "/foreign"), ("SubState", "running")])
+def test_foreign_or_active_unit_readback_never_allows_failure_raw(field, value):
+    unit = custody.unit_name("a" * 32, guard=True)
+    fields = {"Id": unit, "LoadState": "loaded", "ActiveState": "inactive", "SubState": "dead",
+        "MainPID": "0", "ControlPID": "0", "ControlGroup": ""}
+    fields[field] = value
+    raw = "".join(key + "=" + val + "\n" for key, val in fields.items()).encode()
+    with pytest.raises(ValueError, match="ROOT_CUSTODY_DIAGNOSTIC_UNIT_STILL_ACTIVE_OR_UNKNOWN"):
+        custody._inactive_unit_readback(unit, raw, 0)
+
+
+def test_unknown_writer_failure_preserves_real_client_fin_and_keeps_namespace(tmp_path, monkeypatch):
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    namespace = owned.create_namespace(tmp_path, binding())
+    command = ["/bin/sh", "-c", custody.BRIDGE_SHELL, "rc6-own-diagnostic",
+        sys.executable, "-I", "-B", "-c", "import sys;sys.stderr.write('ORIGINAL_STDERR');sys.exit(73)"]
+    kernel, fin = custody.execute_service(namespace, command, cwd=custody.ROOT, environ={"PATH": "/usr/bin:/bin"},
+        progress=None, timeout_seconds=5, log_relative="guardian-native.log", fin_label="root-guardian-proof")
+    assert kernel["returncode"] == 73 and kernel["actual_child_reaped"]
+    original_fin = calibration.read(namespace.path / fin.control_name)
+    actual_execute = owned.execute_owned
+    def cheap_unknown_query(ns, requested, **kwargs):
+        assert requested[-1] == custody.unit_name(namespace.nonce, guard=True)
+        assert requested[:2] == ["systemctl", "show"] and "sudo" not in requested
+        return actual_execute(ns, [sys.executable, "-I", "-B", "-c", "print('UNIT_UNKNOWN')"], **kwargs)
+    def no_capture(*args, **kwargs):
+        pytest.fail("ROOT log must not be opened while exact unit/cgroup is UNKNOWN")
+    monkeypatch.setattr(owned, "execute_owned", cheap_unknown_query)
+    monkeypatch.setattr(owned, "capture_required_evidence", no_capture)
+    monkeypatch.setattr(owned, "cleanup_namespace", no_capture)
+    output = tmp_path / "diagnostic"
+    result = custody._preserve_failure({"namespace": namespace, "kernel": kernel, "fin": fin,
+        "unit": custody.unit_name(namespace.nonce, guard=True), "log": "guardian-native.log"}, output,
+        ValueError("ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED"))
+    assert (output / "client-fin-original.json").read_bytes() == original_fin
+    assert result["original_client_FIN_authenticated"] is True and result["client_kernel"] == kernel
+    assert result["ROOT_FIN"] == result["writer_absence"] == "UNKNOWN"
+    assert result["root_producer_RAW_read"] is False and result["ROOT_custody_qualified"] is False
+    assert result["cleanup_authorized"] is False and namespace.path.is_dir()
+    assert (output / "failure.json").exists() and not (output / "closed-client-raw").exists()
+
+
+@pytest.mark.parametrize("query_exit", [0, 4])
+def test_inactive_unit_failure_captures_original_bytes_without_root_credit(tmp_path, monkeypatch, query_exit):
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    namespace = owned.create_namespace(tmp_path, binding())
+    command = ["/bin/sh", "-c", custody.BRIDGE_SHELL, "rc6-own-diagnostic",
+        sys.executable, "-I", "-B", "-c", "import sys;sys.stderr.write('ORIGINAL_STDERR');sys.exit(73)"]
+    kernel, fin = custody.execute_service(namespace, command, cwd=custody.ROOT, environ={"PATH": "/usr/bin:/bin"},
+        progress=None, timeout_seconds=5, log_relative="guardian-native.log", fin_label="root-guardian-proof")
+    assert kernel["returncode"] == 73 and kernel["actual_child_reaped"]
+    actual_execute = owned.execute_owned
+    def cheap_inactive_query(ns, requested, **kwargs):
+        return actual_execute(ns, [sys.executable, "-I", "-B", "-c",
+            "import sys;print('UNIT_READBACK_FIXTURE');sys.exit(" + str(query_exit) + ")"], **kwargs)
+    # Decoder fixture only, not a claimed ROOT/native cgroup proof. The actual
+    # original manager still supplies NONROOT FIN and byte-exact RAW capture.
+    monkeypatch.setattr(owned, "execute_owned", cheap_inactive_query)
+    monkeypatch.setattr(custody, "_inactive_unit_readback", lambda *args: {
+        "unit": custody.unit_name(namespace.nonce, guard=True), "scope": "DECODER_FIXTURE_ONLY",
+        "cgroup_state": "DECODER_FIXTURE_EMPTY", "ROOT_FIN_claimed": False})
+    monkeypatch.setattr(custody, "_cgroup_writer_absence", lambda *args: "DECODER_FIXTURE_EMPTY")
+    monkeypatch.setattr(owned, "cleanup_namespace", lambda *args: pytest.fail("Diagnostic cannot cleanup"))
+    result = custody._preserve_failure({"namespace": namespace, "kernel": kernel, "fin": fin,
+        "unit": custody.unit_name(namespace.nonce, guard=True), "log": "guardian-native.log"}, tmp_path / "diagnostic",
+        ValueError("ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED"))
+    assert result["root_producer_RAW_read"] is True
+    capture = Path(result["diagnostic_capture"])
+    manifest = json.loads((capture / "manifest.json").read_bytes())
+    row = next(row for row in manifest["files"] if row["relative_source"] == "guardian-native.log")
+    assert (capture / row["capture_file"]).read_bytes() == b"ORIGINAL_STDERR"
+    assert result["ROOT_FIN"] == "UNKNOWN" and result["ROOT_custody_qualified"] is False
+    assert result["reservation_recovery_credited_bytes"] == 0 and namespace.path.is_dir()
+    assert result["unit_query_kernel"]["returncode"] == query_exit
+    assert result["cgroup_revalidated_after_capture"] is True
+    if query_exit == 4:
+        assert manifest["phase_green"] is False
+
+
+def test_exit4_absent_unit_readback_needs_exact_fields_and_never_claims_fresh_systemd(monkeypatch):
+    unit = custody.unit_name("a" * 32, guard=True)
+    fields = {"Id": unit, "LoadState": "not-found", "ActiveState": "inactive", "SubState": "dead",
+        "MainPID": "0", "ControlPID": "0", "ControlGroup": ""}
+    calls = []
+    monkeypatch.setattr(custody, "_cgroup_writer_absence", lambda name: calls.append(name) or "DECODER_FIXTURE_ABSENT")
+    raw = "".join(key + "=" + value + "\n" for key, value in fields.items()).encode()
+    result = custody._inactive_unit_readback(unit, raw, 4)
+    assert calls == [unit] and result["ROOT_FIN_claimed"] is False
+    assert result["systemd_query_samples"] == 1 and result["fresh_systemd_recheck_after_capture"] is False
+    for field, value in (("LoadState", "loaded"), ("ActiveState", "failed"), ("SubState", "failed"),
+                         ("ControlGroup", "/system.slice/" + unit)):
+        altered = {**fields, field: value}
+        raw = "".join(key + "=" + val + "\n" for key, val in altered.items()).encode()
+        with pytest.raises(ValueError, match="ROOT_CUSTODY_DIAGNOSTIC_EXIT4_NOT_EXACT_ABSENCE"):
+            custody._inactive_unit_readback(unit, raw, 4)
+    assert calls == [unit]
+
+
+def test_typed_failure_never_becomes_a_root_witness():
+    error = custody.CustodyFailure(ValueError("ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED"), {"status": "RED"})
+    assert str(error) == "ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED" and error.diagnostics["status"] == "RED"
+    with pytest.raises(ValueError, match="ROOT_CUSTODY_ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+        custody.validate_witness(error, binding=binding())
+
+
 def test_original_manager_and_opaque_fd_transport_are_real_nonroot_only(tmp_path):
     """Exercise Unix FD inheritance without sudo/systemd/mount/ROOT/fixtures."""
     from scripts import rc6_authenticated_fixture_lifecycle as owned

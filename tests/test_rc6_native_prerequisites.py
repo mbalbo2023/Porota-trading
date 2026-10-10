@@ -210,3 +210,36 @@ def test_empty_resealed_source_inventory_is_not_literal_source_evidence(monkeypa
     raw,origin=sealed_container(empty)
     with pytest.raises(ValueError,match='FULL_LITERAL_SOURCE_INVENTORY_REBOUND'):
         native.verify_positive_economics(raw,origin,source_sha='a'*40,source_tree='b'*40)
+
+
+def test_root_start_failure_keeps_primary_red_and_original_diagnostic(tmp_path,monkeypatch):
+    """Controller regression only; the fixture never launches or qualifies ROOT."""
+    from scripts import rc6_capacity_comparison as capacity
+    from scripts import rc6_privileged_custody as privileged
+    output=tmp_path/'fresh'
+    monkeypatch.setattr(sys,'argv',['native','--source-sha','a'*40,'--source-tree','b'*40,
+        '--owner-session','UNIT_ONLY','--launch-receipt-url','unit-only','--output',str(output)])
+    monkeypatch.setenv('GITHUB_RUN_ID','123')
+    monkeypatch.setattr(native,'admit_native_prerequisites',lambda *args:{
+        'owner_check':lambda:None,'plan_sha256':'f'*64})
+    monkeypatch.setattr(capacity,'readonly_runner_observation',lambda path:{'live_filesystem':{
+        'filesystem_type':'ext4','allocation_unit_bytes':4096,'free_bytes':8*1024**3,
+        'total_inodes':1000,'free_inodes':900}})
+    monkeypatch.setattr(native.governed,'source_pin',lambda *args:{'unit-only':True})
+    monkeypatch.setattr(native,'prove_filter_in_child',lambda **kwargs:{'scope':'UNIT_FIXTURE_ONLY'})
+    monkeypatch.setattr(privileged,'native_contract',lambda *args:{'scope':'UNIT_FIXTURE_ONLY'})
+    diagnostic={'status':'RED','ROOT_FIN':'UNKNOWN','ROOT_custody_qualified':False,
+        'cleanup_authorized':False,'reservation_recovery_credited_bytes':0,
+        'original_client_FIN_sha256':'e'*64,'namespace_retained':'UNIT_FIXTURE_ONLY'}
+    def fail(**kwargs):
+        assert kwargs['capture_parent']==output/'custody-raw'
+        raise privileged.CustodyFailure(ValueError('ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED'),diagnostic)
+    monkeypatch.setattr(privileged,'prove_custody',fail)
+    assert native.main()==1
+    result=json.loads((output/'native-prerequisites.json').read_bytes())
+    assert result['status']=='RED'
+    assert result['error_signature']=='ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED'
+    assert result['custody_failure_diagnostics']==diagnostic
+    assert 'custody' not in result and 'fullSource_unchanged' not in result
+    assert all(result[key] is False for key in ('G0_G8_qualification','quota_enforcement_proved',
+        'product_resource_profile_proved','backing_allocated','material_gate_launched'))
