@@ -1,78 +1,114 @@
-# Decisión concreta antes de calificación RC6
+# Decisión del propietario: certificación con costo recurrente cero
 
-Recomendación: autorizar un **perfil preparado aislado para GitHub Actions** y
-su presupuesto; mantener bloqueadas contratación, heavy y deploy hasta entonces.
-El runner público ubuntu24.04 sigue siendo el contrato canónico vigente; no se
-modificó a self-hosted ni se retiró ningún control. La autorización debe nombrar
-expresamente el nuevo perfil y su equivalencia verificable, además del gasto.
+El 2026-10-10 el propietario rechazó infraestructura adicional de USD 84/mes y
+la ampliación del Droplet. Esa recomendación anterior queda retirada. El perfil
+de certificación sigue siendo el runner público canónico `ubuntu-24.04`; no se
+provisiona infraestructura, no se cambia producción y no se autorizan merge,
+deploy ni heavy mientras exista un bloqueo de admisión.
 
-## Contradicción física reproducible
+El candidato conserva el trabajo del PR #481, base
+`aee4261c58d63ca1cec54c32719878affe1d0f4f`. La revisión y las regresiones económicas
+no convierten un gate pendiente en GREEN. PAPER/SHADOW ONLY,
+`real_orders_sent=0`, PPI Watch intacto y FIX-FORWARD ONLY siguen obligatorios.
 
-`scripts/rc6_capacity_comparison.evaluate_bootstrap_storage` lee los límites
-originales de `limits_for("bootstrap")` y el costo exterior de controles:
+## Garantía nominal y capacidad de una ejecución
 
-| Obligación simultánea | Bytes |
+Los **14 GB nominales** documentados por GitHub son información del perfil y no
+un techo físico por ejecución. GB decimal equivale aquí a 14.000.000.000 bytes;
+no se lo transforma en 14 GiB. La garantía no asegura que el contrato actual
+quepa, pero tampoco prueba que sea imposible usar runners gratuitos. La decisión
+se toma sobre `f_bavail`, filesystem, unidad de asignación, dispositivo, mount,
+inodos, cuota y custodia observados en **esa ejecución**, con recheck vivo justo
+antes de cada productor. Un runner con espacio suficiente puede continuar hasta
+la siguiente admisión; ni ese espacio ni un receipt nominal conceden seguridad.
+
+Referencia del perfil, cuya disponibilidad debe revalidarse:
+[GitHub-hosted runners](https://docs.github.com/actions/reference/runners/github-hosted-runners).
+Los runners estándar de repositorios públicos no requieren contratar un runner
+persistente. La revisión del workflow debe conservar el repositorio público y
+el perfil estándar; cambiar a un perfil facturado requiere otra autorización.
+
+**Capacidad física verificada de una ejecución gratuita:** el run
+[37988736476](https://github.com/mbalbo2023/Porota-trading/actions/runs/37988736476),
+attempt1, job114017192418, label `ubuntu-24.04`, ejecutó el candidato #481 exacto.
+Su `runner-readonly.json` original, observado el2026-10-09T20:42:27Z, registró
+ext4, bloque4096B, mount27, **91.698.405.376B libres** y18.423.046 inodos libres
+de19.529.728. Ese valor supera el piso legacy32.596.295.680B. El ZIP original
+11644630741 fue descargado, verificado por SHA256
+`dd858cb57c7b83153c17a5b7514690e35a6447f234622c65004ad9cf3f863ea9`
+y CRC de sus16 miembros, sin modificarlo. El miembro readonly tiene SHA256
+`b86f596f2186fcf2ea695041892e458be852c445e3ef483028d75b91c4afc958`.
+
+Esto refuta la exclusión de runners gratuitos basada únicamente en14GB. No
+autoriza otra ejecución ni demuestra su cuota/custodia o pico compuesto:
+el mismo control dejó `G0_status=BLOQUEADO`, ROOT no probado y falta de
+`QFMT_VFS_V1_MODULE_NOT_ALREADY_LIVE`. La prioridad es cerrar custodia/readiness
+y medir el runner gratuito siguiente; la alternativa de quota directa queda
+opcional y bloqueada hasta su demostración, sin compras ni limpieza ajena.
+
+## Qué exige realmente el bootstrap existente
+
+`evaluate_bootstrap_storage` conserva estos valores históricos y muestra el
+piso necesario, todavía distinto del grafo completo:
+
+| Obligación exterior simultánea | Bytes |
 |---|---:|
-| Backing físico26GiB |27917287424|
-| Reserva residual4GiB separada |4294967296|
-| Cota de controles exteriores, bloque4096B |384040960|
-| Mínimo necesario, todavía no el grafo completo |**32596295680**|
-| Garantía14GiB del runner canónico |15032385536|
+| Backing físicamente preasignado de 26 GiB | 27.917.287.424 |
+| Reserva exterior de 4 GiB | 4.294.967.296 |
+| Controles exteriores acotados, bloque de 4096 B | 384.040.960 |
+| Piso exterior actual | **32.596.295.680** |
 
-La garantía no cubre ese mínimo. Tener más espacio en **una** medición no lo
-convierte en garantía contractual; el preflight vivo siempre es obligatorio.
-La quota hard20GiB no reemplaza el backing26GiB ni permite consumir su reserva.
-Los tests usan estos valores originales, rechazan el caso14GiB y separan un
-caso con espacio suficiente de una certificación de cuota/kernel/custodia.
+Los 26 GiB son el contenedor de un proyecto de cuota hard 20 GiB; el código
+requiere **otros 4 GiB dentro** de ese contenedor, más el proyecto EDQUOT de
+1 MiB y metadata del filesystem. Por eso reemplazar sin revisión 26 GiB por
+20 GiB eliminaría una reserva interior. No existe en los archivos revisados una
+derivación que pruebe que 20 GiB sean el mínimo del producto. Son un envelope
+del harness que instala dos entornos Product157, conserva seed/fullGit y dos
+fullSource, y permite temporales/RAW/recuperación bajo cuota agregada. La cuota
+es un control real; el tamaño fijo del contenedor y las duplicaciones son
+decisiones de implementación de la certificación. Ningún valor histórico se
+reduce en esta propuesta.
 
-`readonly_runner_observation` registra filesystem, unidad/dev/mount/free/inodes,
-kernel metadata y CPU/RAM sin cargar módulos, montar, crear backing ni lanzarROOT.
-QFMT=m/no observado live no prueba que todo GitHub-hosted sea incompatible.
-Las anteriores fallas mount/errno y la custodia de señal permanecen abiertas.
-El native manager original conserva SHA256
+## Alternativa desarrollada y límites de su evidencia
+
+El contrato propuesto usa project quota **nativa sobre un filesystem efímero ya
+existente** cuando sus capacidades sean auténticamente comprobadas. Evita crear
+y formatear un loop de 26 GiB. Conserva cuota 20 GiB, límite de 100.000 inodos,
+proyecto EDQUOT original y, conservadoramente, **las dos reservas de 4 GiB**.
+Su piso aritmético es:
+
+`20 GiB + 1 MiB probe + 8 GiB reservas + controles + metadata incremental acotada`.
+
+El ahorro máximo frente al loop es `2 GiB - 1 MiB - metadata incremental`.
+Fusionar las reservas o bajar la calibración necesitaría una revisión adicional
+y pruebas; esos ahorros no se contabilizan. Usar sólo el máximo de bytes
+efectivamente escritos exige asimismo demostrar toda la reserva física y los
+escritores externos. Una quota hard no reserva espacio ni protege de ENOSPC
+causado por otro escritor. La alternativa permanece **PROPUESTO**, con
+equivalencia **NO_VERIFICADO**; no es un nuevo camino de admisión ejecutable.
+
+`readonly_runner_observation` incorpora `FSGETXATTR`, readbacks exclusivos
+`quotactl_fd/Q_GETFMT` y `Q_GETQUOTA` cuando libc/kernel los permiten, flags de
+proyecto, mount/dev/inodo y UID/GID/capabilities/namespaces del observador. No
+asigna proyectos, no cambia cuotas, no inicia ROOT y no monta nada. Rechaza
+statfs de un directorio con vista proyectada por cuota como capacidad física.
+Un syscall ausente o denegado queda `NO_VERIFICADO`; no significa que todo
+GitHub-hosted sea incompatible.
+
+Siguen intactos `PRIVILEGED_SIGNAL_CUSTODY` y el native manager SHA256
 `55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8`.
+El bloqueo actual es custodia ROOT desde la primera instrucción, además de
+cuota/costos compuestos y capacidad viva del próximo productor no demostrados.
+El piso de almacenamiento sí cabía en el runner original verificado. Comprar disco no corrige ese
+bloqueo. La aceptación del contrato, obligaciones equivalentes y secuencia
+finita se detallan en [ZERO_COST_CONTRACT.md](ZERO_COST_CONTRACT.md).
 
-## Perfil propuesto y costo
+## Compatibilidad con el Droplet
 
-Catálogo DigitalOcean consultado read-only el 2026-10-09T18:37Z:
-`s-4vcpu-16gb-amd`, nyc1,4vCPU,16GiBRAM,200GiBSSD, disponible,
-USD84/mes o USD0.125/h según el catálogo. Es un runner de calificación
-independiente; **no** modifica el Droplet productivo ni PPI Watch.
-No se provisionó, contrató ni conectó nada. CPU compartida no garantiza BIG75s.
-
-Requisitos verificables del perfil, antes del primer productor:
-
-- Ubuntu24.04/CPython exactos, ambiente efímero dedicado, Source/file modes
-  canónicos y namespace con custodia medida; sin credenciales de trading reales.
-- Ext4 o XFS y cuota agregada física nativa con project inheritance y límites
-  leídos del kernel, herramientas selladas y prueba real de escape denegado;
-  kernel/config/format/module live comprobados, sin inferir soporte del catálogo.
-- Supervisión del actorROOT **desde su primera instrucción**, señal y terminación
-  realmente permitidas, UIDdrop/FDs cerrados, ECHILD/FIN/recovery genuinos. El hold
-  actual no se retira hasta tener la implementación/proof adversarial auténtica.
-- >=32596295680B libres como piso,4GiB residuales y >=10% inodes; además grafo
-  compuesto completo de tooling dual/157/four sdists/19Git/fullSource/directorios/
-  productores/RAW/temporales/recovery/Docker.200GiB nominales no prueban ese grafo.
-- Custodia recuperable de RAW y controles externos; autorizaciones por gate,
-  candidato único, receipts exactos y ownership supervisado durante gates largos.
-
-Preparar el perfil requiere código/probes de custodia ROOT y aceptación real de
-cuota: tener más disco por sí solo no cierraG0. Luego se deben derivar envelopes
-auténticos G5 para1202 prefijos y probar todo el schedule512MiB/9h+1h/depth32,
-sin introducir otro codec, variar universo ni adoptar el forecast de siete cortes.
-
-## Alternativas y alcance de la decisión
-
-1. **Recomendada:** aprobar perfil preparado dedicado y hasta USD84/mes de
-   runner, manteniendo las garantías originales; aceptar sólo después de pruebas
-   nativas deG0, modeloG5 y calificación íntegra de un único candidato.
-2. Mantener exclusivamente GitHub-hosted con14GiB garantizados: RC6 continúa
-   bloqueado bajo el contrato físico actual. Sólo otro perfil hosted con capacidad
-   garantizada suficiente y custodia nativa probada podría ser equivalente.
-
-El host actual ID594077619 sigue activo con1vCPU/1GiBRAM/25GiB. La consulta API
-no mide cgroups, carga ni RSS del candidato. La medición37656549281 es histórica
-de af08 y no se reutiliza como certificación del candidato nuevo. Después de su
-calificación y antes de promoción se necesita la verificación canónica read-only
-del host y, si falla, autorización separada de capacidad/migración productiva.
-La decisión de runner no autoriza despliegue ni tocar PPI Watch.
+La infraestructura productiva actual permanece en 1 vCPU, 1 GiB de RAM y
+25 GB de disco. Hace falta probar cargas representativas bajo esos límites en
+CI y medir capacidad real antes de promoción. Un PASS en cuatro CPU no prueba
+esa compatibilidad. Los límites históricos BIG/Horizon continúan siendo límites
+de certificación; no se trasladan como requisitos de infraestructura productiva.
+Toda promoción futura requiere el mismo artefacto inmutable aprobado y evidencia
+del host actual; no se reutiliza una medición histórica de otro candidato.

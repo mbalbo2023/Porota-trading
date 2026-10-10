@@ -331,7 +331,9 @@ def evaluate_bootstrap_storage(*, free_bytes, nominal_storage_bytes, total_inode
     This pure arithmetic guard starts no actor, loop, mount, quota or fetch.
     It does not establish the unknown compound bootstrap peak, filesystem
     support, platform availability, writer confinement or ROOT signal custody.
-    A concrete runner's extra observed space cannot upgrade the 14 GiB promise.
+    Nominal advertised storage is informational, not an execution ceiling.
+    A runner with enough measured space passes this necessary arithmetic
+    regardless of its nominal guarantee; native proofs still remain required.
     """
     from scripts.rc6_capacity_calibration import limits_for, outer_control_peak_bound
     _integer(free_bytes)
@@ -355,6 +357,9 @@ def evaluate_bootstrap_storage(*, free_bytes, nominal_storage_bytes, total_inode
         "required_minimum_bytes": required, "measured_free_bytes": free_bytes,
         "nominal_storage_bytes": nominal_storage_bytes,
         "nominal_storage_guarantees_necessary_floor": nominal_storage_bytes >= required,
+        "nominal_storage_is_launch_ceiling": False,
+        "measured_physical_floor_sufficient": not blockers,
+        "platform_impossibility_claimed": False,
         "minimum_free_inode_ratio": 0.1, "full_compound_peak_proved": False,
         "native_quota_or_privileged_custody_proved": False, "G0_GREEN_claimed": False,
         "launch_authorized": False, "live_filesystem_recheck_required": True}
@@ -370,6 +375,7 @@ def readonly_runner_observation(path):
     """
     from scripts import rc6_capacity_calibration as calibration
     from scripts import rc6_heavy_test_preflight as preflight
+    from scripts import rc6_certification_contract as contract
     started = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     selected = Path(path).absolute()
     errors = []
@@ -379,6 +385,22 @@ def readonly_runner_observation(path):
                  "reason": str(error)[:2048]}
         errors.append(value)
         return value
+    try:
+        quota_custody = contract.readonly_quota_custody_observation(selected)
+        require(type(quota_custody) is dict and quota_custody.get("schema") == "porota.rc6.readonly-existing-quota-custody.v1"
+                and quota_custody.get("status") in ("READ_ONLY_METADATA_RECORDED", "NO_VERIFICADO")
+                and all(quota_custody.get(key) is False for key in ("project_assignment_attempted",
+                    "quota_mutations_attempted", "actor_launch_attempted", "mount_attempted",
+                    "native_quota_enforcement_proved", "privileged_signal_custody_proved", "FIN_proved",
+                    "platform_impossibility_claimed", "G0_GREEN_claimed", "launch_authorized")),
+                "CAPACITY_READONLY_QUOTA_OBSERVER_CANNOT_GRANT_NATIVE_ADMISSION")
+        if quota_custody.get("status") == "NO_VERIFICADO":
+            observation_error("quota_and_custody_metadata", ValueError("CAPACITY_NATIVE_QUOTA_READBACK_UNKNOWN"))
+    except Exception as error:
+        quota_custody = {"schema": "porota.rc6.readonly-existing-quota-custody.v1", "status": "NO_VERIFICADO",
+            "project": None, "native_quota_enforcement_proved": False,
+            "privileged_signal_custody_proved": False, "FIN_proved": False,
+            "launch_authorized": False, "observer_error": observation_error("quota_and_custody_metadata", error)}
     filesystem, live_filesystem, floor = None, None, None
     try:
         filesystem = calibration.filesystem(selected)
@@ -387,9 +409,17 @@ def readonly_runner_observation(path):
                 and filesystem["mount_id"] == live_filesystem["mount_id"]
                 and filesystem["fragment_bytes"] == live_filesystem["allocation_unit_bytes"],
                 "CAPACITY_READONLY_FILESYSTEM_REBOUND_DURING_OBSERVATION")
+        project = quota_custody.get("project")
+        require(type(project) is dict and project.get("statfs_may_be_quota_projected") is False,
+                "CAPACITY_UNPROJECTED_PHYSICAL_FILESYSTEM_MEASUREMENT_REQUIRED")
+        mount = quota_custody.get("mount")
+        require(type(mount) is dict and mount.get("mount_id") == filesystem["mount_id"]
+                and mount.get("filesystem_device") == filesystem["device"]
+                and mount.get("directory_inode") == filesystem["inode"],
+                "CAPACITY_READONLY_PROJECT_INODE_OR_MOUNT_REBOUND")
         floor = evaluate_bootstrap_storage(
             free_bytes=min(filesystem["available_bytes"], live_filesystem["free_bytes"]),
-            nominal_storage_bytes=14 * 1024**3,
+            nominal_storage_bytes=contract.GITHUB_NOMINAL_STORAGE_BYTES,
             total_inodes=filesystem["total_inodes"],
             free_inodes=min(filesystem["free_inodes"], live_filesystem["free_inodes"]),
             allocation_unit_bytes=filesystem["fragment_bytes"])
@@ -418,6 +448,8 @@ def readonly_runner_observation(path):
         "observed_completed_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "filesystem": filesystem, "live_filesystem": live_filesystem, "storage_floor": floor,
         "kernel_prerequisites": kernel, "machine": machine,
+        "quota_and_custody_metadata": quota_custody,
+        "nominal_storage_source": "GITHUB_PUBLIC_RUNNER_DOCUMENTED_14_GB_DECIMAL_NOT_EXECUTION_CEILING",
         "privileged_signal_custody": dict(calibration.PRIVILEGED_SIGNAL_CUSTODY),
         "observer_errors": errors,
         "generation_operations": {"image_allocation": "NOT_CALLED", "root_worker_launch": "NOT_CALLED",
@@ -426,6 +458,7 @@ def readonly_runner_observation(path):
         "G0_status": "BLOQUEADO", "G0_GREEN_claimed": False, "launch_authorized": False,
         "actual_capability_proved": False, "compound_bootstrap_peak_proved": False,
         "platform_compatibility_proved": False, "kernel_unsupported_claimed": False,
+        "platform_impossibility_claimed": False,
         "runtime_validated": False, "live_filesystem_recheck_required": True}
 
 

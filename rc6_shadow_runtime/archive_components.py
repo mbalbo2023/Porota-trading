@@ -24,12 +24,15 @@ from . import exact_page_storage as page_storage
 
 
 RECIPE_SCHEMA = "RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V3"
+SLICE_RECIPE_SCHEMA = "RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V4"
 ACK_SCHEMA = "RC6_SHADOW_ARCHIVE_ACK_V3"
 ARCHIVER_ID = "RC6_LOCAL_PRIVATE_COMPONENT_ARCHIVER_V3"
 PACK_MAGIC = b"RC6CASP3"
 PACK_HEADER = struct.Struct("!8sI")
 PACK_RECORD = struct.Struct("!32sII")
 COMPONENT_RECORD = struct.Struct("!II32s")
+SLICE_COMPONENT_RECORD = struct.Struct("!IIII32s")
+SLICE_ARRAY_CODEC = "GZIP_BIG_ENDIAN_BINARY_SLICE_INDEX_V1"
 MAX_COMPONENTS = 524288
 MAX_PACK_BYTES = 128 * 1024**2
 MAX_RECIPE_BYTES = 64 * 1024**2
@@ -45,6 +48,50 @@ DEPENDENT_RECOVERIES = frozenset({"EXACT_PAGE_PACK", "EXACT_BINARY_PACK"})
 MAX_WIRE_REGION_GROUPS = 16
 MIN_WIRE_GROUP_PAGES = 64
 MAX_GROUPED_WIRE_COMPONENTS = 1 + 2 * MAX_WIRE_REGION_GROUPS
+MAX_WIRE_SLICES = 128
+MIN_WIRE_SLICE_BYTES = 4096
+_WIRE_BOUNDARY = re.compile(b"[\x00-\x0f]\x00")
+
+
+class ComponentCatalog(dict):
+    """Lookup hints plus the count of ALL physical records, including duplicates."""
+    def __init__(self, *args, physical_records=0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.physical_records = physical_records
+
+
+def _exact_wire_ranges(raw):
+    """Boundaries without copying a verified, immutable parent image.
+
+    A C regex search avoids a Python rolling-hash pass over every byte. The
+    minimum length makes <=128 references a structural bound. A maximum span
+    terminates the search even for adversarial bytes with no boundary. Changed
+    or shifted wire is still exact concatenation, never a semantic approximation.
+    """
+    immutable_view = (type(raw) is memoryview and type(raw.obj) is bytes
+                      and raw.readonly and raw.c_contiguous
+                      and raw.format == "B" and raw.ndim == 1)
+    if (type(raw) is not bytes and not immutable_view) or not raw or len(raw) > MAX_PACK_BYTES:
+        raise ValueError("RETENTION_SLICE_BOUNDED_ORIGINAL_WIRE_REQUIRED")
+    minimum = max(MIN_WIRE_SLICE_BYTES, (len(raw) + MAX_WIRE_SLICES - 1) // MAX_WIRE_SLICES)
+    cursor, result = 0, []
+    while cursor < len(raw):
+        start = min(len(raw), cursor + minimum)
+        stop = min(len(raw), cursor + 4 * minimum)
+        match = _WIRE_BOUNDARY.search(raw, start, stop)
+        end = match.end() if match is not None else stop
+        result.append((cursor, end))
+        cursor = end
+    if len(result) > MAX_WIRE_SLICES or cursor != len(raw):
+        raise ValueError("RETENTION_SLICE_EXACT_BOUND_INVALID")
+    return tuple(result)
+
+
+def exact_wire_slices(raw):
+    """Return exact pieces for a proposal; range indexing itself makes no copy."""
+    if type(raw) is not bytes:
+        raise ValueError("RETENTION_SLICE_BOUNDED_ORIGINAL_WIRE_REQUIRED")
+    return tuple(raw[start:end] for start, end in _exact_wire_ranges(raw))
 
 
 def sha(raw):
@@ -186,15 +233,15 @@ def source_gzip_frames(raw):
     return tuple(result)
 
 
-def _array(raw, *, count):
+def _array(raw, *, count, codec="GZIP_BIG_ENDIAN_BINARY_INDEX_V1"):
     encoded = gzip.compress(raw, mtime=0, compresslevel=1)
-    return {"codec": "GZIP_BIG_ENDIAN_BINARY_INDEX_V1", "count": count,
+    return {"codec": codec, "count": count,
         "sha256": sha(encoded), "payload": base64.b64encode(encoded).decode("ascii")}
 
 
-def _decode_array(record, *, width, maximum):
+def _decode_array(record, *, width, maximum, codec="GZIP_BIG_ENDIAN_BINARY_INDEX_V1"):
     if (not isinstance(record, dict) or set(record) != {"codec", "count", "sha256", "payload"}
-            or record["codec"] != "GZIP_BIG_ENDIAN_BINARY_INDEX_V1"
+            or record["codec"] != codec
             or not isinstance(record["sha256"], str) or HEX.fullmatch(record["sha256"]) is None
             or not isinstance(record["payload"], str)):
         raise ValueError("RETENTION_RECIPE_ARRAY_INVALID")
@@ -308,7 +355,7 @@ class ComponentArchive:
 
     def _catalog(self):
         """Headers locate candidate bytes; they never authenticate a component."""
-        catalog, count = {}, 0
+        catalog, count = ComponentCatalog(), 0
         for path in sorted(path for path in self.owner._read_only_paths(self.root)
                            if path.name.endswith(".cas.pack")):
             header, info = read(path, maximum=MAX_PACK_BYTES, header_only=PACK_HEADER.size)
@@ -323,21 +370,106 @@ class ComponentArchive:
             rows = _pack_index(indexed, info[6]); count += len(rows)
             for ordinal, (cid, _, _) in enumerate(rows):
                 catalog.setdefault(cid, (path.name, ordinal))
+        catalog.physical_records = count
         return catalog
 
     def _component(self, cid, location):
-        if not isinstance(cid, str) or HEX.fullmatch(cid) is None:
-            raise ValueError("RETENTION_COMPONENT_CID_INVALID")
-        name, ordinal = location
-        raw, rows = self._pack(name)
-        integer(ordinal, MAX_COMPONENTS)
-        if ordinal >= len(rows) or rows[ordinal][0] != cid:
-            raise ValueError("RETENTION_COMPONENT_BINDING_MISMATCH")
-        _, offset, size = rows[ordinal]
-        original = raw[offset:offset+size]
-        if sha(original) != cid:
-            raise ValueError("RETENTION_COMPONENT_HASH_MISMATCH")
-        return original
+        return self._components(((cid, location),))[cid]
+
+    def _components(self, entries, *, byte_budget=MAX_PACK_BYTES, multiplicities=None, visitor=None):
+        self.packs.clear()
+        try:
+            return self._verified_components(entries, byte_budget=byte_budget,
+                                             multiplicities=multiplicities, visitor=visitor)
+        finally:
+            # An exception must not leave a proof available to the next read.
+            self.packs.clear()
+
+    def _verified_components(self, entries, *, byte_budget, multiplicities, visitor):
+        """Authenticate each whole parent once, with a one-pack byte cache."""
+        groups, result, total = {}, {}, 0
+        for cid, location in entries:
+            if not isinstance(cid, str) or HEX.fullmatch(cid) is None:
+                raise ValueError("RETENTION_COMPONENT_CID_INVALID")
+            if type(location) is not tuple or len(location) not in (2, 4):
+                raise ValueError("RETENTION_COMPONENT_BINDING_MISMATCH")
+            groups.setdefault(location[0], {}).setdefault(location[1], []).append((cid, location))
+        for name, parents in groups.items():
+            raw, rows = self._pack(name)
+            # Check every request against authenticated parent lengths BEFORE
+            # materializing any ranges from this pack. Repeated references
+            # count repeatedly toward the member's expansion, not just once.
+            for ordinal, requests in parents.items():
+                integer(ordinal, MAX_COMPONENTS)
+                if ordinal >= len(rows):
+                    raise ValueError("RETENTION_COMPONENT_BINDING_MISMATCH")
+                _, _, size = rows[ordinal]
+                for cid, location in requests:
+                    if len(location) == 4:
+                        start, length = location[2:]
+                        integer(start, MAX_PACK_BYTES)
+                        integer(length, MAX_PACK_BYTES, positive=True)
+                        if start + length > size:
+                            raise ValueError("RETENTION_COMPONENT_SLICE_BOUNDS_INVALID")
+                    else:
+                        length = size
+                    total += length * (multiplicities.get(cid, 1) if multiplicities is not None else 1)
+                    if total > byte_budget:
+                        raise ValueError("RETENTION_RECIPE_MEMBER_EXPANSION_INVALID")
+            for ordinal, requests in parents.items():
+                integer(ordinal, MAX_COMPONENTS)
+                if ordinal >= len(rows):
+                    raise ValueError("RETENTION_COMPONENT_BINDING_MISMATCH")
+                parent_cid, offset, size = rows[ordinal]
+                parent = memoryview(raw)[offset:offset + size]
+                if sha(parent) != parent_cid:
+                    raise ValueError("RETENTION_COMPONENT_HASH_MISMATCH")
+                for cid, location in requests:
+                    if len(location) == 2:
+                        if parent_cid != cid:
+                            raise ValueError("RETENTION_COMPONENT_BINDING_MISMATCH")
+                        part = parent
+                    else:
+                        start, length = location[2:]
+                        integer(start, MAX_PACK_BYTES)
+                        integer(length, MAX_PACK_BYTES, positive=True)
+                        if start + length > size:
+                            raise ValueError("RETENTION_COMPONENT_SLICE_BOUNDS_INVALID")
+                        part = parent[start:start + length]
+                    if sha(part) != cid:
+                        raise ValueError("RETENTION_COMPONENT_HASH_MISMATCH")
+                    if visitor is None:
+                        result[cid] = bytes(part)
+                    else:
+                        visitor(cid, location, part)
+                    del part
+                del parent
+            self.packs.clear()
+            del raw, rows
+        return result
+
+    def _slice_catalog(self, catalog, recipe):
+        """Call-scoped hints from the preceding authenticated recipe only.
+
+        The original whole pack and its parent CID are reauthenticated before
+        deriving each slice. Whole packs stay referenced by the V4 recipe and
+        GC never treats a referenced range as permission to delete its parent.
+        No persistent mutable index or proof cache is introduced.
+        """
+        result = ComponentCatalog(catalog, physical_records=getattr(catalog, "physical_records", len(catalog)))
+        entries = self._indices(recipe)
+        def remember(cid, location, view):
+            parent_start = location[2] if len(location) == 4 else 0
+            for start, end in _exact_wire_ranges(view):
+                result.setdefault(sha(view[start:end]),
+                                  (location[0], location[1], parent_start + start, end - start))
+            if len(result) > MAX_COMPONENTS:
+                raise ValueError("RETENTION_COMPONENT_INDEX_CAPACITY_REACHED")
+        # A recipe cannot declare more wire than all five original bounded
+        # members and their existing encodings. Streaming retains one parent,
+        # one range and small aliases; never every historical source image.
+        self._components(entries, byte_budget=MAX_PACK_BYTES * len(MEMBERS), visitor=remember)
+        return result
 
     def _publish(self, path, raw, *, prefix):
         temporary = self.root / (prefix + uuid.uuid4().hex + ".tmp")
@@ -371,7 +503,7 @@ class ComponentArchive:
             value = loads(inflate(raw, maximum=MAX_RECIPE_BYTES))
             if (not isinstance(value, dict) or set(value) != {"schema", "generation_id", "sequence", "manifest_sha256",
                     "members", "packs", "components", "manifest_links", "verification_level", "custody"}
-                    or value.get("schema") != RECIPE_SCHEMA or value.get("generation_id") != ident
+                    or value.get("schema") not in {RECIPE_SCHEMA, SLICE_RECIPE_SCHEMA} or value.get("generation_id") != ident
                     or value.get("manifest_sha256") != receipt.get("manifest_sha256")
                     or type(value.get("sequence")) is not int or value["sequence"] != receipt.get("sequence")
                     or value.get("verification_level") != LEVEL or value.get("custody") != "LOCAL_PRIVATE_FSYNC_NOT_WORM"
@@ -386,14 +518,28 @@ class ComponentArchive:
                 or any(not isinstance(name, str) or PACK_NAME.fullmatch(name) is None for name in packs)
                 or len(set(packs)) != len(packs)):
             raise ValueError("RETENTION_RECIPE_PACK_INDEX_INVALID")
-        raw, count = _decode_array(recipe.get("components"), width=COMPONENT_RECORD.size, maximum=MAX_COMPONENTS)
+        sliced = recipe.get("schema") == SLICE_RECIPE_SCHEMA
+        if recipe.get("schema") not in {RECIPE_SCHEMA, SLICE_RECIPE_SCHEMA}:
+            raise ValueError("RETENTION_RECIPE_HEADER_INVALID")
+        shape = SLICE_COMPONENT_RECORD if sliced else COMPONENT_RECORD
+        raw, count = _decode_array(recipe.get("components"), width=shape.size, maximum=MAX_COMPONENTS,
+            codec=SLICE_ARRAY_CODEC if sliced else "GZIP_BIG_ENDIAN_BINARY_INDEX_V1")
         if not count:
             raise ValueError("RETENTION_RECIPE_COMPONENT_INDEX_INVALID")
         rows, used_packs, seen = [], set(), set()
-        for pack, ordinal, cid in COMPONENT_RECORD.iter_unpack(raw):
+        for row in shape.iter_unpack(raw):
+            pack, ordinal, cid = row[0], row[1], row[-1]
             if pack >= len(packs) or ordinal >= MAX_COMPONENTS or cid in seen:
                 raise ValueError("RETENTION_RECIPE_COMPONENT_INDEX_INVALID")
-            seen.add(cid); used_packs.add(pack); rows.append((cid.hex(), (packs[pack], ordinal)))
+            location = (packs[pack], ordinal)
+            if sliced:
+                start, length = row[2:4]
+                integer(start, MAX_PACK_BYTES)
+                integer(length, MAX_PACK_BYTES, positive=True)
+                if start + length > MAX_PACK_BYTES:
+                    raise ValueError("RETENTION_COMPONENT_SLICE_BOUNDS_INVALID")
+                location += (start, length)
+            seen.add(cid); used_packs.add(pack); rows.append((cid.hex(), location))
         if used_packs != set(range(len(packs))):
             raise ValueError("RETENTION_RECIPE_UNUSED_PACK")
         return rows
@@ -409,13 +555,31 @@ class ComponentArchive:
         raw, count = _decode_array(record.get("references"), width=4, maximum=MAX_REFS)
         if not count:
             raise ValueError("RETENTION_RECIPE_MEMBER_INVALID")
-        output, total = [], 0
-        for index, in struct.iter_unpack("!I", raw):
+        indices = [index for index, in struct.iter_unpack("!I", raw)]
+        locations, multiplicities, sliced_total = {}, {}, 0
+        for index in indices:
             if index >= len(components):
                 raise ValueError("RETENTION_RECIPE_MEMBER_REFERENCE_INVALID")
             used.add(index)
             cid, location = components[index]
-            part = self._component(cid, location)
+            multiplicities[cid] = multiplicities.get(cid, 0) + 1
+            if len(location) == 4:
+                sliced_total += location[3]
+            locations.setdefault(location[0], {})[index] = (cid, location)
+        budget = MAX_PACK_BYTES if record.get("recovery") in DEPENDENT_RECOVERIES or record.get("recovery") == "STORED_GZIP_RAW" else size
+        if sliced_total > budget:
+            raise ValueError("RETENTION_RECIPE_MEMBER_EXPANSION_INVALID")
+        # Authenticate one whole pack at a time, even when the wire alternates
+        # between packs. Persist only requested bytes, not a many-pack cache.
+        captured = {}
+        parts = self._components((entry for group in locations.values() for entry in group.values()),
+                                 byte_budget=budget, multiplicities=multiplicities)
+        for group in locations.values():
+            for index, (cid, _) in group.items():
+                captured[index] = parts[cid]
+        output, total = [], 0
+        for index in indices:
+            part = captured[index]
             if decode and record.get("recovery") == "STORED_GZIP_RAW":
                 part = inflate(part, maximum=size-total)
             total += len(part)
@@ -553,7 +717,7 @@ class ComponentArchive:
         directory = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY | getattr(os, "O_NOATIME", 0))
         try:
             source_info = _metadata(os.fstat(directory), directory=True)
-            names = os.listdir(directory)
+            names = sorted(os.listdir(directory))
             if set(names) not in (BASE_MEMBERS, MEMBERS):
                 raise ValueError("RETENTION_ARCHIVE_OBJECT_SHAPE_INVALID")
         finally:
@@ -580,7 +744,7 @@ class ComponentArchive:
                 raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")
             unchanged()
             return preview
-        base_receipt, previous, previous_depth, checkpoint, checkpoint_depth, common_depth = None, None, 0, None, 0, 0
+        base_receipt, prior_recipe, previous, previous_depth, checkpoint, checkpoint_depth, common_depth = None, None, None, 0, None, 0, 0
         if head.get("generation_id"):
             prior, _ = self.owner._read_control(self.root / (head["generation_id"] + ".receipt.json"))
             if prior.get("schema") == ACK_SCHEMA:
@@ -592,6 +756,13 @@ class ComponentArchive:
                 if "checkpoint.json.gz" in prior_recipe["members"]:
                     checkpoint, checkpoint_depth = self._original(prior, prior_recipe, self._indices(prior_recipe), set(), "checkpoint.json.gz")
         catalog = self._catalog()
+        slice_catalog = None
+        if prior_recipe is not None:
+            try:
+                slice_catalog = self._slice_catalog(catalog, prior_recipe)
+            except ValueError as error:
+                if str(error) != "RETENTION_COMPONENT_INDEX_CAPACITY_REACHED":
+                    raise
         alternatives = {}
         force_full = bool(manifest["sequence"] % 32 == 0) or common_depth == 32
         def dependent_record(raw, recovery, packed, info):
@@ -611,6 +782,10 @@ class ComponentArchive:
             else:
                 parts, record["recovery"] = (gzip.compress(raw, mtime=0, compresslevel=1),), "STORED_GZIP_RAW"
             alternatives[name] = [(parts, record)]
+            if slice_catalog is not None and record["recovery"] != "STORED_GZIP_RAW":
+                sliced = tuple(part for piece in parts for part in exact_wire_slices(piece))
+                if sliced != parts:
+                    alternatives[name].append((sliced, record))
             if name == "projection.sqlite":
                 grouped = grouped_wire_parts(page, "EXACT_PAGE_PACK",
                     expected_pack_sha256=record["pack_sha256"], expected_target_sha256=record["sha256"])
@@ -625,7 +800,8 @@ class ComponentArchive:
         # Authenticate the catalog once; all alternatives reuse this same
         # captured base. Sequential plans retain one winner, never four packs.
         # The unchanged report frame layout is not a second codec experiment.
-        recipe_wire, packed, new_name = self._select_plan(alternatives, catalog, manifest, manifest_sha)
+        recipe_wire, packed, new_name = self._select_plan(alternatives, catalog, manifest, manifest_sha,
+                                                       slice_catalog=slice_catalog)
         # Exact new bytes plus simultaneous controls, rounded physical blocks.
         additions = (len(packed) if packed is not None else 0) + len(recipe_wire)
         self.owner._archive_inventory(additional_bytes=additions+4*65536, additional_files=6)
@@ -646,7 +822,7 @@ class ComponentArchive:
         unchanged()
         return preview
 
-    def _select_plan(self, alternatives, catalog, manifest, manifest_sha):
+    def _select_plan(self, alternatives, catalog, manifest, manifest_sha, *, slice_catalog=None):
         """Keep the original first plan unless both complete new costs improve.
 
         Costs include whole newly written CAS packs (headers and records) and
@@ -662,7 +838,8 @@ class ComponentArchive:
         for choices in product(*(range(len(options)) for options in alternatives.values())):
             options = {name: alternatives[name][choice] for name, choice in zip(alternatives, choices)}
             try:
-                plan = self._plan(options, catalog, manifest, manifest_sha, verified_reuse)
+                active_catalog = slice_catalog if slice_catalog is not None and selected is not None else catalog
+                plan = self._plan(options, active_catalog, manifest, manifest_sha, verified_reuse)
             except ValueError as error:
                 # An optional layout cannot turn an admissible original into
                 # a catalog/pack overflow. Custody, hash and typed-index errors
@@ -685,13 +862,27 @@ class ComponentArchive:
 
     def _plan(self, options, catalog, manifest, manifest_sha, verified_reuse):
         components, component_ids, members, fresh = [], {}, {}, {}
+        candidates = {}
+        for parts, _ in options.values():
+            for part in parts:
+                cid = sha(part)
+                if cid in catalog and cid not in verified_reuse:
+                    if cid in candidates and candidates[cid] != part:
+                        raise ValueError("RETENTION_COMPONENT_HASH_COLLISION")
+                    candidates[cid] = part
+        originals = self._components(((cid, catalog[cid]) for cid in candidates),
+                                    byte_budget=sum(map(len, candidates.values())))
+        for cid, part in candidates.items():
+            if originals.pop(cid) != part:
+                raise ValueError("RETENTION_COMPONENT_HASH_COLLISION")
+            verified_reuse[cid] = part
         def add(part):
             cid = sha(part)
             if cid not in component_ids:
+                if len(components) >= MAX_COMPONENTS:
+                    raise ValueError("RETENTION_COMPONENT_INDEX_CAPACITY_REACHED")
                 component_ids[cid] = len(components); components.append(cid)
                 if cid in catalog:
-                    if cid not in verified_reuse:
-                        verified_reuse[cid] = self._component(cid, catalog[cid])
                     if verified_reuse[cid] != part:
                         raise ValueError("RETENTION_COMPONENT_HASH_COLLISION")
                 else:
@@ -700,11 +891,13 @@ class ComponentArchive:
                 raise ValueError("RETENTION_COMPONENT_HASH_COLLISION")
             return component_ids[cid]
         for name, (parts, descriptor) in options.items():
+            if len(parts) > MAX_REFS:
+                raise ValueError("RETENTION_COMPONENT_INDEX_CAPACITY_REACHED")
             record = dict(descriptor)
             refs = [add(part) for part in parts]
             record["references"] = _array(b"".join(struct.pack("!I", index) for index in refs), count=len(refs))
             members[name] = record
-        if len(catalog) + len(fresh) > MAX_COMPONENTS:
+        if getattr(catalog, "physical_records", len(catalog)) + len(fresh) > MAX_COMPONENTS:
             raise ValueError("RETENTION_COMPONENT_INDEX_CAPACITY_REACHED")
         packed, new_name = None, None
         if fresh:
@@ -718,14 +911,20 @@ class ComponentArchive:
             new_name = sha(packed) + ".cas.pack"
         locations = {cid: (new_name, ordinal) for ordinal, cid in enumerate(fresh)}
         packs, pack_ids, rows = [], {}, []
+        sliced = any(cid not in locations and len(catalog[cid]) == 4 for cid in components)
         for cid in components:
-            name, ordinal = locations[cid] if cid in locations else catalog[cid]
+            location = locations[cid] if cid in locations else catalog[cid]
+            name, ordinal = location[:2]
             if name not in pack_ids:
                 pack_ids[name] = len(packs); packs.append(name)
-            rows.append(COMPONENT_RECORD.pack(pack_ids[name], ordinal, bytes.fromhex(cid)))
-        recipe = {"schema": RECIPE_SCHEMA, "generation_id": manifest["generation_id"], "sequence": manifest["sequence"],
+            if sliced:
+                start, length = location[2:] if len(location) == 4 else (0, len(fresh[cid]) if cid in fresh else len(verified_reuse[cid]))
+                rows.append(SLICE_COMPONENT_RECORD.pack(pack_ids[name], ordinal, start, length, bytes.fromhex(cid)))
+            else:
+                rows.append(COMPONENT_RECORD.pack(pack_ids[name], ordinal, bytes.fromhex(cid)))
+        recipe = {"schema": SLICE_RECIPE_SCHEMA if sliced else RECIPE_SCHEMA, "generation_id": manifest["generation_id"], "sequence": manifest["sequence"],
             "manifest_sha256": manifest_sha, "members": members, "packs": packs,
-            "components": _array(b"".join(rows), count=len(rows)),
+            "components": _array(b"".join(rows), count=len(rows), codec=SLICE_ARRAY_CODEC if sliced else "GZIP_BIG_ENDIAN_BINARY_INDEX_V1"),
             "manifest_links": {key: manifest.get(key) for key in ("generation_id", "sequence", "previous_generation_id",
                 "previous_manifest_sha256", "as_of", "source_watermark", "source_audit_digest", "source_reports_digest", "role_headers")},
             "verification_level": LEVEL, "custody": "LOCAL_PRIVATE_FSYNC_NOT_WORM"}
@@ -754,8 +953,8 @@ class ComponentArchive:
             active.add(ident)
             recipe = self._recipe(receipt)
             components = self._indices(recipe)
-            for cid, location in components:
-                self._component(cid, location)
+            self._components(components, byte_budget=MAX_PACK_BYTES * len(MEMBERS),
+                             visitor=lambda cid, location, view: None)
             base, depth = None, 0
             for member_name in ("projection.sqlite", "checkpoint.json.gz"):
                 if member_name not in recipe["members"]:
