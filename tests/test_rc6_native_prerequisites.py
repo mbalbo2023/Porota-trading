@@ -2,6 +2,7 @@
 import copy
 import io
 import json
+import os
 import sys
 import zipfile
 
@@ -227,6 +228,8 @@ def test_root_start_failure_keeps_primary_red_and_original_diagnostic(tmp_path,m
         'total_inodes':1000,'free_inodes':900}})
     monkeypatch.setattr(native.governed,'source_pin',lambda *args:{'unit-only':True})
     monkeypatch.setattr(native,'prove_filter_in_child',lambda **kwargs:{'scope':'UNIT_FIXTURE_ONLY'})
+    monkeypatch.setattr(native,'capture_systemd_diagnostics',lambda **kwargs:{
+        'status':'SCOPED_NONROOT_SYSTEMD_OBSERVATION_ONLY','ROOT_custody_qualified':False,'ROOT_FIN_claimed':False})
     monkeypatch.setattr(privileged,'native_contract',lambda *args:{'scope':'UNIT_FIXTURE_ONLY'})
     diagnostic={'status':'RED','ROOT_FIN':'UNKNOWN','ROOT_custody_qualified':False,
         'cleanup_authorized':False,'reservation_recovery_credited_bytes':0,
@@ -243,3 +246,75 @@ def test_root_start_failure_keeps_primary_red_and_original_diagnostic(tmp_path,m
     assert 'custody' not in result and 'fullSource_unchanged' not in result
     assert all(result[key] is False for key in ('G0_G8_qualification','quota_enforcement_proved',
         'product_resource_profile_proved','backing_allocated','material_gate_launched'))
+
+
+@pytest.mark.parametrize('field,value', [
+    ('guard_hang_only_LogLevelMax','info'), ('systemd_startup_observer','ROOT'),
+    ('systemd_query_timeout_seconds',True), ('systemd_query_physical_file_hard_limit_bytes',65537),
+    ('systemd_query_count',5), ('systemd_installed_binary_identity_qualifies_running_PID1',True),
+    ('systemd_metadata_qualifies_ROOT_custody_or_namespace_cause',True),
+    ('journal_maximum_entries_per_owned_origin',31), ('journal_query_physical_file_hard_limit_bytes',2097153)])
+def test_diagnostic_plan_cannot_expand_bounds_or_borrow_root_authority(field, value):
+    plan=json.loads(native.PLAN.read_bytes())
+    native.require_systemd_diagnostic_plan(canonical(plan))
+    plan[field]=value
+    with pytest.raises(ValueError,match='FIXED_SYSTEMD_DIAGNOSTIC_PLAN_REQUIRED'):
+        native.require_systemd_diagnostic_plan(canonical(plan))
+
+
+def test_unknown_systemd_observation_is_preserved_before_any_root_attempt(tmp_path,monkeypatch):
+    from scripts import rc6_capacity_comparison as capacity
+    from scripts import rc6_privileged_custody as privileged
+    output=tmp_path/'fresh'
+    monkeypatch.setattr(sys,'argv',['native','--source-sha','a'*40,'--source-tree','b'*40,
+        '--owner-session','UNIT_ONLY','--launch-receipt-url','unit-only','--output',str(output)])
+    monkeypatch.setenv('GITHUB_RUN_ID','123')
+    monkeypatch.setattr(native,'admit_native_prerequisites',lambda *args:{
+        'owner_check':lambda:None,'plan_sha256':'f'*64})
+    monkeypatch.setattr(capacity,'readonly_runner_observation',lambda path:{'live_filesystem':{
+        'filesystem_type':'ext4','allocation_unit_bytes':4096,'free_bytes':8*1024**3,
+        'total_inodes':1000,'free_inodes':900}})
+    monkeypatch.setattr(native.governed,'source_pin',lambda *args:{'unit-only':True})
+    monkeypatch.setattr(native,'prove_filter_in_child',lambda **kwargs:{'scope':'UNIT_FIXTURE_ONLY'})
+    observation={'status':'UNKNOWN','ROOT_custody_qualified':False,'ROOT_FIN_claimed':False,
+        'namespace_failure_cause':'UNKNOWN','reason':'UNIT_METADATA_MISSING'}
+    monkeypatch.setattr(native,'capture_systemd_diagnostics',lambda **kwargs:observation)
+    monkeypatch.setattr(privileged,'native_contract',lambda *args:{'scope':'UNIT_FIXTURE_ONLY'})
+    monkeypatch.setattr(privileged,'prove_custody',lambda **kwargs:pytest.fail('ROOT reached with UNKNOWN provenance'))
+    assert native.main()==1
+    result=json.loads((output/'native-prerequisites.json').read_bytes())
+    assert result['error_signature']=='NATIVE_PREREQUISITES_SYSTEMD_CAUSAL_DIAGNOSTICS_UNKNOWN'
+    assert result['systemd_startup_diagnostics']==observation
+    assert result['G0_G8_qualification'] is result['backing_allocated'] is False
+
+
+def test_actual_nonroot_systemd_queries_retain_original_fin_even_when_manager_is_absent(tmp_path,monkeypatch):
+    """Read-only installed metadata; no sudo, unit creation or ROOT operation."""
+    assert os.getuid() == os.geteuid() > 0
+    monkeypatch.setenv('GITHUB_RUN_ID','123')
+    monkeypatch.setattr(native.development,'short_control_parent',lambda root:tmp_path)
+    result=native.capture_systemd_diagnostics(output=tmp_path/'systemd-capture',source_sha='a'*40,
+        source_tree='b'*40,owner_session='UNIT_ONLY',plan_sha256='f'*64)
+    assert set(result['queries'])=={'manager','version','package','binaries'}
+    assert result['ROOT_custody_qualified'] is result['ROOT_FIN_claimed'] is False
+    assert result['namespace_failure_cause']=='UNKNOWN'
+    assert result['status'] in ('UNKNOWN','SCOPED_NONROOT_SYSTEMD_OBSERVATION_ONLY')
+    assert result['original_NONROOT_cleanup']['foreign_paths_removed']==0
+    assert result['original_NONROOT_cleanup']['namespace_removed'] is True
+    capture=tmp_path/'systemd-capture'/'raw'
+    manifest_raw=(capture/'manifest.json').read_bytes()
+    assert digest(manifest_raw)==result['capture_manifest_sha256']
+    manifest=json.loads(manifest_raw)
+    assert manifest['actual_owned_fin_closed'] is True and manifest['owned_fin_kind']=='NATIVE_WAIT4_OWNED_FIN'
+    for kind,row in result['queries'].items():
+        log=next(item for item in manifest['files'] if item['relative_source']=='systemd-'+kind+'.log')
+        fin=next(item for item in manifest['files'] if item['relative_source']=='producer-owned-fin-systemd-'+kind+'.json')
+        assert digest((capture/log['capture_file']).read_bytes())==row['raw_sha256']
+        original=(capture/fin['capture_file']).read_bytes()
+        assert digest(original)==row['original_FIN_sha256']
+        control=json.loads(original)
+        assert control['manager_sha256']==native.development.lifecycle.DRIVER_SHA256
+        assert control['actual_owned_fin_closed'] is True and control['global_or_other_producer_FIN_claimed'] is False
+        assert control['kernel']==row['kernel'] and row['kernel']['actual_child_reaped'] is True
+        assert row['kernel']['owned_children_exhaustion_verified'] is True
+        assert row['kernel']['command'][-2:]==['--systemd-query',kind]

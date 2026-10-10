@@ -18,6 +18,52 @@ from scripts.porota_artifact_provenance import canonical_bytes, create_source_ma
 
 
 ROOT = Path(__file__).resolve().parents[1]
+MAX_PRIVATE_FULLGIT_BYTES = 256 * 1024**2
+
+
+def copy_native_fullgit(source, target):
+    """Copy bounded complete native Git, including unreachable custody objects.
+
+    A local clone from a shallow Source can drop --shared and copy only its
+    reachable subset. The original custody guard requires additional real
+    Git objects. Every read preserves source all11 custody; no aliases/links
+    to Source are left in the private fixture and no fetch is performed.
+    """
+    allocated = 0
+    def visit(origin, destination):
+        nonlocal allocated
+        descriptor = smoke.directory(origin)
+        try:
+            info = os.fstat(descriptor)
+            allocated += info.st_blocks * 512
+            assert allocated <= MAX_PRIVATE_FULLGIT_BYTES
+            destination.mkdir(mode=0o755)
+            for name in sorted(os.listdir(descriptor)):
+                old, new = origin / name, destination / name
+                row = old.lstat()
+                assert not stat.S_ISLNK(row.st_mode), "PRIVATE_FULLGIT_ALIAS_FORBIDDEN"
+                if stat.S_ISDIR(row.st_mode):
+                    visit(old, new)
+                else:
+                    assert stat.S_ISREG(row.st_mode), "PRIVATE_FULLGIT_NONREGULAR_FORBIDDEN"
+                    allocated += row.st_blocks * 512
+                    assert allocated <= MAX_PRIVATE_FULLGIT_BYTES
+                    handle = os.open(old, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+                    try:
+                        with new.open("xb") as output:
+                            while chunk := os.read(handle, 65536):
+                                output.write(chunk)
+                        assert smoke.identity(os.fstat(handle)) == smoke.identity(row)
+                        assert smoke.identity(old.lstat()) == smoke.identity(row)
+                    finally:
+                        os.close(handle)
+                    new.chmod(stat.S_IMODE(row.st_mode))
+            assert smoke.identity(os.fstat(descriptor)) == smoke.identity(info)
+        finally:
+            os.close(descriptor)
+    visit(source, target)
+    assert not (target / "objects/info/alternates").exists(), "PRIVATE_FULLGIT_FOREIGN_ALTERNATE_FORBIDDEN"
+    return allocated
 
 
 def synthetic_receipt(source, frozen):
@@ -27,7 +73,7 @@ def synthetic_receipt(source, frozen):
     legacy = json.loads((ROOT / smoke.CODEC_FIXTURE).read_bytes())
     archived = json.loads((ROOT / smoke.ARCHIVE_FIXTURE).read_bytes())
     member_hashes = {name: row["sha256"] for name, row in archived["members"].items()}
-    cases = {name: {"status": "GREEN_EXPECTED_RED" if i in {2, 3, 5, 8, 9} else "GREEN"}
+    cases = {name: {"status": "GREEN_EXPECTED_RED" if i in {2, 3, 5, 8, 9, 12, 13} else "GREEN"}
              for i, name in enumerate(smoke.CASE_IDS)}
     cases[smoke.CASE_IDS[0]].update(wire_sha256=legacy["wire_sha256"],
         logical_sha256=legacy["logical_sha256"], logical_bytes=legacy["logical_bytes"])
@@ -47,13 +93,22 @@ def synthetic_receipt(source, frozen):
         original_members_per_generation=5, source_bytes_and_all_stats_unchanged=True,
         repeated_restore_fresh_verification=True, member_sha256=[member_hashes, member_hashes])
     for index, signature in ((8, "RETENTION_COMPONENT_PACK_HASH_MISMATCH"),
-                             (9, "FileNotFoundError:EXACT_DEPENDENCY")):
+                             (9, "FileNotFoundError:EXACT_DEPENDENCY"),
+                             (12, "RETENTION_COMPONENT_PACK_HASH_MISMATCH"),
+                             (13, "FileNotFoundError:EXACT_DEPENDENCY")):
         cases[smoke.CASE_IDS[index]].update(restore_signature=signature, archive_signature=signature,
             new_ack_written=False, origin_deleted=False, source_bytes_and_all_stats_unchanged=True)
         cases[smoke.CASE_IDS[index]]["same_reader_success_before_mutation"] = True
     cases[smoke.CASE_IDS[10]].update(verification_level="BOUNDED_ARCHIVE_NAMESPACE_AND_CUSTODY_METADATA",
         isolated_python_flags=["-I", "-S"], repo_package_imports=0, source_bytes_and_all_stats_unchanged=True,
         source_sha256=hashes["rc6_shadow_runtime/archive_namespace.py"])
+    cases[smoke.CASE_IDS[11]].update(recipe_schemas=["RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V3",
+        "RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V4", "RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V3"],
+        generations=3, original_members_per_generation=5, verification_level=smoke.V3_LEVEL,
+        member_sha256=[member_hashes, member_hashes, member_hashes], source_bytes_and_all_stats_unchanged=True,
+        repeated_restore_fresh_verification=True, whole_parent_graph_verified=True, recovery_encoder_calls=0,
+        native_write_recipe_schema="RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V3", native_v4_write_enabled=False,
+        original_horizon_or_capacity_equivalence_claimed=False)
     return {"schema": smoke.SCHEMA, "status": "GREEN", "scope": smoke.SCOPE,
         "unit_fixture_scope": "EXPLICIT_SYNTHETIC_METADATA_ONLY_NOT_IMAGE_EXECUTION",
         "candidate_sha": frozen["candidate_sha"], "candidate_tree_sha": frozen["candidate_tree_sha"],
@@ -69,7 +124,7 @@ def synthetic_receipt(source, frozen):
         "rss_observation_scope": smoke.RSS_SCOPE,
         "signal_lifetime_rss_peak_bytes": 64 * 1024**2,
         "scratch_allocated_bytes": 1024**2, "output_limit_bytes": 65536,
-        "cases": cases, "case_count": 11, "runtime_approval": False,
+        "cases": cases, "case_count": len(smoke.CASE_IDS), "runtime_approval": False,
         "nine_hour_archive_capacity": "PENDING_SEPARATE_NATIVE_GATE",
         "large_producer_health_browser": "PENDING_SEPARATE_NATIVE_GATES"}
 
@@ -82,9 +137,14 @@ def native_private_source(tmp_path_factory):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     previous = os.umask(0o022)
     try:
-        subprocess.run(["git", "clone", "--shared", "--no-checkout", "--quiet", str(ROOT), str(repo)],
-                       check=True, capture_output=True, env=env)
+        repo.mkdir(mode=0o755)
+        fullgit_bytes = copy_native_fullgit(ROOT / ".git", repo / ".git")
+        assert 0 < fullgit_bytes <= MAX_PRIVATE_FULLGIT_BYTES
         head = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
+        # The copied index names files absent in this fresh checkout. Reset the
+        # private index/worktree before adding the already developed smoke.
+        subprocess.run(["git", "-C", str(repo), "reset", "--hard", "--quiet", head], check=True,
+                       capture_output=True, env=env)
         subprocess.run(["git", "-C", str(repo), "checkout", "--quiet", "--detach", head], check=True,
                        capture_output=True, env=env)
         for name in smoke.SOURCE_PATHS[:3]:
@@ -122,6 +182,8 @@ def test_native_tiny_cli_executes_all_legacy_v3_corruption_and_missing_dependenc
     assert set(report["cases"]) == set(smoke.CASE_IDS) and report["runtime_approval"] is False
     assert report["cases"][smoke.CASE_IDS[8]]["new_ack_written"] is False
     assert report["cases"][smoke.CASE_IDS[9]]["origin_deleted"] is False
+    assert report["cases"][smoke.CASE_IDS[11]]["native_v4_write_enabled"] is False
+    assert report["cases"][smoke.CASE_IDS[11]]["generations"] == 3
     receipt = path.parent / "native-cli.json"
     receipt.write_bytes(completed.stdout); receipt.chmod(0o644)
 

@@ -87,6 +87,85 @@ def test_service_command_uses_frozen_bootstrap_and_no_foreign_proc_bind(tmp_path
     assert "--guardian" in command and command[-1] == custody.unit_name("a" * 32)
 
 
+def test_only_owned_guard_hang_adds_debug_without_changing_any_restriction(tmp_path):
+    standard = custody.service_properties(tmp_path, 6)
+    assert not any(value.startswith("Log") for value in standard)
+    guard = custody.service_command(custody.ROOT, tmp_path / "custody-request.json", nonce="a" * 32,
+        control_root=tmp_path, runtime_seconds=6, broker_mode="guard-hang", guard=True)
+    properties = [value.removeprefix("--property=") for value in guard if value.startswith("--property=")]
+    assert properties == [*standard, "LogLevelMax=debug"]
+    for mode in ("probe", "quota"):
+        normal = custody.service_command(custody.ROOT, tmp_path / "probe-request.json", nonce="a" * 32,
+            control_root=tmp_path, runtime_seconds=6, broker_mode=mode)
+        assert [value.removeprefix("--property=") for value in normal if value.startswith("--property=")] == standard
+        with pytest.raises(ValueError, match="GUARD_DIAGNOSTIC_ROLE_REQUIRED"):
+            custody.service_command(custody.ROOT, tmp_path / "probe-request.json", nonce="a" * 32,
+                control_root=tmp_path, runtime_seconds=6, broker_mode=mode, guard=True)
+    with pytest.raises(ValueError, match="GUARD_DIAGNOSTIC_ROLE_REQUIRED"):
+        custody.service_command(custody.ROOT, tmp_path / "custody-request.json", nonce="a" * 32,
+            control_root=tmp_path, runtime_seconds=6, broker_mode="guard-hang")
+
+
+@pytest.mark.parametrize("value", [None, "info", "", "0", True])
+def test_guard_live_readback_requires_its_debug_profile(value):
+    with pytest.raises(ValueError, match="GUARD_ACTUAL_DEBUG_LEVEL_REQUIRED"):
+        custody.require_guard_log_profile(custody.unit_name("a" * 32, guard=True), {"LogLevelMax": value})
+    custody.require_guard_log_profile(custody.unit_name("a" * 32, guard=True), {"LogLevelMax": "debug"})
+    custody.require_guard_log_profile(custody.unit_name("a" * 32, guard=True), {"LogLevelMax": "7"})
+    custody.require_guard_log_profile(custody.unit_name("a" * 32), {})
+    with pytest.raises(ValueError, match="NON_GUARD_LOG_PROFILE_CHANGED"):
+        custody.require_guard_log_profile(custody.unit_name("a" * 32), {"LogLevelMax": "debug"})
+
+
+def systemd_raw_fixture():
+    return {"manager": b"Version=255.4-1ubuntu8.11\nLogLevel=info\nLogTarget=journal-or-kmsg\nDefaultStandardOutput=journal\nDefaultStandardError=inherit\n",
+        "version": b"systemd 255 (255.4-1ubuntu8.11)\n+PAM +AUDIT\n", "package": b"systemd\t255.4-1ubuntu8.11\n",
+        "binaries": custody.wire({"schema": "porota.rc6.installed-systemd-binaries.v1",
+            "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False,
+            "files": [{"path": path, "bytes": 64, "sha256": "a" * 64,
+                "identity": [1, 2, 0, 0, 0o100755, 1, 64, 10, 11],
+                "running_PID1_or_executor_identity_verified": False} for path in custody.SYSTEMD_BINARY_PATHS]})}
+
+
+def test_systemd_fixed_queries_and_captured_metadata_do_not_qualify_root():
+    command = custody.systemd_query_command("manager")
+    assert command == ["/usr/bin/systemctl", "show", "--no-pager",
+        "--property=Version,LogLevel,LogTarget,DefaultStandardOutput,DefaultStandardError"]
+    assert custody.systemd_query_command("version") == ["/usr/bin/systemd-run", "--version"]
+    package = custody.systemd_query_command("package")
+    assert package[-1] == "systemd" and "--showformat=${Package}\t${Version}\n" in package
+    for unknown in (None, "stop", "set-property", "foreign.service", "binaries"):
+        with pytest.raises(ValueError, match="FIXED_SYSTEMD_QUERY_REQUIRED"):
+            custody.systemd_query_command(unknown)
+    result = custody.systemd_diagnostic_origin(systemd_raw_fixture())
+    assert result["status"] == "SCOPED_NONROOT_SYSTEMD_OBSERVATION_ONLY"
+    assert result["namespace_failure_cause"] == "UNKNOWN" and result["executor_logging_journal_target_observed"] is True
+    assert result["running_PID1_binary_identity_verified"] is False
+    assert result["ROOT_custody_qualified"] is result["ROOT_FIN_claimed"] is False
+    with pytest.raises(ValueError, match="ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+        custody.validate_witness(result, binding=binding())
+
+
+@pytest.mark.parametrize("kind,raw", [("manager", b""), ("manager", b"Version=255\n"),
+    ("manager", b"Version=255\nVersion=255\n"), ("manager", b"x" * 65537),
+    ("version", b"systemd invented\n"), ("version", b"systemd 255 (foreign-version)\n"),
+    ("package", b"foreign\t255.4\n"), ("binaries", b"{}\n")])
+def test_empty_malformed_or_rebound_systemd_provenance_stays_unknown(kind, raw):
+    original = systemd_raw_fixture()
+    original[kind] = raw
+    result = custody.systemd_diagnostic_origin(original)
+    assert result["status"] == "UNKNOWN" and result["namespace_failure_cause"] == "UNKNOWN"
+    assert result["ROOT_custody_qualified"] is result["ROOT_FIN_claimed"] is False
+
+
+def test_systemd_installed_binary_hash_is_readonly_and_not_a_running_pid1_proof():
+    result = custody._installed_systemd_binary("/usr/bin/systemctl")
+    assert result["bytes"] > 0 and result["sha256"] == hashlib.sha256(Path("/usr/bin/systemctl").read_bytes()).hexdigest()
+    assert result["identity"][2] == 0 and result["running_PID1_or_executor_identity_verified"] is False
+    with pytest.raises(ValueError, match="FIXED_SYSTEMD_BINARY_REQUIRED"):
+        custody._installed_systemd_binary("/proc/1/exe")
+
+
 def test_aliased_control_root_or_foreign_request_is_not_a_root_command(tmp_path):
     alias = tmp_path / "alias"
     alias.symlink_to(tmp_path, target_is_directory=True)

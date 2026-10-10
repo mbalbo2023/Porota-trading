@@ -374,6 +374,98 @@ def test_own_scope_revocation_during_producer_cannot_be_erased_by_reacquisition(
         lease.prove_lease_coverage(timelines, context, NOW, NOW + timedelta(seconds=3), workstream=WORKSTREAM)
 
 
+def own_release_then_reacquisition(*, reacquired=NOW-timedelta(seconds=1)):
+    timelines={issue:[scoped_row(issue,1000+issue,NOW-timedelta(minutes=1),OWNER),
+        scoped_row(issue,2000+issue,NOW-timedelta(seconds=20),OWNER,released=True)]
+        for issue in (471,473)}
+    if reacquired is not None:
+        for issue,rows in timelines.items():rows.append(scoped_row(issue,3000+issue,reacquired,OWNER))
+    context={'owner_session':OWNER,'source_sha':SHA,'source_tree':TREE}
+    return timelines,context
+
+
+@pytest.mark.parametrize('quoted_lease',['unexpired','expired','absent'])
+def test_authentic_prior_own_release_requires_new_same_source_lease(quoted_lease):
+    timelines,context=own_release_then_reacquisition()
+    for rows in timelines.values():
+        release=rows[1]
+        if quoted_lease=='absent':
+            release['body']='\n'.join(line for line in release['body'].splitlines()
+                if not line.startswith('SOURCE_LEASE_EXPIRES_UTC='))+'\n'
+        elif quoted_lease=='expired':
+            release['body']=release['body'].replace(
+                lease.text_stamp(NOW+timedelta(minutes=19,seconds=40)),
+                lease.text_stamp(NOW-timedelta(seconds=30)))
+    coverage=lease.prove_lease_coverage(timelines,context,NOW,NOW+timedelta(seconds=3),workstream=WORKSTREAM)
+    assert {issue:facts['comment_ids'] for issue,facts in coverage.items()}=={'471':[3471],'473':[3473]}
+
+
+@pytest.mark.parametrize('fault',['no_reacquisition','late_reacquisition','one_issue_only'])
+def test_released_unexpired_lease_cannot_bridge_a_reacquisition_gap(fault):
+    timelines,context=own_release_then_reacquisition(reacquired=
+        None if fault=='no_reacquisition' else NOW+timedelta(seconds=1)
+        if fault=='late_reacquisition' else NOW-timedelta(seconds=1))
+    if fault=='one_issue_only':timelines[473].pop()
+    with pytest.raises(ValueError,match='CONTINUITY_GAP'):
+        lease.prove_lease_coverage(timelines,context,NOW,NOW+timedelta(seconds=3),workstream=WORKSTREAM)
+
+
+@pytest.mark.parametrize('fault',['author','edited','session','integration','workstream','mode',
+    'real_orders','deploy','expiry','flag','source_syntax','tree_syntax','foreign_active','forged_release'])
+def test_prior_release_transition_cannot_hide_malformed_or_foreign_authority(fault):
+    timelines,context=own_release_then_reacquisition()
+    release=timelines[473][1]
+    if fault=='author':release['user']['login']='foreign'
+    elif fault=='edited':release['updated_at']=lease.text_stamp(NOW)
+    elif fault=='foreign_active':
+        timelines[473].insert(-1,scoped_row(473,4000,NOW-timedelta(seconds=10),PREVIOUS))
+    elif fault=='forged_release':
+        timelines[473].insert(-1,scoped_row(473,4000,NOW-timedelta(seconds=10),PREVIOUS))
+        forged=scoped_row(473,4001,NOW-timedelta(seconds=5),PREVIOUS,released=True)
+        forged['body']=forged['body'].replace('SESSION_SUCCESSOR='+PREVIOUS,'SESSION_SUCCESSOR='+OWNER)
+        timelines[473].insert(-1,forged)
+    else:
+        key,value={'session':('SESSION_SUCCESSOR',PREVIOUS),'integration':('INTEGRATION_OWNER',PREVIOUS),
+            'workstream':('WORKSTREAM_ID','WS-RC6-FOREIGN'), 'mode':('MODE','REAL'),
+            'real_orders':('real_orders_sent','1'),'deploy':('DEPLOY_OWNER',OWNER),
+            'expiry':('SOURCE_LEASE_EXPIRES_UTC','malformed'),'flag':('RELEASED','unknown'),
+            'source_syntax':('SOURCE_SHA','malformed'),'tree_syntax':('SOURCE_TREE','malformed')}[fault]
+        fields=admission.fields(release['body']);fields[key]=value;release['body']=body(fields)
+    with pytest.raises(ValueError):
+        lease.prove_lease_coverage(timelines,context,NOW,NOW+timedelta(seconds=3),workstream=WORKSTREAM)
+
+
+@pytest.mark.parametrize('offset',[0,1,3])
+@pytest.mark.parametrize('quoted_lease',[True,False])
+def test_reacquisition_never_erases_own_release_inside_closed_interval(offset,quoted_lease):
+    timelines,context=own_release_then_reacquisition()
+    release=scoped_row(473,4000,NOW+timedelta(seconds=offset),OWNER,released=True)
+    if not quoted_lease:
+        release['body']='\n'.join(line for line in release['body'].splitlines()
+            if not line.startswith('SOURCE_LEASE_EXPIRES_UTC='))+'\n'
+    timelines[473]+=[release,scoped_row(473,4001,NOW+timedelta(seconds=offset,microseconds=1),OWNER)]
+    with pytest.raises(ValueError,match='OWNER_RELEASE_OVERLAPS_PRODUCER'):
+        lease.prove_lease_coverage(timelines,context,NOW,NOW+timedelta(seconds=3),workstream=WORKSTREAM)
+
+
+def test_fresh_same_owner_reacquisition_never_authorizes_identical_red_retry(monkeypatch):
+    transport=ReleasedApi(monkeypatch)
+    for issue in (471,473):
+        for row in (scoped_row(issue,500000+issue,NOW-timedelta(seconds=20),OWNER,released=True),
+                scoped_row(issue,600000+issue,NOW-timedelta(seconds=1),OWNER)):
+            transport.rows[issue].append(row)
+            transport.documents['/issues/comments/'+str(row['id'])]=row
+    receipt=transport.authorize_control('RC6_NATIVE_PREREQUISITES_AUTHORIZATION')
+    assert custody.verify_owner(transport,receipt['html_url'],sha=SHA,tree=TREE,owner=OWNER,now=NOW,
+        plan_sha256=PLAN,authorization_field='RC6_NATIVE_PREREQUISITES_AUTHORIZATION')
+    monkeypatch.setenv('GITHUB_RUN_ID','72')
+    monkeypatch.setattr(admission,'api',lambda path:{'total_count':1,'workflow_runs':[
+        {'id':71,'head_sha':SHA,'event':'workflow_dispatch','status':'completed','conclusion':'failure',
+            'display_title':'RC6 material native-prerequisites @ '+SHA}]})
+    with pytest.raises(ValueError,match='REQUIRES_NEW_EVIDENCED_SHA'):
+        admission.dedup_admission(SHA,'native-prerequisites')
+
+
 def test_successor_history_pagination_does_not_silently_truncate(monkeypatch):
     transport = ReleasedApi(monkeypatch)
     pages = {}

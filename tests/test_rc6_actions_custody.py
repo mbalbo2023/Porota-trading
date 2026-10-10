@@ -283,6 +283,13 @@ def test_development_admission_runs_real_git_identity_before_any_tooling(tmp_pat
         return 'a'*64
     monkeypatch.setattr(development,'verify_owner',authorized_transport_only)
     monkeypatch.setattr(development.admission,'dedup_admission',lambda sha,gate:{'unit_transport_only':True})
+    history_calls=[]
+    def history_transport_only(repo, output, **scope):
+        assert len(owner_checks)==1
+        history_calls.append(scope)
+        return {'scope':'UNIT_TRANSPORT_ONLY_NOT_HISTORY_PROOF','source_sha':scope['source_sha'],
+                'source_tree':scope['source_tree']}
+    monkeypatch.setattr(development,'prepare_history',history_transport_only)
     output=tmp_path/'admitted'
     monkeypatch.setattr(development.sys,'argv',['development','--plan',
         str(root/'ops/policy/rc6-development-checks-v1.json'),'--source-sha',expected['sha'],
@@ -291,13 +298,15 @@ def test_development_admission_runs_real_git_identity_before_any_tooling(tmp_pat
     if rebound:
         with pytest.raises(ValueError,match='DEVELOPMENT_EXACT_FROZEN_SOURCE_REQUIRED'):
             development.main()
-        assert not output.exists() and owner_checks==[]
+        assert not output.exists() and owner_checks==[] and history_calls==[]
     else:
         assert development.main()==0
         receipt=json.loads((output/'admission.json').read_bytes())
         assert receipt['source_sha']==sha and receipt['source_tree']==tree
         assert receipt['qualification_claimed'] is False
         assert len(owner_checks)==2
+        assert len(history_calls)==1 and history_calls[0]['source_sha']==sha
+        assert history_calls[0]['source_tree']==tree and len(receipt['history_sha256'])==64
         assert (output/'tooling.lock.txt').read_text()==development.tooling_lock(
             (root/'requirements.lock.txt').read_text(),sorted(development.DEPENDENCIES))
 

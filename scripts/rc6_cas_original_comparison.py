@@ -36,12 +36,12 @@ from types import MappingProxyType
 import zipfile
 
 from rc6_shadow_runtime import archive_components as components
-from rc6_shadow_runtime.archive_physical_model import horizon_schedule
+from rc6_shadow_runtime.archive_physical_model import horizon_schedule, original_prefix_obligations
 from rc6_shadow_runtime.retention import EvidenceRetention, RetentionPressure
 
 
 SCHEMA = "rc6.original-cas-comparison.v1"
-REVIEW_SCHEMA = "rc6.original-cas-reader-review.v1"
+REVIEW_SCHEMA = "rc6.original-cas-reader-review.v2"
 ACK_REVIEW_SCHEMA = "rc6.original-cas-private-producer-ack-review.v1"
 ACK_SCOPE = "PRIVATE_ORIGINAL_PRODUCER_CANDIDATE_ACK_ONLY_NOT_G5"
 MAX_AUDIT_BYTES = 256 * 1024**2
@@ -201,6 +201,7 @@ def audit_original_artifact(policy_path, member_index, artifact_path, artifact_i
         "cuts_with_all_five_payloads_available": available,
         "source_db_archive_copied": manifest.get("Source_tar_DB_archive_venv_fixture_content_copied"),
         "historical_error": result.get("error", {}).get("reason"), "original_contract": dict(CONTRACT),
+        "original_model_obligations": dict(original_prefix_obligations(cuts, available_payload_sha256=payload_hashes)),
         "storage_reduction_percent": None, "certified_physical_bound_bytes": None,
         "runtime_validated": False, "real_orders_sent": 0}
 
@@ -578,6 +579,7 @@ def publish_result(path, result):
 def authenticate_comparison(manifest_path, *, source_sha, source_tree, source_root, output_root, producer_root=None):
     """Authenticate exact predecessor artifacts; honor the current G5 hold."""
     from scripts import rc6_architectural_gates as gates
+    from scripts import rc6_archive_reader_review as readers
     gates.require_horizon_model_before_material("G5")
     wire = _read(manifest_path, maximum=MAX_INDEX_BYTES)
     manifest = components.loads(wire)
@@ -623,18 +625,25 @@ def authenticate_comparison(manifest_path, *, source_sha, source_tree, source_ro
             and ack_record.get("native_fallback_allowed") is False and ack_record.get("g5_qualification_allowed") is False
             and set(ack_record.get("executed_ack_case_names", [])) >= ACK_CASES,
             "CAS_COMPARISON_PRIVATE_ACK_CONTRACT_REVIEW_INCOMPLETE")
+    inventory = readers.source_inventory(source_root, source_sha=source_sha, source_tree=source_tree)
     for epoch in ("G1.311", "G1.312"):
         row = next(row for row in verified["authenticated_receipts"] if row["gate"] == epoch)
         reference = row["native_evidence"]["execution"]
         execution = gates.capture_member(verified["evidence_files"][epoch]["archive"], reference["path"])
         require(components.sha(execution) == reference["sha256"], "CAS_COMPARISON_ACTUAL_EXECUTION_CHANGED")
-        items = components.loads(execution)["items"]
+        observed_execution = components.loads(execution)
+        readers.executed_reader_nodes(observed_execution, source_sha=source_sha, source_tree=source_tree)
+        if epoch == review["gate"]:
+            readers.validate_review(record, inventory, observed_execution, execution,
+                                    source_sha=source_sha, source_tree=source_tree)
+        items = observed_execution["items"]
         names = _executed_case_names(items, "tests/test_rc6_archive_slice_reuse.py::")
         require(READER_CASES <= names, "CAS_COMPARISON_ACTUAL_DUAL_READER_CASES_MISSING")
         ack_names = _executed_case_names(items, "tests/test_rc6_cas_original_comparison.py::")
         require(ACK_CASES <= ack_names, "CAS_COMPARISON_ACTUAL_DUAL_PRIVATE_ACK_CASES_MISSING")
     authority = {"admission_manifest_sha256": components.sha(wire), "source_sha": source_sha,
         "source_tree": source_tree, "reader_review_sha256": review["sha256"],
+        "all_consumers_inventory_sha256": inventory["inventory_sha256"],
         "private_producer_ack_review_sha256": ack_review["sha256"], "producer_namespace_root": str(Path(producer_root).absolute()),
         "artifact_origins": verified["artifact_origins"], "native_v4_write_capability": "BLOCKED"}
     return OriginalComparison(output / "private-comparison", authority, source_root,

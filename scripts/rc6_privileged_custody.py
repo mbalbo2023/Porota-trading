@@ -33,6 +33,11 @@ MEMBER = "scripts/rc6_privileged_custody.py"
 MANAGER_MEMBER = "scripts/rc6_controlled_native_child_manager.py"
 MANAGER_SHA256 = "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
 CONTROL_BOUND = 2 * 1024**2
+SYSTEMD_QUERY_BOUND = 65536
+SYSTEMD_BINARY_BOUND = 16 * 1024**2
+SYSTEMD_CONFIG_FIELDS = ("Version", "LogLevel", "LogTarget", "DefaultStandardOutput", "DefaultStandardError")
+SYSTEMD_BINARY_PATHS = ("/usr/bin/systemctl", "/usr/bin/systemd-run", "/usr/lib/systemd/systemd",
+                        "/usr/lib/systemd/systemd-executor")
 PROBE_LIMIT = 60
 BRIDGE_DESCRIPTOR = 3
 BRIDGE_SHELL = 'exec 3<&0; exec 0</dev/null; exec "$@"'
@@ -187,6 +192,8 @@ def service_properties(control_root, runtime_seconds):
 def service_command(source, request_path, *, nonce, control_root, runtime_seconds,
                     broker_mode, guard=False):
     require(broker_mode in ("probe", "quota", "guard-hang"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
+    require(type(guard) is bool and guard == (broker_mode == "guard-hang"),
+            "ROOT_CUSTODY_GUARD_DIAGNOSTIC_ROLE_REQUIRED")
     source = Path(source).absolute()
     require(source == ROOT, "ROOT_CUSTODY_FIXED_CHECKOUT_REQUIRED")
     request_path = Path(request_path).absolute()
@@ -201,6 +208,10 @@ def service_command(source, request_path, *, nonce, control_root, runtime_second
     if broker_mode != "guard-hang":
         command.insert(4, "--quiet")
     command.extend("--property=" + value for value in service_properties(control_root, runtime_seconds))
+    if guard:
+        # This changes only the owned startup diagnostic's log verbosity.
+        # Broker/quota properties and every isolation restriction stay fixed.
+        command.append("--property=LogLevelMax=debug")
     for key in ("PATH", "RUNNER_TOOL_CACHE", "LANG", "LC_ALL"):
         if key in os.environ:
             value = os.environ[key]
@@ -238,6 +249,16 @@ def _seconds(value):
     return int(number) / {"us": 1000000, "ms": 1000, "s": 1, "sec": 1, None: 1}[unit]
 
 
+def require_guard_log_profile(name, properties):
+    require(type(name) is str and re.fullmatch(r"rc6-native-[0-9a-f]{32}(?:-guard)?\.service", name),
+            "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
+    if name.endswith("-guard.service"):
+        require(properties.get("LogLevelMax") in ("debug", "7"),
+                "ROOT_CUSTODY_GUARD_ACTUAL_DEBUG_LEVEL_REQUIRED")
+    else:
+        require("LogLevelMax" not in properties, "ROOT_CUSTODY_NON_GUARD_LOG_PROFILE_CHANGED")
+
+
 def controller_snapshot(name, expected_runtime):
     actor = kernel_process(os.getpid())
     controller = public_kernel_process(1)
@@ -247,6 +268,7 @@ def controller_snapshot(name, expected_runtime):
     require(actor["cgroup"] == expected_cgroup, "ROOT_CUSTODY_ACTUAL_PRIVATE_CGROUP_REQUIRED")
     unit = _unit_file(name)
     properties = unit["properties"]
+    require_guard_log_profile(name, properties)
     require(_seconds(properties.get("RuntimeMaxSec")) == expected_runtime
             and _seconds(properties.get("TimeoutStopSec")) == 2
             and properties.get("KillMode") == "control-group"
@@ -967,6 +989,119 @@ def journal_command(unit, boot_id):
         "_BOOT_ID=" + boot_id, "_UID=0", "UNIT=" + unit, "+", "_BOOT_ID=" + boot_id, "_SYSTEMD_UNIT=" + unit]
 
 
+def systemd_query_command(kind):
+    """Fixed NONROOT read-only commands; no unit selection or mutation API."""
+    commands = {
+        "manager": ["/usr/bin/systemctl", "show", "--no-pager",
+                    "--property=" + ",".join(SYSTEMD_CONFIG_FIELDS)],
+        "version": ["/usr/bin/systemd-run", "--version"],
+        "package": ["/usr/bin/dpkg-query", "--show", "--showformat=${Package}\t${Version}\n", "systemd"],
+    }
+    require(type(kind) is str and kind in commands, "ROOT_CUSTODY_FIXED_SYSTEMD_QUERY_REQUIRED")
+    return list(commands[kind])
+
+
+def _installed_systemd_binary(path):
+    """Hash an installed trusted file, never claim it is PID1's pinned FD."""
+    path = Path(path)
+    require(str(path) in SYSTEMD_BINARY_PATHS, "ROOT_CUSTODY_FIXED_SYSTEMD_BINARY_REQUIRED")
+    require(not any(item.is_symlink() for item in (path, *path.parents)),
+            "ROOT_CUSTODY_SYSTEMD_BINARY_ALIAS")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_uid == 0 and not before.st_mode & 0o022
+                and 0 < before.st_size <= SYSTEMD_BINARY_BOUND, "ROOT_CUSTODY_SYSTEMD_BINARY_IDENTITY_UNKNOWN")
+        hashed, size = hashlib.sha256(), 0
+        while True:
+            part = os.read(descriptor, 131072)
+            if not part:
+                break
+            size += len(part)
+            require(size <= SYSTEMD_BINARY_BOUND, "ROOT_CUSTODY_SYSTEMD_BINARY_BYTES_BOUND")
+            hashed.update(part)
+        after = os.fstat(descriptor)
+        fields = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+        identity = [getattr(before, name) for name in fields]
+        require(size == before.st_size and identity == [getattr(after, name) for name in fields]
+                and identity == [getattr(path.lstat(), name) for name in fields],
+                "ROOT_CUSTODY_SYSTEMD_BINARY_CHANGED")
+        return {"path": str(path), "bytes": size, "sha256": hashed.hexdigest(), "identity": identity,
+                "running_PID1_or_executor_identity_verified": False}
+    finally:
+        os.close(descriptor)
+
+
+def systemd_query_worker(kind):
+    require(os.getuid() == os.geteuid() > 0 and public_kernel_process(os.getpid())["capabilities"]["CapEff"] == 0,
+            "ROOT_CUSTODY_SYSTEMD_QUERY_NONROOT_ONLY")
+    require(kind in ("manager", "version", "package", "binaries"), "ROOT_CUSTODY_FIXED_SYSTEMD_QUERY_REQUIRED")
+    resource.setrlimit(resource.RLIMIT_FSIZE, (SYSTEMD_QUERY_BOUND, SYSTEMD_QUERY_BOUND))
+    if kind != "binaries":
+        command = systemd_query_command(kind)
+        os.execve(command[0], command, {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+    rows = []
+    for path in SYSTEMD_BINARY_PATHS:
+        try:
+            rows.append(_installed_systemd_binary(path))
+        except (ValueError, OSError) as error:
+            rows.append({"path": path, "status": "UNKNOWN", "errno": getattr(error, "errno", None),
+                         "reason": str(error), "running_PID1_or_executor_identity_verified": False})
+    sys.stdout.buffer.write(wire({"schema": "porota.rc6.installed-systemd-binaries.v1", "files": rows,
+        "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False}))
+    return 0
+
+
+def systemd_diagnostic_origin(raws):
+    """Inspect original query bytes; observations cannot admit a ROOT actor."""
+    result = {"status": "UNKNOWN", "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False,
+              "namespace_failure_cause": "UNKNOWN", "running_PID1_binary_identity_verified": False}
+    try:
+        require(type(raws) is dict and set(raws) == {"manager", "version", "package", "binaries"}
+                and all(type(raw) is bytes and 0 < len(raw) <= SYSTEMD_QUERY_BOUND for raw in raws.values()),
+                "ROOT_CUSTODY_SYSTEMD_ORIGINAL_QUERY_BYTES_REQUIRED")
+        config = {}
+        for line in raws["manager"].decode("utf-8", errors="strict").splitlines():
+            key, value = line.split("=", 1)
+            require(key in SYSTEMD_CONFIG_FIELDS and key not in config and value
+                    and len(value) <= 512, "ROOT_CUSTODY_SYSTEMD_MANAGER_FIELDS_UNKNOWN")
+            config[key] = value
+        require(set(config) == set(SYSTEMD_CONFIG_FIELDS)
+                and config["LogLevel"] in ("emerg", "alert", "crit", "err", "warning", "notice", "info", "debug")
+                and config["LogTarget"] in ("auto", "console", "console-prefixed", "journal", "journal-or-kmsg",
+                    "kmsg", "syslog", "syslog-or-kmsg", "null"), "ROOT_CUSTODY_SYSTEMD_MANAGER_PROFILE_UNKNOWN")
+        version = raws["version"].decode("utf-8", errors="strict").splitlines()[0]
+        require(re.fullmatch(r"systemd [0-9]{3}(?:\.[0-9]+)?(?: \([^\r\n]{1,256}\))?", version),
+                "ROOT_CUSTODY_SYSTEMD_VERSION_UNKNOWN")
+        package = raws["package"].decode("utf-8", errors="strict").strip()
+        require(re.fullmatch(r"systemd\t[0-9][A-Za-z0-9.+:~\-]{0,255}", package),
+                "ROOT_CUSTODY_SYSTEMD_PACKAGE_UNKNOWN")
+        package_version = package.split("\t", 1)[1]
+        require(config["Version"] == package_version and ("(" + package_version + ")") in version,
+                "ROOT_CUSTODY_SYSTEMD_LIVE_AND_INSTALLED_VERSION_REBOUND")
+        from scripts import rc6_capacity_calibration as calibration
+        binaries = calibration.decode(raws["binaries"])
+        require(binaries.get("schema") == "porota.rc6.installed-systemd-binaries.v1"
+                and binaries.get("ROOT_custody_qualified") is False and binaries.get("ROOT_FIN_claimed") is False
+                and type(binaries.get("files")) is list
+                and [row.get("path") for row in binaries["files"]] == list(SYSTEMD_BINARY_PATHS)
+                and all(type(row.get("sha256")) is str and re.fullmatch(r"[0-9a-f]{64}", row["sha256"])
+                    and type(row.get("bytes")) is int and 0 < row["bytes"] <= SYSTEMD_BINARY_BOUND
+                    and type(row.get("identity")) is list and len(row["identity"]) == 9
+                    and all(type(item) is int for item in row["identity"])
+                    and row["identity"][2] == 0 and stat.S_ISREG(row["identity"][4])
+                    and row["identity"][4] & 0o022 == 0 and row["identity"][5] > 0
+                    and row["identity"][6] == row["bytes"]
+                    and row.get("running_PID1_or_executor_identity_verified") is False
+                    for row in binaries["files"]), "ROOT_CUSTODY_SYSTEMD_INSTALLED_BINARY_UNKNOWN")
+        return {**result, "status": "SCOPED_NONROOT_SYSTEMD_OBSERVATION_ONLY", "manager": config,
+                "installed_version": version, "installed_package": package, "installed_binaries": binaries["files"],
+                "executor_logging_journal_target_observed": config["LogTarget"] in ("journal", "journal-or-kmsg"),
+                "default_stdio_is_guard_pipe_stdio_claimed": False}
+    except (ValueError, TypeError, KeyError, UnicodeError, IndexError, AttributeError) as error:
+        return {**result, "reason": str(error)}
+
+
 def journal_query_worker(unit, boot_id):
     require(os.getuid() == os.geteuid() > 0 and public_kernel_process(os.getpid())["capabilities"]["CapEff"] == 0,
             "ROOT_CUSTODY_JOURNAL_NONROOT_ONLY")
@@ -1227,7 +1362,13 @@ def cli():
     parser.add_argument("--unit")
     parser.add_argument("--journal-unit")
     parser.add_argument("--journal-boot")
+    parser.add_argument("--systemd-query", choices=("manager", "version", "package", "binaries"))
     args = parser.parse_args()
+    if args.systemd_query:
+        require(not any((args.guardian, args.private_init, args.broker, args.actor_case, args.request,
+                         args.unit, args.journal_unit, args.journal_boot)),
+                "ROOT_CUSTODY_SYSTEMD_EXACT_READONLY_ROLE_REQUIRED")
+        return systemd_query_worker(args.systemd_query)
     if args.journal_unit or args.journal_boot:
         require(args.journal_unit and args.journal_boot and not any((args.guardian, args.private_init, args.broker,
                 args.actor_case, args.request, args.unit)), "ROOT_CUSTODY_JOURNAL_EXACT_READONLY_ROLE_REQUIRED")

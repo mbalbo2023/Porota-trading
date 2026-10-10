@@ -1571,5 +1571,133 @@
       "RED_reclassified": false,
       "identical_retry_allowed": false
     }
+  },
+  "continuation_from_pr483_20261010": {
+    "authorization": {
+      "G0_G8_qualification": false,
+      "G7_G8_prepared": false,
+      "deployed": false,
+      "exact_successor_economic_Actions": "PENDING",
+      "material_gate_launched": false,
+      "merged": false,
+      "mode": "PRODUCTION_PAPER / SIMULATION",
+      "native_ROOT": "NOT_CERTIFIED",
+      "ppi_watch": "UNTOUCHED",
+      "production_mutated": false,
+      "real_orders_sent": 0,
+      "real_routes": "BLOCKED / NOT_CALLED",
+      "recurring_additional_usd": 0
+    },
+    "branch": "fix/rc6-native-certification-20261010",
+    "cas": {
+      "G7_exact_image_reader_proof_still_required": true,
+      "GC_recovery_temporary_and_global_envelope_certified": false,
+      "HORIZON_MODEL_CLOSURE_hold_preserved": true,
+      "V4_productive_writes_enabled": false,
+      "consumer_inventory": "ALL_TRACKED_EXECUTABLE_SOURCE_AND_TRANSITIVE_PYTHON_CALLERS",
+      "global_1202_physical_bound_bytes": null,
+      "missing_original_cuts": 153,
+      "mixed_V3_V4_GC_SIGKILL_control_points": 7,
+      "native_write_schema": "V3",
+      "original_1202_saving_percent": null,
+      "original_payload_sets_complete": 0,
+      "phase_boundary_original_indices": [
+        770,
+        771,
+        772
+      ],
+      "reader_review_requires_authentic_dual_execution": true,
+      "reader_review_schema": "rc6.original-cas-reader-review.v2",
+      "tiny_fixture_is_original_Horizon": false,
+      "local_complete_regressions_per_python": 247,
+      "local_final_reader_regressions_per_python": 43,
+      "local_complete_JUnit_sha256": {
+        "311": "6495b9804e08d5032a2db0395c8d8ab308495bee0416d544ac1396758d104e2c",
+        "312": "6102b6b78c59e18f516d6cbc0510e710155dc677266b4745e60577f5fe3a0175"
+      },
+      "authentic_original_model_obligations_sha256": "31f5669c83d2b1cfc59498ba9b463308d6ac57789c69abd4a9415fa8d1419993",
+      "committed_allocation_observations_NOT_continuous_peak": {
+        "771": 362553344,
+        "772": 366702592,
+        "1048": 535801856
+      }
+    },
+    "fullGit": {
+      "CI_reader_history_bootstrap": "DEVELOPED_BOUNDED_NONROOT_POST_ADMISSION_PRE_TOOLING",
+      "ecad_origin_is_ancestor": true,
+      "local_recovery": "CANONICAL_FETCH_UNSHALLOW_NOT_MANUAL_SHALLOW_EDIT",
+      "local_scoped_regressions_per_python": 74,
+      "original_NONROOT_FIN_and_capture_and_cleanup_passed": true,
+      "offline_miniature_Git_allocated_bytes": 225280,
+      "offline_miniature_Git_entries": 53,
+      "kernel_per_file_limit_bytes": 268435456,
+      "observed_aggregate_Git_limit_bytes": 536870912,
+      "aggregate_is_continuous_peak_or_native_quota": false,
+      "timeout_seconds": 60,
+      "free_floor_bytes": 5100273664,
+      "free_inode_ratio": 0.1,
+      "freeze_witness_sha256": "2bd0399258d376995b0621e6d6b9232bcc684bf5a0f253e3ba3723d786e17863"
+    },
+    "original_native_RED": {
+      "ROOT_FIN": "UNKNOWN",
+      "ROOT_cleanup_authorized": false,
+      "ROOT_pidfd": false,
+      "all_journal_records_PID1_only": true,
+      "artifact_id": 11659366663,
+      "client_FIN_returncode": 226,
+      "errno": null,
+      "executor_phase": "EXIT_NAMESPACE_BEFORE_GUARDIAN_BIRTH",
+      "failed_operation": null,
+      "guardian_birth": false,
+      "identical_retry_permitted": false,
+      "original_boot_unit_journal_records": 4,
+      "run_id": 38024250723,
+      "space_recovery_credited_bytes": 0,
+      "zip_bytes": 42853,
+      "zip_members": 22,
+      "zip_sha256": "61a00c5c3e2e63c414d00381365e811d35c7964302c7ce41eed7e15a8b528bee"
+    },
+    "ownership": "AUTHENTIC_OWN_SESSION_REACQUISITION_AFTER_EXPLICIT_RELEASE_NOT_EXPIRY",
+    "pr": 483,
+    "root_actor_security_audit": {
+      "CAP_SYS_ADMIN_during_original_probe": "STATIC_CODE_CONFIRMED_UNSEALED",
+      "after_trusted_setup_ROOT_seal": "SEPARATE_DEVELOPMENT_REQUIRES_NATIVE_PROOF",
+      "contract_equivalence_approved": false,
+      "minimum_boundary": "PID1_OWN_CGROUP_AND_DEADLINE_PLUS_ORIGINAL_SUBREAPER_AND_PRIVATE_SEALED_ACTORS",
+      "nonroot_plan_reused_before_ROOT_drop": false,
+      "service_readonly_paths_cannot_alone_resist_privileged_remount": true
+    },
+    "source_origin_sha": "5daf01728865c3f65c3f31a5abb843ee8ce874d3",
+    "source_origin_tree": "7bd8cc2695079fd25befd551d3aadb8fddec8a68",
+    "status": "DEVELOPED_SCOPED_GUARDS_EXACT_SUCCESSOR_CI_AND_NATIVE_RCA_PENDING",
+    "systemd_diagnostic": {
+      "NONROOT_fixed_queries": 4,
+      "broker_quota_restrictions_changed": false,
+      "bytes_per_query": 65536,
+      "causal_errno_requires_original_runner_RAW": true,
+      "guard_only_LogLevelMax": "debug",
+      "installed_binary_identity_is_running_PID1_identity": false,
+      "journal_max_bytes": 2097152,
+      "journal_max_records": 30,
+      "seconds_per_query": 5,
+      "status": "DEVELOPED_LOCAL_282_PASS_PER_PYTHON_NOT_NATIVE_ROOT"
+    },
+    "economic_plan": {
+      "selections": 69,
+      "all_prior_66_preserved": true,
+      "dependencies": 14,
+      "sha256": "58bb20a57a91d8247dcb154d1ef405fd317b055b4a00f0b06c253ed0692f3469"
+    },
+    "implementation_sha256": {
+      "scripts/rc6_privileged_custody.py": "53554c1643b574366bd74a18050739f9c38e65265d6f97714b825cdfe8bd7c9c",
+      "scripts/rc6_native_prerequisites.py": "587463b071abd747d41a38a873b196cdd9e8c68f6b4c871c78e21083813397a4",
+      "ops/policy/rc6-native-prerequisites-v1.json": "728faa3ce7b6fd759113ebad77a8bb6beeef56d569e408fb5691f72f5350bf66",
+      "scripts/rc6_development_checks.py": "86022a27285b5f26605717ff2df8f2e737bbf2da6b8482fffe978c285b4433d5",
+      "scripts/rc6_owned_gate_lease.py": "f3470d2a78d7fc98c19c562be6e7d99f9ea58d539d2666c12292caf6d40aba0a",
+      "scripts/rc6_archive_reader_review.py": "bc424b1013b382b1b076babbcbf303e89b8c08c3fe541541916b508b45391d30",
+      "scripts/rc6_archive_v3_image_smoke.py": "198cf6fe24beb003e6b5029bd6688b58a13c18985ba43446a4d00aa4318f98ed",
+      "scripts/rc6_cas_original_comparison.py": "0fe56460ccfa76e38d064ce455a45a836ca796723b977e5afcde933949b73b0f",
+      "rc6_shadow_runtime/archive_physical_model.py": "0dc7233524f43e29546a03df32b3ef18a31b897fdb7322961ab13ef726394bee"
+    }
   }
 }

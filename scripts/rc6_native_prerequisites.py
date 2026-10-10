@@ -201,6 +201,73 @@ def prove_filter_in_child(*, output, source_sha, source_tree, owner_session, pla
         'capture_manifest_sha256':captured.manifest_sha256,'irreversible_filter_installed_in_issuer':False}
 
 
+def capture_systemd_diagnostics(*, output, source_sha, source_tree, owner_session, plan_sha256):
+    """Retain bounded original NONROOT queries, including RED/empty replies."""
+    from scripts import rc6_privileged_custody as privileged
+    owned = development.lifecycle
+    output = require_control_path(output)
+    require(os.getuid() == os.geteuid() > 0
+        and privileged.public_kernel_process(os.getpid())['capabilities']['CapEff'] == 0,
+        'NATIVE_PREREQUISITES_SYSTEMD_OBSERVER_NONROOT_REQUIRED')
+    binding = {'candidate_sha':source_sha,'candidate_tree':source_tree,'producer':'NATIVE_SYSTEMD_DIAGNOSTICS',
+        'attempt_id':os.environ['GITHUB_RUN_ID']+'-1','owner_id':owner_session,'runner_class':'github-hosted/ubuntu-24.04',
+        'workload_fingerprint':plan_sha256}
+    namespace = owned.create_namespace(development.short_control_parent(ROOT),binding)
+    output.mkdir(mode=0o700)
+    result = {'schema':'porota.rc6.systemd-startup-diagnostics.v1','status':'UNKNOWN','binding':binding,
+        'scope':'ORIGINAL_NONROOT_METADATA_ONLY','ROOT_custody_qualified':False,'ROOT_FIN_claimed':False,
+        'namespace_failure_cause':'UNKNOWN','namespace_retained':str(namespace.path),'queries':{}}
+    raws, required, fin = {}, [], None
+    try:
+        for kind in ('manager','version','package','binaries'):
+            label = 'systemd-'+kind
+            command = [sys.executable,'-I','-B',str(ROOT/privileged.MEMBER),'--systemd-query',kind]
+            kernel,fin = owned.execute_owned(namespace,command,cwd=ROOT,
+                environ={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'},progress=None,timeout_seconds=5,
+                log_relative=label+'.log',fin_label=label)
+            owned.require_fin(namespace,fin)
+            raw = privileged._read(namespace.path/(label+'.log'),privileged.SYSTEMD_QUERY_BOUND)
+            original_fin = privileged._read(namespace.path/fin.control_name,privileged.SYSTEMD_QUERY_BOUND)
+            raws[kind] = raw
+            required.append(label+'.log')
+            result['queries'][kind] = {'kernel':kernel,'command':(
+                privileged.systemd_query_command(kind) if kind != 'binaries' else {'fixed_paths':list(privileged.SYSTEMD_BINARY_PATHS)}),
+                'raw_bytes':len(raw),'raw_sha256':digest(raw),'original_FIN_sha256':digest(original_fin),
+                'native_query_phase_green':owned._phase_green(fin)}
+        captured = owned.capture_required_evidence(namespace,fin,output/'raw',required)
+        result['capture_manifest_sha256'] = captured.manifest_sha256
+        result['original_capture'] = str(captured.path)
+        result['original_NONROOT_cleanup'] = owned.cleanup_namespace(namespace,fin,captured)
+        result.pop('namespace_retained')
+        origin = privileged.systemd_diagnostic_origin(raws)
+        result['observation'] = origin
+        if all(row['native_query_phase_green'] for row in result['queries'].values()):
+            result['status'] = origin['status']
+        else:
+            result['reason'] = 'SYSTEMD_QUERY_NATIVE_PHASE_RED'
+    except (ValueError,OSError,KeyError,TypeError) as error:
+        result.update(reason=str(error),errno=getattr(error,'errno',None))
+    with (output/'systemd-startup-diagnostics.json').open('xb') as stream:
+        stream.write(canonical(result))
+    return result
+
+
+def require_systemd_diagnostic_plan(raw):
+    require(type(raw) is bytes, 'NATIVE_PREREQUISITES_FIXED_SYSTEMD_DIAGNOSTIC_PLAN_REQUIRED')
+    plan = admission.document(raw.decode('utf-8'))
+    require(type(plan) is dict and plan.get('guard_hang_only_LogLevelMax') == 'debug'
+        and plan.get('systemd_startup_observer') == 'NONROOT_ORIGINAL_OWNED_FIN_ONLY'
+        and type(plan.get('systemd_query_timeout_seconds')) is int and plan['systemd_query_timeout_seconds'] == 5
+        and type(plan.get('systemd_query_physical_file_hard_limit_bytes')) is int
+        and plan['systemd_query_physical_file_hard_limit_bytes'] == 65536
+        and type(plan.get('systemd_query_count')) is int and plan['systemd_query_count'] == 4
+        and plan.get('systemd_installed_binary_identity_qualifies_running_PID1') is False
+        and plan.get('systemd_metadata_qualifies_ROOT_custody_or_namespace_cause') is False
+        and plan.get('journal_maximum_entries_per_owned_origin') == 30
+        and plan.get('journal_query_physical_file_hard_limit_bytes') == 2*1024**2,
+        'NATIVE_PREREQUISITES_FIXED_SYSTEMD_DIAGNOSTIC_PLAN_REQUIRED')
+
+
 def admit_native_prerequisites(args, source, control):
     require_control_path(control)
     require(Path(source) == ROOT and os.getuid() == os.geteuid() > 0
@@ -219,6 +286,7 @@ def admit_native_prerequisites(args, source, control):
         'NATIVE_PREREQUISITES_DISPATCH_SCOPE_REBOUND')
     github = Github(os.environ.get('GH_TOKEN'))
     plan_raw = PLAN.read_bytes()
+    require_systemd_diagnostic_plan(plan_raw)
     owner_check = lambda:verify_owner(github,args.launch_receipt_url,sha=args.source_sha,tree=args.source_tree,
         owner=args.owner_session,plan_sha256=digest(plan_raw),authorization_field='RC6_NATIVE_PREREQUISITES_AUTHORIZATION')
     owner_hash = owner_check()
@@ -310,6 +378,12 @@ def main():
             'producer':'NATIVE_CUSTODY_PREREQUISITES','attempt_id':os.environ['GITHUB_RUN_ID']+'-1',
             'owner_id':args.owner_session,'runner_class':'github-hosted/ubuntu-24.04',
             'workload_fingerprint':admitted['plan_sha256']}
+        result['systemd_startup_diagnostics'] = capture_systemd_diagnostics(output=output/'systemd-startup',
+            source_sha=args.source_sha,source_tree=args.source_tree,owner_session=args.owner_session,
+            plan_sha256=admitted['plan_sha256'])
+        require(result['systemd_startup_diagnostics'].get('status') == 'SCOPED_NONROOT_SYSTEMD_OBSERVATION_ONLY',
+            'NATIVE_PREREQUISITES_SYSTEMD_CAUSAL_DIAGNOSTICS_UNKNOWN')
+        admitted['owner_check']()
         witness = privileged.prove_custody(source=ROOT,source_sha=args.source_sha,source_tree=args.source_tree,
             code_hashes=code_hashes,parent=development.short_control_parent(ROOT),binding=witness_binding,progress=None,
             capture_parent=output/'custody-raw')

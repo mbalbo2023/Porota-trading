@@ -209,3 +209,38 @@ ni crédito de reserva. Mantiene30 entradas/2MiB/5s/NONROOT/originales/hash,
 properties/caps/DUMPABLE/manager. El próximo Source exige su propia CI antes
 de un único control nativo acotado que recupere la causa. No se retira
 InaccessiblePaths ni se habilita AF_UNIX por sospecha, ni se modifica G0.
+
+
+## Continuación desde PR483: causa y frontera de custodia
+
+Se conserva el Source original `5daf01728865c3f65c3f31a5abb843ee8ce874d3` y
+la misma rama/PR483; #481/#482 permanecen en su ascendencia. La reacquisición
+es de la propia sesión después de releases auténticos, por la nueva orden del
+propietario. Un release histórico anterior a una reacquisición no reemplaza la
+cobertura de lease del intervalo nuevo: el guard tiene251 regresiones por Python
+y rechaza autor/scope ajenos, gaps y revocación dentro del intervalo.
+
+El original38024250723/artifact11659366663 conserva22 miembros CRC/SHA,42853B,
+SHA256 `61a00c5c3e2e63c414d00381365e811d35c7964302c7ce41eed7e15a8b528bee`.
+Su FIN cliente226 es anterior a birth/pidfd ROOT. Los cuatro mensajes journal
+del boot/unidad propios provienen de PID1 y no contienen operación/errno causal.
+No se atribuye ENOENT, EACCES ni otro errno a esa ejecución. FIN ROOT permanece
+UNKNOWN, namespace retenido, sin cleanup ni crédito físico.
+
+| Propiedad / error | Corrección concreta | Evidencia y límite |
+|---|---|---|
+| Diagnóstico226 antes de exec | Sólo el guard propio añade `LogLevelMax=debug` con readback; cuatro consultas NONROOT de configuración viva, versión, package y digests instalados, cada una con FIN original/5s/64KiB. |282 PASS económicos por Python; broker/quota sin cambios. Journal30/2MiB intacto. Próxima prueba nativa requiere CI positiva del mismo Source. Binario instalado no acredita FD vivo PID1. |
+| Magic links de `InaccessiblePaths` | Auditoría de executor/namespace/chase v255.4: systemd sigue links y puede reordenar mounts. | Hipótesis de máscara del root de servicio y fallo posterior; sólo RAW causal del runner puede convertirla en RCA. No se retira ninguna restricción por sospecha. |
+| ROOT puede deshacer mounts protegidos | Auditoría confirma que el actor conservaba CAP_SYS_ADMIN durante probes. Se separa setup confiable de un sello ROOT posterior; originalmanager conserva subreaper/fork/exec/setsid/wait4/killpg. | Sello en desarrollo separado, sin aplicar el filtro NONROOT antes del drop. Frontera única: PID1/cgroup/plazo y supervisor original para drenaje; actores privados sellados. Necesita prueba nativa, no equivalencia por metadata. |
+| FullGit shallow impide smoke real | Fetch canónico recuperó ancestry ecad→HEAD; no eliminación manual de shallow. CI debe preparar ese historial después de admisión y antes de tooling/pin, con límites y FIN propios. | Los RED previos se conservan. No se rebaja el guard RAW/provenance ni se obtiene el historial durante las pruebas. |
+| Lectores mixtos y recovery | CLI V3→V4→V3, corrupción/falta de parent pack, ocho controles GC reales con siete puntos SIGKILL, inventario de todo Source ejecutable y callers transitivos; reviewv2 exige ejecuciones duales y FIN. | Fixtures económicas; writer productivoV3 y G7 exactimage siguen obligatorios. Ningún porcentaje sintético se extrapola a Horizon. |
+| Modelo globalG5 | Guards de fases PREOPEN/OPEN/CLOSED y transición770/771/772; cotas incluyen graph, pins, GC/recovery/temporales. | RAW tiene1049/1202 cortes y0 conjuntos completos de payloads. Cota física/ahorro global siguen null; `HORIZON_MODEL_CLOSURE` intacto, sin ejecutar Horizon antes de admisión. |
+
+Source1 sólo habilita, tras su CI económica auténtica, un diagnóstico nativo
+pequeño con las restricciones originales. La corrección de la causa confirmada
+exigirá un nuevo Source, regresión positiva/negativa, CI exacta y witness nativo
+antes de declarar custodia, cuota o reservas. Cambiar el outcome contractual
+EACCES por PID ausente requiere revisión explícita; no se aprueba aquí.
+G0–G6, perfil completo1CPU/1GiB y margen total del Droplet permanecen bloqueados;
+G7/G8 esperan esos gates. USD0 recurrente adicional, PAPER/SHADOW, órdenes0,
+PPI intacto, FIX-FORWARD; sin compra, ampliación, merge ni deploy.

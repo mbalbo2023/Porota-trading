@@ -171,6 +171,23 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None):
                         require(values.get('WORKSTREAM_ID') == prior.get('WORKSTREAM_ID'),
                             'OWNED_LEASE_EXPLICIT_RELEASE_WORKSTREAM_REBOUND')
                     states[identifier] = values
+                if values.get('RELEASED') == 'true' and context['owner_session'] in owners:
+                    require(values.get('WRITE_OWNER') == values.get('INTEGRATION_OWNER')
+                            == values.get('SESSION_SUCCESSOR', values.get('SESSION')) == context['owner_session']
+                        and values.get('WORKSTREAM_ID') == (workstream or admission.WORKSTREAM)
+                        and values.get('DEPLOY_OWNER') == 'NOT_ACQUIRED'
+                        and values.get('MODE') == 'PRODUCTION_PAPER / SIMULATION'
+                        and values.get('real_orders_sent') == '0'
+                        and re.fullmatch('[0-9a-f]{40}', values.get('SOURCE_SHA', ''))
+                        and re.fullmatch('[0-9a-f]{40}', values.get('SOURCE_TREE', '')),
+                        'OWNED_LEASE_AUTHENTIC_PRIOR_OWN_RELEASE_REQUIRED')
+                    if values.get('SOURCE_LEASE_EXPIRES_UTC') is not None:
+                        admission.stamp(values['SOURCE_LEASE_EXPIRES_UTC'])
+                    # A pre-interval release revokes all prior own lease spans.
+                    # It grants none, even when it quotes an unexpired lease.
+                    # Coverage must come from a later explicit reacquisition.
+                    spans.clear()
+                    continue
             if values.get('SOURCE_LEASE_EXPIRES_UTC') is None or values.get('WRITE_OWNER') != context['owner_session']:
                 continue
             if values.get('SOURCE_SHA') != context['source_sha'] or values.get('SOURCE_TREE') != context['source_tree']:

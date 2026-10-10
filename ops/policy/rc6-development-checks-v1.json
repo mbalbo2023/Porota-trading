@@ -83,7 +83,10 @@
     "tests/test_rc6_released_successor.py",
     "tests/test_rc6_cas_original_comparison.py",
     "tests/test_rc6_capacity_calibration.py",
-    "tests/test_rc6_privileged_custody.py"
+    "tests/test_rc6_privileged_custody.py",
+    "tests/test_rc6_archive_reader_review.py",
+    "tests/test_rc6_archive_v3_image_smoke.py",
+    "tests/test_rc6_development_history.py"
   ],
   "material_gate_launched": false,
   "full_gov_claimed": false,
