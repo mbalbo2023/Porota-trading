@@ -670,7 +670,32 @@ def prepare_code(source, repository, sha, tree, index, control, raw, data):
     return pin
 
 
-def execute(*,source_root,source_repo,source_sha,source_tree,source_index,raw_root,data_root,python311,control_root):
+def comparison_command_args(path,expected_hash,*,source_root,data_root,source_sha,source_tree):
+    """Forward one original bounded control; it never confers G5 authority."""
+    if path is None:
+        require(expected_hash is None,'PRIVATE_CAS_MANIFEST_AND_HASH_PAIR_REQUIRED')
+        return []
+    require(type(expected_hash) is str and HEX64.fullmatch(expected_hash),
+        'PRIVATE_CAS_MANIFEST_AND_HASH_PAIR_REQUIRED')
+    path=canonical(Path(path),existing=True)
+    require(not path.is_relative_to(source_root) and path.parent==data_root.parent
+        and path.name=='private-cas-admission.json','PRIVATE_CAS_MANIFEST_OWNED_SIBLING_REQUIRED')
+    require(path.lstat().st_uid==os.geteuid() and path.lstat().st_size<=256*1024,
+        'PRIVATE_CAS_MANIFEST_OWNED_BYTES_BOUND')
+    facts,wire=capture(path,keep_bytes=True)
+    require(facts['st_size']<=256*1024 and facts['sha256']==expected_hash,
+        'PRIVATE_CAS_MANIFEST_BYTES_OR_HASH_CHANGED')
+    manifest=parse(wire)
+    require(manifest.get('schema')=='rc6.original-cas-comparison-admission.v2'
+        and manifest.get('source_sha')==source_sha and manifest.get('source_tree')==source_tree
+        and manifest.get('producer_namespace_root')==str(data_root)
+        and manifest.get('qualification_scope')=='PRIVATE_DEVELOPMENT_ONLY_NOT_G5',
+        'PRIVATE_CAS_MANIFEST_SOURCE_OR_DATA_ROOT_REBOUND')
+    return ['--cas-comparison-manifest',str(path)]
+
+
+def execute(*,source_root,source_repo,source_sha,source_tree,source_index,raw_root,data_root,python311,control_root,
+            cas_comparison_manifest=None,cas_comparison_manifest_sha256=None):
     initial_kernel = pre_capture_kernel_state()  # No Source or payload IO before actual own ECHILD.
     source = canonical(source_root,existing=True)
     repository = canonical(source_repo,existing=True)
@@ -681,6 +706,8 @@ def execute(*,source_root,source_repo,source_sha,source_tree,source_index,raw_ro
                 (control,source),(control,repository),(control,raw),(control,data)):
         require(a!=b and not a.is_relative_to(b) and not b.is_relative_to(a),'SEPARATE_HORIZON_NAMESPACES_REQUIRED')
     require(index.name=='source.index.json' and not index.is_relative_to(data), 'INDEPENDENT_WHOLE_SOURCE_INDEX_REQUIRED')
+    comparison_args=comparison_command_args(cas_comparison_manifest,cas_comparison_manifest_sha256,
+        source_root=source,data_root=data,source_sha=source_sha,source_tree=source_tree)
     interpreter = Path(python311).absolute()
     require(interpreter.is_file() and os.access(interpreter,os.X_OK),'EXPLICIT_PRODUCT311_INTERPRETER_REQUIRED')
     os.umask(0o022)
@@ -741,6 +768,7 @@ def execute(*,source_root,source_repo,source_sha,source_tree,source_index,raw_ro
             '--source-repo',str(repository),'--source-root',str(source),
             '--source-sha',source_sha,'--source-tree',source_tree,'--source-index',str(index),
             '--root',str(data),'--catalog-count','1200','--ticks','1201','--owned-fin',str(owned_fin)]
+        command.extend(comparison_args)
         result.update(command=command,source_index_sha256=capture(index)[0]['sha256'],
             source_tar_sha256=capture(index.parent/'source.tar')[0]['sha256'],
             source_authority_before=authority,source_file_count=len(before),
@@ -804,6 +832,10 @@ def execute(*,source_root,source_repo,source_sha,source_tree,source_index,raw_ro
         result['errors'].append({'class':type(error).__name__,'reason':str(error)})
         result['native_horizon_validated'] = False
         result['classification'] = 'FULL1201_NOT_ACCEPTED'
+    if comparison_args:
+        result.update(native_horizon_validated=False,private_comparison_active=True,
+            classification='PRIVATE_ORIGINAL_CAS_COMPARISON_NOT_G5',G5_qualification=False,
+            comparison_manifest_sha256=cas_comparison_manifest_sha256)
     result.update(code_preparation_completed=prepared,native_launched=launched)
     receipt = write_control_new(control,'terminal.json',result)
     result['terminal_receipt_sha256'] = receipt['sha256']
@@ -815,6 +847,8 @@ def main():
     for name in ('source-root','source-repo','source-sha','source-tree','source-index',
                  'raw-root','data-root','python311','control-root'):
         parser.add_argument('--'+name,required=True)
+    parser.add_argument('--cas-comparison-manifest')
+    parser.add_argument('--cas-comparison-manifest-sha256')
     args = parser.parse_args()
     values = vars(args)
     for name in ('source_root','source_repo','source_index','raw_root','data_root','python311','control_root'):

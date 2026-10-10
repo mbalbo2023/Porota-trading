@@ -53,7 +53,8 @@ FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRA
     'OWNER_RECEIPT_471_SHA256','OWNER_RECEIPT_473_SHA256','BRANCH','SUCCESSION_KIND',
     'PREDECESSOR_OWNER','PREDECESSOR_RELEASED','PREDECESSOR_RECEIPT_471','PREDECESSOR_RECEIPT_473',
     'HEAVY_GATES_AUTHORIZED','G0_G8_QUALIFICATION','FINAL_CANDIDATE_ELIGIBLE',
-    'RC6_NATIVE_PREREQUISITES_AUTHORIZATION','NATIVE_PREREQUISITES_PLAN_SHA256','DEVELOPMENT_ORIGIN_JSON'}
+    'RC6_NATIVE_PREREQUISITES_AUTHORIZATION','NATIVE_PREREQUISITES_PLAN_SHA256','DEVELOPMENT_ORIGIN_JSON',
+    'RC6_PRIVATE_ORIGINAL_CAS_COMPARISON_AUTHORIZATION','CAS_COMPARISON_TEMPLATE_JSON'}
 COMMENT_PAGES=50
 RUN_PAGES=10
 RECOVERY_OWNER='CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC'
@@ -550,6 +551,46 @@ def fresh_source(sha,tree,gate=None,*,get=None,candidate=None):
     if tree:require(tree==actual,'EXACT_TREE_AUTHORITY_REBOUND')
     return actual
 
+def private_cas_template_scope(f,sha,tree,gate,*,get=None):
+    """Dual immutable authority for one private experiment, never G5 credit."""
+    approval=f.get('RC6_PRIVATE_ORIGINAL_CAS_COMPARISON_AUTHORIZATION')
+    raw=f.get('CAS_COMPARISON_TEMPLATE_JSON')
+    if approval in (None,'NOT_GRANTED') and raw is None:
+        return None
+    require(approval=='APPROVED' and gate=='Horizon' and type(raw) is str,
+        'PRIVATE_CAS_EXPLICIT_HORIZON_TEMPLATE_AUTHORITY_REQUIRED')
+    template=document(raw)
+    require(type(template) is dict and set(template)=={'schema','source_sha','source_tree',
+        'producer_namespace_root','original_contract','prerequisites','reader_review',
+        'private_producer_ack_review','qualification_scope'}
+        and template.get('schema')=='rc6.original-cas-comparison-admission.v2'
+        and template.get('source_sha')==sha and template.get('source_tree')==tree
+        and template.get('producer_namespace_root')=='OWNED_HORIZON_DATA_ROOT'
+        and template.get('qualification_scope')=='PRIVATE_DEVELOPMENT_ONLY_NOT_G5'
+        and template.get('prerequisites')==document(f.get('PREREQUISITES_MANIFEST_JSON','null')),
+        'PRIVATE_CAS_EXACT_SOURCE_ORDERED_TEMPLATE_REQUIRED')
+    from scripts.rc6_cas_original_comparison import CONTRACT
+    require(template['original_contract']==document(json.dumps(dict(CONTRACT)))
+        and all(type(template[key]) is dict and set(template[key])=={'gate','path','sha256'}
+            and template[key].get('gate') in ('G1.311','G1.312')
+            and re.fullmatch('[0-9a-f]{64}',template[key].get('sha256',''))
+            and type(template[key].get('path')) is str
+            for key in ('reader_review','private_producer_ack_review')),
+        'PRIVATE_CAS_ORIGINAL_CONTRACT_AND_REVIEW_REFS_REQUIRED')
+    number=f.get('OWNER_RECEIPT_473','')
+    require(re.fullmatch('[1-9][0-9]{0,9}',number),'PRIVATE_CAS_DUAL_TEMPLATE_AUTHORITY_REQUIRED')
+    twin=comment('https://github.com/'+REPO+'/issues/473#issuecomment-'+number,473,get=get)
+    other=fields(twin['body'])
+    require(twin['created_at']==twin['updated_at']
+        and hashlib.sha256(twin['body'].encode()).hexdigest()==f.get('OWNER_RECEIPT_473_SHA256')
+        and all(other.get(key)==f.get(key) for key in ('WORKSTREAM_ID','SESSION_SUCCESSOR',
+            'WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER','RELEASED','SOURCE_SHA','SOURCE_TREE',
+            'MODE','real_orders_sent','GATES_AUTHORIZED','RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION',
+            'RC6_PRIVATE_ORIGINAL_CAS_COMPARISON_AUTHORIZATION','CAS_COMPARISON_TEMPLATE_JSON')),
+        'PRIVATE_CAS_AUTHENTIC_DUAL_EXACT_TEMPLATE_REQUIRED')
+    return template
+
+
 def launch_fields(row,sha,tree,session=None,gate=None,*,get=None,anchors=None):
     require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/471')
         and row['created_at']==row['updated_at'],'IMMUTABLE_OWNER_LAUNCH_AUTHOR_REQUIRED')
@@ -590,6 +631,7 @@ def launch_fields(row,sha,tree,session=None,gate=None,*,get=None,anchors=None):
             'HEAVY_GATE_REQUIRES_SAME_SHA_ORDERED_ARTIFACT_MANIFEST')
     if gates==['predeploy']:
         require(f.get('RC6_PREDEPLOY_G7_AUTHORIZATION')=='APPROVED','PREDEPLOY_EXPLICIT_G7_AUTHORIZATION_REQUIRED')
+    private_cas_template_scope(f,sha,tree,gates[0],get=get)
     return f
 
 def dedup_admission(sha,gate):
@@ -829,6 +871,8 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
         'capacity_source_comparison':capacity_source,
         'cheap_files':document(auth['CHEAP_FILES_JSON']) if gate=='cheap' else None,
         'prerequisites_manifest':document(auth['PREREQUISITES_MANIFEST_JSON']) if gate!='cheap' else None,
+        **({'private_cas_comparison_template':document(auth['CAS_COMPARISON_TEMPLATE_JSON'])}
+            if auth.get('RC6_PRIVATE_ORIGINAL_CAS_COMPARISON_AUTHORIZATION')=='APPROVED' else {}),
         'Gov311_scope_pointer':auth.get('CANONICAL_GOV311_CUSTODY_RECEIPT_URL') or auth.get('SUPPLEMENTARY_GOV311_JUSTIFICATION_URL'),
         'omitted_Gov311_PASS_or_artifact_claimed':False,'source_truth':'CANONICAL_GITHUB_HEAD_COMMIT_TREE_PR',
         'workflow_ref':os.environ.get('GITHUB_WORKFLOW_REF'),'workflow_sha':os.environ.get('GITHUB_WORKFLOW_SHA'),

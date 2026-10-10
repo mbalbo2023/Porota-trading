@@ -1,6 +1,7 @@
 """Economic native five-member controls, never the 1200/6000 material run."""
 from datetime import datetime
 import gzip
+import json
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,9 @@ from rc6_shadow_runtime import archive_components as components
 from scripts import rc6_cas_original_comparison as comparison
 from scripts import rc6_material_horizon_producer as producer
 from tests.test_rc6_component_archive import native, members, policy, tree_custody
+from rc6_shadow_runtime.persistence import EvidenceFiles, shadow_evidence_root, shadow_archive_root
+from rc6_shadow_runtime.retention import RetentionPressure
+from tests.test_issue465_generations import publish
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -153,3 +157,174 @@ def test_lossless_result_publication_is_exclusive_bounded_and_separate_from_fin(
         comparison.publish_result(path, value)
     with pytest.raises(ValueError, match="RESULT_BOUND_OR_CUSTODY_INVALID"):
         comparison.publish_result(tmp_path / "too-large.gz", {"payload": "x" * comparison.MAX_RESULT_BYTES})
+
+
+def _private_ack_fixture(tmp_path):
+    """Existing small native persistence fixture, never admission/Horizon data."""
+    native_root, controls = tmp_path / "native", tmp_path / "review"
+    native_root.mkdir(mode=0o700); controls.mkdir(mode=0o700)
+    database = native_root / "data/paper_v17/observer_v17.db"
+    live, archive = shadow_evidence_root(database, {}), shadow_archive_root(database, {})
+    archive.parent.mkdir(mode=0o700, parents=True)
+    attempt = comparison.OriginalComparison(controls / "attempt", {"scope": "UNIT_API_ONLY_NO_MATERIAL_AUTHORITY"}, ROOT,
+        _ack_review={"scope": "UNIT_API_ONLY_NO_MATERIAL_AUTHORITY"}, _producer_root=native_root)
+    attempt.bind_native_archive(live, archive)
+    return attempt, live, archive
+
+
+def _capture_unit_cut(attempt, live, archive, number):
+    with EvidenceFiles(live, archive_root=archive, archive_format="COMPONENT_V3") as files:
+        cut = publish(files, number)
+    generation = live / ("gen-" + cut["pointer"]["generation_id"])
+    original = members(generation)
+    binding = producer.original_member_binding(original, pointer=cut["pointer"])
+    results = attempt._archive_pair(original, native_pins=policy(live, archive)._archive_pins())
+    # Unit API records deliberately do NOT invent catalog_count=1200 or claim
+    # OriginalComparison.observe()'s financial/source/schedule admission.
+    attempt.cuts.append({"cut_index": len(attempt.cuts), "original_member_sha256": binding["original_member_sha256"],
+                         "branches": results, "scope": "UNIT_API_ONLY_NO_MATERIAL_AUTHORITY"})
+    attempt.pending_originals = original
+    return generation, original, results
+
+
+def test_existing_candidate_ack_restores_same_five_bytes_and_preserves_native_v3_writer(tmp_path, monkeypatch):
+    attempt, live, archive = _private_ack_fixture(tmp_path)
+    generation, original, results = _capture_unit_cut(attempt, live, archive, 1)
+    # Test a typed V4 recipe already published in the private namespace, with
+    # unchanged component bytes/codecs. This is no new native write capability.
+    context = components.ComponentArchive(attempt.branches["V4"].owner)
+    receipt = results["V4"]["receipt"]
+    from tests.test_rc6_component_archive import reseal_recipe
+    def v4_recipe(recipe):
+        rows = []
+        for cid, location in context._indices(recipe):
+            raw = context._component(cid, location)
+            rows.append(components.SLICE_COMPONENT_RECORD.pack(recipe["packs"].index(location[0]), location[1],
+                0, len(raw), bytes.fromhex(cid)))
+        recipe["schema"] = components.SLICE_RECIPE_SCHEMA
+        recipe["components"] = components._array(b"".join(rows), count=len(rows), codec=components.SLICE_ARRAY_CODEC)
+    receipt = reseal_recipe(archive, receipt, v4_recipe)
+    results["V4"]["receipt"] = receipt
+    custody = tree_custody(generation)
+    monkeypatch.setattr(components.ComponentArchive, "build", lambda *args: pytest.fail("NATIVE_NEW_RECIPE_BUILD_FORBIDDEN"))
+    owner = attempt.native_ack_owner(live, archive, archive_format="COMPONENT_V3")
+    assert owner.archive_generation(generation) == receipt
+    assert owner.restore_generation(receipt["generation_id"])["members"] == original
+    assert json.loads((live / ("archive-ack-" + receipt["generation_id"] + ".json")).read_bytes()) == receipt
+    assert attempt.native_ack_count == 1 and attempt.pending_originals is None
+    assert tree_custody(generation) == custody
+    assert components.NATIVE_WRITE_RECIPE_SCHEMA == components.RECIPE_SCHEMA
+
+
+def test_private_candidate_red_stops_before_any_native_build_or_ack(tmp_path, monkeypatch):
+    attempt, live, archive = _private_ack_fixture(tmp_path)
+    def capacity_red(stage):
+        if stage == "archive_after_build_intent":
+            raise RetentionPressure("RETENTION_ARCHIVE_CAPACITY_REACHED", {"limit": 512 * 1024**2})
+    attempt.branches["V4"].owner.fault_inject = capacity_red
+    generation, original, results = _capture_unit_cut(attempt, live, archive, 1)
+    assert results["V4"]["status"] == "RED_ORIGINAL_QUOTA_PRESERVED"
+    monkeypatch.setattr(components.ComponentArchive, "build", lambda *args: pytest.fail("RED_NATIVE_FALLBACK_FORBIDDEN"))
+    with pytest.raises(ValueError, match="CANDIDATE_RECOVERY_REQUIRED_BEFORE_ACK|CANDIDATE_RED_NO_NATIVE_FALLBACK"):
+        attempt.native_ack_owner(live, archive, archive_format="COMPONENT_V3").archive_generation(generation)
+    ident = components.loads(original["manifest.json"])["generation_id"]
+    assert not (live / ("archive-ack-" + ident + ".json")).exists()
+    assert attempt.native_ack_count == 0
+
+
+def test_private_baseline_quota_red_keeps_candidate_and_original_sequence_running(tmp_path, monkeypatch):
+    attempt, live, archive = _private_ack_fixture(tmp_path)
+    def capacity_red(stage):
+        if stage == "archive_after_build_intent":
+            raise RetentionPressure("RETENTION_ARCHIVE_CAPACITY_REACHED", {"limit": 512 * 1024**2})
+    attempt.branches["V3"].owner.fault_inject = capacity_red
+    monkeypatch.setattr(components.ComponentArchive, "build", lambda *args: pytest.fail("NATIVE_NEW_RECIPE_BUILD_FORBIDDEN"))
+    for number in range(1, 4):
+        generation, original, results = _capture_unit_cut(attempt, live, archive, number)
+        assert results["V3"]["status"] == ("RED_ORIGINAL_QUOTA_PRESERVED" if number == 1 else "BLOCKED_AFTER_ORIGINAL_QUOTA_RED")
+        assert results["V4"]["status"] == "EXACT_ORIGINAL_BYTES_RESTORED"
+        owner = attempt.native_ack_owner(live, archive, archive_format="COMPONENT_V3")
+        receipt = owner.archive_generation(generation)
+        assert owner.restore_generation(receipt["generation_id"])["members"] == original
+    assert attempt.native_ack_count == len(attempt.cuts) == 3
+    assert attempt.failures["V3"]["cut_index"] == 0
+    assert attempt.branches["V3"].owner.archive_maximum_bytes == 512 * 1024**2
+
+
+def test_private_candidate_ack_rotation_and_recovery_keep_native_pins_and_original_limits(tmp_path):
+    attempt, live, archive = _private_ack_fixture(tmp_path)
+    ids, captured = [], {}
+    for number in range(1, 7):
+        generation, original, results = _capture_unit_cut(attempt, live, archive, number)
+        ident = results["V4"]["receipt"]["generation_id"]
+        fired = []
+        def interrupted_ack(stage):
+            if number == 6 and stage == "private_candidate_after_native_ack" and not fired:
+                fired.append(stage); raise OSError("PRIVATE_ACK_INTERRUPTED")
+        owner = attempt.native_ack_owner(live, archive, archive_format="COMPONENT_V3", fault_inject=interrupted_ack)
+        if number == 6:
+            with pytest.raises(OSError, match="PRIVATE_ACK_INTERRUPTED"):
+                owner.archive_generation(generation)
+        assert owner.archive_generation(generation)["generation_id"] == ident
+        ids.append(ident); captured[ident] = original
+    native = policy(live, archive, auto_archive=True)
+    metrics = native.prepare(additional_files=375, pinned=[ids[-2]])
+    assert metrics["rotated_archived_generations"] > 0
+    assert (live / ("gen-" + ids[-1])).is_dir() and (live / ("gen-" + ids[-2])).is_dir()
+    assert native.policy.maximum_bytes == 128 * 1024**2 and native.policy.maximum_files == 512
+    assert native.archive_maximum_bytes == 512 * 1024**2
+    head = native._archive_checkpoint()
+    assert head["contracted_horizon_seconds"] == 32400 and head["recovery_margin_seconds"] == 3600
+    for ident, original in captured.items():
+        assert native.restore_generation(ident)["members"] == original
+    assert attempt.native_ack_count == 6
+
+
+def test_private_comparison_completion_never_satisfies_g5():
+    result = {"cuts": [{}] * 1202, "ticks_requested": 1201, "execution_complete": True,
+        "source_database_unchanged": True, "code_source_unchanged": True, "provider_requests": 0,
+        "native_horizon_contract_verified": True, "private_comparison_active": True}
+    flags = producer.completion_flags(result)
+    assert flags["execution_complete"] is True
+    assert flags["horizon_complete"] is flags["complete"] is flags["acceptance_complete"] is False
+
+
+@pytest.mark.parametrize("attack", ["marker", "source", "receipt", "current"])
+def test_private_candidate_ack_rejects_changed_marker_source_or_receipt(tmp_path, monkeypatch, attack):
+    attempt, live, archive = _private_ack_fixture(tmp_path)
+    generation, _, results = _capture_unit_cut(attempt, live, archive, 1)
+    owner = attempt.native_ack_owner(live, archive, archive_format="COMPONENT_V3")
+    receipt = results["V4"]["receipt"]
+    if attack == "marker":
+        attempt.marker.write_bytes(b"{}")
+    elif attack == "source":
+        (generation / "status.json").write_bytes(b"{}")
+    elif attack == "current":
+        (live / "CURRENT.json").write_bytes(b"{}")
+    else:
+        path = archive / (receipt["generation_id"] + ".receipt.json")
+        path.write_bytes(components.canonical(dict(receipt, durable=False)))
+    monkeypatch.setattr(components.ComponentArchive, "build", lambda *args: pytest.fail("INVALID_NATIVE_FALLBACK_FORBIDDEN"))
+    with pytest.raises((ValueError, KeyError)):
+        owner.archive_generation(generation)
+    assert not (live / ("archive-ack-" + receipt["generation_id"] + ".json")).exists()
+
+
+def test_authenticated_case_names_bind_real_parameterized_nodeids_without_inventing_test_execution():
+    prefix = "tests/test_rc6_cas_original_comparison.py::"
+    name = "test_private_candidate_ack_rejects_changed_marker_source_or_receipt"
+    items = [{"name": name + "[" + value + "]", "nodeid": prefix + name + "[" + value + "]"}
+             for value in ("marker", "source", "receipt", "current")]
+    assert comparison._executed_case_names(items, prefix) == {name}
+    assert comparison._executed_case_names(items, "tests/other.py::") == set()
+    with pytest.raises(ValueError, match="ACTUAL_EXECUTION_CASE_ID_CHANGED"):
+        comparison._executed_case_names([{**items[0], "name": "different_test[marker]"}], prefix)
+
+
+def test_unreviewed_attempt_cannot_bind_native_archive_from_environment_optin(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC6_ENABLE_SLICE_WRITE", "true")
+    monkeypatch.setenv("RC6_PRIVATE_CANDIDATE_ACK", "true")
+    attempt = comparison.OriginalComparison(tmp_path / "attempt", {"scope": "UNIT_API_ONLY_NO_MATERIAL_AUTHORITY"}, ROOT)
+    with pytest.raises(ValueError, match="AUTHENTICATED_PRIVATE_ACK_REVIEW_REQUIRED"):
+        attempt.bind_native_archive(tmp_path / "source-live", tmp_path / "source-archive")
+    assert components.NATIVE_WRITE_RECIPE_SCHEMA == components.RECIPE_SCHEMA

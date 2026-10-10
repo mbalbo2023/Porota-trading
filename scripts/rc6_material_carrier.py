@@ -46,6 +46,12 @@ PREPARATION_SCOPE={'locked_python_epochs':['311','312'],'installed_distribution_
     'pip_fetch_source_and_git_preparation_included':True}
 
 def workload_fingerprint(producer):
+    if producer=='Horizon-private-original-cas':
+        from scripts.rc6_cas_original_comparison import CONTRACT
+        return digest(canonical({'schema':'rc6.private-original-cas-workload.v1',
+            'producer':producer,'original_contract':dict(CONTRACT),'live_limit_bytes':128*1024**2,
+            'live_limit_entries':512,'catalogs':2,'candidate_uses_original_native_archive':True,
+            'new_Source_or_fixture_copies':0,'qualification_scope':'PRIVATE_DEVELOPMENT_ONLY_NOT_G5'}))
     """Comparable workload identity excludes machine/SHA and timing outcomes."""
     if producer in ('capacity-probe','capacity-calibration'):
         image,hard_limit=(5*1024**3,512*1024**2) if producer=='capacity-probe' else (26*1024**3,20*1024**3)
@@ -508,6 +514,7 @@ def readmit_automatic_pr(a,run,stage):
     row=controller['admit'](source_sha=a.source_sha,source_tree=a.source_tree,
         launch_receipt_url=a.launch_receipt_url,owner_session=a.owner_session,gate=a.gate)
     a.capacity_peaks=row['capacity_peaks'];a.cheap_files=row['cheap_files'];a.prerequisites_manifest=row['prerequisites_manifest']
+    a.private_cas_comparison_template=row.get('private_cas_comparison_template')
     save(run.control/('automatic-pr-'+stage+'.json'),row)
     run.lease_context={key:row[key] for key in ('source_sha','source_tree','owner_session','gate','launch_receipt_url')}
     def after_fin(label):
@@ -1160,8 +1167,37 @@ def file_sha(path):
         need(attrs(before)==attrs(os.fstat(fd))==attrs(path.lstat()),'SOURCE_TAR_ALL11_CHANGED');return h.hexdigest()
     finally:os.close(fd)
 
+def private_cas_control(a,namespace,epoch):
+    """Derive only the owned data path from a dual-authorized exact template."""
+    template=getattr(a,'private_cas_comparison_template',None)
+    if template is None:return None
+    fixture_lifecycle.authenticate(namespace)
+    epoch=safe_path(epoch)
+    need(epoch.is_relative_to(namespace.path) and not epoch.is_relative_to(a.repo_root)
+        and epoch.is_dir() and epoch.lstat().st_uid==os.geteuid(),
+        'PRIVATE_CAS_CONTROL_EXACT_OWNED_EPOCH_REQUIRED')
+    need(type(template) is dict and template.get('source_sha')==a.source_sha
+        and template.get('source_tree')==a.source_tree
+        and template.get('producer_namespace_root')=='OWNED_HORIZON_DATA_ROOT'
+        and template.get('qualification_scope')=='PRIVATE_DEVELOPMENT_ONLY_NOT_G5',
+        'PRIVATE_CAS_CONTROL_EXACT_AUTHORIZED_TEMPLATE_REQUIRED')
+    need(type(a.capacity_peaks.get('Horizon-private-original-cas')) is dict,
+        'PRIVATE_CAS_AGGREGATE_COMPARISON_PEAK_REQUIRED_BEFORE_EXPORT')
+    derived=document(canonical(template))
+    derived['producer_namespace_root']=str(epoch/'native-data')
+    wire=canonical(derived)
+    need(len(wire)<=256*1024,'PRIVATE_CAS_CONTROL_BYTES_BOUND')
+    path=epoch/'private-cas-admission.json'
+    return {'path':path,'sha256':save_raw(path,wire),'qualification_scope':'PRIVATE_DEVELOPMENT_ONLY_NOT_G5'}
+
+
 def horizon(a,run,root,prepared,interpreters):
     architectural.require_horizon_model_before_material('Horizon')
+    private=getattr(a,'private_cas_comparison_template',None) is not None
+    producer='Horizon-private-original-cas' if private else a.gate
+    if private:
+        need(type(a.capacity_peaks.get(producer)) is dict,
+            'PRIVATE_CAS_AGGREGATE_COMPARISON_PEAK_REQUIRED_BEFORE_EXPORT')
     # Kept in a separate module so the original21600/30/5 lifecycle can be reviewed independently.
     started=architectural.utc()
     namespace,epoch,repo=exported(a,run,root,prepared,interpreters)
@@ -1170,7 +1206,11 @@ def horizon(a,run,root,prepared,interpreters):
         '--source-root',str(source),'--source-repo',str(repo),'--source-sha',a.source_sha,'--source-tree',a.source_tree,
         '--source-index',str(epoch/'pin/source.index.json'),'--raw-root',str(epoch/'native-raw'),
         '--data-root',str(epoch/'native-data'),'--python311',interpreters['311'],'--control-root',str(control)]
-    binding,peak,live=heavy_preflight(a,run,epoch,a.gate,'Horizon-original1201')
+    comparison=private_cas_control(a,namespace,epoch)
+    if comparison is not None:
+        command.extend(['--cas-comparison-manifest',str(comparison['path']),
+            '--cas-comparison-manifest-sha256',comparison['sha256']])
+    binding,peak,live=heavy_preflight(a,run,epoch,producer,'Horizon-original1201')
     row=run(command,cwd=root,label='Horizon-original1201',limit=21600,namespace=namespace)
     preserve_controls(run,'Horizon',[control/name for name in ('producer-owned-fin.json','terminal.json','launch.json')])
     report=document(read(control/'terminal.json',256*1024));code=row['returncode']

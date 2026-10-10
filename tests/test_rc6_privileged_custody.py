@@ -292,6 +292,8 @@ def test_unknown_writer_failure_preserves_real_client_fin_and_keeps_namespace(tm
     original_fin = calibration.read(namespace.path / fin.control_name)
     actual_execute = owned.execute_owned
     def cheap_unknown_query(ns, requested, **kwargs):
+        if "--journal-unit" in requested:
+            return actual_execute(ns, [sys.executable, "-I", "-B", "-c", "import sys;sys.exit(1)"], **kwargs)
         assert requested[-1] == custody.unit_name(namespace.nonce, guard=True)
         assert requested[:2] == ["systemctl", "show"] and "sudo" not in requested
         return actual_execute(ns, [sys.executable, "-I", "-B", "-c", "print('UNIT_UNKNOWN')"], **kwargs)
@@ -310,6 +312,9 @@ def test_unknown_writer_failure_preserves_real_client_fin_and_keeps_namespace(tm
     assert result["root_producer_RAW_read"] is False and result["ROOT_custody_qualified"] is False
     assert result["cleanup_authorized"] is False and namespace.path.is_dir()
     assert (output / "failure.json").exists() and not (output / "closed-client-raw").exists()
+    assert result["journal"]["origin"]["status"] == "UNKNOWN"
+    assert (output / "journal-query-original.log").read_bytes() == b""
+    assert (output / "journal-fin-original.json").exists()
 
 
 @pytest.mark.parametrize("query_exit", [0, 4])
@@ -373,6 +378,80 @@ def test_typed_failure_never_becomes_a_root_witness():
     assert str(error) == "ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED" and error.diagnostics["status"] == "RED"
     with pytest.raises(ValueError, match="ROOT_CUSTODY_ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
         custody.validate_witness(error, binding=binding())
+
+
+def test_guard_startup_status_is_retained_without_changing_security_properties(tmp_path):
+    command = custody.service_command(custody.ROOT, tmp_path / "custody-request.json", nonce="a" * 32,
+        control_root=tmp_path, runtime_seconds=6, broker_mode="guard-hang", guard=True)
+    assert "--quiet" not in command and "--collect" in command
+    assert "--property=NoNewPrivileges=yes" in command and "--property=ProtectSystem=strict" in command
+    assert any("CAP_SYS_PTRACE" in value for value in command if value.startswith("--property=CapabilityBoundingSet="))
+    assert any("-/proc/1/root" in value for value in command if value.startswith("--property=InaccessiblePaths="))
+
+
+def test_journal_command_cannot_cross_boot_or_unit_boundaries():
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    command = custody.journal_command(unit, boot)
+    assert command[0] == "/usr/bin/journalctl" and "--lines=30" in command and "--no-pager" in command
+    assert command[command.index("_BOOT_ID=" + boot):] == ["_BOOT_ID=" + boot, "_PID=1", "UNIT=" + unit,
+        "+", "_BOOT_ID=" + boot, "_SYSTEMD_UNIT=" + unit]
+    assert not any(value in command for value in ("--follow", "--vacuum-time", "--rotate", "sudo"))
+    with pytest.raises(ValueError, match="ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED"):
+        custody.journal_command("foreign.service", boot)
+    with pytest.raises(ValueError, match="ROOT_CUSTODY_JOURNAL_ACTUAL_BOOT_REQUIRED"):
+        custody.journal_command(unit, "current")
+
+
+def test_journal_origin_accepts_exact_boot_pid1_unit_and_own_unit_only():
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    records = [{"_BOOT_ID": boot, "_PID": "1", "_UID": "0", "UNIT": unit, "MESSAGE": "EXIT_NAMESPACE"},
+        {"_BOOT_ID": boot, "_PID": "42", "_UID": "0", "_SYSTEMD_UNIT": unit,
+         "_SYSTEMD_CGROUP": "/system.slice/" + unit, "MESSAGE": "Failed mount"}]
+    raw = b"".join(custody.wire(record) for record in records)
+    result = custody.journal_origin(raw, unit=unit, boot_id=boot, owner_uid=os.geteuid(),
+        kernel={"timed_out": False, "returncode": 0})
+    assert result["status"] == "SCOPED_JOURNAL_OBSERVATION_ONLY"
+    assert result["origins"] == ["PID1_UNIT", "OWN_UNIT"] and result["record_count"] == 2
+    assert result["ROOT_FIN_claimed"] is False and result["ROOT_custody_qualified"] is False
+
+
+@pytest.mark.parametrize("field,value", [("_BOOT_ID", "c" * 32), ("_UID", "999999"),
+    ("UNIT", "foreign.service"), ("_PID", "42")])
+def test_foreign_pid1_journal_record_is_unknown(field, value):
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    record = {"_BOOT_ID": boot, "_PID": "1", "_UID": "0", "UNIT": unit, field: value}
+    result = custody.journal_origin(custody.wire(record), unit=unit, boot_id=boot, owner_uid=os.geteuid(),
+        kernel={"timed_out": False, "returncode": 0})
+    assert result["status"] == "UNKNOWN" and result["ROOT_custody_qualified"] is False
+
+
+@pytest.mark.parametrize("raw,kernel,reason", [(b"", {"timed_out": False, "returncode": 0}, "JOURNAL_EMPTY"),
+    (b"permission denied", {"timed_out": False, "returncode": 1}, "JOURNAL_QUERY_RED"),
+    (b"", {"timed_out": True, "returncode": 0}, "JOURNAL_QUERY_RED")])
+def test_empty_red_or_timed_out_journal_never_invents_rca(raw, kernel, reason):
+    result = custody.journal_origin(raw, unit=custody.unit_name("a" * 32), boot_id="b" * 32,
+        owner_uid=os.geteuid(), kernel=kernel)
+    assert result["status"] == "UNKNOWN" and result["reason"] == reason
+    assert result["ROOT_FIN_claimed"] is False
+
+
+def test_nonroot_journal_worker_has_actual_boot_binding_and_hard_log_size_cap(tmp_path):
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    namespace = owned.create_namespace(tmp_path, binding())
+    unit = custody.unit_name(namespace.nonce)
+    boot = custody._proc_text("/proc/sys/kernel/random/boot_id").strip().replace("-", "")
+    # Replace only the read-only journal executable in this NONROOT child.
+    # The shipped worker still establishes the real rlimit before exec.
+    program = ("import sys,resource;sys.path.insert(0," + repr(str(custody.ROOT)) + ");"
+        "from scripts import rc6_privileged_custody as c;"
+        "c.journal_command=lambda *args:[sys.executable,'-I','-B','-c',"
+        + repr("import resource,json;print(json.dumps({'limit':resource.getrlimit(resource.RLIMIT_FSIZE)}))") + "];"
+        "c.journal_query_worker(" + repr(unit) + "," + repr(boot) + ")")
+    kernel, fin = owned.execute_owned(namespace, [sys.executable, "-I", "-B", "-c", program], cwd=custody.ROOT,
+        environ={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, progress=None, timeout_seconds=5,
+        log_relative="journal-rlimit.json", fin_label="own-nonroot-journal-rlimit")
+    assert owned._phase_green(fin) and kernel["actual_child_reaped"]
+    assert json.loads(calibration.read(namespace.path / "journal-rlimit.json"))["limit"] == [custody.CONTROL_BOUND] * 2
 
 
 def test_original_manager_and_opaque_fd_transport_are_real_nonroot_only(tmp_path):

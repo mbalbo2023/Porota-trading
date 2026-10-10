@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import re
+import resource
 import runpy
 import select
 import signal
@@ -193,8 +194,12 @@ def service_command(source, request_path, *, nonce, control_root, runtime_second
             and request_path.name in ("custody-request.json", "probe-request.json")
             and not request_path.is_symlink(), "ROOT_CUSTODY_FIXED_OWN_REQUEST_PATH_REQUIRED")
     name = unit_name(nonce, guard=guard)
-    command = ["sudo", "-n", "--", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "--service-type=exec",
+    command = ["sudo", "-n", "--", "systemd-run", "--wait", "--pipe", "--collect", "--service-type=exec",
                "--unit=" + name, "--working-directory=" + str(source)]
+    # The guardian failure log is diagnostic, not a JSON producer. Preserve
+    # systemd-run startup/status messages there instead of discarding them.
+    if broker_mode != "guard-hang":
+        command.insert(4, "--quiet")
     command.extend("--property=" + value for value in service_properties(control_root, runtime_seconds))
     for key in ("PATH", "RUNNER_TOOL_CACHE", "LANG", "LC_ALL"):
         if key in os.environ:
@@ -949,6 +954,77 @@ def _cgroup_writer_absence(unit):
     return state
 
 
+def journal_command(unit, boot_id):
+    require(type(unit) is str and re.fullmatch(r"rc6-native-[0-9a-f]{32}(?:-guard)?\.service", unit),
+            "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
+    require(type(boot_id) is str and re.fullmatch(r"[0-9a-f]{32}", boot_id),
+            "ROOT_CUSTODY_JOURNAL_ACTUAL_BOOT_REQUIRED")
+    # PID1 reports UNIT=; the service's own entries carry trusted journald
+    # _SYSTEMD_UNIT=. Repeat the boot match across the explicit OR boundary.
+    return ["/usr/bin/journalctl", "--no-pager", "--quiet", "--output=json", "--lines=30",
+        "--output-fields=_BOOT_ID,_PID,_UID,_SYSTEMD_UNIT,_SYSTEMD_CGROUP,UNIT,SYSLOG_IDENTIFIER,MESSAGE,ERRNO,CODE_FILE,CODE_LINE,CODE_FUNC",
+        "_BOOT_ID=" + boot_id, "_PID=1", "UNIT=" + unit, "+", "_BOOT_ID=" + boot_id, "_SYSTEMD_UNIT=" + unit]
+
+
+def journal_query_worker(unit, boot_id):
+    require(os.getuid() == os.geteuid() > 0 and public_kernel_process(os.getpid())["capabilities"]["CapEff"] == 0,
+            "ROOT_CUSTODY_JOURNAL_NONROOT_ONLY")
+    require(_proc_text("/proc/sys/kernel/random/boot_id").strip().replace("-", "") == boot_id,
+            "ROOT_CUSTODY_JOURNAL_ACTUAL_BOOT_REQUIRED")
+    command = journal_command(unit, boot_id)
+    # Even a journal entry with a huge MESSAGE cannot grow the original
+    # manager's log past this physical cap. SIGXFSZ is RED with actual FIN.
+    resource.setrlimit(resource.RLIMIT_FSIZE, (CONTROL_BOUND, CONTROL_BOUND))
+    os.execve(command[0], command, {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+
+
+def journal_origin(raw, *, unit, boot_id, owner_uid, kernel):
+    result = {"status": "UNKNOWN", "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False,
+              "unit": unit, "boot_id": boot_id, "record_count": 0}
+    if kernel.get("timed_out") is not False or kernel.get("returncode") != 0:
+        return {**result, "reason": "JOURNAL_QUERY_RED"}
+    if not raw.strip():
+        return {**result, "reason": "JOURNAL_EMPTY"}
+    try:
+        from scripts import rc6_capacity_calibration as calibration
+        rows = raw.splitlines()
+        require(len(raw) <= CONTROL_BOUND and 1 <= len(rows) <= 30, "ROOT_CUSTODY_JOURNAL_BOUND_REQUIRED")
+        kinds = []
+        for row in rows:
+            value = calibration.decode(row)
+            require(type(value) is dict and value.get("_BOOT_ID") == boot_id,
+                    "ROOT_CUSTODY_JOURNAL_FOREIGN_BOOT")
+            if value.get("_PID") == "1" and value.get("_UID") == "0" and value.get("UNIT") == unit:
+                kinds.append("PID1_UNIT")
+            else:
+                require(value.get("_SYSTEMD_UNIT") == unit and value.get("_UID") in ("0", str(owner_uid))
+                        and type(value.get("_PID")) is str and value["_PID"].isdigit() and int(value["_PID"]) > 1
+                        and value.get("_SYSTEMD_CGROUP", "/system.slice/" + unit) == "/system.slice/" + unit,
+                        "ROOT_CUSTODY_JOURNAL_FOREIGN_PROCESS_OR_UNIT")
+                kinds.append("OWN_UNIT")
+        return {**result, "status": "SCOPED_JOURNAL_OBSERVATION_ONLY", "record_count": len(rows), "origins": kinds}
+    except (ValueError, TypeError, KeyError, UnicodeError) as error:
+        return {**result, "reason": str(error)}
+
+
+def _preserve_journal(namespace, unit, output, boot_id):
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    require(_proc_text("/proc/sys/kernel/random/boot_id").strip().replace("-", "") == boot_id,
+            "ROOT_CUSTODY_JOURNAL_ACTUAL_BOOT_REQUIRED")
+    command = [sys.executable, "-I", "-B", str(ROOT / MEMBER), "--journal-unit", unit, "--journal-boot", boot_id]
+    kernel, fin = owned.execute_owned(namespace, command, cwd=ROOT,
+        environ={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, progress=None, timeout_seconds=5,
+        log_relative="diagnostic-journal-query.log", fin_label="diagnostic-journal-query")
+    owned.require_fin(namespace, fin)
+    raw = _read(namespace.path / "diagnostic-journal-query.log", CONTROL_BOUND)
+    fin_raw = _read(namespace.path / fin.control_name, 1024**2)
+    _diagnostic_bytes(output / "journal-query-original.log", raw)
+    _diagnostic_bytes(output / "journal-fin-original.json", fin_raw)
+    return {"command": journal_command(unit, boot_id), "kernel": kernel,
+        "original_FIN_sha256": sha256(fin_raw), "raw_sha256": sha256(raw), "raw_bytes": len(raw),
+        "origin": journal_origin(raw, unit=unit, boot_id=boot_id, owner_uid=os.geteuid(), kernel=kernel)}
+
+
 def _preserve_failure(context, destination, error):
     from scripts import rc6_authenticated_fixture_lifecycle as owned
     from scripts import rc6_capacity_calibration as calibration
@@ -975,6 +1051,15 @@ def _preserve_failure(context, destination, error):
         # Query only the positively owned nonce unit; never enumerate, stop,
         # signal, reset-failed or mutate any systemd/cgroup state.
         unit = context["unit"]
+        # This NONROOT query has no ROOT writer and is captured even if the
+        # unit is active/unknown or the query is RED/empty. It never certifies
+        # ROOT custody and cannot grant cleanup or recovery credit.
+        try:
+            boot_id = context.get("boot_id", _proc_text("/proc/sys/kernel/random/boot_id").strip()).replace("-", "")
+            diagnostic["journal"] = _preserve_journal(namespace, unit, output, boot_id)
+        except (ValueError, OSError, KeyError, TypeError) as journal_error:
+            diagnostic["journal"] = {"status": "UNKNOWN", "reason": str(journal_error),
+                "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False}
         query_kernel, query_fin = owned.execute_owned(namespace, ["systemctl", "show", "--no-pager",
             "--property=Id,LoadState,ActiveState,SubState,MainPID,ControlPID,ControlGroup", "--", unit],
             cwd=ROOT, environ={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, progress=None,
@@ -996,7 +1081,8 @@ def _preserve_failure(context, destination, error):
             require((namespace.path / context["log"]).lstat().st_size <= CONTROL_BOUND,
                     "ROOT_CUSTODY_DIAGNOSTIC_LOG_BYTES_BOUND")
             capture = owned.capture_required_evidence(namespace, query_fin, output / "closed-client-raw",
-                [context["log"], "diagnostic-unit-query.log"])
+                [context["log"], "diagnostic-unit-query.log",
+                 *(["diagnostic-journal-query.log"] if "raw_sha256" in diagnostic["journal"] else [])])
             # Only cgroup state is read again. The single systemd query above
             # is retained verbatim and never advertised as a fresh second one.
             after = _cgroup_writer_absence(unit)
@@ -1044,6 +1130,7 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
     native_contract(source_sha, source_tree, code_hashes)
     namespace = owned.create_namespace(parent, binding)
     failure_context["namespace"] = namespace
+    failure_context["boot_id"] = issuer["boot_id"]
     receipt = owned.namespace_receipt(namespace)
     request = {"schema": "porota.rc6.root-custody-request.v1", "source_root": str(Path(source).absolute()),
         "source_sha": source_sha, "source_tree": source_tree, "code_hashes": code_hashes,
@@ -1125,9 +1212,16 @@ def cli():
     parser.add_argument("--private-init", choices=("probe", "quota"))
     parser.add_argument("--broker", choices=("probe", "quota", "guard-hang"))
     parser.add_argument("--actor-case", choices=("root-success", "failure-before-drop", "root-hang", "nonroot-hang"))
-    parser.add_argument("--request", required=True, type=Path)
+    parser.add_argument("--request", type=Path)
     parser.add_argument("--unit")
+    parser.add_argument("--journal-unit")
+    parser.add_argument("--journal-boot")
     args = parser.parse_args()
+    if args.journal_unit or args.journal_boot:
+        require(args.journal_unit and args.journal_boot and not any((args.guardian, args.private_init, args.broker,
+                args.actor_case, args.request, args.unit)), "ROOT_CUSTODY_JOURNAL_EXACT_READONLY_ROLE_REQUIRED")
+        return journal_query_worker(args.journal_unit, args.journal_boot)
+    require(args.request is not None, "ROOT_CUSTODY_FIXED_REQUEST_REQUIRED")
     if args.actor_case:
         request, _, _ = _request(args.request, private=True)
         _actor_observation(args.actor_case, request)

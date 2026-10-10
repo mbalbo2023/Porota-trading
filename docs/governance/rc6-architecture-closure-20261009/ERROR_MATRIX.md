@@ -139,3 +139,40 @@ El fix mantiene manager55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad
 capacidades, DUMPABLE, límites y todos los holds. No se elimina privacidad para
 obtener un PASS. El próximo Source se valida económicamente antes del siguiente
 control nativo. Coste recurrente adicional USD0; real_orders_sent=0.
+
+## Segundo Source autenticado y fix de CAS/ACK y journal
+
+`98e9f70899d1d6bc1f3f84adbe4b5b5689fbdf8e`, tree
+`25f411385dbe7a488f673a0cfe9f85b8a17251fd`, pasó CI38020059029:
+1399 PASS por Python3.11/3.12, cero failures/errors/skips, mismas identidades,
+Source literal completo y FIN/capturas/cleanup propios. Original11657861635:
+920980B/16CRC, SHA256
+`6195c1fdd2aa7ec4020fb3ac98566f42fdd7cab56991aa3bb91710f6858989fe`.
+Managers87.309/94.223s, RSS máximo295997440/296501248B; ext4 libre91697659904B,
+18423027 inodos. Son observaciones de esa ejecución, no garantías ni prueba
+del Droplet ni enforcement de cuota. El siguiente Source requiere su propia CI.
+
+Control38020561080 conservó RED con FIN cliente226/EXIT_NAMESPACE antes de
+birth ROOT. Original11657921965:36492B/18CRC, SHA256
+`59f34068f4ce99cdbd3b40a324797d75527047523d50387344d45c8df807f807`.
+Unidad nonce exacta inactiva/not-found, PID0/cgroup ausente; guardian log vacío.
+**Errno/ruta causal UNKNOWN**. No se atribuye a permisos concretos ni a falta
+de infraestructura. FIN ROOT UNKNOWN, namespace retenido y crédito de reserva0.
+El fix captura journal NONROOT del boot y unidad propios con máximo30 entradas,
+RLIMIT_FSIZE duro2MiB, timeout5s, FIN y RAW originales; una consulta vacía/RED
+continúa UNKNOWN. Conserva mensajes de arranque del guardián sin cambiar
+privacy, capabilities, DUMPABLE ni manager. No reintenta Source98.
+
+| Bloqueo nuevo observado | Fix ejecutable y regresión | Estado y obligación pendiente |
+|---|---|---|
+| Observe CAS llegaba después del fallo/ACK V3: perdía cortes y el live128MiB/512files no podía rotar. | Mismos cinco bytes de la única fixture pasan al candidato privado antes del ACK. Candidato usa el archivo canónico privado; baseline V3 independiente puede quedar sticky RED sin abortar candidato. ACK vuelve a verificar CURRENT/manifest/bytes/receta existente; corrupción o ausencia detiene rotación, sin fallback.163 PASS económicos por Python. | Código corregido; **revisión contractual explícita del ACK privado** y casos ejecutados autenticados G1.311/312 requeridos. COMPARE_COMPLETE mantiene G5=false; writer productivoV3. |
+| Manifiesto privado no llegaba del recibo al productor. | Template dual hash-bound exacto; ruta derivada sólo dentro del namespace propio, fichero original exclusivo/fsync/hash, revalidación antes del wrapper/productor.25 PASS por Python; peak normal Horizon rechaza comparación. | Código corregido; grafo agregado propio obligatorio. Dos catálogos totales, una sola fixture/Source; sin equivalencia ni pico físico declarado. |
+| Causa de EXIT_NAMESPACE no emitida por modo quiet. | Journal del boot/unidad propios y arranque no quiet sólo para guard-hang; RAW original bounded post-FIN y prueba nativa de ausencia de escritores. | Diagnóstico implementado; próximo Source exige CI económica exacta positiva antes de una única comprobación nativa. No autoriza backing, cuota, pruebas financieras ni ROOT local. |
+
+Todos los1202 ciclos,512MiB, profundidad32, anchors/fallbacks, cambios reales
+de sesión, retención9h+1h y live128MiB/512entries se conservan. El ZIP histórico
+tiene1049 cortes y ningún conjunto completo de los cinco payloads; no permite
+reconstruir los153 faltantes ni medir retrospectivamente V4. Consumo global con
+recuperación/GC/temporales y ahorro original siguen NO_VERIFICADO. El69,91%
+sintético no se extrapola. G0–G6 materiales, nueve cargas PAPER acotadas y
+G7/G8 permanecen bloqueados por sus prerrequisitos originales.
