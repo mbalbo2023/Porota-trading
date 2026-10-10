@@ -392,7 +392,7 @@ def api(path):
     need(len(wire)<=1024**2,'GITHUB_AUTHORITY_BOUND');return document(wire)
 def authority(a):
     from scripts import rc6_material_pr_admission as controller
-    if a.owner_session==controller.CLOSURE_OWNER:
+    if a.owner_session!=controller.SUCCESSOR_OWNER:
         need(a.require_pr_admission,'CURRENT_CANDIDATE_FULL_PR_ADMISSION_REQUIRED')
         anchors=controller.administrative_anchors(a.owner_session)
         launch=controller.comment(a.launch_receipt_url,471)

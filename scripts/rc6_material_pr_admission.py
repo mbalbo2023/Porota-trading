@@ -52,7 +52,8 @@ FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRA
     'BASE_BRANCH','BASE_SHA','BASE_TREE','OWNER_RECEIPT_471','OWNER_RECEIPT_473',
     'OWNER_RECEIPT_471_SHA256','OWNER_RECEIPT_473_SHA256','BRANCH','SUCCESSION_KIND',
     'PREDECESSOR_OWNER','PREDECESSOR_RELEASED','PREDECESSOR_RECEIPT_471','PREDECESSOR_RECEIPT_473',
-    'HEAVY_GATES_AUTHORIZED','G0_G8_QUALIFICATION','FINAL_CANDIDATE_ELIGIBLE'}
+    'HEAVY_GATES_AUTHORIZED','G0_G8_QUALIFICATION','FINAL_CANDIDATE_ELIGIBLE',
+    'RC6_NATIVE_PREREQUISITES_AUTHORIZATION','NATIVE_PREREQUISITES_PLAN_SHA256','DEVELOPMENT_ORIGIN_JSON'}
 COMMENT_PAGES=50
 RUN_PAGES=10
 RECOVERY_OWNER='CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC'
@@ -72,6 +73,7 @@ CLOSURE_ANCHORS={471:(6086143803,'2026-10-09T17:43:32Z'),473:(6086144145,'2026-1
 PREDECESSOR_BODY_SHA256='1e44f471ed5c7b1d10a6dba9b29cdd8bc1bf959b8164f06a7d029ac00ff7fc01'
 PREDECESSOR_ANCHORS={471:(6069926329,'2026-10-08T22:04:11Z'),473:(6069926700,'2026-10-08T22:04:12Z')}
 EXPLICIT_SINGLE_WRITER_LITERAL='Sí, todas están detenidas; esta es la única sesión escritora.'
+RELEASED_SUCCESSION_KIND='EXPLICIT_USER_AUTHORIZATION_AFTER_AUTHENTIC_RELEASE'
 STAT11=('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size','st_blocks','st_atime_ns','st_mtime_ns','st_ctime_ns')
 CAPACITY_COMPARISON_MANIFEST_SCHEMA='porota.rc6.capacity-comparison-manifest.v1'
 
@@ -223,6 +225,30 @@ def comment(url,issue,*,get=None):
         and row['user']['login']=='mbalbo2023','AUTHENTIC_REPOSITORY_OWNER_RECEIPT_REQUIRED')
     return row
 
+def immutable_comment_identity(row):
+    """Bind one comment across REST collection and single-resource shapes.
+
+    Decorative app metadata can differ by endpoint. The comment bytes,
+    timestamps, repository URLs, author ID/login and app ID/slug cannot.
+    """
+    require(type(row) is dict and type(row.get('id')) is int and row['id']>0
+        and all(type(row.get(key)) is str for key in
+            ('body','created_at','updated_at','html_url','issue_url')),
+        'IMMUTABLE_COMMENT_IDENTITY_REQUIRED')
+    user=row.get('user')
+    require(type(user) is dict and type(user.get('id')) is int and user['id']>0
+        and user.get('login')=='mbalbo2023','IMMUTABLE_COMMENT_AUTHOR_ID_REQUIRED')
+    app=row.get('performed_via_github_app')
+    require(app is None or (type(app) is dict and type(app.get('id')) is int and app['id']>0
+        and type(app.get('slug')) is str and bool(app['slug'])),
+        'IMMUTABLE_COMMENT_APP_ID_REQUIRED')
+    return (row['id'],row['body'],row['created_at'],row['updated_at'],row['html_url'],
+        row['issue_url'],row.get('url'),user['id'],user['login'],
+        None if app is None else (app['id'],app['slug']))
+
+def same_immutable_comment(left,right):
+    return immutable_comment_identity(left)==immutable_comment_identity(right)
+
 def recovery_anchors(owner,*,get=None):
     require(owner==RECOVERY_OWNER,'EXACT_CONTROLLED_RECOVERY_SESSION_REQUIRED')
     result={}
@@ -256,14 +282,15 @@ def successor_anchors(owner,*,get=None):
         result[issue]=row
     return result
 
-def administrative_anchors(owner,*,get=None):
+def administrative_anchors(owner,*,get=None,now=None):
     """Authenticate succession; neither an expired lease nor a run grants it.
 
     This pinned owner transfer grants development only. Every future launch
     still needs an immutable, single-gate receipt and current dual leases.
     Keep the older recovery anchors intact as the stale ops-state authority.
     """
-    require(owner==CLOSURE_OWNER,'EXACT_ADMINISTRATIVE_SUCCESSOR_SESSION_REQUIRED')
+    if owner!=CLOSURE_OWNER:
+        return released_successor_anchors(owner,get=get,now=now)
     successor_anchors(SUCCESSOR_OWNER,get=get)
     result={}
     for issue,(identifier,created) in CLOSURE_ANCHORS.items():
@@ -297,11 +324,99 @@ def administrative_anchors(owner,*,get=None):
     require(result[471]['body']==result[473]['body'],'ADMINISTRATIVE_DUAL_RECEIPT_BODY_MISMATCH')
     return result
 
+def released_successor_anchors(owner,*,get=None,now=None):
+    """Authenticate an actual released succession without adopting an old ID.
+
+    A transfer is only development ownership. Its two immutable, owner-authored
+    comments must reference two genuine explicit releases of the predecessor.
+    Keep the pinned administrative checkpoint as the history floor: a newer
+    anchor must never hide an old unresolved writer or an edited old comment.
+    """
+    require(isinstance(owner,str) and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}',owner)
+        and owner not in (RECOVERY_OWNER,SUCCESSOR_OWNER,CLOSURE_OWNER),
+        'EXACT_RELEASED_SUCCESSOR_SESSION_REQUIRED')
+    current=now or datetime.now(timezone.utc)
+    history=administrative_anchors(CLOSURE_OWNER,get=get)
+    timelines={issue:recent(issue,history[issue],current,get=get) for issue in (471,473)}
+    candidates=[row for row in timelines[471]
+        if fields(row.get('body','')).get('SESSION_SUCCESSOR')==owner
+        and fields(row.get('body','')).get('SUCCESSION_KIND')==RELEASED_SUCCESSION_KIND]
+    require(candidates,'AUTHENTIC_RELEASED_SUCCESSOR_TRANSFER_REQUIRED')
+    # A renewal can repeat the scope; the first transfer establishes identity.
+    first=min(candidates,key=lambda row:(stamp(row['created_at']),row['id']))
+    scope=fields(first['body']);number=scope.get('OWNER_RECEIPT_473','')
+    require(re.fullmatch('[1-9][0-9]{0,9}',number), 'RELEASED_SUCCESSOR_DUAL_TRANSFER_REQUIRED')
+    twin=comment('https://github.com/'+REPO+'/issues/473#issuecomment-'+number,473,get=get)
+    # Captured API documents are immutable inputs to historical replay. Add
+    # internal history pointers only to copies, never to the response cache.
+    result={471:dict(first),473:dict(twin)}
+    require(any(row['id']==twin['id'] and same_immutable_comment(row,twin) for row in timelines[473]),
+        'RELEASED_SUCCESSOR_TRANSFER_MISSING_FROM_COMPLETE_TIMELINE')
+    require(scope.get('OWNER_RECEIPT_473_SHA256')==hashlib.sha256(twin['body'].encode()).hexdigest(),
+        'RELEASED_SUCCESSOR_TRANSFER_PAIR_DIGEST_REQUIRED')
+    bindings=('WORKSTREAM_ID','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER',
+        'RELEASED','BRANCH','BASE_SHA','SOURCE_SHA','SOURCE_TREE','PREDECESSOR_OWNER',
+        'PREDECESSOR_RELEASED','PREDECESSOR_RECEIPT_471','PREDECESSOR_RECEIPT_473',
+        'SUCCESSION_KIND','MODE','real_orders_sent','HEAVY_GATES_AUTHORIZED',
+        'G0_G8_QUALIFICATION','FINAL_CANDIDATE_ELIGIBLE')
+    previous=scope.get('PREDECESSOR_OWNER','')
+    require(previous!=owner and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}',previous)
+        and re.fullmatch(r'WS-RC6-[A-Z0-9-]{1,179}',scope.get('WORKSTREAM_ID','')),
+        'RELEASED_SUCCESSOR_EXACT_PREDECESSOR_AND_WORKSTREAM_REQUIRED')
+    require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_./-]{0,199}',scope.get('BRANCH',''))
+        and scope['BRANCH'] not in ('main',BASE,BRANCH,DIAGNOSTIC_BRANCH)
+        and all(part not in ('','.','..') and not part.endswith(('.','.lock'))
+            for part in scope['BRANCH'].split('/')) and '..' not in scope['BRANCH']
+        and re.fullmatch('[0-9a-f]{40}',scope.get('BASE_SHA',''))
+        and scope.get('BASE_SHA')==scope.get('SOURCE_SHA')
+        and re.fullmatch('[0-9a-f]{40}',scope.get('SOURCE_TREE','')),
+        'RELEASED_SUCCESSOR_EXACT_ISOLATED_BASE_REQUIRED')
+    for issue,row in result.items():
+        f=fields(row['body'])
+        require(row['user']['login']=='mbalbo2023'
+            and row['issue_url'].endswith('/issues/'+str(issue))
+            and row['html_url']=='https://github.com/'+REPO+'/issues/'+str(issue)
+                +'#issuecomment-'+str(row['id'])
+            and row['created_at']==row['updated_at']
+            and all(f.get(key)==scope.get(key) for key in bindings)
+            and f.get('SESSION_SUCCESSOR')==f.get('WRITE_OWNER')==f.get('INTEGRATION_OWNER')==owner
+            and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
+            and f.get('SUCCESSION_KIND')==RELEASED_SUCCESSION_KIND
+            and f.get('PREDECESSOR_RELEASED')=='true'
+            and f.get('HEAVY_GATES_AUTHORIZED')==f.get('G0_G8_QUALIFICATION')
+                ==f.get('FINAL_CANDIDATE_ELIGIBLE')=='false'
+            and f.get('MODE')=='PRODUCTION_PAPER / SIMULATION' and f.get('real_orders_sent')=='0',
+            'AUTHENTIC_UNEDITED_RELEASED_SUCCESSOR_TRANSFER_REQUIRED')
+        release_id=f.get('PREDECESSOR_RECEIPT_'+str(issue),'')
+        require(re.fullmatch('[1-9][0-9]{0,9}',release_id),
+            'RELEASED_SUCCESSOR_EXPLICIT_PREDECESSOR_RECEIPT_REQUIRED')
+        release=comment('https://github.com/'+REPO+'/issues/'+str(issue)+'#issuecomment-'+release_id,
+            issue,get=get);old=fields(release['body'])
+        require(release['created_at']==release['updated_at']
+            and any(item['id']==release['id'] and same_immutable_comment(item,release) for item in timelines[issue])
+            and old.get('SESSION_SUCCESSOR',old.get('SESSION'))==old.get('WRITE_OWNER')==previous
+            and old.get('INTEGRATION_OWNER',previous)==previous
+            and old.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and old.get('RELEASED')=='true'
+            and old.get('SOURCE_SHA')==scope['BASE_SHA'] and old.get('SOURCE_TREE')==scope['SOURCE_TREE']
+            and old.get('MODE')==f['MODE'] and old.get('real_orders_sent')=='0'
+            and stamp(release['created_at'])<=min(stamp(item['created_at']) for item in result.values()),
+            'AUTHENTIC_DUAL_PREDECESSOR_RELEASE_BEFORE_TRANSFER_REQUIRED')
+        # The digest does not grant release. It binds the row already proven
+        # authentic above; release status is never inferred from lease expiry.
+        row['_rc6_history_anchor']=history[issue]
+    releases=[fields(next(row['body'] for row in timelines[issue]
+        if str(row['id'])==scope['PREDECESSOR_RECEIPT_'+str(issue)])) for issue in (471,473)]
+    require(all(releases[0].get(key)==releases[1].get(key)
+        for key in ('WORKSTREAM_ID','WRITE_OWNER','SOURCE_SHA','SOURCE_TREE','BASE_SHA','MODE','real_orders_sent')),
+        'PREDECESSOR_RELEASE_PAIR_SCOPE_MISMATCH')
+    return result
+
 def candidate_scope(f,*,owner,anchors):
     """Derive PR/branch/base from authenticated launch bytes, never constants."""
     number=f.get('SOURCE_PR','');branch=f.get('SOURCE_BRANCH','')
     require(f.get('AUTHORIZATION_SCHEMA')==CANDIDATE_AUTHORIZATION_SCHEMA
-        and owner==CLOSURE_OWNER and re.fullmatch('[1-9][0-9]{0,9}',number)
+        and owner==fields(anchors[471]['body']).get('SESSION_SUCCESSOR')
+        and re.fullmatch('[1-9][0-9]{0,9}',number)
         and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_./-]{0,199}',branch)
         and all(part not in ('','.','..') and not part.endswith(('.','.lock')) for part in branch.split('/'))
         and '..' not in branch and branch not in ('main',BASE,BRANCH,DIAGNOSTIC_BRANCH)
@@ -328,6 +443,8 @@ def recent(issue,anchor,now,*,get=None):
     # GitHub issue-comments `since` selects last-updated timestamps. A comment
     # created before the controlled anchor but edited afterwards is included.
     # No moving two-hour window and no silently truncated page are permitted.
+    transfer=anchor
+    anchor=anchor.get('_rc6_history_anchor',anchor)
     cutoff=stamp(anchor['created_at'])
     since=(cutoff-timedelta(seconds=1)).isoformat().replace('+00:00','Z')
     rows=[]
@@ -344,6 +461,7 @@ def recent(issue,anchor,now,*,get=None):
         if len(batch)<100:break
     else:raise ValueError('OWNERSHIP_PAGINATION_INCOMPLETE_FAIL_CLOSED')
     require(anchor['id'] in ids,'ACTUAL_CONTROLLED_ANCHOR_MISSING_FROM_UPDATED_TIMELINE')
+    require(transfer['id'] in ids,'ACTUAL_SUCCESSOR_TRANSFER_MISSING_FROM_UPDATED_TIMELINE')
     return sorted(rows,key=lambda row:(effective_stamp(row),row['id']))
 
 def actual_event(gate):
@@ -436,10 +554,12 @@ def launch_fields(row,sha,tree,session=None,gate=None,*,get=None,anchors=None):
     require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/471')
         and row['created_at']==row['updated_at'],'IMMUTABLE_OWNER_LAUNCH_AUTHOR_REQUIRED')
     f=fields(row['body']);owner=f.get('SESSION_SUCCESSOR')
+    current=None if owner==SUCCESSOR_OWNER else (anchors or administrative_anchors(owner,get=get))
+    workstream=WORKSTREAM if current is None else fields(current[471]['body']).get('WORKSTREAM_ID')
     gates=f.get('GATES_AUTHORIZED','').split(',')
-    require(f.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION')=='APPROVED' and f.get('WORKSTREAM_ID')==WORKSTREAM
+    require(f.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION')=='APPROVED' and f.get('WORKSTREAM_ID')==workstream
         and f.get('SOURCE_SHA')==sha and f.get('SOURCE_TREE')==tree
-        and owner in (SUCCESSOR_OWNER,CLOSURE_OWNER)
+        and owner is not None
         and (session is None or session==owner) and f.get('WRITE_OWNER')==owner
         and f.get('INTEGRATION_OWNER')==owner
         and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
@@ -448,8 +568,7 @@ def launch_fields(row,sha,tree,session=None,gate=None,*,get=None,anchors=None):
         'EXACT_IMMUTABLE_SINGLE_GATE_LAUNCH_RECEIPT_REQUIRED')
     require(re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/(?:471|473)#issuecomment-[0-9]+',f.get('CAUSE_EVIDENCE_URL','')),
         'EVIDENCED_NEW_SOURCE_REPAIR_REQUIRED_BEFORE_MATERIAL_RETRY')
-    if owner==CLOSURE_OWNER:
-        current=anchors or administrative_anchors(owner,get=get)
+    if current is not None:
         candidate_scope(f,owner=owner,anchors=current)
         require(all(stamp(row['created_at'])>=stamp(anchor['created_at']) for anchor in current.values()),
             'CANDIDATE_AUTHORIZATION_PRECEDES_OWNER_TRANSFER')
@@ -496,22 +615,41 @@ def dedup_admission(sha,gate):
         'pagination_complete':True,'no_prior_run_reclassified_as_PASS':True}
 
 def latest_writer(rows,issue,sha,tree,owner,now):
-    records=[]
-    for row in rows:
+    records=[];states={}
+    for row in sorted(rows,key=lambda item:(effective_stamp(item),item['id'])):
         f=fields(row.get('body',''))
         if any(key in f for key in ('WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER','SOURCE_LEASE_EXPIRES_UTC','RELEASED')):
             require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/'+str(issue)),
                 'OWNERSHIP_RECORD_AUTHOR_OR_ISSUE_REBOUND')
-            for key in ('WRITE_OWNER','INTEGRATION_OWNER'):
-                if key in f and f[key] not in (owner,'RELEASED','NOT_ACQUIRED','NONE','null'):
-                    # Expiration is evidence of lease expiry, never release.
-                    # An active, unknown or unbounded foreign scope blocks.
-                    require(f.get('RELEASED')=='true',
-                        'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER_AFTER_SUCCESSOR_ANCHOR')
+            require(row['created_at']==row['updated_at'],'EDITED_HISTORICAL_OWNERSHIP_RECORD')
             require('DEPLOY_OWNER' not in f or f['DEPLOY_OWNER'] in ('NOT_ACQUIRED','RELEASED','NONE','null'),
                 'ANY_DEPLOY_OWNER_AFTER_CONTROLLED_ANCHOR')
+            scoped={f[key] for key in ('WRITE_OWNER','INTEGRATION_OWNER')
+                if key in f and f[key] not in ('RELEASED','NOT_ACQUIRED','NONE','null')}
+            if f.get('RELEASED')=='true':
+                # A release belongs to the session that actually wrote it.
+                # A foreign active session cannot manufacture another writer's
+                # release merely by naming that owner or quoting an old lease.
+                require(scoped and scoped=={f.get('SESSION_SUCCESSOR',f.get('SESSION'))},
+                    'AUTHENTIC_OWN_SESSION_EXPLICIT_RELEASE_REQUIRED')
+                for identifier in scoped:
+                    prior=states.get(identifier)
+                    if prior is not None:
+                        require(f.get('WORKSTREAM_ID')==prior[1].get('WORKSTREAM_ID'),
+                            'EXPLICIT_RELEASE_WORKSTREAM_REBOUND')
+                    states[identifier]=(row,f)
+            else:
+                for identifier in scoped:states[identifier]=(row,f)
             records.append((row,f))
     require(records,'FRESH_OWNER_RECORDS_REQUIRED_BOTH_ISSUES')
+    # Evaluate the last authentic status for each writer, rather than demanding
+    # that every historical lease already contain its future release. A later
+    # false/unknown status reacquires the scope and blocks again. Expiry never
+    # changes release state, including records older than a new transfer.
+    for identifier,(_row,status) in states.items():
+        if identifier!=owner:
+            require(status.get('RELEASED')=='true',
+                'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER_AFTER_SUCCESSOR_ANCHOR')
     integrations=[(row,f) for row,f in records if 'INTEGRATION_OWNER' in f]
     require(integrations and integrations[-1][1]['INTEGRATION_OWNER']==owner,
         'LATEST_INTEGRATION_OWNER_NOT_CONTROLLED_RECOVERY')
@@ -527,11 +665,15 @@ def latest_writer(rows,issue,sha,tree,owner,now):
     require(stamp(row['created_at'])<=effective_stamp(row)<=now<expires
         and timedelta(0)<expires-stamp(row['created_at'])<=timedelta(minutes=20),
         'LATEST_WRITER_LEASE_EXPIRED_OR_UNBOUNDED')
-    return {'comment_id':row['id'],'url':row['html_url'],'author':'mbalbo2023','fields':f,
+    result={'comment_id':row['id'],'url':row['html_url'],'author':'mbalbo2023','fields':f,
         'body_sha256':hashlib.sha256(row['body'].encode()).hexdigest(),'lease_expires_utc':expires.isoformat().replace('+00:00','Z'),
         'latest_integration_owner_comment_id':integrations[-1][0]['id'],
         'all_post_anchor_owner_record_ids':[item[0]['id'] for item in records],
         'all_post_anchor_records_and_old_comment_edits_checked':True,'maximum_lease_seconds':1200}
+    if owner not in (RECOVERY_OWNER,SUCCESSOR_OWNER,CLOSURE_OWNER):
+        result['latest_status_by_owner']={identifier:{'comment_id':item[0]['id'],
+            'released':item[1].get('RELEASED')=='true'} for identifier,item in sorted(states.items())}
+    return result
 
 def ops_admission(auth,owner,now,anchors,*,get=None):
     response=(get or api)('/contents/'+OPS+'?'+urllib.parse.urlencode({'ref':OPS_REF}))
@@ -577,19 +719,22 @@ def owned_gate_control_scope(*,source_sha,source_tree,launch_receipt_url,owner_s
     """
     run_attempt=int(os.environ['GITHUB_RUN_ATTEMPT']) if run_attempt is None else run_attempt
     run_id=int(os.environ['GITHUB_RUN_ID']) if run_id is None else run_id
-    require(gate in GATES and owner_session in (SUCCESSOR_OWNER,CLOSURE_OWNER) and type(run_attempt) is int and run_attempt==1
+    require(gate in GATES and isinstance(owner_session,str)
+        and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}',owner_session)
+        and type(run_attempt) is int and run_attempt==1
         and type(run_id) is int and run_id>0,'OWNED_GATE_FIRST_EXACT_SUCCESSOR_SCOPE_REQUIRED')
     anchors=recovery_anchors(RECOVERY_OWNER,get=get)
-    successor=(administrative_anchors(owner_session,get=get) if owner_session==CLOSURE_OWNER
-        else successor_anchors(owner_session,get=get))
+    successor=(successor_anchors(owner_session,get=get) if owner_session==SUCCESSOR_OWNER
+        else administrative_anchors(owner_session,get=get,now=now))
     launch=comment(launch_receipt_url,471,get=get)
     auth=launch_fields(launch,source_sha,source_tree,owner_session,gate,get=get,anchors=successor)
-    scope=candidate_scope(auth,owner=owner_session,anchors=successor) if owner_session==CLOSURE_OWNER else None
+    scope=candidate_scope(auth,owner=owner_session,anchors=successor) if owner_session!=SUCCESSOR_OWNER else None
     fresh_source(source_sha,source_tree,gate,get=get,candidate=scope)
     timelines={issue:recent(issue,successor[issue],now,get=get) for issue in (471,473)}
     owners={str(issue):latest_writer(timelines[issue],issue,source_sha,source_tree,owner_session,now)
         for issue in (471,473)}
-    require(all(fields(row['body']).get('WORKSTREAM_ID')==WORKSTREAM
+    workstream=fields(successor[471]['body']).get('WORKSTREAM_ID')
+    require(all(fields(row['body']).get('WORKSTREAM_ID')==workstream
         for issue in (471,473) for row in timelines[issue]
         if row['id']==owners[str(issue)]['comment_id']),'OWNED_GATE_WORKSTREAM_REBOUND')
     ops=ops_admission(auth,owner_session,now,anchors,get=get)
@@ -602,10 +747,15 @@ def owned_gate_control_scope(*,source_sha,source_tree,launch_receipt_url,owner_s
         and run.get('path')==('.github/workflows/porota-predeploy-v2.yml' if gate=='predeploy'
             else '.github/workflows/rc6-unified-candidate-tests.yml'),
         'OWNED_GATE_ACTIONS_CANCELLED_OR_REBOUND')
-    return {'source_sha':source_sha,'source_tree':source_tree,'owner_session':owner_session,'gate':gate,
+    result={'source_sha':source_sha,'source_tree':source_tree,'owner_session':owner_session,'gate':gate,
         'run_id':run_id,'run_attempt':1,'read_utc':now.isoformat().replace('+00:00','Z'),
         'launch_receipt_url':launch_receipt_url,'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
         'fresh_ownership':owners,'ops':ops,'real_orders_sent':0,'DEPLOY_OWNER':'NOT_ACQUIRED'}
+    # Existing archived V1 scope digests must replay byte for byte. New owners
+    # record their authenticated workstream; the two legacy owners keep the
+    # original return wire and original WORKSTREAM used by lease replay.
+    if owner_session not in (SUCCESSOR_OWNER,CLOSURE_OWNER):result['workstream_id']=workstream
+    return result
 
 def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=None,gate,now=None):
     require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
@@ -619,22 +769,29 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
     else:require(event['inputs'].get('source_sha')==source_sha,'DISPATCH_HEAD_SHA_REBOUND')
     now=now or datetime.now(timezone.utc)
     anchors=recovery_anchors(RECOVERY_OWNER)  # unchanged user-stop/raw-ops authority
-    successor=administrative_anchors(CLOSURE_OWNER)
-    timelines={issue:recent(issue,successor[issue],now) for issue in (471,473)}
     if launch_receipt_url:
         launch=comment(launch_receipt_url,471)
     else:
+        # Find exact launch bytes from the original checkpoint, then derive
+        # and authenticate their actual current owner. Never adopt an old
+        # owner name simply because the workflow default has that value.
+        history=administrative_anchors(CLOSURE_OWNER)
+        search=recent(471,history[471],now)
         matching=[]
-        for row in timelines[471]:
+        for row in search:
             f=fields(row.get('body',''))
             if f.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION')=='APPROVED' and f.get('SOURCE_SHA')==source_sha and f.get('GATES_AUTHORIZED')==gate:
                 matching.append(row)
         require(len(matching)==1,'ONE_EXACT_PREPUSH_LAUNCH_AUTHORITY_REQUIRED')
         launch=matching[0]
     claimed=fields(launch['body']);tree=source_tree or claimed.get('SOURCE_TREE')
-    require(claimed.get('SESSION_SUCCESSOR')==CLOSURE_OWNER,'CURRENT_ADMINISTRATIVE_OWNER_REQUIRED')
+    owner=claimed.get('SESSION_SUCCESSOR')
+    require(owner!=SUCCESSOR_OWNER and (owner_session is None or owner==owner_session),
+        'CURRENT_ADMINISTRATIVE_OWNER_REQUIRED')
+    successor=administrative_anchors(owner,now=now)
+    timelines={issue:recent(issue,successor[issue],now) for issue in (471,473)}
     auth=launch_fields(launch,source_sha,tree,owner_session,gate,anchors=successor)
-    scope=candidate_scope(auth,owner=CLOSURE_OWNER,anchors=successor)
+    scope=candidate_scope(auth,owner=owner,anchors=successor)
     if os.environ['GITHUB_EVENT_NAME']=='pull_request':
         pr=event['pull_request']
         require(event['number']==scope['pr'] and pr['head']['ref']==scope['branch']
@@ -643,7 +800,7 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
         require(event.get('ref','').removeprefix('refs/heads/')==scope['branch']
             and event['inputs'].get('source_tree')==tree
             and event['inputs'].get('launch_receipt_url')==launch['html_url']
-            and event['inputs'].get('owner_session')==CLOSURE_OWNER,
+            and event['inputs'].get('owner_session')==owner,
             'DISPATCH_EXACT_CURRENT_OWNER_CANDIDATE_SCOPE_REBOUND')
     fresh_source(source_sha,tree,gate,candidate=scope)
     # Event delivery follows push: authorization must already exist.
@@ -659,10 +816,11 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
     return {'schema':'rc6.material-automatic-pr-admission.v2','status':'ADMITTED_NATIVE_NOT_STARTED','source_sha':source_sha,
         'source_tree':tree,'gate':gate,'owner_session':owner,'launch_receipt_url':launch['html_url'],
         'candidate_scope':scope,
-        'ownership_transfer':{'kind':'ADMINISTRATIVE_EXPLICIT_USER_AUTHORIZATION',
+        'ownership_transfer':{'kind':fields(successor[471]['body'])['SUCCESSION_KIND'],
             'receipts':{str(issue):{'url':successor[issue]['html_url'],
                 'body_sha256':hashlib.sha256(successor[issue]['body'].encode()).hexdigest()}
-                for issue in (471,473)},'predecessor_released_claimed':False,
+                for issue in (471,473)},
+            'predecessor_released_claimed':fields(successor[471]['body']).get('PREDECESSOR_RELEASED')=='true',
             'lease_expiration_treated_as_release':False,'heavy_authority_from_transfer_claimed':False},
         'launch_receipt_created_at':launch['created_at'],'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
         'fresh_ownership':owners,'ops':ops,'dedup':dedup,'event_custody':event_custody,

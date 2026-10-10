@@ -76,7 +76,14 @@
     "tests/test_rc6_readonly_complete_archive.py::test_actual_rebound_context_before_admission_vetoes_every_source_snapshot",
     "tests/test_rc6_readonly_complete_archive.py::test_failed_module_veto_precedes_post_snapshot_and_future_reuse",
     "tests/test_rc6_readonly_complete_archive.py::test_owned_source_mutation_rejects_readonly_lease_and_all_reuse",
-    "tests/test_rc6_readonly_complete_archive.py::test_rebound_owner_context_veto_precedes_post_snapshot_and_future_reuse"
+    "tests/test_rc6_readonly_complete_archive.py::test_rebound_owner_context_veto_precedes_post_snapshot_and_future_reuse",
+    "tests/test_rc6_development_rejection.py",
+    "tests/test_rc6_native_prerequisites.py",
+    "tests/test_rc6_native_namespace_filter.py",
+    "tests/test_rc6_released_successor.py",
+    "tests/test_rc6_cas_original_comparison.py",
+    "tests/test_rc6_capacity_calibration.py",
+    "tests/test_rc6_privileged_custody.py"
   ],
   "material_gate_launched": false,
   "full_gov_claimed": false,

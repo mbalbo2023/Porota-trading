@@ -130,30 +130,54 @@ def _timelines(calls):
     return result
 
 
-def prove_lease_coverage(timelines, context, start, end):
+def prove_lease_coverage(timelines, context, start, end, *, workstream=None):
     """Both immutable same-Source lease unions must cover the complete interval."""
     require(start <= end, 'OWNED_LEASE_TIME_ORDER_INVALID')
     covered = {}
     for issue in (471, 473):
         rows = timelines.get(issue)
         require(type(rows) is list and rows, 'OWNED_LEASE_BOTH_ISSUE_TIMELINES_REQUIRED')
-        spans = []
-        for row in rows:
+        spans = []; states = {}
+        for row in sorted(rows, key=lambda item: (admission.effective_stamp(item), item['id'])):
             values = admission.fields(row.get('body', ''))
-            owners = [values[key] for key in ('WRITE_OWNER', 'INTEGRATION_OWNER') if key in values]
+            owners = [values[key] for key in ('WRITE_OWNER', 'INTEGRATION_OWNER') if key in values
+                and values[key] not in ('RELEASED', 'NOT_ACQUIRED', 'NONE', 'null')]
             foreign = any(owner not in (context['owner_session'], 'RELEASED', 'NOT_ACQUIRED', 'NONE', 'null')
                 for owner in owners)
             effective = admission.effective_stamp(row)
-            if foreign and effective <= end:
-                require(effective < start and values.get('RELEASED') == 'true',
-                    'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')
+            if effective <= end and owners:
+                require(row['created_at'] == row['updated_at'] and row['user']['login'] == 'mbalbo2023'
+                    and row['issue_url'].endswith('/issues/' + str(issue)),
+                    'OWNED_LEASE_IMMUTABLE_SCOPE_OR_MODE_REQUIRED')
+                if values.get('RELEASED') == 'true':
+                    require(set(owners) == {values.get('SESSION_SUCCESSOR', values.get('SESSION'))},
+                        'OWNED_LEASE_AUTHENTIC_OWN_SESSION_RELEASE_REQUIRED')
+                    require(effective < start or context['owner_session'] not in owners,
+                        'OWNED_LEASE_OWNER_RELEASE_OVERLAPS_PRODUCER')
+                if foreign and effective >= start:
+                    require(False, 'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')
+                if context['owner_session'] in owners and effective >= start:
+                    require(values.get('WRITE_OWNER') == values.get('INTEGRATION_OWNER')
+                            == values.get('SESSION_SUCCESSOR', values.get('SESSION')) == context['owner_session']
+                        and values.get('SOURCE_SHA') == context['source_sha']
+                        and values.get('SOURCE_TREE') == context['source_tree']
+                        and values.get('DEPLOY_OWNER') == 'NOT_ACQUIRED' and values.get('RELEASED') == 'false'
+                        and values.get('MODE') == 'PRODUCTION_PAPER / SIMULATION'
+                        and values.get('real_orders_sent') == '0',
+                        'OWNED_LEASE_CURRENT_SOURCE_OR_OWNER_CHANGED_DURING_PRODUCER')
+                for identifier in owners:
+                    prior = states.get(identifier)
+                    if values.get('RELEASED') == 'true' and prior is not None:
+                        require(values.get('WORKSTREAM_ID') == prior.get('WORKSTREAM_ID'),
+                            'OWNED_LEASE_EXPLICIT_RELEASE_WORKSTREAM_REBOUND')
+                    states[identifier] = values
             if values.get('SOURCE_LEASE_EXPIRES_UTC') is None or values.get('WRITE_OWNER') != context['owner_session']:
                 continue
             if values.get('SOURCE_SHA') != context['source_sha'] or values.get('SOURCE_TREE') != context['source_tree']:
                 continue
             require(row['created_at'] == row['updated_at'] and row['user']['login'] == 'mbalbo2023'
                 and row['issue_url'].endswith('/issues/' + str(issue))
-                and values.get('WORKSTREAM_ID') == admission.WORKSTREAM
+                and values.get('WORKSTREAM_ID') == (workstream or admission.WORKSTREAM)
                 and values.get('SESSION_SUCCESSOR', values.get('SESSION')) == context['owner_session']
                 and values.get('INTEGRATION_OWNER') == context['owner_session']
                 and values.get('DEPLOY_OWNER') == 'NOT_ACQUIRED' and values.get('RELEASED') == 'false'
@@ -163,6 +187,8 @@ def prove_lease_coverage(timelines, context, start, end):
             require(timedelta(0) < expiry - begin <= timedelta(minutes=20), 'OWNED_LEASE_UNBOUNDED_INTERVAL')
             if begin <= end:
                 spans.append((begin, expiry, row['id']))
+        require(all(identifier == context['owner_session'] or values.get('RELEASED') == 'true'
+            for identifier, values in states.items()), 'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')
         cursor, identifiers = start, []
         for begin, expiry, identifier in sorted(spans):
             if expiry <= cursor:
@@ -187,11 +213,13 @@ class GateLeaseMonitor:
             'run_id': int(os.environ['GITHUB_RUN_ID']) if run_id is None else run_id,
             'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']) if run_attempt is None else run_attempt}
         require(re.fullmatch('[0-9a-f]{40}', source_sha) and re.fullmatch('[0-9a-f]{40}', source_tree)
-            and owner_session == admission.SUCCESSOR_OWNER and gate in (*admission.GATES, *admission.DIAGNOSTIC_GATES)
+            and isinstance(owner_session, str) and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}', owner_session)
+            and gate in (*admission.GATES, *admission.DIAGNOSTIC_GATES)
             and self.context['run_attempt'] == 1 and type(self.context['run_attempt']) is int,
             'OWNED_LEASE_EXACT_FIRST_SOURCE_SCOPE_REQUIRED')
         if gate in admission.DIAGNOSTIC_GATES:
-            require(type(diagnostic_binding) is dict, 'OWNED_DIAGNOSTIC_FULL_ADMISSION_PINS_REQUIRED')
+            require(owner_session == admission.SUCCESSOR_OWNER and type(diagnostic_binding) is dict,
+                'OWNED_DIAGNOSTIC_FULL_ADMISSION_PINS_REQUIRED')
             self.context['diagnostic_binding'] = diagnostic_binding
         else:
             require(diagnostic_binding is None, 'OWNED_LEASE_DIAGNOSTIC_PINS_OUTSIDE_DIAGNOSTIC_SCOPE')
@@ -291,7 +319,7 @@ class GateLeaseMonitor:
                 'OWNED_LEASE_CONTROL_COMMENT_DELETED_OR_EDITED')
             reference = {path: self._response(value) for path, value in sorted(calls.items())}
             proof = prove_lease_coverage(_timelines(calls), self.context,
-                self.launch_intent or finished, finished)
+                self.launch_intent or finished, finished, workstream=scope.get('workstream_id'))
             snapshot = {'schema': SNAPSHOT_SCHEMA, 'stage': stage, 'context': self.context,
                 'started_utc': text_stamp(started), 'read_utc': text_stamp(finished),
                 'http_total_budget_seconds': HTTP_BUDGET_SECONDS,
@@ -367,7 +395,7 @@ class GateLeaseMonitor:
         proof = None
         try:
             proof = prove_lease_coverage(_timelines(self.last_calls or {}), self.context,
-                self.launch_intent, closed)
+                self.launch_intent, closed, workstream=(self.last_scope or {}).get('workstream_id'))
         except BaseException as error:
             self._failure(error)
         receipt = {'schema': SCHEMA, 'context': self.context, 'command_label': self.command_label,
@@ -510,7 +538,8 @@ def replay_lease_evidence(receipt, *, read_object, kernel, source_sha, source_tr
     context = receipt.get('context')
     require(type(context) is dict and context.get('source_sha') == source_sha and context.get('source_tree') == source_tree
         and context.get('run_id') == run_id and context.get('run_attempt') == run_attempt == 1
-        and context.get('owner_session') == admission.SUCCESSOR_OWNER
+        and isinstance(context.get('owner_session'), str)
+        and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}', context['owner_session'])
         and (expected_label is None or receipt.get('command_label') == expected_label),
         'OWNED_LEASE_ARCHIVED_SOURCE_RUN_OR_LABEL_REBOUND')
     require(native.managed_phase_green(kernel) and receipt.get('kernel_sha256') == digest(wire(kernel))
@@ -582,10 +611,12 @@ def replay_lease_evidence(receipt, *, read_object, kernel, source_sha, source_tr
             and snapshot.get('latest_owners') == {issue: {'comment_id': record['comment_id'],
                 'lease_expires_utc': record['lease_expires_utc']} for issue, record in scope['fresh_ownership'].items()},
             'OWNED_LEASE_ARCHIVED_AUTHENTIC_SCOPE_REBOUND')
-        proof = prove_lease_coverage(_timelines(calls), context, launch if position else read, read)
+        proof = prove_lease_coverage(_timelines(calls), context, launch if position else read, read,
+            workstream=scope.get('workstream_id'))
         require(proof == snapshot.get('lease_coverage'), 'OWNED_LEASE_ARCHIVED_INTERVAL_PROOF_REBOUND')
         previous, final_calls, final_proof = read, calls, proof
-    proof = prove_lease_coverage(_timelines(final_calls), context, launch, closed)
+    proof = prove_lease_coverage(_timelines(final_calls), context, launch, closed,
+        workstream=scope.get('workstream_id'))
     require(proof == receipt.get('lease_coverage') and receipt.get('object_count') == len(cache)
         and receipt.get('deduplicated_object_bytes') == sum(len(value[0]) for value in cache.values()),
         'OWNED_LEASE_ARCHIVED_COVERAGE_OR_DEDUP_COUNTER_REBOUND')

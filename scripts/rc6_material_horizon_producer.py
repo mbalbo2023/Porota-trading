@@ -638,6 +638,13 @@ def publish_owned_fin(path, value):
         os.close(descriptor)
 
 
+def observe_original_cas_comparison(comparison, originals, node, archiver):
+    """Share the native captured bytes; never rebuild a comparison fixture."""
+    if comparison is None:
+        return None
+    return comparison.observe(originals, cut=node, native_pins=archiver._archive_pins())
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-repo", required=True, help="Local Git object authority; no fetch or replace refs")
@@ -649,6 +656,7 @@ def main():
     parser.add_argument("--catalog-count", type=int, default=1200)
     parser.add_argument("--ticks", type=int, default=4)
     parser.add_argument("--owned-fin", required=True, help="Fresh external native lifecycle control; never a data result")
+    parser.add_argument("--cas-comparison-manifest", help="Exact authenticated private comparison admission; never enables native V4 writes")
     args = parser.parse_args()
     source_root = Path(args.source_root).absolute()
     if source_root.resolve(strict=True) != source_root or any(parent.is_symlink() for parent in source_root.parents):
@@ -692,6 +700,14 @@ def main():
     if (not stat.S_ISDIR(control_parent.st_mode) or control_parent.st_uid != os.geteuid()
             or stat.S_IMODE(control_parent.st_mode) != 0o700):
         raise ValueError("OWN_PRIVATE_HORIZON_FIN_PARENT_REQUIRED")
+    comparison = None
+    if args.cas_comparison_manifest is not None:
+        if args.ticks != 1201 or args.catalog_count != 1200:
+            raise ValueError("CAS_COMPARISON_ORIGINAL1202_AND1200X5_REQUIRED")
+        from scripts.rc6_cas_original_comparison import authenticate_comparison
+        comparison = authenticate_comparison(args.cas_comparison_manifest,
+            source_sha=args.source_sha, source_tree=args.source_tree, source_root=source_root,
+            output_root=owned_fin_path.parent / "original-cas-comparison")
     lifecycle_initial = lifecycle.child_infrastructure_snapshot()
     lifecycle.require(all(value is None for value in lifecycle_initial.values()),
                       "FRESH_NATIVE_HORIZON_INFRASTRUCTURE_REQUIRED")
@@ -906,6 +922,12 @@ def main():
                         native_receipt=dict(receipt), verified_native_archive_head=archiver._archive_checkpoint(),
                         archive_residence=residence(archive),
                         live_residence=residence(worker.root), archive_verification_level=restored["verification_level"])
+            comparison_cut = observe_original_cas_comparison(comparison, originals, node, archiver)
+            if comparison_cut is not None:
+                node["private_cas_comparison"] = {"cut_index": comparison_cut["cut_index"],
+                    "comparison_wall_seconds": comparison_cut["comparison_wall_seconds"],
+                    "branch_status": {key: value["status"] for key, value in comparison_cut["branches"].items()},
+                    "scope": "SAME_ORIGINAL_FIVE_MEMBERS_PRIVATE_DEVELOPMENT_NOT_G5"}
             graph = import_inventory(source_root, code_before)
             result["import_graph_union"].update(graph["modules"])
             node["native_retention_call_deltas"] = {name: {key: value-counters_before[name][key]
@@ -1061,6 +1083,18 @@ def main():
         if not result["execution_complete"]:
             result["native_horizon_contract_verified"] = False
         result.update(completion_flags(result))
+        if comparison is not None:
+            if native_fin_closed:
+                from scripts.rc6_cas_original_comparison import publish_result
+                comparison_result = comparison.finish(original_complete=result["execution_complete"])
+                comparison_path = owned_fin_path.parent / "original-cas-comparison" / "comparison-result.json.gz"
+                publication = publish_result(comparison_path, comparison_result)
+                result["private_cas_comparison"] = {**publication, "status": comparison_result["status"],
+                    "actual_original_cuts": comparison_result["actual_original_cuts"],
+                    "qualification_claimed": False, "native_v4_write_enabled": False}
+            else:
+                result["private_cas_comparison"] = {"status": "UNKNOWN_FIN_NO_PAYLOAD_POSTCAPTURE",
+                    "qualification_claimed": False, "native_v4_write_enabled": False}
         destination.write_text(json.dumps(result, sort_keys=True, indent=2)+"\n")
         print(json.dumps({"path": str(destination), "execution_complete": result["execution_complete"],
                          "complete": result["complete"], "acceptance_complete": result["acceptance_complete"],

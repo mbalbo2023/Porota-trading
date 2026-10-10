@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import sys
 import xml.etree.ElementTree as ET
 
@@ -111,6 +112,50 @@ def preserve_result(output,result):
     print('RC6_DEVELOPMENT_NATIVE_RESULT='+canonical(summary).decode().strip(),flush=True)
 
 
+def preserve_admission_rejection(output, error, *, source_sha, source_tree, plan_sha256):
+    """Keep a bounded RED control even when admission rejects before tooling.
+
+    This grants no namespace, fixture, Source qualification or cleanup authority.
+    Every ancestor is held NOFOLLOW; a prior control is never overwritten.
+    """
+    output=Path(output)
+    admission.require(output.is_absolute() and len(output.parts)<=64
+        and str(output)==os.path.abspath(output) and not output.is_relative_to(ROOT)
+        and not ROOT.is_relative_to(output),'DEVELOPMENT_REJECTION_OUTPUT_OUTSIDE_SOURCE_REQUIRED')
+    descriptor=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+    held=[descriptor]
+    try:
+        for component in output.parts[1:-1]:
+            descriptor=os.open(component,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,
+                dir_fd=descriptor)
+            held.append(descriptor)
+        try:os.mkdir(output.name,mode=0o700,dir_fd=descriptor)
+        except FileExistsError:pass
+        descriptor=os.open(output.name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,
+            dir_fd=descriptor)
+        held.append(descriptor)
+        info=os.fstat(descriptor)
+        admission.require(info.st_uid==os.geteuid() and stat.S_IMODE(info.st_mode)==0o700,
+            'DEVELOPMENT_REJECTION_OWNED_PRIVATE_CONTROL_REQUIRED')
+        signature=str(error)
+        if re.fullmatch(r'[A-Z][A-Z0-9_]*(?::[0-9]+)?',signature) is None:
+            signature=type(error).__name__
+        row={'schema':'porota.rc6.development-admission-rejection.v1','status':'RED_ADMISSION',
+            'source_sha':source_sha,'source_tree':source_tree,'plan_sha256':plan_sha256,
+            'error_signature':signature,'error_class':type(error).__name__,
+            'G0_G8_qualification':False,'Product157_qualified':False,'workload_started':False,
+            'fixture_created':False,'launch_authorized':False,'cleanup_authorized':False,
+            'real_orders_sent':0}
+        fd=os.open('admission-rejected.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,
+            0o600,dir_fd=descriptor)
+        with os.fdopen(fd,'wb') as stream:
+            stream.write(canonical(row));stream.flush();os.fsync(stream.fileno())
+        os.fsync(descriptor)
+        return row
+    finally:
+        for fd in reversed(held):os.close(fd)
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--plan',type=Path,required=True)
@@ -139,7 +184,13 @@ def main():
     def owner_check():
         return verify_owner(github,args.launch_receipt_url,sha=args.source_sha,tree=args.source_tree,
             owner=args.owner_session,plan_sha256=digest(raw),authorization_field='RC6_DEVELOPMENT_CHECKS_AUTHORIZATION')
-    owner_check()
+    try:
+        owner_check()
+        admission.dedup_admission(args.source_sha,'development-checks')
+    except (ValueError,OSError) as error:
+        preserve_admission_rejection(args.output,error,source_sha=args.source_sha,
+            source_tree=args.source_tree,plan_sha256=digest(raw))
+        raise
     output=args.output.absolute()
     admission.require(not output.is_relative_to(ROOT),'DEVELOPMENT_OUTPUT_OUTSIDE_SOURCE_REQUIRED')
     if args.admit_only:
