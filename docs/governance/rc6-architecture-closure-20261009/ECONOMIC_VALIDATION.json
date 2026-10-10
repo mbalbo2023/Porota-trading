@@ -1577,11 +1577,11 @@
       "G0_G8_qualification": false,
       "G7_G8_prepared": false,
       "deployed": false,
-      "exact_successor_economic_Actions": "NEW_SOURCE_PENDING_PRIOR_9c743_SUCCESS_NOT_INHERITED",
+      "exact_successor_economic_Actions": "NEW_SOURCE_PENDING_PRIOR_1f5678fe_SUCCESS_NOT_INHERITED",
       "material_gate_launched": false,
       "merged": false,
       "mode": "PRODUCTION_PAPER / SIMULATION",
-      "native_ROOT": "NOT_CERTIFIED_9c743_PREBIRTH_GUARD_RED",
+      "native_ROOT": "NOT_CERTIFIED_1f5678fe_PREBIRTH_CANONICAL_SIGNAL_GUARD_RED",
       "ppi_watch": "UNTOUCHED",
       "production_mutated": false,
       "real_orders_sent": 0,
@@ -1683,10 +1683,10 @@
       "status": "DEVELOPED_LOCAL_282_PASS_PER_PYTHON_NOT_NATIVE_ROOT"
     },
     "economic_plan": {
-      "selections": 69,
+      "selections": 70,
       "all_prior_66_preserved": true,
       "dependencies": 14,
-      "sha256": "58bb20a57a91d8247dcb154d1ef405fd317b055b4a00f0b06c253ed0692f3469"
+      "sha256": "eb6ab68ba7f00ffd90ee8db8d5d9fbe5b9b064d651fa08943dbf0c459b206607"
     },
     "implementation_sha256": {
       "scripts/rc6_privileged_custody.py": "01e2b0156f380dcb447af331789b69734ac14b2a509c8e16b3f462ae8ca9bed3",
@@ -2259,7 +2259,7 @@
       "systemd_observed_package": "255.4-1ubuntu8.17",
       "timeout_each_seconds": 5
     },
-    "recorded_utc": "2026-10-10T13:44:30Z",
+    "recorded_utc": "2026-10-10T14:27:20.209385Z",
     "worker_dumpability_observation": {
       "contract_review_required_before_claiming_all_payload_DUMP0": true,
       "historical_filter_plan_sha256": "9daf64ba999008527b7220b4274e0e7439e27711608ec47b544b8e6e7e42dc2e",
@@ -2724,6 +2724,299 @@
         "quota_prerequisite_sec": 290,
         "quota_bootstrap_sec": 10790
       }
+    },
+    "authenticated_source_1f5678fe": {
+      "origin": {
+        "artifact_id": 11672068470,
+        "bytes": 972937,
+        "conclusion": "success",
+        "run_id": 38057139682,
+        "sha256": "1d26e03069af4c2e7ad0a4f501068526e7dec60f269cd0f1fdc3babadad2467b",
+        "source_sha": "1f5678fe44a570f42b28b7d0fdbdd5a2b1e1022d",
+        "source_tree": "fbab6060825e17a8122b1252e7d7018e82461117"
+      },
+      "run": {
+        "job_id": 114227822226,
+        "labels": [
+          "ubuntu-24.04"
+        ],
+        "run_attempt": 1,
+        "run_id": 38057139682,
+        "runner_group_name": "GitHub Actions",
+        "source_sha": "1f5678fe44a570f42b28b7d0fdbdd5a2b1e1022d"
+      },
+      "members_crc_verified": 22,
+      "fullSource_unchanged": true,
+      "identities_equal": true,
+      "epochs": [
+        {
+          "epoch": "311",
+          "passed": true,
+          "tests": 1863,
+          "junit_sha256": "4229f7efefc09cb14c5a9a925ee163c9b7de0c31a87210fc645eb5f9ba25d542",
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "wall_seconds": 120.44716835600002,
+          "max_RSS_bytes_not_sum": 303640576,
+          "own_ECHILD": true,
+          "cleanup": {
+            "actual_owned_fin_closed": true,
+            "allocated_bytes_before": 811323392,
+            "capture_manifest_sha256": "e14979161c5753ee510590ca661d662bc1ebb024170b3d7742b6111c2fdf9a0e",
+            "foreign_paths_removed": 0,
+            "namespace_removed": true,
+            "original_namespace_removed": true,
+            "retained_entries_before": 35814
+          },
+          "allocation_scope": "AFTER_OWN_FIN_BEFORE_OWN_CLEANUP_NOT_GLOBAL_PEAK"
+        },
+        {
+          "epoch": "312",
+          "passed": true,
+          "tests": 1863,
+          "junit_sha256": "a5f822c22ec1cf6b4afa1d3e3a29bbdae27a7406f87a907e9c14971f0991973b",
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "wall_seconds": 131.778852718,
+          "max_RSS_bytes_not_sum": 300740608,
+          "own_ECHILD": true,
+          "cleanup": {
+            "actual_owned_fin_closed": true,
+            "allocated_bytes_before": 811311104,
+            "capture_manifest_sha256": "60fdb52e123ba473361c4abe8d951b7d6bfebe5b3eb32ba263bcb60bb6ffcadf",
+            "foreign_paths_removed": 0,
+            "namespace_removed": true,
+            "original_namespace_removed": true,
+            "retained_entries_before": 35811
+          },
+          "allocation_scope": "AFTER_OWN_FIN_BEFORE_OWN_CLEANUP_NOT_GLOBAL_PEAK"
+        }
+      ],
+      "fresh_physical_observation": {
+        "allocation_unit_bytes": 4096,
+        "filesystem_device": 2049,
+        "filesystem_type": "ext4",
+        "free_bytes": 91482607616,
+        "free_inodes": 18422979,
+        "mount_id": 27,
+        "path_identity": [
+          2049,
+          8912899,
+          1001,
+          1001,
+          16832
+        ],
+        "preferred_io_block_bytes": 4096,
+        "total_inodes": 19529728
+      },
+      "history_bootstrap": {
+        "ECHILD": true,
+        "G0_G8_qualification": false,
+        "actual_owned_FIN": true,
+        "foreign_removed": 0,
+        "git_after": {
+          "aggregate_bound_kind": "OBSERVED_SAMPLES_ONLY_NOT_KERNEL_QUOTA",
+          "allocated_bytes": 439853056,
+          "continuous_peak_proved": false,
+          "entries": 55,
+          "maximum_allocated_bytes": 536870912,
+          "maximum_entries": 100000,
+          "maximum_file_bytes": 268435456
+        },
+        "git_before": {
+          "aggregate_bound_kind": "OBSERVED_SAMPLES_ONLY_NOT_KERNEL_QUOTA",
+          "allocated_bytes": 225480704,
+          "continuous_peak_proved": false,
+          "entries": 36,
+          "maximum_allocated_bytes": 536870912,
+          "maximum_entries": 100000,
+          "maximum_file_bytes": 268435456
+        },
+        "manifest_sha256": "d73d14c6b359d6f90de22cfb23bcc616b6c860885d9e5299f944d45682dc1685",
+        "peak_RSS_bytes_not_sum": 229228544,
+        "real_orders_sent": 0,
+        "run_id": 38057139682,
+        "schema": "porota.rc6.authentic-economic-history-readout.v1",
+        "source_sha": "1f5678fe44a570f42b28b7d0fdbdd5a2b1e1022d",
+        "source_tree": "fbab6060825e17a8122b1252e7d7018e82461117",
+        "wall_seconds": 5.225810047000003
+      },
+      "readout_sha256": "ed666dd296e52a2a1548a2c337aa68064c9be810a04c0b32a7a9ed82150595cf",
+      "original_full_case_identities_retained_in_artifact_not_duplicated_in_Source": true,
+      "G0_G8_qualification": false,
+      "whole_Droplet_capacity_proved": false
+    },
+    "authenticated_native_1f5678fe": {
+      "source_sha": "1f5678fe44a570f42b28b7d0fdbdd5a2b1e1022d",
+      "source_tree": "fbab6060825e17a8122b1252e7d7018e82461117",
+      "run_id": 38057740591,
+      "job_id": 114229559919,
+      "artifact_id": 11671784226,
+      "artifact_bytes": 61571,
+      "artifact_sha256": "acc3272063ffd736d7b998d32d906dae80418d9c6d1604d1ff56f70a5dc3045e",
+      "members_crc_verified": 34,
+      "status": "RED",
+      "client_exitcode": 1,
+      "error_signature": "ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED",
+      "ROOT_FIN": "UNKNOWN",
+      "ROOT_custody_proved": false,
+      "Root_cases_started": false,
+      "namespace_retained": true,
+      "cleanup_authorized": false,
+      "reserve_credit_bytes": 0,
+      "boot_bound_journal": {
+        "kernel_returncode": 0,
+        "origin": {
+          "ROOT_FIN_claimed": false,
+          "ROOT_custody_qualified": false,
+          "boot_id": "302d8bce7e1a43d0b4806725a0a62436",
+          "origins": [
+            "PID1_UNIT",
+            "PID1_UNIT",
+            "PID1_UNIT",
+            "PID1_UNIT"
+          ],
+          "record_count": 4,
+          "status": "SCOPED_JOURNAL_OBSERVATION_ONLY",
+          "unit": "rc6-native-d4e985a827ad490ab7c1b338690a2fd9-guard.service"
+        },
+        "original_FIN_sha256": "032a3b9b4611fa0134b764cc6e48394b1040886bc67dc62aedae03406d54fad6",
+        "raw_bytes": 4089,
+        "raw_sha256": "b1043e52611f1711d60e0d607d34e1b96235b5ccb064de976a2850a8870736ca"
+      },
+      "capture_manifests": {
+        "custody-raw/closed-client-raw/manifest.json": {
+          "members": 8,
+          "sha256": "4589fc5e60705b470b6dce8eabd3d742ced4ff0e2f67c2bbc55f54a21c5c66c3"
+        },
+        "filter/manifest.json": {
+          "members": 7,
+          "sha256": "4fdd0274173d855168135fb5354147c076a044c41f24c7349f6cf10264f38866"
+        }
+      },
+      "captured_member_hashes_verified": true,
+      "quota_proved": false,
+      "reserves_proved": false,
+      "material_gate_launched": false,
+      "G0_G8_qualification": false,
+      "filter": {
+        "status": "PASS_NATIVE_FILTER_ONLY",
+        "rules_each_actor": 57,
+        "denials_each_actor": 26,
+        "filters_supervisor_before_after": [
+          0,
+          1
+        ],
+        "filters_worker_before_after": [
+          1,
+          2
+        ],
+        "dumpable_supervisor_worker_observed": [
+          0,
+          1
+        ],
+        "plan_sha256": "9daf64ba999008527b7220b4274e0e7439e27711608ec47b544b8e6e7e42dc2e",
+        "module_sha256": "c6efda60cee1b9d6a899ff27da05993b5287e0082c22f1f5999a1a1e570ac21f",
+        "wall_seconds": 0.20090116800002988,
+        "max_RSS_bytes_not_sum": 101609472,
+        "cleanup": {
+          "actual_owned_fin_closed": true,
+          "allocated_bytes_before": 69632,
+          "foreign_paths_removed": 0,
+          "namespace_removed": true
+        },
+        "capture_manifest_sha256": "4fdd0274173d855168135fb5354147c076a044c41f24c7349f6cf10264f38866"
+      },
+      "readout_sha256": "d945a8ba0a28e14f8644f6d604e1e5c97ad1454f62f13d8e047718c55f40f709",
+      "causal_prebirth_guard_readout": {
+        "operation": "controller_snapshot: ROOT_CUSTODY_ACTUAL_UNIT_PROPERTIES_REQUIRED",
+        "source_line": 488,
+        "python_ROOT_reached": true,
+        "failure": "ValueError",
+        "errno": "NOT_APPLICABLE_TO_SOURCE_VALUEERROR",
+        "guardian_original_bytes": 1443,
+        "guardian_original_sha256": "1bb5dd1f4d3748a08fdb36489d11b03821f242f8dab3ae2c7333844e32e228ab",
+        "original_unit_bytes": 2538,
+        "original_unit_sha256": "d5a5d7109f6180b64028013fda12c1ee98783c9955eafa35412a73a749a43a58",
+        "snapshot_sha256": "54ba77fc8ae73fe9bfca57aba922fdf8c9c5f55d0da2a1a3ee8310b3414e89dd",
+        "snapshot_scope": "DIAGNOSTIC_ONLY_CAPTURED_AFTER_FIN_AND_WRITER_ABSENCE",
+        "declared_original_identity_UID_GID_dev_inode_mode": [
+          0,
+          0,
+          28,
+          1502,
+          33188
+        ],
+        "all_other_properties_guard_predicates_true_NONROOT_exact_Source_AST_replay": 12,
+        "unique_false_predicate": "FinalKillSignal=KILL_not_in_SIGKILL_9",
+        "canonical_signal_number_unchanged": 9,
+        "quoted_safe_PID1_path_guard_passed_natively": true,
+        "exact_namespace_predicate_passed_NONROOT_replay_not_reached_natively": true,
+        "PID1_journal_exit_status": 1,
+        "old_EXIT_NAMESPACE_226_present_in_this_run": false,
+        "historical_final_226_errno": "UNKNOWN",
+        "ROOT_birth_pidfd_cases_seal_FIN": "NOT_PROVED",
+        "identical_native_retry_allowed": false
+      }
+    },
+    "canonical_SIGKILL_and_closed_private_RAW_corrective_review": {
+      "status": "SUCCESSOR_EXACT_CI_THEN_ONE_NATIVE_REQUIRED",
+      "source_references": [
+        {
+          "url": "https://github.com/systemd/systemd-stable/blob/v255.4/src/core/dbus-kill.c#L41",
+          "sha256": "f644d49d84995a813bb95679b10a5ec0af13be5aefebafd920a41e899a9bff6a",
+          "operation": "FINAL_KILL_SIGNAL_SIGNAL_TO_STRING_WITH_CHECK"
+        },
+        {
+          "url": "https://github.com/systemd/systemd-stable/blob/v255.4/src/basic/signal-util.c#L131",
+          "sha256": "3942112300443b19d0629a2575c4f28f01a6facce76de63f513927739ec5201a",
+          "operation": "SIGKILL_TABLE_ABBREVIATION_KILL"
+        }
+      ],
+      "binary_identity_proved_from_upstream": false,
+      "native_original_unit_confirms_KILL": true,
+      "minimum_signal_fix": "ACCEPT_EXACT_KILL_ABBREVIATION_WITH_SIGKILL_AND_9_REJECT_OTHER_SIGNALS",
+      "private_RAW_loss_demonstrated_by_Source_order": "PIDFD_REQUIRED_PRECEDES_RAW_READ_AND_DECODE_REPLACES_TRACEBACK",
+      "private_RAW_preservation_rule": "ONLY_AFTER_ORIGINAL_PRIVATE_MANAGER_FIN_AND_CAPTURE_STATE_THEN_CLIENT_FIN_UNIT_INACTIVE_CGROUP_NO_WRITERS",
+      "no_diagnostic_ROOT_FIN_or_cleanup_authority": true,
+      "original_manager_sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+      "root_actor_seal_sha256": "ce4be531882eb3a991f4324ed6da1166eab52db87341ecf2467ab1b73bb18172",
+      "systemd_properties_deadlines_capabilities_drop_namespaces_plans_changed": false,
+      "contract_revision_approved": false,
+      "native_custody_qualified": false,
+      "G0_G8_qualification": false,
+      "implementation_sha256": {
+        "scripts/rc6_privileged_custody.py": "969dca2ed51259258b841edeb575ae16dcd436b8ba4955d2b1a04ee6dc8d1103",
+        "tests/test_rc6_privileged_custody.py": "313c7ceb73a0066ae06ea753cd80e6939ca5ff16fce4569ca8381926f7c5cc9f"
+      },
+      "local_frozen_regressions": [
+        {
+          "python_epoch": "311",
+          "passed": 487,
+          "failures_errors_skips": 0,
+          "seconds": 9.066,
+          "junit_sha256": "e64f472b8eb5bca92292bc25c5dddd4b819536eb04873b8e5949377dc0618c8a",
+          "suites": [
+            "tests/test_rc6_privileged_custody.py",
+            "tests/test_rc6_capacity_calibration.py"
+          ],
+          "scope": "LOCAL_NONROOT_EXACT_FROZEN_CODE_NOT_ACTIONS_OR_NATIVE_ROOT"
+        },
+        {
+          "python_epoch": "312",
+          "passed": 487,
+          "failures_errors_skips": 0,
+          "seconds": 8.987,
+          "junit_sha256": "295dc0b2be86a019212e284004302c59a394a9c5f60c5780e602bb4fa3deafc3",
+          "suites": [
+            "tests/test_rc6_privileged_custody.py",
+            "tests/test_rc6_capacity_calibration.py"
+          ],
+          "scope": "LOCAL_NONROOT_EXACT_FROZEN_CODE_NOT_ACTIONS_OR_NATIVE_ROOT"
+        }
+      ]
     }
   }
 }

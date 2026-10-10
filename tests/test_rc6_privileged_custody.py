@@ -307,7 +307,8 @@ def test_single_proc_mount_rows_and_host_seal_arguments_keep_original_owner_bind
 
 
 @pytest.mark.parametrize("namespaces", [None, "mnt pid", "mnt pid user", "pid", "mnt pid unknown"])
-def test_masked_pid1_decoder_never_follows_foreign_proc_or_qualifies_root(tmp_path, monkeypatch, namespaces):
+@pytest.mark.parametrize("final_signal", ["SIGKILL", "KILL", "9", "TERM", "SIGTERM", "15", "HUP", "SIGHUP", "1"])
+def test_masked_pid1_decoder_never_follows_foreign_proc_or_qualifies_root(tmp_path, monkeypatch, namespaces, final_signal):
     # Pure readback decoder fixture: no ROOT process, unit, mount or seal.
     actor = custody.kernel_process(os.getpid())
     actor.update(parent_pid=1, uids=[0] * 4, gids=[0] * 4)
@@ -318,6 +319,9 @@ def test_masked_pid1_decoder_never_follows_foreign_proc_or_qualifies_root(tmp_pa
     host = {key: number + 1 for key, number in custody.host_boundary_snapshot().items()}
     request = {"host_PID1": pid1, "host_boundary": host, "issuer": custody.issuer_snapshot(actor)}
     properties = dict(value.split("=", 1) for value in custody.service_properties(tmp_path, 45, probe_only=True))
+    # Authenticated Source1f5678fe's original unit (2538 B, d5a5d710...43a58)
+    # persists FinalKillSignal=KILL for the unchanged SIGKILL request.
+    properties["FinalKillSignal"] = final_signal
     if namespaces is not None: properties["RestrictNamespaces"] = namespaces
     monkeypatch.setattr(custody, "kernel_process", lambda pid: actor)
     monkeypatch.setattr(custody, "public_kernel_process", lambda *args, **kwargs: pytest.fail("Host PID1 is masked"))
@@ -325,7 +329,7 @@ def test_masked_pid1_decoder_never_follows_foreign_proc_or_qualifies_root(tmp_pa
         for key, value in properties.items()]
     parsed = custody.parse_unit_properties(("[Service]\n" + "\n".join(serialized)).encode())
     monkeypatch.setattr(custody, "_unit_file", lambda unit: parsed)
-    if namespaces not in (None, "mnt pid"):
+    if namespaces not in (None, "mnt pid") or final_signal not in ("SIGKILL", "KILL", "9"):
         with pytest.raises(ValueError, match="UNIT_PROPERTIES_REQUIRED|UNIT_NAMESPACE_BITMAP_UNKNOWN"):
             custody.controller_snapshot(name, 45, request=request, mode="probe")
         return
@@ -580,6 +584,7 @@ def test_issuer_namespace_requires_self_snapshot_and_native_host_mapping():
 def test_failure_without_authentic_client_fin_never_reads_raw_or_cleans(tmp_path, monkeypatch):
     from scripts import rc6_authenticated_fixture_lifecycle as owned
     namespace = owned.create_namespace(tmp_path, binding())
+    (namespace.path / "private-broker-native.log").write_bytes(b"UNREAD_PRIVATE_RAW")
     def forbidden(*args, **kwargs):
         pytest.fail("No log read, service query or cleanup without authentic client FIN")
     monkeypatch.setattr(custody, "_read", forbidden)
@@ -608,6 +613,7 @@ def test_foreign_or_active_unit_readback_never_allows_failure_raw(field, value):
 def test_unknown_writer_failure_preserves_real_client_fin_and_keeps_namespace(tmp_path, monkeypatch):
     from scripts import rc6_authenticated_fixture_lifecycle as owned
     namespace = owned.create_namespace(tmp_path, binding())
+    (namespace.path / "private-broker-native.log").write_bytes(b"UNREAD_PRIVATE_RAW")
     command = ["/bin/sh", "-c", custody.BRIDGE_SHELL, "rc6-own-diagnostic",
         sys.executable, "-I", "-B", "-c", "import sys;sys.stderr.write('ORIGINAL_STDERR');sys.exit(73)"]
     kernel, fin = custody.execute_service(namespace, command, cwd=custody.ROOT, environ={"PATH": "/usr/bin:/bin"},
@@ -642,7 +648,8 @@ def test_unknown_writer_failure_preserves_real_client_fin_and_keeps_namespace(tm
 
 
 @pytest.mark.parametrize("query_exit", [0, 4])
-def test_inactive_unit_failure_captures_original_bytes_without_root_credit(tmp_path, monkeypatch, query_exit):
+@pytest.mark.parametrize("private_defect", [None, "symlink", "hardlink", "oversize", "writable"])
+def test_inactive_unit_failure_captures_original_bytes_without_root_credit(tmp_path, monkeypatch, query_exit, private_defect):
     from scripts import rc6_authenticated_fixture_lifecycle as owned
     namespace = owned.create_namespace(tmp_path, binding())
     command = ["/bin/sh", "-c", custody.BRIDGE_SHELL, "rc6-own-diagnostic",
@@ -665,6 +672,21 @@ def test_inactive_unit_failure_captures_original_bytes_without_root_credit(tmp_p
     snapshot = unit_snapshot_fixture(custody.unit_name(namespace.nonce, guard=True))
     snapshot_raw = custody.wire(snapshot)
     calibration.publish(namespace.path / "guardian-unit-original.json", snapshot)
+    optional_bytes = {name: ("ORIGINAL_PRIVATE_TRACEBACK:" + name).encode()
+        for name in custody.OPTIONAL_FAILURE_RAW_NAMES}
+    for name, raw in optional_bytes.items():
+        path = namespace.path / name
+        path.write_bytes(raw)
+        path.chmod(0o600)
+    private_path = namespace.path / "private-broker-native.log"
+    if private_defect == "symlink":
+        private_path.unlink()
+        private_path.symlink_to(namespace.path / "root-success.native.log")
+    elif private_defect == "hardlink": os.link(private_path, namespace.path / "private-alias.log")
+    elif private_defect == "oversize":
+        with private_path.open("r+b") as stream: stream.truncate(custody.CONTROL_BOUND + 1)
+    elif private_defect == "writable": private_path.chmod(0o622)
+    (namespace.path / "foreign-not-enumerated.log").write_bytes(b"EXCLUDED")
     result = custody._preserve_failure({"namespace": namespace, "kernel": kernel, "fin": fin,
         "unit": custody.unit_name(namespace.nonce, guard=True), "log": "guardian-native.log"}, tmp_path / "diagnostic",
         ValueError("ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED"))
@@ -676,6 +698,18 @@ def test_inactive_unit_failure_captures_original_bytes_without_root_credit(tmp_p
     snapshot_row = next(row for row in manifest["files"] if row["relative_source"] == "guardian-unit-original.json")
     assert (capture / snapshot_row["capture_file"]).read_bytes() == snapshot_raw
     assert snapshot_row["sha256"] == hashlib.sha256(snapshot_raw).hexdigest()
+    assert set(result["optional_producer_RAW"]) == set(custody.OPTIONAL_FAILURE_RAW_NAMES)
+    assert not any(row["relative_source"] == "foreign-not-enumerated.log" for row in manifest["files"])
+    for name, raw in optional_bytes.items():
+        metadata = result["optional_producer_RAW"][name]
+        rows = [row for row in manifest["files"] if row["relative_source"] == name]
+        assert metadata["ROOT_FIN_claimed"] is metadata["ROOT_custody_qualified"] is False
+        if name == "private-broker-native.log" and private_defect:
+            assert metadata["status"] == "UNKNOWN" and not rows
+        else:
+            assert metadata["status"] == "CAPTURED_PRIVATE_RAW_DIAGNOSTIC_ONLY"
+            assert len(rows) == 1 and (capture / rows[0]["capture_file"]).read_bytes() == raw
+            assert metadata["sha256"] == hashlib.sha256(raw).hexdigest()
     assert result["unit_snapshot"]["status"] == "CAPTURED_ROOT_UNIT_METADATA_DIAGNOSTIC_ONLY"
     assert result["unit_snapshot"]["ROOT_FIN_claimed"] is result["unit_snapshot"]["ROOT_custody_qualified"] is False
     assert result["ROOT_FIN"] == "UNKNOWN" and result["ROOT_custody_qualified"] is False
@@ -684,6 +718,87 @@ def test_inactive_unit_failure_captures_original_bytes_without_root_credit(tmp_p
     assert result["cgroup_revalidated_after_capture"] is True
     if query_exit == 4:
         assert manifest["phase_green"] is False
+
+
+@pytest.mark.parametrize("exit_code", [0, 73])
+def test_private_raw_is_pinned_after_actual_nonroot_fin_before_secondary_checks(tmp_path, exit_code):
+    assert os.getuid() == os.geteuid() > 0
+    manager = custody._manager(custody.ROOT)
+    manager["pre_capture_kernel_state"]()
+    path = tmp_path / "private-broker-native.log"
+    kernel = manager["managed_native_child"]([sys.executable, "-I", "-B", "-c",
+        "import sys;sys.stderr.write('ORIGINAL_PRIVATE_TRACEBACK');sys.exit(" + str(exit_code) + ")"],
+        custody.ROOT, path, {"PATH": "/usr/bin:/bin"}, 5, terminate_grace=2, progress_poll=5)
+    assert manager["managed_custody_closed"](kernel) and kernel["returncode"] == exit_code
+    assert kernel["actual_child_reaped"] and kernel["owned_children_exhaustion_verified"]
+    raw = custody._closed_private_broker_raw(manager, kernel, path,
+        owner_uid=os.getuid(), owner_gid=os.getgid())
+    assert raw == b"ORIGINAL_PRIVATE_TRACEBACK" and path.read_bytes() == raw
+    with pytest.raises(ValueError, match="ROOT_CUSTODY_NATIVE_PRIVATE_PIDFD_REQUIRED"):
+        custody.require(False, "ROOT_CUSTODY_NATIVE_PRIVATE_PIDFD_REQUIRED")
+    with pytest.raises(json.JSONDecodeError): calibration.decode(raw)
+    assert path.read_bytes() == raw  # Either secondary failure retains causal bytes.
+    with pytest.raises(ValueError, match="ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+        custody.validate_witness({"kernel": kernel, "raw_sha256": custody.sha256(raw)}, binding=binding())
+
+
+@pytest.mark.parametrize("failure", ["fin", "echild"])
+def test_private_raw_never_opens_or_transfers_before_original_fin_and_echild(tmp_path, monkeypatch, failure):
+    seen = []
+    def closed(kernel):
+        seen.append("fin")
+        return failure != "fin"
+    def before():
+        seen.append("echild")
+        raise ValueError("ACTUAL_OWN_ECHILD_UNKNOWN")
+    def forbidden(*args, **kwargs): pytest.fail("No producer IO/ownership before closed FIN plus ECHILD")
+    monkeypatch.setattr(custody.os, "open", forbidden)
+    monkeypatch.setattr(custody.os, "fchown", forbidden)
+    with pytest.raises(ValueError):
+        custody._closed_private_broker_raw({"managed_custody_closed": closed, "pre_capture_kernel_state": before},
+            {}, tmp_path / "private-broker-native.log", owner_uid=os.getuid(), owner_gid=os.getgid())
+    assert seen == (["fin"] if failure == "fin" else ["fin", "echild"])
+
+
+@pytest.mark.parametrize("defect", ["symlink", "hardlink", "fifo", "oversize", "writable", "name"])
+def test_closed_private_raw_rejects_aliases_and_bounds_before_transfer(tmp_path, monkeypatch, defect):
+    path = tmp_path / ("foreign.log" if defect == "name" else "private-broker-native.log")
+    if defect == "fifo": os.mkfifo(path, 0o600)
+    else:
+        path.write_bytes(b"OWN_NONROOT_TRACEBACK")
+        path.chmod(0o600)
+    if defect == "symlink":
+        path.rename(tmp_path / "target.log")
+        path.symlink_to(tmp_path / "target.log")
+    elif defect == "hardlink": os.link(path, tmp_path / "alias.log")
+    elif defect == "oversize":
+        with path.open("r+b") as stream: stream.truncate(custody.CONTROL_BOUND + 1)
+    elif defect == "writable": path.chmod(0o622)
+    monkeypatch.setattr(custody.os, "fchown", lambda *args: pytest.fail("Untrusted producer cannot be transferred"))
+    manager = {"managed_custody_closed": lambda kernel: True, "pre_capture_kernel_state": lambda: {}}
+    with pytest.raises((ValueError, OSError)):
+        custody._closed_private_broker_raw(manager, {}, path, owner_uid=os.getuid(), owner_gid=os.getgid())
+
+
+def test_closed_private_raw_rejects_path_rebound_and_closes_pinned_descriptor(tmp_path, monkeypatch):
+    path = tmp_path / "private-broker-native.log"
+    path.write_bytes(b"ORIGINAL_OWN_NONROOT")
+    path.chmod(0o600)
+    actual_read, descriptors = os.read, []
+    def rebound(descriptor, maximum):
+        part = actual_read(descriptor, maximum)
+        if not descriptors:
+            descriptors.append(descriptor)
+            path.rename(tmp_path / "former.log")
+            path.write_bytes(b"OTHER_OWN_NONROOT")
+            path.chmod(0o600)
+        return part
+    monkeypatch.setattr(custody.os, "read", rebound)
+    manager = {"managed_custody_closed": lambda kernel: True, "pre_capture_kernel_state": lambda: {}}
+    with pytest.raises(ValueError, match="ROOT_CUSTODY_PRIVATE_RAW_CHANGED"):
+        custody._closed_private_broker_raw(manager, {}, path, owner_uid=os.getuid(), owner_gid=os.getgid())
+    with pytest.raises(OSError) as error: os.fstat(descriptors[0])
+    assert error.value.errno == errno.EBADF
 
 
 def unit_snapshot_fixture(unit):

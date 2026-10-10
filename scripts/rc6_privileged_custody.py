@@ -35,6 +35,8 @@ ROOT_SEAL_MEMBER = "scripts/rc6_root_actor_seal.py"
 SYSTEMD_DENIED_FILTER = "~setns ptrace process_vm_readv process_vm_writev bpf open_by_handle_at name_to_handle_at kexec_load kexec_file_load init_module finit_module delete_module reboot swapon swapoff"
 MANAGER_SHA256 = "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
 CONTROL_BOUND = 2 * 1024**2
+OPTIONAL_FAILURE_RAW_NAMES = ("private-broker-native.log", "root-success.native.log",
+    "failure-before-drop.native.log", "root-hang.native.log", "nonroot-hang.native.log")
 SYSTEMD_QUERY_BOUND = 65536
 SYSTEMD_BINARY_BOUND = 16 * 1024**2
 SYSTEMD_CONFIG_FIELDS = ("Version", "LogLevel", "LogTarget", "DefaultStandardOutput", "DefaultStandardError")
@@ -489,7 +491,7 @@ def controller_snapshot(name, expected_runtime, *, request, mode):
             and _seconds(properties.get("TimeoutStopSec")) == 2
             and properties.get("KillMode") == "control-group"
             and properties.get("SendSIGKILL") in ("yes", "true", "1")
-            and properties.get("FinalKillSignal") in ("SIGKILL", "9")
+            and properties.get("FinalKillSignal") in ("SIGKILL", "KILL", "9")
             and properties.get("PrivateMounts") in ("yes", "true", "1")
             and properties.get("ProtectSystem") == "strict"
             and properties.get("ProtectControlGroups") in ("yes", "true", "1")
@@ -790,6 +792,46 @@ def _broker_probe(request, namespace, manager, controller):
     return rows
 
 
+def _closed_private_broker_raw(manager, kernel, path, *, owner_uid, owner_gid):
+    """Preserve closed producer bytes before any secondary pidfd/JSON check."""
+    require(manager["managed_custody_closed"](kernel), "ROOT_CUSTODY_PRIVATE_BROKER_ACTUAL_FIN_REQUIRED")
+    manager["pre_capture_kernel_state"]()
+    path = Path(path)
+    require(path.name == "private-broker-native.log" and type(owner_uid) is int and owner_uid > 0
+            and type(owner_gid) is int and owner_gid > 0, "ROOT_CUSTODY_PRIVATE_RAW_TARGET_INVALID")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                and before.st_uid in (os.geteuid(), owner_uid)
+                and before.st_gid in (os.getegid(), owner_gid)
+                and not stat.S_IMODE(before.st_mode) & 0o022 and before.st_size <= CONTROL_BOUND
+                and unit_source_identity(before) == unit_source_identity(path.lstat()),
+                "ROOT_CUSTODY_PRIVATE_RAW_SOURCE_INVALID")
+        # Change only the positively owned, pinned closed-producer descriptor.
+        # FIN permits this diagnostic transfer; it grants no ROOT admission.
+        os.fchown(descriptor, owner_uid, owner_gid)
+        transferred = os.fstat(descriptor)
+        unchanged = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_mtime_ns")
+        require(all(getattr(before, key) == getattr(transferred, key) for key in unchanged)
+                and transferred.st_uid == owner_uid and transferred.st_gid == owner_gid,
+                "ROOT_CUSTODY_PRIVATE_RAW_TRANSFER_CHANGED")
+        chunks, total = [], 0
+        while True:
+            part = os.read(descriptor, min(65536, CONTROL_BOUND + 1 - total))
+            if not part:
+                break
+            chunks.append(part)
+            total += len(part)
+            require(total <= CONTROL_BOUND, "ROOT_CUSTODY_PRIVATE_RAW_BYTES_BOUND")
+        require(total == transferred.st_size
+                and unit_source_identity(transferred) == unit_source_identity(os.fstat(descriptor))
+                == unit_source_identity(path.lstat()), "ROOT_CUSTODY_PRIVATE_RAW_CHANGED")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
 def guardian_main(mode, request_path, name):
     require(os.getuid() == os.geteuid() == 0, "ROOT_CUSTODY_ACTUAL_ROOT_BROKER_REQUIRED")
     request, request_raw, namespace = _request(request_path)
@@ -876,8 +918,8 @@ def guardian_main(mode, request_path, name):
     finally:
         os.dup2(saved, 0)
         os.close(saved)
-    require(manager["managed_custody_closed"](kernel), "ROOT_CUSTODY_PRIVATE_BROKER_ACTUAL_FIN_REQUIRED")
-    manager["pre_capture_kernel_state"]()
+    raw = _closed_private_broker_raw(manager, kernel, log,
+        owner_uid=request["owner_uid"], owner_gid=request["owner_gid"])
     require(type(mapping_state.get("pidfd")) is int, "ROOT_CUSTODY_NATIVE_PRIVATE_PIDFD_REQUIRED")
     poller = select.poll()
     poller.register(mapping_state["pidfd"], select.POLLIN | select.POLLHUP)
@@ -886,8 +928,6 @@ def guardian_main(mode, request_path, name):
                 "ROOT_CUSTODY_PRIVATE_PID1_ACTUAL_REAP_REQUIRED")
     finally:
         os.close(mapping_state["pidfd"])
-    os.chown(log, request["owner_uid"], request["owner_gid"], follow_symlinks=False)
-    raw = _read(log)
     from scripts import rc6_capacity_calibration as calibration
     result = calibration.decode(raw)
     result["external_guardian"] = {"controller": controller, "private_broker_kernel": kernel,
@@ -1673,6 +1713,9 @@ def _preserve_failure(context, destination, error):
         "ROOT_custody_qualified": False, "cleanup_authorized": False, "namespace_removed": False,
         "reservation_recovery_credited_bytes": 0, "root_producer_RAW_read": False,
         "writer_absence": "UNKNOWN", "real_orders_sent": 0}
+    diagnostic["private_broker_RAW"] = {"status": "UNKNOWN", "scope": "DIAGNOSTIC_ONLY",
+        "ROOT_FIN_claimed": False, "ROOT_custody_qualified": False}
+    diagnostic["optional_producer_RAW"] = {}
     namespace, fin = context.get("namespace"), context.get("fin")
     if namespace is None:
         return diagnostic
@@ -1741,14 +1784,35 @@ def _preserve_failure(context, destination, error):
             if snapshot_files:
                 snapshot_raw = _read(namespace.path / snapshot_name, CONTROL_BOUND)
                 diagnostic["unit_snapshot"] = unit_snapshot_origin(snapshot_raw, unit=unit, binding=namespace.binding)
+            optional_files = []
+            for optional_name in OPTIONAL_FAILURE_RAW_NAMES:
+                metadata = {"status": "UNKNOWN", "scope": "DIAGNOSTIC_ONLY",
+                    "ROOT_FIN_claimed": False, "ROOT_custody_qualified": False}
+                diagnostic["optional_producer_RAW"][optional_name] = metadata
+                if optional_name == "private-broker-native.log":
+                    diagnostic["private_broker_RAW"] = metadata
+                try:
+                    details = (namespace.path / optional_name).lstat()
+                    owned.custody.private_stat(details)
+                    require(details.st_gid == os.getegid() and details.st_dev == namespace.identity[0]
+                            and not stat.S_IMODE(details.st_mode) & 0o022 and details.st_size <= CONTROL_BOUND,
+                            "ROOT_CUSTODY_PRIVATE_DIAGNOSTIC_SOURCE_INVALID")
+                    optional_files.append(optional_name)
+                except (ValueError, OSError) as optional_error:
+                    metadata["reason"] = str(optional_error)
             capture = owned.capture_required_evidence(namespace, query_fin, output / "closed-client-raw",
-                [context["log"], "diagnostic-unit-query.log", *snapshot_files,
+                [context["log"], "diagnostic-unit-query.log", *snapshot_files, *optional_files,
                  *(["diagnostic-journal-query.log"] if "raw_sha256" in diagnostic["journal"] else []),
                  *(["diagnostic-journal-invocation-query.log"] if "raw_sha256" in diagnostic["journal_invocation"] else [])])
             # Only cgroup state is read again. The single systemd query above
             # is retained verbatim and never advertised as a fresh second one.
             after = _cgroup_writer_absence(unit)
             require(after == before["cgroup_state"], "ROOT_CUSTODY_DIAGNOSTIC_WRITER_ABSENCE_CHANGED")
+            for optional_name in optional_files:
+                row = next(row for row in capture.files if row["relative_source"] == optional_name)
+                diagnostic["optional_producer_RAW"][optional_name].update(
+                    status="CAPTURED_PRIVATE_RAW_DIAGNOSTIC_ONLY", sha256=row["sha256"],
+                    bytes=row["bytes"], relative_source=optional_name)
             diagnostic.update(writer_absence=before, root_producer_RAW_read=True,
                 cgroup_revalidated_after_capture=True,
                 diagnostic_capture=str(capture.path), diagnostic_capture_manifest_sha256=capture.manifest_sha256,

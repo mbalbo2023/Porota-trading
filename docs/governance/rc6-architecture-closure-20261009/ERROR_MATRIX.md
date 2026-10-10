@@ -392,3 +392,68 @@ Se conserva un candidato en PR483 y ancestry de481/482, sin una rama o PR
 documental adicional. USD0 de infraestructura recurrente adicional,
 PAPER/SHADOW, real_orders_sent=0 y PPI Watch intacto. Sin contratación,
 ampliación, infraestructura persistente, merge ni deploy.
+
+
+## Source1f5678fe: causa canónica SIGKILL y conservación del RAW privado
+
+CI exacta Source `1f5678fe44a570f42b28b7d0fdbdd5a2b1e1022d`, tree
+`fbab6060825e17a8122b1252e7d7018e82461117`: Actions38057139682,
+job114227822226, **1863 PASS por Python**, cero fallos/errores/skips.
+Artifact11672068470:972937B/22CRC/SHA256
+`1d26e03069af4c2e7ad0a4f501068526e7dec60f269cd0f1fdc3babadad2467b`.
+Source literal intacto, identidades iguales, FIN/ECHILD, cleanup0foreign.
+Wall120.447/131.779s, RSS máximo303640576/300740608B por época;
+inventario post-FIN811323392/811311104B, sin afirmar pico global.
+Ext4/4096 con91482607616B e18422979inodos libres observados en esa
+ejecución; no cuota garantizada ni capacidad total del Droplet.
+Bootstrap histórico5.226s/RSS229228544B, Git225480704→439853056B
+observado, FIN/ECHILD y límite original512MiB intactos.
+
+Native38057740591/job114229559919 es RED distinto, sin retry idéntico.
+Artifact11671784226:61571B/34CRC/SHA256
+`acc3272063ffd736d7b998d32d906dae80418d9c6d1604d1ff56f70a5dc3045e`.
+Unidad propia `rc6-native-d4e985a827ad490ab7c1b338690a2fd9-guard.service`,
+boot `302d8bce7e1a43d0b4806725a0a62436`, salida1 antes de birth/pidfd.
+RAW ROOT1443B/SHA256
+`1bb5dd1f4d3748a08fdb36489d11b03821f242f8dab3ae2c7333844e32e228ab`
+demuestra ValueError `ROOT_CUSTODY_ACTUAL_UNIT_PROPERTIES_REQUIRED`.
+El errno no aplica a ese ValueError; no hay226 en esta ejecución.
+ROOT_FIN UNKNOWN, namespace retenido, cleanupfalse y crédito0.
+
+La unidad original2538B/SHA256
+`d5a5d7109f6180b64028013fda12c1ee98783c9955eafa35412a73a749a43a58`
+se conserva en snapshot54ba77fc… tras FIN y ausencia de escritores.
+El replay NONROOT de los13 predicados del Source exacto obtiene12TRUE:
+únicamente `FinalKillSignal=KILL` no coincide con el guardSIGKILL/9.
+`dbus-kill.c:41` y `signal-util.c:131` de systemd255.4 explican la abreviatura
+KILL. El fix acepta ese literal exacto para la misma señal9 y rechaza otras
+señales. La máscara entre comillas pasó nativamente; namespaces exactos dio TRUE
+en replay NONROOT y aún no se ejecutó tras el guard de KILL. El replay no
+prueba kernel, birth, pidfd, sello ni custodia.
+
+La auditoría de orden revela que la exigencia de pidfd del proceso privado
+precedía su RAW y decode podía sustituir el traceback. Se conserva el RAW
+acotado sólo después del FIN original del manager y pre_capture; su captura
+NONROOT requiere además FIN cliente, unidad nonce inactiva y cgroup sin
+escritores. No concede ROOT_FIN, cleanup, equivalencia ni recuperación.
+No cambia propiedades systemd, señal, manager, sello, caps, drop, namespaces,
+deadlines, planes o límites. El nuevo Source debe pasar CI exacta antes de
+una única prueba nativa; no hereda el PASS previo.
+
+El filtro nativo volvió a demostrar57 reglas/26denegaciones por actor,
+herencia0→1→2 y dumpable0/1, FIN/cleanup0foreign,0.201s/RSS101609472B.
+Custodia ROOT, cuota/reservasG0, lectores focales duales y cota globalG5
+continúan pendientes. No Horizon ni gates materiales antes de admisión.
+Un candidatoPR483, USD0 adicional recurrente, PAPER/SHADOW, real0,
+PPI intacto, sin infraestructura persistente, merge ni deploy.
+
+Cierre local del Source siguiente:487 PASS por Python3.11/3.12 en custodia
+y calibración,9.066/8.987s, cero errores/fallos/skips. JUnit
+`e64f472b8eb5bca92292bc25c5dddd4b819536eb04873b8e5949377dc0618c8a` y
+`295dc0b2be86a019212e284004302c59a394a9c5f60c5780e602bb4fa3deafc3`.
+Helper124390B/SHA256
+`969dca2ed51259258b841edeb575ae16dcd436b8ba4955d2b1a04ee6dc8d1103`;
+tests82542B/SHA256
+`313c7ceb73a0066ae06ea753cd80e6939ca5ff16fce4569ca8381926f7c5cc9f`.
+Estos tests preservan realmente FIN/ECHILD NONROOT y bytes originales; sus
+fixtures de unidad/cgroup se declaran fixtures, sin certificación ROOT.
