@@ -337,7 +337,7 @@
     "branch": "runtime-observability",
     "day": "2026-10-10",
     "detail": null,
-    "recorded_at": "2026-10-10T03:42:18.984534+00:00",
+    "recorded_at": "2026-10-10T04:42:38.452936+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -396,7 +396,7 @@
     "unchanged": 0
   },
   "observer": {
-    "heartbeat_at": "2026-10-10T04:35:00.788559+00:00",
+    "heartbeat_at": "2026-10-10T05:35:03.356309+00:00",
     "http_allowed": 1803,
     "http_blocked": 0,
     "last_market_data_at": "2026-10-09T20:01:38.564461+00:00",
@@ -427,17 +427,17 @@
   },
   "storage": {
     "database_bytes": 1484201984,
-    "filesystem_free": 4897964032,
+    "filesystem_free": 4900245504,
     "filesystem_total": 24883167232,
-    "filesystem_used": 19968425984,
-    "filesystem_used_pct": 80.25,
+    "filesystem_used": 19966144512,
+    "filesystem_used_pct": 80.24,
     "wal_bytes": 59637032
   },
   "telegram": {
     "SENT": 427,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-10-10T01:35:03-03:00",
+  "timestamp": "2026-10-10T02:35:04-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
@@ -452,32 +452,32 @@
   "workers": {
     "candles": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-10T04:35:18.881698+00:00",
+      "heartbeat_at": "2026-10-10T05:35:15.253482+00:00",
       "state": "RUNNING"
     },
     "caucion_cash_sweep": {
-      "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-10T04:35:05.691257+00:00",
+      "heartbeat_age_seconds": 0.229805,
+      "heartbeat_at": "2026-10-10T05:35:03.779505+00:00",
       "state": "WAITING_CALENDAR"
     },
     "exit_reader": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-10T04:35:18.847307+00:00",
+      "heartbeat_at": "2026-10-10T05:35:13.062890+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
-      "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-10T04:35:10.957299+00:00",
+      "heartbeat_age_seconds": 0.164733,
+      "heartbeat_at": "2026-10-10T05:35:03.844577+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-10T04:35:17.274502+00:00",
+      "heartbeat_at": "2026-10-10T05:35:13.457091+00:00",
       "state": "RUNNING"
     },
     "telegram": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-10T04:35:18.638243+00:00",
+      "heartbeat_at": "2026-10-10T05:35:16.322175+00:00",
       "state": "RUNNING"
     }
   }
