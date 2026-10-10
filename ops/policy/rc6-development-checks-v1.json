@@ -109,7 +109,8 @@
     "tests/test_rc6_g5a_actions.py",
     "tests/test_rc6_g5a_parts.py",
     "tests/test_rc6_g5a_custody_replay.py",
-    "tests/test_rc6_g5a_release_wiring.py"
+    "tests/test_rc6_g5a_release_wiring.py",
+    "tests/test_rc6_development_parallel_epoch.py"
   ],
   "material_gate_launched": false,
   "full_gov_claimed": false,

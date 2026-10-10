@@ -926,7 +926,8 @@ def test_compute_capture_cannot_escape_original_member_or_authenticated_fin(tmp_
         resource_profile.validate_custody_compute_observation(object(), binding=binding)
 
 
-def test_compute_controller_uses_existing_certified_guardian_only_and_requires_actions(tmp_path):
+def test_compute_controller_uses_existing_certified_guardian_only_and_requires_actions(tmp_path, monkeypatch):
+    monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
     with pytest.raises(ValueError, match="AUTHENTICATED_ACTIONS_OWNER_REQUIRED"):
         resource_profile.prove_compute_probe(output=tmp_path / "probe", source_sha="a" * 40,
             source_tree="b" * 40, owner_session="unit", plan_sha256="c" * 64, owner_check=lambda: None)

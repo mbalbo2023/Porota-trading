@@ -459,13 +459,20 @@ def main():
              'TMPDIR':str(namespace.path/'t'),'RC6_UNIT_NAMESPACE_PARENT':str(control_parent)}
         command=[interpreter,'-B','-m','pytest','--noconftest','-c','/dev/null','--rootdir='+str(ROOT),
             '-p','no:cacheprovider','-o','junit_family=legacy','--basetemp='+str(namespace.path/'p'),
-            '--junitxml='+str(namespace.path/'junit.xml'),'-q',*plan['suites']]
+            '--junitxml='+str(namespace.path/'junit.xml'),'-x','--tb=short','-q',*plan['suites']]
+        if len({suite.split('::',1)[0] for suite in plan['suites']}) > 1:
+            command=[interpreter,'-I','-B',str(Path(__file__).with_name('rc6_development_parallel_epoch.py')),
+                '--source-root',str(ROOT),'--namespace',str(namespace.path),'--plan',str(args.plan.absolute())]
         kernel,fin=lifecycle.execute_owned(namespace,command,cwd=ROOT,environ=env,
             log_relative='native.log',timeout_seconds=180,fin_label='development-'+epoch)
         # Only a genuine live FIN may authorize reads or retirement. Logical
         # RED still captures its original JUnit and log before cleanup.
         required=['native.log','producer-owned-fin-development-'+epoch+'.json']
         if (namespace.path/'junit.xml').is_file():required.append('junit.xml')
+        for worker in ('worker-0','worker-1'):
+            for name in ('native.log','junit.xml'):
+                member=worker+'/'+name
+                if (namespace.path/member).is_file():required.append(member)
         captured=lifecycle.capture_required_evidence(namespace,fin,output/epoch,required)
         rows={row['relative_source']:row for row in captured.files}
         facts=None
@@ -487,6 +494,18 @@ def main():
         if retirement_error is not None:
             result.update(status='RED_CONTROL_RETIREMENT',fullSource_unchanged=None,
                 next_epoch_launched=False,cleanup_credit_claimed=False)
+            preserve_result(output,result)
+            return 1
+        if not result['epochs'][-1]['passed']:
+            after=governed.source_pin(ROOT,args.source_sha,args.source_tree)
+            (output/'source-after.index.json').write_bytes(canonical(after))
+            try:
+                result['source_atime_observations']=governed.compare_source(before,after)
+                result['fullSource_unchanged']=True
+            except (ValueError,OSError) as error:
+                result['fullSource_unchanged']=False
+                result['source_validation_error']=type(error).__name__
+            result.update(status='RED',identities_equal=False,next_epoch_launched=False)
             preserve_result(output,result)
             return 1
     result['identities_equal']=all(e['junit'] is not None for e in result['epochs']) and (
