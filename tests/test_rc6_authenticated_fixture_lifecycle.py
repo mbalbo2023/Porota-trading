@@ -62,6 +62,23 @@ class FixtureLifecycleTests(unittest.TestCase):
         self.assertEqual(receipt["capacity_after"]["mount_id"], receipt["capacity_before"]["mount_id"])
         lifecycle.verify_capture(self.namespace, capture)
 
+    def test_development_retirement_preserves_actual_custody_refusal_and_source_site(self):
+        from scripts import rc6_development_checks as checks
+        fin = self.produce()
+        capture = self.capture(fin)
+        marker_before = custody.identity((self.namespace.path / lifecycle.MARKER).lstat())
+        (self.namespace.path / 'raw-control.json').write_bytes(b'changed after genuine FIN/capture')
+        cleanup, error = checks.retire_epoch(self.namespace, fin, capture)
+        self.assertIsNone(cleanup)
+        self.assertEqual(error['error_signature'], 'FIXTURE_REQUIRED_SOURCE_CHANGED_AFTER_CAPTURE')
+        self.assertEqual(error['type'], 'CleanupRejected')
+        self.assertFalse(error['cleanup_credit_claimed'])
+        self.assertFalse(error['retry_authorized'])
+        self.assertTrue(any(site['source'] == 'scripts/rc6_authenticated_fixture_lifecycle.py'
+                            and site['function'] == 'cleanup_namespace' for site in error['source_sites']))
+        self.assertEqual(marker_before, custody.identity((self.namespace.path / lifecycle.MARKER).lstat()))
+        lifecycle.verify_capture(self.namespace, capture)
+
     def test_mutating_native_failed_kernel_cannot_manufacture_green(self):
         fin = self.produce(exit_code=1)
         fin.kernel["returncode"] = 0

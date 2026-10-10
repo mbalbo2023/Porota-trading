@@ -48,3 +48,14 @@ def test_unstructured_error_text_is_not_copied_into_evidence(tmp_path):
     row=reject(tmp_path/'controls','sensitive-example-value')
     assert row['error_signature']=='ValueError'
     assert 'sensitive-example-value' not in (tmp_path/'controls'/'admission-rejected.json').read_text()
+
+
+@pytest.mark.parametrize('message',['sensitive-example-value','PATH=/private/secret',
+    'FIXTURE_'+'A'*200,'FIXTURE_CODE\nPRIVATE_VALUE'])
+def test_retirement_diagnostic_never_copies_unstructured_or_unbounded_exception(monkeypatch,message):
+    def rejected(*args):raise ValueError(message)
+    monkeypatch.setattr(checks.lifecycle,'cleanup_namespace',rejected)
+    cleanup,error=checks.retire_epoch(None,None,None)
+    assert cleanup is None and error['error_signature']=='ValueError'
+    assert message not in json.dumps(error)
+    assert error['cleanup_credit_claimed'] is error['retry_authorized'] is False

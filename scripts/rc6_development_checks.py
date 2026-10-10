@@ -348,6 +348,27 @@ def preserve_result(output,result):
     print('RC6_DEVELOPMENT_NATIVE_RESULT='+canonical(summary).decode().strip(),flush=True)
 
 
+def retire_epoch(namespace,fin,captured):
+    """Preserve the exact bounded custody rejection without granting cleanup."""
+    try:
+        return lifecycle.cleanup_namespace(namespace,fin,captured),None
+    except (ValueError,OSError) as error:
+        signature=str(error)
+        if re.fullmatch(r'[A-Z][A-Z0-9_]{0,159}(?::[0-9]{1,12})?',signature) is None:
+            signature=type(error).__name__
+        sites=[];trace=error.__traceback__;remaining=64
+        while trace is not None and remaining:
+            code=trace.tb_frame.f_code
+            try:relative=Path(code.co_filename).relative_to(ROOT).as_posix()
+            except ValueError:pass
+            else:
+                sites.append({'source':relative,'function':code.co_name,'line':trace.tb_lineno})
+            trace=trace.tb_next;remaining-=1
+        return None,{'type':type(error).__name__,'errno':getattr(error,'errno',None),
+            'error_signature':signature,'source_sites':sites[-8:],
+            'cleanup_credit_claimed':False,'retry_authorized':False}
+
+
 def preserve_admission_rejection(output, error, *, source_sha, source_tree, plan_sha256):
     """Keep a bounded RED control even when admission rejects before tooling.
 
@@ -480,12 +501,7 @@ def main():
         if 'junit.xml' in rows:
             try: facts=junit_facts((output/epoch/rows['junit.xml']['capture_file']).read_bytes())
             except (ValueError,ET.ParseError) as error:validation_error=type(error).__name__
-        cleanup=None
-        retirement_error=None
-        try:
-            cleanup=lifecycle.cleanup_namespace(namespace,fin,captured)
-        except (ValueError,OSError) as error:
-            retirement_error={'type':type(error).__name__,'errno':getattr(error,'errno',None)}
+        cleanup,retirement_error=retire_epoch(namespace,fin,captured)
         result['epochs'].append({'epoch':epoch,'interpreter':interpreter,'kernel':kernel,
             'cleanup':cleanup,'retirement_error':retirement_error,'junit':facts,'junit_validation_error':validation_error,
             'passed':kernel['returncode']==0 and facts is not None
