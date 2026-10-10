@@ -53,3 +53,10 @@ def test_native_emitter_document_cannot_authorize_any_stage_without_live_proof()
         with pytest.raises(ValueError, match="^G5A_HOST_STAGE_AGGREGATE_ENFORCEMENT_NOT_VERIFIED$"):
             host.require_host_stage_admission(stage=stage, enforcement=evidence,
                 owner_acceptance={"revision_approved": True})
+
+
+def test_unlinked_probe_rejects_changed_limit_before_any_native_allocation():
+    for limit in (issuer.LIMIT - 1024, issuer.LIMIT + 1024, 0, True):
+        with pytest.raises(ValueError, match="G5A_AGGREGATE_EXACT_PROBE_LIMIT_REQUIRED"):
+            issuer.nonroot_unlinked_edquot_probe("/must-not-open", expected_id=1,
+                hard_bytes=limit)

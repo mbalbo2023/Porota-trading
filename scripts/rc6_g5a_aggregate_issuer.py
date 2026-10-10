@@ -139,8 +139,15 @@ def trusted_setup(*, root, probe, source, device, project_id, probe_id, owner_ui
             "G5_GREEN": False, "qualification_claimed": False}
 
 
-def nonroot_unlinked_edquot_probe(probe, *, expected_id):
-    """Actual EDQUOT on an open unlinked inode in a distinct small project."""
+def nonroot_unlinked_edquot_probe(probe, *, expected_id, hard_bytes=PROBE_LIMIT):
+    """Actual EDQUOT on an open unlinked inode, including the exact 20 GiB project.
+
+    The 20 GiB call is a material disk operation and must only be made after
+    admission by the original manager. The 1 MiB control uses another project.
+    A caught ENOSPC does not count as EDQUOT or as aggregate enforcement.
+    """
+    require(type(hard_bytes) is int and hard_bytes in (PROBE_LIMIT, LIMIT),
+            "G5A_AGGREGATE_EXACT_PROBE_LIMIT_REQUIRED")
     require(os.getuid() == os.geteuid() > 0 and type(expected_id) is int and expected_id > 0,
             "G5A_AGGREGATE_NONROOT_PROBE_REQUIRED")
     status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines() if ":" in line)
@@ -152,24 +159,60 @@ def nonroot_unlinked_edquot_probe(probe, *, expected_id):
     require(info.st_uid == os.getuid()
             and calibration.project_attributes(probe)["project_id"] == expected_id,
             "G5A_AGGREGATE_PROBE_PROJECT_REBOUND")
+    if hard_bytes == LIMIT:
+        calibration.require_capacity(calibration.filesystem(probe), LIMIT)
     path = probe / "open-unlinked-edquot"
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
     try:
         os.unlink(path)
         require(os.fstat(fd).st_nlink == 0, "G5A_AGGREGATE_UNLINKED_FD_REQUIRED")
         try:
-            os.posix_fallocate(fd, 0, PROBE_LIMIT + 4096)
+            os.posix_fallocate(fd, 0, hard_bytes + 4096)
         except OSError as error:
             require(error.errno == errno.EDQUOT,
                     "G5A_AGGREGATE_ACTUAL_UNLINKED_EDQUOT_REQUIRED")
             result = {"errno": error.errno, "name": errno.errorcode[error.errno],
                 "open_unlinked": True, "allocated_bytes": os.fstat(fd).st_blocks * 512,
-                "same_project_id": expected_id}
+                "same_project_id": expected_id, "hard_bytes": hard_bytes}
         else:
             raise ValueError("G5A_AGGREGATE_UNLINKED_QUOTA_NOT_ENFORCED")
     finally:
         os.close(fd)
     return result
+
+
+def trusted_stage_kernel_readback(setup, *, stage):
+    """Root readback after the original manager's stage FIN, not an admission.
+
+    A captured JSON copy cannot attest the preceding seal, original manager,
+    actual workload or its FIN. The live ROOT parent must bind those facts.
+    """
+    require(os.getresuid() == (0, 0, 0) and len(os.listdir("/proc/self/task")) == 1,
+            "G5A_AGGREGATE_TRUSTED_SINGLE_ROOT_REQUIRED")
+    require(type(setup) is dict and setup.get("schema") == SCHEMA
+            and setup.get("phase") == "TRUSTED_SETUP_ONLY" and stage in STAGES,
+            "G5A_AGGREGATE_ORIGINAL_STAGE_SETUP_REQUIRED")
+    root, info = _plain_directory(setup["root"])
+    require([info.st_dev, info.st_ino] == setup["root_identity"]
+            and _mount(root) == setup["mount"]
+            and calibration.project_attributes(root)["project_id"] == setup["project_id"]
+            and calibration.project_attributes(root)["inheritance"] is True,
+            "G5A_AGGREGATE_STAGE_ROOT_REBOUND")
+    quota = _quota(setup["device"], setup["project_id"])
+    require(quota["hard_bytes"] == quota["soft_bytes"] == LIMIT
+            and quota["hard_inodes"] == quota["soft_inodes"] == INODES
+            and 0 <= quota["used_bytes"] <= LIMIT
+            and 0 <= quota["used_inodes"] <= INODES,
+            "G5A_AGGREGATE_STAGE_KERNEL_QUOTA_REBOUND")
+    physical = calibration.filesystem(root)
+    require(physical["available_bytes"] >= 4 * 1024**3
+            and physical["free_inodes"] * 10 >= physical["total_inodes"],
+            "G5A_AGGREGATE_STAGE_PHYSICAL_RESERVE_REBOUND")
+    return {"schema": SCHEMA, "phase": "POST_ORIGINAL_STAGE_FIN_READBACK_ONLY",
+            "stage": stage, "root_identity": setup["root_identity"],
+            "mount": setup["mount"], "kernel_quota": quota, "physical": physical,
+            "original_manager_fin_verified": False, "launch_authorized": False,
+            "G5_GREEN": False, "qualification_claimed": False}
 
 
 class _PathBeneath(ctypes.Structure):
