@@ -483,6 +483,15 @@ def parse_unit_properties(raw):
             values[key] = " ".join(paths[key])
         elif key in UNIT_OPAQUE_ADDITIVE_KEYS:
             values[key] = (values.get(key, "") + "\n" + value).strip() if value else ""
+        elif key == "AllowedCPUs":
+            # Native transient units serialize this cpuset as a reset followed
+            # by the requested CPU. Keep the frozen ONE-CPU grammar; never
+            # accept a union, range or last-wins singular security property.
+            require(value == "" or re.fullmatch(r"0|[1-9][0-9]{0,3}", value)
+                and int(value) <= 4095, "ROOT_CUSTODY_UNIT_SINGLE_CPU_SYNTAX_REQUIRED")
+            require(not value or not values.get(key) or values[key] == value,
+                "ROOT_CUSTODY_UNIT_SINGULAR_CONFLICT")
+            values[key] = value
         else:
             require(key not in values or values[key] == value, "ROOT_CUSTODY_UNIT_SINGULAR_CONFLICT")
             values[key] = value
@@ -631,6 +640,7 @@ def controller_snapshot(name, expected_runtime, *, request, mode):
         require(mode == "probe" and properties.get("MemoryMax") == "1073741824"
                 and properties.get("MemorySwapMax") == "0" and properties.get("TasksMax") == "64"
                 and re.fullmatch(r"100(?:\.0+)?%", properties.get("CPUQuota", "")) is not None
+                and properties.get("AllowedCPUs") == properties.get("CPUAffinity") == str(request["resource_cpu"])
                 and os.sched_getaffinity(0) == {request["resource_cpu"]},
                 "ROOT_CUSTODY_ACTUAL_COMPUTE_UNIT_LIMITS_REQUIRED")
     if mode == "g5a":

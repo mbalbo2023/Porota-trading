@@ -51,6 +51,27 @@ def test_boundary_actor_keeps_original_nonroot_fin_and_raw_before_red(tmp_path, 
     assert 'private-pid-v2.original-fin.json' in custody.OPTIONAL_FAILURE_RAW_NAMES
 
 
+@pytest.mark.parametrize('cpu', [0, 3, 4095])
+def test_actual_transient_single_cpu_reset_serialization(cpu):
+    raw = ('[Service]\nAllowedCPUs=\nAllowedCPUs=' + str(cpu) + '\nCPUAffinity=' + str(cpu) + '\n').encode()
+    value = custody.parse_unit_properties(raw)
+    assert value['properties']['AllowedCPUs'] == value['properties']['CPUAffinity'] == str(cpu)
+
+
+@pytest.mark.parametrize('value', ['0 1', '0-1', '0,1', '4096', '-1', '00', 'all', 'true'])
+def test_single_cpu_parser_cannot_broaden_the_envelope(value):
+    with pytest.raises(ValueError, match='ROOT_CUSTODY_UNIT_SINGLE_CPU_SYNTAX_REQUIRED'):
+        custody.parse_unit_properties(('[Service]\nAllowedCPUs=\nAllowedCPUs=' + value + '\n').encode())
+
+
+def test_single_cpu_union_and_singular_security_conflicts_stay_red():
+    for raw in (b'[Service]\nAllowedCPUs=0\nAllowedCPUs=1\n',
+                b'[Service]\nMemoryMax=1073741824\nMemoryMax=2147483648\n',
+                b'[Service]\nNoNewPrivileges=yes\nNoNewPrivileges=no\n'):
+        with pytest.raises(ValueError, match='ROOT_CUSTODY_UNIT_SINGULAR_CONFLICT'):
+            custody.parse_unit_properties(raw)
+
+
 def test_boundary_capture_checks_fixed_role_before_read_or_publication(tmp_path):
     with pytest.raises(ValueError, match='ROOT_CUSTODY_BOUNDARY_FIXED_RAW_REQUIRED'):
         custody.preserve_boundary_actor_fin({}, {}, tmp_path / 'foreign.log', request={})
