@@ -275,6 +275,20 @@ def require_systemd_diagnostic_plan(raw):
         and plan.get('ROOT_probe_seal_allowed_on_quota_ancestor') is False
         and plan.get('ROOT_proc_contract_revision_approved') is False,
         'NATIVE_PREREQUISITES_FIXED_SYSTEMD_DIAGNOSTIC_PLAN_REQUIRED')
+    if 'proposed_private_pid_observation_revision' in plan:
+        observation = plan.get('bounded_compute_observation')
+        require(plan['proposed_private_pid_observation_revision'] == 'PRIVATE_PID_BOUNDARY_V2'
+            and plan.get('proposal_observation_grants_contract_acceptance') is False
+            and observation == {
+                'enabled':True,'cpu_maximum':1,'memory_maximum_bytes':1024**3,
+                'swap_maximum_bytes':0,'pids_maximum':64,
+                'full_product_profile_qualified':False,'financial_ticks_allowed':False,
+                'fixtures_allowed':False,'original_custody_timeout_seconds':60}
+            and all(type(observation[key]) is bool for key in ('enabled',
+                'full_product_profile_qualified','financial_ticks_allowed','fixtures_allowed'))
+            and all(type(observation[key]) is int for key in ('cpu_maximum','memory_maximum_bytes',
+                'swap_maximum_bytes','pids_maximum','original_custody_timeout_seconds')),
+            'NATIVE_PREREQUISITES_OBSERVATION_IS_NOT_CONTRACT_OR_PRODUCT_ACCEPTANCE')
 
 
 def admit_native_prerequisites(args, source, control):
@@ -395,8 +409,23 @@ def main():
         admitted['owner_check']()
         witness = privileged.prove_custody(source=ROOT,source_sha=args.source_sha,source_tree=args.source_tree,
             code_hashes=code_hashes,parent=development.short_control_parent(ROOT),binding=witness_binding,progress=None,
-            capture_parent=output/'custody-raw')
+            capture_parent=output/'custody-raw',boundary_revision='PRIVATE_PID_BOUNDARY_V2')
         result['custody'] = privileged.validate_witness(witness,binding=witness_binding)
+        from scripts import rc6_private_pid_boundary as boundary
+        boundary_context = boundary.boundary_witness(witness,binding=witness_binding)
+        result['proposed_private_pid_boundary'] = boundary.validate_witness(boundary_context,
+            binding=witness_binding,custody_witness=witness)
+        result['contract_revision_approved'] = False
+        admitted['owner_check']()
+        resource_binding = {**witness_binding,'producer':'NATIVE_COMPUTE_RESOURCE_OBSERVATION'}
+        resource_witness = privileged.prove_custody(source=ROOT,source_sha=args.source_sha,source_tree=args.source_tree,
+            code_hashes=code_hashes,parent=development.short_control_parent(ROOT),binding=resource_binding,
+            progress=None,capture_parent=output/'compute-custody-raw',resource_probe=True)
+        result['bounded_compute_custody'] = privileged.validate_witness(resource_witness,binding=resource_binding)
+        from scripts import rc6_product_resource_compatibility as resource_probe
+        result['bounded_compute_observation'] = resource_probe.validate_custody_compute_observation(
+            resource_witness, binding=resource_binding)
+        result['bounded_compute_full_product_profile_qualified'] = False
         admitted['owner_check']()
         governed.compare_source(before,governed.source_pin(ROOT,args.source_sha,args.source_tree))
         result.update(status='PASS_SMALL_NATIVE_ONLY',fullSource_unchanged=True)

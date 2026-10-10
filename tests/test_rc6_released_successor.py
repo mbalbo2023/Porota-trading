@@ -490,3 +490,306 @@ def test_successor_history_pagination_does_not_silently_truncate(monkeypatch):
         return transport.read(path)
     with pytest.raises(ValueError, match='OWNERSHIP_PAGINATION_INCOMPLETE_FAIL_CLOSED'):
         admission.administrative_anchors(OWNER, get=incomplete, now=NOW)
+
+
+class ReleasedDiagnosticApi(ReleasedApi):
+    """Bounded API fixture exercises real paired-owner/revision predicates.
+
+    No native acceptance object is fabricated and no producer is launched.
+    The source/transport fixture is not a claim about an actual GitHub run.
+    """
+    def __init__(self,monkeypatch,gate='capacity-probe'):
+        super().__init__(monkeypatch)
+        from scripts import rc6_contract_revisions as revisions
+        from scripts import rc6_private_pid_boundary as boundary
+        self.gate=gate
+        self.contract_digest=boundary.contract_sha256()
+        scope={'schema':'porota.rc6.capacity-diagnostic-scope.v1','mode':gate,
+            'backing_image_bytes':(5 if gate=='capacity-probe' else 26)*1024**3,
+            'project_hard_limit_bytes':512*1024**2 if gate=='capacity-probe' else 20*1024**3,
+            'residual_reserve_bytes':4*1024**3,'financial_tick_allowed':False,'qualification_claimed':False}
+        self.prior=None
+        values={'AUTHORIZATION_SCHEMA':admission.DIAGNOSTIC_AUTHORIZATION_SCHEMA,
+            'RC6_CAPACITY_DIAGNOSTIC_AUTHORIZATION':'APPROVED','WORKSTREAM_ID':WORKSTREAM,
+            'DIAGNOSTIC_MODE':gate,'SOURCE_BRANCH':BRANCH,'SOURCE_SHA':SHA,'SOURCE_TREE':TREE,
+            'SESSION_SUCCESSOR':OWNER,'WRITE_OWNER':OWNER,'INTEGRATION_OWNER':OWNER,
+            'DEPLOY_OWNER':'NOT_ACQUIRED','RELEASED':'false','MODE':'PRODUCTION_PAPER / SIMULATION',
+            'real_orders_sent':'0','SOURCE_LEASE_EXPIRES_UTC':lease.text_stamp(NOW+timedelta(minutes=10)),
+            'READ_CONTRACT_SHA256':PLAN,'SOURCE_MANIFEST_SHA256':'e'*64,
+            'CAPACITY_DIAGNOSTIC_SCOPE_JSON':json.dumps(scope),'CAPACITY_DIAGNOSTIC_PREREQUISITES_JSON':'null',
+            'CONTRACT_ACCEPTANCE_SCHEMA':revisions.SCHEMA,'RC6_CONTRACT_REVISION_AUTHORIZATION':'APPROVED',
+            'CONTRACT_DECISION_ORIGIN':'EXPLICIT_OWNER_DECISION','CONTRACT_REVISION':'PRIVATE_PID_BOUNDARY_V2',
+            'CONTRACT_SCOPE':gate,'CONTRACT_DOCUMENT_SHA256':self.contract_digest,
+            'CONTRACT_ACCEPTANCE_LIFECYCLE':admission.DIAGNOSTIC_CONTRACT_LIFECYCLE,
+            'CONTRACT_GATES_ALREADY_GREEN':'false','NATIVE_EQUIVALENCE_FROM_APPROVAL_CLAIMED':'false',
+            'FINAL_CANDIDATE_ELIGIBLE':'false','DEPLOY_AUTHORIZATION':'NOT_GRANTED'}
+        self.twin=comment(473,410473,body(values),lease.text_stamp(NOW-timedelta(seconds=21)))
+        values.update(OWNER_RECEIPT_473=str(self.twin['id']),OWNER_RECEIPT_473_SHA256=custody.digest(self.twin['body'].encode()))
+        self.launch=comment(471,410471,body(values),lease.text_stamp(NOW-timedelta(seconds=20)))
+        for issue,row in ((471,self.launch),(473,self.twin)):
+            self.rows[issue].append(row)
+            self.documents['/issues/comments/'+str(row['id'])]=row
+        self.documents['/git/commits/'+SHA]['parents']=[{'sha':INITIAL_SHA}]
+        self.documents['/git/commits/'+INITIAL_SHA]={'sha':INITIAL_SHA,'tree':{'sha':INITIAL_TREE}}
+        run={'id':RUN,'head_sha':SHA,'head_branch':BRANCH,'run_attempt':1,
+            'event':'workflow_dispatch','status':'in_progress','conclusion':None,
+            'repository':{'id':admission.REPO_ID,'full_name':admission.REPO},
+            'head_repository':{'id':admission.REPO_ID},'path':'.github/workflows/rc6-unified-candidate-tests.yml',
+            'display_title':'RC6 material '+gate+' @ '+SHA}
+        self.documents['/actions/runs/'+str(RUN)]=run
+        self.documents['/actions/runs/'+str(RUN)+'/attempts/1']=run
+        self.documents['/actions/runs/'+str(RUN)+'/attempts/1/jobs?per_page=100']={'total_count':1,'jobs':[
+            {'id':800,'run_id':RUN,'status':'in_progress','labels':['ubuntu-24.04'],
+             'runner_group_name':'GitHub Actions','runner_name':'GitHub Actions 1'}]}
+        self.documents[''].update(private=False)
+
+    def rewrite_pair(self,**changes):
+        first=admission.fields(self.launch['body']);twin=admission.fields(self.twin['body'])
+        first.update(changes);twin.update(changes)
+        self.twin['body']=body(twin)
+        first['OWNER_RECEIPT_473_SHA256']=custody.digest(self.twin['body'].encode())
+        self.launch['body']=body(first)
+
+    def pins(self):
+        anchors=admission.administrative_anchors(OWNER,get=self.read,now=NOW)
+        auth,scope,prior=admission.diagnostic_launch_control_fields(self.launch,SHA,TREE,OWNER,self.gate,
+            get=self.read,anchors=anchors,now=NOW)
+        return {'schema':admission.DIAGNOSTIC_ADMISSION_SCHEMA,'authorization_schema':admission.DIAGNOSTIC_AUTHORIZATION_SCHEMA,
+            'status':'ADMITTED_DIAGNOSTIC_NOT_STARTED','source_sha':SHA,'source_tree':TREE,'gate':self.gate,
+            'owner_session':OWNER,'qualification_claimed':False,'launch_receipt_url':self.launch['html_url'],
+            'launch_body_sha256':custody.digest(self.launch['body'].encode()),
+            'source_manifest_sha256':auth['SOURCE_MANIFEST_SHA256'],'read_contract_sha256':auth['READ_CONTRACT_SHA256'],
+            'scope':scope,'capability_prerequisite':prior,
+            'diagnostic_owner_scope':admission.successor_diagnostic_scope(auth,OWNER,anchors),
+            'contract_revision_binding':admission._diagnostic_revision_pointer(auth,self.launch,SHA,TREE,OWNER,self.gate)}
+
+
+def test_released_v2_diagnostic_has_real_in_process_acceptance_without_native_green(monkeypatch):
+    from scripts import rc6_contract_revisions as revisions
+    transport=ReleasedDiagnosticApi(monkeypatch)
+    receipt=transport.pins()
+    auth=admission.fields(transport.launch['body'])
+    context=admission._authenticate_successor_revision(auth,transport.launch,SHA,TREE,OWNER,'capacity-probe',
+        reader=transport.read,now=NOW)
+    assert revisions.validate_revision_approval(context,revision='PRIVATE_PID_BOUNDARY_V2',scope='capacity-probe',
+        source_sha=SHA,source_tree=TREE,contract_sha256=transport.contract_digest,now=NOW) is context
+    assert receipt['diagnostic_owner_scope']['branch']==BRANCH
+    assert receipt['contract_revision_binding']['serialized_pointer_grants_authority'] is False
+    assert receipt['qualification_claimed'] is False
+    assert not hasattr(context,'native_equivalence_proved') and not hasattr(context,'G0_green')
+    with pytest.raises(ValueError,match='AUTHENTICATED_OWNER_ACCEPTANCE'):
+        revisions.validate_revision_approval(receipt['contract_revision_binding'],revision='PRIVATE_PID_BOUNDARY_V2',
+            scope='capacity-probe',source_sha=SHA,source_tree=TREE,contract_sha256=transport.contract_digest,now=NOW)
+
+
+@pytest.mark.parametrize('fault',['economic','native_prerequisites','no_contract_acceptance','automatic_origin',
+    'scope','source','tree','branch','legacy_branch','digest','edited','twin_operation','twin_digest',
+    'twin_mode','deploy','green','expired','no_lifecycle','foreign_active'])
+def test_v2_diagnostic_rejects_rebound_automatic_and_one_sided_decisions(monkeypatch,fault):
+    transport=ReleasedDiagnosticApi(monkeypatch)
+    if fault in ('economic','native_prerequisites'):
+        name='RC6_DEVELOPMENT_CHECKS_AUTHORIZATION' if fault=='economic' else 'RC6_NATIVE_PREREQUISITES_AUTHORIZATION'
+        transport.launch['body']=transport.launch['body'].replace('RC6_CAPACITY_DIAGNOSTIC_AUTHORIZATION',name)
+    elif fault=='edited':transport.launch['updated_at']=lease.text_stamp(NOW-timedelta(seconds=19))
+    elif fault in ('twin_operation','twin_digest','twin_mode'):
+        changes={'twin_operation':('RC6_CAPACITY_DIAGNOSTIC_AUTHORIZATION','NOT_GRANTED'),
+                 'twin_digest':('CONTRACT_DOCUMENT_SHA256','f'*64),'twin_mode':('MODE','REAL')}
+        key,value=changes[fault];fields=admission.fields(transport.twin['body']);fields[key]=value
+        transport.twin['body']=body(fields)
+        fields=admission.fields(transport.launch['body']);fields['OWNER_RECEIPT_473_SHA256']=custody.digest(transport.twin['body'].encode())
+        transport.launch['body']=body(fields)
+    elif fault=='foreign_active':
+        for issue in (471,473):transport.rows[issue].append(scoped_row(issue,900000+issue,NOW-timedelta(seconds=1),PREVIOUS))
+    else:
+        changes={'no_contract_acceptance':('RC6_CONTRACT_REVISION_AUTHORIZATION','NOT_GRANTED'),
+            'automatic_origin':('CONTRACT_DECISION_ORIGIN','AUTOMATIC_CI'), 'scope':('CONTRACT_SCOPE','capacity-calibration'),
+            'source':('SOURCE_SHA','c'*40),'tree':('SOURCE_TREE','c'*40),'branch':('SOURCE_BRANCH','fix/foreign'),
+            'legacy_branch':('SOURCE_BRANCH',admission.DIAGNOSTIC_BRANCH),'digest':('CONTRACT_DOCUMENT_SHA256','broken'),
+            'deploy':('DEPLOY_AUTHORIZATION','APPROVED'),'green':('CONTRACT_GATES_ALREADY_GREEN','true'),
+            'expired':('SOURCE_LEASE_EXPIRES_UTC',lease.text_stamp(NOW)),
+            'no_lifecycle':('CONTRACT_ACCEPTANCE_LIFECYCLE','LEGACY_EXPIRES_WITH_COMMENT')}
+        key,value=changes[fault];transport.rewrite_pair(**{key:value})
+    with pytest.raises(ValueError):transport.pins()
+
+
+def test_v2_diagnostic_current_branch_lineage_does_not_touch_old_prs(monkeypatch):
+    transport=ReleasedDiagnosticApi(monkeypatch);receipt=transport.pins();transport.calls.clear()
+    source=admission.fresh_diagnostic_source(SHA,TREE,get=transport.read,candidate=receipt['diagnostic_owner_scope'])
+    assert source['lineage_base_sha']==INITIAL_SHA and source['lineage_base_tree']==INITIAL_TREE
+    assert source['wip_branch']==BRANCH and source['single_parent_fix_forward_lineage']==[SHA]
+    assert not any(path.startswith('/pulls/') for path in transport.calls)
+    transport.documents['/git/ref/heads/'+BRANCH]['object']['sha']='c'*40
+    with pytest.raises(ValueError,match='BRANCH_HEAD_TREE_REBOUND'):
+        admission.fresh_diagnostic_source(SHA,TREE,get=transport.read,candidate=receipt['diagnostic_owner_scope'])
+
+
+@pytest.mark.parametrize('fault',['merge','base_tree','parent_identity','lineage_limit'])
+def test_v2_source_cannot_infer_fix_forward_from_a_ref_or_synthetic_base(monkeypatch,fault):
+    transport=ReleasedDiagnosticApi(monkeypatch);receipt=transport.pins()
+    if fault=='merge':transport.documents['/git/commits/'+SHA]['parents'].append({'sha':'c'*40})
+    elif fault=='base_tree':transport.documents['/git/commits/'+INITIAL_SHA]['tree']['sha']='d'*40
+    elif fault=='parent_identity':transport.documents['/git/commits/'+INITIAL_SHA]['sha']='d'*40
+    else:transport.documents['/git/commits/'+SHA]['parents']=[{'sha':SHA}]
+    with pytest.raises(ValueError):
+        admission.fresh_diagnostic_source(SHA,TREE,get=transport.read,candidate=receipt['diagnostic_owner_scope'])
+
+
+def test_v2_polling_is_api_only_and_keeps_source_contract_branch_and_workstream_pins(monkeypatch):
+    transport=ReleasedDiagnosticApi(monkeypatch);receipt=transport.pins();pins=admission.diagnostic_control_binding(receipt)
+    def forbidden(*args,**kwargs):pytest.fail('polling must not read checkout/event/Source or mint a new approval')
+    monkeypatch.setattr(admission,'actual_event',forbidden)
+    monkeypatch.setattr(admission,'frozen_source_inventory',forbidden)
+    monkeypatch.setattr(admission,'frozen_private_pid_contract',forbidden)
+    monkeypatch.setattr(admission,'_authenticate_successor_revision',forbidden)
+    result=admission.owned_diagnostic_control_scope(source_sha=SHA,source_tree=TREE,launch_receipt_url=transport.launch['html_url'],
+        owner_session=OWNER,gate='capacity-probe',now=NOW,get=transport.read,diagnostic_binding=pins,run_id=RUN,run_attempt=1)
+    assert result['workstream_id']==WORKSTREAM and result['source']['wip_branch']==BRANCH
+    assert result['qualification_claimed'] is False and result['DEPLOY_OWNER']=='NOT_ACQUIRED'
+    assert result['diagnostic_binding']==pins
+    pins['contract_revision_binding']['contract_sha256']='f'*64
+    with pytest.raises(ValueError,match='PINS_REBOUND'):
+        admission.owned_diagnostic_control_scope(source_sha=SHA,source_tree=TREE,launch_receipt_url=transport.launch['html_url'],
+            owner_session=OWNER,gate='capacity-probe',now=NOW,get=transport.read,diagnostic_binding=pins,run_id=RUN,run_attempt=1)
+
+
+def test_v2_long_polling_needs_fresh_actual_lease_and_never_renews_old_contract_comment(monkeypatch):
+    transport=ReleasedDiagnosticApi(monkeypatch);receipt=transport.pins();pins=admission.diagnostic_control_binding(receipt)
+    later=NOW+timedelta(minutes=11)
+    original=custody.digest(transport.launch['body'].encode())
+    with pytest.raises(ValueError,match='LEASE_EXPIRED'):
+        admission.owned_diagnostic_control_scope(source_sha=SHA,source_tree=TREE,launch_receipt_url=transport.launch['html_url'],
+            owner_session=OWNER,gate='capacity-probe',now=later,get=transport.read,diagnostic_binding=pins,run_id=RUN,run_attempt=1)
+    for issue in (471,473):
+        row=scoped_row(issue,700000+issue,later-timedelta(seconds=1),OWNER)
+        transport.rows[issue].append(row);transport.documents['/issues/comments/'+str(row['id'])]=row
+    result=admission.owned_diagnostic_control_scope(source_sha=SHA,source_tree=TREE,launch_receipt_url=transport.launch['html_url'],
+        owner_session=OWNER,gate='capacity-probe',now=later,get=transport.read,diagnostic_binding=pins,run_id=RUN,run_attempt=1)
+    assert result['qualification_claimed'] is False and custody.digest(transport.launch['body'].encode())==original
+    with pytest.raises(ValueError,match='LEASE_EXPIRED'):
+        admission.diagnostic_launch_control_fields(transport.launch,SHA,TREE,OWNER,'capacity-probe',get=transport.read,now=later)
+
+
+def test_v2_owner_revocation_cannot_be_hidden_by_later_same_source_lease(monkeypatch):
+    transport=ReleasedDiagnosticApi(monkeypatch);receipt=transport.pins();pins=admission.diagnostic_control_binding(receipt)
+    revoked=scoped_row(473,710473,NOW-timedelta(seconds=3),OWNER)
+    revoked['body']+='CONTRACT_REVISION=PRIVATE_PID_BOUNDARY_V2\nCONTRACT_SCOPE=capacity-probe\nRC6_CONTRACT_REVISION_AUTHORIZATION=REVOKED\n'
+    transport.rows[473].append(revoked)
+    transport.rows[473].append(scoped_row(473,720473,NOW-timedelta(seconds=1),OWNER))
+    with pytest.raises(ValueError,match='CONTRACT_OR_LAUNCH_REVOKED'):
+        admission.owned_diagnostic_control_scope(source_sha=SHA,source_tree=TREE,launch_receipt_url=transport.launch['html_url'],
+            owner_session=OWNER,gate='capacity-probe',now=NOW,get=transport.read,diagnostic_binding=pins,run_id=RUN,run_attempt=1)
+
+
+def test_v2_bootstrap_metadata_is_not_native_capability_or_green(monkeypatch):
+    transport=ReleasedDiagnosticApi(monkeypatch,gate='capacity-calibration')
+    with pytest.raises(ValueError,match='ACTUAL_CAPABILITY_ARTIFACT'):transport.pins()
+    auth=admission.fields(transport.launch['body'])
+    for reference in ({},{'artifact_id':1,'run_id':2,'run_attempt':1},
+            {'source_sha':SHA,'source_tree':TREE,'contract_revision':'PRIVATE_PID_BOUNDARY_V2','contract_document_sha256':transport.contract_digest}):
+        with pytest.raises(ValueError,match='EXACT_NATIVE_CAPABILITY_ARTIFACT'):
+            admission.authenticate_capability_reference(reference,SHA,TREE,auth,reader=lambda path:pytest.fail('metadata-shaped object must not fetch'))
+
+
+def capability_origin_fixture(transport):
+    identifier,artifact_id=61,99
+    stamp=lease.text_stamp(NOW)
+    reference={'source_sha':SHA,'source_tree':TREE,'contract_revision':'PRIVATE_PID_BOUNDARY_V2',
+        'contract_document_sha256':transport.contract_digest,'artifact_id':artifact_id,'run_id':identifier,
+        'run_attempt':1,'artifact_digest':'sha256:'+'d'*64,'receipt_member':'diagnostic-result.json','receipt_sha256':'e'*64}
+    run={'id':identifier,'head_sha':SHA,'head_branch':BRANCH,'run_attempt':1,'status':'completed','conclusion':'success',
+        'path':'.github/workflows/rc6-unified-candidate-tests.yml','event':'workflow_dispatch',
+        'display_title':'RC6 material capacity-probe @ '+SHA,'repository':{'id':admission.REPO_ID,'full_name':admission.REPO},
+        'head_repository':{'id':admission.REPO_ID},'run_started_at':stamp,'updated_at':stamp}
+    artifact={'id':artifact_id,'digest':reference['artifact_digest'],'expired':False,'size_in_bytes':1,
+        'workflow_run':{'id':identifier,'head_sha':SHA,'repository_id':admission.REPO_ID,'head_repository_id':admission.REPO_ID},
+        'created_at':stamp,'expires_at':'2099-10-10T00:00:00Z'}
+    jobs={'total_count':1,'jobs':[{'id':123,'run_id':identifier,'status':'completed','conclusion':'success',
+        'labels':['ubuntu-24.04'],'runner_group_name':'GitHub Actions','runner_name':'GitHub Actions 1',
+        'started_at':stamp,'completed_at':stamp}]}
+    transport.documents.update({'/actions/artifacts/'+str(artifact_id):artifact,'/actions/runs/'+str(identifier):run,
+        '/actions/runs/'+str(identifier)+'/attempts/1':run,
+        '/actions/runs/'+str(identifier)+'/attempts/1/jobs?per_page=100':jobs})
+    return reference,run,artifact,jobs
+
+
+def test_v2_capability_origin_precheck_explicitly_leaves_native_payload_unproved(monkeypatch):
+    transport=ReleasedDiagnosticApi(monkeypatch,gate='capacity-calibration')
+    reference,_,_,_=capability_origin_fixture(transport)
+    auth=admission.fields(transport.launch['body'])
+    result=admission.authenticate_capability_reference(reference,SHA,TREE,auth,reader=transport.read,now=NOW)
+    assert result['artifact_origin_authenticated'] is True
+    assert result['native_payload_verification_required'] is True
+    assert result['capability_proved_from_metadata'] is False and result['qualification_claimed'] is False
+    assert not any('/dispatches' in path or '/contents/' in path for path in transport.calls)
+
+
+@pytest.mark.parametrize('fault',['source','tree','contract','artifact_digest','expired','run_red','run_branch','wrong_gate','alternate_runner'])
+def test_v2_capability_origin_requires_exact_source_digest_actions_probe_and_standard_runner(monkeypatch,fault):
+    transport=ReleasedDiagnosticApi(monkeypatch,gate='capacity-calibration')
+    reference,run,artifact,jobs=capability_origin_fixture(transport)
+    auth=admission.fields(transport.launch['body'])
+    if fault in ('source','tree','contract'):
+        key={'source':'source_sha','tree':'source_tree','contract':'contract_document_sha256'}[fault]
+        reference[key]='f'*(64 if fault=='contract' else 40)
+    elif fault=='artifact_digest':artifact['digest']='sha256:'+'f'*64
+    elif fault=='expired':artifact['expired']=True
+    elif fault=='run_red':run['conclusion']='failure'
+    elif fault=='run_branch':run['head_branch']=admission.DIAGNOSTIC_BRANCH
+    elif fault=='wrong_gate':run['display_title']='RC6 material cheap @ '+SHA
+    else:jobs['jobs'][0]['labels']=['self-hosted']
+    with pytest.raises(ValueError):
+        admission.authenticate_capability_reference(reference,SHA,TREE,auth,reader=transport.read,now=NOW)
+
+
+def test_v2_full_admission_requires_exact_source_digest_before_returning_a_pointer(monkeypatch,tmp_path):
+    from scripts import rc6_architectural_gates as gates
+    from scripts import rc6_private_pid_boundary as boundary
+    transport=ReleasedDiagnosticApi(monkeypatch)
+    inventory={'files':[{'path':boundary.MEMBER,'sha256':custody.digest((admission.ROOT/boundary.MEMBER).read_bytes())}]}
+    transport.rewrite_pair(SOURCE_MANIFEST_SHA256=custody.digest(admission.wire(inventory)))
+    monkeypatch.setattr(admission,'frozen_source_inventory',lambda *a:inventory)
+    monkeypatch.setattr(gates,'productive_contract',lambda repo:PLAN)
+    monkeypatch.setattr(admission,'api',transport.read)
+    event={'repository':{'id':admission.REPO_ID,'full_name':admission.REPO},'ref':BRANCH,
+        'sender':{'login':'mbalbo2023'},'inputs':{'gate':'capacity-probe','source_sha':SHA,'source_tree':TREE,
+            'owner_session':OWNER,'launch_receipt_url':transport.launch['html_url']}}
+    event_path=tmp_path/'event.json';event_path.write_bytes(admission.wire(event))
+    environment={'GITHUB_REPOSITORY':admission.REPO,'GITHUB_REPOSITORY_ID':str(admission.REPO_ID),
+        'GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_EVENT_PATH':str(event_path),'GITHUB_RUN_ID':str(RUN),
+        'GITHUB_RUN_ATTEMPT':'1','GITHUB_SHA':SHA,'GITHUB_WORKFLOW_SHA':SHA,'GITHUB_REF':'refs/heads/'+BRANCH,
+        'GITHUB_WORKFLOW_REF':admission.REPO+'/.github/workflows/rc6-unified-candidate-tests.yml@refs/heads/'+BRANCH,
+        'RUNNER_ENVIRONMENT':'github-hosted','RUNNER_OS':'Linux','RUNNER_ARCH':'X64'}
+    for key,value in environment.items():monkeypatch.setenv(key,value)
+    receipt=admission.admit_diagnostic(source_sha=SHA,source_tree=TREE,launch_receipt_url=transport.launch['html_url'],
+        owner_session=OWNER,gate='capacity-probe',now=NOW)
+    assert receipt['schema']==admission.DIAGNOSTIC_ADMISSION_SCHEMA and receipt['status']=='ADMITTED_DIAGNOSTIC_NOT_STARTED'
+    assert receipt['workstream_id']==WORKSTREAM and receipt['source']['wip_branch']==BRANCH
+    assert receipt['material_gates']==[] and receipt['final_candidate_eligible'] is False
+    context=admission.reauthenticate_diagnostic_revision(receipt,get=transport.read,now=NOW)
+    assert context.source_sha==SHA and context.contract_sha256==boundary.contract_sha256()
+    later=NOW+timedelta(minutes=11)
+    for issue in (471,473):
+        row=scoped_row(issue,800000+issue,later-timedelta(seconds=1),OWNER)
+        transport.rows[issue].append(row)
+        transport.documents['/issues/comments/'+str(row['id'])]=row
+    capture=admission.admit_diagnostic(source_sha=SHA,source_tree=TREE,
+        launch_receipt_url=transport.launch['html_url'],owner_session=OWNER,
+        gate='capacity-probe',now=later,native_finished=True)
+    assert capture['status']=='CAPTURE_ONLY_NATIVE_ALREADY_FINISHED'
+    assert admission.diagnostic_control_binding(capture)==admission.diagnostic_control_binding(receipt)
+    with pytest.raises(ValueError,match='SOURCE_POINTER_REQUIRED'):
+        admission.reauthenticate_diagnostic_revision(capture,get=transport.read,now=later)
+    with pytest.raises(ValueError,match='LEASE_EXPIRED'):
+        admission.admit_diagnostic(source_sha=SHA,source_tree=TREE,
+            launch_receipt_url=transport.launch['html_url'],owner_session=OWNER,
+            gate='capacity-probe',now=later)
+    for issue in (471,473):
+        transport.rows[issue].pop()
+        transport.documents.pop('/issues/comments/'+str(800000+issue))
+    receipt['contract_revision_binding']['approval_body_sha256']='f'*64
+    with pytest.raises(ValueError,match='SOURCE_POINTER_REBOUND'):
+        admission.reauthenticate_diagnostic_revision(receipt,get=transport.read,now=NOW)
+    transport.rewrite_pair(CONTRACT_DOCUMENT_SHA256='f'*64)
+    with pytest.raises(ValueError,match='EXACT_SOURCE_CONTRACT_REBOUND'):
+        admission.admit_diagnostic(source_sha=SHA,source_tree=TREE,launch_receipt_url=transport.launch['html_url'],
+            owner_session=OWNER,gate='capacity-probe',now=NOW)

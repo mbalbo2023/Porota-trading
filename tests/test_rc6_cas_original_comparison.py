@@ -53,8 +53,9 @@ def test_hook_passes_the_same_captured_five_byte_objects_and_actual_native_pins(
         def _archive_pins(self):
             return pins
     class Observer:
-        def observe(self, captured, *, cut, native_pins):
+        def observe(self, captured, *, cut, native_pins, source_generation=None):
             assert captured is original and cut is node and native_pins is pins
+            assert source_generation is None
             seen.append(captured)
             return {"scope": "UNIT_API_CONTROL_ONLY"}
     assert producer.observe_original_cas_comparison(None, original, node, NativePins()) is None

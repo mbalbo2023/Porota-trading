@@ -11,6 +11,17 @@ from scripts import rc6_native_prerequisites as native
 from scripts.rc6_actions_custody import canonical,digest
 
 
+@pytest.mark.parametrize('field,value', [('cpu_maximum', 2), ('memory_maximum_bytes', 2*1024**3),
+    ('swap_maximum_bytes', 1), ('pids_maximum', 65), ('enabled', 1),
+    ('full_product_profile_qualified', True), ('financial_ticks_allowed', True),
+    ('fixtures_allowed', True), ('original_custody_timeout_seconds', 61)])
+def test_proposed_observation_cannot_accept_contract_or_expand_original_limits(field, value):
+    plan = json.loads(native.PLAN.read_bytes())
+    plan['bounded_compute_observation'][field] = value
+    with pytest.raises(ValueError, match='OBSERVATION_IS_NOT_CONTRACT_OR_PRODUCT_ACCEPTANCE'):
+        native.require_systemd_diagnostic_plan(canonical(plan))
+
+
 def sealed_container(change=None):
     xml=b'<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0"><testcase classname="original" name="exact"/></testsuite></testsuites>'
     facts=native.development.junit_facts(xml)

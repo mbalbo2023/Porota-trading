@@ -278,7 +278,7 @@ def test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_
 def test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy(tmp_path):
     store, _ = make_store(tmp_path, count=2)
     current = ShadowRuntime.from_environment(store.path, evidence_root=tmp_path / "native", source_roots=[])
-    assert current.files.archive_format == "COMPONENT_V3"
+    assert current.files.archive_format == "COMPONENT_V4"
     legacy = ShadowRuntime.from_environment(store.path, evidence_root=current.root, source_roots=[], archive_format="TAR_V2")
     assert legacy.files.archive_format == "TAR_V2" and legacy.configuration_fingerprint(PRE) != current.configuration_fingerprint(PRE)
     assert ShadowRuntime(store.path, evidence_root=tmp_path / "offline", source_roots=[]).files.archive_format == "TAR_V2"

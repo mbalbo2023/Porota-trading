@@ -51,6 +51,10 @@ on:
         description: Existing reviewed Product157 interpreter; no installation or candidate rebuild
         required: false
         type: string
+      g5a_revision_approval_url:
+        description: Explicit immutable owner acceptance of the proposed G5A/B contract; pointer alone grants no authority
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -66,7 +70,7 @@ concurrency:
 jobs:
   ordered-source-gate:
     name: RC6 ${{ inputs.gate || 'G0-G1-cheap-dual' }} @ ${{ inputs.source_sha || github.event.pull_request.head.sha }}
-    if: github.event.repository.id == 1338680554 && github.event.sender.login == 'mbalbo2023' && inputs.gate != 'evidence-custody' && inputs.gate != 'evidence-readout' && inputs.gate != 'development-checks' && inputs.gate != 'native-prerequisites' && inputs.gate != 'product-resource-compatibility' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'))
+    if: github.event.repository.id == 1338680554 && github.event.sender.login == 'mbalbo2023' && inputs.gate != 'evidence-custody' && inputs.gate != 'evidence-readout' && inputs.gate != 'development-checks' && inputs.gate != 'native-prerequisites' && inputs.gate != 'product-resource-compatibility' && !(inputs.gate == 'Horizon' && inputs.g5a_revision_approval_url != '') && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'))
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
@@ -201,6 +205,128 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: ${{ steps.gate.outputs.payload_root }}
+
+  g5a-bounded-acquisition:
+    name: Acquire original bounded G5A evidence without granting G5 GREEN
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'Horizon' && inputs.g5a_revision_approval_url != '' && github.repository_id == '1338680554' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      GH_TOKEN: ${{ github.token }}
+      RC6_SOURCE_SHA: ${{ inputs.source_sha }}
+      RC6_SOURCE_TREE: ${{ inputs.source_tree }}
+      RC6_OWNER_SESSION: ${{ inputs.owner_session }}
+      RC6_LAUNCH_RECEIPT: ${{ inputs.launch_receipt_url }}
+      RC6_G5A_REVISION_APPROVAL: ${{ inputs.g5a_revision_approval_url }}
+    steps:
+      - name: Checkout exact Source before fresh contractual admission
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Authenticate Source and proposed stage before reviewed tooling
+        id: g5a_admission
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 022
+          python3 -I -B - <<'PY'
+          import os,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path.cwd()))
+          from scripts.rc6_material_pr_admission import admit_g5a_preparation
+          admit_g5a_preparation(source_sha=os.environ['RC6_SOURCE_SHA'],source_tree=os.environ['RC6_SOURCE_TREE'],
+              owner_session=os.environ['RC6_OWNER_SESSION'],launch_receipt_url=os.environ['RC6_LAUNCH_RECEIPT'],
+              revision_approval_url=os.environ['RC6_G5A_REVISION_APPROVAL'])
+          PY
+      - name: Prepare reviewed CPython311 after actual owner admission
+        id: g5a_py311
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11.16"
+      - name: Authenticate predecessors then prepare the original locked PRODUCT311
+        id: g5a_preparation
+        shell: bash
+        env:
+          RC6_PYTHON311: ${{ steps.g5a_py311.outputs.python-path }}
+        run: |
+          set -Eeuo pipefail
+          umask 022
+          "$RC6_PYTHON311" -I -B scripts/rc6_g5a_actions.py --prepare-only \
+            --repo-root "$GITHUB_WORKSPACE" --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
+            --owner-session "$RC6_OWNER_SESSION" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" \
+            --g5a-revision-approval-url "$RC6_G5A_REVISION_APPROVAL" --python311 "$RC6_PYTHON311"
+      - name: Reauthenticate in actual PRODUCT311 then acquire with native custody
+        id: g5a
+        shell: bash
+        env:
+          RC6_PRODUCT311: ${{ steps.g5a_preparation.outputs.g5a_python311 }}
+          RC6_PREPARED_MANIFEST: ${{ steps.g5a_preparation.outputs.g5a_prepared_manifest }}
+        run: |
+          set -Eeuo pipefail
+          umask 022
+          "$RC6_PRODUCT311" -I -B scripts/rc6_g5a_actions.py --execute \
+            --repo-root "$GITHUB_WORKSPACE" --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
+            --owner-session "$RC6_OWNER_SESSION" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" \
+            --g5a-revision-approval-url "$RC6_G5A_REVISION_APPROVAL" --prepared-manifest "$RC6_PREPARED_MANIFEST"
+      - name: Preserve preparation and native controls on every terminal path
+        if: always() && steps.g5a_preparation.outputs.control_root != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-g5a-controls-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.g5a_preparation.outputs.control_root }}/*.json
+            ${{ steps.g5a.outputs.control_root }}/*.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload original G5A frame parts (official)
+        if: always() && steps.g5a.outputs.safe_payload_upload == 'true' && steps.g5a.outputs.parts_count != ''
+        uses: ./.github/actions/rc6-g5a-upload-parts
+        with:
+          parts_root: ${{ steps.g5a.outputs.parts_root }}
+          parts_count: ${{ steps.g5a.outputs.parts_count }}
+          parts_start: ${{ steps.g5a.outputs.parts_start }}
+          source_sha: ${{ inputs.source_sha }}
+          category: frames
+      - name: Upload original G5A runtime parts (official)
+        if: always() && steps.g5a.outputs.safe_payload_upload == 'true' && steps.g5a.outputs.runtimeparts_count != ''
+        uses: ./.github/actions/rc6-g5a-upload-parts
+        with:
+          parts_root: ${{ steps.g5a.outputs.runtimeparts_root }}
+          parts_count: ${{ steps.g5a.outputs.runtimeparts_count }}
+          parts_start: ${{ steps.g5a.outputs.runtimeparts_start }}
+          source_sha: ${{ inputs.source_sha }}
+          category: runtime
+      - name: Join actual uploaded parts without certifying G5
+        id: g5a_family
+        if: success() && steps.g5a.outputs.family_draft != ''
+        shell: bash
+        env:
+          RC6_PACKAGE_MANIFEST: ${{ steps.g5a.outputs.package_manifest }}
+          RC6_PACKAGE_SHA256: ${{ steps.g5a.outputs.package_manifest_sha256 }}
+          RC6_FAMILY_DRAFT: ${{ steps.g5a.outputs.family_draft }}
+          RC6_FAMILY_DRAFT_SHA256: ${{ steps.g5a.outputs.family_draft_sha256 }}
+          RC6_PRODUCT311: ${{ steps.g5a_preparation.outputs.g5a_python311 }}
+        run: |
+          set -Eeuo pipefail
+          umask 022
+          "$RC6_PRODUCT311" -I -B scripts/rc6_g5a_family.py \
+            --package-manifest "$RC6_PACKAGE_MANIFEST" --package-manifest-sha256 "$RC6_PACKAGE_SHA256" \
+            --family-draft "$RC6_FAMILY_DRAFT" --family-draft-sha256 "$RC6_FAMILY_DRAFT_SHA256"
+      - name: Preserve actual G5A Source family for later full G5B verification
+        if: always() && steps.g5a_family.outputs.family_sealed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-g5a-source-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.g5a_family.outputs.primary_root }}/G5.acquisition.receipt.json
+            ${{ steps.g5a_family.outputs.primary_root }}/family/
+            ${{ steps.g5a_family.outputs.primary_root }}/controls/
+            ${{ steps.g5a_family.outputs.primary_root }}/source-original-raw/primary/
+          if-no-files-found: error
+          retention-days: 14
 
   evidence-readout:
     name: Read exact sealed development RED without reexecuting tests

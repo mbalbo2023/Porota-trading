@@ -53,6 +53,11 @@ CODE_MEMBERS = ("scripts/rc6_capacity_calibration.py", DRIVER_MEMBER, "scripts/r
                 "scripts/rc6_owned_gate_lease.py",
                 "scripts/rc6_privileged_custody.py", "scripts/rc6_native_namespace_filter.py",
                 "scripts/rc6_root_actor_seal.py",
+                "scripts/rc6_private_pid_boundary.py", "scripts/rc6_trusted_quota_setup.py",
+                "scripts/rc6_private_pid_capture_replay.py", "scripts/rc6_ephemeral_api_credential.py",
+                "scripts/rc6_contract_revisions.py",
+                "scripts/rc6_product_resource_compatibility.py", "ops/policy/rc6-product-resource-compatibility-v2.json",
+                "de_concurrent_risk_capacity_hf6.py",
                 "requirements.lock.txt", "requirements.build.lock.txt", "ops/policy/rc6-supply-chain-v1.json",
                 OBJECTS_MEMBER, BUILDER_MEMBER)
 ORIGIN = "https://github.com/mbalbo2023/Porota-trading.git"
@@ -193,7 +198,7 @@ def require_capacity(observation, bound, *, control_bytes=0):
          "CALIBRATION_INODE_RESERVE_BLOCKED")
 
 
-def outer_control_peak_bound(fragment_bytes):
+def outer_control_peak_bound(fragment_bytes, *, revision_capture_copy_bytes=0):
     """Physical simultaneous copies, never a credit from future cleanup.
 
     Both authenticated captures have their original 128MiB API ceiling. The
@@ -202,6 +207,8 @@ def outer_control_peak_bound(fragment_bytes):
     """
     need(type(fragment_bytes) is int and 0 < fragment_bytes <= 65536,
          "CALIBRATION_CONTROL_ALLOCATION_UNIT_UNKNOWN")
+    need(type(revision_capture_copy_bytes) is int and 0 <= revision_capture_copy_bytes <= CONTROLS,
+         "CALIBRATION_PRIVATE_PID_CAPTURE_COPY_BOUND_REQUIRED")
     components = {"root_request_marker_fin_bytes": 6 * MIB,
                   "original_worker_log_bytes": MAX_WORKER_WIRE,
                   "root_custody_relay_and_live_controls_bytes": 12 * MIB,
@@ -213,6 +220,8 @@ def outer_control_peak_bound(fragment_bytes):
                   "carrier_terminal_controls_bytes": 4 * MIB,
                   "issuer_owned_lease_controls_bytes": 16 * MIB,
                   "directory_and_file_rounding_bytes": (4 * MAX_RAW_FILES + 64) * fragment_bytes}
+    if revision_capture_copy_bytes:
+        components["already_closed_revision_capture_future_copy_bytes"] = revision_capture_copy_bytes
     return {"schema": "porota.rc6.capacity-diagnostic-control-bound.v1", "components": components,
             "total_bytes": sum(components.values()), "premature_cleanup_credit_bytes": 0,
             "future_capture_copies_included": 2, "max_raw_files": MAX_RAW_FILES}
@@ -227,8 +236,11 @@ def evaluate_kernel_prerequisites(config, *, quota_module_live, filesystems, too
             missing.append(name)
         elif value not in ("y", "m"):
             unknown.append(name)
-    if config.get("CONFIG_QFMT_V2") == "m" and not quota_module_live:
-        missing.append("QFMT_VFS_V1_MODULE_NOT_ALREADY_LIVE")
+    # /sys/module absence is neither a Q_GETFMT result nor proof that a
+    # filesystem cannot instantiate its existing quota format. The trusted
+    # own mount must observe Q_GETFMT/GETQUOTA and NONROOT EDQUOT. No explicit
+    # module load is authorized here; an actual syscall failure is retained.
+    format_unobserved = config.get("CONFIG_QFMT_V2") == "m" and not quota_module_live
     if "ext4" not in filesystems:
         missing.append("EXT4_NOT_REGISTERED")
     for name in ("sudo", "unshare", "mkfs.ext4"):
@@ -240,9 +252,10 @@ def evaluate_kernel_prerequisites(config, *, quota_module_live, filesystems, too
             "missing": missing, "unknown": unknown, "actual_capability_proved": False,
             "module_loading_attempted": False, "qualification_claimed": False,
             "kernel_unsupported_claimed": False,
-            "format_readiness": "READINESS_REQUIRED_NO_MODULE_LOADING" if
-                "QFMT_VFS_V1_MODULE_NOT_ALREADY_LIVE" in missing else
-                "NO_VERIFICADO" if unknown else "PRESENT_METADATA_ONLY"}
+            "format_readiness": "NATIVE_Q_GETFMT_REQUIRED_MODULE_NOT_OBSERVED" if format_unobserved else
+                "NO_VERIFICADO" if unknown else "PRESENT_METADATA_ONLY",
+            "quota_module_absence_is_incompatibility": False,
+            "native_format_readback_required": True}
 
 
 def readonly_system_code(path):
@@ -404,7 +417,8 @@ def source_pin(root, sha, tree):
 
 def verify_admission(admission, binding, mode):
     gate = "capacity-probe" if mode == "capability" else "capacity-calibration"
-    need(type(admission) is dict and admission.get("schema") == "porota.rc6.capacity-diagnostic-admission.v1"
+    need(type(admission) is dict and admission.get("schema") in (
+         "porota.rc6.capacity-diagnostic-admission.v1", "porota.rc6.capacity-diagnostic-admission.v2")
          and admission.get("status") == "ADMITTED_DIAGNOSTIC_NOT_STARTED"
          and admission.get("gate") == gate and binding.get("producer") == gate
          and admission.get("source_sha") == binding.get("candidate_sha")
@@ -557,6 +571,19 @@ def set_project(path, project_id):
         fcntl.ioctl(fd, FSGETXATTR, current, True)
         xflags, extsize, nextents, _, cow = struct.unpack("=5I8x", current)
         fcntl.ioctl(fd, FSSETXATTR, struct.pack("=5I8x", xflags | PROJINHERIT, extsize, nextents, project_id, cow))
+    finally:
+        os.close(fd)
+
+
+def project_attributes(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        current = bytearray(28)
+        fcntl.ioctl(fd, FSGETXATTR, current, True)
+        flags, _, _, project_id, _ = struct.unpack("=5I8x", current)
+        return {"project_id": project_id, "inheritance": bool(flags & PROJINHERIT),
+                "raw_sha256": digest(bytes(current)), "directory_device": os.fstat(fd).st_dev,
+                "directory_inode": os.fstat(fd).st_ino, "mount_id": descriptor_mount_id(fd)}
     finally:
         os.close(fd)
 
@@ -1012,7 +1039,7 @@ def read_loop_birth(request, request_sha256):
     return validate_loop_birth(decode(raw), request, request_sha256), digest(raw)
 
 
-def root_setup(request):
+def trusted_quota_setup(request):
     request["setup_stage"] = "authenticate_root_request"
     validate_root_request(request)
     need(os.getuid() == os.geteuid() == 0 and request["owner_uid"] > 0
@@ -1080,6 +1107,10 @@ def root_setup(request):
         project_id = 1 + int(request["namespace_receipt"]["namespace_nonce"][:7], 16)
         for path, number in ((project, project_id), (probe, project_id + 1)):
             set_project(path, number)
+            attributes = project_attributes(path)
+            need(attributes["project_id"] == number and attributes["inheritance"] is True,
+                 "CALIBRATION_ROOT_PROJECT_ASSIGNMENT_READBACK_FAILED")
+            request.setdefault("project_attributes", []).append(attributes)
             os.chown(path, request["owner_uid"], request["owner_gid"])
         quotas = [set_quota(device, project_id, limits["project_hard_limit_bytes"]),
                   set_quota(device, project_id + 1, MIB)]
@@ -1110,6 +1141,14 @@ def root_setup(request):
             request["toolchain_binaries"] = binaries
     finally:
         os.close(hold)
+    request["setup_stage"] = "trusted_quota_setup_complete"
+    from scripts import rc6_trusted_quota_setup as trusted
+    request["phases"] = [trusted.setup_receipt(request)]
+    return request
+
+
+def seal_quota_setup(request):
+    need(request.get("setup_stage") == "trusted_quota_setup_complete", "CALIBRATION_SETUP_BEFORE_SEAL_REQUIRED")
     # No writable raw device/image/root descriptor reaches NONROOT workloads.
     for name in os.listdir("/proc/self/fd"):
         if name.isdigit() and int(name) > 2:
@@ -1121,6 +1160,262 @@ def root_setup(request):
     request["privilege"] = drop_privileges(request["owner_uid"], request["owner_gid"],
         source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
     request["setup_stage"] = "nonroot_ready"
+    request["phases"].append({"schema": "porota.rc6.quota-seal.v2", "phase": "Seal",
+        "privilege": request["privilege"], "closed_privileged_descriptors": True,
+        "qualification_claimed": False})
+    from scripts import rc6_trusted_quota_setup as trusted
+    trusted.validate_phase_sequence(request["phases"], complete=False)
+    return request
+
+
+def root_setup(request):
+    """Authenticated fixed ROOT setup, followed by irreversible own Seal."""
+    return seal_quota_setup(trusted_quota_setup(request))
+
+
+def g5a_validate_setup_request(request, *, preparation=None):
+    """Authenticate the distinct G5A request and same-PID owner preparation.
+
+    No historical mode/schema is relabelled and no mount/image is created by
+    this validation. The typed registry and closed ROOT oracle remain guards
+    before every privileged setup or Seal operation.
+    """
+    from scripts import rc6_g5_contract as g5
+    from scripts import rc6_g5a_native_runner as runner
+    need(type(preparation) is g5.TrustedG5APreparation,
+         "G5A_SETUP_CURRENT_TYPED_PREPARATION_REQUIRED_BEFORE_PRIVILEGED_OPERATIONS")
+    need(type(request) is dict and "mode" not in request
+         and runner.REQUEST_FIELDS <= set(request), "G5A_SETUP_DISTINCT_ROOT_REQUEST_REQUIRED")
+    base = {key: request[key] for key in runner.REQUEST_FIELDS}
+    paths = runner.validate_request_shape(base)
+    need(type(request.get("original_request_sha256")) is str
+         and request["original_request_sha256"] == digest(wire(base))
+         and type(request.get("privileged_custody_live")) is dict
+         and request["privileged_custody_live"].get("calibration_request_sha256") == request["original_request_sha256"],
+         "G5A_SETUP_ORIGINAL_REQUEST_AND_LIVE_CONTROLLER_BINDING_REQUIRED")
+    need(type(getattr(preparation, "manifest_wire", None)) is bytes,
+         "G5A_SETUP_CURRENT_TYPED_PREPARATION_FIELDS_REQUIRED")
+    manifest = decode(preparation.manifest_wire)
+    verified = g5.validate_trusted_g5a_preparation(preparation, binding=request["binding"],
+                                                prerequisites_manifest=manifest)
+    need(preparation.source_root == str(ROOT) == request["source_root"], "G5A_SETUP_EXECUTED_SOURCE_REBOUND")
+    actual_manifest = decode(runner.read_input(request["g5a_prerequisites_manifest_path"],
+        expected_sha256=request["g5a_prerequisites_manifest_sha256"]))
+    need(actual_manifest == manifest, "G5A_SETUP_ORIGINAL_PREREQUISITE_MANIFEST_REBOUND")
+    need(verified.get("status") == "GREEN" and verified.get("source_sha") == request["source_sha"]
+         and verified.get("source_tree") == request["source_tree"]
+         and verified.get("target_gate") == "G5", "G5A_SETUP_VERIFIED_G0_G4_SOURCE_REQUIRED")
+    for member, expected in request["code_hashes"].items():
+        need(digest(runner.read_input(ROOT / member, maximum=CONTROLS)) == expected,
+             "G5A_SETUP_SOURCE_MEMBER_CHANGED")
+    return paths
+
+
+def g5a_validate_root_namespace(request):
+    """Retain the original nonce/inode/marker and actual external custody."""
+    from scripts import rc6_privileged_custody as privileged
+    claim = request["namespace_receipt"]; root = Path(claim["path"])
+    need(root.is_absolute() and str(root) == os.path.abspath(root)
+         and not any(path.is_symlink() for path in (root, *root.parents)), "G5A_SETUP_OWN_NAMESPACE_NOFOLLOW_REQUIRED")
+    details = root.lstat()
+    need(stat.S_ISDIR(details.st_mode) and stat.S_IMODE(details.st_mode) == 0o700
+         and [details.st_dev, details.st_ino, details.st_uid, details.st_gid, 0o700] == claim["identity"]
+         and [details.st_uid, details.st_gid] == [request["owner_uid"], request["owner_gid"]],
+         "G5A_SETUP_ORIGINAL_NAMESPACE_INODE_REBOUND")
+    marker_path = root / ".porota-generated-fixture-owner.json"
+    marker_info = marker_path.lstat(); marker_raw = read(marker_path, MIB); marker = decode(marker_raw)
+    need(stat.S_ISREG(marker_info.st_mode) and marker_info.st_nlink == 1
+         and [marker_info.st_uid, marker_info.st_gid] == [request["owner_uid"], request["owner_gid"]]
+         and stat.S_IMODE(marker_info.st_mode) == 0o600 and digest(marker_raw) == claim["marker_sha256"]
+         and marker.get("schema") == "porota.rc6.generated-fixture-owner.v1"
+         and marker.get("runtime_paths_authorized") is False and type(marker.get("real_orders_sent")) is int
+         and marker["real_orders_sent"] == 0 and marker.get("binding") == request["binding"]
+         and marker.get("path") == str(root) and marker.get("identity") == claim["identity"]
+         and marker.get("mount_id") == claim["mount_id"] and marker.get("namespace_nonce") == claim["namespace_nonce"]
+         and root.name == "r6-" + base64.urlsafe_b64encode(bytes.fromhex(claim["namespace_nonce"])).decode().rstrip("="),
+         "G5A_SETUP_ORIGINAL_NONCE_MARKER_REBOUND")
+    need(request.get("require_quota_ancestor_seal") is True, "G5A_SETUP_ALREADY_SEALED_PRIVATE_PARENT_REQUIRED")
+    privileged.verify_live_controller(request["privileged_custody_live"], request)
+    issuer_kernel_identity(request)
+    return root
+
+
+def g5a_open_image_on_issuer_mount(request):
+    """Only the retained own directory bridge; no host procfs alternative."""
+    from scripts import rc6_privileged_custody as privileged
+    root = g5a_validate_root_namespace(request); claim = request["namespace_receipt"]
+    issuer_before = issuer_kernel_identity(request)
+    directory = os.dup(privileged.BRIDGE_DESCRIPTOR)
+    image_fd = birth_fd = marker_fd = None
+    try:
+        details = os.fstat(directory)
+        need([details.st_dev, details.st_ino, details.st_uid, details.st_gid, stat.S_IMODE(details.st_mode)]
+             == claim["identity"] and descriptor_mount_id(directory) == claim["mount_id"],
+             "G5A_SETUP_ORIGINAL_OPAQUE_DIRECTORY_BRIDGE_REBOUND")
+        marker_fd = os.open(".porota-generated-fixture-owner.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC,
+                            dir_fd=directory)
+        before = os.fstat(marker_fd)
+        marker_raw = os.pread(marker_fd, MIB + 1, 0)
+        need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size <= MIB
+             and [before.st_uid, before.st_gid] == [request["owner_uid"], request["owner_gid"]]
+             and stat.S_IMODE(before.st_mode) == 0o600 and len(marker_raw) == before.st_size
+             and digest(marker_raw) == claim["marker_sha256"] and identity(before) == identity(os.fstat(marker_fd))
+             == identity((root / ".porota-generated-fixture-owner.json").lstat()),
+             "G5A_SETUP_ORIGINAL_BRIDGED_MARKER_REBOUND")
+        image_fd = os.open("image.ext4", os.O_RDWR | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC, dir_fd=directory)
+        info = os.fstat(image_fd)
+        image_mount = descriptor_mount_id(image_fd)
+        need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+             and [info.st_uid, info.st_gid] == [request["owner_uid"], request["owner_gid"]]
+             and stat.S_IMODE(info.st_mode) == 0o600 and info.st_size == request["limits"]["backing_image_bytes"]
+             and identity(info) == request["image_identity"] == identity(Path(request["image"]).lstat())
+             == identity(os.stat("image.ext4", dir_fd=directory, follow_symlinks=False))
+             and image_mount == claim["mount_id"], "G5A_SETUP_ORIGINAL_BRIDGED_IMAGE_REBOUND")
+        birth_fd = os.open("loop-birth.json", os.O_RDWR | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC, dir_fd=directory)
+        birth_info = os.fstat(birth_fd)
+        need(Path(request["loop_birth_path"]) == root / "loop-birth.json"
+             and stat.S_ISREG(birth_info.st_mode) and birth_info.st_nlink == 1
+             and stat.S_IMODE(birth_info.st_mode) == 0o600
+             and [birth_info.st_uid, birth_info.st_gid] == [request["owner_uid"], request["owner_gid"]]
+             and identity(birth_info) == request["loop_birth_identity"] == identity(Path(request["loop_birth_path"]).lstat())
+             and descriptor_mount_id(birth_fd) == claim["mount_id"]
+             and digest(os.pread(birth_fd, MIB + 1, 0)) == request["loop_birth_pending_sha256"],
+             "G5A_SETUP_ORIGINAL_BRIDGED_LOOP_BIRTH_REBOUND")
+        need(g5a_validate_root_namespace(request) == root and issuer_kernel_identity(request) == issuer_before
+             and identity(os.fstat(image_fd)) == request["image_identity"], "G5A_SETUP_ISSUER_OR_IMAGE_CHANGED_DURING_OPEN")
+        origin = {"schema": "porota.rc6.original-issuer-backing.v1", "issuer": issuer_before,
+            "original_mount_id": image_mount, "original_directory_identity": claim["identity"],
+            "image_identity": request["image_identity"], "namespace_nonce": claim["namespace_nonce"],
+            "marker_sha256": claim["marker_sha256"], "marker_identity": identity(before),
+            "ordinary_components_nofollow": True, "issuer_revalidated_before_after": True}
+        result, image_fd, birth, birth_fd = image_fd, None, birth_fd, None
+        return result, origin, birth
+    finally:
+        for descriptor in (marker_fd, birth_fd, image_fd, directory):
+            if descriptor is not None: os.close(descriptor)
+
+
+def g5a_trusted_quota_setup(request, *, preparation=None):
+    """Original26/20/4-GiB backing and bounded archive subprojects for G5A."""
+    import threading
+    from scripts import rc6_trusted_quota_setup as trusted
+    paths = g5a_validate_setup_request(request, preparation=preparation)
+    g5a_validate_root_namespace(request)
+    need(os.getresuid() == os.getresgid() == (0, 0, 0)
+         and threading.get_native_id() == os.getpid() and len(os.listdir("/proc/self/task")) == 1
+         and request["mount_namespace_inode"] != os.stat("/proc/self/ns/mnt").st_ino,
+         "G5A_SETUP_NEW_SINGLE_ROOT_PRIVATE_MOUNT_NAMESPACE_REQUIRED")
+    request["private_mount_preflight"] = private_mount_preflight(request["mount_namespace_inode"])
+    image, mountpoint = Path(request["image"]), paths["mount"]
+    image_info = image.lstat(); mount_info = mountpoint.lstat()
+    need(stat.S_ISREG(image_info.st_mode) and image_info.st_nlink == 1 and stat.S_IMODE(image_info.st_mode) == 0o600
+         and identity(image_info) == request["image_identity"] and image_info.st_size == 26 * GIB
+         and image_info.st_blocks * 512 >= 26 * GIB
+         and [image_info.st_uid, image_info.st_gid] == [request["owner_uid"], request["owner_gid"]]
+         and stat.S_ISDIR(mount_info.st_mode) and stat.S_IMODE(mount_info.st_mode) == 0o700
+         and [mount_info.st_uid, mount_info.st_gid] == [request["owner_uid"], request["owner_gid"]]
+         and not list(mountpoint.iterdir()), "G5A_SETUP_ORIGINAL_OWN_IMAGE_AND_EMPTY_MOUNT_REQUIRED")
+    request["setup_stage"] = "open_original_issuer_backing"
+    backing_fd, origin, birth_fd = g5a_open_image_on_issuer_mount(request)
+    request["backing_origin"] = origin
+    try:
+        device, loop, hold = configure_loop(image, expected_identity=request["image_identity"],
+                                           owned_image_fd=backing_fd, backing_origin=origin)
+    except BaseException:
+        os.close(birth_fd)
+        raise
+    request["loop"] = loop
+    try:
+        try: request["loop_birth_control"] = publish_loop_birth(birth_fd, request, loop)
+        finally: os.close(birth_fd)
+        request["setup_commands"] = []
+        run_setup(request, ["mkfs.ext4", "-V"])
+        request["setup_stage"] = "mkfs_own_ext4"
+        run_setup(request, ["mkfs.ext4", "-q", "-F", "-b", "4096", "-m", "0", "-O", "project,quota",
+            "-E", "lazy_itable_init=0,lazy_journal_init=0,nodiscard", device])
+        request["ext4_superblock"] = own_image_superblock(request)
+        request["readonly_operation"] = mount_all_readonly(backing_origin=origin,
+            issuer_namespace_inode=request["mount_namespace_inode"])
+        actual = image.lstat()
+        need(all(getattr(actual, key) == request["image_identity"][key] for key in
+            ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size")),
+            "G5A_SETUP_IMAGE_CHANGED_AFTER_PRIVATE_READONLY")
+        request["mount_operation"] = mount_own_ext4(device, mountpoint, origin)
+        request["quota_format"] = quota_format(device)
+        os.chmod(mountpoint, 0o555)
+        paths["producer"].mkdir(mode=0o700); paths["control"].mkdir(mode=0o700)
+        paths["probe"].mkdir(mode=0o700)
+        base = 1 + int(request["namespace_receipt"]["namespace_nonce"][:7], 16)
+        quotas, attributes = [], []
+        for path in (paths["producer"], paths["control"]):
+            quota = trusted.setup_project(device, path, base, hard_bytes=20 * GIB, hard_inodes=100000,
+                operation_scope="G5A_EVIDENCE_ACQUISITION_ONLY")
+            quotas.append(quota); attributes.append(quota["project_attributes"])
+            os.chown(path, request["owner_uid"], request["owner_gid"])
+        current = paths["producer"]
+        for component in paths["archive"].relative_to(current).parts:
+            current /= component
+            current.mkdir(mode=0o700)
+            os.chown(current, request["owner_uid"], request["owner_gid"])
+        for path, project_id, hard_bytes in ((paths["archive"], base + 1, 512 * MIB), (paths["probe"], base + 2, MIB)):
+            quota = trusted.setup_project(device, path, project_id, hard_bytes=hard_bytes, hard_inodes=32768,
+                operation_scope="G5A_EVIDENCE_ACQUISITION_ONLY")
+            quotas.append(quota); attributes.append(quota["project_attributes"])
+            os.chown(path, request["owner_uid"], request["owner_gid"])
+        physical = filesystem(mountpoint)
+        require_physical_and_project_capacity(physical, quotas[0], 20 * GIB)
+        for path, quota in zip((paths["producer"], paths["control"], paths["archive"], paths["probe"]), quotas):
+            projection = filesystem(path)
+            need(projection["total_bytes"] == quota["hard_bytes"] and projection["total_inodes"] == quota["hard_inodes"],
+                 "G5A_SETUP_EXACT_LIVE_PROJECT_STATVFS_PROJECTION_REQUIRED")
+            quota["live_projection"] = projection
+        mounts = []
+        for line in Path("/proc/self/mountinfo").read_text().splitlines():
+            fields = line.split(); mounts.append({"mountpoint": fields[4], "readonly": "ro" in fields[5].split(","),
+                "options": fields[5].split(",")})
+        need(all(row["readonly"] or row["mountpoint"] == str(mountpoint) for row in mounts)
+             and sum(row["mountpoint"] == str(mountpoint) and not row["readonly"] for row in mounts) == 1
+             and all({"nodev", "nosuid"} <= set(row["options"]) for row in mounts if row["mountpoint"] == str(mountpoint)),
+             "G5A_SETUP_OUTSIDE_MOUNTS_AND_OWN_NODEV_NOSUID_REQUIRED")
+        request.update(project=str(paths["producer"]), control=str(paths["control"]), archive=str(paths["archive"]),
+            probe=str(paths["probe"]), device=device, quotas=quotas, project_attributes=attributes,
+            inner_before=physical, outside_mounts_readonly_verified=True, setup_stage="g5a_trusted_quota_setup_complete")
+        request["phases"] = [{"schema": "porota.rc6.g5a-trusted-quota-setup.v1", "phase": "TrustedQuotaSetup",
+            "operation_scope": "G5A_EVIDENCE_ACQUISITION_ONLY", "limits": request["limits"], "binding": request["binding"],
+            "source_sha": request["source_sha"], "source_tree": request["source_tree"], "quotas": quotas,
+            "quota_format": request["quota_format"], "mount_operation": request["mount_operation"],
+            "ext4_superblock": request["ext4_superblock"], "physical": physical,
+            "workload_and_control_share_project_id": True, "archive_and_probe_are_distinct_subprojects": True,
+            "ancestor_already_sealed": True, "native_EDQUOT_proved_by_setup": False, "G5_GREEN": False,
+            "qualification_claimed": False}]
+        return request
+    finally:
+        os.close(hold)
+
+
+def g5a_seal_quota_setup(request, *, preparation=None):
+    """Close every privileged FD, then drop once in the original setup PID."""
+    from scripts import rc6_privileged_custody as privileged
+    from scripts import rc6_trusted_quota_setup as trusted
+    g5a_validate_setup_request(request, preparation=preparation)
+    need(request.get("setup_stage") == "g5a_trusted_quota_setup_complete"
+         and request.get("outside_mounts_readonly_verified") is True
+         and type(request.get("phases")) is list and len(request["phases"]) == 1
+         and request["phases"][0].get("phase") == "TrustedQuotaSetup",
+         "G5A_SETUP_COMPLETE_BEFORE_SAME_PID_SEAL_REQUIRED")
+    privileged.verify_live_controller(request["privileged_custody_live"], request)
+    for name in os.listdir("/proc/self/fd"):
+        need(name.isdecimal(), "G5A_SEAL_DESCRIPTOR_METADATA_UNKNOWN")
+        if int(name) > 2:
+            try: os.close(int(name))
+            except OSError as error: need(error.errno == errno.EBADF, "G5A_SEAL_PRIVILEGED_DESCRIPTOR_CLOSE_FAILED")
+    request["setup_stage"] = "g5a_drop_privileges"
+    request["privilege"] = drop_privileges(request["owner_uid"], request["owner_gid"], source_binding=request["filter_binding"])
+    request["setup_stage"] = "g5a_nonroot_ready"
+    request["phases"].append({"schema": "porota.rc6.g5a-quota-seal.v1", "phase": "Seal",
+        "filter_binding": request["filter_binding"], "privilege": request["privilege"],
+        "closed_privileged_descriptors": True, "same_pid_setup_and_seal": True, "qualification_claimed": False})
+    trusted.validate_phase_sequence(request["phases"], complete=False)
     return request
 
 
@@ -1141,7 +1436,7 @@ def issuer_root_escape_probe(issuer_pid, outside, *, issuer_proc_root=Path("/pro
         raise ValueError("CALIBRATION_ORIGINAL_ISSUER_ROOT_ESCAPE")
 
 
-def quota_probe(project, probe, outside, supervisor_pid, issuer_pid, *, issuer_proc_root=Path("/proc")):
+def quota_probe(project, probe, outside, supervisor_pid, issuer_pid, *, issuer_proc_root=Path("/proc"), boundary_context=None):
     need(os.getuid() == os.geteuid() > 0, "CALIBRATION_NONROOT_PROBE_REQUIRED")
     observed = {}
     fd = os.open(project, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -1216,7 +1511,11 @@ def quota_probe(project, probe, outside, supervisor_pid, issuer_pid, *, issuer_p
     else:
         os.close(descriptor)
         raise ValueError("CALIBRATION_OUTSIDE_CONTROL_FD_ESCAPE")
-    observed["original_issuer_root_escape"] = issuer_root_escape_probe(issuer_pid, outside, issuer_proc_root=issuer_proc_root)
+    if boundary_context is None:
+        observed["original_issuer_root_escape"] = issuer_root_escape_probe(issuer_pid, outside, issuer_proc_root=issuer_proc_root)
+    else:
+        from scripts import rc6_private_pid_boundary as private_pid
+        observed["private_pid_boundary_v2"] = private_pid.quota_actor_observation(boundary_context)
     quota = Dqblk()
     libc = ctypes.CDLL(None, use_errno=True)
     need(libc.quotactl((Q_SETQUOTA << 8) | PRJQUOTA, b"/dev/quota-probe-denied", projid, ctypes.byref(quota)) == -1
@@ -1458,12 +1757,20 @@ def nonroot_worker(request):
     parent_filter = native_filter.assert_current_filter(source_binding=filter_binding)
     parent_path = project / "controls" / "supervisor-filter.json"
     parent_sha = publish(parent_path, parent_filter)
+    boundary_arguments = []
+    if request.get("boundary_revision") == "PRIVATE_PID_BOUNDARY_V2":
+        context_path = project / "controls" / "quota-boundary-context.json"
+        context_sha = publish(context_path, {"request": {k: request[k] for k in (
+            "source_sha", "source_tree", "binding", "owner_uid", "owner_gid", "issuer", "mount_namespace_inode",
+            "boundary_revision", "boundary_host_proc_device", "require_quota_ancestor_seal", "original_request_sha256")},
+            "proof": request["privileged_custody_live"]})
+        boundary_arguments = ["--boundary-context-json", str(context_path), "--boundary-context-sha256", context_sha]
     probe = run([sys.executable, "-I", "-B", str(source / "scripts/rc6_capacity_calibration.py"), "--probe-child",
                  "--project", str(project), "--probe", request["probe"], "--outside", request["namespace_receipt"]["path"],
                  "--supervisor-pid", str(os.getpid()), "--issuer-pid", str(request["issuer"]["pid"]),
                  "--issuer-proc-root", request.get("host_proc", "/proc"),
                  "--parent-filter-json", str(parent_path), "--parent-filter-sha256", parent_sha,
-                 "--source-sha", request["source_sha"], "--source-tree", request["source_tree"]],
+                 "--source-sha", request["source_sha"], "--source-tree", request["source_tree"], *boundary_arguments],
                 "capability", 60)
     positive = decode(read(probe["log"]))
     need(positive.get("actual_positive") is True, "CALIBRATION_REAL_CAPABILITY_NOT_PROVED")
@@ -1471,6 +1778,8 @@ def nonroot_worker(request):
     need(positive["native_filter"]["identity"]["pid"] == probe["kernel"]["pid"],
          "CALIBRATION_NATIVE_FILTER_ACTUAL_WORKER_PID_REBOUND")
     report.update(actual_capability_proved=True, capability=positive)
+    request["phases"].append({"phase": "NONROOT", "actual_native_EDQUOT": True,
+        "capability_sha256": digest(wire(positive)), "qualification_claimed": False})
     build = bootstrap(request, run) if request["mode"] == "bootstrap" else None
     report.update({"status": "GREEN", "actual_capability_proved": True, "capability": positive,
             "privilege": request["privilege"], "loop": request["loop"], "quotas": request["quotas"],
@@ -1481,6 +1790,8 @@ def nonroot_worker(request):
             "mount_operation": request["mount_operation"], "quota_format": request["quota_format"],
             "ext4_superblock": request["ext4_superblock"], "loop_birth_control": request["loop_birth_control"],
             "setup_stage": request["setup_stage"],
+            "phases": request["phases"],
+            "project_attributes": request["project_attributes"],
             "private_mount_preflight": request["private_mount_preflight"],
             "source_tree": request["source_tree"],
             "commands": records, "samples": samples,
@@ -1491,6 +1802,10 @@ def nonroot_worker(request):
             "qualification_claimed": False})
     finalize_nonroot_report(request, report, manager)
     need(report["required_raw_complete"] and report["actual_own_fin_closed"], "CALIBRATION_REQUIRED_RAW_NOT_SEALED")
+    report["phases"].append({"phase": "CustodyFIN", "actual_native_FIN": True,
+        "required_raw_complete": True, "qualification_claimed": False})
+    from scripts import rc6_trusted_quota_setup as trusted
+    trusted.validate_phase_sequence(report["phases"], complete=True)
     return report
 
 
@@ -1501,6 +1816,13 @@ def root_worker(request_path, *, privileged_custody_proof=None):
     try:
         if privileged_custody_proof is not None:
             request["privileged_custody_live"] = decode(read(privileged_custody_proof, 2 * MIB))
+            if request.get("require_quota_ancestor_seal") is True:
+                path = Path(request["namespace_receipt"]["path"]) / "quota-ancestor-seal.json"
+                deadline = time.monotonic() + 5
+                while not path.exists():
+                    need(time.monotonic() < deadline, "CALIBRATION_QUOTA_ANCESTOR_SEAL_NOT_READY")
+                    time.sleep(0.01)
+                request["privileged_custody_live"]["quota_ancestor_seal"] = decode(read(path, 65536))
             from scripts import rc6_privileged_custody as privileged
             privileged.verify_live_controller(request["privileged_custody_live"], request)
         prepared = root_setup(request)
@@ -1514,6 +1836,7 @@ def root_worker(request_path, *, privileged_custody_proof=None):
                   "backing_origin": request.get("backing_origin"),
                   "readonly_operation": request.get("readonly_operation"),
                   "operation_failure": getattr(error, "details", None),
+                  "phases": request.get("phases", []),
                   "oserror_errno": error.errno if isinstance(error, OSError) else None}
         for name in ("loop_birth_control", "mount_operation", "quota_format", "ext4_superblock", "quotas", "inner_before", "privilege"):
             report[name] = request.get(name)
@@ -1567,18 +1890,31 @@ def attach_issuer_evidence(report, progress):
             report["payload_upload_safe"] = False
 
 
-def calibration_custody(witness, *, binding, source_sha, source_tree, code_hashes):
+def calibration_custody(witness, *, binding, source_sha, source_tree, code_hashes,
+                        boundary_witness=None, revision_context=None, mode="capability"):
     """Native custody alone cannot change the original quota/proc contract."""
     from scripts import rc6_privileged_custody as privileged
     receipt = privileged.validate_witness(witness, binding=binding)
     need(receipt.get("source_sha") == source_sha and receipt.get("source_tree") == source_tree
          and receipt.get("code_hashes") == code_hashes, "CALIBRATION_NATIVE_CUSTODY_EXACT_SOURCE_REBOUND")
+    if boundary_witness is not None:
+        from scripts import rc6_private_pid_boundary as boundary
+        from scripts.rc6_contract_revisions import validate_revision_approval
+        native = boundary.validate_witness(boundary_witness, binding=binding, custody_witness=witness)
+        scope = "capacity-probe" if mode == "capability" else "capacity-calibration"
+        acceptance = validate_revision_approval(revision_context, revision=boundary.REVISION, scope=scope,
+            source_sha=source_sha, source_tree=source_tree, contract_sha256=boundary.contract_sha256())
+        need(acceptance.owner_session == binding["owner_id"], "CALIBRATION_CONTRACT_OWNER_REBOUND")
+        return ({"status": "NATIVE_PRIVATE_PID_V2_AND_SCOPED_OWNER_ACCEPTANCE_PROVED", "proved": True,
+                 "privileged_launch_authorized": True, "scope": scope, "revision": boundary.REVISION,
+                 "contract_sha256": boundary.contract_sha256(), "boundary_observation_sha256": digest(wire(native)),
+                 "approval_body_sha256": acceptance.approval_body_sha256}, receipt, None)
     return ({"status": "NATIVE_CUSTODY_PROVED_QUOTA_BRIDGE_BLOCKED", "proved": True,
              "privileged_launch_authorized": False}, receipt,
             "CALIBRATION_PRIVATE_PID_ORIGINAL_PROC_ROOT_CONTRACT_REVIEW_REQUIRED")
 
 
-def main(args, *, progress=None, custody_witness=None):
+def main(args, *, progress=None, custody_witness=None, boundary_witness=None, revision_context=None):
     need(os.getuid() == os.geteuid() > 0 and sys.platform == "linux" and platform.machine() == "x86_64",
          "CALIBRATION_ACTIONS_NONROOT_LINUX_REQUIRED")
     sys.path.insert(0, str(ROOT))
@@ -1620,8 +1956,12 @@ def main(args, *, progress=None, custody_witness=None):
         # that host PID. Neither ENOENT nor native ROOT-only success can replace
         # the historical assertion without a reviewed, demonstrated contract.
         # Stop before backing; do not spend 5/26GiB to discover this known gap.
-        signal_custody, custody_receipt, custody_reason = calibration_custody(custody_witness,
-            binding=binding, source_sha=args.source_sha, source_tree=args.source_tree, code_hashes=code_hashes)
+        try:
+            signal_custody, custody_receipt, custody_reason = calibration_custody(custody_witness,
+                binding=binding, source_sha=args.source_sha, source_tree=args.source_tree, code_hashes=code_hashes,
+                boundary_witness=boundary_witness, revision_context=revision_context, mode=args.mode)
+        except ValueError as error:
+            custody_reason = str(error).split(":", 1)[0]
     if (prerequisites["status"] != "PREREQUISITES_PRESENT" or signal_custody["proved"] is not True
             or signal_custody["privileged_launch_authorized"] is not True):
         source_pin(source, args.source_sha, args.source_tree)
@@ -1657,7 +1997,36 @@ def main(args, *, progress=None, custody_witness=None):
     source_fs = filesystem(source)
     need(before["device"] == source_fs["device"] and before["mount_id"] == source_fs["mount_id"],
          "CALIBRATION_OUTER_SOURCE_FILESYSTEM_MISMATCH")
-    control_bound = outer_control_peak_bound(before["fragment_bytes"])
+    revision_copy = 0
+    if signal_custody.get("revision") == "PRIVATE_PID_BOUNDARY_V2":
+        # Existing proof files are already charged in available_bytes. The
+        # carrier will copy them once more after FIN; reserve that exact future
+        # allocation as well, without assuming their deletion or compression.
+        from scripts import rc6_private_pid_capture_replay as replay
+        custody_raw = Path(custody_receipt["capture_root"])
+        need(custody_raw == parent / "revision-custody-raw",
+             "CALIBRATION_CLOSED_REVISION_CAPTURE_PATH_REBOUND")
+        manifest_raw = read(custody_raw / "manifest.json", 4 * MIB)
+        need(digest(manifest_raw) == custody_receipt["capture_manifest_sha256"],
+             "CALIBRATION_CLOSED_REVISION_CAPTURE_MANIFEST_REBOUND")
+        manifest = decode(manifest_raw)
+        entries = manifest.get("files")
+        need(type(entries) is list and len(entries) == len(replay.REQUIRED)
+             and {row.get("relative_source") for row in entries} == replay.REQUIRED,
+             "CALIBRATION_CLOSED_REVISION_CAPTURE_INVENTORY_REBOUND")
+        fragment = before["fragment_bytes"]
+        for row in [*entries, {"capture_file": "manifest.json", "bytes": len(manifest_raw),
+                               "sha256": digest(manifest_raw)}]:
+            member = row.get("capture_file")
+            need(member == "manifest.json" or re.fullmatch(r"[0-9]{4,}\.raw", member or ""),
+                 "CALIBRATION_CLOSED_REVISION_CAPTURE_MEMBER_REBOUND")
+            raw = read(custody_raw / member, 4 * MIB)
+            need(len(raw) == row.get("bytes") and digest(raw) == row.get("sha256"),
+                 "CALIBRATION_CLOSED_REVISION_CAPTURE_BYTES_REBOUND")
+            revision_copy += ((len(raw) + fragment - 1) // fragment) * fragment
+        revision_copy += (len(entries) + 2) * fragment
+    control_bound = outer_control_peak_bound(before["fragment_bytes"],
+        revision_capture_copy_bytes=revision_copy)
     require_capacity(before, limits["backing_image_bytes"], control_bytes=control_bound["total_bytes"])
     namespace = owned.create_namespace(parent, binding)
     image, mountpoint = namespace.path / "image.ext4", namespace.path / "mount"
@@ -1673,6 +2042,7 @@ def main(args, *, progress=None, custody_witness=None):
                      "namespace_nonce": namespace.nonce, "image_identity": identity(image.lstat()),
                      "loop": None, "qualification_claimed": False}
     pending_birth_sha = publish(birth_path, pending_birth)
+    from scripts import rc6_privileged_custody as privileged
     request = {"schema": "porota.rc6.capacity-root-request.v1", "mode": args.mode, "limits": limits,
                "owner_uid": os.geteuid(), "owner_gid": os.getegid(), "source_root": str(source),
                "source_sha": args.source_sha, "source_tree": args.source_tree, "binding": binding,
@@ -1681,10 +2051,16 @@ def main(args, *, progress=None, custody_witness=None):
                "mount_namespace_inode": os.stat("/proc/self/ns/mnt").st_ino, "code_hashes": code_hashes,
                "loop_birth_path": str(birth_path), "loop_birth_identity": identity(birth_path.lstat()),
                "loop_birth_pending_sha256": pending_birth_sha, "outer_control_peak_bound": control_bound,
+               "host_PID1": privileged.public_kernel_process(1),
+               "host_boundary": privileged.host_boundary_snapshot(),
                "issuer": {"pid": os.getpid(), "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+                          "pid_namespace_inode": os.stat("/proc/self/ns/pid").st_ino,
                           "start_ticks": Path("/proc/self/stat").read_text().rsplit(")", 1)[1].split()[19]},
                "pythons": {"311": args.python311 or os.environ.get("RC6_CALIBRATION_PYTHON311", ""),
                            "312": args.python312 or os.environ.get("RC6_CALIBRATION_PYTHON312", "")}}
+    if signal_custody.get("revision") == "PRIVATE_PID_BOUNDARY_V2":
+        request.update(boundary_revision="PRIVATE_PID_BOUNDARY_V2", require_quota_ancestor_seal=True,
+            boundary_host_proc_device=os.stat("/proc").st_dev)
     request_path = namespace.path / "root-request.json"
     need(len(wire(request)) <= 4 * MIB, "CALIBRATION_ROOT_REQUEST_METADATA_LIMIT")
     request_sha = publish(request_path, request)
@@ -1779,11 +2155,13 @@ def main(args, *, progress=None, custody_witness=None):
         report["source_unchanged"] = True
         need(inner.get("loop") == born_loop, "CALIBRATION_TERMINAL_LOOP_BIRTH_REBOUND")
         report["loop_finalization"] = loop_gone(born_loop)
-        capture = owned.capture_required_evidence(namespace, fin, output / "sealed-controls",
-            ["root-request.json", "producer-native.log", "loop-birth.json", "custody-request.json",
+        controls = ["root-request.json", "producer-native.log", "loop-birth.json", "custody-request.json",
              "root-worker-native.log", "private-broker-native.log", "broker-birth.json",
              "broker-birth.observed.json", "broker-bridge.json", "guardian-controller.json", "live-root-controller.json",
-             "private-broker-birth.json", "private-broker.observed.json"])
+             "private-broker-birth.json", "private-broker.observed.json"]
+        if request.get("require_quota_ancestor_seal") is True:
+            controls.append("quota-ancestor-seal.json")
+        capture = owned.capture_required_evidence(namespace, fin, output / "sealed-controls", controls)
         report["capture_manifest_sha256"] = capture.manifest_sha256
         report["cleanup"] = owned.cleanup_namespace(namespace, fin, capture)
         report["outer_after_cleanup"] = filesystem(parent)
@@ -1820,6 +2198,8 @@ def cli(*, progress=None):
     p.add_argument("--issuer-proc-root", type=Path, default=Path("/proc"))
     p.add_argument("--parent-filter-json", type=Path)
     p.add_argument("--parent-filter-sha256")
+    p.add_argument("--boundary-context-json", type=Path)
+    p.add_argument("--boundary-context-sha256")
     p.add_argument("--mode", choices=("capability", "bootstrap"))
     p.add_argument("--source-root", type=Path)
     p.add_argument("--source-sha")
@@ -1843,13 +2223,41 @@ def cli(*, progress=None):
         from scripts import rc6_native_namespace_filter as native_filter
         filter_receipt = native_filter.install_filter(source_binding={"source_sha": a.source_sha, "source_tree": a.source_tree},
             inherited=decode(parent_raw))
+        context = None
+        if a.boundary_context_json is not None or a.boundary_context_sha256 is not None:
+            need(a.boundary_context_json and a.boundary_context_sha256, "CALIBRATION_QUOTA_BOUNDARY_CONTEXT_REQUIRED")
+            context_raw = read(a.boundary_context_json, 2 * MIB)
+            need(digest(context_raw) == a.boundary_context_sha256, "CALIBRATION_QUOTA_BOUNDARY_CONTEXT_REBOUND")
+            context = decode(context_raw)
         positive = quota_probe(a.project, a.probe, a.outside, a.supervisor_pid, a.issuer_pid,
-            issuer_proc_root=a.issuer_proc_root)
+            issuer_proc_root=a.issuer_proc_root, boundary_context=context)
         positive["native_filter"] = filter_receipt
         print(wire(positive).decode().strip(), flush=True)
         return 0
     need(a.mode and a.source_root and a.source_sha and a.source_tree and a.namespace_receipt and a.output and a.binding_json,
          "CALIBRATION_EXPLICIT_CLI_BINDING_REQUIRED")
+    admission_path = os.environ.get("RC6_CALIBRATION_ADMISSION_JSON")
+    previous = decode(read(admission_path)) if admission_path else None
+    if type(previous) is dict and previous.get("schema") == "porota.rc6.capacity-diagnostic-admission.v2":
+        from scripts import rc6_material_pr_admission as controller
+        from scripts import rc6_privileged_custody as privileged
+        from scripts import rc6_private_pid_boundary as boundary
+        from scripts import rc6_development_checks as development
+        from scripts import rc6_authenticated_fixture_lifecycle as owned
+        context = controller.reauthenticate_diagnostic_revision(previous, repo=a.source_root)
+        binding = decode(read(a.binding_json))
+        claim = decode(read(a.namespace_receipt))
+        parent = owned.validate_consumer_receipt(claim, candidate_sha=a.source_sha, candidate_tree=a.source_tree)
+        need(claim["binding"] == binding, "CALIBRATION_NAMESPACE_BINDING_REBOUND")
+        source_pin(a.source_root, a.source_sha, a.source_tree)
+        code_hashes = {name:digest(read(a.source_root/name)) for name in CODE_MEMBERS}
+        witness = privileged.prove_custody(source=a.source_root, source_sha=a.source_sha,
+            source_tree=a.source_tree, code_hashes=code_hashes, parent=development.short_control_parent(a.source_root),
+            binding=binding, progress=None, boundary_revision=boundary.REVISION,
+            capture_parent=parent/"revision-custody-raw")
+        native_boundary = boundary.boundary_witness(witness, binding=binding)
+        return main(a, progress=progress, custody_witness=witness,
+            boundary_witness=native_boundary, revision_context=context)
     return main(a, progress=progress)
 
 

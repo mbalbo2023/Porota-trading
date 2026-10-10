@@ -46,6 +46,14 @@ PREPARATION_SCOPE={'locked_python_epochs':['311','312'],'installed_distribution_
     'pip_fetch_source_and_git_preparation_included':True}
 
 def workload_fingerprint(producer):
+    if producer == 'Horizon':
+        from scripts.rc6_cas_original_comparison import CONTRACT
+        return digest(canonical({'schema':'rc6.original-horizon-workload.v2',
+            'producer':producer,'original_contract':dict(CONTRACT),
+            'catalogs':2,'original_cuts':1202,'archive_limit_bytes':512*1024**2,
+            'maximum_dependency_depth':32,'contracted_retention_seconds':32400,
+            'recovery_margin_seconds':3600,'original_bytes_required':True,
+            'qualification_scope':'NATIVE_ORIGINAL_HORIZON_G5'}))
     if producer=='Horizon-private-original-cas':
         from scripts.rc6_cas_original_comparison import CONTRACT
         return digest(canonical({'schema':'rc6.private-original-cas-workload.v1',
@@ -236,7 +244,8 @@ def diagnostic_main(argv=None):
     parser.add_argument('--repo-root',type=Path,required=True);args=parser.parse_args(argv)
     os.umask(0o022);repo=safe_path(args.repo_root);previous=document(read(args.diagnostic_admission_json))
     from scripts import rc6_material_pr_admission as controller
-    need(previous.get('schema')=='porota.rc6.capacity-diagnostic-admission.v1'
+    need(previous.get('schema') in ('porota.rc6.capacity-diagnostic-admission.v1',
+        'porota.rc6.capacity-diagnostic-admission.v2')
         and previous.get('qualification_claimed') is False,'ISOLATED_CAPACITY_DIAGNOSTIC_ADMISSION_REQUIRED')
     authority=controller.admit_diagnostic(source_sha=previous['source_sha'],source_tree=previous['source_tree'],
         launch_receipt_url=previous['launch_receipt_url'],owner_session=previous['owner_session'],gate=previous['gate'])
@@ -265,7 +274,9 @@ def diagnostic_main(argv=None):
     if mode=='bootstrap':
         evidence=architectural.verify_capacity_capability_artifact(authority['capability_prerequisite'],
             source_sha=authority['source_sha'],source_tree=authority['source_tree'],
-            read_contract_sha256=authority['read_contract_sha256'],evidence_root=namespace.path/'capability-artifact')
+            read_contract_sha256=authority['read_contract_sha256'],evidence_root=namespace.path/'capability-artifact',
+            authenticated_branch=(authority['source']['wip_branch']
+                if authority.get('authorization_schema')=='porota.rc6.capacity-diagnostic-launch.v2' else None))
         save(controls/'capability-origin.json',evidence['origin']);save_raw(controls/'capability-receipt.json',evidence['receipt_raw'])
         command+=['--capability-receipt',str(controls/'capability-receipt.json'),
             '--capability-artifact-origin',str(controls/'capability-origin.json')]
@@ -279,8 +290,13 @@ def diagnostic_main(argv=None):
     try:
         native=run(command,cwd=repo,label='isolated-'+authority['gate'],limit=600 if mode=='capability' else 11400,
             env=environment,namespace=namespace)
-        fresh=controller.admit_diagnostic(source_sha=authority['source_sha'],source_tree=authority['source_tree'],
-            launch_receipt_url=authority['launch_receipt_url'],owner_session=authority['owner_session'],gate=authority['gate'])
+        need(gate_lease.native.managed_custody_closed(native['kernel']),
+            'DIAGNOSTIC_CAPTURE_READMISSION_REQUIRES_ACTUAL_OUTER_FIN')
+        fresh_arguments={key:authority[key] for key in
+            ('source_sha','source_tree','launch_receipt_url','owner_session','gate')}
+        if authority.get('authorization_schema')=='porota.rc6.capacity-diagnostic-launch.v2':
+            fresh_arguments['native_finished']=True
+        fresh=controller.admit_diagnostic(**fresh_arguments)
         need(controller.diagnostic_control_binding(fresh)==controller.diagnostic_control_binding(authority),
             'DIAGNOSTIC_SOURCE_OR_AUTHORITY_REBOUND_AFTER_OUTER_FIN')
         save(controls/'after-outer-fin-admission.json',fresh)
@@ -293,6 +309,10 @@ def diagnostic_main(argv=None):
             and terminal_custody.get('qualification_claimed') is False,
             'DIAGNOSTIC_INNER_LOOP_OR_NAMESPACE_UNKNOWN_OUTER_CLEANUP_VETO')
         required=[path.relative_to(namespace.path).as_posix() for path in sorted(output.rglob('*')) if path.is_file()]
+        if authority.get('authorization_schema')=='porota.rc6.capacity-diagnostic-launch.v2':
+            required.extend(path.relative_to(namespace.path).as_posix()
+                for path in sorted((namespace.path/'revision-custody-raw').rglob('*')) if path.is_file())
+            required.extend(('controls/admission.json','controls/after-outer-fin-admission.json'))
         required+=['isolated-'+authority['gate']+'.native.log']
         payload=Path(args.diagnostic_admission_json).parent/'diagnostic-payload';payload.mkdir(mode=0o700)
         destination=payload/'sealed'

@@ -188,7 +188,7 @@ def collect_preserved_heavy_inventory(output):
 def main():
     p=argparse.ArgumentParser();p.add_argument('--repo-root',required=True);p.add_argument('--source-sha',required=True)
     p.add_argument('--source-tree',required=True);p.add_argument('--output-root',required=True)
-    p.add_argument('--stage',choices=('focal','cheap','admission'),default='focal')
+    p.add_argument('--stage',choices=('focal','cheap','admission','reader-review'),default='focal')
     p.add_argument('--cheap-files-json')
     p.add_argument('--phase',choices=('collection','execution'),required=True);a=p.parse_args();os.umask(0o022)
     root=Path(a.repo_root)
@@ -202,7 +202,7 @@ def main():
     g['publish'](output/(a.phase+'.namespace.json'),g['canonical'](namespace))
     capability=g['restrict_inet_creation']()
     g['publish'](output/(a.phase+'.offline-capability.json'),g['canonical'](capability))
-    if a.stage == 'cheap':
+    if a.stage in ('cheap', 'reader-review'):
         # Load supplementary evidence code before the original Source pin.
         from scripts import rc6_archive_reader_review, rc6_cas_original_comparison
     initial=g['child_infrastructure_snapshot']()
@@ -220,6 +220,13 @@ def main():
             and all(type(name) is str and name.startswith('tests/test_') and name.endswith('.py') for name in selected_files),
             'CHEAP_STAGE_EXPLICIT_REVIEWED_FILES_REQUIRED')
         req(G1_HEAVY_FILES.isdisjoint(selected_files),'G1_CANNOT_ADMIT_MATERIAL_STRESS_CORPUS')
+    elif a.stage == 'reader-review':
+        # A distinct versioned evidence step. This corpus grants no G1/G6
+        # claim and preserves the same full-Git/157/fixtures/offline/FIN guards.
+        from scripts import rc6_archive_reader_review as readers
+        selected_files=json.loads(a.cheap_files_json or 'null')
+        req(type(selected_files) is list and selected_files == sorted(readers.CAS_REVIEW_MODULES),
+            'G5B_NATIVE_READER_EXACT_SOURCE_FOUR_MODULES_REQUIRED')
     req(all(name in before['files'] for name in selected_files),'FOCAL_LITERAL_SOURCE_FILE_MISSING')
     observations={'inet_socket_attempts':[],'subprocess_executable_counts':{},'actual_product_imports':[],
                   'unexpected_product_imports':[],'inet_socket_constructor_requests':[]}
@@ -285,7 +292,9 @@ def main():
     if source_validation['post_fin_source_validation_error'] is not None:
         phase_errors.append(source_validation['post_fin_source_validation_error']['reason'])
     if execution_coverage_exact is False:phase_errors.append('FOCAL_NATIVE_EXECUTION_COVERAGE_MISMATCH')
-    report={'schema':'rc6.material-focal-owned-phase.v1','scope':'SUPPLEMENTARY_FOCAL_ONLY_NOT_WHOLE_GOV',
+    report={'schema':'rc6.material-focal-owned-phase.v1','scope':
+        ('EXACT_ORIGINAL_CAS_REVIEW_COLLECTION_EXECUTION_NO_G1_OR_G6_CLAIM' if a.stage == 'reader-review'
+            else 'SUPPLEMENTARY_FOCAL_ONLY_NOT_WHOLE_GOV'),
         'source_sha':a.source_sha,'source_tree':a.source_tree,'pid':os.getpid(),'phase':a.phase,
         'items':observer.items,'pytest_exit_code':rc,'literal_focal_files':list(selected_files),'closure_before_fixture':closure,
         'execution_stage':a.stage,'complete_corpus':observer.corpus,'deferred_material_nodes':observer.deferred,
@@ -301,7 +310,7 @@ def main():
     execution_wire = g['canonical'](report)
     g['publish'](output/(a.phase+'.observations.json'), execution_wire)
     review_error = False
-    if a.stage == 'cheap' and a.phase == 'execution':
+    if a.stage in ('cheap', 'reader-review') and a.phase == 'execution':
         try:
             emit_cas_reviews(g, root, before, report, execution_wire, output, selected_files)
         except (OSError, ValueError, RuntimeError, KeyError, TypeError) as error:

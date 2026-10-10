@@ -38,7 +38,7 @@ CONTROL_BOUND = 2 * 1024**2
 PRIVATE_MOUNT_DIAGNOSTIC = "private-mount-setup.native.json"
 ACTOR_RAW_NAMES = ("root-success.native.log", "failure-before-drop.native.log", "root-hang.native.log", "nonroot-hang.native.log")
 ROOT_POSTSEAL_CONTROL_NAMES = frozenset(("custody-request.json", ".porota-generated-fixture-owner.json",
-    "private-broker.observed.json", "private-parent-seal.json"))
+    "private-broker.observed.json", "private-parent-seal.json", "quota-ancestor-seal.json", "probe-request.json"))
 ROOT_ACTOR_RUNPY_LAUNCHER = 'import runpy,sys; p=sys.argv.pop(1); runpy.run_path(p,run_name="__main__")'
 OPTIONAL_FAILURE_RAW_NAMES = ("private-broker-native.log", "root-success.native.log",
     "failure-before-drop.native.log", "root-hang.native.log", "nonroot-hang.native.log", PRIVATE_MOUNT_DIAGNOSTIC)
@@ -54,6 +54,17 @@ UNIT_PROCESS_EXIT_MESSAGE_ID = "98e322203f7a4ed290d09fe03c09fe15"
 PROBE_LIMIT = 60
 BRIDGE_DESCRIPTOR = 3
 BRIDGE_SHELL = 'exec 3<&0; exec 0</dev/null; exec "$@"'
+G5A_SCOPE = "G5A_EVIDENCE_ACQUISITION_ONLY"
+G5A_OUTER_SECONDS = 21600
+G5A_RAW_BOUND = 20 * 1024**3
+G5A_RAW_CHUNK = 512 * 1024
+G5A_STAT_FIELDS = frozenset(("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
+    "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns"))
+G5A_SERVICE_FIELDS = frozenset(("schema", "operation_scope", "source_root", "source_sha", "source_tree",
+    "code_hashes", "owner_uid", "owner_gid", "binding", "namespace_receipt", "issuer", "host_PID1",
+    "host_boundary", "runtime_seconds", "calibration_request", "calibration_request_sha256",
+    "require_quota_ancestor_seal", "boundary_revision", "boundary_host_proc_device", "resource_cpu",
+    "credential_metadata", "g5a_contract_sha256", "source_repo", "source_index", "source_index_sha256", "python311"))
 _AUTHORITY = object()
 _WITNESSES = {}
 
@@ -283,11 +294,12 @@ def guard_access_targets(properties):
     return properties
 
 
-def service_properties(control_root, runtime_seconds, *, probe_only=False):
+def service_properties(control_root, runtime_seconds, *, probe_only=False, resource_cpu=None, g5a=False):
     root = Path(control_root).absolute()
     require(root != Path("/") and not any(x.is_symlink() for x in (root, *root.parents)),
             "ROOT_CUSTODY_PRIVATE_CONTROL_ROOT_REQUIRED")
-    require(type(runtime_seconds) is int and 1 <= runtime_seconds <= 10800,
+    require(type(g5a) is bool and (not g5a or not probe_only), "G5A_CUSTODY_FIXED_QUOTA_DEVICE_ROLE_REQUIRED")
+    require(type(runtime_seconds) is int and 1 <= runtime_seconds <= (G5A_OUTER_SECONDS if g5a else 10800),
             "ROOT_CUSTODY_NATIVE_RUNTIME_BOUND_REQUIRED")
     require(type(probe_only) is bool, "ROOT_CUSTODY_FIXED_DEVICE_ROLE_REQUIRED")
     properties = ["RuntimeMaxSec=" + str(runtime_seconds), "TimeoutStopSec=2", "KillMode=control-group",
@@ -304,16 +316,28 @@ def service_properties(control_root, runtime_seconds, *, probe_only=False):
             "SystemCallErrorNumber=EPERM"]
     if probe_only:
         properties.extend(["PrivateDevices=yes", "ProtectHome=read-only"])
+    require(not g5a or resource_cpu is not None, "G5A_CUSTODY_SINGLETON_CPU_REQUIRED")
+    if resource_cpu is not None:
+        require((probe_only or g5a) and type(resource_cpu) is int and 0 <= resource_cpu < 8192,
+                "ROOT_CUSTODY_FIXED_COMPUTE_CPU_REQUIRED")
+        properties.extend(["CPUQuota=100%", "AllowedCPUs=" + str(resource_cpu),
+            "CPUAffinity=" + str(resource_cpu), "MemoryMax=1073741824",
+            "MemorySwapMax=0", "TasksMax=64"])
     return guard_access_targets(properties)
 
 
 def service_command(source, request_path, *, nonce, control_root, runtime_seconds,
-                    broker_mode, guard=False):
-    require(broker_mode in ("probe", "quota", "guard-hang"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
+                    broker_mode, guard=False, resource_cpu=None, credential_context=None,
+                    credential_owner_check=None, exported_source_context=None):
+    require(broker_mode in ("probe", "quota", "guard-hang", "g5a"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
     require(type(guard) is bool and guard == (broker_mode == "guard-hang"),
             "ROOT_CUSTODY_GUARD_DIAGNOSTIC_ROLE_REQUIRED")
+    require(resource_cpu is None or broker_mode in ("probe", "g5a"),
+            "ROOT_CUSTODY_COMPUTE_LIMITS_ONLY_ON_PROBE")
     source = Path(source).absolute()
-    require(source == ROOT, "ROOT_CUSTODY_FIXED_CHECKOUT_REQUIRED")
+    require((broker_mode == "g5a" and source != ROOT and exported_source_context is not None)
+        or (broker_mode != "g5a" and source == ROOT and exported_source_context is None),
+        "ROOT_CUSTODY_FIXED_CHECKOUT_REQUIRED")
     request_path = Path(request_path).absolute()
     require(request_path.parent == Path(control_root).absolute()
             and request_path.name in ("custody-request.json", "probe-request.json")
@@ -326,7 +350,24 @@ def service_command(source, request_path, *, nonce, control_root, runtime_second
     if broker_mode != "guard-hang":
         command.insert(4, "--quiet")
     command.extend("--property=" + value for value in service_properties(control_root, runtime_seconds,
-        probe_only=broker_mode != "quota"))
+        probe_only=broker_mode not in ("quota", "g5a"), resource_cpu=resource_cpu, g5a=broker_mode == "g5a"))
+    if broker_mode == "g5a":
+        from scripts import rc6_ephemeral_api_credential as credential
+        request, _, _ = _request(request_path, exported_source_context=exported_source_context)
+        _g5a_service_shape(request, exported_source_context=exported_source_context)
+        require(request["source_root"] == str(source), "G5A_CUSTODY_ACTUAL_EXPORTED_COMMAND_SOURCE_REBOUND")
+        require(request["runtime_seconds"] == runtime_seconds and request["resource_cpu"] == resource_cpu
+                and request["namespace_receipt"]["namespace_nonce"] == nonce,
+                "G5A_CUSTODY_LAUNCH_SOURCE_REQUEST_REBOUND")
+        metadata = credential.validate(credential_context, source_sha=request["source_sha"],
+            source_tree=request["source_tree"], binding=request["binding"], owner_check=credential_owner_check)
+        require(metadata == request["credential_metadata"], "G5A_CUSTODY_ORIGINAL_ISSUER_CREDENTIAL_REBOUND")
+        command.append("--property=" + credential.load_credential_property(credential_context,
+            source_sha=request["source_sha"], source_tree=request["source_tree"], binding=request["binding"],
+            owner_check=credential_owner_check))
+    else:
+        require(credential_context is None and credential_owner_check is None,
+                "ROOT_CUSTODY_CREDENTIAL_ONLY_IN_G5A_ROLE")
     if guard:
         # This changes only the owned startup diagnostic's log verbosity.
         # Broker/quota properties and every isolation restriction stay fixed.
@@ -350,7 +391,8 @@ UNIT_SERVICE_ONLY_KEYS = UNIT_PATH_KEYS | UNIT_OPAQUE_ADDITIVE_KEYS | frozenset(
     "RuntimeMaxSec", "TimeoutStopSec", "KillMode", "SendSIGKILL", "FinalKillSignal", "PrivateMounts",
     "ProtectSystem", "ProtectControlGroups", "NoNewPrivileges", "RestrictAddressFamilies", "RestrictNamespaces",
     "SystemCallErrorNumber", "SystemCallFilter", "LogLevelMax", "PrivateDevices", "ProtectHome",
-    "ProtectKernelTunables", "ProtectKernelModules", "ProtectKernelLogs", "RestrictSUIDSGID", "CapabilityBoundingSet", "Restart"))
+    "ProtectKernelTunables", "ProtectKernelModules", "ProtectKernelLogs", "RestrictSUIDSGID", "CapabilityBoundingSet", "Restart",
+    "CPUQuota", "AllowedCPUs", "CPUAffinity", "MemoryMax", "MemorySwapMax", "TasksMax", "LoadCredential"))
 
 
 def _unit_path_words(value):
@@ -558,8 +600,8 @@ def controller_snapshot(name, expected_runtime, *, request, mode):
     require("/proc/1" in unit.get("path_lists", {}).get("InaccessiblePaths", [])
             and not any("/proc/1/root" in value for value in properties.values()),
             "ROOT_CUSTODY_ACTUAL_SAFE_PID1_MASK_REQUIRED")
-    require(mode in ("probe", "quota", "guard-hang"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
-    if mode != "quota":
+    require(mode in ("probe", "quota", "guard-hang", "g5a"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
+    if mode not in ("quota", "g5a"):
         require(properties.get("PrivateDevices") in ("yes", "true", "1")
                 and properties.get("ProtectHome") == "read-only"
                 and os.stat("/dev").st_dev != host_boundary["device_number"],
@@ -582,6 +624,24 @@ def controller_snapshot(name, expected_runtime, *, request, mode):
             and exact_system_call_filter(properties.get("SystemCallFilter")),
             "ROOT_CUSTODY_ACTUAL_UNIT_PROPERTIES_REQUIRED")
     require(actor["capabilities"]["CapEff"] & (1 << 5), "ROOT_CUSTODY_PARENT_CAP_KILL_REQUIRED")
+    if request.get("resource_probe") is True:
+        require(mode == "probe" and properties.get("MemoryMax") == "1073741824"
+                and properties.get("MemorySwapMax") == "0" and properties.get("TasksMax") == "64"
+                and re.fullmatch(r"100(?:\.0+)?%", properties.get("CPUQuota", "")) is not None
+                and os.sched_getaffinity(0) == {request["resource_cpu"]},
+                "ROOT_CUSTODY_ACTUAL_COMPUTE_UNIT_LIMITS_REQUIRED")
+    if mode == "g5a":
+        _g5a_service_shape(request)
+        require(properties.get("MemoryMax") == "1073741824" and properties.get("MemorySwapMax") == "0"
+                and properties.get("TasksMax") == "64"
+                and re.fullmatch(r"100(?:\.0+)?%", properties.get("CPUQuota", "")) is not None
+                and properties.get("AllowedCPUs") == properties.get("CPUAffinity") == str(request["resource_cpu"])
+                and os.sched_getaffinity(0) == {request["resource_cpu"]}
+                and properties.get("LoadCredential") == _g5a_credential_value(request["credential_metadata"]),
+                "G5A_CUSTODY_ACTUAL_UNIT_RESOURCE_AND_CREDENTIAL_REQUIRED")
+        resource_limits = _g5a_kernel_resource_limits(request, actor)
+    else:
+        require("LoadCredential" not in properties, "ROOT_CUSTODY_ORIGINAL_ROLE_CREDENTIAL_FORBIDDEN")
     forbidden = sum(1 << number for number in (16, 17, 19, 22, 25, 30, 38, 39, 40))
     require(all(actor["capabilities"][key] & forbidden == 0 for key in ("CapPrm", "CapEff", "CapBnd")),
             "ROOT_CUSTODY_FOREIGN_PROCESS_AND_KERNEL_CAPABILITIES_FORBIDDEN")
@@ -591,7 +651,8 @@ def controller_snapshot(name, expected_runtime, *, request, mode):
             "host_boundary": host_boundary, "external_PID1_identity_pending_live_ACK": True,
             "systemd_guard_exists_before_guardian_exec": True,
             "ROOT_actor_boundary_certified": False,
-            "root_controller_claimed_by_metadata_only": False}
+            "root_controller_claimed_by_metadata_only": False,
+            **({"g5a_native_resource_limits": resource_limits} if mode == "g5a" else {})}
 
 
 def _manager(source):
@@ -606,34 +667,62 @@ def _write_control(path, value, owner_uid, owner_gid):
     os.chown(path, owner_uid, owner_gid, follow_symlinks=False)
 
 
-def _request(path, *, private=False):
+def _request(path, *, private=False, exported_source_context=None):
     from scripts import rc6_capacity_calibration as calibration
     raw = _read(path)
     value = calibration.decode(raw)
+    source = ROOT
+    if exported_source_context is not None:
+        require(not private and value.get("operation_scope") == G5A_SCOPE,
+            "G5A_CUSTODY_EXPORT_CONTEXT_ONLY_IN_NONROOT_ISSUER")
+        source = _g5a_exported_source(value, exported_source_context)
     require(value.get("schema") == "porota.rc6.root-custody-request.v1"
-            and value.get("source_root") == str(ROOT)
+            and value.get("source_root") == str(source)
             and type(value.get("owner_uid")) is int and value["owner_uid"] > 0
             and type(value.get("owner_gid")) is int and value["owner_gid"] > 0
             and value.get("code_hashes", {}).get(MANAGER_MEMBER) == MANAGER_SHA256
-            and value["code_hashes"].get(MEMBER) == sha256(_read(ROOT / MEMBER)),
+            and value["code_hashes"].get(MEMBER) == sha256(_read(source / MEMBER)),
             "ROOT_CUSTODY_AUTHENTIC_FIXED_REQUEST_REQUIRED")
     native_contract(value["source_sha"], value["source_tree"], value["code_hashes"])
+    g5a_role = value.get("operation_scope") == G5A_SCOPE
+    require("operation_scope" not in value or g5a_role, "G5A_CUSTODY_OPERATION_SCOPE_REQUIRED")
+    if g5a_role:
+        _g5a_service_shape(value, exported_source_context=exported_source_context)
+    elif "resource_probe" in value or "resource_cpu" in value:
+        require(value.get("resource_probe") is True
+                and type(value.get("resource_cpu")) is int
+                and 0 <= value["resource_cpu"] < 8192
+                and value.get("runtime_seconds") == 45
+                and value.get("binding", {}).get("producer") == "NATIVE_COMPUTE_RESOURCE_OBSERVATION",
+                "ROOT_CUSTODY_FIXED_COMPUTE_OBSERVATION_REQUEST_REQUIRED")
     host_pid1 = public_process_identity(value.get("host_PID1"))
     require(host_pid1["pid"] == 1 and host_pid1["uids"] == [0] * 4
             and host_pid1["boot_id"] == value["issuer"]["boot_id"],
             "ROOT_CUSTODY_EXTERNAL_PID1_IDENTITY_REBOUND")
     require_host_boundary(value.get("host_boundary"))
+    if g5a_role:
+        from scripts import rc6_g5a_native_runner as g5a_runner
+        members = g5a_runner.CODE_MEMBERS
+    else:
+        members = calibration.CODE_MEMBERS
     for member, expected in value["code_hashes"].items():
-        require(member in calibration.CODE_MEMBERS and sha256(_read(ROOT / member)) == expected,
+        require(member in members and sha256(_read(source / member)) == expected,
                 "ROOT_CUSTODY_EXACT_SOURCE_PROGRAM_REBOUND")
-    require(set(value["code_hashes"]) == set(calibration.CODE_MEMBERS),
+    require(set(value["code_hashes"]) == set(members),
             "ROOT_CUSTODY_SOURCE_PROGRAM_INCOMPLETE")
     # Root may read the runner-owned checkout, but must not trust Git's global
     # safe.directory or mutate its configuration to do so.
     previous = {key: os.environ.get(key) for key in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0")}
     try:
-        os.environ.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="safe.directory", GIT_CONFIG_VALUE_0=str(ROOT))
-        calibration.source_pin(ROOT, value["source_sha"], value["source_tree"])
+        repository = Path(value["source_repo"]) if g5a_role else ROOT
+        os.environ.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="safe.directory", GIT_CONFIG_VALUE_0=str(repository))
+        if g5a_role:
+            from scripts import rc6_material_horizon_producer as producer
+            index = _read(value["source_index"], 4 * 1024**2)
+            require(sha256(index) == value["source_index_sha256"], "G5A_CUSTODY_COMPLETE_SOURCE_INDEX_REBOUND")
+            producer.verify_source(repository, source, value["source_sha"], value["source_tree"], calibration.decode(index))
+        else:
+            calibration.source_pin(ROOT, value["source_sha"], value["source_tree"])
     finally:
         for key, old in previous.items():
             if old is None:
@@ -817,6 +906,15 @@ def _actor_observation(case, request):
         result["drop"] = calibration.drop_privileges(request["owner_uid"], request["owner_gid"],
             source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
         result["after_drop"] = kernel_process(os.getpid())
+    if case == "root-success" and request.get("resource_probe") is True:
+        from scripts import rc6_capacity_calibration as calibration
+        from scripts import rc6_product_resource_compatibility as resource_probe
+        result["drop"] = calibration.drop_privileges(request["owner_uid"], request["owner_gid"],
+            source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
+        result["after_drop"] = kernel_process(os.getpid())
+        result["compute_resource_observation"] = resource_probe.compute_probe_result(
+            source_sha=request["source_sha"], source_tree=request["source_tree"],
+            unit=unit_name(request["namespace_receipt"]["namespace_nonce"]))
     if case in ("root-hang", "nonroot-hang"):
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
     sys.stdout.buffer.write(wire(result))
@@ -836,7 +934,8 @@ def _broker_probe(request, namespace, manager, controller):
     for case in ("root-success", "failure-before-drop", "root-hang", "nonroot-hang"):
         manager["pre_capture_kernel_state"]()
         output = namespace / (case + ".native.log")
-        command = actor_command(case, namespace / "custody-request.json")
+        command = actor_command(case, namespace / ("probe-request.json"
+            if request.get("resource_probe") is True else "custody-request.json"))
         kernel = manager["managed_native_child"](command, ROOT, output,
             {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8"},
             1 if "hang" in case else 10, terminate_grace=2, progress_poll=5)
@@ -875,13 +974,15 @@ def _closed_private_broker_raw(manager, kernel, path, *, owner_uid, owner_gid):
     require(manager["managed_custody_closed"](kernel), "ROOT_CUSTODY_PRIVATE_BROKER_ACTUAL_FIN_REQUIRED")
     manager["pre_capture_kernel_state"]()
     path = Path(path).absolute()
-    require(path.name in ("private-broker-native.log", *ACTOR_RAW_NAMES) and type(owner_uid) is int and owner_uid > 0
+    require(path.name in ("private-broker-native.log", "private-pid-v2.native.log", "root-worker-native.log", *ACTOR_RAW_NAMES)
+            and type(owner_uid) is int and owner_uid > 0
             and type(owner_gid) is int and owner_gid > 0 and ".." not in path.parts
             and not any(p.is_symlink() for p in (path, *path.parents)), "ROOT_CUSTODY_PRIVATE_RAW_TARGET_INVALID")
     directory = os.open(path.parent, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
     descriptor = None
     try:
         from scripts import rc6_capacity_calibration as calibration
+        maximum = calibration.MAX_WORKER_WIRE if path.name == "root-worker-native.log" else CONTROL_BOUND
         parent = os.fstat(directory)
         require(parent.st_uid == owner_uid and parent.st_gid == owner_gid
                 and read_identity(parent) == read_identity(path.parent.lstat()),
@@ -891,7 +992,7 @@ def _closed_private_broker_raw(manager, kernel, path, *, owner_uid, owner_gid):
         require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
                 and before.st_uid in (os.geteuid(), owner_uid)
                 and before.st_gid in (os.getegid(), owner_gid)
-                and not stat.S_IMODE(before.st_mode) & 0o022 and before.st_size <= CONTROL_BOUND
+                and not stat.S_IMODE(before.st_mode) & 0o022 and before.st_size <= maximum
                 and before.st_dev == parent.st_dev
                 and calibration.descriptor_mount_id(descriptor) == calibration.descriptor_mount_id(directory)
                 and read_identity(before) == read_identity(path.lstat()),
@@ -906,12 +1007,12 @@ def _closed_private_broker_raw(manager, kernel, path, *, owner_uid, owner_gid):
                 "ROOT_CUSTODY_PRIVATE_RAW_TRANSFER_CHANGED")
         chunks, total = [], 0
         while True:
-            part = os.read(descriptor, min(65536, CONTROL_BOUND + 1 - total))
+            part = os.read(descriptor, min(65536, maximum + 1 - total))
             if not part:
                 break
             chunks.append(part)
             total += len(part)
-            require(total <= CONTROL_BOUND, "ROOT_CUSTODY_PRIVATE_RAW_BYTES_BOUND")
+            require(total <= maximum, "ROOT_CUSTODY_PRIVATE_RAW_BYTES_BOUND")
         require(total == transferred.st_size
                 and read_identity(transferred) == read_identity(os.fstat(descriptor))
                 == read_identity(path.lstat()) and read_identity(parent) == read_identity(path.parent.lstat()),
@@ -926,6 +1027,8 @@ def _closed_private_broker_raw(manager, kernel, path, *, owner_uid, owner_gid):
 def guardian_main(mode, request_path, name):
     require(os.getuid() == os.geteuid() == 0, "ROOT_CUSTODY_ACTUAL_ROOT_BROKER_REQUIRED")
     request, request_raw, namespace = _request(request_path)
+    require((mode == "g5a") == (request.get("operation_scope") == G5A_SCOPE),
+            "G5A_CUSTODY_EXPLICIT_UNIT_ROLE_REQUIRED")
     runtime = request["runtime_seconds"]
     _publish_unit_snapshot(name, namespace, request)
     controller = controller_snapshot(name, runtime, request=request, mode=mode)
@@ -970,6 +1073,10 @@ def guardian_main(mode, request_path, name):
                sys.executable, "-I", "-B", str(ROOT / MEMBER),
                "--private-init", mode, "--request", str(request_path), "--unit", name]
     mapping_state = {}
+    boundary_ledger = None
+    if mode == "probe" and request.get("boundary_revision") == "PRIVATE_PID_BOUNDARY_V2":
+        from scripts import rc6_private_pid_boundary as pid_boundary
+        boundary_ledger = pid_boundary.GuardianLedger(request, namespace, controller["actor"])
     def observe_private(stage, pid, entered, deadline, log_fd):
         live_issuer = public_kernel_process(request["issuer"]["pid"])
         require(live_issuer["start_ticks"] == request["issuer"]["start_ticks"]
@@ -978,6 +1085,8 @@ def guardian_main(mode, request_path, name):
                 and live_issuer["gids"] == [request["owner_gid"]] * 4
                 and live_issuer["namespace_pids"] == [live_issuer["pid"]],
                 "ROOT_CUSTODY_LIVE_ISSUER_DIED_OR_REBOUND")
+        if boundary_ledger is not None:
+            boundary_ledger.observe(mapping_state.get("mapping"))
         if mapping_state or not (namespace / "private-broker-birth.json").exists():
             return
         born = json.loads(_read(namespace / "private-broker-birth.json"))
@@ -1009,22 +1118,45 @@ def guardian_main(mode, request_path, name):
     finally:
         os.dup2(saved, 0)
         os.close(saved)
+        if boundary_ledger is not None:
+            boundary_ledger.close()
     raw = _closed_private_broker_raw(manager, kernel, log,
         owner_uid=request["owner_uid"], owner_gid=request["owner_gid"])
+    g5a_result = None
+    if mode == "g5a":
+        from scripts import rc6_capacity_calibration as calibration
+        g5a_result = calibration.decode(raw)
     require(type(mapping_state.get("pidfd")) is int, "ROOT_CUSTODY_NATIVE_PRIVATE_PIDFD_REQUIRED")
     poller = select.poll()
     poller.register(mapping_state["pidfd"], select.POLLIN | select.POLLHUP)
     try:
         require(bool(poller.poll(0)) and not Path("/proc/" + str(mapping_state["mapping"]["host_private_PID1"]["pid"])).exists(),
                 "ROOT_CUSTODY_PRIVATE_PID1_ACTUAL_REAP_REQUIRED")
+        if mode == "g5a":
+            g5a_result["root_worker_transfer"] = _g5a_transfer_closed_worker_raw(request=request,
+                result=g5a_result, manager=manager, private_broker_kernel=kernel,
+                mapping=mapping_state["mapping"], controller=controller, private_pidfd=mapping_state["pidfd"])
     finally:
         os.close(mapping_state["pidfd"])
     from scripts import rc6_capacity_calibration as calibration
-    result = calibration.decode(raw)
+    result = g5a_result if mode == "g5a" else calibration.decode(raw)
+    if boundary_ledger is not None:
+        evidence = result.get("private_pid_boundary_v2")
+        require(type(evidence) is dict, "ROOT_CUSTODY_PRIVATE_PID_V2_OBSERVATION_MISSING")
+        native_pre = [*boundary_ledger.native_controls, evidence["native_inherited_proc_control"]]
+        pid_boundary.validate_observation(evidence["observation"], request=request,
+            guardian_rows=boundary_ledger.rows, native_pre_controls=native_pre, bridge=bridge)
+        evidence.update(status="NATIVE_OBSERVATION_PROVED", request=request,
+            contract_sha256=pid_boundary.contract_sha256(), guardian_rows=boundary_ledger.rows,
+            native_pre_controls=native_pre, bridge=bridge)
+        evidence["negative_guards"] = pid_boundary.adversarial_rejections(evidence["observation"],
+            request=request, guardian_rows=boundary_ledger.rows, native_pre_controls=native_pre, bridge=bridge)
     result["external_guardian"] = {"controller": controller, "private_broker_kernel": kernel,
         "private_PID1_actual_mapping": mapping_state["mapping"], "private_PID1_native_pidfd_FIN": True,
         "private_broker_raw_sha256": sha256(raw), "original_manager_sha256": MANAGER_SHA256,
         "actual_root_FIN_closed": True, "root_phase_green": manager["managed_phase_green"](kernel)}
+    if mode == "g5a":
+        result["external_guardian"]["g5a_raw_transfer"] = result.pop("root_worker_transfer")
     sys.stdout.buffer.write(wire(result))
     sys.stdout.buffer.flush()
     return 0 if manager["managed_phase_green"](kernel) else 1
@@ -1187,7 +1319,7 @@ def _mountinfo_diagnostic(raw):
 
 def _prepare_private_mounts(request, *, mode, host_identity):
     """Fixed private bootstrap. No mount runs before SELF namespace checks."""
-    require(mode in ("probe", "quota"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
+    require(mode in ("probe", "quota", "g5a"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
     host_boundary = require_host_boundary(request["host_boundary"])
     require(os.getuid() == os.geteuid() == 0 and os.getpid() == 1
             and host_identity["uids"] == [0] * 4
@@ -1298,16 +1430,61 @@ def _seal_arguments(request):
             "control_root": request["namespace_receipt"]["path"]}
 
 
+def _prepare_quota_ancestor_mounts(request):
+    """Confine ROOT PID1 only after its fixed child has unshared mount state."""
+    from scripts import rc6_capacity_calibration as calibration
+    require(os.getuid() == os.geteuid() == 0 and os.getpid() == 1,
+            "ROOT_CUSTODY_QUOTA_ANCESTOR_FIXED_ROOT_PID1_REQUIRED")
+    private = os.stat("/proc/self/ns/mnt").st_ino
+    require(private != request["host_boundary"]["mount_namespace_inode"],
+            "ROOT_CUSTODY_QUOTA_ANCESTOR_HOST_MOUNT_VETO")
+    _mount_rows(_proc_text("/proc/self/mountinfo"))
+    libc, operations = ctypes.CDLL(None, use_errno=True), []
+    def operation(name, function, arguments):
+        operations.append(calibration.native_operation(name, function, arguments,
+            metadata={"scope": "PRIVATE_ROOT_QUOTA_CUSTODY_ANCESTOR", "host_mount_mutation_allowed": False}))
+    operation("quota_ancestor_dev_detach", libc.umount2, (b"/dev", 2))
+    operation("quota_ancestor_dev_tmpfs", libc.mount,
+              (b"tmpfs", b"/dev", b"tmpfs", ctypes.c_ulong(2 | 8), b"mode=0755,size=1048576"))
+    os.mkdir("/dev/pts", 0o755)
+    os.mknod("/dev/null", stat.S_IFCHR | 0o666, os.makedev(1, 3))
+    operation("quota_ancestor_devpts", libc.mount, (b"devpts", b"/dev/pts", b"devpts",
+              ctypes.c_ulong(11), b"newinstance,ptmxmode=0666,mode=0620,gid=5"))
+    root = request["namespace_receipt"]["path"]
+    descriptor = os.open(root, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        identity = _control_mount_identity(request, _mount_rows(_proc_text("/proc/self/mountinfo")), descriptor)
+        _mount_attribute(libc, -100, b"/", 0x8100, readonly=True, operations=operations)
+        rows = _mount_rows(_proc_text("/proc/self/mountinfo"))
+        require(all("ro" in row["options"] for row in rows), "ROOT_CUSTODY_QUOTA_ANCESTOR_READONLY_REQUIRED")
+        require(_control_mount_identity(request, rows, descriptor) == identity,
+                "ROOT_CUSTODY_QUOTA_ANCESTOR_CONTROL_REBOUND")
+        _mount_attribute(libc, descriptor, b"", 0x1000, readonly=False, operations=operations)
+    finally:
+        os.close(descriptor)
+    rows = _mount_rows(_proc_text("/proc/self/mountinfo"))
+    require(all("ro" in row["options"] or row["target"] == root for row in rows),
+            "ROOT_CUSTODY_QUOTA_ANCESTOR_FOREIGN_WRITABLE_MOUNT")
+    return {"operations": operations, "parent_mount_namespace_inode": private,
+            "host_mounts_modified": False, "child_mounts_modified": False}
+
+
 def private_init(mode, request_path, name):
     """Frozen bootstrap: no fixture, package backend or actor before sealing."""
     require(os.getuid() == os.geteuid() == 0 and os.getpid() == 1,
             "ROOT_CUSTODY_PRIVATE_BOOTSTRAP_PID1_REQUIRED")
     from scripts import rc6_capacity_calibration as calibration
     request, raw, namespace = _request(request_path, private=True)
+    require((mode == "g5a") == (request.get("operation_scope") == G5A_SCOPE),
+            "G5A_CUSTODY_EXPLICIT_PRIVATE_INIT_ROLE_REQUIRED")
     status = dict(line.split(":", 1) for line in _proc_text("/proc/self/status").splitlines() if ":" in line)
     host = kernel_process(int(status["Pid"].strip()))
     require(host["namespace_pids"] == [host["pid"], 1], "ROOT_CUSTODY_PRIVATE_BOOTSTRAP_HOST_MAPPING_REQUIRED")
     bridge = original_directory_bridge(request)
+    inherited_proc_control = None
+    if mode == "probe" and request.get("boundary_revision") == "PRIVATE_PID_BOUNDARY_V2":
+        from scripts import rc6_private_pid_boundary as pid_boundary
+        inherited_proc_control = pid_boundary.pre_namespace_controls(request, inherited_host_proc=True)
     mounts = _prepare_private_mounts(request, mode=mode, host_identity=host)
     _write_control(namespace / "private-broker-birth.json", {"binding": request["binding"],
         "request_sha256": sha256(raw), "host_private_PID1": host, "original_directory_bridge": bridge,
@@ -1319,13 +1496,15 @@ def private_init(mode, request_path, name):
         time.sleep(0.05)
     if mode == "probe":
         os.close(BRIDGE_DESCRIPTOR)
-    return broker_main(mode, request_path, name)
+    return broker_main(mode, request_path, name, inherited_proc_control=inherited_proc_control)
 
 
-def broker_main(mode, request_path, name):
+def broker_main(mode, request_path, name, *, inherited_proc_control=None):
     require(os.getuid() == os.geteuid() == 0 and os.getpid() == 1,
             "ROOT_CUSTODY_ACTUAL_PRIVATE_ROOT_PID1_REQUIRED")
     request, request_raw, namespace = _request(request_path, private=True)
+    require((mode == "g5a") == (request.get("operation_scope") == G5A_SCOPE),
+            "G5A_CUSTODY_EXPLICIT_BROKER_ROLE_REQUIRED")
     mapping = json.loads(_read(namespace / "private-broker.observed.json"))
     boundary = _private_identity(request, mapping)
     proof = json.loads(_read(namespace / "guardian-controller.json"))
@@ -1335,6 +1514,9 @@ def broker_main(mode, request_path, name):
                   "unit": name, "ROOT_actor_boundary_certified": True}
     manager = _manager(ROOT)
     before = manager["pre_capture_kernel_state"]()
+    if mode == "g5a":
+        return _g5a_broker(request, request_raw, namespace, name, manager, controller,
+                          proof=proof, mapping=mapping, boundary=boundary)
     if mode == "probe":
         from scripts import rc6_root_actor_seal as root_seal
         seal = root_seal.install_root_actor_seal(**_seal_arguments(request))
@@ -1351,6 +1533,21 @@ def broker_main(mode, request_path, name):
         result.update(namespace_setup_mounts_executed=True, quota_backing_mounts_attempted=False,
             root_actor_seal_probe_only=True, contract_revision_required=True,
             original_PROC_EACCES_equivalence_approved=False, proof_only_no_G0_qualification=True)
+        if request.get("boundary_revision") == "PRIVATE_PID_BOUNDARY_V2":
+            from scripts import rc6_private_pid_boundary as pid_boundary
+            from scripts import rc6_capacity_calibration as calibration
+            log = namespace / "private-pid-v2.native.log"
+            command = [sys.executable, "-I", "-B", "-c", ROOT_ACTOR_RUNPY_LAUNCHER,
+                str(ROOT / MEMBER), "--boundary-worker", "--request", str(request_path)]
+            kernel = manager["managed_native_child"](command, ROOT, log,
+                {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8"},
+                20, terminate_grace=2, progress_poll=5)
+            raw = _closed_private_broker_raw(manager, kernel, log,
+                owner_uid=request["owner_uid"], owner_gid=request["owner_gid"])
+            require(manager["managed_phase_green"](kernel), "ROOT_CUSTODY_PRIVATE_PID_V2_NATIVE_RED")
+            result["private_pid_boundary_v2"] = {"observation": calibration.decode(raw),
+                "kernel": kernel, "native_inherited_proc_control": inherited_proc_control,
+                "raw": {"path": log.name, "sha256": sha256(raw), "bytes": len(raw)}}
         sys.stdout.buffer.write(wire(result))
         sys.stdout.buffer.flush()
         return 0
@@ -1366,18 +1563,56 @@ def broker_main(mode, request_path, name):
                "--privileged-custody-proof", str(proof_path)]
     log = namespace / "root-worker-native.log"
     saved = os.dup(0)
+    seal_state = {}
+    def seal_ancestor(stage, pid, entered, deadline, log_fd):
+        if seal_state:
+            return
+        from scripts import rc6_root_actor_seal as root_seal
+        from scripts import rc6_capacity_calibration as calibration
+        parent_mount = os.stat("/proc/self/ns/mnt").st_ino
+        limit = min(deadline, time.monotonic() + 5)
+        while os.stat(f"/proc/{pid}/ns/mnt").st_ino == parent_mount:
+            require(time.monotonic() < limit, "ROOT_CUSTODY_SETUP_CHILD_MOUNT_UNSHARE_NOT_OBSERVED")
+            time.sleep(0.01)
+        child = kernel_process(pid)
+        require(child["parent_pid"] == 1 and child["cgroup"] == controller["private_PID1"]["local"]["cgroup"]
+                and child["pid_namespace_inode"] == controller["private_PID1"]["local"]["pid_namespace_inode"]
+                and child["uids"] == [0] * 4, "ROOT_CUSTODY_SETUP_CHILD_PRIVATE_BIRTH_REBOUND")
+        os.dup2(saved, 0)
+        os.close(saved)
+        seal_state["saved_closed"] = True
+        original_directory_bridge(request)
+        os.close(BRIDGE_DESCRIPTOR)
+        mount_receipt = _prepare_quota_ancestor_mounts(request)
+        details = os.fstat(log_fd)
+        require(stat.S_ISREG(details.st_mode) and details.st_nlink == 1
+                and read_identity(details) == read_identity(log.lstat()), "ROOT_CUSTODY_OWN_FIN_LOG_REBOUND")
+        owned_log = {"descriptor": log_fd,
+            "identity": [details.st_dev, details.st_ino, details.st_uid, details.st_gid, details.st_mode],
+            "mount_id": calibration.descriptor_mount_id(log_fd), "path": str(log)}
+        seal = root_seal.install_quota_custody_seal(**_seal_arguments(request), owned_fin_log=owned_log)
+        _write_control(namespace / "quota-ancestor-seal.json", seal, request["owner_uid"], request["owner_gid"])
+        seal_state.update(receipt=seal, mounts=mount_receipt, setup_child=child)
+        controller.update(quota_ancestor_sealed=True, root_actor_seal=seal)
     try:
         os.dup2(BRIDGE_DESCRIPTOR, 0)
         kernel = manager["managed_native_child"](command, ROOT, log,
             {key: os.environ[key] for key in ("PATH", "RUNNER_TOOL_CACHE", "LANG", "LC_ALL") if key in os.environ},
-            request["runtime_seconds"] - 20, terminate_grace=2, progress_poll=5)
+            request["runtime_seconds"] - 20, terminate_grace=2, progress_poll=5,
+            progress=seal_ancestor if request.get("require_quota_ancestor_seal") is True else None)
     finally:
-        os.dup2(saved, 0)
-        os.close(saved)
+        if not seal_state.get("saved_closed"):
+            os.dup2(saved, 0)
+            os.close(saved)
     require(manager["managed_custody_closed"](kernel), "ROOT_CUSTODY_QUOTA_WORKER_ACTUAL_FIN_REQUIRED")
     manager["pre_capture_kernel_state"]()
-    os.chown(log, request["owner_uid"], request["owner_gid"], follow_symlinks=False)
-    worker_raw = _read(log, 40 * 1024**2)
+    if request.get("require_quota_ancestor_seal") is True:
+        require(seal_state.get("receipt") is not None, "ROOT_CUSTODY_QUOTA_ANCESTOR_NOT_SEALED")
+        worker_raw = _closed_private_broker_raw(manager, kernel, log,
+            owner_uid=request["owner_uid"], owner_gid=request["owner_gid"])
+    else:
+        os.chown(log, request["owner_uid"], request["owner_gid"], follow_symlinks=False)
+        worker_raw = _read(log, 40 * 1024**2)
     from scripts import rc6_capacity_calibration as calibration
     worker = calibration.decode(worker_raw)
     require(worker.get("schema") == "porota.rc6.capacity-worker.v1", "ROOT_CUSTODY_CALIBRATION_WORKER_WIRE_REQUIRED")
@@ -1386,6 +1621,7 @@ def broker_main(mode, request_path, name):
     relay = {"schema": "porota.rc6.capacity-custody-worker.v1", "request_sha256": worker["request_sha256"],
         "root_worker": {"path": log.name, "sha256": sha256(worker_raw), "bytes": len(worker_raw)},
         "privileged_controller": {"controller": controller, "worker_kernel": kernel,
+            "quota_ancestor_seal": seal_state.get("receipt"), "quota_ancestor_mounts": seal_state.get("mounts"),
             "manager_sha256": MANAGER_SHA256, "root_native_FIN_closed": True,
             "root_native_phase_green": manager["managed_phase_green"](kernel)}}
     sys.stdout.buffer.write(wire(relay))
@@ -1425,11 +1661,28 @@ def verify_live_controller(proof, request):
     guardian = _external_controller(proof, request, mapping)
     boundary = proof.get("pid_boundary")
     require(type(boundary) is dict, "ROOT_CUSTODY_ACTUAL_PRIVATE_BROKER_PROOF_REQUIRED")
-    broker = kernel_process(1)
-    require(broker == boundary["local"] and mapping["host_private_PID1"] == boundary["host"]
+    current = kernel_process(os.getpid())
+    seal = proof.get("quota_ancestor_seal")
+    if request.get("require_quota_ancestor_seal") is True:
+        from scripts import rc6_root_actor_seal as root_seal
+        root_seal.validate_evidence(seal, owner_uid=request["owner_uid"], owner_gid=request["owner_gid"],
+            source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
+        require(seal.get("scope") == "ROOT_QUOTA_CUSTODY_ONLY" and seal["identity"]["pid"] == 1
+                and seal["identity"]["pid_namespace_inode"] == current["pid_namespace_inode"],
+                "ROOT_CUSTODY_QUOTA_ANCESTOR_NATIVE_SEAL_REQUIRED")
+        broker = public_kernel_process(1)
+        broker["pid_namespace_inode"] = current["pid_namespace_inode"]
+        stable = set(broker) - {"capabilities"}
+        require(all(broker[key] == boundary["local"][key] for key in stable)
+                and broker["capabilities"] == seal["capabilities"]
+                and int(broker["start_ticks"]) == seal["identity"]["start_ticks"],
+                "ROOT_CUSTODY_QUOTA_SEALED_PARENT_BIRTH_REBOUND")
+    else:
+        broker = kernel_process(1)
+        require(broker == boundary["local"], "ROOT_CUSTODY_PRIVATE_ROOT_BROKER_KERNEL_REBOUND")
+    require(mapping["host_private_PID1"] == boundary["host"]
             and broker["uids"] == [0] * 4 and broker["pid_namespace_inode"] != guardian["pid_namespace_inode"],
             "ROOT_CUSTODY_PRIVATE_ROOT_BROKER_KERNEL_REBOUND")
-    current = kernel_process(os.getpid())
     require(current["parent_pid"] == 1 and current["cgroup"] == broker["cgroup"]
             and current["pid_namespace_inode"] == broker["pid_namespace_inode"]
             and current["pid_namespace_inode"] != guardian["pid_namespace_inode"],
@@ -2099,18 +2352,19 @@ def unit_snapshot_origin(raw, *, unit, binding):
 
 
 def prove_custody(*, source, source_sha, source_tree, code_hashes, parent, binding, progress,
-                  capture_parent=None):
+                  capture_parent=None, boundary_revision=None, resource_probe=False):
     context = {}
     try:
         return _prove_custody(source=source, source_sha=source_sha, source_tree=source_tree,
             code_hashes=code_hashes, parent=parent, binding=binding, progress=progress,
-            capture_parent=capture_parent, failure_context=context)
+            capture_parent=capture_parent, failure_context=context, boundary_revision=boundary_revision,
+            resource_probe=resource_probe)
     except (ValueError, OSError, KeyError, TypeError) as error:
         raise CustodyFailure(error, _preserve_failure(context, capture_parent, error)) from error
 
 
 def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, binding, progress,
-                  capture_parent=None, failure_context):
+                  capture_parent=None, failure_context, boundary_revision=None, resource_probe=False):
     from scripts import rc6_authenticated_fixture_lifecycle as owned
     from scripts import rc6_capacity_calibration as calibration
     require(os.getuid() == os.geteuid() > 0, "ROOT_CUSTODY_NONROOT_ISSUER_REQUIRED")
@@ -2126,6 +2380,8 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
     require(libc.prctl(4, 0, 0, 0, 0) == 0 and libc.prctl(3, 0, 0, 0, 0) == 0,
             "ROOT_CUSTODY_ISSUER_DUMPABLE_ZERO_REQUIRED")
     native_contract(source_sha, source_tree, code_hashes)
+    require(boundary_revision in (None, "PRIVATE_PID_BOUNDARY_V2"), "ROOT_CUSTODY_UNKNOWN_BOUNDARY_REVISION")
+    require(type(resource_probe) is bool, "ROOT_CUSTODY_FIXED_COMPUTE_OBSERVATION_ROLE_REQUIRED")
     namespace = owned.create_namespace(parent, binding)
     failure_context["namespace"] = namespace
     failure_context["boot_id"] = issuer["boot_id"]
@@ -2151,12 +2407,17 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
             "ROOT_CUSTODY_PID1_GUARD_TIMEOUT_NOT_NATIVE")
     guardian_fin = _closed_service(state)
     request["runtime_seconds"] = 45
+    if resource_probe:
+        request.update(resource_probe=True, resource_cpu=min(os.sched_getaffinity(0)))
+    if boundary_revision is not None:
+        request.update(boundary_revision=boundary_revision, boundary_host_proc_device=os.stat("/proc").st_dev)
     probe_request = namespace.path / "probe-request.json"
     calibration.publish(probe_request, request)
     # Actors use the original immutable request for identity; the broker's
     # guard is longer than the fixed four-case probe, never a payload producer.
     probe = service_command(source, probe_request, nonce=namespace.nonce, control_root=namespace.path,
-                            runtime_seconds=45, broker_mode="probe")
+                            runtime_seconds=45, broker_mode="probe",
+                            resource_cpu=request.get("resource_cpu"))
     state = {}
     kernel, fin = execute_service(namespace, probe, cwd=source,
         environ={key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL") if key in os.environ},
@@ -2180,6 +2441,9 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
                 PRIVATE_MOUNT_DIAGNOSTIC,
                 "private-broker-birth.json", "private-broker.observed.json", "private-parent-seal.json",
                 *[row["raw"]["path"] for row in result["cases"]]]
+    if boundary_revision is not None:
+        expected.extend(["private-pid-v2.native.log", "boundary-before.challenge.json",
+            "boundary-before.guardian.json", "boundary-after.challenge.json", "boundary-after.guardian.json"])
     destination = (namespace.path.parent / ("root-custody-" + namespace.nonce)
                    if capture_parent is None else Path(capture_parent))
     require(destination.is_absolute() and ".." not in destination.parts
@@ -2196,7 +2460,506 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
         "cleanup": cleanup, "proof_only_no_G0_qualification": True,
         "contract_revision_required": True, "original_PROC_EACCES_equivalence_approved": False,
         "real_orders_sent": 0}
+    if resource_probe:
+        compute = result["cases"][0]["actor"].get("compute_resource_observation")
+        require(type(compute) is dict and compute.get("source_sha") == source_sha
+                and compute.get("source_tree") == source_tree
+                and compute.get("representative_full_workload") is False,
+                "ROOT_CUSTODY_ACTUAL_COMPUTE_OBSERVATION_REQUIRED")
+        accepted.update(resource_probe=True, compute_resource_observation=compute)
     return CustodyWitness(_AUTHORITY, accepted, binding)
+
+
+def _g5a_credential_value(metadata):
+    from scripts import rc6_ephemeral_api_credential as credential
+    require(type(metadata) is dict and set(metadata) ==
+        {"pid", "start_ticks", "boot_id", "uid", "gid", "fd", "name", "bytes"}
+        and metadata.get("name") == credential.NAME
+        and all(type(metadata.get(key)) is int and metadata[key] > 0 for key in ("pid", "uid", "gid", "bytes"))
+        and type(metadata.get("fd")) is int and metadata["fd"] > 2
+        and metadata["bytes"] <= credential.MAXIMUM_BYTES
+        and type(metadata.get("start_ticks")) is int and metadata["start_ticks"] > 0
+        and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", str(metadata.get("boot_id", ""))),
+        "G5A_CUSTODY_OPAQUE_CREDENTIAL_METADATA_REQUIRED")
+    return credential.NAME + ":/proc/" + str(metadata["pid"]) + "/fd/" + str(metadata["fd"])
+
+
+def _g5a_kernel_resource_limits(request, actor):
+    name = unit_name(request["namespace_receipt"]["namespace_nonce"])
+    require(actor["cgroup"] == "0::/system.slice/" + name, "G5A_CUSTODY_RESOURCE_CGROUP_REBOUND")
+    root = Path("/sys/fs/cgroup/system.slice") / name
+    raw = {key: _proc_text(root / key).strip() for key in
+        ("cpu.max", "memory.max", "memory.swap.max", "pids.max", "cpuset.cpus.effective")}
+    cpu = raw["cpu.max"].split()
+    require(len(cpu) == 2 and all(value.isdecimal() for value in cpu)
+        and int(cpu[0]) == int(cpu[1]) > 0 and raw["memory.max"] == "1073741824"
+        and raw["memory.swap.max"] == "0" and raw["pids.max"] == "64"
+        and raw["cpuset.cpus.effective"] == str(request["resource_cpu"]),
+        "G5A_CUSTODY_ACTUAL_KERNEL_1CPU_1GIB_SWAP0_TASKS64_REQUIRED")
+    return {"schema": "rc6.g5a-live-own-cgroup-resource-limits.v1", "cgroup": actor["cgroup"],
+        "kernel_readback": raw, "scope": G5A_SCOPE, "qualification_claimed": False}
+
+
+def _g5a_exported_source(request, context):
+    from scripts import rc6_g5a_source_context as export
+    observation = export.validate_export(context, source_repo=request["source_repo"], source_root=request["source_root"],
+        index=request["source_index"], source_sha=request["source_sha"], source_tree=request["source_tree"],
+        binding=request["binding"])
+    require(observation["source_repo"] == str(ROOT) and observation["source_root"] != str(ROOT)
+        and observation["index_sha256"] == request["source_index_sha256"],
+        "G5A_CUSTODY_REGISTERED_EXPORTED_SOURCE_REBOUND")
+    return Path(observation["source_root"])
+
+
+def _g5a_service_shape(request, *, exported_source_context=None):
+    """A public shape is never an owner approval, ROOT admission or G5 GREEN."""
+    from scripts import rc6_g5_contract as g5
+    require(type(request) is dict and set(request) == G5A_SERVICE_FIELDS and request.get("operation_scope") == G5A_SCOPE
+        and request.get("schema") == "porota.rc6.root-custody-request.v1"
+        and request.get("g5a_contract_sha256") == g5.CONTRACT_SHA256
+        and request.get("require_quota_ancestor_seal") is True
+        and request.get("boundary_revision") == "PRIVATE_PID_BOUNDARY_V2"
+        and request.get("runtime_seconds") == G5A_OUTER_SECONDS - 10
+        and "resource_probe" not in request and "mode" not in request
+        and type(request.get("resource_cpu")) is int and 0 <= request["resource_cpu"] < 8192
+        and request.get("binding", {}).get("producer") == "Horizon-private-original-cas",
+        "G5A_CUSTODY_EXACT_PROPOSED_SOURCE_SCOPE_REQUIRED")
+    root = Path(request["namespace_receipt"]["path"])
+    source = ROOT if exported_source_context is None else _g5a_exported_source(request, exported_source_context)
+    require(request.get("calibration_request") == str(root / "root-request.json")
+        and re.fullmatch(r"[0-9a-f]{64}", str(request.get("calibration_request_sha256", "")))
+        and request.get("source_root") == str(source)
+        and request.get("python311") == sys.executable,
+        "G5A_CUSTODY_FIXED_EXECUTED_SOURCE_AND_INTERPRETER_REQUIRED")
+    for name in ("source_repo", "source_index", "python311"):
+        value = request.get(name)
+        require(type(value) is str and value == os.path.abspath(value) and ".." not in Path(value).parts
+            and not any(node.is_symlink() for node in (Path(value), *Path(value).parents)),
+            "G5A_CUSTODY_LITERAL_SOURCE_INPUT_REQUIRED")
+    require(Path(request["source_repo"]) != source and Path(request["source_index"]).name == "source.index.json"
+        and re.fullmatch(r"[0-9a-f]{64}", str(request.get("source_index_sha256", ""))),
+        "G5A_CUSTODY_FULL_GIT_REPOSITORY_AND_INDEX_REQUIRED")
+    metadata = request.get("credential_metadata")
+    _g5a_credential_value(metadata)
+    require(all(metadata[key] == request["issuer"][key] for key in ("pid", "boot_id"))
+        and str(metadata["start_ticks"]) == request["issuer"]["start_ticks"]
+        and metadata["uid"] == request["owner_uid"] and metadata["gid"] == request["owner_gid"],
+        "G5A_CUSTODY_ORIGINAL_CREDENTIAL_ISSUER_REQUIRED")
+    return request
+
+
+def g5a_service_request(request, *, namespace_receipt, source, code_hashes, resource_cpu, credential_metadata,
+                       exported_source_context=None):
+    from scripts import rc6_g5a_native_runner as runner
+    runner.validate_request_shape(request)
+    require(exported_source_context is not None, "G5A_CUSTODY_NATIVE_EXPORT_CONTEXT_REQUIRED")
+    _g5a_exported_source(request, exported_source_context)
+    require(request["namespace_receipt"] == namespace_receipt and request["source_root"] == str(Path(source).absolute())
+        and request["code_hashes"] == code_hashes, "G5A_CUSTODY_ROOT_HANDOFF_REBOUND")
+    value = {"schema": "porota.rc6.root-custody-request.v1", "operation_scope": G5A_SCOPE,
+        "source_root": str(Path(source).absolute()), "source_sha": request["source_sha"],
+        "source_tree": request["source_tree"], "code_hashes": code_hashes,
+        "owner_uid": request["owner_uid"], "owner_gid": request["owner_gid"], "binding": request["binding"],
+        "namespace_receipt": namespace_receipt, "issuer": issuer_snapshot(kernel_process(os.getpid())),
+        "host_PID1": public_kernel_process(1), "host_boundary": host_boundary_snapshot(),
+        "runtime_seconds": G5A_OUTER_SECONDS - 10,
+        "calibration_request": str(Path(namespace_receipt["path"]) / "root-request.json"),
+        "calibration_request_sha256": sha256(wire(request)), "require_quota_ancestor_seal": True,
+        "boundary_revision": request["boundary_revision"], "boundary_host_proc_device": request["boundary_host_proc_device"],
+        "resource_cpu": resource_cpu, "credential_metadata": credential_metadata,
+        **{key: request[key] for key in ("g5a_contract_sha256", "source_repo", "source_index", "source_index_sha256", "python311")}}
+    require(all(value[key] == request[key] for key in ("issuer", "host_PID1", "host_boundary")),
+        "G5A_CUSTODY_LIVE_ROOT_REQUEST_ISSUER_HOST_REBOUND")
+    return _g5a_service_shape(value, exported_source_context=exported_source_context)
+
+
+class _G5AReadonlyGithub:
+    """Only the private ROOT broker owns this temporary client after exec birth."""
+    def __init__(self, token, *, deadline):
+        import urllib.request
+        from scripts.porota_artifact_http import RemoveAuthorizationRedirect
+        require(type(token) is bytearray and 0 < len(token) <= 65536 and time.monotonic() < deadline,
+                "G5A_CUSTODY_ACTUAL_TRANSIENT_CREDENTIAL_REQUIRED")
+        self.token = token
+        self.deadline = deadline
+        self.opener = urllib.request.build_opener(RemoveAuthorizationRedirect())
+
+    def _open(self, path, *, artifact_id=None):
+        import urllib.error
+        import urllib.request
+        from scripts import rc6_g5_contract as g5
+        require(self.opener is not None and type(self.token) is bytearray and bool(self.token),
+                "G5A_CUSTODY_ROOT_API_CLIENT_CLOSED")
+        if artifact_id is None:
+            path = g5._oracle_api_path(path)
+        else:
+            require(type(artifact_id) is int and artifact_id > 0
+                and path == "/actions/artifacts/" + str(artifact_id) + "/zip",
+                "G5A_CUSTODY_SOURCE_FIXED_ZIP_ENDPOINT_REQUIRED")
+        remaining = self.deadline - time.monotonic()
+        require(remaining > 0, "G5A_CUSTODY_ROOT_API_DEADLINE_EXCEEDED")
+        token = self.token.decode("ascii", errors="strict")
+        require(re.fullmatch(r"[A-Za-z0-9_.-]+", token), "G5A_CUSTODY_ROOT_API_CREDENTIAL_FORMAT_REQUIRED")
+        request = urllib.request.Request("https://api.github.com/repos/mbalbo2023/Porota-trading" + path,
+            headers={"Authorization": "Bearer " + token, "X-GitHub-Api-Version": "2022-11-28",
+                     "Accept": "application/vnd.github+json"}, method="GET")
+        try:
+            return self.opener.open(request, timeout=min(30, remaining))
+        except urllib.error.HTTPError as error:
+            raise ValueError("G5A_CUSTODY_ROOT_API_HTTP_" + str(error.code)) from None
+        except urllib.error.URLError:
+            raise ValueError("G5A_CUSTODY_ROOT_API_TRANSPORT_FAILED") from None
+        finally:
+            request.remove_header("Authorization")
+            token = None
+
+    def request(self, path):
+        with self._open(path) as response:
+            raw = response.read(4 * 1024**2 + 1)
+        require(len(raw) <= 4 * 1024**2 and time.monotonic() < self.deadline,
+                "G5A_CUSTODY_ROOT_API_METADATA_OR_DEADLINE_BOUND")
+        from scripts import rc6_capacity_calibration as calibration
+        return calibration.decode(raw)
+
+    def open_artifact(self, identifier, *, deadline):
+        require(type(identifier) is int and identifier > 0 and deadline <= self.deadline,
+                "G5A_CUSTODY_ROOT_API_ARTIFACT_FIXED_BOUND_REQUIRED")
+        return self._open("/actions/artifacts/" + str(identifier) + "/zip", artifact_id=identifier)
+
+    def close(self):
+        from scripts import rc6_ephemeral_api_credential as credential
+        credential.wipe(self.token)
+        self.token, self.opener = None, None
+
+
+def _g5a_closed_raw_reference(manager, kernel, path, *, request):
+    """Hash the actual closed log in bounded memory; never infer framed completeness."""
+    require(manager["managed_custody_closed"](kernel), "G5A_CUSTODY_RAW_ACTUAL_WORKER_FIN_REQUIRED")
+    manager["pre_capture_kernel_state"]()
+    path = Path(path).absolute()
+    namespace = Path(request["namespace_receipt"]["path"])
+    require(path == namespace / "root-worker-native.log" and not any(node.is_symlink() for node in (path, *path.parents)),
+            "G5A_CUSTODY_RAW_EXACT_OWN_PATH_REQUIRED")
+    directory = os.open(namespace, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    descriptor = None
+    try:
+        from scripts import rc6_capacity_calibration as calibration
+        parent = os.fstat(directory)
+        require(stat.S_ISDIR(parent.st_mode) and parent.st_uid == request["owner_uid"]
+            and parent.st_gid == request["owner_gid"] and stat.S_IMODE(parent.st_mode) == 0o700
+            and read_identity(parent) == read_identity(namespace.lstat()), "G5A_CUSTODY_RAW_PARENT_REBOUND")
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK, dir_fd=directory)
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and stat.S_IMODE(before.st_mode) == 0o600
+            and (before.st_uid, before.st_gid) in ((os.geteuid(), os.getegid()), (request["owner_uid"], request["owner_gid"]))
+            and before.st_dev == parent.st_dev and 0 < before.st_size <= G5A_RAW_BOUND
+            and read_identity(before) == read_identity(path.lstat())
+            and calibration.descriptor_mount_id(descriptor) == calibration.descriptor_mount_id(directory),
+            "G5A_CUSTODY_RAW_PIN_OR_PHYSICAL_BOUND_REQUIRED")
+        total, digest = 0, hashlib.sha256()
+        while True:
+            part = os.read(descriptor, G5A_RAW_CHUNK)
+            if not part: break
+            total += len(part); digest.update(part)
+            require(total <= G5A_RAW_BOUND, "G5A_CUSTODY_RAW_BYTES_EXCEEDED")
+        require(total == before.st_size and read_identity(before) == read_identity(os.fstat(descriptor))
+            == read_identity(path.lstat()) and read_identity(parent) == read_identity(namespace.lstat()),
+            "G5A_CUSTODY_RAW_CHANGED_AFTER_FIN")
+        # The separately authenticated outer ROOT guardian owns the eventual
+        # post-FIN transfer. No large RAW is decoded or duplicated here.
+        return {"path": path.name, "bytes": total, "sha256": digest.hexdigest(),
+            "identity": calibration.identity(os.fstat(descriptor)), "actual_worker_FIN": True,
+            "stream_complete_verified": False, "outer_source_parser_required": True,
+            "G5_GREEN": False, "qualification_claimed": False}
+    finally:
+        if descriptor is not None: os.close(descriptor)
+        os.close(directory)
+
+
+def _g5a_validate_transfer_relay(result, *, request, mapping, controller, manager):
+    """Strict Source relay decoding only; this function grants no native custody."""
+    from scripts import rc6_capacity_calibration as calibration
+    require(type(result) is dict and result.get("schema") == "porota.rc6.g5a-custody-worker.v1"
+        and result.get("operation_scope") == G5A_SCOPE and result.get("binding") == request["binding"]
+        and result.get("source_sha") == request["source_sha"] and result.get("source_tree") == request["source_tree"]
+        and result.get("request_sha256") == request["calibration_request_sha256"]
+        and result.get("G5_GREEN") is False and result.get("qualification_claimed") is False
+        and result.get("required_raw_complete") is False, "G5A_GUARDIAN_EXACT_SOURCE_RELAY_REQUIRED")
+    custody = result.get("privileged_controller")
+    require(type(custody) is dict and custody.get("manager_sha256") == MANAGER_SHA256
+        and custody.get("root_native_FIN_closed") is True
+        and manager["managed_custody_closed"](custody.get("worker_kernel")),
+        "G5A_GUARDIAN_ORIGINAL_ROOT_WORKER_FIN_REQUIRED")
+    broker = custody.get("controller")
+    require(type(broker) is dict and broker.get("external") == controller and broker.get("unit") == controller["unit"]
+        and type(broker.get("private_PID1")) is dict
+        and broker["private_PID1"].get("host") == mapping["host_private_PID1"]
+        and mapping.get("guardian_actual") == controller["actor"]
+        and mapping.get("binding") == request["binding"] and mapping.get("source_sha") == request["source_sha"]
+        and mapping.get("source_tree") == request["source_tree"], "G5A_GUARDIAN_ROOT_BROKER_SOURCE_BIRTH_REBOUND")
+    private = broker["private_PID1"].get("local")
+    require(type(private) is dict and private.get("pid") == 1 and private.get("namespace_pids") == [1]
+        and private.get("uids") == private.get("gids") == [0] * 4
+        and private.get("cgroup") == mapping["host_private_PID1"]["cgroup"] == controller["actor"]["cgroup"]
+        and private.get("boot_id") == mapping["host_private_PID1"]["boot_id"] == request["issuer"]["boot_id"]
+        and private.get("start_ticks") == mapping["host_private_PID1"]["start_ticks"]
+        and private.get("pid_namespace_inode") == mapping["host_private_PID1"]["pid_namespace_inode"]
+        and private["pid_namespace_inode"] != request["issuer"]["pid_namespace_inode"],
+        "G5A_GUARDIAN_PRIVATE_ROOT_PID_CGROUP_BOOT_REBOUND")
+    close = custody.get("oracle_close")
+    require(custody.get("oracle_closed_before_seal") is True and type(close) is dict
+        and set(close) == {"status", "worker_birth", "paired_close_receipt_sha256"}
+        and close.get("status") == "ACTUAL_KERNEL_FIFO_DESCRIPTORS_CLOSED"
+        and re.fullmatch(r"[0-9a-f]{64}", str(close.get("paired_close_receipt_sha256", ""))),
+        "G5A_GUARDIAN_SOURCE_PAIRED_ORACLE_CLOSE_REQUIRED")
+    child, kernel = close["worker_birth"], custody["worker_kernel"]
+    require(type(child) is dict and child.get("pid") == kernel["pid"] and child["pid"] > 1
+        and child.get("parent_pid") == 1 and child.get("namespace_pids") == [child["pid"]]
+        and child.get("uids") == child.get("gids") == [0] * 4
+        and all(child.get(key) == private[key] for key in ("cgroup", "boot_id", "pid_namespace_inode"))
+        and kernel.get("supervisor_pid") == kernel.get("supervisor_native_tid") == 1
+        and type(kernel.get("supervisor_kernel_identity_before_spawn")) is dict
+        and set(kernel["supervisor_kernel_identity_before_spawn"]) == {"Pid", "Tgid", "Uid"}
+        and kernel["supervisor_kernel_identity_before_spawn"]["Pid"] == "1"
+        and kernel["supervisor_kernel_identity_before_spawn"]["Tgid"] == "1"
+        and kernel["supervisor_kernel_identity_before_spawn"]["Uid"].split() == ["0"] * 4,
+        "G5A_GUARDIAN_ORIGINAL_WORKER_PID_CGROUP_REBOUND")
+    command = ["unshare", "--mount", "--propagation", "private", "--", "/bin/sh", "-c", BRIDGE_SHELL,
+        "rc6-opaque-own-fd", request["python311"], "-I", "-B", str(ROOT / MEMBER),
+        "--g5a-root-worker", "--request", request["calibration_request"],
+        "--privileged-custody-proof", str(Path(request["namespace_receipt"]["path"]) / "live-root-controller.json")]
+    require(kernel.get("command") == command, "G5A_GUARDIAN_SOURCE_FIXED_WORKER_COMMAND_REBOUND")
+    seal = custody.get("quota_ancestor_seal")
+    require(broker.get("quota_ancestor_sealed") is True and broker.get("root_actor_seal") == seal
+        and type(seal) is dict and seal.get("scope") == "ROOT_QUOTA_CUSTODY_ONLY",
+        "G5A_GUARDIAN_QUOTA_ANCESTOR_SOURCE_SEAL_REQUIRED")
+    from scripts import rc6_root_actor_seal as root_seal
+    root_seal.validate_evidence(seal, owner_uid=request["owner_uid"], owner_gid=request["owner_gid"],
+        source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
+    ref = result.get("root_worker")
+    require(type(ref) is dict and ref.get("path") == "root-worker-native.log"
+        and type(ref.get("bytes")) is int and 0 < ref["bytes"] <= G5A_RAW_BOUND
+        and re.fullmatch(r"[0-9a-f]{64}", str(ref.get("sha256", "")))
+        and ref.get("actual_worker_FIN") is True and ref.get("stream_complete_verified") is False
+        and ref.get("outer_source_parser_required") is True and ref.get("G5_GREEN") is False
+        and ref.get("qualification_claimed") is False and type(ref.get("identity")) is dict
+        and set(ref["identity"]) == G5A_STAT_FIELDS
+        and all(type(value) is int for value in ref["identity"].values())
+        and ref["identity"]["st_uid"] == ref["identity"]["st_gid"] == 0
+        and stat.S_ISREG(ref["identity"]["st_mode"]) and stat.S_IMODE(ref["identity"]["st_mode"]) == 0o600
+        and ref["identity"]["st_nlink"] == 1 and ref["identity"]["st_size"] == ref["bytes"],
+        "G5A_GUARDIAN_EXACT_ROOT600_SOURCE_RAW_REFERENCE_REQUIRED")
+    return ref
+
+
+def _g5a_transfer_pinned_io(path, *, namespace, expected_identity, expected_bytes, expected_sha256,
+                             owner_uid, owner_gid, maximum):
+    """Owned descriptor IO only. Caller separately proves ROOT and both FINs."""
+    from scripts import rc6_capacity_calibration as calibration
+    path, namespace = Path(path).absolute(), Path(namespace).absolute()
+    require(path.parent == namespace and path.name in ("root-worker-native.log", "live-root-controller.json",
+        "quota-ancestor-seal.json", "g5a-owner-oracle.json") and type(owner_uid) is int and owner_uid > 0
+        and type(owner_gid) is int and owner_gid > 0 and type(maximum) is int and 0 < maximum <= G5A_RAW_BOUND
+        and type(expected_bytes) is int and 0 < expected_bytes <= maximum
+        and type(expected_sha256) is str and re.fullmatch(r"[0-9a-f]{64}", expected_sha256)
+        and not any(node.is_symlink() for node in (path, *path.parents)), "G5A_GUARDIAN_OWN_FIXED_TRANSFER_PATH_REQUIRED")
+    directory = os.open(namespace, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    descriptor = None
+    try:
+        parent = os.fstat(directory)
+        require(stat.S_ISDIR(parent.st_mode) and parent.st_uid == owner_uid and parent.st_gid == owner_gid
+            and stat.S_IMODE(parent.st_mode) == 0o700 and read_identity(parent) == read_identity(namespace.lstat()),
+            "G5A_GUARDIAN_TRANSFER_PARENT_REBOUND")
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC | os.O_NONBLOCK,
+            dir_fd=directory)
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and stat.S_IMODE(before.st_mode) == 0o600
+            and before.st_size == expected_bytes and before.st_dev == parent.st_dev
+            and calibration.identity(before) == expected_identity == calibration.identity(path.lstat())
+            and calibration.descriptor_mount_id(descriptor) == calibration.descriptor_mount_id(directory),
+            "G5A_GUARDIAN_TRANSFER_ALL11_SOURCE_INODE_REBOUND")
+        digest, total = hashlib.sha256(), 0
+        while True:
+            chunk = os.read(descriptor, min(G5A_RAW_CHUNK, maximum + 1 - total))
+            if not chunk: break
+            total += len(chunk); digest.update(chunk)
+            require(total <= maximum, "G5A_GUARDIAN_TRANSFER_RAW_BYTES_EXCEEDED")
+        require(total == expected_bytes and digest.hexdigest() == expected_sha256
+            and expected_identity == calibration.identity(os.fstat(descriptor)) == calibration.identity(path.lstat())
+            and read_identity(parent) == read_identity(namespace.lstat()), "G5A_GUARDIAN_TRANSFER_SHA_OR_ALL11_CHANGED")
+        os.fchown(descriptor, owner_uid, owner_gid)
+        after = os.fstat(descriptor)
+        immutable = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_blocks", "st_atime_ns", "st_mtime_ns")
+        require(all(getattr(before, key) == getattr(after, key) for key in immutable)
+            and (after.st_uid, after.st_gid) == (owner_uid, owner_gid)
+            and calibration.identity(after) == calibration.identity(path.lstat())
+            and read_identity(parent) == read_identity(namespace.lstat()), "G5A_GUARDIAN_TRANSFER_POST_CHOWN_REBOUND")
+        return {"path": path.name, "bytes": total, "sha256": digest.hexdigest(),
+            "identity_before": expected_identity, "identity_after": calibration.identity(after),
+            "stream_complete_verified": False, "G5_GREEN": False, "qualification_claimed": False}
+    finally:
+        if descriptor is not None: os.close(descriptor)
+        os.close(directory)
+
+
+def _g5a_transfer_closed_worker_raw(*, request, result, manager, private_broker_kernel, mapping,
+                                   controller, private_pidfd):
+    require(os.getresuid() == os.getresgid() == (0, 0, 0) and len(os.listdir("/proc/self/task")) == 1,
+        "G5A_GUARDIAN_ACTUAL_ROOT_TRANSFER_ROLE_REQUIRED")
+    _g5a_service_shape(request)
+    actual = kernel_process(os.getpid())
+    require(actual == controller["actor"] and actual["parent_pid"] == 1
+        and actual["cgroup"] == "0::/system.slice/" + unit_name(request["namespace_receipt"]["namespace_nonce"])
+        and actual["pid_namespace_inode"] == request["issuer"]["pid_namespace_inode"],
+        "G5A_GUARDIAN_LIVE_HOST_CONTROLLER_BIRTH_REBOUND")
+    require(manager["managed_custody_closed"](private_broker_kernel)
+        and private_broker_kernel.get("supervisor_pid") == os.getpid()
+        and mapping["host_private_PID1"]["parent_pid"] == private_broker_kernel["pid"],
+        "G5A_GUARDIAN_ACTUAL_PRIVATE_BROKER_FIN_REQUIRED")
+    echild = manager["pre_capture_kernel_state"]()
+    require(echild.get("kernel_echild_verified") is True, "G5A_GUARDIAN_PRE_TRANSFER_KERNEL_ECHILD_REQUIRED")
+    require(type(private_pidfd) is int and os.readlink("/proc/self/fd/" + str(private_pidfd)) == "anon_inode:[pidfd]",
+        "G5A_GUARDIAN_ORIGINAL_PRIVATE_PIDFD_REQUIRED")
+    poller = select.poll(); poller.register(private_pidfd, select.POLLIN | select.POLLHUP)
+    require(bool(poller.poll(0)) and not Path("/proc/" + str(mapping["host_private_PID1"]["pid"])).exists(),
+        "G5A_GUARDIAN_NATIVE_PRIVATE_PID1_FIN_REQUIRED")
+    ref = _g5a_validate_transfer_relay(result, request=request, mapping=mapping, controller=controller, manager=manager)
+    namespace = Path(request["namespace_receipt"]["path"])
+    transfer = _g5a_transfer_pinned_io(namespace / ref["path"], namespace=namespace,
+        expected_identity=ref["identity"], expected_bytes=ref["bytes"], expected_sha256=ref["sha256"],
+        owner_uid=request["owner_uid"], owner_gid=request["owner_gid"], maximum=G5A_RAW_BOUND)
+    transfer.update(actual_root_worker_FIN_verified=True, actual_private_PID1_FIN_verified=True,
+        actual_original_private_broker_FIN_verified=True, guardian_kernel_echild=echild,
+        Source_relay_sha256=sha256(wire(result)), fixed_controls=[])
+    from scripts import rc6_capacity_calibration as calibration
+    for name in ("live-root-controller.json", "quota-ancestor-seal.json", "g5a-owner-oracle.json"):
+        path = namespace / name
+        raw = _read(path, CONTROL_BOUND)
+        before = path.lstat()
+        require(before.st_uid == before.st_gid == 0 and stat.S_IMODE(before.st_mode) == 0o600,
+            "G5A_GUARDIAN_FIXED_CONTROL_ROOT_ORIGIN_REQUIRED")
+        document = calibration.decode(raw)
+        if name == "live-root-controller.json":
+            require(document.get("schema") == "porota.rc6.root-custody-controller-birth.v1"
+                and document.get("source_sha") == request["source_sha"] and document.get("source_tree") == request["source_tree"]
+                and document.get("binding") == request["binding"] and document.get("controller") == controller
+                and document.get("guardian_native_mapping") == mapping
+                and document.get("pid_boundary") == result["privileged_controller"]["controller"]["private_PID1"]
+                and document.get("calibration_request_sha256") == request["calibration_request_sha256"],
+                "G5A_GUARDIAN_ROOT_CONTROLLER_CONTROL_REBOUND")
+        elif name == "quota-ancestor-seal.json":
+            require(document == result["privileged_controller"]["quota_ancestor_seal"],
+                "G5A_GUARDIAN_ROOT_QUOTA_SEAL_CONTROL_REBOUND")
+        else:
+            require(document.get("schema") == "rc6.g5a-root-owner-oracle.v2" and document.get("source_sha") == request["source_sha"]
+                and document.get("source_tree") == request["source_tree"] and document.get("binding") == request["binding"]
+                and document.get("contract_sha256") == request["g5a_contract_sha256"]
+                and document.get("broker_birth") == result["privileged_controller"]["controller"]["private_PID1"]["local"]
+                and document.get("directory") == str(namespace / "g5a-owner-oracle")
+                and re.fullmatch(r"[0-9a-f]{64}", str(document.get("nonce", ""))),
+                "G5A_GUARDIAN_ROOT_ORACLE_METADATA_CONTROL_REBOUND")
+        transfer["fixed_controls"].append(_g5a_transfer_pinned_io(path, namespace=namespace,
+            expected_identity=calibration.identity(before), expected_bytes=len(raw), expected_sha256=sha256(raw),
+            owner_uid=request["owner_uid"], owner_gid=request["owner_gid"], maximum=CONTROL_BOUND))
+    return transfer
+
+
+def _g5a_broker(request, request_raw, namespace, name, manager, controller, *, proof, mapping, boundary):
+    from scripts import rc6_capacity_calibration as calibration
+    from scripts import rc6_ephemeral_api_credential as credential
+    from scripts import rc6_g5_contract as g5
+    from scripts import rc6_g5a_native_runner as runner
+    from scripts import rc6_root_actor_seal as root_seal
+    _g5a_service_shape(request)
+    root_raw = _read(request["calibration_request"], 4 * 1024**2)
+    require(sha256(root_raw) == request["calibration_request_sha256"], "G5A_CUSTODY_ROOT_REQUEST_BYTES_REBOUND")
+    root_request = calibration.decode(root_raw)
+    runner.validate_request_shape(root_request)
+    require(all(root_request[key] == request[key] for key in
+        ("source_sha", "source_tree", "source_root", "code_hashes", "binding", "issuer", "host_PID1", "host_boundary",
+         "namespace_receipt", "source_repo", "source_index", "source_index_sha256", "python311", "g5a_contract_sha256")),
+        "G5A_CUSTODY_ROOT_SOURCE_HANDOFF_REBOUND")
+    runner.validate_source_inputs(root_request)
+    live_proof = {**proof, "pid_boundary": boundary, "guardian_native_mapping": mapping,
+                  "calibration_request_sha256": request["calibration_request_sha256"]}
+    proof_path = namespace / "live-root-controller.json"
+    _write_control(proof_path, live_proof, 0, 0)
+    root_request["original_request_sha256"] = request["calibration_request_sha256"]
+    trusted = g5.observe_trusted_api_controller(root_request, live_proof, role="broker")
+    oracle = g5.RootOwnerOracle.start(namespace / "g5a-owner-oracle", trusted_controller=trusted)
+    _write_control(namespace / "g5a-owner-oracle.json", oracle.metadata, 0, 0)
+    command = ["unshare", "--mount", "--propagation", "private", "--", "/bin/sh", "-c", BRIDGE_SHELL,
+        "rc6-opaque-own-fd", request["python311"], "-I", "-B", str(ROOT / MEMBER),
+        "--g5a-root-worker", "--request", request["calibration_request"], "--privileged-custody-proof", str(proof_path)]
+    log, saved, seal_state = namespace / "root-worker-native.log", os.dup(0), {}
+    def prepare_and_seal(stage, pid, entered, deadline, log_fd):
+        if seal_state.get("receipt") is not None: return
+        birth_limit = min(deadline, time.monotonic() + 5)
+        parent_mount = os.stat("/proc/self/ns/mnt").st_ino
+        while os.stat(f"/proc/{pid}/ns/mnt").st_ino == parent_mount:
+            require(time.monotonic() < birth_limit, "G5A_CUSTODY_EXEC_WORKER_MOUNT_BIRTH_NOT_OBSERVED")
+            time.sleep(0.01)
+        child = kernel_process(pid)
+        oracle.bind_worker(child)
+        token = credential.read_once(unit=name, expected_bytes=request["credential_metadata"]["bytes"],
+            source_sha=request["source_sha"], source_tree=request["source_tree"], binding=request["binding"],
+            controller_proof=live_proof, controller_request=root_request,
+            role=credential.BROKER_ORACLE_ROLE, worker_birth=child)
+        client = None
+        try:
+            api_deadline = min(deadline, time.monotonic() + runner.TRUSTED_API_SECONDS)
+            client = _G5AReadonlyGithub(token, deadline=api_deadline)
+            while not oracle.done:
+                oracle.serve_one(client, deadline=api_deadline)
+            require(oracle.done, "G5A_CUSTODY_AUTHENTIC_ORACLE_CLOSE_REQUIRED")
+            seal_state["oracle_close"] = oracle.finish_close(deadline=api_deadline)
+        finally:
+            if client is not None: client.close()
+            credential.wipe(token)
+            oracle.close()
+        seal_state["oracle_closed_before_seal"] = True
+        os.dup2(saved, 0); os.close(saved); seal_state["saved_closed"] = True
+        original_directory_bridge(request); os.close(BRIDGE_DESCRIPTOR)
+        mounts = _prepare_quota_ancestor_mounts(request)
+        details = os.fstat(log_fd)
+        require(stat.S_ISREG(details.st_mode) and details.st_nlink == 1
+            and read_identity(details) == read_identity(log.lstat()), "G5A_CUSTODY_ORIGINAL_FIN_LOG_REBOUND")
+        os.fchmod(log_fd, 0o600)
+        details = os.fstat(log_fd)
+        require(read_identity(details) == read_identity(log.lstat()) and stat.S_IMODE(details.st_mode) == 0o600,
+            "G5A_CUSTODY_ORIGINAL_FIN_LOG_MODE_REBOUND")
+        owned_log = {"descriptor": log_fd,
+            "identity": [details.st_dev, details.st_ino, details.st_uid, details.st_gid, details.st_mode],
+            "mount_id": calibration.descriptor_mount_id(log_fd), "path": str(log)}
+        seal = root_seal.install_quota_custody_seal(**_seal_arguments(request), owned_fin_log=owned_log)
+        _write_control(namespace / "quota-ancestor-seal.json", seal, 0, 0)
+        seal_state.update(receipt=seal, mounts=mounts, setup_child=child)
+        controller.update(quota_ancestor_sealed=True, root_actor_seal=seal)
+    try:
+        os.dup2(BRIDGE_DESCRIPTOR, 0)
+        kernel = manager["managed_native_child"](command, ROOT, log,
+            {key: os.environ[key] for key in ("PATH", "RUNNER_TOOL_CACHE", "LANG", "LC_ALL") if key in os.environ},
+            request["runtime_seconds"] - 20, terminate_grace=2, progress_poll=5, progress=prepare_and_seal)
+    finally:
+        if not seal_state.get("saved_closed"):
+            os.dup2(saved, 0); os.close(saved)
+        if not oracle.closed: oracle.close()
+    require(manager["managed_custody_closed"](kernel), "G5A_CUSTODY_ORIGINAL_ROOT_WORKER_FIN_REQUIRED")
+    reference = _g5a_closed_raw_reference(manager, kernel, log, request=request)
+    green = manager["managed_phase_green"](kernel)
+    require(not green or seal_state.get("receipt") is not None, "G5A_CUSTODY_ANCESTOR_SEAL_REQUIRED")
+    relay = {"schema": "porota.rc6.g5a-custody-worker.v1", "operation_scope": G5A_SCOPE,
+        "request_sha256": request["calibration_request_sha256"], "binding": request["binding"],
+        "source_sha": request["source_sha"], "source_tree": request["source_tree"], "root_worker": reference,
+        "G5_GREEN": False, "qualification_claimed": False, "required_raw_complete": False,
+        "privileged_controller": {"controller": controller, "worker_kernel": kernel,
+            "quota_ancestor_seal": seal_state.get("receipt"), "quota_ancestor_mounts": seal_state.get("mounts"),
+            "oracle_closed_before_seal": seal_state.get("oracle_closed_before_seal") is True,
+            "oracle_close": seal_state.get("oracle_close"),
+            "manager_sha256": MANAGER_SHA256, "root_native_FIN_closed": True,
+            "root_native_phase_green": green}}
+    sys.stdout.buffer.write(wire(relay)); sys.stdout.buffer.flush()
+    return 0 if green else 1
 
 
 def quota_service_request(request, *, namespace_receipt, source, code_hashes):
@@ -2209,15 +2972,21 @@ def quota_service_request(request, *, namespace_receipt, source, code_hashes):
         # The original outer ceiling includes PID1's TERM2 and final reap.
         "runtime_seconds": (300 if request["mode"] == "capability" else 10800) - 10,
         "calibration_request": str(Path(namespace_receipt["path"]) / "root-request.json"),
+        "require_quota_ancestor_seal": request.get("require_quota_ancestor_seal") is True,
+        "boundary_revision": request.get("boundary_revision"),
+        "boundary_host_proc_device": request.get("boundary_host_proc_device"),
         "calibration_request_sha256": sha256(wire(request))}
 
 
 def cli():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--guardian", choices=("probe", "quota", "guard-hang"))
-    parser.add_argument("--private-init", choices=("probe", "quota"))
-    parser.add_argument("--broker", choices=("probe", "quota", "guard-hang"))
+    parser.add_argument("--guardian", choices=("probe", "quota", "guard-hang", "g5a"))
+    parser.add_argument("--private-init", choices=("probe", "quota", "g5a"))
+    parser.add_argument("--broker", choices=("probe", "quota", "guard-hang", "g5a"))
     parser.add_argument("--actor-case", choices=("root-success", "failure-before-drop", "root-hang", "nonroot-hang"))
+    parser.add_argument("--boundary-worker", action="store_true")
+    parser.add_argument("--g5a-root-worker", action="store_true")
+    parser.add_argument("--privileged-custody-proof", type=Path)
     parser.add_argument("--request", type=Path)
     parser.add_argument("--unit")
     parser.add_argument("--journal-unit")
@@ -2225,6 +2994,14 @@ def cli():
     parser.add_argument("--journal-invocation")
     parser.add_argument("--systemd-query", choices=("manager", "version", "package", "binaries"))
     args = parser.parse_args()
+    if args.g5a_root_worker:
+        require(args.request is not None and args.privileged_custody_proof is not None
+            and not any((args.guardian, args.private_init, args.broker, args.actor_case, args.boundary_worker,
+                args.unit, args.journal_unit, args.journal_boot, args.journal_invocation, args.systemd_query)),
+            "G5A_CUSTODY_SOURCE_FIXED_ROOT_WORKER_ROLE_REQUIRED")
+        from scripts import rc6_g5a_native_runner as runner
+        return runner.root_worker(args.request, privileged_custody_proof=args.privileged_custody_proof)
+    require(args.privileged_custody_proof is None, "ROOT_CUSTODY_ORIGINAL_ROLE_PROOF_ARGUMENT_FORBIDDEN")
     if args.systemd_query:
         require(not any((args.guardian, args.private_init, args.broker, args.actor_case, args.request,
                          args.unit, args.journal_unit, args.journal_boot, args.journal_invocation)),
@@ -2236,6 +3013,21 @@ def cli():
         return (journal_query_worker(args.journal_unit, args.journal_boot) if args.journal_invocation is None
                 else journal_query_worker(args.journal_unit, args.journal_boot, args.journal_invocation))
     require(args.request is not None, "ROOT_CUSTODY_FIXED_REQUEST_REQUIRED")
+    if args.boundary_worker:
+        require(not any((args.guardian, args.private_init, args.broker, args.actor_case, args.unit)),
+                "ROOT_CUSTODY_BOUNDARY_OBSERVER_FIXED_ROLE_REQUIRED")
+        request, _, namespace = _request(args.request, private=True)
+        require(request.get("boundary_revision") == "PRIVATE_PID_BOUNDARY_V2", "ROOT_CUSTODY_BOUNDARY_REVISION_REQUIRED")
+        from scripts import rc6_root_actor_seal as root_seal
+        from scripts import rc6_capacity_calibration as calibration
+        from scripts import rc6_private_pid_boundary as pid_boundary
+        parent = json.loads(_read(namespace / "private-parent-seal.json"))
+        root_seal.install_root_actor_seal(**_seal_arguments(request), inherited=parent)
+        calibration.drop_privileges(request["owner_uid"], request["owner_gid"],
+            source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
+        sys.stdout.buffer.write(wire(pid_boundary.observe_nonroot(request)))
+        sys.stdout.buffer.flush()
+        return 0
     if args.actor_case:
         request, _, _ = _request(args.request, private=True)
         _actor_observation(args.actor_case, request)

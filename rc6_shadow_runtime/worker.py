@@ -147,7 +147,9 @@ class ShadowRuntime:
         kwargs.setdefault("history_database", history if history.exists() else None)
         kwargs.setdefault("archive_root", shadow_archive_root(database))
         kwargs.setdefault("archive_maximum_bytes", shadow_archive_maximum_bytes())
-        kwargs.setdefault("archive_format", "COMPONENT_V3")
+        # Proposed candidate V2 dispatch; contract acceptance and artifact
+        # qualification are enforced by the release gates before deployment.
+        kwargs.setdefault("archive_format", "COMPONENT_V4")
         return cls(database, **kwargs)
 
     def configuration_fingerprint(self, as_of, *, capacity_policy=None):

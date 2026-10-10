@@ -113,6 +113,19 @@ def test_normal_horizon_peak_cannot_authorize_private_comparison_storage(tmp_pat
 REASON = 'HORIZON_ALL1202_PHYSICAL_MODEL_NO_VERIFICADO_BEFORE_MATERIAL'
 
 
+def test_horizon_comparison_identity_preserves_original_schedule_and_is_not_big():
+    from scripts.rc6_cas_original_comparison import CONTRACT
+    expected = carrier.digest(carrier.canonical({
+        'schema':'rc6.original-horizon-workload.v2','producer':'Horizon',
+        'original_contract':dict(CONTRACT),'catalogs':2,'original_cuts':1202,
+        'archive_limit_bytes':512*1024**2,'maximum_dependency_depth':32,
+        'contracted_retention_seconds':32400,'recovery_margin_seconds':3600,
+        'original_bytes_required':True,'qualification_scope':'NATIVE_ORIGINAL_HORIZON_G5'}))
+    assert carrier.workload_fingerprint('Horizon') == expected
+    assert expected != carrier.workload_fingerprint('BIG')
+    assert expected != carrier.workload_fingerprint('Horizon-private-original-cas')
+
+
 @pytest.mark.parametrize('gate', ['Horizon', 'G5'])
 def test_partial_closed_samples_cannot_admit_the_original_horizon(gate):
     with pytest.raises(ValueError, match=REASON):

@@ -47,13 +47,16 @@ jobs:
           CANDIDATE_TREE="$(git rev-parse HEAD^{tree})"
           CONTROL_ROOT="$RUNNER_TEMP/rc6-g7-owner-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           VERIFIED="$RUNNER_TEMP/rc6-g7-verified-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          WRITER_BINDING="$RUNNER_TEMP/rc6-g5b-writer-binding-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
           python3 -I -B scripts/rc6_material_pr_admission.py \
             --source-sha "$CANDIDATE_SHA" --source-tree "$CANDIDATE_TREE" --gate predeploy --control-root "$CONTROL_ROOT"
           python3 -I -B scripts/rc6_architectural_gates.py \
             --source-sha "$CANDIDATE_SHA" --source-tree "$CANDIDATE_TREE" --target-gate G7 \
             --admission-json "$CONTROL_ROOT/admission.json" \
-            --evidence-root "$RUNNER_TEMP/rc6-g7-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --json-out "$VERIFIED"
+            --evidence-root "$RUNNER_TEMP/rc6-g7-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --json-out "$VERIFIED" \
+            --writer-binding-out "$WRITER_BINDING"
           echo "RC6_G7_VERIFIED_ADMISSION=$VERIFIED" >> "$GITHUB_ENV"
+          echo "RC6_G5B_WRITER_BINDING=$WRITER_BINDING" >> "$GITHUB_ENV"
           echo "RC6_G7_OWNER_ADMISSION=$CONTROL_ROOT/admission.json" >> "$GITHUB_ENV"
           echo 'RC6_G7_ALL_PREDECESSOR_PAYLOADS=GREEN'
           echo 'DEPLOY_OWNER=NOT_ACQUIRED'
@@ -427,7 +430,8 @@ jobs:
             --manifest-out "${POROTA_PREDEPLOY_TMP}/porota-artifact-manifest.json" \
             --source-manifest POROTA_SOURCE_PROVENANCE.json \
             --image-inspect "${POROTA_PREDEPLOY_TMP}/porota-image-inspect.json" \
-            --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE"
+            --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE" \
+            --g5-writer-binding "$RC6_G5B_WRITER_BINDING"
           python - <<'PY'
           import os
           import json

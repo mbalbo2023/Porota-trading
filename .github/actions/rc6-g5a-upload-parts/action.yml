@@ -1,0 +1,1461 @@
+name: Preserve bounded G5A original frame parts
+description: Upload only Source-owned post-FIN parts; no gate or contract acceptance
+inputs:
+  parts_root:
+    description: Exact Source-generated own parts directory
+    required: true
+  parts_count:
+    description: Source-verified finite part count, at most160
+    required: true
+  parts_start:
+    description: Source-generated first global index in this category
+    required: true
+  source_sha:
+    description: Exact candidate SHA
+    required: true
+  category:
+    description: Source-fixed frames or runtime category
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Preserve original frame part 000
+      if: always() && fromJSON(inputs.parts_start) <= 0 && fromJSON(inputs.parts_count) > 0
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-000
+        path: ${{ inputs.parts_root }}/part-000/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 001
+      if: always() && fromJSON(inputs.parts_start) <= 1 && fromJSON(inputs.parts_count) > 1
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-001
+        path: ${{ inputs.parts_root }}/part-001/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 002
+      if: always() && fromJSON(inputs.parts_start) <= 2 && fromJSON(inputs.parts_count) > 2
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-002
+        path: ${{ inputs.parts_root }}/part-002/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 003
+      if: always() && fromJSON(inputs.parts_start) <= 3 && fromJSON(inputs.parts_count) > 3
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-003
+        path: ${{ inputs.parts_root }}/part-003/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 004
+      if: always() && fromJSON(inputs.parts_start) <= 4 && fromJSON(inputs.parts_count) > 4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-004
+        path: ${{ inputs.parts_root }}/part-004/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 005
+      if: always() && fromJSON(inputs.parts_start) <= 5 && fromJSON(inputs.parts_count) > 5
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-005
+        path: ${{ inputs.parts_root }}/part-005/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 006
+      if: always() && fromJSON(inputs.parts_start) <= 6 && fromJSON(inputs.parts_count) > 6
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-006
+        path: ${{ inputs.parts_root }}/part-006/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 007
+      if: always() && fromJSON(inputs.parts_start) <= 7 && fromJSON(inputs.parts_count) > 7
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-007
+        path: ${{ inputs.parts_root }}/part-007/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 008
+      if: always() && fromJSON(inputs.parts_start) <= 8 && fromJSON(inputs.parts_count) > 8
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-008
+        path: ${{ inputs.parts_root }}/part-008/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 009
+      if: always() && fromJSON(inputs.parts_start) <= 9 && fromJSON(inputs.parts_count) > 9
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-009
+        path: ${{ inputs.parts_root }}/part-009/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 010
+      if: always() && fromJSON(inputs.parts_start) <= 10 && fromJSON(inputs.parts_count) > 10
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-010
+        path: ${{ inputs.parts_root }}/part-010/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 011
+      if: always() && fromJSON(inputs.parts_start) <= 11 && fromJSON(inputs.parts_count) > 11
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-011
+        path: ${{ inputs.parts_root }}/part-011/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 012
+      if: always() && fromJSON(inputs.parts_start) <= 12 && fromJSON(inputs.parts_count) > 12
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-012
+        path: ${{ inputs.parts_root }}/part-012/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 013
+      if: always() && fromJSON(inputs.parts_start) <= 13 && fromJSON(inputs.parts_count) > 13
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-013
+        path: ${{ inputs.parts_root }}/part-013/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 014
+      if: always() && fromJSON(inputs.parts_start) <= 14 && fromJSON(inputs.parts_count) > 14
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-014
+        path: ${{ inputs.parts_root }}/part-014/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 015
+      if: always() && fromJSON(inputs.parts_start) <= 15 && fromJSON(inputs.parts_count) > 15
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-015
+        path: ${{ inputs.parts_root }}/part-015/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 016
+      if: always() && fromJSON(inputs.parts_start) <= 16 && fromJSON(inputs.parts_count) > 16
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-016
+        path: ${{ inputs.parts_root }}/part-016/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 017
+      if: always() && fromJSON(inputs.parts_start) <= 17 && fromJSON(inputs.parts_count) > 17
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-017
+        path: ${{ inputs.parts_root }}/part-017/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 018
+      if: always() && fromJSON(inputs.parts_start) <= 18 && fromJSON(inputs.parts_count) > 18
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-018
+        path: ${{ inputs.parts_root }}/part-018/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 019
+      if: always() && fromJSON(inputs.parts_start) <= 19 && fromJSON(inputs.parts_count) > 19
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-019
+        path: ${{ inputs.parts_root }}/part-019/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 020
+      if: always() && fromJSON(inputs.parts_start) <= 20 && fromJSON(inputs.parts_count) > 20
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-020
+        path: ${{ inputs.parts_root }}/part-020/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 021
+      if: always() && fromJSON(inputs.parts_start) <= 21 && fromJSON(inputs.parts_count) > 21
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-021
+        path: ${{ inputs.parts_root }}/part-021/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 022
+      if: always() && fromJSON(inputs.parts_start) <= 22 && fromJSON(inputs.parts_count) > 22
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-022
+        path: ${{ inputs.parts_root }}/part-022/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 023
+      if: always() && fromJSON(inputs.parts_start) <= 23 && fromJSON(inputs.parts_count) > 23
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-023
+        path: ${{ inputs.parts_root }}/part-023/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 024
+      if: always() && fromJSON(inputs.parts_start) <= 24 && fromJSON(inputs.parts_count) > 24
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-024
+        path: ${{ inputs.parts_root }}/part-024/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 025
+      if: always() && fromJSON(inputs.parts_start) <= 25 && fromJSON(inputs.parts_count) > 25
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-025
+        path: ${{ inputs.parts_root }}/part-025/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 026
+      if: always() && fromJSON(inputs.parts_start) <= 26 && fromJSON(inputs.parts_count) > 26
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-026
+        path: ${{ inputs.parts_root }}/part-026/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 027
+      if: always() && fromJSON(inputs.parts_start) <= 27 && fromJSON(inputs.parts_count) > 27
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-027
+        path: ${{ inputs.parts_root }}/part-027/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 028
+      if: always() && fromJSON(inputs.parts_start) <= 28 && fromJSON(inputs.parts_count) > 28
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-028
+        path: ${{ inputs.parts_root }}/part-028/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 029
+      if: always() && fromJSON(inputs.parts_start) <= 29 && fromJSON(inputs.parts_count) > 29
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-029
+        path: ${{ inputs.parts_root }}/part-029/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 030
+      if: always() && fromJSON(inputs.parts_start) <= 30 && fromJSON(inputs.parts_count) > 30
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-030
+        path: ${{ inputs.parts_root }}/part-030/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 031
+      if: always() && fromJSON(inputs.parts_start) <= 31 && fromJSON(inputs.parts_count) > 31
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-031
+        path: ${{ inputs.parts_root }}/part-031/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 032
+      if: always() && fromJSON(inputs.parts_start) <= 32 && fromJSON(inputs.parts_count) > 32
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-032
+        path: ${{ inputs.parts_root }}/part-032/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 033
+      if: always() && fromJSON(inputs.parts_start) <= 33 && fromJSON(inputs.parts_count) > 33
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-033
+        path: ${{ inputs.parts_root }}/part-033/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 034
+      if: always() && fromJSON(inputs.parts_start) <= 34 && fromJSON(inputs.parts_count) > 34
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-034
+        path: ${{ inputs.parts_root }}/part-034/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 035
+      if: always() && fromJSON(inputs.parts_start) <= 35 && fromJSON(inputs.parts_count) > 35
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-035
+        path: ${{ inputs.parts_root }}/part-035/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 036
+      if: always() && fromJSON(inputs.parts_start) <= 36 && fromJSON(inputs.parts_count) > 36
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-036
+        path: ${{ inputs.parts_root }}/part-036/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 037
+      if: always() && fromJSON(inputs.parts_start) <= 37 && fromJSON(inputs.parts_count) > 37
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-037
+        path: ${{ inputs.parts_root }}/part-037/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 038
+      if: always() && fromJSON(inputs.parts_start) <= 38 && fromJSON(inputs.parts_count) > 38
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-038
+        path: ${{ inputs.parts_root }}/part-038/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 039
+      if: always() && fromJSON(inputs.parts_start) <= 39 && fromJSON(inputs.parts_count) > 39
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-039
+        path: ${{ inputs.parts_root }}/part-039/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 040
+      if: always() && fromJSON(inputs.parts_start) <= 40 && fromJSON(inputs.parts_count) > 40
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-040
+        path: ${{ inputs.parts_root }}/part-040/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 041
+      if: always() && fromJSON(inputs.parts_start) <= 41 && fromJSON(inputs.parts_count) > 41
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-041
+        path: ${{ inputs.parts_root }}/part-041/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 042
+      if: always() && fromJSON(inputs.parts_start) <= 42 && fromJSON(inputs.parts_count) > 42
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-042
+        path: ${{ inputs.parts_root }}/part-042/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 043
+      if: always() && fromJSON(inputs.parts_start) <= 43 && fromJSON(inputs.parts_count) > 43
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-043
+        path: ${{ inputs.parts_root }}/part-043/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 044
+      if: always() && fromJSON(inputs.parts_start) <= 44 && fromJSON(inputs.parts_count) > 44
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-044
+        path: ${{ inputs.parts_root }}/part-044/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 045
+      if: always() && fromJSON(inputs.parts_start) <= 45 && fromJSON(inputs.parts_count) > 45
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-045
+        path: ${{ inputs.parts_root }}/part-045/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 046
+      if: always() && fromJSON(inputs.parts_start) <= 46 && fromJSON(inputs.parts_count) > 46
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-046
+        path: ${{ inputs.parts_root }}/part-046/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 047
+      if: always() && fromJSON(inputs.parts_start) <= 47 && fromJSON(inputs.parts_count) > 47
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-047
+        path: ${{ inputs.parts_root }}/part-047/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 048
+      if: always() && fromJSON(inputs.parts_start) <= 48 && fromJSON(inputs.parts_count) > 48
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-048
+        path: ${{ inputs.parts_root }}/part-048/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 049
+      if: always() && fromJSON(inputs.parts_start) <= 49 && fromJSON(inputs.parts_count) > 49
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-049
+        path: ${{ inputs.parts_root }}/part-049/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 050
+      if: always() && fromJSON(inputs.parts_start) <= 50 && fromJSON(inputs.parts_count) > 50
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-050
+        path: ${{ inputs.parts_root }}/part-050/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 051
+      if: always() && fromJSON(inputs.parts_start) <= 51 && fromJSON(inputs.parts_count) > 51
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-051
+        path: ${{ inputs.parts_root }}/part-051/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 052
+      if: always() && fromJSON(inputs.parts_start) <= 52 && fromJSON(inputs.parts_count) > 52
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-052
+        path: ${{ inputs.parts_root }}/part-052/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 053
+      if: always() && fromJSON(inputs.parts_start) <= 53 && fromJSON(inputs.parts_count) > 53
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-053
+        path: ${{ inputs.parts_root }}/part-053/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 054
+      if: always() && fromJSON(inputs.parts_start) <= 54 && fromJSON(inputs.parts_count) > 54
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-054
+        path: ${{ inputs.parts_root }}/part-054/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 055
+      if: always() && fromJSON(inputs.parts_start) <= 55 && fromJSON(inputs.parts_count) > 55
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-055
+        path: ${{ inputs.parts_root }}/part-055/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 056
+      if: always() && fromJSON(inputs.parts_start) <= 56 && fromJSON(inputs.parts_count) > 56
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-056
+        path: ${{ inputs.parts_root }}/part-056/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 057
+      if: always() && fromJSON(inputs.parts_start) <= 57 && fromJSON(inputs.parts_count) > 57
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-057
+        path: ${{ inputs.parts_root }}/part-057/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 058
+      if: always() && fromJSON(inputs.parts_start) <= 58 && fromJSON(inputs.parts_count) > 58
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-058
+        path: ${{ inputs.parts_root }}/part-058/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 059
+      if: always() && fromJSON(inputs.parts_start) <= 59 && fromJSON(inputs.parts_count) > 59
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-059
+        path: ${{ inputs.parts_root }}/part-059/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 060
+      if: always() && fromJSON(inputs.parts_start) <= 60 && fromJSON(inputs.parts_count) > 60
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-060
+        path: ${{ inputs.parts_root }}/part-060/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 061
+      if: always() && fromJSON(inputs.parts_start) <= 61 && fromJSON(inputs.parts_count) > 61
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-061
+        path: ${{ inputs.parts_root }}/part-061/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 062
+      if: always() && fromJSON(inputs.parts_start) <= 62 && fromJSON(inputs.parts_count) > 62
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-062
+        path: ${{ inputs.parts_root }}/part-062/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 063
+      if: always() && fromJSON(inputs.parts_start) <= 63 && fromJSON(inputs.parts_count) > 63
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-063
+        path: ${{ inputs.parts_root }}/part-063/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 064
+      if: always() && fromJSON(inputs.parts_start) <= 64 && fromJSON(inputs.parts_count) > 64
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-064
+        path: ${{ inputs.parts_root }}/part-064/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 065
+      if: always() && fromJSON(inputs.parts_start) <= 65 && fromJSON(inputs.parts_count) > 65
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-065
+        path: ${{ inputs.parts_root }}/part-065/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 066
+      if: always() && fromJSON(inputs.parts_start) <= 66 && fromJSON(inputs.parts_count) > 66
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-066
+        path: ${{ inputs.parts_root }}/part-066/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 067
+      if: always() && fromJSON(inputs.parts_start) <= 67 && fromJSON(inputs.parts_count) > 67
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-067
+        path: ${{ inputs.parts_root }}/part-067/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 068
+      if: always() && fromJSON(inputs.parts_start) <= 68 && fromJSON(inputs.parts_count) > 68
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-068
+        path: ${{ inputs.parts_root }}/part-068/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 069
+      if: always() && fromJSON(inputs.parts_start) <= 69 && fromJSON(inputs.parts_count) > 69
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-069
+        path: ${{ inputs.parts_root }}/part-069/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 070
+      if: always() && fromJSON(inputs.parts_start) <= 70 && fromJSON(inputs.parts_count) > 70
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-070
+        path: ${{ inputs.parts_root }}/part-070/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 071
+      if: always() && fromJSON(inputs.parts_start) <= 71 && fromJSON(inputs.parts_count) > 71
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-071
+        path: ${{ inputs.parts_root }}/part-071/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 072
+      if: always() && fromJSON(inputs.parts_start) <= 72 && fromJSON(inputs.parts_count) > 72
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-072
+        path: ${{ inputs.parts_root }}/part-072/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 073
+      if: always() && fromJSON(inputs.parts_start) <= 73 && fromJSON(inputs.parts_count) > 73
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-073
+        path: ${{ inputs.parts_root }}/part-073/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 074
+      if: always() && fromJSON(inputs.parts_start) <= 74 && fromJSON(inputs.parts_count) > 74
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-074
+        path: ${{ inputs.parts_root }}/part-074/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 075
+      if: always() && fromJSON(inputs.parts_start) <= 75 && fromJSON(inputs.parts_count) > 75
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-075
+        path: ${{ inputs.parts_root }}/part-075/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 076
+      if: always() && fromJSON(inputs.parts_start) <= 76 && fromJSON(inputs.parts_count) > 76
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-076
+        path: ${{ inputs.parts_root }}/part-076/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 077
+      if: always() && fromJSON(inputs.parts_start) <= 77 && fromJSON(inputs.parts_count) > 77
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-077
+        path: ${{ inputs.parts_root }}/part-077/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 078
+      if: always() && fromJSON(inputs.parts_start) <= 78 && fromJSON(inputs.parts_count) > 78
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-078
+        path: ${{ inputs.parts_root }}/part-078/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 079
+      if: always() && fromJSON(inputs.parts_start) <= 79 && fromJSON(inputs.parts_count) > 79
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-079
+        path: ${{ inputs.parts_root }}/part-079/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 080
+      if: always() && fromJSON(inputs.parts_start) <= 80 && fromJSON(inputs.parts_count) > 80
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-080
+        path: ${{ inputs.parts_root }}/part-080/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 081
+      if: always() && fromJSON(inputs.parts_start) <= 81 && fromJSON(inputs.parts_count) > 81
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-081
+        path: ${{ inputs.parts_root }}/part-081/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 082
+      if: always() && fromJSON(inputs.parts_start) <= 82 && fromJSON(inputs.parts_count) > 82
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-082
+        path: ${{ inputs.parts_root }}/part-082/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 083
+      if: always() && fromJSON(inputs.parts_start) <= 83 && fromJSON(inputs.parts_count) > 83
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-083
+        path: ${{ inputs.parts_root }}/part-083/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 084
+      if: always() && fromJSON(inputs.parts_start) <= 84 && fromJSON(inputs.parts_count) > 84
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-084
+        path: ${{ inputs.parts_root }}/part-084/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 085
+      if: always() && fromJSON(inputs.parts_start) <= 85 && fromJSON(inputs.parts_count) > 85
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-085
+        path: ${{ inputs.parts_root }}/part-085/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 086
+      if: always() && fromJSON(inputs.parts_start) <= 86 && fromJSON(inputs.parts_count) > 86
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-086
+        path: ${{ inputs.parts_root }}/part-086/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 087
+      if: always() && fromJSON(inputs.parts_start) <= 87 && fromJSON(inputs.parts_count) > 87
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-087
+        path: ${{ inputs.parts_root }}/part-087/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 088
+      if: always() && fromJSON(inputs.parts_start) <= 88 && fromJSON(inputs.parts_count) > 88
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-088
+        path: ${{ inputs.parts_root }}/part-088/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 089
+      if: always() && fromJSON(inputs.parts_start) <= 89 && fromJSON(inputs.parts_count) > 89
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-089
+        path: ${{ inputs.parts_root }}/part-089/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 090
+      if: always() && fromJSON(inputs.parts_start) <= 90 && fromJSON(inputs.parts_count) > 90
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-090
+        path: ${{ inputs.parts_root }}/part-090/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 091
+      if: always() && fromJSON(inputs.parts_start) <= 91 && fromJSON(inputs.parts_count) > 91
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-091
+        path: ${{ inputs.parts_root }}/part-091/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 092
+      if: always() && fromJSON(inputs.parts_start) <= 92 && fromJSON(inputs.parts_count) > 92
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-092
+        path: ${{ inputs.parts_root }}/part-092/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 093
+      if: always() && fromJSON(inputs.parts_start) <= 93 && fromJSON(inputs.parts_count) > 93
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-093
+        path: ${{ inputs.parts_root }}/part-093/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 094
+      if: always() && fromJSON(inputs.parts_start) <= 94 && fromJSON(inputs.parts_count) > 94
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-094
+        path: ${{ inputs.parts_root }}/part-094/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 095
+      if: always() && fromJSON(inputs.parts_start) <= 95 && fromJSON(inputs.parts_count) > 95
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-095
+        path: ${{ inputs.parts_root }}/part-095/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 096
+      if: always() && fromJSON(inputs.parts_start) <= 96 && fromJSON(inputs.parts_count) > 96
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-096
+        path: ${{ inputs.parts_root }}/part-096/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 097
+      if: always() && fromJSON(inputs.parts_start) <= 97 && fromJSON(inputs.parts_count) > 97
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-097
+        path: ${{ inputs.parts_root }}/part-097/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 098
+      if: always() && fromJSON(inputs.parts_start) <= 98 && fromJSON(inputs.parts_count) > 98
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-098
+        path: ${{ inputs.parts_root }}/part-098/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 099
+      if: always() && fromJSON(inputs.parts_start) <= 99 && fromJSON(inputs.parts_count) > 99
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-099
+        path: ${{ inputs.parts_root }}/part-099/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 100
+      if: always() && fromJSON(inputs.parts_start) <= 100 && fromJSON(inputs.parts_count) > 100
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-100
+        path: ${{ inputs.parts_root }}/part-100/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 101
+      if: always() && fromJSON(inputs.parts_start) <= 101 && fromJSON(inputs.parts_count) > 101
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-101
+        path: ${{ inputs.parts_root }}/part-101/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 102
+      if: always() && fromJSON(inputs.parts_start) <= 102 && fromJSON(inputs.parts_count) > 102
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-102
+        path: ${{ inputs.parts_root }}/part-102/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 103
+      if: always() && fromJSON(inputs.parts_start) <= 103 && fromJSON(inputs.parts_count) > 103
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-103
+        path: ${{ inputs.parts_root }}/part-103/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 104
+      if: always() && fromJSON(inputs.parts_start) <= 104 && fromJSON(inputs.parts_count) > 104
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-104
+        path: ${{ inputs.parts_root }}/part-104/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 105
+      if: always() && fromJSON(inputs.parts_start) <= 105 && fromJSON(inputs.parts_count) > 105
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-105
+        path: ${{ inputs.parts_root }}/part-105/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 106
+      if: always() && fromJSON(inputs.parts_start) <= 106 && fromJSON(inputs.parts_count) > 106
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-106
+        path: ${{ inputs.parts_root }}/part-106/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 107
+      if: always() && fromJSON(inputs.parts_start) <= 107 && fromJSON(inputs.parts_count) > 107
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-107
+        path: ${{ inputs.parts_root }}/part-107/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 108
+      if: always() && fromJSON(inputs.parts_start) <= 108 && fromJSON(inputs.parts_count) > 108
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-108
+        path: ${{ inputs.parts_root }}/part-108/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 109
+      if: always() && fromJSON(inputs.parts_start) <= 109 && fromJSON(inputs.parts_count) > 109
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-109
+        path: ${{ inputs.parts_root }}/part-109/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 110
+      if: always() && fromJSON(inputs.parts_start) <= 110 && fromJSON(inputs.parts_count) > 110
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-110
+        path: ${{ inputs.parts_root }}/part-110/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 111
+      if: always() && fromJSON(inputs.parts_start) <= 111 && fromJSON(inputs.parts_count) > 111
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-111
+        path: ${{ inputs.parts_root }}/part-111/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 112
+      if: always() && fromJSON(inputs.parts_start) <= 112 && fromJSON(inputs.parts_count) > 112
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-112
+        path: ${{ inputs.parts_root }}/part-112/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 113
+      if: always() && fromJSON(inputs.parts_start) <= 113 && fromJSON(inputs.parts_count) > 113
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-113
+        path: ${{ inputs.parts_root }}/part-113/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 114
+      if: always() && fromJSON(inputs.parts_start) <= 114 && fromJSON(inputs.parts_count) > 114
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-114
+        path: ${{ inputs.parts_root }}/part-114/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 115
+      if: always() && fromJSON(inputs.parts_start) <= 115 && fromJSON(inputs.parts_count) > 115
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-115
+        path: ${{ inputs.parts_root }}/part-115/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 116
+      if: always() && fromJSON(inputs.parts_start) <= 116 && fromJSON(inputs.parts_count) > 116
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-116
+        path: ${{ inputs.parts_root }}/part-116/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 117
+      if: always() && fromJSON(inputs.parts_start) <= 117 && fromJSON(inputs.parts_count) > 117
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-117
+        path: ${{ inputs.parts_root }}/part-117/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 118
+      if: always() && fromJSON(inputs.parts_start) <= 118 && fromJSON(inputs.parts_count) > 118
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-118
+        path: ${{ inputs.parts_root }}/part-118/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 119
+      if: always() && fromJSON(inputs.parts_start) <= 119 && fromJSON(inputs.parts_count) > 119
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-119
+        path: ${{ inputs.parts_root }}/part-119/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 120
+      if: always() && fromJSON(inputs.parts_start) <= 120 && fromJSON(inputs.parts_count) > 120
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-120
+        path: ${{ inputs.parts_root }}/part-120/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 121
+      if: always() && fromJSON(inputs.parts_start) <= 121 && fromJSON(inputs.parts_count) > 121
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-121
+        path: ${{ inputs.parts_root }}/part-121/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 122
+      if: always() && fromJSON(inputs.parts_start) <= 122 && fromJSON(inputs.parts_count) > 122
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-122
+        path: ${{ inputs.parts_root }}/part-122/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 123
+      if: always() && fromJSON(inputs.parts_start) <= 123 && fromJSON(inputs.parts_count) > 123
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-123
+        path: ${{ inputs.parts_root }}/part-123/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 124
+      if: always() && fromJSON(inputs.parts_start) <= 124 && fromJSON(inputs.parts_count) > 124
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-124
+        path: ${{ inputs.parts_root }}/part-124/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 125
+      if: always() && fromJSON(inputs.parts_start) <= 125 && fromJSON(inputs.parts_count) > 125
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-125
+        path: ${{ inputs.parts_root }}/part-125/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 126
+      if: always() && fromJSON(inputs.parts_start) <= 126 && fromJSON(inputs.parts_count) > 126
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-126
+        path: ${{ inputs.parts_root }}/part-126/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 127
+      if: always() && fromJSON(inputs.parts_start) <= 127 && fromJSON(inputs.parts_count) > 127
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-127
+        path: ${{ inputs.parts_root }}/part-127/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 128
+      if: always() && fromJSON(inputs.parts_start) <= 128 && fromJSON(inputs.parts_count) > 128
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-128
+        path: ${{ inputs.parts_root }}/part-128/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 129
+      if: always() && fromJSON(inputs.parts_start) <= 129 && fromJSON(inputs.parts_count) > 129
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-129
+        path: ${{ inputs.parts_root }}/part-129/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 130
+      if: always() && fromJSON(inputs.parts_start) <= 130 && fromJSON(inputs.parts_count) > 130
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-130
+        path: ${{ inputs.parts_root }}/part-130/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 131
+      if: always() && fromJSON(inputs.parts_start) <= 131 && fromJSON(inputs.parts_count) > 131
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-131
+        path: ${{ inputs.parts_root }}/part-131/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 132
+      if: always() && fromJSON(inputs.parts_start) <= 132 && fromJSON(inputs.parts_count) > 132
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-132
+        path: ${{ inputs.parts_root }}/part-132/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 133
+      if: always() && fromJSON(inputs.parts_start) <= 133 && fromJSON(inputs.parts_count) > 133
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-133
+        path: ${{ inputs.parts_root }}/part-133/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 134
+      if: always() && fromJSON(inputs.parts_start) <= 134 && fromJSON(inputs.parts_count) > 134
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-134
+        path: ${{ inputs.parts_root }}/part-134/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 135
+      if: always() && fromJSON(inputs.parts_start) <= 135 && fromJSON(inputs.parts_count) > 135
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-135
+        path: ${{ inputs.parts_root }}/part-135/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 136
+      if: always() && fromJSON(inputs.parts_start) <= 136 && fromJSON(inputs.parts_count) > 136
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-136
+        path: ${{ inputs.parts_root }}/part-136/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 137
+      if: always() && fromJSON(inputs.parts_start) <= 137 && fromJSON(inputs.parts_count) > 137
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-137
+        path: ${{ inputs.parts_root }}/part-137/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 138
+      if: always() && fromJSON(inputs.parts_start) <= 138 && fromJSON(inputs.parts_count) > 138
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-138
+        path: ${{ inputs.parts_root }}/part-138/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 139
+      if: always() && fromJSON(inputs.parts_start) <= 139 && fromJSON(inputs.parts_count) > 139
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-139
+        path: ${{ inputs.parts_root }}/part-139/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 140
+      if: always() && fromJSON(inputs.parts_start) <= 140 && fromJSON(inputs.parts_count) > 140
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-140
+        path: ${{ inputs.parts_root }}/part-140/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 141
+      if: always() && fromJSON(inputs.parts_start) <= 141 && fromJSON(inputs.parts_count) > 141
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-141
+        path: ${{ inputs.parts_root }}/part-141/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 142
+      if: always() && fromJSON(inputs.parts_start) <= 142 && fromJSON(inputs.parts_count) > 142
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-142
+        path: ${{ inputs.parts_root }}/part-142/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 143
+      if: always() && fromJSON(inputs.parts_start) <= 143 && fromJSON(inputs.parts_count) > 143
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-143
+        path: ${{ inputs.parts_root }}/part-143/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 144
+      if: always() && fromJSON(inputs.parts_start) <= 144 && fromJSON(inputs.parts_count) > 144
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-144
+        path: ${{ inputs.parts_root }}/part-144/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 145
+      if: always() && fromJSON(inputs.parts_start) <= 145 && fromJSON(inputs.parts_count) > 145
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-145
+        path: ${{ inputs.parts_root }}/part-145/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 146
+      if: always() && fromJSON(inputs.parts_start) <= 146 && fromJSON(inputs.parts_count) > 146
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-146
+        path: ${{ inputs.parts_root }}/part-146/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 147
+      if: always() && fromJSON(inputs.parts_start) <= 147 && fromJSON(inputs.parts_count) > 147
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-147
+        path: ${{ inputs.parts_root }}/part-147/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 148
+      if: always() && fromJSON(inputs.parts_start) <= 148 && fromJSON(inputs.parts_count) > 148
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-148
+        path: ${{ inputs.parts_root }}/part-148/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 149
+      if: always() && fromJSON(inputs.parts_start) <= 149 && fromJSON(inputs.parts_count) > 149
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-149
+        path: ${{ inputs.parts_root }}/part-149/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 150
+      if: always() && fromJSON(inputs.parts_start) <= 150 && fromJSON(inputs.parts_count) > 150
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-150
+        path: ${{ inputs.parts_root }}/part-150/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 151
+      if: always() && fromJSON(inputs.parts_start) <= 151 && fromJSON(inputs.parts_count) > 151
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-151
+        path: ${{ inputs.parts_root }}/part-151/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 152
+      if: always() && fromJSON(inputs.parts_start) <= 152 && fromJSON(inputs.parts_count) > 152
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-152
+        path: ${{ inputs.parts_root }}/part-152/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 153
+      if: always() && fromJSON(inputs.parts_start) <= 153 && fromJSON(inputs.parts_count) > 153
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-153
+        path: ${{ inputs.parts_root }}/part-153/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 154
+      if: always() && fromJSON(inputs.parts_start) <= 154 && fromJSON(inputs.parts_count) > 154
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-154
+        path: ${{ inputs.parts_root }}/part-154/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 155
+      if: always() && fromJSON(inputs.parts_start) <= 155 && fromJSON(inputs.parts_count) > 155
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-155
+        path: ${{ inputs.parts_root }}/part-155/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 156
+      if: always() && fromJSON(inputs.parts_start) <= 156 && fromJSON(inputs.parts_count) > 156
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-156
+        path: ${{ inputs.parts_root }}/part-156/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 157
+      if: always() && fromJSON(inputs.parts_start) <= 157 && fromJSON(inputs.parts_count) > 157
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-157
+        path: ${{ inputs.parts_root }}/part-157/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 158
+      if: always() && fromJSON(inputs.parts_start) <= 158 && fromJSON(inputs.parts_count) > 158
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-158
+        path: ${{ inputs.parts_root }}/part-158/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0
+    - name: Preserve original frame part 159
+      if: always() && fromJSON(inputs.parts_start) <= 159 && fromJSON(inputs.parts_count) > 159
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: rc6-g5a-${{ inputs.category }}-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}-159
+        path: ${{ inputs.parts_root }}/part-159/
+        if-no-files-found: error
+        retention-days: 14
+        compression-level: 0

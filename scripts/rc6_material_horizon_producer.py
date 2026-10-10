@@ -639,14 +639,43 @@ def publish_owned_fin(path, value):
         os.close(descriptor)
 
 
-def observe_original_cas_comparison(comparison, originals, node, archiver):
+def observe_original_cas_comparison(comparison, originals, node, archiver, *, source_generation=None):
     """Share the native captured bytes; never rebuild a comparison fixture."""
     if comparison is None:
         return None
-    return comparison.observe(originals, cut=node, native_pins=archiver._archive_pins())
+    return comparison.observe(originals, cut=node, native_pins=archiver._archive_pins(), source_generation=source_generation)
 
 
-def main():
+def prepared_native_g5a(*, preparation, quota, custody, binding, filter_binding, source_root, producer_arguments,
+                        continuation=None, workload_quota=None):
+    """Source-fixed same-PID entry after TrustedAPISetup, quota setup andSeal.
+
+    The ROOT runner supplies no bearer or serialized G5 authority. It closes
+   every privileged descriptor, drops privileges and passes only private typed
+   observations retained in this interpreter. Fixtures are first entered by
+   main after live quota enforcement, custody and owner admission all succeed.
+    """
+    from scripts import rc6_g5_contract as g5
+    from scripts.rc6_contract_revisions import validate_revision_approval
+    g5.require(type(producer_arguments) in (list, tuple) and all(type(value) is str for value in producer_arguments),
+               "G5A_SOURCE_FIXED_ORIGINAL_PRODUCER_ARGUMENTS_REQUIRED")
+    g5.validate_trusted_g5a_preparation(preparation, binding=binding,
+                                      prerequisites_manifest=json.loads(preparation.manifest_wire), continuation=continuation)
+    validate_revision_approval(preparation.approval, revision=g5.REVISION, scope=g5.SCOPE,
+        source_sha=binding["candidate_sha"], source_tree=binding["candidate_tree"], contract_sha256=g5.CONTRACT_SHA256)
+    g5.require(type(quota) is g5.NativeProjectQuota and type(custody) is g5.NativeCustodyContext,
+               "G5A_SAME_PROCESS_NATIVE_QUOTA_AND_CUSTODY_REQUIRED")
+    if quota.descriptor is None:
+        quota.reopen_after_seal(binding=binding, filter_binding=filter_binding)
+    g5.prove_native_quota_enforcement(quota, binding=binding, filter_binding=filter_binding)
+    authority = g5.authenticate_g5a(approval=preparation.approval, quota=quota, custody=custody,
+        binding=binding, filter_binding=filter_binding, prerequisites_manifest=json.loads(preparation.manifest_wire),
+        evidence_root=Path(source_root).parent, source_root=source_root, trusted_preparation=preparation,
+        continuation=continuation, workload_quota=workload_quota)
+    return main(g5a=authority, expected_binding=binding, argv=producer_arguments)
+
+
+def main(*, g5a=None, expected_binding=None, argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-repo", required=True, help="Local Git object authority; no fetch or replace refs")
     parser.add_argument("--source-root", required=True)
@@ -658,7 +687,13 @@ def main():
     parser.add_argument("--ticks", type=int, default=4)
     parser.add_argument("--owned-fin", required=True, help="Fresh external native lifecycle control; never a data result")
     parser.add_argument("--cas-comparison-manifest", help="Exact authenticated private comparison admission; never enables native V4 writes")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if g5a is not None:
+        from scripts.rc6_g5_contract import validate_g5a_authority, validate_prepared_producer_root
+        validate_g5a_authority(g5a, expected_binding=expected_binding)
+        if args.ticks != 1201 or args.catalog_count != 1200 or args.cas_comparison_manifest is None:
+            raise ValueError("G5A_SAME_PROCESS_ORIGINAL1202_COMPARISON_CONTEXT_REQUIRED")
+        validate_prepared_producer_root(Path(args.root).absolute(), g5a=g5a, expected_binding=expected_binding)
     source_root = Path(args.source_root).absolute()
     if source_root.resolve(strict=True) != source_root or any(parent.is_symlink() for parent in source_root.parents):
         raise ValueError("NATIVE_PROFILE_CODE_ALIAS_INVALID")
@@ -680,7 +715,7 @@ def main():
     if not HEX64.fullmatch(str(pin.get("tar_sha256", ""))) or signature(source_tar)["sha256"] != pin["tar_sha256"]:
         raise ValueError("NATIVE_PROFILE_SOURCE_TAR_INDEX_HASH_MISMATCH")
     root = Path(args.root).absolute()
-    if (root.exists() or root == source_root or root in source_root.parents or source_root in root.parents
+    if ((g5a is None and root.exists()) or root == source_root or root in source_root.parents or source_root in root.parents
             or root == repository or root in repository.parents or repository in root.parents
             or root.parent.resolve() != root.parent or args.ticks not in (4, 1201)
             or args.catalog_count not in (5, 1200, 12000)
@@ -708,7 +743,8 @@ def main():
         from scripts.rc6_cas_original_comparison import authenticate_comparison
         comparison = authenticate_comparison(args.cas_comparison_manifest,
             source_sha=args.source_sha, source_tree=args.source_tree, source_root=source_root,
-            output_root=owned_fin_path.parent / "original-cas-comparison", producer_root=root)
+            output_root=owned_fin_path.parent / "original-cas-comparison", producer_root=root,
+            g5a=g5a, expected_binding=expected_binding)
     lifecycle_initial = lifecycle.child_infrastructure_snapshot()
     lifecycle.require(all(value is None for value in lifecycle_initial.values()),
                       "FRESH_NATIVE_HORIZON_INFRASTRUCTURE_REQUIRED")
@@ -722,7 +758,8 @@ def main():
     # Dependency/platform/lock checks happen before even the fixture root exists.
     qualification = environment_qualification(source_root)
     import_before = import_inventory(source_root, code_before)
-    root.mkdir(mode=0o700, parents=True)
+    if g5a is None:
+        root.mkdir(mode=0o700, parents=True)
     for name in tuple(os.environ):
         if name.startswith("POROTA_CAPACITY_") and name.endswith("_PATH"):
             os.environ.pop(name)
@@ -730,7 +767,7 @@ def main():
                  "POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT", "POROTA_DYNAMIC_SHADOW_ARCHIVE_MAX_BYTES",
                  "POROTA_IOL_SHADOW_ROOT", "POROTA_IOL_SHADOW_CACHE_PATH"):
         os.environ.pop(name, None)
-    database.parent.mkdir(mode=0o700, parents=True)
+    database.parent.mkdir(mode=0o700, parents=True, exist_ok=g5a is not None)
     os.environ.update(DATA_DIR=str(data), PAPER_V17_DB_PATH=str(database), POROTA_DYNAMIC_CAPACITY_MODE="OFF")
     from cg_paper_workspace import artifact_root
     from scripts.rc6_sqlite_scratch_guard import runtime_settings
@@ -878,7 +915,7 @@ def main():
                 factory=lambda: ShadowRuntime.from_environment(database), restarts=result["restarts"])
             if (worker.root != evidence or worker.files.archive_root != archive
                     or worker.files.maximum_files != 512 or worker.files.maximum_bytes != 128*1024**2
-                    or worker.files.archive_maximum_bytes != 512*1024**2 or worker.files.archive_format != "COMPONENT_V3"):
+                    or worker.files.archive_maximum_bytes != 512*1024**2 or worker.files.archive_format != "COMPONENT_V4"):
                 raise AssertionError("NATIVE_PROFILE_FIXED_CANONICAL_FACTORY_POLICY_MISMATCH")
             result.update(archive_format=worker.files.archive_format,
                 live_maximum_bytes=worker.files.maximum_bytes, live_maximum_files=worker.files.maximum_files,
@@ -914,7 +951,7 @@ def main():
             # native archive call. The private V3 RED cannot truncate V4/input.
             # The reviewed candidate receipt is the sole private source ACK;
             # a missing/failed candidate must never fall back to build().
-            comparison_cut = observe_original_cas_comparison(comparison, originals, node, archiver)
+            comparison_cut = observe_original_cas_comparison(comparison, originals, node, archiver, source_generation=generation)
             start, process = time.monotonic(), time.process_time()
             receipt = archiver.archive_generation(generation)
             node.update(archive_wall_seconds=time.monotonic()-start, archive_cpu_seconds=time.process_time()-process,
@@ -942,6 +979,7 @@ def main():
                     "comparison_wall_seconds": comparison_cut["comparison_wall_seconds"],
                     "branch_status": {key: value["status"] for key, value in comparison_cut["branches"].items()},
                     "scope": "SAME_ORIGINAL_FIVE_MEMBERS_PRIVATE_DEVELOPMENT_NOT_G5"}
+                comparison.complete_native_cut(node)
             graph = import_inventory(source_root, code_before)
             result["import_graph_union"].update(graph["modules"])
             node["native_retention_call_deltas"] = {name: {key: value-counters_before[name][key]
@@ -1102,8 +1140,24 @@ def main():
             if native_fin_closed:
                 from scripts.rc6_cas_original_comparison import publish_result
                 comparison_result = comparison.finish(original_complete=result["execution_complete"])
+                if comparison.g5a is not None:
+                    capture_root = owned_fin_path.parent / "original-cas-comparison"
+                    records = {"g5a_ledger": comparison.ledger.capture(),
+                        "g5a_quota": comparison.g5a.capture_native_control(expected_binding=expected_binding),
+                        "g5b_writer_binding": comparison.writer_binding,
+                        "g5b_original_frames_manifest": comparison.original_frames.manifest()}
+                    result["private_g5a_captured_evidence"] = {}
+                    for role, record in records.items():
+                        record_path = capture_root / (role.replace("_", "-") + ".json.gz")
+                        reference = publish_result(record_path, record, g5a=comparison.g5a, expected_binding=expected_binding)
+                        result["private_g5a_captured_evidence"][role] = {**reference,
+                            "source_sha": args.source_sha, "source_tree": args.source_tree,
+                            "qualification_claimed": False}
+                    comparison_result["g5a_physical_ledger"].update(
+                        result["private_g5a_captured_evidence"]["g5a_ledger"])
                 comparison_path = owned_fin_path.parent / "original-cas-comparison" / "comparison-result.json.gz"
-                publication = publish_result(comparison_path, comparison_result)
+                publication = publish_result(comparison_path, comparison_result,
+                    g5a=comparison.g5a, expected_binding=expected_binding)
                 result["private_cas_comparison"] = {**publication, "status": comparison_result["status"],
                     "actual_original_cuts": comparison_result["actual_original_cuts"],
                     "qualification_claimed": False, "native_v4_write_enabled": False}

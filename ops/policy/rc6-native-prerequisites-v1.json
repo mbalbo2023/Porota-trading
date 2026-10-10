@@ -42,5 +42,18 @@
   "mode": "PRODUCTION_PAPER / SIMULATION",
   "real_orders_sent": 0,
   "ppi_watch": "UNTOUCHED",
-  "DEPLOY_OWNER": "NOT_ACQUIRED"
+  "DEPLOY_OWNER": "NOT_ACQUIRED",
+  "proposed_private_pid_observation_revision": "PRIVATE_PID_BOUNDARY_V2",
+  "proposal_observation_grants_contract_acceptance": false,
+  "bounded_compute_observation": {
+    "enabled": true,
+    "cpu_maximum": 1,
+    "memory_maximum_bytes": 1073741824,
+    "swap_maximum_bytes": 0,
+    "pids_maximum": 64,
+    "full_product_profile_qualified": false,
+    "financial_ticks_allowed": false,
+    "fixtures_allowed": false,
+    "original_custody_timeout_seconds": 60
+  }
 }

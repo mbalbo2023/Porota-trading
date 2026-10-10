@@ -568,7 +568,7 @@ def test_worker_red_retains_completed_setup_controls_and_operation_errno(tmp_pat
 
 
 @pytest.mark.parametrize("mutation,status", [("none", "PREREQUISITES_PRESENT"), ("unknown", "NO_VERIFICADO"),
-    ("disabled", "BLOQUEADO"), ("module-not-live", "BLOQUEADO"), ("seccomp", "BLOQUEADO"),
+    ("disabled", "BLOQUEADO"), ("module-not-live", "PREREQUISITES_PRESENT"), ("seccomp", "BLOQUEADO"),
     ("tool", "BLOQUEADO"), ("ext4", "BLOQUEADO")])
 def test_readonly_kernel_metadata_cannot_substitute_missing_format(mutation, status):
     config = dict.fromkeys(("CONFIG_QUOTA", "CONFIG_QUOTACTL", "CONFIG_EXT4_FS", "CONFIG_QFMT_V2"), "y")
@@ -589,6 +589,10 @@ def test_readonly_kernel_metadata_cannot_substitute_missing_format(mutation, sta
         tools=tools, seccomp_names_known=seccomp)
     assert record["status"] == status and record["actual_capability_proved"] is False
     assert record["module_loading_attempted"] is False and record["qualification_claimed"] is False
+    assert record["quota_module_absence_is_incompatibility"] is False and record["native_format_readback_required"] is True
+    if mutation == "module-not-live":
+        assert record["format_readiness"] == "NATIVE_Q_GETFMT_REQUIRED_MODULE_NOT_OBSERVED"
+        assert record["missing"] == [] and record["kernel_unsupported_claimed"] is False
 
 
 def ext4_superblock_fixture():

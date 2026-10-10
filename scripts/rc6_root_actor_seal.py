@@ -101,7 +101,7 @@ def _process(status):
             and len(os.listdir("/proc/self/task")) == 1, "ROOT_SEAL_SINGLE_NATIVE_THREAD_REQUIRED")
 
 
-def _descriptors():
+def _descriptors(*, owned_fin_log=None):
     rows = []
     for name in os.listdir("/proc/self/fd"):
         require(name.isdecimal(), "ROOT_SEAL_DESCRIPTOR_METADATA_UNKNOWN")
@@ -111,7 +111,24 @@ def _descriptors():
         except OSError as error:
             require(error.errno == errno.EBADF, "ROOT_SEAL_DESCRIPTOR_METADATA_UNKNOWN")
             continue  # os.listdir's already-closed directory descriptor only.
-        require(number <= 2, "ROOT_SEAL_INHERITED_HOST_DESCRIPTOR_FORBIDDEN")
+        if number > 2:
+            require(type(owned_fin_log) is dict and number == owned_fin_log.get("descriptor")
+                    and [details.st_dev, details.st_ino, details.st_uid, details.st_gid, details.st_mode]
+                    == owned_fin_log.get("identity") and stat.S_ISREG(details.st_mode) and details.st_nlink == 1,
+                    "ROOT_SEAL_INHERITED_HOST_DESCRIPTOR_FORBIDDEN")
+            from scripts import rc6_capacity_calibration as calibration
+            import fcntl
+            require(calibration.descriptor_mount_id(number) == owned_fin_log.get("mount_id")
+                    and fcntl.fcntl(number, fcntl.F_GETFL) & os.O_ACCMODE == os.O_WRONLY,
+                    "ROOT_SEAL_OWN_FIN_LOG_FD_REBOUND")
+            path = Path(owned_fin_log.get("path", ""))
+            require(path.is_absolute() and path.name == "root-worker-native.log" and ".." not in path.parts
+                    and not any(candidate.is_symlink() for candidate in (path, *path.parents)),
+                    "ROOT_SEAL_OWN_FIN_LOG_PATH_REQUIRED")
+            named = path.lstat()
+            require(stat.S_ISREG(named.st_mode) and named.st_nlink == 1
+                    and [named.st_dev, named.st_ino, named.st_uid, named.st_gid, named.st_mode]
+                    == owned_fin_log["identity"], "ROOT_SEAL_OWN_FIN_LOG_NAMED_REBOUND")
         require(stat.S_ISREG(details.st_mode) or stat.S_ISFIFO(details.st_mode)
                 or stat.S_ISCHR(details.st_mode) and details.st_rdev == os.makedev(1, 3),
                 "ROOT_SEAL_STDIO_NOT_OWN_FILE_PIPE_OR_NULL")
@@ -119,7 +136,8 @@ def _descriptors():
                 "ROOT_SEAL_STDIN_MUST_BE_NULL")
         rows.append({"descriptor": number, "device": details.st_dev, "inode": details.st_ino,
                      "mode": details.st_mode, "rdevice": details.st_rdev})
-    require({row["descriptor"] for row in rows} == {0, 1, 2}, "ROOT_SEAL_COMPLETE_STDIO_REQUIRED")
+    required = {0, 1, 2} | ({owned_fin_log["descriptor"]} if owned_fin_log is not None else set())
+    require({row["descriptor"] for row in rows} == required, "ROOT_SEAL_COMPLETE_STDIO_REQUIRED")
     return sorted(rows, key=lambda row: row["descriptor"])
 
 
@@ -152,7 +170,8 @@ def _device_inventory():
 
 
 def _boundary(*, owner_uid, owner_gid, control_root, host_pid_namespace_inode,
-              host_mount_namespace_inode, host_device_number, host_devpts_device_number, initial):
+              host_mount_namespace_inode, host_device_number, host_devpts_device_number, initial,
+              owned_fin_log=None):
     identity = _identity()
     require(all(type(x) is int and x > 0 for x in (
         host_pid_namespace_inode, host_mount_namespace_inode, host_device_number, host_devpts_device_number)),
@@ -226,7 +245,9 @@ def _boundary(*, owner_uid, owner_gid, control_root, host_pid_namespace_inode,
         "private_devpts_readonly": True,
         "control_root": str(root), "private_proc_readonly": True, "foreign_mounts_readonly": True,
         "cgroup_readonly": True, "mountinfo_sha256": native.digest(raw.encode()),
-        "devices": _device_inventory(), "descriptors": _descriptors(),
+        "devices": _device_inventory(),
+        "descriptors": _descriptors() if owned_fin_log is None else _descriptors(owned_fin_log=owned_fin_log),
+        **({"owned_fin_log": owned_fin_log} if owned_fin_log is not None else {}),
         "host_boundary_provenance_requires_caller_live_custody": True}
 
 
@@ -410,7 +431,8 @@ def validate_evidence(receipt, *, owner_uid, owner_gid, source_binding=None):
     plan, binding = build_plan(owner_uid, owner_gid), native._binding(source_binding)
     require(type(receipt) is dict and receipt.get("schema") == SCHEMA
             and receipt.get("plan") == plan and receipt.get("plan_sha256") == native.digest(native.canonical(plan))
-            and receipt.get("source_binding") == binding and receipt.get("scope") in ("ROOT_POST_SETUP_ONLY", "NONROOT_TEST_ONLY")
+            and receipt.get("source_binding") == binding
+            and receipt.get("scope") in ("ROOT_POST_SETUP_ONLY", "ROOT_QUOTA_CUSTODY_ONLY", "NONROOT_TEST_ONLY")
             and receipt.get("ROOT_custody_certified") is False and receipt.get("G0_G8_qualification") is False
             and receipt.get("quota_bootstrap_allowed") is False
             and type(receipt.get("seccomp_load_returncode")) is int and receipt["seccomp_load_returncode"] == 0
@@ -434,11 +456,19 @@ def validate_evidence(receipt, *, owner_uid, owner_gid, source_binding=None):
         and row.get("returncode") == -1 and row.get("errno") == expected
         for row, (label, name, _, expected) in zip(rows, _probe_specs())), "ROOT_SEAL_COMPLETE_DENIALS_REQUIRED")
     caps = receipt.get("capabilities")
-    if receipt["scope"] == "ROOT_POST_SETUP_ONLY":
+    if receipt["scope"] in ("ROOT_POST_SETUP_ONLY", "ROOT_QUOTA_CUSTODY_ONLY"):
         require(binding is not None and caps == {"CapInh": 0, "CapAmb": 0, "CapPrm": RETAINED_MASK,
                         "CapEff": RETAINED_MASK, "CapBnd": RETAINED_MASK}
                 and type(receipt.get("boundary")) is dict, "ROOT_SEAL_ROOT_CAPABILITIES_OR_BOUNDARY_UNPROVED")
         _validate_boundary_evidence(receipt["boundary"], identity, owner_uid, owner_gid)
+        if receipt["scope"] == "ROOT_QUOTA_CUSTODY_ONLY":
+            log = receipt["boundary"].get("owned_fin_log")
+            require(type(log) is dict and type(log.get("descriptor")) is int and log["descriptor"] > 2
+                    and type(log.get("identity")) is list and len(log["identity"]) == 5
+                    and all(type(x) is int for x in log["identity"])
+                    and stat.S_ISREG(log["identity"][4]) and type(log.get("mount_id")) is int
+                    and log["mount_id"] > 0 and log.get("path") == receipt["boundary"]["control_root"] + "/root-worker-native.log",
+                    "ROOT_SEAL_QUOTA_CUSTODY_OWN_LOG_REQUIRED")
     else:
         require(type(caps) is dict and all(caps.get(key) == 0 for key in ("CapInh", "CapPrm", "CapEff", "CapAmb"))
                 and receipt.get("boundary") is None, "ROOT_SEAL_NONROOT_TEST_CANNOT_CERTIFY_BOUNDARY")
@@ -496,7 +526,7 @@ def _install(*, owner_uid, owner_gid, source_binding, inherited, scope, boundary
     before = native._status()
     _process(before)
     require(_LIVE is None or _LIVE["identity"]["pid"] != os.getpid(), "ROOT_SEAL_ALREADY_INSTALLED")
-    if scope == "ROOT_POST_SETUP_ONLY":
+    if scope in ("ROOT_POST_SETUP_ONLY", "ROOT_QUOTA_CUSTODY_ONLY"):
         require(os.getresuid() == (0, 0, 0), "ROOT_SEAL_ACTUAL_ROOT_REQUIRED")
         boundary = _boundary(owner_uid=owner_uid, owner_gid=owner_gid, initial=inherited is None, **boundary_arguments)
     else:
@@ -515,7 +545,7 @@ def _install(*, owner_uid, owner_gid, source_binding, inherited, scope, boundary
     try:
         require(libc.prctl(4, 0, 0, 0, 0) == 0 and libc.prctl(3, 0, 0, 0, 0) == 0,
                 "ROOT_SEAL_DUMPABLE_ZERO_FAILED")
-        if scope == "ROOT_POST_SETUP_ONLY" and inherited is None:
+        if scope in ("ROOT_POST_SETUP_ONLY", "ROOT_QUOTA_CUSTODY_ONLY") and inherited is None:
             caps = _reduce_root_capabilities(libc, before)
         else:
             caps = _caps(before)
@@ -538,7 +568,8 @@ def _install(*, owner_uid, owner_gid, source_binding, inherited, scope, boundary
         "no_new_privileges": True, "dumpable": int(libc.prctl(3, 0, 0, 0, 0)),
         "capabilities": caps, "boundary": boundary, "denial_probes": _denials(), "inherited": inheritance,
         "ROOT_custody_certified": False, "G0_G8_qualification": False, "quota_bootstrap_allowed": False,
-        "ROOT_capability_reduction_executed": scope == "ROOT_POST_SETUP_ONLY", "ROOT_capability_minimum_proved": False,
+        "ROOT_capability_reduction_executed": scope in ("ROOT_POST_SETUP_ONLY", "ROOT_QUOTA_CUSTODY_ONLY"),
+        "ROOT_capability_minimum_proved": False,
         "real_orders_sent": 0, "recurring_additional_cost_usd": 0}
     validate_evidence(receipt, owner_uid=owner_uid, owner_gid=owner_gid, source_binding=binding)
     _LIVE = receipt
@@ -578,7 +609,23 @@ def assert_current_seal(*, owner_uid, owner_gid, source_binding=None):
     require(status.get("NoNewPrivs") == "1" and status.get("Seccomp") == "2"
             and native._counter(status) == receipt["filters_after"] and _caps(status) == receipt["capabilities"]
             and ctypes.CDLL(None).prctl(3, 0, 0, 0, 0) == 0, "ROOT_SEAL_LIVE_KERNEL_STATE_REBOUND")
-    if receipt["scope"] == "ROOT_POST_SETUP_ONLY":
+    if receipt["scope"] in ("ROOT_POST_SETUP_ONLY", "ROOT_QUOTA_CUSTODY_ONLY"):
         require(os.getresuid() == (0, 0, 0), "ROOT_SEAL_ROOT_ROLE_ALREADY_DROPPED")
-        _descriptors()
+        log = receipt["boundary"].get("owned_fin_log")
+        _descriptors() if log is None else _descriptors(owned_fin_log=log)
     return validate_evidence(receipt, owner_uid=owner_uid, owner_gid=owner_gid, source_binding=source_binding)
+
+
+def install_quota_custody_seal(*, owner_uid, owner_gid, source_binding, owned_fin_log, **boundary_arguments):
+    """Seal only ROOT PID1 after its exact setup child has already forked.
+
+    The child's separate mount namespace is authenticated by the caller. The
+    sole retained descriptor is the original manager's positively owned log;
+    it does not grant root/image/device/namespace access. No child inherits
+    this scope, and no quota operation is allowed after its installation.
+    """
+    require(os.getpid() == 1 and type(owned_fin_log) is dict,
+            "ROOT_SEAL_QUOTA_CUSTODY_FIXED_PID1_REQUIRED")
+    return _install(owner_uid=owner_uid, owner_gid=owner_gid, source_binding=source_binding,
+        inherited=None, scope="ROOT_QUOTA_CUSTODY_ONLY",
+        boundary_arguments={**boundary_arguments, "owned_fin_log": owned_fin_log})

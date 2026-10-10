@@ -493,6 +493,9 @@ class ComponentArchive:
         return result
 
     def _publish(self, path, raw, *, prefix):
+        # A second live check binds this exact encoded object before its
+        #temporary allocation, including recovery/republication of an object.
+        self.owner._archive_inventory(additional_bytes=len(raw), additional_files=1)
         temporary = self.root / (prefix + uuid.uuid4().hex + ".tmp")
         try:
             fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -509,6 +512,19 @@ class ComponentArchive:
             self.owner._sync_directory(self.root)
         finally:
             temporary.unlink(missing_ok=True)
+
+    def publish_original_v4(self, originals, manifest, manifest_sha):
+        """Candidate V2 writer ABI, subject to owner acceptance and G5/G8."""
+        return self._publish_original_plan(originals, manifest, manifest_sha,
+                                           self._comparison_slice_plan(originals, manifest, manifest_sha))
+
+    def publish_original_v3(self, originals, manifest, manifest_sha):
+        """The original V3 planner and publisher used by nativebuild and G5A."""
+        alternatives, catalog, _ = self._original_proposals(originals, manifest)
+        plan = self._select_plan(alternatives, catalog, manifest, manifest_sha)
+        if loads(inflate(plan[0], maximum=MAX_RECIPE_BYTES)).get("schema") != NATIVE_WRITE_RECIPE_SCHEMA:
+            raise ValueError("RETENTION_SLICE_WRITE_EXACT_ARTIFACT_REVIEW_REQUIRED")
+        return self._publish_original_plan(originals, manifest, manifest_sha, plan)
 
     def _recipe(self, receipt):
         ident = receipt.get("generation_id")
@@ -734,6 +750,18 @@ class ComponentArchive:
         return restored, manifest
 
     def build(self, source, manifest, manifest_sha):
+        """Candidate V2 native dispatch. Changing Source does not approve it."""
+        return self.build_v4(source, manifest, manifest_sha)
+
+    def build_v4(self, source, manifest, manifest_sha):
+        """Read the actual original generation and publish the proposed V4 ABI."""
+        return self._build_original_source(source, manifest, manifest_sha, writer=self.publish_original_v4)
+
+    def build_v3(self, source, manifest, manifest_sha):
+        """Explicit historical V3 writer; mixed V3/V4 readers remain supported."""
+        return self._build_original_source(source, manifest, manifest_sha, writer=self.publish_original_v3)
+
+    def _build_original_source(self, source, manifest, manifest_sha, *, writer):
         ident = manifest["generation_id"]
         directory = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY | getattr(os, "O_NOATIME", 0))
         try:
@@ -765,13 +793,45 @@ class ComponentArchive:
                 raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")
             unchanged()
             return preview
-        alternatives, catalog, _ = self._original_proposals(original, manifest)
-        # Authenticate the catalog once; all alternatives reuse this same
-        # captured base. Sequential plans retain one winner, never four packs.
-        # The unchanged report frame layout is not a second codec experiment.
-        recipe_wire, packed, new_name = self._select_plan(alternatives, catalog, manifest, manifest_sha)
-        if loads(inflate(recipe_wire, maximum=MAX_RECIPE_BYTES)).get("schema") != NATIVE_WRITE_RECIPE_SCHEMA:
-            raise ValueError("RETENTION_SLICE_WRITE_EXACT_ARTIFACT_REVIEW_REQUIRED")
+        preview = writer(original, manifest, manifest_sha)
+        unchanged()
+        return preview
+
+    def _publish_original_plan(self, original, manifest, manifest_sha, plan):
+        """One publisher: both ABIs restore all five bytes before native ACK.
+
+        The candidate Source selects V4. Its contract acceptance, native G5
+        qualification and exact artifact join remain independent requirements.
+        """
+        if validate_materialized(original, expected_manifest_sha256=manifest_sha) != manifest:
+            raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")
+        recipe_wire, packed, new_name = plan
+        ident = manifest["generation_id"]
+        recipe_path = self.root / (ident + ".recipe.gz")
+        head = self.owner._archive_checkpoint()
+        recipe = loads(inflate(recipe_wire, maximum=MAX_RECIPE_BYTES))
+        if (recipe.get("schema") not in {RECIPE_SCHEMA, SLICE_RECIPE_SCHEMA}
+                or recipe.get("generation_id") != ident or recipe.get("manifest_sha256") != manifest_sha
+                or recipe.get("sequence") != manifest["sequence"]
+                or (packed is None) != (new_name is None)
+                or packed is not None and (new_name != sha(packed) + ".cas.pack" or new_name not in recipe["packs"])):
+            raise ValueError("RETENTION_ORIGINAL_PLAN_SOURCE_BINDING_INVALID")
+        if recipe_path.exists() or recipe_path.is_symlink():
+            existing, _ = read(recipe_path, maximum=MAX_RECIPE_BYTES)
+            if existing != recipe_wire:
+                raise ValueError("RETENTION_ORIGINAL_PLAN_RECOVERY_CONFLICT")
+        else:
+            self._publish_new_original_plan(ident, manifest_sha, recipe_wire, packed, new_name)
+        preview = {"schema": ACK_SCHEMA, "archiver_id": ARCHIVER_ID, "generation_id": ident,
+            "sequence": manifest["sequence"], "manifest_sha256": manifest_sha,
+            "archive_sha256": sha(recipe_wire), "archive_uri": "local-private://"+ident+".recipe.gz",
+            "receipt_sequence": head["receipt_count"]+1}
+        restored, _ = self.restore(preview)
+        if restored != original:
+            raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")
+        return preview
+
+    def _publish_new_original_plan(self, ident, manifest_sha, recipe_wire, packed, new_name):
         # Exact new bytes plus simultaneous controls, rounded physical blocks.
         additions = (len(packed) if packed is not None else 0) + len(recipe_wire)
         self.owner._archive_inventory(additional_bytes=additions+4*65536, additional_files=6)
@@ -782,15 +842,6 @@ class ComponentArchive:
             self.owner._fault("archive_after_publish_components")
         self._publish(self.root / (ident + ".recipe.gz"), recipe_wire, prefix=".recipe-")
         self.owner._fault("archive_after_publish_recipe")
-        preview = {"schema": ACK_SCHEMA, "archiver_id": ARCHIVER_ID, "generation_id": ident,
-            "sequence": manifest["sequence"], "manifest_sha256": manifest_sha,
-            "archive_sha256": sha(recipe_wire), "archive_uri": "local-private://"+ident+".recipe.gz",
-            "receipt_sequence": head["receipt_count"]+1}
-        restored, _ = self.restore(preview)
-        if restored != original:
-            raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")
-        unchanged()
-        return preview
 
     def _original_proposals(self, original, manifest):
         """The unchanged native SOURCE/PAGE/BIN proposals and anchor rule.

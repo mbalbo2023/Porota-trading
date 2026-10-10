@@ -198,7 +198,7 @@ class EvidenceFiles:
             if any(p == archive_resolved or p.is_relative_to(archive_resolved) for p in self.protected):
                 raise ValueError("SHADOW_OUTPUT_MUST_BE_SEPARATE")
         self.archive_maximum_bytes = archive_maximum_bytes
-        if not isinstance(archive_format, str) or archive_format not in {"TAR_V2", "COMPONENT_V3"}:
+        if not isinstance(archive_format, str) or archive_format not in {"TAR_V2", "COMPONENT_V3", "COMPONENT_V4"}:
             raise ValueError("INVALID_RETENTION_ARCHIVE_FORMAT")
         self.archive_format = archive_format
         self.authority_root = self.root.parent / (self.root.name + ".authority")

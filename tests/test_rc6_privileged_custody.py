@@ -22,6 +22,29 @@ from scripts import rc6_capacity_calibration as calibration
 from scripts import rc6_privileged_custody as custody
 
 
+def test_optional_compute_observer_uses_same_custody_with_exact_kernel_limits(tmp_path):
+    original = custody.service_properties(tmp_path, 45, probe_only=True)
+    bounded = custody.service_properties(tmp_path, 45, probe_only=True, resource_cpu=3)
+    assert bounded == original + ['CPUQuota=100%', 'AllowedCPUs=3', 'CPUAffinity=3',
+        'MemoryMax=1073741824', 'MemorySwapMax=0', 'TasksMax=64']
+    assert not any(row.startswith(('CPUQuota=', 'MemoryMax=')) for row in original)
+    command = custody.service_command(custody.ROOT, tmp_path/'probe-request.json',
+        nonce='a'*32, control_root=tmp_path, runtime_seconds=45, broker_mode='probe', resource_cpu=3)
+    assert all('--property='+row in command for row in bounded)
+    assert '--guardian' in command and command[-1] == custody.unit_name('a'*32)
+    assert '--property=TimeoutStopSec=2' in command and '--property=RuntimeMaxSec=45' in command
+
+
+@pytest.mark.parametrize('value', [True, -1, 8192, '1'])
+def test_compute_cpu_is_not_an_unreviewed_limit_parameter(tmp_path, value):
+    with pytest.raises(ValueError, match='FIXED_COMPUTE_CPU_REQUIRED'):
+        custody.service_properties(tmp_path, 45, probe_only=True, resource_cpu=value)
+    with pytest.raises(ValueError, match='COMPUTE_LIMITS_ONLY_ON_PROBE'):
+        custody.service_command(custody.ROOT, tmp_path/'custody-request.json',
+            nonce='a'*32, control_root=tmp_path, runtime_seconds=6,
+            broker_mode='guard-hang', guard=True, resource_cpu=0)
+
+
 @pytest.mark.parametrize("name", sorted(custody.ROOT_POSTSEAL_CONTROL_NAMES))
 def test_postseal_reader_own_nonroot_io_preserves_ten_fields_without_noatime(tmp_path, monkeypatch, name):
     tmp_path.chmod(0o700)

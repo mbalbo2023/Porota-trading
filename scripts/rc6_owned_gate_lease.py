@@ -221,7 +221,8 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None):
 
 class GateLeaseMonitor:
     def __init__(self, root, *, source_sha, source_tree, owner_session, gate, launch_receipt_url,
-                 run_id=None, run_attempt=None, get=None, clock=None, monotonic=None, diagnostic_binding=None):
+                 run_id=None, run_attempt=None, get=None, clock=None, monotonic=None, diagnostic_binding=None,
+                 g5a_namespace_receipt=None, g5a_revision=None):
         self.root = Path(root)
         identity = self.root.lstat()
         self.store_key = (str(self.root), identity.st_dev, identity.st_ino, identity.st_uid)
@@ -235,7 +236,8 @@ class GateLeaseMonitor:
             and self.context['run_attempt'] == 1 and type(self.context['run_attempt']) is int,
             'OWNED_LEASE_EXACT_FIRST_SOURCE_SCOPE_REQUIRED')
         if gate in admission.DIAGNOSTIC_GATES:
-            require(owner_session == admission.SUCCESSOR_OWNER and type(diagnostic_binding) is dict,
+            require(type(diagnostic_binding) is dict and (owner_session == admission.SUCCESSOR_OWNER
+                or diagnostic_binding.get('authorization_schema') == 'porota.rc6.capacity-diagnostic-launch.v2'),
                 'OWNED_DIAGNOSTIC_FULL_ADMISSION_PINS_REQUIRED')
             self.context['diagnostic_binding'] = diagnostic_binding
         else:
@@ -247,6 +249,24 @@ class GateLeaseMonitor:
         self.launch_intent, self.native_deadline, self.previous_clock = None, None, None
         self.last_local_poll, self.last_api_poll, self.final_path = None, None, None
         self.seen_owner_versions = {}
+        self.g5a_namespace_receipt = g5a_namespace_receipt
+        self.g5a_revision = g5a_revision
+        require((g5a_namespace_receipt is None) == (g5a_revision is None),
+                'OWNED_G5A_NAMESPACE_AND_TYPED_DECISION_BOTH_REQUIRED')
+        if g5a_namespace_receipt is not None:
+            from scripts import rc6_contract_revisions as revisions
+            from scripts import rc6_g5_contract as g5
+            revisions.validate_revision_approval(g5a_revision, revision=g5.REVISION, scope=g5.SCOPE,
+                source_sha=source_sha, source_tree=source_tree, contract_sha256=g5.CONTRACT_SHA256,
+                now=self.clock())
+            binding = g5a_namespace_receipt.get('binding', {})
+            require(gate == 'Horizon' and binding.get('candidate_sha') == source_sha
+                and binding.get('candidate_tree') == source_tree and binding.get('owner_id') == owner_session
+                and binding.get('producer') == 'Horizon-private-original-cas'
+                and g5a_namespace_receipt.get('cleanup_authority_granted') is False
+                and re.fullmatch('[0-9a-f]{32}', str(g5a_namespace_receipt.get('namespace_nonce', '')))
+                and self.root == Path(g5a_namespace_receipt['path']) / 'g5a-owner-monitor',
+                'OWNED_G5A_EXACT_NAMESPACE_MONITOR_BINDING_REQUIRED')
 
     def _store(self, value):
         raw = wire(value)
@@ -318,12 +338,17 @@ class GateLeaseMonitor:
                 calls[path] = self.get(path, deadline)
             return calls[path]
         with _http_budget(deadline):
+            if self.g5a_revision is not None:
+                from scripts import rc6_owned_g5a_continuation as continuation
+                continuation.validate_decision_documents(self.g5a_revision, record_get)
             # The first pass may only be more conservative than its actual
             # completion. The second pass replays exactly the captured API
             # documents at actual completed UTC; it performs no HTTP/Source IO.
             _scope(self.context, started + timedelta(seconds=allowance), record_get)
             finished = self.clock()
             scope = _scope(self.context, finished, lambda path: calls[path])
+            if self.g5a_revision is not None:
+                continuation.reject_revocations(self.g5a_revision, _timelines(calls))
             versions = {}
             for issue, rows in _timelines(calls).items():
                 for row in rows:
@@ -353,6 +378,15 @@ class GateLeaseMonitor:
         self.seen_owner_versions.update(versions)
         self.last_api_poll = self.monotonic()
         self.previous_clock = finished, self.last_api_poll
+        if self.g5a_namespace_receipt is not None and stage in ('prelaunch', 'poll'):
+            from scripts import rc6_owned_g5a_continuation as continuation
+            sequence = len(self.events)
+            require(sequence <= continuation.MAX_PULSES, 'OWNED_G5A_FINITE_PULSE_BOUND')
+            pulse = {'schema': continuation.SCHEMA, 'sequence': sequence, 'snapshot': identifier,
+                'binding': self.g5a_namespace_receipt['binding'],
+                'namespace_nonce': self.g5a_namespace_receipt['namespace_nonce'],
+                'new_launch_authorized': False, 'G5_GREEN': False}
+            _private_write(self.root / (continuation.PREFIX + str(sequence).zfill(4) + '.json'), wire(pulse))
         return scope
 
     def prelaunch(self, label):
@@ -480,7 +514,8 @@ class DiagnosticIssuerMonitor:
         require(self.previous.get('source_sha') == args.source_sha
             and self.previous.get('source_tree') == args.source_tree
             and self.previous.get('gate') == ('capacity-probe' if args.mode == 'capability' else 'capacity-calibration')
-            and self.previous.get('owner_session') == admission.SUCCESSOR_OWNER
+            and (self.previous.get('owner_session') == admission.SUCCESSOR_OWNER
+                or self.previous.get('authorization_schema') == 'porota.rc6.capacity-diagnostic-launch.v2')
             and self.previous.get('status') == 'ADMITTED_DIAGNOSTIC_NOT_STARTED'
             and self.previous.get('qualification_claimed') is False,
             'OWNED_DIAGNOSTIC_ISSUER_EXACT_ADMISSION_REQUIRED')
@@ -499,8 +534,13 @@ class DiagnosticIssuerMonitor:
         self.monitor = GateLeaseMonitor(self.control_root, **context, diagnostic_binding=self.pins)
 
     def _full_admit(self, stage):
-        fresh = admission.admit_diagnostic(**{key: self.previous[key] for key in
-            ('source_sha', 'source_tree', 'launch_receipt_url', 'owner_session', 'gate')})
+        context = {key: self.previous[key] for key in
+            ('source_sha', 'source_tree', 'launch_receipt_url', 'owner_session', 'gate')}
+        if stage == 'post-fin' and self.previous.get('authorization_schema') == \
+                'porota.rc6.capacity-diagnostic-launch.v2':
+            require(self.physical_fin_closed is True, 'OWNED_DIAGNOSTIC_CAPTURE_ONLY_REQUIRES_ACTUAL_FIN')
+            context['native_finished'] = True
+        fresh = admission.admit_diagnostic(**context)
         require(admission.diagnostic_control_binding(fresh) == self.pins
             and fresh.get('source', {}).get('repository_public_verified') is True
             and fresh.get('source', {}).get('anonymous_source_origin') == 'https://github.com/' + admission.REPO + '.git',

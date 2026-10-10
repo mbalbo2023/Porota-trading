@@ -115,7 +115,7 @@ class EvidenceRetention:
         if any(type(value) is not int or value <= 0 for value in (archive_maximum_bytes, archive_maximum_files)):
             raise ValueError("INVALID_RETENTION_ARCHIVE_POLICY")
         self.archive_maximum_bytes, self.archive_maximum_files = archive_maximum_bytes, archive_maximum_files
-        if not isinstance(archive_format, str) or archive_format not in {"TAR_V2", "COMPONENT_V3"}:
+        if not isinstance(archive_format, str) or archive_format not in {"TAR_V2", "COMPONENT_V3", "COMPONENT_V4"}:
             raise ValueError("INVALID_RETENTION_ARCHIVE_FORMAT")
         self.archive_format = archive_format
         self.auto_archive, self.fault_inject = auto_archive, fault_inject
@@ -166,7 +166,7 @@ class EvidenceRetention:
             if count > self.archive_maximum_files:
                 raise RetentionPressure("RETENTION_ARCHIVE_FILES_CAPACITY_REACHED", {"archive_files": count})
         physical_extra = additional_bytes + additional_files * 4096
-        if self.archive_format == "COMPONENT_V3" and additional_bytes:
+        if self.archive_format in {"COMPONENT_V3", "COMPONENT_V4"} and additional_bytes:
             # The fixed cap covers GC intent/control staging too. Maintain
             # reserve before growing the archive, never count deletion first.
             physical_extra += 2 * CONTROL_LIMIT + 8192
@@ -479,9 +479,11 @@ class EvidenceRetention:
                 and stamp(manifest.get("as_of")) < stamp(head["expired_before"])):
             raise ValueError("RETENTION_ARCHIVE_GENERATION_OUTSIDE_RETAINED_HORIZON")
         pending = self._build_intent()
-        if self.archive_format == "COMPONENT_V3" or pending is not None and pending["generation_id"] == ident:
+        if self.archive_format in {"COMPONENT_V3", "COMPONENT_V4"} or pending is not None and pending["generation_id"] == ident:
             from .archive_components import ComponentArchive
-            receipt = ComponentArchive(self).build(path, manifest, manifest_hash)
+            component = ComponentArchive(self)
+            receipt = (component.build_v3(path, manifest, manifest_hash) if self.archive_format == "COMPONENT_V3"
+                       else component.build(path, manifest, manifest_hash))
             receipt.update(archive_verified=True, durable=True,
                 acknowledged_at=datetime.now(timezone.utc).isoformat(),
                 previous_receipt_digest=head["receipt_digest"], source_as_of=manifest.get("as_of"))

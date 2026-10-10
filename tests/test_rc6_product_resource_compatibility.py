@@ -584,3 +584,357 @@ def test_resource_job_is_manual_and_has_no_persistent_infrastructure_or_build_pa
     # CLI deliberately observes existing kernel controls, and keeps historical
     # native FIN/capture/cleanup implementations instead of rewriting them.
     assert {"execute_owned", "capture_required_evidence", "cleanup_namespace"} <= names
+
+
+def physical_filesystem_fixture():
+    """Typed control input; no block device, mount or disk is created."""
+    node = filesystem_fixture()
+    node["filesystem"] = "ext4"
+    node["all_mounts"][2]["filesystem"] = "ext4"
+    node["physical_backing"] = {"status": "BLOCK_AND_BACKING_READBACK_OBSERVED",
+        "filesystem_device_number": 17, "block_rdev": 17, "block_device_inode": 111,
+        "backend": "FULLY_ALLOCATED_LOOP_ON_PHYSICAL_FILESYSTEM",
+        "backing_filesystem": "ext4", "backing_bytes": 256 * 1024**2,
+        "backing_allocated_bytes": 256 * 1024**2, "backing_device_number": 18,
+        "backing_inode": 222, "backing_ancestry": {
+            "status": "BLOCK_AND_BACKING_READBACK_OBSERVED", "backend": "KERNEL_PHYSICAL_BLOCK_DEVICE",
+            "block_rdev": 18, "filesystem_device_number": 18, "block_device_inode": 333}}
+    return node
+
+
+def metric_fixture(*, clock=10000000, usage=100, path="/sys/fs/cgroup"):
+    pressure = resource_profile.parse_pressure("some avg10=0.00 avg60=0.00 avg300=0.00 total=0")
+    return {"started_monotonic_ns": clock, "finished_monotonic_ns": clock + 1,
+        "cgroup_path": path, "memory.current": 32 * 1024**2, "memory.peak": 64 * 1024**2,
+        "memory.swap.current": 0, "cpu.stat": {"usage_usec": usage},
+        "memory.stat": {"anon": 20 * 1024**2, "file": 1024**2},
+        "memory.events": {"oom": 0, "oom_kill": 0, "oom_group_kill": 0, "max": 0},
+        "memory.pressure": copy.deepcopy(pressure), "cpu.pressure": copy.deepcopy(pressure),
+        "io.pressure": copy.deepcopy(pressure),
+        "self_memory": {"VmRSS": 24 * 1024**2, "VmHWM": 25 * 1024**2, "VmSwap": 0},
+        "self_ru_maxrss_bytes": 25 * 1024**2}
+
+
+def typed_compute_result():
+    """Typed, non-native receipt using real pure functions once, no fixtures/DB."""
+    unit = "rc6-native-" + "1" * 32 + ".service"
+    envelope = cgroup_fixture()
+    envelope["membership"] = "0::/system.slice/" + unit
+    envelope["path"] += "/system.slice/" + unit
+    envelope["cpuset.cpus.effective"] = str(envelope["affinity"][0])
+    proof = unit_filter_fixture(os.getpid(), os.getppid(), 0)
+    proof["source_binding"].pop("plan_sha256")
+    samples = [metric_fixture(path=envelope["path"]),
+               metric_fixture(clock=20000000, usage=10100, path=envelope["path"])]
+    return {"schema": "porota.rc6.compute-resource-observation.v1", "scope": resource_profile.COMPUTE_SCOPE,
+        "status": "PURE_CANDIDATE_CONTROLS_OBSERVED_PENDING_EXTERNAL_FIN", "unit": unit,
+        "source_sha": "a" * 40, "source_tree": "b" * 40,
+        "plan_sha256": resource_profile.exact_plan(resource_profile.PLAN_V2)[1],
+        "identity": proof["identity"], "native_namespace_filter": proof,
+        "kernel_envelope_before": envelope, "kernel_envelope_after": copy.deepcopy(envelope),
+        "resource_samples": samples, "resource_summary": resource_profile.summarize_metrics(samples),
+        "compute_controls": resource_profile.run_original_compute_controls(),
+        "source_mount": {"options": ["ro"]}, "source_readonly": True,
+        "data_or_fixture_writes": False, "disk_equivalence_claimed": False,
+        "persistent_disk_compatibility": "NO_VERIFICADO", "product_resource_compatibility": "NO_VERIFICADO",
+        "whole_droplet_compatibility": "NO_VERIFICADO", "representative_full_workload": False,
+        "original_G4_G5_started": False, "G0_G8_qualification": False,
+        "artifact_transfer_bytes": None, "artifact_transfer_bytes_inferred": False,
+        "FIN": "PENDING_ORIGINAL_EXTERNAL_NATIVE_MANAGER", "real_orders_sent": 0}
+
+
+def verify_typed_compute(result):
+    resource_profile.verify_compute_result(result, source_sha="a" * 40, source_tree="b" * 40,
+        plan_sha256=resource_profile.exact_plan(resource_profile.PLAN_V2)[1], unit=result["unit"],
+        birth={"identity": result["native_namespace_filter"]["identity"]})
+
+
+def test_v2_preserves_limits_and_original_consumers_requires_owner_and_remains_proposed():
+    legacy, _ = resource_profile.exact_plan()
+    proposal, _ = resource_profile.exact_plan(resource_profile.PLAN_V2)
+    for key in ("cpu_maximum", "memory_maximum_bytes", "swap_maximum_bytes", "pids_maximum",
+                "storage_maximum_bytes", "inode_maximum", "minimum_free_inode_fraction"):
+        assert proposal[key] == legacy[key]
+    assert proposal["suites"] == legacy["suites"] + list(resource_profile.PROTECTED_SUITES)
+    assert proposal["owner_contract_acceptance_required"] is True
+    assert proposal["original_material_workloads"] == {
+        "G4_catalog_count": 12000, "G4_observations": 60000, "G4_factual_paper_exits": 5,
+        "G5_cuts": 1202, "G5_storage_maximum_bytes": 512 * 1024**2, "G5_depth": 32,
+        "G5_retention_hours": 9, "G5_temporary_retention_hours": 1}
+    assert proposal["representative_full_workload"] is False
+
+
+@pytest.mark.parametrize("key,value", [
+    ("storage_maximum_bytes", 512 * 1024**2), ("memory_maximum_bytes", 2 * 1024**3),
+    ("owner_contract_acceptance_required", False), ("representative_full_workload", True),
+    ("compute_probe_qualification", True), ("compute_probe_maximum_control_bytes", 65537),
+])
+def test_v2_cannot_raise_original_limit_or_admit_contract_implicitly(tmp_path, key, value):
+    proposal, _ = resource_profile.exact_plan(resource_profile.PLAN_V2)
+    proposal[key] = value
+    path = tmp_path / "altered.json"
+    path.write_bytes(resource_profile.canonical(proposal))
+    with pytest.raises(ValueError, match="SCOPE_OR_FIXED_LIMIT_CHANGED"):
+        resource_profile.exact_plan(path)
+
+
+def test_v2_cannot_drop_protected_concurrent_risk_exit_or_eod_consumer(tmp_path):
+    proposal, _ = resource_profile.exact_plan(resource_profile.PLAN_V2)
+    proposal["suites"].pop()
+    path = tmp_path / "altered.json"
+    path.write_bytes(resource_profile.canonical(proposal))
+    with pytest.raises(ValueError, match="COMPLETE_ORIGINAL_PROTECTED_CONSUMERS_REQUIRED"):
+        resource_profile.exact_plan(path)
+
+
+def test_v2_physical_disk_readback_is_scoped_and_never_durability_or_droplet_proof():
+    plan, _ = resource_profile.exact_plan(resource_profile.PLAN_V2)
+    limits = resource_profile.validate_filesystem(physical_filesystem_fixture(), plan)
+    assert limits["persistent_disk_latency_or_durability_qualified"] is False
+    assert limits["aggregate_storage_limit_bytes"] == 256 * 1024**2
+
+
+@pytest.mark.parametrize("key,value,reason", [
+    ("status", "UNKNOWN", "BLOCK_AND_BACKING_READBACK_REQUIRED"),
+    ("block_rdev", 19, "BLOCK_DEVICE_REBOUND"),
+    ("backing_filesystem", "tmpfs", "LOOP_BYTES_OR_FILESYSTEM_REQUIRED"),
+    ("backing_allocated_bytes", 4096, "LOOP_BYTES_OR_FILESYSTEM_REQUIRED"),
+    ("backing_bytes", 512 * 1024**2, "LOOP_BYTES_OR_FILESYSTEM_REQUIRED"),
+    ("backing_ancestry", {"status": "UNKNOWN"}, "LOOP_BACKING_ANCESTRY_UNVERIFIED"),
+])
+def test_ext4_label_or_sparse_loop_on_tmpfs_cannot_claim_persistent_disk(key, value, reason):
+    plan, _ = resource_profile.exact_plan(resource_profile.PLAN_V2)
+    disk = physical_filesystem_fixture()
+    disk["physical_backing"][key] = value
+    with pytest.raises(ValueError, match=reason):
+        resource_profile.validate_filesystem(disk, plan)
+
+
+def test_recursive_loop_ancestry_cannot_hide_tmpfs_or_unknown_virtual_block_device():
+    plan, _ = resource_profile.exact_plan(resource_profile.PLAN_V2)
+    disk = physical_filesystem_fixture()
+    ancestry = disk["physical_backing"]["backing_ancestry"]
+    ancestry["backend"] = "FULLY_ALLOCATED_LOOP_ON_PHYSICAL_FILESYSTEM"
+    ancestry.update(backing_filesystem="tmpfs", backing_bytes=4096, backing_allocated_bytes=4096,
+        backing_device_number=20, backing_inode=444, backing_ancestry={"status": "UNKNOWN"})
+    with pytest.raises(ValueError, match="LOOP_BACKING_ANCESTRY_UNVERIFIED"):
+        resource_profile.validate_filesystem(disk, plan)
+
+
+def test_metrics_report_kernel_peak_self_rss_pressure_cpu_sampling_limits_without_extrapolation():
+    samples = [metric_fixture(), metric_fixture(clock=20000000, usage=10100)]
+    summary = resource_profile.summarize_metrics(samples, kernel_peak_rss_bytes=26 * 1024**2)
+    assert summary["memory_kernel_peak_bytes"] == 64 * 1024**2
+    assert summary["self_rss_sampled_peak_bytes"] == 24 * 1024**2
+    assert summary["owned_worker_kernel_peak_rss_bytes"] == 26 * 1024**2
+    assert summary["cpu_sampled_peak_percent"] == 100
+    assert summary["cpu_peak_is_sampled_interval_rate_not_continuous_peak"] is True
+    assert summary["self_rss_does_not_include_other_processes"] is True
+    assert summary["cgroup_memory_includes_cache_and_all_members"] is True
+
+
+@pytest.mark.parametrize("key,value,reason", [
+    ("memory.peak", True, "TYPED_ACTUAL_TELEMETRY_REQUIRED"),
+    ("memory.current", 65 * 1024**2, "TYPED_ACTUAL_TELEMETRY_REQUIRED"),
+    ("memory.stat", None, "TYPED_ACTUAL_TELEMETRY_REQUIRED"),
+    ("memory.events", None, "TYPED_ACTUAL_TELEMETRY_REQUIRED"),
+    ("memory.swap.current", 1024, "SWAP_OBSERVED"),
+    ("cpu.stat", {"usage_usec": 0}, "CPU_STAT_COUNTER_RECYCLED"),
+    ("started_monotonic_ns", 10000000, "TELEMETRY_CLOCK_OR_CGROUP_REBOUND"),
+    ("cgroup_path", "/sys/fs/cgroup/foreign", "TELEMETRY_CLOCK_OR_CGROUP_REBOUND"),
+    ("memory.pressure", {"some": {"avg10": float("nan"), "avg60": 0, "avg300": 0, "total": 0}},
+        "PRESSURE_READBACK_MALFORMED"),
+])
+def test_missing_malformed_or_recycled_telemetry_fails_closed(key, value, reason):
+    samples = [metric_fixture(), metric_fixture(clock=20000000, usage=10100)]
+    samples[1][key] = value
+    with pytest.raises(ValueError, match=reason):
+        resource_profile.summarize_metrics(samples)
+
+
+@pytest.mark.parametrize("event", ["oom", "oom_kill", "oom_group_kill", "max"])
+def test_any_oom_or_hard_memory_hit_invalidates_compute_observation(event):
+    samples = [metric_fixture(), metric_fixture(clock=20000000, usage=10100)]
+    samples[1]["memory.events"][event] = 1
+    with pytest.raises(ValueError, match="OOM_OR_HARD_LIMIT_HIT"):
+        resource_profile.summarize_metrics(samples)
+
+
+def test_real_original_pure_candidate_controls_are_exactly_five_risk_and_two_guard_calls():
+    controls = resource_profile.run_original_compute_controls()
+    assert controls["actual_capacity_calls"] == 5
+    assert controls["actual_emergency_guard_calls"] == 2
+    assert controls["repetitions"] == 1
+    assert controls["actual_outputs"][5:] == ["", "EMERGENCY_POSITION_CAP"]
+    assert controls["fixtures_created"] is False
+    assert controls["db_calls"] == controls["network_calls"] == controls["financial_ticks"] == 0
+    assert controls["inputs"] == resource_profile.original_compute_controls()[0]
+
+
+def test_pure_candidate_regression_red_is_discriminated_and_never_relabelled(monkeypatch):
+    from dataclasses import replace
+    import de_concurrent_risk_capacity_hf6 as candidate
+    original = candidate.capacity
+    monkeypatch.setattr(candidate, "capacity", lambda *args, **kwargs: replace(original(*args, **kwargs), admitted=False))
+    with pytest.raises(ValueError, match="REAL_CANDIDATE_PURE_REGRESSION_RED"):
+        resource_profile.run_original_compute_controls()
+
+
+def test_typed_compute_observation_positive_requires_live_actor_limits_but_does_not_mint_fin():
+    result = typed_compute_result()
+    verify_typed_compute(result)
+    assert result["FIN"] == "PENDING_ORIGINAL_EXTERNAL_NATIVE_MANAGER"
+    assert result["product_resource_compatibility"] == "NO_VERIFICADO"
+    assert result["representative_full_workload"] is False
+
+
+@pytest.mark.parametrize("key,value,reason", [
+    ("cpu.max", "50000 100000", "EXACT_ONE_CPU_ONE_GIB_REQUIRED"),
+    ("memory.max", str(512 * 1024**2), "EXACT_ONE_CPU_ONE_GIB_REQUIRED"),
+    ("membership", "0::/system.slice/foreign.service", "OWN_COMPUTE_UNIT_MEMBERSHIP_REQUIRED"),
+    ("mount_options", ["rw"], "COMPUTE_READONLY_CURRENT_CGROUP_REQUIRED"),
+    ("cgroup_namespace_inode", 789, "OWN_COMPUTE_UNIT_MEMBERSHIP_REQUIRED"),
+    ("processes", [], "CURRENT_CGROUP_MEMBERSHIP_REQUIRED"),
+    ("cpuset.cpus.effective", "0,1", "KERNEL_SINGLE_CPUSET_REQUIRED"),
+    ("cpuset.cpus.effective", "", "KERNEL_SINGLE_CPUSET_REQUIRED"),
+])
+def test_typed_compute_receipt_cannot_substitute_nominal_unit_or_lower_smaller_limit(key, value, reason):
+    result = typed_compute_result()
+    result["kernel_envelope_after"][key] = value
+    with pytest.raises(ValueError, match=reason):
+        verify_typed_compute(result)
+
+
+@pytest.mark.parametrize("key,value", [
+    ("representative_full_workload", True), ("G0_G8_qualification", True),
+    ("data_or_fixture_writes", True), ("disk_equivalence_claimed", True),
+    ("product_resource_compatibility", "PASS"), ("FIN", "PASS"),
+    ("artifact_transfer_bytes_inferred", True), ("real_orders_sent", True),
+])
+def test_typed_compute_cannot_self_certify_fin_product_or_synthetic_resource_reduction(key, value):
+    result = typed_compute_result()
+    result[key] = value
+    with pytest.raises(ValueError, match="CANNOT_QUALIFY_OR_RELABEL_MATERIAL_WORKLOAD"):
+        verify_typed_compute(result)
+
+
+def test_compute_receipt_cannot_replace_actual_results_with_self_consistent_hashes():
+    result = typed_compute_result()
+    result["compute_controls"]["actual_outputs"][0]["admitted"] = False
+    result["compute_controls"]["actual_outputs_sha256"] = resource_profile.digest(
+        resource_profile.canonical(result["compute_controls"]["actual_outputs"]))
+    with pytest.raises(ValueError, match="REAL_CANDIDATE_PURE_REGRESSION_RED"):
+        verify_typed_compute(result)
+
+
+def test_compute_receipt_cannot_claim_metrics_from_another_cgroup():
+    result = typed_compute_result()
+    for row in result["resource_samples"]:
+        row["cgroup_path"] = "/sys/fs/cgroup/foreign"
+    result["resource_summary"] = resource_profile.summarize_metrics(result["resource_samples"])
+    with pytest.raises(ValueError, match="ACTUAL_COMPUTE_TELEMETRY_REQUIRED"):
+        verify_typed_compute(result)
+
+
+def test_compute_consumer_rejects_serialized_json_custody_before_reading_any_capture():
+    with pytest.raises(ValueError, match="ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+        resource_profile.validate_custody_compute_observation({"resource_probe": True}, binding={})
+
+
+def typed_custody_compute_input(tmp_path, monkeypatch):
+    """Unit-only adapter around custody boundary; never generates authority."""
+    from scripts import rc6_privileged_custody as privileged
+    result = typed_compute_result()
+    identity = result["identity"]
+    actor = {"compute_resource_observation": result, "drop": {"native_filter": result["native_namespace_filter"]},
+        "after_drop": {"pid": identity["pid"], "start_ticks": str(identity["start_ticks"]), "boot_id": identity["boot_id"]}}
+    raw = resource_profile.canonical(actor)
+    capture = tmp_path / "capture"
+    capture.mkdir()
+    (capture / "0001.raw").write_bytes(raw)
+    row = {"relative_source": "root-success.native.log", "capture_file": "0001.raw",
+           "bytes": len(raw), "sha256": resource_profile.digest(raw)}
+    binding = {"candidate_sha": "a" * 40, "candidate_tree": "b" * 40}
+    manifest = resource_profile.canonical({"schema": "porota.rc6.generated-fixture-required-capture.v1",
+        "files": [row], "binding": binding, "actual_owned_fin_closed": True, "phase_green": True})
+    (capture / "manifest.json").write_bytes(manifest)
+    fin = {key: True for key in ("pidfd_exit_observed", "PID1_actual_broker_reap_observed",
+                               "owned_cgroup_empty_or_removed", "external_PID1_birth_pidfd_ACK_verified")}
+    fin["root_actor"] = {"cgroup": "/system.slice/" + result["unit"]}
+    success = {"case": "root-success", "actor": actor,
+        "raw": {"path": row["relative_source"], "bytes": len(raw), "sha256": row["sha256"]},
+        "kernel": {"pid": identity["pid"], "returncode": 0, "actual_child_reaped": True,
+            "owned_children_exhaustion_verified": True, "process_group_absent_after_reap": True,
+            "peak_rss_bytes": 26 * 1024**2}}
+    receipt = {"resource_probe": True, "capture_root": str(capture),
+        "capture_manifest_sha256": resource_profile.digest(manifest), "compute_resource_observation": result,
+        "guardian_actual_FIN": copy.deepcopy(fin), "controller_actual_FIN": copy.deepcopy(fin),
+        "native_root_proof": {"cases": [success] + [{"case": name} for name in (
+            "failure-before-drop", "root-hang", "nonroot-hang")]}}
+    monkeypatch.setattr(privileged, "validate_witness", lambda *args, **kwargs: receipt)
+    return receipt, binding
+
+
+def test_typed_custody_compute_validation_uses_original_raw_and_external_fin(tmp_path, monkeypatch):
+    receipt, binding = typed_custody_compute_input(tmp_path, monkeypatch)
+    result = resource_profile.validate_custody_compute_observation(object(), binding=binding)
+    assert result["status"] == "PASS_PURE_COMPUTE_OBSERVATION_ONLY"
+    assert result["external_ROOT_guardian_and_FIN_verified"] is True
+    assert result["original_actor_raw_sha256"] == receipt["native_root_proof"]["cases"][0]["raw"]["sha256"]
+    assert result["product_resource_compatibility"] == "NO_VERIFICADO"
+    assert result["whole_droplet_compatibility"] == "NO_VERIFICADO"
+
+
+def test_custody_compute_top_copy_cannot_substitute_original_actor_raw(tmp_path, monkeypatch):
+    receipt, binding = typed_custody_compute_input(tmp_path, monkeypatch)
+    receipt["compute_resource_observation"] = {"status": "PASS"}
+    with pytest.raises(ValueError, match="TOP_COPY_CANNOT_REPLACE_ORIGINAL_ACTOR_RAW"):
+        resource_profile.validate_custody_compute_observation(object(), binding=binding)
+
+
+def test_custody_compute_actor_copy_must_equal_preserved_original_bytes(tmp_path, monkeypatch):
+    receipt, binding = typed_custody_compute_input(tmp_path, monkeypatch)
+    receipt["native_root_proof"]["cases"][0]["actor"]["after_drop"]["pid"] += 1
+    with pytest.raises(ValueError, match="ORIGINAL_ACTOR_RAW_REBOUND"):
+        resource_profile.validate_custody_compute_observation(object(), binding=binding)
+
+
+def test_closed_wrapper_or_unit_timeout_cannot_replace_external_root_fin(tmp_path, monkeypatch):
+    receipt, binding = typed_custody_compute_input(tmp_path, monkeypatch)
+    receipt["controller_actual_FIN"]["external_PID1_birth_pidfd_ACK_verified"] = False
+    with pytest.raises(ValueError, match="EXTERNAL_ROOT_GUARDIAN_FIN_REQUIRED"):
+        resource_profile.validate_custody_compute_observation(object(), binding=binding)
+
+
+@pytest.mark.parametrize("key,value,reason", [
+    ("binding", {"candidate_sha": "0" * 40}, "CAPTURE_BINDING_AND_FIN_REQUIRED"),
+    ("actual_owned_fin_closed", False, "CAPTURE_BINDING_AND_FIN_REQUIRED"),
+    ("capture_file", "..", "ACTOR_CAPTURE_MEMBER_REQUIRED"),
+])
+def test_compute_capture_cannot_escape_original_member_or_authenticated_fin(tmp_path, monkeypatch, key, value, reason):
+    receipt, binding = typed_custody_compute_input(tmp_path, monkeypatch)
+    path = Path(receipt["capture_root"]) / "manifest.json"
+    manifest = json.loads(path.read_bytes())
+    if key == "capture_file":
+        manifest["files"][0][key] = value
+    else:
+        manifest[key] = value
+    altered = resource_profile.canonical(manifest)
+    path.write_bytes(altered)
+    receipt["capture_manifest_sha256"] = resource_profile.digest(altered)
+    with pytest.raises(ValueError, match=reason):
+        resource_profile.validate_custody_compute_observation(object(), binding=binding)
+
+
+def test_compute_controller_uses_existing_certified_guardian_only_and_requires_actions(tmp_path):
+    with pytest.raises(ValueError, match="AUTHENTICATED_ACTIONS_OWNER_REQUIRED"):
+        resource_profile.prove_compute_probe(output=tmp_path / "probe", source_sha="a" * 40,
+            source_tree="b" * 40, owner_session="unit", plan_sha256="c" * 64, owner_check=lambda: None)
+    module = ast.parse(Path(resource_profile.__file__).read_bytes())
+    controller = next(node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == "prove_compute_probe")
+    calls = [node for node in ast.walk(controller) if isinstance(node, ast.Call)]
+    guardian = [node for node in calls if isinstance(node.func, ast.Attribute) and node.func.attr == "prove_custody"]
+    assert len(guardian) == 1
+    assert any(keyword.arg == "resource_probe" and isinstance(keyword.value, ast.Constant)
+               and keyword.value.value is True for keyword in guardian[0].keywords)
+    assert not any(isinstance(node.func, ast.Attribute) and node.func.attr in ("Popen", "run", "system") for node in calls)

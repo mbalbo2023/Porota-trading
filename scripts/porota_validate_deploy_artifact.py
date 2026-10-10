@@ -18,6 +18,10 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+SOURCE_ROOT = Path(__file__).absolute().parents[1]
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+
 RUNTIME_SUFFIXES = {".py", ".sh", ".service", ".timer"}
 RUNTIME_EXACT = {
     ".dockerignore",
@@ -130,7 +134,7 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
+def validate(repo_root: Path, artifact_root: Path, expected: list[str], *, g5_writer_binding=None) -> dict:
     present = artifact_files(artifact_root)
     missing_runtime = sorted(p for p in expected if p not in present)
     unsafe_paths = sorted(
@@ -224,6 +228,21 @@ def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
         "parse_errors": parse_errors,
         "files": manifest_files,
     }
+    if g5_writer_binding is not None:
+        try:
+            from rc6_shadow_runtime.archive_format_contract import SOURCE_MEMBERS, verify_immutable_artifact_binding
+            if not set(SOURCE_MEMBERS) <= set(expected) or not set(SOURCE_MEMBERS) <= safe_present:
+                raise ValueError('G5_ARTIFACT_COMPLETE_WRITER_ABI_INVENTORY_REQUIRED')
+            if any((root/name).stat().st_size > 4*1024**2 for root in (repo_root, artifact_root) for name in SOURCE_MEMBERS):
+                raise ValueError('G5_ARTIFACT_WRITER_ABI_MEMBER_BOUND')
+            result['g5_writer_byte_binding'] = verify_immutable_artifact_binding(g5_writer_binding,
+                source_files={name: (repo_root/name).read_bytes() for name in SOURCE_MEMBERS},
+                artifact_files={name: (artifact_root/name).read_bytes() for name in SOURCE_MEMBERS})
+            result['g5_writer_byte_binding'].update(G5_certification_from_metadata_claimed=False,
+                G7_G8_native_execution_still_required=True)
+        except (ValueError, OSError, KeyError, TypeError) as error:
+            result['status'] = 'FAILED'
+            result['g5_writer_byte_binding'] = {'status': 'RED', 'failure_signature': str(error)}
     return result
 
 
@@ -236,12 +255,19 @@ def main() -> int:
     ap.add_argument("--image-inspect")
     ap.add_argument("--candidate-sha")
     ap.add_argument("--tree-sha")
+    ap.add_argument("--g5-writer-binding", type=Path,
+                    help='Exact G5B Source writer ABI record; proves bytes only, never G5 or deploy approval')
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
     artifact_root = Path(args.artifact_root).resolve()
     expected = git_tracked_runtime_files(repo_root)
-    result = validate(repo_root, artifact_root, expected)
+    binding = None
+    if args.g5_writer_binding:
+        if args.g5_writer_binding.stat().st_size > 1024 * 1024:
+            ap.error('--g5-writer-binding exceeds the bounded Source record')
+        binding = json.loads(args.g5_writer_binding.read_bytes())
+    result = validate(repo_root, artifact_root, expected, g5_writer_binding=binding)
     if args.source_manifest:
         if not args.image_inspect:
             ap.error("--source-manifest requires --image-inspect")
@@ -277,6 +303,8 @@ def main() -> int:
         print("POROTA_ARTIFACT_INTEGRITY=FAILED_SOURCE_BYTES", file=sys.stderr)
     if result.get("byte_provenance", {}).get("status") == "RED":
         print("POROTA_ARTIFACT_INTEGRITY=FAILED_BYTE_PROVENANCE", file=sys.stderr)
+    if result.get('g5_writer_byte_binding', {}).get('status') == 'RED':
+        print('POROTA_ARTIFACT_INTEGRITY=FAILED_G5_WRITER_ABI', file=sys.stderr)
     return 1
 
 
