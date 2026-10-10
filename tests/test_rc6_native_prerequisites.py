@@ -256,7 +256,13 @@ def test_root_start_failure_keeps_primary_red_and_original_diagnostic(tmp_path,m
     ('journal_maximum_entries_per_owned_origin',31), ('journal_query_physical_file_hard_limit_bytes',2097153),
     ('journal_queries_per_owned_failure_maximum',True), ('journal_queries_per_owned_failure_maximum',3),
     ('journal_PID1_own_exit_invocation_anchor_required',False),
-    ('journal_invocation_field_qualifies_ROOT_custody',True)])
+    ('journal_invocation_field_qualifies_ROOT_custody',True),
+    ('ROOT_proc_magiclink_access_mount_forbidden',False),
+    ('ROOT_PID1_directory_mask_required',False),
+    ('ROOT_PID1_live_external_parent_ack_required',False),
+    ('ROOT_probe_post_setup_seal_required',False),
+    ('ROOT_probe_seal_allowed_on_quota_ancestor',True),
+    ('ROOT_proc_contract_revision_approved',True)])
 def test_diagnostic_plan_cannot_expand_bounds_or_borrow_root_authority(field, value):
     plan=json.loads(native.PLAN.read_bytes())
     native.require_systemd_diagnostic_plan(canonical(plan))

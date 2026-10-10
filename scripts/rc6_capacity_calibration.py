@@ -52,6 +52,7 @@ BUILDER_SHA256 = "03d08c3f362b12da70defa8f1e2388373d41e20a4ffc08e46f48fb96916677
 CODE_MEMBERS = ("scripts/rc6_capacity_calibration.py", DRIVER_MEMBER, "scripts/rc6_material_environment.py",
                 "scripts/rc6_owned_gate_lease.py",
                 "scripts/rc6_privileged_custody.py", "scripts/rc6_native_namespace_filter.py",
+                "scripts/rc6_root_actor_seal.py",
                 "requirements.lock.txt", "requirements.build.lock.txt", "ops/policy/rc6-supply-chain-v1.json",
                 OBJECTS_MEMBER, BUILDER_MEMBER)
 ORIGIN = "https://github.com/mbalbo2023/Porota-trading.git"

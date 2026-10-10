@@ -285,3 +285,54 @@ perfil1CPU/1GiB ni cuota. El plan histórico permanece byte exacto.
 | El contexto genérico del logger255.4 reserva2iovec por campo KEY_VALUE, pero cada uno usa3. INVOCATION_ID se prepende; UNIT puede quedar omitido. Los84patches oficiales Ubuntu8.17 no alteran esa cadena. | Capturar INVOCATION_ID/MESSAGE_ID/EXIT_CODE/EXIT_STATUS del mensaje de salida PID1 con boot/UID0/UNIT nonce exactos; segunda consulta sólo del mismo boot+UID0+ID auténtico. Rechazar anchor ausente/ambiguo/ajeno y conservar ambos FIN/RAW/hashes. | Corrige el canal diagnóstico, no demuestra aún el errno de namespace. Los129 números de secuencia intermedios no permiten conocer sus mensajes. |
 | El query y output-fields originales no recuperaban ese contexto. | Máximo2consultas por fallo, cada una30entradas/2MiB/5s; no enumeración de unidades ni perfiles ajenos. Un dato INVOCATION_ID nunca concede custodia ROOT/FIN/cleanup/reservas. | Próximo Source exige CI exacta positiva; no repetir13fa. Properties/caps/bridge/manager y holds intactos. |
 | El hold preventivo Horizon introducido enecad no consume un certificado y fija cuatro condiciones NO_VERIFICADO; capacity_comparison también rechaza costos dinámicos sin lector de cota. | Cambio mínimo revisable: demostrar una cota completa de seguridad para obtener evidencia, conservando el hold de calificaciónG5; después deG0→G4 y reviews, una comparación privada original1202, siempreG5false. | Requiere revisión explícita de la regla de admisión, cota auténtica de todos los solapamientos/reservas y Source correctivo. No aprobado ni ejecutado; G5 original512MiB/1202/profundidad32/retención permanece obligatorio. |
+
+
+Source `2afd79adc7b61815d8c66a07f391c71a12e84dbf`, tree
+`f4165b011be21f225423d8e093a3eaeb9ad69191`, pasó Actions38050786152
+job114209316381: **1642 PASS por Python**, cero errores/fallos/skips,
+identidades iguales, Source literal, FIN/ECHILD, cleanup0foreign. ZIP original
+11669367878:960417B/22CRC/SHA256
+`8edc277972a004f4754b083eeb9ebe72c269da5cb30af38d5372d925101e5edb`.
+Wall120.066/130.488s; RSS máximo298848256/299134976B; inventario
+post-FIN810147840/810201088B (no pico). FS observado ext4/4096, libre
+91478253568B/18422979inodos; no prueba de cuota ni del Droplet.
+
+Native38051376116/job114211025375 conservó RED226 antes de birth/pidfd.
+ZIP11669513385:68188B/37CRC/SHA256
+`6b66c01a1b20e0bf2a0b200e0d6bc16772f09ed5fbde099eda73147c18d54f94`.
+Anchor PID1 propio enlaza boot4220d65f8c7345d38289a76ec860c966,
+Invocation61660a1e6c7340149342237bfae18203 y executorPID2505. El segundo
+RAW23086B/SHA256
+`2a4d94269ef68527b6e421eaac738710389deb0fe60c3a8769ac8195071b7809`
+y FIN original
+`35f11a9f99d72595da47d53812d77b1eb4ad544702a170623e18b3d642f00628`
+se verificaron contra captura cerrada/Source/CRC/ECHILD. La metadata journal
+init.scope previa no se convierte en cgroup live; el parser estricto Source2afd
+la declaró UNKNOWN, conservando los originales.
+
+**Operación peligrosa demostrada:** `apply_one_mount`, namespace.c:1704,
+registró `Successfully mounted /run/systemd/inaccessible/dir to
+/run/systemd/mount-rootfs`. La máscara magiclink `/proc/1/root` alcanzó la
+raíz entera. Los25 EBUSY16 de desmontajes dicen `ignoring`: no son evidencia
+del errno final226. El error posterior sigue no observado y no se inventa.
+Readout completo autenticadoSHA256
+`da8be2bfa42e0ebf79ca55734d05f85038559ba355325813da1472ab750370cd`.
+
+Fix causal implementado: guard que rechaza destinos magiclink/raíz antes
+de ROOT; máscara del directorio real `/proc/1`; parentPID1 leído y cotejado
+por observador externo live más pidfd/ACK antes de actores. Sólo mode=probe
+puede usar el sello posterior al proc único/RO, dispositivos privados/RO y
+cierreFD3. `PrivateDevices` en systemd255 hace bind del devpts host
+(namespace.c1018–1020); el bootstrap privado debe reemplazarlo por una
+instancia `newinstance`, RO/nosuid/noexec, y comprobar un device distinto
+antes del sello. La opción de systemd sola no prueba aislamiento de PTYs.
+Las71 regresiones locales del sello pasan en cadaPython, sin fallos/skips,
+como NONROOT: no certifican ROOT ni G0. No puede heredarlo quota/pip:
+bloquearía sockets y FSGETXATTR.
+Original manager, drop NONROOT, cuatro casos y deadlines se preservan.
+Custodia329, guards59 y calibración130 PASS en cadaPython local, todos
+NONROOT y sin errores/fallos/skips; no reemplazan CI ni la prueba ROOT.
+Este Source necesita CI exacta nueva y evidencia nativa; no hereda el PASS
+de2afd. No aprueba la revisión del witness ROOT, EACCES histórico vs
+ausencia del PID privado, cuota agregada ni regla temporal de admisiónG5.
+No Horizon/cuota/reservas/G0–G8/merge/deploy durante los bloqueos.

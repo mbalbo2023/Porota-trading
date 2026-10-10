@@ -31,6 +31,7 @@ SCHEMA = "porota.rc6.privileged-custody-native.v1"
 CONTRACT_SCHEMA = "porota.rc6.privileged-custody-contract.v1"
 MEMBER = "scripts/rc6_privileged_custody.py"
 MANAGER_MEMBER = "scripts/rc6_controlled_native_child_manager.py"
+ROOT_SEAL_MEMBER = "scripts/rc6_root_actor_seal.py"
 MANAGER_SHA256 = "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
 CONTROL_BOUND = 2 * 1024**2
 SYSTEMD_QUERY_BOUND = 65536
@@ -153,7 +154,7 @@ def unit_name(nonce, *, guard=False):
 def native_contract(source_sha, source_tree, code_hashes):
     require(all(type(x) is str and re.fullmatch("[0-9a-f]{40}", x) for x in (source_sha, source_tree)),
             "ROOT_CUSTODY_EXACT_SOURCE_REQUIRED")
-    required = (MEMBER, MANAGER_MEMBER, "scripts/rc6_capacity_calibration.py", "scripts/rc6_native_namespace_filter.py")
+    required = (MEMBER, MANAGER_MEMBER, ROOT_SEAL_MEMBER, "scripts/rc6_capacity_calibration.py", "scripts/rc6_native_namespace_filter.py")
     require(type(code_hashes) is dict and code_hashes.get(MANAGER_MEMBER) == MANAGER_SHA256
             and all(type(code_hashes.get(member)) is str and re.fullmatch("[0-9a-f]{64}", code_hashes[member])
                     for member in required),
@@ -169,17 +170,44 @@ def native_contract(source_sha, source_tree, code_hashes):
             "backing_allocation_allowed": False, "quota_mutation_allowed": False,
             "namespace_mounts_for_custody_proof_allowed": True, "quota_backing_mounts_allowed": False,
             "actor_mount_operation_allowed": False, "PID1_ephemeral_namespace_setup_allowed": True,
+            "host_PID1_public_identity": "EXTERNAL_LIVE_KERNEL_BIRTH_PIDFD_ACK",
+            "access_mount_magiclinks_forbidden": True, "host_PID1_directory_mask": "/proc/1",
+            "root_actor_seal_probe_only": True, "root_actor_seal_quota_ancestor_allowed": False,
+            "contract_revision_required": True, "original_PROC_EACCES_equivalence_approved": False,
+            "proof_only_no_G0_qualification": True,
             "financial_tick_allowed": False,
             "persistent_infrastructure_allowed": False, "recurring_additional_cost_usd": 0}
 
 
-def service_properties(control_root, runtime_seconds):
+def guard_access_targets(properties):
+    """Reject a root/magiclink mount destination before any privileged launch."""
+    for property_value in properties:
+        key, _, value = property_value.partition("=")
+        if key not in ("InaccessiblePaths", "ReadOnlyPaths", "ReadWritePaths"):
+            continue
+        for token in value.split():
+            path = Path(token.lstrip("-+"))
+            require(path.is_absolute() and ".." not in path.parts
+                    and not re.search(r"^/proc/(?:[0-9]+|self|thread-self)/(?:root|cwd|fd|fdinfo|map_files|ns)(?:/|$)", str(path)),
+                    "ROOT_CUSTODY_ACCESS_MAGICLINK_OR_ROOT_FORBIDDEN")
+            resolved = path.resolve(strict=False)
+            require(resolved != Path("/") and not Path("/run/systemd/mount-rootfs").is_relative_to(resolved),
+                    "ROOT_CUSTODY_ACCESS_MAGICLINK_OR_ROOT_FORBIDDEN")
+            if str(path) == "/proc/1":
+                details = path.lstat()
+                require(stat.S_ISDIR(details.st_mode) and not stat.S_ISLNK(details.st_mode)
+                        and resolved == path, "ROOT_CUSTODY_PID1_MASK_MUST_BE_REAL_DIRECTORY")
+    return properties
+
+
+def service_properties(control_root, runtime_seconds, *, probe_only=False):
     root = Path(control_root).absolute()
     require(root != Path("/") and not any(x.is_symlink() for x in (root, *root.parents)),
             "ROOT_CUSTODY_PRIVATE_CONTROL_ROOT_REQUIRED")
     require(type(runtime_seconds) is int and 1 <= runtime_seconds <= 10800,
             "ROOT_CUSTODY_NATIVE_RUNTIME_BOUND_REQUIRED")
-    return ["RuntimeMaxSec=" + str(runtime_seconds), "TimeoutStopSec=2", "KillMode=control-group",
+    require(type(probe_only) is bool, "ROOT_CUSTODY_FIXED_DEVICE_ROLE_REQUIRED")
+    properties = ["RuntimeMaxSec=" + str(runtime_seconds), "TimeoutStopSec=2", "KillMode=control-group",
             "SendSIGKILL=yes", "FinalKillSignal=SIGKILL", "Restart=no", "PrivateMounts=yes",
             "ProtectSystem=strict", "ReadWritePaths=" + str(root), "ProtectControlGroups=yes",
             "ProtectKernelTunables=yes", "ProtectKernelModules=yes", "ProtectKernelLogs=yes",
@@ -188,9 +216,12 @@ def service_properties(control_root, runtime_seconds):
             # Only the frozen guardian may create the private PID namespace.
             # Actors run inside it; the exact NONROOT plan denies new namespaces.
             "RestrictNamespaces=~cgroup net user ipc uts",
-            "InaccessiblePaths=-/run/systemd/private -/run/dbus -/run/docker.sock -/var/run/docker.sock -/proc/1/root -/dev/shm",
+            "InaccessiblePaths=-/run/systemd/private -/run/dbus -/run/docker.sock -/var/run/docker.sock /proc/1 -/dev/shm",
             "SystemCallFilter=~setns ptrace process_vm_readv process_vm_writev bpf open_by_handle_at name_to_handle_at kexec_load kexec_file_load init_module finit_module delete_module reboot swapon swapoff",
             "SystemCallErrorNumber=EPERM"]
+    if probe_only:
+        properties.extend(["PrivateDevices=yes", "ProtectHome=read-only"])
+    return guard_access_targets(properties)
 
 
 def service_command(source, request_path, *, nonce, control_root, runtime_seconds,
@@ -211,7 +242,8 @@ def service_command(source, request_path, *, nonce, control_root, runtime_second
     # systemd-run startup/status messages there instead of discarding them.
     if broker_mode != "guard-hang":
         command.insert(4, "--quiet")
-    command.extend("--property=" + value for value in service_properties(control_root, runtime_seconds))
+    command.extend("--property=" + value for value in service_properties(control_root, runtime_seconds,
+        probe_only=broker_mode != "quota"))
     if guard:
         # This changes only the owned startup diagnostic's log verbosity.
         # Broker/quota properties and every isolation restriction stay fixed.
@@ -263,16 +295,50 @@ def require_guard_log_profile(name, properties):
         require("LogLevelMax" not in properties, "ROOT_CUSTODY_NON_GUARD_LOG_PROFILE_CHANGED")
 
 
-def controller_snapshot(name, expected_runtime):
+def host_boundary_snapshot():
+    """Issuer SELF readbacks, never a followed namespace of a foreign process."""
+    return {"mount_namespace_inode": os.stat("/proc/self/ns/mnt").st_ino,
+            "device_number": os.stat("/dev").st_dev,
+            "devpts_device_number": os.stat("/dev/pts").st_dev}
+
+
+def require_host_boundary(value):
+    require(type(value) is dict and set(value) == {"mount_namespace_inode", "device_number", "devpts_device_number"}
+            and all(type(number) is int and number > 0 for number in value.values()),
+            "ROOT_CUSTODY_AUTHENTIC_HOST_BOUNDARY_REQUIRED")
+    return value
+
+
+def controller_snapshot(name, expected_runtime, *, request, mode):
     actor = kernel_process(os.getpid())
-    controller = public_kernel_process(1)
+    # /proc/1 is masked by PID1 before exec. This public identity is accepted
+    # only after the NONROOT observer compares the actual current ROOT parent
+    # and actor with it, opens the live actor pidfd and acknowledges birth.
+    controller = public_process_identity(request.get("host_PID1"))
     require(actor["parent_pid"] == 1 and actor["uids"] == [0] * 4 and controller["uids"] == [0] * 4,
             "ROOT_CUSTODY_ACTUAL_PID1_ROOT_PARENT_REQUIRED")
+    require(controller["pid"] == 1 and actor["boot_id"] == controller["boot_id"] == request["issuer"]["boot_id"],
+            "ROOT_CUSTODY_EXTERNAL_PID1_IDENTITY_REBOUND")
+    host_boundary = require_host_boundary(request.get("host_boundary"))
+    require(os.stat("/proc/self/ns/mnt").st_ino != host_boundary["mount_namespace_inode"],
+            "ROOT_CUSTODY_HOST_MOUNT_NAMESPACE_NOT_PRIVATE")
     expected_cgroup = "0::/system.slice/" + name
     require(actor["cgroup"] == expected_cgroup, "ROOT_CUSTODY_ACTUAL_PRIVATE_CGROUP_REQUIRED")
     unit = _unit_file(name)
     properties = unit["properties"]
     require_guard_log_profile(name, properties)
+    require("/proc/1" in properties.get("InaccessiblePaths", "").split()
+            and not any("/proc/1/root" in value for value in properties.values()),
+            "ROOT_CUSTODY_ACTUAL_SAFE_PID1_MASK_REQUIRED")
+    require(mode in ("probe", "quota", "guard-hang"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
+    if mode != "quota":
+        require(properties.get("PrivateDevices") in ("yes", "true", "1")
+                and properties.get("ProtectHome") == "read-only"
+                and os.stat("/dev").st_dev != host_boundary["device_number"],
+                "ROOT_CUSTODY_ACTUAL_PRIVATE_DEVICE_ROLE_REQUIRED")
+    else:
+        require("PrivateDevices" not in properties and "ProtectHome" not in properties,
+                "ROOT_CUSTODY_QUOTA_DEVICE_ROLE_CHANGED")
     require(_seconds(properties.get("RuntimeMaxSec")) == expected_runtime
             and _seconds(properties.get("TimeoutStopSec")) == 2
             and properties.get("KillMode") == "control-group"
@@ -294,6 +360,7 @@ def controller_snapshot(name, expected_runtime):
     return {"schema": "porota.rc6.pid1-root-controller-live.v1", "unit": name,
             "actor": actor, "PID1": controller, "transient_unit": unit,
             "mount_namespace_inode": os.stat("/proc/self/ns/mnt").st_ino,
+            "host_boundary": host_boundary, "external_PID1_identity_pending_live_ACK": True,
             "systemd_guard_exists_before_guardian_exec": True,
             "ROOT_actor_boundary_certified": False,
             "root_controller_claimed_by_metadata_only": False}
@@ -323,6 +390,11 @@ def _request(path, *, private=False):
             and value["code_hashes"].get(MEMBER) == sha256(_read(ROOT / MEMBER)),
             "ROOT_CUSTODY_AUTHENTIC_FIXED_REQUEST_REQUIRED")
     native_contract(value["source_sha"], value["source_tree"], value["code_hashes"])
+    host_pid1 = public_process_identity(value.get("host_PID1"))
+    require(host_pid1["pid"] == 1 and host_pid1["uids"] == [0] * 4
+            and host_pid1["boot_id"] == value["issuer"]["boot_id"],
+            "ROOT_CUSTODY_EXTERNAL_PID1_IDENTITY_REBOUND")
+    require_host_boundary(value.get("host_boundary"))
     for member, expected in value["code_hashes"].items():
         require(member in calibration.CODE_MEMBERS and sha256(_read(ROOT / member)) == expected,
                 "ROOT_CUSTODY_EXACT_SOURCE_PROGRAM_REBOUND")
@@ -460,15 +532,20 @@ def _private_identity(request, mapping):
 
 def _actor_observation(case, request):
     import socket
+    from scripts import rc6_root_actor_seal as root_seal
     actor = kernel_process(os.getpid())
     require(actor["uids"] == [0] * 4, "ROOT_CUSTODY_PROBE_MUST_START_ROOT")
-    parent = kernel_process(os.getppid())
+    parent = public_kernel_process(os.getppid())
     require(parent["uids"] == [0] * 4 and parent["cgroup"] == actor["cgroup"],
             "ROOT_CUSTODY_ROOT_PARENT_AND_CGROUP_INHERITANCE_REQUIRED")
     mapping = json.loads(_read(Path(request["namespace_receipt"]["path"]) / "private-broker.observed.json"))
     boundary = _private_identity(request, mapping)
-    require(parent["pid"] == 1 and parent["pid_namespace_inode"] == actor["pid_namespace_inode"],
+    parent_seal = json.loads(_read(Path(request["namespace_receipt"]["path"]) / "private-parent-seal.json"))
+    require(parent["pid"] == 1 and parent["start_ticks"] == str(parent_seal["identity"]["start_ticks"])
+            and parent_seal["identity"]["pid_namespace_inode"] == actor["pid_namespace_inode"]
+            and parent["capabilities"] == parent_seal["capabilities"],
             "ROOT_CUSTODY_ROOT_PARENT_NOT_PRIVATE_PID1")
+    actor_seal = root_seal.install_root_actor_seal(**_seal_arguments(request), inherited=parent_seal)
     denies = {}
     for name, target in (("foreign_kernel_pid_limit", Path("/proc/sys/kernel/pid_max")),):
         try:
@@ -504,7 +581,9 @@ def _actor_observation(case, request):
         raise ValueError("ROOT_CUSTODY_FOREIGN_CGROUP_WRITER_ALLOWED")
     result = {"schema": "porota.rc6.root-custody-probe-actor.v1", "case": case,
               "root_before_drop": actor, "ROOT_parent": parent, "native_denials": denies,
-              "pid_boundary": boundary, "root_protected_before_first_probe_instruction": True}
+              "pid_boundary": boundary, "root_protected_before_first_probe_instruction": True,
+              "root_actor_seal": actor_seal, "parent_root_actor_seal_sha256": sha256(wire(parent_seal)),
+              "contract_revision_required": True, "original_PROC_EACCES_equivalence_approved": False}
     if case == "nonroot-hang":
         from scripts import rc6_capacity_calibration as calibration
         result["drop"] = calibration.drop_privileges(request["owner_uid"], request["owner_gid"],
@@ -522,6 +601,9 @@ def _actor_observation(case, request):
 
 
 def _broker_probe(request, namespace, manager, controller):
+    from scripts import rc6_root_actor_seal as root_seal
+    parent_seal = root_seal.assert_current_seal(owner_uid=request["owner_uid"], owner_gid=request["owner_gid"],
+        source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
     rows = []
     for case in ("root-success", "failure-before-drop", "root-hang", "nonroot-hang"):
         manager["pre_capture_kernel_state"]()
@@ -541,6 +623,11 @@ def _broker_probe(request, namespace, manager, controller):
                 and actor["root_before_drop"]["pid"] == kernel["pid"]
                 and actor["root_before_drop"]["cgroup"] == controller["private_PID1"]["local"]["cgroup"],
                 "ROOT_CUSTODY_PROBE_ACTUAL_ROOT_OR_BIRTH_REBOUND")
+        root_seal.validate_inheritance_evidence(actor["root_actor_seal"], parent_seal,
+            owner_uid=request["owner_uid"], owner_gid=request["owner_gid"],
+            source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
+        require(actor.get("parent_root_actor_seal_sha256") == sha256(wire(parent_seal)),
+                "ROOT_CUSTODY_PROBE_PARENT_SEAL_REBOUND")
         if "hang" in case:
             sends = kernel["owned_group_signal_observations"]
             require(kernel["timed_out"] is True and kernel["returncode"] == -signal.SIGKILL
@@ -561,7 +648,7 @@ def guardian_main(mode, request_path, name):
     require(os.getuid() == os.geteuid() == 0, "ROOT_CUSTODY_ACTUAL_ROOT_BROKER_REQUIRED")
     request, request_raw, namespace = _request(request_path)
     runtime = request["runtime_seconds"]
-    controller = controller_snapshot(name, runtime)
+    controller = controller_snapshot(name, runtime, request=request, mode=mode)
     birth = {"schema": "porota.rc6.root-custody-controller-birth.v1", "binding": request["binding"],
              "request_sha256": sha256(request_raw), "controller": controller}
     if mode == "guard-hang":
@@ -577,9 +664,13 @@ def guardian_main(mode, request_path, name):
         time.sleep(0.05)
     acknowledged = json.loads(_read(acknowledgement))
     require(acknowledged.get("binding") == request["binding"]
+            and acknowledged.get("schema") == "porota.rc6.root-controller-native-pidfd-observed.v1"
             and acknowledged.get("birth_sha256") == sha256(wire(birth))
             and acknowledged.get("issuer") == request["issuer"]
-            and acknowledged.get("controller_pid") == os.getpid(),
+            and acknowledged.get("controller_pid") == os.getpid()
+            and acknowledged.get("actual_controller") == public_process_identity(controller["actor"])
+            and acknowledged.get("actual_PID1") == controller["PID1"]
+            and acknowledged.get("host_boundary") == request["host_boundary"],
             "ROOT_CUSTODY_NATIVE_OBSERVER_ACK_REBOUND")
     bridge = original_directory_bridge(request)
     _write_control(namespace / ("guardian-bridge.json" if mode == "guard-hang" else "broker-bridge.json"),
@@ -624,7 +715,9 @@ def guardian_main(mode, request_path, name):
         mapping = {"schema": "porota.rc6.root-private-pid-guardian-observed.v1", "binding": request["binding"],
             "host_private_PID1": actual, "guardian_actual": controller["actor"], "issuer_actual": issuer,
             "source_sha": request["source_sha"], "source_tree": request["source_tree"],
-            "request_sha256": sha256(request_raw), "original_directory_bridge": born["original_directory_bridge"]}
+            "request_sha256": sha256(request_raw), "original_directory_bridge": born["original_directory_bridge"],
+            "host_boundary": request["host_boundary"], "external_PID1_ACK": acknowledged,
+            "private_mount_setup": born["private_mount_setup"]}
         _write_control(namespace / "private-broker.observed.json", mapping, request["owner_uid"], request["owner_gid"])
         mapping_state.update(pidfd=descriptor, mapping=mapping)
     saved = os.dup(0)
@@ -667,8 +760,13 @@ def _external_controller(proof, request, mapping):
             "ROOT_CUSTODY_EXACT_LIVE_CONTROLLER_PROOF_REQUIRED")
     controller = proof["controller"]
     guardian = mapping["guardian_actual"]
+    ack = mapping.get("external_PID1_ACK", {})
     require(guardian == controller["actor"] and guardian["uids"] == [0] * 4 and guardian["parent_pid"] == 1
             and guardian["cgroup"] == "0::/system.slice/" + controller["unit"]
+            and mapping.get("host_boundary") == request["host_boundary"] == controller["host_boundary"]
+            and ack.get("actual_controller") == public_process_identity(guardian)
+            and ack.get("actual_PID1") == request["host_PID1"] == controller["PID1"]
+            and ack.get("host_boundary") == request["host_boundary"]
             and _unit_file(controller["unit"]) == controller["transient_unit"],
             "ROOT_CUSTODY_LIVE_CONTROLLER_KERNEL_REBOUND")
     return guardian
@@ -683,25 +781,111 @@ def _null_stdin():
             os.close(descriptor)
 
 
+def _mount_rows(raw):
+    rows = []
+    for line in raw.splitlines():
+        fields = line.split()
+        require(len(fields) >= 10 and "-" in fields, "ROOT_CUSTODY_PRIVATE_MOUNT_METADATA_UNKNOWN")
+        split = fields.index("-")
+        require(split >= 6 and len(fields) >= split + 4
+                and not any(item.startswith(("shared:", "master:", "propagate_from:")) for item in fields[6:split]),
+                "ROOT_CUSTODY_PRIVATE_MOUNT_PROPAGATION_REQUIRED")
+        target = fields[4]
+        require(not re.search(r"\\(?![0-7]{3})", target), "ROOT_CUSTODY_PRIVATE_MOUNT_ESCAPE_UNKNOWN")
+        target = re.sub(r"\\([0-7]{3})", lambda match: chr(int(match[1], 8)), target)
+        require(target.startswith("/") and "\x00" not in target and ".." not in Path(target).parts,
+                "ROOT_CUSTODY_PRIVATE_MOUNT_TARGET_UNKNOWN")
+        rows.append({"target": target, "options": fields[5].split(","), "type": fields[split + 1]})
+    require(0 < len(rows) <= 1024, "ROOT_CUSTODY_PRIVATE_MOUNT_COUNT_BOUND")
+    return rows
+
+
+def _prepare_private_mounts(request, *, mode, host_identity):
+    """Fixed private bootstrap. No mount runs before SELF namespace checks."""
+    require(mode in ("probe", "quota"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
+    host_boundary = require_host_boundary(request["host_boundary"])
+    require(os.getuid() == os.geteuid() == 0 and os.getpid() == 1
+            and host_identity["uids"] == [0] * 4
+            and host_identity["namespace_pids"] == [host_identity["pid"], 1]
+            and host_identity["pid_namespace_inode"] != request["issuer"]["pid_namespace_inode"]
+            and os.stat("/proc/self/ns/mnt").st_ino != host_boundary["mount_namespace_inode"],
+            "ROOT_CUSTODY_PRIVATE_BOOTSTRAP_KERNEL_BOUNDARY_REQUIRED")
+    # The launcher requests private propagation; read it back before a detach
+    # could affect any shared or slave host mount rather than after setup.
+    _mount_rows(_proc_text("/proc/self/mountinfo"))
+    libc = ctypes.CDLL(None, use_errno=True)
+    # Remove the inherited host proc view and every stacked/submount under it
+    # inside this already private mount namespace; do not retain a host proc FD.
+    ctypes.set_errno(0)
+    require(libc.umount2(b"/proc", 2) == 0,
+            "ROOT_CUSTODY_PRIVATE_OLD_PROC_DETACH_FAILED:" + str(ctypes.get_errno()))
+    ctypes.set_errno(0)
+    returned = libc.mount(b"proc", b"/proc", b"proc", ctypes.c_ulong(1 | 2 | 4 | 8), None)
+    saved = ctypes.get_errno()
+    require(returned == 0, "ROOT_CUSTODY_PRIVATE_PROC_MOUNT_FAILED:" + str(saved))
+    if mode == "probe":
+        # systemd 255 PrivateDevices creates a private /dev but bind-mounts
+        # host devpts. Replace that bind inside our private namespace first.
+        ctypes.set_errno(0)
+        returned = libc.umount2(b"/dev/pts", 2)
+        saved = ctypes.get_errno()
+        require(returned == 0, "ROOT_CUSTODY_PRIVATE_OLD_DEVPTS_DETACH_FAILED:" + str(saved))
+        ctypes.set_errno(0)
+        returned = libc.mount(b"devpts", b"/dev/pts", b"devpts", ctypes.c_ulong(1 | 2 | 8),
+                              b"newinstance,ptmxmode=0666,mode=0620,gid=5")
+        saved = ctypes.get_errno()
+        require(returned == 0, "ROOT_CUSTODY_PRIVATE_DEVPTS_MOUNT_FAILED:" + str(saved))
+        require(os.stat("/dev").st_dev != host_boundary["device_number"]
+                and os.stat("/dev/pts").st_dev != host_boundary["devpts_device_number"],
+                "ROOT_CUSTODY_PRIVATE_DEVICES_NOT_NATIVE")
+        root = request["namespace_receipt"]["path"]
+        for row in _mount_rows(_proc_text("/proc/self/mountinfo")):
+            if "ro" in row["options"] or row["target"] == root:
+                continue
+            # MS_BIND|MS_REMOUNT changes this namespace's per-mount flags,
+            # rather than marking a shared host filesystem superblock readonly.
+            flags = 4096 | 32 | 1
+            flags |= sum(bit for name, bit in (("nosuid", 2), ("nodev", 4), ("noexec", 8)) if name in row["options"])
+            ctypes.set_errno(0)
+            returned = libc.mount(None, os.fsencode(row["target"]), None, ctypes.c_ulong(flags), None)
+            saved = ctypes.get_errno()
+            require(returned == 0, "ROOT_CUSTODY_PRIVATE_FOREIGN_READONLY_FAILED:" + row["target"] + ":" + str(saved))
+        rows = _mount_rows(_proc_text("/proc/self/mountinfo"))
+        require(all("ro" in row["options"] or row["target"] == root for row in rows),
+                "ROOT_CUSTODY_PRIVATE_FOREIGN_READONLY_UNPROVED")
+    rows = _mount_rows(_proc_text("/proc/self/mountinfo"))
+    proc = [row for row in rows if row["target"] == "/proc" or row["target"].startswith("/proc/")]
+    require(len(proc) == 1 and proc[0]["type"] == "proc" and "ro" in proc[0]["options"],
+            "ROOT_CUSTODY_SINGLE_PRIVATE_PROC_REQUIRED")
+    return {"old_host_proc_detached": True, "single_readonly_private_proc": True,
+            "private_devpts_newinstance_created": mode == "probe",
+            "foreign_mounts_readonly_required": mode == "probe", "quota_ancestor_sealed": False}
+
+
+def _seal_arguments(request):
+    host = require_host_boundary(request["host_boundary"])
+    return {"owner_uid": request["owner_uid"], "owner_gid": request["owner_gid"],
+            "source_binding": {"source_sha": request["source_sha"], "source_tree": request["source_tree"]},
+            "host_pid_namespace_inode": request["issuer"]["pid_namespace_inode"],
+            "host_mount_namespace_inode": host["mount_namespace_inode"],
+            "host_device_number": host["device_number"], "host_devpts_device_number": host["devpts_device_number"],
+            "control_root": request["namespace_receipt"]["path"]}
+
+
 def private_init(mode, request_path, name):
     """Frozen bootstrap: no fixture, package backend or actor before sealing."""
     require(os.getuid() == os.geteuid() == 0 and os.getpid() == 1,
             "ROOT_CUSTODY_PRIVATE_BOOTSTRAP_PID1_REQUIRED")
     from scripts import rc6_capacity_calibration as calibration
-    raw = _read(request_path)
-    request = calibration.decode(raw)
+    request, raw, namespace = _request(request_path, private=True)
     status = dict(line.split(":", 1) for line in _proc_text("/proc/self/status").splitlines() if ":" in line)
     host = kernel_process(int(status["Pid"].strip()))
     require(host["namespace_pids"] == [host["pid"], 1], "ROOT_CUSTODY_PRIVATE_BOOTSTRAP_HOST_MAPPING_REQUIRED")
     bridge = original_directory_bridge(request)
-    libc = ctypes.CDLL(None, use_errno=True)
-    ctypes.set_errno(0)
-    returned = libc.mount(b"proc", b"/proc", b"proc", ctypes.c_ulong(1 | 2 | 4 | 8), None)
-    saved = ctypes.get_errno()
-    require(returned == 0, "ROOT_CUSTODY_PRIVATE_PROC_MOUNT_FAILED:" + str(saved))
-    namespace = Path(request["namespace_receipt"]["path"])
+    mounts = _prepare_private_mounts(request, mode=mode, host_identity=host)
     _write_control(namespace / "private-broker-birth.json", {"binding": request["binding"],
-        "request_sha256": sha256(raw), "host_private_PID1": host, "original_directory_bridge": bridge},
+        "request_sha256": sha256(raw), "host_private_PID1": host, "original_directory_bridge": bridge,
+        "private_mount_setup": mounts, "host_boundary": request["host_boundary"]},
         request["owner_uid"], request["owner_gid"])
     deadline = time.monotonic() + 10
     while not (namespace / "private-broker.observed.json").exists():
@@ -726,13 +910,20 @@ def broker_main(mode, request_path, name):
     manager = _manager(ROOT)
     before = manager["pre_capture_kernel_state"]()
     if mode == "probe":
+        from scripts import rc6_root_actor_seal as root_seal
+        seal = root_seal.install_root_actor_seal(**_seal_arguments(request))
+        _write_control(namespace / "private-parent-seal.json", seal, request["owner_uid"], request["owner_gid"])
+        controller["root_actor_seal"] = seal
         rows = _broker_probe(request, namespace, manager, controller)
         result = {"schema": SCHEMA, "request_sha256": sha256(request_raw), "binding": request["binding"],
                   "controller": controller, "cases": rows, "before": before,
                   "after": manager["pre_capture_kernel_state"](), "manager_sha256": MANAGER_SHA256,
                   "ROOT_parent_owns_actual_worker_wait4": True, "native_probe_proved": True,
                   "backing_allocated": False, "quota_mutations_attempted": False,
-                  "mount_operations_attempted": False, "real_orders_sent": 0}
+                  "actor_mount_operations_attempted": False, "real_orders_sent": 0}
+        result.update(namespace_setup_mounts_executed=True, quota_backing_mounts_attempted=False,
+            root_actor_seal_probe_only=True, contract_revision_required=True,
+            original_PROC_EACCES_equivalence_approved=False, proof_only_no_G0_qualification=True)
         sys.stdout.buffer.write(wire(result))
         sys.stdout.buffer.flush()
         return 0
@@ -837,8 +1028,10 @@ def execute_service(namespace, command, *, cwd, environ, progress, timeout_secon
         os.close(directory)
 
 
-def _observer(birth_path, binding, state, progress):
+def _observer(birth_path, binding, state, progress, *, expected_pid1=None, expected_host=None):
     """Read a trusted supervisory birth control only; never producer RAW."""
+    expected_pid1 = public_kernel_process(1) if expected_pid1 is None else public_process_identity(expected_pid1)
+    expected_host = host_boundary_snapshot() if expected_host is None else require_host_boundary(expected_host)
     def observe(stage, pid, entered, deadline, log_fd):
         if progress is not None:
             progress(stage, pid, entered, deadline, log_fd)
@@ -858,18 +1051,39 @@ def _observer(birth_path, binding, state, progress):
                 and actual["cgroup"] == "0::/system.slice/" + expected_unit,
                 "ROOT_CUSTODY_SUPERVISORY_BIRTH_FOREIGN_UNIT")
         descriptor = os.pidfd_open(actual["pid"], 0)
+        parent_descriptor = None
         try:
             require(public_kernel_process(actual["pid"]) == actual, "ROOT_CUSTODY_PIDFD_BIRTH_RACE")
             observer = kernel_process(os.getpid())
+            parent = public_kernel_process(actual["parent_pid"])
+            require(parent == expected_pid1 == birth["controller"].get("PID1")
+                    and parent["boot_id"] == observer["boot_id"] == actual["boot_id"]
+                    and parent["uids"] == [0] * 4 and parent["pid"] == 1
+                    and observer["pid_namespace_inode"] == birth["controller"]["actor"]["pid_namespace_inode"]
+                    and host_boundary_snapshot() == expected_host == birth["controller"].get("host_boundary")
+                    and birth["controller"].get("mount_namespace_inode") != expected_host["mount_namespace_inode"],
+                    "ROOT_CUSTODY_LIVE_EXTERNAL_PID1_OR_BOUNDARY_REBOUND")
+            parent_descriptor = os.pidfd_open(parent["pid"], 0)
+            for live_descriptor in (descriptor, parent_descriptor):
+                poller = select.poll()
+                poller.register(live_descriptor, select.POLLIN | select.POLLHUP)
+                require(not poller.poll(0), "ROOT_CUSTODY_EXTERNAL_PIDFD_ALREADY_EXITED")
+            require(public_kernel_process(parent["pid"]) == parent
+                    and public_kernel_process(actual["pid"]) == actual,
+                    "ROOT_CUSTODY_EXTERNAL_PARENT_BIRTH_RACE")
             from scripts import rc6_capacity_calibration as calibration
             calibration.publish(Path(birth_path).with_suffix(".observed.json"), {
                 "schema": "porota.rc6.root-controller-native-pidfd-observed.v1", "binding": binding,
                 "birth_sha256": sha256(wire(birth)), "controller_pid": actual["pid"],
-                "issuer": issuer_snapshot(observer)})
+                "issuer": issuer_snapshot(observer), "actual_controller": actual, "actual_PID1": parent,
+                "host_boundary": expected_host, "ROOT_custody_qualified_by_JSON": False})
         except BaseException:
             os.close(descriptor)
+            if parent_descriptor is not None:
+                os.close(parent_descriptor)
             raise
-        state.update(pidfd=descriptor, birth=birth)
+        state.update(pidfd=descriptor, parent_pidfd=parent_descriptor, birth=birth,
+                     external_PID1=parent, external_PID1_observed_native=True)
     return observe
 
 
@@ -880,6 +1094,9 @@ def _closed_service(state):
         poller = select.poll()
         poller.register(descriptor, select.POLLIN | select.POLLHUP)
         require(bool(poller.poll(0)), "ROOT_CUSTODY_CONTROLLER_PIDFD_NOT_EXITED")
+        require(state.get("external_PID1_observed_native") is True
+                and public_kernel_process(1) == state.get("external_PID1"),
+                "ROOT_CUSTODY_EXTERNAL_PID1_FIN_REBOUND")
         actor = state["birth"]["controller"]["actor"]
         require(not Path("/proc/" + str(actor["pid"])).exists(), "ROOT_CUSTODY_PID1_ACTUAL_CONTROLLER_REAP_UNKNOWN")
         cgroup = Path("/sys/fs/cgroup") / actor["cgroup"].split("::", 1)[1].lstrip("/")
@@ -887,10 +1104,16 @@ def _closed_service(state):
             events = dict(line.split() for line in _proc_text(cgroup / "cgroup.events").splitlines())
             require(events.get("populated") == "0", "ROOT_CUSTODY_ACTUAL_SERVICE_CHILDREN_REMAIN")
         return {"pidfd_exit_observed": True, "PID1_actual_broker_reap_observed": True,
-                "owned_cgroup_empty_or_removed": True, "root_actor": actor}
+                "owned_cgroup_empty_or_removed": True, "root_actor": actor,
+                "external_PID1_live_kernel_identity": state["external_PID1"],
+                "external_PID1_birth_pidfd_ACK_verified": True,
+                "ROOT_custody_qualified_by_JSON": False}
     finally:
         os.close(descriptor)
         state["pidfd"] = None
+        parent_descriptor = state.pop("parent_pidfd", None)
+        if parent_descriptor is not None:
+            os.close(parent_descriptor)
 
 
 class CustodyFailure(ValueError):
@@ -1221,10 +1444,14 @@ def journal_invocation_origin(raw, *, unit, boot_id, invocation_id, kernel):
             require(type(pid) is str and pid.isascii() and pid.isdigit() and int(pid) > 0,
                     "ROOT_CUSTODY_JOURNAL_ROOT_UNIT_PID_INVALID")
             require("UNIT" not in value or value["UNIT"] == unit, "ROOT_CUSTODY_JOURNAL_FOREIGN_UNIT")
-            expected_units = (unit, "init.scope") if pid == "1" else (unit,)
+            cached_executor = (pid != "1" and value.get("_EXE") == "/usr/lib/systemd/systemd-executor"
+                               and value.get("CODE_FILE") in ("src/core/namespace.c", "src/core/exec-invoke.c",
+                                   "src/shared/mount-util.c", "src/basic/mountpoint-util.c", "src/core/executor.c"))
+            expected_units = (unit, "init.scope") if pid == "1" or cached_executor else (unit,)
             require("_SYSTEMD_UNIT" not in value or value["_SYSTEMD_UNIT"] in expected_units,
                     "ROOT_CUSTODY_JOURNAL_FOREIGN_UNIT")
-            expected_cgroups = ("/system.slice/" + unit, "/init.scope") if pid == "1" else ("/system.slice/" + unit,)
+            expected_cgroups = (("/system.slice/" + unit, "/init.scope") if pid == "1" or cached_executor
+                                else ("/system.slice/" + unit,))
             require("_SYSTEMD_CGROUP" not in value or value["_SYSTEMD_CGROUP"] in expected_cgroups,
                     "ROOT_CUSTODY_JOURNAL_FOREIGN_CGROUP")
             require(type(value.get("CODE_FILE")) is str and value["CODE_FILE"].startswith("src/")
@@ -1407,6 +1634,10 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
     # Self namespace access remains valid with dumpable=0. Capture it before
     # the reduction; foreign proc namespace links are never needed by ROOT.
     issuer = kernel_process(os.getpid())
+    host_pid1 = public_kernel_process(1)
+    host_boundary = host_boundary_snapshot()
+    require(host_pid1["uids"] == [0] * 4 and host_pid1["boot_id"] == issuer["boot_id"],
+            "ROOT_CUSTODY_EXTERNAL_PID1_IDENTITY_REBOUND")
     require(libc.prctl(4, 0, 0, 0, 0) == 0 and libc.prctl(3, 0, 0, 0, 0) == 0,
             "ROOT_CUSTODY_ISSUER_DUMPABLE_ZERO_REQUIRED")
     native_contract(source_sha, source_tree, code_hashes)
@@ -1418,6 +1649,7 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
         "source_sha": source_sha, "source_tree": source_tree, "code_hashes": code_hashes,
         "owner_uid": os.getuid(), "owner_gid": os.getgid(), "binding": binding,
         "namespace_receipt": receipt, "issuer": issuer_snapshot(issuer),
+        "host_PID1": host_pid1, "host_boundary": host_boundary,
         "runtime_seconds": 6}
     request_path = namespace.path / "custody-request.json"
     calibration.publish(request_path, request)
@@ -1427,7 +1659,8 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
     kernel, fin = execute_service(namespace, guard, cwd=source,
         environ={key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL") if key in os.environ},
         log_relative="guardian-native.log", timeout_seconds=20, fin_label="root-guardian-proof",
-        progress=_observer(namespace.path / "guardian-birth.json", binding, state, progress))
+        progress=_observer(namespace.path / "guardian-birth.json", binding, state, progress,
+            expected_pid1=host_pid1, expected_host=host_boundary))
     failure_context.update(kernel=kernel, fin=fin, log="guardian-native.log", unit=unit_name(namespace.nonce, guard=True))
     require(kernel["returncode"] != 0 and kernel["timed_out"] is False,
             "ROOT_CUSTODY_PID1_GUARD_TIMEOUT_NOT_NATIVE")
@@ -1443,7 +1676,8 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
     kernel, fin = execute_service(namespace, probe, cwd=source,
         environ={key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL") if key in os.environ},
         log_relative="custody-native.log", timeout_seconds=PROBE_LIMIT, fin_label="root-worker-proof",
-        progress=_observer(namespace.path / "broker-birth.json", binding, state, progress))
+        progress=_observer(namespace.path / "broker-birth.json", binding, state, progress,
+            expected_pid1=host_pid1, expected_host=host_boundary))
     failure_context.update(kernel=kernel, fin=fin, log="custody-native.log", unit=unit_name(namespace.nonce))
     controller_fin = _closed_service(state)
     require(owned._phase_green(fin), "ROOT_CUSTODY_NATIVE_BROKER_PROBE_RED")
@@ -1457,7 +1691,7 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
     expected = ["custody-request.json", "probe-request.json", "guardian-native.log", "custody-native.log",
                 "guardian-birth.json", "guardian-birth.observed.json", "broker-birth.json", "broker-birth.observed.json",
                 "guardian-bridge.json", "broker-bridge.json", "guardian-controller.json", "private-broker-native.log",
-                "private-broker-birth.json", "private-broker.observed.json",
+                "private-broker-birth.json", "private-broker.observed.json", "private-parent-seal.json",
                 *[row["raw"]["path"] for row in result["cases"]]]
     destination = (namespace.path.parent / ("root-custody-" + namespace.nonce)
                    if capture_parent is None else Path(capture_parent))
@@ -1472,7 +1706,9 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
         "source_sha": source_sha, "source_tree": source_tree, "code_hashes": code_hashes,
         "native_root_proof": result, "guardian_actual_FIN": guardian_fin, "controller_actual_FIN": controller_fin,
         "capture_manifest_sha256": capture.manifest_sha256, "capture_root": str(capture.path),
-        "cleanup": cleanup, "proof_only_no_G0_qualification": True, "real_orders_sent": 0}
+        "cleanup": cleanup, "proof_only_no_G0_qualification": True,
+        "contract_revision_required": True, "original_PROC_EACCES_equivalence_approved": False,
+        "real_orders_sent": 0}
     return CustodyWitness(_AUTHORITY, accepted, binding)
 
 
@@ -1482,6 +1718,7 @@ def quota_service_request(request, *, namespace_receipt, source, code_hashes):
         "source_sha": request["source_sha"], "source_tree": request["source_tree"], "code_hashes": code_hashes,
         "owner_uid": request["owner_uid"], "owner_gid": request["owner_gid"], "binding": request["binding"],
         "namespace_receipt": namespace_receipt, "issuer": issuer_snapshot(issuer),
+        "host_PID1": public_kernel_process(1), "host_boundary": host_boundary_snapshot(),
         # The original outer ceiling includes PID1's TERM2 and final reap.
         "runtime_seconds": (300 if request["mode"] == "capability" else 10800) - 10,
         "calibration_request": str(Path(namespace_receipt["path"]) / "root-request.json"),

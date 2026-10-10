@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import select
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -42,6 +43,9 @@ def test_contract_does_not_enable_backing_quota_or_qualification():
     assert contract["control_bound_bytes"] == 2 * 1024**2
     assert contract["native_probe_timeout_seconds"] == 60
     assert contract["recurring_additional_cost_usd"] == 0 and contract["persistent_infrastructure_allowed"] is False
+    assert contract["contract_revision_required"] and contract["proof_only_no_G0_qualification"]
+    assert contract["original_PROC_EACCES_equivalence_approved"] is False
+    assert contract["root_actor_seal_probe_only"] and contract["root_actor_seal_quota_ancestor_allowed"] is False
 
 
 @pytest.mark.parametrize("value", [None, True, 12, "", "A" * 40, "g" * 40, "0" * 39, "0" * 41])
@@ -51,7 +55,7 @@ def test_missing_exact_source_never_enables_a_contract(value):
 
 
 @pytest.mark.parametrize("member", [custody.MEMBER, custody.MANAGER_MEMBER,
-    "scripts/rc6_capacity_calibration.py", "scripts/rc6_native_namespace_filter.py"])
+    custody.ROOT_SEAL_MEMBER, "scripts/rc6_capacity_calibration.py", "scripts/rc6_native_namespace_filter.py"])
 def test_missing_or_rebound_frozen_program_blocks(member):
     code = hashes()
     code[member] = "changed"
@@ -88,7 +92,7 @@ def test_service_command_uses_frozen_bootstrap_and_no_foreign_proc_bind(tmp_path
 
 
 def test_only_owned_guard_hang_adds_debug_without_changing_any_restriction(tmp_path):
-    standard = custody.service_properties(tmp_path, 6)
+    standard = custody.service_properties(tmp_path, 6, probe_only=True)
     assert not any(value.startswith("Log") for value in standard)
     guard = custody.service_command(custody.ROOT, tmp_path / "custody-request.json", nonce="a" * 32,
         control_root=tmp_path, runtime_seconds=6, broker_mode="guard-hang", guard=True)
@@ -97,7 +101,8 @@ def test_only_owned_guard_hang_adds_debug_without_changing_any_restriction(tmp_p
     for mode in ("probe", "quota"):
         normal = custody.service_command(custody.ROOT, tmp_path / "probe-request.json", nonce="a" * 32,
             control_root=tmp_path, runtime_seconds=6, broker_mode=mode)
-        assert [value.removeprefix("--property=") for value in normal if value.startswith("--property=")] == standard
+        expected = custody.service_properties(tmp_path, 6, probe_only=mode == "probe")
+        assert [value.removeprefix("--property=") for value in normal if value.startswith("--property=")] == expected
         with pytest.raises(ValueError, match="GUARD_DIAGNOSTIC_ROLE_REQUIRED"):
             custody.service_command(custody.ROOT, tmp_path / "probe-request.json", nonce="a" * 32,
                 control_root=tmp_path, runtime_seconds=6, broker_mode=mode, guard=True)
@@ -174,6 +179,228 @@ def test_aliased_control_root_or_foreign_request_is_not_a_root_command(tmp_path)
     with pytest.raises(ValueError, match="ROOT_CUSTODY_FIXED_OWN_REQUEST_PATH_REQUIRED"):
         custody.service_command(custody.ROOT, tmp_path.parent / "custody-request.json",
             nonce="a" * 32, control_root=tmp_path, runtime_seconds=45, broker_mode="probe")
+
+
+@pytest.mark.parametrize("target", ["/", "/run", "/run/systemd", "/run/systemd/mount-rootfs",
+    "/proc/1/root", "/proc/1/cwd", "/proc/1/fd/3", "/proc/self/root", "/proc/thread-self/ns/mnt", "/x/../proc/1"])
+def test_access_mount_magiclink_or_root_is_rejected_before_any_root_launch(target):
+    with pytest.raises(ValueError, match="ACCESS_MAGICLINK_OR_ROOT_FORBIDDEN"):
+        custody.guard_access_targets(["InaccessiblePaths=" + target])
+
+
+def test_access_mount_alias_to_root_is_rejected_and_real_pid1_directory_is_required(tmp_path):
+    alias = tmp_path / "alias"
+    alias.symlink_to("/", target_is_directory=True)
+    with pytest.raises(ValueError, match="ACCESS_MAGICLINK_OR_ROOT_FORBIDDEN"):
+        custody.guard_access_targets(["InaccessiblePaths=" + str(alias)])
+    properties = custody.service_properties(tmp_path, 6, probe_only=True)
+    mask = next(value for value in properties if value.startswith("InaccessiblePaths="))
+    assert "/proc/1" in mask.split() and "/proc/1/root" not in mask
+    assert "PrivateDevices=yes" in properties and "ProtectHome=read-only" in properties
+    quota = custody.service_properties(tmp_path, 45)
+    assert "PrivateDevices=yes" not in quota and "ProtectHome=read-only" not in quota
+
+
+def test_host_boundary_is_self_metadata_and_cannot_be_enabled_by_flags():
+    result = custody.host_boundary_snapshot()
+    assert result == {"mount_namespace_inode": os.stat("/proc/self/ns/mnt").st_ino,
+        "device_number": os.stat("/dev").st_dev, "devpts_device_number": os.stat("/dev/pts").st_dev}
+    for value in ({}, {**result, "device_number": True}, {**result, "devpts_device_number": 0},
+                  {**result, "root_proved": True}):
+        with pytest.raises(ValueError, match="AUTHENTIC_HOST_BOUNDARY_REQUIRED"):
+            custody.require_host_boundary(value)
+
+
+def test_nonroot_bootstrap_never_loads_libc_or_attempts_mounts(monkeypatch):
+    host = custody.kernel_process(os.getpid())
+    monkeypatch.setattr(custody.ctypes, "CDLL", lambda *args, **kwargs: pytest.fail("Cannot mount from NONROOT"))
+    request = {"host_boundary": custody.host_boundary_snapshot(), "issuer": custody.issuer_snapshot(host)}
+    with pytest.raises(ValueError, match="PRIVATE_BOOTSTRAP_KERNEL_BOUNDARY_REQUIRED"):
+        custody._prepare_private_mounts(request, mode="probe", host_identity=host)
+
+
+@pytest.mark.parametrize("scenario", ["probe", "quota", "proc_detach", "proc_mount", "pts_detach",
+    "pts_mount", "foreign_ro", "host_pts", "host_namespace", "shared_namespace", "stacked_proc"])
+def test_private_bootstrap_fixed_mount_sequence_and_fail_closed_errnos_are_decoder_only(tmp_path, monkeypatch, scenario):
+    # Pure syscall/readback decoder: every mount/umount is a recording stub.
+    # No ROOT, namespace, mount, device mutation or native certification runs.
+    actual = custody.kernel_process(os.getpid())
+    own_mount = os.stat("/proc/self/ns/mnt").st_ino
+    native_proc_read = custody._proc_text
+    native_mountinfo = native_proc_read("/proc/self/mountinfo")
+    native_devices = (os.stat("/dev").st_dev, os.stat("/dev/pts").st_dev)
+    host = {"mount_namespace_inode": own_mount if scenario == "host_namespace" else own_mount + 1,
+        "device_number": 100, "devpts_device_number": 200}
+    request = {"issuer": custody.issuer_snapshot(actual), "host_boundary": host,
+        "namespace_receipt": {"path": str(tmp_path)}}
+    private = {**actual, "uids": [0] * 4, "namespace_pids": [actual["pid"], 1],
+        "pid_namespace_inode": actual["pid_namespace_inode"] + 1}
+    rows = ["1 0 8:1 / / ro - ext4 ext4 rw", "2 1 0:2 / /proc ro,nosuid,nodev,noexec - proc proc rw",
+        "3 1 0:3 / /dev ro - tmpfs tmpfs rw", "4 3 0:4 / /dev/pts ro,nosuid,noexec - devpts devpts rw",
+        "5 1 0:5 / " + str(tmp_path) + " rw - tmpfs tmpfs rw", "6 1 0:6 / /foreign rw,nosuid,nodev - tmpfs tmpfs rw"]
+    if scenario == "stacked_proc": rows.append("7 2 0:7 / /proc/1 ro - tmpfs tmpfs rw")
+    if scenario == "shared_namespace": rows[0] = rows[0].replace(" ro -", " ro shared:1 -")
+    calls = []
+    class FakeLibc:
+        def umount2(self, target, flags):
+            calls.append(("umount", target, flags))
+            if scenario == ("proc_detach" if target == b"/proc" else "pts_detach"):
+                ctypes.set_errno(errno.EPERM)
+                return -1
+            return 0
+        def mount(self, source, target, fstype, flags, data):
+            calls.append(("mount", source, target, fstype, flags.value, data))
+            failure = "proc_mount" if target == b"/proc" else "pts_mount" if target == b"/dev/pts" else "foreign_ro"
+            if scenario == failure:
+                ctypes.set_errno(errno.EACCES)
+                return -1
+            if target == b"/foreign": rows[5] = rows[5].replace(" rw,nosuid,nodev -", " ro,nosuid,nodev -")
+            return 0
+    saved_stat = os.stat
+    def metadata(path, *args, **kwargs):
+        if str(path) == "/proc/self/ns/mnt": return SimpleNamespace(st_ino=own_mount)
+        if str(path) == "/dev": return SimpleNamespace(st_dev=101)
+        if str(path) == "/dev/pts": return SimpleNamespace(st_dev=200 if scenario == "host_pts" else 201)
+        return saved_stat(path, *args, **kwargs)
+    monkeypatch.setattr(custody.os, "getuid", lambda: 0)
+    monkeypatch.setattr(custody.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(custody.os, "getpid", lambda: 1)
+    monkeypatch.setattr(custody.os, "stat", metadata)
+    monkeypatch.setattr(custody.ctypes, "CDLL", lambda *args, **kwargs: FakeLibc())
+    monkeypatch.setattr(custody, "_proc_text", lambda path: "\n".join(rows))
+    if scenario in ("probe", "quota"):
+        result = custody._prepare_private_mounts(request, mode=scenario, host_identity=private)
+        assert result["single_readonly_private_proc"] is True and result["quota_ancestor_sealed"] is False
+        assert calls[:2] == [("umount", b"/proc", 2), ("mount", b"proc", b"/proc", b"proc", 15, None)]
+        if scenario == "probe":
+            assert calls[2:4] == [("umount", b"/dev/pts", 2), ("mount", b"devpts", b"/dev/pts", b"devpts", 11,
+                b"newinstance,ptmxmode=0666,mode=0620,gid=5")]
+            assert calls[4][2] == b"/foreign" and (calls[4][4] & (4096 | 32 | 1)) == (4096 | 32 | 1)
+            assert not any(call[0] == "mount" and call[2] == os.fsencode(tmp_path) for call in calls)
+        else:
+            assert len(calls) == 2 and result["private_devpts_newinstance_created"] is False
+    else:
+        with pytest.raises(ValueError, match="ROOT_CUSTODY_PRIVATE|ROOT_CUSTODY_SINGLE_PRIVATE_PROC"):
+            custody._prepare_private_mounts(request, mode="probe", host_identity=private)
+        if scenario in ("host_namespace", "shared_namespace"): assert not calls
+    assert native_proc_read("/proc/self/mountinfo") == native_mountinfo
+    assert (saved_stat("/dev").st_dev, saved_stat("/dev/pts").st_dev) == native_devices
+
+
+@pytest.mark.parametrize("raw", ["", "not mountinfo", "1 0 0:1 / / rw shared:1 - tmpfs tmpfs rw",
+    "1 0 0:1 / /x\\garbage ro - tmpfs tmpfs ro", "1 0 0:1 / /x/../y ro - tmpfs tmpfs ro"])
+def test_unknown_or_shared_mounts_cannot_reach_root_seal(raw):
+    with pytest.raises(ValueError, match="ROOT_CUSTODY_PRIVATE_MOUNT"):
+        custody._mount_rows(raw)
+
+
+def test_single_proc_mount_rows_and_host_seal_arguments_keep_original_owner_binding(tmp_path):
+    rows = custody._mount_rows("1 0 0:1 / / ro - ext4 ext4 ro\n2 1 0:2 / /proc ro,nosuid,nodev,noexec - proc proc rw")
+    assert rows[1] == {"target": "/proc", "options": ["ro", "nosuid", "nodev", "noexec"], "type": "proc"}
+    request = {"owner_uid": os.getuid(), "owner_gid": os.getgid(), "source_sha": "1" * 40,
+        "source_tree": "2" * 40, "issuer": custody.issuer_snapshot(custody.kernel_process(os.getpid())),
+        "host_boundary": custody.host_boundary_snapshot(), "namespace_receipt": {"path": str(tmp_path)}}
+    arguments = custody._seal_arguments(request)
+    assert arguments["host_devpts_device_number"] == os.stat("/dev/pts").st_dev
+    assert arguments["control_root"] == str(tmp_path) and arguments["source_binding"] == {
+        "source_sha": "1" * 40, "source_tree": "2" * 40}
+
+
+def test_masked_pid1_decoder_never_follows_foreign_proc_or_qualifies_root(tmp_path, monkeypatch):
+    # Pure readback decoder fixture: no ROOT process, unit, mount or seal.
+    actor = custody.kernel_process(os.getpid())
+    actor.update(parent_pid=1, uids=[0] * 4, gids=[0] * 4)
+    actor["capabilities"] = {key: 1 << 5 for key in actor["capabilities"]}
+    name = custody.unit_name("a" * 32)
+    actor["cgroup"] = "0::/system.slice/" + name
+    pid1 = {**custody.public_process_identity(actor), "pid": 1, "parent_pid": 0, "namespace_pids": [1]}
+    host = {key: number + 1 for key, number in custody.host_boundary_snapshot().items()}
+    request = {"host_PID1": pid1, "host_boundary": host, "issuer": custody.issuer_snapshot(actor)}
+    properties = dict(value.split("=", 1) for value in custody.service_properties(tmp_path, 45, probe_only=True))
+    monkeypatch.setattr(custody, "kernel_process", lambda pid: actor)
+    monkeypatch.setattr(custody, "public_kernel_process", lambda *args, **kwargs: pytest.fail("Host PID1 is masked"))
+    monkeypatch.setattr(custody, "_unit_file", lambda unit: {"properties": properties})
+    result = custody.controller_snapshot(name, 45, request=request, mode="probe")
+    assert result["external_PID1_identity_pending_live_ACK"] is True
+    assert result["ROOT_actor_boundary_certified"] is False
+    with pytest.raises(ValueError, match="ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+        custody.validate_witness(result, binding=binding())
+    request["host_PID1"] = {**pid1, "boot_id": "00000000-0000-0000-0000-000000000000"}
+    with pytest.raises(ValueError, match="EXTERNAL_PID1_IDENTITY_REBOUND"):
+        custody.controller_snapshot(name, 45, request=request, mode="probe")
+
+
+def test_probe_result_distinguishes_bootstrap_mounts_from_actor_mounts_decoder_only(tmp_path, monkeypatch, capsysbinary):
+    from scripts import rc6_root_actor_seal as root_seal
+    # Pure orchestration fixture: all ROOT identities, native setup and seal
+    # calls are stubs. The resulting JSON cannot qualify custody or admission.
+    request = {"owner_uid": os.getuid(), "owner_gid": os.getgid(), "binding": binding(),
+        "source_sha": "1" * 40, "source_tree": "2" * 40,
+        "issuer": custody.issuer_snapshot(custody.kernel_process(os.getpid())),
+        "host_boundary": custody.host_boundary_snapshot(), "namespace_receipt": {"path": str(tmp_path)}}
+    monkeypatch.setattr(custody.os, "getuid", lambda: 0)
+    monkeypatch.setattr(custody.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(custody.os, "getpid", lambda: 1)
+    monkeypatch.setattr(custody, "_request", lambda *args, **kwargs: (request, b"fixture", tmp_path))
+    monkeypatch.setattr(custody, "_read", lambda *args, **kwargs: b'{"controller":{}}')
+    monkeypatch.setattr(custody, "_private_identity", lambda *args: {"host": {"cgroup": "owned"}})
+    monkeypatch.setattr(custody, "_external_controller", lambda *args: {"cgroup": "owned"})
+    monkeypatch.setattr(custody, "_manager", lambda *args: {"pre_capture_kernel_state": lambda: {}})
+    monkeypatch.setattr(root_seal, "install_root_actor_seal", lambda **kwargs: {"scope": "NONROOT_TEST_ONLY"})
+    monkeypatch.setattr(custody, "_write_control", lambda *args: None)
+    monkeypatch.setattr(custody, "_broker_probe", lambda *args: [])
+    assert custody.broker_main("probe", tmp_path / "request.json", custody.unit_name("a" * 32)) == 0
+    result = json.loads(capsysbinary.readouterr().out)
+    assert result["namespace_setup_mounts_executed"] is True
+    assert result["actor_mount_operations_attempted"] is result["quota_backing_mounts_attempted"] is False
+    assert "mount_operations_attempted" not in result
+    assert result["proof_only_no_G0_qualification"] is result["contract_revision_required"] is True
+    assert result["original_PROC_EACCES_equivalence_approved"] is False
+    with pytest.raises(ValueError, match="ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+        custody.validate_witness(result, binding=binding())
+
+
+@pytest.mark.parametrize("mutation", [None, "parent", "boundary", "namespace", "boot"])
+def test_external_pid1_ack_requires_live_double_identity_and_pidfds(tmp_path, monkeypatch, mutation):
+    # ONLY a decoder fixture with two readonly real pidfds (SELF and PID1).
+    # Public ROOT fields below are substituted; this cannot mint a witness.
+    observer = custody.kernel_process(os.getpid())
+    parent = {**custody.public_kernel_process(1), "uids": [0] * 4, "gids": [0] * 4}
+    actor = {**observer, "parent_pid": 1, "uids": [0] * 4, "gids": [0] * 4}
+    nonce = "a" * 32
+    name = custody.unit_name(nonce)
+    actor["cgroup"] = "0::/system.slice/" + name
+    host = custody.host_boundary_snapshot()
+    namespace = tmp_path / ("r6-" + base64.urlsafe_b64encode(bytes.fromhex(nonce)).decode().rstrip("="))
+    namespace.mkdir(mode=0o700)
+    path = namespace / "broker-birth.json"
+    birth = {"binding": binding(), "controller": {"unit": name, "actor": actor, "PID1": parent,
+        "host_boundary": host, "mount_namespace_inode": host["mount_namespace_inode"] + 1}}
+    if mutation == "parent": birth["controller"]["PID1"] = {**parent, "start_ticks": "0"}
+    elif mutation == "boundary": birth["controller"]["host_boundary"] = {**host, "device_number": host["device_number"] + 1}
+    elif mutation == "namespace": birth["controller"]["actor"] = {**actor, "pid_namespace_inode": actor["pid_namespace_inode"] + 1}
+    elif mutation == "boot": birth["controller"]["PID1"] = {**parent, "boot_id": "00000000-0000-0000-0000-000000000000"}
+    calibration.publish(path, birth)
+    monkeypatch.setattr(custody, "public_kernel_process", lambda pid, **kwargs: parent if pid == 1 else custody.public_process_identity(actor))
+    monkeypatch.setattr(custody, "kernel_process", lambda pid, **kwargs: observer)
+    state = {}
+    callback = custody._observer(path, binding(), state, None, expected_pid1=parent, expected_host=host)
+    if mutation:
+        with pytest.raises(ValueError, match="LIVE_EXTERNAL_PID1_OR_BOUNDARY_REBOUND"):
+            callback("poll", os.getpid(), 0, 1, -1)
+        assert not state and not path.with_suffix(".observed.json").exists()
+    else:
+        try:
+            callback("poll", os.getpid(), 0, 1, -1)
+            ack = json.loads(path.with_suffix(".observed.json").read_bytes())
+            assert ack["actual_PID1"] == parent and ack["actual_controller"] == custody.public_process_identity(actor)
+            assert ack["ROOT_custody_qualified_by_JSON"] is False
+            assert state["external_PID1_observed_native"] is True
+            with pytest.raises(ValueError, match="ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+                custody.validate_witness(ack, binding=binding())
+        finally:
+            for key in ("pidfd", "parent_pidfd"):
+                if state.get(key) is not None: os.close(state[key])
 
 
 @pytest.mark.parametrize("value", [None, "infinity", "1.5s", "1min", "-1s", "1s 1ms"])
@@ -465,7 +692,10 @@ def test_guard_startup_status_is_retained_without_changing_security_properties(t
     assert "--quiet" not in command and "--collect" in command
     assert "--property=NoNewPrivileges=yes" in command and "--property=ProtectSystem=strict" in command
     assert any("CAP_SYS_PTRACE" in value for value in command if value.startswith("--property=CapabilityBoundingSet="))
-    assert any("-/proc/1/root" in value for value in command if value.startswith("--property=InaccessiblePaths="))
+    assert any("/proc/1" in value.split() for value in command if value.startswith("--property=InaccessiblePaths="))
+    assert not any("/proc/1/root" in value for value in command)
+    with pytest.raises(ValueError, match="ACCESS_MAGICLINK_OR_ROOT_FORBIDDEN"):
+        custody.guard_access_targets(["InaccessiblePaths=-/proc/1/root"])
 
 
 def test_journal_command_cannot_cross_boot_or_unit_boundaries():
@@ -556,6 +786,27 @@ def test_generic_invocation_without_unit_or_cgroup_keeps_errno_but_never_qualifi
         kernel={"timed_out": False, "returncode": 0})
     assert result["status"] == "SCOPED_INVOCATION_DIAGNOSTIC_ONLY" and result["record_count"] == 2
     assert result["ROOT_FIN_claimed"] is result["ROOT_custody_qualified"] is False
+
+
+@pytest.mark.parametrize("mutation", [None, "exe", "source", "unit", "cgroup", "invocation", "cached_invocation"])
+def test_anchored_executor_cached_init_scope_is_diagnostic_only(mutation):
+    # Source2afd's own invocation was journaled with cached init.scope metadata.
+    # It can supply diagnosis, never ROOT identity, custody, FIN or admission.
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    record = {**invocation_record(boot), "_SYSTEMD_UNIT": "init.scope", "_SYSTEMD_CGROUP": "/init.scope"}
+    if mutation == "exe": record["_EXE"] = "/usr/bin/foreign"
+    elif mutation == "source": record["CODE_FILE"] = "src/core/foreign.c"
+    elif mutation == "unit": record["UNIT"] = "foreign.service"
+    elif mutation == "cgroup": record["_SYSTEMD_CGROUP"] = "/foreign"
+    elif mutation == "invocation": record["INVOCATION_ID"] = "d" * 32
+    elif mutation == "cached_invocation": record["_SYSTEMD_INVOCATION_ID"] = "d" * 32
+    raw = custody.wire(record)
+    result = custody.journal_invocation_origin(raw, unit=unit, boot_id=boot, invocation_id="c" * 32,
+        kernel={"timed_out": False, "returncode": 0})
+    assert result["status"] == ("UNKNOWN" if mutation else "SCOPED_INVOCATION_DIAGNOSTIC_ONLY")
+    assert result["ROOT_FIN_claimed"] is result["ROOT_custody_qualified"] is False
+    with pytest.raises(ValueError, match="ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+        custody.validate_witness(result, binding=binding())
 
 
 @pytest.mark.parametrize("field,value", [("_BOOT_ID", "d" * 32), ("_UID", "1001"),

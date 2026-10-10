@@ -268,7 +268,12 @@ def require_systemd_diagnostic_plan(raw):
         and type(plan.get('journal_queries_per_owned_failure_maximum')) is int
         and plan['journal_queries_per_owned_failure_maximum'] == 2
         and plan.get('journal_PID1_own_exit_invocation_anchor_required') is True
-        and plan.get('journal_invocation_field_qualifies_ROOT_custody') is False,
+        and plan.get('journal_invocation_field_qualifies_ROOT_custody') is False
+        and all(plan.get(key) is True for key in (
+            'ROOT_proc_magiclink_access_mount_forbidden', 'ROOT_PID1_directory_mask_required',
+            'ROOT_PID1_live_external_parent_ack_required', 'ROOT_probe_post_setup_seal_required'))
+        and plan.get('ROOT_probe_seal_allowed_on_quota_ancestor') is False
+        and plan.get('ROOT_proc_contract_revision_approved') is False,
         'NATIVE_PREREQUISITES_FIXED_SYSTEMD_DIAGNOSTIC_PLAN_REQUIRED')
 
 
