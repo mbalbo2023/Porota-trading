@@ -35,8 +35,9 @@ ROOT_SEAL_MEMBER = "scripts/rc6_root_actor_seal.py"
 SYSTEMD_DENIED_FILTER = "~setns ptrace process_vm_readv process_vm_writev bpf open_by_handle_at name_to_handle_at kexec_load kexec_file_load init_module finit_module delete_module reboot swapon swapoff"
 MANAGER_SHA256 = "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
 CONTROL_BOUND = 2 * 1024**2
+PRIVATE_MOUNT_DIAGNOSTIC = "private-mount-setup.native.json"
 OPTIONAL_FAILURE_RAW_NAMES = ("private-broker-native.log", "root-success.native.log",
-    "failure-before-drop.native.log", "root-hang.native.log", "nonroot-hang.native.log")
+    "failure-before-drop.native.log", "root-hang.native.log", "nonroot-hang.native.log", PRIVATE_MOUNT_DIAGNOSTIC)
 SYSTEMD_QUERY_BOUND = 65536
 SYSTEMD_BINARY_BOUND = 16 * 1024**2
 SYSTEMD_CONFIG_FIELDS = ("Version", "LogLevel", "LogTarget", "DefaultStandardOutput", "DefaultStandardError")
@@ -610,8 +611,8 @@ def _request(path, *, private=False):
 def original_directory_bridge(request):
     """Authenticate FD3, which transports only the issuer's own directory.
 
-    The fixed ROOT setup opens exactly marker/image/birth with NOFOLLOW. This
-    descriptor is closed before any mutable NONROOT backend or probe actor.
+    The fixed ROOT setup opens marker/image/birth and its own fixed diagnostic
+    with NOFOLLOW. This descriptor is closed before any mutable NONROOT backend or probe actor.
     No host proc tree, foreign root/cwd/fd magic links or namespace fd is bound.
     """
     from scripts import rc6_capacity_calibration as calibration
@@ -972,7 +973,9 @@ def _mount_rows(raw):
     rows = []
     for line in raw.splitlines():
         fields = line.split()
-        require(len(fields) >= 10 and "-" in fields, "ROOT_CUSTODY_PRIVATE_MOUNT_METADATA_UNKNOWN")
+        require(len(fields) >= 10 and fields.count("-") == 1
+                and fields[0].isdecimal() and int(fields[0]) > 0 and fields[1].isdecimal()
+                and re.fullmatch(r"[0-9]+:[0-9]+", fields[2]), "ROOT_CUSTODY_PRIVATE_MOUNT_METADATA_UNKNOWN")
         split = fields.index("-")
         require(split >= 6 and len(fields) >= split + 4
                 and not any(item.startswith(("shared:", "master:", "propagate_from:")) for item in fields[6:split]),
@@ -982,9 +985,114 @@ def _mount_rows(raw):
         target = re.sub(r"\\([0-7]{3})", lambda match: chr(int(match[1], 8)), target)
         require(target.startswith("/") and "\x00" not in target and ".." not in Path(target).parts,
                 "ROOT_CUSTODY_PRIVATE_MOUNT_TARGET_UNKNOWN")
-        rows.append({"target": target, "options": fields[5].split(","), "type": fields[split + 1]})
-    require(0 < len(rows) <= 1024, "ROOT_CUSTODY_PRIVATE_MOUNT_COUNT_BOUND")
+        major, minor = map(int, fields[2].split(":"))
+        rows.append({"id": int(fields[0]), "device": os.makedev(major, minor),
+                     "target": target, "options": fields[5].split(","), "type": fields[split + 1]})
+    require(0 < len(rows) <= 1024 and len({row["id"] for row in rows}) == len(rows),
+            "ROOT_CUSTODY_PRIVATE_MOUNT_COUNT_BOUND")
     return rows
+
+
+class _MountAttribute(ctypes.Structure):
+    _fields_ = [(name, ctypes.c_uint64) for name in ("attr_set", "attr_clr", "propagation", "userns_fd")]
+
+
+def _mount_attribute(libc, descriptor, path, flags, *, readonly, operations):
+    require(sys.platform == "linux" and os.uname().machine == "x86_64"
+            and ctypes.sizeof(_MountAttribute) == 32
+            and [getattr(_MountAttribute, name).offset for name, _ in _MountAttribute._fields_] == [0, 8, 16, 24],
+            "ROOT_CUSTODY_MOUNT_SETATTR_ABI_REQUIRED")
+    require((readonly is True and descriptor == -100 and path == b"/" and flags == 0x8100)
+            or (readonly is False and type(descriptor) is int and descriptor >= 0
+                and descriptor != BRIDGE_DESCRIPTOR and path == b"" and flags == 0x1000),
+            "ROOT_CUSTODY_MOUNT_SETATTR_FIXED_OPERATION_REQUIRED")
+    attribute = _MountAttribute(1 if readonly else 0, 0 if readonly else 1, 0, 0)
+    libc.syscall.restype = ctypes.c_long
+    ctypes.set_errno(0)
+    returned = int(libc.syscall(ctypes.c_long(442), ctypes.c_int(descriptor), ctypes.c_char_p(path),
+        ctypes.c_uint(flags), ctypes.byref(attribute), ctypes.c_size_t(32)))
+    saved = ctypes.get_errno()
+    operations.append({"operation": "mount_setattr", "syscall_number": 442,
+        "descriptor_scope": "AT_FDCWD" if readonly else "FRESH_PRIVATE_CONTROL",
+        "path": path.decode(), "flags": flags, "attr_set": attribute.attr_set, "attr_clr": attribute.attr_clr,
+        "propagation": attribute.propagation, "userns_fd": attribute.userns_fd, "attribute_bytes": 32,
+        "returncode": returned, "errno": saved})
+    require(returned == 0, "ROOT_CUSTODY_PRIVATE_" + ("RECURSIVE_READONLY" if readonly else "CONTROL_READWRITE")
+            + "_FAILED:" + str(saved))
+
+
+def _control_mount_identity(request, rows, descriptor):
+    from scripts import rc6_capacity_calibration as calibration
+    claim = request["namespace_receipt"]
+    root = Path(claim["path"])
+    require(root.is_absolute() and root != Path("/") and ".." not in root.parts
+            and not any(path.is_symlink() for path in (root, *root.parents)),
+            "ROOT_CUSTODY_PRIVATE_CONTROL_PATH_REQUIRED")
+    matches = [row for row in rows if row["target"] == str(root)]
+    require(len(matches) == 1 and descriptor != BRIDGE_DESCRIPTOR,
+            "ROOT_CUSTODY_PRIVATE_CONTROL_SINGLE_MOUNT_REQUIRED")
+    current, named = os.fstat(descriptor), root.lstat()
+    identity = lambda value: [value.st_dev, value.st_ino, value.st_uid, value.st_gid, stat.S_IMODE(value.st_mode)]
+    mount_id = calibration.descriptor_mount_id(descriptor)
+    require(fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_PATH == os.O_PATH
+            and stat.S_ISDIR(current.st_mode) and current.st_uid == request["owner_uid"]
+            and current.st_gid == request["owner_gid"] and stat.S_IMODE(current.st_mode) == 0o700
+            and identity(current) == identity(named) == claim["identity"]
+            and matches[0]["device"] == current.st_dev and matches[0]["id"] == mount_id
+            and mount_id != claim["mount_id"], "ROOT_CUSTODY_PRIVATE_CONTROL_NATIVE_IDENTITY_REQUIRED")
+    return {"identity": identity(current), "private_mount_id": mount_id, "target": str(root)}
+
+
+def _publish_mount_diagnostic(request, value):
+    """Use only the authenticated original own directory, never foreign proc."""
+    from scripts import rc6_capacity_calibration as calibration
+    original_directory_bridge(request)
+    require(type(value) is dict and value.get("schema") == "porota.rc6.private-mount-setup-diagnostic.v1"
+            and value.get("scope") == "DIAGNOSTIC_ONLY" and value.get("ROOT_FIN_claimed") is False
+            and value.get("ROOT_custody_qualified") is False and value.get("binding") == request["binding"]
+            and value.get("mode") == "probe" and type(value.get("operations")) is list
+            and len(value["operations"]) <= 6, "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_IDENTITY_REQUIRED")
+    for key in ("mountinfo_before", "mountinfo_before_readonly", "mountinfo_after_recursive_readonly", "mountinfo_after"):
+        if key not in value:
+            continue
+        record = value[key]
+        require(type(record) is dict and set(record) == {"raw_base64", "sha256", "bytes"},
+                "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_RAW_INVALID")
+        original = base64.b64decode(record["raw_base64"], validate=True)
+        require(type(record["bytes"]) is int and len(original) == record["bytes"] <= 65536
+                and sha256(original) == record["sha256"], "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_RAW_INVALID")
+    raw = wire(value)
+    require(len(raw) <= CONTROL_BOUND, "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_BOUND")
+    descriptor = os.open(PRIVATE_MOUNT_DIAGNOSTIC,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=BRIDGE_DESCRIPTOR)
+    try:
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size == 0
+                and before.st_uid == os.geteuid() and before.st_dev == request["namespace_receipt"]["identity"][0]
+                and calibration.descriptor_mount_id(descriptor) == request["namespace_receipt"]["mount_id"],
+                "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_SOURCE_REQUIRED")
+        with os.fdopen(descriptor, "wb", closefd=False) as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(descriptor)
+        os.fchown(descriptor, request["owner_uid"], request["owner_gid"])
+        after = os.fstat(descriptor)
+        named = os.stat(PRIVATE_MOUNT_DIAGNOSTIC, dir_fd=BRIDGE_DESCRIPTOR, follow_symlinks=False)
+        require(after.st_dev == before.st_dev and after.st_ino == before.st_ino
+                and after.st_uid == request["owner_uid"] and after.st_gid == request["owner_gid"]
+                and stat.S_IMODE(after.st_mode) == 0o600 and after.st_nlink == 1 and after.st_size == len(raw)
+                and unit_source_identity(after) == unit_source_identity(named),
+                "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_CHANGED")
+        return {"relative_source": PRIVATE_MOUNT_DIAGNOSTIC, "sha256": sha256(raw), "bytes": len(raw),
+                "scope": "DIAGNOSTIC_ONLY", "ROOT_FIN_claimed": False, "ROOT_custody_qualified": False}
+    finally:
+        os.close(descriptor)
+
+
+def _mountinfo_diagnostic(raw):
+    encoded = raw.encode("utf-8")
+    require(len(encoded) <= 65536, "ROOT_CUSTODY_PROC_METADATA_BOUND")
+    return {"raw_base64": base64.b64encode(encoded).decode(), "sha256": sha256(encoded), "bytes": len(encoded)}
 
 
 def _prepare_private_mounts(request, *, mode, host_identity):
@@ -999,45 +1107,86 @@ def _prepare_private_mounts(request, *, mode, host_identity):
             "ROOT_CUSTODY_PRIVATE_BOOTSTRAP_KERNEL_BOUNDARY_REQUIRED")
     # The launcher requests private propagation; read it back before a detach
     # could affect any shared or slave host mount rather than after setup.
-    _mount_rows(_proc_text("/proc/self/mountinfo"))
+    before_raw = _proc_text("/proc/self/mountinfo")
+    _mount_rows(before_raw)
+    diagnostic = {"schema": "porota.rc6.private-mount-setup-diagnostic.v1", "scope": "DIAGNOSTIC_ONLY",
+        "ROOT_FIN_claimed": False, "ROOT_custody_qualified": False, "status": "UNKNOWN",
+        "binding": request.get("binding"), "mode": mode, "kernel_machine": os.uname().machine,
+        "kernel_release": os.uname().release, "mountinfo_before": _mountinfo_diagnostic(before_raw), "operations": []}
+    if mode == "probe":
+        original_directory_bridge(request)
+    try:
+        result = _prepare_private_mount_operations(request, mode=mode, diagnostic=diagnostic)
+    except BaseException as error:
+        if mode == "probe":
+            diagnostic.update(status="RED", error_class=type(error).__name__, error_signature=str(error))
+            try:
+                diagnostic["mountinfo_after"] = _mountinfo_diagnostic(_proc_text("/proc/self/mountinfo"))
+            except (ValueError, OSError) as read_error:
+                diagnostic["mountinfo_after_error"] = str(read_error)
+            try:
+                _publish_mount_diagnostic(request, diagnostic)
+            except (ValueError, OSError) as publication_error:
+                sys.stderr.write("ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_UNKNOWN:" + str(publication_error) + "\n")
+        raise
+    if mode == "probe":
+        diagnostic.update(status="SETUP_READBACK_ONLY_NO_ROOT_QUALIFICATION",
+            mountinfo_after=_mountinfo_diagnostic(_proc_text("/proc/self/mountinfo")))
+        result["mount_diagnostic"] = _publish_mount_diagnostic(request, diagnostic)
+    return result
+
+
+def _prepare_private_mount_operations(request, *, mode, diagnostic):
+    host_boundary = request["host_boundary"]
     libc = ctypes.CDLL(None, use_errno=True)
+    def mount_operation(operation, target, callback):
+        ctypes.set_errno(0)
+        returned = int(callback())
+        saved = ctypes.get_errno()
+        diagnostic["operations"].append({"operation": operation, "target": target,
+            "returncode": returned, "errno": saved})
+        require(returned == 0, "ROOT_CUSTODY_PRIVATE_" + operation.upper() + "_FAILED:" + str(saved))
     # Remove the inherited host proc view and every stacked/submount under it
     # inside this already private mount namespace; do not retain a host proc FD.
-    ctypes.set_errno(0)
-    require(libc.umount2(b"/proc", 2) == 0,
-            "ROOT_CUSTODY_PRIVATE_OLD_PROC_DETACH_FAILED:" + str(ctypes.get_errno()))
-    ctypes.set_errno(0)
-    returned = libc.mount(b"proc", b"/proc", b"proc", ctypes.c_ulong(1 | 2 | 4 | 8), None)
-    saved = ctypes.get_errno()
-    require(returned == 0, "ROOT_CUSTODY_PRIVATE_PROC_MOUNT_FAILED:" + str(saved))
+    mount_operation("old_proc_detach", "/proc", lambda: libc.umount2(b"/proc", 2))
+    mount_operation("proc_mount", "/proc", lambda: libc.mount(b"proc", b"/proc", b"proc", ctypes.c_ulong(15), None))
     if mode == "probe":
         # systemd 255 PrivateDevices creates a private /dev but bind-mounts
         # host devpts. Replace that bind inside our private namespace first.
-        ctypes.set_errno(0)
-        returned = libc.umount2(b"/dev/pts", 2)
-        saved = ctypes.get_errno()
-        require(returned == 0, "ROOT_CUSTODY_PRIVATE_OLD_DEVPTS_DETACH_FAILED:" + str(saved))
-        ctypes.set_errno(0)
-        returned = libc.mount(b"devpts", b"/dev/pts", b"devpts", ctypes.c_ulong(1 | 2 | 8),
-                              b"newinstance,ptmxmode=0666,mode=0620,gid=5")
-        saved = ctypes.get_errno()
-        require(returned == 0, "ROOT_CUSTODY_PRIVATE_DEVPTS_MOUNT_FAILED:" + str(saved))
+        mount_operation("old_devpts_detach", "/dev/pts", lambda: libc.umount2(b"/dev/pts", 2))
+        mount_operation("devpts_mount", "/dev/pts", lambda: libc.mount(b"devpts", b"/dev/pts", b"devpts",
+            ctypes.c_ulong(11), b"newinstance,ptmxmode=0666,mode=0620,gid=5"))
         require(os.stat("/dev").st_dev != host_boundary["device_number"]
                 and os.stat("/dev/pts").st_dev != host_boundary["devpts_device_number"],
                 "ROOT_CUSTODY_PRIVATE_DEVICES_NOT_NATIVE")
         root = request["namespace_receipt"]["path"]
-        for row in _mount_rows(_proc_text("/proc/self/mountinfo")):
-            if "ro" in row["options"] or row["target"] == root:
-                continue
-            # MS_BIND|MS_REMOUNT changes this namespace's per-mount flags,
-            # rather than marking a shared host filesystem superblock readonly.
-            flags = 4096 | 32 | 1
-            flags |= sum(bit for name, bit in (("nosuid", 2), ("nodev", 4), ("noexec", 8)) if name in row["options"])
-            ctypes.set_errno(0)
-            returned = libc.mount(None, os.fsencode(row["target"]), None, ctypes.c_ulong(flags), None)
-            saved = ctypes.get_errno()
-            require(returned == 0, "ROOT_CUSTODY_PRIVATE_FOREIGN_READONLY_FAILED:" + row["target"] + ":" + str(saved))
+        prior = _proc_text("/proc/self/mountinfo")
+        rows = _mount_rows(prior)
+        diagnostic["mountinfo_before_readonly"] = _mountinfo_diagnostic(prior)
+        control_fd = os.open(root, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            identity = _control_mount_identity(request, rows, control_fd)
+            diagnostic["private_control_before"] = identity
+            _mount_attribute(libc, -100, b"/", 0x8100, readonly=True, operations=diagnostic["operations"])
+            # Authenticate the pathname again before changing the pinned mount.
+            readonly_raw = _proc_text("/proc/self/mountinfo")
+            diagnostic["mountinfo_after_recursive_readonly"] = _mountinfo_diagnostic(readonly_raw)
+            readonly_rows = _mount_rows(readonly_raw)
+            require(all("ro" in row["options"] for row in readonly_rows),
+                    "ROOT_CUSTODY_PRIVATE_RECURSIVE_READONLY_READBACK_REQUIRED")
+            require(_control_mount_identity(request, readonly_rows, control_fd) == identity,
+                    "ROOT_CUSTODY_PRIVATE_CONTROL_REBOUND_BEFORE_CLEAR")
+            _mount_attribute(libc, control_fd, b"", 0x1000, readonly=False, operations=diagnostic["operations"])
+            after_rows = _mount_rows(_proc_text("/proc/self/mountinfo"))
+            require(_control_mount_identity(request, after_rows, control_fd) == identity,
+                    "ROOT_CUSTODY_PRIVATE_CONTROL_REBOUND_AFTER_CLEAR")
+            diagnostic["private_control_after"] = identity
+            require(all("rw" in row["options"] for row in after_rows if row["target"] == root),
+                    "ROOT_CUSTODY_PRIVATE_RECURSIVE_READONLY_READBACK_REQUIRED")
+        finally:
+            os.close(control_fd)
         rows = _mount_rows(_proc_text("/proc/self/mountinfo"))
+        diagnostic["foreign_writable_rows"] = [row for row in rows if "ro" not in row["options"] and row["target"] != root]
         require(all("ro" in row["options"] or row["target"] == root for row in rows),
                 "ROOT_CUSTODY_PRIVATE_FOREIGN_READONLY_UNPROVED")
     rows = _mount_rows(_proc_text("/proc/self/mountinfo"))
@@ -1938,6 +2087,7 @@ def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, bind
                 "guardian-unit-original.json", "broker-unit-original.json",
                 "guardian-birth.json", "guardian-birth.observed.json", "broker-birth.json", "broker-birth.observed.json",
                 "guardian-bridge.json", "broker-bridge.json", "guardian-controller.json", "private-broker-native.log",
+                PRIVATE_MOUNT_DIAGNOSTIC,
                 "private-broker-birth.json", "private-broker.observed.json", "private-parent-seal.json",
                 *[row["raw"]["path"] for row in result["cases"]]]
     destination = (namespace.path.parent / ("root-custody-" + namespace.nonce)

@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import select
+import stat
 import sys
 from types import SimpleNamespace
 
@@ -220,7 +221,10 @@ def test_nonroot_bootstrap_never_loads_libc_or_attempts_mounts(monkeypatch):
 
 
 @pytest.mark.parametrize("scenario", ["probe", "quota", "proc_detach", "proc_mount", "pts_detach",
-    "pts_mount", "foreign_ro", "host_pts", "host_namespace", "shared_namespace", "stacked_proc"])
+    "pts_mount", "foreign_ro", "host_pts", "host_namespace", "shared_namespace", "stacked_proc",
+    "covered", "foreign_rw", "control_clear", "rebind_before", "rebind_after", "duplicate_control", "stale_id",
+    *[phase + "_error_" + str(error) for phase in ("rec", "clear") for error in
+      (errno.ENOSYS, errno.EPERM, errno.EINVAL, errno.EBUSY, errno.EOPNOTSUPP)]])
 def test_private_bootstrap_fixed_mount_sequence_and_fail_closed_errnos_are_decoder_only(tmp_path, monkeypatch, scenario):
     # Pure syscall/readback decoder: every mount/umount is a recording stub.
     # No ROOT, namespace, mount, device mutation or native certification runs.
@@ -231,17 +235,46 @@ def test_private_bootstrap_fixed_mount_sequence_and_fail_closed_errnos_are_decod
     native_devices = (os.stat("/dev").st_dev, os.stat("/dev/pts").st_dev)
     host = {"mount_namespace_inode": own_mount if scenario == "host_namespace" else own_mount + 1,
         "device_number": 100, "devpts_device_number": 200}
+    details = tmp_path.stat()
     request = {"issuer": custody.issuer_snapshot(actual), "host_boundary": host,
-        "namespace_receipt": {"path": str(tmp_path)}}
+        "owner_uid": os.getuid(), "owner_gid": os.getgid(),
+        "namespace_receipt": {"path": str(tmp_path), "mount_id": 1,
+            "identity": [details.st_dev, details.st_ino, details.st_uid, details.st_gid, 0o700]}}
     private = {**actual, "uids": [0] * 4, "namespace_pids": [actual["pid"], 1],
         "pid_namespace_inode": actual["pid_namespace_inode"] + 1}
     rows = ["1 0 8:1 / / ro - ext4 ext4 rw", "2 1 0:2 / /proc ro,nosuid,nodev,noexec - proc proc rw",
         "3 1 0:3 / /dev ro - tmpfs tmpfs rw", "4 3 0:4 / /dev/pts ro,nosuid,noexec - devpts devpts rw",
-        "5 1 0:5 / " + str(tmp_path) + " rw - tmpfs tmpfs rw", "6 1 0:6 / /foreign rw,nosuid,nodev - tmpfs tmpfs rw"]
+        "5 1 " + str(os.major(details.st_dev)) + ":" + str(os.minor(details.st_dev)) + " / " + str(tmp_path)
+            + " rw - tmpfs tmpfs rw", "6 1 0:6 / /foreign rw,nosuid,nodev - tmpfs tmpfs rw"]
     if scenario == "stacked_proc": rows.append("7 2 0:7 / /proc/1 ro - tmpfs tmpfs rw")
+    if scenario == "covered": rows.append("7 1 0:7 / /foreign rw - tmpfs tmpfs rw")
+    if scenario == "duplicate_control": rows.append(rows[4].replace("5 1 ", "7 1 "))
     if scenario == "shared_namespace": rows[0] = rows[0].replace(" ro -", " ro shared:1 -")
     calls = []
+    publications = []
+    class FakeSyscall:
+        def __call__(self, number, descriptor, path, flags, attribute, size):
+            attr = attribute._obj
+            calls.append(("mount_setattr", number.value, descriptor.value, path.value, flags.value,
+                attr.attr_set, attr.attr_clr, attr.propagation, attr.userns_fd, size.value))
+            if scenario == "foreign_ro":
+                ctypes.set_errno(errno.EACCES)
+                return -1
+            phase = "rec" if attr.attr_set else "clear"
+            if scenario.startswith(phase + "_error_") or (scenario == "control_clear" and not attr.attr_set):
+                ctypes.set_errno(int(scenario.rsplit("_", 1)[-1]) if "_error_" in scenario else errno.EPERM)
+                return -1
+            if attr.attr_set:
+                rows[:] = [row.replace(" rw,", " ro,").replace(" rw -", " ro -") for row in rows]
+                if scenario == "foreign_rw": rows[5] = rows[5].replace(" ro,", " rw,")
+            else:
+                rows[4] = rows[4].replace(" ro -", " rw -")
+            if scenario == ("rebind_before" if attr.attr_set else "rebind_after"):
+                tmp_path.rename(tmp_path.with_name(tmp_path.name + "-original"))
+                tmp_path.mkdir(mode=0o700)
+            return 0
     class FakeLibc:
+        def __init__(self): self.syscall = FakeSyscall()
         def umount2(self, target, flags):
             calls.append(("umount", target, flags))
             if scenario == ("proc_detach" if target == b"/proc" else "pts_detach"):
@@ -268,21 +301,44 @@ def test_private_bootstrap_fixed_mount_sequence_and_fail_closed_errnos_are_decod
     monkeypatch.setattr(custody.os, "stat", metadata)
     monkeypatch.setattr(custody.ctypes, "CDLL", lambda *args, **kwargs: FakeLibc())
     monkeypatch.setattr(custody, "_proc_text", lambda path: "\n".join(rows))
-    if scenario in ("probe", "quota"):
-        result = custody._prepare_private_mounts(request, mode=scenario, host_identity=private)
+    monkeypatch.setattr(calibration, "descriptor_mount_id", lambda fd: 6 if scenario == "stale_id" else 5)
+    monkeypatch.setattr(custody, "original_directory_bridge", lambda request: {"scope": "DECODER_ONLY"})
+    def publication(request, value):
+        publications.append(copy.deepcopy(value))
+        return {"scope": "DIAGNOSTIC_ONLY", "ROOT_custody_qualified": False}
+    monkeypatch.setattr(custody, "_publish_mount_diagnostic", publication)
+    if scenario in ("probe", "covered", "quota"):
+        result = custody._prepare_private_mounts(request, mode="quota" if scenario == "quota" else "probe", host_identity=private)
         assert result["single_readonly_private_proc"] is True and result["quota_ancestor_sealed"] is False
         assert calls[:2] == [("umount", b"/proc", 2), ("mount", b"proc", b"/proc", b"proc", 15, None)]
-        if scenario == "probe":
+        if scenario in ("probe", "covered"):
             assert calls[2:4] == [("umount", b"/dev/pts", 2), ("mount", b"devpts", b"/dev/pts", b"devpts", 11,
                 b"newinstance,ptmxmode=0666,mode=0620,gid=5")]
-            assert calls[4][2] == b"/foreign" and (calls[4][4] & (4096 | 32 | 1)) == (4096 | 32 | 1)
-            assert not any(call[0] == "mount" and call[2] == os.fsencode(tmp_path) for call in calls)
+            assert calls[4] == ("mount_setattr", 442, -100, b"/", 0x8100, 1, 0, 0, 0, 32)
+            assert calls[5][0:2] == ("mount_setattr", 442) and calls[5][2] != custody.BRIDGE_DESCRIPTOR
+            assert calls[5][3:] == (b"", 0x1000, 0, 1, 0, 0, 32)
+            with pytest.raises(OSError) as closed: os.fstat(calls[5][2])
+            assert closed.value.errno == errno.EBADF
+            assert publications[0]["status"] == "SETUP_READBACK_ONLY_NO_ROOT_QUALIFICATION"
+            assert publications[0]["ROOT_custody_qualified"] is publications[0]["ROOT_FIN_claimed"] is False
+            assert all("ro" in row["options"] for row in custody._mount_rows(base64.b64decode(
+                publications[0]["mountinfo_after_recursive_readonly"]["raw_base64"]).decode()))
         else:
             assert len(calls) == 2 and result["private_devpts_newinstance_created"] is False
+            assert not publications
     else:
         with pytest.raises(ValueError, match="ROOT_CUSTODY_PRIVATE|ROOT_CUSTODY_SINGLE_PRIVATE_PROC"):
             custody._prepare_private_mounts(request, mode="probe", host_identity=private)
         if scenario in ("host_namespace", "shared_namespace"): assert not calls
+        if scenario in ("foreign_rw", "rebind_before") or scenario.startswith("rec_error_"):
+            assert len([call for call in calls if call[0] == "mount_setattr"]) == 1
+        if scenario in ("duplicate_control", "stale_id"):
+            assert not any(call[0] == "mount_setattr" for call in calls)
+        if publications:
+            assert publications[0]["status"] == "RED" and publications[0]["ROOT_custody_qualified"] is False
+            assert "mountinfo_after" in publications[0]
+            if "_error_" in scenario:
+                assert publications[0]["operations"][-1]["errno"] == int(scenario.rsplit("_", 1)[-1])
     assert native_proc_read("/proc/self/mountinfo") == native_mountinfo
     assert (saved_stat("/dev").st_dev, saved_stat("/dev/pts").st_dev) == native_devices
 
@@ -296,7 +352,8 @@ def test_unknown_or_shared_mounts_cannot_reach_root_seal(raw):
 
 def test_single_proc_mount_rows_and_host_seal_arguments_keep_original_owner_binding(tmp_path):
     rows = custody._mount_rows("1 0 0:1 / / ro - ext4 ext4 ro\n2 1 0:2 / /proc ro,nosuid,nodev,noexec - proc proc rw")
-    assert rows[1] == {"target": "/proc", "options": ["ro", "nosuid", "nodev", "noexec"], "type": "proc"}
+    assert rows[1] == {"id": 2, "device": os.makedev(0, 2), "target": "/proc",
+        "options": ["ro", "nosuid", "nodev", "noexec"], "type": "proc"}
     request = {"owner_uid": os.getuid(), "owner_gid": os.getgid(), "source_sha": "1" * 40,
         "source_tree": "2" * 40, "issuer": custody.issuer_snapshot(custody.kernel_process(os.getpid())),
         "host_boundary": custody.host_boundary_snapshot(), "namespace_receipt": {"path": str(tmp_path)}}
@@ -304,6 +361,102 @@ def test_single_proc_mount_rows_and_host_seal_arguments_keep_original_owner_bind
     assert arguments["host_devpts_device_number"] == os.stat("/dev/pts").st_dev
     assert arguments["control_root"] == str(tmp_path) and arguments["source_binding"] == {
         "source_sha": "1" * 40, "source_tree": "2" * 40}
+
+
+@pytest.mark.parametrize("defect", ["arch", "size", "operation", "bridge_fd"])
+def test_mount_setattr_abi_and_scope_reject_before_any_syscall(monkeypatch, defect):
+    class Forbidden:
+        def __call__(self, *args): pytest.fail("No syscall for foreign ABI or mutable operation")
+    libc = SimpleNamespace(syscall=Forbidden())
+    descriptor, path, flags, readonly = -100, b"/", 0x8100, True
+    if defect == "arch": monkeypatch.setattr(custody.os, "uname", lambda: SimpleNamespace(machine="aarch64"))
+    elif defect == "size":
+        class InvalidAttribute(ctypes.Structure): _fields_ = [("attr_set", ctypes.c_uint64)]
+        monkeypatch.setattr(custody, "_MountAttribute", InvalidAttribute)
+    elif defect == "operation": flags = 0x8000
+    else: descriptor, path, flags, readonly = custody.BRIDGE_DESCRIPTOR, b"", 0x1000, False
+    with pytest.raises(ValueError, match="ROOT_CUSTODY_MOUNT_SETATTR"):
+        custody._mount_attribute(libc, descriptor, path, flags, readonly=readonly, operations=[])
+
+
+@pytest.mark.parametrize("defect", [None, "claim", "duplicate", "stale", "device", "mode", "named_rebound", "bridge"])
+def test_private_control_fd_requires_exact_own_identity_and_mount(tmp_path, monkeypatch, defect):
+    assert os.getuid() == os.geteuid() > 0
+    root = tmp_path / "control"
+    root.mkdir(mode=0o700)
+    descriptor = os.open(root, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        details = root.stat()
+        mount_id = calibration.descriptor_mount_id(descriptor)
+        request = {"owner_uid": os.getuid(), "owner_gid": os.getgid(), "namespace_receipt": {
+            "path": str(root), "mount_id": mount_id + 1,
+            "identity": [details.st_dev, details.st_ino, details.st_uid, details.st_gid, 0o700]}}
+        rows = [{"target": str(root), "id": mount_id, "device": details.st_dev}]
+        if defect == "claim": request["namespace_receipt"]["identity"][1] += 1
+        elif defect == "duplicate": rows.append(dict(rows[0]))
+        elif defect == "stale": rows[0]["id"] += 2
+        elif defect == "device": rows[0]["device"] += 1
+        elif defect == "mode": root.chmod(0o755)
+        elif defect == "named_rebound": root.rename(tmp_path / "original"); root.mkdir(mode=0o700)
+        elif defect == "bridge": monkeypatch.setattr(custody, "BRIDGE_DESCRIPTOR", descriptor)
+        if defect:
+            with pytest.raises(ValueError, match="ROOT_CUSTODY_PRIVATE_CONTROL"):
+                custody._control_mount_identity(request, rows, descriptor)
+        else:
+            result = custody._control_mount_identity(request, rows, descriptor)
+            assert result == {"identity": request["namespace_receipt"]["identity"],
+                "private_mount_id": mount_id, "target": str(root)}
+            with pytest.raises(ValueError, match="ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+                custody.validate_witness(result, binding=binding())
+    finally:
+        os.close(descriptor)
+
+
+@pytest.mark.parametrize("defect", [None, "bound", "foreign_bridge", "exists", "symlink", "digest", "binding", "root_claim"])
+def test_mount_diagnostic_uses_actual_nonroot_owned_original_fd_and_exact_bytes(tmp_path, monkeypatch, defect):
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    assert os.getuid() == os.geteuid() > 0
+    namespace = owned.create_namespace(tmp_path, binding())
+    request = {"owner_uid": os.getuid(), "owner_gid": os.getgid(), "binding": binding(),
+        "namespace_receipt": owned.namespace_receipt(namespace)}
+    descriptor = os.open(namespace.path, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    monkeypatch.setattr(custody, "BRIDGE_DESCRIPTOR", descriptor)
+    value = {"schema": "porota.rc6.private-mount-setup-diagnostic.v1", "scope": "DIAGNOSTIC_ONLY",
+        "binding": binding(), "mode": "probe", "ROOT_FIN_claimed": False, "ROOT_custody_qualified": False,
+        "mountinfo_before": custody._mountinfo_diagnostic("ORIGINAL_BEFORE\n"),
+        "mountinfo_after": custody._mountinfo_diagnostic("ORIGINAL_AFTER\n"), "operations": []}
+    path = namespace.path / custody.PRIVATE_MOUNT_DIAGNOSTIC
+    if defect == "bound": value["oversize"] = "x" * (custody.CONTROL_BOUND + 1)
+    elif defect == "digest": value["mountinfo_before"]["sha256"] = "0" * 64
+    elif defect == "binding": value["binding"] = {}
+    elif defect == "root_claim": value["ROOT_custody_qualified"] = True
+    elif defect == "foreign_bridge": request["namespace_receipt"]["marker_sha256"] = "0" * 64
+    elif defect == "exists": path.write_bytes(b"KEEP_ORIGINAL")
+    elif defect == "symlink":
+        (namespace.path / "foreign.log").write_bytes(b"KEEP_ORIGINAL")
+        path.symlink_to(namespace.path / "foreign.log")
+    try:
+        if defect:
+            with pytest.raises((ValueError, OSError)):
+                custody._publish_mount_diagnostic(request, value)
+            if defect in ("bound", "foreign_bridge", "digest", "binding", "root_claim"): assert not path.exists()
+            else: assert path.read_bytes() == b"KEEP_ORIGINAL"
+        else:
+            result = custody._publish_mount_diagnostic(request, value)
+            raw = path.read_bytes()
+            assert raw == custody.wire(value) and result["sha256"] == custody.sha256(raw)
+            assert result["bytes"] == len(raw) and stat.S_IMODE(path.stat().st_mode) == 0o600
+            assert result["ROOT_FIN_claimed"] is result["ROOT_custody_qualified"] is False
+            for stage in ("before", "after"):
+                record = json.loads(raw)["mountinfo_" + stage]
+                original = base64.b64decode(record["raw_base64"], validate=True)
+                assert original == ("ORIGINAL_" + stage.upper() + "\n").encode()
+                assert record["sha256"] == custody.sha256(original) and record["bytes"] == len(original)
+            with pytest.raises(ValueError, match="ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+                custody.validate_witness(result, binding=binding())
+        assert os.fstat(descriptor).st_ino == namespace.identity[1]
+    finally:
+        os.close(descriptor)
 
 
 @pytest.mark.parametrize("namespaces", [None, "mnt pid", "mnt pid user", "pid", "mnt pid unknown"])

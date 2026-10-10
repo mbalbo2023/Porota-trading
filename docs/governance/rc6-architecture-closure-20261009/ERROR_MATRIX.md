@@ -457,3 +457,82 @@ tests82542B/SHA256
 `313c7ceb73a0066ae06ea753cd80e6939ca5ff16fce4569ca8381926f7c5cc9f`.
 Estos tests preservan realmente FIN/ECHILD NONROOT y bytes originales; sus
 fixtures de unidad/cgroup se declaran fixtures, sin certificación ROOT.
+
+
+## Source324e4273: guard RO privado y corrección recursiva
+
+CI exacta `324e42739dca3c7072dc2d219291b5bdaeae417e`, tree
+`7cb67cfe1aff5487ed72efc40ded80fcac93ec10`: Actions38059823356,
+job114235632983, **1922 PASS en cada Python3.11/3.12**, sin fallos,
+errores o skips. Artifact11672363537:977905B/22CRC/SHA256
+`27fad4e7f80b82e1bb2d9597a387a0c5a854eb5985ad8c105c04fe5b087f6faa`.
+FIN/ECHILD, Source literal intacto y cleanup0foreign; wall125.868/135.187s,
+RSS máximo301056000/304427008B por época. Post-FIN813019136/813023232B
+es inventario, no pico global. Ext4/4096 con91482554368B e18422992inodos
+libres observados; la garantía nominal14GB no fija ese espacio físico.
+Bootstrap histórico5.669s/RSS229171200B, Git225480704→439853056B,
+FIN/ECHILD; límite original512MiB intacto, sin crédito de cuota.
+
+Native38060549037/job114237759512 volvió RED por una causa nueva;
+artifact11672693800:64697B/36CRC/SHA256
+`6f4145dbb7c1cd6f9fa3aa97545522cbdca3a26f534b7889ae55e0ab4b21a932`.
+Boot `277e02725446403d81ccb312be39a0c8`, unidad propia
+`rc6-native-a2afd598a01147d5888f5e382fbb7403.service`, salida1.
+El RAW privado1139B/SHA256
+`0587b51137bfecca55e507a3deb80ab3b89539b700a0a14adb24272f9f98b506`
+conserva ValueError `ROOT_CUSTODY_PRIVATE_FOREIGN_READONLY_UNPROVED`
+en `_prepare_private_mounts:1041`, después de remounts que retornaron0.
+No hay errno para ese ValueError. Faltan las filas infractoras de mountinfo;
+no se afirma que una capa cubierta concreta esté demostrada en el runner.
+El pidfd privado ausente es secundario: el fallo ocurre antes de birth
+privado, sello y cuatro casos. ClientFIN/ECHILD auténticos5.511s/RSS101310464B;
+ROOT_FIN UNKNOWN, namespace retenido, cleanupfalse/crédito0. No hubo226;
+el errno final del226 histórico sigue UNKNOWN. No retry del mismo SHA.
+
+La ejecución alcanzó el bootstrap privado después de los guards ROOT y
+los ACK externos originales. El namespacebitmap que sólo tenía replay
+NONROOT en Source1f ahora pasó su guard por flujo del Source nativo exacto.
+Eso no certifica los cuatro casos ni el FIN ROOT completo. El filtro NONROOT
+demostró de nuevo57reglas/26denegaciones por actor, herencia0→1→2,
+dumpable0/1 y FIN/cleanup0foreign.
+
+Linux6.8 `fs/namespace.c` demuestra que remount por pathname sólo cambia
+el montaje visible y que `mount_setattr` recursivo recorre montajes reales.
+El fix cambia únicamente RDONLY por montaje privado, sin marcar el
+superblock del host RO; conserva nosuid/nodev/noexec y los demás flags.
+Luego restaura RW sólo al montaje exacto de control usando FD O_PATH nuevo
+del namespace privado con mountID/dev/inode/UID/GID0700 comprobados.
+Nunca aplica mount_setattr al FD3 original. Cierra el FD antes del sello;
+errores de syscall bloquean sin fallback. Conserva íntegro el readback
+ALLrowsRO salvo el control exacto y los límites originales.
+
+El diagnóstico fijo `private-mount-setup.native.json` registra mountinfo
+before/after completo y acotado, operación/errno y fase. Usa únicamente
+el directorio original propio autenticado para transportar el diagnóstico;
+no mantiene writer privado abierto durante la operación recursiva. La
+captura requiere FIN original, unidad inactiva y ausencia de escritores.
+No concede custodia, cleanup, cuota, recuperación ni equivalencia.
+Manager55325b31/selloce4be531, propiedades systemd, caps, drop, namespaces,
+deadlines, planes y límites no cambian. Las pruebas NONROOT con libc mock
+son regresiones del guard; no sustituyen éxito kernel.
+
+El sucesor requiere CI exacta nueva y sólo después una pequeña ejecución
+nativa. Custodia completa, equivalencia explícita PROC_EACCES vs PID
+ausente, cuota/reservasG0, lectores focales duales y medición global de
+1202ciclosG5 continúan pendientes. No Horizon ni gates materiales antes
+de admisión, sin cambios silenciosos del contrato. Un único candidatoPR483,
+USD0 adicional recurrente, PAPER/SHADOWreal0, PPI intacto, sin merge/deploy.
+
+Cierre local Source recursivo:524 PASS en custodia y calibración por cada
+Python3.11/3.12,8.302/8.410s, cero fallos/errores/skips. JUnit
+`d7d40b8186b135b57d40227d0b18c03c0d3d13679cb3fa329bdc1b96674d909b` y
+`81eae19a6ac7ac03c8e01f7dbddd095f44b0f3f33041a20b5252e596a7b052e4`.
+Helper134316B/SHA256
+`550e83513066743d4d93acf5255ab52d4cae6596dd4ebcb33014af404cc0336b`;
+tests92527B/SHA256
+`fafe3f26a2fc19874987b80681bb29aa23a49d41cdc08919c82be2994820a859`.
+ABI/error/no-fallback, mounts duplicados, FD3 prohibido, cambio de identidad,
+paths/owners, cierre de FD y custodia del diagnóstico tienen regresiones
+positivas y negativas. La revisión independiente READ_ONLY del orden de
+FDs no halló writers nuevos privados antes del syscall; el kernel puede
+rechazarlo y conservará RED con RAW. No equivale a certificación ROOT.
