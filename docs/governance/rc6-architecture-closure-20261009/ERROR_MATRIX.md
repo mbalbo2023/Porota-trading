@@ -176,3 +176,36 @@ reconstruir los153 faltantes ni medir retrospectivamente V4. Consumo global con
 recuperación/GC/temporales y ahorro original siguen NO_VERIFICADO. El69,91%
 sintético no se extrapola. G0–G6 materiales, nueve cargas PAPER acotadas y
 G7/G8 permanecen bloqueados por sus prerrequisitos originales.
+
+## Source714: prueba positiva económica y filtro, diagnóstico ROOT incompleto
+
+`714a27cf222d1cca8e9fcf75ba26cb5c80214147`, tree
+`99afc9f818a666ac34e5f97d3550bbd68ff9dcdd`, pasó38022392677/job114125990140:
+1434 PASS por Python3.11/3.12 sin failures/errors/skips, Source completo
+literal idéntico, FIN/capturas/cleanup propios/foreign0. Original11658643847:
+926016B/16CRC/SHA256
+`61de89722c168bcd1fe8686c64ebaa5807ae199a562e2e405f15b2e6bc29f03f`.
+Wall88.409/95.328s; RSS máximo295677952/298582016B, no suma; inventario
+propio **post-FIN antes de cleanup**, no pico global139370496/139358208B.
+Ext4/4096 libre91697479680B,18423010 inodos; no cuota/reserva demostrada.
+
+Native38022857618/job114127387746 conserva RED226 antes de birthROOT.
+Original11658139752:42914B/22CRC/SHA256
+`00e4ecfdb73b874ae310539a6179ac993b8bef99c7ba5d1d76443252eb363af3`.
+Filtro PASS real57 reglas/26 denegaciones por actor, supervisor0→1 y worker
+1→2 con herencia fork/exec;69,632B propios post-FIN/cleanup. Journal NONROOT
+3454B/SHA256`e5efd653354fc50ee903c3f0384179c7fb8b8a7ca2c5eff823cec062afba9e40`,
+FIN0/ECHILD original:cuatro registros PID1 del boot/unidad propios. Mensajes
+de arranque guard preservados; errno/ruta causal siguen UNKNOWN. ROOT FIN
+UNKNOWN, namespace retenido, sin cleanup ni crédito de reserva. No reintento714.
+
+La revisión upstream systemd v255 identifica otra omisión del diagnóstico:
+exec-invoke.c configura mount namespace y emite error antes de instalar el
+filtro de address families; el logger de executor usa UNIT=own sin ser PID1
+y puede preceder atribución de _SYSTEMD_UNIT. El cambio mínimo consulta
+boot+UID0 confiable+UNIT nonce exacta y conserva el segundo filtro de unidad
+propia. Un registro pre-cgroup es **diagnóstico**, nunca identidad ROOT ni FIN
+ni crédito de reserva. Mantiene30 entradas/2MiB/5s/NONROOT/originales/hash,
+properties/caps/DUMPABLE/manager. El próximo Source exige su propia CI antes
+de un único control nativo acotado que recupere la causa. No se retira
+InaccessiblePaths ni se habilita AF_UNIX por sospecha, ni se modifica G0.

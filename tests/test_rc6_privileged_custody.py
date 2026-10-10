@@ -393,7 +393,7 @@ def test_journal_command_cannot_cross_boot_or_unit_boundaries():
     unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
     command = custody.journal_command(unit, boot)
     assert command[0] == "/usr/bin/journalctl" and "--lines=30" in command and "--no-pager" in command
-    assert command[command.index("_BOOT_ID=" + boot):] == ["_BOOT_ID=" + boot, "_PID=1", "UNIT=" + unit,
+    assert command[command.index("_BOOT_ID=" + boot):] == ["_BOOT_ID=" + boot, "_UID=0", "UNIT=" + unit,
         "+", "_BOOT_ID=" + boot, "_SYSTEMD_UNIT=" + unit]
     assert not any(value in command for value in ("--follow", "--vacuum-time", "--rotate", "sudo"))
     with pytest.raises(ValueError, match="ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED"):
@@ -413,6 +413,34 @@ def test_journal_origin_accepts_exact_boot_pid1_unit_and_own_unit_only():
     assert result["status"] == "SCOPED_JOURNAL_OBSERVATION_ONLY"
     assert result["origins"] == ["PID1_UNIT", "OWN_UNIT"] and result["record_count"] == 2
     assert result["ROOT_FIN_claimed"] is False and result["ROOT_custody_qualified"] is False
+
+
+def test_pre_cgroup_root_executor_journal_is_diagnostic_only():
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    record = {"_BOOT_ID": boot, "_PID": "42", "_UID": "0", "UNIT": unit,
+        "_SYSTEMD_UNIT": "init.scope", "_SYSTEMD_CGROUP": "/init.scope", "SYSLOG_IDENTIFIER": "(sh)",
+        "CODE_FILE": "src/core/exec-invoke.c", "CODE_FUNC": "exec_invoke", "CODE_LINE": "4670",
+        "ERRNO": "13", "MESSAGE": "Failed to set up mount namespacing: /owned/test: Permission denied"}
+    result = custody.journal_origin(custody.wire(record), unit=unit, boot_id=boot, owner_uid=os.geteuid(),
+        kernel={"timed_out": False, "returncode": 0})
+    assert result["status"] == "SCOPED_JOURNAL_OBSERVATION_ONLY"
+    assert result["origins"] == ["ROOT_UNIT_FIELD_DIAGNOSTIC_ONLY"]
+    assert result["ROOT_FIN_claimed"] is False and result["ROOT_custody_qualified"] is False
+    with pytest.raises(ValueError, match="ROOT_CUSTODY_ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+        custody.validate_witness(result, binding=binding())
+
+
+@pytest.mark.parametrize("field,value", [("_BOOT_ID", "c" * 32), ("_BOOT_ID", True),
+    ("_UID", "1001"), ("UNIT", "foreign.service"), ("_PID", "0"), ("_PID", 42),
+    ("CODE_FILE", "foreign.c"), ("CODE_FUNC", "not a function"), ("CODE_LINE", "unknown")])
+def test_pre_cgroup_executor_unknown_origin_never_becomes_a_root_diagnostic(field, value):
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    record = {"_BOOT_ID": boot, "_PID": "42", "_UID": "0", "UNIT": unit, "_SYSTEMD_UNIT": "init.scope",
+        "CODE_FILE": "src/core/exec-invoke.c", "CODE_FUNC": "exec_invoke", "CODE_LINE": "4670", field: value}
+    result = custody.journal_origin(custody.wire(record), unit=unit, boot_id=boot, owner_uid=os.geteuid(),
+        kernel={"timed_out": False, "returncode": 0})
+    assert result["status"] == "UNKNOWN" and result["ROOT_FIN_claimed"] is False
+    assert result["ROOT_custody_qualified"] is False
 
 
 @pytest.mark.parametrize("field,value", [("_BOOT_ID", "c" * 32), ("_UID", "999999"),

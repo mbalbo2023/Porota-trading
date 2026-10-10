@@ -959,11 +959,12 @@ def journal_command(unit, boot_id):
             "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
     require(type(boot_id) is str and re.fullmatch(r"[0-9a-f]{32}", boot_id),
             "ROOT_CUSTODY_JOURNAL_ACTUAL_BOOT_REQUIRED")
-    # PID1 reports UNIT=; the service's own entries carry trusted journald
-    # _SYSTEMD_UNIT=. Repeat the boot match across the explicit OR boundary.
+    # PID1 and the pre-exec ROOT executor report UNIT=. The executor may not
+    # yet have trusted _SYSTEMD_UNIT= for this service. Keep exact boot/ROOT
+    # UID/unit matches without filtering its PID away. These are diagnostics.
     return ["/usr/bin/journalctl", "--no-pager", "--quiet", "--output=json", "--lines=30",
         "--output-fields=_BOOT_ID,_PID,_UID,_SYSTEMD_UNIT,_SYSTEMD_CGROUP,UNIT,SYSLOG_IDENTIFIER,MESSAGE,ERRNO,CODE_FILE,CODE_LINE,CODE_FUNC",
-        "_BOOT_ID=" + boot_id, "_PID=1", "UNIT=" + unit, "+", "_BOOT_ID=" + boot_id, "_SYSTEMD_UNIT=" + unit]
+        "_BOOT_ID=" + boot_id, "_UID=0", "UNIT=" + unit, "+", "_BOOT_ID=" + boot_id, "_SYSTEMD_UNIT=" + unit]
 
 
 def journal_query_worker(unit, boot_id):
@@ -994,8 +995,18 @@ def journal_origin(raw, *, unit, boot_id, owner_uid, kernel):
             value = calibration.decode(row)
             require(type(value) is dict and value.get("_BOOT_ID") == boot_id,
                     "ROOT_CUSTODY_JOURNAL_FOREIGN_BOOT")
-            if value.get("_PID") == "1" and value.get("_UID") == "0" and value.get("UNIT") == unit:
-                kinds.append("PID1_UNIT")
+            if value.get("_UID") == "0" and value.get("UNIT") == unit:
+                require(type(value.get("_PID")) is str and value["_PID"].isdigit() and int(value["_PID"]) > 0,
+                        "ROOT_CUSTODY_JOURNAL_ROOT_UNIT_PID_INVALID")
+                if value["_PID"] == "1":
+                    kinds.append("PID1_UNIT")
+                else:
+                    require(value.get("CODE_FILE") in ("src/core/exec-invoke.c", "src/core/namespace.c", "src/core/executor.c")
+                            and type(value.get("CODE_FUNC")) is str and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value["CODE_FUNC"])
+                            and type(value.get("CODE_LINE")) is str and value["CODE_LINE"].isdigit()
+                            and int(value["CODE_LINE"]) > 0,
+                            "ROOT_CUSTODY_JOURNAL_EXECUTOR_SOURCE_REQUIRED")
+                    kinds.append("ROOT_UNIT_FIELD_DIAGNOSTIC_ONLY")
             else:
                 require(value.get("_SYSTEMD_UNIT") == unit and value.get("_UID") in ("0", str(owner_uid))
                         and type(value.get("_PID")) is str and value["_PID"].isdigit() and int(value["_PID"]) > 1
