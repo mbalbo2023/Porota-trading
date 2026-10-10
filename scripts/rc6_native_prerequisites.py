@@ -264,7 +264,11 @@ def require_systemd_diagnostic_plan(raw):
         and plan.get('systemd_installed_binary_identity_qualifies_running_PID1') is False
         and plan.get('systemd_metadata_qualifies_ROOT_custody_or_namespace_cause') is False
         and plan.get('journal_maximum_entries_per_owned_origin') == 30
-        and plan.get('journal_query_physical_file_hard_limit_bytes') == 2*1024**2,
+        and plan.get('journal_query_physical_file_hard_limit_bytes') == 2*1024**2
+        and type(plan.get('journal_queries_per_owned_failure_maximum')) is int
+        and plan['journal_queries_per_owned_failure_maximum'] == 2
+        and plan.get('journal_PID1_own_exit_invocation_anchor_required') is True
+        and plan.get('journal_invocation_field_qualifies_ROOT_custody') is False,
         'NATIVE_PREREQUISITES_FIXED_SYSTEMD_DIAGNOSTIC_PLAN_REQUIRED')
 
 

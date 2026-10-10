@@ -1669,7 +1669,7 @@
     },
     "source_origin_sha": "5daf01728865c3f65c3f31a5abb843ee8ce874d3",
     "source_origin_tree": "7bd8cc2695079fd25befd551d3aadb8fddec8a68",
-    "status": "DEVELOPED_SCOPED_GUARDS_EXACT_SUCCESSOR_CI_AND_NATIVE_RCA_PENDING",
+    "status": "EXACT_ECONOMIC_ACTIONS_POSITIVE_NATIVE_RED_DIAGNOSTIC_FIX_NOT_CERTIFIED",
     "systemd_diagnostic": {
       "NONROOT_fixed_queries": 4,
       "broker_quota_restrictions_changed": false,
@@ -1689,7 +1689,7 @@
       "sha256": "58bb20a57a91d8247dcb154d1ef405fd317b055b4a00f0b06c253ed0692f3469"
     },
     "implementation_sha256": {
-      "scripts/rc6_privileged_custody.py": "53554c1643b574366bd74a18050739f9c38e65265d6f97714b825cdfe8bd7c9c",
+      "scripts/rc6_privileged_custody.py": "01e2b0156f380dcb447af331789b69734ac14b2a509c8e16b3f462ae8ca9bed3",
       "scripts/rc6_native_prerequisites.py": "587463b071abd747d41a38a873b196cdd9e8c68f6b4c871c78e21083813397a4",
       "ops/policy/rc6-native-prerequisites-v1.json": "728faa3ce7b6fd759113ebad77a8bb6beeef56d569e408fb5691f72f5350bf66",
       "scripts/rc6_development_checks.py": "86022a27285b5f26605717ff2df8f2e737bbf2da6b8482fffe978c285b4433d5",
@@ -1697,7 +1697,8 @@
       "scripts/rc6_archive_reader_review.py": "bc424b1013b382b1b076babbcbf303e89b8c08c3fe541541916b508b45391d30",
       "scripts/rc6_archive_v3_image_smoke.py": "198cf6fe24beb003e6b5029bd6688b58a13c18985ba43446a4d00aa4318f98ed",
       "scripts/rc6_cas_original_comparison.py": "0fe56460ccfa76e38d064ce455a45a836ca796723b977e5afcde933949b73b0f",
-      "rc6_shadow_runtime/archive_physical_model.py": "0dc7233524f43e29546a03df32b3ef18a31b897fdb7322961ab13ef726394bee"
+      "rc6_shadow_runtime/archive_physical_model.py": "0dc7233524f43e29546a03df32b3ef18a31b897fdb7322961ab13ef726394bee",
+      "tests/test_rc6_privileged_custody.py": "1424bbda385c0c28f245593774c93a96b7255b70ffe815638db8873ceeb29da1"
     },
     "successor_economic_RCA": {
       "source_sha": "18ba722163f6539e68c7a2c1c27b53fb65e9adae",
@@ -1766,6 +1767,507 @@
       "continuous_global_peak_proved": false,
       "native_ROOT_executed": false,
       "hosted_exact_successor_status": "PENDING"
+    },
+    "authenticated_native_13fa": {
+      "G0_G8_qualification": false,
+      "ROOT_FIN": "UNKNOWN",
+      "ROOT_custody_proved": false,
+      "Root_cases_started": false,
+      "actual_causal_errno_path": "UNKNOWN",
+      "artifact_bytes": 57298,
+      "artifact_id": 11668354337,
+      "artifact_sha256": "368457c3eb7afa21804cc9bdee5785cab9124f3aa6873a6a861a8782f566d599",
+      "boot_bound_journal": {
+        "kernel_returncode": 0,
+        "origin": {
+          "ROOT_FIN_claimed": false,
+          "ROOT_custody_qualified": false,
+          "boot_id": "df4128c4363f43929bb41c4b234b7e65",
+          "origins": [
+            "PID1_UNIT",
+            "PID1_UNIT",
+            "PID1_UNIT",
+            "PID1_UNIT"
+          ],
+          "record_count": 4,
+          "status": "SCOPED_JOURNAL_OBSERVATION_ONLY",
+          "unit": "rc6-native-cfddd239b1844abc89652fec8c86a901-guard.service"
+        },
+        "original_FIN_sha256": "2ec8f7048860fa2d09ff5f2a85e8b4d95c9f30e9907856f1eae01b699bd46659",
+        "raw_bytes": 3453,
+        "raw_sha256": "44f17a1db15250a4417e728312f44a50da8cd40f7c14cbb936135ac0a7cbba8a"
+      },
+      "cleanup_authorized": false,
+      "client_exitcode": 226,
+      "error_signature": "ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED",
+      "fresh_physical_observation": {
+        "allocation_unit_bytes": 4096,
+        "filesystem_device": 66305,
+        "filesystem_type": "ext4",
+        "free_bytes": 91701719040,
+        "free_inodes": 18423192,
+        "mount_id": 27,
+        "path_identity": [
+          66305,
+          9437185,
+          1001,
+          1001,
+          16832
+        ],
+        "preferred_io_block_bytes": 4096,
+        "total_inodes": 19529728
+      },
+      "job_id": 114204280653,
+      "material_gate_launched": false,
+      "members_crc_verified": 33,
+      "namespace_filter": {
+        "capture_manifest_sha256": "10a5f5a99945d9c856f4aa75ccbec1abc4a23c30ef5c82f978e30d8b50597aa9",
+        "outer_peak_rss_bytes_not_sum": 100831232,
+        "outer_wall_seconds": 0.2013989480000049,
+        "owned_cleanup": {
+          "actual_owned_fin_closed": true,
+          "allocated_bytes_before": 69632,
+          "foreign_paths_removed": 0,
+          "namespace_removed": true
+        },
+        "status": "PASS_NATIVE_FILTER_ONLY",
+        "supervisor": {
+          "denial_probes": 26,
+          "dumpable": 0,
+          "filters_after": 1,
+          "filters_before": 0,
+          "inherited": null,
+          "module_sha256": "c6efda60cee1b9d6a899ff27da05993b5287e0082c22f1f5999a1a1e570ac21f",
+          "plan_sha256": "9daf64ba999008527b7220b4274e0e7439e27711608ec47b544b8e6e7e42dc2e",
+          "rule_count": 57,
+          "seccomp_load_returncode": 0,
+          "tsync_requested": true
+        },
+        "worker": {
+          "denial_probes": 26,
+          "dumpable": 1,
+          "filters_after": 2,
+          "filters_before": 1,
+          "inherited": {
+            "G0_G8_qualification": false,
+            "filters_before_own_installation": 1,
+            "fork_exec_inheritance_observed": true,
+            "identity": {
+              "boot_id": "df4128c4-363f-4392-9bb4-1c4b234b7e65",
+              "cgroup_namespace_inode": 4026531835,
+              "mount_namespace_inode": 4026531832,
+              "native_tid": 2216,
+              "parent_pid": 2204,
+              "pid": 2216,
+              "start_ticks": 12440
+            },
+            "native_denials_before_own_installation": [
+              {
+                "errno": 1,
+                "number": 165,
+                "probe": "mount",
+                "returncode": -1,
+                "syscall": "mount"
+              },
+              {
+                "errno": 1,
+                "number": 166,
+                "probe": "umount2",
+                "returncode": -1,
+                "syscall": "umount2"
+              },
+              {
+                "errno": 1,
+                "number": 272,
+                "probe": "unshare",
+                "returncode": -1,
+                "syscall": "unshare"
+              },
+              {
+                "errno": 1,
+                "number": 308,
+                "probe": "setns",
+                "returncode": -1,
+                "syscall": "setns"
+              },
+              {
+                "errno": 38,
+                "number": 435,
+                "probe": "clone3",
+                "returncode": -1,
+                "syscall": "clone3"
+              },
+              {
+                "errno": 1,
+                "number": 179,
+                "probe": "quotactl",
+                "returncode": -1,
+                "syscall": "quotactl"
+              },
+              {
+                "errno": 1,
+                "number": 443,
+                "probe": "quotactl_fd",
+                "returncode": -1,
+                "syscall": "quotactl_fd"
+              },
+              {
+                "errno": 1,
+                "number": 101,
+                "probe": "ptrace_parent_invalid_request",
+                "returncode": -1,
+                "syscall": "ptrace"
+              },
+              {
+                "errno": 1,
+                "number": 310,
+                "probe": "process_vm_readv_parent_invalid_iovec",
+                "returncode": -1,
+                "syscall": "process_vm_readv"
+              },
+              {
+                "errno": 1,
+                "number": 311,
+                "probe": "process_vm_writev_parent_invalid_iovec",
+                "returncode": -1,
+                "syscall": "process_vm_writev"
+              },
+              {
+                "errno": 1,
+                "number": 56,
+                "probe": "clone_namespace_131072",
+                "returncode": -1,
+                "syscall": "clone"
+              },
+              {
+                "errno": 1,
+                "number": 56,
+                "probe": "clone_namespace_33554432",
+                "returncode": -1,
+                "syscall": "clone"
+              },
+              {
+                "errno": 1,
+                "number": 56,
+                "probe": "clone_namespace_67108864",
+                "returncode": -1,
+                "syscall": "clone"
+              },
+              {
+                "errno": 1,
+                "number": 56,
+                "probe": "clone_namespace_134217728",
+                "returncode": -1,
+                "syscall": "clone"
+              },
+              {
+                "errno": 1,
+                "number": 56,
+                "probe": "clone_namespace_268435456",
+                "returncode": -1,
+                "syscall": "clone"
+              },
+              {
+                "errno": 1,
+                "number": 56,
+                "probe": "clone_namespace_536870912",
+                "returncode": -1,
+                "syscall": "clone"
+              },
+              {
+                "errno": 1,
+                "number": 56,
+                "probe": "clone_namespace_1073741824",
+                "returncode": -1,
+                "syscall": "clone"
+              },
+              {
+                "errno": 1,
+                "number": 56,
+                "probe": "clone_namespace_128",
+                "returncode": -1,
+                "syscall": "clone"
+              },
+              {
+                "errno": 1,
+                "number": 16,
+                "probe": "ioctl_1075599392",
+                "returncode": -1,
+                "syscall": "ioctl"
+              },
+              {
+                "errno": 1,
+                "number": 16,
+                "probe": "ioctl_1074292226",
+                "returncode": -1,
+                "syscall": "ioctl"
+              },
+              {
+                "errno": 1,
+                "number": 16,
+                "probe": "ioctl_1074030082",
+                "returncode": -1,
+                "syscall": "ioctl"
+              },
+              {
+                "errno": 1,
+                "number": 157,
+                "probe": "prctl_4",
+                "returncode": -1,
+                "syscall": "prctl"
+              },
+              {
+                "errno": 1,
+                "number": 157,
+                "probe": "prctl_8",
+                "returncode": -1,
+                "syscall": "prctl"
+              },
+              {
+                "errno": 1,
+                "number": 157,
+                "probe": "prctl_24",
+                "returncode": -1,
+                "syscall": "prctl"
+              },
+              {
+                "errno": 1,
+                "number": 157,
+                "probe": "prctl_28",
+                "returncode": -1,
+                "syscall": "prctl"
+              },
+              {
+                "errno": 1,
+                "number": 157,
+                "probe": "prctl_47",
+                "returncode": -1,
+                "syscall": "prctl"
+              }
+            ],
+            "parent_identity": {
+              "boot_id": "df4128c4-363f-4392-9bb4-1c4b234b7e65",
+              "cgroup_namespace_inode": 4026531835,
+              "mount_namespace_inode": 4026531832,
+              "native_tid": 2204,
+              "parent_pid": 2177,
+              "pid": 2204,
+              "start_ticks": 12433
+            },
+            "parent_receipt_sha256": "65cc0e29562352fa90dc2f6f5eb84eb78dc0b8f3bd032b6e3567793f049b49f6",
+            "schema": "porota.rc6.native-namespace-filter-inheritance.v1",
+            "source_binding": {
+              "plan_sha256": "728faa3ce7b6fd759113ebad77a8bb6beeef56d569e408fb5691f72f5350bf66",
+              "source_sha": "13fa4520c25b1f6b461b1cfd6507ef418f210f54",
+              "source_tree": "ed6494e78121d7ae8e3d20a2aa1bcb9d41ef659f"
+            }
+          },
+          "module_sha256": "c6efda60cee1b9d6a899ff27da05993b5287e0082c22f1f5999a1a1e570ac21f",
+          "plan_sha256": "9daf64ba999008527b7220b4274e0e7439e27711608ec47b544b8e6e7e42dc2e",
+          "rule_count": 57,
+          "seccomp_load_returncode": 0,
+          "tsync_requested": true
+        }
+      },
+      "quota_proved": false,
+      "reserve_credit_bytes": 0,
+      "reserves_proved": false,
+      "run_id": 38049039051,
+      "source_sha": "13fa4520c25b1f6b461b1cfd6507ef418f210f54",
+      "source_tree": "ed6494e78121d7ae8e3d20a2aa1bcb9d41ef659f",
+      "systemd_installed_package": "systemd\t255.4-1ubuntu8.17",
+      "systemd_manager_observation": {
+        "DefaultStandardError": "inherit",
+        "DefaultStandardOutput": "journal",
+        "LogLevel": "info",
+        "LogTarget": "journal-or-kmsg",
+        "Version": "255.4-1ubuntu8.17"
+      },
+      "systemd_startup_manifest_sha256": "28bc349d29aabc52bd3cdaf1805d3ea6db63ce9d161b880da53ebfa2877272bf",
+      "systemd_startup_report_sha256": "14585bd2b8c11f8ba8dd75e052f55528d55edaeeffc5f299fb6463d5f2b714c2"
+    },
+    "authenticated_source_13fa": {
+      "continuous_global_peak_proved": false,
+      "economic_job_id": 114202783308,
+      "economic_origin": {
+        "artifact_id": 11668752067,
+        "bytes": 957224,
+        "conclusion": "success",
+        "run_id": 38048514189,
+        "sha256": "c769abd464bd4112e84ed06f2584857aa5c96ea36f68324cb8778853e9c49161",
+        "source_sha": "13fa4520c25b1f6b461b1cfd6507ef418f210f54",
+        "source_tree": "ed6494e78121d7ae8e3d20a2aa1bcb9d41ef659f"
+      },
+      "economic_report_path": "/workspace/scratch/rc6-13fa4520-economic-authenticated.json",
+      "economic_report_sha256": "7cf58f41bea4be61ed95943e2fa20ad70249a1047e21e70cc90857b1a0f6a0d4",
+      "epochs": [
+        {
+          "cleanup": {
+            "actual_owned_fin_closed": true,
+            "allocated_bytes_before": 809287680,
+            "capture_manifest_sha256": "1cc85b364b81b854ba4f746c396386e7e219709e8db82484fea19ca69794f712",
+            "foreign_paths_removed": 0,
+            "namespace_removed": true,
+            "original_namespace_removed": true,
+            "retained_entries_before": 35472
+          },
+          "epoch": "311",
+          "junit": {
+            "cases": 1587,
+            "errors": 0,
+            "failures": 0,
+            "sha256": "b9d7e264bdb3378b2f963e6587280ef2559a9f9cf3b4423cb4a19761144a907b",
+            "skipped": 0
+          },
+          "kernel": {
+            "actual_child_reaped": true,
+            "details_retained_in_original_ZIP_not_duplicated": true,
+            "owned_children_exhaustion_verified": true,
+            "returncode": 0,
+            "sigint_failure_grace_seconds": 0,
+            "timed_out": false,
+            "wall_seconds": 113.63552394499996
+          }
+        },
+        {
+          "cleanup": {
+            "actual_owned_fin_closed": true,
+            "allocated_bytes_before": 809193472,
+            "capture_manifest_sha256": "f1c2d1c9dd109ce41643a529706648c4b7d618844b430ffd04466f1eafa8b82e",
+            "foreign_paths_removed": 0,
+            "namespace_removed": true,
+            "original_namespace_removed": true,
+            "retained_entries_before": 35450
+          },
+          "epoch": "312",
+          "junit": {
+            "cases": 1587,
+            "errors": 0,
+            "failures": 0,
+            "sha256": "22a39e8a9e1233c31ced01f97285ea7817aff754c648acb114be5f78a921c701",
+            "skipped": 0
+          },
+          "kernel": {
+            "actual_child_reaped": true,
+            "details_retained_in_original_ZIP_not_duplicated": true,
+            "owned_children_exhaustion_verified": true,
+            "returncode": 0,
+            "sigint_failure_grace_seconds": 0,
+            "timed_out": false,
+            "wall_seconds": 126.56858265400001
+          }
+        }
+      ],
+      "fresh_filesystem": {
+        "allocation_unit_bytes": 4096,
+        "filesystem_device": 2049,
+        "filesystem_type": "ext4",
+        "free_bytes": 91482906624,
+        "free_inodes": 18422998,
+        "mount_id": 27,
+        "path_identity": [
+          2049,
+          9175069,
+          1001,
+          1001,
+          16832
+        ],
+        "preferred_io_block_bytes": 4096,
+        "total_inodes": 19529728
+      },
+      "history": {
+        "ECHILD": true,
+        "G0_G8_qualification": false,
+        "actual_owned_FIN": true,
+        "foreign_removed": 0,
+        "git_after": {
+          "aggregate_bound_kind": "OBSERVED_SAMPLES_ONLY_NOT_KERNEL_QUOTA",
+          "allocated_bytes": 439803904,
+          "continuous_peak_proved": false,
+          "entries": 55,
+          "maximum_allocated_bytes": 536870912,
+          "maximum_entries": 100000,
+          "maximum_file_bytes": 268435456
+        },
+        "git_before": {
+          "aggregate_bound_kind": "OBSERVED_SAMPLES_ONLY_NOT_KERNEL_QUOTA",
+          "allocated_bytes": 225435648,
+          "continuous_peak_proved": false,
+          "entries": 36,
+          "maximum_allocated_bytes": 536870912,
+          "maximum_entries": 100000,
+          "maximum_file_bytes": 268435456
+        },
+        "manifest_sha256": "bc1f5cae7bb968311a6b339d4a86e341af8fcc97c7f42db78ed1bba67dcc59cf",
+        "peak_RSS_bytes_not_sum": 229187584,
+        "real_orders_sent": 0,
+        "run_id": 38048514189,
+        "schema": "porota.rc6.authentic-economic-history-readout.v1",
+        "source_sha": "13fa4520c25b1f6b461b1cfd6507ef418f210f54",
+        "source_tree": "ed6494e78121d7ae8e3d20a2aa1bcb9d41ef659f",
+        "wall_seconds": 5.310322227
+      },
+      "source_sha": "13fa4520c25b1f6b461b1cfd6507ef418f210f54",
+      "source_tree": "ed6494e78121d7ae8e3d20a2aa1bcb9d41ef659f",
+      "whole_Droplet_capacity_proved": false
+    },
+    "namespace_diagnostic_omission_RCA": {
+      "Ubuntu_patch_archive_sha256": "4695ff34f83b1f7e6e02bf3cfac2e2a44ac76b6cfc5a38c0081bac6919d547bb",
+      "Ubuntu_patches_checked": 84,
+      "corrective_query": "Original own PID1 unit/boot exit invocation anchor; second exact boot UID0 INVOCATION_ID query",
+      "entries_each_maximum": 30,
+      "file_each_hard_limit_bytes": 2097152,
+      "intervening_seqnums_content_known": false,
+      "journal_seqnums_observed": [
+        18501,
+        18631,
+        18632,
+        18633
+      ],
+      "logger_UNIT_truncation_chain": [
+        "execute.h LOG_CONTEXT_PUSH_EXEC",
+        "log.c log_context_new_key_value prepends INVOCATION_ID before UNIT",
+        "log.c write_to_journal reserves two iovecs per context field",
+        "log.c log_do_context needs three iovecs per key/value and may omit UNIT"
+      ],
+      "namespace_errno_path": "UNKNOWN",
+      "native_queries_maximum": 2,
+      "new_Source_requires_own_positive_CI_before_native": true,
+      "original_FIN_required": true,
+      "original_restrictions_preserved": true,
+      "original_root_FIN_still_UNKNOWN_on_missing_birth": true,
+      "own_PID1_exit_invocation_was_excluded_by_output_fields": true,
+      "restriction_change_authorized_by_this_evidence": false,
+      "scoped_regressions": {
+        "native_G0_qualification": false,
+        "python311": {
+          "custody_passed": 284,
+          "errors": 0,
+          "failures": 0,
+          "native_plan_passed": 53,
+          "skips": 0
+        },
+        "python312": {
+          "custody_passed": 284,
+          "errors": 0,
+          "failures": 0,
+          "native_plan_passed": 53,
+          "skips": 0
+        }
+      },
+      "status": "CODE_AND_ORIGINAL_RAW_VERIFIED_NOT_NAMESPACE_ERRNO",
+      "systemd_observed_package": "255.4-1ubuntu8.17",
+      "timeout_each_seconds": 5
+    },
+    "recorded_utc": "2026-10-10T11:55:21.615534+00:00",
+    "worker_dumpability_observation": {
+      "contract_review_required_before_claiming_all_payload_DUMP0": true,
+      "historical_filter_plan_sha256": "9daf64ba999008527b7220b4274e0e7439e27711608ec47b544b8e6e7e42dc2e",
+      "historical_plan_unchanged": true,
+      "native_supervisor_dumpable": 0,
+      "native_worker_post_exec_post_install_dumpable": 1,
+      "new_payload_DUMP0_requirement_unilaterally_added": false,
+      "scope": "FILTER_INSTALLATION_INHERITANCE_ONLY_NOT_ALL_PAYLOAD_DUMP0_OR_PRODUCT_PROFILE"
     }
   }
 }

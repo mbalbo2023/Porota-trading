@@ -254,3 +254,34 @@ copiar439734272B dentro de256MiB: se corrige la duplicación con clausura
 Git verificada de Source/RAW/legacy/ascendencia, conservando el límite.
 No se ejecutó ROOT ni se repite Source18ba. El sucesor exige su propia CI
 positiva antes del diagnóstico nativo; el RED no certifica lectores completos.
+
+El sucesor `13fa4520c25b1f6b461b1cfd6507ef418f210f54`, tree
+`ed6494e78121d7ae8e3d20a2aa1bcb9d41ef659f`, pasó Actions38048514189,
+job114202783308: **1587 PASS por Python**, cero fallos/errores/skips,
+identidades iguales, Source literal íntegro, FIN/ECHILD y cleanup0foreign.
+ZIP original11668752067:957224B/22CRC/SHA256
+`c769abd464bd4112e84ed06f2584857aa5c96ea36f68324cb8778853e9c49161`.
+Wall113.636/126.569s; RSS máximo295981056/299286528B, no suma global.
+Inventario propio post-FIN809287680/809193472B; **no pico físico**.
+Ext4/4096 libre91482906624B/18422998inodos, capacidad observada de esa
+ejecución, sin garantía universal ni cuota. El bootstrap histórico fue positivo
+5.310s/FIN/ECHILD, Git225435648→439803904B observado; cada fixture conserva
+su límite256MiB con clausura selectiva. No se extrapola al Droplet.
+
+La nativa38049039051/job114204280653 autenticó ese ZIP y conservó el RED226
+anterior a birth/pidfd. ZIP11668354337:57298B/33CRC/SHA256
+`368457c3eb7afa21804cc9bdee5785cab9124f3aa6873a6a861a8782f566d599`.
+Las cuatro consultas systemd NONROOT tienen FIN originales y hashes completos:
+package255.4-1ubuntu8.17, LogTargetjournal-or-kmsg/LogLevelinfo. Sólo cuatro
+mensajes PID1 del boot/unidad propios; operación/errno siguen **UNKNOWN**.
+Namespace retenido, ROOT_FIN UNKNOWN, ningún cleanup ni crédito de reserva.
+Filtro real57reglas/26denegaciones por actor, herencia y FIN confirmados;
+supervisor dumpable0 y worker post-exec/post-install dumpable1 reales.
+Esto prueba instalación/herencia; no DUMP0 de todo backend, seguridad ROOT,
+perfil1CPU/1GiB ni cuota. El plan histórico permanece byte exacto.
+
+| Causa demostrada | Fix mínimo y guard | Límite de la evidencia |
+|---|---|---|
+| El contexto genérico del logger255.4 reserva2iovec por campo KEY_VALUE, pero cada uno usa3. INVOCATION_ID se prepende; UNIT puede quedar omitido. Los84patches oficiales Ubuntu8.17 no alteran esa cadena. | Capturar INVOCATION_ID/MESSAGE_ID/EXIT_CODE/EXIT_STATUS del mensaje de salida PID1 con boot/UID0/UNIT nonce exactos; segunda consulta sólo del mismo boot+UID0+ID auténtico. Rechazar anchor ausente/ambiguo/ajeno y conservar ambos FIN/RAW/hashes. | Corrige el canal diagnóstico, no demuestra aún el errno de namespace. Los129 números de secuencia intermedios no permiten conocer sus mensajes. |
+| El query y output-fields originales no recuperaban ese contexto. | Máximo2consultas por fallo, cada una30entradas/2MiB/5s; no enumeración de unidades ni perfiles ajenos. Un dato INVOCATION_ID nunca concede custodia ROOT/FIN/cleanup/reservas. | Próximo Source exige CI exacta positiva; no repetir13fa. Properties/caps/bridge/manager y holds intactos. |
+| El hold preventivo Horizon introducido enecad no consume un certificado y fija cuatro condiciones NO_VERIFICADO; capacity_comparison también rechaza costos dinámicos sin lector de cota. | Cambio mínimo revisable: demostrar una cota completa de seguridad para obtener evidencia, conservando el hold de calificaciónG5; después deG0→G4 y reviews, una comparación privada original1202, siempreG5false. | Requiere revisión explícita de la regla de admisión, cota auténtica de todos los solapamientos/reservas y Source correctivo. No aprobado ni ejecutado; G5 original512MiB/1202/profundidad32/retención permanece obligatorio. |

@@ -38,6 +38,10 @@ SYSTEMD_BINARY_BOUND = 16 * 1024**2
 SYSTEMD_CONFIG_FIELDS = ("Version", "LogLevel", "LogTarget", "DefaultStandardOutput", "DefaultStandardError")
 SYSTEMD_BINARY_PATHS = ("/usr/bin/systemctl", "/usr/bin/systemd-run", "/usr/lib/systemd/systemd",
                         "/usr/lib/systemd/systemd-executor")
+JOURNAL_FIELDS = ("_BOOT_ID,_PID,_UID,_SYSTEMD_UNIT,_SYSTEMD_CGROUP,UNIT,SYSLOG_IDENTIFIER,"
+                  "MESSAGE,ERRNO,CODE_FILE,CODE_LINE,CODE_FUNC,INVOCATION_ID,_SYSTEMD_INVOCATION_ID,"
+                  "MESSAGE_ID,EXIT_CODE,EXIT_STATUS,PROCESS_PID,_EXE,_COMM")
+UNIT_PROCESS_EXIT_MESSAGE_ID = "98e322203f7a4ed290d09fe03c09fe15"
 PROBE_LIMIT = 60
 BRIDGE_DESCRIPTOR = 3
 BRIDGE_SHELL = 'exec 3<&0; exec 0</dev/null; exec "$@"'
@@ -976,16 +980,22 @@ def _cgroup_writer_absence(unit):
     return state
 
 
-def journal_command(unit, boot_id):
+def journal_command(unit, boot_id, invocation_id=None):
     require(type(unit) is str and re.fullmatch(r"rc6-native-[0-9a-f]{32}(?:-guard)?\.service", unit),
             "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
     require(type(boot_id) is str and re.fullmatch(r"[0-9a-f]{32}", boot_id),
             "ROOT_CUSTODY_JOURNAL_ACTUAL_BOOT_REQUIRED")
+    if invocation_id is not None:
+        require(type(invocation_id) is str and re.fullmatch(r"[0-9a-f]{32}", invocation_id)
+                and invocation_id != "0" * 32, "ROOT_CUSTODY_JOURNAL_INVOCATION_ID_REQUIRED")
+        return ["/usr/bin/journalctl", "--no-pager", "--quiet", "--output=json", "--lines=30",
+                "--output-fields=" + JOURNAL_FIELDS, "_BOOT_ID=" + boot_id, "_UID=0",
+                "INVOCATION_ID=" + invocation_id]
     # PID1 and the pre-exec ROOT executor report UNIT=. The executor may not
     # yet have trusted _SYSTEMD_UNIT= for this service. Keep exact boot/ROOT
     # UID/unit matches without filtering its PID away. These are diagnostics.
     return ["/usr/bin/journalctl", "--no-pager", "--quiet", "--output=json", "--lines=30",
-        "--output-fields=_BOOT_ID,_PID,_UID,_SYSTEMD_UNIT,_SYSTEMD_CGROUP,UNIT,SYSLOG_IDENTIFIER,MESSAGE,ERRNO,CODE_FILE,CODE_LINE,CODE_FUNC",
+        "--output-fields=" + JOURNAL_FIELDS,
         "_BOOT_ID=" + boot_id, "_UID=0", "UNIT=" + unit, "+", "_BOOT_ID=" + boot_id, "_SYSTEMD_UNIT=" + unit]
 
 
@@ -1102,12 +1112,13 @@ def systemd_diagnostic_origin(raws):
         return {**result, "reason": str(error)}
 
 
-def journal_query_worker(unit, boot_id):
+def journal_query_worker(unit, boot_id, invocation_id=None):
     require(os.getuid() == os.geteuid() > 0 and public_kernel_process(os.getpid())["capabilities"]["CapEff"] == 0,
             "ROOT_CUSTODY_JOURNAL_NONROOT_ONLY")
     require(_proc_text("/proc/sys/kernel/random/boot_id").strip().replace("-", "") == boot_id,
             "ROOT_CUSTODY_JOURNAL_ACTUAL_BOOT_REQUIRED")
-    command = journal_command(unit, boot_id)
+    command = (journal_command(unit, boot_id) if invocation_id is None
+               else journal_command(unit, boot_id, invocation_id))
     # Even a journal entry with a huge MESSAGE cannot grow the original
     # manager's log past this physical cap. SIGXFSZ is RED with actual FIN.
     resource.setrlimit(resource.RLIMIT_FSIZE, (CONTROL_BOUND, CONTROL_BOUND))
@@ -1153,22 +1164,129 @@ def journal_origin(raw, *, unit, boot_id, owner_uid, kernel):
         return {**result, "reason": str(error)}
 
 
-def _preserve_journal(namespace, unit, output, boot_id):
+def journal_invocation_anchor(raw, *, unit, boot_id, owner_uid, kernel):
+    """Link a captured PID1 exit to diagnostics, never to ROOT admission."""
+    result = {"status": "UNKNOWN", "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False,
+              "unit": unit, "boot_id": boot_id, "primary_raw_sha256": sha256(raw)}
+    origin = journal_origin(raw, unit=unit, boot_id=boot_id, owner_uid=owner_uid, kernel=kernel)
+    if origin["status"] != "SCOPED_JOURNAL_OBSERVATION_ONLY":
+        return {**result, "reason": "JOURNAL_ANCHOR_PRIMARY_UNKNOWN"}
+    try:
+        from scripts import rc6_capacity_calibration as calibration
+        journal_command(unit, boot_id)
+        records = [(row, calibration.decode(row)) for row in raw.splitlines()]
+        anchors = [(row, value) for row, value in records if value.get("_PID") == "1"
+                   and value.get("CODE_FUNC") == "unit_log_process_exit"]
+        require(len(anchors) == 1, "ROOT_CUSTODY_JOURNAL_UNIQUE_PID1_EXIT_REQUIRED")
+        row, value = anchors[0]
+        require(value.get("_BOOT_ID") == boot_id and value.get("_UID") == "0"
+                and value.get("UNIT") == unit and value.get("CODE_FILE") == "src/core/unit.c"
+                and type(value.get("CODE_LINE")) is str and value["CODE_LINE"].isascii()
+                and value["CODE_LINE"].isdigit() and int(value["CODE_LINE"]) > 0
+                and value.get("MESSAGE_ID") == UNIT_PROCESS_EXIT_MESSAGE_ID
+                and value.get("EXIT_CODE") == "exited" and value.get("EXIT_STATUS") == "226",
+                "ROOT_CUSTODY_JOURNAL_PID1_NAMESPACE_EXIT_REQUIRED")
+        invocation_id = value.get("INVOCATION_ID")
+        journal_command(unit, boot_id, invocation_id)
+        require(invocation_id is not None, "ROOT_CUSTODY_JOURNAL_INVOCATION_ID_REQUIRED")
+        for _, record in records:
+            if record.get("_PID") == "1" and "INVOCATION_ID" in record:
+                require(record["INVOCATION_ID"] == invocation_id,
+                        "ROOT_CUSTODY_JOURNAL_PID1_INVOCATION_CONFLICT")
+        return {**result, "status": "PID1_INVOCATION_DIAGNOSTIC_ANCHOR_ONLY",
+                "invocation_id": invocation_id, "anchor_record_sha256": sha256(row), "exit_status": 226}
+    except (ValueError, TypeError, KeyError, UnicodeError) as error:
+        return {**result, "reason": str(error)}
+
+
+def journal_invocation_origin(raw, *, unit, boot_id, invocation_id, kernel):
+    result = {"status": "UNKNOWN", "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False,
+              "unit": unit, "boot_id": boot_id, "invocation_id": invocation_id, "record_count": 0}
+    if kernel.get("timed_out") is not False or kernel.get("returncode") != 0:
+        return {**result, "reason": "JOURNAL_QUERY_RED"}
+    if not raw.strip():
+        return {**result, "reason": "JOURNAL_EMPTY"}
+    try:
+        from scripts import rc6_capacity_calibration as calibration
+        journal_command(unit, boot_id, invocation_id)
+        require(invocation_id is not None, "ROOT_CUSTODY_JOURNAL_INVOCATION_ID_REQUIRED")
+        rows = raw.splitlines()
+        require(len(raw) <= CONTROL_BOUND and 1 <= len(rows) <= 30, "ROOT_CUSTODY_JOURNAL_BOUND_REQUIRED")
+        for row in rows:
+            value = calibration.decode(row)
+            require(type(value) is dict and value.get("_BOOT_ID") == boot_id and value.get("_UID") == "0"
+                    and value.get("INVOCATION_ID") == invocation_id,
+                    "ROOT_CUSTODY_JOURNAL_FOREIGN_INVOCATION")
+            pid = value.get("_PID")
+            require(type(pid) is str and pid.isascii() and pid.isdigit() and int(pid) > 0,
+                    "ROOT_CUSTODY_JOURNAL_ROOT_UNIT_PID_INVALID")
+            require("UNIT" not in value or value["UNIT"] == unit, "ROOT_CUSTODY_JOURNAL_FOREIGN_UNIT")
+            expected_units = (unit, "init.scope") if pid == "1" else (unit,)
+            require("_SYSTEMD_UNIT" not in value or value["_SYSTEMD_UNIT"] in expected_units,
+                    "ROOT_CUSTODY_JOURNAL_FOREIGN_UNIT")
+            expected_cgroups = ("/system.slice/" + unit, "/init.scope") if pid == "1" else ("/system.slice/" + unit,)
+            require("_SYSTEMD_CGROUP" not in value or value["_SYSTEMD_CGROUP"] in expected_cgroups,
+                    "ROOT_CUSTODY_JOURNAL_FOREIGN_CGROUP")
+            require(type(value.get("CODE_FILE")) is str and value["CODE_FILE"].startswith("src/")
+                    and ".." not in value["CODE_FILE"].split("/")
+                    and re.fullmatch(r"src/[A-Za-z0-9_./-]+\.c", value["CODE_FILE"])
+                    and type(value.get("CODE_FUNC")) is str and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value["CODE_FUNC"])
+                    and type(value.get("CODE_LINE")) is str and value["CODE_LINE"].isascii()
+                    and value["CODE_LINE"].isdigit() and int(value["CODE_LINE"]) > 0,
+                    "ROOT_CUSTODY_JOURNAL_EXECUTOR_SOURCE_REQUIRED")
+            for field in ("_EXE", "_COMM", "SYSLOG_IDENTIFIER", "MESSAGE"):
+                if field in value:
+                    require(type(value[field]) is str and "\x00" not in value[field],
+                            "ROOT_CUSTODY_JOURNAL_INVALID_METADATA")
+            require("_EXE" not in value or value["_EXE"].startswith("/"),
+                    "ROOT_CUSTODY_JOURNAL_INVALID_METADATA")
+            for field in ("MESSAGE_ID", "_SYSTEMD_INVOCATION_ID"):
+                if field in value:
+                    require(type(value[field]) is str and re.fullmatch(r"[0-9a-f]{32}", value[field])
+                            and value[field] != "0" * 32, "ROOT_CUSTODY_JOURNAL_INVALID_METADATA")
+            require(pid == "1" or "_SYSTEMD_INVOCATION_ID" not in value
+                    or value["_SYSTEMD_INVOCATION_ID"] == invocation_id,
+                    "ROOT_CUSTODY_JOURNAL_FOREIGN_INVOCATION")
+            if "PROCESS_PID" in value:
+                number = value["PROCESS_PID"]
+                require(type(number) is str and number.isascii() and number.isdigit() and int(number) > 1,
+                        "ROOT_CUSTODY_JOURNAL_INVALID_METADATA")
+            if "ERRNO" in value:
+                number = value["ERRNO"]
+                require(type(number) is str and number.isascii() and number.isdigit() and 0 < int(number) <= 4095,
+                        "ROOT_CUSTODY_JOURNAL_INVALID_ERRNO")
+        return {**result, "status": "SCOPED_INVOCATION_DIAGNOSTIC_ONLY", "record_count": len(rows)}
+    except (ValueError, TypeError, KeyError, UnicodeError) as error:
+        return {**result, "reason": str(error)}
+
+
+def _preserve_journal(namespace, unit, output, boot_id, invocation_id=None):
     from scripts import rc6_authenticated_fixture_lifecycle as owned
     require(_proc_text("/proc/sys/kernel/random/boot_id").strip().replace("-", "") == boot_id,
             "ROOT_CUSTODY_JOURNAL_ACTUAL_BOOT_REQUIRED")
     command = [sys.executable, "-I", "-B", str(ROOT / MEMBER), "--journal-unit", unit, "--journal-boot", boot_id]
+    if invocation_id is not None:
+        command.extend(["--journal-invocation", invocation_id])
+    label = "diagnostic-journal-query" if invocation_id is None else "diagnostic-journal-invocation-query"
+    prefix = "journal" if invocation_id is None else "journal-invocation"
     kernel, fin = owned.execute_owned(namespace, command, cwd=ROOT,
         environ={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, progress=None, timeout_seconds=5,
-        log_relative="diagnostic-journal-query.log", fin_label="diagnostic-journal-query")
+        log_relative=label + ".log", fin_label=label)
     owned.require_fin(namespace, fin)
-    raw = _read(namespace.path / "diagnostic-journal-query.log", CONTROL_BOUND)
+    raw = _read(namespace.path / (label + ".log"), CONTROL_BOUND)
     fin_raw = _read(namespace.path / fin.control_name, 1024**2)
-    _diagnostic_bytes(output / "journal-query-original.log", raw)
-    _diagnostic_bytes(output / "journal-fin-original.json", fin_raw)
-    return {"command": journal_command(unit, boot_id), "kernel": kernel,
+    _diagnostic_bytes(output / (prefix + "-query-original.log"), raw)
+    _diagnostic_bytes(output / (prefix + "-fin-original.json"), fin_raw)
+    origin = (journal_origin(raw, unit=unit, boot_id=boot_id, owner_uid=os.geteuid(), kernel=kernel)
+              if invocation_id is None else journal_invocation_origin(raw, unit=unit, boot_id=boot_id,
+                  invocation_id=invocation_id, kernel=kernel))
+    result = {"command": journal_command(unit, boot_id, invocation_id), "kernel": kernel,
         "original_FIN_sha256": sha256(fin_raw), "raw_sha256": sha256(raw), "raw_bytes": len(raw),
-        "origin": journal_origin(raw, unit=unit, boot_id=boot_id, owner_uid=os.geteuid(), kernel=kernel)}
+        "origin": origin}
+    if invocation_id is None:
+        result["invocation_anchor"] = journal_invocation_anchor(raw, unit=unit, boot_id=boot_id,
+            owner_uid=os.geteuid(), kernel=kernel)
+    return result
 
 
 def _preserve_failure(context, destination, error):
@@ -1206,6 +1324,23 @@ def _preserve_failure(context, destination, error):
         except (ValueError, OSError, KeyError, TypeError) as journal_error:
             diagnostic["journal"] = {"status": "UNKNOWN", "reason": str(journal_error),
                 "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False}
+        anchor = diagnostic["journal"].get("invocation_anchor", {})
+        diagnostic["journal_invocation"] = {"status": "UNKNOWN", "reason": "PID1_ANCHOR_UNKNOWN",
+            "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False}
+        if anchor.get("status") == "PID1_INVOCATION_DIAGNOSTIC_ANCHOR_ONLY" and context["kernel"].get("returncode") == 226:
+            try:
+                primary_raw = _read(namespace.path / "diagnostic-journal-query.log", CONTROL_BOUND)
+                require(sha256(primary_raw) == diagnostic["journal"]["raw_sha256"] == anchor["primary_raw_sha256"],
+                        "ROOT_CUSTODY_JOURNAL_PRIMARY_BYTES_CHANGED")
+                fresh_anchor = journal_invocation_anchor(primary_raw, unit=unit, boot_id=boot_id,
+                    owner_uid=os.geteuid(), kernel=diagnostic["journal"]["kernel"])
+                require(fresh_anchor == anchor, "ROOT_CUSTODY_JOURNAL_ANCHOR_CHANGED")
+                diagnostic["journal_invocation"] = _preserve_journal(namespace, unit, output, boot_id,
+                    anchor["invocation_id"])
+                diagnostic["journal_invocation"]["primary_anchor"] = anchor
+            except (ValueError, OSError, KeyError, TypeError) as invocation_error:
+                diagnostic["journal_invocation"] = {"status": "UNKNOWN", "reason": str(invocation_error),
+                    "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False}
         query_kernel, query_fin = owned.execute_owned(namespace, ["systemctl", "show", "--no-pager",
             "--property=Id,LoadState,ActiveState,SubState,MainPID,ControlPID,ControlGroup", "--", unit],
             cwd=ROOT, environ={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, progress=None,
@@ -1228,7 +1363,8 @@ def _preserve_failure(context, destination, error):
                     "ROOT_CUSTODY_DIAGNOSTIC_LOG_BYTES_BOUND")
             capture = owned.capture_required_evidence(namespace, query_fin, output / "closed-client-raw",
                 [context["log"], "diagnostic-unit-query.log",
-                 *(["diagnostic-journal-query.log"] if "raw_sha256" in diagnostic["journal"] else [])])
+                 *(["diagnostic-journal-query.log"] if "raw_sha256" in diagnostic["journal"] else []),
+                 *(["diagnostic-journal-invocation-query.log"] if "raw_sha256" in diagnostic["journal_invocation"] else [])])
             # Only cgroup state is read again. The single systemd query above
             # is retained verbatim and never advertised as a fresh second one.
             after = _cgroup_writer_absence(unit)
@@ -1362,17 +1498,19 @@ def cli():
     parser.add_argument("--unit")
     parser.add_argument("--journal-unit")
     parser.add_argument("--journal-boot")
+    parser.add_argument("--journal-invocation")
     parser.add_argument("--systemd-query", choices=("manager", "version", "package", "binaries"))
     args = parser.parse_args()
     if args.systemd_query:
         require(not any((args.guardian, args.private_init, args.broker, args.actor_case, args.request,
-                         args.unit, args.journal_unit, args.journal_boot)),
+                         args.unit, args.journal_unit, args.journal_boot, args.journal_invocation)),
                 "ROOT_CUSTODY_SYSTEMD_EXACT_READONLY_ROLE_REQUIRED")
         return systemd_query_worker(args.systemd_query)
-    if args.journal_unit or args.journal_boot:
+    if args.journal_unit or args.journal_boot or args.journal_invocation:
         require(args.journal_unit and args.journal_boot and not any((args.guardian, args.private_init, args.broker,
                 args.actor_case, args.request, args.unit)), "ROOT_CUSTODY_JOURNAL_EXACT_READONLY_ROLE_REQUIRED")
-        return journal_query_worker(args.journal_unit, args.journal_boot)
+        return (journal_query_worker(args.journal_unit, args.journal_boot) if args.journal_invocation is None
+                else journal_query_worker(args.journal_unit, args.journal_boot, args.journal_invocation))
     require(args.request is not None, "ROOT_CUSTODY_FIXED_REQUEST_REQUIRED")
     if args.actor_case:
         request, _, _ = _request(args.request, private=True)

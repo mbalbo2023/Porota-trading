@@ -481,6 +481,191 @@ def test_journal_command_cannot_cross_boot_or_unit_boundaries():
         custody.journal_command(unit, "current")
 
 
+def pid1_exit_record(unit, boot, invocation="c" * 32):
+    return {"_BOOT_ID": boot, "_PID": "1", "_UID": "0", "UNIT": unit,
+        "_SYSTEMD_UNIT": "init.scope", "_SYSTEMD_CGROUP": "/init.scope",
+        "CODE_FILE": "src/core/unit.c", "CODE_FUNC": "unit_log_process_exit", "CODE_LINE": "6066",
+        "MESSAGE_ID": custody.UNIT_PROCESS_EXIT_MESSAGE_ID, "EXIT_CODE": "exited", "EXIT_STATUS": "226",
+        "INVOCATION_ID": invocation, "MESSAGE": "Main process exited, status=226/NAMESPACE"}
+
+
+def invocation_record(boot, invocation="c" * 32):
+    # Decoder fixture for a generic systemd log without UNIT/cgroup metadata.
+    return {"_BOOT_ID": boot, "_PID": "42", "_UID": "0", "INVOCATION_ID": invocation,
+        "CODE_FILE": "src/core/namespace.c", "CODE_FUNC": "setup_namespace", "CODE_LINE": "2590",
+        "_EXE": "/usr/lib/systemd/systemd-executor", "ERRNO": "2", "MESSAGE": "Failed remount /owned: No such file"}
+
+
+def test_invocation_query_is_fixed_scoped_and_keeps_causal_fields():
+    unit, boot, invocation = custody.unit_name("a" * 32, guard=True), "b" * 32, "c" * 32
+    command = custody.journal_command(unit, boot, invocation)
+    assert command[-3:] == ["_BOOT_ID=" + boot, "_UID=0", "INVOCATION_ID=" + invocation]
+    assert "--lines=30" in command and "+" not in command
+    assert not any(arg.startswith(("UNIT=", "_SYSTEMD_UNIT=")) for arg in command)
+    fields = next(arg for arg in command if arg.startswith("--output-fields=")).split("=", 1)[1].split(",")
+    assert {"INVOCATION_ID", "MESSAGE_ID", "EXIT_CODE", "EXIT_STATUS", "PROCESS_PID", "_EXE", "ERRNO", "CODE_FUNC"} <= set(fields)
+    for value in ("", "0" * 32, "C" * 32, True, 42, "c" * 31, "c" * 33, "current"):
+        with pytest.raises(ValueError, match="JOURNAL_INVOCATION_ID_REQUIRED"):
+            custody.journal_command(unit, boot, value)
+
+
+def test_pid1_anchor_is_only_diagnostic_and_preserves_exact_primary_digests():
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    raw = custody.wire(pid1_exit_record(unit, boot))
+    result = custody.journal_invocation_anchor(raw, unit=unit, boot_id=boot, owner_uid=os.geteuid(),
+        kernel={"timed_out": False, "returncode": 0})
+    assert result["status"] == "PID1_INVOCATION_DIAGNOSTIC_ANCHOR_ONLY"
+    assert result["primary_raw_sha256"] == hashlib.sha256(raw).hexdigest()
+    assert result["anchor_record_sha256"] == hashlib.sha256(raw.rstrip(b"\n")).hexdigest()
+    assert result["invocation_id"] == "c" * 32 and result["exit_status"] == 226
+    assert result["ROOT_FIN_claimed"] is result["ROOT_custody_qualified"] is False
+    with pytest.raises(ValueError, match="ACTUAL_IN_PROCESS_WITNESS_REQUIRED"):
+        custody.validate_witness(result, binding=binding())
+
+
+@pytest.mark.parametrize("field,value", [("_BOOT_ID", "d" * 32), ("_UID", "1001"), ("_PID", "2"),
+    ("UNIT", "foreign.service"), ("CODE_FILE", "foreign.c"), ("CODE_FUNC", "unit_log_failure"),
+    ("CODE_LINE", True), ("CODE_LINE", "0"), ("MESSAGE_ID", "d" * 32), ("EXIT_CODE", "killed"),
+    ("EXIT_STATUS", "1"), ("EXIT_STATUS", 226), ("INVOCATION_ID", "0" * 32),
+    ("INVOCATION_ID", ["c" * 32]), ("INVOCATION_ID", None), ("INVOCATION_ID", "C" * 32)])
+def test_bad_anchor_cannot_select_secondary_journal(field, value):
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    record = pid1_exit_record(unit, boot)
+    record[field] = value
+    result = custody.journal_invocation_anchor(custody.wire(record), unit=unit, boot_id=boot,
+        owner_uid=os.geteuid(), kernel={"timed_out": False, "returncode": 0})
+    assert result["status"] == "UNKNOWN" and "invocation_id" not in result
+    assert result["ROOT_FIN_claimed"] is result["ROOT_custody_qualified"] is False
+
+
+def test_anchor_rejects_conflicting_or_duplicate_pid1_exits():
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    record = pid1_exit_record(unit, boot)
+    for other in (record, {**record, "INVOCATION_ID": "d" * 32},
+                  {**record, "CODE_FUNC": "unit_log_failure", "INVOCATION_ID": "d" * 32}):
+        result = custody.journal_invocation_anchor(custody.wire(record) + custody.wire(other),
+            unit=unit, boot_id=boot, owner_uid=os.geteuid(), kernel={"timed_out": False, "returncode": 0})
+        assert result["status"] == "UNKNOWN"
+
+
+def test_generic_invocation_without_unit_or_cgroup_keeps_errno_but_never_qualifies_root():
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    record = invocation_record(boot)
+    raw = custody.wire(record) + custody.wire(pid1_exit_record(unit, boot))
+    result = custody.journal_invocation_origin(raw, unit=unit, boot_id=boot, invocation_id="c" * 32,
+        kernel={"timed_out": False, "returncode": 0})
+    assert result["status"] == "SCOPED_INVOCATION_DIAGNOSTIC_ONLY" and result["record_count"] == 2
+    assert result["ROOT_FIN_claimed"] is result["ROOT_custody_qualified"] is False
+
+
+@pytest.mark.parametrize("field,value", [("_BOOT_ID", "d" * 32), ("_UID", "1001"),
+    ("INVOCATION_ID", "d" * 32), ("UNIT", "foreign.service"), ("_SYSTEMD_UNIT", "foreign.service"),
+    ("_SYSTEMD_CGROUP", "/foreign"), ("_PID", True), ("_PID", "0"),
+    ("CODE_FILE", "src/../foreign.c"), ("CODE_FUNC", "not function"), ("CODE_LINE", "bad"),
+    ("_EXE", ["/usr/lib/systemd/systemd-executor"]), ("_EXE", "relative"), ("MESSAGE", ["duplicate"]),
+    ("ERRNO", "bad"), ("ERRNO", "0"), ("ERRNO", "4096"), ("_SYSTEMD_INVOCATION_ID", "d" * 32)])
+def test_invocation_rejects_foreign_or_malformed_metadata(field, value):
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    record = invocation_record(boot)
+    record[field] = value
+    result = custody.journal_invocation_origin(custody.wire(record), unit=unit, boot_id=boot,
+        invocation_id="c" * 32, kernel={"timed_out": False, "returncode": 0})
+    assert result["status"] == "UNKNOWN" and result["ROOT_custody_qualified"] is False
+
+
+@pytest.mark.parametrize("kind", ["empty", "red", "timeout", "rows", "bytes", "duplicate_json"])
+def test_invocation_unknown_bounds_and_red_query_do_not_invent_cause(kind):
+    unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
+    raw, kernel = custody.wire(invocation_record(boot)), {"timed_out": False, "returncode": 0}
+    if kind == "empty": raw = b""
+    elif kind == "red": kernel["returncode"] = 1
+    elif kind == "timeout": kernel["timed_out"] = True
+    elif kind == "rows": raw *= 31
+    elif kind == "bytes": raw = custody.wire({**invocation_record(boot), "MESSAGE": "x" * custody.CONTROL_BOUND})
+    else: raw = raw.replace(b'"_UID":"0"', b'"_UID":"0","_UID":"0"')
+    result = custody.journal_invocation_origin(raw, unit=unit, boot_id=boot, invocation_id="c" * 32, kernel=kernel)
+    assert result["status"] == "UNKNOWN" and result["ROOT_FIN_claimed"] is False
+
+
+@pytest.mark.parametrize("scenario", ["valid", "unknown_anchor", "wrong_client_exit", "secondary_red",
+                                     "secondary_failure", "primary_changed", "anchor_changed"])
+def test_failure_invocation_capture_has_original_nonroot_fin_and_retains_primary_error(tmp_path, monkeypatch, scenario):
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    namespace = owned.create_namespace(tmp_path, binding())
+    unit = custody.unit_name(namespace.nonce, guard=True)
+    boot = custody._proc_text("/proc/sys/kernel/random/boot_id").strip().replace("-", "")
+    client_exit = 73 if scenario == "wrong_client_exit" else 226
+    kernel, fin = owned.execute_owned(namespace, [sys.executable, "-I", "-B", "-c",
+        "import sys;sys.stderr.write('ORIGINAL_STDERR');sys.exit(" + str(client_exit) + ")"],
+        cwd=custody.ROOT, environ={"PATH": "/usr/bin:/bin"}, progress=None, timeout_seconds=5,
+        log_relative="guardian-native.log", fin_label="root-guardian-proof")
+    primary_record = pid1_exit_record(unit, boot)
+    if scenario == "unknown_anchor": primary_record.pop("INVOCATION_ID")
+    primary_raw, secondary_raw = custody.wire(primary_record), custody.wire(invocation_record(boot))
+    actual_execute, actual_preserve = owned.execute_owned, custody._preserve_journal
+    secondary_requests = []
+    def decoder_query(ns, requested, **kwargs):
+        assert kwargs["timeout_seconds"] == 5 and "sudo" not in requested
+        if "--journal-invocation" in requested:
+            secondary_requests.append(requested)
+            assert requested[-2:] == ["--journal-invocation", "c" * 32]
+            if scenario == "secondary_failure": raise ValueError("OWN_SECONDARY_FIXTURE_FAILURE")
+            raw, exit_status = secondary_raw, 1 if scenario == "secondary_red" else 0
+        elif "--journal-unit" in requested:
+            raw, exit_status = primary_raw, 0
+        else:
+            assert requested[:2] == ["systemctl", "show"] and requested[-1] == unit
+            raw, exit_status = b"DECODER_OWN_INACTIVE_UNIT\n", 0
+        return actual_execute(ns, [sys.executable, "-I", "-B", "-c",
+            "import sys;sys.stdout.buffer.write(" + repr(raw) + ");sys.exit(" + str(exit_status) + ")"], **kwargs)
+    def digest_change(ns, requested_unit, output, requested_boot, invocation_id=None):
+        result = actual_preserve(ns, requested_unit, output, requested_boot, invocation_id)
+        if invocation_id is None and scenario == "primary_changed":
+            (ns.path / "diagnostic-journal-query.log").write_bytes(primary_raw + b"\n")
+        if invocation_id is None and scenario == "anchor_changed":
+            result["invocation_anchor"]["invocation_id"] = "d" * 32
+        return result
+    monkeypatch.setattr(owned, "execute_owned", decoder_query)
+    monkeypatch.setattr(custody, "_preserve_journal", digest_change)
+    # Only the pure unit/cgroup decoder is substituted. No ROOT/systemd unit
+    # runs: all bytes and actual FIN come from own NONROOT fixture processes.
+    monkeypatch.setattr(custody, "_inactive_unit_readback", lambda *args: {
+        "unit": unit, "scope": "DECODER_FIXTURE_ONLY", "cgroup_state": "DECODER_FIXTURE_EMPTY"})
+    monkeypatch.setattr(custody, "_cgroup_writer_absence", lambda *args: "DECODER_FIXTURE_EMPTY")
+    monkeypatch.setattr(owned, "cleanup_namespace", lambda *args: pytest.fail("Diagnostic cannot cleanup"))
+    output = tmp_path / "diagnostic"
+    result = custody._preserve_failure({"namespace": namespace, "kernel": kernel, "fin": fin,
+        "unit": unit, "boot_id": boot, "log": "guardian-native.log"}, output,
+        ValueError("ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED"))
+    assert result["error_signature"] == "ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED"
+    assert result["ROOT_FIN"] == "UNKNOWN" and result["ROOT_custody_qualified"] is False
+    assert result["cleanup_authorized"] is False and result["reservation_recovery_credited_bytes"] == 0
+    assert namespace.path.is_dir() and (output / "journal-query-original.log").read_bytes() == primary_raw
+    assert result["journal"]["raw_sha256"] == hashlib.sha256(primary_raw).hexdigest()
+    capture = Path(result["diagnostic_capture"])
+    manifest = json.loads((capture / "manifest.json").read_bytes())
+    files = {row["relative_source"]: row for row in manifest["files"]}
+    selected = scenario in ("valid", "secondary_red", "secondary_failure")
+    assert bool(secondary_requests) is selected
+    if scenario in ("valid", "secondary_red"):
+        secondary = result["journal_invocation"]
+        assert (output / "journal-invocation-query-original.log").read_bytes() == secondary_raw
+        assert (output / "journal-invocation-fin-original.json").exists()
+        assert secondary["raw_sha256"] == hashlib.sha256(secondary_raw).hexdigest()
+        assert secondary["kernel"]["actual_child_reaped"] and secondary["kernel"]["owned_children_exhaustion_verified"]
+        assert secondary["kernel"]["sigint_failure_grace_seconds"] == 0
+        row = files["diagnostic-journal-invocation-query.log"]
+        assert (capture / row["capture_file"]).read_bytes() == secondary_raw
+        assert row["sha256"] == secondary["raw_sha256"]
+        assert "producer-owned-fin-diagnostic-journal-invocation-query.json" in files
+        expected = "UNKNOWN" if scenario == "secondary_red" else "SCOPED_INVOCATION_DIAGNOSTIC_ONLY"
+        assert secondary["origin"]["status"] == expected
+    else:
+        assert result["journal_invocation"]["status"] == "UNKNOWN"
+        assert "diagnostic-journal-invocation-query.log" not in files
+    assert "producer-owned-fin-diagnostic-journal-query.json" in files
+
+
 def test_journal_origin_accepts_exact_boot_pid1_unit_and_own_unit_only():
     unit, boot = custody.unit_name("a" * 32, guard=True), "b" * 32
     records = [{"_BOOT_ID": boot, "_PID": "1", "_UID": "0", "UNIT": unit, "MESSAGE": "EXIT_NAMESPACE"},
