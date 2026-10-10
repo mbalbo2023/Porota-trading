@@ -90,8 +90,13 @@ def verify_owner(github, url, *, sha, tree, owner, now=None, plan_sha256=None,
     from scripts import rc6_material_pr_admission as admission
     plan_keys = {'RC6_EVIDENCE_CUSTODY_AUTHORIZATION': 'CUSTODY_PLAN_SHA256',
         'RC6_DEVELOPMENT_CHECKS_AUTHORIZATION': 'DEVELOPMENT_PLAN_SHA256',
-        'RC6_EVIDENCE_READOUT_AUTHORIZATION': 'READOUT_PLAN_SHA256'}
+        'RC6_EVIDENCE_READOUT_AUTHORIZATION': 'READOUT_PLAN_SHA256',
+        'RC6_NATIVE_PREREQUISITES_AUTHORIZATION': 'NATIVE_PREREQUISITES_PLAN_SHA256'}
     require(authorization_field in plan_keys, 'CUSTODY_UNKNOWN_CONTROL_OPERATION')
+    native_control = authorization_field == 'RC6_NATIVE_PREREQUISITES_AUTHORIZATION'
+    if native_control:
+        require(re.fullmatch('[0-9a-f]{64}', plan_sha256 or ''),
+                'CUSTODY_NATIVE_PREREQUISITES_EXACT_PLAN_REQUIRED')
     match = re.fullmatch(r'https://github\.com/' + REPO + r'/issues/471#issuecomment-([0-9]+)', url)
     require(match is not None, 'CUSTODY_OWNER_RECEIPT_URL_REQUIRED')
     receipt = github.request('/issues/comments/' + match[1])
@@ -106,8 +111,10 @@ def verify_owner(github, url, *, sha, tree, owner, now=None, plan_sha256=None,
             fields[item[1]] = item[2]
     require(fields.get(authorization_field) == 'APPROVED'
             and fields.get('SOURCE_SHA') == sha and fields.get('SOURCE_TREE') == tree
-            and fields.get('WRITE_OWNER') == fields.get('SESSION_SUCCESSOR') == owner
+            and fields.get('WRITE_OWNER') == fields.get('INTEGRATION_OWNER')
+                == fields.get('SESSION_SUCCESSOR') == owner
             and fields.get('DEPLOY_OWNER') == 'NOT_ACQUIRED' and fields.get('RELEASED') == 'false'
+            and fields.get('MODE') == 'PRODUCTION_PAPER / SIMULATION'
             and fields.get('real_orders_sent') == '0', 'CUSTODY_EXACT_SCOPED_AUTHORIZATION_REQUIRED')
     if plan_sha256 is not None:
         key = plan_keys[authorization_field]
@@ -118,16 +125,23 @@ def verify_owner(github, url, *, sha, tree, owner, now=None, plan_sha256=None,
     require(created <= current < expires and (expires-created).total_seconds() <= 1200,
             'CUSTODY_LEASE_EXPIRED_OR_UNBOUNDED')
     twin_id = fields.get('OWNER_RECEIPT_473')
-    require(twin_id is not None and twin_id.isdigit(), 'CUSTODY_OWNER_PAIR_REQUIRED')
+    require(twin_id is not None and re.fullmatch('[1-9][0-9]{0,9}', twin_id), 'CUSTODY_OWNER_PAIR_REQUIRED')
     twin = github.request('/issues/comments/' + twin_id)
-    require(twin['issue_url'].endswith('/issues/473') and twin['user']['login'] == 'mbalbo2023'
+    require(twin['id'] == int(twin_id)
+            and twin['html_url'] == 'https://github.com/' + REPO + '/issues/473#issuecomment-' + twin_id
+            and twin['issue_url'].endswith('/issues/473') and twin['user']['login'] == 'mbalbo2023'
             and twin['created_at'] == twin['updated_at']
             and digest(twin['body'].encode()) == fields.get('OWNER_RECEIPT_473_SHA256'),
             'CUSTODY_AUTHENTIC_PAIR_DIGEST_REQUIRED')
     twin_fields = admission.fields(twin['body'])
+    if native_control:
+        require(twin_fields.get(authorization_field) == 'APPROVED'
+                and twin_fields.get(plan_keys[authorization_field]) == plan_sha256,
+                'CUSTODY_NATIVE_PREREQUISITES_DUAL_AUTHORIZATION_REQUIRED')
     twin_created = datetime.fromisoformat(twin['created_at'].replace('Z', '+00:00'))
     twin_expires = datetime.fromisoformat(twin_fields['SOURCE_LEASE_EXPIRES_UTC'].replace('Z', '+00:00'))
-    require(twin_fields.get('WRITE_OWNER') == twin_fields.get('SESSION_SUCCESSOR') == owner
+    require(twin_fields.get('WRITE_OWNER') == twin_fields.get('INTEGRATION_OWNER')
+                == twin_fields.get('SESSION_SUCCESSOR') == owner
             and twin_fields.get('RELEASED') == 'false' and twin_fields.get('DEPLOY_OWNER') == 'NOT_ACQUIRED'
             and twin_fields.get('SOURCE_SHA') == sha and twin_fields.get('SOURCE_TREE') == tree
             and twin_fields.get('MODE') == 'PRODUCTION_PAPER / SIMULATION'
@@ -136,7 +150,10 @@ def verify_owner(github, url, *, sha, tree, owner, now=None, plan_sha256=None,
             'CUSTODY_OWNER_PAIR_NOT_LIVE')
     # A still-fresh comment may have been superseded. Read complete updated
     # timelines from the authentic administrative transfer in both Issues.
-    anchors = admission.administrative_anchors(owner, get=github.request)
+    anchors = admission.administrative_anchors(owner, get=github.request, now=current)
+    require(fields.get('WORKSTREAM_ID') == twin_fields.get('WORKSTREAM_ID')
+            == admission.fields(anchors[471]['body']).get('WORKSTREAM_ID'),
+            'CUSTODY_CURRENT_OWNER_WORKSTREAM_REQUIRED')
     for issue in (471, 473):
         timeline = admission.recent(issue, anchors[issue], current, get=github.request)
         admission.latest_writer(timeline, issue, sha, tree, owner, current)

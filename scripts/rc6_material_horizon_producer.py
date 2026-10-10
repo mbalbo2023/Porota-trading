@@ -492,7 +492,8 @@ def completion_flags(result):
     clean = bool(result["source_database_unchanged"] and result["code_source_unchanged"]
                  and not result["provider_requests"] and "error" not in result)
     execution = bool(result.get("execution_complete") and clean)
-    horizon = bool(execution and result["ticks_requested"] == 1201 and native_ticks == 1202
+    horizon = bool(execution and result.get("private_comparison_active") is not True
+                   and result["ticks_requested"] == 1201 and native_ticks == 1202
                    and result.get("native_horizon_contract_verified") is True)
     return {"native_ticks_executed": native_ticks, "execution_complete": execution,
             "horizon_complete": horizon, "complete": horizon, "acceptance_complete": horizon}
@@ -638,6 +639,13 @@ def publish_owned_fin(path, value):
         os.close(descriptor)
 
 
+def observe_original_cas_comparison(comparison, originals, node, archiver):
+    """Share the native captured bytes; never rebuild a comparison fixture."""
+    if comparison is None:
+        return None
+    return comparison.observe(originals, cut=node, native_pins=archiver._archive_pins())
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-repo", required=True, help="Local Git object authority; no fetch or replace refs")
@@ -649,6 +657,7 @@ def main():
     parser.add_argument("--catalog-count", type=int, default=1200)
     parser.add_argument("--ticks", type=int, default=4)
     parser.add_argument("--owned-fin", required=True, help="Fresh external native lifecycle control; never a data result")
+    parser.add_argument("--cas-comparison-manifest", help="Exact authenticated private comparison admission; never enables native V4 writes")
     args = parser.parse_args()
     source_root = Path(args.source_root).absolute()
     if source_root.resolve(strict=True) != source_root or any(parent.is_symlink() for parent in source_root.parents):
@@ -692,6 +701,14 @@ def main():
     if (not stat.S_ISDIR(control_parent.st_mode) or control_parent.st_uid != os.geteuid()
             or stat.S_IMODE(control_parent.st_mode) != 0o700):
         raise ValueError("OWN_PRIVATE_HORIZON_FIN_PARENT_REQUIRED")
+    comparison = None
+    if args.cas_comparison_manifest is not None:
+        if args.ticks != 1201 or args.catalog_count != 1200:
+            raise ValueError("CAS_COMPARISON_ORIGINAL1202_AND1200X5_REQUIRED")
+        from scripts.rc6_cas_original_comparison import authenticate_comparison
+        comparison = authenticate_comparison(args.cas_comparison_manifest,
+            source_sha=args.source_sha, source_tree=args.source_tree, source_root=source_root,
+            output_root=owned_fin_path.parent / "original-cas-comparison", producer_root=root)
     lifecycle_initial = lifecycle.child_infrastructure_snapshot()
     lifecycle.require(all(value is None for value in lifecycle_initial.values()),
                       "FRESH_NATIVE_HORIZON_INFRASTRUCTURE_REQUIRED")
@@ -789,6 +806,10 @@ def main():
     evidence, archive = shadow_evidence_root(database), shadow_archive_root(database)
     authority = evidence.parent / (evidence.name+".authority")
     result.update(evidence_root=str(evidence), archive_root=str(archive), authority_control_root=str(authority))
+    result["private_comparison_active"] = comparison is not None
+    if comparison is not None:
+        comparison.bind_native_archive(evidence, archive)
+        result["private_source_rotation_contract"] = "REVIEWED_PRIVATE_CANDIDATE_ACK_ONLY_NOT_G5"
     native_retention = NativeRetentionObservation(EvidenceRetention)
 
     def source_unchanged(phase):
@@ -880,10 +901,20 @@ def main():
             binding = original_member_binding(originals, pointer=current, expected_as_of=as_of.isoformat())
             original_custody = custody_at(generation)
             del report; gc.collect()
-            archiver = EvidenceRetention(worker.root, archive_root=archive, archive_format=worker.files.archive_format,
+            archive_policy = dict(archive_format=worker.files.archive_format,
                 maximum_bytes=worker.files.maximum_bytes, maximum_files=worker.files.maximum_files,
                 archive_maximum_bytes=worker.files.archive_maximum_bytes)
+            archiver = (EvidenceRetention(worker.root, archive_root=archive, **archive_policy) if comparison is None
+                else comparison.native_ack_owner(worker.root, archive, **archive_policy))
             result["archive_maximum_files"] = archiver.archive_maximum_files
+            node.update(member_bytes=binding["member_bytes"], original_member_sha256=binding["original_member_sha256"],
+                        original_manifest_sha256=binding["original_manifest_sha256"],
+                        original_manifest_clock=binding["original_manifest"]["as_of"])
+            # Both private branches receive these very same bytes BEFORE any
+            # native archive call. The private V3 RED cannot truncate V4/input.
+            # The reviewed candidate receipt is the sole private source ACK;
+            # a missing/failed candidate must never fall back to build().
+            comparison_cut = observe_original_cas_comparison(comparison, originals, node, archiver)
             start, process = time.monotonic(), time.process_time()
             receipt = archiver.archive_generation(generation)
             node.update(archive_wall_seconds=time.monotonic()-start, archive_cpu_seconds=time.process_time()-process,
@@ -906,6 +937,11 @@ def main():
                         native_receipt=dict(receipt), verified_native_archive_head=archiver._archive_checkpoint(),
                         archive_residence=residence(archive),
                         live_residence=residence(worker.root), archive_verification_level=restored["verification_level"])
+            if comparison_cut is not None:
+                node["private_cas_comparison"] = {"cut_index": comparison_cut["cut_index"],
+                    "comparison_wall_seconds": comparison_cut["comparison_wall_seconds"],
+                    "branch_status": {key: value["status"] for key, value in comparison_cut["branches"].items()},
+                    "scope": "SAME_ORIGINAL_FIVE_MEMBERS_PRIVATE_DEVELOPMENT_NOT_G5"}
             graph = import_inventory(source_root, code_before)
             result["import_graph_union"].update(graph["modules"])
             node["native_retention_call_deltas"] = {name: {key: value-counters_before[name][key]
@@ -960,7 +996,8 @@ def main():
         if (result["archive_restore_count"] != len(clocks) or result["real_fsync_calls"] <= 0
                 or result["native_scratch_measure_calls"] <= 0
                 or any(value["failed"] or value["completed"] != value["entered"] for value in native_retention.counters.values())
-                or native_retention.counters["_archive_generation"]["completed"] < len(clocks)
+                or (comparison is None and native_retention.counters["_archive_generation"]["completed"] < len(clocks))
+                or (comparison is not None and comparison.native_ack_count != len(clocks))
                 or native_retention.counters["_maintain_archive"]["completed"] <= 0
                 or native_retention.counters["_pins"]["completed"] <= 0):
             raise AssertionError("NATIVE_PROFILE_ACTUAL_DURABILITY_SCRATCH_RETENTION_OBSERVATIONS_REQUIRED")
@@ -974,7 +1011,7 @@ def main():
                 or final_head.get("contracted_horizon_seconds") != 32400
                 or final_head.get("recovery_margin_seconds") != 3600):
             raise AssertionError("NATIVE_PROFILE_NATIVE_ARCHIVE_HORIZON_HEAD_MISMATCH")
-        result.update(execution_complete=True, native_horizon_contract_verified=args.ticks == 1201,
+        result.update(execution_complete=True, native_horizon_contract_verified=args.ticks == 1201 and comparison is None,
             final_sequence=final["pointer"]["sequence"], final_as_of=final["manifest"]["as_of"],
             final_configuration_fingerprint=worker.configuration_fingerprint(clocks[-1]), archive_admission=inspect_private_archive(archive),
             archive_final=residence(archive), live_final=residence(worker.root), authority_control_final=residence(authority),
@@ -1061,6 +1098,18 @@ def main():
         if not result["execution_complete"]:
             result["native_horizon_contract_verified"] = False
         result.update(completion_flags(result))
+        if comparison is not None:
+            if native_fin_closed:
+                from scripts.rc6_cas_original_comparison import publish_result
+                comparison_result = comparison.finish(original_complete=result["execution_complete"])
+                comparison_path = owned_fin_path.parent / "original-cas-comparison" / "comparison-result.json.gz"
+                publication = publish_result(comparison_path, comparison_result)
+                result["private_cas_comparison"] = {**publication, "status": comparison_result["status"],
+                    "actual_original_cuts": comparison_result["actual_original_cuts"],
+                    "qualification_claimed": False, "native_v4_write_enabled": False}
+            else:
+                result["private_cas_comparison"] = {"status": "UNKNOWN_FIN_NO_PAYLOAD_POSTCAPTURE",
+                    "qualification_claimed": False, "native_v4_write_enabled": False}
         destination.write_text(json.dumps(result, sort_keys=True, indent=2)+"\n")
         print(json.dumps({"path": str(destination), "execution_complete": result["execution_complete"],
                          "complete": result["complete"], "acceptance_complete": result["acceptance_complete"],

@@ -17,6 +17,13 @@ from scripts import rc6_product_resource_compatibility as resource_profile
 ROOT = Path(__file__).absolute().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def never_install_in_unit_pytest_process(monkeypatch):
+    def missing(**kwargs):
+        raise ValueError(resource_profile.FILTER_BLOCKER)
+    monkeypatch.setattr(resource_profile, "install_current_native_namespace_filter", missing)
+
+
 @pytest.fixture
 def plan():
     return resource_profile.exact_plan()[0]
@@ -56,7 +63,28 @@ def filesystem_fixture():
 
 def envelope_fixture():
     return {"failures": [], "cgroup_observation": cgroup_fixture(),
-            "filesystem_observation": filesystem_fixture()}
+            "filesystem_observation": filesystem_fixture(),
+            "native_namespace_filter": unit_filter_fixture(os.getpid(), os.getppid(), 0)}
+
+
+def unit_filter_fixture(pid, parent_pid, before, *, inherited=None):
+    """Typed captured-control input only; it never authorizes a current process."""
+    from scripts import rc6_native_namespace_filter as native
+    return {"schema": native.SCHEMA, "source_binding": {"source_sha": "a" * 40,
+        "source_tree": "b" * 40, "plan_sha256": "c" * 64},
+        "identity": {"pid": pid, "parent_pid": parent_pid, "native_tid": pid,
+            "start_ticks": 1, "boot_id": "00000000-0000-0000-0000-000000000000",
+            "mount_namespace_inode": 456, "cgroup_namespace_inode": 123},
+        "plan": native.build_plan(), "plan_sha256": native.digest(native.canonical(native.build_plan())),
+        "filters_before": before, "filters_after": before + 1, "seccomp_load_returncode": 0,
+        "native_architecture": native.SUPPORTED_ARCHITECTURES[0], "tsync_requested": True,
+        "no_new_privileges": True, "dumpable": 0 if inherited is None else 1,
+        "kernel_bpf_bytes_readback_claimed": False, "G0_G8_qualification": False,
+        "exported_bpf_sha256": "0" * 64, "rules_sha256": "0" * 64,
+        "module_sha256": native.digest(Path(native.__file__).read_bytes()), "exported_bpf_bytes": 8,
+        "denial_probes": [{"probe": label, "syscall": name, "number": 42,
+            "returncode": -1, "errno": denied_errno}
+            for label, name, _, denied_errno in native._probe_specs()], "inherited": inherited}
 
 
 def test_unit_readback_accepts_one_cpu_one_gib_but_does_not_qualify_product_or_disk(plan):
@@ -211,10 +239,12 @@ def test_private_worker_entry_cannot_bypass_missing_native_namespace_filter(plan
     monkeypatch.setattr(resource_profile, "exact_source", lambda *args: None)
     monkeypatch.setattr(resource_profile, "observe_cgroup", cgroup_fixture)
     monkeypatch.setattr(resource_profile, "observe_filesystem", lambda *args: filesystem_fixture())
+    monkeypatch.setattr(resource_profile, "read_supervisor_filter", lambda *args: {})
     monkeypatch.setattr(provenance, "environment_qualification", lambda *args: pytest.fail("fixture setup admitted by Seccomp=2"))
     with pytest.raises(ValueError, match=resource_profile.FILTER_BLOCKER):
         resource_profile.worker(SimpleNamespace(source_sha="a" * 40, source_tree="b" * 40,
-            work_root=Path("/unit_control")), plan)
+            plan=resource_profile.PLAN, supervisor_filter="/unit_control/supervisor.json",
+            supervisor_filter_sha256="0" * 64, work_root=Path("/unit_control")), plan)
 
 
 def test_readiness_exit_remains_red_when_ceiling_is_observed_without_effective_filter(tmp_path, monkeypatch):
@@ -246,7 +276,7 @@ def test_readiness_preserves_both_actual_observations_and_stops_before_workload(
     monkeypatch.setattr(resource_profile, "observe_filesystem", lambda *args: fs)
     result = resource_profile.readiness("/unit_control", ROOT, plan)
     assert result["status"] == "BLOQUEADO"
-    assert result["checks"] == {"cgroup": False, "filesystem": False}
+    assert result["checks"] == {"cgroup": False, "filesystem": False, "native_filter": False}
     assert {row["check"] for row in result["failures"]} == {"cgroup", "filesystem"}
     assert result["cgroup_observation"]["cpu.max"] == "400000 100000"
     assert result["filesystem_observation"]["total_bytes"] == 30 * 1024**3
@@ -347,8 +377,12 @@ def test_overmounted_or_ambiguous_mount_is_not_a_budget():
     ("cpu_maximum", 4), ("G0_G8_qualification", True),
     ("historical_G4_G5_workloads_changed", True), ("recurring_infrastructure_cost_usd", 84),
     ("persistent_disk_latency_or_durability_qualified", True),
-    ("execution_enabled", True), ("effective_seccomp_rules_qualified", True),
+    ("execution_enabled", False), ("effective_seccomp_rules_qualified", True),
     ("aggregate_storage_security_qualified", True),
+    ("native_current_load_counter_and_denials_required", False),
+    ("native_worker_inheritance_before_own_installation_required", False),
+    ("supervisor_dumpable_zero_required", False),
+    ("native_namespace_filter_plan_sha256", "0" * 64),
 ])
 def test_fixed_profile_contract_cannot_silently_expand_costs_or_claim_equivalence(tmp_path, plan, key, value):
     plan[key] = value
@@ -368,11 +402,22 @@ def test_plan_uses_existing_original_consumer_tests_without_shortening_big_or_ho
 
 
 def native_fixture(plan):
+    from scripts import rc6_native_namespace_filter as native_filter
+    parent = envelope_fixture()["native_namespace_filter"]
+    parent_sha256 = native_filter.digest(native_filter.canonical(parent))
+    child = unit_filter_fixture(1234, os.getpid(), 1, inherited={})
+    inheritance = {"schema": native_filter.INHERITANCE_SCHEMA,
+        "identity": child["identity"], "parent_identity": parent["identity"],
+        "source_binding": parent["source_binding"], "filters_before_own_installation": 1,
+        "native_denials_before_own_installation": child["denial_probes"], "G0_G8_qualification": False,
+        "fork_exec_inheritance_observed": True, "parent_receipt_sha256": parent_sha256}
     native = {"schema": "porota.rc6.product-resource-worker.v1", "source_sha": "a" * 40,
         "source_tree": "b" * 40, "plan_sha256": "c" * 64, "pid": 1234,
         "parent_pid": os.getpid(), "before_fixtures": True, "real_orders_sent": 0,
         "product157": {"installed_total": 157, "installed_unique_total": 157, "expected_total": 157},
-        "kernel_envelope": envelope_fixture()}
+        "kernel_envelope": envelope_fixture(), "parent_filter_sha256": parent_sha256,
+        "credential_environment_present": False,
+        "native_namespace_filter": unit_filter_fixture(1234, os.getpid(), 1, inherited=inheritance)}
     identities = [(suite.partition("::")[0][:-3].replace("/", "."), suite.partition("::")[2])
                   for suite in plan["suites"]]
     facts = {"cases": len(identities), "identities": identities}
@@ -416,6 +461,68 @@ def test_green_subset_cannot_replace_nine_original_consumer_tests(plan):
         verify_native(native, facts, plan)
 
 
+@pytest.mark.parametrize("key,value", [
+    ("fork_exec_inheritance_observed", False), ("filters_before_own_installation", 4),
+    ("parent_receipt_sha256", "0" * 64), ("native_denials_before_own_installation", []),
+    ("identity", {}), ("parent_identity", {}), ("G0_G8_qualification", True),
+])
+def test_status_counter_or_parent_flag_cannot_replace_native_inheritance(plan, key, value):
+    native, facts = native_fixture(plan)
+    native["native_namespace_filter"]["inherited"][key] = value
+    with pytest.raises(ValueError, match="COMPLETE_PARENT_CHILD_INHERITANCE_EVIDENCE_REQUIRED"):
+        verify_native(native, facts, plan)
+
+
+def test_worker_credential_channel_does_not_qualify_a_correct_native_filter(plan):
+    native, facts = native_fixture(plan)
+    native["credential_environment_present"] = True
+    with pytest.raises(ValueError, match="ACTUAL_WORKER_FILTER_LOAD_AND_INHERITANCE_REQUIRED"):
+        verify_native(native, facts, plan)
+
+
+def test_positive_typed_envelope_and_live_filter_receipt_remain_scoped_not_droplet(plan, monkeypatch):
+    # Typed unit input only: native installation is witnessed in the separate
+    # own-process suite, never minted by this readback fixture.
+    proof = envelope_fixture()["native_namespace_filter"]
+    monkeypatch.setattr(resource_profile, "require_current_native_namespace_filter", lambda **kwargs: proof)
+    monkeypatch.setattr(resource_profile, "observe_cgroup", cgroup_fixture)
+    monkeypatch.setattr(resource_profile, "observe_filesystem", lambda *args: filesystem_fixture())
+    observed = resource_profile.readiness("/unit_control", ROOT, plan)
+    assert observed["status"] == "BOUNDED_ENVELOPE_AND_CURRENT_NATIVE_FILTER_OBSERVED"
+    assert observed["execution_blockers"] == []
+    assert observed["aggregate_storage_security_qualified"] is True
+    assert observed["product_resource_compatibility"] == "NO_VERIFICADO"
+    assert observed["whole_droplet_compatibility"] == "NO_VERIFICADO"
+    assert observed["persistent_disk_compatibility"] == "NO_VERIFICADO"
+    assert observed["workload_started"] is False
+
+
+def test_native_filter_does_not_replace_failed_actual_four_cpu_limit(plan, monkeypatch):
+    monkeypatch.setattr(resource_profile, "require_current_native_namespace_filter", lambda **kwargs: {})
+    limits = cgroup_fixture()
+    limits["cpu.max"] = "400000 100000"
+    monkeypatch.setattr(resource_profile, "observe_cgroup", lambda: limits)
+    monkeypatch.setattr(resource_profile, "observe_filesystem", lambda *args: filesystem_fixture())
+    observed = resource_profile.readiness("/unit_control", ROOT, plan)
+    assert observed["status"] == "BLOQUEADO"
+    assert observed["aggregate_storage_security_qualified"] is False
+    assert observed["failures"][0]["reason"] == "RESOURCE_CPU_ABOVE_ONE_CORE"
+
+
+def test_supervisor_filter_control_hash_and_alias_are_fail_closed(tmp_path):
+    receipt = tmp_path / "supervisor.json"
+    proof = envelope_fixture()["native_namespace_filter"]
+    resource_profile.exclusive_json(receipt, proof)
+    expected = resource_profile.digest(resource_profile.canonical(proof))
+    assert resource_profile.read_supervisor_filter(receipt, expected, tmp_path) == proof
+    with pytest.raises(ValueError, match="CONTROL_BYTES_REBOUND"):
+        resource_profile.read_supervisor_filter(receipt, "0" * 64, tmp_path)
+    alias = tmp_path / "alias.json"
+    alias.symlink_to(receipt)
+    with pytest.raises(ValueError, match="OWNED_SUPERVISOR_FILTER_CONTROL_REQUIRED"):
+        resource_profile.read_supervisor_filter(alias, expected, tmp_path)
+
+
 def test_blocked_execute_never_reaches_native_owner_g0_or_product_fixture(tmp_path, plan, monkeypatch):
     monkeypatch.setattr(resource_profile, "exact_source", lambda *args: None)
     limits = cgroup_fixture()
@@ -448,6 +555,16 @@ def test_control_symlink_is_rejected_without_modifying_target(tmp_path):
     with pytest.raises(ValueError, match="CONTROL_ALIAS_FORBIDDEN"):
         resource_profile.save_control(tmp_path, {"status": "BLOQUEADO"})
     assert target.read_bytes() == b"original evidence"
+
+
+def test_resource_control_parent_traversal_rejected_before_mkdir_or_native_installation(tmp_path, monkeypatch):
+    monkeypatch.setattr(resource_profile, "exact_source", lambda *args: None)
+    (tmp_path / "prefix").mkdir()
+    output = tmp_path / "prefix" / ".." / "foreign"
+    with pytest.raises(ValueError, match="OUTPUT_OUTSIDE_SOURCE_REQUIRED"):
+        resource_profile.main(["--readiness", "--source-sha", "a" * 40, "--source-tree", "b" * 40,
+            "--work-root", str(tmp_path), "--output", str(output)])
+    assert not (tmp_path / "foreign").exists()
 
 
 def test_resource_job_is_manual_and_has_no_persistent_infrastructure_or_build_path():

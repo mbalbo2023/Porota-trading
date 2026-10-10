@@ -9,9 +9,12 @@ as an all1202 input, and no result from this module is a certification receipt.
 """
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import hashlib
+import json
+import re
 from types import MappingProxyType
 
-from .archive_components import MAX_COMPONENTS
+from .archive_components import MAX_COMPONENTS, MEMBERS
 
 
 HORIZON_CUTS = 1202
@@ -86,6 +89,97 @@ def horizon_schedule(day):
     preopen = datetime(day.year, day.month, day.day, 13, 20, tzinfo=timezone.utc)
     first = preopen.replace(hour=13, minute=35)
     return (preopen, *(first + timedelta(seconds=30 * offset) for offset in range(1201)))
+
+
+def original_prefix_obligations(cuts, *, available_payload_sha256=()):
+    """Validate actual ORIGINAL cut metadata without inventing missing payloads.
+
+    The caller must authenticate the complete RAW ZIP/member index first.
+    Allocated observations are samples at committed cuts, never a continuous
+    peak, a V4 prediction, or a proven upper bound. In particular the first
+    CLOSED edge and the next CLOSED cut are distinct original byte workloads.
+    """
+    if type(cuts) is not list or not 0 < len(cuts) <= HORIZON_CUTS:
+        raise ValueError("RETENTION_PHYSICAL_AUTHENTIC_ORIGINAL_PREFIX_REQUIRED")
+    try:
+        first = datetime.fromisoformat(cuts[0]["as_of"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("RETENTION_PHYSICAL_ORIGINAL_SCHEDULE_REQUIRED") from error
+    schedule = horizon_schedule(first.date())
+    payloads = set(available_payload_sha256)
+    sha_pattern, id_pattern = re.compile(r"[0-9a-f]{64}\Z"), re.compile(r"[0-9a-f]{32}\Z")
+    if any(not isinstance(value, str) or not sha_pattern.fullmatch(value) for value in payloads):
+        raise ValueError("RETENTION_PHYSICAL_AUTHENTIC_PAYLOAD_HASH_SET_REQUIRED")
+    observations, seen, available, phase_counts = [], set(), 0, {"PREOPEN": 0, "OPEN": 0, "CLOSED": 0}
+    for index, (cut, clock) in enumerate(zip(cuts, schedule)):
+        expected_phase = "PREOPEN" if index == 0 else "OPEN" if index <= 770 else "CLOSED"
+        if (type(cut) is not dict or type(cut.get("tick_index")) is not int or cut["tick_index"] != index
+                or cut.get("as_of") != clock.isoformat() or cut.get("phase") != expected_phase
+                or type(cut.get("sequence")) is not int or cut["sequence"] != index + 1
+                or not isinstance(cut.get("generation_id"), str) or not id_pattern.fullmatch(cut["generation_id"])
+                or cut["generation_id"] in seen):
+            raise ValueError("RETENTION_PHYSICAL_ORIGINAL_CLOCK_PHASE_OR_LINEAGE_CHANGED")
+        seen.add(cut["generation_id"])
+        sizes, hashes = cut.get("member_bytes"), cut.get("original_member_sha256")
+        if (type(sizes) is not dict or type(hashes) is not dict or set(sizes) != MEMBERS or set(hashes) != MEMBERS
+                or any(type(size) is not int or not 0 < size <= 64 * 1024**2 for size in sizes.values())
+                or any(not isinstance(value, str) or not sha_pattern.fullmatch(value) for value in hashes.values())
+                or cut.get("original_manifest_sha256") != hashes["manifest.json"]
+                or cut.get("original_manifest_clock") != cut["as_of"]
+                or cut.get("original_generation_custody_unchanged") is not True
+                or type(cut.get("real_orders_sent")) is not int or cut["real_orders_sent"] != 0
+                or cut.get("real_routes") != "NOT_CALLED"):
+            raise ValueError("RETENTION_PHYSICAL_ORIGINAL_FIVE_MEMBER_METADATA_REQUIRED")
+        residence, head = cut.get("archive_residence"), cut.get("verified_native_archive_head")
+        if (type(residence) is not dict or type(head) is not dict
+                or head.get("contracted_horizon_seconds") != 9 * 3600
+                or head.get("recovery_margin_seconds") != 3600):
+            raise ValueError("RETENTION_PHYSICAL_ORIGINAL_RETENTION_AND_OBSERVATION_REQUIRED")
+        allocated = _number(residence.get("allocated_bytes_including_directories"), "OBSERVED_ALLOCATED")
+        logical = _number(residence.get("logical_bytes_including_directories"), "OBSERVED_LOGICAL")
+        if type(residence.get("pending_temporaries_or_intents")) is not int or residence["pending_temporaries_or_intents"] != 0:
+            raise ValueError("RETENTION_PHYSICAL_COMMITTED_OBSERVATION_IS_NOT_TRANSIENT_PEAK")
+        phase_counts[expected_phase] += 1
+        available += set(hashes.values()) <= payloads
+        observations.append({"tick_index": index, "as_of": cut["as_of"], "phase": expected_phase,
+            "generation_id": cut["generation_id"], "member_bytes": dict(sizes),
+            "recipe_bytes": _number(cut.get("recipe_bytes"), "OBSERVED_RECIPE_BYTES"),
+            "observed_allocated_bytes_including_directories": allocated,
+            "observed_logical_bytes_including_directories": logical,
+            "metric_origin": "AUTHENTIC_COMMITTED_CUT_OBSERVATION_NOT_CONTINUOUS_PEAK"})
+    selected = sorted({0, min(len(cuts) - 1, 1), len(cuts) - 1} | {index for index in (770, 771, 772) if index < len(cuts)})
+    wire = json.dumps(cuts, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return MappingProxyType({"schema": "rc6.original-horizon-prefix-model-obligations.v1",
+        "classification": "AUTHENTICATED_BY_CALLER_ORIGINAL_METADATA_ONLY_NOT_ALL1202_BOUND",
+        "original_prefix_sha256": hashlib.sha256(wire).hexdigest(),
+        "captured_original_cuts": len(cuts), "missing_original_cut_indices": tuple(range(len(cuts), HORIZON_CUTS)),
+        "cuts_with_all_five_payloads_available": available,
+        "known_cuts_missing_original_payloads": len(cuts) - available,
+        "phase_counts": phase_counts, "measured_edges_and_last_cut": tuple(observations[index] for index in selected),
+        "maximum_observed_committed_archive_allocated_bytes": max(row["observed_allocated_bytes_including_directories"]
+                                                                    for row in observations),
+        "observation_is_continuous_peak": False, "projected_missing_cuts": False,
+        "original_anchor_and_fallback_layouts_verified": False,
+        "all_gc_recovery_temp_states_verified": False,
+        "all1202_original_bytes_coverage": len(cuts) == available == HORIZON_CUTS,
+        "global_complete_physical_upper_bound_bytes": None, "g5_equivalence_demonstrated": False,
+        "missing_certification": ("ALL1202_ORIGINAL_BYTES_AND_CLOCKS", "ACTUAL_ANCHORS_FALLBACKS_PINS_AND_TRANSITIVE_BASES",
+            "ALL_SIMULTANEOUS_GC_RECOVERY_PUBLICATION_AND_CONTROL_TEMPORARIES", "NATIVE_FILESYSTEM_DIRECTORY_METADATA_BOUNDS"),
+    })
+
+
+def require_original_bytes_before_all1202_model(obligations):
+    """Fail before treating incomplete RAW metadata as an original byte model."""
+    if (obligations.get("schema") != "rc6.original-horizon-prefix-model-obligations.v1"
+            or obligations.get("all1202_original_bytes_coverage") is not True
+            or obligations.get("captured_original_cuts") != HORIZON_CUTS
+            or obligations.get("cuts_with_all_five_payloads_available") != HORIZON_CUTS
+            or obligations.get("missing_original_cut_indices") != ()
+            or obligations.get("known_cuts_missing_original_payloads") != 0):
+        raise ValueError("RETENTION_PHYSICAL_ALL1202_AUTHENTIC_ORIGINAL_BYTES_REQUIRED")
+    # Passing only closes byte availability, not provenance, layout, retention,
+    # physical state coverage, writer capability or G5 qualification.
+    return obligations
 
 
 def evaluate_all_prefixes(objects, generations, prefixes, *, allocation_unit):

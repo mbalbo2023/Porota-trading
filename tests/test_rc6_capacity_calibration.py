@@ -89,53 +89,39 @@ def test_capacity_boolean_is_not_a_measurement(field):
 
 
 def test_seccomp_wire_blocks_project_mutation_but_preserves_original_native_fin(monkeypatch):
-    names, rules = {}, []
-    class NativeFunction:
-        def __init__(self, fn):
-            self.fn = fn
-        def __call__(self, *args):
-            return self.fn(*args)
-    def resolve(name):
-        key = name.decode()
-        names.setdefault(key, len(names) + 1)
-        return names[key]
-    def add(context, action, number, count, comparisons):
-        rules.append({"action": action, "name": next(k for k, v in names.items() if v == number),
-                      "args": [(comparisons[i].arg, comparisons[i].op, comparisons[i].a, comparisons[i].b)
-                               for i in range(count)]})
-        return 0
-    fake = SimpleNamespace(seccomp_init=NativeFunction(lambda _: 1),
-        seccomp_syscall_resolve_name=NativeFunction(resolve), seccomp_rule_add_array=NativeFunction(add),
-        seccomp_load=NativeFunction(lambda _: 0), seccomp_release=NativeFunction(lambda _: None))
-    monkeypatch.setattr(c.ctypes, "CDLL", lambda *args, **kwargs: fake)
-    c.install_seccomp()
-    ioctls = [row["args"][0][3] for row in rules if row["name"] == "ioctl"]
-    assert ioctls == [c.FSSETXATTR, *c.SETFLAGS]
-    assert all(row["args"][0][1:3] == (7, 0xFFFFFFFF) for row in rules if row["name"] == "ioctl")
-    assert "quotactl" in names and "quotactl_fd" in names and "mount_setattr" in names
-    assert not any(name in names for name in ("wait4", "waitid", "fork", "vfork", "execve", "kill", "prctl-sub-reaper"))
-    clones = [row["args"][0] for row in rules if row["name"] == "clone"]
-    assert clones == [(0, 7, flag, flag) for flag in c.NAMESPACE_CLONE_FLAGS]
-    options = [row["args"][0][3] for row in rules if row["name"] == "prctl"]
-    assert all(row["args"][0][1:3] == (7, 0xFFFFFFFF) for row in rules if row["name"] == "prctl")
-    assert 4 in options and 36 not in options and 37 not in options
-    assert next(row["action"] for row in rules if row["name"] == "clone3") == 0x00050000 | errno.ENOSYS
+    from scripts import rc6_native_namespace_filter as native_filter
+    # The shared module has real own-process native tests; this wrapper test
+    # proves no historical plan is silently replaced at calibration's boundary.
+    plan = c.seccomp_plan()
+    assert native_filter.build_plan() == plan
+    assert plan["denied_ioctl_requests"] == [c.FSSETXATTR, *c.SETFLAGS]
+    assert {"quotactl", "quotactl_fd", "mount_setattr"} <= set(plan["denied_syscalls"])
+    assert not set(("wait4", "waitid", "fork", "vfork", "execve", "kill")) & set(plan["denied_syscalls"])
+    assert plan["denied_clone_namespace_flags"] == list(c.NAMESPACE_CLONE_FLAGS)
+    assert plan["denied_prctl"] == [4, 8, 24, 28, 47]
+    assert plan["clone3_errno"] == errno.ENOSYS
+    documentary = {"UNIT_DECODER_ONLY": True}
+    calls = []
+    monkeypatch.setattr(native_filter, "install_filter", lambda **kwargs: calls.append(kwargs) or documentary)
+    assert c.install_seccomp() is documentary
+    assert calls == [{}]
 
 
 def test_unknown_native_syscall_fails_before_filter_load(monkeypatch):
-    class Function:
-        def __init__(self, fn):
-            self.fn = fn
-        def __call__(self, *args):
-            return self.fn(*args)
-    loaded = []
-    fake = SimpleNamespace(seccomp_init=Function(lambda _: 1), seccomp_syscall_resolve_name=Function(lambda _: -1),
-        seccomp_rule_add_array=Function(lambda *args: 0), seccomp_load=Function(lambda _: loaded.append(True)),
-        seccomp_release=Function(lambda _: None))
-    monkeypatch.setattr(c.ctypes, "CDLL", lambda *args, **kwargs: fake)
-    with pytest.raises(ValueError, match="CALIBRATION_SECCOMP_SYSCALL_UNKNOWN"):
+    from scripts import rc6_native_namespace_filter as native_filter
+    def unknown(**kwargs):
+        raise ValueError("NATIVE_FILTER_SYSCALL_UNKNOWN")
+    monkeypatch.setattr(native_filter, "install_filter", unknown)
+    with pytest.raises(ValueError, match="NATIVE_FILTER_SYSCALL_UNKNOWN"):
         c.install_seccomp()
-    assert loaded == []
+
+
+def test_changed_shared_filter_plan_never_reaches_installation(monkeypatch):
+    from scripts import rc6_native_namespace_filter as native_filter
+    monkeypatch.setattr(native_filter, "build_plan", lambda: {"default": "ALLOW"})
+    monkeypatch.setattr(native_filter, "install_filter", lambda **kwargs: pytest.fail("NO_CHANGED_PLAN_INSTALL"))
+    with pytest.raises(ValueError, match="CALIBRATION_ORIGINAL_SECCOMP_PLAN_CHANGED"):
+        c.install_seccomp()
 
 
 def test_loop_configure_transfers_hold_without_autoclear_gap(monkeypatch):

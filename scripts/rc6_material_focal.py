@@ -142,6 +142,28 @@ def capture_post_fin_source(g,root,before,*,source_sha,source_tree,output,phase,
     g['publish'](output/(phase+'.source-validation.json'),g['canonical'](result))
     return result
 
+def emit_cas_reviews(g, root, before, report, execution_wire, output, selected_files):
+    """Publish private evidence from the original execution, after original FIN."""
+    from scripts import rc6_archive_reader_review as readers
+    from scripts import rc6_cas_original_comparison as comparison
+    if not readers.CAS_REVIEW_MODULES.issubset(selected_files):
+        return {}
+    require_original_phase_fin(g, report.get('child_infrastructure_finalization', {}))
+    g['require'](report.get('source_sha') == before.get('source_sha')
+        and report.get('source_tree') == before.get('source_tree'), 'CAS_REVIEW_ORIGINAL_SOURCE_PIN_REBOUND')
+    # Validate execution before any Source payload read.
+    readers.executed_reader_nodes(report, source_sha=before['source_sha'], source_tree=before['source_tree'])
+    ack = comparison.build_private_ack_review(report, execution_wire,
+        source_sha=before['source_sha'], source_tree=before['source_tree'])
+    inventory = readers.inventory_from_source_pin(root, before, capture=g['capture'])
+    reader = readers.build_review(inventory, report, execution_wire,
+        source_sha=before['source_sha'], source_tree=before['source_tree'])
+    records = {'cas_reader_review': reader, 'cas_private_ack_review': ack}
+    for role, record in records.items():
+        g['publish'](output / readers.CAS_REVIEW_FILES[role], g['canonical'](record))
+    return records
+
+
 def collect_preserved_heavy_inventory(output):
     """Collect complete module identities before any heavy fixture can start."""
     import pytest
@@ -180,6 +202,9 @@ def main():
     g['publish'](output/(a.phase+'.namespace.json'),g['canonical'](namespace))
     capability=g['restrict_inet_creation']()
     g['publish'](output/(a.phase+'.offline-capability.json'),g['canonical'](capability))
+    if a.stage == 'cheap':
+        # Load supplementary evidence code before the original Source pin.
+        from scripts import rc6_archive_reader_review, rc6_cas_original_comparison
     initial=g['child_infrastructure_snapshot']()
     req(all(v is None for v in initial.values()),'FRESH_PHASE_MULTIPROCESSING_INFRASTRUCTURE_REQUIRED')
     before=g['source_pin'](root,a.source_sha,a.source_tree)
@@ -273,6 +298,17 @@ def main():
         'offline_inet_creation_capability':capability,'child_infrastructure_finalization':finalization,
         'original_tmp_path_scoped_lifecycle':fixture_lifecycle_report,
         'phase_namespace':namespace,**observations,'real_orders_sent':0,'whole_Gov_claim':False}
-    g['publish'](output/(a.phase+'.observations.json'),g['canonical'](report))
-    return rc or int(bool(phase_errors))
+    execution_wire = g['canonical'](report)
+    g['publish'](output/(a.phase+'.observations.json'), execution_wire)
+    review_error = False
+    if a.stage == 'cheap' and a.phase == 'execution':
+        try:
+            emit_cas_reviews(g, root, before, report, execution_wire, output, selected_files)
+        except (OSError, ValueError, RuntimeError, KeyError, TypeError) as error:
+            # Retain verbatim original reports; never rewrite a RED as a review.
+            review_error = True
+            g['publish'](output/'execution.cas-review-error.json', g['canonical']({
+                'status': 'RED', 'class': type(error).__name__, 'reason': str(error),
+                'contract_review_approved': False, 'native_v4_write_enabled': False, 'real_orders_sent': 0}))
+    return rc or int(bool(phase_errors) or review_error)
 if __name__=='__main__':raise SystemExit(main())

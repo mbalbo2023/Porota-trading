@@ -1,0 +1,2251 @@
+"""Ephemeral PID1 custody for the fixed RC6 ROOT quota setup.
+
+The existing native manager remains byte exact. PID1 owns the ROOT broker from
+fork/exec; the ROOT broker uses that manager to signal and reap its ROOT/NONROOT
+children. Metadata alone never produces an accepted in-process witness.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import ctypes
+import errno
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import resource
+import runpy
+import select
+import signal
+import stat
+import sys
+import time
+
+ROOT = Path(__file__).absolute().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+SCHEMA = "porota.rc6.privileged-custody-native.v1"
+CONTRACT_SCHEMA = "porota.rc6.privileged-custody-contract.v1"
+MEMBER = "scripts/rc6_privileged_custody.py"
+MANAGER_MEMBER = "scripts/rc6_controlled_native_child_manager.py"
+ROOT_SEAL_MEMBER = "scripts/rc6_root_actor_seal.py"
+SYSTEMD_DENIED_FILTER = "~setns ptrace process_vm_readv process_vm_writev bpf open_by_handle_at name_to_handle_at kexec_load kexec_file_load init_module finit_module delete_module reboot swapon swapoff"
+MANAGER_SHA256 = "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
+CONTROL_BOUND = 2 * 1024**2
+PRIVATE_MOUNT_DIAGNOSTIC = "private-mount-setup.native.json"
+ACTOR_RAW_NAMES = ("root-success.native.log", "failure-before-drop.native.log", "root-hang.native.log", "nonroot-hang.native.log")
+ROOT_POSTSEAL_CONTROL_NAMES = frozenset(("custody-request.json", ".porota-generated-fixture-owner.json",
+    "private-broker.observed.json", "private-parent-seal.json"))
+ROOT_ACTOR_RUNPY_LAUNCHER = 'import runpy,sys; p=sys.argv.pop(1); runpy.run_path(p,run_name="__main__")'
+OPTIONAL_FAILURE_RAW_NAMES = ("private-broker-native.log", "root-success.native.log",
+    "failure-before-drop.native.log", "root-hang.native.log", "nonroot-hang.native.log", PRIVATE_MOUNT_DIAGNOSTIC)
+SYSTEMD_QUERY_BOUND = 65536
+SYSTEMD_BINARY_BOUND = 16 * 1024**2
+SYSTEMD_CONFIG_FIELDS = ("Version", "LogLevel", "LogTarget", "DefaultStandardOutput", "DefaultStandardError")
+SYSTEMD_BINARY_PATHS = ("/usr/bin/systemctl", "/usr/bin/systemd-run", "/usr/lib/systemd/systemd",
+                        "/usr/lib/systemd/systemd-executor")
+JOURNAL_FIELDS = ("_BOOT_ID,_PID,_UID,_SYSTEMD_UNIT,_SYSTEMD_CGROUP,UNIT,SYSLOG_IDENTIFIER,"
+                  "MESSAGE,ERRNO,CODE_FILE,CODE_LINE,CODE_FUNC,INVOCATION_ID,_SYSTEMD_INVOCATION_ID,"
+                  "MESSAGE_ID,EXIT_CODE,EXIT_STATUS,PROCESS_PID,_EXE,_COMM")
+UNIT_PROCESS_EXIT_MESSAGE_ID = "98e322203f7a4ed290d09fe03c09fe15"
+PROBE_LIMIT = 60
+BRIDGE_DESCRIPTOR = 3
+BRIDGE_SHELL = 'exec 3<&0; exec 0</dev/null; exec "$@"'
+_AUTHORITY = object()
+_WITNESSES = {}
+
+
+def require(value, signature):
+    if not value:
+        raise ValueError(signature)
+
+
+def wire(value):
+    return (json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
+
+
+def sha256(raw):
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _read(path, maximum=CONTROL_BOUND):
+    from scripts import rc6_capacity_calibration as calibration
+    if _root_postseal_read_role():
+        return _root_postseal_read(path, maximum)
+    return calibration.read(path, maximum)
+
+
+def read_identity(value):
+    """All eleven original identity fields except read-induced atime."""
+    from scripts import rc6_capacity_calibration as calibration
+    return {key: item for key, item in calibration.identity(value).items() if key != "st_atime_ns"}
+
+
+def _root_postseal_read_role():
+    """Kernel IO role only; never authority, boundary or ROOT certification."""
+    if os.getuid() != 0 or os.geteuid() != 0:
+        return False
+    values = dict(row.split(":", 1) for row in _proc_text("/proc/self/status").splitlines() if ":" in row)
+    if int(values["CapEff"].strip(), 16) & (1 << 3):
+        return False  # Unsealed setup retains the original O_NOATIME reader.
+    from scripts import rc6_root_actor_seal as seal
+    caps = {key: int(values[key].strip(), 16) for key in seal.CAP_FIELDS}
+    require(os.getresuid() == (0, 0, 0) and os.getresgid() == (0, 0, 0) and os.getgroups() == []
+            and values["Uid"].split() == ["0"] * 4 and values["Gid"].split() == ["0"] * 4
+            and values["NoNewPrivs"].strip() == "1" and values["Seccomp"].strip() == "2"
+            and int(values["Seccomp_filters"].strip()) > 0 and values["Threads"].strip() == "1"
+            and caps == {"CapInh": 0, "CapAmb": 0, "CapPrm": seal.RETAINED_MASK,
+                         "CapEff": seal.RETAINED_MASK, "CapBnd": seal.RETAINED_MASK},
+            "ROOT_CUSTODY_POSTSEAL_READ_KERNEL_ROLE_REQUIRED")
+    return True
+
+
+def _root_postseal_read(path, maximum):
+    """Bounded fixed-source/control reads without requiring CAP_FOWNER."""
+    from scripts import rc6_capacity_calibration as calibration
+    path = Path(path).absolute()
+    require(type(maximum) is int and 0 <= maximum <= CONTROL_BOUND and ".." not in path.parts
+            and not any(p.is_symlink() for p in (path, *path.parents)), "ROOT_CUSTODY_POSTSEAL_NOFOLLOW_BOUND_REQUIRED")
+    source_paths = {ROOT / member for member in calibration.CODE_MEMBERS}
+    parent = path.parent.lstat()
+    source = ROOT.lstat()
+    require(path in source_paths or (path.name in ROOT_POSTSEAL_CONTROL_NAMES and stat.S_ISDIR(parent.st_mode)
+            and parent.st_uid > 0 and parent.st_gid > 0 and stat.S_IMODE(parent.st_mode) == 0o700),
+            "ROOT_CUSTODY_POSTSEAL_FIXED_PATH_REQUIRED")
+    expected = source if path in source_paths else parent
+    directory = os.open(path.parent, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    descriptor = None
+    try:
+        require(read_identity(parent) == read_identity(os.fstat(directory)), "ROOT_CUSTODY_POSTSEAL_PARENT_REBOUND")
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=directory)
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and not stat.S_IMODE(before.st_mode) & 0o022
+                and before.st_size <= maximum and (before.st_dev, before.st_uid, before.st_gid)
+                == (expected.st_dev, expected.st_uid, expected.st_gid)
+                and calibration.descriptor_mount_id(descriptor) == calibration.descriptor_mount_id(directory)
+                and read_identity(before) == read_identity(path.lstat()), "ROOT_CUSTODY_POSTSEAL_PRIVATE_SOURCE_REQUIRED")
+        chunks, total = [], 0
+        while True:
+            part = os.read(descriptor, min(65536, maximum + 1 - total))
+            if not part:
+                break
+            total += len(part)
+            require(total <= maximum, "ROOT_CUSTODY_POSTSEAL_READ_BOUND")
+            chunks.append(part)
+        require(total == before.st_size and read_identity(before) == read_identity(os.fstat(descriptor))
+                == read_identity(path.lstat()) and read_identity(parent) == read_identity(path.parent.lstat()),
+                "ROOT_CUSTODY_POSTSEAL_READ_CHANGED")
+        return b"".join(chunks)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(directory)
+
+
+def actor_command(case, request_path):
+    require(case + ".native.log" in ACTOR_RAW_NAMES, "ROOT_CUSTODY_FIXED_ACTOR_CASE_REQUIRED")
+    return [sys.executable, "-I", "-B", "-c", ROOT_ACTOR_RUNPY_LAUNCHER, str(ROOT / MEMBER),
+            "--actor-case", case, "--request", str(request_path)]
+
+
+def _proc_text(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        raw = os.read(descriptor, 65537)
+        require(len(raw) <= 65536, "ROOT_CUSTODY_PROC_METADATA_BOUND")
+        return raw.decode("utf-8", errors="strict")
+    finally:
+        os.close(descriptor)
+
+
+PUBLIC_PROCESS_FIELDS = frozenset(("pid", "parent_pid", "start_ticks", "uids", "gids", "capabilities",
+                                  "cgroup", "boot_id", "namespace_pids"))
+ISSUER_FIELDS = ("pid", "start_ticks", "boot_id", "pid_namespace_inode")
+
+
+def public_process_identity(value):
+    """Strict projection; a namespace claim never substitutes a kernel read."""
+    require(type(value) is dict and set(value) in (PUBLIC_PROCESS_FIELDS,
+            PUBLIC_PROCESS_FIELDS | {"pid_namespace_inode"}), "ROOT_CUSTODY_PUBLIC_IDENTITY_FIELDS_REQUIRED")
+    require(type(value["pid"]) is int and value["pid"] > 0
+            and type(value["parent_pid"]) is int and value["parent_pid"] >= 0
+            and type(value["start_ticks"]) is str and value["start_ticks"].isdigit()
+            and type(value["boot_id"]) is str and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", value["boot_id"])
+            and type(value["cgroup"]) is str and bool(value["cgroup"])
+            and all(type(value[key]) is list and len(value[key]) == 4
+                    and all(type(x) is int and x >= 0 for x in value[key]) for key in ("uids", "gids"))
+            and type(value["capabilities"]) is dict
+            and set(value["capabilities"]) == {"CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"}
+            and all(type(x) is int and x >= 0 for x in value["capabilities"].values())
+            and type(value["namespace_pids"]) is list and bool(value["namespace_pids"])
+            and all(type(x) is int and x > 0 for x in value["namespace_pids"])
+            and ("pid_namespace_inode" not in value or type(value["pid_namespace_inode"]) is int
+                 and value["pid_namespace_inode"] > 0), "ROOT_CUSTODY_PUBLIC_IDENTITY_INVALID")
+    return {key: value[key] for key in PUBLIC_PROCESS_FIELDS}
+
+
+def public_kernel_process(pid, *, proc_root=Path("/proc")):
+    """Public proc metadata only: following foreign ns links needs ptrace READ."""
+    require(type(pid) is int and pid > 0, "ROOT_CUSTODY_EXACT_PID_REQUIRED")
+    base = str(Path(proc_root) / str(pid))
+    values = dict(row.split(":", 1) for row in _proc_text(base + "/status").splitlines() if ":" in row)
+    fields = _proc_text(base + "/stat").rsplit(")", 1)[1].split()
+    return public_process_identity({"pid": pid, "parent_pid": int(fields[1]), "start_ticks": fields[19],
+            "uids": [int(x) for x in values["Uid"].split()],
+            "gids": [int(x) for x in values["Gid"].split()],
+            "capabilities": {key: int(values[key].strip(), 16) for key in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")},
+            "cgroup": _proc_text(base + "/cgroup").strip(),
+            "boot_id": _proc_text("/proc/sys/kernel/random/boot_id").strip(),
+            "namespace_pids": [int(x) for x in values.get("NSpid", "").split()]})
+
+
+def kernel_process(pid, *, proc_root=Path("/proc")):
+    """Full identity for self or a protected ROOT child in our private boundary."""
+    value = public_kernel_process(pid, proc_root=proc_root)
+    value["pid_namespace_inode"] = os.stat(Path(proc_root) / str(pid) / "ns/pid").st_ino
+    public_process_identity(value)
+    return value
+
+
+def issuer_snapshot(identity):
+    public_process_identity(identity)
+    require("pid_namespace_inode" in identity, "ROOT_CUSTODY_ISSUER_SELF_NAMESPACE_REQUIRED")
+    return {key: identity[key] for key in ISSUER_FIELDS}
+
+
+def issuer_host_namespace(request, guardian):
+    """Authenticate the issuer-self snapshot against the guardian's own inode."""
+    issuer = request.get("issuer")
+    public_process_identity(guardian)
+    require(type(issuer) is dict and set(issuer) == set(ISSUER_FIELDS)
+            and type(issuer["pid"]) is int and issuer["pid"] > 0
+            and type(issuer["pid_namespace_inode"]) is int and issuer["pid_namespace_inode"] > 0
+            and issuer["pid_namespace_inode"] == guardian.get("pid_namespace_inode")
+            and guardian["namespace_pids"] == [guardian["pid"]],
+            "ROOT_CUSTODY_ISSUER_SELF_HOST_NAMESPACE_REBOUND")
+    return issuer["pid_namespace_inode"]
+
+
+def unit_name(nonce, *, guard=False):
+    require(type(nonce) is str and re.fullmatch("[0-9a-f]{32}", nonce), "ROOT_CUSTODY_EXACT_NAMESPACE_NONCE_REQUIRED")
+    return "rc6-native-" + nonce + ("-guard" if guard else "") + ".service"
+
+
+def native_contract(source_sha, source_tree, code_hashes):
+    require(all(type(x) is str and re.fullmatch("[0-9a-f]{40}", x) for x in (source_sha, source_tree)),
+            "ROOT_CUSTODY_EXACT_SOURCE_REQUIRED")
+    required = (MEMBER, MANAGER_MEMBER, ROOT_SEAL_MEMBER, "scripts/rc6_capacity_calibration.py", "scripts/rc6_native_namespace_filter.py")
+    require(type(code_hashes) is dict and code_hashes.get(MANAGER_MEMBER) == MANAGER_SHA256
+            and all(type(code_hashes.get(member)) is str and re.fullmatch("[0-9a-f]{64}", code_hashes[member])
+                    for member in required),
+            "ROOT_CUSTODY_AUTHENTIC_CODE_HASHES_REQUIRED")
+    return {"schema": CONTRACT_SCHEMA, "source_sha": source_sha, "source_tree": source_tree,
+            "adapter_sha256": code_hashes[MEMBER], "manager_sha256": MANAGER_SHA256,
+            "mechanism": "EXISTING_PID1_TRANSIENT_UNIT_AND_UNMODIFIED_ROOT_NATIVE_MANAGER",
+            "root_actor_boundary": "PRIVATE_PID_NAMESPACE_BEFORE_ROOT_OR_NONROOT_PROBE_ACTOR",
+            "issuer_authentication": "GUARDIAN_LIVE_PID_START_BOOT_AND_OPAQUE_OWN_DIRECTORY_FD",
+            "root_foreign_process_signals_forbidden": True,
+            "native_probe_timeout_seconds": PROBE_LIMIT, "control_bound_bytes": CONTROL_BOUND,
+            "TERM_seconds": 2, "failed_phase_FIN_seconds": 5,
+            "backing_allocation_allowed": False, "quota_mutation_allowed": False,
+            "namespace_mounts_for_custody_proof_allowed": True, "quota_backing_mounts_allowed": False,
+            "actor_mount_operation_allowed": False, "PID1_ephemeral_namespace_setup_allowed": True,
+            "host_PID1_public_identity": "EXTERNAL_LIVE_KERNEL_BIRTH_PIDFD_ACK",
+            "access_mount_magiclinks_forbidden": True, "host_PID1_directory_mask": "/proc/1",
+            "root_actor_seal_probe_only": True, "root_actor_seal_quota_ancestor_allowed": False,
+            "contract_revision_required": True, "original_PROC_EACCES_equivalence_approved": False,
+            "proof_only_no_G0_qualification": True,
+            "financial_tick_allowed": False,
+            "persistent_infrastructure_allowed": False, "recurring_additional_cost_usd": 0}
+
+
+def guard_access_targets(properties):
+    """Reject a root/magiclink mount destination before any privileged launch."""
+    for property_value in properties:
+        key, _, value = property_value.partition("=")
+        if key not in ("InaccessiblePaths", "ReadOnlyPaths", "ReadWritePaths"):
+            continue
+        for token in value.split():
+            path = Path(token.lstrip("-+"))
+            require(path.is_absolute() and ".." not in path.parts
+                    and not re.search(r"^/proc/(?:[0-9]+|self|thread-self)/(?:root|cwd|fd|fdinfo|map_files|ns)(?:/|$)", str(path)),
+                    "ROOT_CUSTODY_ACCESS_MAGICLINK_OR_ROOT_FORBIDDEN")
+            resolved = path.resolve(strict=False)
+            require(resolved != Path("/") and not Path("/run/systemd/mount-rootfs").is_relative_to(resolved),
+                    "ROOT_CUSTODY_ACCESS_MAGICLINK_OR_ROOT_FORBIDDEN")
+            if str(path) == "/proc/1":
+                details = path.lstat()
+                require(stat.S_ISDIR(details.st_mode) and not stat.S_ISLNK(details.st_mode)
+                        and resolved == path, "ROOT_CUSTODY_PID1_MASK_MUST_BE_REAL_DIRECTORY")
+    return properties
+
+
+def service_properties(control_root, runtime_seconds, *, probe_only=False):
+    root = Path(control_root).absolute()
+    require(root != Path("/") and not any(x.is_symlink() for x in (root, *root.parents)),
+            "ROOT_CUSTODY_PRIVATE_CONTROL_ROOT_REQUIRED")
+    require(type(runtime_seconds) is int and 1 <= runtime_seconds <= 10800,
+            "ROOT_CUSTODY_NATIVE_RUNTIME_BOUND_REQUIRED")
+    require(type(probe_only) is bool, "ROOT_CUSTODY_FIXED_DEVICE_ROLE_REQUIRED")
+    properties = ["RuntimeMaxSec=" + str(runtime_seconds), "TimeoutStopSec=2", "KillMode=control-group",
+            "SendSIGKILL=yes", "FinalKillSignal=SIGKILL", "Restart=no", "PrivateMounts=yes",
+            "ProtectSystem=strict", "ReadWritePaths=" + str(root), "ProtectControlGroups=yes",
+            "ProtectKernelTunables=yes", "ProtectKernelModules=yes", "ProtectKernelLogs=yes",
+            "CapabilityBoundingSet=~CAP_SYS_PTRACE CAP_SYS_BOOT CAP_SYS_MODULE CAP_SYS_RAWIO CAP_SYS_TIME CAP_AUDIT_CONTROL CAP_BPF CAP_PERFMON CAP_CHECKPOINT_RESTORE",
+            "NoNewPrivileges=yes", "RestrictAddressFamilies=AF_INET AF_INET6",
+            # Only the frozen guardian may create the private PID namespace.
+            # Actors run inside it; the exact NONROOT plan denies new namespaces.
+            "RestrictNamespaces=~cgroup net user ipc uts",
+            "InaccessiblePaths=-/run/systemd/private -/run/dbus -/run/docker.sock -/var/run/docker.sock /proc/1 -/dev/shm",
+            "SystemCallFilter=" + SYSTEMD_DENIED_FILTER,
+            "SystemCallErrorNumber=EPERM"]
+    if probe_only:
+        properties.extend(["PrivateDevices=yes", "ProtectHome=read-only"])
+    return guard_access_targets(properties)
+
+
+def service_command(source, request_path, *, nonce, control_root, runtime_seconds,
+                    broker_mode, guard=False):
+    require(broker_mode in ("probe", "quota", "guard-hang"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
+    require(type(guard) is bool and guard == (broker_mode == "guard-hang"),
+            "ROOT_CUSTODY_GUARD_DIAGNOSTIC_ROLE_REQUIRED")
+    source = Path(source).absolute()
+    require(source == ROOT, "ROOT_CUSTODY_FIXED_CHECKOUT_REQUIRED")
+    request_path = Path(request_path).absolute()
+    require(request_path.parent == Path(control_root).absolute()
+            and request_path.name in ("custody-request.json", "probe-request.json")
+            and not request_path.is_symlink(), "ROOT_CUSTODY_FIXED_OWN_REQUEST_PATH_REQUIRED")
+    name = unit_name(nonce, guard=guard)
+    command = ["sudo", "-n", "--", "systemd-run", "--wait", "--pipe", "--collect", "--service-type=exec",
+               "--unit=" + name, "--working-directory=" + str(source)]
+    # The guardian failure log is diagnostic, not a JSON producer. Preserve
+    # systemd-run startup/status messages there instead of discarding them.
+    if broker_mode != "guard-hang":
+        command.insert(4, "--quiet")
+    command.extend("--property=" + value for value in service_properties(control_root, runtime_seconds,
+        probe_only=broker_mode != "quota"))
+    if guard:
+        # This changes only the owned startup diagnostic's log verbosity.
+        # Broker/quota properties and every isolation restriction stay fixed.
+        command.append("--property=LogLevelMax=debug")
+    for key in ("PATH", "RUNNER_TOOL_CACHE", "LANG", "LC_ALL"):
+        if key in os.environ:
+            value = os.environ[key]
+            require(type(value) is str and "\x00" not in value and "\n" not in value,
+                    "ROOT_CUSTODY_SANITIZED_ENVIRONMENT_REQUIRED")
+            command.append("--setenv=" + key + "=" + value)
+    command.extend(["--", "/bin/sh", "-c", BRIDGE_SHELL, "rc6-opaque-own-fd",
+                    sys.executable, "-I", "-B", str(source / MEMBER), "--guardian", broker_mode,
+                    "--request", str(Path(request_path).absolute()), "--unit", name])
+    return command
+
+
+UNIT_PATH_KEYS = frozenset(("ReadWritePaths", "ReadOnlyPaths", "InaccessiblePaths", "ExecPaths", "NoExecPaths", "ExtensionDirectories"))
+UNIT_OPAQUE_ADDITIVE_KEYS = frozenset(("Environment", "EnvironmentFile", "UnsetEnvironment", "PassEnvironment",
+    "ExecStart", "ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload"))
+UNIT_SERVICE_ONLY_KEYS = UNIT_PATH_KEYS | UNIT_OPAQUE_ADDITIVE_KEYS | frozenset((
+    "RuntimeMaxSec", "TimeoutStopSec", "KillMode", "SendSIGKILL", "FinalKillSignal", "PrivateMounts",
+    "ProtectSystem", "ProtectControlGroups", "NoNewPrivileges", "RestrictAddressFamilies", "RestrictNamespaces",
+    "SystemCallErrorNumber", "SystemCallFilter", "LogLevelMax", "PrivateDevices", "ProtectHome",
+    "ProtectKernelTunables", "ProtectKernelModules", "ProtectKernelLogs", "RestrictSUIDSGID", "CapabilityBoundingSet", "Restart"))
+
+
+def _unit_path_words(value):
+    """Bounded systemd 255 EXTRACT_UNQUOTE/CUNESCAPE path tokens, not shell."""
+    words, word, quote, entered, index = [], [], None, False, 0
+    escapes = {"a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v",
+               "s": " ", "\\": "\\", '"': '"', "'": "'"}
+    while index < len(value):
+        char = value[index]
+        index += 1
+        if char == "\\":
+            require(index < len(value), "ROOT_CUSTODY_UNIT_PATH_ESCAPE_INVALID")
+            escaped = value[index]
+            index += 1
+            if escaped in escapes:
+                char = escapes[escaped]
+            else:
+                size = {"x": 2, "u": 4, "U": 8}.get(escaped)
+                if size is not None:
+                    digits = value[index:index + size]
+                    require(len(digits) == size and re.fullmatch(r"[0-9a-fA-F]+", digits),
+                            "ROOT_CUSTODY_UNIT_PATH_ESCAPE_INVALID")
+                    index += size
+                    number = int(digits, 16)
+                else:
+                    digits = escaped + value[index:index + 2]
+                    require(len(digits) == 3 and re.fullmatch(r"[0-7]{3}", digits),
+                            "ROOT_CUSTODY_UNIT_PATH_ESCAPE_INVALID")
+                    index += 2
+                    number = int(digits, 8)
+                    require(number <= 255, "ROOT_CUSTODY_UNIT_PATH_ESCAPE_INVALID")
+                require(0 < number <= 0x10FFFF and not 0xD800 <= number <= 0xDFFF,
+                        "ROOT_CUSTODY_UNIT_PATH_ESCAPE_INVALID")
+                char = chr(number)
+            word.append(char)
+            entered = True
+        elif char in ("'", '"'):
+            if quote is None:
+                quote, entered = char, True
+            elif char == quote:
+                quote = None
+            else:
+                word.append(char)
+        elif char.isspace() and quote is None:
+            if entered:
+                words.append("".join(word))
+                word, entered = [], False
+        else:
+            word.append(char)
+            entered = True
+    require(quote is None, "ROOT_CUSTODY_UNIT_PATH_QUOTE_INVALID")
+    if entered:
+        words.append("".join(word))
+    require(len(words) <= 128 and all(word and all(ord(char) >= 32 and ord(char) != 127 for char in word)
+            and re.fullmatch(r"(?:[^%]|%%)*", word) for word in words), "ROOT_CUSTODY_UNIT_PATH_TOKEN_INVALID")
+    return [word.replace("%%", "%") for word in words]
+
+
+def parse_unit_properties(raw):
+    """Decode only the frozen transient-unit grammar; ambiguity is RED."""
+    require(type(raw) is bytes and 0 < len(raw) <= SYSTEMD_QUERY_BOUND and b"\x00" not in raw,
+            "ROOT_CUSTODY_UNIT_RAW_BOUND_OR_INVALID")
+    values, paths, sections, section = {}, {}, {}, None
+    for line in raw.decode("utf-8", errors="strict").splitlines():
+        line = line.strip()
+        if not line or line.startswith(("#", ";")):
+            continue
+        if line.startswith("["):
+            require(line in ("[Unit]", "[Service]", "[Install]"), "ROOT_CUSTODY_UNIT_SECTION_INVALID")
+            section = line[1:-1]
+            continue
+        require(section is not None and "=" in line and not line.endswith("\\"), "ROOT_CUSTODY_UNIT_LINE_INVALID")
+        key, value = line.split("=", 1)
+        require(re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", key) and key not in
+                ("ReadWriteDirectories", "ReadOnlyDirectories", "InaccessibleDirectories"),
+                "ROOT_CUSTODY_UNIT_KEY_INVALID")
+        require(key not in sections or sections[key] == section, "ROOT_CUSTODY_UNIT_CROSS_SECTION_CONFLICT")
+        require(key not in UNIT_SERVICE_ONLY_KEYS or section == "Service", "ROOT_CUSTODY_UNIT_SERVICE_SECTION_REQUIRED")
+        sections[key] = section
+        if key in UNIT_PATH_KEYS:
+            require(section == "Service", "ROOT_CUSTODY_UNIT_PATH_SECTION_INVALID")
+            words = _unit_path_words(value)
+            paths[key] = paths.get(key, []) + words if words else []
+            require(len(paths[key]) <= 128, "ROOT_CUSTODY_UNIT_PATH_TOKEN_INVALID")
+            values[key] = " ".join(paths[key])
+        elif key in UNIT_OPAQUE_ADDITIVE_KEYS:
+            values[key] = (values.get(key, "") + "\n" + value).strip() if value else ""
+        else:
+            require(key not in values or values[key] == value, "ROOT_CUSTODY_UNIT_SINGULAR_CONFLICT")
+            values[key] = value
+    require(section is not None, "ROOT_CUSTODY_UNIT_SECTION_INVALID")
+    return {"properties": values, "path_lists": paths}
+
+
+def unit_source_identity(details):
+    # Reading a new transient unit can update atime under relatime. Content,
+    # metadata and pathname binding must stay stable; atime is not custody.
+    return tuple(getattr(details, key) for key in ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid",
+        "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns"))
+
+
+def exact_system_call_filter(value):
+    if type(value) is not str or not value.startswith("~") or value.startswith("~~"):
+        return False
+    words = value[1:].split()
+    return len(words) == len(set(words)) and set(words) == set(SYSTEMD_DENIED_FILTER[1:].split())
+
+
+def _unit_file(name, *, decode=True):
+    require(type(name) is str and re.fullmatch(r"rc6-native-[0-9a-f]{32}(?:-guard)?\.service", name),
+            "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
+    path = Path("/run/systemd/transient") / name
+    before = path.lstat()
+    require(stat.S_ISREG(before.st_mode) and before.st_uid == 0 and before.st_nlink == 1,
+            "ROOT_CUSTODY_ROOT_OWNED_TRANSIENT_UNIT_REQUIRED")
+    raw = _read(path)
+    require(len(raw) <= SYSTEMD_QUERY_BOUND and unit_source_identity(before) == unit_source_identity(path.lstat()),
+            "ROOT_CUSTODY_UNIT_SOURCE_CHANGED")
+    result = {"path": str(path), "sha256": sha256(raw), "raw_base64": base64.b64encode(raw).decode(),
+              "identity": [before.st_dev, before.st_ino, before.st_uid, before.st_gid, before.st_mode]}
+    return {**result, **parse_unit_properties(raw)} if decode else result
+
+
+def _publish_unit_snapshot(name, namespace, request):
+    original = _unit_file(name, decode=False)
+    snapshot = {"schema": "porota.rc6.root-owned-transient-unit-diagnostic.v1", "unit": name,
+        "binding": request["binding"], "source_sha": request["source_sha"], "source_tree": request["source_tree"],
+        "original_unit": original, "scope": "DIAGNOSTIC_ONLY", "ROOT_custody_qualified": False,
+        "ROOT_FIN_claimed": False}
+    _write_control(namespace / ("guardian-unit-original.json" if name.endswith("-guard.service") else "broker-unit-original.json"),
+        snapshot, request["owner_uid"], request["owner_gid"])
+    return original
+
+
+def _seconds(value):
+    require(type(value) is str, "ROOT_CUSTODY_UNIT_DURATION_UNKNOWN")
+    if re.fullmatch(r"[0-9]+", value):
+        return int(value)
+    require(re.fullmatch(r"[0-9]+(?:h|min|sec|ms|us|s)(?: ?[0-9]+(?:h|min|sec|ms|us|s))*", value),
+            "ROOT_CUSTODY_UNIT_DURATION_UNKNOWN")
+    parts = re.findall(r"([0-9]+)(h|min|sec|ms|us|s)", value)
+    order = {"h": 0, "min": 1, "s": 2, "sec": 2, "ms": 3, "us": 4}
+    ranks = [order[unit] for _, unit in parts]
+    require(ranks == sorted(set(ranks)), "ROOT_CUSTODY_UNIT_DURATION_UNKNOWN")
+    micros = {"h": 3600000000, "min": 60000000, "s": 1000000, "sec": 1000000, "ms": 1000, "us": 1}
+    return sum(int(number) * micros[unit] for number, unit in parts) / 1000000
+
+
+def allowed_namespace_bitmap(value):
+    # systemd 255 serializes the allowed bitmap even when the request used
+    # a blacklist. Compare semantics, never the original CLI spelling.
+    flags = {"cgroup": 0x02000000, "ipc": 0x08000000, "net": 0x40000000,
+             "mnt": 0x00020000, "pid": 0x20000000, "user": 0x10000000, "uts": 0x04000000}
+    require(type(value) is str and bool(value), "ROOT_CUSTODY_UNIT_NAMESPACE_BITMAP_UNKNOWN")
+    invert = value.startswith("~")
+    words = value[1:].split() if invert else value.split()
+    require(bool(words) and len(words) == len(set(words)) and all(word in flags for word in words),
+            "ROOT_CUSTODY_UNIT_NAMESPACE_BITMAP_UNKNOWN")
+    mask = sum(flags[word] for word in words)
+    return sum(flags.values()) ^ mask if invert else mask
+
+
+def require_guard_log_profile(name, properties):
+    require(type(name) is str and re.fullmatch(r"rc6-native-[0-9a-f]{32}(?:-guard)?\.service", name),
+            "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
+    if name.endswith("-guard.service"):
+        require(properties.get("LogLevelMax") in ("debug", "7"),
+                "ROOT_CUSTODY_GUARD_ACTUAL_DEBUG_LEVEL_REQUIRED")
+    else:
+        require("LogLevelMax" not in properties, "ROOT_CUSTODY_NON_GUARD_LOG_PROFILE_CHANGED")
+
+
+def host_boundary_snapshot():
+    """Issuer SELF readbacks, never a followed namespace of a foreign process."""
+    return {"mount_namespace_inode": os.stat("/proc/self/ns/mnt").st_ino,
+            "device_number": os.stat("/dev").st_dev,
+            "devpts_device_number": os.stat("/dev/pts").st_dev}
+
+
+def require_host_boundary(value):
+    require(type(value) is dict and set(value) == {"mount_namespace_inode", "device_number", "devpts_device_number"}
+            and all(type(number) is int and number > 0 for number in value.values()),
+            "ROOT_CUSTODY_AUTHENTIC_HOST_BOUNDARY_REQUIRED")
+    return value
+
+
+def controller_snapshot(name, expected_runtime, *, request, mode):
+    actor = kernel_process(os.getpid())
+    # /proc/1 is masked by PID1 before exec. This public identity is accepted
+    # only after the NONROOT observer compares the actual current ROOT parent
+    # and actor with it, opens the live actor pidfd and acknowledges birth.
+    controller = public_process_identity(request.get("host_PID1"))
+    require(actor["parent_pid"] == 1 and actor["uids"] == [0] * 4 and controller["uids"] == [0] * 4,
+            "ROOT_CUSTODY_ACTUAL_PID1_ROOT_PARENT_REQUIRED")
+    require(controller["pid"] == 1 and actor["boot_id"] == controller["boot_id"] == request["issuer"]["boot_id"],
+            "ROOT_CUSTODY_EXTERNAL_PID1_IDENTITY_REBOUND")
+    host_boundary = require_host_boundary(request.get("host_boundary"))
+    require(os.stat("/proc/self/ns/mnt").st_ino != host_boundary["mount_namespace_inode"],
+            "ROOT_CUSTODY_HOST_MOUNT_NAMESPACE_NOT_PRIVATE")
+    expected_cgroup = "0::/system.slice/" + name
+    require(actor["cgroup"] == expected_cgroup, "ROOT_CUSTODY_ACTUAL_PRIVATE_CGROUP_REQUIRED")
+    unit = _unit_file(name)
+    properties = unit["properties"]
+    require_guard_log_profile(name, properties)
+    require("/proc/1" in unit.get("path_lists", {}).get("InaccessiblePaths", [])
+            and not any("/proc/1/root" in value for value in properties.values()),
+            "ROOT_CUSTODY_ACTUAL_SAFE_PID1_MASK_REQUIRED")
+    require(mode in ("probe", "quota", "guard-hang"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
+    if mode != "quota":
+        require(properties.get("PrivateDevices") in ("yes", "true", "1")
+                and properties.get("ProtectHome") == "read-only"
+                and os.stat("/dev").st_dev != host_boundary["device_number"],
+                "ROOT_CUSTODY_ACTUAL_PRIVATE_DEVICE_ROLE_REQUIRED")
+    else:
+        require("PrivateDevices" not in properties and "ProtectHome" not in properties,
+                "ROOT_CUSTODY_QUOTA_DEVICE_ROLE_CHANGED")
+    require(_seconds(properties.get("RuntimeMaxSec")) == expected_runtime
+            and _seconds(properties.get("TimeoutStopSec")) == 2
+            and properties.get("KillMode") == "control-group"
+            and properties.get("SendSIGKILL") in ("yes", "true", "1")
+            and properties.get("FinalKillSignal") in ("SIGKILL", "KILL", "9")
+            and properties.get("PrivateMounts") in ("yes", "true", "1")
+            and properties.get("ProtectSystem") == "strict"
+            and properties.get("ProtectControlGroups") in ("yes", "true", "1")
+            and properties.get("NoNewPrivileges") in ("yes", "true", "1")
+            and set(properties.get("RestrictAddressFamilies", "").split()) == {"AF_INET", "AF_INET6"}
+            and allowed_namespace_bitmap(properties.get("RestrictNamespaces")) == 0x20020000
+            and properties.get("SystemCallErrorNumber") in ("EPERM", "1")
+            and exact_system_call_filter(properties.get("SystemCallFilter")),
+            "ROOT_CUSTODY_ACTUAL_UNIT_PROPERTIES_REQUIRED")
+    require(actor["capabilities"]["CapEff"] & (1 << 5), "ROOT_CUSTODY_PARENT_CAP_KILL_REQUIRED")
+    forbidden = sum(1 << number for number in (16, 17, 19, 22, 25, 30, 38, 39, 40))
+    require(all(actor["capabilities"][key] & forbidden == 0 for key in ("CapPrm", "CapEff", "CapBnd")),
+            "ROOT_CUSTODY_FOREIGN_PROCESS_AND_KERNEL_CAPABILITIES_FORBIDDEN")
+    return {"schema": "porota.rc6.pid1-root-controller-live.v1", "unit": name,
+            "actor": actor, "PID1": controller, "transient_unit": unit,
+            "mount_namespace_inode": os.stat("/proc/self/ns/mnt").st_ino,
+            "host_boundary": host_boundary, "external_PID1_identity_pending_live_ACK": True,
+            "systemd_guard_exists_before_guardian_exec": True,
+            "ROOT_actor_boundary_certified": False,
+            "root_controller_claimed_by_metadata_only": False}
+
+
+def _manager(source):
+    raw = _read(Path(source) / MANAGER_MEMBER)
+    require(sha256(raw) == MANAGER_SHA256, "ROOT_CUSTODY_ORIGINAL_MANAGER_CHANGED")
+    return runpy.run_path(str(Path(source) / MANAGER_MEMBER))
+
+
+def _write_control(path, value, owner_uid, owner_gid):
+    from scripts import rc6_capacity_calibration as calibration
+    calibration.publish(path, value)
+    os.chown(path, owner_uid, owner_gid, follow_symlinks=False)
+
+
+def _request(path, *, private=False):
+    from scripts import rc6_capacity_calibration as calibration
+    raw = _read(path)
+    value = calibration.decode(raw)
+    require(value.get("schema") == "porota.rc6.root-custody-request.v1"
+            and value.get("source_root") == str(ROOT)
+            and type(value.get("owner_uid")) is int and value["owner_uid"] > 0
+            and type(value.get("owner_gid")) is int and value["owner_gid"] > 0
+            and value.get("code_hashes", {}).get(MANAGER_MEMBER) == MANAGER_SHA256
+            and value["code_hashes"].get(MEMBER) == sha256(_read(ROOT / MEMBER)),
+            "ROOT_CUSTODY_AUTHENTIC_FIXED_REQUEST_REQUIRED")
+    native_contract(value["source_sha"], value["source_tree"], value["code_hashes"])
+    host_pid1 = public_process_identity(value.get("host_PID1"))
+    require(host_pid1["pid"] == 1 and host_pid1["uids"] == [0] * 4
+            and host_pid1["boot_id"] == value["issuer"]["boot_id"],
+            "ROOT_CUSTODY_EXTERNAL_PID1_IDENTITY_REBOUND")
+    require_host_boundary(value.get("host_boundary"))
+    for member, expected in value["code_hashes"].items():
+        require(member in calibration.CODE_MEMBERS and sha256(_read(ROOT / member)) == expected,
+                "ROOT_CUSTODY_EXACT_SOURCE_PROGRAM_REBOUND")
+    require(set(value["code_hashes"]) == set(calibration.CODE_MEMBERS),
+            "ROOT_CUSTODY_SOURCE_PROGRAM_INCOMPLETE")
+    # Root may read the runner-owned checkout, but must not trust Git's global
+    # safe.directory or mutate its configuration to do so.
+    previous = {key: os.environ.get(key) for key in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0")}
+    try:
+        os.environ.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="safe.directory", GIT_CONFIG_VALUE_0=str(ROOT))
+        calibration.source_pin(ROOT, value["source_sha"], value["source_tree"])
+    finally:
+        for key, old in previous.items():
+            if old is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = old
+    claim = value["namespace_receipt"]
+    binding_fields = {"candidate_sha", "candidate_tree", "producer", "attempt_id", "owner_id", "workload_fingerprint", "runner_class"}
+    require(type(value.get("binding")) is dict and set(value["binding"]) == binding_fields
+            and value["binding"]["candidate_sha"] == value["source_sha"]
+            and value["binding"]["candidate_tree"] == value["source_tree"]
+            and value["binding"]["runner_class"] == "github-hosted/ubuntu-24.04",
+            "ROOT_CUSTODY_EXACT_ACTIONS_BINDING_REQUIRED")
+    require(type(claim) is dict and claim.get("schema") == "porota.rc6.generated-fixture-consumer-binding.v1"
+            and claim.get("cleanup_authority_granted") is False and claim.get("binding") == value["binding"],
+            "ROOT_CUSTODY_AUTHENTIC_CONSUMER_CLAIM_REQUIRED")
+    path_root = Path(claim["path"]).absolute()
+    require(str(path_root) == claim["path"] and not any(x.is_symlink() for x in (path_root, *path_root.parents)),
+            "ROOT_CUSTODY_CONSUMER_NOFOLLOW_REQUIRED")
+    details = path_root.lstat()
+    require(stat.S_ISDIR(details.st_mode) and details.st_uid == value["owner_uid"]
+            and details.st_gid == value["owner_gid"] and stat.S_IMODE(details.st_mode) == 0o700
+            and claim["identity"] == [details.st_dev, details.st_ino, details.st_uid, details.st_gid, 0o700],
+            "ROOT_CUSTODY_CONSUMER_INODE_REBOUND")
+    nonce = claim.get("namespace_nonce")
+    unit_name(nonce)
+    require(path_root.name == "r6-" + base64.urlsafe_b64encode(bytes.fromhex(nonce)).decode().rstrip("="),
+            "ROOT_CUSTODY_ORIGINAL_NAMESPACE_NAME_REQUIRED")
+    marker_path = path_root / ".porota-generated-fixture-owner.json"
+    marker_raw = _read(marker_path)
+    marker = calibration.decode(marker_raw)
+    marker_stat = marker_path.lstat()
+    require(marker_stat.st_uid == value["owner_uid"] and stat.S_IMODE(marker_stat.st_mode) == 0o600
+            and marker.get("schema") == "porota.rc6.generated-fixture-owner.v1"
+            and sha256(marker_raw) == claim["marker_sha256"] and marker.get("binding") == value["binding"]
+            and marker.get("identity") == claim["identity"] and marker.get("namespace_nonce") == nonce
+            and marker.get("path") == str(path_root) and marker.get("mount_id") == claim["mount_id"]
+            and type(marker.get("real_orders_sent")) is int and marker["real_orders_sent"] == 0
+            and marker.get("runtime_paths_authorized") is False,
+            "ROOT_CUSTODY_ORIGINAL_MARKER_REBOUND")
+    require(Path(path).parent == path_root and value.get("binding") == value["namespace_receipt"]["binding"],
+            "ROOT_CUSTODY_REQUEST_NAMESPACE_REBOUND")
+    if not private:
+        issuer_host_namespace(value, kernel_process(os.getpid()))
+        issuer = public_kernel_process(value["issuer"]["pid"])
+        require(issuer["uids"] == [value["owner_uid"]] * 4
+                and issuer["gids"] == [value["owner_gid"]] * 4
+                and issuer["start_ticks"] == value["issuer"]["start_ticks"]
+                and issuer["boot_id"] == value["issuer"]["boot_id"]
+                and issuer["namespace_pids"] == [issuer["pid"]], "ROOT_CUSTODY_ISSUER_KERNEL_IDENTITY_CHANGED")
+    return value, raw, path_root
+
+
+def original_directory_bridge(request):
+    """Authenticate FD3, which transports only the issuer's own directory.
+
+    The fixed ROOT setup opens marker/image/birth and its own fixed diagnostic
+    with NOFOLLOW. This descriptor is closed before any mutable NONROOT backend or probe actor.
+    No host proc tree, foreign root/cwd/fd magic links or namespace fd is bound.
+    """
+    from scripts import rc6_capacity_calibration as calibration
+    claim = request["namespace_receipt"]
+    details = os.fstat(BRIDGE_DESCRIPTOR)
+    require(fcntl.fcntl(BRIDGE_DESCRIPTOR, fcntl.F_GETFL) & os.O_PATH == os.O_PATH and stat.S_ISDIR(details.st_mode)
+            and [details.st_dev, details.st_ino, details.st_uid, details.st_gid, stat.S_IMODE(details.st_mode)] == claim["identity"]
+            and calibration.descriptor_mount_id(BRIDGE_DESCRIPTOR) == claim["mount_id"],
+            "ROOT_CUSTODY_ORIGINAL_OPAQUE_DIRECTORY_FD_NOT_TRANSPORTED")
+    descriptor = os.open(".porota-generated-fixture-owner.json",
+        os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME, dir_fd=BRIDGE_DESCRIPTOR)
+    try:
+        before = os.fstat(descriptor)
+        raw = os.read(descriptor, 65537)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size == len(raw) <= 65536
+                and before.st_uid == request["owner_uid"] and before.st_gid == request["owner_gid"]
+                and stat.S_IMODE(before.st_mode) == 0o600 and sha256(raw) == claim["marker_sha256"]
+                and calibration.identity(before) == calibration.identity(os.fstat(descriptor)),
+                "ROOT_CUSTODY_ORIGINAL_OPAQUE_MARKER_REBOUND")
+    finally:
+        os.close(descriptor)
+    marker = calibration.decode(raw)
+    require(marker.get("binding") == request["binding"] and marker.get("namespace_nonce") == claim["namespace_nonce"]
+            and marker.get("identity") == claim["identity"] and marker.get("mount_id") == claim["mount_id"],
+            "ROOT_CUSTODY_ORIGINAL_OPAQUE_MARKER_BINDING_REBOUND")
+    return {"schema": "porota.rc6.original-own-directory-fd-native.v1", "descriptor": BRIDGE_DESCRIPTOR,
+            "identity": claim["identity"], "original_mount_id": claim["mount_id"],
+            "marker_sha256": sha256(raw), "namespace_nonce": claim["namespace_nonce"],
+            "foreign_host_proc_exposed": False}
+
+
+def _private_identity(request, mapping):
+    local = kernel_process(os.getpid())
+    host = mapping["host_private_PID1"]
+    issuer = mapping["issuer_actual"]
+    public_process_identity(issuer)
+    host_inode = issuer_host_namespace(request, mapping["guardian_actual"])
+    require(host["namespace_pids"] == [host["pid"], 1]
+            and local["pid_namespace_inode"] == host["pid_namespace_inode"] != host_inode
+            and issuer["pid"] == request["issuer"]["pid"]
+            and issuer["start_ticks"] == request["issuer"]["start_ticks"]
+            and issuer["boot_id"] == request["issuer"]["boot_id"]
+            and issuer["uids"] == [request["owner_uid"]] * 4
+            and issuer["gids"] == [request["owner_gid"]] * 4
+            and issuer["namespace_pids"] == [issuer["pid"]]
+            and host["cgroup"] == local["cgroup"], "ROOT_CUSTODY_ACTUAL_PRIVATE_PID_MAPPING_REQUIRED")
+    mounts = [row.split() for row in _proc_text("/proc/self/mountinfo").splitlines()]
+    proc = [row for row in mounts if row[4] == "/proc"]
+    require(len(proc) == 1 and "ro" in proc[0][5].split(",")
+            and proc[0][proc[0].index("-") + 1] == "proc", "ROOT_CUSTODY_PRIVATE_PROC_READONLY_REQUIRED")
+    # Signal 0 never delivers a signal. The target is live in the original
+    # host proc view, yet cannot be addressed in the actor's PID namespace.
+    foreign = issuer["pid"]
+    require(not Path("/proc/" + str(foreign)).exists(), "ROOT_CUSTODY_HOST_PID_COLLIDES_WITH_PRIVATE_ACTOR")
+    try:
+        os.kill(foreign, 0)
+    except OSError as error:
+        require(error.errno == errno.ESRCH, "ROOT_CUSTODY_FOREIGN_PROCESS_SIGNAL_NOT_NAMESPACE_DENIED")
+        denied = {"signal": 0, "errno": error.errno, "host_pid": foreign, "host_process_actually_live": True}
+    else:
+        raise ValueError("ROOT_CUSTODY_FOREIGN_PROCESS_SIGNAL_ESCAPE")
+    return {"schema": "porota.rc6.root-private-pid-native.v1",
+            "local": local, "host": host, "issuer": issuer, "foreign_signal_native_denial": denied,
+            "private_pid_namespace_before_actor_work": True}
+
+
+def _actor_observation(case, request):
+    import socket
+    from scripts import rc6_root_actor_seal as root_seal
+    actor = kernel_process(os.getpid())
+    require(actor["uids"] == [0] * 4, "ROOT_CUSTODY_PROBE_MUST_START_ROOT")
+    parent = public_kernel_process(os.getppid())
+    require(parent["uids"] == [0] * 4 and parent["cgroup"] == actor["cgroup"],
+            "ROOT_CUSTODY_ROOT_PARENT_AND_CGROUP_INHERITANCE_REQUIRED")
+    mapping = json.loads(_read(Path(request["namespace_receipt"]["path"]) / "private-broker.observed.json"))
+    boundary = _private_identity(request, mapping)
+    parent_seal = json.loads(_read(Path(request["namespace_receipt"]["path"]) / "private-parent-seal.json"))
+    require(parent["pid"] == 1 and parent["start_ticks"] == str(parent_seal["identity"]["start_ticks"])
+            and parent_seal["identity"]["pid_namespace_inode"] == actor["pid_namespace_inode"]
+            and parent["capabilities"] == parent_seal["capabilities"],
+            "ROOT_CUSTODY_ROOT_PARENT_NOT_PRIVATE_PID1")
+    actor_seal = root_seal.install_root_actor_seal(**_seal_arguments(request), inherited=parent_seal)
+    denies = {}
+    for name, target in (("foreign_kernel_pid_limit", Path("/proc/sys/kernel/pid_max")),):
+        try:
+            descriptor = os.open(target, os.O_WRONLY | os.O_CLOEXEC)
+        except OSError as error:
+            require(error.errno in (errno.EACCES, errno.EPERM, errno.EROFS),
+                    "ROOT_CUSTODY_FOREIGN_PROCESS_WRITER_DENIAL_UNKNOWN")
+            denies[name] = {"errno": error.errno, "denied": True, "write_attempted": False}
+        else:
+            os.close(descriptor)
+            raise ValueError("ROOT_CUSTODY_FOREIGN_PROCESS_WRITER_ALLOWED")
+    libc = ctypes.CDLL(None, use_errno=True)
+    ctypes.set_errno(0)
+    returned = libc.syscall(308, -1, 0)  # invalid fd: EPERM must precede EBADF
+    saved = ctypes.get_errno()
+    require(returned == -1 and saved == errno.EPERM, "ROOT_CUSTODY_NATIVE_SETNS_DENIAL_REQUIRED")
+    denies["setns"] = {"return": returned, "errno": saved, "denied": True}
+    try:
+        handle = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    except OSError as error:
+        require(error.errno in (errno.EAFNOSUPPORT, errno.EPERM, errno.EACCES), "ROOT_CUSTODY_FOREIGN_UNIX_SOCKET_NOT_DENIED")
+        denies["AF_UNIX"] = {"errno": error.errno, "denied": True}
+    else:
+        handle.close()
+        raise ValueError("ROOT_CUSTODY_FOREIGN_UNIX_SOCKET_ALLOWED")
+    try:
+        descriptor = os.open("/sys/fs/cgroup/cgroup.procs", os.O_WRONLY | os.O_CLOEXEC)
+    except OSError as error:
+        require(error.errno in (errno.EROFS, errno.EACCES, errno.EPERM), "ROOT_CUSTODY_CGROUP_WRITER_UNKNOWN")
+        denies["foreign_cgroup_writer"] = {"errno": error.errno, "denied": True}
+    else:
+        os.close(descriptor)
+        raise ValueError("ROOT_CUSTODY_FOREIGN_CGROUP_WRITER_ALLOWED")
+    result = {"schema": "porota.rc6.root-custody-probe-actor.v1", "case": case,
+              "root_before_drop": actor, "ROOT_parent": parent, "native_denials": denies,
+              "pid_boundary": boundary, "root_protected_before_first_probe_instruction": True,
+              "root_actor_seal": actor_seal, "parent_root_actor_seal_sha256": sha256(wire(parent_seal)),
+              "contract_revision_required": True, "original_PROC_EACCES_equivalence_approved": False}
+    if case == "nonroot-hang":
+        from scripts import rc6_capacity_calibration as calibration
+        result["drop"] = calibration.drop_privileges(request["owner_uid"], request["owner_gid"],
+            source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
+        result["after_drop"] = kernel_process(os.getpid())
+    if case in ("root-hang", "nonroot-hang"):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    sys.stdout.buffer.write(wire(result))
+    sys.stdout.buffer.flush()
+    if case == "failure-before-drop":
+        os._exit(73)
+    if case in ("root-hang", "nonroot-hang"):
+        while True:
+            signal.pause()
+
+
+def _broker_probe(request, namespace, manager, controller):
+    from scripts import rc6_root_actor_seal as root_seal
+    parent_seal = root_seal.assert_current_seal(owner_uid=request["owner_uid"], owner_gid=request["owner_gid"],
+        source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
+    rows = []
+    for case in ("root-success", "failure-before-drop", "root-hang", "nonroot-hang"):
+        manager["pre_capture_kernel_state"]()
+        output = namespace / (case + ".native.log")
+        command = actor_command(case, namespace / "custody-request.json")
+        kernel = manager["managed_native_child"](command, ROOT, output,
+            {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8"},
+            1 if "hang" in case else 10, terminate_grace=2, progress_poll=5)
+        require(manager["managed_custody_closed"](kernel), "ROOT_CUSTODY_PROBE_ACTUAL_OWN_FIN_REQUIRED")
+        raw = _closed_private_broker_raw(manager, kernel, output,
+            owner_uid=request["owner_uid"], owner_gid=request["owner_gid"])
+        actor = json.loads(raw)
+        require(actor["case"] == case and actor["root_before_drop"]["uids"] == [0] * 4
+                and actor["ROOT_parent"]["pid"] == os.getpid()
+                and actor["root_before_drop"]["pid"] == kernel["pid"]
+                and actor["root_before_drop"]["cgroup"] == controller["private_PID1"]["local"]["cgroup"],
+                "ROOT_CUSTODY_PROBE_ACTUAL_ROOT_OR_BIRTH_REBOUND")
+        root_seal.validate_inheritance_evidence(actor["root_actor_seal"], parent_seal,
+            owner_uid=request["owner_uid"], owner_gid=request["owner_gid"],
+            source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
+        require(actor.get("parent_root_actor_seal_sha256") == sha256(wire(parent_seal)),
+                "ROOT_CUSTODY_PROBE_PARENT_SEAL_REBOUND")
+        if "hang" in case:
+            sends = kernel["owned_group_signal_observations"]
+            require(kernel["timed_out"] is True and kernel["returncode"] == -signal.SIGKILL
+                    and all(any(row["signal"] == number and row["outcome"] == "SENT" for row in sends)
+                            for number in (signal.SIGTERM, signal.SIGKILL)),
+                    "ROOT_CUSTODY_ACTUAL_ROOT_TERM2_KILL_FIN_PROOF_REQUIRED")
+        elif case == "failure-before-drop":
+            require(kernel["returncode"] == 73 and kernel["timed_out"] is False,
+                    "ROOT_CUSTODY_PRE_DROP_FAILURE_NOT_AUTHENTIC")
+        else:
+            require(manager["managed_phase_green"](kernel), "ROOT_CUSTODY_ROOT_SUCCESS_NATIVE_RED")
+        rows.append({"case": case, "kernel": kernel, "actor": actor,
+                     "raw": {"path": output.name, "sha256": sha256(raw), "bytes": len(raw)}})
+    return rows
+
+
+def _closed_private_broker_raw(manager, kernel, path, *, owner_uid, owner_gid):
+    """Preserve closed producer bytes before any secondary pidfd/JSON check."""
+    require(manager["managed_custody_closed"](kernel), "ROOT_CUSTODY_PRIVATE_BROKER_ACTUAL_FIN_REQUIRED")
+    manager["pre_capture_kernel_state"]()
+    path = Path(path).absolute()
+    require(path.name in ("private-broker-native.log", *ACTOR_RAW_NAMES) and type(owner_uid) is int and owner_uid > 0
+            and type(owner_gid) is int and owner_gid > 0 and ".." not in path.parts
+            and not any(p.is_symlink() for p in (path, *path.parents)), "ROOT_CUSTODY_PRIVATE_RAW_TARGET_INVALID")
+    directory = os.open(path.parent, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    descriptor = None
+    try:
+        from scripts import rc6_capacity_calibration as calibration
+        parent = os.fstat(directory)
+        require(parent.st_uid == owner_uid and parent.st_gid == owner_gid
+                and read_identity(parent) == read_identity(path.parent.lstat()),
+                "ROOT_CUSTODY_PRIVATE_RAW_PARENT_INVALID")
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=directory)
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                and before.st_uid in (os.geteuid(), owner_uid)
+                and before.st_gid in (os.getegid(), owner_gid)
+                and not stat.S_IMODE(before.st_mode) & 0o022 and before.st_size <= CONTROL_BOUND
+                and before.st_dev == parent.st_dev
+                and calibration.descriptor_mount_id(descriptor) == calibration.descriptor_mount_id(directory)
+                and read_identity(before) == read_identity(path.lstat()),
+                "ROOT_CUSTODY_PRIVATE_RAW_SOURCE_INVALID")
+        # Change only the positively owned, pinned closed-producer descriptor.
+        # FIN permits this diagnostic transfer; it grants no ROOT admission.
+        os.fchown(descriptor, owner_uid, owner_gid)
+        transferred = os.fstat(descriptor)
+        unchanged = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_blocks", "st_mtime_ns")
+        require(all(getattr(before, key) == getattr(transferred, key) for key in unchanged)
+                and transferred.st_uid == owner_uid and transferred.st_gid == owner_gid,
+                "ROOT_CUSTODY_PRIVATE_RAW_TRANSFER_CHANGED")
+        chunks, total = [], 0
+        while True:
+            part = os.read(descriptor, min(65536, CONTROL_BOUND + 1 - total))
+            if not part:
+                break
+            chunks.append(part)
+            total += len(part)
+            require(total <= CONTROL_BOUND, "ROOT_CUSTODY_PRIVATE_RAW_BYTES_BOUND")
+        require(total == transferred.st_size
+                and read_identity(transferred) == read_identity(os.fstat(descriptor))
+                == read_identity(path.lstat()) and read_identity(parent) == read_identity(path.parent.lstat()),
+                "ROOT_CUSTODY_PRIVATE_RAW_CHANGED")
+        return b"".join(chunks)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(directory)
+
+
+def guardian_main(mode, request_path, name):
+    require(os.getuid() == os.geteuid() == 0, "ROOT_CUSTODY_ACTUAL_ROOT_BROKER_REQUIRED")
+    request, request_raw, namespace = _request(request_path)
+    runtime = request["runtime_seconds"]
+    _publish_unit_snapshot(name, namespace, request)
+    controller = controller_snapshot(name, runtime, request=request, mode=mode)
+    birth = {"schema": "porota.rc6.root-custody-controller-birth.v1", "binding": request["binding"],
+             "request_sha256": sha256(request_raw), "controller": controller}
+    if mode == "guard-hang":
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    birth_path = namespace / ("guardian-birth.json" if mode == "guard-hang" else "broker-birth.json")
+    _write_control(birth_path, birth, request["owner_uid"], request["owner_gid"])
+    # Observe a native pidfd before any short-lived internal phase. Progress
+    # remains the original five seconds; no thread changes subreaper custody.
+    acknowledgement = birth_path.with_suffix(".observed.json")
+    deadline = time.monotonic() + min(10, runtime)
+    while not acknowledgement.exists():
+        require(time.monotonic() < deadline, "ROOT_CUSTODY_NATIVE_OBSERVER_NOT_READY")
+        time.sleep(0.05)
+    acknowledged = json.loads(_read(acknowledgement))
+    require(acknowledged.get("binding") == request["binding"]
+            and acknowledged.get("schema") == "porota.rc6.root-controller-native-pidfd-observed.v1"
+            and acknowledged.get("birth_sha256") == sha256(wire(birth))
+            and acknowledged.get("issuer") == request["issuer"]
+            and acknowledged.get("controller_pid") == os.getpid()
+            and acknowledged.get("actual_controller") == public_process_identity(controller["actor"])
+            and acknowledged.get("actual_PID1") == controller["PID1"]
+            and acknowledged.get("host_boundary") == request["host_boundary"],
+            "ROOT_CUSTODY_NATIVE_OBSERVER_ACK_REBOUND")
+    bridge = original_directory_bridge(request)
+    _write_control(namespace / ("guardian-bridge.json" if mode == "guard-hang" else "broker-bridge.json"),
+                   bridge, request["owner_uid"], request["owner_gid"])
+    if mode == "guard-hang":
+        # PID1 must terminate/reap this broker even before it creates a worker.
+        while True:
+            signal.pause()
+    _write_control(namespace / "guardian-controller.json", {**birth, "source_sha": request["source_sha"],
+        "source_tree": request["source_tree"], "code_hashes": request["code_hashes"],
+        "issuer": request["issuer"]}, request["owner_uid"], request["owner_gid"])
+    manager = _manager(ROOT)
+    manager["pre_capture_kernel_state"]()
+    log = namespace / "private-broker-native.log"
+    command = ["unshare", "--mount", "--propagation", "private", "--pid", "--fork",
+               "--kill-child=SIGKILL", "--", "/bin/sh", "-c", BRIDGE_SHELL, "rc6-opaque-own-fd",
+               sys.executable, "-I", "-B", str(ROOT / MEMBER),
+               "--private-init", mode, "--request", str(request_path), "--unit", name]
+    mapping_state = {}
+    def observe_private(stage, pid, entered, deadline, log_fd):
+        live_issuer = public_kernel_process(request["issuer"]["pid"])
+        require(live_issuer["start_ticks"] == request["issuer"]["start_ticks"]
+                and live_issuer["boot_id"] == request["issuer"]["boot_id"]
+                and live_issuer["uids"] == [request["owner_uid"]] * 4
+                and live_issuer["gids"] == [request["owner_gid"]] * 4
+                and live_issuer["namespace_pids"] == [live_issuer["pid"]],
+                "ROOT_CUSTODY_LIVE_ISSUER_DIED_OR_REBOUND")
+        if mapping_state or not (namespace / "private-broker-birth.json").exists():
+            return
+        born = json.loads(_read(namespace / "private-broker-birth.json"))
+        actual = kernel_process(born["host_private_PID1"]["pid"])
+        issuer = live_issuer
+        require(actual == born["host_private_PID1"] and actual["parent_pid"] == pid
+                and actual["uids"] == [0] * 4 and actual["namespace_pids"] == [actual["pid"], 1]
+                and actual["pid_namespace_inode"] != issuer_host_namespace(request, controller["actor"])
+                and actual["cgroup"] == controller["actor"]["cgroup"]
+                and born.get("binding") == request["binding"]
+                and born.get("request_sha256") == sha256(request_raw),
+                "ROOT_CUSTODY_NATIVE_PRIVATE_PID_BIRTH_REBOUND")
+        descriptor = os.pidfd_open(actual["pid"], 0)
+        require(kernel_process(actual["pid"]) == actual, "ROOT_CUSTODY_PRIVATE_PIDFD_BIRTH_RACE")
+        mapping = {"schema": "porota.rc6.root-private-pid-guardian-observed.v1", "binding": request["binding"],
+            "host_private_PID1": actual, "guardian_actual": controller["actor"], "issuer_actual": issuer,
+            "source_sha": request["source_sha"], "source_tree": request["source_tree"],
+            "request_sha256": sha256(request_raw), "original_directory_bridge": born["original_directory_bridge"],
+            "host_boundary": request["host_boundary"], "external_PID1_ACK": acknowledged,
+            "private_mount_setup": born["private_mount_setup"]}
+        _write_control(namespace / "private-broker.observed.json", mapping, request["owner_uid"], request["owner_gid"])
+        mapping_state.update(pidfd=descriptor, mapping=mapping)
+    saved = os.dup(0)
+    try:
+        os.dup2(BRIDGE_DESCRIPTOR, 0)
+        kernel = manager["managed_native_child"](command, ROOT, log,
+            {key: os.environ[key] for key in ("PATH", "RUNNER_TOOL_CACHE", "LANG", "LC_ALL") if key in os.environ},
+            runtime - 10, terminate_grace=2, progress_poll=5, progress=observe_private)
+    finally:
+        os.dup2(saved, 0)
+        os.close(saved)
+    raw = _closed_private_broker_raw(manager, kernel, log,
+        owner_uid=request["owner_uid"], owner_gid=request["owner_gid"])
+    require(type(mapping_state.get("pidfd")) is int, "ROOT_CUSTODY_NATIVE_PRIVATE_PIDFD_REQUIRED")
+    poller = select.poll()
+    poller.register(mapping_state["pidfd"], select.POLLIN | select.POLLHUP)
+    try:
+        require(bool(poller.poll(0)) and not Path("/proc/" + str(mapping_state["mapping"]["host_private_PID1"]["pid"])).exists(),
+                "ROOT_CUSTODY_PRIVATE_PID1_ACTUAL_REAP_REQUIRED")
+    finally:
+        os.close(mapping_state["pidfd"])
+    from scripts import rc6_capacity_calibration as calibration
+    result = calibration.decode(raw)
+    result["external_guardian"] = {"controller": controller, "private_broker_kernel": kernel,
+        "private_PID1_actual_mapping": mapping_state["mapping"], "private_PID1_native_pidfd_FIN": True,
+        "private_broker_raw_sha256": sha256(raw), "original_manager_sha256": MANAGER_SHA256,
+        "actual_root_FIN_closed": True, "root_phase_green": manager["managed_phase_green"](kernel)}
+    sys.stdout.buffer.write(wire(result))
+    sys.stdout.buffer.flush()
+    return 0 if manager["managed_phase_green"](kernel) else 1
+
+
+def _external_controller(proof, request, mapping):
+    require(type(proof) is dict and proof.get("schema") == "porota.rc6.root-custody-controller-birth.v1"
+            and proof.get("binding") == request["binding"]
+            and proof.get("source_sha") == request["source_sha"] and proof.get("source_tree") == request["source_tree"]
+            and proof.get("code_hashes") == request["code_hashes"] and proof.get("issuer") == request["issuer"],
+            "ROOT_CUSTODY_EXACT_LIVE_CONTROLLER_PROOF_REQUIRED")
+    controller = proof["controller"]
+    guardian = mapping["guardian_actual"]
+    ack = mapping.get("external_PID1_ACK", {})
+    require(guardian == controller["actor"] and guardian["uids"] == [0] * 4 and guardian["parent_pid"] == 1
+            and guardian["cgroup"] == "0::/system.slice/" + controller["unit"]
+            and mapping.get("host_boundary") == request["host_boundary"] == controller["host_boundary"]
+            and ack.get("actual_controller") == public_process_identity(guardian)
+            and ack.get("actual_PID1") == request["host_PID1"] == controller["PID1"]
+            and ack.get("host_boundary") == request["host_boundary"]
+            and _unit_file(controller["unit"]) == controller["transient_unit"],
+            "ROOT_CUSTODY_LIVE_CONTROLLER_KERNEL_REBOUND")
+    return guardian
+
+
+def _null_stdin():
+    descriptor = os.open("/dev/null", os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        os.dup2(descriptor, 0)
+    finally:
+        if descriptor != 0:
+            os.close(descriptor)
+
+
+def _mount_rows(raw):
+    rows = []
+    for line in raw.splitlines():
+        fields = line.split()
+        require(len(fields) >= 10 and fields.count("-") == 1
+                and fields[0].isdecimal() and int(fields[0]) > 0 and fields[1].isdecimal()
+                and re.fullmatch(r"[0-9]+:[0-9]+", fields[2]), "ROOT_CUSTODY_PRIVATE_MOUNT_METADATA_UNKNOWN")
+        split = fields.index("-")
+        require(split >= 6 and len(fields) >= split + 4
+                and not any(item.startswith(("shared:", "master:", "propagate_from:")) for item in fields[6:split]),
+                "ROOT_CUSTODY_PRIVATE_MOUNT_PROPAGATION_REQUIRED")
+        target = fields[4]
+        require(not re.search(r"\\(?![0-7]{3})", target), "ROOT_CUSTODY_PRIVATE_MOUNT_ESCAPE_UNKNOWN")
+        target = re.sub(r"\\([0-7]{3})", lambda match: chr(int(match[1], 8)), target)
+        require(target.startswith("/") and "\x00" not in target and ".." not in Path(target).parts,
+                "ROOT_CUSTODY_PRIVATE_MOUNT_TARGET_UNKNOWN")
+        major, minor = map(int, fields[2].split(":"))
+        rows.append({"id": int(fields[0]), "device": os.makedev(major, minor),
+                     "target": target, "options": fields[5].split(","), "type": fields[split + 1]})
+    require(0 < len(rows) <= 1024 and len({row["id"] for row in rows}) == len(rows),
+            "ROOT_CUSTODY_PRIVATE_MOUNT_COUNT_BOUND")
+    return rows
+
+
+class _MountAttribute(ctypes.Structure):
+    _fields_ = [(name, ctypes.c_uint64) for name in ("attr_set", "attr_clr", "propagation", "userns_fd")]
+
+
+def _mount_attribute(libc, descriptor, path, flags, *, readonly, operations):
+    require(sys.platform == "linux" and os.uname().machine == "x86_64"
+            and ctypes.sizeof(_MountAttribute) == 32
+            and [getattr(_MountAttribute, name).offset for name, _ in _MountAttribute._fields_] == [0, 8, 16, 24],
+            "ROOT_CUSTODY_MOUNT_SETATTR_ABI_REQUIRED")
+    require((readonly is True and descriptor == -100 and path == b"/" and flags == 0x8100)
+            or (readonly is False and type(descriptor) is int and descriptor >= 0
+                and descriptor != BRIDGE_DESCRIPTOR and path == b"" and flags == 0x1000),
+            "ROOT_CUSTODY_MOUNT_SETATTR_FIXED_OPERATION_REQUIRED")
+    attribute = _MountAttribute(1 if readonly else 0, 0 if readonly else 1, 0, 0)
+    libc.syscall.restype = ctypes.c_long
+    ctypes.set_errno(0)
+    returned = int(libc.syscall(ctypes.c_long(442), ctypes.c_int(descriptor), ctypes.c_char_p(path),
+        ctypes.c_uint(flags), ctypes.byref(attribute), ctypes.c_size_t(32)))
+    saved = ctypes.get_errno()
+    operations.append({"operation": "mount_setattr", "syscall_number": 442,
+        "descriptor_scope": "AT_FDCWD" if readonly else "FRESH_PRIVATE_CONTROL",
+        "path": path.decode(), "flags": flags, "attr_set": attribute.attr_set, "attr_clr": attribute.attr_clr,
+        "propagation": attribute.propagation, "userns_fd": attribute.userns_fd, "attribute_bytes": 32,
+        "returncode": returned, "errno": saved})
+    require(returned == 0, "ROOT_CUSTODY_PRIVATE_" + ("RECURSIVE_READONLY" if readonly else "CONTROL_READWRITE")
+            + "_FAILED:" + str(saved))
+
+
+def _control_mount_identity(request, rows, descriptor):
+    from scripts import rc6_capacity_calibration as calibration
+    claim = request["namespace_receipt"]
+    root = Path(claim["path"])
+    require(root.is_absolute() and root != Path("/") and ".." not in root.parts
+            and not any(path.is_symlink() for path in (root, *root.parents)),
+            "ROOT_CUSTODY_PRIVATE_CONTROL_PATH_REQUIRED")
+    matches = [row for row in rows if row["target"] == str(root)]
+    require(len(matches) == 1 and descriptor != BRIDGE_DESCRIPTOR,
+            "ROOT_CUSTODY_PRIVATE_CONTROL_SINGLE_MOUNT_REQUIRED")
+    current, named = os.fstat(descriptor), root.lstat()
+    identity = lambda value: [value.st_dev, value.st_ino, value.st_uid, value.st_gid, stat.S_IMODE(value.st_mode)]
+    mount_id = calibration.descriptor_mount_id(descriptor)
+    require(fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_PATH == os.O_PATH
+            and stat.S_ISDIR(current.st_mode) and current.st_uid == request["owner_uid"]
+            and current.st_gid == request["owner_gid"] and stat.S_IMODE(current.st_mode) == 0o700
+            and identity(current) == identity(named) == claim["identity"]
+            and matches[0]["device"] == current.st_dev and matches[0]["id"] == mount_id
+            and mount_id != claim["mount_id"], "ROOT_CUSTODY_PRIVATE_CONTROL_NATIVE_IDENTITY_REQUIRED")
+    return {"identity": identity(current), "private_mount_id": mount_id, "target": str(root)}
+
+
+def _publish_mount_diagnostic(request, value):
+    """Use only the authenticated original own directory, never foreign proc."""
+    from scripts import rc6_capacity_calibration as calibration
+    original_directory_bridge(request)
+    require(type(value) is dict and value.get("schema") == "porota.rc6.private-mount-setup-diagnostic.v1"
+            and value.get("scope") == "DIAGNOSTIC_ONLY" and value.get("ROOT_FIN_claimed") is False
+            and value.get("ROOT_custody_qualified") is False and value.get("binding") == request["binding"]
+            and value.get("mode") == "probe" and type(value.get("operations")) is list
+            and len(value["operations"]) <= 6, "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_IDENTITY_REQUIRED")
+    for key in ("mountinfo_before", "mountinfo_before_readonly", "mountinfo_after_recursive_readonly", "mountinfo_after"):
+        if key not in value:
+            continue
+        record = value[key]
+        require(type(record) is dict and set(record) == {"raw_base64", "sha256", "bytes"},
+                "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_RAW_INVALID")
+        original = base64.b64decode(record["raw_base64"], validate=True)
+        require(type(record["bytes"]) is int and len(original) == record["bytes"] <= 65536
+                and sha256(original) == record["sha256"], "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_RAW_INVALID")
+    raw = wire(value)
+    require(len(raw) <= CONTROL_BOUND, "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_BOUND")
+    descriptor = os.open(PRIVATE_MOUNT_DIAGNOSTIC,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=BRIDGE_DESCRIPTOR)
+    try:
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size == 0
+                and before.st_uid == os.geteuid() and before.st_dev == request["namespace_receipt"]["identity"][0]
+                and calibration.descriptor_mount_id(descriptor) == request["namespace_receipt"]["mount_id"],
+                "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_SOURCE_REQUIRED")
+        with os.fdopen(descriptor, "wb", closefd=False) as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(descriptor)
+        os.fchown(descriptor, request["owner_uid"], request["owner_gid"])
+        after = os.fstat(descriptor)
+        named = os.stat(PRIVATE_MOUNT_DIAGNOSTIC, dir_fd=BRIDGE_DESCRIPTOR, follow_symlinks=False)
+        require(after.st_dev == before.st_dev and after.st_ino == before.st_ino
+                and after.st_uid == request["owner_uid"] and after.st_gid == request["owner_gid"]
+                and stat.S_IMODE(after.st_mode) == 0o600 and after.st_nlink == 1 and after.st_size == len(raw)
+                and unit_source_identity(after) == unit_source_identity(named),
+                "ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_CHANGED")
+        return {"relative_source": PRIVATE_MOUNT_DIAGNOSTIC, "sha256": sha256(raw), "bytes": len(raw),
+                "scope": "DIAGNOSTIC_ONLY", "ROOT_FIN_claimed": False, "ROOT_custody_qualified": False}
+    finally:
+        os.close(descriptor)
+
+
+def _mountinfo_diagnostic(raw):
+    encoded = raw.encode("utf-8")
+    require(len(encoded) <= 65536, "ROOT_CUSTODY_PROC_METADATA_BOUND")
+    return {"raw_base64": base64.b64encode(encoded).decode(), "sha256": sha256(encoded), "bytes": len(encoded)}
+
+
+def _prepare_private_mounts(request, *, mode, host_identity):
+    """Fixed private bootstrap. No mount runs before SELF namespace checks."""
+    require(mode in ("probe", "quota"), "ROOT_CUSTODY_FIXED_BROKER_MODE_REQUIRED")
+    host_boundary = require_host_boundary(request["host_boundary"])
+    require(os.getuid() == os.geteuid() == 0 and os.getpid() == 1
+            and host_identity["uids"] == [0] * 4
+            and host_identity["namespace_pids"] == [host_identity["pid"], 1]
+            and host_identity["pid_namespace_inode"] != request["issuer"]["pid_namespace_inode"]
+            and os.stat("/proc/self/ns/mnt").st_ino != host_boundary["mount_namespace_inode"],
+            "ROOT_CUSTODY_PRIVATE_BOOTSTRAP_KERNEL_BOUNDARY_REQUIRED")
+    # The launcher requests private propagation; read it back before a detach
+    # could affect any shared or slave host mount rather than after setup.
+    before_raw = _proc_text("/proc/self/mountinfo")
+    _mount_rows(before_raw)
+    diagnostic = {"schema": "porota.rc6.private-mount-setup-diagnostic.v1", "scope": "DIAGNOSTIC_ONLY",
+        "ROOT_FIN_claimed": False, "ROOT_custody_qualified": False, "status": "UNKNOWN",
+        "binding": request.get("binding"), "mode": mode, "kernel_machine": os.uname().machine,
+        "kernel_release": os.uname().release, "mountinfo_before": _mountinfo_diagnostic(before_raw), "operations": []}
+    if mode == "probe":
+        original_directory_bridge(request)
+    try:
+        result = _prepare_private_mount_operations(request, mode=mode, diagnostic=diagnostic)
+    except BaseException as error:
+        if mode == "probe":
+            diagnostic.update(status="RED", error_class=type(error).__name__, error_signature=str(error))
+            try:
+                diagnostic["mountinfo_after"] = _mountinfo_diagnostic(_proc_text("/proc/self/mountinfo"))
+            except (ValueError, OSError) as read_error:
+                diagnostic["mountinfo_after_error"] = str(read_error)
+            try:
+                _publish_mount_diagnostic(request, diagnostic)
+            except (ValueError, OSError) as publication_error:
+                sys.stderr.write("ROOT_CUSTODY_PRIVATE_MOUNT_DIAGNOSTIC_UNKNOWN:" + str(publication_error) + "\n")
+        raise
+    if mode == "probe":
+        diagnostic.update(status="SETUP_READBACK_ONLY_NO_ROOT_QUALIFICATION",
+            mountinfo_after=_mountinfo_diagnostic(_proc_text("/proc/self/mountinfo")))
+        result["mount_diagnostic"] = _publish_mount_diagnostic(request, diagnostic)
+    return result
+
+
+def _prepare_private_mount_operations(request, *, mode, diagnostic):
+    host_boundary = request["host_boundary"]
+    libc = ctypes.CDLL(None, use_errno=True)
+    def mount_operation(operation, target, callback):
+        ctypes.set_errno(0)
+        returned = int(callback())
+        saved = ctypes.get_errno()
+        diagnostic["operations"].append({"operation": operation, "target": target,
+            "returncode": returned, "errno": saved})
+        require(returned == 0, "ROOT_CUSTODY_PRIVATE_" + operation.upper() + "_FAILED:" + str(saved))
+    # Remove the inherited host proc view and every stacked/submount under it
+    # inside this already private mount namespace; do not retain a host proc FD.
+    mount_operation("old_proc_detach", "/proc", lambda: libc.umount2(b"/proc", 2))
+    mount_operation("proc_mount", "/proc", lambda: libc.mount(b"proc", b"/proc", b"proc", ctypes.c_ulong(15), None))
+    if mode == "probe":
+        # systemd 255 PrivateDevices creates a private /dev but bind-mounts
+        # host devpts. Replace that bind inside our private namespace first.
+        mount_operation("old_devpts_detach", "/dev/pts", lambda: libc.umount2(b"/dev/pts", 2))
+        mount_operation("devpts_mount", "/dev/pts", lambda: libc.mount(b"devpts", b"/dev/pts", b"devpts",
+            ctypes.c_ulong(11), b"newinstance,ptmxmode=0666,mode=0620,gid=5"))
+        require(os.stat("/dev").st_dev != host_boundary["device_number"]
+                and os.stat("/dev/pts").st_dev != host_boundary["devpts_device_number"],
+                "ROOT_CUSTODY_PRIVATE_DEVICES_NOT_NATIVE")
+        root = request["namespace_receipt"]["path"]
+        prior = _proc_text("/proc/self/mountinfo")
+        rows = _mount_rows(prior)
+        diagnostic["mountinfo_before_readonly"] = _mountinfo_diagnostic(prior)
+        control_fd = os.open(root, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            identity = _control_mount_identity(request, rows, control_fd)
+            diagnostic["private_control_before"] = identity
+            _mount_attribute(libc, -100, b"/", 0x8100, readonly=True, operations=diagnostic["operations"])
+            # Authenticate the pathname again before changing the pinned mount.
+            readonly_raw = _proc_text("/proc/self/mountinfo")
+            diagnostic["mountinfo_after_recursive_readonly"] = _mountinfo_diagnostic(readonly_raw)
+            readonly_rows = _mount_rows(readonly_raw)
+            require(all("ro" in row["options"] for row in readonly_rows),
+                    "ROOT_CUSTODY_PRIVATE_RECURSIVE_READONLY_READBACK_REQUIRED")
+            require(_control_mount_identity(request, readonly_rows, control_fd) == identity,
+                    "ROOT_CUSTODY_PRIVATE_CONTROL_REBOUND_BEFORE_CLEAR")
+            _mount_attribute(libc, control_fd, b"", 0x1000, readonly=False, operations=diagnostic["operations"])
+            after_rows = _mount_rows(_proc_text("/proc/self/mountinfo"))
+            require(_control_mount_identity(request, after_rows, control_fd) == identity,
+                    "ROOT_CUSTODY_PRIVATE_CONTROL_REBOUND_AFTER_CLEAR")
+            diagnostic["private_control_after"] = identity
+            require(all("rw" in row["options"] for row in after_rows if row["target"] == root),
+                    "ROOT_CUSTODY_PRIVATE_RECURSIVE_READONLY_READBACK_REQUIRED")
+        finally:
+            os.close(control_fd)
+        rows = _mount_rows(_proc_text("/proc/self/mountinfo"))
+        diagnostic["foreign_writable_rows"] = [row for row in rows if "ro" not in row["options"] and row["target"] != root]
+        require(all("ro" in row["options"] or row["target"] == root for row in rows),
+                "ROOT_CUSTODY_PRIVATE_FOREIGN_READONLY_UNPROVED")
+    rows = _mount_rows(_proc_text("/proc/self/mountinfo"))
+    proc = [row for row in rows if row["target"] == "/proc" or row["target"].startswith("/proc/")]
+    require(len(proc) == 1 and proc[0]["type"] == "proc" and "ro" in proc[0]["options"],
+            "ROOT_CUSTODY_SINGLE_PRIVATE_PROC_REQUIRED")
+    return {"old_host_proc_detached": True, "single_readonly_private_proc": True,
+            "private_devpts_newinstance_created": mode == "probe",
+            "foreign_mounts_readonly_required": mode == "probe", "quota_ancestor_sealed": False}
+
+
+def _seal_arguments(request):
+    host = require_host_boundary(request["host_boundary"])
+    return {"owner_uid": request["owner_uid"], "owner_gid": request["owner_gid"],
+            "source_binding": {"source_sha": request["source_sha"], "source_tree": request["source_tree"]},
+            "host_pid_namespace_inode": request["issuer"]["pid_namespace_inode"],
+            "host_mount_namespace_inode": host["mount_namespace_inode"],
+            "host_device_number": host["device_number"], "host_devpts_device_number": host["devpts_device_number"],
+            "control_root": request["namespace_receipt"]["path"]}
+
+
+def private_init(mode, request_path, name):
+    """Frozen bootstrap: no fixture, package backend or actor before sealing."""
+    require(os.getuid() == os.geteuid() == 0 and os.getpid() == 1,
+            "ROOT_CUSTODY_PRIVATE_BOOTSTRAP_PID1_REQUIRED")
+    from scripts import rc6_capacity_calibration as calibration
+    request, raw, namespace = _request(request_path, private=True)
+    status = dict(line.split(":", 1) for line in _proc_text("/proc/self/status").splitlines() if ":" in line)
+    host = kernel_process(int(status["Pid"].strip()))
+    require(host["namespace_pids"] == [host["pid"], 1], "ROOT_CUSTODY_PRIVATE_BOOTSTRAP_HOST_MAPPING_REQUIRED")
+    bridge = original_directory_bridge(request)
+    mounts = _prepare_private_mounts(request, mode=mode, host_identity=host)
+    _write_control(namespace / "private-broker-birth.json", {"binding": request["binding"],
+        "request_sha256": sha256(raw), "host_private_PID1": host, "original_directory_bridge": bridge,
+        "private_mount_setup": mounts, "host_boundary": request["host_boundary"]},
+        request["owner_uid"], request["owner_gid"])
+    deadline = time.monotonic() + 10
+    while not (namespace / "private-broker.observed.json").exists():
+        require(time.monotonic() < deadline, "ROOT_CUSTODY_EXTERNAL_NATIVE_MAPPING_NOT_READY")
+        time.sleep(0.05)
+    if mode == "probe":
+        os.close(BRIDGE_DESCRIPTOR)
+    return broker_main(mode, request_path, name)
+
+
+def broker_main(mode, request_path, name):
+    require(os.getuid() == os.geteuid() == 0 and os.getpid() == 1,
+            "ROOT_CUSTODY_ACTUAL_PRIVATE_ROOT_PID1_REQUIRED")
+    request, request_raw, namespace = _request(request_path, private=True)
+    mapping = json.loads(_read(namespace / "private-broker.observed.json"))
+    boundary = _private_identity(request, mapping)
+    proof = json.loads(_read(namespace / "guardian-controller.json"))
+    guardian = _external_controller(proof, request, mapping)
+    require(boundary["host"]["cgroup"] == guardian["cgroup"], "ROOT_CUSTODY_PRIVATE_BROKER_CGROUP_REBOUND")
+    controller = {"external": proof["controller"], "private_PID1": boundary,
+                  "unit": name, "ROOT_actor_boundary_certified": True}
+    manager = _manager(ROOT)
+    before = manager["pre_capture_kernel_state"]()
+    if mode == "probe":
+        from scripts import rc6_root_actor_seal as root_seal
+        seal = root_seal.install_root_actor_seal(**_seal_arguments(request))
+        _write_control(namespace / "private-parent-seal.json", seal, request["owner_uid"], request["owner_gid"])
+        controller["root_actor_seal"] = seal
+        rows = _broker_probe(request, namespace, manager, controller)
+        result = {"schema": SCHEMA, "request_sha256": sha256(request_raw), "binding": request["binding"],
+                  "controller": controller, "cases": rows, "before": before,
+                  "after": manager["pre_capture_kernel_state"](), "manager_sha256": MANAGER_SHA256,
+                  "ROOT_parent_owns_actual_worker_wait4": True, "native_probe_proved": True,
+                  "backing_allocated": False, "actor_mount_operations_attempted": True,
+                  "actor_mount_operations_succeeded": False, "actor_quota_syscall_probes_attempted": True,
+                  "actor_quota_mutations_succeeded": False, "real_orders_sent": 0}
+        result.update(namespace_setup_mounts_executed=True, quota_backing_mounts_attempted=False,
+            root_actor_seal_probe_only=True, contract_revision_required=True,
+            original_PROC_EACCES_equivalence_approved=False, proof_only_no_G0_qualification=True)
+        sys.stdout.buffer.write(wire(result))
+        sys.stdout.buffer.flush()
+        return 0
+    require(mode == "quota" and request.get("calibration_request") == str(namespace / "root-request.json")
+            and sha256(_read(namespace / "root-request.json", 4 * 1024**2)) == request.get("calibration_request_sha256"),
+            "ROOT_CUSTODY_FIXED_CALIBRATION_REQUEST_REQUIRED")
+    proof_path = namespace / "live-root-controller.json"
+    _write_control(proof_path, {**proof, "pid_boundary": boundary, "guardian_native_mapping": mapping,
+        "calibration_request_sha256": request["calibration_request_sha256"]}, request["owner_uid"], request["owner_gid"])
+    command = ["unshare", "--mount", "--propagation", "private", "--", "/bin/sh", "-c", BRIDGE_SHELL,
+               "rc6-opaque-own-fd", sys.executable, "-I", "-B",
+               str(ROOT / "scripts/rc6_capacity_calibration.py"), "--root-worker", request["calibration_request"],
+               "--privileged-custody-proof", str(proof_path)]
+    log = namespace / "root-worker-native.log"
+    saved = os.dup(0)
+    try:
+        os.dup2(BRIDGE_DESCRIPTOR, 0)
+        kernel = manager["managed_native_child"](command, ROOT, log,
+            {key: os.environ[key] for key in ("PATH", "RUNNER_TOOL_CACHE", "LANG", "LC_ALL") if key in os.environ},
+            request["runtime_seconds"] - 20, terminate_grace=2, progress_poll=5)
+    finally:
+        os.dup2(saved, 0)
+        os.close(saved)
+    require(manager["managed_custody_closed"](kernel), "ROOT_CUSTODY_QUOTA_WORKER_ACTUAL_FIN_REQUIRED")
+    manager["pre_capture_kernel_state"]()
+    os.chown(log, request["owner_uid"], request["owner_gid"], follow_symlinks=False)
+    worker_raw = _read(log, 40 * 1024**2)
+    from scripts import rc6_capacity_calibration as calibration
+    worker = calibration.decode(worker_raw)
+    require(worker.get("schema") == "porota.rc6.capacity-worker.v1", "ROOT_CUSTODY_CALIBRATION_WORKER_WIRE_REQUIRED")
+    # Keep the original byte-exact worker report once. Relays carry only its
+    # hash and actual FIN; repeating base64 RAW would triple physical storage.
+    relay = {"schema": "porota.rc6.capacity-custody-worker.v1", "request_sha256": worker["request_sha256"],
+        "root_worker": {"path": log.name, "sha256": sha256(worker_raw), "bytes": len(worker_raw)},
+        "privileged_controller": {"controller": controller, "worker_kernel": kernel,
+            "manager_sha256": MANAGER_SHA256, "root_native_FIN_closed": True,
+            "root_native_phase_green": manager["managed_phase_green"](kernel)}}
+    sys.stdout.buffer.write(wire(relay))
+    sys.stdout.buffer.flush()
+    return 0 if manager["managed_phase_green"](kernel) else 1
+
+
+class CustodyWitness:
+    def __init__(self, authority, receipt, binding):
+        require(authority is _AUTHORITY, "ROOT_CUSTODY_SYNTHETIC_WITNESS_FORBIDDEN")
+        self.authority, self.receipt, self.binding = authority, receipt, dict(binding)
+        self.pid, self.start = os.getpid(), kernel_process(os.getpid())["start_ticks"]
+        _WITNESSES[id(self)] = (self, self.pid, self.start, sha256(wire(receipt)), dict(binding))
+
+
+def validate_witness(witness, *, binding):
+    registered = _WITNESSES.get(id(witness))
+    require(type(witness) is CustodyWitness and registered is not None and registered[0] is witness
+            and witness.authority is _AUTHORITY
+            and witness.pid == os.getpid() and witness.start == kernel_process(os.getpid())["start_ticks"]
+            and registered[1:3] == (witness.pid, witness.start)
+            and witness.binding == binding == registered[4]
+            and sha256(wire(witness.receipt)) == registered[3]
+            and witness.receipt.get("status") == "NATIVE_CUSTODY_PROVED",
+            "ROOT_CUSTODY_ACTUAL_IN_PROCESS_WITNESS_REQUIRED")
+    return witness.receipt
+
+
+def verify_live_controller(proof, request):
+    """Authorize the service-ancestor exception using actual live kernel state."""
+    require(proof.get("calibration_request_sha256") == request.get("original_request_sha256"),
+            "ROOT_CUSTODY_CALIBRATION_REQUEST_REBOUND")
+    mapping = proof.get("guardian_native_mapping")
+    require(type(mapping) is dict and mapping.get("binding") == request["binding"]
+            and mapping.get("source_sha") == request["source_sha"] and mapping.get("source_tree") == request["source_tree"],
+            "ROOT_CUSTODY_NATIVE_GUARDIAN_MAPPING_REQUIRED")
+    guardian = _external_controller(proof, request, mapping)
+    boundary = proof.get("pid_boundary")
+    require(type(boundary) is dict, "ROOT_CUSTODY_ACTUAL_PRIVATE_BROKER_PROOF_REQUIRED")
+    broker = kernel_process(1)
+    require(broker == boundary["local"] and mapping["host_private_PID1"] == boundary["host"]
+            and broker["uids"] == [0] * 4 and broker["pid_namespace_inode"] != guardian["pid_namespace_inode"],
+            "ROOT_CUSTODY_PRIVATE_ROOT_BROKER_KERNEL_REBOUND")
+    current = kernel_process(os.getpid())
+    require(current["parent_pid"] == 1 and current["cgroup"] == broker["cgroup"]
+            and current["pid_namespace_inode"] == broker["pid_namespace_inode"]
+            and current["pid_namespace_inode"] != guardian["pid_namespace_inode"],
+            "ROOT_CUSTODY_CURRENT_WORKER_NOT_ACTUAL_SERVICE_CHILD")
+    _private_identity(request, mapping)
+    return broker
+
+
+def execute_service(namespace, command, *, cwd, environ, progress, timeout_seconds,
+                    log_relative="producer-native.log", fin_label=None):
+    """Transport only an authenticated own directory FD through existing stdio."""
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    owned.authenticate(namespace)
+    directory = os.open(namespace.path, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    saved = os.dup(0)
+    try:
+        os.dup2(directory, 0)
+        return owned.execute_owned(namespace, command, cwd=cwd, environ=environ, progress=progress,
+            timeout_seconds=timeout_seconds, log_relative=log_relative, fin_label=fin_label)
+    finally:
+        os.dup2(saved, 0)
+        os.close(saved)
+        os.close(directory)
+
+
+def _observer(birth_path, binding, state, progress, *, expected_pid1=None, expected_host=None):
+    """Read a trusted supervisory birth control only; never producer RAW."""
+    expected_pid1 = public_kernel_process(1) if expected_pid1 is None else public_process_identity(expected_pid1)
+    expected_host = host_boundary_snapshot() if expected_host is None else require_host_boundary(expected_host)
+    def observe(stage, pid, entered, deadline, log_fd):
+        if progress is not None:
+            progress(stage, pid, entered, deadline, log_fd)
+        if state.get("pidfd") is not None or not Path(birth_path).exists():
+            return
+        birth = json.loads(_read(birth_path))
+        require(birth.get("binding") == binding, "ROOT_CUSTODY_BIRTH_BINDING_REBOUND")
+        root_name = Path(birth_path).parent.name
+        require(root_name.startswith("r6-"), "ROOT_CUSTODY_ORIGINAL_BIRTH_NAMESPACE_REQUIRED")
+        nonce = base64.urlsafe_b64decode(root_name[3:] + "==").hex()
+        expected_unit = unit_name(nonce, guard=Path(birth_path).name == "guardian-birth.json")
+        actual = public_kernel_process(birth["controller"]["actor"]["pid"])
+        require(actual == public_process_identity(birth["controller"]["actor"])
+                and actual["uids"] == [0] * 4 and actual["parent_pid"] == 1,
+                "ROOT_CUSTODY_SUPERVISORY_BIRTH_NOT_ACTUAL_ROOT")
+        require(birth["controller"].get("unit") == expected_unit
+                and actual["cgroup"] == "0::/system.slice/" + expected_unit,
+                "ROOT_CUSTODY_SUPERVISORY_BIRTH_FOREIGN_UNIT")
+        descriptor = os.pidfd_open(actual["pid"], 0)
+        parent_descriptor = None
+        try:
+            require(public_kernel_process(actual["pid"]) == actual, "ROOT_CUSTODY_PIDFD_BIRTH_RACE")
+            observer = kernel_process(os.getpid())
+            parent = public_kernel_process(actual["parent_pid"])
+            require(parent == expected_pid1 == birth["controller"].get("PID1")
+                    and parent["boot_id"] == observer["boot_id"] == actual["boot_id"]
+                    and parent["uids"] == [0] * 4 and parent["pid"] == 1
+                    and observer["pid_namespace_inode"] == birth["controller"]["actor"]["pid_namespace_inode"]
+                    and host_boundary_snapshot() == expected_host == birth["controller"].get("host_boundary")
+                    and birth["controller"].get("mount_namespace_inode") != expected_host["mount_namespace_inode"],
+                    "ROOT_CUSTODY_LIVE_EXTERNAL_PID1_OR_BOUNDARY_REBOUND")
+            parent_descriptor = os.pidfd_open(parent["pid"], 0)
+            for live_descriptor in (descriptor, parent_descriptor):
+                poller = select.poll()
+                poller.register(live_descriptor, select.POLLIN | select.POLLHUP)
+                require(not poller.poll(0), "ROOT_CUSTODY_EXTERNAL_PIDFD_ALREADY_EXITED")
+            require(public_kernel_process(parent["pid"]) == parent
+                    and public_kernel_process(actual["pid"]) == actual,
+                    "ROOT_CUSTODY_EXTERNAL_PARENT_BIRTH_RACE")
+            from scripts import rc6_capacity_calibration as calibration
+            calibration.publish(Path(birth_path).with_suffix(".observed.json"), {
+                "schema": "porota.rc6.root-controller-native-pidfd-observed.v1", "binding": binding,
+                "birth_sha256": sha256(wire(birth)), "controller_pid": actual["pid"],
+                "issuer": issuer_snapshot(observer), "actual_controller": actual, "actual_PID1": parent,
+                "host_boundary": expected_host, "ROOT_custody_qualified_by_JSON": False})
+        except BaseException:
+            os.close(descriptor)
+            if parent_descriptor is not None:
+                os.close(parent_descriptor)
+            raise
+        state.update(pidfd=descriptor, parent_pidfd=parent_descriptor, birth=birth,
+                     external_PID1=parent, external_PID1_observed_native=True)
+    return observe
+
+
+def _closed_service(state):
+    descriptor = state.get("pidfd")
+    require(type(descriptor) is int, "ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED")
+    try:
+        poller = select.poll()
+        poller.register(descriptor, select.POLLIN | select.POLLHUP)
+        require(bool(poller.poll(0)), "ROOT_CUSTODY_CONTROLLER_PIDFD_NOT_EXITED")
+        require(state.get("external_PID1_observed_native") is True
+                and public_kernel_process(1) == state.get("external_PID1"),
+                "ROOT_CUSTODY_EXTERNAL_PID1_FIN_REBOUND")
+        actor = state["birth"]["controller"]["actor"]
+        require(not Path("/proc/" + str(actor["pid"])).exists(), "ROOT_CUSTODY_PID1_ACTUAL_CONTROLLER_REAP_UNKNOWN")
+        cgroup = Path("/sys/fs/cgroup") / actor["cgroup"].split("::", 1)[1].lstrip("/")
+        if cgroup.exists():
+            events = dict(line.split() for line in _proc_text(cgroup / "cgroup.events").splitlines())
+            require(events.get("populated") == "0", "ROOT_CUSTODY_ACTUAL_SERVICE_CHILDREN_REMAIN")
+        return {"pidfd_exit_observed": True, "PID1_actual_broker_reap_observed": True,
+                "owned_cgroup_empty_or_removed": True, "root_actor": actor,
+                "external_PID1_live_kernel_identity": state["external_PID1"],
+                "external_PID1_birth_pidfd_ACK_verified": True,
+                "ROOT_custody_qualified_by_JSON": False}
+    finally:
+        os.close(descriptor)
+        state["pidfd"] = None
+        parent_descriptor = state.pop("parent_pidfd", None)
+        if parent_descriptor is not None:
+            os.close(parent_descriptor)
+
+
+class CustodyFailure(ValueError):
+    """RED diagnostic only; this object is never a ROOT custody witness."""
+    def __init__(self, error, diagnostics):
+        super().__init__(str(error))
+        self.diagnostics = diagnostics
+
+
+def _failure_destination(destination, namespace):
+    path = Path(destination)
+    require(path.is_absolute() and ".." not in path.parts and not os.path.lexists(path)
+            and not path.is_relative_to(namespace.path) and not path.is_relative_to(ROOT)
+            and not namespace.path.is_relative_to(path)
+            and not any(p.is_symlink() for p in (path, *path.parents)),
+            "ROOT_CUSTODY_FRESH_OUTSIDE_CAPTURE_REQUIRED")
+    parent = path.parent.lstat()
+    require(stat.S_ISDIR(parent.st_mode) and parent.st_uid == os.geteuid(),
+            "ROOT_CUSTODY_DIAGNOSTIC_PARENT_CUSTODY_REQUIRED")
+    path.mkdir(mode=0o700)
+    return path
+
+
+def _diagnostic_bytes(path, raw):
+    require(len(raw) <= CONTROL_BOUND, "ROOT_CUSTODY_DIAGNOSTIC_BYTES_BOUND")
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb", closefd=False) as stream:
+            stream.write(raw)
+    finally:
+        os.close(descriptor)
+
+
+def _inactive_unit_readback(unit, raw, returncode):
+    """Read-only absence of writers, never signal/reap or ROOT FIN credit."""
+    require(type(unit) is str and re.fullmatch(r"rc6-native-[0-9a-f]{32}(?:-guard)?\.service", unit),
+            "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
+    expected = "/system.slice/" + unit
+    fields = ("Id", "LoadState", "ActiveState", "SubState", "MainPID", "ControlPID", "ControlGroup")
+    require(len(raw) <= 65536 and type(returncode) is int and returncode in (0, 4),
+            "ROOT_CUSTODY_DIAGNOSTIC_UNIT_QUERY_UNKNOWN")
+    rows = raw.decode("utf-8", errors="strict").splitlines()
+    require(len(rows) == len(fields) and all("=" in row for row in rows),
+            "ROOT_CUSTODY_DIAGNOSTIC_UNIT_FIELDS_UNKNOWN")
+    values = dict(row.split("=", 1) for row in rows)
+    require(set(values) == set(fields) and values["Id"] == unit
+            and values["LoadState"] in ("loaded", "not-found")
+            and values["ActiveState"] in ("inactive", "failed")
+            and values["SubState"] in ("dead", "failed")
+            and values["MainPID"] == values["ControlPID"] == "0"
+            and values["ControlGroup"] in ("", expected),
+            "ROOT_CUSTODY_DIAGNOSTIC_UNIT_STILL_ACTIVE_OR_UNKNOWN")
+    # systemctl returns 4 for an absent/collected unit. This remains a RED
+    # command: only exact not-found metadata plus actual cgroup absence/empty
+    # permits diagnostic RAW capture; it provides no ROOT FIN or phase GREEN.
+    require(returncode == 0 or values["LoadState"] == "not-found"
+            and values["ActiveState"] == "inactive" and values["SubState"] == "dead"
+            and values["ControlGroup"] == "", "ROOT_CUSTODY_DIAGNOSTIC_EXIT4_NOT_EXACT_ABSENCE")
+    state = _cgroup_writer_absence(unit)
+    return {"unit": unit, "properties": values, "cgroup_state": state,
+            "scope": "READONLY_WRITER_ABSENCE_ONLY", "ROOT_FIN_claimed": False,
+            "systemd_query_samples": 1, "fresh_systemd_recheck_after_capture": False}
+
+
+def _cgroup_writer_absence(unit):
+    require(type(unit) is str and re.fullmatch(r"rc6-native-[0-9a-f]{32}(?:-guard)?\.service", unit),
+            "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
+    expected = "/system.slice/" + unit
+    cgroup = Path("/sys/fs/cgroup") / expected.lstrip("/")
+    # A missing directory is usable only beneath a readable actual cgroup2
+    # mount. Absence of /sys/fs/cgroup itself is not proof of no writers.
+    mounts = [row.split() for row in _proc_text("/proc/self/mountinfo").splitlines()]
+    require(any(row[4] == "/sys/fs/cgroup" and row[row.index("-") + 1] == "cgroup2" for row in mounts),
+            "ROOT_CUSTODY_DIAGNOSTIC_CGROUP_MOUNT_UNKNOWN")
+    try:
+        before = cgroup.lstat()
+    except FileNotFoundError:
+        Path("/sys/fs/cgroup").lstat()
+        state = "EXACT_CGROUP_ABSENT"
+    else:
+        require(stat.S_ISDIR(before.st_mode), "ROOT_CUSTODY_DIAGNOSTIC_CGROUP_NOT_DIRECTORY")
+        events = dict(row.split() for row in _proc_text(cgroup / "cgroup.events").splitlines())
+        require(events.get("populated") == "0" and not _proc_text(cgroup / "cgroup.procs").strip()
+                and not _proc_text(cgroup / "cgroup.threads").strip()
+                and before == cgroup.lstat(), "ROOT_CUSTODY_DIAGNOSTIC_CGROUP_WRITERS_UNKNOWN")
+        state = "EXACT_CGROUP_NATIVE_EMPTY"
+    return state
+
+
+def journal_command(unit, boot_id, invocation_id=None):
+    require(type(unit) is str and re.fullmatch(r"rc6-native-[0-9a-f]{32}(?:-guard)?\.service", unit),
+            "ROOT_CUSTODY_PRIVATE_UNIT_NAME_REQUIRED")
+    require(type(boot_id) is str and re.fullmatch(r"[0-9a-f]{32}", boot_id),
+            "ROOT_CUSTODY_JOURNAL_ACTUAL_BOOT_REQUIRED")
+    if invocation_id is not None:
+        require(type(invocation_id) is str and re.fullmatch(r"[0-9a-f]{32}", invocation_id)
+                and invocation_id != "0" * 32, "ROOT_CUSTODY_JOURNAL_INVOCATION_ID_REQUIRED")
+        return ["/usr/bin/journalctl", "--no-pager", "--quiet", "--output=json", "--lines=30",
+                "--output-fields=" + JOURNAL_FIELDS, "_BOOT_ID=" + boot_id, "_UID=0",
+                "INVOCATION_ID=" + invocation_id]
+    # PID1 and the pre-exec ROOT executor report UNIT=. The executor may not
+    # yet have trusted _SYSTEMD_UNIT= for this service. Keep exact boot/ROOT
+    # UID/unit matches without filtering its PID away. These are diagnostics.
+    return ["/usr/bin/journalctl", "--no-pager", "--quiet", "--output=json", "--lines=30",
+        "--output-fields=" + JOURNAL_FIELDS,
+        "_BOOT_ID=" + boot_id, "_UID=0", "UNIT=" + unit, "+", "_BOOT_ID=" + boot_id, "_SYSTEMD_UNIT=" + unit]
+
+
+def systemd_query_command(kind):
+    """Fixed NONROOT read-only commands; no unit selection or mutation API."""
+    commands = {
+        "manager": ["/usr/bin/systemctl", "show", "--no-pager",
+                    "--property=" + ",".join(SYSTEMD_CONFIG_FIELDS)],
+        "version": ["/usr/bin/systemd-run", "--version"],
+        "package": ["/usr/bin/dpkg-query", "--show", "--showformat=${Package}\t${Version}\n", "systemd"],
+    }
+    require(type(kind) is str and kind in commands, "ROOT_CUSTODY_FIXED_SYSTEMD_QUERY_REQUIRED")
+    return list(commands[kind])
+
+
+def _installed_systemd_binary(path):
+    """Hash an installed trusted file, never claim it is PID1's pinned FD."""
+    path = Path(path)
+    require(str(path) in SYSTEMD_BINARY_PATHS, "ROOT_CUSTODY_FIXED_SYSTEMD_BINARY_REQUIRED")
+    require(not any(item.is_symlink() for item in (path, *path.parents)),
+            "ROOT_CUSTODY_SYSTEMD_BINARY_ALIAS")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_uid == 0 and not before.st_mode & 0o022
+                and 0 < before.st_size <= SYSTEMD_BINARY_BOUND, "ROOT_CUSTODY_SYSTEMD_BINARY_IDENTITY_UNKNOWN")
+        hashed, size = hashlib.sha256(), 0
+        while True:
+            part = os.read(descriptor, 131072)
+            if not part:
+                break
+            size += len(part)
+            require(size <= SYSTEMD_BINARY_BOUND, "ROOT_CUSTODY_SYSTEMD_BINARY_BYTES_BOUND")
+            hashed.update(part)
+        after = os.fstat(descriptor)
+        fields = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+        identity = [getattr(before, name) for name in fields]
+        require(size == before.st_size and identity == [getattr(after, name) for name in fields]
+                and identity == [getattr(path.lstat(), name) for name in fields],
+                "ROOT_CUSTODY_SYSTEMD_BINARY_CHANGED")
+        return {"path": str(path), "bytes": size, "sha256": hashed.hexdigest(), "identity": identity,
+                "running_PID1_or_executor_identity_verified": False}
+    finally:
+        os.close(descriptor)
+
+
+def systemd_query_worker(kind):
+    require(os.getuid() == os.geteuid() > 0 and public_kernel_process(os.getpid())["capabilities"]["CapEff"] == 0,
+            "ROOT_CUSTODY_SYSTEMD_QUERY_NONROOT_ONLY")
+    require(kind in ("manager", "version", "package", "binaries"), "ROOT_CUSTODY_FIXED_SYSTEMD_QUERY_REQUIRED")
+    resource.setrlimit(resource.RLIMIT_FSIZE, (SYSTEMD_QUERY_BOUND, SYSTEMD_QUERY_BOUND))
+    if kind != "binaries":
+        command = systemd_query_command(kind)
+        os.execve(command[0], command, {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+    rows = []
+    for path in SYSTEMD_BINARY_PATHS:
+        try:
+            rows.append(_installed_systemd_binary(path))
+        except (ValueError, OSError) as error:
+            rows.append({"path": path, "status": "UNKNOWN", "errno": getattr(error, "errno", None),
+                         "reason": str(error), "running_PID1_or_executor_identity_verified": False})
+    sys.stdout.buffer.write(wire({"schema": "porota.rc6.installed-systemd-binaries.v1", "files": rows,
+        "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False}))
+    return 0
+
+
+def systemd_diagnostic_origin(raws):
+    """Inspect original query bytes; observations cannot admit a ROOT actor."""
+    result = {"status": "UNKNOWN", "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False,
+              "namespace_failure_cause": "UNKNOWN", "running_PID1_binary_identity_verified": False}
+    try:
+        require(type(raws) is dict and set(raws) == {"manager", "version", "package", "binaries"}
+                and all(type(raw) is bytes and 0 < len(raw) <= SYSTEMD_QUERY_BOUND for raw in raws.values()),
+                "ROOT_CUSTODY_SYSTEMD_ORIGINAL_QUERY_BYTES_REQUIRED")
+        config = {}
+        for line in raws["manager"].decode("utf-8", errors="strict").splitlines():
+            key, value = line.split("=", 1)
+            require(key in SYSTEMD_CONFIG_FIELDS and key not in config and value
+                    and len(value) <= 512, "ROOT_CUSTODY_SYSTEMD_MANAGER_FIELDS_UNKNOWN")
+            config[key] = value
+        require(set(config) == set(SYSTEMD_CONFIG_FIELDS)
+                and config["LogLevel"] in ("emerg", "alert", "crit", "err", "warning", "notice", "info", "debug")
+                and config["LogTarget"] in ("auto", "console", "console-prefixed", "journal", "journal-or-kmsg",
+                    "kmsg", "syslog", "syslog-or-kmsg", "null"), "ROOT_CUSTODY_SYSTEMD_MANAGER_PROFILE_UNKNOWN")
+        version = raws["version"].decode("utf-8", errors="strict").splitlines()[0]
+        require(re.fullmatch(r"systemd [0-9]{3}(?:\.[0-9]+)?(?: \([^\r\n]{1,256}\))?", version),
+                "ROOT_CUSTODY_SYSTEMD_VERSION_UNKNOWN")
+        package = raws["package"].decode("utf-8", errors="strict").strip()
+        require(re.fullmatch(r"systemd\t[0-9][A-Za-z0-9.+:~\-]{0,255}", package),
+                "ROOT_CUSTODY_SYSTEMD_PACKAGE_UNKNOWN")
+        package_version = package.split("\t", 1)[1]
+        require(config["Version"] == package_version and ("(" + package_version + ")") in version,
+                "ROOT_CUSTODY_SYSTEMD_LIVE_AND_INSTALLED_VERSION_REBOUND")
+        from scripts import rc6_capacity_calibration as calibration
+        binaries = calibration.decode(raws["binaries"])
+        require(binaries.get("schema") == "porota.rc6.installed-systemd-binaries.v1"
+                and binaries.get("ROOT_custody_qualified") is False and binaries.get("ROOT_FIN_claimed") is False
+                and type(binaries.get("files")) is list
+                and [row.get("path") for row in binaries["files"]] == list(SYSTEMD_BINARY_PATHS)
+                and all(type(row.get("sha256")) is str and re.fullmatch(r"[0-9a-f]{64}", row["sha256"])
+                    and type(row.get("bytes")) is int and 0 < row["bytes"] <= SYSTEMD_BINARY_BOUND
+                    and type(row.get("identity")) is list and len(row["identity"]) == 9
+                    and all(type(item) is int for item in row["identity"])
+                    and row["identity"][2] == 0 and stat.S_ISREG(row["identity"][4])
+                    and row["identity"][4] & 0o022 == 0 and row["identity"][5] > 0
+                    and row["identity"][6] == row["bytes"]
+                    and row.get("running_PID1_or_executor_identity_verified") is False
+                    for row in binaries["files"]), "ROOT_CUSTODY_SYSTEMD_INSTALLED_BINARY_UNKNOWN")
+        return {**result, "status": "SCOPED_NONROOT_SYSTEMD_OBSERVATION_ONLY", "manager": config,
+                "installed_version": version, "installed_package": package, "installed_binaries": binaries["files"],
+                "executor_logging_journal_target_observed": config["LogTarget"] in ("journal", "journal-or-kmsg"),
+                "default_stdio_is_guard_pipe_stdio_claimed": False}
+    except (ValueError, TypeError, KeyError, UnicodeError, IndexError, AttributeError) as error:
+        return {**result, "reason": str(error)}
+
+
+def journal_query_worker(unit, boot_id, invocation_id=None):
+    require(os.getuid() == os.geteuid() > 0 and public_kernel_process(os.getpid())["capabilities"]["CapEff"] == 0,
+            "ROOT_CUSTODY_JOURNAL_NONROOT_ONLY")
+    require(_proc_text("/proc/sys/kernel/random/boot_id").strip().replace("-", "") == boot_id,
+            "ROOT_CUSTODY_JOURNAL_ACTUAL_BOOT_REQUIRED")
+    command = (journal_command(unit, boot_id) if invocation_id is None
+               else journal_command(unit, boot_id, invocation_id))
+    # Even a journal entry with a huge MESSAGE cannot grow the original
+    # manager's log past this physical cap. SIGXFSZ is RED with actual FIN.
+    resource.setrlimit(resource.RLIMIT_FSIZE, (CONTROL_BOUND, CONTROL_BOUND))
+    os.execve(command[0], command, {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+
+
+def journal_origin(raw, *, unit, boot_id, owner_uid, kernel):
+    result = {"status": "UNKNOWN", "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False,
+              "unit": unit, "boot_id": boot_id, "record_count": 0}
+    if kernel.get("timed_out") is not False or kernel.get("returncode") != 0:
+        return {**result, "reason": "JOURNAL_QUERY_RED"}
+    if not raw.strip():
+        return {**result, "reason": "JOURNAL_EMPTY"}
+    try:
+        from scripts import rc6_capacity_calibration as calibration
+        rows = raw.splitlines()
+        require(len(raw) <= CONTROL_BOUND and 1 <= len(rows) <= 30, "ROOT_CUSTODY_JOURNAL_BOUND_REQUIRED")
+        kinds = []
+        for row in rows:
+            value = calibration.decode(row)
+            require(type(value) is dict and value.get("_BOOT_ID") == boot_id,
+                    "ROOT_CUSTODY_JOURNAL_FOREIGN_BOOT")
+            if value.get("_UID") == "0" and value.get("UNIT") == unit:
+                require(type(value.get("_PID")) is str and value["_PID"].isdigit() and int(value["_PID"]) > 0,
+                        "ROOT_CUSTODY_JOURNAL_ROOT_UNIT_PID_INVALID")
+                if value["_PID"] == "1":
+                    kinds.append("PID1_UNIT")
+                else:
+                    require(value.get("CODE_FILE") in ("src/core/exec-invoke.c", "src/core/namespace.c", "src/core/executor.c")
+                            and type(value.get("CODE_FUNC")) is str and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value["CODE_FUNC"])
+                            and type(value.get("CODE_LINE")) is str and value["CODE_LINE"].isdigit()
+                            and int(value["CODE_LINE"]) > 0,
+                            "ROOT_CUSTODY_JOURNAL_EXECUTOR_SOURCE_REQUIRED")
+                    kinds.append("ROOT_UNIT_FIELD_DIAGNOSTIC_ONLY")
+            else:
+                require(value.get("_SYSTEMD_UNIT") == unit and value.get("_UID") in ("0", str(owner_uid))
+                        and type(value.get("_PID")) is str and value["_PID"].isdigit() and int(value["_PID"]) > 1
+                        and value.get("_SYSTEMD_CGROUP", "/system.slice/" + unit) == "/system.slice/" + unit,
+                        "ROOT_CUSTODY_JOURNAL_FOREIGN_PROCESS_OR_UNIT")
+                kinds.append("OWN_UNIT")
+        return {**result, "status": "SCOPED_JOURNAL_OBSERVATION_ONLY", "record_count": len(rows), "origins": kinds}
+    except (ValueError, TypeError, KeyError, UnicodeError) as error:
+        return {**result, "reason": str(error)}
+
+
+def journal_invocation_anchor(raw, *, unit, boot_id, owner_uid, kernel):
+    """Link a captured PID1 exit to diagnostics, never to ROOT admission."""
+    result = {"status": "UNKNOWN", "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False,
+              "unit": unit, "boot_id": boot_id, "primary_raw_sha256": sha256(raw)}
+    origin = journal_origin(raw, unit=unit, boot_id=boot_id, owner_uid=owner_uid, kernel=kernel)
+    if origin["status"] != "SCOPED_JOURNAL_OBSERVATION_ONLY":
+        return {**result, "reason": "JOURNAL_ANCHOR_PRIMARY_UNKNOWN"}
+    try:
+        from scripts import rc6_capacity_calibration as calibration
+        journal_command(unit, boot_id)
+        records = [(row, calibration.decode(row)) for row in raw.splitlines()]
+        anchors = [(row, value) for row, value in records if value.get("_PID") == "1"
+                   and value.get("CODE_FUNC") == "unit_log_process_exit"]
+        require(len(anchors) == 1, "ROOT_CUSTODY_JOURNAL_UNIQUE_PID1_EXIT_REQUIRED")
+        row, value = anchors[0]
+        require(value.get("_BOOT_ID") == boot_id and value.get("_UID") == "0"
+                and value.get("UNIT") == unit and value.get("CODE_FILE") == "src/core/unit.c"
+                and type(value.get("CODE_LINE")) is str and value["CODE_LINE"].isascii()
+                and value["CODE_LINE"].isdigit() and int(value["CODE_LINE"]) > 0
+                and value.get("MESSAGE_ID") == UNIT_PROCESS_EXIT_MESSAGE_ID
+                and value.get("EXIT_CODE") == "exited" and value.get("EXIT_STATUS") == "226",
+                "ROOT_CUSTODY_JOURNAL_PID1_NAMESPACE_EXIT_REQUIRED")
+        invocation_id = value.get("INVOCATION_ID")
+        journal_command(unit, boot_id, invocation_id)
+        require(invocation_id is not None, "ROOT_CUSTODY_JOURNAL_INVOCATION_ID_REQUIRED")
+        for _, record in records:
+            if record.get("_PID") == "1" and "INVOCATION_ID" in record:
+                require(record["INVOCATION_ID"] == invocation_id,
+                        "ROOT_CUSTODY_JOURNAL_PID1_INVOCATION_CONFLICT")
+        return {**result, "status": "PID1_INVOCATION_DIAGNOSTIC_ANCHOR_ONLY",
+                "invocation_id": invocation_id, "anchor_record_sha256": sha256(row), "exit_status": 226}
+    except (ValueError, TypeError, KeyError, UnicodeError) as error:
+        return {**result, "reason": str(error)}
+
+
+def journal_invocation_origin(raw, *, unit, boot_id, invocation_id, kernel):
+    result = {"status": "UNKNOWN", "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False,
+              "unit": unit, "boot_id": boot_id, "invocation_id": invocation_id, "record_count": 0}
+    if kernel.get("timed_out") is not False or kernel.get("returncode") != 0:
+        return {**result, "reason": "JOURNAL_QUERY_RED"}
+    if not raw.strip():
+        return {**result, "reason": "JOURNAL_EMPTY"}
+    try:
+        from scripts import rc6_capacity_calibration as calibration
+        journal_command(unit, boot_id, invocation_id)
+        require(invocation_id is not None, "ROOT_CUSTODY_JOURNAL_INVOCATION_ID_REQUIRED")
+        rows = raw.splitlines()
+        require(len(raw) <= CONTROL_BOUND and 1 <= len(rows) <= 30, "ROOT_CUSTODY_JOURNAL_BOUND_REQUIRED")
+        for row in rows:
+            value = calibration.decode(row)
+            require(type(value) is dict and value.get("_BOOT_ID") == boot_id and value.get("_UID") == "0"
+                    and value.get("INVOCATION_ID") == invocation_id,
+                    "ROOT_CUSTODY_JOURNAL_FOREIGN_INVOCATION")
+            pid = value.get("_PID")
+            require(type(pid) is str and pid.isascii() and pid.isdigit() and int(pid) > 0,
+                    "ROOT_CUSTODY_JOURNAL_ROOT_UNIT_PID_INVALID")
+            require("UNIT" not in value or value["UNIT"] == unit, "ROOT_CUSTODY_JOURNAL_FOREIGN_UNIT")
+            cached_executor = (pid != "1" and value.get("_EXE") == "/usr/lib/systemd/systemd-executor"
+                               and value.get("CODE_FILE") in ("src/core/namespace.c", "src/core/exec-invoke.c",
+                                   "src/shared/mount-util.c", "src/basic/mountpoint-util.c", "src/core/executor.c"))
+            expected_units = (unit, "init.scope") if pid == "1" or cached_executor else (unit,)
+            require("_SYSTEMD_UNIT" not in value or value["_SYSTEMD_UNIT"] in expected_units,
+                    "ROOT_CUSTODY_JOURNAL_FOREIGN_UNIT")
+            expected_cgroups = (("/system.slice/" + unit, "/init.scope") if pid == "1" or cached_executor
+                                else ("/system.slice/" + unit,))
+            require("_SYSTEMD_CGROUP" not in value or value["_SYSTEMD_CGROUP"] in expected_cgroups,
+                    "ROOT_CUSTODY_JOURNAL_FOREIGN_CGROUP")
+            require(type(value.get("CODE_FILE")) is str and value["CODE_FILE"].startswith("src/")
+                    and ".." not in value["CODE_FILE"].split("/")
+                    and re.fullmatch(r"src/[A-Za-z0-9_./-]+\.c", value["CODE_FILE"])
+                    and type(value.get("CODE_FUNC")) is str and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value["CODE_FUNC"])
+                    and type(value.get("CODE_LINE")) is str and value["CODE_LINE"].isascii()
+                    and value["CODE_LINE"].isdigit() and int(value["CODE_LINE"]) > 0,
+                    "ROOT_CUSTODY_JOURNAL_EXECUTOR_SOURCE_REQUIRED")
+            for field in ("_EXE", "_COMM", "SYSLOG_IDENTIFIER", "MESSAGE"):
+                if field in value:
+                    require(type(value[field]) is str and "\x00" not in value[field],
+                            "ROOT_CUSTODY_JOURNAL_INVALID_METADATA")
+            require("_EXE" not in value or value["_EXE"].startswith("/"),
+                    "ROOT_CUSTODY_JOURNAL_INVALID_METADATA")
+            for field in ("MESSAGE_ID", "_SYSTEMD_INVOCATION_ID"):
+                if field in value:
+                    require(type(value[field]) is str and re.fullmatch(r"[0-9a-f]{32}", value[field])
+                            and value[field] != "0" * 32, "ROOT_CUSTODY_JOURNAL_INVALID_METADATA")
+            require(pid == "1" or "_SYSTEMD_INVOCATION_ID" not in value
+                    or value["_SYSTEMD_INVOCATION_ID"] == invocation_id,
+                    "ROOT_CUSTODY_JOURNAL_FOREIGN_INVOCATION")
+            if "PROCESS_PID" in value:
+                number = value["PROCESS_PID"]
+                require(type(number) is str and number.isascii() and number.isdigit() and int(number) > 1,
+                        "ROOT_CUSTODY_JOURNAL_INVALID_METADATA")
+            if "ERRNO" in value:
+                number = value["ERRNO"]
+                require(type(number) is str and number.isascii() and number.isdigit() and 0 < int(number) <= 4095,
+                        "ROOT_CUSTODY_JOURNAL_INVALID_ERRNO")
+        return {**result, "status": "SCOPED_INVOCATION_DIAGNOSTIC_ONLY", "record_count": len(rows)}
+    except (ValueError, TypeError, KeyError, UnicodeError) as error:
+        return {**result, "reason": str(error)}
+
+
+def _preserve_journal(namespace, unit, output, boot_id, invocation_id=None):
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    require(_proc_text("/proc/sys/kernel/random/boot_id").strip().replace("-", "") == boot_id,
+            "ROOT_CUSTODY_JOURNAL_ACTUAL_BOOT_REQUIRED")
+    command = [sys.executable, "-I", "-B", str(ROOT / MEMBER), "--journal-unit", unit, "--journal-boot", boot_id]
+    if invocation_id is not None:
+        command.extend(["--journal-invocation", invocation_id])
+    label = "diagnostic-journal-query" if invocation_id is None else "diagnostic-journal-invocation-query"
+    prefix = "journal" if invocation_id is None else "journal-invocation"
+    kernel, fin = owned.execute_owned(namespace, command, cwd=ROOT,
+        environ={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, progress=None, timeout_seconds=5,
+        log_relative=label + ".log", fin_label=label)
+    owned.require_fin(namespace, fin)
+    raw = _read(namespace.path / (label + ".log"), CONTROL_BOUND)
+    fin_raw = _read(namespace.path / fin.control_name, 1024**2)
+    _diagnostic_bytes(output / (prefix + "-query-original.log"), raw)
+    _diagnostic_bytes(output / (prefix + "-fin-original.json"), fin_raw)
+    origin = (journal_origin(raw, unit=unit, boot_id=boot_id, owner_uid=os.geteuid(), kernel=kernel)
+              if invocation_id is None else journal_invocation_origin(raw, unit=unit, boot_id=boot_id,
+                  invocation_id=invocation_id, kernel=kernel))
+    result = {"command": journal_command(unit, boot_id, invocation_id), "kernel": kernel,
+        "original_FIN_sha256": sha256(fin_raw), "raw_sha256": sha256(raw), "raw_bytes": len(raw),
+        "origin": origin}
+    if invocation_id is None:
+        result["invocation_anchor"] = journal_invocation_anchor(raw, unit=unit, boot_id=boot_id,
+            owner_uid=os.geteuid(), kernel=kernel)
+    return result
+
+
+def _preserve_failure(context, destination, error):
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    from scripts import rc6_capacity_calibration as calibration
+    diagnostic = {"schema": "porota.rc6.root-custody-failure-diagnostic.v1", "status": "RED",
+        "error_class": type(error).__name__, "error_signature": str(error),
+        "scope": "ORIGINAL_NONROOT_CLIENT_ONLY", "ROOT_FIN": "UNKNOWN",
+        "ROOT_custody_qualified": False, "cleanup_authorized": False, "namespace_removed": False,
+        "reservation_recovery_credited_bytes": 0, "root_producer_RAW_read": False,
+        "writer_absence": "UNKNOWN", "real_orders_sent": 0}
+    diagnostic["private_broker_RAW"] = {"status": "UNKNOWN", "scope": "DIAGNOSTIC_ONLY",
+        "ROOT_FIN_claimed": False, "ROOT_custody_qualified": False}
+    diagnostic["optional_producer_RAW"] = {}
+    namespace, fin = context.get("namespace"), context.get("fin")
+    if namespace is None:
+        return diagnostic
+    diagnostic.update(namespace_retained=str(namespace.path), binding=namespace.binding)
+    if fin is None or destination is None:
+        return diagnostic
+    output = None
+    try:
+        owned.require_fin(namespace, fin)
+        client_fin_raw = _read(namespace.path / fin.control_name, 1024**2)
+        diagnostic.update(client_kernel=context["kernel"], original_client_FIN_sha256=sha256(client_fin_raw),
+            original_client_FIN_control=fin.control_name, original_client_FIN_authenticated=True)
+        output = _failure_destination(destination, namespace)
+        _diagnostic_bytes(output / "client-fin-original.json", client_fin_raw)
+        # Query only the positively owned nonce unit; never enumerate, stop,
+        # signal, reset-failed or mutate any systemd/cgroup state.
+        unit = context["unit"]
+        # This NONROOT query has no ROOT writer and is captured even if the
+        # unit is active/unknown or the query is RED/empty. It never certifies
+        # ROOT custody and cannot grant cleanup or recovery credit.
+        try:
+            boot_id = context.get("boot_id", _proc_text("/proc/sys/kernel/random/boot_id").strip()).replace("-", "")
+            diagnostic["journal"] = _preserve_journal(namespace, unit, output, boot_id)
+        except (ValueError, OSError, KeyError, TypeError) as journal_error:
+            diagnostic["journal"] = {"status": "UNKNOWN", "reason": str(journal_error),
+                "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False}
+        anchor = diagnostic["journal"].get("invocation_anchor", {})
+        diagnostic["journal_invocation"] = {"status": "UNKNOWN", "reason": "PID1_ANCHOR_UNKNOWN",
+            "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False}
+        if anchor.get("status") == "PID1_INVOCATION_DIAGNOSTIC_ANCHOR_ONLY" and context["kernel"].get("returncode") == 226:
+            try:
+                primary_raw = _read(namespace.path / "diagnostic-journal-query.log", CONTROL_BOUND)
+                require(sha256(primary_raw) == diagnostic["journal"]["raw_sha256"] == anchor["primary_raw_sha256"],
+                        "ROOT_CUSTODY_JOURNAL_PRIMARY_BYTES_CHANGED")
+                fresh_anchor = journal_invocation_anchor(primary_raw, unit=unit, boot_id=boot_id,
+                    owner_uid=os.geteuid(), kernel=diagnostic["journal"]["kernel"])
+                require(fresh_anchor == anchor, "ROOT_CUSTODY_JOURNAL_ANCHOR_CHANGED")
+                diagnostic["journal_invocation"] = _preserve_journal(namespace, unit, output, boot_id,
+                    anchor["invocation_id"])
+                diagnostic["journal_invocation"]["primary_anchor"] = anchor
+            except (ValueError, OSError, KeyError, TypeError) as invocation_error:
+                diagnostic["journal_invocation"] = {"status": "UNKNOWN", "reason": str(invocation_error),
+                    "ROOT_custody_qualified": False, "ROOT_FIN_claimed": False}
+        query_kernel, query_fin = owned.execute_owned(namespace, ["systemctl", "show", "--no-pager",
+            "--property=Id,LoadState,ActiveState,SubState,MainPID,ControlPID,ControlGroup", "--", unit],
+            cwd=ROOT, environ={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, progress=None,
+            timeout_seconds=5, log_relative="diagnostic-unit-query.log", fin_label="diagnostic-unit-query")
+        owned.require_fin(namespace, query_fin)
+        query_raw = _read(namespace.path / "diagnostic-unit-query.log", 65536)
+        diagnostic["unit_query_kernel"] = query_kernel
+        diagnostic["unit_query_sha256"] = sha256(query_raw)
+        _diagnostic_bytes(output / "unit-query-original.log", query_raw)
+        try:
+            require(query_kernel["timed_out"] is False and query_kernel["returncode"] in (0, 4),
+                    "ROOT_CUSTODY_DIAGNOSTIC_QUERY_FIN_RED")
+            before = _inactive_unit_readback(unit, query_raw, query_kernel["returncode"])
+        except (ValueError, OSError, KeyError, UnicodeError) as readback_error:
+            diagnostic["writer_absence_error"] = str(readback_error)
+        else:
+            # The original raw stderr/stdout is opened only after actual
+            # owned client FIN and exact unit/cgroup absence of all writers.
+            require((namespace.path / context["log"]).lstat().st_size <= CONTROL_BOUND,
+                    "ROOT_CUSTODY_DIAGNOSTIC_LOG_BYTES_BOUND")
+            snapshot_name = "guardian-unit-original.json" if unit.endswith("-guard.service") else "broker-unit-original.json"
+            snapshot_files = [snapshot_name] if (namespace.path / snapshot_name).exists() else []
+            if snapshot_files:
+                snapshot_raw = _read(namespace.path / snapshot_name, CONTROL_BOUND)
+                diagnostic["unit_snapshot"] = unit_snapshot_origin(snapshot_raw, unit=unit, binding=namespace.binding)
+            optional_files = []
+            for optional_name in OPTIONAL_FAILURE_RAW_NAMES:
+                metadata = {"status": "UNKNOWN", "scope": "DIAGNOSTIC_ONLY",
+                    "ROOT_FIN_claimed": False, "ROOT_custody_qualified": False}
+                diagnostic["optional_producer_RAW"][optional_name] = metadata
+                if optional_name == "private-broker-native.log":
+                    diagnostic["private_broker_RAW"] = metadata
+                try:
+                    details = (namespace.path / optional_name).lstat()
+                    owned.custody.private_stat(details)
+                    require(details.st_gid == os.getegid() and details.st_dev == namespace.identity[0]
+                            and not stat.S_IMODE(details.st_mode) & 0o022 and details.st_size <= CONTROL_BOUND,
+                            "ROOT_CUSTODY_PRIVATE_DIAGNOSTIC_SOURCE_INVALID")
+                    optional_files.append(optional_name)
+                except (ValueError, OSError) as optional_error:
+                    metadata["reason"] = str(optional_error)
+            capture = owned.capture_required_evidence(namespace, query_fin, output / "closed-client-raw",
+                [context["log"], "diagnostic-unit-query.log", *snapshot_files, *optional_files,
+                 *(["diagnostic-journal-query.log"] if "raw_sha256" in diagnostic["journal"] else []),
+                 *(["diagnostic-journal-invocation-query.log"] if "raw_sha256" in diagnostic["journal_invocation"] else [])])
+            # Only cgroup state is read again. The single systemd query above
+            # is retained verbatim and never advertised as a fresh second one.
+            after = _cgroup_writer_absence(unit)
+            require(after == before["cgroup_state"], "ROOT_CUSTODY_DIAGNOSTIC_WRITER_ABSENCE_CHANGED")
+            for optional_name in optional_files:
+                row = next(row for row in capture.files if row["relative_source"] == optional_name)
+                diagnostic["optional_producer_RAW"][optional_name].update(
+                    status="CAPTURED_PRIVATE_RAW_DIAGNOSTIC_ONLY", sha256=row["sha256"],
+                    bytes=row["bytes"], relative_source=optional_name)
+            diagnostic.update(writer_absence=before, root_producer_RAW_read=True,
+                cgroup_revalidated_after_capture=True,
+                diagnostic_capture=str(capture.path), diagnostic_capture_manifest_sha256=capture.manifest_sha256,
+                ROOT_custody_qualified=False)
+        calibration.publish(output / "failure.json", diagnostic)
+        diagnostic["diagnostic_root"] = str(output)
+    except (ValueError, OSError, KeyError, TypeError) as diagnostic_error:
+        diagnostic["preservation_error"] = str(diagnostic_error)
+        if output is not None:
+            try:
+                calibration.publish(output / "failure.json", diagnostic)
+                diagnostic["diagnostic_root"] = str(output)
+            except (ValueError, OSError):
+                pass  # The primary error and UNKNOWN must never be replaced.
+    return diagnostic
+
+
+def unit_snapshot_origin(raw, *, unit, binding):
+    """Captured prebirth metadata and bytes are diagnosis, never authority."""
+    result = {"status": "UNKNOWN", "scope": "DIAGNOSTIC_ONLY", "ROOT_FIN_claimed": False,
+              "ROOT_custody_qualified": False, "snapshot_sha256": sha256(raw)}
+    try:
+        from scripts import rc6_capacity_calibration as calibration
+        require(len(raw) <= CONTROL_BOUND, "ROOT_CUSTODY_UNIT_SNAPSHOT_BOUND")
+        value = calibration.decode(raw)
+        require(type(value) is dict and value.get("schema") == "porota.rc6.root-owned-transient-unit-diagnostic.v1"
+                and value.get("unit") == unit and value.get("binding") == binding
+                and value.get("source_sha") == binding["candidate_sha"] and value.get("source_tree") == binding["candidate_tree"]
+                and value.get("scope") == "DIAGNOSTIC_ONLY" and value.get("ROOT_FIN_claimed") is False
+                and value.get("ROOT_custody_qualified") is False, "ROOT_CUSTODY_UNIT_SNAPSHOT_ORIGIN_INVALID")
+        original = value["original_unit"]
+        require(type(original) is dict and original.get("path") == "/run/systemd/transient/" + unit,
+                "ROOT_CUSTODY_UNIT_SNAPSHOT_ORIGIN_INVALID")
+        identity = original["identity"]
+        require(type(identity) is list and len(identity) == 5 and all(type(number) is int and number >= 0 for number in identity)
+                and identity[2] == 0 and stat.S_ISREG(identity[4]), "ROOT_CUSTODY_UNIT_SNAPSHOT_ROOT_SOURCE_INVALID")
+        original_raw = base64.b64decode(original["raw_base64"], validate=True)
+        require(0 < len(original_raw) <= SYSTEMD_QUERY_BOUND and sha256(original_raw) == original["sha256"],
+                "ROOT_CUSTODY_UNIT_SNAPSHOT_ORIGINAL_DIGEST_INVALID")
+        return {**result, "status": "CAPTURED_ROOT_UNIT_METADATA_DIAGNOSTIC_ONLY",
+                "original_unit_sha256": original["sha256"], "original_unit_bytes": len(original_raw),
+                "declared_original_identity": identity}
+    except (ValueError, TypeError, KeyError, UnicodeError) as error:
+        return {**result, "reason": str(error)}
+
+
+def prove_custody(*, source, source_sha, source_tree, code_hashes, parent, binding, progress,
+                  capture_parent=None):
+    context = {}
+    try:
+        return _prove_custody(source=source, source_sha=source_sha, source_tree=source_tree,
+            code_hashes=code_hashes, parent=parent, binding=binding, progress=progress,
+            capture_parent=capture_parent, failure_context=context)
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        raise CustodyFailure(error, _preserve_failure(context, capture_parent, error)) from error
+
+
+def _prove_custody(*, source, source_sha, source_tree, code_hashes, parent, binding, progress,
+                  capture_parent=None, failure_context):
+    from scripts import rc6_authenticated_fixture_lifecycle as owned
+    from scripts import rc6_capacity_calibration as calibration
+    require(os.getuid() == os.geteuid() > 0, "ROOT_CUSTODY_NONROOT_ISSUER_REQUIRED")
+    libc = ctypes.CDLL(None, use_errno=True)
+    require(libc.prctl(39, 0, 0, 0, 0) == 0, "ROOT_CUSTODY_ISSUER_NNP_PREVENTS_EXISTING_SUDO")
+    # Self namespace access remains valid with dumpable=0. Capture it before
+    # the reduction; foreign proc namespace links are never needed by ROOT.
+    issuer = kernel_process(os.getpid())
+    host_pid1 = public_kernel_process(1)
+    host_boundary = host_boundary_snapshot()
+    require(host_pid1["uids"] == [0] * 4 and host_pid1["boot_id"] == issuer["boot_id"],
+            "ROOT_CUSTODY_EXTERNAL_PID1_IDENTITY_REBOUND")
+    require(libc.prctl(4, 0, 0, 0, 0) == 0 and libc.prctl(3, 0, 0, 0, 0) == 0,
+            "ROOT_CUSTODY_ISSUER_DUMPABLE_ZERO_REQUIRED")
+    native_contract(source_sha, source_tree, code_hashes)
+    namespace = owned.create_namespace(parent, binding)
+    failure_context["namespace"] = namespace
+    failure_context["boot_id"] = issuer["boot_id"]
+    receipt = owned.namespace_receipt(namespace)
+    request = {"schema": "porota.rc6.root-custody-request.v1", "source_root": str(Path(source).absolute()),
+        "source_sha": source_sha, "source_tree": source_tree, "code_hashes": code_hashes,
+        "owner_uid": os.getuid(), "owner_gid": os.getgid(), "binding": binding,
+        "namespace_receipt": receipt, "issuer": issuer_snapshot(issuer),
+        "host_PID1": host_pid1, "host_boundary": host_boundary,
+        "runtime_seconds": 6}
+    request_path = namespace.path / "custody-request.json"
+    calibration.publish(request_path, request)
+    state = {}
+    guard = service_command(source, request_path, nonce=namespace.nonce, control_root=namespace.path,
+                            runtime_seconds=6, broker_mode="guard-hang", guard=True)
+    kernel, fin = execute_service(namespace, guard, cwd=source,
+        environ={key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL") if key in os.environ},
+        log_relative="guardian-native.log", timeout_seconds=20, fin_label="root-guardian-proof",
+        progress=_observer(namespace.path / "guardian-birth.json", binding, state, progress,
+            expected_pid1=host_pid1, expected_host=host_boundary))
+    failure_context.update(kernel=kernel, fin=fin, log="guardian-native.log", unit=unit_name(namespace.nonce, guard=True))
+    require(kernel["returncode"] != 0 and kernel["timed_out"] is False,
+            "ROOT_CUSTODY_PID1_GUARD_TIMEOUT_NOT_NATIVE")
+    guardian_fin = _closed_service(state)
+    request["runtime_seconds"] = 45
+    probe_request = namespace.path / "probe-request.json"
+    calibration.publish(probe_request, request)
+    # Actors use the original immutable request for identity; the broker's
+    # guard is longer than the fixed four-case probe, never a payload producer.
+    probe = service_command(source, probe_request, nonce=namespace.nonce, control_root=namespace.path,
+                            runtime_seconds=45, broker_mode="probe")
+    state = {}
+    kernel, fin = execute_service(namespace, probe, cwd=source,
+        environ={key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL") if key in os.environ},
+        log_relative="custody-native.log", timeout_seconds=PROBE_LIMIT, fin_label="root-worker-proof",
+        progress=_observer(namespace.path / "broker-birth.json", binding, state, progress,
+            expected_pid1=host_pid1, expected_host=host_boundary))
+    failure_context.update(kernel=kernel, fin=fin, log="custody-native.log", unit=unit_name(namespace.nonce))
+    controller_fin = _closed_service(state)
+    require(owned._phase_green(fin), "ROOT_CUSTODY_NATIVE_BROKER_PROBE_RED")
+    raw = _read(namespace.path / "custody-native.log")
+    result = calibration.decode(raw)
+    require(result.get("schema") == SCHEMA and result.get("request_sha256") == sha256(wire(request))
+            and result.get("binding") == binding and result.get("native_probe_proved") is True
+            and [row["case"] for row in result.get("cases", [])]
+                == ["root-success", "failure-before-drop", "root-hang", "nonroot-hang"],
+            "ROOT_CUSTODY_NATIVE_ORIGINAL_PROBE_BYTES_REQUIRED")
+    expected = ["custody-request.json", "probe-request.json", "guardian-native.log", "custody-native.log",
+                "guardian-unit-original.json", "broker-unit-original.json",
+                "guardian-birth.json", "guardian-birth.observed.json", "broker-birth.json", "broker-birth.observed.json",
+                "guardian-bridge.json", "broker-bridge.json", "guardian-controller.json", "private-broker-native.log",
+                PRIVATE_MOUNT_DIAGNOSTIC,
+                "private-broker-birth.json", "private-broker.observed.json", "private-parent-seal.json",
+                *[row["raw"]["path"] for row in result["cases"]]]
+    destination = (namespace.path.parent / ("root-custody-" + namespace.nonce)
+                   if capture_parent is None else Path(capture_parent))
+    require(destination.is_absolute() and ".." not in destination.parts
+            and not destination.exists() and not destination.is_relative_to(namespace.path)
+            and not destination.is_relative_to(ROOT)
+            and not any(p.is_symlink() for p in (destination, *destination.parents)),
+            "ROOT_CUSTODY_FRESH_OUTSIDE_CAPTURE_REQUIRED")
+    capture = owned.capture_required_evidence(namespace, fin, destination, expected)
+    cleanup = owned.cleanup_namespace(namespace, fin, capture)
+    accepted = {"schema": SCHEMA, "status": "NATIVE_CUSTODY_PROVED", "binding": binding,
+        "source_sha": source_sha, "source_tree": source_tree, "code_hashes": code_hashes,
+        "native_root_proof": result, "guardian_actual_FIN": guardian_fin, "controller_actual_FIN": controller_fin,
+        "capture_manifest_sha256": capture.manifest_sha256, "capture_root": str(capture.path),
+        "cleanup": cleanup, "proof_only_no_G0_qualification": True,
+        "contract_revision_required": True, "original_PROC_EACCES_equivalence_approved": False,
+        "real_orders_sent": 0}
+    return CustodyWitness(_AUTHORITY, accepted, binding)
+
+
+def quota_service_request(request, *, namespace_receipt, source, code_hashes):
+    issuer = kernel_process(os.getpid())
+    return {"schema": "porota.rc6.root-custody-request.v1", "source_root": str(Path(source).absolute()),
+        "source_sha": request["source_sha"], "source_tree": request["source_tree"], "code_hashes": code_hashes,
+        "owner_uid": request["owner_uid"], "owner_gid": request["owner_gid"], "binding": request["binding"],
+        "namespace_receipt": namespace_receipt, "issuer": issuer_snapshot(issuer),
+        "host_PID1": public_kernel_process(1), "host_boundary": host_boundary_snapshot(),
+        # The original outer ceiling includes PID1's TERM2 and final reap.
+        "runtime_seconds": (300 if request["mode"] == "capability" else 10800) - 10,
+        "calibration_request": str(Path(namespace_receipt["path"]) / "root-request.json"),
+        "calibration_request_sha256": sha256(wire(request))}
+
+
+def cli():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--guardian", choices=("probe", "quota", "guard-hang"))
+    parser.add_argument("--private-init", choices=("probe", "quota"))
+    parser.add_argument("--broker", choices=("probe", "quota", "guard-hang"))
+    parser.add_argument("--actor-case", choices=("root-success", "failure-before-drop", "root-hang", "nonroot-hang"))
+    parser.add_argument("--request", type=Path)
+    parser.add_argument("--unit")
+    parser.add_argument("--journal-unit")
+    parser.add_argument("--journal-boot")
+    parser.add_argument("--journal-invocation")
+    parser.add_argument("--systemd-query", choices=("manager", "version", "package", "binaries"))
+    args = parser.parse_args()
+    if args.systemd_query:
+        require(not any((args.guardian, args.private_init, args.broker, args.actor_case, args.request,
+                         args.unit, args.journal_unit, args.journal_boot, args.journal_invocation)),
+                "ROOT_CUSTODY_SYSTEMD_EXACT_READONLY_ROLE_REQUIRED")
+        return systemd_query_worker(args.systemd_query)
+    if args.journal_unit or args.journal_boot or args.journal_invocation:
+        require(args.journal_unit and args.journal_boot and not any((args.guardian, args.private_init, args.broker,
+                args.actor_case, args.request, args.unit)), "ROOT_CUSTODY_JOURNAL_EXACT_READONLY_ROLE_REQUIRED")
+        return (journal_query_worker(args.journal_unit, args.journal_boot) if args.journal_invocation is None
+                else journal_query_worker(args.journal_unit, args.journal_boot, args.journal_invocation))
+    require(args.request is not None, "ROOT_CUSTODY_FIXED_REQUEST_REQUIRED")
+    if args.actor_case:
+        request, _, _ = _request(args.request, private=True)
+        _actor_observation(args.actor_case, request)
+        return 0
+    if args.private_init:
+        require(not args.guardian and not args.broker and args.unit, "ROOT_CUSTODY_EXPLICIT_ROLE_REQUIRED")
+        return private_init(args.private_init, args.request, args.unit)
+    require(bool(args.guardian) != bool(args.broker) and args.unit, "ROOT_CUSTODY_EXPLICIT_ROLE_REQUIRED")
+    return guardian_main(args.guardian, args.request, args.unit) if args.guardian else broker_main(args.broker, args.request, args.unit)
+
+
+if __name__ == "__main__":
+    raise SystemExit(cli())

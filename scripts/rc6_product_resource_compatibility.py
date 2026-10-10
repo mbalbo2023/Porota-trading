@@ -1,4 +1,4 @@
-"""Read existing kernel limits; keep bounded PAPER consumers prepared/blocked.
+"""Prove current native isolation and read limits before bounded PAPER consumers.
 
 This controller neither provisions nor enlarges a cgroup/filesystem. Readiness
 is fail-closed on a stock runner. Execution additionally requires authentic G0,
@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import re
 import resource
+import stat
 import sys
 import xml.etree.ElementTree as ET
 
@@ -29,7 +30,7 @@ MIB = 1024**2
 GIB = 1024**3
 PLAN = ROOT / "ops/policy/rc6-product-resource-compatibility-v1.json"
 SCOPE = "BOUNDED_ORIGINAL_PAPER_CONSUMERS_NOT_G0_G8_OR_DROPLET_QUALIFICATION"
-FILTER_BLOCKER = "RESOURCE_CURRENT_WORKER_NAMESPACE_FILTER_PROOF_NOT_INTEGRATED"
+FILTER_BLOCKER = "RESOURCE_CURRENT_NATIVE_NAMESPACE_FILTER_INSTALLATION_REQUIRED"
 
 
 def require(condition, reason):
@@ -71,7 +72,13 @@ def exact_plan(path=PLAN):
         "privilege_status_readback_required": True,
         "effective_seccomp_rules_qualified": False,
         "aggregate_storage_security_qualified": False,
-        "execution_enabled": False,
+        "execution_enabled": True,
+        "native_namespace_filter_schema": "porota.rc6.native-namespace-filter.v1",
+        "native_namespace_filter_plan_sha256": "9daf64ba999008527b7220b4274e0e7439e27711608ec47b544b8e6e7e42dc2e",
+        "native_current_load_counter_and_denials_required": True,
+        "native_worker_inheritance_before_own_installation_required": True,
+        "supervisor_dumpable_zero_required": True,
+        "worker_exec_dumpable_actual_value_required": True,
         "product157_before_fixtures_required": True,
         "native_g0_artifact_maximum_bytes": 64 * MIB,
         "native_g0_only_required": True, "timeout_seconds": 180,
@@ -333,7 +340,7 @@ def observe_filesystem(work_root, source_root):
                 and "rw" in row["options"]]}
 
 
-def readiness(work_root, source_root, plan):
+def readiness(work_root, source_root, plan, *, source_binding=None):
     # Preserve all independent observations, even when the first limit is RED.
     result = {"checks": {}, "failures": [], "workload_started": False,
               "status": "BLOQUEADO", "scope": SCOPE,
@@ -361,15 +368,62 @@ def readiness(work_root, source_root, plan):
                                        "errno": getattr(error, "errno", None)})
     if not result["failures"]:
         result["status"] = "ENVELOPE_OBSERVED_EXECUTION_BLOCKED_NATIVE_FILTER_PROOF_MISSING"
+    try:
+        proof = require_current_native_namespace_filter(source_binding=source_binding)
+        result["native_namespace_filter"] = proof
+        result["effective_seccomp_rules"] = "CURRENT_PROCESS_NATIVE_INSTALLATION_AND_DENIALS_OBSERVED"
+        result["execution_blockers"] = []
+        result["checks"]["native_filter"] = True
+        if not result["failures"]:
+            result["status"] = "BOUNDED_ENVELOPE_AND_CURRENT_NATIVE_FILTER_OBSERVED"
+            result["aggregate_storage_security_qualified"] = True
+    except (ValueError, OSError) as error:
+        result["checks"]["native_filter"] = False
+        result["native_filter_error"] = str(error) if isinstance(error, ValueError) else "RESOURCE_FILTER_LIBRARY_OS_ERROR"
     return result
 
 
-def require_current_native_namespace_filter():
-    # No status counter, caller flag or historical G0 receipt can establish
-    # which filter the current supervisor/worker actually inherited. Keep the
-    # producer prepared but disabled until its native launcher integration has
-    # real same-process installation/readback and denial evidence.
-    raise ValueError(FILTER_BLOCKER)
+def require_current_native_namespace_filter(*, source_binding=None):
+    from scripts import rc6_native_namespace_filter as native
+    return native.assert_current_filter(source_binding=source_binding)
+
+
+def install_current_native_namespace_filter(*, source_binding, inherited=None):
+    from scripts import rc6_native_namespace_filter as native
+    return native.install_filter(source_binding=source_binding, inherited=inherited)
+
+
+def filter_binding(args):
+    return {"source_sha": args.source_sha, "source_tree": args.source_tree,
+            "plan_sha256": digest(Path(args.plan).read_bytes())}
+
+
+def exclusive_json(path, value):
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(canonical(value))
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def read_supervisor_filter(path, expected_sha256, work_root):
+    path = Path(path)
+    require(path.is_absolute() and ".." not in path.parts and path.is_relative_to(work_root)
+            and not any(row.is_symlink() for row in (path, *path.parents))
+            and re.fullmatch(r"[0-9a-f]{64}", expected_sha256 or ""),
+            "RESOURCE_OWNED_SUPERVISOR_FILTER_CONTROL_REQUIRED")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        details = os.fstat(descriptor)
+        require(stat.S_ISREG(details.st_mode) and details.st_uid == os.geteuid()
+                and stat.S_IMODE(details.st_mode) == 0o600 and 0 < details.st_size <= 65536,
+                "RESOURCE_SUPERVISOR_FILTER_CONTROL_METADATA_REQUIRED")
+        raw = os.read(descriptor, 65537)
+    finally:
+        os.close(descriptor)
+    require(len(raw) == details.st_size and digest(raw) == expected_sha256,
+            "RESOURCE_SUPERVISOR_FILTER_CONTROL_BYTES_REBOUND")
+    return document(raw)
 
 
 def require_same_envelope(before, after):
@@ -405,19 +459,29 @@ def worker(args, plan):
     exact_source(args.source_sha, args.source_tree)
     observed = readiness(args.work_root, ROOT, plan)
     require(not observed["failures"], "RESOURCE_WORKER_LIVE_ENVELOPE_NOT_ADMITTED")
-    require_current_native_namespace_filter()
+    binding = filter_binding(args)
+    parent = read_supervisor_filter(args.supervisor_filter, args.supervisor_filter_sha256, args.work_root)
+    proof = install_current_native_namespace_filter(source_binding=binding, inherited=parent)
+    require_current_native_namespace_filter(source_binding=binding)
+    observed = readiness(args.work_root, ROOT, plan, source_binding=binding)
+    require(not observed["failures"] and not observed["execution_blockers"],
+            "RESOURCE_WORKER_CURRENT_NATIVE_ENVELOPE_REQUIRED")
+    require(not any(token in key.upper() for key in os.environ
+                    for token in ("TOKEN", "SECRET", "PASSWORD", "API_KEY", "ACCESS_KEY")),
+            "RESOURCE_WORKER_CREDENTIAL_ENV_FORBIDDEN")
+    paths = [Path(value) for value in (args.worker_controls, args.basetemp, args.junit)]
+    require(all(path.is_absolute() and ".." not in path.parts and path.is_relative_to(args.work_root)
+                and not any(row.is_symlink() for row in (path, *path.parents)) for path in paths)
+            and len(set(paths)) == 3, "RESOURCE_WORKER_WRITES_OUTSIDE_AGGREGATE_MOUNT")
     from scripts.rc6_native_import_provenance import environment_qualification
     installed = environment_qualification(ROOT)
     receipt = Path(args.worker_controls)
-    descriptor = os.open(receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(descriptor, "wb") as stream:
-        stream.write(canonical({"schema": "porota.rc6.product-resource-worker.v1",
+    exclusive_json(receipt, {"schema": "porota.rc6.product-resource-worker.v1",
         "source_sha": args.source_sha, "source_tree": args.source_tree,
         "pid": os.getpid(), "parent_pid": os.getppid(), "plan_sha256": digest(Path(args.plan).read_bytes()),
         "before_fixtures": True, "kernel_envelope": observed, "product157": installed,
-        "real_orders_sent": 0}))
-        stream.flush()
-        os.fsync(stream.fileno())
+        "native_namespace_filter": proof, "parent_filter_sha256": args.supervisor_filter_sha256,
+        "credential_environment_present": False, "real_orders_sent": 0})
     import pytest
     return pytest.main(["--noconftest", "-c", "/dev/null", "--rootdir=" + str(ROOT),
         "-p", "no:cacheprovider", "-o", "junit_family=legacy",
@@ -437,6 +501,19 @@ def verify_native_profile(worker_receipt, kernel, facts, *, source_sha, source_t
             and worker_receipt.get("before_fixtures") is True
             and type(worker_receipt.get("real_orders_sent")) is int and worker_receipt["real_orders_sent"] == 0,
             "RESOURCE_ACTUAL_NATIVE_WORKER_BINDING_REQUIRED")
+    from scripts import rc6_native_namespace_filter as native
+    binding = {"source_sha": source_sha, "source_tree": source_tree, "plan_sha256": plan_sha256}
+    parent = native.validate_evidence(envelope.get("native_namespace_filter"), source_binding=binding)
+    child = native.validate_evidence(worker_receipt.get("native_namespace_filter"), source_binding=binding)
+    inheritance = native.validate_inheritance_evidence(child, parent, source_binding=binding)
+    require(child["identity"]["pid"] == kernel["pid"] and parent["identity"]["pid"] == os.getpid()
+            and parent["dumpable"] == 0
+            and child["filters_before"] == parent["filters_after"]
+            and type(inheritance) is dict and inheritance.get("fork_exec_inheritance_observed") is True
+            and inheritance.get("parent_receipt_sha256") == digest(canonical(parent))
+            and worker_receipt.get("parent_filter_sha256") == digest(canonical(parent))
+            and worker_receipt.get("credential_environment_present") is False,
+            "RESOURCE_ACTUAL_WORKER_FILTER_LOAD_AND_INHERITANCE_REQUIRED")
     installed = worker_receipt.get("product157", {})
     require(all(type(installed.get(key)) is int and installed[key] == 157
                 for key in ("installed_total", "installed_unique_total", "expected_total")),
@@ -450,7 +527,8 @@ def verify_native_profile(worker_receipt, kernel, facts, *, source_sha, source_t
 
 
 def owned_execution(args, plan, plan_sha256, envelope, output, owner_check, g0_manifest):
-    require_current_native_namespace_filter()
+    binding = filter_binding(args)
+    supervisor_filter = require_current_native_namespace_filter(source_binding=binding)
     from scripts import rc6_architectural_gates as gates
     from scripts import rc6_authenticated_fixture_lifecycle as lifecycle
     from scripts import rc6_controlled_governed_runner as governed
@@ -477,7 +555,8 @@ def owned_execution(args, plan, plan_sha256, envelope, output, owner_check, g0_m
             "RESOURCE_NATIVE_G0_ONLY_REQUIRED")
     owner_check()
     installed = environment_qualification(ROOT)
-    require(not readiness(args.work_root, ROOT, plan)["failures"], "RESOURCE_PRELAUNCH_LIVE_ENVELOPE_REQUIRED")
+    live = readiness(args.work_root, ROOT, plan, source_binding=binding)
+    require(not live["failures"] and not live["execution_blockers"], "RESOURCE_PRELAUNCH_LIVE_ENVELOPE_REQUIRED")
     before = governed.source_pin(ROOT, args.source_sha, args.source_tree)
     namespace = lifecycle.create_namespace(Path(args.work_root), {
         "candidate_sha": args.source_sha, "candidate_tree": args.source_tree,
@@ -486,8 +565,12 @@ def owned_execution(args, plan, plan_sha256, envelope, output, owner_check, g0_m
         "runner_class": "DIAGNOSTIC", "workload_fingerprint": plan_sha256})
     temporary = namespace.path / "t"
     temporary.mkdir(mode=0o700)
+    parent_control = namespace.path / "supervisor-filter.json"
+    exclusive_json(parent_control, supervisor_filter)
+    parent_control_sha256 = digest(canonical(supervisor_filter))
     environment = {key: value for key, value in os.environ.items()
-        if not any(token in key.upper() for token in ("TOKEN", "SECRET", "PASSWORD", "API_KEY", "ACCESS_KEY"))}
+        if not any(token in key.upper() for token in ("TOKEN", "SECRET", "PASSWORD", "API_KEY", "ACCESS_KEY"))
+        and key not in ("GITHUB_ENV", "GITHUB_PATH", "GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY")}
     environment.update({"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "PYTHONDONTWRITEBYTECODE": "1",
         "TMPDIR": str(temporary), "TMP": str(temporary), "TEMP": str(temporary),
         "DATA_DIR": str(temporary / "data"), "LOG_DIR": str(temporary / "logs"),
@@ -497,11 +580,12 @@ def owned_execution(args, plan, plan_sha256, envelope, output, owner_check, g0_m
     command = [sys.executable, "-I", "-B", str(Path(__file__).absolute()), "--worker",
         "--plan", str(args.plan), "--source-sha", args.source_sha, "--source-tree", args.source_tree,
         "--work-root", str(args.work_root), "--worker-controls", str(namespace.path / "worker.json"),
+        "--supervisor-filter", str(parent_control), "--supervisor-filter-sha256", parent_control_sha256,
         "--basetemp", str(namespace.path / "p"), "--junit", str(namespace.path / "junit.xml")]
     kernel, fin = lifecycle.execute_owned(namespace, command, cwd=namespace.path, environ=environment,
         log_relative="native.log", timeout_seconds=plan["timeout_seconds"], fin_label="product-resource")
     # No post-Source/RAW reads or cleanup until the original kernel FIN exists.
-    required = ["native.log", "producer-owned-fin-product-resource.json"]
+    required = ["native.log", "producer-owned-fin-product-resource.json", "supervisor-filter.json"]
     for name in ("worker.json", "junit.xml"):
         if (namespace.path / name).is_file():
             required.append(name)
@@ -520,7 +604,7 @@ def owned_execution(args, plan, plan_sha256, envelope, output, owner_check, g0_m
     owner_check()
     after = governed.source_pin(ROOT, args.source_sha, args.source_tree)
     atime = governed.compare_source(before, after)
-    recheck = readiness(args.work_root, ROOT, plan)
+    recheck = readiness(args.work_root, ROOT, plan, source_binding=binding)
     require_same_envelope(envelope, recheck)
     worker_validation_error = None
     try:
@@ -546,7 +630,9 @@ def owned_execution(args, plan, plan_sha256, envelope, output, owner_check, g0_m
         "envelope_before": envelope, "envelope_after": recheck,
         "product_resource_compatibility": "NO_VERIFICADO", "whole_droplet_compatibility": "NO_VERIFICADO",
         "persistent_disk_compatibility": "NO_VERIFICADO", "G0_G8_qualification": False,
-        "effective_seccomp_rules": "NO_VERIFICADO", "aggregate_storage_security_qualified": False,
+        "effective_seccomp_rules": "SUPERVISOR_AND_WORKER_OWN_NATIVE_INSTALLATION_AND_INHERITANCE_OBSERVED" if passed else "NO_VERIFICADO",
+        "aggregate_storage_security_qualified": passed,
+        "supervisor_native_namespace_filter": supervisor_filter,
         "tested_candidate_build_once_artifact": False, "deployed": False,
         "recurring_infrastructure_cost_usd": 0, "real_orders_sent": 0}
 
@@ -575,6 +661,8 @@ def main(argv=None):
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--worker-controls")
+    parser.add_argument("--supervisor-filter")
+    parser.add_argument("--supervisor-filter-sha256")
     parser.add_argument("--basetemp")
     parser.add_argument("--junit")
     args = parser.parse_args(argv)
@@ -584,11 +672,22 @@ def main(argv=None):
     if args.worker:
         return worker(args, plan)
     require(args.output is not None and args.output.is_absolute()
+            and ".." not in args.output.parts
             and not args.output.is_relative_to(ROOT)
             and not any(path.is_symlink() for path in (args.output, *args.output.parents)),
             "RESOURCE_OUTPUT_OUTSIDE_SOURCE_REQUIRED")
     args.output.mkdir(mode=0o700)
-    envelope = readiness(args.work_root, ROOT, plan)
+    binding = filter_binding(args)
+    envelope = readiness(args.work_root, ROOT, plan, source_binding=binding)
+    # An initial Seccomp=0 is expected when the launcher drops capabilities
+    # then execs this supervisor. Only this cheap self-installation occurs
+    # before final admission; failed CPU/RAM/filesystem limits still prohibit
+    # G0 downloads, Product157 imports and every fixture/consumer.
+    try:
+        install_current_native_namespace_filter(source_binding=binding)
+        envelope = readiness(args.work_root, ROOT, plan, source_binding=binding)
+    except (ValueError, OSError) as error:
+        envelope["native_filter_error"] = str(error) if isinstance(error, ValueError) else "RESOURCE_FILTER_LIBRARY_OS_ERROR"
     envelope.update(schema="porota.rc6.product-resource-readiness.v1",
         source_sha=args.source_sha, source_tree=args.source_tree, plan_sha256=plan_sha256,
         run_id=os.environ.get("GITHUB_RUN_ID"), run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT"),
@@ -599,7 +698,8 @@ def main(argv=None):
         print(canonical({key: envelope[key] for key in ("status", "failures", "execution_blockers", "workload_started", "real_orders_sent")}).decode(), end="")
         return int(bool(envelope["failures"] or envelope["execution_blockers"]))
     require(not envelope["failures"], "RESOURCE_ENVELOPE_BLOCKED_NO_WORKLOAD_LAUNCHED")
-    require_current_native_namespace_filter()
+    require(not envelope["execution_blockers"], FILTER_BLOCKER)
+    require_current_native_namespace_filter(source_binding=binding)
     require(args.output.is_relative_to(args.work_root), "RESOURCE_ALL_EXECUTION_WRITES_WITHIN_AGGREGATE_MOUNT_REQUIRED")
     require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("GITHUB_REPOSITORY") == "mbalbo2023/Porota-trading"
             and os.environ.get("GITHUB_ACTOR") == "mbalbo2023" and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"

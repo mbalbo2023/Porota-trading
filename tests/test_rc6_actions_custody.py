@@ -187,11 +187,11 @@ def test_live_custody_receipt_cannot_override_an_unreleased_expired_foreign_writ
     twin = record(473,11,common)
     receipt = record(471,10,common+'RC6_EVIDENCE_CUSTODY_AUTHORIZATION=APPROVED\nOWNER_RECEIPT_473=11\n'
         +'OWNER_RECEIPT_473_SHA256='+custody.digest(twin['body'].encode())+'\n')
-    foreign = record(471,12,'WRITE_OWNER=foreign\nDEPLOY_OWNER=NOT_ACQUIRED\nRELEASED='+foreign_released+'\n'
+    foreign = record(471,12,'WRITE_OWNER=foreign\nSESSION=foreign\nDEPLOY_OWNER=NOT_ACQUIRED\nRELEASED='+foreign_released+'\n'
         +'SOURCE_LEASE_EXPIRES_UTC=2026-10-09T18:11:00Z\n')
     # The transfer chain has separate end-to-end tests. This transport exercises
     # the genuine complete-timeline parser and writer predicate used by custody.
-    monkeypatch.setattr(admission,'administrative_anchors',lambda owner,get:{471:receipt,473:twin})
+    monkeypatch.setattr(admission,'administrative_anchors',lambda owner,get,now:{471:receipt,473:twin})
     class Reader:
         def request(self,path):
             if path == '/issues/comments/10': return receipt
@@ -282,6 +282,14 @@ def test_development_admission_runs_real_git_identity_before_any_tooling(tmp_pat
         owner_checks.append(kwargs)
         return 'a'*64
     monkeypatch.setattr(development,'verify_owner',authorized_transport_only)
+    monkeypatch.setattr(development.admission,'dedup_admission',lambda sha,gate:{'unit_transport_only':True})
+    history_calls=[]
+    def history_transport_only(repo, output, **scope):
+        assert len(owner_checks)==1
+        history_calls.append(scope)
+        return {'scope':'UNIT_TRANSPORT_ONLY_NOT_HISTORY_PROOF','source_sha':scope['source_sha'],
+                'source_tree':scope['source_tree']}
+    monkeypatch.setattr(development,'prepare_history',history_transport_only)
     output=tmp_path/'admitted'
     monkeypatch.setattr(development.sys,'argv',['development','--plan',
         str(root/'ops/policy/rc6-development-checks-v1.json'),'--source-sha',expected['sha'],
@@ -290,13 +298,15 @@ def test_development_admission_runs_real_git_identity_before_any_tooling(tmp_pat
     if rebound:
         with pytest.raises(ValueError,match='DEVELOPMENT_EXACT_FROZEN_SOURCE_REQUIRED'):
             development.main()
-        assert not output.exists() and owner_checks==[]
+        assert not output.exists() and owner_checks==[] and history_calls==[]
     else:
         assert development.main()==0
         receipt=json.loads((output/'admission.json').read_bytes())
         assert receipt['source_sha']==sha and receipt['source_tree']==tree
         assert receipt['qualification_claimed'] is False
         assert len(owner_checks)==2
+        assert len(history_calls)==1 and history_calls[0]['source_sha']==sha
+        assert history_calls[0]['source_tree']==tree and len(receipt['history_sha256'])==64
         assert (output/'tooling.lock.txt').read_text()==development.tooling_lock(
             (root/'requirements.lock.txt').read_text(),sorted(development.DEPENDENCIES))
 
@@ -391,6 +401,7 @@ def test_development_retirement_error_preserves_native_red_controls_and_blocks_n
     monkeypatch.setattr(development,'ROOT',repo)
     monkeypatch.setattr(development,'Github',lambda token:object())
     monkeypatch.setattr(development,'verify_owner',lambda *args,**kwargs:'a'*64)
+    monkeypatch.setattr(development.admission,'dedup_admission',lambda sha,gate:{'unit_transport_only':True})
     monkeypatch.setattr(sys,'argv',['development','--plan',str(plan_path),'--source-sha',sha,
         '--source-tree',tree,'--owner-session','UNIT_ONLY','--launch-receipt-url','https://example.invalid/unit',
         '--python311',sys.executable,'--python312',sys.executable,'--output',str(output)])

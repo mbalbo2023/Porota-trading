@@ -33,6 +33,8 @@ import time
 from types import MappingProxyType
 
 ROOT = Path(__file__).absolute().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 SCHEMA = "porota.rc6.capacity-calibration.v1"
 PRIVILEGED_SIGNAL_CUSTODY = MappingProxyType({"status": "NO_VERIFICADO", "proved": False,
                                            "privileged_launch_authorized": False})
@@ -49,6 +51,8 @@ BUILDER_MEMBER = PREFIX + "full-gov-builder-prepared-only/build_governed_sources
 BUILDER_SHA256 = "03d08c3f362b12da70defa8f1e2388373d41e20a4ffc08e46f48fb9691667738"
 CODE_MEMBERS = ("scripts/rc6_capacity_calibration.py", DRIVER_MEMBER, "scripts/rc6_material_environment.py",
                 "scripts/rc6_owned_gate_lease.py",
+                "scripts/rc6_privileged_custody.py", "scripts/rc6_native_namespace_filter.py",
+                "scripts/rc6_root_actor_seal.py",
                 "requirements.lock.txt", "requirements.build.lock.txt", "ops/policy/rc6-supply-chain-v1.json",
                 OBJECTS_MEMBER, BUILDER_MEMBER)
 ORIGIN = "https://github.com/mbalbo2023/Porota-trading.git"
@@ -200,6 +204,7 @@ def outer_control_peak_bound(fragment_bytes):
          "CALIBRATION_CONTROL_ALLOCATION_UNIT_UNKNOWN")
     components = {"root_request_marker_fin_bytes": 6 * MIB,
                   "original_worker_log_bytes": MAX_WORKER_WIRE,
+                  "root_custody_relay_and_live_controls_bytes": 12 * MIB,
                   "decoded_original_raw_bytes": MAX_RAW,
                   "calibration_receipt_bytes": MAX_RECEIPT,
                   "internal_authenticated_capture_bytes": CONTROLS,
@@ -466,40 +471,12 @@ def seccomp_plan():
 
 
 def install_seccomp():
-    # libseccomp expands the native architecture's actual syscall numbers.
-    lib = ctypes.CDLL("libseccomp.so.2", use_errno=True)
-    lib.seccomp_init.argtypes, lib.seccomp_init.restype = [ctypes.c_uint32], ctypes.c_void_p
-    lib.seccomp_syscall_resolve_name.argtypes = [ctypes.c_char_p]
-    lib.seccomp_rule_add_array.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int,
-                                         ctypes.c_uint, ctypes.c_void_p]
-    lib.seccomp_load.argtypes = [ctypes.c_void_p]
-    lib.seccomp_release.argtypes = [ctypes.c_void_p]
-    class Comparison(ctypes.Structure):
-        _fields_ = [("arg", ctypes.c_uint), ("op", ctypes.c_uint), ("a", ctypes.c_uint64), ("b", ctypes.c_uint64)]
-    context = lib.seccomp_init(0x7FFF0000)
-    need(context, "CALIBRATION_NATIVE_SECCOMP_REQUIRED")
-    try:
-        def add(name, denied_errno=errno.EPERM, comparisons=()):
-            number = lib.seccomp_syscall_resolve_name(name.encode())
-            need(number >= 0, "CALIBRATION_SECCOMP_SYSCALL_UNKNOWN:" + name)
-            values = (Comparison * len(comparisons))(*(Comparison(*x) for x in comparisons))
-            need(lib.seccomp_rule_add_array(context, 0x00050000 | denied_errno, number, len(values), values) == 0,
-                 "CALIBRATION_SECCOMP_RULE_FAILED")
-        for name in DENIED_SYSCALLS:
-            add(name)
-        for request in (FSSETXATTR, *SETFLAGS):
-            add("ioctl", comparisons=((1, 7, 0xFFFFFFFF, request),))
-        for flag in NAMESPACE_CLONE_FLAGS:
-            add("clone", comparisons=((0, 7, flag, flag),))
-        add("clone3", errno.ENOSYS)
-        for option in (4, 8, 24, 28, 47):
-            add("prctl", comparisons=((0, 7, 0xFFFFFFFF, option),))
-        need(lib.seccomp_load(context) == 0, "CALIBRATION_SECCOMP_LOAD_FAILED")
-    finally:
-        lib.seccomp_release(context)
+    from scripts import rc6_native_namespace_filter as native_filter
+    need(native_filter.build_plan() == seccomp_plan(), "CALIBRATION_ORIGINAL_SECCOMP_PLAN_CHANGED")
+    return native_filter.install_filter()
 
 
-def drop_privileges(uid, gid):
+def drop_privileges(uid, gid, *, source_binding=None):
     need(type(uid) is int and uid > 0 and type(gid) is int and gid > 0
          and os.getuid() == os.geteuid() == 0 and len(os.listdir("/proc/self/task")) == 1,
          "CALIBRATION_ROOT_SETUP_SINGLE_THREAD_REQUIRED")
@@ -512,14 +489,17 @@ def drop_privileges(uid, gid):
     os.setresuid(uid, uid, uid)
     need(libc.prctl(4, 0, 0, 0, 0) == 0 and libc.prctl(38, 1, 0, 0, 0) == 0,
          "CALIBRATION_DUMPABLE_NNP_REQUIRED")
-    install_seccomp()
+    from scripts import rc6_native_namespace_filter as native_filter
+    need(native_filter.build_plan() == seccomp_plan(), "CALIBRATION_ORIGINAL_SECCOMP_PLAN_CHANGED")
+    filter_receipt = native_filter.install_filter(source_binding=source_binding)
     values = dict(x.split(":", 1) for x in Path("/proc/self/status").read_text().splitlines() if ":" in x)
     need(os.getresuid() == (uid, uid, uid) and os.getresgid() == (gid, gid, gid) and os.getgroups() == []
          and all(int(values[k].strip(), 16) == 0 for k in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"))
          and values["NoNewPrivs"].strip() == "1" and values["Seccomp"].strip() == "2",
          "CALIBRATION_REAL_PRIVILEGE_DROP_NOT_PROVED")
     return {"uid": uid, "gid": gid, "capabilities_zero": True, "no_new_privileges": True,
-            "seccomp_mode": 2, "mount_namespace_inode": os.stat("/proc/self/ns/mnt").st_ino}
+            "seccomp_mode": 2, "mount_namespace_inode": os.stat("/proc/self/ns/mnt").st_ino,
+            "native_filter": filter_receipt}
 
 
 class LoopInfo(ctypes.Structure):
@@ -815,27 +795,44 @@ def validate_root_request(request):
 
 
 def issuer_kernel_identity(request):
-    """Authenticate the real ancestor before borrowing its original mount."""
+    """Authenticate an ancestor, or a live private-PID service binding."""
     issuer = request.get("issuer")
     need(type(issuer) is dict and type(issuer.get("pid")) is int and issuer["pid"] > 0
          and issuer.get("boot_id") == Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
          "CALIBRATION_ACTUAL_ISSUER_REQUIRED")
-    pid, found = os.getppid(), False
-    for _ in range(8):
-        if pid == issuer["pid"]:
-            found = True
-            break
-        if pid <= 1:
-            break
-        rows = Path("/proc/" + str(pid) + "/stat").read_text().rsplit(")", 1)[1].split()
-        pid = int(rows[1])
-    need(found, "CALIBRATION_ISSUER_NOT_ACTUAL_ANCESTOR")
-    status = dict(line.split(":", 1) for line in Path("/proc/" + str(pid) + "/status").read_text().splitlines() if ":" in line)
-    birth = Path("/proc/" + str(pid) + "/stat").read_text().rsplit(")", 1)[1].split()[19]
+    proc_root = Path("/proc")
+    if request.get("privileged_custody_live") is not None:
+        from scripts import rc6_privileged_custody as privileged
+        privileged.verify_live_controller(request["privileged_custody_live"], request)
+        guarded = request["privileged_custody_live"]["guardian_native_mapping"]["issuer_actual"]
+        need(guarded["pid"] == issuer["pid"] and guarded["start_ticks"] == issuer["start_ticks"]
+             and guarded["boot_id"] == issuer["boot_id"]
+             and guarded["uids"] == [request["owner_uid"]] * 4 and guarded["gids"] == [request["owner_gid"]] * 4,
+             "CALIBRATION_NATIVE_GUARDIAN_ISSUER_REBOUND")
+        bridge = privileged.original_directory_bridge(request)
+        return {"pid": issuer["pid"], "start_ticks": issuer["start_ticks"], "boot_id": issuer["boot_id"],
+                "uids": guarded["uids"], "gids": guarded["gids"],
+                "mount_namespace_inode": request["mount_namespace_inode"],
+                "original_opaque_directory_bridge": bridge,
+                "issuer_liveness_observed_by_external_guardian": True}
+    else:
+        pid, found = os.getppid(), False
+        for _ in range(8):
+            if pid == issuer["pid"]:
+                found = True
+                break
+            if pid <= 1:
+                break
+            rows = Path("/proc/" + str(pid) + "/stat").read_text().rsplit(")", 1)[1].split()
+            pid = int(rows[1])
+        need(found, "CALIBRATION_ISSUER_NOT_ACTUAL_ANCESTOR")
+    actor = proc_root / str(pid)
+    status = dict(line.split(":", 1) for line in (actor / "status").read_text().splitlines() if ":" in line)
+    birth = (actor / "stat").read_text().rsplit(")", 1)[1].split()[19]
     need([int(x) for x in status["Uid"].split()] == [request["owner_uid"]] * 4
          and [int(x) for x in status["Gid"].split()] == [request["owner_gid"]] * 4
          and birth == issuer.get("start_ticks")
-         and os.stat("/proc/" + str(pid) + "/ns/mnt").st_ino == request.get("mount_namespace_inode"),
+         and os.stat(actor / "ns/mnt").st_ino == request.get("mount_namespace_inode"),
          "CALIBRATION_ISSUER_KERNEL_IDENTITY_CHANGED")
     return {"pid": pid, "start_ticks": birth, "boot_id": issuer["boot_id"],
             "uids": [int(x) for x in status["Uid"].split()],
@@ -862,13 +859,18 @@ def open_image_on_issuer_mount(request, *, include_birth=False):
     claim = request["namespace_receipt"]
     held, image_fd, marker_fd, birth_fd = [], None, None, None
     try:
-        directory = os.open("/proc/" + str(issuer_before["pid"]) + "/root",
-                            os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
-        held.append(directory)
-        for component in root.parts[1:]:
-            directory = os.open(component, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
-                                dir_fd=directory)
+        if request.get("privileged_custody_live") is not None:
+            from scripts import rc6_privileged_custody as privileged
+            directory = os.dup(privileged.BRIDGE_DESCRIPTOR)
             held.append(directory)
+        else:
+            directory = os.open("/proc/" + str(issuer_before["pid"]) + "/root",
+                                os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+            held.append(directory)
+            for component in root.parts[1:]:
+                directory = os.open(component, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                    dir_fd=directory)
+                held.append(directory)
         details = os.fstat(directory)
         need([details.st_dev, details.st_ino, details.st_uid, details.st_gid, stat.S_IMODE(details.st_mode)]
              == claim["identity"] and descriptor_mount_id(directory) == claim["mount_id"],
@@ -1116,17 +1118,18 @@ def root_setup(request):
             except OSError as error:
                 need(error.errno == errno.EBADF, "CALIBRATION_PRIVILEGED_FD_CLOSE_FAILED")
     request["setup_stage"] = "drop_privileges"
-    request["privilege"] = drop_privileges(request["owner_uid"], request["owner_gid"])
+    request["privilege"] = drop_privileges(request["owner_uid"], request["owner_gid"],
+        source_binding={"source_sha": request["source_sha"], "source_tree": request["source_tree"]})
     request["setup_stage"] = "nonroot_ready"
     return request
 
 
-def issuer_root_escape_probe(issuer_pid, outside):
+def issuer_root_escape_probe(issuer_pid, outside, *, issuer_proc_root=Path("/proc")):
     need(type(issuer_pid) is int and issuer_pid > 0 and issuer_pid != os.getpid()
          and Path(outside).is_absolute(), "CALIBRATION_ORIGINAL_ISSUER_PROBE_BINDING_REQUIRED")
     # The only attempted write is a fresh file in our own authenticated image
     # namespace. No issuer/foreign payload is read or a foreign path pruned.
-    target = "/proc/" + str(issuer_pid) + "/root" + str(Path(outside)) + "/issuer-escape-must-not-exist"
+    target = str(Path(issuer_proc_root) / str(issuer_pid) / "root") + str(Path(outside)) + "/issuer-escape-must-not-exist"
     try:
         descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
     except OSError as error:
@@ -1138,7 +1141,7 @@ def issuer_root_escape_probe(issuer_pid, outside):
         raise ValueError("CALIBRATION_ORIGINAL_ISSUER_ROOT_ESCAPE")
 
 
-def quota_probe(project, probe, outside, supervisor_pid, issuer_pid):
+def quota_probe(project, probe, outside, supervisor_pid, issuer_pid, *, issuer_proc_root=Path("/proc")):
     need(os.getuid() == os.geteuid() > 0, "CALIBRATION_NONROOT_PROBE_REQUIRED")
     observed = {}
     fd = os.open(project, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -1213,7 +1216,7 @@ def quota_probe(project, probe, outside, supervisor_pid, issuer_pid):
     else:
         os.close(descriptor)
         raise ValueError("CALIBRATION_OUTSIDE_CONTROL_FD_ESCAPE")
-    observed["original_issuer_root_escape"] = issuer_root_escape_probe(issuer_pid, outside)
+    observed["original_issuer_root_escape"] = issuer_root_escape_probe(issuer_pid, outside, issuer_proc_root=issuer_proc_root)
     quota = Dqblk()
     libc = ctypes.CDLL(None, use_errno=True)
     need(libc.quotactl((Q_SETQUOTA << 8) | PRJQUOTA, b"/dev/quota-probe-denied", projid, ctypes.byref(quota)) == -1
@@ -1450,12 +1453,23 @@ def nonroot_worker(request):
         need(type(kernel.get("peak_rss_bytes")) is int and 0 <= kernel["peak_rss_bytes"] < 2 * GIB,
              "CALIBRATION_NATIVE_MEMORY_BOUND_EXCEEDED")
         return records[-1]
+    from scripts import rc6_native_namespace_filter as native_filter
+    filter_binding = {"source_sha": request["source_sha"], "source_tree": request["source_tree"]}
+    parent_filter = native_filter.assert_current_filter(source_binding=filter_binding)
+    parent_path = project / "controls" / "supervisor-filter.json"
+    parent_sha = publish(parent_path, parent_filter)
     probe = run([sys.executable, "-I", "-B", str(source / "scripts/rc6_capacity_calibration.py"), "--probe-child",
                  "--project", str(project), "--probe", request["probe"], "--outside", request["namespace_receipt"]["path"],
-                 "--supervisor-pid", str(os.getpid()), "--issuer-pid", str(request["issuer"]["pid"])],
+                 "--supervisor-pid", str(os.getpid()), "--issuer-pid", str(request["issuer"]["pid"]),
+                 "--issuer-proc-root", request.get("host_proc", "/proc"),
+                 "--parent-filter-json", str(parent_path), "--parent-filter-sha256", parent_sha,
+                 "--source-sha", request["source_sha"], "--source-tree", request["source_tree"]],
                 "capability", 60)
     positive = decode(read(probe["log"]))
     need(positive.get("actual_positive") is True, "CALIBRATION_REAL_CAPABILITY_NOT_PROVED")
+    native_filter.validate_inheritance_evidence(positive.get("native_filter"), parent_filter, source_binding=filter_binding)
+    need(positive["native_filter"]["identity"]["pid"] == probe["kernel"]["pid"],
+         "CALIBRATION_NATIVE_FILTER_ACTUAL_WORKER_PID_REBOUND")
     report.update(actual_capability_proved=True, capability=positive)
     build = bootstrap(request, run) if request["mode"] == "bootstrap" else None
     report.update({"status": "GREEN", "actual_capability_proved": True, "capability": positive,
@@ -1480,11 +1494,15 @@ def nonroot_worker(request):
     return report
 
 
-def root_worker(request_path):
+def root_worker(request_path, *, privileged_custody_proof=None):
     request_raw = read(request_path, 4 * MIB)
     request = decode(request_raw)
     request["original_request_sha256"] = digest(request_raw)
     try:
+        if privileged_custody_proof is not None:
+            request["privileged_custody_live"] = decode(read(privileged_custody_proof, 2 * MIB))
+            from scripts import rc6_privileged_custody as privileged
+            privileged.verify_live_controller(request["privileged_custody_live"], request)
         prepared = root_setup(request)
         report = nonroot_worker(prepared)
     except BaseException as error:
@@ -1549,7 +1567,18 @@ def attach_issuer_evidence(report, progress):
             report["payload_upload_safe"] = False
 
 
-def main(args, *, progress=None):
+def calibration_custody(witness, *, binding, source_sha, source_tree, code_hashes):
+    """Native custody alone cannot change the original quota/proc contract."""
+    from scripts import rc6_privileged_custody as privileged
+    receipt = privileged.validate_witness(witness, binding=binding)
+    need(receipt.get("source_sha") == source_sha and receipt.get("source_tree") == source_tree
+         and receipt.get("code_hashes") == code_hashes, "CALIBRATION_NATIVE_CUSTODY_EXACT_SOURCE_REBOUND")
+    return ({"status": "NATIVE_CUSTODY_PROVED_QUOTA_BRIDGE_BLOCKED", "proved": True,
+             "privileged_launch_authorized": False}, receipt,
+            "CALIBRATION_PRIVATE_PID_ORIGINAL_PROC_ROOT_CONTRACT_REVIEW_REQUIRED")
+
+
+def main(args, *, progress=None, custody_witness=None):
     need(os.getuid() == os.geteuid() > 0 and sys.platform == "linux" and platform.machine() == "x86_64",
          "CALIBRATION_ACTIONS_NONROOT_LINUX_REQUIRED")
     sys.path.insert(0, str(ROOT))
@@ -1579,10 +1608,20 @@ def main(args, *, progress=None):
             "error_class": type(error).__name__, "errno": getattr(error, "errno", None),
             "reason": str(error).split(":", 1)[0]}
     publish(output / "kernel-prerequisites.json", prerequisites)
-    # The NONROOT issuer's ability to signal a pre-drop ROOT actor has not
-    # been proved. Metadata readiness cannot confer that authority. There is
-    # no flag, environment or admission bool that enables this launch.
+    # A live native proof is regenerated by an authenticated controller in
+    # this very process. Neither a JSON receipt nor an admission flag can
+    # enable ROOT or backing. The legacy immutable hold remains the default.
     signal_custody = dict(PRIVILEGED_SIGNAL_CUSTODY)
+    custody_receipt = None
+    custody_reason = "CALIBRATION_PRIVILEGED_SIGNAL_CUSTODY_UNVERIFIED"
+    if prerequisites["status"] == "PREREQUISITES_PRESENT" and custody_witness is not None:
+        # The historical same-UID issuer-root probe requires EACCES through
+        # /proc/HOST_PID/root. A correctly private PID namespace instead hides
+        # that host PID. Neither ENOENT nor native ROOT-only success can replace
+        # the historical assertion without a reviewed, demonstrated contract.
+        # Stop before backing; do not spend 5/26GiB to discover this known gap.
+        signal_custody, custody_receipt, custody_reason = calibration_custody(custody_witness,
+            binding=binding, source_sha=args.source_sha, source_tree=args.source_tree, code_hashes=code_hashes)
     if (prerequisites["status"] != "PREREQUISITES_PRESENT" or signal_custody["proved"] is not True
             or signal_custody["privileged_launch_authorized"] is not True):
         source_pin(source, args.source_sha, args.source_tree)
@@ -1590,8 +1629,9 @@ def main(args, *, progress=None):
                  "binding": binding, "namespace_receipt": claim, "code_hashes": code_hashes,
                  "read_contract_sha256": admission["read_contract_sha256"], "limits": limits_for(args.mode),
                  "status": "BLOQUEADO", "actual_capability_proved": False, "qualification_claimed": False,
-                 "reason": "CALIBRATION_PRIVILEGED_SIGNAL_CUSTODY_UNVERIFIED",
+                 "reason": custody_reason,
                  "privileged_signal_custody": signal_custody,
+                 "native_custody_receipt": custody_receipt,
                  "G0_G8_qualification_claimed": False, "generation": "NOT_STARTED", "inner_namespace_created": False,
                  "inner_generation_operations": {"create_namespace": "NOT_CALLED", "image_allocation": "NOT_CALLED",
                                                  "root_worker_launch": "NOT_CALLED"},
@@ -1656,6 +1696,7 @@ def main(args, *, progress=None):
               "outer_before": before, "outer_after_image": after_image, "root_request_sha256": request_sha,
               "outer_control_peak_bound": control_bound,
               "kernel_prerequisites": prerequisites, "generation": "STARTED", "inner_namespace_created": True,
+              "privileged_signal_custody": signal_custody, "native_custody_receipt": custody_receipt,
               "G0_G8_qualification_claimed": False, "payload_upload_safe": False}
     try:
         need(shutil.which("sudo") and shutil.which("unshare") and shutil.which("mount") and shutil.which("mkfs.ext4"),
@@ -1669,16 +1710,27 @@ def main(args, *, progress=None):
         # Workloads receive their own quota-backed logs and close_fds=True.
         # RLIMIT_FSIZE would silently change Git's ordinary >128MiB pack files.
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        command = ["sudo", "-n", "--preserve-env=RUNNER_TOOL_CACHE", "--",
-                   "unshare", "--mount", "--propagation", "private", "--",
-                   sys.executable, "-I", "-B", str(source / "scripts/rc6_capacity_calibration.py"),
-                   "--root-worker", str(request_path)]
+        from scripts import rc6_privileged_custody as privileged
+        privileged.validate_witness(custody_witness, binding=binding)
+        custody_request = privileged.quota_service_request(request,
+            namespace_receipt=owned.namespace_receipt(namespace), source=source, code_hashes=code_hashes)
+        custody_path = namespace.path / "custody-request.json"
+        need(len(wire(custody_request)) <= 2 * MIB, "CALIBRATION_NATIVE_CUSTODY_REQUEST_BOUND")
+        publish(custody_path, custody_request)
+        command = privileged.service_command(source, custody_path, nonce=namespace.nonce,
+            control_root=namespace.path, runtime_seconds=custody_request["runtime_seconds"], broker_mode="quota")
+        service_state = {}
         if hasattr(progress, "before_launch"):
             progress.before_launch("quota-diagnosis")
-        kernel, fin = owned.execute_owned(namespace, command, cwd=source, environ=env, progress=progress,
+        kernel, fin = privileged.execute_service(namespace, command, cwd=source, environ=env,
+                                           progress=privileged._observer(namespace.path / "broker-birth.json",
+                                               binding, service_state, progress),
                                            timeout_seconds=300 if args.mode == "capability" else 10800,
                                            fin_label="quota-diagnosis")
         report["kernel"] = kernel
+        # The outer NONROOT FIN covers the systemd client. The independently
+        # pinned ROOT guardian must also be reaped and its cgroup drained.
+        report["root_service_actual_FIN"] = privileged._closed_service(service_state)
         issuer_red = False
         if hasattr(progress, "after_fin"):
             try:
@@ -1691,7 +1743,18 @@ def main(args, *, progress=None):
         report["loop_birth_sha256"] = born_sha
         # Documentary reads begin only after original physical FIN, including RED.
         try:
-            worker = decode(read(namespace.path / "producer-native.log", MAX_WORKER_WIRE))
+            relay = decode(read(namespace.path / "producer-native.log", 2 * MIB))
+            need(relay.get("schema") == "porota.rc6.capacity-custody-worker.v1"
+                 and relay.get("request_sha256") == request_sha
+                 and relay.get("privileged_controller", {}).get("root_native_FIN_closed") is True
+                 and relay.get("external_guardian", {}).get("actual_root_FIN_closed") is True,
+                 "CALIBRATION_NATIVE_ROOT_CONTROLLER_FIN_REQUIRED")
+            native = relay.get("root_worker", {})
+            need(native.get("path") == "root-worker-native.log", "CALIBRATION_NATIVE_ROOT_RAW_PATH_REBOUND")
+            worker_raw = read(namespace.path / "root-worker-native.log", MAX_WORKER_WIRE)
+            need(len(worker_raw) == native.get("bytes") and digest(worker_raw) == native.get("sha256"),
+                 "CALIBRATION_NATIVE_ROOT_RAW_HASH_REBOUND")
+            worker = decode(worker_raw)
             need(worker.get("schema") == "porota.rc6.capacity-worker.v1"
                  and worker.get("request_sha256") == request_sha, "CALIBRATION_NATIVE_WORKER_REPORT_MISSING")
             inner = worker["report"]
@@ -1701,6 +1764,7 @@ def main(args, *, progress=None):
             report["loop_finalization"] = loop_gone(born_loop)
             raise ValueError("CALIBRATION_PARTIAL_WORKER_RAW_UNKNOWN") from error
         report["worker"] = {k: v for k, v in inner.items() if k != "raw_files"}
+        report["root_controllers"] = {k: relay[k] for k in ("privileged_controller", "external_guardian")}
         need(inner.get("actual_own_fin_closed") is True and inner.get("required_raw_complete") is True,
              "CALIBRATION_PARTIAL_REQUIRED_RAW_OR_FIN_UNKNOWN")
         raw_refs = []
@@ -1716,7 +1780,10 @@ def main(args, *, progress=None):
         need(inner.get("loop") == born_loop, "CALIBRATION_TERMINAL_LOOP_BIRTH_REBOUND")
         report["loop_finalization"] = loop_gone(born_loop)
         capture = owned.capture_required_evidence(namespace, fin, output / "sealed-controls",
-                                                 ["root-request.json", "producer-native.log", "loop-birth.json"])
+            ["root-request.json", "producer-native.log", "loop-birth.json", "custody-request.json",
+             "root-worker-native.log", "private-broker-native.log", "broker-birth.json",
+             "broker-birth.observed.json", "broker-bridge.json", "guardian-controller.json", "live-root-controller.json",
+             "private-broker-birth.json", "private-broker.observed.json"])
         report["capture_manifest_sha256"] = capture.manifest_sha256
         report["cleanup"] = owned.cleanup_namespace(namespace, fin, capture)
         report["outer_after_cleanup"] = filesystem(parent)
@@ -1743,12 +1810,16 @@ def main(args, *, progress=None):
 def cli(*, progress=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root-worker", type=Path)
+    p.add_argument("--privileged-custody-proof", type=Path)
     p.add_argument("--probe-child", action="store_true")
     p.add_argument("--project", type=Path)
     p.add_argument("--probe", type=Path)
     p.add_argument("--outside", type=Path)
     p.add_argument("--supervisor-pid", type=int)
     p.add_argument("--issuer-pid", type=int)
+    p.add_argument("--issuer-proc-root", type=Path, default=Path("/proc"))
+    p.add_argument("--parent-filter-json", type=Path)
+    p.add_argument("--parent-filter-sha256")
     p.add_argument("--mode", choices=("capability", "bootstrap"))
     p.add_argument("--source-root", type=Path)
     p.add_argument("--source-sha")
@@ -1762,10 +1833,20 @@ def cli(*, progress=None):
     p.add_argument("--python312")
     a = p.parse_args()
     if a.root_worker:
-        return root_worker(a.root_worker)
+        return root_worker(a.root_worker, privileged_custody_proof=a.privileged_custody_proof)
     if a.probe_child:
         need(a.project and a.probe and a.outside, "CALIBRATION_NATIVE_PROBE_PATHS_REQUIRED")
-        print(wire(quota_probe(a.project, a.probe, a.outside, a.supervisor_pid, a.issuer_pid)).decode().strip(), flush=True)
+        need(a.parent_filter_json and a.parent_filter_sha256 and a.source_sha and a.source_tree,
+             "CALIBRATION_NATIVE_INHERITED_FILTER_REQUIRED")
+        parent_raw = read(a.parent_filter_json, 65536)
+        need(digest(parent_raw) == a.parent_filter_sha256, "CALIBRATION_NATIVE_PARENT_FILTER_HASH_REBOUND")
+        from scripts import rc6_native_namespace_filter as native_filter
+        filter_receipt = native_filter.install_filter(source_binding={"source_sha": a.source_sha, "source_tree": a.source_tree},
+            inherited=decode(parent_raw))
+        positive = quota_probe(a.project, a.probe, a.outside, a.supervisor_pid, a.issuer_pid,
+            issuer_proc_root=a.issuer_proc_root)
+        positive["native_filter"] = filter_receipt
+        print(wire(positive).decode().strip(), flush=True)
         return 0
     need(a.mode and a.source_root and a.source_sha and a.source_tree and a.namespace_receipt and a.output and a.binding_json,
          "CALIBRATION_EXPLICIT_CLI_BINDING_REQUIRED")

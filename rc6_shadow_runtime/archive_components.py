@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import stat
 import struct
+from types import MappingProxyType
 import uuid
 import zlib
 
@@ -33,6 +34,26 @@ PACK_RECORD = struct.Struct("!32sII")
 COMPONENT_RECORD = struct.Struct("!II32s")
 SLICE_COMPONENT_RECORD = struct.Struct("!IIII32s")
 SLICE_ARRAY_CODEC = "GZIP_BIG_ENDIAN_BINARY_SLICE_INDEX_V1"
+# The reader's typed V4 dispatch is available for already written evidence.
+# New native recipes remain V3 until a reviewed exact artifact proves the whole
+# reader/restore/retention/GC/recovery closure. This is a code hold, not a runtime
+# flag or a caller-supplied assertion. Private _select_plan comparisons confer
+# no permission to write V4 through build().
+NATIVE_WRITE_RECIPE_SCHEMA = RECIPE_SCHEMA
+SLICE_WRITE_CAPABILITY_REVIEW = MappingProxyType({
+    "schema": "rc6.component-slice-write-capability-review.v1",
+    "status": "BLOCKED",
+    "native_write_recipe_schema": RECIPE_SCHEMA,
+    "proposed_recipe_schema": SLICE_RECIPE_SCHEMA,
+    "validated_source_sha": None,
+    "validated_artifact_digest": None,
+    "required_review": (
+        "EXACT_ARTIFACT_ALL_ACK_V3_RECIPE_READERS",
+        "PUBLIC_EXACT_FIVE_MEMBER_RESTORE_AND_FRESH_CORRUPTION_REJECTION",
+        "WHOLE_PACK_GC_PINS_TRANSITIVE_BASES_AND_INTERRUPTED_RECOVERY",
+        "ORIGINAL1202_PREFIX_PHYSICAL_COST_AND_RETENTION_CONTRACT",
+    ),
+})
 MAX_COMPONENTS = 524288
 MAX_PACK_BYTES = 128 * 1024**2
 MAX_RECIPE_BYTES = 64 * 1024**2
@@ -744,64 +765,13 @@ class ComponentArchive:
                 raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")
             unchanged()
             return preview
-        base_receipt, prior_recipe, previous, previous_depth, checkpoint, checkpoint_depth, common_depth = None, None, None, 0, None, 0, 0
-        if head.get("generation_id"):
-            prior, _ = self.owner._read_control(self.root / (head["generation_id"] + ".receipt.json"))
-            if prior.get("schema") == ACK_SCHEMA:
-                prior_recipe = self._recipe(prior)
-                base_receipt = prior
-                common_depth = self._common_dependency_depth(prior)
-                if "projection.sqlite" in prior_recipe["members"]:
-                    previous, previous_depth = self._projection(prior, prior_recipe, self._indices(prior_recipe), set())
-                if "checkpoint.json.gz" in prior_recipe["members"]:
-                    checkpoint, checkpoint_depth = self._original(prior, prior_recipe, self._indices(prior_recipe), set(), "checkpoint.json.gz")
-        catalog = self._catalog()
-        slice_catalog = None
-        if prior_recipe is not None:
-            try:
-                slice_catalog = self._slice_catalog(catalog, prior_recipe)
-            except ValueError as error:
-                if str(error) != "RETENTION_COMPONENT_INDEX_CAPACITY_REACHED":
-                    raise
-        alternatives = {}
-        force_full = bool(manifest["sequence"] % 32 == 0) or common_depth == 32
-        def dependent_record(raw, recovery, packed, info):
-            from rc6_dynamic_universe.common import digest
-            return {"sha256": sha(raw), "bytes": len(raw), "recovery": recovery,
-                "pack_sha256": sha(packed), "dependency_depth": info["dependency_depth"],
-                "base_generation_id": base_receipt["generation_id"] if info["dependency_depth"] else None,
-                "base_receipt_digest": digest(base_receipt) if info["dependency_depth"] else None}
-        for name, raw in original.items():
-            record = {"sha256": sha(raw), "bytes": len(raw)}
-            if name == "projection.sqlite":
-                page, info = encode_page_pack(raw, previous, previous_depth=previous_depth,
-                    force_full=force_full)
-                parts, record = (page,), dependent_record(raw, "EXACT_PAGE_PACK", page, info)
-            elif name.endswith(".gz"):
-                parts, record["recovery"] = source_gzip_frames(raw), "SOURCE_GZIP_FRAME_CONCAT"
-            else:
-                parts, record["recovery"] = (gzip.compress(raw, mtime=0, compresslevel=1),), "STORED_GZIP_RAW"
-            alternatives[name] = [(parts, record)]
-            if slice_catalog is not None and record["recovery"] != "STORED_GZIP_RAW":
-                sliced = tuple(part for piece in parts for part in exact_wire_slices(piece))
-                if sliced != parts:
-                    alternatives[name].append((sliced, record))
-            if name == "projection.sqlite":
-                grouped = grouped_wire_parts(page, "EXACT_PAGE_PACK",
-                    expected_pack_sha256=record["pack_sha256"], expected_target_sha256=record["sha256"])
-                alternatives[name].append((grouped, record))
-            if name in {"projection.sqlite", "checkpoint.json.gz"}:
-                base, depth = (previous, previous_depth) if name == "projection.sqlite" else (checkpoint, checkpoint_depth)
-                proposal = self._binary_option(raw, base, depth, force_full,
-                                               allow_xor=name == "projection.sqlite")
-                if proposal is not None:
-                    binary, info = proposal
-                    alternatives[name].append(((binary,), dependent_record(raw, "EXACT_BINARY_PACK", binary, info)))
+        alternatives, catalog, _ = self._original_proposals(original, manifest)
         # Authenticate the catalog once; all alternatives reuse this same
         # captured base. Sequential plans retain one winner, never four packs.
         # The unchanged report frame layout is not a second codec experiment.
-        recipe_wire, packed, new_name = self._select_plan(alternatives, catalog, manifest, manifest_sha,
-                                                       slice_catalog=slice_catalog)
+        recipe_wire, packed, new_name = self._select_plan(alternatives, catalog, manifest, manifest_sha)
+        if loads(inflate(recipe_wire, maximum=MAX_RECIPE_BYTES)).get("schema") != NATIVE_WRITE_RECIPE_SCHEMA:
+            raise ValueError("RETENTION_SLICE_WRITE_EXACT_ARTIFACT_REVIEW_REQUIRED")
         # Exact new bytes plus simultaneous controls, rounded physical blocks.
         additions = (len(packed) if packed is not None else 0) + len(recipe_wire)
         self.owner._archive_inventory(additional_bytes=additions+4*65536, additional_files=6)
@@ -821,6 +791,84 @@ class ComponentArchive:
             raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")
         unchanged()
         return preview
+
+    def _original_proposals(self, original, manifest):
+        """The unchanged native SOURCE/PAGE/BIN proposals and anchor rule.
+
+        This private preparation is shared by the native V3 writer and the
+        isolated comparison driver, which supplies the same original bytes.
+        """
+        head = self.owner._archive_checkpoint()
+        base_receipt, prior_recipe, previous, previous_depth, checkpoint, checkpoint_depth, common_depth = None, None, None, 0, None, 0, 0
+        if head.get("generation_id"):
+            prior, _ = self.owner._read_control(self.root / (head["generation_id"] + ".receipt.json"))
+            if prior.get("schema") == ACK_SCHEMA:
+                prior_recipe = self._recipe(prior)
+                base_receipt = prior
+                common_depth = self._common_dependency_depth(prior)
+                if "projection.sqlite" in prior_recipe["members"]:
+                    previous, previous_depth = self._projection(prior, prior_recipe, self._indices(prior_recipe), set())
+                if "checkpoint.json.gz" in prior_recipe["members"]:
+                    checkpoint, checkpoint_depth = self._original(prior, prior_recipe, self._indices(prior_recipe), set(), "checkpoint.json.gz")
+        catalog = self._catalog()
+        alternatives = {}
+        force_full = bool(manifest["sequence"] % 32 == 0) or common_depth == 32
+        def dependent_record(raw, recovery, packed, info):
+            from rc6_dynamic_universe.common import digest
+            return {"sha256": sha(raw), "bytes": len(raw), "recovery": recovery,
+                "pack_sha256": sha(packed), "dependency_depth": info["dependency_depth"],
+                "base_generation_id": base_receipt["generation_id"] if info["dependency_depth"] else None,
+                "base_receipt_digest": digest(base_receipt) if info["dependency_depth"] else None}
+        for name in sorted(original):
+            raw = original[name]
+            record = {"sha256": sha(raw), "bytes": len(raw)}
+            if name == "projection.sqlite":
+                page, info = encode_page_pack(raw, previous, previous_depth=previous_depth,
+                    force_full=force_full)
+                parts, record = (page,), dependent_record(raw, "EXACT_PAGE_PACK", page, info)
+            elif name.endswith(".gz"):
+                parts, record["recovery"] = source_gzip_frames(raw), "SOURCE_GZIP_FRAME_CONCAT"
+            else:
+                parts, record["recovery"] = (gzip.compress(raw, mtime=0, compresslevel=1),), "STORED_GZIP_RAW"
+            alternatives[name] = [(parts, record)]
+            if name == "projection.sqlite":
+                grouped = grouped_wire_parts(page, "EXACT_PAGE_PACK",
+                    expected_pack_sha256=record["pack_sha256"], expected_target_sha256=record["sha256"])
+                alternatives[name].append((grouped, record))
+            if name in {"projection.sqlite", "checkpoint.json.gz"}:
+                base, depth = (previous, previous_depth) if name == "projection.sqlite" else (checkpoint, checkpoint_depth)
+                proposal = self._binary_option(raw, base, depth, force_full,
+                                               allow_xor=name == "projection.sqlite")
+                if proposal is not None:
+                    binary, info = proposal
+                    alternatives[name].append(((binary,), dependent_record(raw, "EXACT_BINARY_PACK", binary, info)))
+        return alternatives, catalog, prior_recipe
+
+    def _comparison_slice_plan(self, original, manifest, manifest_sha):
+        """Non-publishing proposal for an admitted PRIVATE comparison only.
+
+        build() does not call this method. It does not confer a V4 write
+        capability on the native archive; the comparison driver owns a
+        separate namespace and authenticates its admission before use.
+        """
+        if validate_materialized(original, expected_manifest_sha256=manifest_sha) != manifest:
+            raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")
+        alternatives, catalog, prior_recipe = self._original_proposals(original, manifest)
+        aliases = None
+        if prior_recipe is not None:
+            try:
+                aliases = self._slice_catalog(catalog, prior_recipe)
+            except ValueError as error:
+                if str(error) != "RETENTION_COMPONENT_INDEX_CAPACITY_REACHED":
+                    raise
+        if aliases is not None:
+            for proposals in alternatives.values():
+                parts, record = proposals[0]
+                if record["recovery"] != "STORED_GZIP_RAW":
+                    sliced = tuple(part for piece in parts for part in exact_wire_slices(piece))
+                    if sliced != parts:
+                        proposals.insert(1, (sliced, record))
+        return self._select_plan(alternatives, catalog, manifest, manifest_sha, slice_catalog=aliases)
 
     def _select_plan(self, alternatives, catalog, manifest, manifest_sha, *, slice_catalog=None):
         """Keep the original first plan unless both complete new costs improve.
