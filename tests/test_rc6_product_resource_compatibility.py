@@ -811,6 +811,22 @@ def test_typed_compute_observation_positive_requires_live_actor_limits_but_does_
     assert result["representative_full_workload"] is False
 
 
+@pytest.mark.parametrize('processes',[[],[0,os.getpid()],[os.getpid(),os.getpid()]])
+def test_compute_rejection_preserves_exact_pid_readback_and_never_mints_custody(processes,capsys):
+    envelope=cgroup_fixture()
+    envelope['processes']=processes
+    plan=resource_profile.exact_plan(resource_profile.PLAN_V2)[0]
+    with pytest.raises(ValueError,match='RESOURCE_CURRENT_CGROUP_MEMBERSHIP_REQUIRED'):
+        resource_profile.validate_compute_envelope(envelope,plan,source_sha='a'*40,
+            source_tree='b'*40,unit='rc6-native-'+'c'*32+'.service')
+    raw=capsys.readouterr().err
+    row=json.loads(raw.split('RC6_COMPUTE_NATIVE_REJECTION=',1)[1])
+    assert row['observation']==envelope and row['observer_pid']==os.getpid()
+    assert row['source_sha']=='a'*40 and row['source_tree']=='b'*40
+    assert row['error_signature']=='RESOURCE_CURRENT_CGROUP_MEMBERSHIP_REQUIRED'
+    assert row['ROOT_FIN_claimed'] is row['cleanup_authorized'] is row['qualification_claimed'] is False
+
+
 @pytest.mark.parametrize("key,value,reason", [
     ("cpu.max", "50000 100000", "EXACT_ONE_CPU_ONE_GIB_REQUIRED"),
     ("memory.max", str(512 * 1024**2), "EXACT_ONE_CPU_ONE_GIB_REQUIRED"),

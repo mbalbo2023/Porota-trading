@@ -617,6 +617,26 @@ def run_original_compute_controls():
         "db_calls": 0, "network_calls": 0, "real_orders_sent": 0}
 
 
+def validate_compute_envelope(envelope,plan,*,source_sha,source_tree,unit):
+    """Keep the actual failed readback in the original owned actor RAW."""
+    try:
+        return validate_cgroup(envelope,plan,private_cgroup_required=False)
+    except ValueError as error:
+        signature=str(error)
+        if re.fullmatch(r'[A-Z][A-Z0-9_]{0,159}',signature) is None:
+            signature=type(error).__name__
+        row={'schema':'porota.rc6.compute-envelope-rejection.v1','status':'RED',
+            'source_sha':source_sha,'source_tree':source_tree,'unit':unit,
+            'observer_pid':os.getpid(),'error_signature':signature,'observation':envelope,
+            'ROOT_FIN_claimed':False,'cleanup_authorized':False,'qualification_claimed':False}
+        raw=canonical(row)
+        require(len(raw)<=plan['compute_probe_maximum_control_bytes'],
+            'RESOURCE_COMPUTE_REJECTION_CONTROL_BUDGET_EXCEEDED')
+        sys.stderr.buffer.write(b'RC6_COMPUTE_NATIVE_REJECTION='+raw)
+        sys.stderr.buffer.flush()
+        raise
+
+
 def compute_probe_result(*, source_sha, source_tree, unit, plan_path=PLAN_V2):
     """Called only by the certified bounded ROOT broker actor, before authentic FIN."""
     require(re.fullmatch(r"rc6-native-[0-9a-f]{32}\.service", unit or "") is not None,
@@ -635,7 +655,7 @@ def compute_probe_result(*, source_sha, source_tree, unit, plan_path=PLAN_V2):
     require_current_native_namespace_filter(source_binding=binding)
     envelope = observe_cgroup()
     envelope["cpuset.cpus.effective"] = (Path(envelope["path"]) / "cpuset.cpus.effective").read_text().strip()
-    limits = validate_cgroup(envelope, plan, private_cgroup_required=False)
+    limits = validate_compute_envelope(envelope,plan,source_sha=source_sha,source_tree=source_tree,unit=unit)
     require(envelope["membership"] == "0::/system.slice/" + unit,
             "RESOURCE_ACTUAL_OWN_COMPUTE_UNIT_MEMBERSHIP_REQUIRED")
     require(limits["cpu_limit"] == 1 and limits["memory_limit_bytes"] == GIB,
@@ -649,7 +669,7 @@ def compute_probe_result(*, source_sha, source_tree, unit, plan_path=PLAN_V2):
     require(summary["memory_kernel_peak_bytes"] <= GIB, "RESOURCE_MEMORY_ENVELOPE_ALREADY_EXCEEDED")
     recheck = observe_cgroup()
     recheck["cpuset.cpus.effective"] = (Path(recheck["path"]) / "cpuset.cpus.effective").read_text().strip()
-    validate_cgroup(recheck, plan, private_cgroup_required=False)
+    validate_compute_envelope(recheck,plan,source_sha=source_sha,source_tree=source_tree,unit=unit)
     require(all(envelope[key] == recheck[key] for key in ("path", "membership", "mount_id", "cpu.max",
         "memory.max", "memory.swap.max", "pids.max", "affinity", "uid", "privilege_status", "cpuset.cpus.effective")),
         "RESOURCE_COMPUTE_LIVE_CGROUP_OR_PRIVILEGE_REBOUND")
