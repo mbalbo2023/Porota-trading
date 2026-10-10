@@ -354,8 +354,23 @@ def _open_denial(label, path, flags, accepted):
         descriptor = os.open(path, flags | os.O_CLOEXEC)
     except OSError as error:
         require(error.errno in accepted, "PIDV2_NATIVE_DENIAL_UNKNOWN:" + label)
+        # Following a denied proc magiclink repeats the forbidden access.
+        # Observe only the entry; inaccessible parents and link targets remain
+        # UNKNOWN. Existing regular kernel/cgroup targets must still be proved.
+        entry_observed=None;existed=None;metadata_errno=None
+        try:
+            value=os.stat(path,follow_symlinks=False)
+        except OSError as metadata_error:
+            metadata_errno=metadata_error.errno
+            if metadata_errno in (errno.ENOENT,errno.ENOTDIR):
+                entry_observed=False;existed=False
+        else:
+            entry_observed=True
+            if not stat.S_ISLNK(value.st_mode):existed=True
         return {"operation": "open", "path": str(path), "flags": flags,
-                "errno": error.errno, "target_existed": Path(path).exists(), "write_performed": False}
+                "errno": error.errno, "target_existed": existed,"target_entry_observed":entry_observed,
+                "target_metadata_errno":metadata_errno,"target_metadata_follows_links":False,
+                "write_performed": False}
     os.close(descriptor)
     raise ValueError("PIDV2_NATIVE_ESCAPE:" + label)
 

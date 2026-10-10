@@ -218,3 +218,35 @@ def test_approval_context_without_native_boundary_remains_legacy_blocked(monkeyp
         source_sha="a" * 40, source_tree="b" * 40, code_hashes={}, revision_context=object())
     assert result["privileged_launch_authorized"] is False and observed is receipt
     assert reason == "CALIBRATION_PRIVATE_PID_ORIGINAL_PROC_ROOT_CONTRACT_REVIEW_REQUIRED"
+def test_real_nonroot_denial_observes_regular_entry_without_following_target(tmp_path):
+    assert os.geteuid()>0
+    target=tmp_path/'own-denied-target';target.write_bytes(b'own bounded denial control')
+    target.chmod(0)
+    try:
+        row=boundary._open_denial('own_denial',target,os.O_RDONLY,(errno.EACCES,))
+        assert row['errno']==errno.EACCES and row['target_existed'] is True
+        assert row['target_entry_observed'] is True and row['target_metadata_follows_links'] is False
+        assert row['write_performed'] is False
+    finally:target.chmod(0o600)
+
+
+def test_real_nonroot_denied_parent_leaves_existence_unknown(tmp_path):
+    assert os.geteuid()>0
+    parent=tmp_path/'own-denied-parent';parent.mkdir(mode=0o700)
+    target=parent/'actual-own-leaf';target.write_bytes(b'own existing leaf')
+    parent.chmod(0)
+    try:
+        row=boundary._open_denial('own_parent',target,os.O_RDONLY,(errno.EACCES,))
+        assert row['errno']==errno.EACCES and row['target_existed'] is None
+        assert row['target_entry_observed'] is None and row['target_metadata_errno']==errno.EACCES
+        assert row['target_metadata_follows_links'] is row['write_performed'] is False
+    finally:parent.chmod(0o700)
+
+
+def test_missing_entry_and_dangling_link_are_distinct_without_claiming_target(tmp_path):
+    target=tmp_path/'missing';alias=tmp_path/'dangling';alias.symlink_to(target)
+    missing=boundary._open_denial('missing',target,os.O_RDONLY,(errno.ENOENT,))
+    linked=boundary._open_denial('dangling',alias,os.O_RDONLY,(errno.ENOENT,))
+    assert missing['target_existed'] is missing['target_entry_observed'] is False
+    assert linked['target_entry_observed'] is True and linked['target_existed'] is None
+    assert linked['write_performed'] is False
