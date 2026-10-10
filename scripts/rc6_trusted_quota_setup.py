@@ -28,6 +28,8 @@ def validate_project_spec(*, hard_bytes, hard_inodes, operation_scope):
         "capacity-calibration": {(20 * calibration.GIB, calibration.MAX_ENTRIES), (calibration.MIB, calibration.MAX_ENTRIES)},
         "G5A_EVIDENCE_ACQUISITION_ONLY": {(20 * calibration.GIB, calibration.MAX_ENTRIES),
             (512 * calibration.MIB, 32768), (calibration.MIB, 32768)},
+        "G5A_HOST_STAGE_AGGREGATE_20GIB_V1": {(20 * calibration.GIB, calibration.MAX_ENTRIES),
+            (calibration.MIB, 32768)},
     }
     require(operation_scope in allowed and (hard_bytes, hard_inodes) in allowed[operation_scope],
             "TRUSTED_QUOTA_SCOPE_OR_LIMIT_REBOUND")

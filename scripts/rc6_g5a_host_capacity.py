@@ -4,6 +4,7 @@ The original manager polls every five seconds and spends at most five seconds
 closing a failed phase. Those observations are useful for stopping a RED; they
 do not enforce a 20 GiB aggregate filesystem limit between observations. This
 module never substitutes them for native aggregate enforcement or opens a gate.
+The separate native issuer source has no accepted all-stage Actions proof yet.
 """
 from __future__ import annotations
 
@@ -161,10 +162,10 @@ class DiagnosticCutoff:
 def require_host_stage_admission(*,stage,enforcement=None,owner_acceptance=None):
     """Fail before installing, exporting or reviewing; approval cannot bypass it.
 
-    There is currently no native issuer for aggregate host-stage enforcement.
-    Private ROOT writer quota, JSON receipts, accepted-contract flags and sampled
-    maxima cannot confer this missing scope. Implementing a real issuer requires
-    the separate architectural decision below and native proof of all writers.
+    The issuer source is not an authenticated native all-stage receipt. Private
+    ROOT writer quota, JSON receipts, accepted-contract flags and sampled maxima
+    cannot confer this missing scope. Keep the barrier until all original stage
+    writers have the same kernel quota, real EDQUOT, seal and FIN evidence.
     """
     require(stage in STAGES,'G5A_HOST_STAGE_EXACT_STAGE_REQUIRED')
     raise ValueError(BARRIER)

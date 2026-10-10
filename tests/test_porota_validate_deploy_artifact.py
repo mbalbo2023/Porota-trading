@@ -114,7 +114,9 @@ def test_g5_writer_binding_rejects_changed_codec_even_with_complete_runtime_file
 def test_g5_writer_binding_rejects_source_default_v3_relabelled_v4(tmp_path):
     repo, artifact, expected, binding = _writer_fixture(tmp_path)
     path = repo/'rc6_shadow_runtime/worker.py'
-    path.write_bytes(path.read_bytes().replace(b'"COMPONENT_V4"', b'"COMPONENT_V3"'))
+    assert b'kwargs.setdefault("archive_format", "COMPONENT_V3")' in path.read_bytes()
+    path.write_bytes(path.read_bytes().replace(b'kwargs.setdefault("archive_format", "COMPONENT_V3")',
+        b'kwargs.setdefault("archive_format", "COMPONENT_V4")'))
     (artifact/'rc6_shadow_runtime/worker.py').write_bytes(path.read_bytes())
     result = validate(repo, artifact, expected, g5_writer_binding=binding)
     assert result['status'] == 'FAILED'

@@ -117,6 +117,9 @@ class EvidenceRetention:
         self.archive_maximum_bytes, self.archive_maximum_files = archive_maximum_bytes, archive_maximum_files
         if not isinstance(archive_format, str) or archive_format not in {"TAR_V2", "COMPONENT_V3", "COMPONENT_V4"}:
             raise ValueError("INVALID_RETENTION_ARCHIVE_FORMAT")
+        if archive_format == "COMPONENT_V4":
+            from .archive_components import require_native_v4_write_capability
+            require_native_v4_write_capability()
         self.archive_format = archive_format
         self.auto_archive, self.fault_inject = auto_archive, fault_inject
 

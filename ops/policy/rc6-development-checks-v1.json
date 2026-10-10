@@ -106,6 +106,7 @@
     "tests/test_rc6_g5a_admission.py",
     "tests/test_rc6_g5a_raw_capture.py",
     "tests/test_rc6_g5a_host_capacity.py",
+    "tests/test_rc6_g5a_aggregate_issuer.py",
     "tests/test_rc6_g5a_actions.py",
     "tests/test_rc6_g5a_parts.py",
     "tests/test_rc6_g5a_custody_replay.py",

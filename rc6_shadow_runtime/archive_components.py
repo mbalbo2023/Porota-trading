@@ -35,10 +35,9 @@ COMPONENT_RECORD = struct.Struct("!II32s")
 SLICE_COMPONENT_RECORD = struct.Struct("!IIII32s")
 SLICE_ARRAY_CODEC = "GZIP_BIG_ENDIAN_BINARY_SLICE_INDEX_V1"
 # The reader's typed V4 dispatch is available for already written evidence.
-# New native recipes remain V3 until a reviewed exact artifact proves the whole
-# reader/restore/retention/GC/recovery closure. This is a code hold, not a runtime
-# flag or a caller-supplied assertion. Private _select_plan comparisons confer
-# no permission to write V4 through build().
+# New native recipes remain V3 until owner approval, native G5 certification and
+# an exact artifact prove the whole reader/restore/retention/GC closure. No live
+# V4 write capability has been issued. Private comparison plans grant none.
 NATIVE_WRITE_RECIPE_SCHEMA = RECIPE_SCHEMA
 SLICE_WRITE_CAPABILITY_REVIEW = MappingProxyType({
     "schema": "rc6.component-slice-write-capability-review.v1",
@@ -47,6 +46,8 @@ SLICE_WRITE_CAPABILITY_REVIEW = MappingProxyType({
     "proposed_recipe_schema": SLICE_RECIPE_SCHEMA,
     "validated_source_sha": None,
     "validated_artifact_digest": None,
+    "owner_decision_digest": None,
+    "native_g5_certification_digest": None,
     "required_review": (
         "EXACT_ARTIFACT_ALL_ACK_V3_RECIPE_READERS",
         "PUBLIC_EXACT_FIVE_MEMBER_RESTORE_AND_FRESH_CORRUPTION_REJECTION",
@@ -54,6 +55,16 @@ SLICE_WRITE_CAPABILITY_REVIEW = MappingProxyType({
         "ORIGINAL1202_PREFIX_PHYSICAL_COST_AND_RETENTION_CONTRACT",
     ),
 })
+
+
+def require_native_v4_write_capability():
+    """No serializable flag or proposed format can activate a native V4 write.
+
+    The future issuer must authenticate the owner, full native G5 and the exact
+    artifact in one live context. Until it exists, every native V4 entrypoint
+    remains closed, including direct calls that bypass the runtime factory.
+    """
+    raise ValueError("RETENTION_V4_WRITE_APPROVAL_CERTIFICATION_ARTIFACT_REQUIRED")
 MAX_COMPONENTS = 524288
 MAX_PACK_BYTES = 128 * 1024**2
 MAX_RECIPE_BYTES = 64 * 1024**2
@@ -514,7 +525,8 @@ class ComponentArchive:
             temporary.unlink(missing_ok=True)
 
     def publish_original_v4(self, originals, manifest, manifest_sha):
-        """Candidate V2 writer ABI, subject to owner acceptance and G5/G8."""
+        """Candidate V2 writer ABI; native publication is not authorized."""
+        require_native_v4_write_capability()
         return self._publish_original_plan(originals, manifest, manifest_sha,
                                            self._comparison_slice_plan(originals, manifest, manifest_sha))
 
@@ -750,11 +762,12 @@ class ComponentArchive:
         return restored, manifest
 
     def build(self, source, manifest, manifest_sha):
-        """Candidate V2 native dispatch. Changing Source does not approve it."""
-        return self.build_v4(source, manifest, manifest_sha)
+        """Effective native writer while the proposed V4 capability is blocked."""
+        return self.build_v3(source, manifest, manifest_sha)
 
     def build_v4(self, source, manifest, manifest_sha):
-        """Read the actual original generation and publish the proposed V4 ABI."""
+        """Reject before reading Source or creating any V4 archive object."""
+        require_native_v4_write_capability()
         return self._build_original_source(source, manifest, manifest_sha, writer=self.publish_original_v4)
 
     def build_v3(self, source, manifest, manifest_sha):

@@ -425,7 +425,10 @@ class _PrivateBranch:
                         "CAS_COMPARISON_NATIVE_V4_EXACT_SOURCE_GENERATION_REQUIRED")
                     receipt = context.build(source_generation, manifest, manifest_sha)
                 else:
-                    receipt = context.publish_original_v4(originals, manifest, manifest_sha)
+                    # An isolated economic comparison may publish its private
+                    # plan; this is not the native V4 entrypoint or authority.
+                    receipt = context._publish_original_plan(originals, manifest, manifest_sha,
+                        context._comparison_slice_plan(originals, manifest, manifest_sha))
                 recipe_wire, _ = components.read(self.archive / (ident + ".recipe.gz"), maximum=components.MAX_RECIPE_BYTES)
                 packed, pack_name = None, None
                 actual_new_pack_bytes = sum(item.stat().st_size for item in self.archive.iterdir()

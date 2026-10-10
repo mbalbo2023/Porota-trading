@@ -15,6 +15,7 @@ SOURCE_MEMBERS = (
 ENTRYPOINTS = MappingProxyType({
     "native_writer": ("rc6_shadow_runtime/archive_components.py", "ComponentArchive.build"),
     "native_v4_writer": ("rc6_shadow_runtime/archive_components.py", "ComponentArchive.build_v4"),
+    "native_v4_write_guard": ("rc6_shadow_runtime/archive_components.py", "require_native_v4_write_capability"),
     "original_source_custody": ("rc6_shadow_runtime/archive_components.py", "ComponentArchive._build_original_source"),
     "historical_v3_writer": ("rc6_shadow_runtime/archive_components.py", "ComponentArchive.build_v3"),
     "native_runtime_dispatch": ("rc6_shadow_runtime/worker.py", "ShadowRuntime.from_environment"),
@@ -109,35 +110,45 @@ def writer_codec_restorer_binding(source_files):
     points = {role: {"path": path, "qualified_name": name,
                     "source_sha256": components.sha(_function_bytes(source_files[path], name))}
               for role, (path, name) in ENTRYPOINTS.items()}
-    # This closed dispatch is a Source proposition. Actual execution, full
-    # 1,202-frame replay and exact future artifact bytes are separate joins.
+    # Report the effective V3 dispatch and the blocked V4 proposal separately.
+    # Actual execution, full replay and future artifact bytes are separate joins.
     native = ast.parse(__import__("textwrap").dedent(_function_bytes(source_files[SOURCE_MEMBERS[0]], "ComponentArchive.build").decode())).body[0]
     _require(len(native.body) == 2 and isinstance(native.body[1], ast.Return)
         and isinstance(native.body[1].value, ast.Call)
-        and ast.unparse(native.body[1].value.func) == "self.build_v4"
+        and ast.unparse(native.body[1].value.func) == "self.build_v3"
         and [ast.unparse(value) for value in native.body[1].value.args] == ["source", "manifest", "manifest_sha"],
-        "ARCHIVE_FORMAT_CANDIDATE_NATIVE_V4_DISPATCH_REBOUND")
+        "ARCHIVE_FORMAT_EFFECTIVE_NATIVE_V3_DISPATCH_REBOUND")
     v4 = ast.parse(__import__("textwrap").dedent(_function_bytes(source_files[SOURCE_MEMBERS[0]], "ComponentArchive.build_v4").decode())).body[0]
-    _require(len(v4.body) == 2 and isinstance(v4.body[1], ast.Return)
-        and isinstance(v4.body[1].value, ast.Call)
-        and ast.unparse(v4.body[1].value.func) == "self._build_original_source"
-        and [(keyword.arg, ast.unparse(keyword.value)) for keyword in v4.body[1].value.keywords]
+    _require(len(v4.body) == 3 and isinstance(v4.body[1], ast.Expr)
+        and ast.unparse(v4.body[1].value) == "require_native_v4_write_capability()"
+        and isinstance(v4.body[2], ast.Return) and isinstance(v4.body[2].value, ast.Call)
+        and ast.unparse(v4.body[2].value.func) == "self._build_original_source"
+        and [(keyword.arg, ast.unparse(keyword.value)) for keyword in v4.body[2].value.keywords]
             == [("writer", "self.publish_original_v4")], "ARCHIVE_FORMAT_CANDIDATE_V4_PLANNER_REBOUND")
+    public_v4 = ast.parse(__import__("textwrap").dedent(_function_bytes(source_files[SOURCE_MEMBERS[0]], "ComponentArchive.publish_original_v4").decode())).body[0]
+    _require(len(public_v4.body) == 3 and isinstance(public_v4.body[1], ast.Expr)
+        and ast.unparse(public_v4.body[1].value) == "require_native_v4_write_capability()",
+        "ARCHIVE_FORMAT_DIRECT_V4_PUBLICATION_GUARD_REQUIRED")
+    guard = ast.parse(_function_bytes(source_files[SOURCE_MEMBERS[0]], "require_native_v4_write_capability").decode()).body[0]
+    _require(isinstance(guard.body[-1], ast.Raise)
+        and ast.unparse(guard.body[-1].exc) == "ValueError('RETENTION_V4_WRITE_APPROVAL_CERTIFICATION_ARTIFACT_REQUIRED')",
+        "ARCHIVE_FORMAT_LIVE_V4_CAPABILITY_ISSUER_REQUIRED")
     factory = ast.parse(__import__("textwrap").dedent(_function_bytes(source_files["rc6_shadow_runtime/worker.py"], "ShadowRuntime.from_environment").decode()))
     choices = [node for node in ast.walk(factory) if isinstance(node, ast.Call)
                and isinstance(node.func, ast.Attribute) and node.func.attr == "setdefault"
                and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value == "archive_format"]
     _require(len(choices) == 1 and len(choices[0].args) == 2 and isinstance(choices[0].args[1], ast.Constant)
-        and choices[0].args[1].value == "COMPONENT_V4", "ARCHIVE_FORMAT_CANDIDATE_RUNTIME_FACTORY_REBOUND")
+        and choices[0].args[1].value == "COMPONENT_V3", "ARCHIVE_FORMAT_EFFECTIVE_RUNTIME_FACTORY_REBOUND")
     result = {"schema": SCHEMA, "source_files_sha256": files, "entrypoints": points,
         "read_recipe_schemas": [components.RECIPE_SCHEMA, components.SLICE_RECIPE_SCHEMA],
         "ack_schema": components.ACK_SCHEMA, "native_write_recipe_schema": components.RECIPE_SCHEMA,
         "proposed_recipe_schema": components.SLICE_RECIPE_SCHEMA,
-        "effective_product_writer_choice": "CANDIDATE_V2_NATIVE_COMPONENT_V4",
+        "effective_product_writer_choice": "NATIVE_COMPONENT_V3_PENDING_V4_ACTIVATION",
+        "proposed_product_writer_choice": "CANDIDATE_V2_NATIVE_COMPONENT_V4",
         "candidate_native_write_recipe_schema": components.SLICE_RECIPE_SCHEMA,
-        "native_runtime_archive_format": "COMPONENT_V4",
+        "native_runtime_archive_format": "COMPONENT_V3",
         "effective_native_writer": "ComponentArchive.build",
-        "effective_native_planner": "ComponentArchive.publish_original_v4",
+        "effective_native_planner": "ComponentArchive.publish_original_v3",
         "candidate_contract_accepted": False,
         "proposed_v4_writer_choice": "OWNER_ACCEPTANCE_G5_AND_EXACT_G7_G8_ARTIFACT_REQUIRED",
         "artifact_writer_v4_promotion_approved": False, "native_v4_write_enabled": False}

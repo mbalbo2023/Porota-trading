@@ -49,6 +49,8 @@ def test_g5a_proposal_keeps_exact_limits_and_no_early_green(tmp_path):
     assert g5.CONTRACT["original_cuts"] == 1202 and g5.CONTRACT["maximum_dependency_depth"] == 32
     assert g5.CONTRACT["contracted_retention_seconds"] == 9 * 3600
     assert g5.CONTRACT["recovery_margin_seconds"] == 3600
+    assert g5.CONTRACT["native_runtime_archive_format"] == "COMPONENT_V3"
+    assert g5.CONTRACT["proposed_runtime_archive_format"] == "COMPONENT_V4"
     assert g5.CONTRACT_SHA256 == components.sha(components.canonical(dict(g5.CONTRACT)))
     with pytest.raises(TypeError):
         g5.CONTRACT["acquisition_grants_g5_green"] = True
@@ -250,7 +252,7 @@ def test_writer_codec_restore_binding_matches_actual_artifact_members_without_v4
     assert result["native_v4_write_enabled"] is False and components.NATIVE_WRITE_RECIPE_SCHEMA == components.RECIPE_SCHEMA
 
 
-def test_candidate_native_v4_calls_same_source_writer_and_restores_after_legacy_v3(tmp_path, monkeypatch):
+def test_candidate_native_v4_cannot_publish_without_live_owner_g5_and_artifact(tmp_path, monkeypatch):
     from rc6_shadow_runtime.persistence import EvidenceFiles
     from rc6_shadow_runtime.retention import EvidenceRetention
     from tests.test_issue465_generations import publish
@@ -260,15 +262,23 @@ def test_candidate_native_v4_calls_same_source_writer_and_restores_after_legacy_
         cut = publish(files, 3)
     generation = root / ("gen-" + cut["pointer"]["generation_id"])
     original, source_custody = members(generation), tree_custody(generation)
-    calls, actual = [], components.ComponentArchive.build_v4
-    def observe(self, source, manifest, digest):
-        assert source == generation
-        calls.append(source)
-        return actual(self, source, manifest, digest)
-    monkeypatch.setattr(components.ComponentArchive, "build_v4", observe)
-    owner = EvidenceRetention(root, archive_root=archive, archive_format="COMPONENT_V4")
+    before_archive = tree_custody(archive)
+    with pytest.raises(ValueError, match="RETENTION_V4_WRITE_APPROVAL_CERTIFICATION_ARTIFACT_REQUIRED"):
+        EvidenceRetention(root, archive_root=archive, archive_format="COMPONENT_V4")
+    with pytest.raises(ValueError, match="RETENTION_V4_WRITE_APPROVAL_CERTIFICATION_ARTIFACT_REQUIRED"):
+        EvidenceFiles(root, archive_root=archive, archive_format="COMPONENT_V4")
+    owner = EvidenceRetention(root, archive_root=archive, archive_format="COMPONENT_V3")
+    context = components.ComponentArchive(owner)
+    manifest_sha = components.sha(original["manifest.json"])
+    manifest = components.validate_materialized(original, expected_manifest_sha256=manifest_sha)
+    for write in (lambda: context.build_v4(generation, manifest, manifest_sha),
+                  lambda: context.publish_original_v4(original, manifest, manifest_sha)):
+        with pytest.raises(ValueError, match="RETENTION_V4_WRITE_APPROVAL_CERTIFICATION_ARTIFACT_REQUIRED"):
+            write()
+        assert tree_custody(archive) == before_archive
+        assert tree_custody(generation) == source_custody
     receipt = owner.archive_generation(generation)
-    assert calls == [generation] and (root / ("archive-ack-" + receipt["generation_id"] + ".json")).is_file()
+    assert (root / ("archive-ack-" + receipt["generation_id"] + ".json")).is_file()
     assert tree_custody(generation) == source_custody
     monkeypatch.setattr(components.ComponentArchive, "publish_original_v4", lambda *args: pytest.fail("Restore must not write"))
     assert owner.restore_generation(receipt["generation_id"])["members"] == original
@@ -278,12 +288,18 @@ def test_candidate_native_v4_calls_same_source_writer_and_restores_after_legacy_
 
 
 @pytest.mark.parametrize("target,old,new,signature", (
-    ("rc6_shadow_runtime/archive_components.py", b"return self.build_v4(source, manifest, manifest_sha)",
-        b"return self.build_v3(source, manifest, manifest_sha)", "CANDIDATE_NATIVE_V4_DISPATCH_REBOUND"),
-    ("rc6_shadow_runtime/worker.py", b'kwargs.setdefault("archive_format", "COMPONENT_V4")',
-        b'kwargs.setdefault("archive_format", "COMPONENT_V3")', "CANDIDATE_RUNTIME_FACTORY_REBOUND"),
+    ("rc6_shadow_runtime/archive_components.py", b"return self.build_v3(source, manifest, manifest_sha)",
+        b"return self.build_v4(source, manifest, manifest_sha)", "EFFECTIVE_NATIVE_V3_DISPATCH_REBOUND"),
+    ("rc6_shadow_runtime/worker.py", b'kwargs.setdefault("archive_format", "COMPONENT_V3")',
+        b'kwargs.setdefault("archive_format", "COMPONENT_V4")', "EFFECTIVE_RUNTIME_FACTORY_REBOUND"),
     ("rc6_shadow_runtime/archive_components.py", b"writer=self.publish_original_v4)",
         b"writer=self.publish_original_v3)", "CANDIDATE_V4_PLANNER_REBOUND"),
+    ("rc6_shadow_runtime/archive_components.py", b"require_native_v4_write_capability()\n        return self._build_original_source",
+        b"return self._build_original_source", "CANDIDATE_V4_PLANNER_REBOUND"),
+    ("rc6_shadow_runtime/archive_components.py", b"require_native_v4_write_capability()\n        return self._publish_original_plan",
+        b"return self._publish_original_plan", "DIRECT_V4_PUBLICATION_GUARD_REQUIRED"),
+    ("rc6_shadow_runtime/archive_components.py", b'raise ValueError("RETENTION_V4_WRITE_APPROVAL_CERTIFICATION_ARTIFACT_REQUIRED")',
+        b'return None', "LIVE_V4_CAPABILITY_ISSUER_REQUIRED"),
 ))
 def test_candidate_future_artifact_cannot_inherit_qualification_after_writer_or_factory_change(target, old, new, signature):
     actual = source_files()
