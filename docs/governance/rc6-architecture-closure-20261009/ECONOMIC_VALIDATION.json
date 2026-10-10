@@ -1,0 +1,309 @@
+{
+  "schema": "porota.rc6.zero-cost-development-validation.v1",
+  "recorded_utc": "2026-10-10T00:56:01Z",
+  "status": "DESARROLLADO_ECONOMIC_REGRESSIONS_ONLY",
+  "base_pr": 481,
+  "base_sha": "aee4261c58d63ca1cec54c32719878affe1d0f4f",
+  "base_tree": "922c657921eef8e8307cd11dbf5c58a06549d24c",
+  "branch": "fix/rc6-zero-cost-certification-20261010",
+  "workstream": "WS-RC6-ZERO-COST-CERTIFICATION-20261010",
+  "owner_receipts": [
+    "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6091418892",
+    "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6091419671"
+  ],
+  "cost": {
+    "additional_recurring_usd": 0,
+    "rejected_monthly_usd": 84,
+    "paid_runner_authorized": false,
+    "persistent_infrastructure_changes": false,
+    "provisioning_or_droplet_expansion": false,
+    "actions_profile": "STANDARD_PUBLIC_UBUNTU_24_04_ONLY",
+    "local_development_runs_not_billing_or_hosted_qualification": true
+  },
+  "original_hosted_artifact": {
+    "run_id": 37988736476,
+    "attempt": 1,
+    "job_id": 114017192418,
+    "artifact_id": 11644630741,
+    "source_sha": "aee4261c58d63ca1cec54c32719878affe1d0f4f",
+    "runner_label": "ubuntu-24.04",
+    "run_url": "https://github.com/mbalbo2023/Porota-trading/actions/runs/37988736476",
+    "zip_sha256": "dd858cb57c7b83153c17a5b7514690e35a6447f234622c65004ad9cf3f863ea9",
+    "zip_bytes": 870555,
+    "zip_members": 16,
+    "all_crc_verified": true,
+    "runner_readonly_sha256": "b86f596f2186fcf2ea695041892e458be852c445e3ef483028d75b91c4afc958",
+    "observed_utc": "2026-10-09T20:42:27Z",
+    "filesystem": "ext4",
+    "allocation_unit_bytes": 4096,
+    "mount_id": 27,
+    "free_bytes": 91698405376,
+    "free_inodes": 18423046,
+    "total_inodes": 19529728,
+    "legacy_necessary_floor_bytes": 32596295680,
+    "floor_fits_observed_run": true,
+    "nominal_storage_bytes_decimal_informational_only": 14000000000,
+    "original_receipt_kept_byte_exact_including_old_nominal_value": true,
+    "root_custody_proved": false,
+    "native_quota_enforcement_proved": false,
+    "missing_kernel_prerequisite": "QFMT_VFS_V1_MODULE_NOT_ALREADY_LIVE",
+    "G0_status": "BLOQUEADO",
+    "original_development_tests_per_python": 863,
+    "original_native_tests_not_new_candidate_qualification": true,
+    "not_the_16_historical_RC6_ZIPs_2034_original_members": true
+  },
+  "suite_plan": {
+    "original_suites_preserved": 56,
+    "current_suites": 59,
+    "original_dependency_pins_preserved": 14,
+    "new_suite_paths": [
+      "tests/test_rc6_archive_slice_reuse.py",
+      "tests/test_rc6_certification_contract.py",
+      "tests/test_rc6_product_resource_compatibility.py"
+    ],
+    "product157_qualification": false,
+    "local_invocation": [
+      "--noconftest",
+      "-c",
+      "/dev/null",
+      "--rootdir=<isolated-checkout>",
+      "-p",
+      "no:cacheprovider",
+      "-o",
+      "junit_family=legacy",
+      "-q"
+    ],
+    "short_namespace_parent": "/workspace",
+    "same_filesystem_namespace_parent_required": true,
+    "canonical_git_modes_prepared_before_source_freeze": true,
+    "frozen_native_receipts_or_source_snapshots_modified": false
+  },
+  "complete_checkpoint_regressions": [
+    {
+      "scope": "59_SUITES_BEFORE_FINAL_CAS_IMMUTABLE_BACKING_AND_RESOURCE_HARDENING",
+      "python": "3.11.16",
+      "origin": "LOCAL_PYTEST_NOT_GITHUB_ACTIONS_NOT_G0_G8",
+      "source_identity": "MUTABLE_DEVELOPMENT_CHECKPOINT_NOT_NATIVE_SOURCE_QUALIFICATION",
+      "local_file": "/workspace/scratch/rc6-economic-final-311.xml",
+      "sha256": "fcdf8f03de4d29c30e0b07602d5e3ef288d661af371363379a4c3a939f56cd0c",
+      "tests": 976,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 108.607
+    },
+    {
+      "scope": "59_SUITES_BEFORE_FINAL_CAS_IMMUTABLE_BACKING_AND_RESOURCE_HARDENING",
+      "python": "3.12.14",
+      "origin": "LOCAL_PYTEST_NOT_GITHUB_ACTIONS_NOT_G0_G8",
+      "source_identity": "MUTABLE_DEVELOPMENT_CHECKPOINT_NOT_NATIVE_SOURCE_QUALIFICATION",
+      "local_file": "/workspace/scratch/rc6-economic-final-312.xml",
+      "sha256": "a77e6affd901cc561c618a0246920f5089aa0263f7b385d6a7e6a93f49634c0e",
+      "tests": 976,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 146.742
+    }
+  ],
+  "post_checkpoint_hardening_regressions": [
+    {
+      "scope": "FINAL_CAS_SLICE_AND_GROUPED_WIRE_SCOPE",
+      "python": "3.11.16",
+      "origin": "LOCAL_PYTEST_NOT_GITHUB_ACTIONS_NOT_G0_G8",
+      "source_identity": "MUTABLE_DEVELOPMENT_CHECKPOINT_NOT_NATIVE_SOURCE_QUALIFICATION",
+      "local_file": "/workspace/scratch/rc6-cas-hardened-311.xml",
+      "sha256": "0552d2bdf1672e9428c06af0c004a6604344e77677bc5be8f2ded4c179ffd754",
+      "tests": 39,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 9.316
+    },
+    {
+      "scope": "FINAL_CAS_SLICE_AND_GROUPED_WIRE_SCOPE",
+      "python": "3.12.14",
+      "origin": "LOCAL_PYTEST_NOT_GITHUB_ACTIONS_NOT_G0_G8",
+      "source_identity": "MUTABLE_DEVELOPMENT_CHECKPOINT_NOT_NATIVE_SOURCE_QUALIFICATION",
+      "local_file": "/workspace/scratch/rc6-cas-hardened-312.xml",
+      "sha256": "532ea3d7e27deaba93c4739e25e94a693e8ce9cb175b3e1c4fddaefbdefbb457",
+      "tests": 39,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 8.906
+    }
+  ],
+  "final_resource_regressions": [
+    {
+      "python": "3.11.16",
+      "tests": 107,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.46,
+      "exit_code": 0,
+      "origin": "LOCAL_EXEC_COMMAND_OUTPUT_CHUNK_c3284e",
+      "junit_generated": false
+    },
+    {
+      "python": "3.12.14",
+      "tests": 107,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.49,
+      "exit_code": 0,
+      "origin": "LOCAL_EXEC_COMMAND_OUTPUT_CHUNK_5628bd",
+      "junit_generated": false
+    }
+  ],
+  "preserved_red_history": [
+    {
+      "scope": "BEFORE_SAME_FILESYSTEM_NAMESPACE_FIX",
+      "python": "3.12.14",
+      "origin": "LOCAL_PYTEST_NOT_GITHUB_ACTIONS_NOT_G0_G8",
+      "source_identity": "MUTABLE_DEVELOPMENT_CHECKPOINT_NOT_NATIVE_SOURCE_QUALIFICATION",
+      "local_file": "/workspace/scratch/rc6-economic-all-312.xml",
+      "sha256": "8464965a8cdf28ab25da333d48bb7d2e0aadb283ac92558cf3c86c98a9085361",
+      "tests": 975,
+      "failures": 0,
+      "errors": 19,
+      "skipped": 0,
+      "seconds": 84.956
+    },
+    {
+      "scope": "BEFORE_CANONICAL_MUTABLE_CHECKOUT_MODES",
+      "python": "3.11.16",
+      "origin": "LOCAL_PYTEST_NOT_GITHUB_ACTIONS_NOT_G0_G8",
+      "source_identity": "MUTABLE_DEVELOPMENT_CHECKPOINT_NOT_NATIVE_SOURCE_QUALIFICATION",
+      "local_file": "/workspace/scratch/rc6-economic-all-311.xml",
+      "sha256": "de887cea6779df083a2dbdb903193f369d42fa605f59451d0477e4656bd4216e",
+      "tests": 975,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 98.896
+    },
+    {
+      "scope": "TARGETED_BEFORE_CANONICAL_MUTABLE_CHECKOUT_MODES",
+      "python": "3.12.14",
+      "origin": "LOCAL_PYTEST_NOT_GITHUB_ACTIONS_NOT_G0_G8",
+      "source_identity": "MUTABLE_DEVELOPMENT_CHECKPOINT_NOT_NATIVE_SOURCE_QUALIFICATION",
+      "local_file": "/workspace/scratch/rc6-economic-fix-312.xml",
+      "sha256": "a88705d26c5a9e29730225c4bf192538aa38f2f0f6ef54e44974101ecd1d0375",
+      "tests": 19,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 9.51
+    }
+  ],
+  "cas_economic_fixture": {
+    "scope": "32KIB_SYNTHETIC_LAYOUT_NOT_FINANCIAL_HORIZON_OR_G5",
+    "schedule_prefixes": 1202,
+    "baseline_new_file_allocation_sum_bytes": 49233920,
+    "selected_new_file_allocation_sum_bytes": 14815232,
+    "selected_actual_directory_allocation_bytes": 15056896,
+    "new_file_allocation_reduction_percent": 69.91,
+    "same_catalogue_per_cut_comparison_only": true,
+    "global_original_financial_G5_bound_proved": false,
+    "automatic_v4_writer_selection_on_original_financial_data_proved": false,
+    "whole_parent_pack_hash_and_slice_hash_required": true,
+    "parent_packs_retained_for_gc": true,
+    "restore_expansion_checked_before_materialization": true,
+    "historical_reader_review": {
+      "historical_failure": "RETENTION_RECIPE_HEADER_INVALID",
+      "historical_reader_sha256": "b228cec71b7701517658189baeb8a898549d6b6bf704dbadd7652b62647368e3",
+      "historical_reader_v4": "FAIL_CLOSED",
+      "historical_source_sha": "aee4261c58d63ca1cec54c32719878affe1d0f4f",
+      "new_reader_five_original_members_public_restore_and_custody": "PASS_PRIVATE_NATIVE_FIXTURE",
+      "scope": "ECONOMIC_PRIVATE_FIXTURE_NOT_G0_G8"
+    }
+  },
+  "unchanged_invariants": {
+    "original_G5_cycles": 1202,
+    "original_G5_quota_bytes": 536870912,
+    "original_max_depth": 32,
+    "original_retention": "9h+1h",
+    "original_financial_dataset_changed": false,
+    "original_PAGE_BIN_codecs_changed": false,
+    "native_manager_changed": false,
+    "unchanged_files_sha256": {
+      "scripts/rc6_controlled_native_child_manager.py": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+      "scripts/rc6_capacity_calibration.py": "df1603a02cc17e55ded27091a7ade705db7bd7d60f62aede24be4f144df877d1",
+      "rc6_shadow_runtime/exact_page_storage.py": "89b48a6df6ce51e2942b6ff7c9bd3e8fb525d375660415934ec60b455132dbb6",
+      "rc6_shadow_runtime/exact_binary_storage.py": "db041ad54f7421a0a1bab64c334a58c706b6099c4526c4166e9b9d9fc4878a73",
+      "rc6_shadow_runtime/retention.py": "e2e152f63da55cbcc2873e2239b332afd85edc384f79b38bcdab963280fd15cc"
+    }
+  },
+  "resource_profile": {
+    "cpu_maximum": 1,
+    "memory_maximum_bytes": 1073741824,
+    "swap_bytes": 0,
+    "pids_maximum": 64,
+    "aggregate_tmpfs_maximum_bytes": 268435456,
+    "aggregate_inode_maximum": 65536,
+    "tmpfs_in_memory_budget": true,
+    "all_foreign_mounts_readonly_and_private_required": true,
+    "current_readonly_cgroup_namespace_root_required": true,
+    "uid_gid_saved_fs_nonroot_caps_groups_nnp_observed": true,
+    "representative_original_PAPER_consumer_identities": 9,
+    "execution_enabled": false,
+    "execution_blocker": "RESOURCE_CURRENT_WORKER_NAMESPACE_FILTER_PROOF_NOT_INTEGRATED",
+    "actual_limited_workload_executed": false,
+    "whole_droplet_memory_and_persistent_disk_compatibility": "NO_VERIFICADO"
+  },
+  "contract_alternative": {
+    "status": "PROPUESTO_EQUIVALENCE_NO_VERIFICADO",
+    "hard_quota_bytes_unchanged": 21474836480,
+    "hard_inode_quota_unchanged": 100000,
+    "probe_bytes": 1048576,
+    "separate_reserves_total_bytes": 8589934592,
+    "outer_controls_at_4096_allocation_unit_bytes": 384040960,
+    "unknown_incremental_metadata_blocks": true,
+    "direct_quota_does_not_reserve_physical_backing": true,
+    "bounded_foreign_writers_or_equivalent_reservation_required": true,
+    "maximum_arithmetic_saving_before_metadata_bytes": 2146435072,
+    "launch_authorized": false
+  },
+  "publication_preflight": {
+    "workflow_files_reviewed": 166,
+    "potential_automatic_workflows_for_branch_push_and_stacked_draft_pr": [],
+    "automatic_heavy_not_enabled": true,
+    "all_original_suites_and_pins_preserved": true,
+    "AST_JSON_YAML_diff_check": "PASS"
+  },
+  "implementation_sha256": {
+    ".github/workflows/rc6-unified-candidate-tests.yml": "794d1613380d7b43d201cbdc3508ec2dafc255b89e2960ddc0bd9c23081a3e6a",
+    "ops/policy/rc6-development-checks-v1.json": "37be89b1d4559d2ccbcde0fd10fe89fc61d90377074dee1c8c7295bf717cac32",
+    "ops/policy/rc6-product-resource-compatibility-v1.json": "0aa3e6aba17358ad9d56b0e5239e8e29a85a68bb8fc3b257b122e24dc08823cf",
+    "rc6_shadow_runtime/archive_components.py": "971bd5382c12423f7bca90068460c88f5b7f2613e2be156e6f1570928b400b3b",
+    "scripts/rc6_capacity_comparison.py": "f5008649dec2dc542935fc1997b8181003ebd93631525b152d9f3505183ef2b8",
+    "scripts/rc6_certification_contract.py": "7ce66e0c09650bfb673f3bae6715ca5a8ba785545700530920b1edf54bdf0dd7",
+    "scripts/rc6_product_resource_compatibility.py": "997d46d488d2747ca802315a17e5cc1ddee2a26b45e5583a8ed72442170ed98d",
+    "tests/test_rc6_archive_slice_reuse.py": "97223509a7f8ee5a11be06a7976aebe6cf9e7917604f9928af44330225a1edb8",
+    "tests/test_rc6_capacity_comparison.py": "54305db1b767908ad8ed017c8165656db275aeb93a81be3a3ac481cc944de6cb",
+    "tests/test_rc6_certification_contract.py": "a07bb1393d709f579423925f163c31da66db8f01e3cb79589a682b51079ba543",
+    "tests/test_rc6_product_resource_compatibility.py": "f26cf979be4fbbaa8ef2f3835fe5e2f7765d295cab5c9a2b2d4960f843e132db"
+  },
+  "remaining_blockers": [
+    "G0_ROOT_FIRST_INSTRUCTION_CUSTODY_NATIVE_QUOTA_RESERVATION_AND_FULL_COMPOUND_PEAK",
+    "CAS_V4_AUTHENTICATED_CONTRACT_REVIEW_ALL_READER_DISPATCH_AND_ORIGINAL_1202_PREFIX_GLOBAL_512MIB_PROOF",
+    "CURRENT_WORKER_NATIVE_NAMESPACE_FILTER_INTEGRATION_BEFORE_BOUNDED_PRODUCT_WORKLOAD",
+    "ORIGINAL_NATIVE_G2_G6_AND_PRODUCT157_ON_FROZEN_CANDIDATE",
+    "G7_BUILD_ONCE_G8_EXACT_ARTIFACT_AND_READONLY_CURRENT_HOST_MARGIN"
+  ],
+  "authorization": {
+    "G0_G8_qualification": false,
+    "heavy_launched": false,
+    "merged": false,
+    "deployed": false,
+    "DEPLOY_OWNER": "NOT_ACQUIRED",
+    "mode": "PRODUCTION_PAPER / SIMULATION",
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "ppi_watch": "UNTOUCHED",
+    "fix_forward_only": true
+  }
+}

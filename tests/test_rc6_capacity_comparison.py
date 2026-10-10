@@ -532,7 +532,7 @@ def test_public_proof_wrapper_has_no_inventory_authentication_bypass_flag():
 
 def stub_observation(monkeypatch):
     from scripts import rc6_capacity_calibration as calibration
-    measured = {"device": 77, "mount_id": 22, "fragment_bytes": 4096,
+    measured = {"device": 77, "inode": 9, "mount_id": 22, "fragment_bytes": 4096,
         "available_bytes": 41 * 1024**3, "total_bytes": 100 * 1024**3,
         "total_inodes": 1000, "free_inodes": 150, "measured_monotonic_ns": 123456}
     live = {"filesystem_device": 77, "mount_id": 22, "allocation_unit_bytes": 4096,
@@ -551,6 +551,14 @@ def stub_observation(monkeypatch):
     monkeypatch.setattr(calibration, "kernel_prerequisites", observe)
     monkeypatch.setattr(preflight, "measure_filesystem", lambda _path: live.copy())
     monkeypatch.setattr(preflight, "machine_snapshot", lambda: {"cpu_count": 4, "MemTotal_kib": 16 * 1024**2})
+    from scripts import rc6_certification_contract as contract
+    monkeypatch.setattr(contract, "readonly_quota_custody_observation", lambda _path: {
+        "schema": "porota.rc6.readonly-existing-quota-custody.v1", "status": "READ_ONLY_METADATA_RECORDED",
+        "mount": {"filesystem_device": 77, "mount_id": 22, "directory_inode": 9},
+        "project": {"statfs_may_be_quota_projected": False},
+        **{key: False for key in ("project_assignment_attempted", "quota_mutations_attempted", "actor_launch_attempted",
+            "mount_attempted", "native_quota_enforcement_proved", "privileged_signal_custody_proved", "FIN_proved",
+            "platform_impossibility_claimed", "G0_GREEN_claimed", "launch_authorized")}})
     return calibration, calls, measured, live, kernel
 
 
@@ -566,6 +574,8 @@ def test_readonly_runner_observation_preserves_raw_measurements_and_never_starts
     assert calls == [("filesystem", str(tmp_path)), ("kernel", "bootstrap")]
     assert actual["storage_floor"]["measured_free_bytes"] == live["free_bytes"]
     assert actual["storage_floor"]["nominal_storage_guarantees_necessary_floor"] is False
+    assert actual["storage_floor"]["nominal_storage_bytes"] == 14 * 1000**3
+    assert actual["storage_floor"]["nominal_storage_is_launch_ceiling"] is False
     assert actual["status"] == "READ_ONLY_OBSERVATIONS_RECORDED"
     assert set(actual["generation_operations"].values()) == {"NOT_CALLED"}
     assert actual["G0_status"] == "BLOQUEADO" and actual["G0_GREEN_claimed"] is False
@@ -626,3 +636,49 @@ def test_readonly_observation_reports_machine_probe_failure_as_unknown(tmp_path,
     actual = comparison.readonly_runner_observation(tmp_path)
     assert actual["machine"]["status"] == "NO_VERIFICADO" and actual["machine"]["observer_error"]["errno"] == 13
     assert actual["runtime_validated"] is False
+
+
+@pytest.mark.parametrize("projection", [True, None])
+def test_quota_projected_or_unknown_statfs_is_not_physical_backing_evidence(tmp_path, monkeypatch, projection):
+    stub_observation(monkeypatch)
+    from scripts import rc6_certification_contract as contract
+    original = contract.readonly_quota_custody_observation
+    def projected(path):
+        value = original(path)
+        value["project"]["statfs_may_be_quota_projected"] = projection
+        return value
+    monkeypatch.setattr(contract, "readonly_quota_custody_observation", projected)
+    actual = comparison.readonly_runner_observation(tmp_path)
+    assert actual["storage_floor"] is None
+    assert actual["observer_errors"][0]["reason"] == "CAPACITY_UNPROJECTED_PHYSICAL_FILESYSTEM_MEASUREMENT_REQUIRED"
+    assert actual["G0_GREEN_claimed"] is actual["launch_authorized"] is False
+
+
+def test_quota_metadata_from_another_mount_cannot_authorize_the_filesystem_measurement(tmp_path, monkeypatch):
+    stub_observation(monkeypatch)
+    from scripts import rc6_certification_contract as contract
+    original = contract.readonly_quota_custody_observation
+    def rebound(path):
+        value = original(path)
+        value["mount"]["mount_id"] += 1
+        return value
+    monkeypatch.setattr(contract, "readonly_quota_custody_observation", rebound)
+    actual = comparison.readonly_runner_observation(tmp_path)
+    assert actual["storage_floor"] is None
+    assert actual["observer_errors"][0]["reason"] == "CAPACITY_READONLY_PROJECT_INODE_OR_MOUNT_REBOUND"
+
+
+def test_readonly_quota_enforcement_or_custody_claim_is_fail_closed(tmp_path, monkeypatch):
+    stub_observation(monkeypatch)
+    from scripts import rc6_certification_contract as contract
+    original = contract.readonly_quota_custody_observation
+    def invented(path):
+        value = original(path)
+        value["native_quota_enforcement_proved"] = True
+        return value
+    monkeypatch.setattr(contract, "readonly_quota_custody_observation", invented)
+    actual = comparison.readonly_runner_observation(tmp_path)
+    assert actual["storage_floor"] is None
+    assert actual["quota_and_custody_metadata"]["native_quota_enforcement_proved"] is False
+    assert actual["observer_errors"][0]["reason"] == "CAPACITY_READONLY_QUOTA_OBSERVER_CANNOT_GRANT_NATIVE_ADMISSION"
+    assert actual["status"] == "READ_ONLY_OBSERVATIONS_WITH_UNKNOWNS"

@@ -33,6 +33,7 @@ on:
           - evidence-custody
           - evidence-readout
           - development-checks
+          - product-resource-compatibility
       launch_receipt_url:
         description: Immutable issue471 single-gate authorization with predecessor artifact manifest
         required: true
@@ -40,6 +41,14 @@ on:
       owner_session:
         description: Exact SESSION_SUCCESSOR in the durable launch receipt
         required: true
+        type: string
+      resource_work_root:
+        description: Existing admitted bounded mount for resource profile; readiness never creates infrastructure
+        required: false
+        type: string
+      resource_python:
+        description: Existing reviewed Product157 interpreter; no installation or candidate rebuild
+        required: false
         type: string
 
 permissions:
@@ -56,7 +65,7 @@ concurrency:
 jobs:
   ordered-source-gate:
     name: RC6 ${{ inputs.gate || 'G0-G1-cheap-dual' }} @ ${{ inputs.source_sha || github.event.pull_request.head.sha }}
-    if: github.event.repository.id == 1338680554 && github.event.sender.login == 'mbalbo2023' && inputs.gate != 'evidence-custody' && inputs.gate != 'evidence-readout' && inputs.gate != 'development-checks' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'))
+    if: github.event.repository.id == 1338680554 && github.event.sender.login == 'mbalbo2023' && inputs.gate != 'evidence-custody' && inputs.gate != 'evidence-readout' && inputs.gate != 'development-checks' && inputs.gate != 'product-resource-compatibility' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'))
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
@@ -350,5 +359,76 @@ jobs:
         with:
           name: rc6-development-only-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/rc6-development-controls/
+          if-no-files-found: error
+          retention-days: 90
+
+  product-resource-compatibility:
+    name: Observe bounded 1 CPU 1GiB envelope before original PAPER consumers
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'product-resource-compatibility' && github.repository_id == '1338680554' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      RC6_SOURCE_SHA: ${{ inputs.source_sha }}
+      RC6_SOURCE_TREE: ${{ inputs.source_tree }}
+      RC6_RESOURCE_WORK_ROOT: ${{ inputs.resource_work_root }}
+      RC6_RESOURCE_PYTHON: ${{ inputs.resource_python }}
+      RC6_OWNER_SESSION: ${{ inputs.owner_session }}
+      RC6_LAUNCH_RECEIPT: ${{ inputs.launch_receipt_url }}
+    steps:
+      - name: Checkout exact frozen Source without an export or second epoch copy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Read actual cgroup and aggregate filesystem limits without provisioning
+        id: resource_readiness
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 022
+          rc6_resource_work_root=${RC6_RESOURCE_WORK_ROOT:-"$RUNNER_TEMP"}
+          python3 -I -B scripts/rc6_product_resource_compatibility.py \
+            --readiness --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
+            --work-root "$rc6_resource_work_root" --output "$RUNNER_TEMP/rc6-resource-readiness"
+      - name: Execute original consumers only in an existing admitted Source157 envelope
+        id: product_profile
+        if: steps.resource_readiness.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 022
+          # No setup, sudo, mounts, image build, package installation or fallback
+          # runner. Native G0 and owner authority are verified by the controller.
+          # An absent bounded envelope must remain RED, never skipped GREEN.
+          test -n "$RC6_RESOURCE_PYTHON"
+          test "${RC6_RESOURCE_PYTHON:0:1}" = /
+          test -x "$RC6_RESOURCE_PYTHON"
+          rc6_resource_work_root=${RC6_RESOURCE_WORK_ROOT:-"$RUNNER_TEMP"}
+          "$RC6_RESOURCE_PYTHON" -I -B scripts/rc6_product_resource_compatibility.py \
+            --execute --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
+            --work-root "$rc6_resource_work_root" --output "$rc6_resource_work_root/rc6-resource-profile" \
+            --owner-session "$RC6_OWNER_SESSION" --launch-receipt-url "$RC6_LAUNCH_RECEIPT"
+      - name: Preserve native readiness including unresolved admission
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-resource-readiness-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-resource-readiness/*.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Preserve bounded original profile controls after actual FIN
+        if: always() && steps.product_profile.outputs.safe_profile_upload == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-resource-source-profile-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ inputs.resource_work_root || runner.temp }}/rc6-resource-profile/
           if-no-files-found: error
           retention-days: 90
