@@ -403,8 +403,18 @@ def safety_row(path: Path, *, seal=deny_filesystem_writes, connect=sqlite3.conne
         conn.execute("PRAGMA busy_timeout=200")
         if conn.execute("PRAGMA query_only").fetchone() != (1,):
             raise ObservationError("SAFETY_QUERY_ONLY_NOT_ENFORCED")
-        conn.set_progress_handler(lambda: 1, 1000)  # A table scan cannot silently grow.
-        row = conn.execute(QUERY).fetchone()
+        vm_exhausted = False
+        def stop_at_original_budget():
+            nonlocal vm_exhausted
+            vm_exhausted = True
+            return 1
+        conn.set_progress_handler(stop_at_original_budget, 1000)
+        try:
+            row = conn.execute(QUERY).fetchone()
+        except sqlite3.Error as error:
+            if vm_exhausted and getattr(error, "sqlite_errorcode", None) == sqlite3.SQLITE_INTERRUPT:
+                raise ObservationError("SAFETY_SQLITE_ORIGINAL_VM_BUDGET_EXCEEDED") from error
+            raise
         if row is None or len(row) != 3:
             raise ObservationError("SAFETY_ROW_ABSENT")
         mode, orders, heartbeat = row

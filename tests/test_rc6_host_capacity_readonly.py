@@ -151,6 +151,19 @@ def test_no_write_seal_or_wal_ignoring_never_opens_database(tmp_path, seal):
     assert connected == []
 
 
+def test_original_sqlite_vm_budget_is_discriminant_without_db_mutation(tmp_path):
+    # Actual own SQLite work, not a replay of the live host or a quota proof.
+    path = tmp_path / 'bounded-unit.db'
+    with sqlite3.connect(path) as connection:
+        connection.execute('CREATE TABLE observer_state(id INTEGER, mode TEXT, real_orders_sent INTEGER, heartbeat_at TEXT)')
+        connection.executemany('INSERT INTO observer_state VALUES(2,\'PRODUCTION_PAPER\',0,?)', [(AT,)] * 2000)
+        connection.execute('INSERT INTO observer_state VALUES(1,\'PRODUCTION_PAPER\',0,?)', (AT,))
+    before = path.read_bytes()
+    with pytest.raises(audit.ObservationError, match='SAFETY_SQLITE_ORIGINAL_VM_BUDGET_EXCEEDED'):
+        audit.safety_row(path, seal=lambda: {'abi': 3, 'filesystem_writes_denied': True, 'wal_ignored': False})
+    assert path.read_bytes() == before
+
+
 def test_safety_query_is_single_indexed_row_with_query_only_and_mode_ro(tmp_path):
     # Local fixture is a unit test of the query contract, not native host safety.
     path = tmp_path / "unit.db"

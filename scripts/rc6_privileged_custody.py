@@ -41,7 +41,10 @@ ROOT_POSTSEAL_CONTROL_NAMES = frozenset(("custody-request.json", ".porota-genera
     "private-broker.observed.json", "private-parent-seal.json", "quota-ancestor-seal.json", "probe-request.json"))
 ROOT_ACTOR_RUNPY_LAUNCHER = 'import runpy,sys; p=sys.argv.pop(1); runpy.run_path(p,run_name="__main__")'
 OPTIONAL_FAILURE_RAW_NAMES = ("private-broker-native.log", "root-success.native.log",
-    "failure-before-drop.native.log", "root-hang.native.log", "nonroot-hang.native.log", PRIVATE_MOUNT_DIAGNOSTIC)
+    "failure-before-drop.native.log", "root-hang.native.log", "nonroot-hang.native.log", PRIVATE_MOUNT_DIAGNOSTIC,
+    "private-pid-v2.native.log", "private-pid-v2.original-fin.json",
+    "boundary-before.challenge.json", "boundary-before.guardian.json",
+    "boundary-after.challenge.json", "boundary-after.guardian.json")
 SYSTEMD_QUERY_BOUND = 65536
 SYSTEMD_BINARY_BOUND = 16 * 1024**2
 SYSTEMD_CONFIG_FIELDS = ("Version", "LogLevel", "LogTarget", "DefaultStandardOutput", "DefaultStandardError")
@@ -1139,6 +1142,8 @@ def guardian_main(mode, request_path, name):
     finally:
         os.close(mapping_state["pidfd"])
     from scripts import rc6_capacity_calibration as calibration
+    if mode == "probe":
+        require(manager["managed_phase_green"](kernel), "ROOT_CUSTODY_PRIVATE_BROKER_NATIVE_RED")
     result = g5a_result if mode == "g5a" else calibration.decode(raw)
     if boundary_ledger is not None:
         evidence = result.get("private_pid_boundary_v2")
@@ -1469,6 +1474,29 @@ def _prepare_quota_ancestor_mounts(request):
             "host_mounts_modified": False, "child_mounts_modified": False}
 
 
+def preserve_boundary_actor_fin(manager, kernel, log, *, request):
+    """Keep original closed actor bytes/kernel before any RED/JSON decision.
+
+    This control documents the actual returned manager result. It never
+    reconstructs a FIN handle or grants custody, ROOT cleanup or acceptance.
+    """
+    log = Path(log)
+    require(log.name == "private-pid-v2.native.log", "ROOT_CUSTODY_BOUNDARY_FIXED_RAW_REQUIRED")
+    raw = _closed_private_broker_raw(manager, kernel, log,
+        owner_uid=request["owner_uid"], owner_gid=request["owner_gid"])
+    if manager["managed_phase_green"](kernel):
+        return raw  # Success retains the original kernel in the fixed V2 result.
+    _write_control(log.with_name("private-pid-v2.original-fin.json"), {
+        "schema": "porota.rc6.private-pid-actor-original-manager-result.v1",
+        "binding": request["binding"], "request_sha256": sha256(wire(request)),
+        "manager_sha256": MANAGER_SHA256, "kernel": kernel,
+        "raw": {"path": log.name, "bytes": len(raw), "sha256": sha256(raw)},
+        "ROOT_FIN_claimed": False, "cleanup_authorized": False, "G0_GREEN": False},
+        request["owner_uid"], request["owner_gid"])
+    require(manager["managed_phase_green"](kernel), "ROOT_CUSTODY_PRIVATE_PID_V2_NATIVE_RED")
+    return raw
+
+
 def private_init(mode, request_path, name):
     """Frozen bootstrap: no fixture, package backend or actor before sealing."""
     require(os.getuid() == os.geteuid() == 0 and os.getpid() == 1,
@@ -1542,9 +1570,7 @@ def broker_main(mode, request_path, name, *, inherited_proc_control=None):
             kernel = manager["managed_native_child"](command, ROOT, log,
                 {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8"},
                 20, terminate_grace=2, progress_poll=5)
-            raw = _closed_private_broker_raw(manager, kernel, log,
-                owner_uid=request["owner_uid"], owner_gid=request["owner_gid"])
-            require(manager["managed_phase_green"](kernel), "ROOT_CUSTODY_PRIVATE_PID_V2_NATIVE_RED")
+            raw = preserve_boundary_actor_fin(manager, kernel, log, request=request)
             result["private_pid_boundary_v2"] = {"observation": calibration.decode(raw),
                 "kernel": kernel, "native_inherited_proc_control": inherited_proc_control,
                 "raw": {"path": log.name, "sha256": sha256(raw), "bytes": len(raw)}}

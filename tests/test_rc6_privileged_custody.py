@@ -19,6 +19,42 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import rc6_capacity_calibration as calibration
+
+
+@pytest.mark.parametrize('exit_code', [0, 73])
+def test_boundary_actor_keeps_original_nonroot_fin_and_raw_before_red(tmp_path, exit_code):
+    # Real own NONROOT child/manager; no ROOT/private-PID equivalence claim.
+    manager = custody._manager(custody.ROOT)
+    log = tmp_path / 'private-pid-v2.native.log'
+    request = {'owner_uid': os.getuid(), 'owner_gid': os.getgid(),
+        'binding': {'producer': 'UNIT_NONROOT_FIN_ONLY'}}
+    command = [sys.executable, '-I', '-B', '-c',
+        "import sys;sys.stderr.write('ORIGINAL_BOUNDARY_ACTOR_BYTES');sys.exit(" + str(exit_code) + ")"]
+    kernel = manager['managed_native_child'](command, custody.ROOT, log,
+        {'PATH': '/usr/bin:/bin'}, 5, terminate_grace=2, progress_poll=5)
+    if exit_code:
+        with pytest.raises(ValueError, match='ROOT_CUSTODY_PRIVATE_PID_V2_NATIVE_RED'):
+            custody.preserve_boundary_actor_fin(manager, kernel, log, request=request)
+    else:
+        assert custody.preserve_boundary_actor_fin(manager, kernel, log, request=request) == b'ORIGINAL_BOUNDARY_ACTOR_BYTES'
+        assert not log.with_name('private-pid-v2.original-fin.json').exists()
+        assert kernel['actual_child_reaped'] and kernel['owned_children_exhaustion_verified']
+        return
+    saved = json.loads(log.with_name('private-pid-v2.original-fin.json').read_bytes())
+    assert saved['kernel'] == kernel and kernel['returncode'] == exit_code
+    assert kernel['actual_child_reaped'] and kernel['owned_children_exhaustion_verified']
+    assert saved['manager_sha256'] == custody.MANAGER_SHA256
+    assert saved['raw'] == {'path': log.name, 'bytes': 29,
+        'sha256': hashlib.sha256(b'ORIGINAL_BOUNDARY_ACTOR_BYTES').hexdigest()}
+    assert saved['ROOT_FIN_claimed'] is saved['cleanup_authorized'] is saved['G0_GREEN'] is False
+    assert log.name in custody.OPTIONAL_FAILURE_RAW_NAMES
+    assert 'private-pid-v2.original-fin.json' in custody.OPTIONAL_FAILURE_RAW_NAMES
+
+
+def test_boundary_capture_checks_fixed_role_before_read_or_publication(tmp_path):
+    with pytest.raises(ValueError, match='ROOT_CUSTODY_BOUNDARY_FIXED_RAW_REQUIRED'):
+        custody.preserve_boundary_actor_fin({}, {}, tmp_path / 'foreign.log', request={})
+    assert list(tmp_path.iterdir()) == []
 from scripts import rc6_privileged_custody as custody
 
 

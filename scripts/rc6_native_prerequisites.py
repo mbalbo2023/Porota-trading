@@ -407,16 +407,8 @@ def main():
         require(result['systemd_startup_diagnostics'].get('status') == 'SCOPED_NONROOT_SYSTEMD_OBSERVATION_ONLY',
             'NATIVE_PREREQUISITES_SYSTEMD_CAUSAL_DIAGNOSTICS_UNKNOWN')
         admitted['owner_check']()
-        witness = privileged.prove_custody(source=ROOT,source_sha=args.source_sha,source_tree=args.source_tree,
-            code_hashes=code_hashes,parent=development.short_control_parent(ROOT),binding=witness_binding,progress=None,
-            capture_parent=output/'custody-raw',boundary_revision='PRIVATE_PID_BOUNDARY_V2')
-        result['custody'] = privileged.validate_witness(witness,binding=witness_binding)
-        from scripts import rc6_private_pid_boundary as boundary
-        boundary_context = boundary.boundary_witness(witness,binding=witness_binding)
-        result['proposed_private_pid_boundary'] = boundary.validate_witness(boundary_context,
-            binding=witness_binding,custody_witness=witness)
-        result['contract_revision_approved'] = False
-        admitted['owner_check']()
+        # Observe the independently certified compute envelope before the new
+        # optional boundary actor. A later RED never launches another service.
         resource_binding = {**witness_binding,'producer':'NATIVE_COMPUTE_RESOURCE_OBSERVATION'}
         resource_witness = privileged.prove_custody(source=ROOT,source_sha=args.source_sha,source_tree=args.source_tree,
             code_hashes=code_hashes,parent=development.short_control_parent(ROOT),binding=resource_binding,
@@ -426,6 +418,16 @@ def main():
         result['bounded_compute_observation'] = resource_probe.validate_custody_compute_observation(
             resource_witness, binding=resource_binding)
         result['bounded_compute_full_product_profile_qualified'] = False
+        admitted['owner_check']()
+        witness = privileged.prove_custody(source=ROOT,source_sha=args.source_sha,source_tree=args.source_tree,
+            code_hashes=code_hashes,parent=development.short_control_parent(ROOT),binding=witness_binding,progress=None,
+            capture_parent=output/'custody-raw',boundary_revision='PRIVATE_PID_BOUNDARY_V2')
+        result['custody'] = privileged.validate_witness(witness,binding=witness_binding)
+        from scripts import rc6_private_pid_boundary as boundary
+        boundary_context = boundary.boundary_witness(witness,binding=witness_binding)
+        result['proposed_private_pid_boundary'] = boundary.validate_witness(boundary_context,
+            binding=witness_binding,custody_witness=witness)
+        result['contract_revision_approved'] = False
         admitted['owner_check']()
         governed.compare_source(before,governed.source_pin(ROOT,args.source_sha,args.source_tree))
         result.update(status='PASS_SMALL_NATIVE_ONLY',fullSource_unchanged=True)

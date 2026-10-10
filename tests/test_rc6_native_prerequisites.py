@@ -245,11 +245,15 @@ def test_root_start_failure_keeps_primary_red_and_original_diagnostic(tmp_path,m
     diagnostic={'status':'RED','ROOT_FIN':'UNKNOWN','ROOT_custody_qualified':False,
         'cleanup_authorized':False,'reservation_recovery_credited_bytes':0,
         'original_client_FIN_sha256':'e'*64,'namespace_retained':'UNIT_FIXTURE_ONLY'}
+    calls=[]
     def fail(**kwargs):
-        assert kwargs['capture_parent']==output/'custody-raw'
+        calls.append(kwargs)
+        assert kwargs['capture_parent']==output/'compute-custody-raw'
+        assert kwargs['resource_probe'] is True
         raise privileged.CustodyFailure(ValueError('ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED'),diagnostic)
     monkeypatch.setattr(privileged,'prove_custody',fail)
     assert native.main()==1
+    assert len(calls)==1  # A failed original compute actor never launches V2.
     result=json.loads((output/'native-prerequisites.json').read_bytes())
     assert result['status']=='RED'
     assert result['error_signature']=='ROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED'
