@@ -79,6 +79,9 @@ def prepare(*, get=None, event_reader=None, checkout=None, now=None):
     current = now or datetime.now(timezone.utc)
     require(current.tzinfo is not None and os.environ.get("GITHUB_RUN_ATTEMPT") == "1",
             "BRIDGE_FIRST_ACTIONS_ATTEMPT_AND_UTC_REQUIRED")
+    bridge_run_id=os.environ.get('GITHUB_RUN_ID','')
+    require(re.fullmatch(r'[1-9][0-9]{0,19}',bridge_run_id) is not None,
+            'BRIDGE_ACTUAL_ACTIONS_RUN_ID_REQUIRED')
     launch = admission.comment(launch_url, 471, get=reader)
     anchors = admission.administrative_anchors(owner, get=reader, now=current)
     auth = admission.launch_fields(launch, sha, tree, owner, gate,
@@ -103,19 +106,23 @@ def prepare(*, get=None, event_reader=None, checkout=None, now=None):
             "launch_body_sha256": hashlib.sha256(launch["body"].encode()).hexdigest(),
             "pr": scope["pr"], "branch": scope["branch"],
             "event_sha256": custody["sha256"], "run_attempt": 1,
+            "bridge_run_id":int(bridge_run_id),
             "G5P_GREEN": False, "G7_authorized": False,
             "DEPLOY_OWNER": "NOT_ACQUIRED", "real_orders_sent": 0}
 
 
 def dispatch(row, *, opener=None):
     require(row["status"] == "READY_TO_REQUEST_DISPATCH_NOT_GATE_PASS"
-            and row["gate"] in STAGES, "BRIDGE_AUTHENTIC_PREPARED_STAGE_REQUIRED")
+            and row["gate"] in STAGES
+            and type(row.get('bridge_run_id')) is int and row['bridge_run_id']>0,
+            "BRIDGE_AUTHENTIC_PREPARED_STAGE_REQUIRED")
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     require(bool(token), "BRIDGE_ACTIONS_WRITE_TOKEN_REQUIRED")
     payload = {"ref": row["branch"], "inputs": {
         "source_sha": row["source_sha"], "source_tree": row["source_tree"],
         "gate": row["gate"], "launch_receipt_url": row["launch_receipt_url"],
-        "owner_session": row["owner_session"]}}
+        "owner_session": row["owner_session"],
+        "bridge_run_id":str(row['bridge_run_id'])}}
     request = urllib.request.Request(
         "https://api.github.com/repos/" + admission.REPO +
         "/actions/workflows/" + WORKFLOW + "/dispatches",

@@ -45,6 +45,10 @@ on:
         description: Exact SESSION_SUCCESSOR in the durable launch receipt
         required: true
         type: string
+      bridge_run_id:
+        description: PR bridge run ID only when GitHub Actions itself requests the dispatch
+        required: false
+        type: string
       resource_work_root:
         description: Existing admitted bounded mount for resource profile; readiness never creates infrastructure
         required: false
@@ -106,7 +110,7 @@ jobs:
 
   ordered-source-gate:
     name: RC6 ${{ inputs.gate || 'G0-G1-cheap-dual' }} @ ${{ inputs.source_sha || github.event.pull_request.head.sha }}
-    if: github.event.repository.id == 1338680554 && github.event.sender.login == 'mbalbo2023' && inputs.gate != 'evidence-custody' && inputs.gate != 'evidence-readout' && inputs.gate != 'development-checks' && inputs.gate != 'native-prerequisites' && inputs.gate != 'product-resource-compatibility' && !(inputs.gate == 'Horizon' && inputs.g5a_revision_approval_url != '') && !(github.event_name == 'pull_request' && github.event.action == 'reopened' && contains(github.event.pull_request.body, 'RC6_DISPATCH_GATE=')) && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'))
+    if: github.event.repository.id == 1338680554 && (github.event.sender.login == 'mbalbo2023' || (github.event_name == 'workflow_dispatch' && github.event.sender.login == 'github-actions[bot]' && inputs.bridge_run_id != '')) && inputs.gate != 'evidence-custody' && inputs.gate != 'evidence-readout' && inputs.gate != 'development-checks' && inputs.gate != 'native-prerequisites' && inputs.gate != 'product-resource-compatibility' && !(inputs.gate == 'Horizon' && inputs.g5a_revision_approval_url != '') && !(github.event_name == 'pull_request' && github.event.action == 'reopened' && contains(github.event.pull_request.body, 'RC6_DISPATCH_GATE=')) && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'))
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:

@@ -10,6 +10,41 @@ from scripts import rc6_material_pr_admission as admission
 
 
 class BridgeBodyTests(TestCase):
+    def test_bot_dispatch_requires_successful_exact_owner_bridge(self):
+        event={'sender':{'login':'github-actions[bot]'},
+            'ref':'refs/heads/fix/rc6-g5p-paper-v3-20261011',
+            'inputs':{'bridge_run_id':'123','source_sha':'a'*40,'gate':'G5P-acquire'}}
+        run={'id':123,'run_attempt':1,'event':'pull_request','head_sha':'a'*40,
+            'head_branch':'fix/rc6-g5p-paper-v3-20261011',
+            'path':'.github/workflows/rc6-unified-candidate-tests.yml',
+            'actor':{'login':'mbalbo2023'},'repository':{'id':admission.REPO_ID},
+            'head_repository':{'id':admission.REPO_ID},'status':'completed','conclusion':'success',
+            'pull_requests':[{'number':492,'head':{'sha':'a'*40},'base':{'ref':admission.BASE}}]}
+        jobs={'jobs':[{'name':'Dispatch exact owner-approved stage without gate credit',
+                       'conclusion':'success'},
+                      {'name':'RC6 G0-G1-cheap-dual @ '+ 'a'*40,'conclusion':'skipped'}]}
+        def get(path):
+            return run if path=='/actions/runs/123/attempts/1' else jobs
+        result=admission.authenticated_dispatch_bridge(event,'G5P-acquire',get=get,sleep=lambda _:None)
+        self.assertEqual(result['bridge_run_id'],123)
+        self.assertTrue(result['bridge_only_no_gate_credit'])
+        for changed in (dict(run,head_sha='b'*40),dict(run,actor={'login':'github-actions[bot]'}),
+                        dict(run,conclusion='failure')):
+            with self.subTest(changed=changed),self.assertRaises(ValueError):
+                admission.authenticated_dispatch_bridge(event,'G5P-acquire',
+                    get=lambda path:changed if '/actions/runs/123/attempts/1'==path else jobs,
+                    sleep=lambda _:None)
+        with self.assertRaisesRegex(ValueError,'BRIDGE_JOB_OR_CHEAP_GATE_NOT_ISOLATED'):
+            admission.authenticated_dispatch_bridge(event,'G5P-acquire',
+                get=lambda path:run if '/actions/runs/123/attempts/1'==path else
+                    {'jobs':[jobs['jobs'][0],dict(jobs['jobs'][1],conclusion='success')]},
+                sleep=lambda _:None)
+        manual={'sender':{'login':'mbalbo2023'},'inputs':{}}
+        self.assertIsNone(admission.authenticated_dispatch_bridge(manual,'G5P-acquire',get=get))
+        manual['inputs']['bridge_run_id']='123'
+        with self.assertRaisesRegex(ValueError,'CANNOT_BORROW_BRIDGE_ORIGIN'):
+            admission.authenticated_dispatch_bridge(manual,'G5P-acquire',get=get)
+
     def test_one_material_stage_and_pointer_required(self):
         body = ("PR technical summary\n"
                 "RC6_DISPATCH_GATE=G5P-acquire\n"
@@ -25,6 +60,7 @@ class BridgeBodyTests(TestCase):
     def test_dispatch_http_204_is_request_only_and_payload_is_exact(self):
         row = {"status": "READY_TO_REQUEST_DISPATCH_NOT_GATE_PASS",
                "branch": "fix/candidate", "gate": "G5P-acquire",
+               "bridge_run_id": 123,
                "source_sha": "a" * 40, "source_tree": "b" * 40,
                "launch_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1",
                "owner_session": "CODEX_OWNER"}
@@ -49,7 +85,7 @@ class BridgeBodyTests(TestCase):
         self.assertEqual(json.loads(request.data)["inputs"], {
             "source_sha": "a" * 40, "source_tree": "b" * 40,
             "gate": "G5P-acquire", "launch_receipt_url": row["launch_receipt_url"],
-            "owner_session": "CODEX_OWNER"})
+            "owner_session": "CODEX_OWNER", "bridge_run_id": "123"})
         self.assertEqual(timeout, 30)
 
     def test_bridge_refuses_reopen_without_exact_pr_controls(self):

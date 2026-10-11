@@ -14,6 +14,7 @@ import re
 import stat
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 
@@ -477,6 +478,51 @@ def recent(issue,anchor,now,*,get=None):
     require(transfer['id'] in ids,'ACTUAL_SUCCESSOR_TRANSFER_MISSING_FROM_UPDATED_TIMELINE')
     return sorted(rows,key=lambda row:(effective_stamp(row),row['id']))
 
+BRIDGE_STAGES=frozenset(('focal311','focal312','BIG-browser','G5P-acquire',
+    'G5P-certify','full-gov311','full-gov312'))
+
+
+def authenticated_dispatch_bridge(event,gate,*,get=None,sleep=None):
+    """A bot dispatch is valid only after its exact owner-authored PR bridge succeeds."""
+    reader=get or api;wait=sleep or time.sleep
+    sender=event.get('sender',{}).get('login')
+    inputs=event.get('inputs',{})
+    number=inputs.get('bridge_run_id','')
+    if sender=='mbalbo2023':
+        require(number in (None,''),'OWNER_DISPATCH_CANNOT_BORROW_BRIDGE_ORIGIN')
+        return None
+    require(sender=='github-actions[bot]' and gate in BRIDGE_STAGES
+        and re.fullmatch(r'[1-9][0-9]{0,19}',number or '') is not None,
+        'BOT_DISPATCH_EXACT_BRIDGE_RUN_REQUIRED')
+    for attempt in range(16):
+        bridge=reader('/actions/runs/'+number+'/attempts/1')
+        require(bridge.get('id')==int(number) and bridge.get('run_attempt')==1
+            and bridge.get('event')=='pull_request' and bridge.get('head_sha')==inputs.get('source_sha')
+            and bridge.get('head_branch')==event.get('ref','').removeprefix('refs/heads/')
+            and bridge.get('path')=='.github/workflows/rc6-unified-candidate-tests.yml'
+            and bridge.get('actor',{}).get('login')=='mbalbo2023'
+            and bridge.get('repository',{}).get('id')==REPO_ID
+            and bridge.get('head_repository',{}).get('id')==REPO_ID
+            and any(pr.get('number')==492 and pr.get('head',{}).get('sha')==inputs.get('source_sha')
+                and pr.get('base',{}).get('ref')==BASE for pr in bridge.get('pull_requests',[])),
+            'BOT_DISPATCH_BRIDGE_OWNER_SOURCE_PR_OR_WORKFLOW_REBOUND')
+        if bridge.get('status')=='completed':break
+        require(bridge.get('status') in ('queued','in_progress') and attempt<15,
+            'BOT_DISPATCH_BRIDGE_NOT_COMPLETED_WITHIN_BOUND')
+        wait(2)
+    require(bridge.get('conclusion')=='success','BOT_DISPATCH_BRIDGE_NOT_SUCCESSFUL')
+    jobs=reader('/actions/runs/'+number+'/attempts/1/jobs?per_page=100').get('jobs')
+    require(type(jobs) is list and len(jobs)<100
+        and len([job for job in jobs if job.get('name')=='Dispatch exact owner-approved stage without gate credit'
+            and job.get('conclusion')=='success'])==1
+        and all(job.get('conclusion')=='skipped' for job in jobs
+            if job.get('name','').startswith('RC6 ') and job.get('name')!='Dispatch exact owner-approved stage without gate credit'),
+        'BOT_DISPATCH_BRIDGE_JOB_OR_CHEAP_GATE_NOT_ISOLATED')
+    return {'bridge_run_id':int(number),'bridge_attempt':1,
+        'bridge_head_sha':bridge['head_sha'],'bridge_conclusion':'success',
+        'bridge_only_no_gate_credit':True}
+
+
 def actual_event(gate,*,diagnostic_branch=None):
     require(os.environ.get('GITHUB_EVENT_NAME') in ('pull_request','workflow_dispatch'),'ACTUAL_PR_OR_SCOPED_DISPATCH_EVENT_REQUIRED')
     literal=os.environ['GITHUB_EVENT_PATH'];path=Path(literal)
@@ -521,9 +567,11 @@ def actual_event(gate,*,diagnostic_branch=None):
     if os.environ['GITHUB_EVENT_NAME']=='workflow_dispatch':
         branch=event.get('ref','').removeprefix('refs/heads/')
         require(event['repository']['id']==REPO_ID and event['repository']['full_name']==REPO
-            and event['sender']['login']=='mbalbo2023' and event.get('inputs',{}).get('gate')==gate
+            and event.get('inputs',{}).get('gate')==gate
             and bool(branch) and (gate not in DIAGNOSTIC_GATES or branch==(DIAGNOSTIC_BRANCH if diagnostic_branch is None else diagnostic_branch)),
             'SOLE_OWNED_SCOPED_DISPATCH_EVENT_REQUIRED')
+        origin=authenticated_dispatch_bridge(event,gate)
+        if origin is not None:custody['dispatch_bridge']=origin
         return event,custody
     pr=event['pull_request']
     require(event['repository']['id']==REPO_ID and event['repository']['full_name']==REPO
