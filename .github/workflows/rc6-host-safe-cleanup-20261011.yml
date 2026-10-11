@@ -1,0 +1,270 @@
+name: RC6 isolated host safe cleanup - backup removal
+on:
+  push:
+    branches: [ops/rc6-host-maintenance-20261011]
+    paths: [.github/workflows/rc6-host-safe-cleanup-20261011.yml]
+
+permissions:
+  contents: read
+  issues: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  safe-cleanup:
+    name: Exclusive safe cleanup after 2 read-only inventories
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Require explicit paired owner receipts and current branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request
+          REPO="mbalbo2023/Porota-trading"
+          ids=(6111163945,6111164423)
+          headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],"Accept":"application/vnd.github+json"}
+          def get(path):
+              with urllib.request.urlopen(urllib.request.Request("https://api.github.com/repos/"+REPO+path,headers=headers),timeout=20) as p:
+                  return json.load(p)
+          for i in ids:
+              row=get("/issues/comments/"+str(i))
+              body=row["body"]
+              assert row["user"]["login"]=="mbalbo2023"
+              assert "WORKSTREAM_ID=WS-RC6-HOST-MAINT-20261011" in body
+              assert "DEPLOY_OWNER=CHAT_RC6_HOST_MAINT_20261011" in body
+              assert "RELEASED=false" in body
+          refs=get("/git/ref/heads/ops/rc6-host-maintenance-20261011")
+          assert refs["object"]["sha"]==os.environ["GITHUB_SHA"],"BRANCH_MOVED"
+          for issue in (471,473):
+              rows=[]
+              page=1
+              while True:
+                  chunk=get("/issues/"+str(issue)+"/comments?per_page=100&page="+str(page))
+                  rows+=chunk
+                  if len(chunk)<100: break
+                  page+=1
+                  assert page<15
+              claims=[]
+              for row in rows:
+                  body=row.get("body","")
+                  for line in body.splitlines():
+                      if line.startswith("GLOBAL_DEPLOY_OWNER="):
+                          claims.append((row["id"],line.split("=",1)[1],body))
+              assert claims, "NO_DEPLOY_OWNER_GLOBAL_RECEIPT"
+              owner=claims[-1]
+              assert owner[1]=="CHAT_RC6_HOST_MAINT_20261011" and "RELEASED=false" in owner[2], "CONCURRENT_OR_RELEASED_GLOBAL_OWNER"
+          print("RC6_MAINT_OWNER=VERIFIED|paired=true|global=true|branch_exact=true")
+          PY
+      - name: Prepare SSH pinned to known host
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6-host-cleanup"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6-host-cleanup" "$HOME/.ssh/known_hosts"
+      - name: Exact allowlisted backup deletion with runtime and FD guards
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          timeout 650 ssh -i "$HOME/.ssh/rc6-host-cleanup" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n python3 -' \
+            > "$RUNNER_TEMP/rc6-host-cleanup-receipt.json" <<'PY'
+          import datetime, json, os, pathlib, re, sqlite3, stat, subprocess, time
+          from collections import Counter
+          report={"schema":"porota.rc6.safe-maintenance-cleanup.v1",
+                  "started_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                  "scope":"EXACT_BACKUP_GLOBS_ON_EXISTING_HOST_ONLY",
+                  "user_authorized_all_backups":True,
+                  "deleted":[],"other_actions":[],"docker_images_deleted":[],"status":"IN_PROGRESS",
+                  "git_branch_mutated":False,"droplet_deployed":False,"ppi_watch_mutated":False}
+          success=False
+          def require(value,message):
+              if not value: raise RuntimeError(message)
+          def command(args,timeout=30):
+              p=subprocess.run(args,check=False,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                               text=True,timeout=timeout)
+              require(p.returncode==0,"COMMAND_FAILED_"+args[0]+"_exit"+str(p.returncode))
+              return p.stdout.strip()
+          def containers():
+              data={}
+              for name in ("porota_production_observer","porota_production_dashboard","porota_critical_approval_rc6"):
+                  raw=command(["docker","inspect","-f",
+                       "{{.Image}}|{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}",name])
+                  image,status,oom,restarts=raw.split("|")
+                  require(status=="running" and oom=="false","RUNTIME_CONTAINER_NOT_RUNNING_OR_OOM_"+name)
+                  data[name]={"image":image,"status":status,"oom":oom,"restarts":int(restarts)}
+              require(len({row["image"] for row in data.values()})==1,
+                      "RUNTIME_IMAGES_NOT_COHERENT")
+              return data
+          def paper():
+              p="/opt/porota-trading/data/paper_v17/observer_v17.db"
+              require(pathlib.Path(p).is_file() and not pathlib.Path(p).is_symlink(),"PAPER_DB_INVALID")
+              c=sqlite3.connect("file:"+p+"?mode=ro",uri=True,timeout=5)
+              try:
+                  c.execute("PRAGMA query_only=ON")
+                  row=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+                  require(row is not None and row[0]=="PRODUCTION_PAPER" and row[1]==0,
+                          "PAPER_SAFETY_INVARIANT_INVALID")
+                  return {"mode":row[0],"real_orders_sent":row[1]}
+              finally:c.close()
+          def ppi():
+              listing=command(["systemctl","list-unit-files","--no-legend","--no-pager"])
+              names=sorted({row.split()[0] for row in listing.splitlines() if row.split()
+                         and "ppi" in row.split()[0].lower() and "watch" in row.split()[0].lower()})
+              return [(n,subprocess.run(["systemctl","is-active",n],capture_output=True,text=True,timeout=10).stdout.strip(),
+                         subprocess.run(["systemctl","is-enabled",n],capture_output=True,text=True,timeout=10).stdout.strip()) for n in names]
+          def fd_guard(rows):
+              targets={(s.st_dev,s.st_ino) for _,_,s in rows}
+              for proc in pathlib.Path("/proc").iterdir():
+                  if not proc.name.isdigit():continue
+                  base=proc/"fd"
+                  try: fds=list(base.iterdir())
+                  except FileNotFoundError:continue
+                  except PermissionError:raise RuntimeError("FD_SCAN_ACCESS_DENIED")
+                  for fd in fds:
+                      try:s=fd.stat()
+                      except FileNotFoundError:continue
+                      except PermissionError:raise RuntimeError("FD_SCAN_INCOMPLETE")
+                      if (s.st_dev,s.st_ino) in targets:raise RuntimeError("BACKUP_FILE_OPEN_BY_PROCESS")
+          before_fs=os.statvfs("/")
+          before_free=before_fs.f_bavail*before_fs.f_frsize
+          before_inode_pct=100*before_fs.f_ffree/max(1,before_fs.f_files)
+          report["before"]={"free_bytes":before_free,"free_inode_percent":before_inode_pct}
+          handles=[]
+          try:
+              require(os.geteuid()==0,"ROOT_REQUIRED")
+              require(before_free>=2*1024**3,"HOST_SPACE_ALREADY_CRITICAL")
+              before_containers=containers()
+              before_paper=paper()
+              before_ppi=ppi()
+              before_git=command(["git","-C","/opt/porota-trading","rev-parse","HEAD"],12)
+              require(len(before_git)==40 and re.fullmatch("[0-9a-f]{40}",before_git),
+                      "HOST_GIT_IDENTITY_UNKNOWN")
+              report["runtime_before"]={"containers":before_containers,
+                    "paper":before_paper,"git_head":before_git,"ppi_watch":before_ppi}
+              backup_active=command(["systemctl","show","porota-host-general-backup-rc6.service",
+                                     "--property=ActiveState","--value"],12)
+              require(backup_active in ("inactive","failed"),"BACKUP_SERVICE_ACTIVE")
+              roots=(
+                ("/opt/porota-backups",r"porota-general-[0-9]{8}T[0-9]{6}Z[.]tar[.]gz"),
+                ("/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper",
+                 r"observer_[0-9]{4}-[0-9]{2}-[0-9]{2}[.]db[.]gz"),
+                ("/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history",
+                 r"market_history_[0-9]{4}-[0-9]{2}-[0-9]{2}[.]db[.]gz"))
+              root_dev=os.stat("/").st_dev
+              targets=[]
+              for folder,pattern in roots:
+                  path=pathlib.Path(folder)
+                  for parent in (path,*path.parents):
+                      if str(parent)=="/":break
+                      require(not parent.is_symlink(),"BACKUP_DIR_PARENT_SYMLINK")
+                  fd=os.open(folder,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+                  handles.append(fd)
+                  dstat=os.fstat(fd)
+                  require(dstat.st_dev==root_dev,"BACKUP_ROOT_EXTERNAL_FILESYSTEM")
+                  names=os.listdir(fd)
+                  for name in names:
+                      s=os.stat(name,dir_fd=fd,follow_symlinks=False)
+                      if re.fullmatch(pattern,name):
+                          require(stat.S_ISREG(s.st_mode) and s.st_nlink==1,"BACKUP_NOT_EXCLUSIVE_REGULAR")
+                          require(s.st_size>0 and s.st_size<2*1024**3,"BACKUP_SIZE_UNEXPECTED")
+                          require(time.time()-s.st_mtime>300,"BACKUP_STILL_FRESH")
+                          require(s.st_dev==root_dev,"BACKUP_DEVICE_CHANGED")
+                          targets.append((fd,name,s))
+                      else:
+                          # Not an allowlisted backup, preserve it exactly.
+                          pass
+              require(len(targets)<=150,"BACKUP_CANDIDATE_COUNT_EXCEEDS_BOUND")
+              report["candidate_count"]=len(targets)
+              report["candidate_bytes"]=sum(s.st_size for _,_,s in targets)
+              # Known RO observation: 10 general, 8 PAPER, 8 market-history backups.
+              require(len(targets)>=26,"PREVIOUS_BACKUP_CENSUS_DISAPPEARED")
+              fd_guard(targets)
+              # Revalidate immediately before unlink. Use fd-relative unlink
+              # against exact, non-symlink, non-hardlinked regular inodes.
+              require(containers()==before_containers and paper()==before_paper and ppi()==before_ppi,
+                      "RUNTIME_STATE_CHANGED_BEFORE_CLEANUP")
+              fd_guard(targets)
+              for fd,name,s in targets:
+                  current=os.stat(name,dir_fd=fd,follow_symlinks=False)
+                  require((current.st_ino,current.st_dev,current.st_size,current.st_mtime_ns,current.st_nlink)==
+                          (s.st_ino,s.st_dev,s.st_size,s.st_mtime_ns,s.st_nlink),
+                          "BACKUP_INODE_OR_BYTES_CHANGED")
+                  os.unlink(name,dir_fd=fd)
+                  report["deleted"].append({"filename":name,"logical_bytes":s.st_size,
+                      "inode":s.st_ino})
+              # Apt package archives are recreatable; preserve dpkg DB and apt lists.
+              try:
+                  command(["apt-get","clean"],90)
+                  report["other_actions"].append("APT_ARCHIVE_CACHE_CLEAN")
+              except Exception as ex:
+                  report["other_actions"].append("APT_ARCHIVE_CACHE_FAILED_"+type(ex).__name__)
+              # Preserve journal for diagnosis of unhealthy critical container
+              # and 46 observer restarts. No vacuum until RCA.
+              report["other_actions"].append("JOURNAL_PRESERVED_FOR_ACTIVE_SRE_RCA")
+              report["other_actions"].append("DOCKER_ACTIVE_IMAGE_AND_TAGS_PRESERVED_RECLAIMABLE_ZERO")
+              after_fs=os.statvfs("/")
+              after_free=after_fs.f_bavail*after_fs.f_frsize
+              after_inode_pct=100*after_fs.f_ffree/max(1,after_fs.f_files)
+              after_containers=containers()
+              after_paper=paper()
+              after_ppi=ppi()
+              after_git=command(["git","-C","/opt/porota-trading","rev-parse","HEAD"],12)
+              report["after"]={"free_bytes":after_free,"free_inode_percent":after_inode_pct}
+              report["runtime_after"]={"containers":after_containers,"paper":after_paper,
+                    "git_head":after_git,"ppi_watch":after_ppi}
+              require(after_free>=before_free,"DISK_FREE_DID_NOT_INCREASE")
+              require(after_paper==before_paper and after_containers==before_containers and after_ppi==before_ppi
+                   and after_git==before_git,"RUNTIME_OR_PPI_CHANGED_DURING_CLEANUP")
+              report["space_recovered_bytes"]=after_free-before_free
+              success=True
+          except BaseException as ex:
+              report["error"]=type(ex).__name__+":"+str(ex)[:150]
+          finally:
+              for fd in handles:
+                  try:os.close(fd)
+                  except OSError:pass
+              report["completed_utc"]=datetime.datetime.now(datetime.timezone.utc).isoformat()
+              report["status"]="GREEN" if success else "RED"
+              print(json.dumps(report,sort_keys=True,indent=2))
+          raise SystemExit(0 if success else 42)
+          PY
+          python3 -m json.tool "$RUNNER_TEMP/rc6-host-cleanup-receipt.json" >/dev/null
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          row=json.loads((Path(os.environ["RUNNER_TEMP"])/"rc6-host-cleanup-receipt.json").read_text())
+          print("RC6_HOST_CLEANUP="+row["status"]+"|deleted="+str(len(row["deleted"]))+
+                "|reclaimed_bytes="+str(row.get("space_recovered_bytes","UNKNOWN")))
+          PY
+      - name: Upload original safe cleanup receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-host-safe-cleanup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-host-cleanup-receipt.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Wipe runner-only SSH file
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/rc6-host-cleanup"
