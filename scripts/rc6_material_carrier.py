@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import resource
 import runpy
 import stat
 import subprocess
@@ -104,6 +105,60 @@ def heavy_preflight(a,run,path,producer,label):
     return binding,peak,live
 
 
+def v3_memory_capacity(*,v2_path=Path('/sys/fs/cgroup/memory.max'),
+                       v1_path=Path('/sys/fs/cgroup/memory/memory.limit_in_bytes'),
+                       meminfo_path=Path('/proc/meminfo'),physical_bytes=None,rlimit_as=None):
+    """Bind V3's 2 GiB RSS ceiling to the active controller or VM memory.
+
+    Hosted VMs can omit a memory cgroup. That absence is not a measured zero:
+    fall back only when physical total/available and process address-space
+    limits are all observed. Malformed or unreadable evidence stays BLOCKED.
+    """
+    minimum=2*1024**3
+    try:
+        if physical_bytes is None:
+            pages=os.sysconf('SC_PHYS_PAGES');page_size=os.sysconf('SC_PAGE_SIZE')
+            physical_bytes=pages*page_size if pages>0 and page_size>0 else 0
+        if rlimit_as is None:rlimit_as=resource.getrlimit(resource.RLIMIT_AS)[0]
+        lines=meminfo_path.read_text().splitlines()
+        values={}
+        for name in ('MemTotal','MemAvailable'):
+            matches=[int(match.group(1))*1024 for line in lines
+                if (match:=re.fullmatch(name+r':\s+([0-9]+) kB',line))]
+            if len(matches)!=1:raise ValueError('MEMINFO_TOTAL_OR_AVAILABLE_MISSING_OR_DUPLICATED')
+            values[name]=matches[0]
+        if v2_path.exists():
+            mode='CGROUP_V2_MEMORY_MAX'
+            raw=v2_path.read_text().strip()
+            cgroup_limit=None if raw=='max' else int(raw)
+        elif v1_path.exists():
+            mode='CGROUP_V1_MEMORY_LIMIT'
+            raw=v1_path.read_text().strip()
+            cgroup_limit=int(raw)
+        else:
+            mode='PHYSICAL_MEMORY_AND_RLIMIT_AS_NO_CGROUP_CONTROLLER'
+            raw='absent'
+            cgroup_limit=None
+        if cgroup_limit is not None and cgroup_limit<=0:raise ValueError('MEMORY_CGROUP_LIMIT_INVALID')
+        if type(physical_bytes) is not int or physical_bytes<=0 or type(rlimit_as) is not int:
+            raise ValueError('PHYSICAL_OR_RLIMIT_AS_UNKNOWN')
+        address_limit=None if rlimit_as==resource.RLIM_INFINITY else rlimit_as
+        if address_limit is not None and address_limit<=0:raise ValueError('RLIMIT_AS_INVALID')
+        observed=[physical_bytes,values['MemTotal'],values['MemAvailable']]
+        if cgroup_limit is not None:observed.append(cgroup_limit)
+        if address_limit is not None:observed.append(address_limit)
+        available=min(observed)
+        return {'status':'GREEN' if available>=minimum else 'BLOCKED',
+            'source':mode,'cgroup_memory_max':raw,
+            'physical_sysconf_bytes':physical_bytes,'mem_total_bytes':values['MemTotal'],
+            'mem_available_bytes':values['MemAvailable'],'rlimit_as_bytes':address_limit,
+            'effective_available_bytes':available,'required_bytes':minimum}
+    except (OSError,ValueError,OverflowError) as error:
+        return {'status':'BLOCKED','source':'UNKNOWN','cgroup_memory_max':'unknown',
+            'observation_error':type(error).__name__+':'+str(error),
+            'required_bytes':minimum}
+
+
 def g5p_preflight(a,run,path,label,*,bootstrap=False):
     """Measure a V3 physical envelope before bootstrap or native work."""
     from scripts.rc6_g5p_frames import MAX_CAPTURE_BYTES
@@ -123,15 +178,14 @@ def g5p_preflight(a,run,path,label,*,bootstrap=False):
     required=source_export_upper+archive+live+scratch+transfer+controls
     free=fs.f_bavail*fs.f_frsize
     inode_ratio=fs.f_favail/fs.f_files if fs.f_files else 0
-    cgroup=Path('/sys/fs/cgroup/memory.max')
-    memory_limit=cgroup.read_text().strip() if cgroup.exists() else 'unknown'
-    memory_ok=memory_limit=='max' or memory_limit.isdigit() and int(memory_limit)>=2*1024**3
+    memory=v3_memory_capacity()
+    memory_ok=memory['status']=='GREEN'
     reserve=(4 if bootstrap else 2)*1024**3
     blocked_reasons=[]
     if free<required+reserve:blocked_reasons.append('BOOTSTRAP_OR_NATIVE_FREE_BYTES_BELOW_MEASURED_ENVELOPE')
     if inode_ratio<.1:blocked_reasons.append('FREE_INODE_RATIO_BELOW_10_PERCENT')
     if fs.f_favail<5000:blocked_reasons.append('FREE_INODES_BELOW_5000')
-    if not memory_ok:blocked_reasons.append('CGROUP_MEMORY_CEILING_BELOW_2GIB_OR_UNKNOWN')
+    if not memory_ok:blocked_reasons.append('MEMORY_CAPACITY_BELOW_2GIB_OR_UNOBSERVED')
     green=not blocked_reasons
     row={'schema':'rc6.g5p-v3-physical-preflight.v1','status':'GREEN' if green else 'BLOCKED',
          'source_sha':a.source_sha,'source_tree':a.source_tree,'owner_session':a.owner_session,
@@ -144,8 +198,9 @@ def g5p_preflight(a,run,path,label,*,bootstrap=False):
          'native_reserve_bytes':2*1024**3,'bootstrap_reserve_bytes':reserve if bootstrap else None,
          'minimum_free_inode_ratio':.1,
          'measured_free_bytes':free,'measured_free_inodes':fs.f_favail,
-         'measured_total_inodes':fs.f_files,'cgroup_memory_max':memory_limit,
+         'measured_total_inodes':fs.f_files,'cgroup_memory_max':memory['cgroup_memory_max'],
          'memory_ceiling_at_least_native_rss':memory_ok,
+         'memory_observation':memory,
          'blocked_reasons':blocked_reasons,
          'G5A_project_quota_required':False,'real_orders_sent':0,
          'measured_at_unix_ns':time.time_ns()}

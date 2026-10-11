@@ -29,6 +29,28 @@ from scripts import rc6_contract_revisions as revisions
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_missing_memory_cgroup_uses_measured_vm_and_process_limits(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);v2=root/'memory.max';v1=root/'memory.limit_in_bytes'
+            meminfo=root/'meminfo'
+            def observe(available_kib,*,rlimit=-1):
+                meminfo.write_text(f'MemTotal: 8388608 kB\nMemAvailable: {available_kib} kB\n')
+                return carrier.v3_memory_capacity(v2_path=v2,v1_path=v1,
+                    meminfo_path=meminfo,physical_bytes=8*1024**3,rlimit_as=rlimit)
+            good=observe(6*1024**2)
+            self.assertEqual(good['status'],'GREEN')
+            self.assertEqual(good['source'],'PHYSICAL_MEMORY_AND_RLIMIT_AS_NO_CGROUP_CONTROLLER')
+            self.assertEqual(good['cgroup_memory_max'],'absent')
+            self.assertEqual(observe(1024**2)['status'],'BLOCKED')
+            self.assertEqual(observe(6*1024**2,rlimit=1024**3)['status'],'BLOCKED')
+            v2.write_text(str(1024**3))
+            self.assertEqual(observe(6*1024**2)['status'],'BLOCKED')
+            v2.unlink();v1.write_text(str(1024**3))
+            self.assertEqual(observe(6*1024**2)['status'],'BLOCKED')
+            v1.unlink();meminfo.write_text('MemTotal: 8388608 kB\n')
+            self.assertEqual(carrier.v3_memory_capacity(v2_path=v2,v1_path=v1,
+                meminfo_path=meminfo,physical_bytes=8*1024**3,rlimit_as=-1)['status'],'BLOCKED')
+
     def test_long_acquisition_uses_actual_first_run_start_and_live_readmission(self):
         opened=datetime(2026,10,11,18,0,tzinfo=timezone.utc)
         started=opened+timedelta(minutes=2)
