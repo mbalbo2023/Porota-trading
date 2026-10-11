@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+import time
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -27,9 +29,48 @@ from scripts import rc6_material_carrier as carrier
 from scripts import rc6_material_pr_admission as admission
 from scripts import rc6_contract_revisions as revisions
 from scripts.rc6_g5p_model import DOCUMENT_SHA256
+from scripts import rc6_owned_gate_lease as lease
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_g5p_owned_lease_http_budget_is_finite_and_legacy_unchanged(self):
+        self.assertEqual(lease.http_budget_for_gate('G5P-acquire'),45)
+        self.assertEqual(lease.http_budget_for_gate('G5P-certify'),45)
+        self.assertEqual(lease.http_budget_for_gate('full-gov311'),5)
+        self.assertLess(lease.G5P_HTTP_BUDGET_SECONDS,lease.API_REFRESH_SECONDS)
+        with lease._http_budget(time.monotonic()+20,
+                                lease.http_budget_for_gate('G5P-acquire')):
+            pass
+        with self.assertRaisesRegex(lease.LeaseControlFailure,'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED'):
+            with lease._http_budget(time.monotonic()+20,
+                                    lease.http_budget_for_gate('full-gov311')):
+                pass
+        with self.assertRaisesRegex(lease.LeaseControlFailure,'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED'):
+            with lease._http_budget(time.monotonic()+46,lease.G5P_HTTP_BUDGET_SECONDS):
+                pass
+        now=datetime.now(timezone.utc)
+        scope={'fresh_ownership':{
+            issue:{'comment_id':issue,'lease_expires_utc':
+                   (now+timedelta(minutes=10)).isoformat().replace('+00:00','Z')}
+            for issue in ('471','473')}}
+        for gate,budget in (('G5P-acquire',45),('full-gov311',5)):
+            with tempfile.TemporaryDirectory() as temp:
+                monitor=lease.GateLeaseMonitor(temp,source_sha='a'*40,
+                    source_tree='b'*40,owner_session='CODEX_G5P_TEST',gate=gate,
+                    launch_receipt_url='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
+                    run_id=123,run_attempt=1,clock=lambda:now)
+                captured=[]
+                def budget_context(_deadline, seconds):
+                    captured.append(seconds)
+                    return nullcontext()
+                with patch.object(lease,'_http_budget',side_effect=budget_context),\
+                     patch.object(lease,'_scope',return_value=scope),\
+                     patch.object(lease,'prove_lease_coverage',return_value={}),\
+                     patch.object(monitor,'_store',return_value='0'*64) as saved:
+                    monitor._observe('prelaunch')
+                self.assertEqual(captured,[budget])
+                self.assertEqual(saved.call_args.args[0]['value']['http_total_budget_seconds'],budget)
+
     def test_missing_memory_cgroup_uses_measured_vm_and_process_limits(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);v2=root/'memory.max';v1=root/'memory.limit_in_bytes'

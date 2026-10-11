@@ -26,6 +26,7 @@ from scripts import rc6_controlled_native_child_manager as native
 SCHEMA = 'porota.rc6.owned-gate-lease.v1'
 SNAPSHOT_SCHEMA = 'porota.rc6.owned-gate-lease-snapshot.v1'
 HTTP_BUDGET_SECONDS = 5
+G5P_HTTP_BUDGET_SECONDS = 45
 API_REFRESH_SECONDS = 60
 LOCAL_POLL_SECONDS = 5
 MAX_EVIDENCE_BYTES = 16 * 1024**2
@@ -61,6 +62,11 @@ def text_stamp(value):
     return value.isoformat().replace('+00:00', 'Z')
 
 
+def http_budget_for_gate(gate):
+    """Keep legacy pulse timing; bound G5P's complete live owner/API walk."""
+    return G5P_HTTP_BUDGET_SECONDS if gate in ('G5P-acquire', 'G5P-certify') else HTTP_BUDGET_SECONDS
+
+
 def _private_write(path, raw):
     path = Path(path)
     details = path.parent.lstat()
@@ -81,10 +87,11 @@ def _private_write(path, raw):
 
 
 @contextmanager
-def _http_budget(deadline):
+def _http_budget(deadline, budget_seconds=HTTP_BUDGET_SECONDS):
     """Enforce one elapsed deadline even for DNS/TLS or trickling HTTP bodies."""
     remaining = deadline - time.monotonic()
-    require(0 < remaining <= HTTP_BUDGET_SECONDS, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
+    require(budget_seconds in (HTTP_BUDGET_SECONDS, G5P_HTTP_BUDGET_SECONDS)
+        and 0 < remaining <= budget_seconds, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
     previous = signal.getsignal(signal.SIGALRM)
     require(signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0), 'OWNED_LEASE_EXISTING_ALARM_CONFLICT')
     def expired(_number, _frame):
@@ -104,7 +111,7 @@ def api_get(path, deadline):
     require(type(path) is str and (path == '' or path.startswith('/'))
         and '\n' not in path and '\r' not in path, 'OWNED_LEASE_CANONICAL_API_PATH_REQUIRED')
     remaining = deadline - time.monotonic()
-    require(0 < remaining <= HTTP_BUDGET_SECONDS, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
+    require(0 < remaining <= G5P_HTTP_BUDGET_SECONDS, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
     request = urllib.request.Request('https://api.github.com/repos/' + admission.REPO + path,
         headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json',
             'X-GitHub-Api-Version': '2022-11-28'})
@@ -230,6 +237,7 @@ class GateLeaseMonitor:
             'gate': gate, 'launch_receipt_url': launch_receipt_url,
             'run_id': int(os.environ['GITHUB_RUN_ID']) if run_id is None else run_id,
             'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']) if run_attempt is None else run_attempt}
+        self.http_budget_seconds = http_budget_for_gate(gate)
         require(re.fullmatch('[0-9a-f]{40}', source_sha) and re.fullmatch('[0-9a-f]{40}', source_tree)
             and isinstance(owner_session, str) and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}', owner_session)
             and gate in (*admission.GATES, *admission.DIAGNOSTIC_GATES)
@@ -320,13 +328,13 @@ class GateLeaseMonitor:
     def _observe(self, stage):
         budget_entered = time.monotonic()
         started, entered = self._local()
-        allowance = HTTP_BUDGET_SECONDS
+        allowance = self.http_budget_seconds
         if self.last_scope is not None:
             allowance = min(allowance, *( (admission.stamp(record['lease_expires_utc']) - started).total_seconds()
                 for record in self.last_scope['fresh_ownership'].values()))
         if self.native_deadline is not None:
             allowance = min(allowance, self.native_deadline - entered)
-        require(0 < allowance <= HTTP_BUDGET_SECONDS, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
+        require(0 < allowance <= self.http_budget_seconds, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
         # Capture the real budget origin before UTC/clock reads. Adding the
         # allowance to a later clock could run beyond an expiring lease or the
         # unchanged native deadline by the time already spent in this method.
@@ -337,7 +345,7 @@ class GateLeaseMonitor:
                 require(time.monotonic() < deadline, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
                 calls[path] = self.get(path, deadline)
             return calls[path]
-        with _http_budget(deadline):
+        with _http_budget(deadline, self.http_budget_seconds):
             if self.g5a_revision is not None:
                 from scripts import rc6_owned_g5a_continuation as continuation
                 continuation.validate_decision_documents(self.g5a_revision, record_get)
@@ -364,13 +372,13 @@ class GateLeaseMonitor:
                 self.launch_intent or finished, finished, workstream=scope.get('workstream_id'))
             snapshot = {'schema': SNAPSHOT_SCHEMA, 'stage': stage, 'context': self.context,
                 'started_utc': text_stamp(started), 'read_utc': text_stamp(finished),
-                'http_total_budget_seconds': HTTP_BUDGET_SECONDS,
+                'http_total_budget_seconds': self.http_budget_seconds,
                 'elapsed_seconds': self.monotonic() - entered, 'api_response_objects': reference,
                 'scope_sha256': digest(wire(scope)),
                 'latest_owners': {issue: {'comment_id': record['comment_id'],
                     'lease_expires_utc': record['lease_expires_utc']}
                     for issue, record in scope['fresh_ownership'].items()}, 'lease_coverage': proof}
-            require(0 <= snapshot['elapsed_seconds'] <= HTTP_BUDGET_SECONDS,
+            require(0 <= snapshot['elapsed_seconds'] <= self.http_budget_seconds,
                 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
             identifier = self._store({'kind': 'snapshot', 'value': snapshot})
         self.events.append(identifier)
@@ -458,7 +466,7 @@ class GateLeaseMonitor:
             'physical_fin_closed': True, 'post_fin_readmission_verified': revalidated,
             'lease_coverage': proof, 'stop_reason': self.stop_reason, 'snapshots': self.events,
             'object_count': len(self.objects), 'deduplicated_object_bytes': self.object_bytes,
-            'http_total_budget_seconds': HTTP_BUDGET_SECONDS, 'api_refresh_seconds': API_REFRESH_SECONDS,
+            'http_total_budget_seconds': self.http_budget_seconds, 'api_refresh_seconds': API_REFRESH_SECONDS,
             'local_poll_seconds': LOCAL_POLL_SECONDS, 'real_orders_sent': 0,
             'qualification_claimed': False, 'continuous_unobserved_GitHub_state_claimed': False}
         raw = wire(receipt)
@@ -603,7 +611,8 @@ def replay_lease_evidence(receipt, *, read_object, kernel, source_sha, source_tr
         and receipt.get('actual_pid') == kernel.get('pid')
         and receipt.get('original_manager_sha256') == '55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8',
         'OWNED_LEASE_ARCHIVED_ACTUAL_NATIVE_FIN_REBOUND')
-    require(receipt.get('http_total_budget_seconds') == HTTP_BUDGET_SECONDS
+    budget_seconds = http_budget_for_gate(context.get('gate'))
+    require(receipt.get('http_total_budget_seconds') == budget_seconds
         and receipt.get('api_refresh_seconds') == API_REFRESH_SECONDS
         and receipt.get('local_poll_seconds') == LOCAL_POLL_SECONDS,
         'OWNED_LEASE_ARCHIVED_CONTROL_BUDGET_REBOUND')
@@ -643,14 +652,14 @@ def replay_lease_evidence(receipt, *, read_object, kernel, source_sha, source_tr
         require(wrapped.get('kind') == 'snapshot', 'OWNED_LEASE_ARCHIVED_SNAPSHOT_TYPE_INVALID')
         snapshot = wrapped['value']
         require(snapshot.get('schema') == SNAPSHOT_SCHEMA and snapshot.get('context') == context
-            and snapshot.get('http_total_budget_seconds') == HTTP_BUDGET_SECONDS
+            and snapshot.get('http_total_budget_seconds') == budget_seconds
             and type(snapshot.get('elapsed_seconds')) in (int, float)
-            and math.isfinite(snapshot['elapsed_seconds']) and 0 <= snapshot['elapsed_seconds'] <= HTTP_BUDGET_SECONDS,
+            and math.isfinite(snapshot['elapsed_seconds']) and 0 <= snapshot['elapsed_seconds'] <= budget_seconds,
             'OWNED_LEASE_ARCHIVED_SNAPSHOT_SCOPE_OR_BUDGET_REBOUND')
         read = admission.stamp(snapshot.get('read_utc'))
         began = admission.stamp(snapshot.get('started_utc'))
-        require(began <= read and (read - began).total_seconds() <= HTTP_BUDGET_SECONDS
-            and (previous is None or 0 <= (read - previous).total_seconds() <= API_REFRESH_SECONDS + HTTP_BUDGET_SECONDS),
+        require(began <= read and (read - began).total_seconds() <= budget_seconds
+            and (previous is None or 0 <= (read - previous).total_seconds() <= API_REFRESH_SECONDS + budget_seconds),
             'OWNED_LEASE_ARCHIVED_OBSERVATION_STALE_OR_TIME_REBOUND')
         stage = snapshot.get('stage')
         require(stage == ('prelaunch' if position == 0 else 'post-fin' if position == len(identifiers)-1 else 'poll'),
