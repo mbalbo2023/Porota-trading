@@ -137,18 +137,50 @@ def _timelines(calls):
     return result
 
 
-def prove_lease_coverage(timelines, context, start, end, *, workstream=None):
+def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
+                         authenticated_scope=None):
     """Both immutable same-Source lease unions must cover the complete interval."""
     require(start <= end, 'OWNED_LEASE_TIME_ORDER_INVALID')
     covered = {}
     for issue in (471, 473):
         rows = timelines.get(issue)
         require(type(rows) is list and rows, 'OWNED_LEASE_BOTH_ISSUE_TIMELINES_REQUIRED')
-        spans = []; states = {}
+        # _scope has already authenticated each still-active disjoint writer,
+        # including #491's inherited exact scope and deploy-owner release.
+        # A generic foreign row can never mint an exception here.
+        owner_scope = (authenticated_scope or {}).get('fresh_ownership', {}).get(str(issue), {})
+        disjoint = owner_scope.get('authenticated_disjoint_active_writers', [])
+        require(type(disjoint) is list, 'OWNED_LEASE_DISJOINT_SCOPE_REQUIRED')
+        allowed = {}
+        for item in disjoint:
+            require(type(item) is dict and type(item.get('comment_id')) is int
+                and item['comment_id'] > 0 and type(item.get('session')) is str
+                and item['session'] != context['owner_session']
+                and item['session'] == 'WORK_RC6_SRE_20261011_1740Z'
+                and item.get('branch') == 'ops/rc6-sre-deep-20261011'
+                and type(item.get('paths')) is list and item['paths']
+                and all(type(path) is str for path in item['paths'])
+                and len(item['paths']) == len(set(item['paths']))
+                and set(item['paths']) <= admission._DISJOINT_SRE_PATHS
+                and item['session'] not in allowed,
+                'OWNED_LEASE_DISJOINT_SCOPE_REBOUND')
+            allowed[item['session']] = item['comment_id']
+        spans = []; states = {}; state_ids = {}
         for row in sorted(rows, key=lambda item: (admission.effective_stamp(item), item['id'])):
             values = admission.fields(row.get('body', ''))
             owners = [values[key] for key in ('WRITE_OWNER', 'INTEGRATION_OWNER') if key in values
                 and values[key] not in ('RELEASED', 'NOT_ACQUIRED', 'NONE', 'null')]
+            if values.get('RELEASED') == 'true' and not owners and values.get('WRITE_OWNER') == 'RELEASED':
+                # Several authenticated historical releases use the bare
+                # RELEASED literal. It revokes that session's spans; it must
+                # also update the replayed state instead of leaving a false
+                # active foreign writer behind.
+                released = values.get('SESSION_SUCCESSOR', values.get('SESSION'))
+                prior = states.get(released)
+                require(type(released) is str and prior is not None
+                    and values.get('WORKSTREAM_ID') == prior.get('WORKSTREAM_ID'),
+                    'OWNED_LEASE_AUTHENTIC_PRIOR_OWN_RELEASE_REQUIRED')
+                owners = [released]
             foreign = any(owner not in (context['owner_session'], 'RELEASED', 'NOT_ACQUIRED', 'NONE', 'null')
                 for owner in owners)
             effective = admission.effective_stamp(row)
@@ -161,8 +193,12 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None):
                         'OWNED_LEASE_AUTHENTIC_OWN_SESSION_RELEASE_REQUIRED')
                     require(effective < start or context['owner_session'] not in owners,
                         'OWNED_LEASE_OWNER_RELEASE_OVERLAPS_PRODUCER')
-                if foreign and effective >= start:
-                    require(False, 'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')
+                if foreign and effective >= start and values.get('RELEASED') != 'true':
+                    require(all(identifier in allowed and
+                        (row['id'] == allowed[identifier] or admission.disjoint_sre_writer(
+                            values, context['source_sha'], context['owner_session']))
+                        for identifier in owners if identifier != context['owner_session']),
+                        'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')
                 if context['owner_session'] in owners and effective >= start:
                     require(values.get('WRITE_OWNER') == values.get('INTEGRATION_OWNER')
                             == values.get('SESSION_SUCCESSOR', values.get('SESSION')) == context['owner_session']
@@ -178,6 +214,7 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None):
                         require(values.get('WORKSTREAM_ID') == prior.get('WORKSTREAM_ID'),
                             'OWNED_LEASE_EXPLICIT_RELEASE_WORKSTREAM_REBOUND')
                     states[identifier] = values
+                    state_ids[identifier] = row['id']
                 if values.get('RELEASED') == 'true' and context['owner_session'] in owners:
                     require(values.get('WRITE_OWNER') == values.get('INTEGRATION_OWNER')
                             == values.get('SESSION_SUCCESSOR', values.get('SESSION')) == context['owner_session']
@@ -212,6 +249,7 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None):
             if begin <= end:
                 spans.append((begin, expiry, row['id']))
         require(all(identifier == context['owner_session'] or values.get('RELEASED') == 'true'
+            or allowed.get(identifier) == state_ids.get(identifier)
             for identifier, values in states.items()), 'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')
         cursor, identifiers = start, []
         for begin, expiry, identifier in sorted(spans):
@@ -223,6 +261,8 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None):
             identifiers.append(identifier)
         require(cursor > end and identifiers, 'OWNED_LEASE_CONTINUITY_GAP')
         covered[str(issue)] = {'covered_until_utc': text_stamp(cursor), 'comment_ids': identifiers}
+        if allowed:
+            covered[str(issue)]['authenticated_disjoint_writer_ids'] = allowed
     return covered
 
 
@@ -369,7 +409,8 @@ class GateLeaseMonitor:
                 'OWNED_LEASE_CONTROL_COMMENT_DELETED_OR_EDITED')
             reference = {path: self._response(value) for path, value in sorted(calls.items())}
             proof = prove_lease_coverage(_timelines(calls), self.context,
-                self.launch_intent or finished, finished, workstream=scope.get('workstream_id'))
+                self.launch_intent or finished, finished, workstream=scope.get('workstream_id'),
+                authenticated_scope=scope)
             snapshot = {'schema': SNAPSHOT_SCHEMA, 'stage': stage, 'context': self.context,
                 'started_utc': text_stamp(started), 'read_utc': text_stamp(finished),
                 'http_total_budget_seconds': self.http_budget_seconds,
@@ -454,7 +495,8 @@ class GateLeaseMonitor:
         proof = None
         try:
             proof = prove_lease_coverage(_timelines(self.last_calls or {}), self.context,
-                self.launch_intent, closed, workstream=(self.last_scope or {}).get('workstream_id'))
+                self.launch_intent, closed, workstream=(self.last_scope or {}).get('workstream_id'),
+                authenticated_scope=self.last_scope)
         except BaseException as error:
             self._failure(error)
         receipt = {'schema': SCHEMA, 'context': self.context, 'command_label': self.command_label,
@@ -678,11 +720,11 @@ def replay_lease_evidence(receipt, *, read_object, kernel, source_sha, source_tr
                 'lease_expires_utc': record['lease_expires_utc']} for issue, record in scope['fresh_ownership'].items()},
             'OWNED_LEASE_ARCHIVED_AUTHENTIC_SCOPE_REBOUND')
         proof = prove_lease_coverage(_timelines(calls), context, launch if position else read, read,
-            workstream=scope.get('workstream_id'))
+            workstream=scope.get('workstream_id'), authenticated_scope=scope)
         require(proof == snapshot.get('lease_coverage'), 'OWNED_LEASE_ARCHIVED_INTERVAL_PROOF_REBOUND')
         previous, final_calls, final_proof = read, calls, proof
     proof = prove_lease_coverage(_timelines(final_calls), context, launch, closed,
-        workstream=scope.get('workstream_id'))
+        workstream=scope.get('workstream_id'), authenticated_scope=scope)
     require(proof == receipt.get('lease_coverage') and receipt.get('object_count') == len(cache)
         and receipt.get('deduplicated_object_bytes') == sum(len(value[0]) for value in cache.values()),
         'OWNED_LEASE_ARCHIVED_COVERAGE_OR_DEDUP_COUNTER_REBOUND')

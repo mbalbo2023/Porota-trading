@@ -71,6 +71,70 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
                 self.assertEqual(captured,[budget])
                 self.assertEqual(saved.call_args.args[0]['value']['http_total_budget_seconds'],budget)
 
+    def test_owned_lease_replays_bare_releases_and_only_authenticated_disjoint_writer(self):
+        opened=datetime(2026,10,11,19,0,tzinfo=timezone.utc)
+        stamp=lambda at:at.isoformat().replace('+00:00','Z')
+        owner='CODEX_G5P_TEST';sre='WORK_RC6_SRE_20261011_1740Z'
+        context={'source_sha':'a'*40,'source_tree':'b'*40,'owner_session':owner}
+        def row(issue,identifier,at,fields):
+            return {'id':identifier,'created_at':stamp(at),'updated_at':stamp(at),
+                'user':{'login':'mbalbo2023'},
+                'issue_url':f'https://api.github.com/repos/mbalbo2023/Porota-trading/issues/{issue}',
+                'body':'\n'.join(key+'='+value for key,value in fields.items())}
+        def current_fields(lease_end,*,released=False):
+            return {'WORKSTREAM_ID':'WS-G5P','SESSION_SUCCESSOR':owner,
+                'WRITE_OWNER':'RELEASED' if released else owner,
+                'INTEGRATION_OWNER':'NOT_ACQUIRED' if released else owner,
+                'DEPLOY_OWNER':'NOT_ACQUIRED','RELEASED':str(released).lower(),
+                'SOURCE_SHA':'a'*40,'SOURCE_TREE':'b'*40,
+                'SOURCE_LEASE_EXPIRES_UTC':stamp(lease_end),
+                'MODE':'PRODUCTION_PAPER / SIMULATION','real_orders_sent':'0'}
+        def rows(issue):
+            return [
+                row(issue,issue*10+1,opened-timedelta(minutes=12),
+                    {'WORKSTREAM_ID':'WS-OLD','SESSION_SUCCESSOR':'CODEX_OLD',
+                     'WRITE_OWNER':'CODEX_OLD','INTEGRATION_OWNER':'CODEX_OLD','RELEASED':'false'}),
+                row(issue,issue*10+2,opened-timedelta(minutes=11),
+                    {'WORKSTREAM_ID':'WS-OLD','SESSION_SUCCESSOR':'CODEX_OLD',
+                     'WRITE_OWNER':'RELEASED','INTEGRATION_OWNER':'NOT_ACQUIRED','RELEASED':'true'}),
+                row(issue,issue*10+3,opened-timedelta(minutes=10),
+                    {'WORKSTREAM_ID':'WS-SRE','SESSION_SUCCESSOR':sre,
+                     'WRITE_OWNER':sre,'INTEGRATION_OWNER':sre,
+                     'DEPLOY_OWNER':'NOT_ACQUIRED','RELEASED':'false'}),
+                row(issue,issue*10+4,opened,current_fields(opened+timedelta(minutes=10)))]
+        timelines={issue:rows(issue) for issue in (471,473)}
+        scope={'fresh_ownership':{str(issue):{
+            'authenticated_disjoint_active_writers':[
+                {'session':sre,'comment_id':issue*10+3,
+                 'branch':'ops/rc6-sre-deep-20261011','paths':['scripts/ops/rc6_sre_*']}]
+            } for issue in (471,473)}}
+        end=opened+timedelta(minutes=2)
+        proof=lease.prove_lease_coverage(timelines,context,opened,end,
+            workstream='WS-G5P',authenticated_scope=scope)
+        self.assertEqual(proof['471']['authenticated_disjoint_writer_ids'][sre],4713)
+        changed=copy.deepcopy(scope)
+        changed['fresh_ownership']['471']['authenticated_disjoint_active_writers'][0]['comment_id']=9999
+        with self.assertRaisesRegex(lease.LeaseControlFailure,'FOREIGN_RECORD_OVERLAPS_PRODUCER'):
+            lease.prove_lease_coverage(timelines,context,opened,end,
+                workstream='WS-G5P',authenticated_scope=changed)
+        overlapping=copy.deepcopy(timelines)
+        overlapping[471].append(row(471,9998,opened+timedelta(minutes=1),
+            {'WORKSTREAM_ID':'WS-UNKNOWN','SESSION_SUCCESSOR':'CODEX_UNKNOWN',
+             'WRITE_OWNER':'CODEX_UNKNOWN','INTEGRATION_OWNER':'CODEX_UNKNOWN',
+             'RELEASED':'false'}))
+        with self.assertRaisesRegex(lease.LeaseControlFailure,'FOREIGN_RECORD_OVERLAPS_PRODUCER'):
+            lease.prove_lease_coverage(overlapping,context,opened,end,
+                workstream='WS-G5P',authenticated_scope=scope)
+        gap=copy.deepcopy(timelines)
+        gap[471].extend([
+            row(471,9996,opened+timedelta(seconds=20),
+                current_fields(opened+timedelta(minutes=10),released=True)),
+            row(471,9997,opened+timedelta(seconds=40),
+                current_fields(opened+timedelta(minutes=10)))])
+        with self.assertRaisesRegex(lease.LeaseControlFailure,'OWNED_LEASE_OWNER_RELEASE_OVERLAPS_PRODUCER'):
+            lease.prove_lease_coverage(gap,context,opened,end,
+                workstream='WS-G5P',authenticated_scope=scope)
+
     def test_missing_memory_cgroup_uses_measured_vm_and_process_limits(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);v2=root/'memory.max';v1=root/'memory.limit_in_bytes'
