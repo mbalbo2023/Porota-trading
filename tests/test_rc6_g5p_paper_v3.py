@@ -93,7 +93,7 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
                 derive.authority_literal_derivation(original.replace("row['PR'] == 476",
                     "row['PR'] == 477"),scope)
 
-    def test_g5p_concurrent_owner_comment_restarts_only_one_complete_read(self):
+    def test_g5p_paired_owner_renewal_restarts_at_most_two_complete_reads(self):
         args={'source_sha':'a'*40,'source_tree':'b'*40,
             'launch_receipt_url':'https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
             'owner_session':'CODEX_G5P_TEST','gate':'G5P-acquire'}
@@ -106,6 +106,15 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
             self.assertIsNotNone(read.call_args_list[1].kwargs['now'].tzinfo)
         with patch.object(admission,'_admit_g5p_once',side_effect=[
             ValueError('OWNERSHIP_COMMENT_FUTURE_TIMESTAMP'),
+            ValueError('OWNERSHIP_COMMENT_FUTURE_TIMESTAMP'),
+            {'status':'ADMITTED_NATIVE_NOT_STARTED'}]) as read:
+            row=admission.admit_g5p(**args)
+            self.assertEqual(row['owner_read_consistency_restart_count'],2)
+            self.assertEqual(read.call_count,3)
+            self.assertTrue(all(call.kwargs['now'].tzinfo is not None
+                for call in read.call_args_list[1:]))
+        with patch.object(admission,'_admit_g5p_once',side_effect=[
+            ValueError('OWNERSHIP_COMMENT_FUTURE_TIMESTAMP'),
             ValueError('G5P_LONG_RUN_CONTRACT_DECISION_REVOKED')]) as read:
             with self.assertRaisesRegex(ValueError,'CONTRACT_DECISION_REVOKED'):
                 admission.admit_g5p(**args)
@@ -115,6 +124,11 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'FUTURE_TIMESTAMP'):
                 admission.admit_g5p(**args,now=datetime.now(timezone.utc))
             read.assert_called_once()
+        with patch.object(admission,'_admit_g5p_once',side_effect=ValueError(
+                'OWNERSHIP_COMMENT_FUTURE_TIMESTAMP')) as read:
+            with self.assertRaisesRegex(ValueError,'FUTURE_TIMESTAMP'):
+                admission.admit_g5p(**args)
+            self.assertEqual(read.call_count,3)
         with patch.object(admission,'_admit_g5p_once',side_effect=ValueError(
                 'LATEST_WRITER_OR_DEPLOY_OWNER_CONFLICT')) as read:
             with self.assertRaisesRegex(ValueError,'DEPLOY_OWNER_CONFLICT'):

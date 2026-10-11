@@ -1159,13 +1159,13 @@ def validate_g5p_acquisition_manifest(manifest,source_sha,source_tree,owner,appr
 
 
 def admit_g5p(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now=None):
-    """Restart one read-only G5P admission if an owner comment arrives mid-read.
+    """Restart at most twice if a paired owner renewal arrives mid-read.
 
     Every attempt reauthenticates the original decision and complete live
-    Source/owner/OPS state. An actual revocation, expiry or second concurrent
+    Source/owner/OPS state. An actual revocation, expiry or third concurrent
     update still fails; this never retries a producer or native command.
     """
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             row=_admit_g5p_once(source_sha=source_sha,source_tree=source_tree,
                 launch_receipt_url=launch_receipt_url,owner_session=owner_session,
@@ -1173,7 +1173,7 @@ def admit_g5p(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now
             if attempt:row['owner_read_consistency_restart_count']=attempt
             return row
         except ValueError as error:
-            if (now is not None or attempt or
+            if (now is not None or attempt==2 or
                     str(error)!='OWNERSHIP_COMMENT_FUTURE_TIMESTAMP'):
                 raise
     raise AssertionError('G5P_OWNER_READ_RESTART_UNREACHABLE')
