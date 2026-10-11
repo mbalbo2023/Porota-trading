@@ -145,12 +145,96 @@ jobs:
           print(f"RC6_HOST_AUDIT=EVIDENCE_CAPTURED|free_bytes={f['free_bytes']}|inode_free={f['free_inode_percent']}|cleaned=false")
           print("RC6_HOST_AUDIT_SQLITE="+str(j["paper_state"]))
           PY
+      - name: Targeted SRE diagnostics for observed unhealthy service and observer restarts
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          timeout 240 ssh -i "$HOME/.ssh/rc6-host-audit" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'python3 -' \
+            > "$RUNNER_TEMP/rc6-host-sre-forensics.json" <<'PY'
+          import datetime,json,subprocess,re
+          def run(args,timeout=25):
+              try:
+                  p=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                                   text=True,timeout=timeout,check=False)
+                  return {"exit_code":p.returncode,"output":p.stdout[:100000]}
+              except Exception as exc:
+                  return {"error":type(exc).__name__}
+          def category(s):
+              s=s.lower()
+              patterns={"CONNECTION_REFUSED":r"connection refused|connect\(\) failed",
+                  "AUTH_DENIED":r"unauthorized|forbidden|403|401",
+                  "NOT_FOUND":r"not found|no such file|404",
+                  "TIMEOUT":r"timed out|timeout",
+                  "FAILED_HEALTH":r"unhealthy|healthcheck|health check",
+                  "SQLITE_LOCK":r"database is locked|sqlite_busy",
+                  "OOM":r"oom|out of memory|memoryerror|killed process",
+                  "TRACEBACK":r"traceback|exception|error",
+                  "SEGV":r"segmentation fault|sigsegv|exit code 139",
+                  "HTTP_5XX":r"http[^0-9]*(500|502|503|504)"}
+              matches=[k for k,pattern in patterns.items() if re.search(pattern,s)]
+              return matches or ["OTHER_OR_NO_TEXT"]
+          rpt={"schema":"porota.rc6.host-sre-forensics-safe-summary.v1",
+               "utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+               "read_only":True,"secrets_or_raw_logs_exported":False}
+          names=["porota_production_observer","porota_production_dashboard","porota_critical_approval_rc6"]
+          rpt["containers"]={}
+          for name in names:
+              entry={}
+              entry["state"]=run(["sudo","-n","docker","inspect","-f",
+                 "{{.Name}}|{{.Image}}|{{.State.Status}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{.State.StartedAt}}|{{if .State.Health}}{{.State.Health.Status}}|{{.State.Health.FailingStreak}}{{else}}none|0{{end}}",name])
+              raw=run(["sudo","-n","docker","inspect","-f","{{if .State.Health}}{{json .State.Health.Log}}{{else}}[]{{end}}",name],15)
+              if raw.get("exit_code")==0:
+                  try:
+                      lines=json.loads(raw["output"])
+                      entry["health_events"]=[{"exit_code":x.get("ExitCode"),
+                         "start":x.get("Start"),"categories":category(x.get("Output",""))}
+                        for x in lines[-8:]]
+                  except Exception:
+                      entry["health_parse"]="UNAVAILABLE"
+              else:entry["health_parse"]="INSPECT_UNAVAILABLE"
+              logs=run(["sudo","-n","docker","logs","--since","4h","--tail","500",name],35)
+              if logs.get("exit_code")==0:
+                  lines=logs["output"].splitlines()
+                  entry["recent_log_lines_observed"]=len(lines)
+                  entry["error_category_counts"]={k:sum(k in category(line) for line in lines)
+                     for k in ["OOM","SQLITE_LOCK","SEGV","TRACEBACK","TIMEOUT","AUTH_DENIED","CONNECTION_REFUSED"]}
+              else:entry["log_status"]=logs.get("error") or logs.get("exit_code")
+              rpt["containers"][name]=entry
+          rpt["docker_live_stats"]=run(["sudo","-n","docker","stats","--no-stream",
+             "--format","{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.PIDs}}"],30)
+          units=["porota-contract-evidence-weekend-backfill-rc6.service",
+                 "porota-gdelt-event-risk-rc6.service",
+                 "porota-preopen-rc6.service",
+                 "porota-scheduler-export-hf6.service",
+                 "porota-critical-approval-rc6.service",
+                 "porota-host-general-backup-rc4.service"]
+          rpt["failed_unit_details"]={}
+          fields="LoadState,ActiveState,SubState,Result,ExecMainStatus,ExecMainStartTimestamp,ExecMainExitTimestamp,FragmentPath"
+          for unit in units:
+              rpt["failed_unit_details"][unit]=run(["systemctl","show",unit,"--no-pager",
+                  *("-p"+key for key in fields.split(","))],15)
+          rpt["docker_image_labels"]=run(["sudo","-n","docker","image","inspect",
+              "--format","{{.Id}}|{{index .Config.Labels \"org.opencontainers.image.revision\"}}",
+              "porota-trading-bot:17.0.0-rc6"],12)
+          rpt["git_identity"]=run(["git","-C","/opt/porota-trading","rev-parse","HEAD"],10)
+          print(json.dumps(rpt,sort_keys=True,indent=2))
+          PY
+          python3 -m json.tool "$RUNNER_TEMP/rc6-host-sre-forensics.json" >/dev/null
+          echo "RC6_HOST_SRE_FORENSICS=CAPTURED_NO_RAW_LOGS"
       - name: Upload read-only original evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: rc6-host-readonly-audit-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/rc6-host-inventory.json
+          path: |
+            ${{ runner.temp }}/rc6-host-inventory.json
+            ${{ runner.temp }}/rc6-host-sre-forensics.json
           if-no-files-found: warn
           retention-days: 14
       - name: Clean runner SSH credential only
