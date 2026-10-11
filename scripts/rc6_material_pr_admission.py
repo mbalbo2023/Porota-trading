@@ -995,6 +995,20 @@ def authenticate_g5p_revision(fields_row,source_sha,source_tree,owner_session,no
         contract_sha256=DOCUMENT_SHA256,now=now)
 
 
+def validate_g5p_acquisition_manifest(manifest,source_sha,source_tree,owner,approval_url):
+    """Acquisition gathers original V3 data; it cannot carry predecessor credit."""
+    from scripts import rc6_architectural_gates as architectural
+    expected={'schema':architectural.MANIFEST_SCHEMA,'source_sha':source_sha,
+        'source_tree':source_tree,'release_profile':'PAPER_V3_ONLY',
+        'owner_session':owner,'g5p_revision_approval_url':approval_url,
+        'g5p_acquisition':None,'artifacts':[]}
+    require(type(manifest) is dict and manifest==expected,
+        'G5P_ACQUISITION_MUST_BE_EXACT_NONCERTIFYING_EMPTY_MANIFEST')
+    return {'schema':'rc6.g5p-acquisition-prerequisites.v1',
+        'source_sha':source_sha,'source_tree':source_tree,'authenticated_receipts':[],
+        'material_gate_credit':False,'G0_G4_claimed':False}
+
+
 def admit_g5p(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now=None):
     require(gate in ('G5P-acquire','G5P-certify')
             and os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch'
@@ -1014,6 +1028,12 @@ def admit_g5p(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now
             and manifest.get('owner_session')==owner_session
             and manifest.get('g5p_revision_approval_url')==accepted.approval_url,
             'G5P_EXACT_PROFILE_OWNER_AND_PRIOR_GATE_MANIFEST_REQUIRED')
+    if gate=='G5P-acquire':
+        row['acquisition_prerequisites']=validate_g5p_acquisition_manifest(
+            manifest,source_sha,source_tree,owner_session,accepted.approval_url)
+    else:
+        require(type(manifest.get('artifacts')) is list and bool(manifest['artifacts']),
+            'G5P_CERTIFICATION_REQUIRES_ACTUAL_G0_G4_ARTIFACTS')
     reference=document(f.get('G5P_ACQUISITION_REFERENCE_JSON','null'))
     require((gate=='G5P-acquire' and reference is None and manifest.get('g5p_acquisition') is None)
             or (gate=='G5P-certify' and type(reference) is dict

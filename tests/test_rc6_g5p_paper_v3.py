@@ -24,9 +24,56 @@ from scripts import rc6_architectural_gates as gates
 from scripts.porota_validate_deploy_artifact import validate as validate_artifact
 from scripts.porota_predeploy_binding import BindingRejected, verify_g8_report
 from scripts import rc6_material_carrier as carrier
+from scripts import rc6_material_pr_admission as admission
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_acquisition_has_no_gate_credit_and_certification_keeps_g0_g4(self):
+        manifest={'schema':gates.MANIFEST_SCHEMA,'source_sha':'a'*40,'source_tree':'b'*40,
+            'release_profile':'PAPER_V3_ONLY','owner_session':'OWNER',
+            'g5p_revision_approval_url':'https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
+            'g5p_acquisition':None,'artifacts':[]}
+        accepted=admission.validate_g5p_acquisition_manifest(manifest,'a'*40,'b'*40,
+            'OWNER',manifest['g5p_revision_approval_url'])
+        self.assertEqual(accepted['authenticated_receipts'],[])
+        self.assertFalse(accepted['material_gate_credit'])
+        self.assertEqual(gates.PAPER_V3_PREREQUISITES['G5P'],
+            ('G0','G1.311','G1.312','G2','G3','G4'))
+        self.assertTrue(carrier.browser_prerequisite_satisfied('G5P-acquire',[]))
+        self.assertFalse(carrier.browser_prerequisite_satisfied('G5P-certify',[]))
+        self.assertFalse(carrier.browser_prerequisite_satisfied('Horizon',[]))
+        self.assertTrue(carrier.browser_prerequisite_satisfied('G5P-certify',
+            [{'gate':'G4','required_browser_material_green':True}]))
+        for changed in (dict(manifest,artifacts=[{'gate':'G4'}]),
+                        dict(manifest,source_sha='c'*40),
+                        dict(manifest,g5p_acquisition={'run_id':123}),
+                        dict(manifest,qualification_claimed=True)):
+            with self.subTest(changed=changed),self.assertRaisesRegex(
+                    ValueError,'G5P_ACQUISITION_MUST_BE_EXACT_NONCERTIFYING_EMPTY_MANIFEST'):
+                admission.validate_g5p_acquisition_manifest(changed,'a'*40,'b'*40,
+                    'OWNER',manifest['g5p_revision_approval_url'])
+        accepted=SimpleNamespace(approval_url=manifest['g5p_revision_approval_url'])
+        row={'prerequisites_manifest':manifest,'capacity_peaks':{}}
+        with patch.dict(os.environ,{'GITHUB_EVENT_NAME':'workflow_dispatch',
+                                    'GITHUB_ACTIONS':'true','GITHUB_RUN_ATTEMPT':'1'}),\
+             patch.object(admission,'comment',return_value={'body':'GATES_AUTHORIZED=G5P-acquire'}),\
+             patch.object(admission,'authenticate_g5p_revision',return_value=accepted),\
+             patch.object(admission,'_admit_source_scope',return_value=dict(row)):
+            staged=admission.admit_g5p(source_sha='a'*40,source_tree='b'*40,
+                launch_receipt_url='https://example.invalid/launch',owner_session='OWNER',
+                gate='G5P-acquire')
+        self.assertEqual(staged['g5p_material_stage'],'ACQUISITION_ONLY')
+        self.assertFalse(staged['acquisition_prerequisites']['material_gate_credit'])
+        with patch.dict(os.environ,{'GITHUB_EVENT_NAME':'workflow_dispatch',
+                                    'GITHUB_ACTIONS':'true','GITHUB_RUN_ATTEMPT':'1'}),\
+             patch.object(admission,'comment',return_value={'body':'GATES_AUTHORIZED=G5P-certify'}),\
+             patch.object(admission,'authenticate_g5p_revision',return_value=accepted),\
+             patch.object(admission,'_admit_source_scope',return_value=dict(row)):
+            with self.assertRaisesRegex(ValueError,'G5P_CERTIFICATION_REQUIRES_ACTUAL_G0_G4_ARTIFACTS'):
+                admission.admit_g5p(source_sha='a'*40,source_tree='b'*40,
+                    launch_receipt_url='https://example.invalid/launch',owner_session='OWNER',
+                    gate='G5P-certify')
+
     def test_tooling_requires_live_v3_checks_and_exact_python_pin(self):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         root=Path(temp.name);admission=root/'admission.json'
@@ -51,6 +98,11 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
         saved=carrier.document((root/'tooling-capacity.json').read_bytes())
         self.assertEqual(saved['release_profile'],'PAPER_V3_ONLY')
         self.assertEqual(saved['reviewed_cpython_tooling']['python_versions'],['3.11.16','3.12.14'])
+        workflow=(Path(__file__).resolve().parents[1]/'.github/workflows/rc6-unified-candidate-tests.yml').read_text()
+        expected=saved['reviewed_cpython_tooling']
+        self.assertTrue(carrier.reviewed_g5p_python_tooling(workflow,expected))
+        self.assertFalse(carrier.reviewed_g5p_python_tooling(
+            workflow.replace('python-version: "3.12.14"','python-version: "3.12.13"',1),expected))
 
     def test_preparation_checks_every_storage_path_and_legacy_still_needs_peak(self):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)

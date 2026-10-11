@@ -217,6 +217,14 @@ def complete_full_git(a,run,root):
         'native_fetch_label':'fullGit-guarded-fetch' if shallow==b'true' else None,
         'runtime_or_deploy_claimed':False,'real_orders_sent':0})
 
+
+def reviewed_g5p_python_tooling(workflow,expected):
+    job=re.search(r'(?ms)^  ordered-source-gate:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if job is None:return False
+    body=job[1]
+    return (body.count('uses: actions/setup-python@'+expected['setup_python_action_sha'])==2
+        and re.findall(r'(?m)^          python-version: "([^"]+)"$',body)==expected['python_versions'])
+
 def tooling_capacity(admission_path,repo,environ):
     """No tooling download starts under a native-only capacity comparison."""
     from types import SimpleNamespace
@@ -236,8 +244,7 @@ def tooling_capacity(admission_path,repo,environ):
             'PYTHON_TOOLING_CAPACITY_UNKNOWN_BEFORE_ACTION_DOWNLOAD')
     else:
         workflow=read(Path(repo)/'.github/workflows/rc6-unified-candidate-tests.yml').decode()
-        need(workflow.count('uses: actions/setup-python@'+expected['setup_python_action_sha'])>=2
-             and all('python-version: "'+version+'"' in workflow for version in expected['python_versions']),
+        need(reviewed_g5p_python_tooling(workflow,expected),
              'G5P_REVIEWED_PYTHON_TOOLING_PIN_CHANGED')
     args=SimpleNamespace(repo_root=Path(repo),source_sha=authority['source_sha'],source_tree=authority['source_tree'],
         owner_session=authority['owner_session'],capacity_peaks=authority['capacity_peaks'],gate=authority['gate'])
@@ -631,6 +638,17 @@ def readmit_automatic_pr(a,run,stage):
         need(fresh['launch_body_sha256']==row['launch_body_sha256'],'OWNED_GATE_IMMUTABLE_AUTHORITY_EDITED')
         save(run.control/('automatic-pr-'+label+'-after-fin.json'),fresh)
     run.lease_readmit=after_fin
+    return row
+
+
+def controller_acquisition_prerequisites(a,run):
+    """Record a deliberately empty, noncertifying acquisition predecessor set."""
+    from scripts import rc6_material_pr_admission as controller
+    need(a.gate=='G5P-acquire' and a.release_profile=='PAPER_V3_ONLY',
+         'G5P_ACQUISITION_EXACT_PROFILE_REQUIRED')
+    row=controller.validate_g5p_acquisition_manifest(a.prerequisites_manifest,
+        a.source_sha,a.source_tree,a.owner_session,a.g5p_revision_approval_url)
+    save(run.control/'ordered-prerequisite-admission.json',row)
     return row
 
 def owned_lease_evidence(a,run,root,label,required_labels):
@@ -1334,6 +1352,12 @@ def private_cas_control(a,namespace,epoch):
     return {'path':path,'sha256':save_raw(path,wire),'qualification_scope':'PRIVATE_DEVELOPMENT_ONLY_NOT_G5'}
 
 
+def browser_prerequisite_satisfied(gate,receipts):
+    prior=[node for node in receipts if node.get('gate')=='G4']
+    browser_green=len(prior)==1 and prior[0].get('required_browser_material_green') is True
+    return gate=='G5P-acquire' or browser_green
+
+
 def horizon(a,run,root,prepared,interpreters):
     g5p=a.gate in ('G5P-acquire','G5P-certify')
     if not g5p:architectural.require_horizon_model_before_material('Horizon')
@@ -1389,10 +1413,12 @@ def horizon(a,run,root,prepared,interpreters):
     required=material_evidence(namespace,[control,epoch/'native-raw',
         *([epoch/'native-data/g5p-frames'] if g5p else [])])
     sealed,cleanup=seal_generated(a,run,namespace,root,'Horizon',required)
-    prior=[node for node in a.verified_prerequisites['authenticated_receipts'] if node['gate']=='G4']
-    browser_green=len(prior)==1 and prior[0].get('required_browser_material_green') is True
+    prior=a.verified_prerequisites['authenticated_receipts']
+    browser_green=browser_prerequisite_satisfied(a.gate,prior)
     accepted=(code==0 and report.get('native_horizon_validated') is True
         and report.get('original_native_acceptance_checks_executed') is True)
+    # The first original acquisition is evidence gathering only. G4 is still
+    # mandatory for the separate material G5P certification receipt.
     code=0 if accepted and browser_green else 1
     if g5p:
         from scripts.rc6_g5p_model import build_model, model_wire
@@ -1565,7 +1591,9 @@ def main():
     run=OwnedRunner(manager,controls);code=1
     try:
         readmit_automatic_pr(a,run,'before-preparation')
-        if a.gate!='cheap':
+        if a.gate=='G5P-acquire':
+            a.verified_prerequisites=controller_acquisition_prerequisites(a,run)
+        elif a.gate!='cheap':
             a.verified_prerequisites=architectural.verify_manifest(a.prerequisites_manifest,
                 source_sha=a.source_sha,source_tree=a.source_tree,
                 target_gate='G5P' if a.gate in ('G5P-acquire','G5P-certify')
