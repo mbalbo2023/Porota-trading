@@ -60,6 +60,10 @@ def patch_unit(raw: bytes) -> bytes:
             "memory": re.findall(r"--memory(?:=|\s+)([0-9]+[a-zA-Z]*)", line),
             "init": "--init" in line,
             "health_override": "--health-cmd" in line,
+            "health_broker_client": "UnixGithubIssuesClient" in line,
+            "health_socket": "github.sock" in line,
+            "health_http": "http" in line.lower(),
+            "health_dashboard": "DASHBOARD_PORT" in line,
             "line_sha256": sha(line.encode()),
         }
         raise RuntimeError("UNIT_SOURCE_MISMATCH:" + json.dumps(flags, sort_keys=True))
@@ -143,6 +147,40 @@ def plan(tool_sha256: str) -> dict:
     return plan_doc
 
 
+def diagnose() -> dict:
+    raw = UNIT.read_bytes()
+    lines = [line for line in raw.decode("utf-8").splitlines()
+             if line.startswith("ExecStart=/usr/bin/docker run ")]
+    if len(lines) != 1:
+        raise RuntimeError("UNIT_EXECSTART_COUNT")
+    line = lines[0]
+    docker = json.loads(run("docker", "inspect", NAME, timeout=25))[0]
+    test = str((docker["Config"].get("Healthcheck") or {}).get("Test") or "")
+    return {
+        "schema": "porota.rc6.sre.critical-unit-diagnose.v1",
+        "unit_sha256": sha(raw),
+        "line_sha256": sha(line.encode()),
+        "unit_flags": {
+            "init": "--init" in line,
+            "pids": re.findall(r"--pids-limit(?:=|\s+)([0-9]+)", line),
+            "health_override": "--health-cmd" in line,
+            "broker_client": "UnixGithubIssuesClient" in line,
+            "socket": "github.sock" in line,
+            "http": "http" in line.lower(),
+            "dashboard": "DASHBOARD_PORT" in line,
+        },
+        "live_test_sha256": sha(test.encode()),
+        "live_test_categories": {
+            "broker_client": "UnixGithubIssuesClient" in test,
+            "socket": "github.sock" in test,
+            "http": "http" in test.lower(),
+            "dashboard": "DASHBOARD_PORT" in test,
+            "python": "python" in test,
+        },
+        "before": snapshot(),
+    }
+
+
 def apply(expected: dict, tool_sha256: str) -> dict:
     current = plan(tool_sha256)
     if not all(current[key] == expected.get(key) for key in
@@ -220,11 +258,13 @@ def apply(expected: dict, tool_sha256: str) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("plan", "apply"), required=True)
+    parser.add_argument("--mode", choices=("diagnose", "plan", "apply"), required=True)
     parser.add_argument("--plan-base64")
     parser.add_argument("--tool-sha256", required=True)
     args = parser.parse_args()
-    if args.mode == "plan":
+    if args.mode == "diagnose":
+        result = diagnose()
+    elif args.mode == "plan":
         result = plan(args.tool_sha256)
     else:
         if not args.plan_base64:
