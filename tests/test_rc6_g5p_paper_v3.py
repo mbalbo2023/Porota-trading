@@ -30,9 +30,47 @@ from scripts import rc6_material_pr_admission as admission
 from scripts import rc6_contract_revisions as revisions
 from scripts.rc6_g5p_model import DOCUMENT_SHA256
 from scripts import rc6_owned_gate_lease as lease
+from scripts import rc6_material_derive as derive
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_original_full_git_builder_derives_only_exact_pr492_authority_literals(self):
+        scope={'pr':492,'branch':'fix/rc6-g5p-paper-v3-20261011',
+            'base_branch':'deploy/rc6-pr69-isolated-20260915',
+            'base_sha':'da697c6e6c2274579f9e4a112fabc4327475dd35',
+            'base_tree':'96a112a55ed779df3f7056b1e30d81aac8d0b791',
+            'authorization_schema':'porota.rc6.candidate-launch.v1'}
+        def save_raw(path,raw):
+            path.write_bytes(raw)
+            return hashlib.sha256(raw).hexdigest()
+        source=Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            kwargs={'python311':'/tmp/controlled-python311',
+                'python312':'/tmp/controlled-python312','owner_uid':os.geteuid(),
+                'read':lambda path:path.read_bytes(),'save_raw':save_raw}
+            candidate=derive.prepare(source,root/'candidate',candidate_scope=scope,**kwargs)
+            legacy=derive.prepare(source,root/'legacy',**kwargs)
+            new=Path(candidate['builder_path']).read_text()
+            old=Path(legacy['builder_path']).read_text()
+            self.assertIn("row['branch'] == 'fix/rc6-g5p-paper-v3-20261011'",new)
+            self.assertIn("row['PR'] == 492",new)
+            self.assertIn("row['PR'] == 476",old)
+            self.assertNotIn("row['PR'] == 492",old)
+            self.assertTrue(candidate['builder_only_exact_candidate_authority_literals_changed'])
+            self.assertFalse(candidate['builder_all_function_AST_unchanged'])
+            self.assertTrue(legacy['builder_all_function_AST_unchanged'])
+            self.assertEqual(candidate['original_pins'],legacy['original_pins'])
+            for changed in ({**scope,'pr':493},{**scope,'branch':'ops/rc6-sre-deep-20261011'},
+                            {**scope,'base_sha':'0'*40}):
+                with self.assertRaisesRegex(ValueError,'G5P_BUILDER_EXACT_AUTHENTICATED_PR_SCOPE_REQUIRED'):
+                    derive.prepare(source,root/('invalid-'+str(changed['pr'])+'-'+changed['branch'].split('/')[0]
+                        +'-'+changed['base_sha'][0]),candidate_scope=changed,**kwargs)
+            original=(source/derive.BUILDER).read_text()
+            with self.assertRaisesRegex(ValueError,'G5P_BUILDER_EXACT_ORIGINAL_AUTHORITY_SITE_REQUIRED'):
+                derive.authority_literal_derivation(original.replace("row['PR'] == 476",
+                    "row['PR'] == 477"),scope)
+
     def test_g5p_concurrent_owner_comment_restarts_only_one_complete_read(self):
         args={'source_sha':'a'*40,'source_tree':'b'*40,
             'launch_receipt_url':'https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',

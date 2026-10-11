@@ -779,7 +779,8 @@ def prepare_gov(a,run,root,interpreters,auth,manager_pin,native_pin):
     preparation_capacity(a,run,root,'before-fullGit-original-inputs')
     derives=runpy.run_path(str(a.repo_root/'scripts/rc6_material_derive.py'))
     derived=derives['prepare'](a.repo_root,root/'drivers',python311=interpreters['311'],python312=interpreters['312'],
-        owner_uid=os.geteuid(),read=read,save_raw=save_raw)
+        owner_uid=os.geteuid(),read=read,save_raw=save_raw,
+        candidate_scope=auth.get('candidate_scope'))
     save(root/'driver-derivations.json',derived);authority_path=root/'source-authority.json';authority_sha=save(authority_path,auth)
     binding={'stage':'FINAL_GITHUB_SOURCE_PREPARATION_AUTHORIZED_ONLY','repo_id':REPO_ID,'PAPER_SHADOW_ONLY':True,
         'real_orders_sent':0,'DEPLOY_OWNER':'NOT_ACQUIRED','preparation_receipt_url':a.launch_receipt_url,
