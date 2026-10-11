@@ -207,21 +207,29 @@ jobs:
           proc=report["containers"].get("porota_critical_approval_rc6",{})
           pid=proc.get("state_pid")
           proc_tree=[]
+          rel=""
           if isinstance(pid,int) and pid>0:
               try:
-                  rel=(pathlib.Path("/proc")/str(pid)/"cgroup").read_text().splitlines()[0].split(":",2)[-1].lstrip("/")
-                  cgroup_path=pathlib.Path("/sys/fs/cgroup")/rel/"cgroup.procs"
-                  for entry in cgroup_path.read_text().splitlines()[:300]:
-                      status=(pathlib.Path("/proc")/entry/"status").read_text().splitlines()
-                      fields={}
-                      for line in status:
-                          if line.startswith(("Name:","State:","PPid:","Threads:")):
-                              k,v=line.split(":",1);fields[k]=v.strip()
-                      proc_tree.append({"pid":int(entry),**fields})
-              except Exception as e: report["critical_process_tree_error"]=type(e).__name__
-          report["critical_process_tree"]={"processes":proc_tree,
+                  rel=(pathlib.Path("/proc")/str(pid)/"cgroup").read_text().splitlines()[0].split(":",2)[-1]
+                  for entry in pathlib.Path("/proc").iterdir():
+                      if not entry.name.isdigit():continue
+                      try:
+                          cg=(entry/"cgroup").read_text()
+                          paths=[line.split(":",2)[-1] for line in cg.splitlines()]
+                          if not any(x==rel or x.startswith(rel.rstrip("/")+"/") for x in paths):continue
+                          status=(entry/"status").read_text().splitlines()
+                          fields={}
+                          for line in status:
+                              if line.startswith(("Name:","State:","PPid:","Threads:")):
+                                  k,v=line.split(":",1);fields[k]=v.strip()
+                          proc_tree.append({"pid":int(entry.name),**fields})
+                      except OSError:pass
+              except Exception as e:report["critical_process_tree_error"]=type(e).__name__
+          report["critical_process_tree"]={"processes":sorted(proc_tree,key=lambda x:x["pid"])[:120],
               "name_state_counts":dict(collections.Counter((r.get("Name","?")+"|"+r.get("State","?")) for r in proc_tree)),
-              "thread_sum":sum(int(r.get("Threads",0)) for r in proc_tree)}
+              "thread_sum":sum(int(r.get("Threads",0)) for r in proc_tree),
+              "cgroup_path_sha256":digest(rel)}
+          report["critical_docker_top"]=command(["docker","top","porota_critical_approval_rc6","-eo","pid,ppid,stat,nlwp,comm"],15)
           unit=run(["systemctl","cat","porota-critical-approval-rc6.service"],12,100000,True)
           unit_text=unit["out"]
           report["critical_unit"]={"exit":unit["exit"],"sha256":digest(unit_text),
@@ -273,8 +281,7 @@ jobs:
                   except OSError: pass
           report["log_files_top"]=sorted(rotated,key=lambda x:-x["blocks_bytes"])[:40]
           check='import sqlite3,sys;c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True,timeout=2);c.execute("PRAGMA query_only=ON");print(c.execute("PRAGMA quick_check(1)").fetchone()[0]);c.close()'
-          qc=run(["timeout","85","python3","-c",check,db],90,1000,True)
-          report["db"]["quick_check"]={"exit":qc["exit"],"result":qc["out"].strip()[:40] if qc["exit"]==0 else "NOT_COMPLETED"}
+          report["db"]["quick_check"]={"result":"DEFERRED_AFTER_85S_TIMEOUT_RUN_38161901175"}
           report["completed_utc"]=now()
           print(json.dumps(report,sort_keys=True,indent=2))
           PY
