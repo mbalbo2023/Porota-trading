@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).absolute().parents[1]
@@ -147,6 +148,30 @@ def publish(path, row):
         stream.write(admission.wire(row)); stream.flush(); os.fsync(stream.fileno())
 
 
+def failure_row(error):
+    """Expose a transport failure without publishing a request URL or secret."""
+    literal = str(error).partition(":")[0]
+    reason = literal if re.fullmatch(r"[A-Z][A-Z0-9_]{0,191}", literal) else "BRIDGE_NON_LITERAL_FAILURE"
+    row = {"schema": "rc6.scoped-dispatch-bridge.v1", "status": "RED",
+           "reason": reason, "class": type(error).__name__,
+           "gate_pass_claimed": False, "real_orders_sent": 0}
+    if isinstance(error, urllib.error.HTTPError) and type(error.code) is int \
+            and 100 <= error.code <= 599:
+        row["reason"] = "BRIDGE_HTTP_STATUS_" + str(error.code)
+        row["http_status"] = error.code
+        for header, key in (("X-RateLimit-Remaining", "rate_limit_remaining"),
+                            ("X-RateLimit-Reset", "rate_limit_reset_epoch"),
+                            ("Retry-After", "retry_after_seconds")):
+            value = error.headers.get(header) if error.headers else None
+            if value is not None and re.fullmatch(r"[0-9]{1,20}", value):
+                row[key] = int(value)
+    elif isinstance(error, (TimeoutError,)):
+        row["reason"] = "BRIDGE_TRANSPORT_TIMEOUT"
+    elif isinstance(error, urllib.error.URLError):
+        row["reason"] = "BRIDGE_TRANSPORT_URL_ERROR"
+    return row
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True)
@@ -162,11 +187,7 @@ def main(argv=None):
                           "source_sha": result["source_sha"], "G5P_GREEN": False}), flush=True)
         return 0
     except BaseException as error:
-        literal = str(error).partition(":")[0]
-        reason = literal if re.fullmatch(r"[A-Z][A-Z0-9_]{0,191}", literal) else "BRIDGE_NON_LITERAL_FAILURE"
-        row = {"schema": "rc6.scoped-dispatch-bridge.v1", "status": "RED",
-               "reason": reason, "class": type(error).__name__,
-               "gate_pass_claimed": False, "real_orders_sent": 0}
+        row = failure_row(error)
         if not os.path.lexists(args.out):
             publish(args.out, row)
         print(json.dumps(row, sort_keys=True), flush=True)

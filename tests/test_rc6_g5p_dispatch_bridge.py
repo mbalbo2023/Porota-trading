@@ -1,8 +1,10 @@
 """Offline regressions for the owner-bound canonical Actions activation path."""
 from datetime import datetime, timezone
+from email.message import Message
 import hashlib
 import json
 import os
+import urllib.error
 from unittest import TestCase, main
 from unittest.mock import patch
 
@@ -11,6 +13,26 @@ from scripts import rc6_material_pr_admission as admission
 
 
 class BridgeBodyTests(TestCase):
+    def test_bridge_http_failure_receipt_preserves_status_without_secret_or_url(self):
+        headers = Message()
+        headers['X-RateLimit-Remaining'] = '0'
+        headers['X-RateLimit-Reset'] = '1791753600'
+        headers['Retry-After'] = '60'
+        headers['Authorization'] = 'Bearer secret'
+        error = urllib.error.HTTPError('https://api.github.com/private?token=secret',
+                                       403, 'secret body', headers, None)
+        row = bridge.failure_row(error)
+        self.assertEqual(row['reason'], 'BRIDGE_HTTP_STATUS_403')
+        self.assertEqual(row['http_status'], 403)
+        self.assertEqual(row['rate_limit_remaining'], 0)
+        self.assertEqual(row['rate_limit_reset_epoch'], 1791753600)
+        self.assertEqual(row['retry_after_seconds'], 60)
+        self.assertFalse(row['gate_pass_claimed'])
+        self.assertNotIn('secret', json.dumps(row))
+        self.assertNotIn('api.github.com', json.dumps(row))
+        self.assertEqual(bridge.failure_row(TimeoutError('private'))['reason'],
+                         'BRIDGE_TRANSPORT_TIMEOUT')
+
     def test_bot_dispatch_requires_successful_exact_owner_bridge(self):
         event={'sender':{'login':'github-actions[bot]'},
             'ref':'refs/heads/fix/rc6-g5p-paper-v3-20261011',
