@@ -1,4 +1,4 @@
-name: RC6 SRE critical unit PLAN read only
+name: RC6 SRE critical unit PLAN read only v2
 on:
   push:
     branches: [ops/rc6-sre-deep-20261011]
