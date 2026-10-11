@@ -148,6 +148,66 @@ def test_readonly_feasibility_keeps_actual_q_getfmt_failure(monkeypatch):
     assert result['project_quota_enforcement_proved'] is False
 
 
+def test_superblock_feature_read_is_readonly_and_does_not_claim_active_quota(monkeypatch):
+    import struct
+    raw = bytearray(1024)
+    struct.pack_into('<H', raw, 0x38, feasibility.EXT4_MAGIC)
+    struct.pack_into('<I', raw, 0x64,
+        feasibility.EXT4_RO_COMPAT_QUOTA | feasibility.EXT4_RO_COMPAT_PROJECT)
+    monkeypatch.setattr(feasibility.os, 'open', lambda *args: 99)
+    monkeypatch.setattr(feasibility.os, 'fstat', lambda fd: type('Stat', (), {
+        'st_mode': 0o060000, 'st_rdev': 43})())
+    monkeypatch.setattr(feasibility.os, 'pread', lambda fd, size, offset: bytes(raw))
+    monkeypatch.setattr(feasibility.os, 'close', lambda fd: None)
+    result = feasibility._ext4_feature_bits('/dev/root', 43)
+    assert result['required_features_present'] is True
+    assert result['quota_active_proved'] is result['enforcement_proved'] is False
+    struct.pack_into('<I', raw, 0x64, feasibility.EXT4_RO_COMPAT_QUOTA)
+    assert feasibility._ext4_feature_bits('/dev/root', 43)['project_feature'] is False
+
+
+def test_prior_esrch_is_not_retried_and_unreadable_features_stay_unknown(monkeypatch):
+    same = {'mount_id': 27, 'device': 43, 'filesystem': 'ext4',
+            'source': '/dev/root', 'mount_options': ['rw'], 'super_options': []}
+    monkeypatch.setattr(feasibility, '_mount_for', lambda path: dict(same))
+    monkeypatch.setattr(feasibility.os.path, 'exists', lambda path: True)
+    monkeypatch.setattr(feasibility.os.path, 'islink', lambda path: False)
+    monkeypatch.setattr(feasibility.os, 'stat', lambda path: type('Stat', (), {
+        'st_mode': 0o060000, 'st_rdev': 43})())
+    monkeypatch.setattr(feasibility, '_ext4_feature_bits', lambda *args: {
+        'status': 'NO_VERIFICADO', 'errno': 13, 'required_features_present': None})
+    monkeypatch.setattr(feasibility.calibration, 'quota_format',
+        lambda device: pytest.fail('identical Q_GETFMT must not be retried'))
+    with pytest.raises(ValueError, match='EXACT_PRIOR_FAILURE_REQUIRED'):
+        feasibility.observe({'source': '/source', 'home': '/home'}, check_format=False,
+                            prior_format_observation={'errno': 3})
+    result = feasibility.observe({'source': '/source', 'home': '/home'},
+        check_format=False, prior_format_observation=feasibility.PRIOR_ESRCH)
+    assert result['status'] == 'NO_GO'
+    assert result['format']['called'] is False
+    assert result['format']['prior_observation_reference_only'] == feasibility.PRIOR_ESRCH
+    assert result['ext4_superblock']['errno'] == 13
+    assert result['project_quota_enforcement_proved'] is False
+
+
+def test_static_inventory_cannot_claim_runtime_process_fd_closure():
+    report = {'schema': writers.SCHEMA, 'outside_project': [],
+              'unconfined_parent_call_sites': [], 'all_writers_enclosed': True,
+              'runtime_coverage_proved': True}
+    with pytest.raises(ValueError, match='G5A_RUNTIME_WRITER_COVERAGE_NOT_VERIFIED'):
+        writers.require_closed(report)
+
+
+def test_source_inventory_records_potential_write_sites_without_claiming_destinations():
+    report = writers.audit(Path(__file__).absolute().parents[1])
+    assert report['coverage'] == 'STATIC_SOURCE_PARTIAL'
+    assert report['runtime_coverage_proved'] is False
+    assert any(row['call'] == 'os.open' for row in report['write_call_sites'])
+    assert any(row['call'] == 'calibration.publish' for row in report['write_call_sites'])
+    assert all(row['runtime_destination_proved'] is False
+               for row in report['write_call_sites'])
+
+
 def test_open_regular_fd_outside_project_is_rejected_before_landlock(tmp_path, monkeypatch):
     root = tmp_path/'project'
     root.mkdir()

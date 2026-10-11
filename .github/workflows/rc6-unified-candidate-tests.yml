@@ -446,10 +446,11 @@ jobs:
           from scripts.rc6_capacity_comparison import readonly_runner_observation
           path=Path(os.environ['RUNNER_TEMP'])/'rc6-development-controls'/'runner-readonly.json'
           path.write_text(json.dumps(readonly_runner_observation(path.parent),sort_keys=True,indent=2)+'\n')
-          from scripts.rc6_g5a_native_feasibility import observe
+          from scripts.rc6_g5a_native_feasibility import observe, PRIOR_ESRCH
           feasibility=observe({'source':os.environ['GITHUB_WORKSPACE'],
               'home':os.environ['HOME'], 'runner_temp':os.environ['RUNNER_TEMP'],
-              'tool_cache':os.environ['RUNNER_TOOL_CACHE']})
+              'tool_cache':os.environ['RUNNER_TOOL_CACHE']}, check_format=False,
+              prior_format_observation=PRIOR_ESRCH)
           (path.parent/'g5a-native-feasibility.json').write_text(
               json.dumps(feasibility,sort_keys=True,indent=2)+'\n')
           PY_READONLY

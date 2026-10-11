@@ -22,6 +22,19 @@ ENVIRONMENT_WRITERS = frozenset(('HOME', 'TMPDIR', 'TMP', 'TEMP', 'XDG_CACHE_HOM
     'PIP_BUILD_TRACKER', 'PIP_SRC', 'CARGO_HOME', 'RUSTUP_HOME', 'CCACHE_DIR',
     'PYTHONPYCACHEPREFIX'))
 STAGES = ('preparation', 'reader-collection', 'reader-execution')
+UNRESOLVED_RUNTIME_WRITERS = (
+    'checkout_and_setup_python_before_project',
+    'pip_sdists_build_backend_and_compiler_descendants',
+    'git_parent_fetch_fsck_objects_and_source_pin',
+    'artifact_uploaders_and_inherited_or_unlinked_fds',
+    'alternate_environment_caches_and_mount_rebinding',
+)
+WRITE_CALLS = frozenset(('open', 'os.open', 'os.write', 'os.mkdir', 'os.makedirs',
+    'os.rename', 'os.replace', 'os.unlink', 'os.remove', 'tempfile.mkdtemp',
+    'shutil.copy', 'shutil.copy2', 'shutil.copyfile', 'shutil.move', 'shutil.rmtree'))
+WRITE_SUFFIXES = ('.open', '.write', '.write_text', '.write_bytes', '.mkdir',
+    '.touch', '.rename', '.replace', '.unlink', '.publish', '.publish_bytes',
+    '.save', '.save_raw', '.write_json')
 
 
 def _calls(member, raw):
@@ -56,11 +69,41 @@ def _calls(member, raw):
     return rows
 
 
+def _write_calls(member, raw):
+    """Conservative syntax sites; os.open/open modes need runtime inspection."""
+    tree = ast.parse(raw, filename=member)
+    rows = []
+
+    class Visitor(ast.NodeVisitor):
+        def __init__(self):
+            self.scope = []
+
+        def visit_FunctionDef(self, node):
+            self.scope.append(node.name)
+            self.generic_visit(node)
+            self.scope.pop()
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+
+        def visit_Call(self, node):
+            name = ast.unparse(node.func)
+            if name in WRITE_CALLS or name.endswith(WRITE_SUFFIXES):
+                rows.append({'member': member, 'function': '.'.join(self.scope),
+                             'line': node.lineno, 'call': name,
+                             'runtime_destination_proved': False})
+            self.generic_visit(node)
+
+    Visitor().visit(tree)
+    return rows
+
+
 def audit(source_root, *, project_root=None, destinations=None):
     root = Path(source_root).absolute()
     blobs = {member: (root / member).read_bytes() for member in MEMBERS}
     calls = sorted((row for member, raw in blobs.items() for row in _calls(member, raw)),
                    key=lambda row: (row['member'], row['line'], row['call']))
+    writes = sorted((row for member, raw in blobs.items() for row in _write_calls(member, raw)),
+                    key=lambda row: (row['member'], row['line'], row['call']))
     # Source is the input to the native child. It must itself reside in the
     # project before Git/Source can be regarded as covered by the host quota.
     outside = []
@@ -92,12 +135,15 @@ def audit(source_root, *, project_root=None, destinations=None):
     external_steps = [name for name in ('actions/checkout@', 'actions/setup-python@') if name in workflow]
     if external_steps:
         outside.append('PRE_QUOTA_ACTIONS_WRITERS')
-    return {'schema': SCHEMA, 'source_members_sha256':
+    return {'schema': SCHEMA, 'coverage': 'STATIC_SOURCE_PARTIAL',
+            'unresolved_runtime_writers': list(UNRESOLVED_RUNTIME_WRITERS),
+            'runtime_coverage_proved': False, 'source_members_sha256':
             {member: hashlib.sha256(raw).hexdigest() for member, raw in blobs.items()},
-            'process_call_sites': calls, 'unconfined_parent_call_sites': unconfined,
+            'process_call_sites': calls, 'write_call_sites': writes,
+            'unconfined_parent_call_sites': unconfined,
             'write_destinations': {key: str(value) for key, value in (destinations or {}).items()},
             'outside_project': outside, 'pre_quota_workflow_steps': external_steps,
-            'stages': list(STAGES), 'all_writers_enclosed': not outside and not unconfined,
+            'stages': list(STAGES), 'all_writers_enclosed': False,
             'native_enforcement_proved': False, 'G5_GREEN': False}
 
 
@@ -108,6 +154,6 @@ def require_closed(inventory):
         raise ValueError(inventory['outside_project'][0])
     if inventory['unconfined_parent_call_sites']:
         raise ValueError('G5A_UNCONFINED_PARENT_PROCESS_PRESENT')
-    if not inventory['all_writers_enclosed']:
-        raise ValueError('G5A_ALL_WRITERS_NOT_ENCLOSED')
-    return inventory
+    # An AST list is never runtime process/FD closure, even if a caller edits
+    # the documentary flags. A native custody path must replace this guard.
+    raise ValueError('G5A_RUNTIME_WRITER_COVERAGE_NOT_VERIFIED')

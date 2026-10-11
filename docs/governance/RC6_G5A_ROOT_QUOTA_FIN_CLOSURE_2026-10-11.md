@@ -7,6 +7,12 @@ admisión sobre PR #483. La aceptación del diseño
 No es aprobación de una operación ROOT ni certificación de G5A/G5B. El guard
 `G5A_HOST_STAGE_AGGREGATE_ENFORCEMENT_NOT_VERIFIED` permanece BLOQUEADO.
 
+La [RCA y handoff del runner](RC6_G5A_RUNNER_RCA_AND_HANDOFF_2026-10-11.md)
+conserva el primer `Q_GETFMT=ESRCH`, separa la cuota de proyecto inactiva
+observada de su causa subyacente aún no verificada, y agrega una lectura ext4
+no mutante y un inventario parcial de procesos y escrituras. No cambia esta
+barrera ni concede permiso material.
+
 ## Primer bloqueo preservado
 
 `scripts/rc6_g5a_writer_inventory.py` recorre por AST los diez módulos de la
