@@ -8,6 +8,26 @@ jobs:
   checkpoint-attestation:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout proposed main change for RC6 registration guard
+        if: github.event.pull_request.base.ref == 'main'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reject accidental removal of the RC6 manual workflow registration
+        if: github.event.pull_request.base.ref == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          registration=.github/workflows/rc6-unified-candidate-tests.yml
+          if [ ! -f "$registration" ]; then
+            echo "::error::RC6 workflow registration is missing from the proposed main tree."
+            exit 1
+          fi
+          if ! grep -Eq '^  workflow_dispatch:' "$registration" ||
+             ! grep -Eq '^  deny-bootstrap:' "$registration"; then
+            echo "::error::RC6 workflow registration or its fail-closed job is missing."
+            exit 1
+          fi
       - name: Require continuity and safety references in PR body
         shell: bash
         run: |

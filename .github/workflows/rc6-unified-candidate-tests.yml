@@ -1,0 +1,47 @@
+name: RC6 supplemental material evidence
+run-name: RC6 registration only @ ${{ github.ref_name }}
+
+# GitHub lists manual workflows from its default branch (main). When the user
+# selects the candidate ref, Actions uses that ref's own workflow at this path.
+# This file is only the main-branch registration. It cannot run a candidate.
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact owner-authorized candidate commit (40 lowercase hex)
+        required: true
+        type: string
+      source_tree:
+        description: Exact candidate Git tree (40 lowercase hex)
+        required: true
+        type: string
+      gate:
+        description: Development regressions only; no G0-G8 qualification
+        required: true
+        type: choice
+        options:
+          - development-checks
+      launch_receipt_url:
+        description: Immutable single-gate authorization from issue 471
+        required: true
+        type: string
+      owner_session:
+        description: Exact owner session in the authorization receipt
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  deny-bootstrap:
+    name: Refuse execution of the registration-only version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Fail closed when this main-branch file is selected
+        shell: bash
+        run: |
+          echo '::error::This registration-only workflow cannot validate a candidate. Select the candidate branch to run its own reviewed workflow.'
+          echo 'TEST_RESULT_CLAIM=NONE'
+          echo 'real_orders_sent=0'
+          exit 1
