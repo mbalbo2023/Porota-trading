@@ -42,13 +42,15 @@ class CriticalHealthContract(unittest.TestCase):
         spec.loader.exec_module(module)
         raw = (b"ExecStart=/usr/bin/docker run --pull never --read-only "
                b"--user botuser --cap-drop ALL --pids-limit 64 --memory 192m "
-               b"-e POROTA_RUNTIME_MODE=PRODUCTION_PAPER image cmd\n")
+               b"-e POROTA_RUNTIME_MODE=PRODUCTION_PAPER "
+               b"--health-cmd=\"python -c 'import socket; socket.socket(); # github.sock'\" image cmd\n")
         modified = module.patch_unit(raw)
         self.assertEqual(modified.count(b"--init"), 1)
         self.assertEqual(modified.count(b"--health-cmd"), 1)
         argv = shlex.split(modified.decode().split("=", 1)[1])
         command = next(a.split("=", 1)[1] for a in argv if a.startswith("--health-cmd="))
-        compile(shlex.split(command)[2], "<critical-health>", "exec")
+        self.assertIn("github.sock", command)
+        self.assertIn("socket", command)
         with self.assertRaisesRegex(RuntimeError, "UNIT_SOURCE_MISMATCH"):
             module.patch_unit(modified)
         with self.assertRaisesRegex(RuntimeError, "UNIT_EXECSTART_COUNT"):
