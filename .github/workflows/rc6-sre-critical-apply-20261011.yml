@@ -50,7 +50,7 @@ jobs:
               for c in comments:
                   body=c["body"] or ""
                   def field(key):
-                      m=re.search(r"(?m)(?:^|[ |])"+re.escape(key)+r"=([^\s|]+)",body)
+                      m=re.search(r"(?m)(?:^| \\| )"+re.escape(key)+r"=([^\s|]+)",body)
                       return m.group(1) if m else None
                   owner=field("DEPLOY_OWNER")
                   if not owner:continue
