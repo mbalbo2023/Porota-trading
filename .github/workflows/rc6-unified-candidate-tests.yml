@@ -26,6 +26,8 @@ on:
           - focal312
           - BIG-browser
           - Horizon
+          - G5P-acquire
+          - G5P-certify
           - full-gov311
           - full-gov312
           - capacity-probe
@@ -198,6 +200,7 @@ jobs:
           retention-days: 14
           path: ${{ steps.diagnostic.outputs.payload_root }}
       - name: Preserve original RAW after physical FIN even on logical RED
+        id: original_raw
         if: always() && steps.gate.outputs.safe_payload_upload == 'true' && steps.gate.outputs.payload_root != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -205,6 +208,33 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: ${{ steps.gate.outputs.payload_root }}
+
+      - name: Propose exact V3 RAW artifact reference for later replay
+        if: success() && (env.RC6_GATE == 'G5P-acquire' || env.RC6_GATE == 'G5P-certify')
+        shell: bash
+        env:
+          G5P_RAW_ARTIFACT_ID: ${{ steps.original_raw.outputs.artifact-id }}
+          G5P_RAW_ARTIFACT_DIGEST: ${{ steps.original_raw.outputs.artifact-digest }}
+          G5P_RAW_PAYLOAD_ROOT: ${{ steps.gate.outputs.payload_root }}
+        run: |
+          set -Eeuo pipefail
+          python3 -I -B scripts/rc6_g5p_reference.py \
+            --payload-root "$G5P_RAW_PAYLOAD_ROOT" \
+            --stage "${RC6_GATE#G5P-}" \
+            --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --artifact-id "$G5P_RAW_ARTIFACT_ID" \
+            --artifact-digest "$G5P_RAW_ARTIFACT_DIGEST" \
+            --json-out "$RUNNER_TEMP/g5p-reference-proposal.json"
+
+      - name: Preserve proposed V3 RAW reference
+        if: success() && (env.RC6_GATE == 'G5P-acquire' || env.RC6_GATE == 'G5P-certify')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-g5p-reference-${{ env.RC6_GATE }}-${{ env.RC6_SOURCE_SHA }}-${{ github.run_id }}-1
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/g5p-reference-proposal.json
 
   g5a-bounded-acquisition:
     name: Acquire original bounded G5A evidence without granting G5 GREEN

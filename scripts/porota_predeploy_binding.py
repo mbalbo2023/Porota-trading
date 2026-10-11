@@ -18,6 +18,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import types
 import uuid
@@ -66,6 +67,7 @@ REQUIRED_FILES = (
     "porota-runtime-codec-smoke.json",
     "porota-final-input-provenance.json", "porota-governed-tests.json", "porota-governed-tests.xml",
 )
+G7_ADMISSION_FILE = "porota-g7-verified-admission.json"
 MAX_ZIP_BYTES = 8 * 1024**3
 CONVERGENCE_HANDOFF = "docs/audits/convergence/INPUT_MANIFEST_RC6_CONVERGENCIA.json"
 CONVERGENCE_VERIFIER = "scripts/rc6_convergence_provenance.py"
@@ -211,11 +213,11 @@ def safe_extract(zip_path, output_root, binding, *, extra_required=()):
             total += entry.file_size
             if total > MAX_ZIP_BYTES:
                 raise BindingRejected("ZIP_UNPACKED_SIZE_LIMIT")
-            if not entry.is_dir() and parsed.name in required:
+            if not entry.is_dir() and parsed.name in required | {G7_ADMISSION_FILE}:
                 if parsed.name in inventory:
                     raise BindingRejected("AMBIGUOUS_ZIP_REQUIRED_FILE")
                 inventory[parsed.name] = entry
-        if set(inventory) != required:
+        if not required <= set(inventory) or set(inventory)-required not in (set(),{G7_ADMISSION_FILE}):
             raise BindingRejected("FROZEN_ARTIFACT_REQUIRED_FILE_MISSING")
         if archive.testzip() is not None:
             raise BindingRejected("FROZEN_ARTIFACT_CRC_MISMATCH")
@@ -441,6 +443,25 @@ def verify_frozen_payload(repo_root, extracted_root, binding, tree_sha):
             or frozen.get("build_once") is not True
             or type(frozen.get("image_size_bytes")) is not int or frozen["image_size_bytes"] <= 0):
         raise BindingRejected("FROZEN_CANDIDATE_APPROVAL_MISMATCH")
+    profile=frozen.get("release_profile")
+    if profile is not None and (profile not in ("FULL_G5","PAPER_V3_ONLY")
+            or type(frozen.get("g7_admission_sha256")) is not str
+            or re.fullmatch(r"[0-9a-f]{64}",frozen["g7_admission_sha256"]) is None):
+        raise BindingRejected("FROZEN_EXACT_G7_RELEASE_PROFILE_REQUIRED")
+    if profile=="PAPER_V3_ONLY":
+        g7_path=Path(extracted_root)/G7_ADMISSION_FILE
+        if not g7_path.is_file() or sha256_file(g7_path)!=frozen["g7_admission_sha256"]:
+            raise BindingRejected("PAPER_V3_G7_EXACT_PRIMARY_ADMISSION_BYTES_REQUIRED")
+        g7=decode_json(g7_path.read_bytes())
+        prerequisites=["G0","G1.311","G1.312","G2","G3","G4",
+                       "G5P","G6.311","G6.312"]
+        if (g7.get("schema")!="rc6.architectural-gate-admission.v1"
+                or g7.get("status")!="GREEN" or g7.get("target_gate")!="G7"
+                or g7.get("release_profile")!="PAPER_V3_ONLY"
+                or g7.get("source_sha")!=binding["candidate_sha"]
+                or g7.get("source_tree")!=tree_sha
+                or g7.get("verified_prerequisites")!=prerequisites):
+            raise BindingRejected("PAPER_V3_G7_COMPLETE_ORDERED_PROFILE_REQUIRED")
     source_path = extracted_root / "porota-source-provenance.json"
     source = verify_source_manifest(repo_root, source_path, binding["candidate_sha"], tree_sha)
     if frozen.get("source_manifest_sha256") != sha256_file(source_path):
@@ -484,6 +505,127 @@ def api_get(path):
     return bounded_get(path)
 
 
+def verify_g8_report(report,index,files,*,binding,frozen,tree_sha):
+    """Replay typed G8 evidence from the secondary ZIP before any transfer."""
+    if type(report) is not dict:
+        raise BindingRejected("G8_TYPED_REPORT_REQUIRED")
+    keys=("repository","workflow_path","workflow_id","run_id","run_attempt",
+          "candidate_sha","event","artifact_id","artifact_digest",
+          "artifact_name","artifact_size_bytes","created_at","expires_at")
+    primary=report.get("primary",{}) if type(report) is dict else {}
+    if (type(index) is not dict or type(files) is not dict
+            or report.get("schema")!="porota.published-primary-evidence-only.v1"
+            or report.get("status")!="GREEN"
+            or report.get("architectural_gate")!="G8"
+            or report.get("release_profile")!="PAPER_V3_ONLY"
+            or report.get("G8_scope")!="EXACT_PUBLISHED_PRIMARY_BYTE_AND_IMAGE_REPLAY_EVIDENCE_ONLY"
+            or report.get("G8_material_source")!="porota_published_artifact_evidence.main"
+            or report.get("G7_authenticated_admission_sha256")!=frozen["g7_admission_sha256"]
+            or report.get("candidate_tree_sha")!=tree_sha
+            or any(primary.get(key)!=binding.get(key) for key in keys)
+            or primary.get("execution_state")!="IN_PROGRESS_EVIDENCE_ONLY"
+            or report.get("G8_primary_artifact_id")!=binding["artifact_id"]
+            or report.get("G8_primary_artifact_digest")!=binding["artifact_digest"]
+            or report.get("promotable") is not False
+            or report.get("production_actions")!="NOT_CALLED"
+            or report.get("real_orders_sent")!=0
+            or report.get("real_routes")!="NOT_CALLED"
+            or report.get("DEPLOY_OWNER")!="NOT_ACQUIRED"
+            or report.get("G8_deploy_authorization_claimed") is not False
+            or report.get("image_rebuilt") is not False
+            or report.get("loaded_image_id")!=frozen["image_id"]
+            or report.get("frozen_image_id")!=frozen["image_id"]
+            or report.get("rootfs",{}).get("status")!="GREEN"
+            or report.get("actual_image_execution",{}).get("status")!="GREEN"
+            or report.get("byte_verification",{}).get("status")!="GREEN"
+            or index.get("schema")!="porota.secondary-evidence-inventory.v1"
+            or index.get("promotable") is not False
+            or index.get("primary")!=primary
+            or type(index.get("files")) is not dict
+            or set(index["files"])!=set(files)-{"evidence-inventory.json"}):
+        raise BindingRejected("G8_PAPER_V3_PUBLISHED_PRIMARY_REPLAY_REQUIRED")
+    for name,metadata in index["files"].items():
+        raw=files[name]
+        if (type(raw) is not bytes or type(metadata) is not dict
+                or metadata.get("bytes")!=len(raw)
+                or metadata.get("sha256")!=hashlib.sha256(raw).hexdigest()):
+            raise BindingRejected("G8_SECONDARY_EXACT_EVIDENCE_BYTES_REBOUND")
+    if index.get("total_payload_bytes")!=sum(len(files[name]) for name in index["files"]):
+        raise BindingRejected("G8_SECONDARY_EVIDENCE_INVENTORY_TOTAL_REBOUND")
+    return {"schema":"rc6.g8-published-primary-admission.v1",
+            "status":"GREEN","release_profile":"PAPER_V3_ONLY",
+            "source_sha":binding["candidate_sha"],"source_tree":tree_sha,
+            "primary_artifact_id":binding["artifact_id"],
+            "primary_artifact_digest":binding["artifact_digest"],
+            "g7_admission_sha256":frozen["g7_admission_sha256"],
+            "real_orders_sent":0,"DEPLOY_OWNER":"NOT_ACQUIRED"}
+
+
+def verify_paper_g8(binding,frozen,tree_sha,*,get=None,download=None):
+    try:
+        from scripts.porota_artifact_http import download_artifact
+    except ModuleNotFoundError:
+        from porota_artifact_http import download_artifact
+    get=get or api_get
+    download=download or download_artifact
+    inventory=get(f"/actions/runs/{binding['run_id']}/artifacts?per_page=100")
+    rows=inventory.get("artifacts")
+    name=("porota-predeploy-v2-evidence-only-"+binding["candidate_sha"]
+          +"-run-"+str(binding["run_id"])+"-attempt-"+str(binding["run_attempt"]))
+    if (type(rows) is not list or inventory.get("total_count")!=len(rows)
+            or len(rows)>100):
+        raise BindingRejected("G8_SECONDARY_ACTIONS_INVENTORY_INCOMPLETE")
+    matches=[row for row in rows if row.get("name")==name]
+    if len(matches)!=1:
+        raise BindingRejected("G8_UNIQUE_SECONDARY_ARTIFACT_REQUIRED")
+    artifact=get("/actions/artifacts/"+str(matches[0]["id"]))
+    origin=artifact.get("workflow_run",{})
+    if (artifact.get("id")==binding["artifact_id"]
+            or artifact.get("id")!=matches[0]["id"]
+            or artifact.get("name")!=name
+            or artifact.get("digest")!=matches[0].get("digest")
+            or DIGEST.fullmatch(artifact.get("digest","")) is None
+            or artifact.get("expired") is not False
+            or not 0<positive_integer(artifact.get("size_in_bytes"),"G8_SECONDARY_SIZE_INVALID")<=32*1024**2
+            or origin.get("id")!=binding["run_id"]
+            or origin.get("head_sha")!=binding["candidate_sha"]):
+        raise BindingRejected("G8_SECONDARY_ACTIONS_ORIGIN_REBOUND")
+    with tempfile.TemporaryDirectory(prefix="porota-g8-secondary-") as temporary:
+        path=Path(temporary)/"secondary.zip"
+        download(artifact["id"],path,expected_size=artifact["size_in_bytes"],
+                 expected_digest=artifact["digest"],deadline=time.monotonic()+300)
+        if path.stat().st_size!=artifact["size_in_bytes"] or "sha256:"+sha256_file(path)!=artifact["digest"]:
+            raise BindingRejected("G8_SECONDARY_ZIP_BYTES_CHANGED")
+        files={}
+        with zipfile.ZipFile(path) as archive:
+            if len(archive.infolist())>100 or archive.testzip() is not None:
+                raise BindingRejected("G8_SECONDARY_ZIP_CRC_OR_MEMBER_COUNT_RED")
+            total=0
+            for entry in archive.infolist():
+                name=entry.filename
+                mode=entry.external_attr>>16
+                if (PurePosixPath(name).name!=name or name in files
+                        or not name.endswith((".json",".xml"))
+                        or entry.flag_bits&1 or stat.S_ISLNK(mode)
+                        or stat.S_IFMT(mode) not in (0,stat.S_IFREG)
+                        or entry.file_size>24*1024**2):
+                    raise BindingRejected("G8_SECONDARY_UNSAFE_MEMBER")
+                total+=entry.file_size
+                if total>32*1024**2:
+                    raise BindingRejected("G8_SECONDARY_UNPACKED_BOUND")
+                files[name]=archive.read(entry)
+        if not {"published-primary-verification.json","evidence-inventory.json"}<=set(files):
+            raise BindingRejected("G8_SECONDARY_REQUIRED_REPLAY_RECEIPTS_MISSING")
+        report=decode_json(files["published-primary-verification.json"])
+        index=decode_json(files["evidence-inventory.json"])
+        result=verify_g8_report(report,index,files,binding=binding,
+                                frozen=frozen,tree_sha=tree_sha)
+        result.update(secondary_artifact_id=artifact["id"],
+                      secondary_artifact_digest=artifact["digest"],
+                      secondary_exact_zip_authenticated=True)
+        return result
+
+
 def locate_approved(approval):
     workflow = api_get("/actions/workflows/porota-predeploy-v2.yml")
     run = api_get(f"/actions/runs/{approval['run_id']}")
@@ -522,6 +664,9 @@ def main(argv=None):
             raise BindingRejected("APPROVED_CANDIDATE_SHA_MISMATCH")
         safe_extract(args.zip, args.output_root, binding)
         result = verify_frozen_payload(args.repo_root, args.output_root, binding, args.tree_sha)
+        frozen=decode_json((args.output_root/"porota-frozen-candidate.json").read_bytes())
+        if frozen.get("release_profile")=="PAPER_V3_ONLY":
+            result["g8_published_primary"]=verify_paper_g8(binding,frozen,args.tree_sha)
         args.receipt.write_bytes(canonical_bytes(result))
     print("POROTA_APPROVED_PREDEPLOY_BINDING=GREEN")
     return 0

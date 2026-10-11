@@ -699,7 +699,7 @@ def comparison_command_args(path,expected_hash,*,source_root,data_root,source_sh
 
 
 def execute(*,source_root,source_repo,source_sha,source_tree,source_index,raw_root,data_root,python311,control_root,
-            cas_comparison_manifest=None,cas_comparison_manifest_sha256=None):
+            cas_comparison_manifest=None,cas_comparison_manifest_sha256=None,g5p_capture=False):
     initial_kernel = pre_capture_kernel_state()  # No Source or payload IO before actual own ECHILD.
     source = canonical(source_root,existing=True)
     repository = canonical(source_repo,existing=True)
@@ -712,6 +712,8 @@ def execute(*,source_root,source_repo,source_sha,source_tree,source_index,raw_ro
     require(index.name=='source.index.json' and not index.is_relative_to(data), 'INDEPENDENT_WHOLE_SOURCE_INDEX_REQUIRED')
     comparison_args=comparison_command_args(cas_comparison_manifest,cas_comparison_manifest_sha256,
         source_root=source,data_root=data,source_sha=source_sha,source_tree=source_tree)
+    require(type(g5p_capture) is bool and not (g5p_capture and comparison_args),
+            'G5P_V3_CANNOT_RUN_PRIVATE_V4_COMPARISON')
     interpreter = Path(python311).absolute()
     require(interpreter.is_file() and os.access(interpreter,os.X_OK),'EXPLICIT_PRODUCT311_INTERPRETER_REQUIRED')
     os.umask(0o022)
@@ -773,6 +775,8 @@ def execute(*,source_root,source_repo,source_sha,source_tree,source_index,raw_ro
             '--source-sha',source_sha,'--source-tree',source_tree,'--source-index',str(index),
             '--root',str(data),'--catalog-count','1200','--ticks','1201','--owned-fin',str(owned_fin)]
         command.extend(comparison_args)
+        if g5p_capture:
+            command.extend(('--g5p-frame-root',str(data/'g5p-frames')))
         result.update(command=command,source_index_sha256=capture(index)[0]['sha256'],
             source_tar_sha256=capture(index.parent/'source.tar')[0]['sha256'],
             source_authority_before=authority,source_file_count=len(before),
@@ -853,6 +857,7 @@ def main():
         parser.add_argument('--'+name,required=True)
     parser.add_argument('--cas-comparison-manifest')
     parser.add_argument('--cas-comparison-manifest-sha256')
+    parser.add_argument('--g5p-capture',action='store_true')
     args = parser.parse_args()
     values = vars(args)
     for name in ('source_root','source_repo','source_index','raw_root','data_root','python311','control_root'):

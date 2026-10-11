@@ -89,6 +89,8 @@
     "tests/test_rc6_development_history.py",
     "tests/test_rc6_root_actor_seal.py",
     "tests/test_rc6_contract_revisions.py",
+    "tests/test_rc6_deploy_preopen_gate.py",
+    "tests/test_rc6_g5p_paper_v3.py",
     "tests/test_rc6_private_pid_boundary.py",
     "tests/test_rc6_g5_contract.py",
     "tests/test_rc6_host_capacity_readonly.py",

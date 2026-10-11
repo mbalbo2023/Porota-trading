@@ -646,6 +646,14 @@ def observe_original_cas_comparison(comparison, originals, node, archiver, *, so
     return comparison.observe(originals, cut=node, native_pins=archiver._archive_pins(), source_generation=source_generation)
 
 
+def require_paper_v3_archive_policy(files):
+    """Bind the horizon producer to the effective PAPER writer and budgets."""
+    if (files.maximum_files != 512 or files.maximum_bytes != 128 * 1024**2
+            or files.archive_maximum_bytes != 512 * 1024**2
+            or files.archive_format != "COMPONENT_V3"):
+        raise ValueError("NATIVE_PROFILE_FIXED_CANONICAL_FACTORY_POLICY_MISMATCH")
+
+
 def prepared_native_g5a(*, preparation, quota, custody, binding, filter_binding, source_root, producer_arguments,
                         continuation=None, workload_quota=None):
     """Source-fixed same-PID entry after TrustedAPISetup, quota setup andSeal.
@@ -687,7 +695,13 @@ def main(*, g5a=None, expected_binding=None, argv=None):
     parser.add_argument("--ticks", type=int, default=4)
     parser.add_argument("--owned-fin", required=True, help="Fresh external native lifecycle control; never a data result")
     parser.add_argument("--cas-comparison-manifest", help="Exact authenticated private comparison admission; never enables native V4 writes")
+    parser.add_argument("--g5p-frame-root", help="Fresh bounded RAW five-member capture for exact V3 1202-cut material")
     args = parser.parse_args(argv)
+    if args.g5p_frame_root is not None and (g5a is not None or args.cas_comparison_manifest is not None
+            or args.ticks != 1201 or args.catalog_count != 1200
+            or os.environ.get("GITHUB_ACTIONS") != "true"
+            or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"):
+        raise ValueError("G5P_EXACT_ACTIONS_V3_ORIGINAL1202_CONTEXT_REQUIRED")
     if g5a is not None:
         from scripts.rc6_g5_contract import validate_g5a_authority, validate_prepared_producer_root
         validate_g5a_authority(g5a, expected_binding=expected_binding)
@@ -844,6 +858,19 @@ def main(*, g5a=None, expected_binding=None, argv=None):
     authority = evidence.parent / (evidence.name+".authority")
     result.update(evidence_root=str(evidence), archive_root=str(archive), authority_control_root=str(authority))
     result["private_comparison_active"] = comparison is not None
+    g5p_frames = None
+    if args.g5p_frame_root is not None:
+        from rc6_shadow_runtime.archive_format_contract import SOURCE_MEMBERS, writer_codec_restorer_binding
+        from scripts.rc6_g5p_frames import FrameRecorder
+        writer_binding = writer_codec_restorer_binding(
+            {name: raw(source_root / name) for name in SOURCE_MEMBERS})
+        if writer_binding["native_runtime_archive_format"] != "COMPONENT_V3" or writer_binding["native_v4_write_enabled"] is not False:
+            raise ValueError("G5P_EFFECTIVE_SOURCE_WRITER_NOT_V3_ONLY")
+        g5p_frames = FrameRecorder(args.g5p_frame_root, source_sha=args.source_sha,
+            source_tree=args.source_tree, owner_session=os.environ.get("RC6_OWNER_SESSION"),
+            run_id=int(os.environ.get("GITHUB_RUN_ID", "0")), run_attempt=int(os.environ["GITHUB_RUN_ATTEMPT"]),
+            writer_binding_sha256=writer_binding["binding_sha256"])
+        result["g5p_writer_binding_sha256"] = writer_binding["binding_sha256"]
     if comparison is not None:
         comparison.bind_native_archive(evidence, archive)
         result["private_source_rotation_contract"] = "REVIEWED_PRIVATE_CANDIDATE_ACK_ONLY_NOT_G5"
@@ -913,10 +940,9 @@ def main(*, g5a=None, expected_binding=None, argv=None):
             counters_before = {key: dict(value) for key, value in native_retention.counters.items()}
             worker, cycle_start, process = start_cycle(worker, index=index, ticks=args.ticks,
                 factory=lambda: ShadowRuntime.from_environment(database), restarts=result["restarts"])
-            if (worker.root != evidence or worker.files.archive_root != archive
-                    or worker.files.maximum_files != 512 or worker.files.maximum_bytes != 128*1024**2
-                    or worker.files.archive_maximum_bytes != 512*1024**2 or worker.files.archive_format != "COMPONENT_V4"):
+            if worker.root != evidence or worker.files.archive_root != archive:
                 raise AssertionError("NATIVE_PROFILE_FIXED_CANONICAL_FACTORY_POLICY_MISMATCH")
+            require_paper_v3_archive_policy(worker.files)
             result.update(archive_format=worker.files.archive_format,
                 live_maximum_bytes=worker.files.maximum_bytes, live_maximum_files=worker.files.maximum_files,
                 archive_maximum_bytes=worker.files.archive_maximum_bytes)
@@ -948,7 +974,7 @@ def main(*, g5a=None, expected_binding=None, argv=None):
                         original_manifest_sha256=binding["original_manifest_sha256"],
                         original_manifest_clock=binding["original_manifest"]["as_of"])
             # Both private branches receive these very same bytes BEFORE any
-            # native archive call. The private V3 RED cannot truncate V4/input.
+            # native archive call. Private comparison evidence cannot truncate V3/input.
             # The reviewed candidate receipt is the sole private source ACK;
             # a missing/failed candidate must never fall back to build().
             comparison_cut = observe_original_cas_comparison(comparison, originals, node, archiver, source_generation=generation)
@@ -961,6 +987,9 @@ def main(*, g5a=None, expected_binding=None, argv=None):
                 expected_as_of=as_of.isoformat())
             if restored["members"] != originals or restored["receipt"] != receipt or restored_binding != binding:
                 raise AssertionError("NATIVE_PROFILE_ORIGINAL_MEMBER_RESTORE_MISMATCH")
+            if g5p_frames is not None:
+                g5p_frames.record(index, as_of=as_of.isoformat(), originals=originals,
+                                  receipt=receipt, restored=restored["members"])
             if original_custody != custody_at(generation):
                 raise AssertionError("NATIVE_PROFILE_ORIGINAL_SOURCE_CUSTODY_CHANGED")
             source_unchanged("archive_restore_tick_" + str(index))
@@ -1136,6 +1165,19 @@ def main(*, g5a=None, expected_binding=None, argv=None):
         if not result["execution_complete"]:
             result["native_horizon_contract_verified"] = False
         result.update(completion_flags(result))
+        if g5p_frames is not None:
+            try:
+                if not result["execution_complete"]:
+                    raise ValueError("G5P_RED_NATIVE_CANNOT_PUBLISH_COMPLETE_ORIGINAL_FRAMES")
+                frames_manifest = g5p_frames.finish(native_fin_closed=native_fin_closed)
+                result["g5p_frames_manifest_sha256"] = hashlib.sha256(
+                    json.dumps(frames_manifest, sort_keys=True, separators=(",", ":")).encode() + b"\n").hexdigest()
+                result["g5p_original_frames_captured"] = len(frames_manifest["frames"])
+            except BaseException as error:
+                result["native_horizon_contract_verified"] = False
+                result["execution_complete"] = False
+                result["g5p_frames_error"] = {"class": type(error).__name__, "reason": str(error)}
+                result.update(completion_flags(result))
         if comparison is not None:
             if native_fin_closed:
                 from scripts.rc6_cas_original_comparison import publish_result

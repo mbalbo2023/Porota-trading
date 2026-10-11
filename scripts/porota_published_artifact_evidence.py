@@ -147,10 +147,32 @@ def verify_saved_app_rootfs(image_path, source, *, deadline=None):
             "source_files_and_generated_metadata_verified": len(verified), "files": verified}
 
 
-def write_evidence(output, *, binding, payload, rootfs, download, loaded_image_id):
+def write_evidence(output, *, binding, payload, rootfs, download, loaded_image_id,
+                   g7_admission=None, g7_admission_wire=None):
     frozen = decode_json((payload["extracted_root"] / "porota-frozen-candidate.json").read_bytes())
     if loaded_image_id != frozen["image_id"] or re.fullmatch(r"sha256:[0-9a-f]{64}", loaded_image_id) is None:
         raise ValueError("PUBLISHED_PRIMARY_LOADED_IMAGE_ID_MISMATCH")
+    if g7_admission is not None:
+        prerequisites=g7_admission.get("verified_prerequisites", [])
+        profile=g7_admission.get("release_profile")
+        if not (type(g7_admission_wire) is bytes
+                and g7_admission.get("schema")=="rc6.architectural-gate-admission.v1"
+                and g7_admission.get("status")=="GREEN"
+                and g7_admission.get("target_gate")=="G7"
+                and g7_admission.get("source_sha")==binding["candidate_sha"]
+                and g7_admission.get("source_tree")==frozen["candidate_tree_sha"]
+                and frozen.get("release_profile")==profile
+                and frozen.get("g7_admission_sha256")==hashlib.sha256(g7_admission_wire).hexdigest()
+                and profile in ("FULL_G5","PAPER_V3_ONLY")
+                and type(prerequisites) is list
+                and all(gate in prerequisites for gate in ("G0","G4","G6.311","G6.312"))
+                and (("G5P" in prerequisites and "G5" not in prerequisites)
+                     if profile=="PAPER_V3_ONLY" else
+                     ("G5" in prerequisites and "G5P" not in prerequisites))
+                and payload["receipt"].get("status")=="GREEN"
+                and rootfs.get("status")=="GREEN"
+                and payload.get("actual_image_execution",{}).get("status")=="GREEN"):
+            raise ValueError("G8_REQUIRES_EXACT_G7_PROFILE_AND_PUBLISHED_PRIMARY_REPLAY")
     if output.is_symlink() or output.exists() and any(output.iterdir()): raise ValueError("EVIDENCE_OUTPUT_NOT_EMPTY")
     output.mkdir(parents=True, exist_ok=True)
     for name in REQUIRED_FILES:
@@ -172,6 +194,14 @@ def write_evidence(output, *, binding, payload, rootfs, download, loaded_image_i
         "real_orders_sent": 0, "real_routes": "NOT_CALLED",
         "trust_boundary": "VERIFY_EXTERNAL_GITHUB_API_SOURCE_WORKFLOW_JOBS_LOGS_AND_MANIFESTS",
         "secondary_raw_limit_bytes": MAX_EVIDENCE_BYTES, "secondary_artifact_limit_bytes": MAX_SECONDARY_ARTIFACT_BYTES}
+    if g7_admission is not None:
+        report.update(architectural_gate="G8", release_profile=profile,
+            G7_authenticated_admission_sha256=hashlib.sha256(g7_admission_wire).hexdigest(),
+            G8_scope="EXACT_PUBLISHED_PRIMARY_BYTE_AND_IMAGE_REPLAY_EVIDENCE_ONLY",
+            G8_material_source="porota_published_artifact_evidence.main",
+            G8_primary_artifact_id=binding["artifact_id"],
+            G8_primary_artifact_digest=binding["artifact_digest"],
+            DEPLOY_OWNER="NOT_ACQUIRED", G8_deploy_authorization_claimed=False)
     (output / "published-primary-verification.json").write_bytes(canonical_bytes(report))
     inventory = {path.name: {"sha256": sha256_file(path), "bytes": path.stat().st_size}
                  for path in output.iterdir()}
@@ -298,6 +328,13 @@ def main(argv=None, *, clock=time.monotonic):
     signal.signal(signal.SIGALRM, deadline_expired)
     signal.setitimer(signal.ITIMER_REAL, args.deadline_seconds)
     try:
+        admission_path=os.environ.get("RC6_G7_VERIFIED_ADMISSION")
+        if not admission_path:
+            raise ValueError("G8_SAME_JOB_AUTHENTIC_G7_ADMISSION_REQUIRED")
+        g7_admission_wire=Path(admission_path).read_bytes()
+        if len(g7_admission_wire)>1024*1024:
+            raise ValueError("G8_G7_ADMISSION_BYTES_BOUND")
+        g7_admission=decode_json(g7_admission_wire)
         binding = current_primary_binding(args.candidate_sha, args.artifact_id, args.upload_digest, deadline=deadline)
         with tempfile.TemporaryDirectory(prefix="porota-published-replay-", dir=os.getenv("RUNNER_TEMP")) as temporary:
             root = Path(temporary); archive = root / "primary.zip"
@@ -318,7 +355,8 @@ def main(argv=None, *, clock=time.monotonic):
             result = write_evidence(args.evidence_root, binding=binding,
                 payload={"extracted_root": extracted, "receipt": receipt, "actual_image_execution": execution,
                          "extra_receipts": PUBLISHED_EXTRA_RECEIPTS}, rootfs=rootfs,
-                download=download, loaded_image_id=execution["loaded_image_id"])
+                download=download, loaded_image_id=execution["loaded_image_id"],
+                g7_admission=g7_admission,g7_admission_wire=g7_admission_wire)
             replay_remaining(deadline, clock=clock)
         # The same total deadline includes private context cleanup and stdout.
         replay_remaining(deadline, clock=clock)

@@ -47,7 +47,7 @@ jobs:
           CANDIDATE_TREE="$(git rev-parse HEAD^{tree})"
           CONTROL_ROOT="$RUNNER_TEMP/rc6-g7-owner-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           VERIFIED="$RUNNER_TEMP/rc6-g7-verified-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
-          WRITER_BINDING="$RUNNER_TEMP/rc6-g5b-writer-binding-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          WRITER_BINDING="$RUNNER_TEMP/rc6-g7-writer-binding-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
           python3 -I -B scripts/rc6_material_pr_admission.py \
             --source-sha "$CANDIDATE_SHA" --source-tree "$CANDIDATE_TREE" --gate predeploy --control-root "$CONTROL_ROOT"
           python3 -I -B scripts/rc6_architectural_gates.py \
@@ -56,7 +56,7 @@ jobs:
             --evidence-root "$RUNNER_TEMP/rc6-g7-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --json-out "$VERIFIED" \
             --writer-binding-out "$WRITER_BINDING"
           echo "RC6_G7_VERIFIED_ADMISSION=$VERIFIED" >> "$GITHUB_ENV"
-          echo "RC6_G5B_WRITER_BINDING=$WRITER_BINDING" >> "$GITHUB_ENV"
+          echo "RC6_G7_WRITER_BINDING=$WRITER_BINDING" >> "$GITHUB_ENV"
           echo "RC6_G7_OWNER_ADMISSION=$CONTROL_ROOT/admission.json" >> "$GITHUB_ENV"
           echo 'RC6_G7_ALL_PREDECESSOR_PAYLOADS=GREEN'
           echo 'DEPLOY_OWNER=NOT_ACQUIRED'
@@ -431,7 +431,8 @@ jobs:
             --source-manifest POROTA_SOURCE_PROVENANCE.json \
             --image-inspect "${POROTA_PREDEPLOY_TMP}/porota-image-inspect.json" \
             --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE" \
-            --g5-writer-binding "$RC6_G5B_WRITER_BINDING"
+            --g5-writer-binding "$RC6_G7_WRITER_BINDING" \
+            --g7-verified-admission "$RC6_G7_VERIFIED_ADMISSION"
           python - <<'PY'
           import os
           import json
@@ -591,6 +592,13 @@ jobs:
           rows={row['path']:row for row in json.loads(Path('POROTA_SOURCE_PROVENANCE.json').read_bytes())['files']}
           codec_raw=Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-runtime-codec-smoke.json')).read_bytes()
           assert loads(codec_raw)['image_id_argument'] == image_id
+          g7_raw=Path(os.environ['RC6_G7_VERIFIED_ADMISSION']).read_bytes()
+          g7=json.loads(g7_raw)
+          assert g7['status']=='GREEN' and g7['target_gate']=='G7'
+          assert g7['source_sha']==candidate and g7['source_tree']==tree
+          assert g7['release_profile'] in ('FULL_G5','PAPER_V3_ONLY')
+          Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"],
+              'porota-g7-verified-admission.json')).write_bytes(g7_raw)
           payload={
             "schema_version":1,
             "candidate_sha":candidate,
@@ -603,6 +611,8 @@ jobs:
             "real_orders_sent_required":0,
             "real_order_capability_required":"BLOCKED",
             "build_once":True,
+            "release_profile":g7['release_profile'],
+            "g7_admission_sha256":hashlib.sha256(g7_raw).hexdigest(),
             "source_manifest_sha256":os.environ['SOURCE_MANIFEST_SHA256'],
             "source_byte_provenance_required":True,
             "final_input_provenance_sha256":hashlib.sha256(Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-final-input-provenance.json')).read_bytes()).hexdigest(),
@@ -658,6 +668,7 @@ jobs:
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-deploy-bundle-v2-manifest.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-image.tar.gz
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-frozen-candidate.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-g7-verified-admission.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-final-input-provenance.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-runtime-codec-smoke.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-governed-tests.xml

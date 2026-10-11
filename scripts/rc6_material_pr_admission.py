@@ -27,7 +27,8 @@ BRANCH='recovery/rc6-material-fix-forward-3091e93-20261006'
 BASE='deploy/rc6-pr69-isolated-20260915'
 BASE_SHA='da697c6e6c2274579f9e4a112fabc4327475dd35'
 PR=476
-GATES=('cheap','focal311','focal312','BIG-browser','Horizon','full-gov311','full-gov312','predeploy')
+GATES=('cheap','focal311','focal312','BIG-browser','Horizon','G5P-acquire','G5P-certify',
+       'full-gov311','full-gov312','predeploy')
 DIAGNOSTIC_GATES=('capacity-probe','capacity-calibration')
 DIAGNOSTIC_BRANCH='wip/rc6-architectural-rca-20261008-1606UTC'
 DIAGNOSTIC_AUTHORIZATION_SCHEMA='porota.rc6.capacity-diagnostic-launch.v2'
@@ -63,7 +64,9 @@ FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRA
     'CONTRACT_GATES_ALREADY_GREEN','NATIVE_EQUIVALENCE_FROM_APPROVAL_CLAIMED','DEPLOY_AUTHORIZATION',
     'CONTRACT_ACCEPTANCE_LIFECYCLE','CONTRACT_REVISION_REVOKED','CONTRACT_DECISION_REVOKED',
     'G5A_REVISION_APPROVAL_URL','G5A_CAPABILITY_REFERENCE_JSON','G5A_BOOTSTRAP_REFERENCE_JSON',
-    'RC6_G5A_ROOT_SETUP_AUTHORIZATION'}
+    'RC6_G5A_ROOT_SETUP_AUTHORIZATION','RELEASE_PROFILE','G5P_REVISION_APPROVAL_URL',
+    'G5P_CONTRACT_DOCUMENT_SHA256','RC6_G5P_MATERIAL_AUTHORIZATION',
+    'G5P_ACQUISITION_REFERENCE_JSON'}
 COMMENT_PAGES=50
 RUN_PAGES=10
 RECOVERY_OWNER='CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC'
@@ -812,13 +815,41 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
     require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
         and os.environ.get('GITHUB_REPOSITORY_ID')==str(REPO_ID),'ACTUAL_NONROOT_CANONICAL_ACTIONS_REQUIRED')
     require(gate in GATES and os.environ.get('GITHUB_RUN_ATTEMPT')=='1','FIRST_SCOPED_RUN_ATTEMPT_REQUIRED_NO_BLIND_RERUN')
-    from scripts.rc6_architectural_gates import require_horizon_model_before_material
-    require_horizon_model_before_material(gate)
+    if gate in ('G5P-acquire','G5P-certify'):
+        require(launch_receipt_url is not None and owner_session is not None
+                and source_tree is not None,
+                'G5P_EXACT_MATERIAL_LAUNCH_OWNER_SOURCE_REQUIRED')
+        return admit_g5p(source_sha=source_sha,source_tree=source_tree,
+                         launch_receipt_url=launch_receipt_url,
+                         owner_session=owner_session,gate=gate,now=now)
+    if gate == 'predeploy' and launch_receipt_url is None:
+        # The old automatic ready-for-review admission remains FULL_G5 only.
+        from scripts.rc6_architectural_gates import require_horizon_model_before_material
+        require_horizon_model_before_material(gate)
+    else:
+        from scripts.rc6_architectural_gates import require_horizon_model_before_material
+        require_horizon_model_before_material(gate)
+    if gate == 'predeploy':
+        launch=comment(launch_receipt_url,471) if launch_receipt_url else None
+        profile=fields(launch['body']).get('RELEASE_PROFILE') if launch else None
+        if profile == 'PAPER_V3_ONLY':
+            f=fields(launch['body'])
+            approval=authenticate_g5p_revision(f,source_sha,source_tree,owner_session,now)
+            result=_admit_source_scope(source_sha=source_sha,source_tree=source_tree,
+                launch_receipt_url=launch_receipt_url,owner_session=owner_session,gate=gate,
+                now=now,g5p_approval=approval)
+            require(result['prerequisites_manifest'].get('release_profile')=='PAPER_V3_ONLY'
+                    and result['prerequisites_manifest'].get('owner_session')==owner_session
+                    and result['prerequisites_manifest'].get('g5p_revision_approval_url')==approval.approval_url,
+                    'G7_PAPER_V3_EXACT_MANIFEST_CONTRACT_REBOUND')
+            result.update(release_profile='PAPER_V3_ONLY',
+                          g5p_revision_approval_url=approval.approval_url)
+            return result
     return _admit_source_scope(source_sha=source_sha,source_tree=source_tree,
         launch_receipt_url=launch_receipt_url,owner_session=owner_session,gate=gate,now=now)
 
 def _admit_source_scope(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=None,gate,now=None,
-                        g5a_approval=None):
+                        g5a_approval=None,g5p_approval=None):
     """Source/API admission only; this mapping grants no native G5A authority."""
     require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
         and os.environ.get('GITHUB_REPOSITORY_ID')==str(REPO_ID),'ACTUAL_NONROOT_CANONICAL_ACTIONS_REQUIRED')
@@ -851,6 +882,8 @@ def _admit_source_scope(*,source_sha,source_tree=None,launch_receipt_url=None,ow
     successor=administrative_anchors(owner,now=now)
     timelines={issue:recent(issue,successor[issue],now) for issue in (471,473)}
     auth=launch_fields(launch,source_sha,tree,owner_session,gate,anchors=successor)
+    if gate in ('full-gov311','full-gov312','predeploy') and auth.get('RELEASE_PROFILE')=='PAPER_V3_ONLY' and g5p_approval is None:
+        g5p_approval=authenticate_g5p_revision(auth,source_sha,tree,owner,now)
     scope=candidate_scope(auth,owner=owner,anchors=successor)
     if os.environ['GITHUB_EVENT_NAME']=='pull_request':
         pr=event['pull_request']
@@ -871,7 +904,23 @@ def _admit_source_scope(*,source_sha,source_tree=None,launch_receipt_url=None,ow
     require(gate in gates,'GATE_NOT_AUTHORIZED_IN_IMMUTABLE_PREPUSH_SCOPE')
     owner=auth['SESSION_SUCCESSOR'];owners={str(issue):latest_writer(timelines[issue],issue,source_sha,tree,owner,now) for issue in (471,473)}
     ops=ops_admission(auth,owner,now,anchors)
-    if g5a_approval is None:
+    if g5p_approval is not None:
+        from scripts import rc6_contract_revisions as revisions
+        from scripts.rc6_g5p_model import DOCUMENT_SHA256
+        revisions.validate_revision_approval(g5p_approval,revision='PAPER_V3_ONLY_G5P_V1',
+            scope='G5P_V3_MATERIAL',source_sha=source_sha,source_tree=tree,
+            contract_sha256=DOCUMENT_SHA256)
+        require(g5p_approval.owner_session==owner,
+                'G5P_APPROVAL_CANNOT_REBIND_EXCLUSIVE_OWNER')
+        manifest=document(auth.get('PREREQUISITES_MANIFEST_JSON','null'))
+        require(type(manifest) is dict and manifest.get('release_profile')=='PAPER_V3_ONLY'
+                and manifest.get('owner_session')==owner
+                and manifest.get('g5p_revision_approval_url')==g5p_approval.approval_url,
+                'G5P_DOWNSTREAM_EXACT_PROFILE_MANIFEST_REQUIRED')
+        capacity_source={'status':'V3_NATIVE_MEASUREMENT_REQUIRED_BEFORE_MATERIAL',
+            'G5P_GREEN':False,'G5A_legacy_horizon_model_claimed':False,
+            'native_v3_reserve_bytes':2*1024**3,'native_v3_minimum_free_inode_percent':10}
+    elif g5a_approval is None:
         capacity_source=verify_capacity_comparison_manifest(auth,source_sha,tree)
     else:
         capacity_source=g5a_preparation_capacity(g5a_approval,source_sha=source_sha,source_tree=tree,now=now)
@@ -901,7 +950,56 @@ def _admit_source_scope(*,source_sha,source_tree=None,launch_receipt_url=None,ow
         'workflow_ref':os.environ.get('GITHUB_WORKFLOW_REF'),'workflow_sha':os.environ.get('GITHUB_WORKFLOW_SHA'),
         'GITHUB_SHA_is_candidate_SHA_claimed':False,'read_utc':now.isoformat().replace('+00:00','Z'),
         'same_read_lease_valid_for_whole_long_gate_claimed':False,'real_orders_sent':0,
-        'DEPLOY_OWNER':'NOT_ACQUIRED','canonical_artifact_pipeline':'PREDEPLOY_V2_ONLY','final_candidate_eligible':False}
+        'DEPLOY_OWNER':'NOT_ACQUIRED','canonical_artifact_pipeline':'PREDEPLOY_V2_ONLY','final_candidate_eligible':False,
+        'release_profile':'PAPER_V3_ONLY' if g5p_approval is not None else 'FULL_G5',
+        'g5p_revision_approval_url':g5p_approval.approval_url if g5p_approval is not None else None}
+
+
+def authenticate_g5p_revision(fields_row,source_sha,source_tree,owner_session,now=None):
+    from types import SimpleNamespace
+    from scripts import rc6_contract_revisions as revisions
+    from scripts.rc6_g5p_model import DOCUMENT_SHA256
+    require(fields_row.get('RELEASE_PROFILE')=='PAPER_V3_ONLY'
+            and fields_row.get('G5P_CONTRACT_DOCUMENT_SHA256')==DOCUMENT_SHA256
+            and fields_row.get('RC6_G5P_MATERIAL_AUTHORIZATION')=='APPROVED'
+            and type(fields_row.get('G5P_REVISION_APPROVAL_URL')) is str,
+            'G5P_EXPLICIT_EXACT_DOCUMENT_MATERIAL_AUTHORIZATION_REQUIRED')
+    return revisions.authenticate_revision(SimpleNamespace(request=api),
+        fields_row['G5P_REVISION_APPROVAL_URL'],owner_session=owner_session,
+        revision='PAPER_V3_ONLY_G5P_V1',scope='G5P_V3_MATERIAL',
+        source_sha=source_sha,source_tree=source_tree,
+        contract_sha256=DOCUMENT_SHA256,now=now)
+
+
+def admit_g5p(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now=None):
+    require(gate in ('G5P-acquire','G5P-certify')
+            and os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch'
+            and os.environ.get('GITHUB_ACTIONS')=='true'
+            and os.environ.get('GITHUB_RUN_ATTEMPT')=='1',
+            'G5P_EXACT_FIRST_MANUAL_ACTIONS_STAGE_REQUIRED')
+    launch=comment(launch_receipt_url,471)
+    f=fields(launch['body'])
+    require(f.get('GATES_AUTHORIZED')==gate,
+            'G5P_SINGLE_STAGE_LAUNCH_RECEIPT_REQUIRED')
+    accepted=authenticate_g5p_revision(f,source_sha,source_tree,owner_session,now)
+    row=_admit_source_scope(source_sha=source_sha,source_tree=source_tree,
+        launch_receipt_url=launch_receipt_url,owner_session=owner_session,
+        gate=gate,now=now,g5p_approval=accepted)
+    manifest=row['prerequisites_manifest']
+    require(manifest.get('release_profile')=='PAPER_V3_ONLY'
+            and manifest.get('owner_session')==owner_session
+            and manifest.get('g5p_revision_approval_url')==accepted.approval_url,
+            'G5P_EXACT_PROFILE_OWNER_AND_PRIOR_GATE_MANIFEST_REQUIRED')
+    reference=document(f.get('G5P_ACQUISITION_REFERENCE_JSON','null'))
+    require((gate=='G5P-acquire' and reference is None and manifest.get('g5p_acquisition') is None)
+            or (gate=='G5P-certify' and type(reference) is dict
+                and manifest.get('g5p_acquisition')==reference),
+            'G5P_ACQUISITION_AND_CERTIFICATION_STATES_MUST_DIFFER')
+    row.update(release_profile='PAPER_V3_ONLY',
+               g5p_revision_approval_url=accepted.approval_url,
+               g5p_acquisition_reference=reference,
+               g5p_material_stage='ACQUISITION_ONLY' if gate=='G5P-acquire' else 'CERTIFICATION')
+    return row
 
 
 _G5A_SETUP_CONTEXTS = {}

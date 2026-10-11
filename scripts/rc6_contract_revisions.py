@@ -18,6 +18,7 @@ SCHEMA = "porota.rc6.contract-revision-acceptance.v2"
 SCOPES = MappingProxyType({
     "PRIVATE_PID_BOUNDARY_V2": frozenset({"capacity-probe", "capacity-calibration"}),
     "G5A_BOUNDED_EVIDENCE_V2": frozenset({"EVIDENCE_ACQUISITION_ONLY"}),
+    "PAPER_V3_ONLY_G5P_V1": frozenset({"G5P_V3_MATERIAL"}),
 })
 _ISSUED = weakref.WeakKeyDictionary()
 

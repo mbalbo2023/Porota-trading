@@ -134,7 +134,9 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def validate(repo_root: Path, artifact_root: Path, expected: list[str], *, g5_writer_binding=None) -> dict:
+def validate(repo_root: Path, artifact_root: Path, expected: list[str], *,
+             g5_writer_binding=None, g7_verified_admission=None,
+             candidate_sha=None, tree_sha=None) -> dict:
     present = artifact_files(artifact_root)
     missing_runtime = sorted(p for p in expected if p not in present)
     unsafe_paths = sorted(
@@ -231,13 +233,34 @@ def validate(repo_root: Path, artifact_root: Path, expected: list[str], *, g5_wr
     if g5_writer_binding is not None:
         try:
             from rc6_shadow_runtime.archive_format_contract import SOURCE_MEMBERS, verify_immutable_artifact_binding
+            qualified=g5_writer_binding
+            if type(g5_writer_binding) is dict and g5_writer_binding.get('schema')=='rc6.g5p-writer-binding.v1':
+                admission=g7_verified_admission
+                if not (type(admission) is dict and admission.get('status')=='GREEN'
+                        and admission.get('target_gate')=='G7'
+                        and admission.get('release_profile')=='PAPER_V3_ONLY'
+                        and admission.get('source_sha')==candidate_sha==g5_writer_binding.get('source_sha')
+                        and admission.get('source_tree')==tree_sha==g5_writer_binding.get('source_tree')
+                        and 'G5P' in admission.get('verified_prerequisites',[])
+                        and 'G5' not in admission['verified_prerequisites']
+                        and g5_writer_binding.get('release_profile')=='PAPER_V3_ONLY'):
+                    raise ValueError('G5P_G7_EXACT_PROFILE_SOURCE_ADMISSION_REQUIRED')
+                qualified=g5_writer_binding.get('writer_codec_restorer_binding')
+            elif g7_verified_admission is not None and g7_verified_admission.get('release_profile')=='PAPER_V3_ONLY':
+                raise ValueError('G5P_TYPED_WRITER_BINDING_REQUIRED')
             if not set(SOURCE_MEMBERS) <= set(expected) or not set(SOURCE_MEMBERS) <= safe_present:
                 raise ValueError('G5_ARTIFACT_COMPLETE_WRITER_ABI_INVENTORY_REQUIRED')
             if any((root/name).stat().st_size > 4*1024**2 for root in (repo_root, artifact_root) for name in SOURCE_MEMBERS):
                 raise ValueError('G5_ARTIFACT_WRITER_ABI_MEMBER_BOUND')
-            result['g5_writer_byte_binding'] = verify_immutable_artifact_binding(g5_writer_binding,
+            result['g5_writer_byte_binding'] = verify_immutable_artifact_binding(qualified,
                 source_files={name: (repo_root/name).read_bytes() for name in SOURCE_MEMBERS},
                 artifact_files={name: (artifact_root/name).read_bytes() for name in SOURCE_MEMBERS})
+            if type(g5_writer_binding) is dict and g5_writer_binding.get('schema')=='rc6.g5p-writer-binding.v1':
+                if (qualified.get('native_runtime_archive_format')!='COMPONENT_V3'
+                        or qualified.get('native_v4_write_enabled') is not False
+                        or result['g5_writer_byte_binding'].get('native_v4_write_enabled') is not False):
+                    raise ValueError('G5P_ARTIFACT_EFFECTIVE_V3_AND_V4_BLOCK_REQUIRED')
+                result['g5_writer_byte_binding']['release_profile']='PAPER_V3_ONLY'
             result['g5_writer_byte_binding'].update(G5_certification_from_metadata_claimed=False,
                 G7_G8_native_execution_still_required=True)
         except (ValueError, OSError, KeyError, TypeError) as error:
@@ -257,6 +280,8 @@ def main() -> int:
     ap.add_argument("--tree-sha")
     ap.add_argument("--g5-writer-binding", type=Path,
                     help='Exact G5B Source writer ABI record; proves bytes only, never G5 or deploy approval')
+    ap.add_argument("--g7-verified-admission", type=Path,
+                    help='Exact authenticated G7 admission from this Predeploy job')
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -267,7 +292,10 @@ def main() -> int:
         if args.g5_writer_binding.stat().st_size > 1024 * 1024:
             ap.error('--g5-writer-binding exceeds the bounded Source record')
         binding = json.loads(args.g5_writer_binding.read_bytes())
-    result = validate(repo_root, artifact_root, expected, g5_writer_binding=binding)
+    admission=json.loads(args.g7_verified_admission.read_bytes()) if args.g7_verified_admission else None
+    result = validate(repo_root, artifact_root, expected, g5_writer_binding=binding,
+                      g7_verified_admission=admission,candidate_sha=args.candidate_sha,
+                      tree_sha=args.tree_sha)
     if args.source_manifest:
         if not args.image_inspect:
             ap.error("--source-manifest requires --image-inspect")

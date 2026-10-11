@@ -46,6 +46,13 @@ PREPARATION_SCOPE={'locked_python_epochs':['311','312'],'installed_distribution_
     'pip_fetch_source_and_git_preparation_included':True}
 
 def workload_fingerprint(producer):
+    if producer in ('G5P-acquire','G5P-certify'):
+        from scripts.rc6_g5p_frames import MAX_CAPTURE_BYTES
+        return digest(canonical({'schema':'rc6.paper-v3-g5p-workload.v1',
+            'producer':producer,'original_cuts':1202,'original_members_per_cut':5,
+            'live_limit_bytes':128*1024**2,'archive_limit_bytes':512*1024**2,
+            'raw_capture_limit_bytes':MAX_CAPTURE_BYTES,'native_reserve_bytes':2*1024**3,
+            'material_qualification_claimed':producer=='G5P-certify'}))
     if producer == 'Horizon':
         from scripts.rc6_cas_original_comparison import CONTRACT
         return digest(canonical({'schema':'rc6.original-horizon-workload.v2',
@@ -95,6 +102,56 @@ def heavy_preflight(a,run,path,producer,label):
     if not hasattr(run,'capacity_records'):run.capacity_records=[]
     run.capacity_records.append(record);run.pending_capacity=[record]
     return binding,peak,live
+
+
+def g5p_preflight(a,run,path,label):
+    """Derive and measure V3-only peak; no G5A image or project quota."""
+    from scripts.rc6_g5p_frames import MAX_CAPTURE_BYTES
+    path=safe_path(path)
+    fs=os.statvfs(path)
+    tracked=git(a.repo_root,'ls-tree','-r','-l','HEAD').decode().splitlines()
+    sizes=[]
+    for line in tracked:
+        fields=line.split(None,4)
+        need(len(fields)==5 and fields[1]=='blob' and fields[3].isdigit(),
+             'G5P_COMPLETE_SOURCE_BLOB_SIZE_UNKNOWN')
+        sizes.append(int(fields[3]))
+    source_export_upper=2*sum(sizes)+len(sizes)*1024
+    archive=512*1024**2;live=128*1024**2;scratch=512*1024**2
+    transfer=2*MAX_CAPTURE_BYTES
+    controls=128*1024**2
+    required=source_export_upper+archive+live+scratch+transfer+controls
+    free=fs.f_bavail*fs.f_frsize
+    inode_ratio=fs.f_favail/fs.f_files if fs.f_files else 0
+    cgroup=Path('/sys/fs/cgroup/memory.max')
+    memory_limit=cgroup.read_text().strip() if cgroup.exists() else 'unknown'
+    memory_ok=memory_limit=='max' or memory_limit.isdigit() and int(memory_limit)>=2*1024**3
+    green=(free>=required+2*1024**3 and inode_ratio>=.1
+           and fs.f_favail>=5000 and memory_ok)
+    row={'schema':'rc6.g5p-v3-physical-preflight.v1','status':'GREEN' if green else 'BLOCKED',
+         'source_sha':a.source_sha,'source_tree':a.source_tree,'owner_session':a.owner_session,
+         'run_id':int(os.environ['GITHUB_RUN_ID']),'run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+         'stage':a.gate,'label':label,'measured_path':str(path),
+         'source_export_upper_bytes':source_export_upper,'source_file_count':len(sizes),
+         'archive_v3_limit_bytes':archive,'live_v3_limit_bytes':live,
+         'native_scratch_limit_bytes':scratch,'raw_capture_and_closed_stage_upper_bytes':transfer,
+         'control_and_log_envelope_bytes':controls,'admission_envelope_bytes':required,
+         'native_reserve_bytes':2*1024**3,'minimum_free_inode_ratio':.1,
+         'measured_free_bytes':free,'measured_free_inodes':fs.f_favail,
+         'measured_total_inodes':fs.f_files,'cgroup_memory_max':memory_limit,
+         'memory_ceiling_at_least_native_rss':memory_ok,
+         'G5A_project_quota_required':False,'real_orders_sent':0,
+         'measured_at_unix_ns':time.time_ns()}
+    save(run.control/(label+'.g5p-capacity.json'),row)
+    need(green,'G5P_V3_ACTUAL_CAPACITY_PREFLIGHT_BLOCKED')
+    record={'label':label,'measured_path':str(path),
+            'before':{'path':'controls/'+label+'.g5p-capacity.json',
+                      'sha256':digest(canonical(row))},
+            'live':{'path':'controls/'+label+'.g5p-capacity.json',
+                    'sha256':digest(canonical(row))},
+            'measured_at_unix_ns':row['measured_at_unix_ns']}
+    run.capacity_records.append(record);run.pending_capacity=[record]
+    return capacity_binding(a,a.gate),row,{'capacity':{'status':'GREEN'},'g5p_native_v3':row}
 
 def preparation_capacity(a,run,root,label,*,additional_storage=()):
     """Bootstrap is a compound producer, not a focal/epoch peak assumption."""
@@ -535,6 +592,9 @@ def readmit_automatic_pr(a,run,stage):
         launch_receipt_url=a.launch_receipt_url,owner_session=a.owner_session,gate=a.gate)
     a.capacity_peaks=row['capacity_peaks'];a.cheap_files=row['cheap_files'];a.prerequisites_manifest=row['prerequisites_manifest']
     a.private_cas_comparison_template=row.get('private_cas_comparison_template')
+    a.release_profile=row.get('release_profile','FULL_G5')
+    a.g5p_acquisition_reference=row.get('g5p_acquisition_reference')
+    a.g5p_revision_approval_url=row.get('g5p_revision_approval_url')
     save(run.control/('automatic-pr-'+stage+'.json'),row)
     run.lease_context={key:row[key] for key in ('source_sha','source_tree','owner_session','gate','launch_receipt_url')}
     def after_fin(label):
@@ -826,7 +886,8 @@ def run_gov(a,run,root,prepared,derived,auth_path,auth_sha):
             if prior['gate']=='G0')['preserved_heavy_corpora'][epoch],
         identity_verified=identity,failures=counts['failure'],errors=counts['error'],skipped=counts['skipped'],xfail=0,
         scope='repository-root automatic pytest discovery',cleanup_receipt=cleanup,reason=reason,
-        source_unchanged=code==0)
+        source_unchanged=code==0,
+        **({'release_profile':'PAPER_V3_ONLY'} if a.release_profile=='PAPER_V3_ONLY' else {}))
     save(root/('G6.'+epoch+'.receipt.json'),receipt)
     return code,{'gate':a.gate,'native_phases':phases,'receipt':receipt,'reason':reason,
         'raw_root':str(sealed),'whole_Gov_claim':code==0,'native_FIN_payload_safe':True}
@@ -1030,7 +1091,10 @@ def focal(a,run,root,prepared,interpreters):
 def exported(a,run,root,prepared,interpreters):
     namespace=fixture_lifecycle.create_namespace(Path.home(),capacity_binding(a,a.gate))
     epoch=namespace.path
-    heavy_preflight(a,run,epoch,a.gate,'material-export')
+    if a.gate in ('G5P-acquire','G5P-certify'):
+        g5p_preflight(a,run,epoch,'material-export')
+    else:
+        heavy_preflight(a,run,epoch,a.gate,'material-export')
     repo=Path(next(x for x in prepared if x['epoch']=='311')['source_root'])
     # Original exporter creates source700 with Git644/755 files; full index, tar and raw commit remain separate.
     row=run([interpreters['311'],'-I','-B',str(repo/EXPORT_MEMBER),'--repo',str(repo),'--sha',a.source_sha,
@@ -1243,8 +1307,13 @@ def private_cas_control(a,namespace,epoch):
 
 
 def horizon(a,run,root,prepared,interpreters):
-    architectural.require_horizon_model_before_material('Horizon')
+    g5p=a.gate in ('G5P-acquire','G5P-certify')
+    if not g5p:architectural.require_horizon_model_before_material('Horizon')
+    if g5p:
+        need(a.release_profile=='PAPER_V3_ONLY' and a.g5p_revision_approval_url,
+             'G5P_LIVE_OWNER_REVISION_ADMISSION_REQUIRED')
     private=getattr(a,'private_cas_comparison_template',None) is not None
+    need(not (g5p and private),'G5P_PRIVATE_V4_COMPARISON_FORBIDDEN')
     producer='Horizon-private-original-cas' if private else a.gate
     if private:
         need(type(a.capacity_peaks.get(producer)) is dict,
@@ -1253,6 +1322,14 @@ def horizon(a,run,root,prepared,interpreters):
     started=architectural.utc()
     namespace,epoch,repo=exported(a,run,root,prepared,interpreters)
     source=epoch/'source';control=epoch/'horizon-control'
+    prior_origin=None
+    if a.gate=='G5P-certify':
+        from scripts.porota_artifact_http import download_artifact
+        prior_origin=architectural.authenticate_g5p_model_reference(
+            a.g5p_acquisition_reference,source_sha=a.source_sha,
+            source_tree=a.source_tree,owner_session=a.owner_session,before_utc=architectural.utc(),
+            evidence_root=root/'g5p-acquisition.zip',get=api,download=download_artifact)
+        save_raw(root/'G5P.acquisition-model.json',prior_origin['model_wire'])
     command=[interpreters['311'],'-I','-B',str(source/'scripts/rc6_material_horizon.py'),
         '--source-root',str(source),'--source-repo',str(repo),'--source-sha',a.source_sha,'--source-tree',a.source_tree,
         '--source-index',str(epoch/'pin/source.index.json'),'--raw-root',str(epoch/'native-raw'),
@@ -1261,8 +1338,13 @@ def horizon(a,run,root,prepared,interpreters):
     if comparison is not None:
         command.extend(['--cas-comparison-manifest',str(comparison['path']),
             '--cas-comparison-manifest-sha256',comparison['sha256']])
-    binding,peak,live=heavy_preflight(a,run,epoch,producer,'Horizon-original1201')
-    row=run(command,cwd=root,label='Horizon-original1201',limit=21600,namespace=namespace)
+    if g5p:command.append('--g5p-capture')
+    binding,peak,live=(g5p_preflight(a,run,epoch,'Horizon-original1201') if g5p
+        else heavy_preflight(a,run,epoch,producer,'Horizon-original1201'))
+    row=run(command,cwd=root,label='Horizon-original1201',limit=21600,namespace=namespace,
+            env={'RC6_OWNER_SESSION':a.owner_session,'GITHUB_ACTIONS':'true',
+                 'GITHUB_RUN_ID':os.environ['GITHUB_RUN_ID'],
+                 'GITHUB_RUN_ATTEMPT':os.environ['GITHUB_RUN_ATTEMPT']} if g5p else None)
     preserve_controls(run,'Horizon',[control/name for name in ('producer-owned-fin.json','terminal.json','launch.json')])
     report=document(read(control/'terminal.json',256*1024));code=row['returncode']
     need(report.get('source_sha')==a.source_sha and report.get('source_tree')==a.source_tree,
@@ -1276,13 +1358,69 @@ def horizon(a,run,root,prepared,interpreters):
         'raw_path':str(epoch/'native-raw/native-horizon-result.json'),'sha256':digest(wire),'bytes':len(wire),
         'stat_after':attrs(result_path.lstat()),'captured_only_after_native_and_outer_FIN':True}
     report['native_FIN_payload_safe']=True
-    required=material_evidence(namespace,[control,epoch/'native-raw'])
+    required=material_evidence(namespace,[control,epoch/'native-raw',
+        *([epoch/'native-data/g5p-frames'] if g5p else [])])
     sealed,cleanup=seal_generated(a,run,namespace,root,'Horizon',required)
     prior=[node for node in a.verified_prerequisites['authenticated_receipts'] if node['gate']=='G4']
     browser_green=len(prior)==1 and prior[0].get('required_browser_material_green') is True
     accepted=(code==0 and report.get('native_horizon_validated') is True
         and report.get('original_native_acceptance_checks_executed') is True)
     code=0 if accepted and browser_green else 1
+    if g5p:
+        from scripts.rc6_g5p_model import build_model, model_wire
+        from scripts.rc6_g5p_frames import parse as g5p_parse
+        frame_manifest_wire=read(captured_file(sealed,'native-data/g5p-frames/manifest.json'))
+        frame_manifest=g5p_parse(frame_manifest_wire)
+        capture_index=document(read(sealed/'manifest.json',4*1024**2))
+        lookup={item['relative_source']:item for item in capture_index['files']}
+        def captured_frame(name):
+            item=lookup['native-data/g5p-frames/'+name]
+            path=sealed/item['capture_file']
+            raw=read(path,16*1024**2)
+            need(digest(raw)==item['sha256'],'G5P_SEALED_ORIGINAL_FRAME_BYTES_CHANGED')
+            return raw
+        frames=[]
+        for position,item in enumerate(frame_manifest['frames']):
+            name='cut-'+str(position).zfill(4)+'.json.gz'
+            original=lookup['native-data/g5p-frames/'+name]
+            frames.append({'cut_index':position,'name':name,
+                'path':sealed.name+'/'+original['capture_file'],
+                'sha256':original['sha256']})
+        frame_index={'schema':'rc6.g5p-frame-zip-index.v1','frames':frames}
+        save(root/'G5P.frame-index.json',frame_index)
+        current_model=build_model(wire,frame_manifest_wire,read_frame=captured_frame,
+            owner_session=a.owner_session,writer_binding_sha256=frame_manifest['writer_binding_sha256'])
+        need(current_model['source_sha']==a.source_sha and current_model['source_tree']==a.source_tree,
+             'G5P_CURRENT_ORIGINAL_MODEL_EXACT_SOURCE_REQUIRED')
+        if a.gate=='G5P-acquire':
+            save_raw(root/'G5P.acquisition-model.json',model_wire(current_model))
+            report.update(G5P_qualification=False,acquisition_model_status=current_model['status'],
+                          g5p_frame_index_sha256=digest(canonical(frame_index)))
+            return code,{**report,'receipt':None,'raw_root':str(sealed),
+                'G5P_qualification':False,'acquisition_only':True}
+        need(prior_origin is not None and prior_origin['run_id']!=int(os.environ['GITHUB_RUN_ID']),
+             'G5P_PRIOR_DISTINCT_AUTHENTIC_ACQUISITION_REQUIRED')
+        native=g5p_parse(wire)
+        checks={name:bool(code==0 and native.get('execution_complete') is True)
+            for name in ('original1202','retention','ACK_GC_restore','physical_budget','V3_writer','V4_blocked')}
+        receipt=architectural.receipt_base('G5P',source_sha=a.source_sha,source_tree=a.source_tree,
+            read_contract_sha256=architectural.productive_contract(a.repo_root),started_utc=started,
+            native_exit_code=code,checks=checks,release_profile='PAPER_V3_ONLY',
+            contract_revision='PAPER_V3_ONLY_G5P_V1',owner_session=a.owner_session,
+            original_cut_count=1202,native_archive_format='COMPONENT_V3',
+            required_material_gates=list(checks),
+            native_evidence={'Horizon':captured_reference(sealed,'horizon-control/terminal.json'),
+                'native_Horizon':captured_reference(sealed,'native-raw/native-horizon-result.json'),
+                'g5p_owned_fin':captured_reference(sealed,'horizon-control/producer-owned-fin.json'),
+                'g5p_frames_manifest':captured_reference(sealed,'native-data/g5p-frames/manifest.json'),
+                'g5p_frame_index':{'path':'carrier/G5P.frame-index.json','sha256':digest(canonical(frame_index))},
+                'g5p_acquisition_model':{'path':'carrier/G5P.acquisition-model.json',
+                    'sha256':digest(prior_origin['model_wire'])},
+                'ownership_index':owned_lease_evidence(a,run,root,'G5P',['Horizon-original1201'])},
+            cleanup_receipt=cleanup,source_unchanged=accepted)
+        save(root/'G5P.receipt.json',receipt)
+        return code,{**report,'receipt':receipt,'raw_root':str(sealed),
+            'G5P_qualification':False,'certification_receipt_requires_external_replay':True}
     receipt=architectural.receipt_base('G5',source_sha=a.source_sha,source_tree=a.source_tree,
         read_contract_sha256=architectural.productive_contract(a.repo_root),started_utc=started,native_exit_code=code,
         checks={'retention':accepted,'Horizon':accepted,'browser':browser_green,
@@ -1369,7 +1507,8 @@ def main():
     p.add_argument('--owner-session',required=True)
     p.add_argument('--require-pr-admission',action='store_true')
     p.add_argument('--python311',required=True);p.add_argument('--python312',required=True)
-    p.add_argument('--gate',choices=('cheap','focal311','focal312','full-gov311','full-gov312','BIG-browser','Horizon'),required=True)
+    p.add_argument('--gate',choices=('cheap','focal311','focal312','full-gov311','full-gov312',
+        'BIG-browser','Horizon','G5P-acquire','G5P-certify'),required=True)
     a=p.parse_args()
     architectural.require_horizon_model_before_material(a.gate)
     os.umask(0o022);boot=bootstrap();a.repo_root=safe_path(a.repo_root)
@@ -1400,8 +1539,10 @@ def main():
         readmit_automatic_pr(a,run,'before-preparation')
         if a.gate!='cheap':
             a.verified_prerequisites=architectural.verify_manifest(a.prerequisites_manifest,
-                source_sha=a.source_sha,source_tree=a.source_tree,target_gate=architectural.ALIASES[a.gate],
-                evidence_root=root/'verified-prerequisites')
+                source_sha=a.source_sha,source_tree=a.source_tree,
+                target_gate='G5P' if a.gate in ('G5P-acquire','G5P-certify')
+                    else architectural.ALIASES[a.gate],
+                evidence_root=root/'verified-prerequisites',release_profile=a.release_profile)
             save(controls/'ordered-prerequisite-admission.json',a.verified_prerequisites)
         auth=authority(a)
         a.preparation_started_utc=architectural.utc()

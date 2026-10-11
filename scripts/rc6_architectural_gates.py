@@ -38,11 +38,15 @@ RUNNER_CLASS = "github-hosted/ubuntu-24.04"
 SHA = re.compile(r"[0-9a-f]{40}")
 DIGEST = re.compile(r"[0-9a-f]{64}")
 MAX_ARCHIVE_BYTES = 256 * 1024**2
+MAX_G5P_ARCHIVE_BYTES = 2 * 1024**3
 MAX_MEMBER_BYTES = 16 * 1024**2
 MAX_GATE_RECEIPT_BYTES = 1024**2
 MAX_MEMBERS = 4096
 _AUTHENTIC_G4 = {}
-GATES = ("G0", "G1.311", "G1.312", "G2", "G3", "G4", "G5", "G6.311", "G6.312", "G7", "G8")
+_AUTHENTIC_G5P = {}
+FULL_G5_PROFILE = "FULL_G5"
+PAPER_V3_PROFILE = "PAPER_V3_ONLY"
+GATES = ("G0", "G1.311", "G1.312", "G2", "G3", "G4", "G5", "G6.311", "G6.312", "G7", "G8", "G5P")
 PREREQUISITES = {
     "G0": (), "G1.311": ("G0",), "G1.312": ("G0",),
     "G2": ("G0", "G1.311", "G1.312"),
@@ -54,7 +58,13 @@ PREREQUISITES = {
     "G7": ("G0", "G1.311", "G1.312", "G2", "G3", "G4", "G5", "G6.311", "G6.312"),
     "G8": ("G0", "G1.311", "G1.312", "G2", "G3", "G4", "G5", "G6.311", "G6.312", "G7"),
 }
+PAPER_V3_PREREQUISITES = {
+    gate: tuple("G5P" if item == "G5" else item for item in required)
+    for gate, required in PREREQUISITES.items() if gate != "G5"
+}
+PAPER_V3_PREREQUISITES["G5P"] = PREREQUISITES["G5"]
 ALIASES = {"focal311": "G2", "focal312": "G3", "BIG-browser": "G4", "Horizon": "G5",
+           "G5P-certify": "G5P",
            "full-gov311": "G6.311", "full-gov312": "G6.312", "predeploy": "G7"}
 G1_REQUIRED_CHEAP_FILES = frozenset({
     'tests/test_rc6_single_source_tick.py', 'tests/test_rc6_native_source_reads.py',
@@ -274,6 +284,15 @@ def validate_receipt(row, *, source_sha, source_tree, read_contract_sha256=None)
         require(row.get("required_material_gates") == ["retention", "Horizon", "browser"]
                 and all(checks.get(name) is True for name in ("retention", "Horizon", "browser")),
                 "G5_REQUIRED_MATERIAL_GATES_INCOMPLETE")
+    if row["gate"] == "G5P":
+        require(row.get("release_profile") == PAPER_V3_PROFILE
+                and row.get("contract_revision") == "PAPER_V3_ONLY_G5P_V1"
+                and row.get("required_material_gates") ==
+                    ["original1202", "retention", "ACK_GC_restore", "physical_budget", "V3_writer", "V4_blocked"]
+                and all(checks.get(name) is True for name in row["required_material_gates"])
+                and row.get("original_cut_count") == 1202
+                and row.get("native_archive_format") == "COMPONENT_V3",
+                "G5P_EXACT_V3_MATERIAL_RECEIPT_REQUIRED")
     if row["gate"] in ("G6.311", "G6.312"):
         require(row.get("scope") == "repository-root automatic pytest discovery"
                 and checks.get("full_source") is True and checks.get("closure_matrix") is True,
@@ -281,22 +300,34 @@ def validate_receipt(row, *, source_sha, source_tree, read_contract_sha256=None)
     return row
 
 
-def validate_chain(receipts, *, source_sha, source_tree, target_gate, read_contract_sha256=None):
+def validate_chain(receipts, *, source_sha, source_tree, target_gate, read_contract_sha256=None,
+                   release_profile=FULL_G5_PROFILE):
     target_gate = ALIASES.get(target_gate, target_gate)
-    require(target_gate in GATES, "GATE_UNKNOWN_TARGET")
+    require(release_profile in (FULL_G5_PROFILE, PAPER_V3_PROFILE), "GATE_UNKNOWN_RELEASE_PROFILE")
+    graph = PREREQUISITES if release_profile == FULL_G5_PROFILE else PAPER_V3_PREREQUISITES
+    require(target_gate in graph, "GATE_UNKNOWN_TARGET_FOR_PROFILE")
     by_gate = {}
     for row in receipts:
         validate_receipt(row, source_sha=source_sha, source_tree=source_tree,
                          read_contract_sha256=read_contract_sha256)
         gate = row["gate"]
+        if release_profile == PAPER_V3_PROFILE:
+            require(gate != "G5" and row.get("release_profile", PAPER_V3_PROFILE) == PAPER_V3_PROFILE,
+                    "G5P_CROSS_PROFILE_OR_G5_RECEIPT_REJECTED")
+            if gate in ('G5P','G6.311','G6.312','G7','G8'):
+                require(row.get('release_profile')==PAPER_V3_PROFILE,
+                        'G5P_DOWNSTREAM_TYPED_PROFILE_RECEIPT_REQUIRED')
+        else:
+            require(gate != "G5P" and row.get("release_profile", FULL_G5_PROFILE) == FULL_G5_PROFILE,
+                    "G5P_CROSS_PROFILE_OR_G5_RECEIPT_REJECTED")
         require(gate not in by_gate, "GATE_DUPLICATE_STAGE_RECEIPT")
         by_gate[gate] = row
-    required = PREREQUISITES[target_gate]
+    required = graph[target_gate]
     require(all(gate in by_gate for gate in required), "GATE_PREREQUISITE_MISSING_PENDING_OR_RED")
     require(len({by_gate[gate]["read_contract_sha256"] for gate in required}) <= 1,
             "GATE_PRODUCTIVE_READ_CONTRACT_CHANGED_WITHIN_SHA")
     for gate in required:
-        for previous in PREREQUISITES[gate]:
+        for previous in graph[gate]:
             require(previous in by_gate and stamp(by_gate[previous]["completed_utc"]) <= stamp(by_gate[gate]["started_utc"]),
                     "GATE_ORDER_VIOLATION")
         if gate.startswith('G6.'):
@@ -304,14 +335,21 @@ def validate_chain(receipts, *, source_sha, source_tree, target_gate, read_contr
             validate_preserved_heavy_corpus(corpus)
             require(by_gate[gate].get('required_preserved_heavy_corpus')==corpus,
                 'G6_HEAVY_COVERAGE_LEDGER_NOT_BOUND_TO_AUTHENTIC_G0_SAME_SHA_TREE')
+        if gate == "G5P":
+            authenticated = _AUTHENTIC_G5P.get(id(by_gate[gate]))
+            require(authenticated is not None and authenticated[0] is by_gate[gate]
+                    and authenticated[1] == os.getpid()
+                    and authenticated[2] == canonical(by_gate[gate]),
+                    "G5P_JSON_OR_MOCK_CANNOT_REPLACE_AUTHENTIC_MATERIAL")
     return {"schema": "rc6.architectural-gate-admission.v1", "status": "GREEN", "target_gate": target_gate,
+            "release_profile": release_profile,
             "source_sha": source_sha, "source_tree": source_tree, "verified_prerequisites": list(required),
             "read_contract_sha256": by_gate[required[0]]["read_contract_sha256"] if required else read_contract_sha256,
             "workflow_success_alone_accepted": False, "DEPLOY_OWNER": "NOT_ACQUIRED",
             "final_candidate_eligible": False, "runtime_validated": False, "real_orders_sent": 0}
 
 
-def archive_members(path):
+def archive_members(path, *, maximum=MAX_ARCHIVE_BYTES):
     """No extraction or traversal of a path supplied by an artifact."""
     with zipfile.ZipFile(path) as archive:
         members = {}
@@ -328,12 +366,12 @@ def archive_members(path):
                     "GATE_UNSAFE_OR_DUPLICATE_ARTIFACT_MEMBER")
             members[name] = item
             total += item.file_size
-            require(total <= MAX_ARCHIVE_BYTES, "GATE_UNPACKED_EVIDENCE_BOUND")
+            require(total <= maximum, "GATE_UNPACKED_EVIDENCE_BOUND")
         return members
 
 
-def capture_member(path, name, *, maximum=MAX_MEMBER_BYTES):
-    members = archive_members(path)
+def capture_member(path, name, *, maximum=MAX_MEMBER_BYTES, members=None):
+    members = archive_members(path) if members is None else members
     require(name in members and not members[name].is_dir() and 0 < members[name].file_size <= maximum,
             "GATE_REQUIRED_PAYLOAD_MEMBER_MISSING_OR_OVERSIZED")
     with zipfile.ZipFile(path) as archive:
@@ -342,7 +380,7 @@ def capture_member(path, name, *, maximum=MAX_MEMBER_BYTES):
     return raw
 
 
-def artifact_origin(reference, artifact, run, attempt, *, source_sha):
+def artifact_origin(reference, artifact, run, attempt, *, source_sha, maximum=MAX_ARCHIVE_BYTES):
     require(type(reference) is dict and positive(reference.get("artifact_id"))
             and re.fullmatch(r"sha256:[0-9a-f]{64}", reference.get("artifact_digest", ""))
             and positive(reference.get("run_id")) and reference.get("run_attempt") == 1
@@ -359,7 +397,7 @@ def artifact_origin(reference, artifact, run, attempt, *, source_sha):
     origin = artifact.get("workflow_run", {})
     require(artifact.get("id") == reference["artifact_id"] and artifact.get("digest") == reference["artifact_digest"]
             and artifact.get("expired") is False and type(artifact.get("size_in_bytes")) is int
-            and 0 < artifact["size_in_bytes"] <= MAX_ARCHIVE_BYTES
+            and 0 < artifact["size_in_bytes"] <= maximum
             and origin.get("id") == reference["run_id"] and origin.get("head_sha") == source_sha
             and origin.get("repository_id") == origin.get("head_repository_id") == REPOSITORY_ID,
             "GATE_ARTIFACT_EXACT_DIGEST_OR_ORIGIN_MISMATCH")
@@ -382,8 +420,102 @@ def actions_runner_origin(jobs, *, run_id):
     return job
 
 
+def authenticate_g5p_model_reference(reference, *, source_sha, source_tree,
+                                     owner_session, before_utc, evidence_root,
+                                     get, download):
+    """Replay prior noncertifying Actions bytes before admitting G5P material."""
+    from scripts.rc6_g5p_model import build_model, model_wire
+    from scripts.rc6_g5p_frames import parse
+    from rc6_shadow_runtime.archive_format_contract import SOURCE_MEMBERS, writer_codec_restorer_binding
+    require(type(reference) is dict and reference.get('kind') == 'G5P_V3_ACQUISITION_V1'
+            and reference.get('run_attempt') == 1
+            and type(owner_session) is str and bool(owner_session),
+            'G5P_PRIOR_TYPED_ACQUISITION_REFERENCE_REQUIRED')
+    identifier = reference.get('artifact_id')
+    require(positive(identifier), 'G5P_PRIOR_ARTIFACT_ID_REQUIRED')
+    artifact = get('/actions/artifacts/' + str(identifier))
+    run = get('/actions/runs/' + str(reference.get('run_id')))
+    attempt = get('/actions/runs/' + str(reference.get('run_id')) + '/attempts/1')
+    artifact_origin(reference, artifact, run, attempt, source_sha=source_sha,
+                    maximum=MAX_G5P_ARCHIVE_BYTES)
+    require(run.get('path') == WORKFLOW and stamp(attempt['updated_at']) < stamp(before_utc),
+            'G5P_PRIOR_DISTINCT_COMPLETED_ACQUISITION_REQUIRED')
+    actions_runner_origin(get('/actions/runs/' + str(reference['run_id']) +
+                              '/attempts/1/jobs?per_page=100'), run_id=reference['run_id'])
+    destination = Path(evidence_root)
+    require(not os.path.lexists(destination) and not destination.parent.is_symlink(),
+            'G5P_FRESH_MODEL_DOWNLOAD_PATH_REQUIRED')
+    download(identifier, destination, expected_size=artifact['size_in_bytes'],
+             expected_digest=artifact['digest'], deadline=time.monotonic() + 300)
+    require(destination.stat().st_size == artifact['size_in_bytes']
+            and 'sha256:' + hashlib.sha256(destination.read_bytes()).hexdigest() == artifact['digest'],
+            'G5P_PRIOR_ACTIONS_ZIP_DIGEST_CHANGED')
+    members = archive_members(destination, maximum=MAX_G5P_ARCHIVE_BYTES)
+    def member(role):
+        member_ref = reference.get(role)
+        require(type(member_ref) is dict and type(member_ref.get('path')) is str
+                and DIGEST.fullmatch(member_ref.get('sha256', '')),
+                'G5P_PRIOR_MEMBER_REFERENCE_INVALID')
+        raw = capture_member(destination, member_ref['path'], members=members)
+        require(hashlib.sha256(raw).hexdigest() == member_ref['sha256'],
+                'G5P_PRIOR_MEMBER_BYTES_REBOUND')
+        return raw
+    native_wire, manifest_wire = member('native_result'), member('frames_manifest')
+    horizon_wire, fin_wire, model_raw, index_raw = (
+        member('Horizon'), member('owned_fin'), member('model'), member('frame_index'))
+    native, manifest, horizon, fin = map(parse,
+        (native_wire, manifest_wire, horizon_wire, fin_wire))
+    require(manifest.get('run_id') == reference['run_id'] and manifest.get('run_attempt') == 1
+            and manifest.get('owner_session') == owner_session
+            and native.get('source_sha') == source_sha and native.get('source_tree') == source_tree
+            and horizon.get('source_sha') == source_sha and horizon.get('source_tree') == source_tree
+            and horizon.get('native_result_sha256') == hashlib.sha256(native_wire).hexdigest()
+            and horizon.get('native_horizon_validated') is True
+            and horizon.get('physical_custody_closed') is True
+            and horizon.get('native_finalizer5_green_before_payload_reads') is True
+            and horizon.get('errors') == []
+            and fin == native.get('native_child_infrastructure')
+            and fin.get('source_sha') == source_sha and fin.get('source_tree') == source_tree
+            and fin.get('native_finalizer_closed') is True,
+            'G5P_PRIOR_ORIGINAL_HORIZON_FIN_OR_SOURCE_REBOUND')
+    binding = writer_codec_restorer_binding({name: (ROOT/name).read_bytes() for name in SOURCE_MEMBERS})
+    require(binding.get('native_runtime_archive_format') == 'COMPONENT_V3'
+            and binding.get('native_v4_write_enabled') is False
+            and native.get('g5p_writer_binding_sha256') == binding['binding_sha256'],
+            'G5P_PRIOR_SOURCE_V3_WRITER_BINDING_REBOUND')
+    index = parse(index_raw)
+    require(index.get('schema') == 'rc6.g5p-frame-zip-index.v1'
+            and type(index.get('frames')) is list and len(index['frames']) == 1202,
+            'G5P_PRIOR_FRAME_ZIP_INDEX_REQUIRED')
+    frame_paths = {}
+    for position, item in enumerate(index['frames']):
+        require(type(item) is dict and item.get('cut_index') == position
+                and item.get('name') == 'cut-' + str(position).zfill(4) + '.json.gz'
+                and type(item.get('path')) is str
+                and item['path'] in members and DIGEST.fullmatch(item.get('sha256', '')),
+                'G5P_PRIOR_FRAME_ZIP_INDEX_REBOUND')
+        frame_paths[item['name']] = item
+    def read_frame(name):
+        item = frame_paths[name]
+        raw = capture_member(destination, item['path'], members=members)
+        require(hashlib.sha256(raw).hexdigest() == item['sha256'],
+                'G5P_PRIOR_FRAME_INDEX_BYTES_REBOUND')
+        return raw
+    actual = build_model(native_wire, manifest_wire, owner_session=owner_session,
+        writer_binding_sha256=binding['binding_sha256'],
+        read_frame=read_frame)
+    require(model_wire(actual) == model_raw and parse(model_raw).get('run_id') == reference['run_id'],
+            'G5P_PRIOR_MODEL_MUST_REPLAY_FROM_ALL1202_RAW_FRAMES')
+    return {'source_sha': source_sha, 'source_tree': source_tree,
+            'run_id': reference['run_id'], 'run_attempt': 1,
+            'exact_model_sha256': hashlib.sha256(model_raw).hexdigest(),
+            'actions_zip_authenticated': True, 'model_wire': model_raw,
+            'artifact_id': identifier, 'artifact_digest': artifact['digest']}
+
+
 def verify_manifest(manifest, *, source_sha, source_tree, target_gate, evidence_root, get=None, download=None,
-                    g5_contract_approval=None):
+                    g5_contract_approval=None, release_profile=FULL_G5_PROFILE,
+                    g5p_contract_approval=None):
     """Authenticate ZIP bytes before trusting their self-described gate status."""
     if get is None or download is None:
         from scripts.porota_artifact_http import api_get, download_artifact
@@ -393,6 +525,29 @@ def verify_manifest(manifest, *, source_sha, source_tree, target_gate, evidence_
             and manifest.get("source_sha") == source_sha and manifest.get("source_tree") == source_tree
             and type(manifest.get("artifacts")) is list and len(manifest["artifacts"]) <= 16,
             "GATE_PREREQUISITE_ARTIFACT_MANIFEST_INVALID")
+    require(release_profile in (FULL_G5_PROFILE, PAPER_V3_PROFILE)
+            and manifest.get('release_profile', FULL_G5_PROFILE) == release_profile,
+            'G5P_EXACT_RELEASE_PROFILE_MANIFEST_REQUIRED')
+    if release_profile == PAPER_V3_PROFILE:
+        from scripts import rc6_contract_revisions as revisions
+        from scripts.rc6_g5p_model import DOCUMENT_SHA256
+        from types import SimpleNamespace
+        owner = manifest.get('owner_session')
+        pointer = manifest.get('g5p_revision_approval_url')
+        require(type(owner) is str and bool(owner) and type(pointer) is str,
+                'G5P_EXACT_OWNER_CONTRACT_POINTER_REQUIRED')
+        if g5p_contract_approval is None:
+            from scripts.rc6_material_pr_admission import api
+            g5p_contract_approval = revisions.authenticate_revision(SimpleNamespace(request=api),
+                pointer, owner_session=owner, revision='PAPER_V3_ONLY_G5P_V1',
+                scope='G5P_V3_MATERIAL', source_sha=source_sha, source_tree=source_tree,
+                contract_sha256=DOCUMENT_SHA256)
+        revisions.validate_revision_approval(g5p_contract_approval,
+            revision='PAPER_V3_ONLY_G5P_V1', scope='G5P_V3_MATERIAL',
+            source_sha=source_sha, source_tree=source_tree, contract_sha256=DOCUMENT_SHA256)
+        require(g5p_contract_approval.owner_session == owner
+                and g5p_contract_approval.approval_url == pointer,
+                'G5P_CONTRACT_OWNER_OR_POINTER_REBOUND')
     root = Path(evidence_root)
     require(root.is_absolute() and not any(path.is_symlink() for path in (root, *root.parents))
             and not os.path.lexists(root), "GATE_FRESH_OWNED_EVIDENCE_NAMESPACE_REQUIRED")
@@ -404,7 +559,9 @@ def verify_manifest(manifest, *, source_sha, source_tree, target_gate, evidence_
         artifact = get("/actions/artifacts/" + str(identifier))
         run = get("/actions/runs/" + str(reference.get("run_id")))
         attempt = get("/actions/runs/" + str(reference.get("run_id")) + "/attempts/" + str(reference.get("run_attempt")))
-        artifact_origin(reference, artifact, run, attempt, source_sha=source_sha)
+        g5p_material = reference.get('kind') == 'G5P_V3_MATERIAL_V1'
+        artifact_origin(reference, artifact, run, attempt, source_sha=source_sha,
+                        maximum=MAX_G5P_ARCHIVE_BYTES if g5p_material else MAX_ARCHIVE_BYTES)
         job=actions_runner_origin(get('/actions/runs/'+str(reference['run_id'])+'/attempts/1/jobs?per_page=100'),
             run_id=reference['run_id'])
         path = root / (str(identifier) + ".zip")
@@ -413,13 +570,14 @@ def verify_manifest(manifest, *, source_sha, source_tree, target_gate, evidence_
         require(path.stat().st_size == artifact["size_in_bytes"]
                 and "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest() == artifact["digest"],
                 "GATE_DOWNLOADED_ARTIFACT_BYTES_MISMATCH")
-        archive_members(path)
+        archive_members(path, maximum=MAX_G5P_ARCHIVE_BYTES if g5p_material else MAX_ARCHIVE_BYTES)
         require(type(reference.get("receipts")) is list and bool(reference["receipts"]),
                 "GATE_EXACT_RECEIPT_MEMBERS_REQUIRED")
         for member in reference["receipts"]:
             require(type(member) is dict and type(member.get("path")) is str
                     and DIGEST.fullmatch(member.get("sha256", "")), "GATE_RECEIPT_MEMBER_REFERENCE_INVALID")
-            raw = capture_member(path, member["path"], maximum=MAX_GATE_RECEIPT_BYTES)
+            raw = capture_member(path, member["path"], maximum=MAX_GATE_RECEIPT_BYTES,
+                members=archive_members(path, maximum=MAX_G5P_ARCHIVE_BYTES) if g5p_material else None)
             require(hashlib.sha256(raw).hexdigest() == member["sha256"], "GATE_RECEIPT_MEMBER_DIGEST_MISMATCH")
             row = document(raw)
             require(row.get("run_id") == reference["run_id"] and row.get("run_attempt") == reference["run_attempt"]
@@ -449,20 +607,40 @@ def verify_manifest(manifest, *, source_sha, source_tree, target_gate, evidence_
                 read_contract_sha256=productive_contract(ROOT))
             require(stamp(job['started_at'])<=stamp(row['started_utc'])<=stamp(row['completed_utc'])
                 <=stamp(job['completed_at']),'GATE_NATIVE_TIMES_OUTSIDE_ACTUAL_ACTIONS_JOB')
-            if g5_contract_approval is None:
-                verify_native_evidence(row, path)
+            if row['gate'] == 'G5P':
+                require(release_profile == PAPER_V3_PROFILE and g5p_material
+                    and row.get('owner_session') == manifest['owner_session'],
+                    'G5P_MATERIAL_PROFILE_OWNER_OR_ARTIFACT_KIND_REBOUND')
+                prior = authenticate_g5p_model_reference(manifest.get('g5p_acquisition'),
+                    source_sha=source_sha, source_tree=source_tree,
+                    owner_session=manifest['owner_session'], before_utc=row['started_utc'],
+                    evidence_root=root/('g5p-model-' + str(identifier) + '.zip'), get=get, download=download)
+                require(prior['run_id'] != row['run_id'], 'G5P_ACQUISITION_AND_CERTIFICATION_RUN_MUST_DIFFER')
+                qualified = verify_native_evidence(row, path, g5p_model_origin=prior)
+                _AUTHENTIC_G5P[id(row)] = (row, os.getpid(), canonical(row), artifact['digest'])
             else:
-                verify_native_evidence(row, path, g5_contract_approval=g5_contract_approval)
+                require(not g5p_material, 'G5P_TYPED_ARTIFACT_CANNOT_CARRY_OTHER_GATE')
+                if g5_contract_approval is None:
+                    verify_native_evidence(row, path)
+                else:
+                    verify_native_evidence(row, path, g5_contract_approval=g5_contract_approval)
             if row['gate'] == 'G4':
                 _AUTHENTIC_G4[id(row)] = (row, os.getpid(), canonical(row), artifact['digest'])
             receipts.append(row)
             files[row["gate"]] = {"archive": str(path), "receipt_member": member["path"],
                                    "artifact_id": identifier, "artifact_digest": artifact["digest"],
-                                   "run_id": run["id"], "run_attempt": run["run_attempt"]}
+                                   "run_id": run["id"], "run_attempt": run["run_attempt"],
+                                   **({'qualified_writer_binding': {
+                                       'schema':'rc6.g5p-writer-binding.v1',
+                                       'release_profile': PAPER_V3_PROFILE,
+                                       'source_sha': source_sha, 'source_tree': source_tree,
+                                       'writer_codec_restorer_binding': qualified['writer_codec_restorer_binding']}}
+                                      if row['gate'] == 'G5P' else {})}
         origins.append({"artifact_id": identifier, "digest": artifact["digest"], "run_id": run["id"],
                         "run_attempt": run["run_attempt"], "downloaded_exact_bytes_verified": True,
                         'actual_job_runner':job})
-    result = validate_chain(receipts, source_sha=source_sha, source_tree=source_tree, target_gate=target_gate)
+    result = validate_chain(receipts, source_sha=source_sha, source_tree=source_tree,
+                            target_gate=target_gate, release_profile=release_profile)
     result.update(artifact_origins=origins, authenticated_receipts=receipts, evidence_files=files)
     return result
 
@@ -607,14 +785,17 @@ def verify_g0_capacity_index(index,row,archive):
 
 def verify_native_evidence(row, archive, *, g5_contract_approval=None, g5_frame_capture=None,
                            g5_scratch_root=None, g5_historical_certification=None,
-                           g5_archive_context=None, g5_source_root=None):
+                           g5_archive_context=None, g5_source_root=None,
+                           g5p_model_origin=None):
     evidence = row.get("native_evidence")
     require(type(evidence) is dict and bool(evidence), "GATE_NATIVE_EVIDENCE_MISSING")
     captured = {}
+    members = archive_members(archive, maximum=MAX_G5P_ARCHIVE_BYTES
+                              if row.get('gate') == 'G5P' else MAX_ARCHIVE_BYTES)
     for role, reference in evidence.items():
         require(type(reference) is dict and type(reference.get("path")) is str
                 and DIGEST.fullmatch(reference.get("sha256", "")), "GATE_NATIVE_EVIDENCE_REFERENCE_INVALID")
-        raw = capture_member(archive, reference["path"])
+        raw = capture_member(archive, reference["path"], members=members)
         require(hashlib.sha256(raw).hexdigest() == reference["sha256"], "GATE_NATIVE_EVIDENCE_BYTES_MISMATCH")
         captured[role] = raw
     if row['gate'] in ('G1.311','G1.312'):
@@ -765,6 +946,41 @@ def verify_native_evidence(row, archive, *, g5_contract_approval=None, g5_frame_
             and browser.get('source_custody_inventory_unchanged') is True
             and browser.get('tracked_source_hashes_and_modes_unchanged') is True,
             'G4_NATIVE_RESOURCE_OR_BROWSER_MATERIAL_REBOUND')
+    if row['gate']=='G5P':
+        from scripts.rc6_g5p_evidence import verify_material
+        from scripts.rc6_g5p_frames import parse
+        require(g5p_model_origin is not None and 'g5p_frame_index' in captured,
+                'G5P_PRIOR_MODEL_AND_FRAME_INDEX_REQUIRED')
+        index = parse(captured['g5p_frame_index'])
+        require(index.get('schema') == 'rc6.g5p-frame-zip-index.v1'
+                and type(index.get('frames')) is list and len(index['frames']) == 1202,
+                'G5P_ALL1202_FRAME_ZIP_INDEX_REQUIRED')
+        frame_paths = {}
+        for position, item in enumerate(index['frames']):
+            require(type(item) is dict and item.get('cut_index') == position
+                    and item.get('name') == 'cut-' + str(position).zfill(4) + '.json.gz'
+                    and type(item.get('path')) is str and item['path'] in members
+                    and DIGEST.fullmatch(item.get('sha256', '')),
+                    'G5P_FRAME_ZIP_INDEX_REBOUND')
+            frame_paths[item['name']] = item
+        def read_frame(name):
+            item = frame_paths[name]
+            raw = capture_member(archive, item['path'], members=members)
+            require(hashlib.sha256(raw).hexdigest() == item['sha256'],
+                    'G5P_CURRENT_FRAME_ZIP_INDEX_BYTES_REBOUND')
+            return raw
+        require(hashlib.sha256(captured['g5p_acquisition_model']).hexdigest()
+                == g5p_model_origin['exact_model_sha256']
+                and captured['g5p_acquisition_model'] == g5p_model_origin['model_wire'],
+                'G5P_PRIOR_MODEL_EXACT_BYTES_REQUIRED')
+        qualified = verify_material(row, captured, read_frame=read_frame,
+                                    source_root=g5_source_root or ROOT,
+                                    model_origin=g5p_model_origin)
+        require('ownership_index' in captured,
+                'GATE_ACTUAL_LAUNCH_AND_CONTINUOUS_OWNERSHIP_REQUIRED')
+        verify_owned_gate_lease_index(document(captured['ownership_index']), row, archive,
+                                      members=members)
+        return qualified
     if row['gate']=='G5':
         if row.get('contract_revision') == 'G5A_BOUNDED_EVIDENCE_V2':
             from scripts.rc6_g5b_evidence import verify_g5b_capture
@@ -905,7 +1121,7 @@ def qualified_g5_receipt(qualification, *, acquired_row, browser_row):
         'G7_G8_artifact_join_required': True, 'runtime_validated': False, 'final_candidate_eligible': False}
 
 
-def verify_owned_gate_lease_index(index,row,archive):
+def verify_owned_gate_lease_index(index,row,archive,*,members=None):
     """Past leases are checked at actual launch/FIN; G7 current admission is separate."""
     from scripts import rc6_owned_gate_lease as lease
     require(type(index) is dict and index.get('schema')=='porota.rc6.owned-gate-lease-index.v1'
@@ -918,7 +1134,7 @@ def verify_owned_gate_lease_index(index,row,archive):
     require(len(set(labels))==len(labels),'GATE_HISTORICAL_OWNERSHIP_DUPLICATE_COMMAND')
     required=({'fullGov'+row['python_epoch']} if row['gate'].startswith('G6.') else
         ({'g5a-original1202','g5-reader-collection','g5-reader-execution'} if row.get('contract_revision')=='G5A_BOUNDED_EVIDENCE_V2'
-            else {'Horizon-original1201'}) if row['gate']=='G5' else {'canonical-BIG','LARGE-browser'} if row['gate']=='G4' else
+            else {'Horizon-original1201'}) if row['gate'] in ('G5','G5P') else {'canonical-BIG','LARGE-browser'} if row['gate']=='G4' else
         {'focal'+row['python_epoch']+'-collection','focal'+row['python_epoch']+'-execution'}
         if row['gate'] in ('G1.311','G1.312','G2','G3') else {'G0-admission311','G0-admission312'})
     require(required.issubset(labels),'GATE_HISTORICAL_OWNERSHIP_REQUIRED_NATIVE_COMMAND_MISSING')
@@ -926,7 +1142,7 @@ def verify_owned_gate_lease_index(index,row,archive):
         require(type(reference) is dict and type(reference.get('path')) is str
             and reference['path'].startswith('controls/') and DIGEST.fullmatch(reference.get('sha256','')),
             'GATE_HISTORICAL_OWNERSHIP_RAW_REFERENCE_REQUIRED')
-        raw=capture_member(archive,reference['path'])
+        raw=capture_member(archive,reference['path'],members=members)
         require(hashlib.sha256(raw).hexdigest()==reference['sha256'],
             'GATE_HISTORICAL_OWNERSHIP_CONTROL_BYTES_CHANGED')
         return document(raw)
@@ -940,7 +1156,7 @@ def verify_owned_gate_lease_index(index,row,archive):
             <=stamp(receipt.get('native_started_utc'))<=stamp(receipt.get('native_fin_utc'))
             <=stamp(row['completed_utc']), 'GATE_HISTORICAL_OWNERSHIP_TIMES_OUTSIDE_NATIVE_RECEIPT')
         lease.replay_lease_evidence(receipt,
-            read_object=lambda identifier:capture_member(archive,index['object_prefix']+identifier+'.json'),
+            read_object=lambda identifier:capture_member(archive,index['object_prefix']+identifier+'.json',members=members),
             kernel=kernel,source_sha=row['source_sha'],source_tree=row['source_tree'],
             run_id=row['run_id'],run_attempt=row['run_attempt'],expected_label=command['label'])
     return {'historical_launch_and_lease_union_verified':True,'current_G7_owner_checked_separately':True}
@@ -2066,14 +2282,23 @@ def main(argv=None):
                 and authority.get("source_sha")==args.source_sha and authority.get("source_tree")==args.source_tree,
                 "G7_EXACT_SCOPED_OWNER_ADMISSION_REQUIRED")
             manifest=authority["prerequisites_manifest"]
-        else:manifest=document(args.manifest_json)
+            release_profile=authority.get('release_profile',FULL_G5_PROFILE)
+            require(manifest.get('release_profile',FULL_G5_PROFILE)==release_profile
+                and (release_profile!=PAPER_V3_PROFILE or
+                    authority.get('g5p_revision_approval_url')==manifest.get('g5p_revision_approval_url')),
+                'G7_EXACT_OWNER_PROFILE_AND_REVISION_MANIFEST_REQUIRED')
+        else:
+            manifest=document(args.manifest_json)
+            release_profile=manifest.get('release_profile',FULL_G5_PROFILE)
         result = verify_manifest(manifest, source_sha=args.source_sha,
-            source_tree=args.source_tree, target_gate=args.target_gate, evidence_root=args.evidence_root)
+            source_tree=args.source_tree, target_gate=args.target_gate,
+            evidence_root=args.evidence_root,release_profile=release_profile)
         if args.writer_binding_out is not None:
-            require(args.target_gate == 'G7', 'G5B_WRITER_BINDING_CONTROL_REQUIRES_AUTHENTIC_G7_CHAIN')
-            qualified = result.get('evidence_files', {}).get('G5', {}).get('qualified_writer_binding')
+            require(args.target_gate == 'G7', 'G7_WRITER_BINDING_CONTROL_REQUIRES_AUTHENTIC_CHAIN')
+            binding_gate='G5P' if release_profile==PAPER_V3_PROFILE else 'G5'
+            qualified = result.get('evidence_files', {}).get(binding_gate, {}).get('qualified_writer_binding')
             require(type(qualified) is dict,
-                'G7_CANDIDATE_NATIVE_V4_REQUIRES_FULL_G5B_SOURCE_WRITER_BINDING')
+                'G7_EXACT_PROFILE_REQUIRES_AUTHENTIC_MATERIAL_SOURCE_WRITER_BINDING')
             require(not os.path.lexists(args.writer_binding_out)
                 and args.writer_binding_out.parent.lstat().st_uid == os.getuid()
                 and not any(node.is_symlink() for node in (args.writer_binding_out, *args.writer_binding_out.parents)),
