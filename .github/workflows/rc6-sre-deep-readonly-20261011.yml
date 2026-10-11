@@ -269,32 +269,7 @@ jobs:
                           rotated.append({"path":str(path),"inode":st.st_ino,"dev":st.st_dev,
                               "blocks_bytes":st.st_blocks*512,"size":st.st_size,
                               "nlink":st.st_nlink,"mtime":datetime.datetime.fromtimestamp(st.st_mtime,datetime.timezone.utc).isoformat(),
-                              "rotated":bool(re.search(r'[.]([0-9]+|gz|xz|zst)
-          print(json.dumps(report,sort_keys=True,indent=2))
-          PY
-          python3 -m json.tool "$RUNNER_TEMP/rc6-sre-deep-readonly.json" >/dev/null
-          python3 - <<'PY'
-          import json,os,pathlib
-          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"rc6-sre-deep-readonly.json"
-          x=json.loads(p.read_text())
-          print("SRE_READONLY=CAPTURED|free_bytes="+str(x["root_fs"]["available_bytes"])+
-                "|critical_health="+str(x["containers"].get("porota_critical_approval_rc6",{}).get("health_status"))+
-                "|paper_state="+str(x["db"].get("state"))+"|mutation=false")
-          PY
-          sha256sum "$RUNNER_TEMP/rc6-sre-deep-readonly.json"
-      - name: Upload original redacted evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: rc6-sre-deep-readonly-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/rc6-sre-deep-readonly.json
-          if-no-files-found: warn
-          retention-days: 30
-      - name: Remove runner-only SSH credential
-        if: always()
-        shell: bash
-        run: rm -f "$HOME/.ssh/rc6-sre-audit"
-,name))})
+                              "rotated":bool(__import__('re').search(r'\.(?:[0-9]+|gz|xz|zst)$',name))})
                   except OSError: pass
           report["log_files_top"]=sorted(rotated,key=lambda x:-x["blocks_bytes"])[:40]
           check='import sqlite3,sys;c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True,timeout=2);c.execute("PRAGMA query_only=ON");print(c.execute("PRAGMA quick_check(1)").fetchone()[0]);c.close()'
@@ -325,3 +300,4 @@ jobs:
         if: always()
         shell: bash
         run: rm -f "$HOME/.ssh/rc6-sre-audit"
+
