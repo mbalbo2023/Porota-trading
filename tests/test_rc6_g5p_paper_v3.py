@@ -2,6 +2,7 @@
 import unittest
 import copy
 from datetime import date, datetime, timedelta, timezone
+from email.message import Message
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import time
+import urllib.error
 from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -34,6 +36,32 @@ from scripts import rc6_material_derive as derive
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_owner_http_error_preserves_only_sanitized_status_after_control_red(self):
+        headers=Message()
+        headers['X-RateLimit-Remaining']='0'
+        headers['X-RateLimit-Reset']='1791753600'
+        headers['Retry-After']='60'
+        for failure,reason,status in (
+            (urllib.error.HTTPError('https://api.github.com/private',403,'forbidden',headers,None),
+             'OWNED_LEASE_HTTP_STATUS_403',403),
+            (TimeoutError('timed out'),'OWNED_LEASE_HTTP_TIMEOUT',None)):
+            with tempfile.TemporaryDirectory() as temp:
+                monitor=lease.GateLeaseMonitor(temp,source_sha='a'*40,source_tree='b'*40,
+                    owner_session='CODEX_G5P_TEST',gate='G5P-acquire',
+                    launch_receipt_url='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
+                    run_id=123,run_attempt=1)
+                monitor.command_label='locked312-0'
+                self.assertEqual(str(monitor._failure(failure)),reason)
+                detail=json.loads((Path(temp)/'owner-locked312-0.first-error.json').read_bytes())
+                self.assertEqual(detail['reason'],reason)
+                self.assertEqual(detail['http_status'],status)
+                self.assertEqual(detail['exception_class'],type(failure).__name__)
+                if status==403:
+                    self.assertEqual(detail['http_limit_counters'],{
+                        'rate_limit_remaining':0,'rate_limit_reset_epoch':1791753600,
+                        'retry_after_seconds':60})
+                self.assertNotIn('https://api.github.com/private',json.dumps(detail))
+
     def test_full_git_original_preflight_red_preserves_only_finished_private_controls(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)

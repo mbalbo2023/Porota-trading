@@ -18,6 +18,7 @@ import re
 import signal
 import stat
 import time
+import urllib.error
 import urllib.request
 
 from scripts import rc6_material_pr_admission as admission
@@ -367,7 +368,40 @@ class GateLeaseMonitor:
     def _failure(self, error):
         if self.stop_reason is None:
             reason = str(error).partition(':')[0]
-            self.stop_reason = reason if re.fullmatch('[A-Z][A-Z0-9_]{0,191}', reason) else 'OWNED_LEASE_CONTROL_UNAVAILABLE'
+            if re.fullmatch('[A-Z][A-Z0-9_]{0,191}', reason):
+                self.stop_reason = reason
+            elif isinstance(error, urllib.error.HTTPError) and 100 <= error.code <= 599:
+                self.stop_reason = 'OWNED_LEASE_HTTP_STATUS_' + str(error.code)
+            elif isinstance(error, TimeoutError) or (isinstance(error, urllib.error.URLError)
+                    and isinstance(error.reason, TimeoutError)):
+                self.stop_reason = 'OWNED_LEASE_HTTP_TIMEOUT'
+            elif isinstance(error, urllib.error.URLError):
+                self.stop_reason = 'OWNED_LEASE_HTTP_TRANSPORT_FAILURE'
+            else:
+                self.stop_reason = 'OWNED_LEASE_CONTROL_UNAVAILABLE'
+            if self.command_label is not None:
+                # Preserve only a sanitized classification after control RED;
+                # a URL, header, token or response body is never copied.
+                safe_http_headers = {}
+                if isinstance(error, urllib.error.HTTPError):
+                    for header, key in (('X-RateLimit-Remaining', 'rate_limit_remaining'),
+                                        ('X-RateLimit-Reset', 'rate_limit_reset_epoch'),
+                                        ('Retry-After', 'retry_after_seconds')):
+                        raw = error.headers.get(header) if error.headers is not None else None
+                        if raw is not None and re.fullmatch(r'[0-9]{1,12}', raw):
+                            safe_http_headers[key] = int(raw)
+                detail = {'schema': 'porota.rc6.owner-control-first-error.v1',
+                    'command_label': self.command_label, 'reason': self.stop_reason,
+                    'exception_class': type(error).__name__,
+                    'http_status': error.code if isinstance(error, urllib.error.HTTPError) else None,
+                    'http_limit_counters': safe_http_headers,
+                    'transport_cause_class': (type(error.reason).__name__
+                        if isinstance(error, urllib.error.URLError) else None),
+                    'qualification_claimed': False, 'real_orders_sent': 0}
+                try:
+                    _private_write(self.root / ('owner-' + self.command_label + '.first-error.json'), wire(detail))
+                except (OSError, LeaseControlFailure):
+                    pass
         return LeaseControlFailure(self.stop_reason)
 
     def _local(self):
