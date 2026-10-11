@@ -1,0 +1,53 @@
+name: RC6 SRE post repair stability and SQLite lock probe READ_ONLY
+on:
+  push:
+    branches: [ops/rc6-sre-deep-20261011]
+    paths: [.github/workflows/rc6-sre-post-probe-20261011.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-sre-post-probe-20261011
+  cancel-in-progress: false
+jobs:
+  probe:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/ops/rc6-sre-deep-20261011' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run bounded read only post repair probe
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS" && test -n "$DO_HOST" && test -n "$DO_USER"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6-sre-post"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6-sre-post" "$HOME/.ssh/known_hosts"
+          timeout 330 ssh -i "$HOME/.ssh/rc6-sre-post" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n nice -n 19 ionice -c3 python3 -' < scripts/ops/rc6_sre_post_probe.py > "$RUNNER_TEMP/rc6-sre-post-probe.json"
+          python3 -m json.tool "$RUNNER_TEMP/rc6-sre-post-probe.json" >/dev/null
+          sha256sum scripts/ops/rc6_sre_post_probe.py "$RUNNER_TEMP/rc6-sre-post-probe.json"
+          python3 - <<'PY'
+          import json,os,pathlib
+          x=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'rc6-sre-post-probe.json').read_text())
+          c=x['containers']['porota_critical_approval_rc6']
+          print('POST_PROBE|critical='+str(c.get('health'))+'|init='+str(c.get('init'))+'|pids='+str(c.get('pids'))+'|paper='+str(x['paper'])+'|lock_counts='+str(x['lock_owner_counts'])+'|mutation=false')
+          PY
+      - name: Upload original redacted probe
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-sre-post-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-sre-post-probe.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Remove runner only SSH credential
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6-sre-post"
