@@ -1,4 +1,4 @@
-name: RC6 SRE critical unit DIAGNOSE live health read only
+name: RC6 SRE critical unit PLAN preserve live health read only
 on:
   push:
     branches: [ops/rc6-sre-deep-20261011]
@@ -29,7 +29,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6-sre-plan" "$HOME/.ssh/known_hosts"
           tool_sha="$(sha256sum scripts/ops/rc6_sre_critical_repair.py | cut -d' ' -f1)"
-          timeout 160 ssh -i "$HOME/.ssh/rc6-sre-plan" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15 "$DO_USER@$DO_HOST" "sudo -n nice -n 19 ionice -c3 python3 - --mode diagnose --tool-sha256 $tool_sha" < scripts/ops/rc6_sre_critical_repair.py > "$RUNNER_TEMP/rc6-sre-critical-plan.json"
+          timeout 160 ssh -i "$HOME/.ssh/rc6-sre-plan" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15 "$DO_USER@$DO_HOST" "sudo -n nice -n 19 ionice -c3 python3 - --mode plan --tool-sha256 $tool_sha" < scripts/ops/rc6_sre_critical_repair.py > "$RUNNER_TEMP/rc6-sre-critical-plan.json"
           python3 -m json.tool "$RUNNER_TEMP/rc6-sre-critical-plan.json" >/dev/null
           sha256sum "$RUNNER_TEMP/rc6-sre-critical-plan.json"
           rm -f "$HOME/.ssh/rc6-sre-plan"
