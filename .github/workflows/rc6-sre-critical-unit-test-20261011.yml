@@ -5,6 +5,7 @@ on:
     paths:
       - ops/rc6_deploy_critical_control_plane.sh
       - tests/test_rc6_sre_critical_health.py
+      - scripts/ops/rc6_sre_critical_repair.py
       - .github/workflows/rc6-sre-critical-unit-test-20261011.yml
 permissions:
   contents: read
@@ -22,5 +23,6 @@ jobs:
         run: |
           set -Eeuo pipefail
           bash -n ops/rc6_deploy_critical_control_plane.sh
+          python3 -m py_compile scripts/ops/rc6_sre_critical_repair.py
           python3 -m unittest discover -s tests -p 'test_rc6_sre_critical_health.py' -v
           git diff --exit-code
