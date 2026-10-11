@@ -160,8 +160,9 @@ jobs:
                       "HOST_GIT_IDENTITY_UNKNOWN")
               report["runtime_before"]={"containers":before_containers,
                     "paper":before_paper,"git_head":before_git,"ppi_watch":before_ppi}
-              require(command(["systemctl","is-active","porota-host-general-backup-rc6.service"],12)
-                      in ("inactive","failed"),"BACKUP_SERVICE_ACTIVE")
+              backup_active=command(["systemctl","show","porota-host-general-backup-rc6.service",
+                                     "--property=ActiveState","--value"],12)
+              require(backup_active in ("inactive","failed"),"BACKUP_SERVICE_ACTIVE")
               roots=(
                 ("/opt/porota-backups",r"porota-general-[0-9]{8}T[0-9]{6}Z[.]tar[.]gz"),
                 ("/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper",
