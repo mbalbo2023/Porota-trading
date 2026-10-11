@@ -34,6 +34,28 @@ from scripts import rc6_material_derive as derive
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_full_git_original_preflight_red_preserves_only_finished_private_controls(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            control=root/'controls-only';control.mkdir()
+            commands=root/'command-raw';commands.mkdir()
+            epoch=root/'rc6g311-abcdefgh';epoch.mkdir(mode=0o700)
+            preparation=epoch/'preparation';preparation.mkdir(mode=0o700)
+            (preparation/'selected-epoch-original-preflight.log').write_text('first child error\n')
+            source=epoch/'source';source.mkdir()
+            (source/'product.py').write_text('product')
+            run=SimpleNamespace(control=control,raw=commands,sealed_groups=[],unknown=False,
+                manager={'managed_custody_closed':lambda kernel:True},
+                lease_stop={'namespace':None,'kernel':{},'label':'fullGit-original-inputs'})
+            candidate=SimpleNamespace(gate='G5P-acquire',repo_root=root,source_sha='a'*40,source_tree='b'*40)
+            with patch.object(carrier.runpy,'run_path',return_value={'bundle':lambda **kwargs:kwargs['groups']}):
+                groups=carrier.preserve_closed_lease_stop(candidate,run,root)
+                self.assertIn(('preparation-error311',preparation),groups)
+                self.assertFalse(any(path==source for _label,path in groups))
+                preparation.chmod(0o777)
+                with self.assertRaisesRegex(ValueError,'G5P_BUILDER_DIAGNOSTIC_CONTROL_OWNER_INVALID'):
+                    carrier.preserve_closed_lease_stop(candidate,run,root)
+
     def test_original_full_git_builder_derives_only_exact_pr492_authority_literals(self):
         scope={'pr':492,'branch':'fix/rc6-g5p-paper-v3-20261011',
             'base_branch':'deploy/rc6-pr69-isolated-20260915',

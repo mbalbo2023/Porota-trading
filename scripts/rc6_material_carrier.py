@@ -1599,6 +1599,32 @@ def preserve_closed_lease_stop(a,run,root):
         seal_generated(a,run,namespace,root,'owned-lease-stop',sorted(set(required)))
     module=runpy.run_path(str(a.repo_root/'scripts/rc6_material_raw.py'))
     groups=[('controls',run.control),('commands',run.raw),*run.sealed_groups]
+    if a.gate in ('G5P-acquire','G5P-certify') and stop['label']=='fullGit-original-inputs':
+        # The original builder writes nested preflight logs in a new private
+        # rc6g epoch, not in its outer stdout. Its parent and the selected
+        # child have both reached FIN here. Capture only preparation controls;
+        # never traverse the freshly cloned Source or Git object store.
+        parents=sorted(root.glob('rc6g[0-9][0-9][0-9]-*'))
+        need(len(parents)<=2,'G5P_BUILDER_DIAGNOSTIC_EPOCH_COUNT_INVALID')
+        epochs=[]
+        for parent in parents:
+            match=re.fullmatch(r'rc6g(311|312)-[a-z0-9_]+',parent.name)
+            need(match is not None and match.group(1) not in epochs
+                and parent.parent==root and not parent.is_symlink(),
+                'G5P_BUILDER_DIAGNOSTIC_PARENT_SCOPE_INVALID')
+            identity=parent.lstat()
+            need(stat.S_ISDIR(identity.st_mode) and identity.st_uid==os.geteuid()
+                and stat.S_IMODE(identity.st_mode)==0o700,
+                'G5P_BUILDER_DIAGNOSTIC_PARENT_OWNER_INVALID')
+            epoch=match.group(1);epochs.append(epoch)
+            preparation=parent/'preparation'
+            if preparation.exists():
+                identity=preparation.lstat()
+                need(not preparation.is_symlink() and stat.S_ISDIR(identity.st_mode)
+                    and identity.st_uid==os.geteuid()
+                    and stat.S_IMODE(identity.st_mode)==0o700,
+                    'G5P_BUILDER_DIAGNOSTIC_CONTROL_OWNER_INVALID')
+                groups.append(('preparation-error'+epoch,preparation))
     return module['bundle'](namespace=root,output_root=root/'closed-lease-red-raw',groups=groups,files=[],
         read=read,save_raw=save_raw,save=save,source_sha=a.source_sha,source_tree=a.source_tree,gate=a.gate)
 
