@@ -23,16 +23,8 @@ UNIT = Path("/etc/systemd/system/porota-critical-approval-rc6.service")
 DB = "/opt/porota-trading/data/paper_v17/observer_v17.db"
 NAME = "porota_critical_approval_rc6"
 SIBLINGS = ("porota_production_observer", "porota_production_dashboard")
-HEALTH = (
-    '--init --pids-limit 64 --memory 192m '
-    '--health-cmd="python -c \'from fm_critical_approval_unix_runtime_rc6 '
-    'import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); '
-    'assert h.get(\\"status\\")==\\"ok\\" and '
-    'h.get(\\"capability\\")==\\"issues_only\\"\'" '
-    '--health-interval=30s --health-timeout=20s '
-    '--health-retries=3 --health-start-period=20s'
-)
 OLD = "--pids-limit 64 --memory 192m"
+NEW = "--init " + OLD
 
 
 def sha(raw: bytes) -> str:
@@ -53,7 +45,7 @@ def patch_unit(raw: bytes) -> bytes:
         raise RuntimeError("UNIT_EXECSTART_COUNT")
     index = matches[0]
     line = lines[index]
-    if line.count(OLD) != 1 or "--init" in line or "--health-cmd" in line:
+    if line.count(OLD) != 1 or "--init" in line:
         flags = {
             "old_exact": line.count(OLD),
             "pids": re.findall(r"--pids-limit(?:=|\s+)([0-9]+)", line),
@@ -69,9 +61,10 @@ def patch_unit(raw: bytes) -> bytes:
         raise RuntimeError("UNIT_SOURCE_MISMATCH:" + json.dumps(flags, sort_keys=True))
     if not all(token in line for token in
                ("--read-only", "--user botuser", "--cap-drop ALL",
-                "POROTA_RUNTIME_MODE=PRODUCTION_PAPER", "--pull never")):
+                "POROTA_RUNTIME_MODE=PRODUCTION_PAPER", "--pull never",
+                "--health-cmd", "github.sock")) or "http" in line.lower():
         raise RuntimeError("UNIT_PAPER_GUARD_MISSING")
-    lines[index] = line.replace(OLD, HEALTH, 1)
+    lines[index] = line.replace(OLD, NEW, 1)
     return "".join(lines).encode("utf-8")
 
 
@@ -90,6 +83,9 @@ def inspect(name: str) -> dict:
             str((data["Config"].get("Healthcheck") or {}).get("Test") or "")
             else "OTHER"
         ),
+        "health_test_sha256": sha(json.dumps(
+            (data["Config"].get("Healthcheck") or {}).get("Test"),
+            sort_keys=True).encode()),
     }
 
 
@@ -136,7 +132,7 @@ def plan(tool_sha256: str) -> dict:
     plan_doc = {
         "schema": "porota.rc6.sre.critical-unit-plan.v1",
         "actor": "WORK_RC6_SRE_20261011_1740Z",
-        "mutation": "SINGLE_CRITICAL_UNIT_INIT_AND_BROKER_HEALTH_RESTART",
+        "mutation": "SINGLE_CRITICAL_UNIT_INIT_PRESERVE_HEALTH_RESTART",
         "unit": str(UNIT), "old_sha256": sha(raw),
         "new_sha256": sha(patched), "old_inode": before["unit_inode"],
         "old_mode": before["unit_mode"], "before": before,
@@ -236,11 +232,22 @@ def apply(expected: dict, tool_sha256: str) -> dict:
         if v["health"] == "healthy":
             break
     after = snapshot()
+    try:
+        broker = run("docker", "exec", NAME, "python", "-c",
+                     'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; '
+                     'h=UnixGithubIssuesClient().health(); '
+                     'assert h.get("status")=="ok" and h.get("capability")=="issues_only"; '
+                     'print("ISSUES_ONLY_OK")', timeout=30)
+        broker_class = "ISSUES_ONLY_OK" if broker == "ISSUES_ONLY_OK" else "UNEXPECTED"
+    except Exception as exc:
+        broker_class = type(exc).__name__
     good = (
         after["unit_sha256"] == expected["new_sha256"]
         and after["paper"] == ["PRODUCTION_PAPER", 0]
         and after["critical"]["health"] == "healthy"
-        and after["critical"]["health_cmd_class"] == "BROKER_ISSUES"
+        and after["critical"]["health_test_sha256"] ==
+            before["critical"]["health_test_sha256"]
+        and broker_class == "ISSUES_ONLY_OK"
         and after["critical"]["init"] is True
         and after["critical"]["pids_limit"] == 64
         and after["critical"]["image_id"] == before["critical"]["image_id"]
@@ -252,6 +259,7 @@ def apply(expected: dict, tool_sha256: str) -> dict:
     return {"schema": "porota.rc6.sre.critical-unit-apply.v1",
             "plan_sha256": sha(json.dumps(expected, sort_keys=True).encode()),
             "before": before, "after": after,
+            "broker_probe_class": broker_class,
             "health_observations": observations, "validated": good,
             "fail_closed": not good}
 
