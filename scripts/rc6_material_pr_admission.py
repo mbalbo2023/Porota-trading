@@ -669,22 +669,43 @@ def dedup_admission(sha,gate):
         'pagination_complete':True,'no_prior_run_reclassified_as_PASS':True}
 
 def latest_writer(rows,issue,sha,tree,owner,now):
-    records=[];states={}
+    records=[];states={};deploy_states={}
     for row in sorted(rows,key=lambda item:(effective_stamp(item),item['id'])):
         f=fields(row.get('body',''))
         if any(key in f for key in ('WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER','SOURCE_LEASE_EXPIRES_UTC','RELEASED')):
             require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/'+str(issue)),
                 'OWNERSHIP_RECORD_AUTHOR_OR_ISSUE_REBOUND')
             require(row['created_at']==row['updated_at'],'EDITED_HISTORICAL_OWNERSHIP_RECORD')
-            require('DEPLOY_OWNER' not in f or f['DEPLOY_OWNER'] in ('NOT_ACQUIRED','RELEASED','NONE','null'),
-                'ANY_DEPLOY_OWNER_AFTER_CONTROLLED_ANCHOR')
+            deploy=f.get('DEPLOY_OWNER')
+            if deploy not in (None,'NOT_ACQUIRED','NONE','null'):
+                session=f.get('SESSION_SUCCESSOR',f.get('SESSION'))
+                if deploy=='RELEASED':
+                    prior=deploy_states.get(session)
+                    require(prior is not None and f.get('RELEASED')=='true'
+                        and f.get('WORKSTREAM_ID')==prior[1].get('WORKSTREAM_ID'),
+                        'HISTORICAL_DEPLOY_OWNER_RELEASE_NOT_AUTHENTIC')
+                else:
+                    require(deploy==session and f.get('RELEASED')=='false'
+                        and bool(f.get('WORKSTREAM_ID')),
+                        'FOREIGN_OR_UNKNOWN_DEPLOY_OWNER_AFTER_ANCHOR')
+                deploy_states[session]=(row,f)
             scoped={f[key] for key in ('WRITE_OWNER','INTEGRATION_OWNER')
                 if key in f and f[key] not in ('RELEASED','NOT_ACQUIRED','NONE','null')}
             if f.get('RELEASED')=='true':
-                # A release belongs to the session that actually wrote it.
-                # A foreign active session cannot manufacture another writer's
-                # release merely by naming that owner or quoting an old lease.
-                require(scoped and scoped=={f.get('SESSION_SUCCESSOR',f.get('SESSION'))},
+                # Historical owner records use both WRITE_OWNER=<session> and
+                # WRITE_OWNER=RELEASED. In the latter form, bind the release
+                # to its explicit SESSION and to the preceding workstream;
+                # an unrelated comment must never release another writer.
+                session=f.get('SESSION_SUCCESSOR',f.get('SESSION'))
+                if not scoped and f.get('WRITE_OWNER')=='RELEASED':
+                    prior=states.get(session)
+                    require(type(session) is str and prior is not None
+                        and prior[1].get('WORKSTREAM_ID')==f.get('WORKSTREAM_ID')
+                        and f.get('INTEGRATION_OWNER','NOT_ACQUIRED') in
+                            ('NOT_ACQUIRED','RELEASED'),
+                        'AUTHENTIC_BARE_RELEASE_SESSION_AND_WORKSTREAM_REQUIRED')
+                    scoped={session}
+                require(scoped and scoped=={session},
                     'AUTHENTIC_OWN_SESSION_EXPLICIT_RELEASE_REQUIRED')
                 for identifier in scoped:
                     prior=states.get(identifier)
@@ -704,6 +725,9 @@ def latest_writer(rows,issue,sha,tree,owner,now):
         if identifier!=owner:
             require(status.get('RELEASED')=='true',
                 'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER_AFTER_SUCCESSOR_ANCHOR')
+    require(all(status.get('DEPLOY_OWNER')=='RELEASED' and status.get('RELEASED')=='true'
+                for _row,status in deploy_states.values()),
+            'ACTIVE_DEPLOY_OWNER_AFTER_CONTROLLED_ANCHOR')
     integrations=[(row,f) for row,f in records if 'INTEGRATION_OWNER' in f]
     require(integrations and integrations[-1][1]['INTEGRATION_OWNER']==owner,
         'LATEST_INTEGRATION_OWNER_NOT_CONTROLLED_RECOVERY')
