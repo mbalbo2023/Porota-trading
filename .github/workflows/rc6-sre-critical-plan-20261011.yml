@@ -1,0 +1,46 @@
+name: RC6 SRE critical unit PLAN read only
+on:
+  push:
+    branches: [ops/rc6-sre-deep-20261011]
+    paths: [.github/workflows/rc6-sre-critical-plan-20261011.yml]
+permissions:
+  contents: read
+jobs:
+  plan:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/ops/rc6-sre-deep-20261011' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Capture sealed no-write plan
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS" && test -n "$DO_HOST" && test -n "$DO_USER"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6-sre-plan"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6-sre-plan" "$HOME/.ssh/known_hosts"
+          tool_sha="$(sha256sum scripts/ops/rc6_sre_critical_repair.py | cut -d' ' -f1)"
+          timeout 160 ssh -i "$HOME/.ssh/rc6-sre-plan" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15 "$DO_USER@$DO_HOST" "sudo -n nice -n 19 ionice -c3 python3 - --mode plan --tool-sha256 $tool_sha" < scripts/ops/rc6_sre_critical_repair.py > "$RUNNER_TEMP/rc6-sre-critical-plan.json"
+          python3 -m json.tool "$RUNNER_TEMP/rc6-sre-critical-plan.json" >/dev/null
+          sha256sum "$RUNNER_TEMP/rc6-sre-critical-plan.json"
+          rm -f "$HOME/.ssh/rc6-sre-plan"
+      - name: Upload immutable plan evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-sre-critical-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-sre-critical-plan.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Remove runner SSH key on failure
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6-sre-plan"
