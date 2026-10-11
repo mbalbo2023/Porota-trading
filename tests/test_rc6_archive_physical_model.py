@@ -1,6 +1,7 @@
 """Cheap all1202 arithmetic counterexamples; no Horizon producer authority."""
 from dataclasses import replace
 from datetime import date, timedelta
+import hashlib
 
 import pytest
 
@@ -166,3 +167,67 @@ def test_arithmetic_envelope_cannot_claim_authentic_provenance_or_a_g5_certifica
     assert report["missing_certification"]
     with pytest.raises(TypeError):
         report["global_complete_physical_upper_bound_bytes"] = 1
+
+
+def original_metadata_prefix(count=2):
+    """Unit metadata only: no original financial bytes or artifact authority."""
+    clocks = model.horizon_schedule(date(2026, 10, 5))
+    rows = []
+    for index, clock in enumerate(clocks[:count]):
+        hashes = {name: hashlib.sha256((str(index) + name).encode()).hexdigest() for name in model.MEMBERS}
+        rows.append({"tick_index": index, "as_of": clock.isoformat(), "sequence": index + 1,
+            "phase": "PREOPEN" if index == 0 else "OPEN" if index <= 770 else "CLOSED",
+            "generation_id": f"{index + 1:032x}", "member_bytes": {name: 1 for name in model.MEMBERS},
+            "original_member_sha256": hashes, "original_manifest_sha256": hashes["manifest.json"],
+            "original_manifest_clock": clock.isoformat(), "original_generation_custody_unchanged": True,
+            "real_orders_sent": 0, "real_routes": "NOT_CALLED", "recipe_bytes": 1,
+            "archive_residence": {"allocated_bytes_including_directories": 4096 * (index + 1),
+                "logical_bytes_including_directories": index + 1, "pending_temporaries_or_intents": 0},
+            "verified_native_archive_head": {"contracted_horizon_seconds": 32400, "recovery_margin_seconds": 3600}})
+    return rows
+
+
+def test_original_prefix_guard_preserves_missing_payloads_and_does_not_extrapolate_closed_samples():
+    cuts = original_metadata_prefix(773)
+    report = model.original_prefix_obligations(cuts)
+    assert report["captured_original_cuts"] == 773 and len(report["missing_original_cut_indices"]) == 429
+    assert report["cuts_with_all_five_payloads_available"] == 0 and report["known_cuts_missing_original_payloads"] == 773
+    assert report["phase_counts"] == {"PREOPEN": 1, "OPEN": 770, "CLOSED": 2}
+    assert [(row["tick_index"], row["phase"]) for row in report["measured_edges_and_last_cut"]][-3:] == [
+        (770, "OPEN"), (771, "CLOSED"), (772, "CLOSED")]
+    assert report["observation_is_continuous_peak"] is report["projected_missing_cuts"] is False
+    assert report["global_complete_physical_upper_bound_bytes"] is None and report["g5_equivalence_demonstrated"] is False
+    with pytest.raises(ValueError, match="ALL1202_AUTHENTIC_ORIGINAL_BYTES_REQUIRED"):
+        model.require_original_bytes_before_all1202_model(report)
+
+
+def test_all1202_hashes_alone_cannot_close_original_byte_coverage_or_model():
+    cuts = original_metadata_prefix(1202)
+    report = model.original_prefix_obligations(cuts)
+    assert report["missing_original_cut_indices"] == () and report["all1202_original_bytes_coverage"] is False
+    with pytest.raises(ValueError, match="ALL1202_AUTHENTIC_ORIGINAL_BYTES_REQUIRED"):
+        model.require_original_bytes_before_all1202_model(report)
+    payloads = {value for cut in cuts for value in cut["original_member_sha256"].values()}
+    availability_only = model.original_prefix_obligations(cuts, available_payload_sha256=payloads)
+    assert model.require_original_bytes_before_all1202_model(availability_only) == availability_only
+    assert availability_only["original_anchor_and_fallback_layouts_verified"] is False
+    assert availability_only["all_gc_recovery_temp_states_verified"] is False
+    assert availability_only["global_complete_physical_upper_bound_bytes"] is None
+
+
+@pytest.mark.parametrize("attack", ("phase", "clock", "member_hashes", "member_size", "retention",
+    "pending_temporary", "source_custody", "duplicate_generation", "orders"))
+def test_original_model_guard_rejects_changed_clock_closed_or_retention_contract(attack):
+    cuts = original_metadata_prefix(773)
+    victim = cuts[772]
+    if attack == "phase": victim["phase"] = "OPEN"
+    elif attack == "clock": victim["as_of"] = cuts[771]["as_of"]
+    elif attack == "member_hashes": victim["original_member_sha256"].pop("projection.sqlite")
+    elif attack == "member_size": victim["member_bytes"]["projection.sqlite"] = True
+    elif attack == "retention": victim["verified_native_archive_head"]["recovery_margin_seconds"] = 0
+    elif attack == "pending_temporary": victim["archive_residence"]["pending_temporaries_or_intents"] = 1
+    elif attack == "source_custody": victim["original_generation_custody_unchanged"] = False
+    elif attack == "duplicate_generation": victim["generation_id"] = cuts[771]["generation_id"]
+    elif attack == "orders": victim["real_orders_sent"] = 1
+    with pytest.raises(ValueError, match="RETENTION_PHYSICAL_"):
+        model.original_prefix_obligations(cuts)

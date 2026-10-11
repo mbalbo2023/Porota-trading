@@ -130,30 +130,71 @@ def _timelines(calls):
     return result
 
 
-def prove_lease_coverage(timelines, context, start, end):
+def prove_lease_coverage(timelines, context, start, end, *, workstream=None):
     """Both immutable same-Source lease unions must cover the complete interval."""
     require(start <= end, 'OWNED_LEASE_TIME_ORDER_INVALID')
     covered = {}
     for issue in (471, 473):
         rows = timelines.get(issue)
         require(type(rows) is list and rows, 'OWNED_LEASE_BOTH_ISSUE_TIMELINES_REQUIRED')
-        spans = []
-        for row in rows:
+        spans = []; states = {}
+        for row in sorted(rows, key=lambda item: (admission.effective_stamp(item), item['id'])):
             values = admission.fields(row.get('body', ''))
-            owners = [values[key] for key in ('WRITE_OWNER', 'INTEGRATION_OWNER') if key in values]
+            owners = [values[key] for key in ('WRITE_OWNER', 'INTEGRATION_OWNER') if key in values
+                and values[key] not in ('RELEASED', 'NOT_ACQUIRED', 'NONE', 'null')]
             foreign = any(owner not in (context['owner_session'], 'RELEASED', 'NOT_ACQUIRED', 'NONE', 'null')
                 for owner in owners)
             effective = admission.effective_stamp(row)
-            if foreign and effective <= end:
-                require(effective < start and values.get('RELEASED') == 'true',
-                    'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')
+            if effective <= end and owners:
+                require(row['created_at'] == row['updated_at'] and row['user']['login'] == 'mbalbo2023'
+                    and row['issue_url'].endswith('/issues/' + str(issue)),
+                    'OWNED_LEASE_IMMUTABLE_SCOPE_OR_MODE_REQUIRED')
+                if values.get('RELEASED') == 'true':
+                    require(set(owners) == {values.get('SESSION_SUCCESSOR', values.get('SESSION'))},
+                        'OWNED_LEASE_AUTHENTIC_OWN_SESSION_RELEASE_REQUIRED')
+                    require(effective < start or context['owner_session'] not in owners,
+                        'OWNED_LEASE_OWNER_RELEASE_OVERLAPS_PRODUCER')
+                if foreign and effective >= start:
+                    require(False, 'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')
+                if context['owner_session'] in owners and effective >= start:
+                    require(values.get('WRITE_OWNER') == values.get('INTEGRATION_OWNER')
+                            == values.get('SESSION_SUCCESSOR', values.get('SESSION')) == context['owner_session']
+                        and values.get('SOURCE_SHA') == context['source_sha']
+                        and values.get('SOURCE_TREE') == context['source_tree']
+                        and values.get('DEPLOY_OWNER') == 'NOT_ACQUIRED' and values.get('RELEASED') == 'false'
+                        and values.get('MODE') == 'PRODUCTION_PAPER / SIMULATION'
+                        and values.get('real_orders_sent') == '0',
+                        'OWNED_LEASE_CURRENT_SOURCE_OR_OWNER_CHANGED_DURING_PRODUCER')
+                for identifier in owners:
+                    prior = states.get(identifier)
+                    if values.get('RELEASED') == 'true' and prior is not None:
+                        require(values.get('WORKSTREAM_ID') == prior.get('WORKSTREAM_ID'),
+                            'OWNED_LEASE_EXPLICIT_RELEASE_WORKSTREAM_REBOUND')
+                    states[identifier] = values
+                if values.get('RELEASED') == 'true' and context['owner_session'] in owners:
+                    require(values.get('WRITE_OWNER') == values.get('INTEGRATION_OWNER')
+                            == values.get('SESSION_SUCCESSOR', values.get('SESSION')) == context['owner_session']
+                        and values.get('WORKSTREAM_ID') == (workstream or admission.WORKSTREAM)
+                        and values.get('DEPLOY_OWNER') == 'NOT_ACQUIRED'
+                        and values.get('MODE') == 'PRODUCTION_PAPER / SIMULATION'
+                        and values.get('real_orders_sent') == '0'
+                        and re.fullmatch('[0-9a-f]{40}', values.get('SOURCE_SHA', ''))
+                        and re.fullmatch('[0-9a-f]{40}', values.get('SOURCE_TREE', '')),
+                        'OWNED_LEASE_AUTHENTIC_PRIOR_OWN_RELEASE_REQUIRED')
+                    if values.get('SOURCE_LEASE_EXPIRES_UTC') is not None:
+                        admission.stamp(values['SOURCE_LEASE_EXPIRES_UTC'])
+                    # A pre-interval release revokes all prior own lease spans.
+                    # It grants none, even when it quotes an unexpired lease.
+                    # Coverage must come from a later explicit reacquisition.
+                    spans.clear()
+                    continue
             if values.get('SOURCE_LEASE_EXPIRES_UTC') is None or values.get('WRITE_OWNER') != context['owner_session']:
                 continue
             if values.get('SOURCE_SHA') != context['source_sha'] or values.get('SOURCE_TREE') != context['source_tree']:
                 continue
             require(row['created_at'] == row['updated_at'] and row['user']['login'] == 'mbalbo2023'
                 and row['issue_url'].endswith('/issues/' + str(issue))
-                and values.get('WORKSTREAM_ID') == admission.WORKSTREAM
+                and values.get('WORKSTREAM_ID') == (workstream or admission.WORKSTREAM)
                 and values.get('SESSION_SUCCESSOR', values.get('SESSION')) == context['owner_session']
                 and values.get('INTEGRATION_OWNER') == context['owner_session']
                 and values.get('DEPLOY_OWNER') == 'NOT_ACQUIRED' and values.get('RELEASED') == 'false'
@@ -163,6 +204,8 @@ def prove_lease_coverage(timelines, context, start, end):
             require(timedelta(0) < expiry - begin <= timedelta(minutes=20), 'OWNED_LEASE_UNBOUNDED_INTERVAL')
             if begin <= end:
                 spans.append((begin, expiry, row['id']))
+        require(all(identifier == context['owner_session'] or values.get('RELEASED') == 'true'
+            for identifier, values in states.items()), 'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')
         cursor, identifiers = start, []
         for begin, expiry, identifier in sorted(spans):
             if expiry <= cursor:
@@ -178,7 +221,8 @@ def prove_lease_coverage(timelines, context, start, end):
 
 class GateLeaseMonitor:
     def __init__(self, root, *, source_sha, source_tree, owner_session, gate, launch_receipt_url,
-                 run_id=None, run_attempt=None, get=None, clock=None, monotonic=None, diagnostic_binding=None):
+                 run_id=None, run_attempt=None, get=None, clock=None, monotonic=None, diagnostic_binding=None,
+                 g5a_namespace_receipt=None, g5a_revision=None):
         self.root = Path(root)
         identity = self.root.lstat()
         self.store_key = (str(self.root), identity.st_dev, identity.st_ino, identity.st_uid)
@@ -187,11 +231,14 @@ class GateLeaseMonitor:
             'run_id': int(os.environ['GITHUB_RUN_ID']) if run_id is None else run_id,
             'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']) if run_attempt is None else run_attempt}
         require(re.fullmatch('[0-9a-f]{40}', source_sha) and re.fullmatch('[0-9a-f]{40}', source_tree)
-            and owner_session == admission.SUCCESSOR_OWNER and gate in (*admission.GATES, *admission.DIAGNOSTIC_GATES)
+            and isinstance(owner_session, str) and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}', owner_session)
+            and gate in (*admission.GATES, *admission.DIAGNOSTIC_GATES)
             and self.context['run_attempt'] == 1 and type(self.context['run_attempt']) is int,
             'OWNED_LEASE_EXACT_FIRST_SOURCE_SCOPE_REQUIRED')
         if gate in admission.DIAGNOSTIC_GATES:
-            require(type(diagnostic_binding) is dict, 'OWNED_DIAGNOSTIC_FULL_ADMISSION_PINS_REQUIRED')
+            require(type(diagnostic_binding) is dict and (owner_session == admission.SUCCESSOR_OWNER
+                or diagnostic_binding.get('authorization_schema') == 'porota.rc6.capacity-diagnostic-launch.v2'),
+                'OWNED_DIAGNOSTIC_FULL_ADMISSION_PINS_REQUIRED')
             self.context['diagnostic_binding'] = diagnostic_binding
         else:
             require(diagnostic_binding is None, 'OWNED_LEASE_DIAGNOSTIC_PINS_OUTSIDE_DIAGNOSTIC_SCOPE')
@@ -202,6 +249,24 @@ class GateLeaseMonitor:
         self.launch_intent, self.native_deadline, self.previous_clock = None, None, None
         self.last_local_poll, self.last_api_poll, self.final_path = None, None, None
         self.seen_owner_versions = {}
+        self.g5a_namespace_receipt = g5a_namespace_receipt
+        self.g5a_revision = g5a_revision
+        require((g5a_namespace_receipt is None) == (g5a_revision is None),
+                'OWNED_G5A_NAMESPACE_AND_TYPED_DECISION_BOTH_REQUIRED')
+        if g5a_namespace_receipt is not None:
+            from scripts import rc6_contract_revisions as revisions
+            from scripts import rc6_g5_contract as g5
+            revisions.validate_revision_approval(g5a_revision, revision=g5.REVISION, scope=g5.SCOPE,
+                source_sha=source_sha, source_tree=source_tree, contract_sha256=g5.CONTRACT_SHA256,
+                now=self.clock())
+            binding = g5a_namespace_receipt.get('binding', {})
+            require(gate == 'Horizon' and binding.get('candidate_sha') == source_sha
+                and binding.get('candidate_tree') == source_tree and binding.get('owner_id') == owner_session
+                and binding.get('producer') == 'Horizon-private-original-cas'
+                and g5a_namespace_receipt.get('cleanup_authority_granted') is False
+                and re.fullmatch('[0-9a-f]{32}', str(g5a_namespace_receipt.get('namespace_nonce', '')))
+                and self.root == Path(g5a_namespace_receipt['path']) / 'g5a-owner-monitor',
+                'OWNED_G5A_EXACT_NAMESPACE_MONITOR_BINDING_REQUIRED')
 
     def _store(self, value):
         raw = wire(value)
@@ -273,12 +338,17 @@ class GateLeaseMonitor:
                 calls[path] = self.get(path, deadline)
             return calls[path]
         with _http_budget(deadline):
+            if self.g5a_revision is not None:
+                from scripts import rc6_owned_g5a_continuation as continuation
+                continuation.validate_decision_documents(self.g5a_revision, record_get)
             # The first pass may only be more conservative than its actual
             # completion. The second pass replays exactly the captured API
             # documents at actual completed UTC; it performs no HTTP/Source IO.
             _scope(self.context, started + timedelta(seconds=allowance), record_get)
             finished = self.clock()
             scope = _scope(self.context, finished, lambda path: calls[path])
+            if self.g5a_revision is not None:
+                continuation.reject_revocations(self.g5a_revision, _timelines(calls))
             versions = {}
             for issue, rows in _timelines(calls).items():
                 for row in rows:
@@ -291,7 +361,7 @@ class GateLeaseMonitor:
                 'OWNED_LEASE_CONTROL_COMMENT_DELETED_OR_EDITED')
             reference = {path: self._response(value) for path, value in sorted(calls.items())}
             proof = prove_lease_coverage(_timelines(calls), self.context,
-                self.launch_intent or finished, finished)
+                self.launch_intent or finished, finished, workstream=scope.get('workstream_id'))
             snapshot = {'schema': SNAPSHOT_SCHEMA, 'stage': stage, 'context': self.context,
                 'started_utc': text_stamp(started), 'read_utc': text_stamp(finished),
                 'http_total_budget_seconds': HTTP_BUDGET_SECONDS,
@@ -308,6 +378,15 @@ class GateLeaseMonitor:
         self.seen_owner_versions.update(versions)
         self.last_api_poll = self.monotonic()
         self.previous_clock = finished, self.last_api_poll
+        if self.g5a_namespace_receipt is not None and stage in ('prelaunch', 'poll'):
+            from scripts import rc6_owned_g5a_continuation as continuation
+            sequence = len(self.events)
+            require(sequence <= continuation.MAX_PULSES, 'OWNED_G5A_FINITE_PULSE_BOUND')
+            pulse = {'schema': continuation.SCHEMA, 'sequence': sequence, 'snapshot': identifier,
+                'binding': self.g5a_namespace_receipt['binding'],
+                'namespace_nonce': self.g5a_namespace_receipt['namespace_nonce'],
+                'new_launch_authorized': False, 'G5_GREEN': False}
+            _private_write(self.root / (continuation.PREFIX + str(sequence).zfill(4) + '.json'), wire(pulse))
         return scope
 
     def prelaunch(self, label):
@@ -367,7 +446,7 @@ class GateLeaseMonitor:
         proof = None
         try:
             proof = prove_lease_coverage(_timelines(self.last_calls or {}), self.context,
-                self.launch_intent, closed)
+                self.launch_intent, closed, workstream=(self.last_scope or {}).get('workstream_id'))
         except BaseException as error:
             self._failure(error)
         receipt = {'schema': SCHEMA, 'context': self.context, 'command_label': self.command_label,
@@ -435,7 +514,8 @@ class DiagnosticIssuerMonitor:
         require(self.previous.get('source_sha') == args.source_sha
             and self.previous.get('source_tree') == args.source_tree
             and self.previous.get('gate') == ('capacity-probe' if args.mode == 'capability' else 'capacity-calibration')
-            and self.previous.get('owner_session') == admission.SUCCESSOR_OWNER
+            and (self.previous.get('owner_session') == admission.SUCCESSOR_OWNER
+                or self.previous.get('authorization_schema') == 'porota.rc6.capacity-diagnostic-launch.v2')
             and self.previous.get('status') == 'ADMITTED_DIAGNOSTIC_NOT_STARTED'
             and self.previous.get('qualification_claimed') is False,
             'OWNED_DIAGNOSTIC_ISSUER_EXACT_ADMISSION_REQUIRED')
@@ -454,8 +534,13 @@ class DiagnosticIssuerMonitor:
         self.monitor = GateLeaseMonitor(self.control_root, **context, diagnostic_binding=self.pins)
 
     def _full_admit(self, stage):
-        fresh = admission.admit_diagnostic(**{key: self.previous[key] for key in
-            ('source_sha', 'source_tree', 'launch_receipt_url', 'owner_session', 'gate')})
+        context = {key: self.previous[key] for key in
+            ('source_sha', 'source_tree', 'launch_receipt_url', 'owner_session', 'gate')}
+        if stage == 'post-fin' and self.previous.get('authorization_schema') == \
+                'porota.rc6.capacity-diagnostic-launch.v2':
+            require(self.physical_fin_closed is True, 'OWNED_DIAGNOSTIC_CAPTURE_ONLY_REQUIRES_ACTUAL_FIN')
+            context['native_finished'] = True
+        fresh = admission.admit_diagnostic(**context)
         require(admission.diagnostic_control_binding(fresh) == self.pins
             and fresh.get('source', {}).get('repository_public_verified') is True
             and fresh.get('source', {}).get('anonymous_source_origin') == 'https://github.com/' + admission.REPO + '.git',
@@ -510,7 +595,8 @@ def replay_lease_evidence(receipt, *, read_object, kernel, source_sha, source_tr
     context = receipt.get('context')
     require(type(context) is dict and context.get('source_sha') == source_sha and context.get('source_tree') == source_tree
         and context.get('run_id') == run_id and context.get('run_attempt') == run_attempt == 1
-        and context.get('owner_session') == admission.SUCCESSOR_OWNER
+        and isinstance(context.get('owner_session'), str)
+        and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}', context['owner_session'])
         and (expected_label is None or receipt.get('command_label') == expected_label),
         'OWNED_LEASE_ARCHIVED_SOURCE_RUN_OR_LABEL_REBOUND')
     require(native.managed_phase_green(kernel) and receipt.get('kernel_sha256') == digest(wire(kernel))
@@ -582,10 +668,12 @@ def replay_lease_evidence(receipt, *, read_object, kernel, source_sha, source_tr
             and snapshot.get('latest_owners') == {issue: {'comment_id': record['comment_id'],
                 'lease_expires_utc': record['lease_expires_utc']} for issue, record in scope['fresh_ownership'].items()},
             'OWNED_LEASE_ARCHIVED_AUTHENTIC_SCOPE_REBOUND')
-        proof = prove_lease_coverage(_timelines(calls), context, launch if position else read, read)
+        proof = prove_lease_coverage(_timelines(calls), context, launch if position else read, read,
+            workstream=scope.get('workstream_id'))
         require(proof == snapshot.get('lease_coverage'), 'OWNED_LEASE_ARCHIVED_INTERVAL_PROOF_REBOUND')
         previous, final_calls, final_proof = read, calls, proof
-    proof = prove_lease_coverage(_timelines(final_calls), context, launch, closed)
+    proof = prove_lease_coverage(_timelines(final_calls), context, launch, closed,
+        workstream=scope.get('workstream_id'))
     require(proof == receipt.get('lease_coverage') and receipt.get('object_count') == len(cache)
         and receipt.get('deduplicated_object_bytes') == sum(len(value[0]) for value in cache.values()),
         'OWNED_LEASE_ARCHIVED_COVERAGE_OR_DEDUP_COUNTER_REBOUND')

@@ -20,8 +20,8 @@ las obligaciones técnicas todavía sin evidencia completa. El registro históri
 | V2 capacity; ERR-015/021/027/033 | Un SHA con forma válida, un índice o un pico histórico parcial no prueban los bytes ni el grafo del candidato. | Autenticar commit/tree/blob Git, contenedor/CRC/todos los miembros originales, SourceDelta e inventarios; recomputar costos verificables. Reusar el inventario fresco de admisión. | `rc6_capacity_comparison`: costos canónicos completos obligatorios, reserva separada, sin crédito de cleanup; nodos dinámicos sin modelo probado bloquean. Scope diagnóstico nunca admite RC6. | `test_rc6_capacity_comparison`, negativos de provenance, alteración, grafo incompleto y diagnóstico en admisión. | `FIXED_WITH_GUARD` para verificación auténtica; grafo físico dinámico canónico `NO_VERIFICADO`. No se sustituye la excepción por PASS. |
 | G0 arquitectura B; ERR-015/031/032/034/036 | El bootstrap retiene seed, dos fullSource y dos Product157. Backing26GiB, quota20GiB y dos reservas4GiB son cargas de certificación, no un mínimo demostrado del producto. La garantía nominal14GB no es un techo físico; metadata no prueba enforcement ni custodia ROOT. | Observación física por ejecución y propuesta de quota nativa directa conservando20GiB, inodos, ambas reservas y probe independiente; medir fuera de la vista proyectada por quota. | Holds `PRIVILEGED_SIGNAL_CUSTODY` intactos y native manager byte exacto; metadata, cuota directa o capacidad nominal nunca conceden launch. Reserva física y escritores externos exigen pruebas propias. | `test_rc6_capacity_comparison`, `test_rc6_certification_contract`; observador read-only y aritmética autenticada sólo en su ámbito. Probe histórico37845108215 `NOT_STARTED`, no cuota PASS. | `BLOQUEADO` por admisión técnica, no por falta de compra. Enforcement/reserva/custodia nativos `NO_VERIFICADO`; USD84 y ampliación rechazados. Véanse [RUNNER_DECISION.md](RUNNER_DECISION.md) y [ZERO_COST_CONTRACT.md](ZERO_COST_CONTRACT.md). |
 | G5 wire; ERR-019/029/037 | Componentes por página sin cota, packs compartidos y churn de diccionario/cohortes impiden extrapolar siete cortes. | Factoring PAGE determinístico: header + <=16 grupos de índices + <=16 grupos de payload; tamaño de grupo potencia de2 >=64. BIN conserva gzip original. Reusar CAS/recipes/decoder existente. | Propuesta opcional sólo si **pack nuevo completo + recipe comprimida**, redondeados al bloque físico, y bytes lógicos no exceden baseline. Corrupción es fatal; overflow opcional conserva baseline. | `test_rc6_archive_grouped_wire`, compatibilidad de CAS, restore byte exacto/CRC/SHA256, límites, tamper y bases transitivas. | `FIXED_WITH_GUARD` para factoring acotado y selector; ahorro global original `NO_VERIFICADO`. El selector no certifica directorios/temporales. |
-| G5 reutilización y lectura CAS | Dividir un primer objeto único aumenta índices y nunca gana el selector. Referencias intercaladas reabrían packs completos; errores podían dejar proof cache y catálogos deduplicados omitían filas físicas. | Recipe V4 con slices de padres V3 retenidos, sin reescribirlos; reads agrupados por pack y ordinal, cache liberada incluso ante excepción y presupuesto antes de materializar. | Hash del pack completo, parentCID y sliceCID; dispatch tipado V3/V4; límites físicos y virtuales separados, repetición/solapamiento contabilizados y costo nuevo<=baseline del mismo catálogo. GC conserva packs completos. | `test_rc6_archive_slice_reuse`: corrupción, cinco miembros exactos, API pública sin encoder y custodia;1202 pasos de fixture32KiB con reloj original. | `FIXED_WITH_GUARD` en código; revisión contractual lector>=4, selección V4 nativa automática, peak1GiB y ahorro global financiero original `NO_VERIFICADO`. No es G5 GREEN. |
-| Compatibilidad productiva acotada | Un runner de4CPU sin límites no demuestra el Droplet1CPU/1GiB/25GB; RLIMIT_FSIZE no limita escritura agregada de descendientes. | Job manual aislado y NONROOT observa límites kernel reales y mount agregado256MiB/65536inodos; prepara nueve consumidores PAPER originales con Product157, G0 y FIN nativos. | Sin envelope admitido, Source readonly, owner exacto o G0 auténtico no hay fixtures/workload. Recheck de límites/OOM y cobertura exacta; tmpfs no prueba disco durable ni RAM total del host. | `test_rc6_product_resource_compatibility`; observación local read-only BLOQUEADA por mapping cgroup desconocido y mount agregado ausente. | `DESARROLLADO` para controles; compatibilidad material/runtime/OS/PPI y disco persistente `NO_VERIFICADO`. Sin mounts/ROOT/Docker/provisionamiento ejecutados. |
+| G5 reutilización y lectura CAS | Dividir un primer objeto único aumenta índices y nunca gana el selector. Referencias intercaladas reabrían packs completos; errores podían dejar proof cache y catálogos deduplicados omitían filas físicas. El ahorro sintético69,91% no demuestra Horizon original. | Recipes V4 con slices y hashes de padres enteros; lectores públicos V3/V4, image Smoke independiente, restore, recuperación y GC con catálogos mixtos. Escrituras productivas conservan V3; V4 sólo en comparación privada. | Hash del pack completo y slice, dispatch tipado, bases transitivas, presupuesto previo al restore y rechazo de corrupción. Hold de escritura V4 no se levanta por un flag o un PASS unitario. | `test_rc6_archive_slice_reuse`, `test_rc6_cas_original_comparison`: cinco miembros byte exactos, misma sesión/anchors/fallbacks;152 regresiones económicas duales por scope. | `FIXED_WITH_GUARD` en lectores y comparación; habilitar escritura V4 requiere revisión contractual lector>=4, lectores del artifact G7 y consumo global original demostrado. No es G5 GREEN. |
+| Compatibilidad productiva acotada | Un runner de4CPU sin límites no demuestra el Droplet1CPU/1GiB/25GB; RLIMIT_FSIZE no limita escritura agregada de descendientes. El stub de filtro anterior rechazaba siempre. | Filtro libseccomp real en supervisor/worker, instalación TSYNC, counter kernel/BPF, herencia fork/exec y23 probes de escape. El perfil instala el filtro después de exec; mantiene los límites1CPU/1GiB/swap0/pids64 y mount256MiB/65536inodos. | DUMPABLE/NNP/caps/UID observados, no inventados; plan de denegación original intacto. Sin G0, Product157, envelope admitido y Source readonly no hay nueve consumidores. Tmpfs forma parte del GiB de RAM; no certifica OS/PPI ni disco durable del Droplet. | `test_rc6_native_namespace_filter`, `test_rc6_product_resource_compatibility`:154 PASS económicos por Python en el scope. Probe NONROOT real sólo certifica filtro/herencia, no perfil completo. | `FIXED_WITH_GUARD` para filtro ejecutable; launcher acotado, nueve cargas PAPER y margen total del Droplet `NO_VERIFICADO`. Sin ROOT/mounts/Docker locales ni infraestructura persistente. |
 | G5 global; ERR-019/029/037 |1202 cortes originales; final retiene1201 cortes operacionales. GC elegible no equivale a bytes recuperados; fallback/base/pins/temporales siguen consumiendo. | Modelo condicional de **todos** los prefijos con packs enteros, metadata, profundidad32, pins/bases transitivas,13 estados y6 obligaciones de costo adicionales. | `archive_physical_model`: rechaza siete cortes, ausencia/UNKNOWN, DAG inválido y costos omitidos; créditoGC=0, certificado/cota global auténtica siempre `null`. Hold `HORIZON_MODEL_CLOSURE` intacto. | `test_rc6_archive_physical_model`; evidencia af08/run37633310327: RED1049/1202; forecast500195328B no certifica. | `NO_VERIFICADO`: faltan envelopes auténticos1202 y costo físico simultáneo completo; G5 bloqueado. No se demuestra imposibilidad global con muestras ni se altera512MiB/9h+1h/universo. |
 | BIG/captura/WAL; ERR-017/022/028 | Capturas, hashes y copias equivalentes repetidos; writers abiertos pueden checkpointar después del sello. | Reconciliar fixes existentes de una captura autenticada por tick, lectores internos compartidos y cierre explícito de conexiones/writers. Reusar hashes del post-FIN para import closure. | Source concurrente alterado continúa RED; presupuestos y fingerprint productivos originales. | Regresiones focal/Source/lifecycle y fixes existentes en ecad; BIG material del nuevo SHA no ejecutado. | Código reconciliado; calificación material `NO_VERIFICADO`:12000/60000,5 salidas PAPER,<=75s/90s,RSS<2GiB,RAW<=128MiB sin cambios. |
 | READONLY_SOURCE10_CHANGED; ERR-022/023 | Diagnóstico tardío/INTERNALERROR ocultaba path/field; Source se reabría o sellaba mientras quedaban consumidores. | Diagnóstico preciso y veto sticky; failure como TestReport real; índices antes/después y validación se preservan antes del rechazo lógico. | Captura sólo tras FIN original; toda diferencia Source10 real rechaza; atime Source11 se registra sin restaurar timestamps. | `test_rc6_material_focal_evidence`, `test_rc6_readonly_complete_archive` controles Source reales. | `FIXED_WITH_GUARD` para reporte/veto/custodia; ausencia de mutaciones en fullGov del candidato `NO_VERIFICADO`. |
@@ -65,3 +65,663 @@ sin reclasificar ejecuciones previas ni repetir un mismo material fallido.
 
 PAPER/SHADOW ONLY; PRODUCTION_PAPER / SIMULATION; real_orders_sent=0;
 rutas reales BLOCKED/NOT_CALLED; PPI Watch NO TOCAR; FIX-FORWARD ONLY.
+
+## Continuación de código desde PR #482
+
+Base exacta `2bf97dde54b4f960e105d2397d9b80012ba97aab`, tree
+`49808f6a229f0f53bb1c765a9d6be1e22ac0095f`; se preservan #481 y #482.
+Un único sucesor aislado en `fix/rc6-native-certification-20261010`.
+Transferencia auténtica #471/6092206348 y #473/6092202857 después de las
+liberaciones explícitas #471/6091939624 y #473/6091938137. El nuevo owner no
+suplanta la sesión histórica. Los leases se renuevan en ambos threads antes
+de vencer; una expiración ajena sigue bloqueando y no implica RELEASED.
+
+| Bloqueo auditado | Cambio ejecutable y prueba | Residual antes de material |
+|---|---|---|
+| CI económica exacta #482 | Run[38013494334](https://github.com/mbalbo2023/Porota-trading/actions/runs/38013494334), attempt1: admisiónRED `EXACT_ADMINISTRATIVE_SUCCESSOR_SESSION_REQUIRED`; tests/tooling/fixtures no iniciados. ZIP original12246B,7 miembros conCRC, SHA256`aaebda5bfbbeb0b5180f5b619a21fddc7e8bd2e84406d06c890ca77c5717a23e`. Sucesión nueva admite sólo una liberación auténtica y autoridad dual exacta. | CI positiva del nuevo SHA/tree; no retry idéntico del RED. |
+| Native prerequisites inseguros o ficticios | Job económico manual separado; artefacto Actions positivo del mismo SHA/tree, ambas épocas/JUnit originales, inventario Git completo, FIN y cleanup autenticados. Revalida Issues, ref/tree y run/job vivo antes y después de ROOT. Output fresh fuera deSource; filtro irreversible sólo en child NONROOT. | PASS pequeño no concede G0, cuota, perfil productivo ni backing. |
+| Custodia ROOT desde primera instrucción | Adaptador efímero sobre PID1/systemd existente: unidad transitoria, cgroup propio, RuntimeMax/TERM/KILL; manager original SHA256`55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8` intacto. Broker en PID privado; sólo FD opaco del directorio propio, sin exponer host/proc/root/cwd/fd ajenos. Identidad pública PID/start/boot/UID/GID/caps/cgroup/NSpid y birth/pidfd; inode de namespace leído sólo por self o ROOT hijo privado. Transporte NONROOT/DUMPABLE0/FIN/reap real y184 regresiones baratas PASS por Python. | Las cuatro situaciones ROOT/NONROOT y guardian timeout requieren Actions autenticado; metadata JSON no sustituye el witness privado. Sin provisionar ni servicio persistente. |
+| Contrato ROOT original de G0 | Calibración recibe witness nativo privado y conserva los límites históricos. Hold `CALIBRATION_PRIVATE_PID_ORIGINAL_PROC_ROOT_CONTRACT_REVIEW_REQUIRED` antes de asignar backing: PID privado oculta el issuer y el original exigeEACCES en `/proc/HOSTPID/root`. | Revisar explícitamente la sustitución contractual: ausencia del PID no es EACCES. Debe demostrarse la nueva frontera guardian+FD, escapes denegados y FIN; sin esa revisión no hay cuota ni equivalenteGREEN. |
+| Horizon auténtico y consumo global | RAW original autenticado: ZIP5894344B/884 miembros/SHA256`5738a959b1483e46125b2a44a3b536067d6f5bf87b01cde68888c218023f0bb2`,1049 cortes,153 faltantes y0 juegos completos de cinco payloads. Hook del productor entrega los mismos bytes originales a catálogos V3 y V4; conserva1202 ciclos,512MiB, profundidad32,9h+1h, sesiones/anchors/fallbacks y mide recovery/GC/temporales. | Ahorro global y cota permanecen `null`. Admitir físicamente los dos catálogos adicionales y cerrar `HORIZON_MODEL_CLOSURE` antes de namespaces/fixtures; el RAW no permite reconstruir datos ausentes. |
+
+La revalidación READ_ONLY auténtica de Issues cerró un defecto adicional antes
+de CI: GitHub incluye `performed_via_github_app.client_id` en collection y lo omite
+en GET individual. Comparar el objeto REST completo rechazaba un mismo recibo.
+Se conserva comparación estricta de ID/body/timestamps/URLs/autorID+login/appID+slug;
+224 regresiones de ownership por Python rechazan alteraciones de esos campos.
+No se convierte metadata decorativa en autoridad. El plan completo pasó1333 casos
+por Python antes de estos dos fixes; sus checkpoints se conservan y la CI del
+SHA final debe ejecutar el plan completo actualizado, sin tomar prestado ese PASS.
+
+Camino finito y secuencial: (1) congelar un único SHA/tree y ejecutar66 selecciones
+económicas con los14 pins originales en3.11.16/3.12.14; (2) sólo tras su artefacto
+positivo admitir el job pequeño de filtro/custodia y conservar todos sus RAW;
+(3) resolver la revisión exacta de `/proc` y probar cuota nativa/reservas/preflight
+fresco en Actions estándar, sin asignar backing ante un prerrequisitoRED;
+(4) cerrar el grafo físico completo de todos los writers y ejecutarG0–G6 en orden,
+incluida la comparación Horizon original y el perfil PAPER acotado;
+(5) sólo entoncesG7 build once yG8 artifact exacto/margen read-only del host.
+Un RED tiene causa y fix nuevo antes del siguiente SHA; no se repite la misma
+ejecución ni se transforma un control económico en gate material. USD0 recurrente
+adicional, sin ampliar el Droplet, contratar runners, merge o deploy.
+
+### Evidencia auténtica del candidato PR483 y fix de diagnóstico
+
+El Source `174d7b5d7057e20e5364f9b612b380126bf2cc8d`, tree
+`8de2f40cd8942f5236a093c434f47e82bcd3c3f8`, pasó CI económica38018234467
+en Actions estándar ubuntu-24.04:1386 PASS por Python,0 failures/errors/skips,
+identidades iguales, Source literal completo, FIN/capture/cleanup propios.
+Artefacto11657136542:922398B,16 miembros CRC/SHA verificados,
+SHA256`bce2b30ffc1ff933f027c022e42a8f3695b8d0af541ad6010e3f3fe9e3abcf02`.
+Los managers originales midieron88.117/94.530s y295706624/297369600B de
+peak RSS por época; esto no es suma global de RAM ni prueba del Droplet.
+La observación fresca tuvo91697651712B libres en ext4/4096 y18423012 inodos
+libres. La cuota nativa continúa no probada:CONFIG_QFMT_V2=m, quota_v2 no vivo,
+sin módulos coincidentes observados; capacidad nominal14GB no es techo físico.
+
+El control nativo38018906264 autenticó esa CI antes de actuar. Su filtro real
+pasó instalación, TSYNC, herencia y26 denegaciones por supervisor/worker:
+PASS_NATIVE_FILTER_ONLY,57 reglas, filtro0→1 y1→2, FIN/captura/cleanup propio.
+Artefacto11657187465:23333B,9 miembros CRC/SHA verificados,
+SHA256`cc37f5ea18436ce5c8f5bcfd50693e0161b8ab3208aebd6227de0d8a904fa46d`.
+La custodia ROOT quedó RED enROOT_CUSTODY_ACTUAL_CONTROLLER_PIDFD_REQUIRED;
+faltó birth/pidfd y no se ejecutaron sus cuatro casos, cuota/backing/material.
+El original queda conservado sin reclasificación ni repetición del mismo SHA.
+
+| Bloqueo | Resultado demostrado | Fix y guard pendiente |
+|---|---|---|
+| Sucesión/CI económica exacta174d7 | Cerrado para ese Source con recibos auténticos, JUnit/FIN/Source completos y Actions estándar. | Un Source sucesor requiere otra CI exacta; no hereda ese PASS. |
+| Filtro supervisor/worker | Cerrado sólo como prerrequisito NONROOT nativo en Actions. | No equivale a perfil PAPER completo ni seguridad ROOT/cuota. |
+| Pérdida de diagnóstico al faltar ROOT birth | Confirmada por el ZIP original: no conservó stderr del arranque. | CustodyFailure preserva error primario y FIN cliente original; sólo lee stderr tras unidad nonce exacta inactiva y cgroup2 vacío/ausente. FIN exit4 sólo sirve al diagnóstico RED de not-found estricto. UNKNOWN retiene namespace; no cleanup/crédito/ROOT FIN. Próxima ejecución sobre un SHA corregido debe entregar causa original. |
+| G0/cuota/reservas;1202 ciclos;perfil productivo | Permanecen bloqueados; no hay dato global ni porcentaje extrapolado. | Mantener revisión `/proc`, grafo físico, Horizon original y Product157 antes de gates materiales; G7/G8 no preparados. |
+
+El fix mantiene manager55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8,
+capacidades, DUMPABLE, límites y todos los holds. No se elimina privacidad para
+obtener un PASS. El próximo Source se valida económicamente antes del siguiente
+control nativo. Coste recurrente adicional USD0; real_orders_sent=0.
+
+## Segundo Source autenticado y fix de CAS/ACK y journal
+
+`98e9f70899d1d6bc1f3f84adbe4b5b5689fbdf8e`, tree
+`25f411385dbe7a488f673a0cfe9f85b8a17251fd`, pasó CI38020059029:
+1399 PASS por Python3.11/3.12, cero failures/errors/skips, mismas identidades,
+Source literal completo y FIN/capturas/cleanup propios. Original11657861635:
+920980B/16CRC, SHA256
+`6195c1fdd2aa7ec4020fb3ac98566f42fdd7cab56991aa3bb91710f6858989fe`.
+Managers87.309/94.223s, RSS máximo295997440/296501248B; ext4 libre91697659904B,
+18423027 inodos. Son observaciones de esa ejecución, no garantías ni prueba
+del Droplet ni enforcement de cuota. El siguiente Source requiere su propia CI.
+
+Control38020561080 conservó RED con FIN cliente226/EXIT_NAMESPACE antes de
+birth ROOT. Original11657921965:36492B/18CRC, SHA256
+`59f34068f4ce99cdbd3b40a324797d75527047523d50387344d45c8df807f807`.
+Unidad nonce exacta inactiva/not-found, PID0/cgroup ausente; guardian log vacío.
+**Errno/ruta causal UNKNOWN**. No se atribuye a permisos concretos ni a falta
+de infraestructura. FIN ROOT UNKNOWN, namespace retenido y crédito de reserva0.
+El fix captura journal NONROOT del boot y unidad propios con máximo30 entradas,
+RLIMIT_FSIZE duro2MiB, timeout5s, FIN y RAW originales; una consulta vacía/RED
+continúa UNKNOWN. Conserva mensajes de arranque del guardián sin cambiar
+privacy, capabilities, DUMPABLE ni manager. No reintenta Source98.
+
+| Bloqueo nuevo observado | Fix ejecutable y regresión | Estado y obligación pendiente |
+|---|---|---|
+| Observe CAS llegaba después del fallo/ACK V3: perdía cortes y el live128MiB/512files no podía rotar. | Mismos cinco bytes de la única fixture pasan al candidato privado antes del ACK. Candidato usa el archivo canónico privado; baseline V3 independiente puede quedar sticky RED sin abortar candidato. ACK vuelve a verificar CURRENT/manifest/bytes/receta existente; corrupción o ausencia detiene rotación, sin fallback.163 PASS económicos por Python. | Código corregido; **revisión contractual explícita del ACK privado** y casos ejecutados autenticados G1.311/312 requeridos. COMPARE_COMPLETE mantiene G5=false; writer productivoV3. |
+| Manifiesto privado no llegaba del recibo al productor. | Template dual hash-bound exacto; ruta derivada sólo dentro del namespace propio, fichero original exclusivo/fsync/hash, revalidación antes del wrapper/productor.25 PASS por Python; peak normal Horizon rechaza comparación. | Código corregido; grafo agregado propio obligatorio. Dos catálogos totales, una sola fixture/Source; sin equivalencia ni pico físico declarado. |
+| Causa de EXIT_NAMESPACE no emitida por modo quiet. | Journal del boot/unidad propios y arranque no quiet sólo para guard-hang; RAW original bounded post-FIN y prueba nativa de ausencia de escritores. | Diagnóstico implementado; próximo Source exige CI económica exacta positiva antes de una única comprobación nativa. No autoriza backing, cuota, pruebas financieras ni ROOT local. |
+
+Todos los1202 ciclos,512MiB, profundidad32, anchors/fallbacks, cambios reales
+de sesión, retención9h+1h y live128MiB/512entries se conservan. El ZIP histórico
+tiene1049 cortes y ningún conjunto completo de los cinco payloads; no permite
+reconstruir los153 faltantes ni medir retrospectivamente V4. Consumo global con
+recuperación/GC/temporales y ahorro original siguen NO_VERIFICADO. El69,91%
+sintético no se extrapola. G0–G6 materiales, nueve cargas PAPER acotadas y
+G7/G8 permanecen bloqueados por sus prerrequisitos originales.
+
+## Source714: prueba positiva económica y filtro, diagnóstico ROOT incompleto
+
+`714a27cf222d1cca8e9fcf75ba26cb5c80214147`, tree
+`99afc9f818a666ac34e5f97d3550bbd68ff9dcdd`, pasó38022392677/job114125990140:
+1434 PASS por Python3.11/3.12 sin failures/errors/skips, Source completo
+literal idéntico, FIN/capturas/cleanup propios/foreign0. Original11658643847:
+926016B/16CRC/SHA256
+`61de89722c168bcd1fe8686c64ebaa5807ae199a562e2e405f15b2e6bc29f03f`.
+Wall88.409/95.328s; RSS máximo295677952/298582016B, no suma; inventario
+propio **post-FIN antes de cleanup**, no pico global139370496/139358208B.
+Ext4/4096 libre91697479680B,18423010 inodos; no cuota/reserva demostrada.
+
+Native38022857618/job114127387746 conserva RED226 antes de birthROOT.
+Original11658139752:42914B/22CRC/SHA256
+`00e4ecfdb73b874ae310539a6179ac993b8bef99c7ba5d1d76443252eb363af3`.
+Filtro PASS real57 reglas/26 denegaciones por actor, supervisor0→1 y worker
+1→2 con herencia fork/exec;69,632B propios post-FIN/cleanup. Journal NONROOT
+3454B/SHA256`e5efd653354fc50ee903c3f0384179c7fb8b8a7ca2c5eff823cec062afba9e40`,
+FIN0/ECHILD original:cuatro registros PID1 del boot/unidad propios. Mensajes
+de arranque guard preservados; errno/ruta causal siguen UNKNOWN. ROOT FIN
+UNKNOWN, namespace retenido, sin cleanup ni crédito de reserva. No reintento714.
+
+La revisión upstream systemd v255 identifica otra omisión del diagnóstico:
+exec-invoke.c configura mount namespace y emite error antes de instalar el
+filtro de address families; el logger de executor usa UNIT=own sin ser PID1
+y puede preceder atribución de _SYSTEMD_UNIT. El cambio mínimo consulta
+boot+UID0 confiable+UNIT nonce exacta y conserva el segundo filtro de unidad
+propia. Un registro pre-cgroup es **diagnóstico**, nunca identidad ROOT ni FIN
+ni crédito de reserva. Mantiene30 entradas/2MiB/5s/NONROOT/originales/hash,
+properties/caps/DUMPABLE/manager. El próximo Source exige su propia CI antes
+de un único control nativo acotado que recupere la causa. No se retira
+InaccessiblePaths ni se habilita AF_UNIX por sospecha, ni se modifica G0.
+
+
+## Continuación desde PR483: causa y frontera de custodia
+
+Se conserva el Source original `5daf01728865c3f65c3f31a5abb843ee8ce874d3` y
+la misma rama/PR483; #481/#482 permanecen en su ascendencia. La reacquisición
+es de la propia sesión después de releases auténticos, por la nueva orden del
+propietario. Un release histórico anterior a una reacquisición no reemplaza la
+cobertura de lease del intervalo nuevo: el guard tiene251 regresiones por Python
+y rechaza autor/scope ajenos, gaps y revocación dentro del intervalo.
+
+El original38024250723/artifact11659366663 conserva22 miembros CRC/SHA,42853B,
+SHA256 `61a00c5c3e2e63c414d00381365e811d35c7964302c7ce41eed7e15a8b528bee`.
+Su FIN cliente226 es anterior a birth/pidfd ROOT. Los cuatro mensajes journal
+del boot/unidad propios provienen de PID1 y no contienen operación/errno causal.
+No se atribuye ENOENT, EACCES ni otro errno a esa ejecución. FIN ROOT permanece
+UNKNOWN, namespace retenido, sin cleanup ni crédito físico.
+
+| Propiedad / error | Corrección concreta | Evidencia y límite |
+|---|---|---|
+| Diagnóstico226 antes de exec | Sólo el guard propio añade `LogLevelMax=debug` con readback; cuatro consultas NONROOT de configuración viva, versión, package y digests instalados, cada una con FIN original/5s/64KiB. |282 PASS económicos por Python; broker/quota sin cambios. Journal30/2MiB intacto. Próxima prueba nativa requiere CI positiva del mismo Source. Binario instalado no acredita FD vivo PID1. |
+| Magic links de `InaccessiblePaths` | Auditoría de executor/namespace/chase v255.4: systemd sigue links y puede reordenar mounts. | Hipótesis de máscara del root de servicio y fallo posterior; sólo RAW causal del runner puede convertirla en RCA. No se retira ninguna restricción por sospecha. |
+| ROOT puede deshacer mounts protegidos | Auditoría confirma que el actor conservaba CAP_SYS_ADMIN durante probes. Se separa setup confiable de un sello ROOT posterior; originalmanager conserva subreaper/fork/exec/setsid/wait4/killpg. | Sello en desarrollo separado, sin aplicar el filtro NONROOT antes del drop. Frontera única: PID1/cgroup/plazo y supervisor original para drenaje; actores privados sellados. Necesita prueba nativa, no equivalencia por metadata. |
+| FullGit shallow impide smoke real | Fetch canónico recuperó ancestry ecad→HEAD; no eliminación manual de shallow. CI debe preparar ese historial después de admisión y antes de tooling/pin, con límites y FIN propios. | Los RED previos se conservan. No se rebaja el guard RAW/provenance ni se obtiene el historial durante las pruebas. |
+| Lectores mixtos y recovery | CLI V3→V4→V3, corrupción/falta de parent pack, ocho controles GC reales con siete puntos SIGKILL, inventario de todo Source ejecutable y callers transitivos; reviewv2 exige ejecuciones duales y FIN. | Fixtures económicas; writer productivoV3 y G7 exactimage siguen obligatorios. Ningún porcentaje sintético se extrapola a Horizon. |
+| Modelo globalG5 | Guards de fases PREOPEN/OPEN/CLOSED y transición770/771/772; cotas incluyen graph, pins, GC/recovery/temporales. | RAW tiene1049/1202 cortes y0 conjuntos completos de payloads. Cota física/ahorro global siguen null; `HORIZON_MODEL_CLOSURE` intacto, sin ejecutar Horizon antes de admisión. |
+
+Source1 sólo habilita, tras su CI económica auténtica, un diagnóstico nativo
+pequeño con las restricciones originales. La corrección de la causa confirmada
+exigirá un nuevo Source, regresión positiva/negativa, CI exacta y witness nativo
+antes de declarar custodia, cuota o reservas. Cambiar el outcome contractual
+EACCES por PID ausente requiere revisión explícita; no se aprueba aquí.
+G0–G6, perfil completo1CPU/1GiB y margen total del Droplet permanecen bloqueados;
+G7/G8 esperan esos gates. USD0 recurrente adicional, PAPER/SHADOW, órdenes0,
+PPI intacto, FIX-FORWARD; sin compra, ampliación, merge ni deploy.
+
+Source `18ba722163f6539e68c7a2c1c27b53fb65e9adae` conserva RED económico
+38046686266/artifact11667771533:966426B/22CRC/SHA256
+`ab45bd1da324c193cfae156022a70dcc5887cd03b0ab1d3ae86506fa8ba4b868`.
+Ambos Python:1577 PASS y7 setupErrors del mismo fixtureGit, sin failure/skip;
+Source literal idéntico y FIN/ECHILD/foreignremoved0. El fixture intentó
+copiar439734272B dentro de256MiB: se corrige la duplicación con clausura
+Git verificada de Source/RAW/legacy/ascendencia, conservando el límite.
+No se ejecutó ROOT ni se repite Source18ba. El sucesor exige su propia CI
+positiva antes del diagnóstico nativo; el RED no certifica lectores completos.
+
+El sucesor `13fa4520c25b1f6b461b1cfd6507ef418f210f54`, tree
+`ed6494e78121d7ae8e3d20a2aa1bcb9d41ef659f`, pasó Actions38048514189,
+job114202783308: **1587 PASS por Python**, cero fallos/errores/skips,
+identidades iguales, Source literal íntegro, FIN/ECHILD y cleanup0foreign.
+ZIP original11668752067:957224B/22CRC/SHA256
+`c769abd464bd4112e84ed06f2584857aa5c96ea36f68324cb8778853e9c49161`.
+Wall113.636/126.569s; RSS máximo295981056/299286528B, no suma global.
+Inventario propio post-FIN809287680/809193472B; **no pico físico**.
+Ext4/4096 libre91482906624B/18422998inodos, capacidad observada de esa
+ejecución, sin garantía universal ni cuota. El bootstrap histórico fue positivo
+5.310s/FIN/ECHILD, Git225435648→439803904B observado; cada fixture conserva
+su límite256MiB con clausura selectiva. No se extrapola al Droplet.
+
+La nativa38049039051/job114204280653 autenticó ese ZIP y conservó el RED226
+anterior a birth/pidfd. ZIP11668354337:57298B/33CRC/SHA256
+`368457c3eb7afa21804cc9bdee5785cab9124f3aa6873a6a861a8782f566d599`.
+Las cuatro consultas systemd NONROOT tienen FIN originales y hashes completos:
+package255.4-1ubuntu8.17, LogTargetjournal-or-kmsg/LogLevelinfo. Sólo cuatro
+mensajes PID1 del boot/unidad propios; operación/errno siguen **UNKNOWN**.
+Namespace retenido, ROOT_FIN UNKNOWN, ningún cleanup ni crédito de reserva.
+Filtro real57reglas/26denegaciones por actor, herencia y FIN confirmados;
+supervisor dumpable0 y worker post-exec/post-install dumpable1 reales.
+Esto prueba instalación/herencia; no DUMP0 de todo backend, seguridad ROOT,
+perfil1CPU/1GiB ni cuota. El plan histórico permanece byte exacto.
+
+| Causa demostrada | Fix mínimo y guard | Límite de la evidencia |
+|---|---|---|
+| El contexto genérico del logger255.4 reserva2iovec por campo KEY_VALUE, pero cada uno usa3. INVOCATION_ID se prepende; UNIT puede quedar omitido. Los84patches oficiales Ubuntu8.17 no alteran esa cadena. | Capturar INVOCATION_ID/MESSAGE_ID/EXIT_CODE/EXIT_STATUS del mensaje de salida PID1 con boot/UID0/UNIT nonce exactos; segunda consulta sólo del mismo boot+UID0+ID auténtico. Rechazar anchor ausente/ambiguo/ajeno y conservar ambos FIN/RAW/hashes. | Corrige el canal diagnóstico, no demuestra aún el errno de namespace. Los129 números de secuencia intermedios no permiten conocer sus mensajes. |
+| El query y output-fields originales no recuperaban ese contexto. | Máximo2consultas por fallo, cada una30entradas/2MiB/5s; no enumeración de unidades ni perfiles ajenos. Un dato INVOCATION_ID nunca concede custodia ROOT/FIN/cleanup/reservas. | Próximo Source exige CI exacta positiva; no repetir13fa. Properties/caps/bridge/manager y holds intactos. |
+| El hold preventivo Horizon introducido enecad no consume un certificado y fija cuatro condiciones NO_VERIFICADO; capacity_comparison también rechaza costos dinámicos sin lector de cota. | Cambio mínimo revisable: demostrar una cota completa de seguridad para obtener evidencia, conservando el hold de calificaciónG5; después deG0→G4 y reviews, una comparación privada original1202, siempreG5false. | Requiere revisión explícita de la regla de admisión, cota auténtica de todos los solapamientos/reservas y Source correctivo. No aprobado ni ejecutado; G5 original512MiB/1202/profundidad32/retención permanece obligatorio. |
+
+
+Source `2afd79adc7b61815d8c66a07f391c71a12e84dbf`, tree
+`f4165b011be21f225423d8e093a3eaeb9ad69191`, pasó Actions38050786152
+job114209316381: **1642 PASS por Python**, cero errores/fallos/skips,
+identidades iguales, Source literal, FIN/ECHILD, cleanup0foreign. ZIP original
+11669367878:960417B/22CRC/SHA256
+`8edc277972a004f4754b083eeb9ebe72c269da5cb30af38d5372d925101e5edb`.
+Wall120.066/130.488s; RSS máximo298848256/299134976B; inventario
+post-FIN810147840/810201088B (no pico). FS observado ext4/4096, libre
+91478253568B/18422979inodos; no prueba de cuota ni del Droplet.
+
+Native38051376116/job114211025375 conservó RED226 antes de birth/pidfd.
+ZIP11669513385:68188B/37CRC/SHA256
+`6b66c01a1b20e0bf2a0b200e0d6bc16772f09ed5fbde099eda73147c18d54f94`.
+Anchor PID1 propio enlaza boot4220d65f8c7345d38289a76ec860c966,
+Invocation61660a1e6c7340149342237bfae18203 y executorPID2505. El segundo
+RAW23086B/SHA256
+`2a4d94269ef68527b6e421eaac738710389deb0fe60c3a8769ac8195071b7809`
+y FIN original
+`35f11a9f99d72595da47d53812d77b1eb4ad544702a170623e18b3d642f00628`
+se verificaron contra captura cerrada/Source/CRC/ECHILD. La metadata journal
+init.scope previa no se convierte en cgroup live; el parser estricto Source2afd
+la declaró UNKNOWN, conservando los originales.
+
+**Operación peligrosa demostrada:** `apply_one_mount`, namespace.c:1704,
+registró `Successfully mounted /run/systemd/inaccessible/dir to
+/run/systemd/mount-rootfs`. La máscara magiclink `/proc/1/root` alcanzó la
+raíz entera. Los25 EBUSY16 de desmontajes dicen `ignoring`: no son evidencia
+del errno final226. El error posterior sigue no observado y no se inventa.
+Readout completo autenticadoSHA256
+`da8be2bfa42e0ebf79ca55734d05f85038559ba355325813da1472ab750370cd`.
+
+Fix causal implementado: guard que rechaza destinos magiclink/raíz antes
+de ROOT; máscara del directorio real `/proc/1`; parentPID1 leído y cotejado
+por observador externo live más pidfd/ACK antes de actores. Sólo mode=probe
+puede usar el sello posterior al proc único/RO, dispositivos privados/RO y
+cierreFD3. `PrivateDevices` en systemd255 hace bind del devpts host
+(namespace.c1018–1020); el bootstrap privado debe reemplazarlo por una
+instancia `newinstance`, RO/nosuid/noexec, y comprobar un device distinto
+antes del sello. La opción de systemd sola no prueba aislamiento de PTYs.
+Las71 regresiones locales del sello pasan en cadaPython, sin fallos/skips,
+como NONROOT: no certifican ROOT ni G0. No puede heredarlo quota/pip:
+bloquearía sockets y FSGETXATTR.
+Original manager, drop NONROOT, cuatro casos y deadlines se preservan.
+Custodia329, guards59 y calibración130 PASS en cadaPython local, todos
+NONROOT y sin errores/fallos/skips; no reemplazan CI ni la prueba ROOT.
+Este Source necesita CI exacta nueva y evidencia nativa; no hereda el PASS
+de2afd. No aprueba la revisión del witness ROOT, EACCES histórico vs
+ausencia del PID privado, cuota agregada ni regla temporal de admisiónG5.
+No Horizon/cuota/reservas/G0–G8/merge/deploy durante los bloqueos.
+
+
+## Source9c743: arranque ROOT auténtico y guard de unidad tipada
+
+Source `9c74348a0e5b8e3f3bc4761837d579a6ba54f4a5`, tree
+`0da16e98d7f60e7c78eccbbec0c92978728b1123`, pasó Actions38054448912,
+job114219930405: **1764 PASS por Python3.11/3.12**, cero fallos/errores/skips,
+identidades iguales, Source literal completo, FIN/ECHILD y cleanup0foreign.
+Original11669964319:964805B/22CRC/SHA256
+`c9cb666e3d55cfc301a5c2584e3cdfc2fee325b9ac4070fcbfbdc4a9b620332b`.
+Wall116.937/113.040s y RSS máximo300036096/301252608B por época.
+Inventario post-FIN811159552/811134976B: **no pico físico global**.
+Ext4/4096 observado con91482693632B libres y18422996 inodos; capacidad
+física de esa ejecución, sin garantía universal, enforcement de cuota ni prueba
+del Droplet. Bootstrap histórico8.108s/RSS229363712B/FIN/ECHILD;
+Git225468416→439844864B observado, conservando el límite histórico512MiB.
+
+La prueba nativa38055205582/job114222135982 conserva un RED nuevo.
+Original11671540153:58499B/33CRC/SHA256
+`36ebcad1460eb27e8dec67dd000f242e14cb91a5790dbdd763a755e5346a69cc`.
+PID1 registró Starting/Started y salida**1**, con boot propio
+`a7390f4c7cf94563a3f246590332f9c8`, unidad nonce
+`rc6-native-d5d6b6a21245408daef00faf4c3c80cc-guard.service` e Invocation
+`acd438f993054198890686213cdf6041`. Python ROOT se ejecutó y alcanzó
+`controller_snapshot:330`. RAW1441B/SHA256
+`db3e9eb12b32acaa25264395ea7f5565e79e585564bcb193bc2b64c7efa8c85c`
+demuestra `ValueError: ROOT_CUSTODY_ACTUAL_SAFE_PID1_MASK_REQUIRED`.
+**El errno no aplica a ese ValueError**. Esta ejecución no falló con226;
+el errno final del fallo226 histórico continúa UNKNOWN. Birth/pidfd, sello
+ROOT y los cuatro casos todavía no están certificados; ROOT_FIN UNKNOWN,
+namespace retenido, cleanupfalse y crédito físico0. No se repite este SHA.
+
+| Bloqueo | Corrección mínima y evidencia | Obligación restante |
+|---|---|---|
+| Parser rechaza máscara real `/proc/1` entre comillas | systemd255.4 `dbus-execute.c:3128–3178` usa `unit_concat_strv`; `unit.c:4575–4604` rodea cada ruta con comillas. Los84 parches Ubuntu8.17 no modifican esos serializadores. `.split()` conserva las comillas. Parser tipado de listas con escapes, append/reset vacío, secciones y conflicto singular fail-closed; conserva RAW y hash. | La unidad RAW no fue capturada en9c743: no se afirma repetición real. Snapshot ROOT-owned antes del guard y captura sólo tras FIN propio y unidad/cgroup inactivos; diagnóstico nunca concede custodia. Nueva CI exacta y después una prueba nativa. |
+| Readback namespaces canónico | systemd255.4 `dbus-execute.c:1472,1861` serializa el bitmap permitido mediante `namespace_flags_to_string`. Entrada original `~cgroup net user ipc uts` corresponde exactamente a salida `mnt pid`, bitmap0x20020000. | Guard compara semántica exacta y rechaza cualquier namespace adicional; propiedades del servicio intactas. Source9c743 no alcanzó este guard posterior: hallazgo de código, no un segundo error nativo atribuido. |
+| Máscara magiclink del root del executor | Source9c743 alcanzó PythonROOT tras sustituir el magiclink por el directorio real y mantener protección. | La operación peligrosa histórica está probada; su errno final226 sigue UNKNOWN. Guard permanente rechaza raíz/magiclinks antes de ROOT. No se quitan restricciones para obtener PASS. |
+| Reporting de mounts | Bootstrap privado realiza mounts confiables. El sello prueba denegaciones con syscalls de mount de operandos inválidos: son intentos denegados, no cero intentos. | Reportar alcance exacto, ausencia de mounts exitosos de actores y backing/cuota no iniciados; ningún flag sustituye evidencia nativa. |
+| Filtro NONROOT supervisor/worker | Native9c743 confirma57reglas y26denegaciones, herencia0→1→2, dumpable real0/1, FIN y cleanup0foreign. Wall0.201s/RSS máximo103731200B, inventario post-FIN69632B. | Es prerrequisito de filtro; no prueba custodia ROOT, perfil PAPER1CPU/1GiB ni presupuesto total del Droplet. |
+| G0, lectores admitidos y G5 original | Los límites20GiB/26GiB/reservas,1202/512MiB/profundidad32/retención y writer productivoV3 permanecen. | Revisión explícita witness ROOT y EACCES vs PID ausente; cuota/reservas físicas; G1 focal dual con reviews auténticos; cota completa y revisión temporal de admisión antes de Horizon original. G7/G8 esperanG0–G6. |
+
+Cierre local del fix tipado: **428 PASS por Python**, cero fallos/errores/skips,
+5.409/5.508s como NONROOT. Helper SHA256
+`92cbf003bafad50998b21867f10ba9ff61b9f1f807fbb23d928cd6ae20295bd3`;
+tests `9d4c6c265091d09cf005cf207273de7fdfd7046acc985c92ae40dfde500842b4`.
+Incluye regresiones de sección[Service], dirección y conjunto completo del
+filtro original, identidad dev/inode/mode/UID/GID/nlink/size/mtime/ctime estable
+sin confundir atime, y tiempos canónicos290s/10790s sin cambiar deadlines.
+El manager, planes, sello, propiedades systemd y drop original permanecen.
+Estos PASS locales no certifican ROOT: el Source congelado necesita CI exacta
+positiva antes de una nueva prueba nativa con RAW de unidad previo a birth.
+
+Se conserva un candidato en PR483 y ancestry de481/482, sin una rama o PR
+documental adicional. USD0 de infraestructura recurrente adicional,
+PAPER/SHADOW, real_orders_sent=0 y PPI Watch intacto. Sin contratación,
+ampliación, infraestructura persistente, merge ni deploy.
+
+
+## Source1f5678fe: causa canónica SIGKILL y conservación del RAW privado
+
+CI exacta Source `1f5678fe44a570f42b28b7d0fdbdd5a2b1e1022d`, tree
+`fbab6060825e17a8122b1252e7d7018e82461117`: Actions38057139682,
+job114227822226, **1863 PASS por Python**, cero fallos/errores/skips.
+Artifact11672068470:972937B/22CRC/SHA256
+`1d26e03069af4c2e7ad0a4f501068526e7dec60f269cd0f1fdc3babadad2467b`.
+Source literal intacto, identidades iguales, FIN/ECHILD, cleanup0foreign.
+Wall120.447/131.779s, RSS máximo303640576/300740608B por época;
+inventario post-FIN811323392/811311104B, sin afirmar pico global.
+Ext4/4096 con91482607616B e18422979inodos libres observados en esa
+ejecución; no cuota garantizada ni capacidad total del Droplet.
+Bootstrap histórico5.226s/RSS229228544B, Git225480704→439853056B
+observado, FIN/ECHILD y límite original512MiB intactos.
+
+Native38057740591/job114229559919 es RED distinto, sin retry idéntico.
+Artifact11671784226:61571B/34CRC/SHA256
+`acc3272063ffd736d7b998d32d906dae80418d9c6d1604d1ff56f70a5dc3045e`.
+Unidad propia `rc6-native-d4e985a827ad490ab7c1b338690a2fd9-guard.service`,
+boot `302d8bce7e1a43d0b4806725a0a62436`, salida1 antes de birth/pidfd.
+RAW ROOT1443B/SHA256
+`1bb5dd1f4d3748a08fdb36489d11b03821f242f8dab3ae2c7333844e32e228ab`
+demuestra ValueError `ROOT_CUSTODY_ACTUAL_UNIT_PROPERTIES_REQUIRED`.
+El errno no aplica a ese ValueError; no hay226 en esta ejecución.
+ROOT_FIN UNKNOWN, namespace retenido, cleanupfalse y crédito0.
+
+La unidad original2538B/SHA256
+`d5a5d7109f6180b64028013fda12c1ee98783c9955eafa35412a73a749a43a58`
+se conserva en snapshot54ba77fc… tras FIN y ausencia de escritores.
+El replay NONROOT de los13 predicados del Source exacto obtiene12TRUE:
+únicamente `FinalKillSignal=KILL` no coincide con el guardSIGKILL/9.
+`dbus-kill.c:41` y `signal-util.c:131` de systemd255.4 explican la abreviatura
+KILL. El fix acepta ese literal exacto para la misma señal9 y rechaza otras
+señales. La máscara entre comillas pasó nativamente; namespaces exactos dio TRUE
+en replay NONROOT y aún no se ejecutó tras el guard de KILL. El replay no
+prueba kernel, birth, pidfd, sello ni custodia.
+
+La auditoría de orden revela que la exigencia de pidfd del proceso privado
+precedía su RAW y decode podía sustituir el traceback. Se conserva el RAW
+acotado sólo después del FIN original del manager y pre_capture; su captura
+NONROOT requiere además FIN cliente, unidad nonce inactiva y cgroup sin
+escritores. No concede ROOT_FIN, cleanup, equivalencia ni recuperación.
+No cambia propiedades systemd, señal, manager, sello, caps, drop, namespaces,
+deadlines, planes o límites. El nuevo Source debe pasar CI exacta antes de
+una única prueba nativa; no hereda el PASS previo.
+
+El filtro nativo volvió a demostrar57 reglas/26denegaciones por actor,
+herencia0→1→2 y dumpable0/1, FIN/cleanup0foreign,0.201s/RSS101609472B.
+Custodia ROOT, cuota/reservasG0, lectores focales duales y cota globalG5
+continúan pendientes. No Horizon ni gates materiales antes de admisión.
+Un candidatoPR483, USD0 adicional recurrente, PAPER/SHADOW, real0,
+PPI intacto, sin infraestructura persistente, merge ni deploy.
+
+Cierre local del Source siguiente:487 PASS por Python3.11/3.12 en custodia
+y calibración,9.066/8.987s, cero errores/fallos/skips. JUnit
+`e64f472b8eb5bca92292bc25c5dddd4b819536eb04873b8e5949377dc0618c8a` y
+`295dc0b2be86a019212e284004302c59a394a9c5f60c5780e602bb4fa3deafc3`.
+Helper124390B/SHA256
+`969dca2ed51259258b841edeb575ae16dcd436b8ba4955d2b1a04ee6dc8d1103`;
+tests82542B/SHA256
+`313c7ceb73a0066ae06ea753cd80e6939ca5ff16fce4569ca8381926f7c5cc9f`.
+Estos tests preservan realmente FIN/ECHILD NONROOT y bytes originales; sus
+fixtures de unidad/cgroup se declaran fixtures, sin certificación ROOT.
+
+
+## Source324e4273: guard RO privado y corrección recursiva
+
+CI exacta `324e42739dca3c7072dc2d219291b5bdaeae417e`, tree
+`7cb67cfe1aff5487ed72efc40ded80fcac93ec10`: Actions38059823356,
+job114235632983, **1922 PASS en cada Python3.11/3.12**, sin fallos,
+errores o skips. Artifact11672363537:977905B/22CRC/SHA256
+`27fad4e7f80b82e1bb2d9597a387a0c5a854eb5985ad8c105c04fe5b087f6faa`.
+FIN/ECHILD, Source literal intacto y cleanup0foreign; wall125.868/135.187s,
+RSS máximo301056000/304427008B por época. Post-FIN813019136/813023232B
+es inventario, no pico global. Ext4/4096 con91482554368B e18422992inodos
+libres observados; la garantía nominal14GB no fija ese espacio físico.
+Bootstrap histórico5.669s/RSS229171200B, Git225480704→439853056B,
+FIN/ECHILD; límite original512MiB intacto, sin crédito de cuota.
+
+Native38060549037/job114237759512 volvió RED por una causa nueva;
+artifact11672693800:64697B/36CRC/SHA256
+`6f4145dbb7c1cd6f9fa3aa97545522cbdca3a26f534b7889ae55e0ab4b21a932`.
+Boot `277e02725446403d81ccb312be39a0c8`, unidad propia
+`rc6-native-a2afd598a01147d5888f5e382fbb7403.service`, salida1.
+El RAW privado1139B/SHA256
+`0587b51137bfecca55e507a3deb80ab3b89539b700a0a14adb24272f9f98b506`
+conserva ValueError `ROOT_CUSTODY_PRIVATE_FOREIGN_READONLY_UNPROVED`
+en `_prepare_private_mounts:1041`, después de remounts que retornaron0.
+No hay errno para ese ValueError. Faltan las filas infractoras de mountinfo;
+no se afirma que una capa cubierta concreta esté demostrada en el runner.
+El pidfd privado ausente es secundario: el fallo ocurre antes de birth
+privado, sello y cuatro casos. ClientFIN/ECHILD auténticos5.511s/RSS101310464B;
+ROOT_FIN UNKNOWN, namespace retenido, cleanupfalse/crédito0. No hubo226;
+el errno final del226 histórico sigue UNKNOWN. No retry del mismo SHA.
+
+La ejecución alcanzó el bootstrap privado después de los guards ROOT y
+los ACK externos originales. El namespacebitmap que sólo tenía replay
+NONROOT en Source1f ahora pasó su guard por flujo del Source nativo exacto.
+Eso no certifica los cuatro casos ni el FIN ROOT completo. El filtro NONROOT
+demostró de nuevo57reglas/26denegaciones por actor, herencia0→1→2,
+dumpable0/1 y FIN/cleanup0foreign.
+
+Linux6.8 `fs/namespace.c` demuestra que remount por pathname sólo cambia
+el montaje visible y que `mount_setattr` recursivo recorre montajes reales.
+El fix cambia únicamente RDONLY por montaje privado, sin marcar el
+superblock del host RO; conserva nosuid/nodev/noexec y los demás flags.
+Luego restaura RW sólo al montaje exacto de control usando FD O_PATH nuevo
+del namespace privado con mountID/dev/inode/UID/GID0700 comprobados.
+Nunca aplica mount_setattr al FD3 original. Cierra el FD antes del sello;
+errores de syscall bloquean sin fallback. Conserva íntegro el readback
+ALLrowsRO salvo el control exacto y los límites originales.
+
+El diagnóstico fijo `private-mount-setup.native.json` registra mountinfo
+before/after completo y acotado, operación/errno y fase. Usa únicamente
+el directorio original propio autenticado para transportar el diagnóstico;
+no mantiene writer privado abierto durante la operación recursiva. La
+captura requiere FIN original, unidad inactiva y ausencia de escritores.
+No concede custodia, cleanup, cuota, recuperación ni equivalencia.
+Manager55325b31/selloce4be531, propiedades systemd, caps, drop, namespaces,
+deadlines, planes y límites no cambian. Las pruebas NONROOT con libc mock
+son regresiones del guard; no sustituyen éxito kernel.
+
+El sucesor requiere CI exacta nueva y sólo después una pequeña ejecución
+nativa. Custodia completa, equivalencia explícita PROC_EACCES vs PID
+ausente, cuota/reservasG0, lectores focales duales y medición global de
+1202ciclosG5 continúan pendientes. No Horizon ni gates materiales antes
+de admisión, sin cambios silenciosos del contrato. Un único candidatoPR483,
+USD0 adicional recurrente, PAPER/SHADOWreal0, PPI intacto, sin merge/deploy.
+
+Cierre local Source recursivo:524 PASS en custodia y calibración por cada
+Python3.11/3.12,8.302/8.410s, cero fallos/errores/skips. JUnit
+`d7d40b8186b135b57d40227d0b18c03c0d3d13679cb3fa329bdc1b96674d909b` y
+`81eae19a6ac7ac03c8e01f7dbddd095f44b0f3f33041a20b5252e596a7b052e4`.
+Helper134316B/SHA256
+`550e83513066743d4d93acf5255ab52d4cae6596dd4ebcb33014af404cc0336b`;
+tests92527B/SHA256
+`fafe3f26a2fc19874987b80681bb29aa23a49d41cdc08919c82be2994820a859`.
+ABI/error/no-fallback, mounts duplicados, FD3 prohibido, cambio de identidad,
+paths/owners, cierre de FD y custodia del diagnóstico tienen regresiones
+positivas y negativas. La revisión independiente READ_ONLY del orden de
+FDs no halló writers nuevos privados antes del syscall; el kernel puede
+rechazarlo y conservará RED con RAW. No equivale a certificación ROOT.
+
+
+## Source88594fa1: montajes nativos correctos; arranque y lectura sellados
+
+CI exacta `88594fa1435e9ff21c6f2fdb9286ef340e740233`, tree
+`bd850ea2a39d9e20dc013a36182b57bb20344298`: run38062673643,
+job114243949626, **1959 PASS por cada Python3.11/3.12**, cero errores,
+fallos o skips. Artifact11673778033:968082B/22CRC/SHA256
+`64ec2dc8485770b0f1267ba50ac193850db6d7ec5ee93b7b5ba6083a50d490dd`.
+Source literal intacto, FIN/ECHILD y cleanup0foreign; wall95.517/99.029s,
+RSS máximo303906816/305418240B por época. PostFIN813473792/813412352B
+es inventario, no pico global. Ext4/4096:91478032384B e18422994inodos
+libres observados; no equivalen a cuota o reserva. Git histórico
+225492992→439869440B, límite512MiB original intacto/FIN/ECHILD.
+
+La única Native run38063198313/job114245476222/art11673279521 quedó RED:
+69274B/38CRC/SHA256
+`8ebb967c0241325816163684c0f74ca6a0845ff218b073c955f6da3a471b1216`.
+El RAW del montaje22786B/SHA256
+`d5e13e50a0390b045f767f84e764c01ce40d59466ef71ee7cb72df68c079bddb`
+demuestra ambos mount_setattr442 return0/errno0:32montajes RO antes de
+clear, después sólo control propio445RW; dev/inode/UID/GID0700 idénticos
+antes/después. Esto prueba ese algoritmo, no FIN ROOT ni G0.
+
+El actor primero falló antes de abrir el helper. RAW153B/SHA256
+`7684e10284f52165d5bc3ac590f0e9b70355fa61b4cf4f79cccfc541681f9a7a`:
+Python can'topenfile/errno1. Python3.12.3 está observado; su binario Ubuntu
+exacto no está hasheado. CPythonv3.12.3 documenta
+_Py_fopen_obj→set_inheritable→ioctlFIOCLEX0x5451; el sello deniega todo
+ioctl con EPERM y CPython no hace fallback para ese errno. El fix usa un
+launcher -I/-B/-c fijo y runpy para el mismo helper/argv, con atomicCLOEXEC.
+La regresión kernel NONROOT del entorno debe comprobar filenameRED,
+launcherpositivo, denegaciones/herencia y FIN original. No permite ioctl.
+
+El fallo secundario es independiente y está demostrado directamente:
+RAW1674B/SHA256
+`2beef261a5d0736b20e362f1f881f1ccb702ad12eeda0cba4e40f1e36e225bdd`,
+_broker_probe→calibration.read→open(O_NOATIME) devuelve EPERM después
+de chown1001; ROOT ya no es dueño y carece de CAP_FOWNER3 por diseño.
+Se auditaron también request/Source/manager/marker/mapping/parentseal:
+el actor heredado usaría el mismo flag sobre controles del runner.
+Se agrega lector acotado al rol sellado real, sin O_NOATIME, conservando
+NOFOLLOW/noalias/límites y diez campos originales, incluido st_blocks.
+Sólo ignora atime de lectura; calibration.read original y sus once campos
+permanecen byte exactos. Los cuatro logs se leen por FD propio fijado
+únicamente tras FIN/ECHILD, con transferencia de propiedad comprobada.
+No se agrega CAP_FOWNER ni se concede autoridad por JSON o por ese lector.
+
+Una única frontera de custodia sigue en PID1 ROOT privado y su manager
+original: nacimiento/pidfd/wait4/señal/FIN de sus workers. systemd aporta
+watchdog del cgroup y ACK externo, sin sustituir ese FIN. Montajes/proc
+limitan visibilidad, el sello irreversible bloquea escapes y el drop fijo
+protege workers NONROOT. Se conservan controles sin eliminar redundancias
+por sospecha. El rol ROOT de preparación de cuota aún requiere revisión;
+el sello postsetup probado no autoriza ese ancestro privilegiado.
+
+ClientFIN/ECHILD10.517s/RSS100339712B; ROOT_FIN UNKNOWN, namespace
+retenido, cleanupfalse/reservecredit0. Birth/pidfd privado y sello del
+parent se alcanzaron por flujo del Source exacto, pero el helper del actor
+no abrió y no se probaron sus cuatro casos. El errno final del226
+histórico sigue UNKNOWN. Ningún retry del mismo SHA. Source sucesor exige
+CI exacta antes de una única Native nueva. G0/cuota/reservas, equivalencia
+PROC_EACCES, lector dual focal y1202ciclosG5 siguen sin aprobar; Horizon
+no se ejecuta antes de admisión. USD0 adicional recurrente, únicoPR483,
+PAPER/SHADOWreal0, PPI intacto, sin infraestructura/merge/deploy.
+
+
+Freeze Source sellado:560PASS en custodia+calibración por cada Python3.11/3.12,
+10.178/10.658s, cero errores/fallos/skips y nodeIDs iguales. JUnit
+`6266cf5192c3e5a6bfc1a3fb105447100e0184843006c99afd8d73f5ac47f955`/
+`e795781a6e89853b25f06b44f3370ace9747812da81fb5e4fc01accbffa610b4`.
+Helper139818B/SHA256
+`7601b96bf88cf2bdb9e266ba6aee6ddd075326adc59656013a6a52acab21dff0`;
+tests105473B/SHA256
+`211c12cef853fcd119e5fdfe43bd4731cd98b68e1e6e823ee159700c5a62cbcf`.
+Los procesos propios NONROOT con el BPF ROOT real comprobaron filename
+exit2/EPERM frente a launcher fijo positivo, herencia y denegaciónFIOCLEX,
+helper --help/FIN original, Source+control byte exacto y tresGit limpios.
+También se comprobó /usr/bin/python3 local3.13.5:6812336B/SHA256
+`17b78e0a93175e86f9ac03141924fd7a7f0c0c52e66b34bfa0de20ffef989df1`;
+no se confunde con Ubuntu3.12.3 de Actions. Las regresiones negativas
+cubren alias/symlinks/hardlinks/FIFO/bounds/owners/mountID/bloques/rebind
+y FIN/ECHILD antesIO. Revisión independiente READ_ONLY sin defecto
+bloqueante, AST/diffPASS, archivos originales de seguridad byte exactos.
+Esto sigue siendo prueba económica NONROOT, sin crédito de custodia ROOT.
+
+
+### Custodia ROOT auténtica, Source d97fe4f4
+
+Source `d97fe4f469aa1f90f5ba36af6adbe2ad899e06c5`, tree
+`81bd261b827c64de8be976f62582d35b9b0fd2df`: CI
+[38065423750](https://github.com/mbalbo2023/Porota-trading/actions/runs/38065423750)
+con **1995 PASS en cada Python 3.11/3.12**, identidades iguales,
+cero errores/fallos/skips, Source intacta y FIN/ECHILD/cleanup propios.
+Artifact11675087792, ZIP original976212B/22CRC/SHA256
+`2c2b243c3738ca2ef3a0f19ee4bfd8d0029f065042875852316dfbb2efe37a29`.
+Wall125.245/134.850s, RSS303624192/307236864B; inventario postFIN
+813998080/813981696B, **no pico físico global**.
+
+Después, una sola prueba nativa de ese SHA:
+[38066365383](https://github.com/mbalbo2023/Porota-trading/actions/runs/38066365383),
+job114254723064, artifact11674874049, ZIP original125481B/46CRC/SHA256
+`5044338f7423d5f73ba6655326f2b8cbac163c740da54d037bedd9d08e379815`.
+Readout autenticado SHA256
+`212c5191ce50f0ba6984e43734797f0848cbe5047b0fda1437630ed39cc274ac`:
+**PASS_SMALL_NATIVE_ONLY**, ROOT_FIN CLOSED_ORIGINAL_NATIVE_AND_PIDFD.
+
+Los cuatro casos originales observaron exit0, fail73 antes del drop,
+ROOT hang y NONROOT hang terminados con TERM→KILL real. En cada caso:
+birth, pidfd, identidad, reap original, ECHILD y FIN; sello heredado y
+denegaciones reales. Parent ROOT conserva máscara483, NNP1, dump0 y
+42 denegaciones; workers UID/GID1001 y las cinco máscaras de capacidades0.
+Los ACK externos se verificaron contra PID1 vivo y pidfds; cgroups propios
+vacíos/removidos, reap real. El JSON del actor no concede custodia.
+Broker privado11.6166s/RSS35065856B; casos0.2007/0.2009/3.0567/3.0566s,
+RSS34918400B máximo por caso, sin sumarlo como pico global.
+
+Cleanup original cerrado:417792B/26entradas antes de retirada, namespace
+propio removido,0rutas ajenas,0cambios de modos o write-owner,0aliases seguidos.
+La observación fresca de ext4/4096 registró91705847808B y18423175inodos libres;
+no es una cuota o reserva. Runner4CPU/16GiBRAM: esto tampoco demuestra
+el Droplet1CPU/1GiBRAM/25GB ni su margen compartido con OS/PPI.
+
+Se cierran en **ese Source** el arranque privado, interoperabilidad CPython,
+lectura de controles sellados y custodia ROOT/NONROOT original. El errno
+final del EXIT_NAMESPACE226 histórico permanece UNKNOWN_NOT_OBSERVED;
+los EBUSY ignorados durante cleanup no se declaran su causa.
+
+**G0 sigue BLOQUEADO**: original issuer-root requiere EACCES con el mismo
+UID; el PID privado puede producir ENOENT/ESRCH o colisión con otro PID.
+Ausencia sola no demuestra equivalencia. El ancestro ROOT que prepara
+cuota también necesita una revisión separada: el sello postsetup deniega
+ioctl/quotactl/montaje, y no se debilita para acomodar preparación.
+Sin revisión contractual explícita, pruebas adversariales propias, cuota
+física20GiB, backing26GiB, ambas reservas4GiB e inodos/preflight frescos
+no hay G0 material. No se declara imposible Actions por su garantía14GB.
+
+Los1.202ciclos,512MiB, profundidad32, retención9h+1h y datos byte exactos
+permanecen originales. El RAW histórico tiene1049metadata,153índices
+faltantes y0juegos completos de cinco payloads; ahorro/cota global G5
+siguen null. Horizon y G7/G8 no se ejecutan antes de sus admisiones.
+Cada Source sucesor requiere CI económica exacta y una prueba nativa nueva;
+este PASS no se hereda por identidad de archivos. USD0 recurrente
+adicional, PAPER/SHADOWreal0, PPI intacto, sin compra/merge/deploy.
+
+
+Revisión contractual mínima propuesta, **no aprobada**: conservar el
+objetivo de negar salida al root del issuer, sustituyendo sólo su observación
+literal del HOSTPID oculto por identidad viva externa+pidfd/ACK, namespace
+privado distinto y ausencia de bridges, junto con prueba positiva y negativa
+contra supervisor propio NONROOT del mismo UID, vivo y DUMPABLE0. El mismo
+nonce debe poder crearse por su ruta canónica propia; por
+`/proc/LOCAL_SUPERVISOR/root` debe EACCES, y fd/1 debe EACCES sin escribirlo.
+Esto exige evidencia nueva y evita certificar ENOENT, EROFS o UID diferente.
+El sello del probe deniega todo ioctl: heredarlo a quota_probe bloquearía
+FSGETXATTR. Se necesita revisar un rol de preparación estrictamente anterior
+a datos mutables, con ioctl/quota sólo sobre el dispositivo/FD propio y
+drop fijo original; no ensanchar globalmente el sello probado. Ambas
+propiedades y sus pruebas pendientes están enumeradas en el JSON existente.
+
+
+### Emisión y custodia de reviews privados CAS
+
+El mismo candidato incorpora siete paths de código/regresiones existentes:
+reader-review v2 desde inventario Source+execution wire original, builder y
+validador recomputado ACK-review v1, emisión cheap/execution después de FIN
+y captura de ambos registros/error en RAW antes de cleanup. El carrier
+verifica los bytes capturados y publica referencias path/SHA256; no reconstruye
+RAW. El inventario reusa el pin fullSource, sin Git adicional ni clones:
+cada captura NOATIME mantiene all11, y vs pin anterior compara los diez
+campos CODE estables originales, incluyendo st_blocks; conserva atime
+admitido y su observación, sin restaurarlo. El bound de8.192files aplica
+sólo al código escaneado, no a documentación.
+
+Freeze local SHA256
+`3880121e4634b38c25110c8519dfc6418113dcc4fae92b6e1a5f439a3d39b4c5`:
+**92 PASS por Python3.11/3.12**,0fallos/errores/skips,71.478/73.000s.
+El positivo ejecuta23casos parametrizados reales de14reader nodeids y
+6ACKfunctions,69reports setup/call/teardown PASS, originalmanager y
+finalizador con FIN/ECHILD. El pin de Source de esa regresión es un fixture
+explícito NO_G1; no certifica equivalencia ni artifact de G1.
+Negativos: FIN incompleto, corpus parcial, skip, setup/teardown RED, Source,
+wire y registros alterados; no producen reviews positivos.
+
+El futuro CHEAP_FILES_JSON conserva el mínimo original y añade los cuatro
+módulos CAS indicados en el JSON. Esa selección se autentica en la admisión
+de G1, no modifica el mínimo contractual automáticamente. G0 aún debe
+certificarse antes de ambos G1 reales. Reviews, ACK y PASS económicos
+mantienen aprobación/V4/G5/runtime false; escritura productiva V3 intacta.

@@ -21,6 +21,7 @@ import resource
 import signal
 import socket
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -62,6 +63,7 @@ SOURCE_PATHS = (
     "scripts/rc6_archive_v3_image_smoke.py", CODEC_FIXTURE, ARCHIVE_FIXTURE,
     "rc6_shadow_runtime/serialization.py", "rc6_shadow_runtime/packed_storage.py",
     "rc6_shadow_runtime/exact_page_storage.py", "rc6_shadow_runtime/archive_components.py",
+    "rc6_shadow_runtime/exact_binary_storage.py",
     "rc6_shadow_runtime/archive_namespace.py", "rc6_shadow_runtime/retention.py",
     "rc6_shadow_runtime/persistence.py", "rc6_shadow_runtime/projection.py",
 )
@@ -89,6 +91,9 @@ CASE_IDS = (
     "LEGACY_ARCHIVE_V2_ORIGINAL_BYTES", "NATIVE_ARCHIVE_V3_FIVE_MEMBERS_EXACT",
     "NATIVE_ARCHIVE_V3_CORRUPT_PACK_REJECTED", "NATIVE_ARCHIVE_V3_MISSING_PACK_REJECTED",
     "ISOLATED_STDLIB_NAMESPACE_LOADER",
+    "PRIVATE_ARCHIVE_V4_MIXED_CHAIN_FIVE_MEMBERS_EXACT",
+    "PRIVATE_ARCHIVE_V4_CORRUPT_PARENT_PACK_REJECTED",
+    "PRIVATE_ARCHIVE_V4_MISSING_PARENT_PACK_REJECTED",
 )
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -369,6 +374,8 @@ def no_encoder():
          patch("rc6_shadow_runtime.exact_page_storage.encode_page", forbidden), \
          patch("rc6_shadow_runtime.exact_page_storage.encode_page_pack", forbidden), \
          patch("rc6_shadow_runtime.archive_components.encode_page_pack", forbidden), \
+         patch("rc6_shadow_runtime.exact_binary_storage.encode_binary_pack", forbidden), \
+         patch("rc6_shadow_runtime.archive_components.encode_binary_pack", forbidden), \
          patch("rc6_shadow_runtime.serialization.encode_storage", forbidden), \
          patch("rc6_shadow_runtime.packed_storage.encode_packed_storage", forbidden):
         yield
@@ -499,8 +506,119 @@ def native_archive(work, files_class, retention_class, *, deadline):
         "source_bytes_and_all_stats_unchanged": True, "repeated_restore_fresh_verification": True}
 
 
-def broken_archive(work, live, archive, ident, original, mutation, retention_class, *, deadline):
-    broken_live, broken_archive = work / (mutation + "-live"), work / (mutation + "-archive")
+def _private_slice_recipe_fixture(retention, *, deadline):
+    """Reframe the latest tiny owned fixture, never enable the native V4 writer.
+
+    Both source codec wires and whole CAS parents are unchanged. This exercises
+    an existing V4 receipt through public readers; it is not a capacity model.
+    """
+    import gzip
+    from rc6_dynamic_universe.common import digest
+    from rc6_shadow_runtime import archive_components as components
+    root = retention.archive_root
+    require(root.parent.name.startswith("rc6-codec-image-smoke-")
+            and stat.S_IMODE(root.parent.lstat().st_mode) == 0o700
+            and root.parent.lstat().st_uid == os.geteuid(), "SMOKE_PRIVATE_V4_FIXTURE_ONLY")
+    head = retention._archive_checkpoint()
+    receipts = retention._archive_receipts(head=head)
+    require(bool(receipts), "SMOKE_PRIVATE_V4_LAST_RECEIPT_REQUIRED")
+    receipt = receipts[-1]
+    context = components.ComponentArchive(retention)
+    recipe = context._recipe(receipt)
+    require(recipe["schema"] == components.RECIPE_SCHEMA
+            and receipt["receipt_sequence"] == head["receipt_count"], "SMOKE_PRIVATE_V4_LAST_RECEIPT_REQUIRED")
+    prior = context._indices(recipe)
+    indivisible = set()
+    for descriptor in recipe["members"].values():
+        if descriptor["recovery"] == "STORED_GZIP_RAW":
+            raw, _ = components._decode_array(descriptor["references"], width=4, maximum=components.MAX_REFS)
+            indivisible.update(index for index, in struct.iter_unpack("!I", raw))
+    rows, references, seen = [], {}, {}
+    for number, (cid, location) in enumerate(prior):
+        guard(deadline)
+        raw = context._component(cid, location)
+        require(len(raw) <= MAX_FILE, "SMOKE_PRIVATE_V4_FIXTURE_BOUND")
+        parts = (raw,) if number in indivisible or len(raw) < 2 else (raw[:len(raw)//2], raw[len(raw)//2:])
+        cursor, indices = 0, []
+        for part in parts:
+            part_cid = components.sha(part)
+            if part_cid not in seen:
+                seen[part_cid] = len(rows)
+                rows.append(components.SLICE_COMPONENT_RECORD.pack(recipe["packs"].index(location[0]),
+                    location[1], cursor, len(part), bytes.fromhex(part_cid)))
+            indices.append(seen[part_cid]); cursor += len(part)
+        references[number] = indices
+    for descriptor in recipe["members"].values():
+        raw, _ = components._decode_array(descriptor["references"], width=4, maximum=components.MAX_REFS)
+        indices = [new for old, in struct.iter_unpack("!I", raw) for new in references[old]]
+        descriptor["references"] = components._array(b"".join(struct.pack("!I", index) for index in indices), count=len(indices))
+    recipe["schema"] = components.SLICE_RECIPE_SCHEMA
+    recipe["components"] = components._array(b"".join(rows), count=len(rows), codec=components.SLICE_ARRAY_CODEC)
+    wire = gzip.compress(components.canonical(recipe), mtime=0, compresslevel=1)
+    # Controlled fixture preparation precedes every read-only invariant. Only
+    # the latest receipt can be resealed without invalidating later lineage.
+    path = root / (receipt["generation_id"] + ".recipe.gz")
+    with path.open("wb") as stream:
+        stream.write(wire); stream.flush(); os.fsync(stream.fileno())
+    receipt = dict(receipt, archive_sha256=components.sha(wire))
+    retention._durable_control(root / (receipt["generation_id"] + ".receipt.json"), receipt)
+    head["receipt_digest"] = digest(receipt)
+    head["digest"] = digest({key: value for key, value in head.items() if key != "digest"})
+    retention._durable_control(root / "CHECKPOINT.json", head)
+    # The production ACK API verifies this existing V4 receipt. It emits no
+    # new V4 recipe and must restore all original members before authorizing it.
+    retention.archive_generation(retention.root / ("gen-" + receipt["generation_id"]))
+    require(components.NATIVE_WRITE_RECIPE_SCHEMA == components.RECIPE_SCHEMA,
+            "SMOKE_NATIVE_WRITE_CAPABILITY_CHANGED")
+    return receipt
+
+
+def private_mixed_archive(work, live, archive, identifiers, original, files_class, retention_class, *, deadline):
+    from rc6_shadow_runtime import archive_components as components
+    owner = retention_class(live, archive_root=archive, archive_format="COMPONENT_V3")
+    source_before = {ident: {name: read(live / ("gen-" + ident) / name, limit=MAX_FILE, deadline=deadline)
+                            for name in MEMBERS} for ident in identifiers}
+    _private_slice_recipe_fixture(owner, deadline=deadline)
+    at = datetime(2026, 10, 5, 13, 35, 3, tzinfo=timezone.utc).isoformat()
+    base = {"as_of": at, "mode": "SHADOW", "real_orders_sent": 0, "real_routes": "NOT_CALLED",
+            "number": 3, "typed_control": typed_payload()}
+    with files_class(live) as files:
+        bundle = files.commit_generation({**base, "source_reports": [], "source_audit": {}, "phase": "OPEN"},
+            dict(base), {**base, "status": "SHADOW_OBSERVING"}, source_watermark={"as_of": at,
+            "source_identity": "PRIVATE_SYNTHETIC_NATIVE_CODEC_FIXTURE"}, configuration_fingerprint="private-image-codec-v1")
+    third = bundle["pointer"]["generation_id"]
+    original[third] = {name: read(live / ("gen-" + third) / name, limit=MAX_FILE, deadline=deadline)[0] for name in MEMBERS}
+    owner.archive_generation(live / ("gen-" + third))
+    all_ids = [*identifiers, third]
+    context = components.ComponentArchive(owner)
+    receipts = owner._archive_receipts()
+    schemas = [context._recipe(receipt)["schema"] for receipt in receipts]
+    require(schemas == [components.RECIPE_SCHEMA, components.SLICE_RECIPE_SCHEMA, components.RECIPE_SCHEMA],
+            "SMOKE_MIXED_RECIPE_DISPATCH_NOT_EXERCISED")
+    for ident in identifiers:
+        require(all(read(live / ("gen-" + ident) / name, limit=MAX_FILE, deadline=deadline) == source_before[ident][name]
+                    for name in MEMBERS), "SMOKE_PRIVATE_V4_SOURCE_MUTATED")
+    sealed = protected(live, archive, deadline=deadline)
+    with no_encoder():
+        graph = context.dependency_graph(receipts)
+    require(set(graph) == set(all_ids) and all(graph[ident]["depth"] <= 32 for ident in all_ids),
+            "SMOKE_PRIVATE_V4_GRAPH_INCOMPLETE")
+    for ident in all_ids:
+        restore(owner, ident, original[ident], level=V3_LEVEL)
+        restore(owner, ident, original[ident], level=V3_LEVEL)
+    require(protected(live, archive, deadline=deadline) == sealed, "SMOKE_PRIVATE_V4_READ_MUTATED")
+    return {"status": "GREEN", "recipe_schemas": schemas, "generations": 3,
+        "original_members_per_generation": 5, "verification_level": V3_LEVEL,
+        "member_sha256": [{name: sha(raw) for name, raw in original[ident].items()} for ident in all_ids],
+        "source_bytes_and_all_stats_unchanged": True, "repeated_restore_fresh_verification": True,
+        "whole_parent_graph_verified": True, "recovery_encoder_calls": 0,
+        "native_write_recipe_schema": components.RECIPE_SCHEMA, "native_v4_write_enabled": False,
+        "original_horizon_or_capacity_equivalence_claimed": False}
+
+
+def broken_archive(work, live, archive, ident, original, mutation, retention_class, *, deadline, prefix=None):
+    name = prefix or mutation
+    broken_live, broken_archive = work / (name + "-live"), work / (name + "-archive")
     copy_namespace(live, broken_live, deadline=deadline)
     copy_namespace(Path(str(live) + ".authority"), Path(str(broken_live) + ".authority"), deadline=deadline)
     copy_namespace(archive, broken_archive, deadline=deadline)
@@ -651,7 +769,7 @@ def validate_report(report, *, candidate_sha, tree_sha, image_id, source_manifes
     cases = report.get("cases")
     require(type(cases) is dict and set(cases) == set(CASE_IDS) and type(report.get("case_count")) is int
             and report["case_count"] == len(CASE_IDS), "SMOKE_RECEIPT_CASE_CLOSURE")
-    negatives = {CASE_IDS[index] for index in (2, 3, 5, 8, 9)}
+    negatives = {CASE_IDS[index] for index in (2, 3, 5, 8, 9, 12, 13)}
     for name, result in cases.items():
         require(type(result) is dict and result.get("status") == ("GREEN_EXPECTED_RED" if name in negatives else "GREEN"),
                 "SMOKE_RECEIPT_CASE_STATUS")
@@ -681,7 +799,8 @@ def validate_report(report, *, candidate_sha, tree_sha, image_id, source_manifes
             and cases[CASE_IDS[2]].get("public_hashes_resealed") is True
             and cases[CASE_IDS[3]].get("signature") == "SHADOW_STORAGE_SCHEMA_UNSUPPORTED"
             and cases[CASE_IDS[5]].get("signature") == "PACK_PREVIOUS_SHA256_MISMATCH", "SMOKE_RECEIPT_NEGATIVE_SIGNATURE")
-    for index, signature in ((8, "RETENTION_COMPONENT_PACK_HASH_MISMATCH"), (9, "FileNotFoundError:EXACT_DEPENDENCY")):
+    for index, signature in ((8, "RETENTION_COMPONENT_PACK_HASH_MISMATCH"), (9, "FileNotFoundError:EXACT_DEPENDENCY"),
+                             (12, "RETENTION_COMPONENT_PACK_HASH_MISMATCH"), (13, "FileNotFoundError:EXACT_DEPENDENCY")):
         row = cases[CASE_IDS[index]]
         require(row.get("restore_signature") == signature and row.get("archive_signature") == signature
                 and row.get("new_ack_written") is False and row.get("origin_deleted") is False
@@ -701,6 +820,23 @@ def validate_report(report, *, candidate_sha, tree_sha, image_id, source_manifes
     modern = cases[CASE_IDS[7]].get("member_sha256")
     require(type(modern) is list and len(modern) == 2, "SMOKE_RECEIPT_ORIGINAL_BYTES")
     member_hashes.extend(modern)
+    mixed = cases[CASE_IDS[11]]
+    require(mixed.get("recipe_schemas") == ["RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V3",
+            "RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V4", "RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V3"]
+            and type(mixed.get("generations")) is int and mixed["generations"] == 3
+            and type(mixed.get("original_members_per_generation")) is int and mixed["original_members_per_generation"] == 5
+            and mixed.get("verification_level") == V3_LEVEL
+            and mixed.get("source_bytes_and_all_stats_unchanged") is True
+            and mixed.get("repeated_restore_fresh_verification") is True
+            and mixed.get("whole_parent_graph_verified") is True
+            and type(mixed.get("recovery_encoder_calls")) is int and mixed["recovery_encoder_calls"] == 0
+            and mixed.get("native_write_recipe_schema") == "RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V3"
+            and mixed.get("native_v4_write_enabled") is False
+            and mixed.get("original_horizon_or_capacity_equivalence_claimed") is False,
+            "SMOKE_RECEIPT_PRIVATE_V4_READER_SCOPE")
+    require(type(mixed.get("member_sha256")) is list and len(mixed["member_sha256"]) == 3
+            and mixed["member_sha256"][:2] == modern, "SMOKE_RECEIPT_PRIVATE_V4_ORIGINAL_BINDING")
+    member_hashes.extend(mixed["member_sha256"])
     for hashes in member_hashes:
         require(type(hashes) is dict and set(hashes) == MEMBERS
                 and all(isinstance(value, str) and _SHA.fullmatch(value) for value in hashes.values()),
@@ -811,6 +947,12 @@ def _run_smoke(root, manifest_path, *, candidate_sha, tree_sha, image_id, deadli
         cases[CASE_IDS[9]] = broken_archive(work, live, archive, identifiers[-1], _original[identifiers[-1]],
                                           "missing", EvidenceRetention, deadline=deadline)
         cases[CASE_IDS[10]] = isolated_namespace(root, archive, deadline=deadline)
+        cases[CASE_IDS[11]] = private_mixed_archive(work, live, archive, identifiers, _original,
+            EvidenceFiles, EvidenceRetention, deadline=deadline)
+        cases[CASE_IDS[12]] = broken_archive(work, live, archive, identifiers[-1], _original[identifiers[-1]],
+            "corrupt", EvidenceRetention, deadline=deadline, prefix="v4-corrupt")
+        cases[CASE_IDS[13]] = broken_archive(work, live, archive, identifiers[-1], _original[identifiers[-1]],
+            "missing", EvidenceRetention, deadline=deadline, prefix="v4-missing")
         inventory = snapshot(work, deadline=deadline)
         allocated = sum(row["identity"][7] * 512 for row in inventory.values())
         require(allocated <= MAX_SCRATCH, "SMOKE_SCRATCH_LIMIT")

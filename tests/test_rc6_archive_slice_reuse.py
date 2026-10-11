@@ -1,5 +1,5 @@
 """Economic CAS layout proofs, NOT the original financial Horizon/G5 run."""
-from datetime import date
+from datetime import date, datetime, timedelta
 import hashlib
 import gzip
 import os
@@ -175,7 +175,7 @@ def test_virtual_slice_recipe_count_is_bounded_separately_from_physical_catalog(
                       catalog, manifest(1), "a" * 64, {})
 
 
-def test_native_v4_exact_five_members_mixed_v3_chain_and_reachability_without_encoder(tmp_path, monkeypatch):
+def native_v4(tmp_path):
     root, path, _, directories, receipts = native(tmp_path)
     original = members(directories[-1])
     context = archive.ComponentArchive(policy(root, path))
@@ -207,6 +207,12 @@ def test_native_v4_exact_five_members_mixed_v3_chain_and_reachability_without_en
         recipe["schema"] = archive.SLICE_RECIPE_SCHEMA
         recipe["components"] = archive._array(b"".join(rows), count=len(rows), codec=archive.SLICE_ARRAY_CODEC)
     current = reseal_recipe(path, receipts[-1], range_layout)
+    return root, path, directories, receipts, current, context
+
+
+def test_native_v4_exact_five_members_mixed_v3_chain_and_reachability_without_encoder(tmp_path, monkeypatch):
+    root, path, directories, receipts, current, context = native_v4(tmp_path)
+    original = members(directories[-1])
     custody = {str(protected): tree_custody(protected)
                for protected in (root, root.with_name(root.name + ".authority"), path)}
     monkeypatch.setattr(gzip, "compress", lambda *args, **kwargs: pytest.fail("RESTORE_ENCODER_CALLED"))
@@ -214,12 +220,93 @@ def test_native_v4_exact_five_members_mixed_v3_chain_and_reachability_without_en
     restored, _ = context.restore(current)
     assert restored == original
     assert policy(root, path).restore_generation(current["generation_id"])["members"] == original
+    from scripts import rc6_archive_v3_image_smoke as image_smoke
+    assert image_smoke.restore(policy(root, path), current["generation_id"], original,
+                               level=image_smoke.V3_LEVEL)["members"] == original
     graph = context.dependency_graph([current])
     assert graph[current["generation_id"]]["base_generation_id"] == receipts[0]["generation_id"]
     parent_packs = {name for node in graph.values() for name in node["packs"]}
     assert parent_packs and all((path / name).is_file() for name in parent_packs)
     assert custody == {str(protected): tree_custody(protected)
                        for protected in (root, root.with_name(root.name + ".authority"), path)}
+
+
+def test_native_writer_stays_v3_without_runtime_flag_or_slice_catalog(tmp_path, monkeypatch):
+    monkeypatch.setenv("POROTA_SHADOW_ARCHIVE_RECIPE_SCHEMA", archive.SLICE_RECIPE_SCHEMA)
+    monkeypatch.setenv("RC6_ENABLE_SLICE_WRITE", "true")
+    monkeypatch.setattr(archive.ComponentArchive, "_slice_catalog",
+                        lambda *args: pytest.fail("UNREVIEWED_NATIVE_V4_PROPOSAL"))
+    _, path, _, _, receipts = native(tmp_path)
+    for receipt in receipts:
+        wire, _ = archive.read(path / (receipt["generation_id"] + ".recipe.gz"),
+                               maximum=archive.MAX_RECIPE_BYTES)
+        assert archive.loads(archive.inflate(wire, maximum=archive.MAX_RECIPE_BYTES))["schema"] == archive.RECIPE_SCHEMA
+    assert archive.NATIVE_WRITE_RECIPE_SCHEMA == archive.RECIPE_SCHEMA
+    assert archive.SLICE_WRITE_CAPABILITY_REVIEW["status"] == "BLOCKED"
+    assert archive.SLICE_WRITE_CAPABILITY_REVIEW["validated_artifact_digest"] is None
+    with pytest.raises(TypeError):
+        archive.SLICE_WRITE_CAPABILITY_REVIEW["status"] = "VERIFIED"
+
+
+def test_unreviewed_native_v4_plan_fails_before_intent_or_publication(tmp_path, monkeypatch):
+    from rc6_shadow_runtime.persistence import EvidenceFiles
+    from tests.test_issue465_generations import publish
+    root, path, _, _, _ = native(tmp_path, count=1)
+    with EvidenceFiles(root) as files:
+        cut = publish(files, 2)
+    ident = cut["pointer"]["generation_id"]
+    custody = tree_custody(path)
+    actual = archive.ComponentArchive._select_plan
+    def unreviewed(self, *args, **kwargs):
+        wire, packed, name = actual(self, *args, **kwargs)
+        value = archive.loads(archive.inflate(wire, maximum=archive.MAX_RECIPE_BYTES))
+        value["schema"] = archive.SLICE_RECIPE_SCHEMA
+        return gzip.compress(archive.canonical(value), mtime=0, compresslevel=1), packed, name
+    monkeypatch.setattr(archive.ComponentArchive, "_select_plan", unreviewed)
+    with pytest.raises(ValueError, match="SLICE_WRITE_EXACT_ARTIFACT_REVIEW_REQUIRED"):
+        policy(root, path).archive_generation(root / ("gen-" + ident))
+    assert tree_custody(path) == custody
+    assert not (path / (ident + ".recipe.gz")).exists()
+
+
+def test_existing_v4_remains_readable_and_next_native_write_is_v3(tmp_path):
+    from rc6_shadow_runtime.persistence import EvidenceFiles
+    from tests.test_issue465_generations import publish
+    root, path, directories, _, current, _ = native_v4(tmp_path)
+    original = members(directories[-1])
+    assert policy(root, path).restore_generation(current["generation_id"])["members"] == original
+    with EvidenceFiles(root) as files:
+        cut = publish(files, 3)
+    source = root / ("gen-" + cut["pointer"]["generation_id"])
+    receipt = policy(root, path).archive_generation(source)
+    value = archive.ComponentArchive(policy(root, path))._recipe(receipt)
+    assert value["schema"] == archive.RECIPE_SCHEMA
+    assert policy(root, path).restore_generation(receipt["generation_id"])["members"] == members(source)
+    assert policy(root, path).restore_generation(current["generation_id"])["members"] == original
+
+
+def test_v4_gc_recovery_rejects_reachable_whole_parent_pack_before_any_unlink(tmp_path):
+    from rc6_dynamic_universe.common import digest
+    from rc6_shadow_runtime.retention import GC_SCHEMA
+    root, path, directories, receipts, current, context = native_v4(tmp_path)
+    owner = policy(root, path)
+    head = owner._archive_checkpoint()
+    checkpoint = {key: value for key, value in head.items() if key != "digest"}
+    checkpoint.update(compacted_receipt_count=1, compacted_receipt_digest=digest(receipts[0]),
+        expired_before=(datetime.fromisoformat(head["source_as_of_max"]) - timedelta(hours=10)).isoformat(),
+        last_gc_as_of=head["source_as_of_max"])
+    checkpoint["digest"] = digest(checkpoint)
+    graph = context.dependency_graph([current])
+    parent = next(iter(graph[receipts[0]["generation_id"]]["packs"]))
+    raw, _ = archive.read(path / parent, maximum=archive.MAX_PACK_BYTES)
+    value = {"schema": GC_SCHEMA, "previous_checkpoint_digest": head["digest"],
+        "checkpoint": checkpoint, "targets": [{"name": parent, "sha256": archive.sha(raw)}]}
+    value["digest"] = digest(value)
+    owner._durable_control(path / "GC.json", value)
+    custody = {str(protected): tree_custody(protected) for protected in (root, path)}
+    with pytest.raises(ValueError, match="GC_REACHABLE_MEMBER"):
+        owner._recover_archive_gc()
+    assert custody == {str(protected): tree_custody(protected) for protected in (root, path)}
 
 
 def test_interleaved_member_references_authenticate_each_parent_pack_once(tmp_path, monkeypatch):

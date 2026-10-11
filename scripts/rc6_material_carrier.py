@@ -46,6 +46,20 @@ PREPARATION_SCOPE={'locked_python_epochs':['311','312'],'installed_distribution_
     'pip_fetch_source_and_git_preparation_included':True}
 
 def workload_fingerprint(producer):
+    if producer == 'Horizon':
+        from scripts.rc6_cas_original_comparison import CONTRACT
+        return digest(canonical({'schema':'rc6.original-horizon-workload.v2',
+            'producer':producer,'original_contract':dict(CONTRACT),
+            'catalogs':2,'original_cuts':1202,'archive_limit_bytes':512*1024**2,
+            'maximum_dependency_depth':32,'contracted_retention_seconds':32400,
+            'recovery_margin_seconds':3600,'original_bytes_required':True,
+            'qualification_scope':'NATIVE_ORIGINAL_HORIZON_G5'}))
+    if producer=='Horizon-private-original-cas':
+        from scripts.rc6_cas_original_comparison import CONTRACT
+        return digest(canonical({'schema':'rc6.private-original-cas-workload.v1',
+            'producer':producer,'original_contract':dict(CONTRACT),'live_limit_bytes':128*1024**2,
+            'live_limit_entries':512,'catalogs':2,'candidate_uses_original_native_archive':True,
+            'new_Source_or_fixture_copies':0,'qualification_scope':'PRIVATE_DEVELOPMENT_ONLY_NOT_G5'}))
     """Comparable workload identity excludes machine/SHA and timing outcomes."""
     if producer in ('capacity-probe','capacity-calibration'):
         image,hard_limit=(5*1024**3,512*1024**2) if producer=='capacity-probe' else (26*1024**3,20*1024**3)
@@ -230,7 +244,8 @@ def diagnostic_main(argv=None):
     parser.add_argument('--repo-root',type=Path,required=True);args=parser.parse_args(argv)
     os.umask(0o022);repo=safe_path(args.repo_root);previous=document(read(args.diagnostic_admission_json))
     from scripts import rc6_material_pr_admission as controller
-    need(previous.get('schema')=='porota.rc6.capacity-diagnostic-admission.v1'
+    need(previous.get('schema') in ('porota.rc6.capacity-diagnostic-admission.v1',
+        'porota.rc6.capacity-diagnostic-admission.v2')
         and previous.get('qualification_claimed') is False,'ISOLATED_CAPACITY_DIAGNOSTIC_ADMISSION_REQUIRED')
     authority=controller.admit_diagnostic(source_sha=previous['source_sha'],source_tree=previous['source_tree'],
         launch_receipt_url=previous['launch_receipt_url'],owner_session=previous['owner_session'],gate=previous['gate'])
@@ -259,7 +274,9 @@ def diagnostic_main(argv=None):
     if mode=='bootstrap':
         evidence=architectural.verify_capacity_capability_artifact(authority['capability_prerequisite'],
             source_sha=authority['source_sha'],source_tree=authority['source_tree'],
-            read_contract_sha256=authority['read_contract_sha256'],evidence_root=namespace.path/'capability-artifact')
+            read_contract_sha256=authority['read_contract_sha256'],evidence_root=namespace.path/'capability-artifact',
+            authenticated_branch=(authority['source']['wip_branch']
+                if authority.get('authorization_schema')=='porota.rc6.capacity-diagnostic-launch.v2' else None))
         save(controls/'capability-origin.json',evidence['origin']);save_raw(controls/'capability-receipt.json',evidence['receipt_raw'])
         command+=['--capability-receipt',str(controls/'capability-receipt.json'),
             '--capability-artifact-origin',str(controls/'capability-origin.json')]
@@ -273,8 +290,13 @@ def diagnostic_main(argv=None):
     try:
         native=run(command,cwd=repo,label='isolated-'+authority['gate'],limit=600 if mode=='capability' else 11400,
             env=environment,namespace=namespace)
-        fresh=controller.admit_diagnostic(source_sha=authority['source_sha'],source_tree=authority['source_tree'],
-            launch_receipt_url=authority['launch_receipt_url'],owner_session=authority['owner_session'],gate=authority['gate'])
+        need(gate_lease.native.managed_custody_closed(native['kernel']),
+            'DIAGNOSTIC_CAPTURE_READMISSION_REQUIRES_ACTUAL_OUTER_FIN')
+        fresh_arguments={key:authority[key] for key in
+            ('source_sha','source_tree','launch_receipt_url','owner_session','gate')}
+        if authority.get('authorization_schema')=='porota.rc6.capacity-diagnostic-launch.v2':
+            fresh_arguments['native_finished']=True
+        fresh=controller.admit_diagnostic(**fresh_arguments)
         need(controller.diagnostic_control_binding(fresh)==controller.diagnostic_control_binding(authority),
             'DIAGNOSTIC_SOURCE_OR_AUTHORITY_REBOUND_AFTER_OUTER_FIN')
         save(controls/'after-outer-fin-admission.json',fresh)
@@ -287,6 +309,10 @@ def diagnostic_main(argv=None):
             and terminal_custody.get('qualification_claimed') is False,
             'DIAGNOSTIC_INNER_LOOP_OR_NAMESPACE_UNKNOWN_OUTER_CLEANUP_VETO')
         required=[path.relative_to(namespace.path).as_posix() for path in sorted(output.rglob('*')) if path.is_file()]
+        if authority.get('authorization_schema')=='porota.rc6.capacity-diagnostic-launch.v2':
+            required.extend(path.relative_to(namespace.path).as_posix()
+                for path in sorted((namespace.path/'revision-custody-raw').rglob('*')) if path.is_file())
+            required.extend(('controls/admission.json','controls/after-outer-fin-admission.json'))
         required+=['isolated-'+authority['gate']+'.native.log']
         payload=Path(args.diagnostic_admission_json).parent/'diagnostic-payload';payload.mkdir(mode=0o700)
         destination=payload/'sealed'
@@ -392,7 +418,7 @@ def api(path):
     need(len(wire)<=1024**2,'GITHUB_AUTHORITY_BOUND');return document(wire)
 def authority(a):
     from scripts import rc6_material_pr_admission as controller
-    if a.owner_session==controller.CLOSURE_OWNER:
+    if a.owner_session!=controller.SUCCESSOR_OWNER:
         need(a.require_pr_admission,'CURRENT_CANDIDATE_FULL_PR_ADMISSION_REQUIRED')
         anchors=controller.administrative_anchors(a.owner_session)
         launch=controller.comment(a.launch_receipt_url,471)
@@ -508,6 +534,7 @@ def readmit_automatic_pr(a,run,stage):
     row=controller['admit'](source_sha=a.source_sha,source_tree=a.source_tree,
         launch_receipt_url=a.launch_receipt_url,owner_session=a.owner_session,gate=a.gate)
     a.capacity_peaks=row['capacity_peaks'];a.cheap_files=row['cheap_files'];a.prerequisites_manifest=row['prerequisites_manifest']
+    a.private_cas_comparison_template=row.get('private_cas_comparison_template')
     save(run.control/('automatic-pr-'+stage+'.json'),row)
     run.lease_context={key:row[key] for key in ('source_sha','source_tree','owner_session','gate','launch_receipt_url')}
     def after_fin(label):
@@ -804,6 +831,27 @@ def run_gov(a,run,root,prepared,derived,auth_path,auth_sha):
     return code,{'gate':a.gate,'native_phases':phases,'receipt':receipt,'reason':reason,
         'raw_root':str(sealed),'whole_Gov_claim':code==0,'native_FIN_payload_safe':True}
 
+def captured_cas_review_references(destination, *, source, source_pin, execution_wire, capture):
+    """Verify both hash-bound records from captured RAW, never reconstruct RAW."""
+    from scripts import rc6_archive_reader_review as readers
+    from scripts import rc6_cas_original_comparison as comparison
+    execution = document(execution_wire)
+    readers.executed_reader_nodes(execution, source_sha=source_pin['source_sha'], source_tree=source_pin['source_tree'])
+    records, references = {}, {}
+    for role, filename in readers.CAS_REVIEW_FILES.items():
+        relative = 'focal/' + filename
+        wire = read(captured_file(destination, relative), 4 * 1024**2)
+        references[role] = captured_reference(destination, relative)
+        need(digest(wire) == references[role]['sha256'], 'CAS_REVIEW_CAPTURED_REFERENCE_REBOUND')
+        records[role] = document(wire)
+    comparison.validate_private_ack_review(records['cas_private_ack_review'], execution, execution_wire,
+        source_sha=source_pin['source_sha'], source_tree=source_pin['source_tree'])
+    inventory = readers.inventory_from_source_pin(source, source_pin, capture=capture)
+    readers.validate_review(records['cas_reader_review'], inventory, execution, execution_wire,
+        source_sha=source_pin['source_sha'], source_tree=source_pin['source_tree'])
+    return references
+
+
 def seal_generated(a,run,namespace,root,label,required_paths):
     fin=run.fins.get(namespace.nonce)
     need(fin is not None,'ACTUAL_OWNED_GENERATED_FIN_REQUIRED')
@@ -921,6 +969,16 @@ def focal(a,run,root,prepared,interpreters):
         for phase,destination in sealed_phases.items():
             native_evidence[phase+'_kernel']=captured_reference(destination,
                 'producer-owned-fin-focal'+epoch+'-'+phase+'.json')
+        if a.gate == 'cheap':
+            from scripts import rc6_archive_reader_review as readers
+            if readers.CAS_REVIEW_MODULES.issubset(a.cheap_files) and 'execution' in sealed_phases:
+                try:
+                    destination = sealed_phases['execution']
+                    execution_wire = read(captured_file(destination, 'focal/execution.observations.json'))
+                    native_evidence.update(captured_cas_review_references(destination, source=source,
+                        source_pin=before, execution_wire=execution_wire, capture=g['capture']))
+                except (OSError, ValueError, RuntimeError, KeyError, TypeError) as error:
+                    code=1;reason=reason or 'CAS_REVIEW_CAPTURED_RAW_MISSING_OR_REBOUND'
         probe_green=True
         if a.gate=='cheap':
             destination=sealed_phases.get('execution');probe_green=False
@@ -1160,8 +1218,37 @@ def file_sha(path):
         need(attrs(before)==attrs(os.fstat(fd))==attrs(path.lstat()),'SOURCE_TAR_ALL11_CHANGED');return h.hexdigest()
     finally:os.close(fd)
 
+def private_cas_control(a,namespace,epoch):
+    """Derive only the owned data path from a dual-authorized exact template."""
+    template=getattr(a,'private_cas_comparison_template',None)
+    if template is None:return None
+    fixture_lifecycle.authenticate(namespace)
+    epoch=safe_path(epoch)
+    need(epoch.is_relative_to(namespace.path) and not epoch.is_relative_to(a.repo_root)
+        and epoch.is_dir() and epoch.lstat().st_uid==os.geteuid(),
+        'PRIVATE_CAS_CONTROL_EXACT_OWNED_EPOCH_REQUIRED')
+    need(type(template) is dict and template.get('source_sha')==a.source_sha
+        and template.get('source_tree')==a.source_tree
+        and template.get('producer_namespace_root')=='OWNED_HORIZON_DATA_ROOT'
+        and template.get('qualification_scope')=='PRIVATE_DEVELOPMENT_ONLY_NOT_G5',
+        'PRIVATE_CAS_CONTROL_EXACT_AUTHORIZED_TEMPLATE_REQUIRED')
+    need(type(a.capacity_peaks.get('Horizon-private-original-cas')) is dict,
+        'PRIVATE_CAS_AGGREGATE_COMPARISON_PEAK_REQUIRED_BEFORE_EXPORT')
+    derived=document(canonical(template))
+    derived['producer_namespace_root']=str(epoch/'native-data')
+    wire=canonical(derived)
+    need(len(wire)<=256*1024,'PRIVATE_CAS_CONTROL_BYTES_BOUND')
+    path=epoch/'private-cas-admission.json'
+    return {'path':path,'sha256':save_raw(path,wire),'qualification_scope':'PRIVATE_DEVELOPMENT_ONLY_NOT_G5'}
+
+
 def horizon(a,run,root,prepared,interpreters):
     architectural.require_horizon_model_before_material('Horizon')
+    private=getattr(a,'private_cas_comparison_template',None) is not None
+    producer='Horizon-private-original-cas' if private else a.gate
+    if private:
+        need(type(a.capacity_peaks.get(producer)) is dict,
+            'PRIVATE_CAS_AGGREGATE_COMPARISON_PEAK_REQUIRED_BEFORE_EXPORT')
     # Kept in a separate module so the original21600/30/5 lifecycle can be reviewed independently.
     started=architectural.utc()
     namespace,epoch,repo=exported(a,run,root,prepared,interpreters)
@@ -1170,7 +1257,11 @@ def horizon(a,run,root,prepared,interpreters):
         '--source-root',str(source),'--source-repo',str(repo),'--source-sha',a.source_sha,'--source-tree',a.source_tree,
         '--source-index',str(epoch/'pin/source.index.json'),'--raw-root',str(epoch/'native-raw'),
         '--data-root',str(epoch/'native-data'),'--python311',interpreters['311'],'--control-root',str(control)]
-    binding,peak,live=heavy_preflight(a,run,epoch,a.gate,'Horizon-original1201')
+    comparison=private_cas_control(a,namespace,epoch)
+    if comparison is not None:
+        command.extend(['--cas-comparison-manifest',str(comparison['path']),
+            '--cas-comparison-manifest-sha256',comparison['sha256']])
+    binding,peak,live=heavy_preflight(a,run,epoch,producer,'Horizon-original1201')
     row=run(command,cwd=root,label='Horizon-original1201',limit=21600,namespace=namespace)
     preserve_controls(run,'Horizon',[control/name for name in ('producer-owned-fin.json','terminal.json','launch.json')])
     report=document(read(control/'terminal.json',256*1024));code=row['returncode']

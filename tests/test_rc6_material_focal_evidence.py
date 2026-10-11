@@ -163,3 +163,120 @@ def test_native_red_junit_and_actual_execution_identities_are_preserved(tmp_path
         result=gates.validate_junit(originals['collection'],originals['execution'],raw,require_green=False)
         assert result['cases']==3 and result['failure']==1
     assert hashlib.sha256((suite/'original-native.xml').read_bytes()).hexdigest()==before_hash
+
+
+_NATIVE_CAS_REPORTS = r'''
+import json, runpy, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import pytest
+from scripts.rc6_material_focal import FocalObserver
+from scripts import rc6_archive_reader_review as readers, rc6_cas_original_comparison as comparison
+g = runpy.run_path(str(Path(sys.argv[1])/'scripts/rc6_controlled_governed_runner.py'))
+initial = g['child_infrastructure_snapshot']()
+observer = FocalObserver('cheap')
+nodes = sorted(readers.REQUIRED_NODEIDS) + ['tests/test_rc6_cas_original_comparison.py::'+name for name in sorted(comparison.ACK_CASES)]
+rc = int(pytest.main(['--noconftest','-c','/dev/null','--rootdir='+sys.argv[1],'-q',
+    '-p','no:cacheprovider','-o','junit_family=legacy','--basetemp='+sys.argv[2]+'/p',*nodes], plugins=[observer]))
+fin = g['finalize_child_infrastructure'](initial)
+# These are original executed reports/FIN. Source fields are explicitly unit
+# metadata; this control cannot authenticate a native G1 Source or artifact.
+report = {'phase':'execution','source_sha':sys.argv[3],'source_tree':sys.argv[4],
+    'source_namespace_exact_before_after':True,'pytest_exit_code':rc,
+    'native_execution_coverage_exact':observer.execution_coverage_exact(),
+    'inet_socket_attempts':[],'unexpected_product_imports':[],'phase_validation_errors':[],
+    'child_infrastructure_finalization':fin,'items':observer.items,
+    'actual_execution_started_nodeids':observer.started_nodeids,
+    'actual_execution_finished_nodeids':observer.finished_nodeids,
+    'original_pytest_reports':observer.reports,'scope':'LOCAL_REAL_PYTEST_REPORTS_WITH_UNIT_SOURCE_FIELDS_NOT_G1'}
+Path(sys.argv[2]+'/original.json').write_bytes(g['canonical'](report))
+sys.exit(rc)
+'''
+
+
+def test_original_green_pytest_reports_and_fin_drive_captured_private_reviews_without_gate_approval(tmp_path):
+    from scripts import rc6_archive_reader_review as readers
+    from scripts import rc6_controlled_native_child_manager as manager
+    from tests.test_rc6_archive_reader_review import _pinned_source
+    work = tmp_path/'real-cas-controls';work.mkdir()
+    root = Path(__file__).absolute().parents[1]
+    source_sha = governed.git(root, 'rev-parse', 'HEAD').decode().strip()
+    source_tree = governed.git(root, 'rev-parse', 'HEAD^{tree}').decode().strip()
+    log = work/'original-native.log'
+    kernel = manager.managed_native_child(
+        [sys.executable,'-I','-B','-c',_NATIVE_CAS_REPORTS,str(root),str(work),source_sha,source_tree],
+        root, log, dict(os.environ,PYTEST_DISABLE_PLUGIN_AUTOLOAD='1',PYTHONDONTWRITEBYTECODE='1'), 90)
+    assert manager.managed_phase_green(kernel), log.read_text()
+    wire = (work/'original.json').read_bytes()
+    report = json.loads(wire)
+    pin, _ = _pinned_source(tmp_path)
+    pin.update(source_sha=source_sha, source_tree=source_tree)
+    g = {'require':governed.require,'canonical':governed.canonical,'capture':governed.capture,'publish':governed.publish}
+    records = focal.emit_cas_reviews(g,tmp_path,pin,report,wire,work,readers.CAS_REVIEW_MODULES)
+    assert readers.REQUIRED_NODEIDS <= {row['nodeid'] for row in report['items']}
+    assert all(row['outcome'] == 'passed' for row in report['original_pytest_reports'])
+    assert all(record['execution_sha256'] == hashlib.sha256(wire).hexdigest() for record in records.values())
+    assert records['cas_private_ack_review']['contract_review_approved'] is False
+    assert records['cas_reader_review']['native_writer_contract_approved'] is False
+
+
+def _cas_review_emission(tmp_path):
+    from tests.test_rc6_archive_reader_review import _pinned_source
+    from tests.test_rc6_cas_original_comparison import _ack_execution_metadata
+    from scripts import rc6_archive_reader_review as readers
+    pin, _ = _pinned_source(tmp_path)
+    report = _ack_execution_metadata()  # Explicit unit metadata, not G1/artifact authority.
+    output = tmp_path / 'records'
+    output.mkdir()
+    g = {'require': governed.require, 'canonical': governed.canonical,
+         'capture': governed.capture, 'publish': governed.publish}
+    wire = governed.canonical(report)
+    governed.publish(output/'execution.observations.json', wire)
+    return pin, report, wire, output, g, readers
+
+
+def test_cas_review_emitter_preserves_original_wire_and_captured_references(tmp_path):
+    from scripts import rc6_material_carrier as carrier
+    pin, report, wire, output, g, readers = _cas_review_emission(tmp_path)
+    records = focal.emit_cas_reviews(g, tmp_path, pin, report, wire, output, readers.CAS_REVIEW_MODULES)
+    sealed = tmp_path/'sealed';sealed.mkdir()
+    rows = []
+    for number, (role, filename) in enumerate(readers.CAS_REVIEW_FILES.items()):
+        raw = (output/filename).read_bytes()
+        capture_file = f'{number:04d}.raw'
+        (sealed/capture_file).write_bytes(raw)
+        rows.append({'relative_source': 'focal/'+filename, 'capture_file': capture_file,
+                     'sha256': hashlib.sha256(raw).hexdigest()})
+    (sealed/'manifest.json').write_text(json.dumps({'files': rows}))
+    refs = carrier.captured_cas_review_references(sealed, source=tmp_path, source_pin=pin,
+        execution_wire=wire, capture=governed.capture)
+    assert set(refs) == set(records) == set(readers.CAS_REVIEW_FILES)
+    assert (output/'execution.observations.json').read_bytes() == wire
+    assert all(record.get('native_v4_write_enabled') is False for record in records.values())
+    (sealed/'0001.raw').write_bytes(b'changed')
+    with pytest.raises(ValueError, match='SEALED_RAW_BYTES_OR_LITERAL_PATH_REBOUND'):
+        carrier.captured_cas_review_references(sealed, source=tmp_path, source_pin=pin,
+            execution_wire=wire, capture=governed.capture)
+
+
+@pytest.mark.parametrize('attack', ('partial', 'fin', 'source', 'skip', 'setup', 'teardown', 'wire'))
+def test_cas_review_emitter_never_reads_source_or_emits_positive_for_incomplete_evidence(tmp_path, attack):
+    pin, report, wire, output, g, readers = _cas_review_emission(tmp_path)
+    original_wire = (output/'execution.observations.json').read_bytes()
+    selected = set(readers.CAS_REVIEW_MODULES)
+    if attack == 'partial': selected.pop()
+    elif attack == 'fin': report['child_infrastructure_finalization']['status'] = 'RED'
+    elif attack == 'source': report['source_tree'] = 'c'*40
+    elif attack in ('skip', 'setup', 'teardown'):
+        phase = 'call' if attack == 'skip' else attack
+        next(row for row in report['original_pytest_reports'] if row['when'] == phase)['outcome'] = 'skipped' if attack == 'skip' else 'failed'
+    elif attack == 'wire': wire += b'{}'
+    if attack not in ('wire', 'partial'): wire = governed.canonical(report)
+    g['capture'] = lambda *args, **kw: pytest.fail('PREMATURE_SOURCE_READ')
+    if attack == 'partial':
+        assert focal.emit_cas_reviews(g, tmp_path, pin, report, wire, output, selected) == {}
+    else:
+        with pytest.raises((ValueError, json.JSONDecodeError, KeyError)):
+            focal.emit_cas_reviews(g, tmp_path, pin, report, wire, output, selected)
+    assert (output/'execution.observations.json').read_bytes() == original_wire
+    assert not any((output/name).exists() for name in readers.CAS_REVIEW_FILES.values())

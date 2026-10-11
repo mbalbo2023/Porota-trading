@@ -147,6 +147,9 @@ class ShadowRuntime:
         kwargs.setdefault("history_database", history if history.exists() else None)
         kwargs.setdefault("archive_root", shadow_archive_root(database))
         kwargs.setdefault("archive_maximum_bytes", shadow_archive_maximum_bytes())
+        # V4 is a proposed writer. Keep the effective native writer on V3
+        # until a live approval, native G5 certification and exact artifact
+        # capability exists; explicit V4 requests are rejected by retention.
         kwargs.setdefault("archive_format", "COMPONENT_V3")
         return cls(database, **kwargs)
 

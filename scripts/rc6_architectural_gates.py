@@ -41,6 +41,7 @@ MAX_ARCHIVE_BYTES = 256 * 1024**2
 MAX_MEMBER_BYTES = 16 * 1024**2
 MAX_GATE_RECEIPT_BYTES = 1024**2
 MAX_MEMBERS = 4096
+_AUTHENTIC_G4 = {}
 GATES = ("G0", "G1.311", "G1.312", "G2", "G3", "G4", "G5", "G6.311", "G6.312", "G7", "G8")
 PREREQUISITES = {
     "G0": (), "G1.311": ("G0",), "G1.312": ("G0",),
@@ -103,14 +104,18 @@ def require(value, reason):
         raise ValueError(reason)
 
 
-def require_horizon_model_before_material(gate):
+def require_horizon_model_before_material(gate, *, g5a=None, expected_binding=None):
     """Refuse the current WIP's expensive Horizon before any preparation.
 
-    Closing this hold requires a corrective Source with a demonstrated global
-    model. The existing full native Horizon and G6/G7 artifact requirements
-    remain independent requirements; this hold never grants their approval.
+    The legacy path still requires a demonstrated global model. The proposed
+    G5A path can acquire bounded evidence only after explicit owner acceptance,
+    real live quota and native custody authentication. It never qualifies G5.
     """
     if ALIASES.get(gate, gate) == 'G5':
+        if g5a is not None:
+            from scripts.rc6_g5_contract import validate_g5a_authority
+            require(type(expected_binding) is dict, 'G5A_EXACT_LIVE_BINDING_REQUIRED')
+            return validate_g5a_authority(g5a, expected_binding=expected_binding)
         require(HORIZON_MODEL_CLOSURE['status'] == 'VERIFICADO'
                 and HORIZON_MODEL_CLOSURE['global_retained_footprint_proved'] is True
                 and HORIZON_MODEL_CLOSURE['future_envelopes_proved'] is True
@@ -377,7 +382,8 @@ def actions_runner_origin(jobs, *, run_id):
     return job
 
 
-def verify_manifest(manifest, *, source_sha, source_tree, target_gate, evidence_root, get=None, download=None):
+def verify_manifest(manifest, *, source_sha, source_tree, target_gate, evidence_root, get=None, download=None,
+                    g5_contract_approval=None):
     """Authenticate ZIP bytes before trusting their self-described gate status."""
     if get is None or download is None:
         from scripts.porota_artifact_http import api_get, download_artifact
@@ -418,11 +424,37 @@ def verify_manifest(manifest, *, source_sha, source_tree, target_gate, evidence_
             row = document(raw)
             require(row.get("run_id") == reference["run_id"] and row.get("run_attempt") == reference["run_attempt"]
                     and row.get("workflow_path") == run["path"], "GATE_PAYLOAD_EXECUTION_ORIGIN_REBOUND")
+            if row.get('gate') == 'G5' and row.get('contract_revision') == 'G5A_BOUNDED_EVIDENCE_V2':
+                require(reference.get('kind') == 'G5B_FULL_SOURCE_V2',
+                    'G5B_VERSIONED_AUTHENTICATED_REFERENCE_KIND_REQUIRED')
+                acquired = {'artifact_id': identifier, 'artifact_digest': reference['artifact_digest'],
+                    'run_id': reference['run_id'], 'run_attempt': reference['run_attempt'],
+                    'receipt_member': member['path'], 'receipt_sha256': member['sha256']}
+                qualified = verify_g5_artifact(acquired, source_sha=source_sha, source_tree=source_tree,
+                    evidence_root=root/('g5b-'+str(identifier)), source_root=ROOT, source_repository=ROOT,
+                    get=get, download=download)
+                browser = [previous for previous in receipts if previous['gate'] == 'G4']
+                require(len(browser) == 1 and browser[0]['status'] == 'GREEN'
+                    and stamp(browser[0]['completed_utc']) <= stamp(row['started_utc']),
+                    'G5B_REQUIRES_PREVIOUS_AUTHENTIC_NATIVE_G4_BROWSER')
+                row = qualified_g5_receipt(qualified, acquired_row=row, browser_row=browser[0])
+                row = validate_receipt(row, source_sha=source_sha, source_tree=source_tree,
+                    read_contract_sha256=productive_contract(ROOT))
+                receipts.append(row)
+                files[row['gate']] = {'archive': str(path), 'receipt_member': member['path'],
+                    'artifact_id': identifier, 'artifact_digest': artifact['digest'], 'run_id': run['id'],
+                    'run_attempt': 1, 'qualified_writer_binding': qualified.public_report()['writer_codec_restorer_binding']}
+                continue
             row = validate_receipt(row, source_sha=source_sha, source_tree=source_tree,
                 read_contract_sha256=productive_contract(ROOT))
             require(stamp(job['started_at'])<=stamp(row['started_utc'])<=stamp(row['completed_utc'])
                 <=stamp(job['completed_at']),'GATE_NATIVE_TIMES_OUTSIDE_ACTUAL_ACTIONS_JOB')
-            verify_native_evidence(row, path)
+            if g5_contract_approval is None:
+                verify_native_evidence(row, path)
+            else:
+                verify_native_evidence(row, path, g5_contract_approval=g5_contract_approval)
+            if row['gate'] == 'G4':
+                _AUTHENTIC_G4[id(row)] = (row, os.getpid(), canonical(row), artifact['digest'])
             receipts.append(row)
             files[row["gate"]] = {"archive": str(path), "receipt_member": member["path"],
                                    "artifact_id": identifier, "artifact_digest": artifact["digest"],
@@ -573,7 +605,9 @@ def verify_g0_capacity_index(index,row,archive):
         'compound_bootstrap_and_both_epoch_capacity_launches_verified':True,'promotion_claimed':False}
 
 
-def verify_native_evidence(row, archive):
+def verify_native_evidence(row, archive, *, g5_contract_approval=None, g5_frame_capture=None,
+                           g5_scratch_root=None, g5_historical_certification=None,
+                           g5_archive_context=None, g5_source_root=None):
     evidence = row.get("native_evidence")
     require(type(evidence) is dict and bool(evidence), "GATE_NATIVE_EVIDENCE_MISSING")
     captured = {}
@@ -732,6 +766,16 @@ def verify_native_evidence(row, archive):
             and browser.get('tracked_source_hashes_and_modes_unchanged') is True,
             'G4_NATIVE_RESOURCE_OR_BROWSER_MATERIAL_REBOUND')
     if row['gate']=='G5':
+        if row.get('contract_revision') == 'G5A_BOUNDED_EVIDENCE_V2':
+            from scripts.rc6_g5b_evidence import verify_g5b_capture
+            verify_g5b_capture(row, captured, approval=g5_contract_approval, source_root=g5_source_root or ROOT,
+                frame_capture=g5_frame_capture, scratch_root=g5_scratch_root,
+                historical_certification=g5_historical_certification, archive_context=g5_archive_context)
+            require('ownership_index' in captured, 'GATE_ACTUAL_LAUNCH_AND_CONTINUOUS_OWNERSHIP_REQUIRED')
+            verify_owned_gate_lease_index(document(captured['ownership_index']),row,archive)
+            return captured
+        require(row.get('contract_revision') in (None,'LEGACY_ALL1202_PREPROVED_V1'),
+                'G5_UNKNOWN_CONTRACT_REVISION_FORBIDDEN')
         require(all(name in captured for name in ('Horizon','native_Horizon')),'G5_NATIVE_HORIZON_RETENTION_EVIDENCE_REQUIRED')
         horizon=document(captured['Horizon']);native=document(captured['native_Horizon'])
         require(horizon.get('source_sha')==row['source_sha'] and horizon.get('source_tree')==row['source_tree']
@@ -752,6 +796,115 @@ def verify_native_evidence(row, archive):
     return captured
 
 
+def verify_g5a_captured_custody(record, *, row, quota_control, archive_context, source_root):
+    from scripts.rc6_g5a_custody_replay import verify_capture
+    return verify_capture(record, row=row, quota_control=quota_control,
+        archive_context=archive_context, source_root=source_root)
+
+
+def verify_g5_artifact(reference, *, source_sha, source_tree, evidence_root, source_root=ROOT,
+                       source_repository=ROOT, get=None, download=None, now=None):
+    """Finished-operation G5B certification from genuine Actions parts.
+
+    This factory cannot authorize a launch or turn an acquisition envelope
+    GREEN. Its opaque result is usable only in this process for the G7/G8
+    immutable writer join; another process authenticates and replays again.
+    """
+    from scripts import rc6_g5b_evidence as evidence
+    from scripts import rc6_g5_historical_certification as historical
+    if get is None or download is None:
+        from scripts.porota_artifact_http import api_get, download_artifact
+        get, download = get or api_get, download or download_artifact
+    root = Path(evidence_root).absolute()
+    require(not os.path.lexists(root) and not any(path.is_symlink() for path in root.parents)
+        and root.parent.lstat().st_uid == os.getuid(), 'G5B_FRESH_SOURCE_CERTIFICATION_ROOT_REQUIRED')
+    root.mkdir(mode=0o700)
+    context = evidence.authenticate_g5_archive(reference, source_sha=source_sha, source_tree=source_tree,
+        evidence_root=root/'main', get=get, download=download)
+    state = evidence.registered_archive(context); row = state['row']
+    require(row.get('workflow_path') == state['run']['path']
+        and row.get('read_contract_sha256') == productive_contract(Path(source_root))
+        and row.get('real_orders_sent') == 0 and type(row.get('real_orders_sent')) is int
+        and row.get('mode') == 'PRODUCTION_PAPER / SIMULATION'
+        and row.get('real_routes') == 'NOT_CALLED' and row.get('ppi_watch') == 'UNTOUCHED'
+        and row.get('DEPLOY_OWNER') == 'NOT_ACQUIRED'
+        and row.get('runtime_validated') is False and row.get('final_candidate_eligible') is False,
+        'G5B_EXACT_FINISHED_PAPER_SOURCE_RECEIPT_REQUIRED')
+    repository = Path(source_repository).absolute()
+    require(subprocess.check_output(['git','--no-replace-objects','-C',str(repository),'rev-parse','HEAD'], timeout=30)
+        .decode().strip() == source_sha
+        and subprocess.check_output(['git','--no-replace-objects','-C',str(repository),'rev-parse','HEAD^{tree}'], timeout=30)
+        .decode().strip() == source_tree, 'G5B_CERTIFIER_ACTUAL_GIT_SOURCE_REQUIRED')
+    job = actions_runner_origin(get('/actions/runs/'+str(row['run_id'])+'/attempts/1/jobs?per_page=100'), run_id=row['run_id'])
+    require(stamp(job['started_at']) <= stamp(row['started_utc']) <= stamp(row['completed_utc']) <= stamp(job['completed_at']),
+        'G5B_CAPTURE_UTC_OUTSIDE_ACTUAL_ACTIONS_JOB')
+    certification = historical.authenticate_historical_certification(context, get=get, now=now)
+    captured = {role: context.capture(role) for role in evidence.REQUIRED_ROLES}
+    binding = evidence.capture_document(captured['g5b_writer_binding'])
+    supplier = evidence.authenticate_frame_parts(evidence.capture_document(captured['g5b_frame_parts']),
+        archive_context=context, writer_binding_sha256=binding['binding_sha256'], evidence_root=root/'parts',
+        get=get, download=download)
+    try:
+        result = evidence.verify_g5b_capture(row, captured, source_root=source_root, frame_capture=supplier,
+            scratch_root=root/'replay', historical_certification=certification, archive_context=context)
+        require(supplier.next == 1202, 'G5B_ALL1202_AUTHENTICATED_PARTS_NOT_CONSUMED')
+    finally:
+        supplier.close_active()
+    # Replay may take longer than the initial review. Reauthenticate the actual
+    # current owner/Source/revocation timeline; never refresh past launch rights.
+    certification = historical.authenticate_historical_certification(context, get=get,
+        now=None if now is None else now)
+    result.update(source_sha=source_sha, source_tree=source_tree,
+        source_capture_sha256=state['archive_sha256'], source_run_id=row['run_id'], source_run_attempt=1,
+        certification_scope=historical.SCOPE, launch_authority_granted=False,
+        G5A_acquisition_was_qualified_before_replay=False)
+    return evidence.qualify_verified_source(context, result, historical_certification=certification)
+
+
+def validate_g5_writer_artifact(qualification, *, source_sha, source_tree, source_root, artifact_root):
+    """Join a qualified actual writer to the exact immutable artifact ABI."""
+    from scripts import rc6_g5b_evidence as evidence
+    from scripts import rc6_cas_original_comparison as comparison
+    from rc6_shadow_runtime.archive_format_contract import SOURCE_MEMBERS, verify_immutable_artifact_binding
+    report = evidence.validate_verified_source(qualification, source_sha=source_sha, source_tree=source_tree)
+    sources = {name: comparison._read(Path(source_root)/name, maximum=comparison.MAX_INDEX_BYTES) for name in SOURCE_MEMBERS}
+    artifacts = {name: comparison._read(Path(artifact_root)/name, maximum=comparison.MAX_INDEX_BYTES) for name in SOURCE_MEMBERS}
+    joined = verify_immutable_artifact_binding(report['writer_codec_restorer_binding'], source_files=sources, artifact_files=artifacts)
+    return {**joined, 'all1202_effective_native_writer_source_qualified': True,
+        'source_sha': source_sha, 'source_tree': source_tree,
+        'source_capture_sha256': report['source_capture_sha256'],
+        'G7_G8_native_execution_still_required': True, 'deploy_authorization': 'NOT_GRANTED'}
+
+
+def qualified_g5_receipt(qualification, *, acquired_row, browser_row):
+    """Derive G5 status only after full Source qualification and earlier G4."""
+    from scripts import rc6_g5b_evidence as evidence
+    proof = evidence.validate_verified_source(qualification, source_sha=acquired_row['source_sha'],
+        source_tree=acquired_row['source_tree'])
+    validate_receipt(browser_row, source_sha=acquired_row['source_sha'], source_tree=acquired_row['source_tree'],
+        read_contract_sha256=acquired_row['read_contract_sha256'])
+    require(browser_row.get('gate') == 'G4', 'G5B_PREVIOUS_AUTHENTICATED_G4_REQUIRED')
+    browser = _AUTHENTIC_G4.get(id(browser_row))
+    require(browser is not None and browser[0] is browser_row and browser[1] == os.getpid()
+        and browser[2] == canonical(browser_row), 'G5B_BROWSER_JSON_CANNOT_REPLACE_AUTHENTIC_ACTIONS_NATIVE_G4')
+    require(acquired_row.get('contract_revision') == 'G5A_BOUNDED_EVIDENCE_V2'
+        and proof['source_run_id'] == acquired_row['run_id'] and acquired_row['run_attempt'] == 1,
+        'G5B_CERTIFIED_ACQUISITION_SCOPE_REBOUND')
+    require(proof.get('native_source_unchanged') is True and proof.get('native_fin_closed') is True,
+        'G5B_QUALIFIED_NATIVE_SOURCE_AND_FIN_REQUIRED')
+    # No input GREEN/check flag supplies any of these properties. Retention,
+    # native closure, all original1202 bytes and timing were independently
+    # replayed by the opaque qualification factory; G4 was verified separately.
+    return {**acquired_row, 'status': 'GREEN', 'source_unchanged': proof['native_source_unchanged'],
+        'native_fin_closed': proof['native_fin_closed'], 'checks': {'retention': True, 'Horizon': True, 'browser': True,
+        'all1202_actual_original_byte_replay': True, 'current_owner_and_revocation_reauthenticated': True},
+        'required_material_gates': ['retention', 'Horizon', 'browser'],
+        'g5b_certification_scope': proof['certification_scope'],
+        'g5b_capture_sha256': proof['source_capture_sha256'],
+        'writer_codec_restorer_binding': proof['writer_codec_restorer_binding'],
+        'G7_G8_artifact_join_required': True, 'runtime_validated': False, 'final_candidate_eligible': False}
+
+
 def verify_owned_gate_lease_index(index,row,archive):
     """Past leases are checked at actual launch/FIN; G7 current admission is separate."""
     from scripts import rc6_owned_gate_lease as lease
@@ -764,7 +917,8 @@ def verify_owned_gate_lease_index(index,row,archive):
     commands=index['commands'];labels=[command.get('label') for command in commands]
     require(len(set(labels))==len(labels),'GATE_HISTORICAL_OWNERSHIP_DUPLICATE_COMMAND')
     required=({'fullGov'+row['python_epoch']} if row['gate'].startswith('G6.') else
-        {'Horizon-original1201'} if row['gate']=='G5' else {'canonical-BIG','LARGE-browser'} if row['gate']=='G4' else
+        ({'g5a-original1202','g5-reader-collection','g5-reader-execution'} if row.get('contract_revision')=='G5A_BOUNDED_EVIDENCE_V2'
+            else {'Horizon-original1201'}) if row['gate']=='G5' else {'canonical-BIG','LARGE-browser'} if row['gate']=='G4' else
         {'focal'+row['python_epoch']+'-collection','focal'+row['python_epoch']+'-execution'}
         if row['gate'] in ('G1.311','G1.312','G2','G3') else {'G0-admission311','G0-admission312'})
     require(required.issubset(labels),'GATE_HISTORICAL_OWNERSHIP_REQUIRED_NATIVE_COMMAND_MISSING')
@@ -928,10 +1082,50 @@ def productive_contract(root):
     return values["DEFAULT_READ_CONTRACT"].fingerprint()
 
 def verify_capacity_capability_artifact(reference,*,source_sha,source_tree,read_contract_sha256,
-                                       evidence_root,get=None,download=None):
+                                       evidence_root,get=None,download=None,authenticated_branch=None,source_repository=None):
     """A quota capability receipt authenticates diagnosis, never G0..G8."""
+    return _verify_capacity_diagnostic_artifact(reference,source_sha=source_sha,source_tree=source_tree,
+        read_contract_sha256=read_contract_sha256,evidence_root=evidence_root,get=get,download=download,
+        authenticated_branch=authenticated_branch,source_repository=source_repository,diagnostic_gate='capacity-probe')
+
+
+def verify_capacity_bootstrap_artifact(reference,*,capability_reference,source_sha,source_tree,
+        read_contract_sha256,evidence_root,get=None,download=None,authenticated_branch=None,source_repository=None):
+    """Authenticate exact5/512 FIRST, then original26/20 bootstrap RAW and FIN.
+
+    Both actual Actions artifacts are authenticated in this call. An archived
+    GREEN mapping, a workflow conclusion or a caller-supplied validator grants
+    no authority. This documentary result never certifies a material gate.
+    """
+    root=Path(evidence_root)
+    require(root.is_absolute() and not any(node.is_symlink() for node in (root,*root.parents))
+        and not os.path.lexists(root),'BOOTSTRAP_FRESH_OWNED_ARTIFACT_ROOT_REQUIRED')
+    root.mkdir(mode=0o700)
+    capability=verify_capacity_capability_artifact(capability_reference,source_sha=source_sha,
+        source_tree=source_tree,read_contract_sha256=read_contract_sha256,evidence_root=root/'capability',
+        get=get,download=download,authenticated_branch=authenticated_branch,source_repository=source_repository)
+    bootstrap=_verify_capacity_diagnostic_artifact(reference,source_sha=source_sha,source_tree=source_tree,
+        read_contract_sha256=read_contract_sha256,evidence_root=root/'bootstrap',get=get,download=download,
+        authenticated_branch=authenticated_branch,diagnostic_gate='capacity-calibration',
+        capability_reference=capability_reference,source_repository=source_repository)
+    bootstrap['verified_capability_prerequisite']=capability
+    return bootstrap
+
+
+def _verify_capacity_diagnostic_artifact(reference,*,source_sha,source_tree,read_contract_sha256,
+        evidence_root,get=None,download=None,authenticated_branch=None,diagnostic_gate='capacity-probe',
+        capability_reference=None,source_repository=None):
+    require(diagnostic_gate in ('capacity-probe','capacity-calibration')
+        and ((diagnostic_gate=='capacity-probe' and capability_reference is None)
+             or (diagnostic_gate=='capacity-calibration' and type(capability_reference) is dict)),
+        'CAPABILITY_EXACT_DIAGNOSTIC_ARTIFACT_MODE_REQUIRED')
+    mode='capability' if diagnostic_gate=='capacity-probe' else 'bootstrap'
     from scripts import rc6_material_pr_admission as admission
     from scripts.rc6_controlled_native_child_manager import managed_phase_green
+    branch=admission.DIAGNOSTIC_BRANCH if authenticated_branch is None else authenticated_branch
+    require(type(branch) is str and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_./-]{0,199}',branch)
+        and all(part not in ('','.','..') and not part.endswith(('.','.lock')) for part in branch.split('/'))
+        and '..' not in branch and branch!='main', 'CAPABILITY_AUTHENTICATED_LITERAL_BRANCH_REQUIRED')
     if get is None or download is None:
         from scripts.porota_artifact_http import api_get,download_artifact
         get=get or api_get;download=download or download_artifact
@@ -942,8 +1136,8 @@ def verify_capacity_capability_artifact(reference,*,source_sha,source_tree,read_
     attempt=get('/actions/runs/'+str(reference.get('run_id'))+'/attempts/'+str(reference.get('run_attempt')))
     artifact_origin(reference,artifact,run,attempt,source_sha=source_sha)
     require(run.get('path')==WORKFLOW and run.get('event')=='workflow_dispatch'
-        and run.get('head_branch')==admission.DIAGNOSTIC_BRANCH
-        and run.get('display_title')=='RC6 material capacity-probe @ '+source_sha,
+        and run.get('head_branch')==branch
+        and run.get('display_title')=='RC6 material '+diagnostic_gate+' @ '+source_sha,
         'CAPABILITY_ACTUAL_WIP_PROBE_ORIGIN_REQUIRED')
     job=actions_runner_origin(get('/actions/runs/'+str(reference['run_id'])+'/attempts/1/jobs?per_page=100'),
         run_id=reference['run_id'])
@@ -970,7 +1164,7 @@ def verify_capacity_capability_artifact(reference,*,source_sha,source_tree,read_
     require(hashlib.sha256(raw).hexdigest()==reference['receipt_sha256'],'CAPABILITY_RESULT_MEMBER_DIGEST_CHANGED')
     result=document(raw)
     require(result.get('schema')=='porota.rc6.capacity-diagnostic-result.v1'
-        and result.get('status')=='GREEN_DIAGNOSTIC_ONLY' and result.get('gate')=='capacity-probe'
+        and result.get('status')=='GREEN_DIAGNOSTIC_ONLY' and result.get('gate')==diagnostic_gate
         and result.get('source_sha')==source_sha and result.get('source_tree')==source_tree
         and all(result.get(key) is False for key in
             ('qualification_claimed','G0_G8_claimed','financial_tick_executed','runtime_validated','final_candidate_eligible'))
@@ -978,26 +1172,27 @@ def verify_capacity_capability_artifact(reference,*,source_sha,source_tree,read_
         'CAPABILITY_DIAGNOSIS_CANNOT_SUBSTITUTE_FOR_CANDIDATE_QUALIFICATION')
     producer_raw=raw_ref(result.get('producer_receipt_ref'));receipt=document(producer_raw)
     require(receipt==result.get('producer_receipt') and receipt.get('schema')=='porota.rc6.capacity-calibration.v1'
-        and receipt.get('mode')=='capability' and receipt.get('status')=='GREEN'
+        and receipt.get('mode')==mode and receipt.get('status')=='GREEN'
         and receipt.get('source_sha')==source_sha and receipt.get('source_tree')==source_tree
         and receipt.get('read_contract_sha256')==read_contract_sha256
         and receipt.get('actual_capability_proved') is True and receipt.get('qualification_claimed') is False
         and receipt.get('source_unchanged') is True and receipt.get('payload_upload_safe') is True
         and receipt.get('cleanup',{}).get('namespace_removed') is True and 'preserved_owned_namespace' not in receipt,
         'CAPABILITY_NATIVE_QUOTA_PROOF_NOT_VERIFIED')
-    scope=admission.diagnostic_scope('capacity-probe',{'schema':'porota.rc6.capacity-diagnostic-scope.v1',
-        'mode':'capacity-probe',**receipt.get('limits',{}),
+    scope=admission.diagnostic_scope(diagnostic_gate,{'schema':'porota.rc6.capacity-diagnostic-scope.v1',
+        'mode':diagnostic_gate,**receipt.get('limits',{}),
         'financial_tick_allowed':False,'qualification_claimed':False})
     require(all(receipt.get('capability_checks',{}).get(key) is True for key in
         ('project_hard_limit_enforced','same_uid_escape_blocked','project_reassignment_blocked',
          'quota_mutation_blocked','privilege_drop_seccomp_enforced')),'CAPABILITY_REQUIRED_KERNEL_DEFENSE_NOT_PROVED')
     fin=document(raw_ref(result.get('outer_native_fin_ref')));kernel=fin.get('kernel',{})
-    require(managed_phase_green(kernel) and kernel.get('owned_cleanup_management_bound_seconds')==5,
+    require(managed_phase_green(kernel) and kernel.get('owned_cleanup_management_bound_seconds')==5
+        and (mode=='capability' or kernel.get('launcher_management_deadline_seconds')==11400),
         'CAPABILITY_ORIGINAL_OUTER_NATIVE_FIN_RED')
     capture=document(raw_ref(result.get('capture_manifest_ref')));cleanup=result.get('actual_outer_cleanup',{})
     binding=receipt.get('binding')
     require(type(binding) is dict and binding.get('candidate_sha')==source_sha and binding.get('candidate_tree')==source_tree
-        and binding.get('producer')=='capacity-probe' and binding.get('runner_class')==RUNNER_CLASS
+        and binding.get('producer')==diagnostic_gate and binding.get('runner_class')==RUNNER_CLASS
         and binding.get('attempt_id')==str(reference['run_id'])+':1'
         and capture.get('binding')==cleanup.get('binding')==binding
         and capture.get('actual_owned_fin_closed') is True and capture.get('phase_green') is True
@@ -1018,15 +1213,27 @@ def verify_capacity_capability_artifact(reference,*,source_sha,source_tree,read_
         require(type(item.get('relative_source')) is str and item['relative_source'] not in preserved,
             'CAPABILITY_ORIGINAL_RAW_SOURCE_DUPLICATED')
         preserved[item['relative_source']]=raw
-    verify_capacity_kernel_probe(receipt,preserved)
+    require(mode=='capability' or receipt.get('privileged_signal_custody',{}).get('revision')=='PRIVATE_PID_BOUNDARY_V2',
+        'BOOTSTRAP_VERSIONED_OWNER_ACCEPTANCE_AND_COMPLETE_PRIVATE_PID_CAPTURE_REQUIRED')
     hashes=receipt.get('code_hashes')
     require(type(hashes) is dict and all(path in hashes for path in
         ('scripts/rc6_capacity_calibration.py','scripts/rc6_controlled_native_child_manager.py')),
         'CAPABILITY_ACTUAL_SOURCE_CODE_HASHES_REQUIRED')
-    inventory=admission.frozen_source_inventory(ROOT,source_sha,source_tree)
+    inventory=admission.frozen_source_inventory(ROOT if source_repository is None else source_repository,source_sha,source_tree)
     actual={entry['path']:entry['sha256'] for entry in inventory['files']}
     require(all(type(path) is str and DIGEST.fullmatch(value or '') and actual.get(path)==value
         for path,value in hashes.items()),'CAPABILITY_SOURCE_CODE_HASHES_REBOUND')
+    if source_repository is not None:
+        from scripts import rc6_capacity_calibration as calibration
+        require(all(calibration.digest(calibration.read(ROOT/path))==value for path,value in hashes.items()),
+            'CAPABILITY_EXECUTED_EXPORT_AND_FROZEN_GIT_SOURCE_CODE_REBOUND')
+    revision_capture=None
+    if receipt.get('privileged_signal_custody',{}).get('revision')=='PRIVATE_PID_BOUNDARY_V2':
+        revision_capture=verify_capacity_private_pid_capture(receipt,preserved,code_hashes=hashes)
+        verify_capacity_revision_owner(receipt,preserved,run=run,branch=branch,get=get,scope=scope,
+            revision_capture=revision_capture,capability_reference=capability_reference,source_repository=source_repository)
+    verify_capacity_kernel_probe(receipt,preserved,code_hashes=hashes,revision_capture=revision_capture)
+    if mode=='bootstrap':verify_capacity_bootstrap_raw(receipt,preserved)
     origin={'schema':'porota.rc6.capacity-capability-artifact-origin.v1','source_sha':source_sha,'source_tree':source_tree,
         'read_contract_sha256':read_contract_sha256,'artifact_id':reference['artifact_id'],
         'artifact_digest':artifact['digest'],'run_id':reference['run_id'],'run_attempt':1,'workflow_path':WORKFLOW,
@@ -1034,9 +1241,307 @@ def verify_capacity_capability_artifact(reference,*,source_sha,source_tree,read_
         'producer_receipt_sha256':hashlib.sha256(producer_raw).hexdigest(),
         'downloaded_exact_bytes_verified':True,'actual_job_runner':job,'original_outer_native_fin_verified':True,
         'actual_outer_cleanup_verified':True,'source_code_hashes_verified':hashes,'qualification_claimed':False}
+    if mode=='bootstrap':
+        origin['schema']='porota.rc6.capacity-bootstrap-artifact-origin.v1'
+        origin['capability_reference']=capability_reference
+        origin['original_PRODUCT157_and_fullGit_RAW_verified']=True
+    if revision_capture is not None:
+        origin['private_pid_captured_custody']=revision_capture
     return {'receipt':receipt,'receipt_raw':producer_raw,'origin':origin,'scope':scope,'qualification_claimed':False}
 
-def verify_capacity_kernel_probe(receipt,preserved):
+def verify_capacity_private_pid_capture(receipt,preserved,*,code_hashes):
+    """Replay inner custody only after the caller authenticates Source/outer FIN."""
+    from scripts import rc6_private_pid_capture_replay as replay
+    native=receipt.get('native_custody_receipt');signal=receipt.get('privileged_signal_custody',{})
+    require(type(native) is dict and type(signal) is dict and receipt.get('code_hashes')==code_hashes
+        and signal.get('revision')=='PRIVATE_PID_BOUNDARY_V2'
+        and signal.get('scope')==('capacity-calibration' if receipt.get('mode')=='bootstrap' else 'capacity-probe')
+        and signal.get('status')=='NATIVE_PRIVATE_PID_V2_AND_SCOPED_OWNER_ACCEPTANCE_PROVED'
+        and signal.get('proved') is True and signal.get('privileged_launch_authorized') is True,
+        'CAPABILITY_V2_SCOPED_CAPTURE_BINDING_REQUIRED')
+    raw=preserved.get('revision-custody-raw/manifest.json')
+    require(type(raw) is bytes,'CAPABILITY_V2_ORIGINAL_CUSTODY_CAPTURE_MISSING')
+    manifest=document(raw);files=manifest.get('files')
+    require(type(files) is list and all(type(row) is dict for row in files),
+        'CAPABILITY_V2_ORIGINAL_CUSTODY_MANIFEST_INVALID')
+    lookup={}
+    for row in files:
+        name,member=row.get('relative_source'),row.get('capture_file')
+        require(type(name) is str and name not in lookup and re.fullmatch('[0-9]{4}\\.raw',member or ''),
+            'CAPABILITY_V2_ORIGINAL_CUSTODY_MEMBER_REBOUND')
+        lookup[name]=member
+    def original(name):
+        if name=='manifest.json':return raw
+        require(name in lookup,'CAPABILITY_V2_ORIGINAL_CUSTODY_MEMBER_MISSING')
+        value=preserved.get('revision-custody-raw/'+lookup[name])
+        require(type(value) is bytes,'CAPABILITY_V2_ORIGINAL_CUSTODY_MEMBER_MISSING')
+        return value
+    result=replay.validate_capture(native,binding=receipt['binding'],code_hashes=code_hashes,read_original=original)
+    require(signal.get('boundary_observation_sha256')==result['boundary_observation_sha256']
+        and signal.get('contract_sha256')==result['contract_sha256']
+        and DIGEST.fullmatch(signal.get('approval_body_sha256','')),
+        'CAPABILITY_V2_NATIVE_CUSTODY_BOUNDARY_DIGEST_REBOUND')
+    return result
+
+
+def verify_capacity_revision_owner(receipt,preserved,*,run,branch,get,scope,revision_capture,now=None,
+                                   capability_reference=None,source_repository=None):
+    """Authenticate archived explicit acceptance and current exclusive ownership.
+
+    Historical decision freshness is checked against the real Actions creation
+    time. Current leases/revocation remain mandatory; no past approval is minted
+    as an in-process AuthenticatedRevision or a new workload authorization.
+    """
+    from datetime import timedelta
+    from scripts import rc6_material_pr_admission as admission
+    current=now or datetime.now(timezone.utc)
+    gate='capacity-calibration' if receipt.get('mode')=='bootstrap' else 'capacity-probe'
+    require((gate=='capacity-probe' and capability_reference is None) or
+        (gate=='capacity-calibration' and type(capability_reference) is dict),
+        'BOOTSTRAP_ACTUAL_ACCEPTED_CAPABILITY_REFERENCE_REQUIRED')
+    before_raw=preserved.get('controls/admission.json')
+    after_raw=preserved.get('controls/after-outer-fin-admission.json')
+    require(type(before_raw) is bytes and type(after_raw) is bytes,
+        'CAPABILITY_V2_BOTH_FULL_SOURCE_ADMISSIONS_REQUIRED')
+    before,after=document(before_raw),document(after_raw)
+    owner=receipt['binding']['owner_id'];sha,tree=receipt['source_sha'],receipt['source_tree']
+    require(type(before) is dict and type(after) is dict
+        and before.get('schema')==after.get('schema')==admission.DIAGNOSTIC_ADMISSION_SCHEMA
+        and before.get('status')=='ADMITTED_DIAGNOSTIC_NOT_STARTED'
+        and after.get('status')=='CAPTURE_ONLY_NATIVE_ALREADY_FINISHED'
+        and all(row.get('owner_session')==owner and row.get('gate')==gate
+            and row.get('source_sha')==sha and row.get('source_tree')==tree
+            and row.get('qualification_claimed') is False for row in (before,after)),
+        'CAPABILITY_V2_ARCHIVED_SOURCE_OWNER_SCOPE_REBOUND')
+    launch=admission.comment(before.get('launch_receipt_url'),471,get=get)
+    anchors=admission.administrative_anchors(owner,get=get,now=current)
+    auth,actual_scope,prior=admission.diagnostic_launch_fields(launch,sha,tree,owner,gate,
+        repo=ROOT if source_repository is None else source_repository,get=get,anchors=anchors,now=current,native_finished=True)
+    owner_scope=admission.successor_diagnostic_scope(auth,owner,anchors)
+    pointer=admission._diagnostic_revision_pointer(auth,launch,sha,tree,owner,gate)
+    expected={'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
+        'source_manifest_sha256':auth['SOURCE_MANIFEST_SHA256'],'read_contract_sha256':auth['READ_CONTRACT_SHA256'],
+        'scope':actual_scope,'capability_prerequisite':prior,
+        'authorization_schema':admission.DIAGNOSTIC_AUTHORIZATION_SCHEMA,
+        'diagnostic_owner_scope':owner_scope,'contract_revision_binding':pointer}
+    require(actual_scope==scope and prior==capability_reference and owner_scope['branch']==branch
+        and pointer['contract_sha256']==revision_capture['contract_sha256']
+        and pointer['approval_body_sha256']==receipt['privileged_signal_custody']['approval_body_sha256']
+        and auth['READ_CONTRACT_SHA256']==receipt.get('read_contract_sha256')
+        and all(admission.diagnostic_control_binding(row)==expected
+            and row.get('launch_receipt_url')==launch['html_url']
+            and row.get('actions_origin',{}).get('run',{}).get('id')==run.get('id')
+            and row['actions_origin']['run'].get('head_sha')==sha
+            and row['actions_origin']['run'].get('head_branch')==branch for row in (before,after)),
+        'CAPABILITY_V2_EXPLICIT_OWNER_POINTER_OR_SOURCE_MANIFEST_REBOUND')
+    twin=admission.comment('https://github.com/'+admission.REPO+'/issues/473#issuecomment-'+auth['OWNER_RECEIPT_473'],473,get=get)
+    launched=admission.stamp(run.get('created_at'))
+    if gate=='capacity-calibration':
+        # The bootstrap's immutable owner reference accepts a completed actual
+        # capability attempt. A future/concurrent capability cannot justify a
+        # bootstrap that already started, even if both eventually succeed.
+        capability_run=get('/actions/runs/'+str(capability_reference['run_id'])+'/attempts/1')
+        capability_artifact=get('/actions/artifacts/'+str(capability_reference['artifact_id']))
+        require(capability_run.get('id')==capability_reference['run_id']
+            and capability_run.get('head_sha')==sha and capability_run.get('run_attempt')==1
+            and capability_run.get('status')=='completed' and capability_run.get('conclusion')=='success'
+            and capability_artifact.get('id')==capability_reference['artifact_id']
+            and capability_artifact.get('workflow_run',{}).get('id')==capability_reference['run_id']
+            and capability_artifact.get('workflow_run',{}).get('head_sha')==sha
+            and admission.stamp(capability_artifact.get('created_at'))<=admission.stamp(launch['created_at'])
+            and admission.stamp(capability_run.get('updated_at'))<=admission.stamp(launch['created_at'])<=launched,
+            'BOOTSTRAP_CAPABILITY_MUST_COMPLETE_BEFORE_EXPLICIT_ACCEPTANCE_AND_LAUNCH')
+    for row in (launch,twin):
+        created=admission.stamp(row['created_at']);expires=admission.stamp(admission.fields(row['body']).get('SOURCE_LEASE_EXPIRES_UTC'))
+        require(row['created_at']==row['updated_at'] and created<=launched<expires
+            and timedelta(0)<expires-created<=timedelta(minutes=20),
+            'CAPABILITY_V2_HISTORICAL_PAIRED_DECISION_EXPIRED_OR_UNBOUNDED')
+    admission.fresh_diagnostic_source(sha,tree,get=get,candidate=owner_scope)
+    admission._successor_diagnostic_owners(auth,owner,sha,tree,anchors=anchors,reader=get,now=current)
+    admission._successor_diagnostic_decision_not_revoked(auth,launch,owner,anchors=anchors,reader=get,now=current)
+    require(admission.same_immutable_comment(launch,admission.comment(launch['html_url'],471,get=get))
+        and admission.same_immutable_comment(twin,admission.comment(twin['html_url'],473,get=get)),
+        'CAPABILITY_V2_OWNER_DECISION_CHANGED_DURING_REPLAY')
+    return {'archived_acceptance_authenticated':True,'current_owner_and_revocation_checked':True,
+        'scope':'DOCUMENTARY_CAPABILITY_REPLAY_ONLY','new_workload_authorization_granted':False,'qualification_claimed':False}
+
+
+def verify_capacity_quota_private_pid(probe,privilege,context):
+    """Replay the actual quota branch, ROOT custody and sealed NONROOT actor."""
+    import errno
+    from scripts import rc6_native_namespace_filter as native
+    from scripts import rc6_private_pid_boundary as boundary
+    from scripts import rc6_private_pid_capture_replay as replay
+    from scripts import rc6_privileged_custody as custody
+    from scripts import rc6_root_actor_seal as seal
+    from scripts.rc6_controlled_native_child_manager import managed_phase_green
+    require(type(context) is dict and set(context)=={'receipt','controls','request_raw','required_raw','probe_kernel',
+        'code_hashes','revision_capture'},'CAPABILITY_V2_COMPLETE_RAW_CONTEXT_REQUIRED')
+    receipt=context['receipt'];controls=context['controls'];raw=context['required_raw'];hashes=context['code_hashes']
+    require(type(receipt) is dict and type(controls) is dict and type(raw) is dict and type(hashes) is dict
+        and hashes==receipt.get('code_hashes') and replay.HASH_MEMBERS<=set(hashes)
+        and all(name in controls for name in ('custody-request.json','root-request.json','root-worker-native.log',
+            'producer-native.log','private-broker-native.log','broker-birth.json','broker-birth.observed.json',
+            'broker-bridge.json','guardian-controller.json','live-root-controller.json',
+            'private-broker-birth.json','private-broker.observed.json','quota-ancestor-seal.json','loop-birth.json'))
+        and all(name in raw for name in ('quota-boundary-context.json','supervisor-filter.json')),
+        'CAPABILITY_V2_ORIGINAL_QUOTA_CUSTODY_CONTROLS_MISSING')
+    request_raw=context['request_raw']
+    require(type(request_raw) is bytes,'CAPABILITY_V2_ORIGINAL_QUOTA_REQUEST_BYTES_REQUIRED')
+    request=document(request_raw);request_sha=hashlib.sha256(request_raw).hexdigest()
+    expected_source={'source_sha':receipt['source_sha'],'source_tree':receipt['source_tree']}
+    closure=context['revision_capture'];signal=receipt.get('privileged_signal_custody',{})
+    native_receipt=receipt.get('native_custody_receipt',{})
+    require(type(request) is dict and type(closure) is dict and closure.get('schema')==replay.SCHEMA
+        and closure.get('status')=='CAPTURED_PRIVATE_PID_V2_CLOSURE_VERIFIED'
+        and closure.get('scope')=='DOCUMENTARY_CLOSURE_NOT_LIVE_AUTHORITY'
+        and closure.get('binding')==receipt['binding']
+        and closure.get('native_custody_receipt_sha256')==hashlib.sha256(canonical(native_receipt)).hexdigest()
+        and closure.get('boundary_observation_sha256')==signal.get('boundary_observation_sha256')
+        and closure.get('contract_sha256')==boundary.contract_sha256()==signal.get('contract_sha256')
+        and closure.get('G0_GREEN') is False and closure.get('privileged_launch_authorized') is False
+        and request.get('boundary_revision')==boundary.REVISION and request.get('require_quota_ancestor_seal') is True
+        and request.get('source_sha')==receipt['source_sha'] and request.get('source_tree')==receipt['source_tree']
+        and request.get('binding')==receipt['binding'] and request.get('code_hashes')==hashes
+        and request_sha==receipt.get('root_request_sha256') and controls['root-request.json']==request_raw,
+        'CAPABILITY_V2_QUOTA_REQUEST_CAPTURE_SOURCE_OR_REVISION_REBOUND')
+    live=document(controls['live-root-controller.json']);ancestor=document(controls['quota-ancestor-seal.json'])
+    actor_context=document(raw['quota-boundary-context.json'])
+    request_keys=('source_sha','source_tree','binding','owner_uid','owner_gid','issuer','mount_namespace_inode',
+        'boundary_revision','boundary_host_proc_device','require_quota_ancestor_seal')
+    require(all(key in request for key in request_keys) and type(live) is dict and type(ancestor) is dict
+        and actor_context=={'request':{**{key:request[key] for key in request_keys},'original_request_sha256':request_sha},
+        'proof':{**live,'quota_ancestor_seal':ancestor}},'CAPABILITY_V2_ACTUAL_QUOTA_CONTEXT_BYTES_REBOUND')
+    require(live.get('schema')=='porota.rc6.root-custody-controller-birth.v1'
+        and live.get('binding')==request['binding'] and live.get('source_sha')==request['source_sha']
+        and live.get('source_tree')==request['source_tree'] and live.get('code_hashes')==hashes
+        and live.get('issuer')==request['issuer'] and live.get('calibration_request_sha256')==request_sha,
+        'CAPABILITY_V2_LIVE_ROOT_SOURCE_OR_REQUEST_REBOUND')
+    seal.validate_evidence(ancestor,owner_uid=request['owner_uid'],owner_gid=request['owner_gid'],source_binding=expected_source)
+    seal_boundary=ancestor['boundary']
+    require(ancestor.get('scope')=='ROOT_QUOTA_CUSTODY_ONLY' and ancestor['identity']['pid']==1
+        and ancestor.get('module_sha256')==hashes[custody.ROOT_SEAL_MEMBER]
+        and seal_boundary.get('control_root')==request['namespace_receipt']['path']
+        and seal_boundary.get('control_identity')==request['namespace_receipt']['identity']
+        and seal_boundary.get('host_pid_namespace_inode')==request['issuer']['pid_namespace_inode']
+        and seal_boundary.get('host_mount_namespace_inode')==request['host_boundary']['mount_namespace_inode']
+        and seal_boundary.get('host_device_number')==request['host_boundary']['device_number']
+        and seal_boundary.get('host_devpts_device_number')==request['host_boundary']['devpts_device_number'],
+        'CAPABILITY_V2_ANCESTOR_SEAL_SOURCE_BOUNDARY_REBOUND')
+    custody_request=document(controls['custody-request.json']);birth=document(controls['broker-birth.json'])
+    require(type(custody_request) is dict and type(birth) is dict
+        and all(type(live.get(key)) is dict for key in ('controller','guardian_native_mapping','pid_boundary'))
+        and all(type(live['pid_boundary'].get(key)) is dict for key in ('host','local','issuer'))
+        and type(live['controller'].get('actor')) is dict
+        and type(live['guardian_native_mapping'].get('issuer_actual')) is dict,
+        'CAPABILITY_V2_COMPLETE_LIVE_ROOT_IDENTITY_REQUIRED')
+    controller=live['controller'];guardian=controller['actor'];mapping=live['guardian_native_mapping'];private=live['pid_boundary']
+    require(custody_request.get('calibration_request_sha256')==request_sha
+        and custody_request.get('boundary_revision')==boundary.REVISION
+        and custody_request.get('require_quota_ancestor_seal') is True
+        and custody_request.get('source_sha')==request['source_sha'] and custody_request.get('source_tree')==request['source_tree']
+        and custody_request.get('binding')==request['binding'] and custody_request.get('code_hashes')==hashes
+        and custody_request.get('issuer')==request['issuer']
+        and live.get('request_sha256')==hashlib.sha256(controls['custody-request.json']).hexdigest()
+        and mapping==document(controls['private-broker.observed.json'])
+        and mapping.get('binding')==request['binding'] and mapping.get('source_sha')==request['source_sha']
+        and mapping.get('source_tree')==request['source_tree'] and mapping.get('guardian_actual')==guardian
+        and mapping.get('host_boundary')==request['host_boundary']
+        and private.get('host')==mapping.get('host_private_PID1') and private.get('issuer')==mapping.get('issuer_actual'),
+        'CAPABILITY_V2_ROOT_CONTROLLER_MAPPING_SOURCE_REBOUND')
+    replay._service_ack(birth,document(controls['broker-birth.observed.json']),receipt.get('root_service_actual_FIN'),
+        request=custody_request,request_raw=controls['custody-request.json'],controller=controller)
+    relay=document(controls['producer-native.log']);private_relay=document(controls['private-broker-native.log'])
+    root=relay.get('privileged_controller',{});external=relay.get('external_guardian',{})
+    require(type(relay) is dict and type(private_relay) is dict and type(root) is dict and type(external) is dict
+        and relay.get('schema')=='porota.rc6.capacity-custody-worker.v1' and relay.get('request_sha256')==request_sha
+        and private_relay=={key:value for key,value in relay.items() if key!='external_guardian'}
+        and external.get('private_broker_raw_sha256')==hashlib.sha256(controls['private-broker-native.log']).hexdigest()
+        and external.get('original_manager_sha256')==root.get('manager_sha256')==custody.MANAGER_SHA256
+        and root.get('root_native_FIN_closed') is True and root.get('root_native_phase_green') is True
+        and external.get('actual_root_FIN_closed') is True and external.get('root_phase_green') is True
+        and external.get('private_PID1_native_pidfd_FIN') is True
+        and external.get('private_PID1_actual_mapping')==mapping and external.get('controller')==controller
+        and root.get('quota_ancestor_seal')==ancestor and root.get('controller',{}).get('root_actor_seal')==ancestor
+        and root['controller'].get('quota_ancestor_sealed') is True
+        and root['controller'].get('private_PID1')==private and root['controller'].get('external')==controller
+        and receipt.get('root_controllers')=={'privileged_controller':root,'external_guardian':external},
+        'CAPABILITY_V2_ORIGINAL_ROOT_RELAY_OR_GUARDIAN_FIN_REBOUND')
+    host=private['host'];local=private['local'];issuer=mapping['issuer_actual']
+    for process in (guardian,host,local,issuer):custody.public_process_identity(process)
+    require(guardian.get('parent_pid')==1 and guardian.get('uids')==[0]*4
+        and guardian.get('pid_namespace_inode')==request['issuer']['pid_namespace_inode']
+        and guardian.get('cgroup')=='0::/system.slice/'+controller['unit']
+        and controller.get('unit')=='rc6-native-'+request['namespace_receipt']['namespace_nonce']+'.service'
+        and controller.get('PID1')==request['host_PID1'] and controller.get('host_boundary')==request['host_boundary']
+        and host.get('namespace_pids')==[host['pid'],1] and host.get('uids')==[0]*4
+        and host.get('pid_namespace_inode')==local.get('pid_namespace_inode')==ancestor['identity']['pid_namespace_inode']
+        and local.get('pid')==1 and local.get('namespace_pids')==[1] and local.get('uids')==[0]*4
+        and str(ancestor['identity']['start_ticks'])==local.get('start_ticks')==host.get('start_ticks')
+        and all(issuer.get(key)==request['issuer'][key] for key in ('pid','start_ticks','boot_id'))
+        and issuer.get('namespace_pids')==[issuer['pid']]
+        and issuer.get('uids')==[request['owner_uid']]*4 and issuer.get('gids')==[request['owner_gid']]*4,
+        'CAPABILITY_V2_ACTUAL_ROOT_AND_ISSUER_BIRTH_REBOUND')
+    guardian_kernel=external.get('private_broker_kernel',{});worker_kernel=root.get('worker_kernel',{})
+    require(managed_phase_green(guardian_kernel) and managed_phase_green(worker_kernel)
+        and guardian_kernel.get('supervisor_pid')==guardian['pid'] and host.get('parent_pid')==guardian_kernel.get('pid')
+        and worker_kernel.get('supervisor_pid')==1
+        and guardian_kernel.get('launcher_management_deadline_seconds')==280
+        and worker_kernel.get('launcher_management_deadline_seconds')==270
+        and all(value.get('owned_cleanup_management_bound_seconds')==5 for value in (guardian_kernel,worker_kernel)),
+        'CAPABILITY_V2_ROOT_GUARDIAN_WORKER_ORIGINAL_WAIT4_FIN_RED')
+    parent_filter=document(raw['supervisor-filter.json']);child_filter=probe.get('native_filter')
+    native.validate_inheritance_evidence(child_filter,parent_filter,source_binding=expected_source)
+    require(privilege.get('native_filter')==parent_filter
+        and parent_filter.get('module_sha256')==hashes['scripts/rc6_native_namespace_filter.py']
+        and parent_filter['identity']['pid']==worker_kernel.get('pid')
+        and parent_filter['identity']['parent_pid']==1
+        and child_filter['identity']['pid']==context['probe_kernel'].get('pid')
+        and context['probe_kernel'].get('supervisor_pid')==parent_filter['identity']['pid'],
+        'CAPABILITY_V2_NONROOT_FILTER_OR_ACTUAL_ACTOR_PID_REBOUND')
+    loop_birth=document(controls['loop-birth.json'])
+    require(loop_birth.get('actor_pid')==parent_filter['identity']['pid']
+        and loop_birth.get('actor_start_ticks')==str(parent_filter['identity']['start_ticks'])
+        and loop_birth.get('actor_mount_namespace_inode')==parent_filter['identity']['mount_namespace_inode']
+        and loop_birth.get('boot_id')==parent_filter['identity']['boot_id']==request['issuer']['boot_id'],
+        'CAPABILITY_V2_ROOT_SETUP_AND_NONROOT_BIRTH_REBOUND')
+    observed=probe['checks']['private_pid_boundary_v2']
+    require(type(observed) is dict and type(observed.get('actor')) is dict
+        and type(observed.get('mount_view')) is dict,'CAPABILITY_V2_ACTUAL_PRIVATE_PID_QUOTA_OBSERVATION_REQUIRED')
+    actor=observed['actor']
+    boundary.validate_private_view(actor,observed.get('mount_view',{}),{
+        'pid_namespace_inode':request['issuer']['pid_namespace_inode'],
+        'mount_namespace_inode':request['mount_namespace_inode'],'proc_device':request['boundary_host_proc_device']})
+    boundary.validate_descriptors(observed.get('descriptors'))
+    capabilities=actor.get('capabilities')
+    require(observed.get('schema')=='porota.rc6.quota-private-pid-observation.v2'
+        and observed.get('revision')==boundary.REVISION and observed.get('contract_sha256')==boundary.contract_sha256()
+        and observed.get('external_issuer')==issuer and observed.get('ENOENT_alone_accepted') is False
+        and observed.get('launch_authority_granted') is False and observed.get('qualification_claimed') is False
+        and actor.get('pid')==child_filter['identity']['pid'] and actor.get('parent_pid')==parent_filter['identity']['pid']
+        and actor.get('start_ticks')==str(child_filter['identity']['start_ticks'])
+        and actor.get('mount_namespace_inode')==child_filter['identity']['mount_namespace_inode']==privilege.get('mount_namespace_inode')
+        and actor.get('pid_namespace_inode')==host['pid_namespace_inode']!=guardian['pid_namespace_inode']
+        and actor.get('uids')==[request['owner_uid']]*4 and actor.get('gids')==[request['owner_gid']]*4
+        and actor.get('supplementary_groups')==[] and actor.get('no_new_privileges')==1
+        and actor.get('seccomp_mode')==2 and actor.get('seccomp_filters')==child_filter['filters_after']
+        and type(capabilities) is dict and set(capabilities)=={'CapInh','CapPrm','CapEff','CapBnd','CapAmb'}
+        and all(type(value) is int and value==0 for value in capabilities.values())
+        and actor.get('cgroup')==guardian['cgroup']==host['cgroup'],
+        'CAPABILITY_V2_NONROOT_PRIVATE_PID_OR_PRIVILEGE_CHAIN_REBOUND')
+    hidden=observed.get('hidden_magiclinks',{})
+    existing=observed.get('existing_ROOT_descriptor_denial',{})
+    require(type(hidden) is dict and type(existing) is dict and set(hidden)==set(boundary.MAGICLINKS)
+        and all(type(row) is dict and row.get('errno')==errno.ENOENT and type(row.get('errno')) is int
+            and row.get('write_performed') is False for row in hidden.values())
+        and observed.get('host_signal_errno')==errno.ESRCH and type(observed.get('host_signal_errno')) is int
+        and existing.get('errno')==errno.EACCES and type(existing.get('errno')) is int
+        and existing.get('write_performed') is False and 'original_issuer_root_escape' not in probe['checks'],
+        'CAPABILITY_V2_EXISTING_ROOT_EACCES_AND_COMPLETE_ISOLATION_REQUIRED')
+    return {'quota_private_pid_branch_original_bytes_verified':True,'qualification_claimed':False}
+
+
+def verify_capacity_kernel_probe(receipt,preserved,*,code_hashes=None,revision_capture=None):
     """Replay the actual errno/native controls behind the five quota booleans."""
     from scripts.rc6_controlled_native_child_manager import managed_phase_green
     required=receipt.get('required_raw')
@@ -1052,7 +1557,12 @@ def verify_capacity_kernel_probe(receipt,preserved):
     require(all(name in raw for name in ('capability.log','capability.kernel.json')),
         'CAPABILITY_REAL_PROBE_NATIVE_RAW_MISSING')
     probe=document(raw['capability.log']);kernel=document(raw['capability.kernel.json']);worker=receipt.get('worker',{})
-    verify_capacity_probe_observations(probe,worker.get('privilege',{}))
+    v2='private_pid_boundary_v2' in probe.get('checks',{})
+    if not v2:
+        verify_capacity_probe_observations(probe,worker.get('privilege',{}))
+    else:
+        require(code_hashes is not None and revision_capture is not None,
+            'CAPABILITY_PRIVATE_PID_V2_AUTHENTICATED_CAPTURE_GUARDIAN_ROOT_FIN_REPLAY_REQUIRED')
     require(probe==worker.get('capability') and managed_phase_green(kernel)
         and kernel.get('launcher_management_deadline_seconds')==60
         and kernel.get('owned_cleanup_management_bound_seconds')==5
@@ -1065,10 +1575,154 @@ def verify_capacity_kernel_probe(receipt,preserved):
         and worker.get('outside_mounts_readonly_verified') is True
         and worker.get('absolute_enforced_project_bound_bytes')==receipt['limits']['project_hard_limit_bytes'],
         'CAPABILITY_ACTUAL_BACKING_PROJECT_QUOTA_READBACK_MISSING')
-    verify_capacity_inner_controls(receipt,preserved)
+    verify_capacity_inner_controls(receipt,preserved,code_hashes=code_hashes,
+        revision_capture=revision_capture,probe=probe if v2 else None,probe_kernel=kernel if v2 else None,required_raw=raw)
     return {'status':'GREEN_DIAGNOSTIC_RAW_ONLY','qualification_claimed':False}
 
-def verify_capacity_inner_controls(receipt,preserved):
+
+def verify_capacity_bootstrap_raw(receipt,preserved):
+    """Replay original two PRODUCT157 closures and all19 literal Git objects.
+
+    This pure parser runs only after the actual artifact verifier's Source and
+    custody barriers. It neither installs a dependency nor grants launch.
+    """
+    from scripts import rc6_capacity_calibration as calibration
+    from scripts.rc6_controlled_native_child_manager import managed_phase_green
+    require(receipt.get('mode')=='bootstrap' and receipt.get('limits')==calibration.limits_for('bootstrap'),
+        'BOOTSTRAP_ORIGINAL26_20_LIMITS_REQUIRED')
+    worker=receipt.get('worker',{});build=worker.get('bootstrap');commands=worker.get('commands')
+    require(type(build) is dict and type(commands) is list and bool(commands)
+        and build.get('original_builder_sha256')==calibration.BUILDER_SHA256
+        and build.get('authority')=='AUTHENTIC_WIP_DIAGNOSTIC_ONLY_NOT_PR476_BUILDER_ADMISSION'
+        and build.get('additional_seed_transport_measured_separately') is True
+        and worker.get('actual_own_fin_closed') is True and worker.get('required_raw_complete') is True,
+        'BOOTSTRAP_ORIGINAL_FULL_NATIVE_RESULT_REQUIRED')
+    objects_raw=calibration.read(ROOT/calibration.OBJECTS_MEMBER)
+    require(calibration.digest(objects_raw)==calibration.OBJECTS_SHA256
+        and calibration.digest(calibration.read(ROOT/calibration.BUILDER_MEMBER))==calibration.BUILDER_SHA256,
+        'BOOTSTRAP_IMMUTABLE19_OR_BUILDER_SOURCE_REBOUND')
+    objects=calibration.decode(objects_raw)['objects']
+    require(len(objects)==len({row['sha'] for row in objects})==19 and build.get('original_objects')==objects,
+        'BOOTSTRAP_EXACT_ORIGINAL19_REQUIRED')
+    raw={}
+    for entry in receipt.get('required_raw',[]):
+        require(type(entry) is dict and type(entry.get('path')) is str and entry['path'] not in raw,
+            'BOOTSTRAP_ORIGINAL_RAW_INVENTORY_REBOUND')
+        value=preserved.get('diagnostic/'+entry['path'])
+        require(type(value) is bytes and len(value)==entry.get('bytes')
+            and calibration.digest(value)==entry.get('sha256'),'BOOTSTRAP_ORIGINAL_RAW_BYTES_REBOUND')
+        raw[entry['path']]=value
+    rows={}
+    for row in commands:
+        require(type(row) is dict and type(row.get('label')) is str and row['label'] not in rows,
+            'BOOTSTRAP_NATIVE_COMMAND_DUPLICATED')
+        label=row['label'];kernel=row.get('kernel',{});argv=row.get('argv')
+        require(type(argv) is list and all(type(arg) is str and arg for arg in argv)
+            and kernel.get('command')==argv and managed_phase_green(kernel)
+            and kernel.get('owned_cleanup_management_bound_seconds')==5
+            and type(kernel.get('peak_rss_bytes')) is int and 0<=kernel['peak_rss_bytes']<2*calibration.GIB
+            and row.get('log','').endswith('/controls/'+label+'.log')
+            and label+'.log' in raw and label+'.kernel.json' in raw
+            and document(raw[label+'.kernel.json'])==kernel,
+            'BOOTSTRAP_ORIGINAL_COMMAND_RAW_KERNEL_FIN_RED')
+        rows[label]=row
+    require('capability' in rows and len(rows['capability']['argv'])>5,
+        'BOOTSTRAP_ACTUAL_CAPABILITY_COMMAND_REQUIRED')
+    capability_argv=rows['capability']['argv']
+    require('--project' in capability_argv and '--outside' in capability_argv,
+        'BOOTSTRAP_ORIGINAL_OWN_PROJECT_REQUIRED')
+    project=Path(capability_argv[capability_argv.index('--project')+1])
+    namespace=Path(capability_argv[capability_argv.index('--outside')+1])
+    require(project.is_absolute() and project==namespace/'mount/project',
+        'BOOTSTRAP_ORIGINAL_OWN_PROJECT_REQUIRED')
+    source=str(Path(capability_argv[3]).parent.parent)
+    expected=[('capability',None,60)]
+    def add(label,argv,seconds):expected.append((label,argv,seconds))
+    py={}
+    for epoch,version in calibration.VERSIONS.items():
+        row=rows.get('interpreter'+epoch,{})
+        argv=row.get('argv',[])
+        require(len(argv)==5 and argv[1:]==['-I','-B','-c','import platform;print(platform.python_version())']
+            and raw.get('interpreter'+epoch+'.log',b'').strip()==version.encode(),
+            'BOOTSTRAP_ORIGINAL311_312_INTERPRETER_RAW_REBOUND')
+        py[epoch]=argv[0];add('interpreter'+epoch,argv,60)
+    toolchain=build.get('toolchain_binaries',{})
+    for name,flags in (('git',['--version','--build-options']),('cc',['--version'])):
+        tool=toolchain.get(name,{})
+        require(type(tool) is dict and type(tool.get('path')) is str
+            and tool.get('native_version_raw_sha256')==calibration.digest(raw.get('toolchain-'+name+'.log',b'')),
+            'BOOTSTRAP_ACTUAL_TOOLCHAIN_VERSION_RAW_REQUIRED')
+        add('toolchain-'+name,[tool['path'],*flags],60)
+    policy=calibration.decode(calibration.read(ROOT/'ops/policy/rc6-supply-chain-v1.json'))
+    require(type(build.get('PRODUCT157')) is dict and set(build['PRODUCT157'])==set(calibration.VERSIONS),
+        'BOOTSTRAP_BOTH_ORIGINAL157_EPOCHS_REQUIRED')
+    closure_code="import importlib.metadata as m,json;print(json.dumps(sorted((d.metadata['Name'],d.version) for d in m.distributions())))"
+    for epoch,version in calibration.VERSIONS.items():
+        private=project/('product'+epoch);venv=private/'venv';python=str(venv/'bin/python')
+        add('venv'+epoch,[py[epoch],'-I','-B',source+'/scripts/rc6_material_environment.py','--root',str(venv),
+            '--owner-uid',str(worker.get('privilege',{}).get('uid')),'--python-version',version,
+            '--receipt',str(private/'creation.json')],300)
+        install=[python,'-I','-B','-m','pip','install','--disable-pip-version-check','--no-cache-dir']
+        add('locked'+epoch+'-0',[*install,'--require-hashes','--only-binary=:all:','-r',source+'/requirements.build.lock.txt'],1800)
+        add('locked'+epoch+'-1',[*install,'--require-hashes','--only-binary=:all:',
+            '--no-binary=msgpack,ppi-client,signalrcoreppi,ta','--no-build-isolation','-r',source+'/requirements.lock.txt'],1800)
+        add('pipcheck'+epoch,[python,'-I','-B','-m','pip','check'],300)
+        require(raw.get('pipcheck'+epoch+'.log',b'').strip()==b'No broken requirements found.',
+            'BOOTSTRAP_NATIVE_PIP_CHECK_RED')
+        add('closure'+epoch,[python,'-I','-B','-c',closure_code],60)
+        packages=document(raw.get('closure'+epoch+'.log',b'null'))
+        calibration.validate_product_closure(packages,policy)
+        reported=build['PRODUCT157'][epoch]
+        require(type(reported) is dict and reported.get('packages')==packages and reported.get('python')==version
+            and DIGEST.fullmatch(reported.get('creation_receipt_sha256','')),
+            'BOOTSTRAP_CAPTURED_PRODUCT157_REPORT_REBOUND')
+    seed=project/'fullGit-seed'
+    add('seed-clone',['git','clone','--no-local','--no-hardlinks','--no-checkout',source,str(seed)],600)
+    add('seed-origin',['git','-C',str(seed),'config','remote.origin.url',calibration.ORIGIN],60)
+    add('seed-shallow',['git','-C',str(seed),'rev-parse','--is-shallow-repository'],60)
+    shallow=raw.get('seed-shallow.log',b'').strip()
+    require(shallow in (b'true',b'false'),'BOOTSTRAP_LITERAL_SEED_SHALLOW_RAW_REQUIRED')
+    if shallow==b'true':
+        add('seed-full-history',['git','-C',str(seed),'-c','credential.helper=','fetch','--unshallow','--no-tags',
+            '--no-write-fetch-head','--no-auto-maintenance',calibration.ORIGIN,receipt['source_sha']],1800)
+    for n,obj in enumerate(objects):
+        add('seed-object'+str(n),['git','-C',str(seed),'-c','credential.helper=','fetch','--no-tags',
+            '--no-write-fetch-head','--no-auto-maintenance',calibration.ORIGIN,obj['sha']+':'+obj['local_ref']],300)
+        add('seed-object-check'+str(n),['git','-C',str(seed),'cat-file','commit',obj['sha']],60)
+        commit=raw.get('seed-object-check'+str(n)+'.log',b'')
+        require(calibration.digest(commit)==obj['raw_commit_sha256']
+            and hashlib.sha1(b'commit '+str(len(commit)).encode()+b'\0'+commit).hexdigest()==obj['sha']
+            and commit.splitlines()[0:1]==[b'tree '+obj['github_tree'].encode()],
+            'BOOTSTRAP_ORIGINAL19_LITERAL_COMMIT_BYTES_REBOUND')
+    require(type(build.get('fullGit')) is list and len(build['fullGit'])==2,
+        'BOOTSTRAP_BOTH_ORIGINAL_FULL_GIT_REQUIRED')
+    for epoch in calibration.VERSIONS:
+        clone=project/('fullSource'+epoch)
+        add('clone'+epoch,['git','clone','--no-local','--no-hardlinks','--no-checkout',str(seed),str(clone)],600)
+        add('origin'+epoch,['git','-C',str(clone),'config','remote.origin.url',calibration.ORIGIN],60)
+        add('checkout'+epoch,['git','-C',str(clone),'checkout','--detach',receipt['source_sha']],300)
+        for n,obj in enumerate(objects):
+            add('original'+epoch+'-'+str(n),['git','-C',str(clone),'fetch','--no-tags','--no-write-fetch-head',
+                '--no-auto-maintenance',str(seed),obj['sha']+':'+obj['local_ref']],300)
+        add('fsck'+epoch,['git','-C',str(clone),'fsck','--full','--strict'],600)
+        add('identity'+epoch,['git','-C',str(clone),'rev-parse','HEAD','HEAD^{tree}','--is-shallow-repository'],60)
+        require(raw.get('identity'+epoch+'.log',b'').splitlines()==
+            [receipt['source_sha'].encode(),receipt['source_tree'].encode(),b'false']
+            and len([row for row in build['fullGit'] if row.get('epoch')==epoch
+                and row.get('source_sha')==receipt['source_sha'] and row.get('source_tree')==receipt['source_tree']
+                and row.get('exact_original19') is True])==1,'BOOTSTRAP_FULL_GIT_HEAD_TREE_HISTORY_RAW_REBOUND')
+    require([row['label'] for row in commands]==[label for label,_,_ in expected],
+        'BOOTSTRAP_COMPLETE_ORIGINAL_COMMAND_SEQUENCE_REQUIRED')
+    for label,argv,seconds in expected:
+        require((argv is None or rows[label]['argv']==argv)
+            and rows[label]['kernel'].get('launcher_management_deadline_seconds')==seconds,
+            'BOOTSTRAP_SOURCE_FIXED_ARGV_OR_DEADLINE_REBOUND')
+    return {'scope':'DOCUMENTARY_ORIGINAL_BOOTSTRAP_ONLY','original_objects':19,'PRODUCT157_epochs':['311','312'],
+        'source_sha':receipt['source_sha'],'source_tree':receipt['source_tree'],
+        'material_gate_GREEN_granted':False,'new_workload_authorization_granted':False,'qualification_claimed':False}
+
+def verify_capacity_inner_controls(receipt,preserved,*,code_hashes=None,revision_capture=None,
+                                   probe=None,probe_kernel=None,required_raw=None):
     """Replay sealed birth/request/worker/lease and physical quota observations."""
     from scripts import rc6_capacity_calibration as calibration
     from scripts import rc6_owned_gate_lease as lease
@@ -1083,7 +1737,8 @@ def verify_capacity_inner_controls(receipt,preserved):
     require(manifest.get('schema')=='porota.rc6.generated-fixture-required-capture.v1'
         and manifest.get('binding')==receipt.get('binding') and manifest.get('actual_owned_fin_closed') is True
         and manifest.get('phase_green') is True and manifest.get('kernel_sha256')==lease.digest(lease.wire(kernel))
-        and managed_phase_green(kernel) and kernel.get('launcher_management_deadline_seconds')==300
+        and managed_phase_green(kernel) and kernel.get('launcher_management_deadline_seconds')==
+            (10800 if receipt.get('mode')=='bootstrap' else 300)
         and kernel.get('owned_cleanup_management_bound_seconds')==5
         and cleanup.get('namespace_removed') is True and cleanup.get('actual_owned_fin_closed') is True
         and cleanup.get('phase_green') is True and cleanup.get('binding')==receipt.get('binding')
@@ -1107,6 +1762,15 @@ def verify_capacity_inner_controls(receipt,preserved):
     request_sha=hashlib.sha256(request_raw).hexdigest();birth=document(birth_raw);worker=receipt.get('worker',{})
     root_fin=document(controls['producer-owned-fin-quota-diagnosis.json'])
     worker_wire=document(controls['producer-native.log'])
+    revised=request.get('boundary_revision')=='PRIVATE_PID_BOUNDARY_V2'
+    if revised:
+        require(code_hashes is not None and revision_capture is not None
+            and worker_wire.get('schema')=='porota.rc6.capacity-custody-worker.v1'
+            and 'root-worker-native.log' in controls,'CAPABILITY_V2_ORIGINAL_ROOT_WORKER_RELAY_REQUIRED')
+        original_worker=controls['root-worker-native.log'];original_ref=worker_wire.get('root_worker',{})
+        require(original_ref=={'path':'root-worker-native.log','bytes':len(original_worker),
+            'sha256':hashlib.sha256(original_worker).hexdigest()},'CAPABILITY_V2_ORIGINAL_ROOT_WORKER_BYTES_REBOUND')
+        worker_wire=document(original_worker)
     require(request_sha==receipt.get('root_request_sha256') and request.get('source_sha')==receipt.get('source_sha')
         and request.get('source_tree')==receipt.get('source_tree') and request.get('binding')==receipt.get('binding')
         and request.get('limits')==receipt.get('limits') and request.get('code_hashes')==receipt.get('code_hashes')
@@ -1212,21 +1876,43 @@ def verify_capacity_inner_controls(receipt,preserved):
         full=document(preserved['diagnostic/owned-lease-controls/'+stage+'-full-admission.json'])
         require(admission.diagnostic_control_binding(full)==issuer.get('context',{}).get('diagnostic_binding')
             and full.get('source_sha')==receipt['source_sha'] and full.get('source_tree')==receipt['source_tree']
-            and full.get('gate')=='capacity-probe','CAPABILITY_FULL_SOURCE_ISSUER_ADMISSION_REBOUND')
+            and full.get('gate')==('capacity-calibration' if receipt.get('mode')=='bootstrap' else 'capacity-probe'),
+            'CAPABILITY_FULL_SOURCE_ISSUER_ADMISSION_REBOUND')
     binding=receipt['binding'];attempt=binding.get('attempt_id','').split(':')
     require(len(attempt)==2 and attempt[0].isdigit() and attempt[1]=='1', 'CAPABILITY_FIRST_ISSUER_RUN_REQUIRED')
     lease.replay_lease_evidence(issuer,read_object=lambda identifier:preserved[
         'diagnostic/owned-lease-controls/'+lease.OBJECT_PREFIX+identifier+'.json'],kernel=kernel,
         source_sha=receipt['source_sha'],source_tree=receipt['source_tree'],run_id=int(attempt[0]),run_attempt=1,
         expected_label='quota-diagnosis')
+    if revised:
+        require(probe is not None and probe_kernel is not None and required_raw is not None,
+            'CAPABILITY_V2_ACTUAL_QUOTA_PROBE_RAW_REQUIRED')
+        verify_capacity_probe_observations(probe,worker.get('privilege',{}),private_pid_context={
+            'receipt':receipt,'controls':controls,'request_raw':request_raw,'required_raw':required_raw,
+            'probe_kernel':probe_kernel,'code_hashes':code_hashes,'revision_capture':revision_capture})
+    else:
+        require(probe is None,'CAPABILITY_V2_QUOTA_BRANCH_REQUEST_MISMATCH')
     return {'original_inner_controls_replayed':True,'qualification_claimed':False}
 
-def verify_capacity_probe_observations(probe,privilege):
+def verify_capacity_probe_observations(probe,privilege,*,private_pid_context=None):
     import errno
+    # The complete accepted V2 guardian/Source/ROOT FIN replay is a separate
+    # contract. A serialized observation, including ENOENT, cannot replace it.
+    # A top-level field never substitutes for the actual checks emitted by the
+    # quota actor. The optional revised branch requires its complete RAW chain.
+    require(type(probe) is dict and 'private_pid_boundary_v2' not in probe,
+        'CAPABILITY_PRIVATE_PID_V2_AUTHENTICATED_CAPTURE_GUARDIAN_ROOT_FIN_REPLAY_NOT_IMPLEMENTED')
     require(type(probe) is dict and probe.get('actual_positive') is True and positive(probe.get('same_uid'))
         and probe.get('source_financial_code_called') is False and probe.get('project_attributes_unchanged') is True,
         'CAPABILITY_ACTUAL_POSITIVE_ERRNO_OBSERVATIONS_REQUIRED')
     checks=probe.get('checks',{})
+    revised='private_pid_boundary_v2' in checks
+    if revised:
+        require(private_pid_context is not None,
+            'CAPABILITY_PRIVATE_PID_V2_AUTHENTICATED_CAPTURE_GUARDIAN_ROOT_FIN_REPLAY_REQUIRED')
+        verify_capacity_quota_private_pid(probe,privilege,private_pid_context)
+    else:
+        require(private_pid_context is None,'CAPABILITY_PRIVATE_PID_V2_BRANCH_REBOUND')
     for label in ('project_id_change','inheritance_clear','setflags','quota_mutation',
         'high32_project_id_change','high32_setflags','high32_prctl'):
         require(checks.get(label,{}).get('errno')==errno.EPERM
@@ -1240,10 +1926,10 @@ def verify_capacity_probe_observations(probe,privilege):
         and checks.get('outside_write',{}).get('errno')==errno.EROFS and checks['outside_write'].get('readonly') is True
         and checks.get('supervisor_fd_escape',{}).get('errno')==errno.EACCES
         and checks['supervisor_fd_escape'].get('denied') is True
-        and checks.get('original_issuer_root_escape',{}).get('errno')==errno.EACCES
-        and checks['original_issuer_root_escape'].get('denied') is True
-        and checks['original_issuer_root_escape'].get('operation')=='open_own_namespace_through_original_issuer_root'
-        and positive(checks['original_issuer_root_escape'].get('issuer_pid')),
+        and (revised or checks.get('original_issuer_root_escape',{}).get('errno')==errno.EACCES
+            and checks['original_issuer_root_escape'].get('denied') is True
+            and checks['original_issuer_root_escape'].get('operation')=='open_own_namespace_through_original_issuer_root'
+            and positive(checks['original_issuer_root_escape'].get('issuer_pid'))),
         'CAPABILITY_EDQUOT_OR_SAME_UID_ESCAPE_NOT_REAL')
     require(privilege.get('uid')==probe['same_uid'] and privilege.get('capabilities_zero') is True
         and privilege.get('no_new_privileges') is True and privilege.get('seccomp_mode')==2
@@ -1369,6 +2055,7 @@ def main(argv=None):
     source.add_argument("--admission-json",type=Path)
     parser.add_argument("--evidence-root", type=Path, required=True)
     parser.add_argument("--json-out", type=Path, required=True)
+    parser.add_argument("--writer-binding-out", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.admission_json:
@@ -1382,6 +2069,19 @@ def main(argv=None):
         else:manifest=document(args.manifest_json)
         result = verify_manifest(manifest, source_sha=args.source_sha,
             source_tree=args.source_tree, target_gate=args.target_gate, evidence_root=args.evidence_root)
+        if args.writer_binding_out is not None:
+            require(args.target_gate == 'G7', 'G5B_WRITER_BINDING_CONTROL_REQUIRES_AUTHENTIC_G7_CHAIN')
+            qualified = result.get('evidence_files', {}).get('G5', {}).get('qualified_writer_binding')
+            require(type(qualified) is dict,
+                'G7_CANDIDATE_NATIVE_V4_REQUIRES_FULL_G5B_SOURCE_WRITER_BINDING')
+            require(not os.path.lexists(args.writer_binding_out)
+                and args.writer_binding_out.parent.lstat().st_uid == os.getuid()
+                and not any(node.is_symlink() for node in (args.writer_binding_out, *args.writer_binding_out.parents)),
+                'G7_NEW_SOURCE_EXTERNAL_WRITER_BINDING_CONTROL_REQUIRED')
+            fd = os.open(args.writer_binding_out, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(canonical(qualified)); stream.flush(); os.fsync(stream.fileno())
         require(not os.path.lexists(args.json_out), "GATE_NEW_RECEIPT_PATH_REQUIRED")
         with args.json_out.open("xb") as stream:
             stream.write(canonical(result)); stream.flush(); os.fsync(stream.fileno())

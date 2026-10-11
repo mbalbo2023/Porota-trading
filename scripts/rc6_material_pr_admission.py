@@ -30,6 +30,9 @@ PR=476
 GATES=('cheap','focal311','focal312','BIG-browser','Horizon','full-gov311','full-gov312','predeploy')
 DIAGNOSTIC_GATES=('capacity-probe','capacity-calibration')
 DIAGNOSTIC_BRANCH='wip/rc6-architectural-rca-20261008-1606UTC'
+DIAGNOSTIC_AUTHORIZATION_SCHEMA='porota.rc6.capacity-diagnostic-launch.v2'
+DIAGNOSTIC_ADMISSION_SCHEMA='porota.rc6.capacity-diagnostic-admission.v2'
+DIAGNOSTIC_CONTRACT_LIFECYCLE='IMMUTABLE_DECISION_LIVE_OWNER_REVOCATION_V1'
 RECOVERY_HEAD='dfc240a478cf08e0c6a9b0ba1b760307b09a9565'
 RECOVERY_TREE='192ea26348c8fe10db55857cdd6029edd8344708'
 GUARDS_HEAD='756d37b93aa26bb6395dac481bf3c2dda9d034d7'
@@ -52,7 +55,15 @@ FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRA
     'BASE_BRANCH','BASE_SHA','BASE_TREE','OWNER_RECEIPT_471','OWNER_RECEIPT_473',
     'OWNER_RECEIPT_471_SHA256','OWNER_RECEIPT_473_SHA256','BRANCH','SUCCESSION_KIND',
     'PREDECESSOR_OWNER','PREDECESSOR_RELEASED','PREDECESSOR_RECEIPT_471','PREDECESSOR_RECEIPT_473',
-    'HEAVY_GATES_AUTHORIZED','G0_G8_QUALIFICATION','FINAL_CANDIDATE_ELIGIBLE'}
+    'HEAVY_GATES_AUTHORIZED','G0_G8_QUALIFICATION','FINAL_CANDIDATE_ELIGIBLE',
+    'RC6_NATIVE_PREREQUISITES_AUTHORIZATION','NATIVE_PREREQUISITES_PLAN_SHA256','DEVELOPMENT_ORIGIN_JSON',
+    'RC6_PRIVATE_ORIGINAL_CAS_COMPARISON_AUTHORIZATION','CAS_COMPARISON_TEMPLATE_JSON',
+    'RC6_CONTRACT_REVISION_AUTHORIZATION','CONTRACT_DOCUMENT_SHA256','CONTRACT_ACCEPTANCE_SCHEMA',
+    'CONTRACT_DECISION_ORIGIN','CONTRACT_REVISION','CONTRACT_SCOPE',
+    'CONTRACT_GATES_ALREADY_GREEN','NATIVE_EQUIVALENCE_FROM_APPROVAL_CLAIMED','DEPLOY_AUTHORIZATION',
+    'CONTRACT_ACCEPTANCE_LIFECYCLE','CONTRACT_REVISION_REVOKED','CONTRACT_DECISION_REVOKED',
+    'G5A_REVISION_APPROVAL_URL','G5A_CAPABILITY_REFERENCE_JSON','G5A_BOOTSTRAP_REFERENCE_JSON',
+    'RC6_G5A_ROOT_SETUP_AUTHORIZATION'}
 COMMENT_PAGES=50
 RUN_PAGES=10
 RECOVERY_OWNER='CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC'
@@ -72,6 +83,7 @@ CLOSURE_ANCHORS={471:(6086143803,'2026-10-09T17:43:32Z'),473:(6086144145,'2026-1
 PREDECESSOR_BODY_SHA256='1e44f471ed5c7b1d10a6dba9b29cdd8bc1bf959b8164f06a7d029ac00ff7fc01'
 PREDECESSOR_ANCHORS={471:(6069926329,'2026-10-08T22:04:11Z'),473:(6069926700,'2026-10-08T22:04:12Z')}
 EXPLICIT_SINGLE_WRITER_LITERAL='Sí, todas están detenidas; esta es la única sesión escritora.'
+RELEASED_SUCCESSION_KIND='EXPLICIT_USER_AUTHORIZATION_AFTER_AUTHENTIC_RELEASE'
 STAT11=('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size','st_blocks','st_atime_ns','st_mtime_ns','st_ctime_ns')
 CAPACITY_COMPARISON_MANIFEST_SCHEMA='porota.rc6.capacity-comparison-manifest.v1'
 
@@ -223,6 +235,30 @@ def comment(url,issue,*,get=None):
         and row['user']['login']=='mbalbo2023','AUTHENTIC_REPOSITORY_OWNER_RECEIPT_REQUIRED')
     return row
 
+def immutable_comment_identity(row):
+    """Bind one comment across REST collection and single-resource shapes.
+
+    Decorative app metadata can differ by endpoint. The comment bytes,
+    timestamps, repository URLs, author ID/login and app ID/slug cannot.
+    """
+    require(type(row) is dict and type(row.get('id')) is int and row['id']>0
+        and all(type(row.get(key)) is str for key in
+            ('body','created_at','updated_at','html_url','issue_url')),
+        'IMMUTABLE_COMMENT_IDENTITY_REQUIRED')
+    user=row.get('user')
+    require(type(user) is dict and type(user.get('id')) is int and user['id']>0
+        and user.get('login')=='mbalbo2023','IMMUTABLE_COMMENT_AUTHOR_ID_REQUIRED')
+    app=row.get('performed_via_github_app')
+    require(app is None or (type(app) is dict and type(app.get('id')) is int and app['id']>0
+        and type(app.get('slug')) is str and bool(app['slug'])),
+        'IMMUTABLE_COMMENT_APP_ID_REQUIRED')
+    return (row['id'],row['body'],row['created_at'],row['updated_at'],row['html_url'],
+        row['issue_url'],row.get('url'),user['id'],user['login'],
+        None if app is None else (app['id'],app['slug']))
+
+def same_immutable_comment(left,right):
+    return immutable_comment_identity(left)==immutable_comment_identity(right)
+
 def recovery_anchors(owner,*,get=None):
     require(owner==RECOVERY_OWNER,'EXACT_CONTROLLED_RECOVERY_SESSION_REQUIRED')
     result={}
@@ -256,14 +292,15 @@ def successor_anchors(owner,*,get=None):
         result[issue]=row
     return result
 
-def administrative_anchors(owner,*,get=None):
+def administrative_anchors(owner,*,get=None,now=None):
     """Authenticate succession; neither an expired lease nor a run grants it.
 
     This pinned owner transfer grants development only. Every future launch
     still needs an immutable, single-gate receipt and current dual leases.
     Keep the older recovery anchors intact as the stale ops-state authority.
     """
-    require(owner==CLOSURE_OWNER,'EXACT_ADMINISTRATIVE_SUCCESSOR_SESSION_REQUIRED')
+    if owner!=CLOSURE_OWNER:
+        return released_successor_anchors(owner,get=get,now=now)
     successor_anchors(SUCCESSOR_OWNER,get=get)
     result={}
     for issue,(identifier,created) in CLOSURE_ANCHORS.items():
@@ -297,11 +334,99 @@ def administrative_anchors(owner,*,get=None):
     require(result[471]['body']==result[473]['body'],'ADMINISTRATIVE_DUAL_RECEIPT_BODY_MISMATCH')
     return result
 
+def released_successor_anchors(owner,*,get=None,now=None):
+    """Authenticate an actual released succession without adopting an old ID.
+
+    A transfer is only development ownership. Its two immutable, owner-authored
+    comments must reference two genuine explicit releases of the predecessor.
+    Keep the pinned administrative checkpoint as the history floor: a newer
+    anchor must never hide an old unresolved writer or an edited old comment.
+    """
+    require(isinstance(owner,str) and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}',owner)
+        and owner not in (RECOVERY_OWNER,SUCCESSOR_OWNER,CLOSURE_OWNER),
+        'EXACT_RELEASED_SUCCESSOR_SESSION_REQUIRED')
+    current=now or datetime.now(timezone.utc)
+    history=administrative_anchors(CLOSURE_OWNER,get=get)
+    timelines={issue:recent(issue,history[issue],current,get=get) for issue in (471,473)}
+    candidates=[row for row in timelines[471]
+        if fields(row.get('body','')).get('SESSION_SUCCESSOR')==owner
+        and fields(row.get('body','')).get('SUCCESSION_KIND')==RELEASED_SUCCESSION_KIND]
+    require(candidates,'AUTHENTIC_RELEASED_SUCCESSOR_TRANSFER_REQUIRED')
+    # A renewal can repeat the scope; the first transfer establishes identity.
+    first=min(candidates,key=lambda row:(stamp(row['created_at']),row['id']))
+    scope=fields(first['body']);number=scope.get('OWNER_RECEIPT_473','')
+    require(re.fullmatch('[1-9][0-9]{0,9}',number), 'RELEASED_SUCCESSOR_DUAL_TRANSFER_REQUIRED')
+    twin=comment('https://github.com/'+REPO+'/issues/473#issuecomment-'+number,473,get=get)
+    # Captured API documents are immutable inputs to historical replay. Add
+    # internal history pointers only to copies, never to the response cache.
+    result={471:dict(first),473:dict(twin)}
+    require(any(row['id']==twin['id'] and same_immutable_comment(row,twin) for row in timelines[473]),
+        'RELEASED_SUCCESSOR_TRANSFER_MISSING_FROM_COMPLETE_TIMELINE')
+    require(scope.get('OWNER_RECEIPT_473_SHA256')==hashlib.sha256(twin['body'].encode()).hexdigest(),
+        'RELEASED_SUCCESSOR_TRANSFER_PAIR_DIGEST_REQUIRED')
+    bindings=('WORKSTREAM_ID','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER',
+        'RELEASED','BRANCH','BASE_SHA','SOURCE_SHA','SOURCE_TREE','PREDECESSOR_OWNER',
+        'PREDECESSOR_RELEASED','PREDECESSOR_RECEIPT_471','PREDECESSOR_RECEIPT_473',
+        'SUCCESSION_KIND','MODE','real_orders_sent','HEAVY_GATES_AUTHORIZED',
+        'G0_G8_QUALIFICATION','FINAL_CANDIDATE_ELIGIBLE')
+    previous=scope.get('PREDECESSOR_OWNER','')
+    require(previous!=owner and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}',previous)
+        and re.fullmatch(r'WS-RC6-[A-Z0-9-]{1,179}',scope.get('WORKSTREAM_ID','')),
+        'RELEASED_SUCCESSOR_EXACT_PREDECESSOR_AND_WORKSTREAM_REQUIRED')
+    require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_./-]{0,199}',scope.get('BRANCH',''))
+        and scope['BRANCH'] not in ('main',BASE,BRANCH,DIAGNOSTIC_BRANCH)
+        and all(part not in ('','.','..') and not part.endswith(('.','.lock'))
+            for part in scope['BRANCH'].split('/')) and '..' not in scope['BRANCH']
+        and re.fullmatch('[0-9a-f]{40}',scope.get('BASE_SHA',''))
+        and scope.get('BASE_SHA')==scope.get('SOURCE_SHA')
+        and re.fullmatch('[0-9a-f]{40}',scope.get('SOURCE_TREE','')),
+        'RELEASED_SUCCESSOR_EXACT_ISOLATED_BASE_REQUIRED')
+    for issue,row in result.items():
+        f=fields(row['body'])
+        require(row['user']['login']=='mbalbo2023'
+            and row['issue_url'].endswith('/issues/'+str(issue))
+            and row['html_url']=='https://github.com/'+REPO+'/issues/'+str(issue)
+                +'#issuecomment-'+str(row['id'])
+            and row['created_at']==row['updated_at']
+            and all(f.get(key)==scope.get(key) for key in bindings)
+            and f.get('SESSION_SUCCESSOR')==f.get('WRITE_OWNER')==f.get('INTEGRATION_OWNER')==owner
+            and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
+            and f.get('SUCCESSION_KIND')==RELEASED_SUCCESSION_KIND
+            and f.get('PREDECESSOR_RELEASED')=='true'
+            and f.get('HEAVY_GATES_AUTHORIZED')==f.get('G0_G8_QUALIFICATION')
+                ==f.get('FINAL_CANDIDATE_ELIGIBLE')=='false'
+            and f.get('MODE')=='PRODUCTION_PAPER / SIMULATION' and f.get('real_orders_sent')=='0',
+            'AUTHENTIC_UNEDITED_RELEASED_SUCCESSOR_TRANSFER_REQUIRED')
+        release_id=f.get('PREDECESSOR_RECEIPT_'+str(issue),'')
+        require(re.fullmatch('[1-9][0-9]{0,9}',release_id),
+            'RELEASED_SUCCESSOR_EXPLICIT_PREDECESSOR_RECEIPT_REQUIRED')
+        release=comment('https://github.com/'+REPO+'/issues/'+str(issue)+'#issuecomment-'+release_id,
+            issue,get=get);old=fields(release['body'])
+        require(release['created_at']==release['updated_at']
+            and any(item['id']==release['id'] and same_immutable_comment(item,release) for item in timelines[issue])
+            and old.get('SESSION_SUCCESSOR',old.get('SESSION'))==old.get('WRITE_OWNER')==previous
+            and old.get('INTEGRATION_OWNER',previous)==previous
+            and old.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and old.get('RELEASED')=='true'
+            and old.get('SOURCE_SHA')==scope['BASE_SHA'] and old.get('SOURCE_TREE')==scope['SOURCE_TREE']
+            and old.get('MODE')==f['MODE'] and old.get('real_orders_sent')=='0'
+            and stamp(release['created_at'])<=min(stamp(item['created_at']) for item in result.values()),
+            'AUTHENTIC_DUAL_PREDECESSOR_RELEASE_BEFORE_TRANSFER_REQUIRED')
+        # The digest does not grant release. It binds the row already proven
+        # authentic above; release status is never inferred from lease expiry.
+        row['_rc6_history_anchor']=history[issue]
+    releases=[fields(next(row['body'] for row in timelines[issue]
+        if str(row['id'])==scope['PREDECESSOR_RECEIPT_'+str(issue)])) for issue in (471,473)]
+    require(all(releases[0].get(key)==releases[1].get(key)
+        for key in ('WORKSTREAM_ID','WRITE_OWNER','SOURCE_SHA','SOURCE_TREE','BASE_SHA','MODE','real_orders_sent')),
+        'PREDECESSOR_RELEASE_PAIR_SCOPE_MISMATCH')
+    return result
+
 def candidate_scope(f,*,owner,anchors):
     """Derive PR/branch/base from authenticated launch bytes, never constants."""
     number=f.get('SOURCE_PR','');branch=f.get('SOURCE_BRANCH','')
     require(f.get('AUTHORIZATION_SCHEMA')==CANDIDATE_AUTHORIZATION_SCHEMA
-        and owner==CLOSURE_OWNER and re.fullmatch('[1-9][0-9]{0,9}',number)
+        and owner==fields(anchors[471]['body']).get('SESSION_SUCCESSOR')
+        and re.fullmatch('[1-9][0-9]{0,9}',number)
         and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_./-]{0,199}',branch)
         and all(part not in ('','.','..') and not part.endswith(('.','.lock')) for part in branch.split('/'))
         and '..' not in branch and branch not in ('main',BASE,BRANCH,DIAGNOSTIC_BRANCH)
@@ -328,6 +453,8 @@ def recent(issue,anchor,now,*,get=None):
     # GitHub issue-comments `since` selects last-updated timestamps. A comment
     # created before the controlled anchor but edited afterwards is included.
     # No moving two-hour window and no silently truncated page are permitted.
+    transfer=anchor
+    anchor=anchor.get('_rc6_history_anchor',anchor)
     cutoff=stamp(anchor['created_at'])
     since=(cutoff-timedelta(seconds=1)).isoformat().replace('+00:00','Z')
     rows=[]
@@ -344,9 +471,10 @@ def recent(issue,anchor,now,*,get=None):
         if len(batch)<100:break
     else:raise ValueError('OWNERSHIP_PAGINATION_INCOMPLETE_FAIL_CLOSED')
     require(anchor['id'] in ids,'ACTUAL_CONTROLLED_ANCHOR_MISSING_FROM_UPDATED_TIMELINE')
+    require(transfer['id'] in ids,'ACTUAL_SUCCESSOR_TRANSFER_MISSING_FROM_UPDATED_TIMELINE')
     return sorted(rows,key=lambda row:(effective_stamp(row),row['id']))
 
-def actual_event(gate):
+def actual_event(gate,*,diagnostic_branch=None):
     require(os.environ.get('GITHUB_EVENT_NAME') in ('pull_request','workflow_dispatch'),'ACTUAL_PR_OR_SCOPED_DISPATCH_EVENT_REQUIRED')
     literal=os.environ['GITHUB_EVENT_PATH'];path=Path(literal)
     require(path.is_absolute() and literal==os.path.abspath(literal),'CANONICAL_ABSOLUTE_EVENT_PATH_REQUIRED')
@@ -391,7 +519,7 @@ def actual_event(gate):
         branch=event.get('ref','').removeprefix('refs/heads/')
         require(event['repository']['id']==REPO_ID and event['repository']['full_name']==REPO
             and event['sender']['login']=='mbalbo2023' and event.get('inputs',{}).get('gate')==gate
-            and bool(branch) and (gate not in DIAGNOSTIC_GATES or branch==DIAGNOSTIC_BRANCH),
+            and bool(branch) and (gate not in DIAGNOSTIC_GATES or branch==(DIAGNOSTIC_BRANCH if diagnostic_branch is None else diagnostic_branch)),
             'SOLE_OWNED_SCOPED_DISPATCH_EVENT_REQUIRED')
         return event,custody
     pr=event['pull_request']
@@ -432,14 +560,56 @@ def fresh_source(sha,tree,gate=None,*,get=None,candidate=None):
     if tree:require(tree==actual,'EXACT_TREE_AUTHORITY_REBOUND')
     return actual
 
+def private_cas_template_scope(f,sha,tree,gate,*,get=None):
+    """Dual immutable authority for one private experiment, never G5 credit."""
+    approval=f.get('RC6_PRIVATE_ORIGINAL_CAS_COMPARISON_AUTHORIZATION')
+    raw=f.get('CAS_COMPARISON_TEMPLATE_JSON')
+    if approval in (None,'NOT_GRANTED') and raw is None:
+        return None
+    require(approval=='APPROVED' and gate=='Horizon' and type(raw) is str,
+        'PRIVATE_CAS_EXPLICIT_HORIZON_TEMPLATE_AUTHORITY_REQUIRED')
+    template=document(raw)
+    require(type(template) is dict and set(template)=={'schema','source_sha','source_tree',
+        'producer_namespace_root','original_contract','prerequisites','reader_review',
+        'private_producer_ack_review','qualification_scope'}
+        and template.get('schema')=='rc6.original-cas-comparison-admission.v2'
+        and template.get('source_sha')==sha and template.get('source_tree')==tree
+        and template.get('producer_namespace_root')=='OWNED_HORIZON_DATA_ROOT'
+        and template.get('qualification_scope')=='PRIVATE_DEVELOPMENT_ONLY_NOT_G5'
+        and template.get('prerequisites')==document(f.get('PREREQUISITES_MANIFEST_JSON','null')),
+        'PRIVATE_CAS_EXACT_SOURCE_ORDERED_TEMPLATE_REQUIRED')
+    from scripts.rc6_cas_original_comparison import CONTRACT
+    require(template['original_contract']==document(json.dumps(dict(CONTRACT)))
+        and all(type(template[key]) is dict and set(template[key])=={'gate','path','sha256'}
+            and template[key].get('gate') in ('G1.311','G1.312')
+            and re.fullmatch('[0-9a-f]{64}',template[key].get('sha256',''))
+            and type(template[key].get('path')) is str
+            for key in ('reader_review','private_producer_ack_review')),
+        'PRIVATE_CAS_ORIGINAL_CONTRACT_AND_REVIEW_REFS_REQUIRED')
+    number=f.get('OWNER_RECEIPT_473','')
+    require(re.fullmatch('[1-9][0-9]{0,9}',number),'PRIVATE_CAS_DUAL_TEMPLATE_AUTHORITY_REQUIRED')
+    twin=comment('https://github.com/'+REPO+'/issues/473#issuecomment-'+number,473,get=get)
+    other=fields(twin['body'])
+    require(twin['created_at']==twin['updated_at']
+        and hashlib.sha256(twin['body'].encode()).hexdigest()==f.get('OWNER_RECEIPT_473_SHA256')
+        and all(other.get(key)==f.get(key) for key in ('WORKSTREAM_ID','SESSION_SUCCESSOR',
+            'WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER','RELEASED','SOURCE_SHA','SOURCE_TREE',
+            'MODE','real_orders_sent','GATES_AUTHORIZED','RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION',
+            'RC6_PRIVATE_ORIGINAL_CAS_COMPARISON_AUTHORIZATION','CAS_COMPARISON_TEMPLATE_JSON')),
+        'PRIVATE_CAS_AUTHENTIC_DUAL_EXACT_TEMPLATE_REQUIRED')
+    return template
+
+
 def launch_fields(row,sha,tree,session=None,gate=None,*,get=None,anchors=None):
     require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/471')
         and row['created_at']==row['updated_at'],'IMMUTABLE_OWNER_LAUNCH_AUTHOR_REQUIRED')
     f=fields(row['body']);owner=f.get('SESSION_SUCCESSOR')
+    current=None if owner==SUCCESSOR_OWNER else (anchors or administrative_anchors(owner,get=get))
+    workstream=WORKSTREAM if current is None else fields(current[471]['body']).get('WORKSTREAM_ID')
     gates=f.get('GATES_AUTHORIZED','').split(',')
-    require(f.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION')=='APPROVED' and f.get('WORKSTREAM_ID')==WORKSTREAM
+    require(f.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION')=='APPROVED' and f.get('WORKSTREAM_ID')==workstream
         and f.get('SOURCE_SHA')==sha and f.get('SOURCE_TREE')==tree
-        and owner in (SUCCESSOR_OWNER,CLOSURE_OWNER)
+        and owner is not None
         and (session is None or session==owner) and f.get('WRITE_OWNER')==owner
         and f.get('INTEGRATION_OWNER')==owner
         and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
@@ -448,8 +618,7 @@ def launch_fields(row,sha,tree,session=None,gate=None,*,get=None,anchors=None):
         'EXACT_IMMUTABLE_SINGLE_GATE_LAUNCH_RECEIPT_REQUIRED')
     require(re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/(?:471|473)#issuecomment-[0-9]+',f.get('CAUSE_EVIDENCE_URL','')),
         'EVIDENCED_NEW_SOURCE_REPAIR_REQUIRED_BEFORE_MATERIAL_RETRY')
-    if owner==CLOSURE_OWNER:
-        current=anchors or administrative_anchors(owner,get=get)
+    if current is not None:
         candidate_scope(f,owner=owner,anchors=current)
         require(all(stamp(row['created_at'])>=stamp(anchor['created_at']) for anchor in current.values()),
             'CANDIDATE_AUTHORIZATION_PRECEDES_OWNER_TRANSFER')
@@ -471,6 +640,7 @@ def launch_fields(row,sha,tree,session=None,gate=None,*,get=None,anchors=None):
             'HEAVY_GATE_REQUIRES_SAME_SHA_ORDERED_ARTIFACT_MANIFEST')
     if gates==['predeploy']:
         require(f.get('RC6_PREDEPLOY_G7_AUTHORIZATION')=='APPROVED','PREDEPLOY_EXPLICIT_G7_AUTHORIZATION_REQUIRED')
+    private_cas_template_scope(f,sha,tree,gates[0],get=get)
     return f
 
 def dedup_admission(sha,gate):
@@ -496,22 +666,41 @@ def dedup_admission(sha,gate):
         'pagination_complete':True,'no_prior_run_reclassified_as_PASS':True}
 
 def latest_writer(rows,issue,sha,tree,owner,now):
-    records=[]
-    for row in rows:
+    records=[];states={}
+    for row in sorted(rows,key=lambda item:(effective_stamp(item),item['id'])):
         f=fields(row.get('body',''))
         if any(key in f for key in ('WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER','SOURCE_LEASE_EXPIRES_UTC','RELEASED')):
             require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/'+str(issue)),
                 'OWNERSHIP_RECORD_AUTHOR_OR_ISSUE_REBOUND')
-            for key in ('WRITE_OWNER','INTEGRATION_OWNER'):
-                if key in f and f[key] not in (owner,'RELEASED','NOT_ACQUIRED','NONE','null'):
-                    # Expiration is evidence of lease expiry, never release.
-                    # An active, unknown or unbounded foreign scope blocks.
-                    require(f.get('RELEASED')=='true',
-                        'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER_AFTER_SUCCESSOR_ANCHOR')
+            require(row['created_at']==row['updated_at'],'EDITED_HISTORICAL_OWNERSHIP_RECORD')
             require('DEPLOY_OWNER' not in f or f['DEPLOY_OWNER'] in ('NOT_ACQUIRED','RELEASED','NONE','null'),
                 'ANY_DEPLOY_OWNER_AFTER_CONTROLLED_ANCHOR')
+            scoped={f[key] for key in ('WRITE_OWNER','INTEGRATION_OWNER')
+                if key in f and f[key] not in ('RELEASED','NOT_ACQUIRED','NONE','null')}
+            if f.get('RELEASED')=='true':
+                # A release belongs to the session that actually wrote it.
+                # A foreign active session cannot manufacture another writer's
+                # release merely by naming that owner or quoting an old lease.
+                require(scoped and scoped=={f.get('SESSION_SUCCESSOR',f.get('SESSION'))},
+                    'AUTHENTIC_OWN_SESSION_EXPLICIT_RELEASE_REQUIRED')
+                for identifier in scoped:
+                    prior=states.get(identifier)
+                    if prior is not None:
+                        require(f.get('WORKSTREAM_ID')==prior[1].get('WORKSTREAM_ID'),
+                            'EXPLICIT_RELEASE_WORKSTREAM_REBOUND')
+                    states[identifier]=(row,f)
+            else:
+                for identifier in scoped:states[identifier]=(row,f)
             records.append((row,f))
     require(records,'FRESH_OWNER_RECORDS_REQUIRED_BOTH_ISSUES')
+    # Evaluate the last authentic status for each writer, rather than demanding
+    # that every historical lease already contain its future release. A later
+    # false/unknown status reacquires the scope and blocks again. Expiry never
+    # changes release state, including records older than a new transfer.
+    for identifier,(_row,status) in states.items():
+        if identifier!=owner:
+            require(status.get('RELEASED')=='true',
+                'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER_AFTER_SUCCESSOR_ANCHOR')
     integrations=[(row,f) for row,f in records if 'INTEGRATION_OWNER' in f]
     require(integrations and integrations[-1][1]['INTEGRATION_OWNER']==owner,
         'LATEST_INTEGRATION_OWNER_NOT_CONTROLLED_RECOVERY')
@@ -527,11 +716,15 @@ def latest_writer(rows,issue,sha,tree,owner,now):
     require(stamp(row['created_at'])<=effective_stamp(row)<=now<expires
         and timedelta(0)<expires-stamp(row['created_at'])<=timedelta(minutes=20),
         'LATEST_WRITER_LEASE_EXPIRED_OR_UNBOUNDED')
-    return {'comment_id':row['id'],'url':row['html_url'],'author':'mbalbo2023','fields':f,
+    result={'comment_id':row['id'],'url':row['html_url'],'author':'mbalbo2023','fields':f,
         'body_sha256':hashlib.sha256(row['body'].encode()).hexdigest(),'lease_expires_utc':expires.isoformat().replace('+00:00','Z'),
         'latest_integration_owner_comment_id':integrations[-1][0]['id'],
         'all_post_anchor_owner_record_ids':[item[0]['id'] for item in records],
         'all_post_anchor_records_and_old_comment_edits_checked':True,'maximum_lease_seconds':1200}
+    if owner not in (RECOVERY_OWNER,SUCCESSOR_OWNER,CLOSURE_OWNER):
+        result['latest_status_by_owner']={identifier:{'comment_id':item[0]['id'],
+            'released':item[1].get('RELEASED')=='true'} for identifier,item in sorted(states.items())}
+    return result
 
 def ops_admission(auth,owner,now,anchors,*,get=None):
     response=(get or api)('/contents/'+OPS+'?'+urllib.parse.urlencode({'ref':OPS_REF}))
@@ -577,19 +770,22 @@ def owned_gate_control_scope(*,source_sha,source_tree,launch_receipt_url,owner_s
     """
     run_attempt=int(os.environ['GITHUB_RUN_ATTEMPT']) if run_attempt is None else run_attempt
     run_id=int(os.environ['GITHUB_RUN_ID']) if run_id is None else run_id
-    require(gate in GATES and owner_session in (SUCCESSOR_OWNER,CLOSURE_OWNER) and type(run_attempt) is int and run_attempt==1
+    require(gate in GATES and isinstance(owner_session,str)
+        and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}',owner_session)
+        and type(run_attempt) is int and run_attempt==1
         and type(run_id) is int and run_id>0,'OWNED_GATE_FIRST_EXACT_SUCCESSOR_SCOPE_REQUIRED')
     anchors=recovery_anchors(RECOVERY_OWNER,get=get)
-    successor=(administrative_anchors(owner_session,get=get) if owner_session==CLOSURE_OWNER
-        else successor_anchors(owner_session,get=get))
+    successor=(successor_anchors(owner_session,get=get) if owner_session==SUCCESSOR_OWNER
+        else administrative_anchors(owner_session,get=get,now=now))
     launch=comment(launch_receipt_url,471,get=get)
     auth=launch_fields(launch,source_sha,source_tree,owner_session,gate,get=get,anchors=successor)
-    scope=candidate_scope(auth,owner=owner_session,anchors=successor) if owner_session==CLOSURE_OWNER else None
+    scope=candidate_scope(auth,owner=owner_session,anchors=successor) if owner_session!=SUCCESSOR_OWNER else None
     fresh_source(source_sha,source_tree,gate,get=get,candidate=scope)
     timelines={issue:recent(issue,successor[issue],now,get=get) for issue in (471,473)}
     owners={str(issue):latest_writer(timelines[issue],issue,source_sha,source_tree,owner_session,now)
         for issue in (471,473)}
-    require(all(fields(row['body']).get('WORKSTREAM_ID')==WORKSTREAM
+    workstream=fields(successor[471]['body']).get('WORKSTREAM_ID')
+    require(all(fields(row['body']).get('WORKSTREAM_ID')==workstream
         for issue in (471,473) for row in timelines[issue]
         if row['id']==owners[str(issue)]['comment_id']),'OWNED_GATE_WORKSTREAM_REBOUND')
     ops=ops_admission(auth,owner_session,now,anchors,get=get)
@@ -602,10 +798,15 @@ def owned_gate_control_scope(*,source_sha,source_tree,launch_receipt_url,owner_s
         and run.get('path')==('.github/workflows/porota-predeploy-v2.yml' if gate=='predeploy'
             else '.github/workflows/rc6-unified-candidate-tests.yml'),
         'OWNED_GATE_ACTIONS_CANCELLED_OR_REBOUND')
-    return {'source_sha':source_sha,'source_tree':source_tree,'owner_session':owner_session,'gate':gate,
+    result={'source_sha':source_sha,'source_tree':source_tree,'owner_session':owner_session,'gate':gate,
         'run_id':run_id,'run_attempt':1,'read_utc':now.isoformat().replace('+00:00','Z'),
         'launch_receipt_url':launch_receipt_url,'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
         'fresh_ownership':owners,'ops':ops,'real_orders_sent':0,'DEPLOY_OWNER':'NOT_ACQUIRED'}
+    # Existing archived V1 scope digests must replay byte for byte. New owners
+    # record their authenticated workstream; the two legacy owners keep the
+    # original return wire and original WORKSTREAM used by lease replay.
+    if owner_session not in (SUCCESSOR_OWNER,CLOSURE_OWNER):result['workstream_id']=workstream
+    return result
 
 def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=None,gate,now=None):
     require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
@@ -613,28 +814,44 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
     require(gate in GATES and os.environ.get('GITHUB_RUN_ATTEMPT')=='1','FIRST_SCOPED_RUN_ATTEMPT_REQUIRED_NO_BLIND_RERUN')
     from scripts.rc6_architectural_gates import require_horizon_model_before_material
     require_horizon_model_before_material(gate)
+    return _admit_source_scope(source_sha=source_sha,source_tree=source_tree,
+        launch_receipt_url=launch_receipt_url,owner_session=owner_session,gate=gate,now=now)
+
+def _admit_source_scope(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=None,gate,now=None,
+                        g5a_approval=None):
+    """Source/API admission only; this mapping grants no native G5A authority."""
+    require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
+        and os.environ.get('GITHUB_REPOSITORY_ID')==str(REPO_ID),'ACTUAL_NONROOT_CANONICAL_ACTIONS_REQUIRED')
+    require(gate in GATES and os.environ.get('GITHUB_RUN_ATTEMPT')=='1','FIRST_SCOPED_RUN_ATTEMPT_REQUIRED_NO_BLIND_RERUN')
     event,event_custody=actual_event(gate)
     if os.environ['GITHUB_EVENT_NAME']=='pull_request':
         require(event['pull_request']['head']['sha']==source_sha,'EVENT_HEAD_SHA_REBOUND')
     else:require(event['inputs'].get('source_sha')==source_sha,'DISPATCH_HEAD_SHA_REBOUND')
     now=now or datetime.now(timezone.utc)
     anchors=recovery_anchors(RECOVERY_OWNER)  # unchanged user-stop/raw-ops authority
-    successor=administrative_anchors(CLOSURE_OWNER)
-    timelines={issue:recent(issue,successor[issue],now) for issue in (471,473)}
     if launch_receipt_url:
         launch=comment(launch_receipt_url,471)
     else:
+        # Find exact launch bytes from the original checkpoint, then derive
+        # and authenticate their actual current owner. Never adopt an old
+        # owner name simply because the workflow default has that value.
+        history=administrative_anchors(CLOSURE_OWNER)
+        search=recent(471,history[471],now)
         matching=[]
-        for row in timelines[471]:
+        for row in search:
             f=fields(row.get('body',''))
             if f.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION')=='APPROVED' and f.get('SOURCE_SHA')==source_sha and f.get('GATES_AUTHORIZED')==gate:
                 matching.append(row)
         require(len(matching)==1,'ONE_EXACT_PREPUSH_LAUNCH_AUTHORITY_REQUIRED')
         launch=matching[0]
     claimed=fields(launch['body']);tree=source_tree or claimed.get('SOURCE_TREE')
-    require(claimed.get('SESSION_SUCCESSOR')==CLOSURE_OWNER,'CURRENT_ADMINISTRATIVE_OWNER_REQUIRED')
+    owner=claimed.get('SESSION_SUCCESSOR')
+    require(owner!=SUCCESSOR_OWNER and (owner_session is None or owner==owner_session),
+        'CURRENT_ADMINISTRATIVE_OWNER_REQUIRED')
+    successor=administrative_anchors(owner,now=now)
+    timelines={issue:recent(issue,successor[issue],now) for issue in (471,473)}
     auth=launch_fields(launch,source_sha,tree,owner_session,gate,anchors=successor)
-    scope=candidate_scope(auth,owner=CLOSURE_OWNER,anchors=successor)
+    scope=candidate_scope(auth,owner=owner,anchors=successor)
     if os.environ['GITHUB_EVENT_NAME']=='pull_request':
         pr=event['pull_request']
         require(event['number']==scope['pr'] and pr['head']['ref']==scope['branch']
@@ -643,7 +860,7 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
         require(event.get('ref','').removeprefix('refs/heads/')==scope['branch']
             and event['inputs'].get('source_tree')==tree
             and event['inputs'].get('launch_receipt_url')==launch['html_url']
-            and event['inputs'].get('owner_session')==CLOSURE_OWNER,
+            and event['inputs'].get('owner_session')==owner,
             'DISPATCH_EXACT_CURRENT_OWNER_CANDIDATE_SCOPE_REBOUND')
     fresh_source(source_sha,tree,gate,candidate=scope)
     # Event delivery follows push: authorization must already exist.
@@ -654,15 +871,21 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
     require(gate in gates,'GATE_NOT_AUTHORIZED_IN_IMMUTABLE_PREPUSH_SCOPE')
     owner=auth['SESSION_SUCCESSOR'];owners={str(issue):latest_writer(timelines[issue],issue,source_sha,tree,owner,now) for issue in (471,473)}
     ops=ops_admission(auth,owner,now,anchors)
-    capacity_source=verify_capacity_comparison_manifest(auth,source_sha,tree)
+    if g5a_approval is None:
+        capacity_source=verify_capacity_comparison_manifest(auth,source_sha,tree)
+    else:
+        capacity_source=g5a_preparation_capacity(g5a_approval,source_sha=source_sha,source_tree=tree,now=now)
+        require(gate=='Horizon' and g5a_approval.owner_session==owner,
+            'G5A_SETUP_ACCEPTANCE_CANNOT_REBIND_SOURCE_OWNER_OR_GATE')
     dedup=dedup_admission(source_sha,gate)
     return {'schema':'rc6.material-automatic-pr-admission.v2','status':'ADMITTED_NATIVE_NOT_STARTED','source_sha':source_sha,
         'source_tree':tree,'gate':gate,'owner_session':owner,'launch_receipt_url':launch['html_url'],
         'candidate_scope':scope,
-        'ownership_transfer':{'kind':'ADMINISTRATIVE_EXPLICIT_USER_AUTHORIZATION',
+        'ownership_transfer':{'kind':fields(successor[471]['body'])['SUCCESSION_KIND'],
             'receipts':{str(issue):{'url':successor[issue]['html_url'],
                 'body_sha256':hashlib.sha256(successor[issue]['body'].encode()).hexdigest()}
-                for issue in (471,473)},'predecessor_released_claimed':False,
+                for issue in (471,473)},
+            'predecessor_released_claimed':fields(successor[471]['body']).get('PREDECESSOR_RELEASED')=='true',
             'lease_expiration_treated_as_release':False,'heavy_authority_from_transfer_claimed':False},
         'launch_receipt_created_at':launch['created_at'],'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
         'fresh_ownership':owners,'ops':ops,'dedup':dedup,'event_custody':event_custody,
@@ -671,12 +894,114 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
         'capacity_source_comparison':capacity_source,
         'cheap_files':document(auth['CHEAP_FILES_JSON']) if gate=='cheap' else None,
         'prerequisites_manifest':document(auth['PREREQUISITES_MANIFEST_JSON']) if gate!='cheap' else None,
+        **({'private_cas_comparison_template':document(auth['CAS_COMPARISON_TEMPLATE_JSON'])}
+            if auth.get('RC6_PRIVATE_ORIGINAL_CAS_COMPARISON_AUTHORIZATION')=='APPROVED' else {}),
         'Gov311_scope_pointer':auth.get('CANONICAL_GOV311_CUSTODY_RECEIPT_URL') or auth.get('SUPPLEMENTARY_GOV311_JUSTIFICATION_URL'),
         'omitted_Gov311_PASS_or_artifact_claimed':False,'source_truth':'CANONICAL_GITHUB_HEAD_COMMIT_TREE_PR',
         'workflow_ref':os.environ.get('GITHUB_WORKFLOW_REF'),'workflow_sha':os.environ.get('GITHUB_WORKFLOW_SHA'),
         'GITHUB_SHA_is_candidate_SHA_claimed':False,'read_utc':now.isoformat().replace('+00:00','Z'),
         'same_read_lease_valid_for_whole_long_gate_claimed':False,'real_orders_sent':0,
         'DEPLOY_OWNER':'NOT_ACQUIRED','canonical_artifact_pipeline':'PREDEPLOY_V2_ONLY','final_candidate_eligible':False}
+
+
+_G5A_SETUP_CONTEXTS = {}
+
+def g5a_preparation_capacity(approval,*,source_sha,source_tree,now=None):
+    """A pending native obligation, never a complete Horizon cost claim.
+
+    Only a freshly accepted versioned contract selects this Source path. The
+    carrier authenticates the actual G0--G4 and capability/bootstrap bytes,
+    then measures its compound bound before allocating an image. The ROOT
+    worker repeats those checks before quota setup. No ordinary material
+    launch can consume this documentary mapping as capacity authority.
+    """
+    from scripts import rc6_contract_revisions as revisions
+    from scripts import rc6_g5_contract as g5
+    revisions.validate_revision_approval(approval,revision=g5.REVISION,scope=g5.SCOPE,
+        source_sha=source_sha,source_tree=source_tree,contract_sha256=g5.CONTRACT_SHA256,now=now)
+    return {'schema':'rc6.g5a-pending-native-compound-capacity.v2',
+        'scope':'ACQUISITION_ONLY_NATIVE_CHECKS_REQUIRED_BEFORE_OWN_IMAGE',
+        'source_sha':source_sha,'source_tree':source_tree,'contract_sha256':g5.CONTRACT_SHA256,
+        'backing_image_bytes':26*1024**3,'workload_project_hard_bytes':20*1024**3,
+        'archive_hard_bytes':512*1024**2,'closed_raw_stream_hard_bytes':20*1024**3,
+        'residual_reserve_bytes':4*1024**3,'minimum_free_inode_fraction':'1/10',
+        'G0_G4_actual_artifacts_required':True,'accepted_5_512_then_26_20_required':True,
+        'live_compound_preflight_required':True,'per_write_physical_reservation_required':True,
+        'future_cleanup_credit_bytes':0,'future_GC_credit_bytes':0,
+        'native_quota_verified':False,'capacity_admitted':False,'G5_GREEN':False,
+        'original_RC6_stage_complete_claimed':False,'real_orders_sent':0}
+
+class G5ASetupLaunchContext:
+    """Fresh Source/control authority for ROOT preparation, never G5 GREEN."""
+    __slots__ = ('pid','source_sha','source_tree','owner_session','launch_receipt_url',
+                 'revision','admission_wire','binding_wire')
+    def __new__(cls, *args, **kwargs):
+        raise ValueError('G5A_SETUP_ACTUAL_SOURCE_API_FACTORY_REQUIRED')
+    def __setattr__(self, name, value):
+        raise AttributeError('G5A_SETUP_CONTEXT_IMMUTABLE')
+    @property
+    def admission(self): return document(self.admission_wire)
+    @property
+    def binding(self): return document(self.binding_wire)
+
+
+def admit_g5a_preparation(*, source_sha, source_tree, launch_receipt_url, owner_session,
+                         revision_approval_url, now=None):
+    """Authenticate only the proposed bounded ROOT preparation operation.
+
+    Full Source/event/PR/owner/OPS/capacity/dedup predicates are unchanged.
+    The carrier must authenticate G0--G4 and both quota artifacts before any
+    image. The actual ROOT worker authenticates them again before its setup.
+    """
+    from scripts import rc6_contract_revisions as revisions
+    from scripts import rc6_g5_contract as g5
+    from scripts import rc6_material_carrier as carrier
+    from types import SimpleNamespace
+    require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_ACTIONS')=='true'
+        and os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch'
+        and os.environ.get('GITHUB_RUN_ATTEMPT')=='1', 'G5A_SETUP_ACTUAL_FIRST_MANUAL_ACTIONS_REQUIRED')
+    now=now or datetime.now(timezone.utc)
+    api_client=SimpleNamespace(request=api)
+    accepted=revisions.authenticate_revision(api_client,revision_approval_url,owner_session=owner_session,
+        revision=g5.REVISION,scope=g5.SCOPE,source_sha=source_sha,source_tree=source_tree,
+        contract_sha256=g5.CONTRACT_SHA256,now=now)
+    row=comment(launch_receipt_url,471)
+    values=fields(row['body'])
+    require(values.get('RC6_G5A_ROOT_SETUP_AUTHORIZATION')=='APPROVED'
+        and values.get('G5A_REVISION_APPROVAL_URL')==revision_approval_url
+        and values.get('GATES_AUTHORIZED')=='Horizon'
+        and type(document(values.get('G5A_CAPABILITY_REFERENCE_JSON','null'))) is dict
+        and type(document(values.get('G5A_BOOTSTRAP_REFERENCE_JSON','null'))) is dict,
+        'G5A_SETUP_EXPLICIT_SOURCE_FIXED_STAGE_AND_NATIVE_QUOTA_REFERENCES_REQUIRED')
+    observed=_admit_source_scope(source_sha=source_sha,source_tree=source_tree,
+        launch_receipt_url=launch_receipt_url,owner_session=owner_session,gate='Horizon',now=now,
+        g5a_approval=accepted)
+    observed.update(g5a_capability_reference=document(values['G5A_CAPABILITY_REFERENCE_JSON']),
+        g5a_bootstrap_reference=document(values['G5A_BOOTSTRAP_REFERENCE_JSON']),
+        g5a_revision_approval_url=revision_approval_url,root_setup_only=True,
+        G5_GREEN=False,native_archive_launch_authorized=False)
+    args=SimpleNamespace(source_sha=source_sha,source_tree=source_tree,owner_session=owner_session,gate='Horizon')
+    binding=carrier.capacity_binding(args,'Horizon-private-original-cas')
+    result=object.__new__(G5ASetupLaunchContext)
+    values=dict(pid=os.getpid(),source_sha=source_sha,source_tree=source_tree,owner_session=owner_session,
+        launch_receipt_url=launch_receipt_url,revision=accepted,admission_wire=wire(observed),binding_wire=wire(binding))
+    for name,value in values.items(): object.__setattr__(result,name,value)
+    _G5A_SETUP_CONTEXTS[id(result)]=(result,values)
+    return result
+
+
+def validate_g5a_setup_launch(context,*,source_sha,source_tree,owner_session,launch_receipt_url,now=None):
+    from scripts import rc6_contract_revisions as revisions
+    from scripts import rc6_g5_contract as g5
+    registered=_G5A_SETUP_CONTEXTS.get(id(context))
+    require(type(context) is G5ASetupLaunchContext and registered is not None and registered[0] is context
+        and context.pid==os.getpid() and all(getattr(context,name)==value for name,value in registered[1].items())
+        and (context.source_sha,context.source_tree,context.owner_session,context.launch_receipt_url)
+            ==(source_sha,source_tree,owner_session,launch_receipt_url),
+        'G5A_SETUP_CURRENT_TYPED_SOURCE_STAGE_CONTEXT_REQUIRED')
+    revisions.validate_revision_approval(context.revision,revision=g5.REVISION,scope=g5.SCOPE,
+        source_sha=source_sha,source_tree=source_tree,contract_sha256=g5.CONTRACT_SHA256,now=now)
+    return context.admission
 
 def diagnostic_scope(gate,value):
     require(gate in DIAGNOSTIC_GATES and type(value) is dict,'EXACT_CAPACITY_DIAGNOSTIC_MODE_REQUIRED')
@@ -689,8 +1014,10 @@ def diagnostic_scope(gate,value):
         'CAPACITY_DIAGNOSTIC_QUOTA_SCOPE_REBOUND')
     return expected
 
-def diagnostic_launch_control_fields(row,sha,tree,session,gate):
+def diagnostic_launch_control_fields(row,sha,tree,session,gate,*,get=None,anchors=None,now=None):
     """Immutable diagnostic authority, without Git/Source/event/file access."""
+    if session!=SUCCESSOR_OWNER:
+        return successor_diagnostic_control_fields(row,sha,tree,session,gate,get=get,anchors=anchors,now=now)
     require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/471')
         and row['created_at']==row['updated_at'],'IMMUTABLE_OWNER_DIAGNOSTIC_AUTHOR_REQUIRED')
     f=fields(row['body'])
@@ -710,15 +1037,28 @@ def diagnostic_launch_control_fields(row,sha,tree,session,gate):
         'DIAGNOSTIC_CALIBRATION_REQUIRES_ACTUAL_CAPABILITY_ARTIFACT')
     return f,scope,prior
 
-def diagnostic_launch_fields(row,sha,tree,session,gate,*,repo=ROOT):
-    f,scope,prior=diagnostic_launch_control_fields(row,sha,tree,session,gate)
+def diagnostic_launch_fields(row,sha,tree,session,gate,*,repo=ROOT,get=None,anchors=None,now=None,
+                             native_finished=False):
+    require(type(native_finished) is bool, 'DIAGNOSTIC_FIXED_CAPTURE_ONLY_ROLE_REQUIRED')
+    f,scope,prior=(successor_diagnostic_control_fields(row,sha,tree,session,gate,
+        get=get,anchors=anchors,now=now,authenticate_contract=False) if native_finished and session!=SUCCESSOR_OWNER
+        else diagnostic_launch_control_fields(row,sha,tree,session,gate) if session==SUCCESSOR_OWNER
+        else diagnostic_launch_control_fields(row,sha,tree,session,gate,get=get,anchors=anchors,now=now))
     from scripts.rc6_architectural_gates import productive_contract
     require(f.get('READ_CONTRACT_SHA256')==productive_contract(repo),'DIAGNOSTIC_PRODUCTIVE_CONTRACT_REBOUND')
-    require(hashlib.sha256(wire(frozen_source_inventory(repo,sha,tree))).hexdigest()==f.get('SOURCE_MANIFEST_SHA256'),
+    inventory=frozen_source_inventory(repo,sha,tree)
+    require(hashlib.sha256(wire(inventory)).hexdigest()==f.get('SOURCE_MANIFEST_SHA256'),
         'DIAGNOSTIC_FROZEN_GIT_SOURCE_MANIFEST_REBOUND')
+    if session!=SUCCESSOR_OWNER:
+        require(f['CONTRACT_DOCUMENT_SHA256']==frozen_private_pid_contract(repo,inventory),
+            'DIAGNOSTIC_V2_EXACT_SOURCE_CONTRACT_REBOUND')
+        if gate=='capacity-calibration':
+            authenticate_capability_reference(prior,sha,tree,f,reader=get or api,now=now)
     return f,scope,prior
 
-def fresh_diagnostic_source(sha,tree,*,get=None):
+def fresh_diagnostic_source(sha,tree,*,get=None,candidate=None):
+    if candidate is not None:
+        return fresh_successor_diagnostic_source(sha,tree,candidate,get=get)
     require(re.fullmatch('[0-9a-f]{40}',sha or '') and re.fullmatch('[0-9a-f]{40}',tree or ''),
         'DIAGNOSTIC_EXACT_WIP_SHA_TREE_REQUIRED')
     reader=get or api
@@ -754,7 +1094,7 @@ def fresh_diagnostic_source(sha,tree,*,get=None):
 
 def diagnostic_control_binding(row):
     """Source pins established by full admission, reused by API-only polling."""
-    require(type(row) is dict and row.get('schema')=='porota.rc6.capacity-diagnostic-admission.v1'
+    require(type(row) is dict and row.get('schema') in ('porota.rc6.capacity-diagnostic-admission.v1',DIAGNOSTIC_ADMISSION_SCHEMA)
         and row.get('qualification_claimed') is False,'DIAGNOSTIC_FULL_ADMISSION_REQUIRED_FOR_MONITOR')
     result={key:row.get(key) for key in ('launch_body_sha256','source_manifest_sha256','read_contract_sha256',
         'scope','capability_prerequisite')}
@@ -762,11 +1102,21 @@ def diagnostic_control_binding(row):
         ('launch_body_sha256','source_manifest_sha256','read_contract_sha256')),
         'DIAGNOSTIC_FULL_ADMISSION_PINNED_DIGEST_REQUIRED')
     diagnostic_scope(row['gate'],result['scope'])
+    if row['schema']==DIAGNOSTIC_ADMISSION_SCHEMA:
+        require(row.get('authorization_schema')==DIAGNOSTIC_AUTHORIZATION_SCHEMA
+            and type(row.get('diagnostic_owner_scope')) is dict and type(row.get('contract_revision_binding')) is dict,
+            'DIAGNOSTIC_V2_SOURCE_BOUND_CONTROLLER_PINS_REQUIRED')
+        result.update(authorization_schema=DIAGNOSTIC_AUTHORIZATION_SCHEMA,
+            diagnostic_owner_scope=row['diagnostic_owner_scope'],contract_revision_binding=row['contract_revision_binding'])
     return result
 
 def owned_diagnostic_control_scope(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now,get,
                                    diagnostic_binding,run_id=None,run_attempt=None):
     """WIP control-plane read while Native is live; no checkout/Source/event."""
+    if owner_session!=SUCCESSOR_OWNER:
+        return owned_successor_diagnostic_control_scope(source_sha=source_sha,source_tree=source_tree,
+            launch_receipt_url=launch_receipt_url,owner_session=owner_session,gate=gate,now=now,get=get,
+            diagnostic_binding=diagnostic_binding,run_id=run_id,run_attempt=run_attempt)
     run_attempt=int(os.environ['GITHUB_RUN_ATTEMPT']) if run_attempt is None else run_attempt
     run_id=int(os.environ['GITHUB_RUN_ID']) if run_id is None else run_id
     require(gate in DIAGNOSTIC_GATES and owner_session==SUCCESSOR_OWNER
@@ -801,20 +1151,27 @@ def owned_diagnostic_control_scope(*,source_sha,source_tree,launch_receipt_url,o
         'diagnostic_binding':diagnostic_binding,'source':source,'fresh_ownership':owners,'ops':ops,
         'real_orders_sent':0,'DEPLOY_OWNER':'NOT_ACQUIRED','qualification_claimed':False}
 
-def diagnostic_actions_origin(sha,gate):
+def diagnostic_actions_origin(sha,gate,*,candidate=None,get=None):
+    branch=DIAGNOSTIC_BRANCH if candidate is None else candidate['branch']
     require(os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch' and os.environ.get('GITHUB_RUN_ATTEMPT')=='1'
         and os.environ.get('GITHUB_SHA')==os.environ.get('GITHUB_WORKFLOW_SHA')==sha
-        and os.environ.get('GITHUB_REF')=='refs/heads/'+DIAGNOSTIC_BRANCH
-        and os.environ.get('GITHUB_WORKFLOW_REF')==REPO+'/.github/workflows/rc6-unified-candidate-tests.yml@refs/heads/'+DIAGNOSTIC_BRANCH
+        and os.environ.get('GITHUB_REF')=='refs/heads/'+branch
+        and os.environ.get('GITHUB_WORKFLOW_REF')==REPO+'/.github/workflows/rc6-unified-candidate-tests.yml@refs/heads/'+branch
         and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and os.environ.get('RUNNER_OS')=='Linux'
         and os.environ.get('RUNNER_ARCH')=='X64','DIAGNOSTIC_EXACT_FIRST_ATTEMPT_STANDARD_ACTIONS_REQUIRED')
-    identifier=int(os.environ['GITHUB_RUN_ID']);run=api('/actions/runs/'+str(identifier))
-    require(run.get('id')==identifier and run.get('head_sha')==sha and run.get('head_branch')==DIAGNOSTIC_BRANCH
+    reader=get or api
+    identifier=int(os.environ['GITHUB_RUN_ID']);run=reader('/actions/runs/'+str(identifier))
+    require(run.get('id')==identifier and run.get('head_sha')==sha and run.get('head_branch')==branch
         and run.get('run_attempt')==1 and run.get('event')=='workflow_dispatch'
         and run.get('status')=='in_progress' and run.get('repository',{}).get('id')==REPO_ID
         and run.get('path')=='.github/workflows/rc6-unified-candidate-tests.yml',
         'DIAGNOSTIC_ACTUAL_ACTIONS_RUN_ORIGIN_REBOUND')
-    jobs=api('/actions/runs/'+str(identifier)+'/attempts/1/jobs?per_page=100')
+    if candidate is not None:
+        require(run.get('conclusion') is None and run.get('repository',{}).get('full_name')==REPO
+            and run.get('head_repository',{}).get('id')==REPO_ID
+            and run.get('display_title')=='RC6 material '+gate+' @ '+sha,
+            'DIAGNOSTIC_V2_EXACT_OWNED_ACTIONS_SOURCE_REQUIRED')
+    jobs=reader('/actions/runs/'+str(identifier)+'/attempts/1/jobs?per_page=100')
     require(jobs.get('total_count')==1 and type(jobs.get('jobs')) is list and len(jobs['jobs'])==1,
         'DIAGNOSTIC_SINGLE_ACTIONS_JOB_REQUIRED')
     job=jobs['jobs'][0]
@@ -825,7 +1182,11 @@ def diagnostic_actions_origin(sha,gate):
         'DIAGNOSTIC_ACTUAL_STANDARD_HOSTED_RUNNER_REQUIRED')
     return {'run':run,'job':job,'dedup':dedup_admission(sha,gate)}
 
-def admit_diagnostic(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now=None):
+def admit_diagnostic(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now=None,native_finished=False):
+    if owner_session!=SUCCESSOR_OWNER:
+        return admit_successor_diagnostic(source_sha=source_sha,source_tree=source_tree,
+            launch_receipt_url=launch_receipt_url,owner_session=owner_session,gate=gate,now=now,
+            native_finished=native_finished)
     require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
         and os.environ.get('GITHUB_REPOSITORY_ID')==str(REPO_ID),'ACTUAL_NONROOT_CANONICAL_ACTIONS_REQUIRED')
     require(gate in DIAGNOSTIC_GATES and owner_session==SUCCESSOR_OWNER,
@@ -847,6 +1208,337 @@ def admit_diagnostic(*,source_sha,source_tree,launch_receipt_url,owner_session,g
         'launch_receipt_url':launch_receipt_url,'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
         'source_manifest_sha256':auth['SOURCE_MANIFEST_SHA256'],'read_contract_sha256':auth['READ_CONTRACT_SHA256'],
         'scope':scope,'capability_prerequisite':prior,'fresh_ownership':owners,'ops':ops,'event_custody':custody,
+        'source':source,'actions_origin':origin,'material_gates':[],'qualification_claimed':False,
+        'mode':'PRODUCTION_PAPER / SIMULATION','real_orders_sent':0,'real_routes':'NOT_CALLED',
+        'ppi_watch':'UNTOUCHED','DEPLOY_OWNER':'NOT_ACQUIRED','runtime_validated':False,'final_candidate_eligible':False}
+
+
+class _ReadonlyRevisionGithub:
+    """Adapter exposes only the injected authenticated GET reader."""
+    def __init__(self,reader):self.reader=reader
+    def request(self,path):return self.reader(path)
+
+
+def successor_diagnostic_scope(auth,owner,anchors):
+    """Scope is derived from authentic released-transfer and paired launch."""
+    require(owner not in (RECOVERY_OWNER,SUCCESSOR_OWNER,CLOSURE_OWNER)
+        and type(owner) is str and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}',owner),
+        'DIAGNOSTIC_V2_AUTHENTIC_RELEASED_SUCCESSOR_REQUIRED')
+    anchor=fields(anchors[471]['body']);branch=auth.get('SOURCE_BRANCH','')
+    require(auth.get('AUTHORIZATION_SCHEMA')==DIAGNOSTIC_AUTHORIZATION_SCHEMA
+        and anchor.get('SESSION_SUCCESSOR')==owner and anchor.get('SUCCESSION_KIND')==RELEASED_SUCCESSION_KIND
+        and auth.get('WORKSTREAM_ID')==anchor.get('WORKSTREAM_ID')
+        and branch==anchor.get('BRANCH') and branch not in ('main',BASE,BRANCH,DIAGNOSTIC_BRANCH)
+        and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_./-]{0,199}',branch)
+        and '..' not in branch and all(part not in ('','.','..') and not part.endswith(('.','.lock'))
+            for part in branch.split('/'))
+        and all(re.fullmatch('[0-9a-f]{40}',anchor.get(key,'')) for key in ('BASE_SHA','SOURCE_TREE')),
+        'DIAGNOSTIC_V2_CURRENT_OWNER_BRANCH_WORKSTREAM_REQUIRED')
+    require(auth.get('SOURCE_WIP') in (None,branch) and auth.get('SOURCE_PR') is None
+        and auth.get('GATES_AUTHORIZED') is None
+        and auth.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION') is None,
+        'DIAGNOSTIC_V2_CANNOT_BORROW_CANDIDATE_OR_LEGACY_AUTHORITY')
+    return {'authorization_schema':DIAGNOSTIC_AUTHORIZATION_SCHEMA,'branch':branch,
+        'workstream_id':auth['WORKSTREAM_ID'],'owner_session':owner,
+        'lineage_base_sha':anchor['BASE_SHA'],'lineage_base_tree':anchor['SOURCE_TREE']}
+
+
+def _diagnostic_revision_pointer(auth,row,sha,tree,session,gate):
+    return {'schema':'porota.rc6.contract-owner-source-pointer.v2','revision':'PRIVATE_PID_BOUNDARY_V2',
+        'scope':gate,'source_sha':sha,'source_tree':tree,'owner_session':session,
+        'contract_sha256':auth['CONTRACT_DOCUMENT_SHA256'],'approval_url':row['html_url'],
+        'approval_body_sha256':hashlib.sha256(row['body'].encode()).hexdigest(),
+        'serialized_pointer_grants_authority':False,'native_equivalence_claimed':False,'qualification_claimed':False}
+
+
+def _authenticate_successor_revision(auth,row,sha,tree,session,gate,*,reader,now):
+    from scripts import rc6_contract_revisions as revisions
+    context=revisions.authenticate_revision(_ReadonlyRevisionGithub(reader),row['html_url'],
+        owner_session=session,revision='PRIVATE_PID_BOUNDARY_V2',scope=gate,
+        source_sha=sha,source_tree=tree,contract_sha256=auth['CONTRACT_DOCUMENT_SHA256'],now=now)
+    revisions.validate_revision_approval(context,revision='PRIVATE_PID_BOUNDARY_V2',scope=gate,
+        source_sha=sha,source_tree=tree,contract_sha256=auth['CONTRACT_DOCUMENT_SHA256'],now=now)
+    require(context.approval_body_sha256==hashlib.sha256(row['body'].encode()).hexdigest(),
+        'DIAGNOSTIC_V2_OWNER_ACCEPTANCE_BODY_REBOUND')
+    return context
+
+
+def successor_diagnostic_control_fields(row,sha,tree,session,gate,*,get=None,anchors=None,now=None,authenticate_contract=True):
+    """API-only paired diagnostic/explicit contract decision; no Source reads."""
+    reader=get or api;current=now or datetime.now(timezone.utc)
+    require(gate in DIAGNOSTIC_GATES and all(re.fullmatch('[0-9a-f]{40}',value or '') for value in (sha,tree)),
+        'DIAGNOSTIC_V2_EXACT_SOURCE_SCOPE_REQUIRED')
+    require(session not in (RECOVERY_OWNER,SUCCESSOR_OWNER,CLOSURE_OWNER)
+        and type(session) is str and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}',session),
+        'DIAGNOSTIC_V2_AUTHENTIC_RELEASED_SUCCESSOR_REQUIRED')
+    anchors=anchors or administrative_anchors(session,get=reader,now=current)
+    endpoint=comment(row.get('html_url'),471,get=reader)
+    require(same_immutable_comment(row,endpoint) and row['created_at']==row['updated_at'],
+        'DIAGNOSTIC_V2_UNEDITED_ENDPOINT_IDENTITY_REQUIRED')
+    auth=fields(row['body']);successor_diagnostic_scope(auth,session,anchors)
+    expected={'RC6_CAPACITY_DIAGNOSTIC_AUTHORIZATION':'APPROVED','DIAGNOSTIC_MODE':gate,
+        'SOURCE_SHA':sha,'SOURCE_TREE':tree,'SESSION_SUCCESSOR':session,'WRITE_OWNER':session,
+        'INTEGRATION_OWNER':session,'DEPLOY_OWNER':'NOT_ACQUIRED','RELEASED':'false',
+        'MODE':'PRODUCTION_PAPER / SIMULATION','real_orders_sent':'0',
+        'CONTRACT_REVISION':'PRIVATE_PID_BOUNDARY_V2','CONTRACT_SCOPE':gate,
+        'CONTRACT_ACCEPTANCE_SCHEMA':'porota.rc6.contract-revision-acceptance.v2',
+        'CONTRACT_ACCEPTANCE_LIFECYCLE':DIAGNOSTIC_CONTRACT_LIFECYCLE,
+        'CONTRACT_DECISION_ORIGIN':'EXPLICIT_OWNER_DECISION','RC6_CONTRACT_REVISION_AUTHORIZATION':'APPROVED',
+        'CONTRACT_GATES_ALREADY_GREEN':'false','NATIVE_EQUIVALENCE_FROM_APPROVAL_CLAIMED':'false',
+        'FINAL_CANDIDATE_ELIGIBLE':'false','DEPLOY_AUTHORIZATION':'NOT_GRANTED'}
+    require(all(auth.get(key)==value for key,value in expected.items()),
+        'DIAGNOSTIC_V2_EXPLICIT_SCOPED_OWNER_DECISION_REQUIRED')
+    require(all(re.fullmatch('[0-9a-f]{64}',auth.get(key,'')) for key in
+        ('READ_CONTRACT_SHA256','SOURCE_MANIFEST_SHA256','CONTRACT_DOCUMENT_SHA256')),
+        'DIAGNOSTIC_V2_EXACT_SOURCE_CONTRACT_DIGEST_REQUIRED')
+    twin_id=auth.get('OWNER_RECEIPT_473','')
+    require(re.fullmatch('[1-9][0-9]{0,9}',twin_id),'DIAGNOSTIC_V2_DUAL_OPERATION_RECEIPT_REQUIRED')
+    twin=comment('https://github.com/'+REPO+'/issues/473#issuecomment-'+twin_id,473,get=reader)
+    twin_fields=fields(twin['body'])
+    bindings=set(expected)|{'AUTHORIZATION_SCHEMA','WORKSTREAM_ID','SOURCE_BRANCH','READ_CONTRACT_SHA256',
+        'SOURCE_MANIFEST_SHA256','CONTRACT_DOCUMENT_SHA256','CONTRACT_ACCEPTANCE_SCHEMA',
+        'CAPACITY_DIAGNOSTIC_SCOPE_JSON','CAPACITY_DIAGNOSTIC_PREREQUISITES_JSON'}
+    require(twin['created_at']==twin['updated_at']
+        and hashlib.sha256(twin['body'].encode()).hexdigest()==auth.get('OWNER_RECEIPT_473_SHA256')
+        and all(twin_fields.get(key)==auth.get(key) for key in bindings)
+        and all(stamp(row['created_at'])>=stamp(anchor['created_at']) for anchor in anchors.values())
+        and all(stamp(twin['created_at'])>=stamp(anchor['created_at']) for anchor in anchors.values()),
+        'DIAGNOSTIC_V2_AUTHENTIC_PAIRED_OPERATION_REQUIRED')
+    scope=diagnostic_scope(gate,document(auth.get('CAPACITY_DIAGNOSTIC_SCOPE_JSON','null')))
+    prior=document(auth.get('CAPACITY_DIAGNOSTIC_PREREQUISITES_JSON','null'))
+    require((gate=='capacity-probe' and prior is None) or (gate=='capacity-calibration' and type(prior) is dict),
+        'DIAGNOSTIC_CALIBRATION_REQUIRES_ACTUAL_CAPABILITY_ARTIFACT')
+    # A Boolean, CI result, transfer or native-prerequisite authorization
+    # cannot replace the explicit paired contract decision authenticated here.
+    if authenticate_contract:
+        _authenticate_successor_revision(auth,row,sha,tree,session,gate,reader=reader,now=current)
+    return auth,scope,prior
+
+
+def frozen_private_pid_contract(repo,inventory):
+    """Canonical proposed contract comes from this exact frozen Source file."""
+    from scripts.rc6_private_pid_boundary import MEMBER
+    root=Path(repo).absolute();path=root/MEMBER
+    entry=next((item for item in inventory['files'] if item['path']==MEMBER),None)
+    require(entry is not None and not any(item.is_symlink() for item in (path,*path.parents)),
+        'DIAGNOSTIC_V2_FROZEN_CONTRACT_MODULE_REBOUND')
+    descriptor=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC)
+    try:
+        st=os.fstat(descriptor);before={key:getattr(st,key) for key in STAT11}
+        require(stat.S_ISREG(st.st_mode) and 0<st.st_size<=CONTROL_CAP,
+            'DIAGNOSTIC_V2_FROZEN_CONTRACT_FILE_BOUND')
+        raw=os.read(descriptor,CONTROL_CAP+1)
+        require(len(raw)==st.st_size and hashlib.sha256(raw).hexdigest()==entry['sha256']
+            and before=={key:getattr(os.fstat(descriptor),key) for key in STAT11}
+            =={key:getattr(path.lstat(),key) for key in STAT11},
+            'DIAGNOSTIC_V2_FROZEN_CONTRACT_MODULE_REBOUND')
+    finally:os.close(descriptor)
+    # Execute the one already authenticated capture, never reopen a mutable
+    # path between digest verification and extracting the canonical contract.
+    values={'__file__':str(path),'__name__':'_rc6_frozen_private_pid_contract'}
+    exec(compile(raw,str(path),'exec'),values)
+    require(values.get('REVISION')=='PRIVATE_PID_BOUNDARY_V2'
+        and callable(values.get('contract_sha256')),'DIAGNOSTIC_V2_EXACT_CONTRACT_IMPLEMENTATION_REQUIRED')
+    result=values['contract_sha256']()
+    require(re.fullmatch('[0-9a-f]{64}',result or ''),'DIAGNOSTIC_V2_CANONICAL_CONTRACT_DIGEST_REQUIRED')
+    return result
+
+
+def fresh_successor_diagnostic_source(sha,tree,candidate,*,get=None):
+    """READ_ONLY ref/commit lineage of the actual released successor branch."""
+    require(type(candidate) is dict and set(candidate)=={'authorization_schema','branch','workstream_id',
+        'owner_session','lineage_base_sha','lineage_base_tree'}
+        and candidate['authorization_schema']==DIAGNOSTIC_AUTHORIZATION_SCHEMA
+        and all(re.fullmatch('[0-9a-f]{40}',value or '') for value in
+            (sha,tree,candidate['lineage_base_sha'],candidate['lineage_base_tree'])),
+        'DIAGNOSTIC_V2_AUTHENTICATED_SOURCE_SCOPE_REQUIRED')
+    reader=get or api;branch=candidate['branch']
+    repository=reader('');ref=reader('/git/ref/heads/'+branch);commit=reader('/git/commits/'+sha)
+    require(repository.get('id')==REPO_ID and repository.get('full_name')==REPO
+        and repository.get('private') is False and ref.get('object',{}).get('sha')==sha
+        and commit.get('sha')==sha and commit.get('tree',{}).get('sha')==tree,
+        'DIAGNOSTIC_V2_CURRENT_BRANCH_HEAD_TREE_REBOUND')
+    lineage=[]
+    for _ in range(32):
+        if commit['sha']==candidate['lineage_base_sha']:break
+        parents=commit.get('parents')
+        require(type(parents) is list and len(parents)==1 and re.fullmatch('[0-9a-f]{40}',parents[0].get('sha','')),
+            'DIAGNOSTIC_V2_SINGLE_PARENT_FIX_FORWARD_REQUIRED')
+        lineage.append(commit['sha']);commit=reader('/git/commits/'+parents[0]['sha'])
+        require(commit.get('sha')==parents[0]['sha'],'DIAGNOSTIC_V2_GIT_PARENT_REBOUND')
+    else:raise ValueError('DIAGNOSTIC_V2_FIX_FORWARD_LINEAGE_LIMIT')
+    require(bool(lineage) and commit.get('tree',{}).get('sha')==candidate['lineage_base_tree'],
+        'DIAGNOSTIC_V2_AUTHENTIC_RELEASE_BASE_TREE_REQUIRED')
+    return {'wip_branch':branch,'source_sha':sha,'source_tree':tree,
+        'single_parent_fix_forward_lineage':lineage,'lineage_base_sha':candidate['lineage_base_sha'],
+        'lineage_base_tree':candidate['lineage_base_tree'],'repository_public_verified':True,
+        'anonymous_source_origin':'https://github.com/'+REPO+'.git','qualification_claimed':False}
+
+
+def authenticate_capability_reference(reference,sha,tree,auth,*,reader,now=None):
+    """Authenticate origin only; native bytes are still mandatory in issuer.
+
+    No producer/image may start until verify_capacity_capability_artifact has
+    downloaded and replayed the original quota/EDQUOT/FIN controls. This API
+    precheck never turns a receipt-shaped object or Actions success into proof.
+    """
+    require(type(reference) is dict and reference.get('source_sha')==sha and reference.get('source_tree')==tree
+        and reference.get('contract_revision')=='PRIVATE_PID_BOUNDARY_V2'
+        and reference.get('contract_document_sha256')==auth['CONTRACT_DOCUMENT_SHA256']
+        and type(reference.get('artifact_id')) is int and reference['artifact_id']>0
+        and type(reference.get('run_id')) is int and reference['run_id']>0
+        and type(reference.get('run_attempt')) is int and reference['run_attempt']==1
+        and re.fullmatch('sha256:[0-9a-f]{64}',reference.get('artifact_digest',''))
+        and reference.get('receipt_member')=='diagnostic-result.json'
+        and re.fullmatch('[0-9a-f]{64}',reference.get('receipt_sha256','')),
+        'DIAGNOSTIC_V2_BOOTSTRAP_REQUIRES_EXACT_NATIVE_CAPABILITY_ARTIFACT')
+    from scripts.rc6_architectural_gates import artifact_origin,actions_runner_origin
+    artifact=reader('/actions/artifacts/'+str(reference['artifact_id']))
+    run=reader('/actions/runs/'+str(reference['run_id']))
+    attempt=reader('/actions/runs/'+str(reference['run_id'])+'/attempts/1')
+    artifact_origin(reference,artifact,run,attempt,source_sha=sha)
+    branch=auth['SOURCE_BRANCH']
+    require(run.get('path')=='.github/workflows/rc6-unified-candidate-tests.yml'
+        and run.get('event')=='workflow_dispatch' and run.get('head_branch')==branch
+        and run.get('display_title')=='RC6 material capacity-probe @ '+sha,
+        'DIAGNOSTIC_V2_CAPABILITY_ACTUAL_PROBE_BRANCH_REQUIRED')
+    actions_runner_origin(reader('/actions/runs/'+str(reference['run_id'])+'/attempts/1/jobs?per_page=100'),
+        run_id=reference['run_id'])
+    return {'artifact_id':reference['artifact_id'],'run_id':reference['run_id'],
+        'source_sha':sha,'source_tree':tree,'artifact_origin_authenticated':True,
+        'native_payload_verification_required':True,'capability_proved_from_metadata':False,'qualification_claimed':False}
+
+
+def reauthenticate_diagnostic_revision(admission_row,*,get=None,now=None,repo=ROOT):
+    """Issue in-process approval after independently re-reading the pointer.
+
+    The serialized admission is only a Source-bound lookup. It is never a
+    constructor, native equivalence proof or quota-launch flag for an issuer.
+    """
+    require(type(admission_row) is dict and admission_row.get('schema')==DIAGNOSTIC_ADMISSION_SCHEMA
+        and admission_row.get('status')=='ADMITTED_DIAGNOSTIC_NOT_STARTED'
+        and admission_row.get('qualification_claimed') is False,
+        'DIAGNOSTIC_V2_SOURCE_POINTER_REQUIRED')
+    reader=get or api;current=now or datetime.now(timezone.utc)
+    sha,tree,owner,gate=(admission_row[key] for key in ('source_sha','source_tree','owner_session','gate'))
+    launch=comment(admission_row.get('launch_receipt_url'),471,get=reader)
+    auth,scope,prior=diagnostic_launch_fields(launch,sha,tree,owner,gate,repo=repo,get=reader,now=current)
+    anchors=administrative_anchors(owner,get=reader,now=current)
+    owner_scope=successor_diagnostic_scope(auth,owner,anchors)
+    require(admission_row.get('contract_revision_binding')==_diagnostic_revision_pointer(auth,launch,sha,tree,owner,gate)
+        and admission_row.get('diagnostic_owner_scope')==owner_scope
+        and admission_row.get('launch_body_sha256')==hashlib.sha256(launch['body'].encode()).hexdigest()
+        and admission_row.get('scope')==scope and admission_row.get('capability_prerequisite')==prior,
+        'DIAGNOSTIC_V2_SERIALIZED_SOURCE_POINTER_REBOUND')
+    fresh_diagnostic_source(sha,tree,get=reader,candidate=owner_scope)
+    return _authenticate_successor_revision(auth,launch,sha,tree,owner,gate,reader=reader,now=current)
+
+
+def _successor_diagnostic_owners(auth,owner,sha,tree,*,anchors,reader,now):
+    timelines={issue:recent(issue,anchors[issue],now,get=reader) for issue in (471,473)}
+    owners={str(issue):latest_writer(timelines[issue],issue,sha,tree,owner,now) for issue in (471,473)}
+    require(all(fields(row['body']).get('WORKSTREAM_ID')==auth['WORKSTREAM_ID']
+        for issue in (471,473) for row in timelines[issue] if row['id']==owners[str(issue)]['comment_id']),
+        'DIAGNOSTIC_V2_LIVE_WORKSTREAM_REBOUND')
+    return owners
+
+
+def _successor_diagnostic_decision_not_revoked(auth,launch,owner,*,anchors,reader,now):
+    """Re-read updated history; a later lease cannot hide owner revocation."""
+    since=stamp(launch['created_at'])
+    for issue in (471,473):
+        for row in recent(issue,anchors[issue],now,get=reader):
+            value=fields(row['body'])
+            if (row['user']['login']=='mbalbo2023' and effective_stamp(row)>=since
+                    and value.get('SOURCE_SHA')==auth['SOURCE_SHA']
+                    and value.get('CONTRACT_REVISION')=='PRIVATE_PID_BOUNDARY_V2'
+                    and value.get('CONTRACT_SCOPE') in (auth['DIAGNOSTIC_MODE'],'ALL')):
+                require(value.get('RC6_CONTRACT_REVISION_AUTHORIZATION') not in
+                    ('REVOKED','NOT_GRANTED','REJECTED','CANCELLED')
+                    and value.get('RC6_CAPACITY_DIAGNOSTIC_AUTHORIZATION') not in
+                    ('REVOKED','NOT_GRANTED','REJECTED','CANCELLED'),
+                    'DIAGNOSTIC_V2_OWNER_CONTRACT_OR_LAUNCH_REVOKED')
+
+
+def owned_successor_diagnostic_control_scope(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,
+        now,get,diagnostic_binding,run_id=None,run_attempt=None):
+    """API-only live V2 read; all authority is freshly authenticated."""
+    attempt=int(os.environ['GITHUB_RUN_ATTEMPT']) if run_attempt is None else run_attempt
+    identifier=int(os.environ['GITHUB_RUN_ID']) if run_id is None else run_id
+    require(gate in DIAGNOSTIC_GATES and type(attempt) is int and attempt==1
+        and type(identifier) is int and identifier>0,'DIAGNOSTIC_V2_FIRST_NATIVE_ATTEMPT_REQUIRED')
+    anchors=administrative_anchors(owner_session,get=get,now=now)
+    launch=comment(launch_receipt_url,471,get=get)
+    # Initial/prelaunch admission separately mints the short-lived typed
+    # approval. Polling preserves that launch's immutable explicit acceptance
+    # only under its owner-approved lifecycle and a fresh independent lease.
+    # It neither renews the expired lease in the original comment nor mints
+    # an approval. Its exact pins must match the earlier full admission.
+    auth,scope,prior=successor_diagnostic_control_fields(launch,source_sha,source_tree,owner_session,gate,
+        get=get,anchors=anchors,now=now,authenticate_contract=False)
+    owner_scope=successor_diagnostic_scope(auth,owner_session,anchors)
+    pointer=_diagnostic_revision_pointer(auth,launch,source_sha,source_tree,owner_session,gate)
+    expected={'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
+        'source_manifest_sha256':auth['SOURCE_MANIFEST_SHA256'],'read_contract_sha256':auth['READ_CONTRACT_SHA256'],
+        'scope':scope,'capability_prerequisite':prior,'authorization_schema':DIAGNOSTIC_AUTHORIZATION_SCHEMA,
+        'diagnostic_owner_scope':owner_scope,'contract_revision_binding':pointer}
+    require(type(diagnostic_binding) is dict and diagnostic_binding==expected,
+        'DIAGNOSTIC_V2_FULL_ADMISSION_PINS_REBOUND')
+    source=fresh_diagnostic_source(source_sha,source_tree,get=get,candidate=owner_scope)
+    owners=_successor_diagnostic_owners(auth,owner_session,source_sha,source_tree,anchors=anchors,reader=get,now=now)
+    _successor_diagnostic_decision_not_revoked(auth,launch,owner_session,anchors=anchors,reader=get,now=now)
+    recovery=recovery_anchors(RECOVERY_OWNER,get=get)
+    ops=ops_admission(auth,owner_session,now,recovery,get=get)
+    run=get('/actions/runs/'+str(identifier)+'/attempts/1')
+    require(run.get('id')==identifier and run.get('run_attempt')==1 and run.get('head_sha')==source_sha
+        and run.get('head_branch')==owner_scope['branch'] and run.get('event')=='workflow_dispatch'
+        and run.get('status')=='in_progress' and run.get('conclusion') is None
+        and run.get('repository',{}).get('id')==REPO_ID and run['repository'].get('full_name')==REPO
+        and run.get('head_repository',{}).get('id')==REPO_ID
+        and run.get('path')=='.github/workflows/rc6-unified-candidate-tests.yml',
+        'OWNED_DIAGNOSTIC_V2_ACTIONS_CANCELLED_OR_REBOUND')
+    return {'source_sha':source_sha,'source_tree':source_tree,'owner_session':owner_session,'gate':gate,
+        'run_id':identifier,'run_attempt':1,'read_utc':now.isoformat().replace('+00:00','Z'),
+        'launch_receipt_url':launch_receipt_url,'launch_body_sha256':expected['launch_body_sha256'],
+        'diagnostic_binding':diagnostic_binding,'source':source,'fresh_ownership':owners,'ops':ops,
+        'workstream_id':owner_scope['workstream_id'],'real_orders_sent':0,'DEPLOY_OWNER':'NOT_ACQUIRED',
+        'qualification_claimed':False}
+
+
+def admit_successor_diagnostic(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now=None,
+                               native_finished=False):
+    """Separate V2 path; legacy accepted admission/replay bytes stay intact."""
+    require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
+        and os.environ.get('GITHUB_REPOSITORY_ID')==str(REPO_ID),'ACTUAL_NONROOT_CANONICAL_ACTIONS_REQUIRED')
+    require(gate in DIAGNOSTIC_GATES and owner_session not in (RECOVERY_OWNER,SUCCESSOR_OWNER,CLOSURE_OWNER)
+        and type(owner_session) is str and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}',owner_session),
+        'DIAGNOSTIC_V2_AUTHENTIC_RELEASED_SUCCESSOR_REQUIRED')
+    current=now or datetime.now(timezone.utc)
+    branch=os.environ.get('GITHUB_REF','').removeprefix('refs/heads/')
+    event,event_custody=actual_event(gate,diagnostic_branch=branch)
+    require(event.get('inputs',{}).get('source_sha')==source_sha and event['inputs'].get('source_tree')==source_tree
+        and event['inputs'].get('launch_receipt_url')==launch_receipt_url
+        and event['inputs'].get('owner_session')==owner_session,'DIAGNOSTIC_EVENT_LAUNCH_BINDING_REBOUND')
+    anchors=administrative_anchors(owner_session,now=current)
+    launch=comment(launch_receipt_url,471)
+    auth,scope,prior=diagnostic_launch_fields(launch,source_sha,source_tree,owner_session,gate,
+        anchors=anchors,now=current,native_finished=native_finished)
+    owner_scope=successor_diagnostic_scope(auth,owner_session,anchors)
+    require(branch==owner_scope['branch'],'DIAGNOSTIC_V2_DISPATCH_BRANCH_REBOUND')
+    source=fresh_diagnostic_source(source_sha,source_tree,candidate=owner_scope)
+    origin=diagnostic_actions_origin(source_sha,gate,candidate=owner_scope)
+    owners=_successor_diagnostic_owners(auth,owner_session,source_sha,source_tree,anchors=anchors,reader=api,now=current)
+    _successor_diagnostic_decision_not_revoked(auth,launch,owner_session,anchors=anchors,reader=api,now=current)
+    recovery=recovery_anchors(RECOVERY_OWNER)
+    ops=ops_admission(auth,owner_session,current,recovery)
+    return {'schema':DIAGNOSTIC_ADMISSION_SCHEMA,'authorization_schema':DIAGNOSTIC_AUTHORIZATION_SCHEMA,
+        'status':('CAPTURE_ONLY_NATIVE_ALREADY_FINISHED' if native_finished else
+            'ADMITTED_DIAGNOSTIC_NOT_STARTED'),'source_sha':source_sha,'source_tree':source_tree,
+        'gate':gate,'owner_session':owner_session,'workstream_id':owner_scope['workstream_id'],
+        'diagnostic_owner_scope':owner_scope,'contract_revision_binding':_diagnostic_revision_pointer(auth,launch,source_sha,source_tree,owner_session,gate),
+        'launch_receipt_url':launch_receipt_url,'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
+        'source_manifest_sha256':auth['SOURCE_MANIFEST_SHA256'],'read_contract_sha256':auth['READ_CONTRACT_SHA256'],
+        'scope':scope,'capability_prerequisite':prior,'fresh_ownership':owners,'ops':ops,'event_custody':event_custody,
         'source':source,'actions_origin':origin,'material_gates':[],'qualification_claimed':False,
         'mode':'PRODUCTION_PAPER / SIMULATION','real_orders_sent':0,'real_routes':'NOT_CALLED',
         'ppi_watch':'UNTOUCHED','DEPLOY_OWNER':'NOT_ACQUIRED','runtime_validated':False,'final_candidate_eligible':False}
