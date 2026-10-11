@@ -1,6 +1,6 @@
 # RC6 G5A/G5B — decisión arquitectónica y bloqueo de admisión
 
-Fecha: 2026-10-11 UTC. Estado: **DECISIÓN PROPUESTA / G5A NO-GO / SIN AUTORIZACIÓN MATERIAL**. Este documento es el registro de la misión `WS-RC6-G5A-ARCHITECTURE-DECISION-20261011`; no acepta un contrato por cuenta del propietario. [Ownership #471](https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6109851080) y [recibo #473](https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6109852807). Sólo se modifica este archivo en una rama documental aislada con PR hacia el candidato; no se modifica la rama productiva ni el código de #483.
+Fecha: 2026-10-11 UTC. Estado: **DECISIÓN PROPUESTA / G5A NO-GO / SIN AUTORIZACIÓN MATERIAL**. Este documento es el registro de la misión `WS-RC6-G5A-ARCHITECTURE-DECISION-20261011`; no acepta un contrato por cuenta del propietario. [Ownership #471](https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6109851080) y [recibo #473](https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6109852807). Se modifican únicamente este documento y el [registro ERR-RC6-064](RC6_ERROR_REGISTRY.md) en una rama documental aislada con PR hacia el candidato; no se modifica la rama productiva ni el código de #483.
 
 ## Identidad y jerarquía de evidencia
 
@@ -22,6 +22,8 @@ Fecha: 2026-10-11 UTC. Estado: **DECISIÓN PROPUESTA / G5A NO-GO / SIN AUTORIZAC
 El [carrier actual](../../scripts/rc6_g5a_carrier.py) crea `namespace.path/image.ext4` y ejecuta `posix_fallocate(fd, 0, 26 * 2^30)`, `fsync` y una comprobación de `st_blocks * 512 >= 26 * 2^30`. [Preparation](../../scripts/rc6_g5a_actions.py) crea `native_parent` bajo `root`, y `root` bajo `work_parent`, que debe estar dentro del proyecto agregado. [Límites](../../scripts/rc6_g5a_native_runner.py): imagen `26 * 2^30` bytes físicos; cuota de proyecto `20 * 2^30` bytes. Una cuota agregada efectiva que cobre el archivo exige al menos `26 * 2^30` bytes sólo para ese inode; el máximo es `20 * 2^30`. La diferencia es `6 * 2^30 = 6.442.450.944` bytes, incluso antes de directorios, metadata, RAW y controles. Con proyecto vacío, la reserva física completa debe fallar por cuota; si no falla, esa cuota no ha demostrado cobrarla. Sparse/truncate no cumple la reserva física, y reflinks o compresión no prueban los 26 GiB físicos originales.
 
 Mover `image.ext4` fuera del proyecto hace posible reservarla, pero deja sus 26 GiB y sus escrituras fuera del límite agregado de 20 GiB. **Por sí solo no resuelve el contrato.** No existe una implementación que satisfaga simultáneamente estas tres proposiciones: (1) imagen de 26 GiB físicos, (2) imagen cargada a la misma cuota agregada efectiva de 20 GiB y (3) cuota que nunca permita exceder 20 GiB. Esto es un bloqueo lógico, independiente del runner. La cuota privada dentro de la imagen tampoco cobra su backing file al proyecto anfitrión de 20 GiB.
+
+El hallazgo, RCA y lección de no contar futuras excepciones como enforcement están registrados en [ERR-RC6-064](RC6_ERROR_REGISTRY.md).
 
 ## Una arquitectura seleccionada, condicionada a revisión expresa
 
