@@ -231,6 +231,17 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
         blocked=carrier.document((control/'bootstrap.g5p-capacity.json').read_bytes())
         self.assertEqual(blocked['status'],'BLOCKED')
         self.assertEqual(blocked['bootstrap_reserve_bytes'],4*1024**3)
+        self.assertEqual(blocked['blocked_reasons'],
+            ['BOOTSTRAP_OR_NATIVE_FREE_BYTES_BELOW_MEASURED_ENVELOPE'])
+
+    def test_first_capacity_red_preserves_the_original_measurement(self):
+        workflow=(Path(__file__).resolve().parents[1]/
+            '.github/workflows/rc6-unified-candidate-tests.yml').read_text()
+        admission=workflow.split('name: Preserve bounded admission controls on every terminal path',1)[1]
+        admission=admission.split('name: Preserve native custody controls on every terminal path',1)[0]
+        self.assertIn('${{ steps.admit.outputs.control_root }}/tooling-controls/*.json',
+            admission)
+        self.assertIn('if: always()',admission)
 
 
 class PaperV3ProducerTests(unittest.TestCase):

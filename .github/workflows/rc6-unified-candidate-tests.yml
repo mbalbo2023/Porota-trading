@@ -212,7 +212,9 @@ jobs:
           name: rc6-admission-${{ env.RC6_SOURCE_SHA }}-${{ env.RC6_GATE }}-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 14
-          path: ${{ steps.admit.outputs.control_root }}/*.json
+          path: |
+            ${{ steps.admit.outputs.control_root }}/*.json
+            ${{ steps.admit.outputs.control_root }}/tooling-controls/*.json
       - name: Preserve native custody controls on every terminal path
         if: always() && steps.gate.outputs.control_root != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

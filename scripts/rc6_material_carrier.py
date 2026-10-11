@@ -127,8 +127,12 @@ def g5p_preflight(a,run,path,label,*,bootstrap=False):
     memory_limit=cgroup.read_text().strip() if cgroup.exists() else 'unknown'
     memory_ok=memory_limit=='max' or memory_limit.isdigit() and int(memory_limit)>=2*1024**3
     reserve=(4 if bootstrap else 2)*1024**3
-    green=(free>=required+reserve and inode_ratio>=.1
-           and fs.f_favail>=5000 and memory_ok)
+    blocked_reasons=[]
+    if free<required+reserve:blocked_reasons.append('BOOTSTRAP_OR_NATIVE_FREE_BYTES_BELOW_MEASURED_ENVELOPE')
+    if inode_ratio<.1:blocked_reasons.append('FREE_INODE_RATIO_BELOW_10_PERCENT')
+    if fs.f_favail<5000:blocked_reasons.append('FREE_INODES_BELOW_5000')
+    if not memory_ok:blocked_reasons.append('CGROUP_MEMORY_CEILING_BELOW_2GIB_OR_UNKNOWN')
+    green=not blocked_reasons
     row={'schema':'rc6.g5p-v3-physical-preflight.v1','status':'GREEN' if green else 'BLOCKED',
          'source_sha':a.source_sha,'source_tree':a.source_tree,'owner_session':a.owner_session,
          'run_id':int(os.environ['GITHUB_RUN_ID']),'run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
@@ -142,10 +146,12 @@ def g5p_preflight(a,run,path,label,*,bootstrap=False):
          'measured_free_bytes':free,'measured_free_inodes':fs.f_favail,
          'measured_total_inodes':fs.f_files,'cgroup_memory_max':memory_limit,
          'memory_ceiling_at_least_native_rss':memory_ok,
+         'blocked_reasons':blocked_reasons,
          'G5A_project_quota_required':False,'real_orders_sent':0,
          'measured_at_unix_ns':time.time_ns()}
     save(run.control/(label+'.g5p-capacity.json'),row)
-    need(green,'G5P_V3_ACTUAL_CAPACITY_PREFLIGHT_BLOCKED')
+    if not green:print(json.dumps({'G5P_V3_CAPACITY_PREFLIGHT':row},sort_keys=True),flush=True)
+    need(green,'G5P_V3_ACTUAL_CAPACITY_PREFLIGHT_BLOCKED:'+','.join(blocked_reasons))
     record={'label':label,'measured_path':str(path),
             'before':{'path':'controls/'+label+'.g5p-capacity.json',
                       'sha256':digest(canonical(row))},
