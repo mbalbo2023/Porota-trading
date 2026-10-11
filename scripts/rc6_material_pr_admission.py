@@ -1059,11 +1059,12 @@ def _admit_source_scope(*,source_sha,source_tree=None,launch_receipt_url=None,ow
     owner=auth['SESSION_SUCCESSOR'];owners={str(issue):latest_writer(timelines[issue],issue,source_sha,tree,owner,now) for issue in (471,473)}
     ops=ops_admission(auth,owner,now,anchors)
     if g5p_approval is not None:
-        from scripts import rc6_contract_revisions as revisions
-        from scripts.rc6_g5p_model import DOCUMENT_SHA256
-        revisions.validate_revision_approval(g5p_approval,revision='PAPER_V3_ONLY_G5P_V1',
-            scope='G5P_V3_MATERIAL',source_sha=source_sha,source_tree=tree,
-            contract_sha256=DOCUMENT_SHA256)
+        # The complete read-only Source/owner/ops/dedup walk may exceed the
+        # acceptance object's deliberately short 30-second in-process TTL.
+        # Reauthenticate the same immutable decision and live owner here,
+        # immediately before consuming a fresh context. Never extend TTL.
+        g5p_approval=refresh_g5p_revision_for_final_admission(
+            auth,g5p_approval,source_sha,tree,owner)
         require(g5p_approval.owner_session==owner,
                 'G5P_APPROVAL_CANNOT_REBIND_EXCLUSIVE_OWNER')
         manifest=document(auth.get('PREREQUISITES_MANIFEST_JSON','null'))
@@ -1123,6 +1124,24 @@ def authenticate_g5p_revision(fields_row,source_sha,source_tree,owner_session,no
         revision='PAPER_V3_ONLY_G5P_V1',scope='G5P_V3_MATERIAL',
         source_sha=source_sha,source_tree=source_tree,
         contract_sha256=DOCUMENT_SHA256,now=now)
+
+
+def refresh_g5p_revision_for_final_admission(auth,original,source_sha,source_tree,owner):
+    from scripts import rc6_contract_revisions as revisions
+    from scripts.rc6_g5p_model import DOCUMENT_SHA256
+    require(original.owner_session==owner
+        and original.approval_url==auth.get('G5P_REVISION_APPROVAL_URL'),
+        'G5P_INITIAL_ACCEPTANCE_OWNER_OR_POINTER_REBOUND')
+    fresh=authenticate_g5p_revision(auth,source_sha,source_tree,owner)
+    require(fresh.approval_url==original.approval_url
+        and fresh.approval_body_sha256==original.approval_body_sha256
+        and fresh.paired_comment_id==original.paired_comment_id
+        and fresh.paired_body_sha256==original.paired_body_sha256,
+        'G5P_DECISION_BYTES_CHANGED_DURING_LONG_ADMISSION')
+    revisions.validate_revision_approval(fresh,revision='PAPER_V3_ONLY_G5P_V1',
+        scope='G5P_V3_MATERIAL',source_sha=source_sha,source_tree=source_tree,
+        contract_sha256=DOCUMENT_SHA256)
+    return fresh
 
 
 def validate_g5p_acquisition_manifest(manifest,source_sha,source_tree,owner,approval_url):

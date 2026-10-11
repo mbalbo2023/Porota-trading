@@ -26,6 +26,7 @@ from scripts.porota_predeploy_binding import BindingRejected, verify_g8_report
 from scripts import rc6_material_carrier as carrier
 from scripts import rc6_material_pr_admission as admission
 from scripts import rc6_contract_revisions as revisions
+from scripts.rc6_g5p_model import DOCUMENT_SHA256
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
@@ -64,7 +65,7 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
             'CONTRACT_DECISION_ORIGIN':'EXPLICIT_OWNER_DECISION',
             'CONTRACT_REVISION':'PAPER_V3_ONLY_G5P_V1',
             'CONTRACT_SCOPE':'G5P_V3_MATERIAL',
-            'CONTRACT_DOCUMENT_SHA256':'c'*64,
+            'CONTRACT_DOCUMENT_SHA256':DOCUMENT_SHA256,
             'CONTRACT_GATES_ALREADY_GREEN':'false',
             'NATIVE_EQUIVALENCE_FROM_APPROVAL_CLAIMED':'false',
             'FINAL_CANDIDATE_ELIGIBLE':'false',
@@ -84,7 +85,7 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
                 return {'/issues/comments/15':decision,'/issues/comments/16':twin,
                         '/actions/runs/123/attempts/1':run}[_path]
         binding={'revision':'PAPER_V3_ONLY_G5P_V1','scope':'G5P_V3_MATERIAL',
-                 'source_sha':'a'*40,'source_tree':'b'*40,'contract_sha256':'c'*64}
+                 'source_sha':'a'*40,'source_tree':'b'*40,'contract_sha256':DOCUMENT_SHA256}
         with patch.dict(os.environ,{'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1','GITHUB_ACTIONS':'true'}),\
              patch.object(revisions,'verify_owner',return_value=hashlib.sha256(decision_body.encode()).hexdigest()) as verify,\
              patch.object(revisions,'_g5p_decision_not_revoked'):
@@ -93,6 +94,20 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
             self.assertIs(revisions.validate_revision_approval(context,now=current,**binding),context)
             with self.assertRaisesRegex(ValueError,'CONTRACT_ACCEPTANCE_EXPIRED'):
                 revisions.validate_revision_approval(context,now=current+timedelta(seconds=31),**binding)
+            fresh=revisions.authenticate_revision(Github(),url,owner_session='OWNER',
+                now=datetime.now(timezone.utc),**binding)
+            with patch.object(admission,'authenticate_g5p_revision',return_value=fresh) as recheck:
+                renewed=admission.refresh_g5p_revision_for_final_admission(
+                    {'G5P_REVISION_APPROVAL_URL':url},context,'a'*40,'b'*40,'OWNER')
+                self.assertIs(renewed,fresh)
+                recheck.assert_called_once()
+            changed=SimpleNamespace(approval_url=url,approval_body_sha256='0'*64,
+                paired_comment_id=fresh.paired_comment_id,
+                paired_body_sha256=fresh.paired_body_sha256)
+            with patch.object(admission,'authenticate_g5p_revision',return_value=changed),\
+                 self.assertRaisesRegex(ValueError,'DECISION_BYTES_CHANGED_DURING_LONG_ADMISSION'):
+                admission.refresh_g5p_revision_for_final_admission(
+                    {'G5P_REVISION_APPROVAL_URL':url},context,'a'*40,'b'*40,'OWNER')
             run['run_started_at']=stamp(opened+timedelta(minutes=11))
             with self.assertRaisesRegex(ValueError,'G5P_LONG_RUN_INITIAL_DECISION_NOT_LIVE'):
                 revisions.authenticate_revision(Github(),url,owner_session='OWNER',now=current,**binding)
