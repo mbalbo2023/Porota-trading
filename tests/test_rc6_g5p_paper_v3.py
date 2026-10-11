@@ -33,6 +33,34 @@ from scripts import rc6_owned_gate_lease as lease
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_g5p_concurrent_owner_comment_restarts_only_one_complete_read(self):
+        args={'source_sha':'a'*40,'source_tree':'b'*40,
+            'launch_receipt_url':'https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
+            'owner_session':'CODEX_G5P_TEST','gate':'G5P-acquire'}
+        with patch.object(admission,'_admit_g5p_once',side_effect=[
+            ValueError('OWNERSHIP_COMMENT_FUTURE_TIMESTAMP'),{'status':'ADMITTED_NATIVE_NOT_STARTED'}]) as read:
+            row=admission.admit_g5p(**args)
+            self.assertEqual(row['owner_read_consistency_restart_count'],1)
+            self.assertEqual(read.call_count,2)
+            self.assertIsNone(read.call_args_list[0].kwargs['now'])
+            self.assertIsNotNone(read.call_args_list[1].kwargs['now'].tzinfo)
+        with patch.object(admission,'_admit_g5p_once',side_effect=[
+            ValueError('OWNERSHIP_COMMENT_FUTURE_TIMESTAMP'),
+            ValueError('G5P_LONG_RUN_CONTRACT_DECISION_REVOKED')]) as read:
+            with self.assertRaisesRegex(ValueError,'CONTRACT_DECISION_REVOKED'):
+                admission.admit_g5p(**args)
+            self.assertEqual(read.call_count,2)
+        with patch.object(admission,'_admit_g5p_once',side_effect=ValueError(
+                'OWNERSHIP_COMMENT_FUTURE_TIMESTAMP')) as read:
+            with self.assertRaisesRegex(ValueError,'FUTURE_TIMESTAMP'):
+                admission.admit_g5p(**args,now=datetime.now(timezone.utc))
+            read.assert_called_once()
+        with patch.object(admission,'_admit_g5p_once',side_effect=ValueError(
+                'LATEST_WRITER_OR_DEPLOY_OWNER_CONFLICT')) as read:
+            with self.assertRaisesRegex(ValueError,'DEPLOY_OWNER_CONFLICT'):
+                admission.admit_g5p(**args)
+            read.assert_called_once()
+
     def test_g5p_owned_lease_http_budget_is_finite_and_legacy_unchanged(self):
         self.assertEqual(lease.http_budget_for_gate('G5P-acquire'),45)
         self.assertEqual(lease.http_budget_for_gate('G5P-certify'),45)

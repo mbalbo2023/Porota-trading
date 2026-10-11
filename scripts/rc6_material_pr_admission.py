@@ -1159,6 +1159,27 @@ def validate_g5p_acquisition_manifest(manifest,source_sha,source_tree,owner,appr
 
 
 def admit_g5p(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now=None):
+    """Restart one read-only G5P admission if an owner comment arrives mid-read.
+
+    Every attempt reauthenticates the original decision and complete live
+    Source/owner/OPS state. An actual revocation, expiry or second concurrent
+    update still fails; this never retries a producer or native command.
+    """
+    for attempt in range(2):
+        try:
+            row=_admit_g5p_once(source_sha=source_sha,source_tree=source_tree,
+                launch_receipt_url=launch_receipt_url,owner_session=owner_session,
+                gate=gate,now=now if attempt==0 else datetime.now(timezone.utc))
+            if attempt:row['owner_read_consistency_restart_count']=attempt
+            return row
+        except ValueError as error:
+            if (now is not None or attempt or
+                    str(error)!='OWNERSHIP_COMMENT_FUTURE_TIMESTAMP'):
+                raise
+    raise AssertionError('G5P_OWNER_READ_RESTART_UNREACHABLE')
+
+
+def _admit_g5p_once(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now=None):
     require(gate in ('G5P-acquire','G5P-certify')
             and os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch'
             and os.environ.get('GITHUB_ACTIONS')=='true'
