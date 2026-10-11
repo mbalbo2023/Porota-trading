@@ -169,6 +169,41 @@ class HistoricalOwnerReleaseTests(TestCase):
                 admission.latest_writer([owner,dict(sre,body=changed)],471,
                     "a"*40,"b"*40,"CODEX_OWNER",now)
 
+    def test_sre_deploy_release_then_scoped_writer_reacquisition(self):
+        session="WORK_RC6_SRE_20261011_1740Z"
+        workstream="WS-RC6-SRE-REPAIR-DISK-DEEP-20261011"
+        prefix=f"WORKSTREAM_ID={workstream}\nSESSION={session}\n"
+        active=self.row(1,1,prefix+f"WRITE_OWNER={session}\n"
+            f"INTEGRATION_OWNER={session}\nDEPLOY_OWNER={session}\nRELEASED=false\n")
+        release=self.row(2,2,prefix+"WRITE_OWNER=RELEASED\n"
+            "INTEGRATION_OWNER=NOT_ACQUIRED\nDEPLOY_OWNER=RELEASED\nRELEASED=true\n")
+        reacquire=self.row(3,3,prefix+f"SESSION_SUCCESSOR={session}\n"
+            f"WRITE_OWNER={session}\nINTEGRATION_OWNER={session}\n"
+            "DEPLOY_OWNER=NOT_ACQUIRED\nRELEASED=false\n"
+            "BRANCH=ops/rc6-sre-deep-20261011\nSOURCE_SHA="+"c"*40+"\n"
+            "BASE_SHA="+admission.BASE_SHA+"\n"
+            "PR=https://github.com/mbalbo2023/Porota-trading/pull/494\n"
+            "PATHS=scripts/ops/rc6_sre_*,tests/test_rc6_sre_*,docs/ops/RC6_SRE_*\n"
+            "MODE=PRODUCTION_PAPER / SIMULATION\nreal_orders_sent=0\n")
+        owner=self.row(4,4,"WORKSTREAM_ID=WS-RC6-G5P-MATERIAL\n"
+            "SESSION_SUCCESSOR=CODEX_OWNER\nWRITE_OWNER=CODEX_OWNER\n"
+            "INTEGRATION_OWNER=CODEX_OWNER\nDEPLOY_OWNER=NOT_ACQUIRED\n"
+            "RELEASED=false\nSOURCE_SHA="+"a"*40+"\nSOURCE_TREE="+"b"*40+"\n"
+            "SOURCE_LEASE_EXPIRES_UTC=2026-10-11T17:20:00Z\n"
+            "MODE=PRODUCTION_PAPER / SIMULATION\nreal_orders_sent=0\n")
+        rows=[active,release,reacquire,owner]
+        now=datetime(2026,10,11,17,5,tzinfo=timezone.utc)
+        result=admission.latest_writer(rows,471,"a"*40,"b"*40,"CODEX_OWNER",now)
+        self.assertEqual(result['authenticated_disjoint_active_writers'][0]['comment_id'],3)
+        with self.assertRaisesRegex(ValueError,'ACTIVE_DEPLOY_OWNER'):
+            admission.latest_writer([active,dict(release,body=release['body'].replace(
+                'DEPLOY_OWNER=RELEASED','DEPLOY_OWNER=NOT_ACQUIRED')),reacquire,owner],
+                471,"a"*40,"b"*40,"CODEX_OWNER",now)
+        with self.assertRaisesRegex(ValueError,'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER'):
+            admission.latest_writer([active,release,dict(reacquire,body=reacquire['body'].replace(
+                'PATHS=scripts/ops/rc6_sre_*,tests/test_rc6_sre_*,docs/ops/RC6_SRE_*\n','')),owner],
+                471,"a"*40,"b"*40,"CODEX_OWNER",now)
+
 
 if __name__ == "__main__":
     main()
