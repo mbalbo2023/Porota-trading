@@ -104,8 +104,8 @@ def heavy_preflight(a,run,path,producer,label):
     return binding,peak,live
 
 
-def g5p_preflight(a,run,path,label):
-    """Derive and measure V3-only peak; no G5A image or project quota."""
+def g5p_preflight(a,run,path,label,*,bootstrap=False):
+    """Measure a V3 physical envelope before bootstrap or native work."""
     from scripts.rc6_g5p_frames import MAX_CAPTURE_BYTES
     path=safe_path(path)
     fs=os.statvfs(path)
@@ -126,7 +126,8 @@ def g5p_preflight(a,run,path,label):
     cgroup=Path('/sys/fs/cgroup/memory.max')
     memory_limit=cgroup.read_text().strip() if cgroup.exists() else 'unknown'
     memory_ok=memory_limit=='max' or memory_limit.isdigit() and int(memory_limit)>=2*1024**3
-    green=(free>=required+2*1024**3 and inode_ratio>=.1
+    reserve=(4 if bootstrap else 2)*1024**3
+    green=(free>=required+reserve and inode_ratio>=.1
            and fs.f_favail>=5000 and memory_ok)
     row={'schema':'rc6.g5p-v3-physical-preflight.v1','status':'GREEN' if green else 'BLOCKED',
          'source_sha':a.source_sha,'source_tree':a.source_tree,'owner_session':a.owner_session,
@@ -136,7 +137,8 @@ def g5p_preflight(a,run,path,label):
          'archive_v3_limit_bytes':archive,'live_v3_limit_bytes':live,
          'native_scratch_limit_bytes':scratch,'raw_capture_and_closed_stage_upper_bytes':transfer,
          'control_and_log_envelope_bytes':controls,'admission_envelope_bytes':required,
-         'native_reserve_bytes':2*1024**3,'minimum_free_inode_ratio':.1,
+         'native_reserve_bytes':2*1024**3,'bootstrap_reserve_bytes':reserve if bootstrap else None,
+         'minimum_free_inode_ratio':.1,
          'measured_free_bytes':free,'measured_free_inodes':fs.f_favail,
          'measured_total_inodes':fs.f_files,'cgroup_memory_max':memory_limit,
          'memory_ceiling_at_least_native_rss':memory_ok,
@@ -155,6 +157,20 @@ def g5p_preflight(a,run,path,label):
 
 def preparation_capacity(a,run,root,label,*,additional_storage=()):
     """Bootstrap is a compound producer, not a focal/epoch peak assumption."""
+    g5p=a.gate in ('G5P-acquire','G5P-certify')
+    need(not g5p or a.release_profile=='PAPER_V3_ONLY','G5P_BOOTSTRAP_PROFILE_REQUIRED')
+    if g5p:
+        results=[];launch_proofs=[]
+        for storage_role,path in (('bootstrap_namespace',root),('candidate_git_objects',a.repo_root),*additional_storage):
+            if storage_role not in ('bootstrap_namespace','candidate_git_objects'):
+                need(safe_path(path).is_relative_to(root),
+                     'BOOTSTRAP_TEMPORARY_ROOT_OUTSIDE_AUTHENTICATED_NAMESPACE')
+            binding,comparison,live=g5p_preflight(a,run,path,label+'-'+storage_role,bootstrap=True)
+            launch_proofs.extend(run.pending_capacity)
+            results.append({'storage_role':storage_role,'measured_path':str(path),'binding':binding,
+                'physical_v3_preflight':comparison,'capacity_live':live})
+        run.pending_capacity=launch_proofs
+        return results
     # Its comparison must cover both locked environments and the complete
     # original Git/Source preparation. Unknown bootstrap capacity blocks before
     # an environment, fetch or clone starts; no later G0 receipt can repair it.
@@ -209,19 +225,31 @@ def tooling_capacity(admission_path,repo,environ):
     from scripts import rc6_material_pr_admission as controller
     authority=controller.admit(source_sha=authority['source_sha'],source_tree=authority['source_tree'],
         launch_receipt_url=authority['launch_receipt_url'],owner_session=authority['owner_session'],gate=authority['gate'])
+    g5p=authority['gate'] in ('G5P-acquire','G5P-certify')
+    need(not g5p or authority.get('release_profile')=='PAPER_V3_ONLY',
+         'G5P_TOOLING_PROFILE_REQUIRED')
     peak=authority.get('capacity_peaks',{}).get('bootstrap')
     expected={'setup_python_action_sha':'a26af69be951a213d495a4c3e4e4022e16d87065',
         'python_versions':['3.11.16','3.12.14'],'tool_cache_population_included':True}
-    need(type(peak) is dict and peak.get('reviewed_cpython_tooling')==expected,
-        'PYTHON_TOOLING_CAPACITY_UNKNOWN_BEFORE_ACTION_DOWNLOAD')
+    if not g5p:
+        need(type(peak) is dict and peak.get('reviewed_cpython_tooling')==expected,
+            'PYTHON_TOOLING_CAPACITY_UNKNOWN_BEFORE_ACTION_DOWNLOAD')
+    else:
+        workflow=read(Path(repo)/'.github/workflows/rc6-unified-candidate-tests.yml').decode()
+        need(workflow.count('uses: actions/setup-python@'+expected['setup_python_action_sha'])>=2
+             and all('python-version: "'+version+'"' in workflow for version in expected['python_versions']),
+             'G5P_REVIEWED_PYTHON_TOOLING_PIN_CHANGED')
     args=SimpleNamespace(repo_root=Path(repo),source_sha=authority['source_sha'],source_tree=authority['source_tree'],
-        owner_session=authority['owner_session'],capacity_peaks=authority['capacity_peaks'])
+        owner_session=authority['owner_session'],capacity_peaks=authority['capacity_peaks'],gate=authority['gate'])
     root=Path(admission_path).parent;control=root/'tooling-controls';control.mkdir(mode=0o700)
-    run=SimpleNamespace(control=control)
+    run=SimpleNamespace(control=control,capacity_records=[],pending_capacity=[])
     for label,path in (('candidate_git',Path(repo)),('admission_controls',root),
         ('runner_temporary',safe_path(environ['RUNNER_TEMP'])),('reviewed_tool_cache',safe_path(environ['RUNNER_TOOL_CACHE']))):
-        heavy_preflight(args,run,path,'bootstrap','before-reviewed-Python-'+label)
-    save(root/'tooling-capacity.json',{'schema':'rc6.reviewed-python-tooling-capacity.v1','capacity_records':run.capacity_records,
+        if g5p:g5p_preflight(args,run,path,'before-reviewed-Python-'+label,bootstrap=True)
+        else:heavy_preflight(args,run,path,'bootstrap','before-reviewed-Python-'+label)
+    save(root/'tooling-capacity.json',{'schema':'rc6.reviewed-python-tooling-capacity.v2',
+        'release_profile':authority.get('release_profile','FULL_G5'),
+        'reviewed_cpython_tooling':expected,'capacity_records':run.capacity_records,
         'source_sha':args.source_sha,'source_tree':args.source_tree,'qualification_claimed':False,
         'tooling_action_launched':False,'real_orders_sent':0})
     return run.capacity_records

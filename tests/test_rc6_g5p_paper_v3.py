@@ -23,6 +23,74 @@ from rc6_shadow_runtime.archive_format_contract import (
 from scripts import rc6_architectural_gates as gates
 from scripts.porota_validate_deploy_artifact import validate as validate_artifact
 from scripts.porota_predeploy_binding import BindingRejected, verify_g8_report
+from scripts import rc6_material_carrier as carrier
+
+
+class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_tooling_requires_live_v3_checks_and_exact_python_pin(self):
+        temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
+        root=Path(temp.name);admission=root/'admission.json'
+        authority={'status':'ADMITTED_NATIVE_NOT_STARTED','source_sha':'a'*40,
+            'source_tree':'b'*40,'launch_receipt_url':'https://example.invalid/owner',
+            'owner_session':'OWNER','gate':'G5P-acquire','release_profile':'PAPER_V3_ONLY',
+            'capacity_peaks':{}}
+        admission.write_bytes(carrier.canonical(authority))
+        calls=[]
+        def measured(_args,run,path,label,*,bootstrap=False):
+            self.assertTrue(bootstrap)
+            calls.append((str(path),label))
+            record={'label':label};run.capacity_records.append(record)
+            return {},record,{'capacity':{'status':'GREEN'}}
+        environ={'RUNNER_TEMP':temp.name,'RUNNER_TOOL_CACHE':temp.name}
+        with patch('scripts.rc6_material_pr_admission.admit',return_value=authority),\
+             patch('scripts.rc6_material_carrier.g5p_preflight',side_effect=measured),\
+             patch('scripts.rc6_material_carrier.heavy_preflight',side_effect=AssertionError('legacy peak')):
+            records=carrier.tooling_capacity(admission,Path(__file__).resolve().parents[1],environ)
+        self.assertEqual(len(calls),4)
+        self.assertEqual(len(records),4)
+        saved=carrier.document((root/'tooling-capacity.json').read_bytes())
+        self.assertEqual(saved['release_profile'],'PAPER_V3_ONLY')
+        self.assertEqual(saved['reviewed_cpython_tooling']['python_versions'],['3.11.16','3.12.14'])
+
+    def test_preparation_checks_every_storage_path_and_legacy_still_needs_peak(self):
+        temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
+        root=Path(temp.name);extra=root/'temporary';extra.mkdir()
+        args=SimpleNamespace(gate='G5P-certify',release_profile='PAPER_V3_ONLY',
+                             repo_root=root,capacity_peaks={})
+        run=SimpleNamespace(capacity_records=[],pending_capacity=[])
+        def measured(_args,runner,path,label,*,bootstrap=False):
+            self.assertTrue(bootstrap)
+            record={'label':label};runner.pending_capacity=[record]
+            return {},record,{'capacity':{'status':'GREEN'}}
+        with patch('scripts.rc6_material_carrier.g5p_preflight',side_effect=measured),\
+             patch('scripts.rc6_material_carrier.heavy_preflight',side_effect=AssertionError('legacy peak')):
+            result=carrier.preparation_capacity(args,run,root,'before-install',
+                additional_storage=(('pip_temporary',extra),))
+        self.assertEqual([row['storage_role'] for row in result],
+                         ['bootstrap_namespace','candidate_git_objects','pip_temporary'])
+        self.assertEqual(len(run.pending_capacity),3)
+        args.gate='cheap';args.release_profile='FULL_G5'
+        with self.assertRaisesRegex(ValueError,'KNOWN_COMPARABLE_BOOTSTRAP_PEAK_REQUIRED'):
+            carrier.preparation_capacity(args,run,root,'before-install')
+
+    def test_bootstrap_reserve_is_stricter_than_native(self):
+        temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
+        root=Path(temp.name);control=root/'controls';control.mkdir()
+        args=SimpleNamespace(gate='G5P-acquire',repo_root=root,source_sha='a'*40,
+                             source_tree='b'*40,owner_session='OWNER')
+        run=SimpleNamespace(control=control,capacity_records=[],pending_capacity=[])
+        fs=SimpleNamespace(f_frsize=1,f_bavail=6*1024**3,f_favail=100000,f_files=100000)
+        listing=b'100644 blob '+b'0'*40+b' 1\tproduct.py\n'
+        with patch.dict(os.environ,{'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1'}),\
+             patch('scripts.rc6_material_carrier.git',return_value=listing),\
+             patch('scripts.rc6_material_carrier.os.statvfs',return_value=fs):
+            carrier.g5p_preflight(args,run,root,'native')
+            with self.assertRaisesRegex(ValueError,'G5P_V3_ACTUAL_CAPACITY_PREFLIGHT_BLOCKED'):
+                carrier.g5p_preflight(args,run,root,'bootstrap',bootstrap=True)
+        self.assertEqual(carrier.document((control/'native.g5p-capacity.json').read_bytes())['status'],'GREEN')
+        blocked=carrier.document((control/'bootstrap.g5p-capacity.json').read_bytes())
+        self.assertEqual(blocked['status'],'BLOCKED')
+        self.assertEqual(blocked['bootstrap_reserve_bytes'],4*1024**3)
 
 
 class PaperV3ProducerTests(unittest.TestCase):
