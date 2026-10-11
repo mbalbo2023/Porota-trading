@@ -201,6 +201,60 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
             lease.prove_lease_coverage(gap,context,opened,end,
                 workstream='WS-G5P',authenticated_scope=scope)
 
+    def test_g5p_lease_only_counts_valid_owner_receipts_after_historical_bad_pair(self):
+        opened=datetime(2026,10,11,19,48,tzinfo=timezone.utc)
+        stamp=lambda at:at.isoformat().replace('+00:00','Z')
+        owner='CODEX_G5P_TEST'
+        context={'source_sha':'a'*40,'source_tree':'b'*40,'owner_session':owner}
+        def row(issue,identifier,at,fields):
+            return {'id':identifier,'created_at':stamp(at),'updated_at':stamp(at),
+                'user':{'login':'mbalbo2023'},
+                'issue_url':f'https://api.github.com/repos/mbalbo2023/Porota-trading/issues/{issue}',
+                'body':'\n'.join(key+'='+value for key,value in fields.items())}
+        def fields(expiry):
+            return {'WORKSTREAM_ID':'WS-RC6-G5P-MATERIAL-20261011',
+                'SESSION':owner,'SESSION_SUCCESSOR':owner,'WRITE_OWNER':owner,
+                'INTEGRATION_OWNER':owner,'DEPLOY_OWNER':'NOT_ACQUIRED',
+                'RELEASED':'false','SOURCE_SHA':'a'*40,'SOURCE_TREE':'b'*40,
+                'SOURCE_LEASE_EXPIRES_UTC':stamp(expiry),
+                'MODE':'PRODUCTION_PAPER / SIMULATION','real_orders_sent':'0'}
+        timelines={}
+        for issue in (471,473):
+            bad=fields(opened+timedelta(minutes=19))
+            valid=fields(opened+timedelta(minutes=16))
+            approval={key:value for key,value in valid.items() if key!='SESSION'}
+            approval['SOURCE_LEASE_EXPIRES_UTC']='2026-10-11T2026-10-11T20:04:00Z'
+            approval['CONTRACT_ACCEPTANCE_SCHEMA']='porota.rc6.contract-revision-acceptance.v2'
+            launch={**approval,'AUTHORIZATION_SCHEMA':'porota.rc6.candidate-launch.v1'}
+            launch.pop('CONTRACT_ACCEPTANCE_SCHEMA')
+            timelines[issue]=[
+                row(issue,issue*10+1,opened-timedelta(minutes=3),bad),
+                row(issue,issue*10+2,opened-timedelta(minutes=2),valid),
+                row(issue,issue*10+3,opened-timedelta(minutes=1),approval),
+                row(issue,issue*10+4,opened-timedelta(seconds=30),launch)]
+        proof=lease.prove_lease_coverage(timelines,context,opened,opened+timedelta(minutes=1),
+            workstream='WS-RC6-G5P-MATERIAL-20261011')
+        self.assertEqual(proof['471']['comment_ids'],[4712])
+        self.assertEqual(proof['473']['comment_ids'],[4732])
+        missing=copy.deepcopy(timelines)
+        missing[471]=[item for item in missing[471] if item['id']!=4712]
+        with self.assertRaisesRegex(lease.LeaseControlFailure,'OWNED_LEASE_CONTINUITY_GAP'):
+            lease.prove_lease_coverage(missing,context,opened,opened+timedelta(minutes=1),
+                workstream='WS-RC6-G5P-MATERIAL-20261011')
+        during=copy.deepcopy(timelines)
+        during[471].append(row(471,9999,opened+timedelta(seconds=10),
+            fields(opened+timedelta(minutes=22))))
+        with self.assertRaisesRegex(lease.LeaseControlFailure,'OWNED_LEASE_UNBOUNDED_INTERVAL'):
+            lease.prove_lease_coverage(during,context,opened,opened+timedelta(minutes=1),
+                workstream='WS-RC6-G5P-MATERIAL-20261011')
+        unsigned=copy.deepcopy(timelines)
+        owner_without_session=fields(opened+timedelta(minutes=16))
+        owner_without_session.pop('SESSION')
+        unsigned[471].append(row(471,9998,opened+timedelta(seconds=10),owner_without_session))
+        with self.assertRaisesRegex(lease.LeaseControlFailure,'G5P_LEASE_ONLY_EXPLICIT_OWNER_RECEIPT'):
+            lease.prove_lease_coverage(unsigned,context,opened,opened+timedelta(minutes=1),
+                workstream='WS-RC6-G5P-MATERIAL-20261011')
+
     def test_missing_memory_cgroup_uses_measured_vm_and_process_limits(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);v2=root/'memory.max';v1=root/'memory.limit_in_bytes'

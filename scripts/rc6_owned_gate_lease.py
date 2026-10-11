@@ -141,6 +141,7 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
                          authenticated_scope=None):
     """Both immutable same-Source lease unions must cover the complete interval."""
     require(start <= end, 'OWNED_LEASE_TIME_ORDER_INVALID')
+    g5p = workstream == 'WS-RC6-G5P-MATERIAL-20261011'
     covered = {}
     for issue in (471, 473):
         rows = timelines.get(issue)
@@ -168,6 +169,16 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
         spans = []; states = {}; state_ids = {}
         for row in sorted(rows, key=lambda item: (admission.effective_stamp(item), item['id'])):
             values = admission.fields(row.get('body', ''))
+            # G5P approval and launch records repeat the owner and expiry for
+            # binding, but only a SESSION owner receipt can grant lease time.
+            if g5p and values.get('SESSION') is None and (
+                    values.get('CONTRACT_ACCEPTANCE_SCHEMA') == 'porota.rc6.contract-revision-acceptance.v2'
+                    or values.get('AUTHORIZATION_SCHEMA') == 'porota.rc6.candidate-launch.v1'):
+                require(row['created_at'] == row['updated_at']
+                    and row['user']['login'] == 'mbalbo2023'
+                    and row['issue_url'].endswith('/issues/' + str(issue)),
+                    'OWNED_LEASE_IMMUTABLE_SCOPE_OR_MODE_REQUIRED')
+                continue
             owners = [values[key] for key in ('WRITE_OWNER', 'INTEGRATION_OWNER') if key in values
                 and values[key] not in ('RELEASED', 'NOT_ACQUIRED', 'NONE', 'null')]
             if values.get('RELEASED') == 'true' and not owners and values.get('WRITE_OWNER') == 'RELEASED':
@@ -236,6 +247,9 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
                 continue
             if values.get('SOURCE_SHA') != context['source_sha'] or values.get('SOURCE_TREE') != context['source_tree']:
                 continue
+            if g5p:
+                require(values.get('SESSION') == context['owner_session'],
+                    'G5P_LEASE_ONLY_EXPLICIT_OWNER_RECEIPT')
             require(row['created_at'] == row['updated_at'] and row['user']['login'] == 'mbalbo2023'
                 and row['issue_url'].endswith('/issues/' + str(issue))
                 and values.get('WORKSTREAM_ID') == (workstream or admission.WORKSTREAM)
@@ -245,7 +259,13 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
                 and values.get('MODE') == 'PRODUCTION_PAPER / SIMULATION' and values.get('real_orders_sent') == '0',
                 'OWNED_LEASE_IMMUTABLE_SCOPE_OR_MODE_REQUIRED')
             begin, expiry = admission.stamp(row['created_at']), admission.stamp(values['SOURCE_LEASE_EXPIRES_UTC'])
-            require(timedelta(0) < expiry - begin <= timedelta(minutes=20), 'OWNED_LEASE_UNBOUNDED_INTERVAL')
+            if not timedelta(0) < expiry - begin <= timedelta(minutes=20):
+                # An invalid prelaunch receipt supplies no coverage. A later
+                # valid, explicit receipt must cover the complete interval.
+                # Invalid receipts issued during the run remain a hard veto.
+                if g5p and begin < start:
+                    continue
+                require(False, 'OWNED_LEASE_UNBOUNDED_INTERVAL')
             if begin <= end:
                 spans.append((begin, expiry, row['id']))
         require(all(identifier == context['owner_session'] or values.get('RELEASED') == 'true'
