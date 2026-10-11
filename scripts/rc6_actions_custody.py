@@ -86,7 +86,8 @@ class Github:
 
 
 def verify_owner(github, url, *, sha, tree, owner, now=None, plan_sha256=None,
-                 authorization_field='RC6_EVIDENCE_CUSTODY_AUTHORIZATION'):
+                 authorization_field='RC6_EVIDENCE_CUSTODY_AUTHORIZATION',
+                 decision_activation_utc=None):
     from scripts import rc6_material_pr_admission as admission
     plan_keys = {'RC6_EVIDENCE_CUSTODY_AUTHORIZATION': 'CUSTODY_PLAN_SHA256',
         'RC6_DEVELOPMENT_CHECKS_AUTHORIZATION': 'DEVELOPMENT_PLAN_SHA256',
@@ -121,9 +122,12 @@ def verify_owner(github, url, *, sha, tree, owner, now=None, plan_sha256=None,
         key = plan_keys[authorization_field]
         require(fields.get(key) == plan_sha256, 'CUSTODY_EXACT_PLAN_AUTHORIZATION_REQUIRED')
     current = now or datetime.now(timezone.utc)
+    decision_clock = decision_activation_utc or current
+    require(decision_clock.tzinfo is not None and decision_clock <= current,
+            'CUSTODY_DECISION_ACTIVATION_CLOCK_INVALID')
     expires = datetime.fromisoformat(fields['SOURCE_LEASE_EXPIRES_UTC'].replace('Z', '+00:00'))
     created = datetime.fromisoformat(receipt['created_at'].replace('Z', '+00:00'))
-    require(created <= current < expires and (expires-created).total_seconds() <= 1200,
+    require(created <= decision_clock < expires and (expires-created).total_seconds() <= 1200,
             'CUSTODY_LEASE_EXPIRED_OR_UNBOUNDED')
     twin_id = fields.get('OWNER_RECEIPT_473')
     require(twin_id is not None and re.fullmatch('[1-9][0-9]{0,9}', twin_id), 'CUSTODY_OWNER_PAIR_REQUIRED')
@@ -147,7 +151,7 @@ def verify_owner(github, url, *, sha, tree, owner, now=None, plan_sha256=None,
             and twin_fields.get('SOURCE_SHA') == sha and twin_fields.get('SOURCE_TREE') == tree
             and twin_fields.get('MODE') == 'PRODUCTION_PAPER / SIMULATION'
             and twin_fields.get('real_orders_sent') == '0'
-            and twin_created <= current < twin_expires and (twin_expires-twin_created).total_seconds() <= 1200,
+            and twin_created <= decision_clock < twin_expires and (twin_expires-twin_created).total_seconds() <= 1200,
             'CUSTODY_OWNER_PAIR_NOT_LIVE')
     # A still-fresh comment may have been superseded. Read complete updated
     # timelines from the authentic administrative transfer in both Issues.

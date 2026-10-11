@@ -25,9 +25,97 @@ from scripts.porota_validate_deploy_artifact import validate as validate_artifac
 from scripts.porota_predeploy_binding import BindingRejected, verify_g8_report
 from scripts import rc6_material_carrier as carrier
 from scripts import rc6_material_pr_admission as admission
+from scripts import rc6_contract_revisions as revisions
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_long_acquisition_uses_actual_first_run_start_and_live_readmission(self):
+        opened=datetime(2026,10,11,18,0,tzinfo=timezone.utc)
+        started=opened+timedelta(minutes=2)
+        current=opened+timedelta(minutes=25)
+        stamp=lambda value:value.isoformat().replace('+00:00','Z')
+        url='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-15'
+        common={
+            'SOURCE_LEASE_EXPIRES_UTC':stamp(opened+timedelta(minutes=10)),
+            'CONTRACT_ACCEPTANCE_SCHEMA':revisions.SCHEMA,
+            'RC6_CONTRACT_REVISION_AUTHORIZATION':'APPROVED',
+            'CONTRACT_DECISION_ORIGIN':'EXPLICIT_OWNER_DECISION',
+            'CONTRACT_REVISION':'PAPER_V3_ONLY_G5P_V1',
+            'CONTRACT_SCOPE':'G5P_V3_MATERIAL',
+            'CONTRACT_DOCUMENT_SHA256':'c'*64,
+            'CONTRACT_GATES_ALREADY_GREEN':'false',
+            'NATIVE_EQUIVALENCE_FROM_APPROVAL_CLAIMED':'false',
+            'FINAL_CANDIDATE_ELIGIBLE':'false',
+            'DEPLOY_AUTHORIZATION':'NOT_GRANTED',
+            'CONTRACT_ACCEPTANCE_LIFECYCLE':revisions.G5P_LONG_RUN_LIFECYCLE}
+        twin_body='\n'.join(k+'='+v for k,v in common.items())+'\n'
+        decision_body=twin_body+'OWNER_RECEIPT_473=16\nOWNER_RECEIPT_473_SHA256='+hashlib.sha256(twin_body.encode()).hexdigest()+'\n'
+        decision={'id':15,'html_url':url,'body':decision_body,
+                  'created_at':stamp(opened),'updated_at':stamp(opened)}
+        twin={'id':16,'body':twin_body,'created_at':stamp(opened),'updated_at':stamp(opened)}
+        run={'id':123,'run_attempt':1,'head_sha':'a'*40,'event':'workflow_dispatch',
+             'status':'in_progress','conclusion':None,
+             'path':'.github/workflows/rc6-unified-candidate-tests.yml',
+             'repository':{'id':admission.REPO_ID},'run_started_at':stamp(started)}
+        class Github:
+            def request(self,_path):
+                return {'/issues/comments/15':decision,'/issues/comments/16':twin,
+                        '/actions/runs/123/attempts/1':run}[_path]
+        binding={'revision':'PAPER_V3_ONLY_G5P_V1','scope':'G5P_V3_MATERIAL',
+                 'source_sha':'a'*40,'source_tree':'b'*40,'contract_sha256':'c'*64}
+        with patch.dict(os.environ,{'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1','GITHUB_ACTIONS':'true'}),\
+             patch.object(revisions,'verify_owner',return_value=hashlib.sha256(decision_body.encode()).hexdigest()) as verify,\
+             patch.object(revisions,'_g5p_decision_not_revoked'):
+            context=revisions.authenticate_revision(Github(),url,owner_session='OWNER',now=current,**binding)
+            self.assertEqual(verify.call_args.kwargs['decision_activation_utc'],started)
+            self.assertIs(revisions.validate_revision_approval(context,now=current,**binding),context)
+            with self.assertRaisesRegex(ValueError,'CONTRACT_ACCEPTANCE_EXPIRED'):
+                revisions.validate_revision_approval(context,now=current+timedelta(seconds=31),**binding)
+            run['run_started_at']=stamp(opened+timedelta(minutes=11))
+            with self.assertRaisesRegex(ValueError,'G5P_LONG_RUN_INITIAL_DECISION_NOT_LIVE'):
+                revisions.authenticate_revision(Github(),url,owner_session='OWNER',now=current,**binding)
+
+    def test_long_run_later_contract_revocation_is_a_veto(self):
+        now=datetime(2026,10,11,18,30,tzinfo=timezone.utc)
+        created='2026-10-11T18:00:00Z'
+        decision={'created_at':created}
+        revoked={'created_at':'2026-10-11T18:20:00Z',
+            'body':'SOURCE_SHA='+'a'*40+'\nCONTRACT_REVISION=PAPER_V3_ONLY_G5P_V1\n'
+                   'RC6_CONTRACT_REVISION_AUTHORIZATION=REVOKED\n'}
+        github=SimpleNamespace(request=lambda path:None)
+        with patch.object(admission,'administrative_anchors',return_value={471:{},473:{}}),\
+             patch.object(admission,'recent',return_value=[revoked]):
+            with self.assertRaisesRegex(ValueError,'G5P_LONG_RUN_CONTRACT_DECISION_REVOKED'):
+                revisions._g5p_decision_not_revoked(github,source_sha='a'*40,
+                    revision='PAPER_V3_ONLY_G5P_V1',decision=decision,
+                    owner_session='OWNER',now=now)
+
+    def test_legacy_contract_still_expires_without_long_run_lifecycle(self):
+        now=datetime(2026,10,11,18,0,tzinfo=timezone.utc)
+        expires=(now+timedelta(minutes=10)).isoformat()
+        common='\n'.join((
+            'CONTRACT_ACCEPTANCE_SCHEMA='+revisions.SCHEMA,
+            'RC6_CONTRACT_REVISION_AUTHORIZATION=APPROVED',
+            'CONTRACT_DECISION_ORIGIN=EXPLICIT_OWNER_DECISION',
+            'CONTRACT_REVISION=PRIVATE_PID_BOUNDARY_V2','CONTRACT_SCOPE=capacity-probe',
+            'CONTRACT_DOCUMENT_SHA256='+'c'*64,'CONTRACT_GATES_ALREADY_GREEN=false',
+            'NATIVE_EQUIVALENCE_FROM_APPROVAL_CLAIMED=false',
+            'FINAL_CANDIDATE_ELIGIBLE=false','DEPLOY_AUTHORIZATION=NOT_GRANTED',
+            'SOURCE_LEASE_EXPIRES_UTC='+expires))+'\n'
+        decision_body=common+'OWNER_RECEIPT_473=16\nOWNER_RECEIPT_473_SHA256='+hashlib.sha256(common.encode()).hexdigest()+'\n'
+        decision={'body':decision_body};twin={'id':16,'body':common,
+            'created_at':now.isoformat(),'updated_at':now.isoformat()}
+        class Github:
+            def request(self,path):return {'/issues/comments/15':decision,'/issues/comments/16':twin}[path]
+        url='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-15'
+        binding={'revision':'PRIVATE_PID_BOUNDARY_V2','scope':'capacity-probe',
+                 'source_sha':'a'*40,'source_tree':'b'*40,'contract_sha256':'c'*64}
+        with patch.object(revisions,'verify_owner',return_value=hashlib.sha256(decision_body.encode()).hexdigest()) as verify:
+            context=revisions.authenticate_revision(Github(),url,owner_session='OWNER',now=now,**binding)
+        self.assertNotIn('decision_activation_utc',verify.call_args.kwargs)
+        with self.assertRaisesRegex(ValueError,'CONTRACT_ACCEPTANCE_EXPIRED'):
+            revisions.validate_revision_approval(context,now=now+timedelta(minutes=11),**binding)
+
     def test_acquisition_has_no_gate_credit_and_certification_keeps_g0_g4(self):
         manifest={'schema':gates.MANIFEST_SCHEMA,'source_sha':'a'*40,'source_tree':'b'*40,
             'release_profile':'PAPER_V3_ONLY','owner_session':'OWNER',

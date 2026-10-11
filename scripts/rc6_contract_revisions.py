@@ -7,7 +7,8 @@ remain independent obligations of their consumers.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import os
 import re
 from types import MappingProxyType
 import weakref
@@ -21,6 +22,47 @@ SCOPES = MappingProxyType({
     "PAPER_V3_ONLY_G5P_V1": frozenset({"G5P_V3_MATERIAL"}),
 })
 _ISSUED = weakref.WeakKeyDictionary()
+G5P_LONG_RUN_LIFECYCLE = 'IMMUTABLE_DECISION_LIVE_OWNER_REVOCATION_V1'
+
+
+def _g5p_activation(github, decision, values, *, source_sha, now):
+    """Bind a long run to an acceptance that was live when attempt one began."""
+    from scripts import rc6_material_pr_admission as admission
+    require(values.get('CONTRACT_ACCEPTANCE_LIFECYCLE') == G5P_LONG_RUN_LIFECYCLE,
+            'G5P_LONG_RUN_EXPLICIT_LIFECYCLE_REQUIRED')
+    run_id=os.environ.get('GITHUB_RUN_ID','')
+    require(re.fullmatch(r'[1-9][0-9]{0,19}',run_id) is not None
+            and os.environ.get('GITHUB_ACTIONS')=='true'
+            and os.environ.get('GITHUB_RUN_ATTEMPT')=='1',
+            'G5P_LONG_RUN_FIRST_ACTIONS_ATTEMPT_REQUIRED')
+    run=github.request('/actions/runs/'+run_id+'/attempts/1')
+    require(run.get('id')==int(run_id) and run.get('run_attempt')==1
+            and run.get('head_sha')==source_sha and run.get('event')=='workflow_dispatch'
+            and run.get('status')=='in_progress' and run.get('conclusion') is None
+            and run.get('path')=='.github/workflows/rc6-unified-candidate-tests.yml'
+            and run.get('repository',{}).get('id')==admission.REPO_ID,
+            'G5P_LONG_RUN_ACTUAL_ACTIONS_OR_SOURCE_REBOUND')
+    start=admission.stamp(run.get('run_started_at'))
+    created=admission.stamp(decision['created_at'])
+    expires=admission.stamp(values['SOURCE_LEASE_EXPIRES_UTC'])
+    require(created<=start<expires and start<=now<start+timedelta(hours=6),
+            'G5P_LONG_RUN_INITIAL_DECISION_NOT_LIVE_AT_ACTUAL_START')
+    return start
+
+
+def _g5p_decision_not_revoked(github, *, source_sha, revision, decision, owner_session, now):
+    from scripts import rc6_material_pr_admission as admission
+    anchors=admission.administrative_anchors(owner_session,get=github.request,now=now)
+    decision_time=admission.stamp(decision['created_at'])
+    for issue in (471,473):
+        for row in admission.recent(issue,anchors[issue],now,get=github.request):
+            values=admission.fields(row['body'])
+            if (admission.stamp(row['created_at'])>=decision_time
+                    and values.get('SOURCE_SHA')==source_sha
+                    and values.get('CONTRACT_REVISION')==revision):
+                require(values.get('RC6_CONTRACT_REVISION_AUTHORIZATION') not in
+                    ('REVOKED','NOT_GRANTED','REJECTED','CANCELLED'),
+                    'G5P_LONG_RUN_CONTRACT_DECISION_REVOKED')
 
 
 class AuthenticatedRevision:
@@ -70,14 +112,28 @@ def authenticate_revision(github, approval_url, *, owner_session, revision, scop
     binding = _binding(revision, scope, source_sha, source_tree, contract_sha256)
     current = now or datetime.now(timezone.utc)
     require(current.tzinfo is not None, "CONTRACT_UTC_CLOCK_REQUIRED")
+    decision=None;values=None;long_run=False
+    if revision=='PAPER_V3_ONLY_G5P_V1':
+        match = re.fullmatch(r"https://github\.com/mbalbo2023/Porota-trading/issues/471#issuecomment-([1-9][0-9]*)",
+                             approval_url)
+        require(match is not None, "CONTRACT_OWNER_DECISION_URL_REQUIRED")
+        decision=github.request('/issues/comments/'+match[1])
+        values=_fields(decision['body'])
+        long_run=values.get('CONTRACT_ACCEPTANCE_LIFECYCLE')==G5P_LONG_RUN_LIFECYCLE
+    activation=(_g5p_activation(github,decision,values,source_sha=source_sha,now=current)
+        if long_run else None)
+    owner_options={'decision_activation_utc':activation} if long_run else {}
     body_digest = verify_owner(github, approval_url, sha=source_sha, tree=source_tree,
         owner=owner_session, now=current, plan_sha256=contract_sha256,
-        authorization_field="RC6_CONTRACT_REVISION_AUTHORIZATION")
+        authorization_field="RC6_CONTRACT_REVISION_AUTHORIZATION",**owner_options)
     match = re.fullmatch(r"https://github\.com/mbalbo2023/Porota-trading/issues/471#issuecomment-([1-9][0-9]*)",
                          approval_url)
     require(match is not None, "CONTRACT_OWNER_DECISION_URL_REQUIRED")
-    decision = github.request("/issues/comments/" + match[1])
-    values = _fields(decision["body"])
+    if decision is None:
+        decision=github.request('/issues/comments/'+match[1]);values=_fields(decision['body'])
+    else:
+        require(decision.get('html_url')==approval_url and decision.get('id')==int(match[1]),
+                'CONTRACT_INITIAL_DECISION_URL_REBOUND')
     require(digest(decision["body"].encode()) == body_digest,
             "CONTRACT_OWNER_DECISION_CHANGED_DURING_READ")
     twin = github.request("/issues/comments/" + values["OWNER_RECEIPT_473"])
@@ -97,7 +153,11 @@ def authenticate_revision(github, approval_url, *, owner_session, revision, scop
             and twin.get("created_at") == twin.get("updated_at")
             and digest(twin["body"].encode()) == values["OWNER_RECEIPT_473_SHA256"],
             "CONTRACT_OWNER_PAIR_CHANGED_DURING_READ")
+    if long_run:
+        _g5p_decision_not_revoked(github,source_sha=source_sha,revision=revision,
+            decision=decision,owner_session=owner_session,now=current)
     expiration = datetime.fromisoformat(values["SOURCE_LEASE_EXPIRES_UTC"].replace("Z", "+00:00"))
+    if long_run:expiration=min(current+timedelta(seconds=30),activation+timedelta(hours=6))
     values_for_context = {**binding, "owner_session": owner_session,
         "approval_body_sha256": body_digest, "expires_utc": expiration,
         "approval_url": approval_url, "paired_comment_id": twin['id'],
