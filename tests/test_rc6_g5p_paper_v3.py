@@ -36,6 +36,175 @@ from scripts import rc6_material_derive as derive
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_post_handoff_source_evolution_accounts_for_every_20261011_gap(self):
+        matrix=json.loads((Path(__file__).resolve().parents[1]/
+            'docs/audits/convergence/REQUIREMENT_CLOSURE_MATRIX.json').read_bytes())
+        known_unexplained=""".dockerignore
+.github/actions/rc6-g5a-upload-parts/action.yml
+.github/workflows/rc6-current-host-contract-evidence-readonly-audit-20260910.yml
+cg_paper_workspace.py
+docs/governance/RC6_ARCHITECTURAL_DEVELOPMENT_RECEIPTS_20261008.json
+docs/governance/RC6_ARCHITECTURAL_RCA_20261008.md
+docs/governance/RC6_CAPACITY_PROBE_RCA_37823993377.json
+docs/governance/RC6_CAPACITY_PROBE_RCA_37830339583.json
+docs/governance/RC6_CAPACITY_PROBE_RCA_37845108215.json
+docs/governance/RC6_ERROR_REGISTRY.md
+docs/governance/RC6_G0_G5_CONTRACT_PROPOSAL_2026-10-10.md
+docs/governance/RC6_G5A_INTEGRATION_STATUS_2026-10-11.md
+docs/governance/RC6_G5A_ROOT_QUOTA_FIN_CLOSURE_2026-10-11.md
+docs/governance/RC6_G5A_RUNNER_RCA_AND_HANDOFF_2026-10-11.md
+docs/governance/RC6_G5A_STATIC_WRITER_SITES_2026-10-11.csv
+docs/governance/RC6_HORIZON_CAPACITY_ASSESSMENT_20261008.json
+docs/governance/RC6_OWNER_RECEIPT_INCIDENT_20261008.json
+docs/governance/RC6_PRIVILEGED_SIGNAL_CUSTODY_ASSESSMENT_20261008.json
+docs/governance/RC6_SIGNED_MODULE_AVAILABILITY_20261008.json
+docs/governance/RC6_WIP_DURABILITY_20261008.json
+docs/governance/rc6-architecture-closure-20261009/ECONOMIC_VALIDATION.json
+docs/governance/rc6-architecture-closure-20261009/ERROR_MATRIX.md
+docs/governance/rc6-architecture-closure-20261009/RUNNER_DECISION.md
+docs/governance/rc6-architecture-closure-20261009/ZERO_COST_CONTRACT.md
+ops/policy/rc6-actions-custody-20261009.json
+ops/policy/rc6-development-checks-v1.json
+ops/policy/rc6-development-readout-20261009.json
+ops/policy/rc6-heavy-test-governance-v1.json
+ops/policy/rc6-native-prerequisites-v1.json
+ops/policy/rc6-product-resource-compatibility-v1.json
+ops/policy/rc6-product-resource-compatibility-v2.json
+rc6_shadow_runtime/archive_format_contract.py
+rc6_shadow_runtime/archive_physical_model.py
+rc6_shadow_runtime/exact_binary_storage.py
+rc6_shadow_runtime/read_contract.py
+scripts/rc6_actions_custody.py
+scripts/rc6_architectural_gates.py
+scripts/rc6_archive_reader_review.py
+scripts/rc6_authenticated_fixture_lifecycle.py
+scripts/rc6_capacity_calibration.py
+scripts/rc6_capacity_comparison.py
+scripts/rc6_cas_original_comparison.py
+scripts/rc6_certification_contract.py
+scripts/rc6_contract_revisions.py
+scripts/rc6_development_checks.py
+scripts/rc6_development_parallel_epoch.py
+scripts/rc6_development_readout.py
+scripts/rc6_ephemeral_api_credential.py
+scripts/rc6_g5_contract.py
+scripts/rc6_g5_historical_certification.py
+scripts/rc6_g5a_actions.py
+scripts/rc6_g5a_aggregate_issuer.py
+scripts/rc6_g5a_carrier.py
+scripts/rc6_g5a_custody_replay.py
+scripts/rc6_g5a_family.py
+scripts/rc6_g5a_host_capacity.py
+scripts/rc6_g5a_native_feasibility.py
+scripts/rc6_g5a_native_runner.py
+scripts/rc6_g5a_parts.py
+scripts/rc6_g5a_raw_capture.py
+scripts/rc6_g5a_source_context.py
+scripts/rc6_g5a_writer_inventory.py
+scripts/rc6_g5b_evidence.py
+scripts/rc6_g5b_native_readers.py
+scripts/rc6_g5b_source_certify.py
+scripts/rc6_g5p_dispatch_bridge.py
+scripts/rc6_g5p_evidence.py
+scripts/rc6_g5p_frames.py
+scripts/rc6_g5p_model.py
+scripts/rc6_g5p_reference.py
+scripts/rc6_heavy_test_preflight.py
+scripts/rc6_host_capacity_readonly.py
+scripts/rc6_native_namespace_filter.py
+scripts/rc6_native_prerequisites.py
+scripts/rc6_owned_g5a_continuation.py
+scripts/rc6_owned_gate_lease.py
+scripts/rc6_owner_receipts.py
+scripts/rc6_private_pid_boundary.py
+scripts/rc6_private_pid_capture_replay.py
+scripts/rc6_privileged_custody.py
+scripts/rc6_product_resource_compatibility.py
+scripts/rc6_publication_algorithm_probe.py
+scripts/rc6_pytest_fixture_lifecycle.py
+scripts/rc6_root_actor_seal.py
+scripts/rc6_scoped_infrastructure_lease.py
+scripts/rc6_trusted_quota_setup.py
+tests/rc6_fixture_sqlite.py
+tests/test_porota_validate_deploy_artifact.py
+tests/test_rc6_actions_custody.py
+tests/test_rc6_architectural_gate_order.py
+tests/test_rc6_archive_grouped_wire.py
+tests/test_rc6_archive_physical_model.py
+tests/test_rc6_archive_reader_review.py
+tests/test_rc6_archive_segment_reuse.py
+tests/test_rc6_archive_slice_reuse.py
+tests/test_rc6_authenticated_fixture_lifecycle.py
+tests/test_rc6_candidate_authorization.py
+tests/test_rc6_capacity_bootstrap_capture.py
+tests/test_rc6_capacity_calibration.py
+tests/test_rc6_capacity_comparison.py
+tests/test_rc6_capacity_private_pid_capture.py
+tests/test_rc6_cas_original_comparison.py
+tests/test_rc6_certification_contract.py
+tests/test_rc6_contract_revisions.py
+tests/test_rc6_development_history.py
+tests/test_rc6_development_parallel_epoch.py
+tests/test_rc6_development_readout.py
+tests/test_rc6_development_rejection.py
+tests/test_rc6_ephemeral_api_credential.py
+tests/test_rc6_final_family_source_policy.py
+tests/test_rc6_focal_raw_custody.py
+tests/test_rc6_funnel_algorithm.py
+tests/test_rc6_g5_contract.py
+tests/test_rc6_g5a_actions.py
+tests/test_rc6_g5a_admission.py
+tests/test_rc6_g5a_aggregate_issuer.py
+tests/test_rc6_g5a_carrier.py
+tests/test_rc6_g5a_custody_replay.py
+tests/test_rc6_g5a_host_capacity.py
+tests/test_rc6_g5a_native_runner.py
+tests/test_rc6_g5a_parts.py
+tests/test_rc6_g5a_privileged_transport.py
+tests/test_rc6_g5a_quota_setup.py
+tests/test_rc6_g5a_raw_capture.py
+tests/test_rc6_g5a_release_wiring.py
+tests/test_rc6_g5a_source_context.py
+tests/test_rc6_g5b_evidence.py
+tests/test_rc6_g5p_dispatch_bridge.py
+tests/test_rc6_g5p_paper_v3.py
+tests/test_rc6_governed_evidence_validation.py
+tests/test_rc6_heavy_test_preflight.py
+tests/test_rc6_horizon_model_admission.py
+tests/test_rc6_host_capacity_readonly.py
+tests/test_rc6_material_focal_evidence.py
+tests/test_rc6_native_namespace_filter.py
+tests/test_rc6_native_prerequisites.py
+tests/test_rc6_owned_g5a_continuation.py
+tests/test_rc6_owned_gate_lease.py
+tests/test_rc6_owner_receipts.py
+tests/test_rc6_private_pid_boundary.py
+tests/test_rc6_private_pid_capture_replay.py
+tests/test_rc6_privileged_custody.py
+tests/test_rc6_product_resource_compatibility.py
+tests/test_rc6_publication_architecture.py
+tests/test_rc6_pytest_fixture_lifecycle.py
+tests/test_rc6_raw_packaging_custody.py
+tests/test_rc6_released_successor.py
+tests/test_rc6_root_actor_seal.py
+tests/test_rc6_scoped_infrastructure_lease.py
+tests/test_rc6_shadow_operational_funnel.py
+tests/test_rc6_single_source_tick.py
+tests/test_rc6_source_schema_startup.py
+tests/test_rc6_stress_phase_timings.py
+tests/test_rc6_temporal_query_plan.py""".splitlines()
+        self.assertEqual(len(known_unexplained),154)
+        requirements={row['id'] for row in matrix['requirements']}
+        for path in known_unexplained:
+            with self.subTest(path=path):
+                binding=matrix['path_evolution'].get(path)
+                self.assertIsNotNone(binding)
+                self.assertTrue(binding['reason'].strip())
+                self.assertTrue(binding['requirement_ids'])
+                self.assertLessEqual(set(binding['requirement_ids']),requirements)
+        self.assertFalse(any('G5P_GREEN=true' in matrix['path_evolution'][path]['reason']
+                             for path in known_unexplained))
+
     def test_owner_http_error_preserves_only_sanitized_status_after_control_red(self):
         headers=Message()
         headers['X-RateLimit-Remaining']='0'

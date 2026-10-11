@@ -6174,6 +6174,622 @@
     }
   ],
   "path_evolution": {
+    ".dockerignore": {
+      "reason": "Post-handoff Docker build-context exclusion protects the exact governed source and artifact boundary. Final Git blob/mode custody remains mandatory; this traceability entry grants no Predeploy, G5P or deploy result.",
+      "requirement_ids": ["U11", "U25", "U29"]
+    },
+    ".github/actions/rc6-g5a-upload-parts/action.yml": {
+      "reason": "Post-handoff Actions control-plane source. Exact workflow/action bytes and final Git mode remain in the candidate provenance check; gate execution and release authorization are separately required.",
+      "requirement_ids": ["U11", "U28", "U29"]
+    },
+    ".github/workflows/rc6-current-host-contract-evidence-readonly-audit-20260910.yml": {
+      "reason": "Post-handoff Actions control-plane source. Exact workflow/action bytes and final Git mode remain in the candidate provenance check; gate execution and release authorization are separately required.",
+      "requirement_ids": ["U11", "U28", "U29"]
+    },
+    "cg_paper_workspace.py": {
+      "reason": "Post-handoff PAPER workspace integration source. Preserve mode and preopen fail-closed semantics; this mapping records source evolution only, with native behavior still gated.",
+      "requirement_ids": ["U04", "U13"]
+    },
+    "docs/governance/RC6_ARCHITECTURAL_DEVELOPMENT_RECEIPTS_20261008.json": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_ARCHITECTURAL_RCA_20261008.md": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_CAPACITY_PROBE_RCA_37823993377.json": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_CAPACITY_PROBE_RCA_37830339583.json": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_CAPACITY_PROBE_RCA_37845108215.json": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_ERROR_REGISTRY.md": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_G0_G5_CONTRACT_PROPOSAL_2026-10-10.md": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_G5A_INTEGRATION_STATUS_2026-10-11.md": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_G5A_ROOT_QUOTA_FIN_CLOSURE_2026-10-11.md": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_G5A_RUNNER_RCA_AND_HANDOFF_2026-10-11.md": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_G5A_STATIC_WRITER_SITES_2026-10-11.csv": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_HORIZON_CAPACITY_ASSESSMENT_20261008.json": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_OWNER_RECEIPT_INCIDENT_20261008.json": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_PRIVILEGED_SIGNAL_CUSTODY_ASSESSMENT_20261008.json": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_SIGNED_MODULE_AVAILABILITY_20261008.json": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/RC6_WIP_DURABILITY_20261008.json": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/rc6-architecture-closure-20261009/ECONOMIC_VALIDATION.json": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/rc6-architecture-closure-20261009/ERROR_MATRIX.md": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/rc6-architecture-closure-20261009/RUNNER_DECISION.md": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "docs/governance/rc6-architecture-closure-20261009/ZERO_COST_CONTRACT.md": {
+      "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
+      "requirement_ids": ["U28"]
+    },
+    "ops/policy/rc6-actions-custody-20261009.json": {
+      "reason": "Post-handoff typed RC6 policy source for owner, capacity or native gates. Exact Git bytes and mode remain verified; policy admission and material evidence are separate controls.",
+      "requirement_ids": ["U11", "U28"]
+    },
+    "ops/policy/rc6-development-checks-v1.json": {
+      "reason": "Post-handoff typed RC6 policy source for owner, capacity or native gates. Exact Git bytes and mode remain verified; policy admission and material evidence are separate controls.",
+      "requirement_ids": ["U11", "U28"]
+    },
+    "ops/policy/rc6-development-readout-20261009.json": {
+      "reason": "Post-handoff typed RC6 policy source for owner, capacity or native gates. Exact Git bytes and mode remain verified; policy admission and material evidence are separate controls.",
+      "requirement_ids": ["U11", "U28"]
+    },
+    "ops/policy/rc6-heavy-test-governance-v1.json": {
+      "reason": "Post-handoff typed RC6 policy source for owner, capacity or native gates. Exact Git bytes and mode remain verified; policy admission and material evidence are separate controls.",
+      "requirement_ids": ["U11", "U28"]
+    },
+    "ops/policy/rc6-native-prerequisites-v1.json": {
+      "reason": "Post-handoff typed RC6 policy source for owner, capacity or native gates. Exact Git bytes and mode remain verified; policy admission and material evidence are separate controls.",
+      "requirement_ids": ["U11", "U28"]
+    },
+    "ops/policy/rc6-product-resource-compatibility-v1.json": {
+      "reason": "Post-handoff typed RC6 policy source for owner, capacity or native gates. Exact Git bytes and mode remain verified; policy admission and material evidence are separate controls.",
+      "requirement_ids": ["U11", "U28"]
+    },
+    "ops/policy/rc6-product-resource-compatibility-v2.json": {
+      "reason": "Post-handoff typed RC6 policy source for owner, capacity or native gates. Exact Git bytes and mode remain verified; policy admission and material evidence are separate controls.",
+      "requirement_ids": ["U11", "U28"]
+    },
+    "rc6_shadow_runtime/archive_format_contract.py": {
+      "reason": "Post-handoff PAPER V3 archive or read-contract source. Preserve original archive identity, physical capacity and exact modes; native producer and artifact checks remain mandatory.",
+      "requirement_ids": ["U18", "U25"]
+    },
+    "rc6_shadow_runtime/archive_physical_model.py": {
+      "reason": "Post-handoff PAPER V3 archive or read-contract source. Preserve original archive identity, physical capacity and exact modes; native producer and artifact checks remain mandatory.",
+      "requirement_ids": ["U18", "U25"]
+    },
+    "rc6_shadow_runtime/exact_binary_storage.py": {
+      "reason": "Post-handoff PAPER V3 archive or read-contract source. Preserve original archive identity, physical capacity and exact modes; native producer and artifact checks remain mandatory.",
+      "requirement_ids": ["U18", "U25"]
+    },
+    "rc6_shadow_runtime/read_contract.py": {
+      "reason": "Post-handoff PAPER V3 archive or read-contract source. Preserve original archive identity, physical capacity and exact modes; native producer and artifact checks remain mandatory.",
+      "requirement_ids": ["U18", "U25"]
+    },
+    "scripts/rc6_actions_custody.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_architectural_gates.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_archive_reader_review.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_authenticated_fixture_lifecycle.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_capacity_calibration.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_capacity_comparison.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_cas_original_comparison.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_certification_contract.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_contract_revisions.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_development_checks.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_development_parallel_epoch.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_development_readout.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_ephemeral_api_credential.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5_contract.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5_historical_certification.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_actions.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_aggregate_issuer.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_carrier.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_custody_replay.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_family.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_host_capacity.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_native_feasibility.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_native_runner.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_parts.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_raw_capture.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_source_context.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5a_writer_inventory.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5b_evidence.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5b_native_readers.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5b_source_certify.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5p_dispatch_bridge.py": {
+      "reason": "Post-handoff PAPER_V3_ONLY G5P source or focused regression. Exact Source/tree, owner, producer FIN and byte/mode checks remain required; development tests are not certification.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5p_evidence.py": {
+      "reason": "Post-handoff PAPER_V3_ONLY G5P source or focused regression. Exact Source/tree, owner, producer FIN and byte/mode checks remain required; development tests are not certification.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5p_frames.py": {
+      "reason": "Post-handoff PAPER_V3_ONLY G5P source or focused regression. Exact Source/tree, owner, producer FIN and byte/mode checks remain required; development tests are not certification.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5p_model.py": {
+      "reason": "Post-handoff PAPER_V3_ONLY G5P source or focused regression. Exact Source/tree, owner, producer FIN and byte/mode checks remain required; development tests are not certification.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_g5p_reference.py": {
+      "reason": "Post-handoff PAPER_V3_ONLY G5P source or focused regression. Exact Source/tree, owner, producer FIN and byte/mode checks remain required; development tests are not certification.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_heavy_test_preflight.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_host_capacity_readonly.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_native_namespace_filter.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_native_prerequisites.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_owned_g5a_continuation.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_owned_gate_lease.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_owner_receipts.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_private_pid_boundary.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_private_pid_capture_replay.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_privileged_custody.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_product_resource_compatibility.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_publication_algorithm_probe.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_pytest_fixture_lifecycle.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_root_actor_seal.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_scoped_infrastructure_lease.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "scripts/rc6_trusted_quota_setup.py": {
+      "reason": "Post-handoff RC6 owner, capacity, artifact or material-control source. Keep exact candidate Git bytes/modes and fail-closed source authority; native qualification remains separately evidenced.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/rc6_fixture_sqlite.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_porota_validate_deploy_artifact.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_actions_custody.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_architectural_gate_order.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_archive_grouped_wire.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_archive_physical_model.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_archive_reader_review.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_archive_segment_reuse.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_archive_slice_reuse.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_authenticated_fixture_lifecycle.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_candidate_authorization.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_capacity_bootstrap_capture.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_capacity_calibration.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_capacity_comparison.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_capacity_private_pid_capture.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_cas_original_comparison.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_certification_contract.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_contract_revisions.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_development_history.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_development_parallel_epoch.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_development_readout.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_development_rejection.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_ephemeral_api_credential.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_final_family_source_policy.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_focal_raw_custody.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_funnel_algorithm.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5_contract.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_actions.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_admission.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_aggregate_issuer.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_carrier.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_custody_replay.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_host_capacity.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_native_runner.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_parts.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_privileged_transport.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_quota_setup.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_raw_capture.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_release_wiring.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5a_source_context.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5b_evidence.py": {
+      "reason": "Post-handoff historical RC6 gate source or regression carried in the candidate tree. Exact Git bytes/modes remain verified; this source mapping does not require or claim a G5A runner, quota proof or material PASS.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5p_dispatch_bridge.py": {
+      "reason": "Post-handoff PAPER_V3_ONLY G5P source or focused regression. Exact Source/tree, owner, producer FIN and byte/mode checks remain required; development tests are not certification.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_g5p_paper_v3.py": {
+      "reason": "Post-handoff PAPER_V3_ONLY G5P source or focused regression. Exact Source/tree, owner, producer FIN and byte/mode checks remain required; development tests are not certification.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_governed_evidence_validation.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_heavy_test_preflight.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_horizon_model_admission.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_host_capacity_readonly.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_material_focal_evidence.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_native_namespace_filter.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_native_prerequisites.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_owned_g5a_continuation.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_owned_gate_lease.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_owner_receipts.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_private_pid_boundary.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_private_pid_capture_replay.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_privileged_custody.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_product_resource_compatibility.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_publication_architecture.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_pytest_fixture_lifecycle.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_raw_packaging_custody.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_released_successor.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_root_actor_seal.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_scoped_infrastructure_lease.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_shadow_operational_funnel.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_single_source_tick.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_source_schema_startup.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_stress_phase_timings.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
+    "tests/test_rc6_temporal_query_plan.py": {
+      "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
     ".github/workflows/porota-deploy-v2-promote.yml": {
       "reason": "Preserve the canonical source-bound Predeploy/promote model while adding exact origin, complete modes, loaded ImageID, hash-locked closure, bounded health and measured scoped disk guards.",
       "requirement_ids": [
