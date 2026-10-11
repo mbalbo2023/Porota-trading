@@ -5,6 +5,7 @@ controller never dispatches, edits a ref, acquires deploy ownership or runs gate
 """
 import argparse
 import base64
+from collections import OrderedDict
 from datetime import datetime,timedelta,timezone
 import hashlib
 import json
@@ -14,7 +15,9 @@ import re
 import stat
 import subprocess
 import sys
+import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -41,6 +44,11 @@ GUARDS_HEAD='756d37b93aa26bb6395dac481bf3c2dda9d034d7'
 OPS='docs/automation/rc6-night-20261005/state.json'
 OPS_REF='ops/rc6-night-supervisor-20261005'
 CAP=1024*1024
+_HTTP_REVALIDATION_CACHE=OrderedDict()
+_HTTP_REVALIDATION_LOCK=threading.Lock()
+_HTTP_REVALIDATION_BYTES=0
+_HTTP_REVALIDATION_MAX_BYTES=32*CAP
+_HTTP_REVALIDATION_MAX_ENTRIES=128
 CONTROL_CAP=256*1024
 FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER','RELEASED',
     'SOURCE_LEASE_EXPIRES_UTC','SOURCE_SHA','SOURCE_TREE','MODE','real_orders_sent',
@@ -222,16 +230,61 @@ def verify_capacity_comparison_manifest(f,sha,tree,*,repo=ROOT):
         'CAPACITY_DIAGNOSTIC_PAYLOADS_NOT_RC6_ADMISSION')
     return result
 
+def _conditional_cache_get(key):
+    with _HTTP_REVALIDATION_LOCK:
+        entry=_HTTP_REVALIDATION_CACHE.get(key)
+        if entry is not None:_HTTP_REVALIDATION_CACHE.move_to_end(key)
+        return entry
+
+
+def _conditional_cache_put(key,etag,raw):
+    global _HTTP_REVALIDATION_BYTES
+    with _HTTP_REVALIDATION_LOCK:
+        previous=_HTTP_REVALIDATION_CACHE.pop(key,None)
+        if previous is not None:_HTTP_REVALIDATION_BYTES-=len(previous[1])
+        _HTTP_REVALIDATION_CACHE[key]=(etag,raw)
+        _HTTP_REVALIDATION_BYTES+=len(raw)
+        while (_HTTP_REVALIDATION_BYTES>_HTTP_REVALIDATION_MAX_BYTES or
+               len(_HTTP_REVALIDATION_CACHE)>_HTTP_REVALIDATION_MAX_ENTRIES):
+            _discard,old=_HTTP_REVALIDATION_CACHE.popitem(last=False)
+            _HTTP_REVALIDATION_BYTES-=len(old[1])
+
+
 def api(path):
     token=os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
     require(bool(token),'ACTIONS_READONLY_TOKEN_REQUIRED')
+    # G5P's long owned run rechecks the same immutable comments and timeline
+    # pages many times. A server-confirmed 304 is a fresh read of unchanged
+    # bytes, not a local TTL or permission to ignore a changed owner/release.
+    conditional=os.environ.get('RC6_GATE') in ('G5P-acquire','G5P-certify')
+    key=(hashlib.sha256(token.encode()).digest(),path) if conditional else None
+    cached=_conditional_cache_get(key) if conditional else None
+    headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json',
+             'X-GitHub-Api-Version':'2022-11-28'}
+    if cached is not None:headers['If-None-Match']=cached[0]
     print(json.dumps({'scope':'READ_ONLY_GITHUB_SOURCE_OWNER_CONTROL',
         'resource':path.partition('?')[0],'method':'GET','payload_reads':0}),flush=True)
     request=urllib.request.Request('https://api.github.com/repos/'+REPO+path,
-        headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
-    with urllib.request.urlopen(request,timeout=30) as response:raw=response.read(CAP+1)
+        headers=headers)
+    try:
+        with urllib.request.urlopen(request,timeout=30) as response:
+            status=getattr(response,'status',200)
+            if status==304:
+                require(cached is not None,'ADMISSION_304_WITHOUT_VERIFIED_CACHE')
+                return document(cached[1])
+            require(status==200,'ADMISSION_API_HTTP_200_OR_VERIFIED_304_REQUIRED')
+            raw=response.read(CAP+1)
+            etag=response.headers.get('ETag') if conditional else None
+    except urllib.error.HTTPError as error:
+        if error.code==304:
+            require(cached is not None,'ADMISSION_304_WITHOUT_VERIFIED_CACHE')
+            return document(cached[1])
+        raise
     require(len(raw)<=CAP,'ADMISSION_API_RESPONSE_BOUND')
-    return document(raw)
+    value=document(raw)
+    if conditional and type(etag) is str and re.fullmatch(r'(?:W/)?"[A-Za-z0-9._:/+=-]{1,200}"',etag):
+        _conditional_cache_put(key,etag,raw)
+    return value
 def comment(url,issue,*,get=None):
     match=re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/'+str(issue)+r'#issuecomment-([0-9]+)',url or '')
     require(match is not None,'EXACT_OWNER_RECEIPT_URL_REQUIRED')

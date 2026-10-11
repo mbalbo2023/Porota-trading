@@ -36,6 +36,59 @@ from scripts import rc6_material_derive as derive
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_g5p_owner_reads_revalidate_etag_and_never_reuse_on_403(self):
+        path='/issues/471/comments?since=2026-10-11T00%3A00%3A00Z&page=1'
+        requests=[]
+        class Response:
+            status=200
+            def __init__(self,body,etag):
+                self.body=body
+                self.headers=Message()
+                self.headers['ETag']=etag
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def read(self,size):return self.body
+        first=Response(b'{"body":"RELEASED=false"}', 'W/"owner-v1"')
+        changed=Response(b'{"body":"RELEASED=true"}', 'W/"owner-v2"')
+        not_modified=urllib.error.HTTPError('https://api.github.com/private',304,
+            'Not Modified',Message(),None)
+        forbidden=urllib.error.HTTPError('https://api.github.com/private',403,
+            'rate limit',Message(),None)
+        replies=iter((first,not_modified,not_modified,changed,not_modified,
+                      forbidden,not_modified))
+        def request(request,timeout):
+            requests.append(request.get_header('If-none-match'))
+            response=next(replies)
+            if isinstance(response,BaseException):raise response
+            return response
+        with admission._HTTP_REVALIDATION_LOCK:
+            original_cache=admission._HTTP_REVALIDATION_CACHE.copy()
+            original_bytes=admission._HTTP_REVALIDATION_BYTES
+            admission._HTTP_REVALIDATION_CACHE.clear()
+            admission._HTTP_REVALIDATION_BYTES=0
+        try:
+            with patch.dict(os.environ,{'GH_TOKEN':'local-test-token','RC6_GATE':'G5P-acquire'}), \
+                 patch.object(admission.urllib.request,'urlopen',side_effect=request):
+                self.assertEqual(admission.api(path)['body'],'RELEASED=false')
+                self.assertEqual(admission.api(path)['body'],'RELEASED=false')
+                self.assertEqual(lease.api_get(path,time.monotonic()+10)['body'],'RELEASED=false')
+                self.assertEqual(lease.api_get(path,time.monotonic()+10)['body'],'RELEASED=true')
+                self.assertEqual(admission.api(path)['body'],'RELEASED=true')
+                with self.assertRaises(urllib.error.HTTPError) as red:
+                    lease.api_get(path,time.monotonic()+10)
+                self.assertEqual(red.exception.code,403)
+                with self.assertRaisesRegex(lease.LeaseControlFailure,
+                                            'OWNED_LEASE_304_WITHOUT_VERIFIED_CACHE'):
+                    lease.api_get('/issues/473/comments?page=1',time.monotonic()+10)
+            self.assertEqual(requests,[None,'W/"owner-v1"','W/"owner-v1"',
+                                       'W/"owner-v1"','W/"owner-v2"',
+                                       'W/"owner-v2"',None])
+        finally:
+            with admission._HTTP_REVALIDATION_LOCK:
+                admission._HTTP_REVALIDATION_CACHE.clear()
+                admission._HTTP_REVALIDATION_CACHE.update(original_cache)
+                admission._HTTP_REVALIDATION_BYTES=original_bytes
+
     def test_post_handoff_source_evolution_accounts_for_every_20261011_gap(self):
         matrix=json.loads((Path(__file__).resolve().parents[1]/
             'docs/audits/convergence/REQUIREMENT_CLOSURE_MATRIX.json').read_bytes())

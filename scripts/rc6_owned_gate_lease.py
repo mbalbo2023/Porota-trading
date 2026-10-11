@@ -113,13 +113,33 @@ def api_get(path, deadline):
         and '\n' not in path and '\r' not in path, 'OWNED_LEASE_CANONICAL_API_PATH_REQUIRED')
     remaining = deadline - time.monotonic()
     require(0 < remaining <= G5P_HTTP_BUDGET_SECONDS, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
+    conditional = os.environ.get('RC6_GATE') in ('G5P-acquire', 'G5P-certify')
+    key = (hashlib.sha256(token.encode()).digest(), path) if conditional else None
+    cached = admission._conditional_cache_get(key) if conditional else None
+    headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'}
+    if cached is not None: headers['If-None-Match'] = cached[0]
     request = urllib.request.Request('https://api.github.com/repos/' + admission.REPO + path,
-        headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json',
-            'X-GitHub-Api-Version': '2022-11-28'})
-    with urllib.request.urlopen(request, timeout=remaining) as response:
-        raw = response.read(MAX_OBJECT_BYTES + 1)
+        headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=remaining) as response:
+            status = getattr(response, 'status', 200)
+            if status == 304:
+                require(cached is not None, 'OWNED_LEASE_304_WITHOUT_VERIFIED_CACHE')
+                return admission.document(cached[1])
+            require(status == 200, 'OWNED_LEASE_API_HTTP_200_OR_VERIFIED_304_REQUIRED')
+            raw = response.read(MAX_OBJECT_BYTES + 1)
+            etag = response.headers.get('ETag') if conditional else None
+    except urllib.error.HTTPError as error:
+        if error.code == 304:
+            require(cached is not None, 'OWNED_LEASE_304_WITHOUT_VERIFIED_CACHE')
+            return admission.document(cached[1])
+        raise
     require(0 < len(raw) <= MAX_OBJECT_BYTES, 'OWNED_LEASE_API_RESPONSE_BYTE_BOUND')
-    return admission.document(raw)
+    value = admission.document(raw)
+    if conditional and type(etag) is str and re.fullmatch(r'(?:W/)?"[A-Za-z0-9._:/+=-]{1,200}"', etag):
+        admission._conditional_cache_put(key, etag, raw)
+    return value
 
 
 def _scope(context, checked, get):
