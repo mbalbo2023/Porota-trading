@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import subprocess
 import sys
@@ -53,7 +54,15 @@ def patch_unit(raw: bytes) -> bytes:
     index = matches[0]
     line = lines[index]
     if line.count(OLD) != 1 or "--init" in line or "--health-cmd" in line:
-        raise RuntimeError("UNIT_SOURCE_MISMATCH")
+        flags = {
+            "old_exact": line.count(OLD),
+            "pids": re.findall(r"--pids-limit(?:=|\s+)([0-9]+)", line),
+            "memory": re.findall(r"--memory(?:=|\s+)([0-9]+[a-zA-Z]*)", line),
+            "init": "--init" in line,
+            "health_override": "--health-cmd" in line,
+            "line_sha256": sha(line.encode()),
+        }
+        raise RuntimeError("UNIT_SOURCE_MISMATCH:" + json.dumps(flags, sort_keys=True))
     if not all(token in line for token in
                ("--read-only", "--user botuser", "--cap-drop ALL",
                 "POROTA_RUNTIME_MODE=PRODUCTION_PAPER", "--pull never")):
