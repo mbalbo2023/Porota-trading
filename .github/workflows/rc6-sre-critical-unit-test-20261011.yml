@@ -1,0 +1,26 @@
+name: RC6 SRE critical source contract
+on:
+  push:
+    branches: [ops/rc6-sre-deep-20261011]
+    paths:
+      - ops/rc6_deploy_critical_control_plane.sh
+      - tests/test_rc6_sre_critical_health.py
+      - .github/workflows/rc6-sre-critical-unit-test-20261011.yml
+permissions:
+  contents: read
+jobs:
+  source_contract:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/ops/rc6-sre-deep-20261011'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check shell and causal health regression
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n ops/rc6_deploy_critical_control_plane.sh
+          python3 -m unittest discover -s tests -p 'test_rc6_sre_critical_health.py' -v
+          git diff --exit-code
