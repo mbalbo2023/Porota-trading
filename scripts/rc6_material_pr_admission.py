@@ -67,7 +67,8 @@ FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRA
     'G5A_REVISION_APPROVAL_URL','G5A_CAPABILITY_REFERENCE_JSON','G5A_BOOTSTRAP_REFERENCE_JSON',
     'RC6_G5A_ROOT_SETUP_AUTHORIZATION','RELEASE_PROFILE','G5P_REVISION_APPROVAL_URL',
     'G5P_CONTRACT_DOCUMENT_SHA256','RC6_G5P_MATERIAL_AUTHORIZATION',
-    'G5P_ACQUISITION_REFERENCE_JSON','PATHS','PR'}
+    'G5P_ACQUISITION_REFERENCE_JSON','PATHS','PR','SCOPE','PAIR_ISSUE',
+    'APPLY_RUN','APPLY_ATTEMPT','APPLY_ARTIFACT','APPLY_ZIP_SHA256','APPLY_JSON_SHA256'}
 COMMENT_PAGES=50
 RUN_PAGES=10
 RECOVERY_OWNER='CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC'
@@ -723,6 +724,38 @@ _DISJOINT_SRE_PATHS=frozenset((
     'ops/rc6_deploy_critical_control_plane.sh',
     'scripts/ops/rc6_sre_*','tests/test_rc6_sre_*','docs/ops/RC6_SRE_*'))
 
+# These two unedited owner records explicitly relinquish the one critical
+# deploy operation while retaining the earlier, separately scoped SRE writer.
+# Bind this historical spelling to the exact paired bytes; a generic
+# NOT_ACQUIRED row is never a release of an earlier DEPLOY_OWNER.
+_SRE_APPLY_RELEASE={
+    471:(6112057220,6112200132,'139038315d1f6e8427085f1bd8baa069f2f5a99b0cab33f746468f8f7ae5971e'),
+    473:(6112057075,6112200322,'a429849bd7a95a9d434161bdbd6287fae4c705fd8ce6b31469510f1a72eaedca')}
+
+
+def exact_sre_apply_release(row,f,issue,prior_deploy,prior_scope):
+    scope_id,release_id,body_sha=_SRE_APPLY_RELEASE[issue]
+    session='WORK_RC6_SRE_20261011_1740Z'
+    return (row['id']==release_id
+        and hashlib.sha256(row['body'].encode()).hexdigest()==body_sha
+        and prior_scope is not None and prior_scope[0]['id']==scope_id
+        and prior_deploy is not None
+        and prior_deploy[1].get('DEPLOY_OWNER')==session
+        and prior_deploy[1].get('WORKSTREAM_ID')==prior_scope[1].get('WORKSTREAM_ID')
+        ==f.get('WORKSTREAM_ID')=='WS-RC6-SRE-REPAIR-DISK-DEEP-20261011'
+        and f.get('SESSION_SUCCESSOR')==f.get('SESSION')==session
+        and f.get('WRITE_OWNER')==f.get('INTEGRATION_OWNER')==session
+        and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
+        and f.get('BRANCH')==prior_scope[1].get('BRANCH')=='ops/rc6-sre-deep-20261011'
+        and f.get('SCOPE')=='Only SRE source/evidence; no further host mutation authorized by this receipt.'
+        and f.get('APPLY_RUN')=='38163172961' and f.get('APPLY_ATTEMPT')=='1'
+        and f.get('APPLY_ARTIFACT')=='11710093973'
+        and f.get('APPLY_ZIP_SHA256')=='0287ef958307e29ba9165b99fe3406bd6b05b8bd75ab5b4bb88e09d54bc21ee5'
+        and f.get('APPLY_JSON_SHA256')=='0042f2d17ed63cbb00004eeec2c1aa5787c5a9e7f3f04d57ab93914d0e8f0680'
+        and f.get('PAIR_ISSUE')==str(issue)
+        and f.get('MODE')=='PRODUCTION_PAPER / SIMULATION'
+        and f.get('real_orders_sent')=='0')
+
 
 def disjoint_sre_writer(f,source_sha,owner):
     """The separately scoped #491 writer has no claim on G5P Source or paths."""
@@ -741,14 +774,31 @@ def disjoint_sre_writer(f,source_sha,owner):
         and f.get('MODE')=='PRODUCTION_PAPER / SIMULATION' and f.get('real_orders_sent')=='0')
 
 def latest_writer(rows,issue,sha,tree,owner,now):
-    records=[];states={};deploy_states={}
+    records=[];states={};deploy_states={};sre_scope=None;sre_releases=[]
     for row in sorted(rows,key=lambda item:(effective_stamp(item),item['id'])):
         f=fields(row.get('body',''))
         if any(key in f for key in ('WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER','SOURCE_LEASE_EXPIRES_UTC','RELEASED')):
             require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/'+str(issue)),
                 'OWNERSHIP_RECORD_AUTHOR_OR_ISSUE_REBOUND')
             require(row['created_at']==row['updated_at'],'EDITED_HISTORICAL_OWNERSHIP_RECORD')
+            scope_id,release_id,_body_sha=_SRE_APPLY_RELEASE[issue]
+            if row['id']==scope_id:
+                require(disjoint_sre_writer(f,sha,owner),'SRE_PRIOR_DISJOINT_PATH_SCOPE_REBOUND')
+                sre_scope=(row,f)
             deploy=f.get('DEPLOY_OWNER')
+            if row['id']==release_id:
+                session='WORK_RC6_SRE_20261011_1740Z'
+                require(exact_sre_apply_release(row,f,issue,deploy_states.get(session),sre_scope),
+                    'SRE_EXACT_PAIRED_APPLY_RELEASE_REBOUND')
+                # Scope is inherited from its immutable, narrower declaration;
+                # identify the source rather than claiming these fields were in
+                # the later release comment itself.
+                f={**f,**{key:sre_scope[1][key] for key in ('PATHS','BASE_SHA','PR')},
+                    '_SRE_SCOPE_RECEIPT_ID':str(scope_id)}
+                deploy_states[session]=(row,{'DEPLOY_OWNER':'RELEASED','RELEASED':'true',
+                    'WORKSTREAM_ID':f['WORKSTREAM_ID'],'_SRE_EXACT_RELEASE_SHA256':_body_sha})
+                sre_releases.append({'comment_id':row['id'],'body_sha256':_body_sha,
+                    'prior_scope_comment_id':scope_id,'apply_run_id':38163172961})
             if deploy not in (None,'NOT_ACQUIRED','NONE','null'):
                 session=f.get('SESSION_SUCCESSOR',f.get('SESSION'))
                 if deploy=='RELEASED':
@@ -825,6 +875,7 @@ def latest_writer(rows,issue,sha,tree,owner,now):
         'body_sha256':hashlib.sha256(row['body'].encode()).hexdigest(),'lease_expires_utc':expires.isoformat().replace('+00:00','Z'),
         'latest_integration_owner_comment_id':integrations[-1][0]['id'],
         'authenticated_disjoint_active_writers':disjoint,
+        'authenticated_sre_deploy_release_records':sre_releases,
         'all_post_anchor_owner_record_ids':[item[0]['id'] for item in records],
         'all_post_anchor_records_and_old_comment_edits_checked':True,'maximum_lease_seconds':1200}
     if owner not in (RECOVERY_OWNER,SUCCESSOR_OWNER,CLOSURE_OWNER):

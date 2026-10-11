@@ -1,5 +1,6 @@
 """Offline regressions for the owner-bound canonical Actions activation path."""
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from unittest import TestCase, main
@@ -203,6 +204,51 @@ class HistoricalOwnerReleaseTests(TestCase):
             admission.latest_writer([active,release,dict(reacquire,body=reacquire['body'].replace(
                 'PATHS=scripts/ops/rc6_sre_*,tests/test_rc6_sre_*,docs/ops/RC6_SRE_*\n','')),owner],
                 471,"a"*40,"b"*40,"CODEX_OWNER",now)
+
+    def test_exact_historical_sre_apply_release_inherits_only_prior_paths(self):
+        session="WORK_RC6_SRE_20261011_1740Z"
+        workstream="WS-RC6-SRE-REPAIR-DISK-DEEP-20261011"
+        scoped=self.row(6112057220,1,f"WORKSTREAM_ID={workstream}\n"
+            f"SESSION_SUCCESSOR={session}\nWRITE_OWNER={session}\n"
+            f"INTEGRATION_OWNER={session}\nDEPLOY_OWNER=NOT_ACQUIRED\nRELEASED=false\n"
+            "BRANCH=ops/rc6-sre-deep-20261011\nSOURCE_SHA="+"c"*40+"\n"
+            "BASE_SHA="+admission.BASE_SHA+"\n"
+            "PR=https://github.com/mbalbo2023/Porota-trading/pull/494\n"
+            "PATHS=scripts/ops/rc6_sre_*,tests/test_rc6_sre_*,docs/ops/RC6_SRE_*\n"
+            "MODE=PRODUCTION_PAPER / SIMULATION\nreal_orders_sent=0\n")
+        active=self.row(2,2,f"WORKSTREAM_ID={workstream}\nSESSION={session}\n"
+            f"WRITE_OWNER={session}\nINTEGRATION_OWNER={session}\n"
+            f"DEPLOY_OWNER={session}\nRELEASED=false\n")
+        release_body=(f"WORKSTREAM_ID={workstream}\nSESSION={session}\nSESSION_SUCCESSOR={session}\n"
+            f"WRITE_OWNER={session}\nINTEGRATION_OWNER={session}\n"
+            "DEPLOY_OWNER=NOT_ACQUIRED\nRELEASED=false\n"
+            "BRANCH=ops/rc6-sre-deep-20261011\nSOURCE_SHA="+"d"*40+"\n"
+            "SCOPE=Only SRE source/evidence; no further host mutation authorized by this receipt.\n"
+            "APPLY_RUN=38163172961\nAPPLY_ATTEMPT=1\nAPPLY_ARTIFACT=11710093973\n"
+            "APPLY_ZIP_SHA256=0287ef958307e29ba9165b99fe3406bd6b05b8bd75ab5b4bb88e09d54bc21ee5\n"
+            "APPLY_JSON_SHA256=0042f2d17ed63cbb00004eeec2c1aa5787c5a9e7f3f04d57ab93914d0e8f0680\n"
+            "MODE=PRODUCTION_PAPER / SIMULATION\nreal_orders_sent=0\nPAIR_ISSUE=471\n")
+        release=self.row(6112200132,3,release_body)
+        owner=self.row(4,4,"WORKSTREAM_ID=WS-RC6-G5P-MATERIAL\n"
+            "SESSION_SUCCESSOR=CODEX_OWNER\nWRITE_OWNER=CODEX_OWNER\n"
+            "INTEGRATION_OWNER=CODEX_OWNER\nDEPLOY_OWNER=NOT_ACQUIRED\n"
+            "RELEASED=false\nSOURCE_SHA="+"a"*40+"\nSOURCE_TREE="+"b"*40+"\n"
+            "SOURCE_LEASE_EXPIRES_UTC=2026-10-11T17:20:00Z\n"
+            "MODE=PRODUCTION_PAPER / SIMULATION\nreal_orders_sent=0\n")
+        expected=(6112057220,6112200132,hashlib.sha256(release_body.encode()).hexdigest())
+        now=datetime(2026,10,11,17,5,tzinfo=timezone.utc)
+        with patch.dict(admission._SRE_APPLY_RELEASE,{471:expected}):
+            result=admission.latest_writer([scoped,active,release,owner],471,
+                "a"*40,"b"*40,"CODEX_OWNER",now)
+            self.assertEqual(result['authenticated_sre_deploy_release_records'][0]
+                ['prior_scope_comment_id'],6112057220)
+            self.assertEqual(result['authenticated_disjoint_active_writers'][0]['comment_id'],6112200132)
+            for altered in (release_body.replace('APPLY_ATTEMPT=1','APPLY_ATTEMPT=2'),
+                            release_body.replace('no further host mutation','host mutation')):
+                with self.subTest(altered=altered),self.assertRaisesRegex(
+                        ValueError,'SRE_EXACT_PAIRED_APPLY_RELEASE_REBOUND'):
+                    admission.latest_writer([scoped,active,dict(release,body=altered),owner],471,
+                        "a"*40,"b"*40,"CODEX_OWNER",now)
 
 
 if __name__ == "__main__":
