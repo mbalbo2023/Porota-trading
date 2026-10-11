@@ -336,9 +336,13 @@ def verify_preparation_artifacts(context, controls, reader):
 
 class PreparationRunner(original.OwnedRunner):
     """Every preparation command keeps the original manager/own FIN/live lease."""
-    def __init__(self, manager, controls, namespace, context):
+    def __init__(self, manager, controls, namespace, context, *, aggregate_root,
+                 aggregate_probe, aggregate_project_id):
         super().__init__(manager, controls)
         self.namespace, self.context = namespace, context
+        self.aggregate_root = aggregate_root
+        self.aggregate_probe = aggregate_probe
+        self.aggregate_project_id = aggregate_project_id
 
     def __call__(self, argv, *, cwd, label, limit=300, env=None, namespace=None):
         require(namespace is None, 'G5A_ACTIONS_PREPARATION_FOREIGN_NAMESPACE_FORBIDDEN')
@@ -350,8 +354,19 @@ class PreparationRunner(original.OwnedRunner):
             ('source_sha', 'source_tree', 'owner_session', 'launch_receipt_url')}
         self.lease_context.update(gate='Horizon', g5a_namespace_receipt=owned.namespace_receipt(command_namespace),
             g5a_revision=self.context.revision)
-        env = preparation_environment(argv, env)
-        return super().__call__(argv, cwd=cwd, label=label, limit=limit, env=env, namespace=command_namespace)
+        from scripts import rc6_g5a_aggregate_issuer as aggregate
+        env = aggregate.stage_environment(self.aggregate_root,
+            preparation_environment(argv, env), project_id=self.aggregate_project_id,
+            stage='preparation')
+        command = aggregate.guarded_stage_command(stage='preparation', root=self.aggregate_root,
+            outside_control=self.aggregate_probe, project_id=self.aggregate_project_id,
+            cwd=cwd, argv=argv, python=sys.executable)
+        aggregate.require_stage_topology(self.aggregate_root, stage='preparation',
+            project_id=self.aggregate_project_id,
+            write_roots={'controls': self.control, 'namespace': command_namespace.path,
+                'manager_logs': self.raw, 'cwd': cwd})
+        return super().__call__(command, cwd=cwd, label=label, limit=limit,
+            env=env, namespace=command_namespace)
 
 
 def preparation_environment(argv, env):
@@ -434,6 +449,8 @@ def prepare(args, context, reader):
     base = calibration.verify_python(args.python311, '311')
     require(sys.executable == base and platform.python_version() == '3.11.16' and sys.prefix == sys.base_prefix,
         'G5A_ACTIONS_PREPARE_REVIEWED_BASE311_REQUIRED')
+    from scripts.rc6_g5a_host_capacity import require_host_stage_admission
+    require_host_stage_admission(stage='preparation')
     parent = _private_parent(args.work_parent or Path.home())
     require(len(os.fsencode(parent)) <= 24, 'G5A_ACTIONS_ORIGINAL_SHORT_OWNED_PARENT_REQUIRED')
     root = Path(tempfile.mkdtemp(prefix='r6g-', dir=parent))
@@ -442,8 +459,13 @@ def prepare(args, context, reader):
     outputs(control_root=controls, safe_payload_upload='false')
     # Native ZIP validation precedes fixture namespaces, installer, fetch/export and images.
     row = verify_preparation_artifacts(context, controls, reader)
-    from scripts.rc6_g5a_host_capacity import require_host_stage_admission
-    require_host_stage_admission(stage='preparation')
+    from scripts import rc6_g5a_aggregate_issuer as aggregate
+    quota_attributes = calibration.project_attributes(parent)
+    quota_project_id = quota_attributes['project_id']
+    aggregate.require_stage_topology(parent, stage='preparation',
+        project_id=quota_project_id,
+        write_roots={'controls': controls, 'preparation': root})
+    probe_root = parent.parent / 'g5a-probe'
     args.gate = 'Horizon'; args.capacity_peaks = row['capacity_peaks']
     args.prerequisites_manifest = row['prerequisites_manifest']; args.require_pr_admission = True
     probe = type('CapacityControl', (), {'control': controls})()
@@ -452,7 +474,9 @@ def prepare(args, context, reader):
     manager_pin = original.module_pin(ROOT, 'scripts/rc6_controlled_native_child_manager.py', context.source_sha)
     require(manager_pin['sha256'] == owned.DRIVER_SHA256, 'G5A_ACTIONS_ORIGINAL_NATIVE_MANAGER_REBOUND')
     manager = runpy.run_path(str(ROOT / manager_pin['path'])); manager['pre_capture_kernel_state']()
-    run = PreparationRunner(manager, controls, namespace, context)
+    run = PreparationRunner(manager, controls, namespace, context,
+        aggregate_root=parent, aggregate_probe=probe_root,
+        aggregate_project_id=quota_project_id)
     original.complete_full_git(args, run, namespace.path)
     python = installed311(args, run, namespace.path)
     original.preparation_capacity(args, run, namespace.path, 'before-g5a-original19')
@@ -570,9 +594,17 @@ def execute(args, context, reader):
     def capacity_preflight(path, phase):
         host_capacity.require_host_stage_admission(stage='reader-'+phase)
         raise ValueError('G5A_HOST_STAGE_AGGREGATE_ENFORCEMENT_NOT_VERIFIED')
+    from scripts import rc6_g5a_aggregate_issuer as aggregate
+    aggregate_root = Path(prepared['source_root']).parents[2]
+    aggregate_id = calibration.project_attributes(aggregate_root)['project_id']
+    aggregate.require_stage_topology(aggregate_root, stage='reader-collection',
+        project_id=aggregate_id,
+        write_roots={'controls': controls, 'readers': aggregate_root/'readers'})
     review = native_readers.execute_post_fin_review(captured, source_root=ROOT, python311=prepared['python311'],
         control_root=controls/'native-readers', deadline=operation_deadline,
-        owner_check=decision.owner_check, capacity_preflight=capacity_preflight, monitor_factory=decision.monitor_factory)
+        owner_check=decision.owner_check, capacity_preflight=capacity_preflight,
+        monitor_factory=decision.monitor_factory, aggregate_root=aggregate_root,
+        aggregate_probe=aggregate_root.parent/'g5a-probe', aggregate_project_id=aggregate_id)
     packed = parts.package(captured)
     accepted = decision.accepted_row()
     assembled = family.assemble_draft(captured, packed, review, result, root=controls, approval=context.revision,

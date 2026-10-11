@@ -60,3 +60,37 @@ def test_unlinked_probe_rejects_changed_limit_before_any_native_allocation():
         with pytest.raises(ValueError, match="G5A_AGGREGATE_EXACT_PROBE_LIMIT_REQUIRED"):
             issuer.nonroot_unlinked_edquot_probe("/must-not-open", expected_id=1,
                 hard_bytes=limit)
+
+
+def test_all_stage_write_roots_reject_outside_or_rebound_project(tmp_path, monkeypatch):
+    root = tmp_path / 'quota'
+    root.mkdir()
+    inside = root / 'readers'
+    inside.mkdir()
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    monkeypatch.setattr(issuer.calibration, 'project_attributes',
+        lambda path: {'project_id': 55 if Path(path) != outside else 56,
+                      'inheritance': True, 'mount_id': 77})
+    for stage in issuer.STAGES:
+        proof = issuer.require_stage_topology(root, stage=stage,
+            project_id=55, write_roots={'readers': inside})
+        assert proof['launch_authorized'] is proof['G5_GREEN'] is False
+        with pytest.raises(ValueError, match='OUTSIDE_PROJECT_WRITE_ROOT_FORBIDDEN'):
+            issuer.require_stage_topology(root, stage=stage,
+                project_id=55, write_roots={'escape': outside})
+        with pytest.raises(ValueError, match='STAGE_PROJECT_READBACK_REQUIRED'):
+            issuer.require_stage_topology(root, stage=stage,
+                project_id=56, write_roots={'readers': inside})
+        with pytest.raises(ValueError, match='^G5A_HOST_STAGE_AGGREGATE_ENFORCEMENT_NOT_VERIFIED$'):
+            host.require_host_stage_admission(stage=stage, enforcement=proof)
+
+
+def test_sealed_command_rejects_forged_stage_before_exec(tmp_path):
+    with pytest.raises(ValueError, match='EXACT_STAGE_TOPOLOGY_REQUIRED'):
+        issuer.guarded_stage_command(stage='reader-green', root=tmp_path,
+            outside_control=tmp_path, project_id=55, cwd=tmp_path,
+            argv=['/bin/true'], python='/usr/bin/python3')
+    with pytest.raises(ValueError, match='SEALED_STAGE_ARGUMENTS_REQUIRED'):
+        issuer._sealed_stage_main(['--sealed-stage', 'reader-green',
+            str(tmp_path), str(tmp_path), '55', '--', '/bin/true'])

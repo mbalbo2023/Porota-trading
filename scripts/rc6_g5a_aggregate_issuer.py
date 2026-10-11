@@ -15,6 +15,12 @@ from pathlib import Path
 import platform
 import stat
 import struct
+import sys
+
+if __name__ == "__main__":
+    source_root = str(Path(__file__).absolute().parents[1])
+    if source_root not in sys.path:
+        sys.path.insert(0, source_root)
 
 from scripts import rc6_capacity_calibration as calibration
 from scripts import rc6_trusted_quota_setup as trusted
@@ -75,6 +81,41 @@ def _quota(device, project_id):
             "hard_inodes": record.ihard, "soft_inodes": record.isoft,
             "used_bytes": record.space, "used_inodes": record.inodes,
             "native_operation": operation}
+
+
+def require_stage_topology(root, *, stage, project_id, write_roots):
+    """Check live inode/project membership before an original-manager launch.
+
+    This observation grants no stage admission. All paths that can receive
+    manager logs, installer output, Source exports or reader output must be
+    included. The kernel quota, not this path check, bounds unlinked files.
+    """
+    require(stage in STAGES and type(project_id) is int and project_id > 0
+            and type(write_roots) is dict and write_roots,
+            "G5A_AGGREGATE_EXACT_STAGE_TOPOLOGY_REQUIRED")
+    root, info = _plain_directory(root)
+    require(info.st_uid == os.geteuid() and os.getuid() == os.geteuid() > 0,
+            "G5A_AGGREGATE_NONROOT_STAGE_ROOT_REQUIRED")
+    root_attr = calibration.project_attributes(root)
+    require(root_attr["project_id"] == project_id and root_attr["inheritance"] is True,
+            "G5A_AGGREGATE_STAGE_PROJECT_READBACK_REQUIRED")
+    observed = {}
+    for label, value in write_roots.items():
+        require(type(label) is str and label.isidentifier(),
+                "G5A_AGGREGATE_WRITE_ROOT_LABEL_REQUIRED")
+        path, child = _plain_directory(value)
+        require(path == root or path.is_relative_to(root),
+                "G5A_AGGREGATE_OUTSIDE_PROJECT_WRITE_ROOT_FORBIDDEN")
+        attr = calibration.project_attributes(path)
+        require(child.st_dev == info.st_dev and child.st_uid == info.st_uid
+                and attr["project_id"] == project_id
+                and attr["mount_id"] == root_attr["mount_id"],
+                "G5A_AGGREGATE_STAGE_CHILD_PROJECT_REBOUND")
+        observed[label] = {"path": str(path), "device": child.st_dev,
+                           "inode": child.st_ino, "project_id": attr["project_id"]}
+    return {"stage": stage, "root": str(root), "root_identity": [info.st_dev, info.st_ino],
+            "project_id": project_id, "write_roots": observed,
+            "launch_authorized": False, "G5_GREEN": False}
 
 
 def trusted_setup(*, root, probe, source, device, project_id, probe_id, owner_uid, owner_gid):
@@ -219,29 +260,45 @@ class _PathBeneath(ctypes.Structure):
     _fields_ = (("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32))
 
 
-def install_stage_write_boundary(root, *, outside_control):
+def install_stage_write_boundary(root, *, outside_control, project_id):
     """Landlock all inherited subprocess writes to the one quota project.
 
     The original native NONROOT/cap0/NNP/seccomp seal must already exist.
-    All extra FDs are closed; stdio must be pipes or character devices so an
-    inherited regular FD cannot write around the path policy.
+    All extra FDs are closed. An inherited regular manager log is accepted
+    only when its live fd has the same project ID and is inside this root.
     """
     require(platform.machine() in ("x86_64", "aarch64") and os.getuid() == os.geteuid() > 0,
             "G5A_AGGREGATE_NATIVE_NONROOT_ARCH_REQUIRED")
     root, info = _plain_directory(root)
     outside, other = _plain_directory(outside_control)
-    require(root.parent == outside.parent and other.st_dev == info.st_dev
+    require(type(project_id) is int and project_id > 0
+            and root.parent == outside.parent and other.st_dev == info.st_dev
             and other.st_uid == os.getuid()
             and stat.S_IMODE(other.st_mode) & 0o300 == 0o300
-            and calibration.project_attributes(root)["inheritance"] is True,
+            and calibration.project_attributes(root)["inheritance"] is True
+            and calibration.project_attributes(root)["project_id"] == project_id
+            and calibration.project_attributes(outside)["project_id"] != project_id,
             "G5A_AGGREGATE_BOUNDARY_OWN_PROJECT_REQUIRED")
     status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines() if ":" in line)
     require(status["NoNewPrivs"].strip() == "1" and status["Seccomp"].strip() == "2"
             and all(int(status[key].strip(), 16) == 0 for key in
                     ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")),
             "G5A_AGGREGATE_ORIGINAL_NONROOT_SEAL_REQUIRED")
-    require(all(not stat.S_ISREG(os.fstat(fd).st_mode) for fd in (0, 1, 2)),
-            "G5A_AGGREGATE_INHERITED_REGULAR_STDIO_FORBIDDEN")
+    for fd in (0, 1, 2):
+        held = os.fstat(fd)
+        if stat.S_ISREG(held.st_mode):
+            target = Path(os.readlink(f"/proc/self/fd/{fd}"))
+            require(target.is_relative_to(root) and held.st_dev == info.st_dev
+                    and calibration.descriptor_mount_id(fd)
+                        == calibration.project_attributes(root)["mount_id"],
+                    "G5A_AGGREGATE_INHERITED_OUTSIDE_FILE_FORBIDDEN")
+            attrs = bytearray(28)
+            fcntl.ioctl(fd, calibration.FSGETXATTR, attrs, True)
+            require(struct.unpack("=5I8x", attrs)[3] == project_id,
+                    "G5A_AGGREGATE_INHERITED_FD_PROJECT_REBOUND")
+        else:
+            require(stat.S_ISFIFO(held.st_mode) or stat.S_ISCHR(held.st_mode),
+                    "G5A_AGGREGATE_INHERITED_SPECIAL_FD_FORBIDDEN")
     libc = ctypes.CDLL(None, use_errno=True)
     libc.syscall.restype = ctypes.c_long
     abi = libc.syscall(444, ctypes.c_void_p(), 0, 1)
@@ -285,7 +342,40 @@ def install_stage_write_boundary(root, *, outside_control):
             "inherited_by_fork_exec": True, "launch_authorized": False}
 
 
-def stage_environment(root, existing):
+def guarded_stage_command(*, stage, root, outside_control, project_id, cwd, argv, python):
+    """Construct the child sealed under the unchanged original manager.
+
+    Caller must pass this argv to its existing execute_owned/OwnedRunner. The
+    wrapper itself cannot confer G5A admission or claim an original FIN.
+    """
+    require(type(argv) is list and argv and all(type(item) is str and item for item in argv)
+            and type(python) is str and Path(python).is_file(),
+            "G5A_AGGREGATE_EXACT_COMMAND_REQUIRED")
+    require_stage_topology(root, stage=stage, project_id=project_id,
+        write_roots={"cwd": cwd})
+    return [python, "-I", "-B", str(Path(__file__).absolute()), "--sealed-stage",
+            stage, str(root), str(outside_control), str(project_id), "--", *argv]
+
+
+def _sealed_stage_main(arguments):
+    require(len(arguments) >= 7 and arguments[0] == "--sealed-stage"
+            and arguments[1] in STAGES and arguments[5] == "--",
+            "G5A_AGGREGATE_SEALED_STAGE_ARGUMENTS_REQUIRED")
+    _, stage, root, outside, identifier, _, *command = arguments
+    require(identifier.isdecimal() and command and os.getuid() == os.geteuid() > 0,
+            "G5A_AGGREGATE_SEALED_STAGE_NONROOT_REQUIRED")
+    require_stage_topology(root, stage=stage, project_id=int(identifier),
+        write_roots={"cwd": Path.cwd()})
+    libc = ctypes.CDLL(None, use_errno=True)
+    require(libc.prctl(38, 1, 0, 0, 0) == 0,
+            "G5A_AGGREGATE_NO_NEW_PRIVILEGES_REQUIRED")
+    calibration.install_seccomp()
+    install_stage_write_boundary(root, outside_control=outside,
+        project_id=int(identifier))
+    os.execvpe(command[0], command, os.environ)
+
+
+def stage_environment(root, existing, *, project_id=None, stage=None):
     """Place installer, compiler, temporary, Git and reader output in quota."""
     root, _ = _plain_directory(root)
     require(type(existing) is dict and all(type(k) is str and type(v) is str for k, v in existing.items())
@@ -296,6 +386,12 @@ def stage_environment(root, existing):
              "PYTHONPYCACHEPREFIX": root / "cache"}
     require(all(path.is_dir() and not path.is_symlink() and path.stat().st_dev == root.stat().st_dev
                 for path in paths.values()), "G5A_AGGREGATE_ALL_CHILD_WRITE_ROOTS_REQUIRED")
+    if project_id is not None:
+        require_stage_topology(root, stage=stage, project_id=project_id,
+            write_roots={name: path for name, path in paths.items() if name.isidentifier()})
+        require(all(calibration.project_attributes(path)["project_id"] == project_id
+                    for path in paths.values()),
+                "G5A_AGGREGATE_ALL_ENVIRONMENT_PROJECTS_REQUIRED")
     result = {key: value for key, value in existing.items() if key not in paths}
     result.update({key: str(path) for key, path in paths.items()})
     result.update(PYTHONDONTWRITEBYTECODE="1", GIT_OPTIONAL_LOCKS="0")
@@ -313,3 +409,7 @@ def incomplete_evidence(*, setup, unlinked_control, boundary, stages):
             "launch_authorized": False, "G5_GREEN": False,
             "qualification_claimed": False, "real_orders_sent": 0,
             "reason": "G5A_HOST_STAGE_AGGREGATE_ENFORCEMENT_NOT_VERIFIED"}
+
+
+if __name__ == "__main__":
+    _sealed_stage_main(sys.argv[1:])

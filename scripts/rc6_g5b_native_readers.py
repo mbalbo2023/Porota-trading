@@ -26,7 +26,9 @@ def require(ok, reason):
 
 
 def execute_post_fin_review(raw_capture, *, source_root, python311, control_root, deadline,
-                            owner_check, capacity_preflight, monitor_factory):
+                            owner_check, capacity_preflight, monitor_factory,
+                            aggregate_root=None, aggregate_probe=None,
+                            aggregate_project_id=None):
     """Return actual lossless RAW role paths, without a certification factory.
 
     raw_capture is the original opaque parser object. It can exist only after
@@ -43,6 +45,7 @@ def execute_post_fin_review(raw_capture, *, source_root, python311, control_root
     from scripts import rc6_material_horizon as horizon
     from scripts import rc6_architectural_gates as gates
     from scripts import rc6_owned_gate_lease as leases
+    from scripts import rc6_g5a_aggregate_issuer as aggregate
     state = captures._capture(raw_capture)
     documentary = state['documentary']; binding = documentary['binding']
     require(documentary.get('original_retirement', {}).get('original_outer_FIN_verified') is True
@@ -54,6 +57,15 @@ def execute_post_fin_review(raw_capture, *, source_root, python311, control_root
         and type(deadline) in (int, float)
         and 0 < deadline - time.monotonic() <= 21600, 'G5B_READERS_SOURCE_OWNER_CAPACITY_REMAINING_DEADLINE_REQUIRED')
     source, control = runner.canonical_path(str(source_root)), runner.canonical_path(str(control_root))
+    require(aggregate_root is not None and aggregate_probe is not None
+        and type(aggregate_project_id) is int and aggregate_project_id > 0,
+        'G5A_HOST_STAGE_AGGREGATE_ENFORCEMENT_NOT_VERIFIED')
+    aggregate_root = runner.canonical_path(str(aggregate_root))
+    aggregate_probe = runner.canonical_path(str(aggregate_probe))
+    aggregate.require_stage_topology(aggregate_root, stage='reader-collection',
+        project_id=aggregate_project_id, write_roots={'readers': aggregate_root/'readers'})
+    require(control.is_relative_to(aggregate_root),
+        'G5B_READERS_CONTROL_OUTSIDE_AGGREGATE_PROJECT_FORBIDDEN')
     require(not os.path.lexists(control) and control.parent.lstat().st_uid == os.getuid()
         and not control.is_relative_to(source) and not source.is_relative_to(control),
         'G5B_READERS_FRESH_SOURCE_EXTERNAL_CONTROL_REQUIRED')
@@ -79,7 +91,7 @@ def execute_post_fin_review(raw_capture, *, source_root, python311, control_root
         from scripts.rc6_g5a_host_capacity import require_host_stage_admission
         require_host_stage_admission(stage='reader-'+phase)
         require(time.monotonic() < deadline, 'G5B_READERS_ORIGINAL_HORIZON21600_DEADLINE_EXHAUSTED')
-        namespace = lifecycle.create_namespace(Path.home(), binding)
+        namespace = lifecycle.create_namespace(aggregate_root/'readers', binding)
         output = namespace.path/'focal'; output.mkdir(mode=0o700)
         # This callback must use the already authenticated original comparable
         # corpus bound; an observation or synthetic reduction is insufficient.
@@ -100,7 +112,16 @@ def execute_post_fin_review(raw_capture, *, source_root, python311, control_root
             calibration.wire(selected_files).decode()]
         remaining = min(5400, int(deadline-time.monotonic()))
         require(remaining >= 1, 'G5B_READERS_ORIGINAL_HORIZON21600_DEADLINE_EXHAUSTED')
-        kernel, fin = lifecycle.execute_owned(namespace, command, cwd=source, environ=env,
+        stage = 'reader-'+phase
+        aggregate.require_stage_topology(aggregate_root, stage=stage,
+            project_id=aggregate_project_id,
+            write_roots={'control': control, 'namespace': namespace.path, 'output': output})
+        env = aggregate.stage_environment(aggregate_root, env,
+            project_id=aggregate_project_id, stage=stage)
+        sealed = aggregate.guarded_stage_command(stage=stage, root=aggregate_root,
+            outside_control=aggregate_probe, project_id=aggregate_project_id,
+            cwd=aggregate_root, argv=command, python=str(python311))
+        kernel, fin = lifecycle.execute_owned(namespace, sealed, cwd=aggregate_root, environ=env,
             timeout_seconds=remaining, fin_label=label, progress=monitor.progress)
         lifecycle.require_fin(namespace, fin)
         monitor.after_fin(kernel)
