@@ -71,7 +71,7 @@ jobs:
               "mount":command(["findmnt","-n","-o","SOURCE,FSTYPE,OPTIONS","/"],10),
               "docker_root":command(["docker","info","--format","{{.DockerRootDir}}"],20),
               "docker_mounts":command(["findmnt","-R","-o","TARGET,SOURCE,FSTYPE","/var/lib/docker"],12),
-              "docker_du":command(["timeout","75","du","-B1","-s","/var/lib/docker"],80),
+              "docker_du":"PRIOR_RUN_38161419212",
               "docker_df":command(["docker","system","df","-v"],40),
               "memory":command(["free","-b"],10),
               "failed_units":command(["systemctl","--failed","--no-pager","--no-legend"],10),
@@ -177,7 +177,7 @@ jobs:
                 "-p","ExecMainExitTimestamp","-p","FragmentPath"],10)
               report["units"][unit]=r
           report["occupancy"]={}
-          for root in ("/opt","/var","/usr","/home","/root","/tmp"):
+          for root in ("/var/log","/var/lib","/opt/porota-trading"):
               r=run(["timeout","95","du","-x","-B1","-d1",root],100,100000)
               rows=[]
               for line in r["out"].splitlines():
@@ -203,6 +203,103 @@ jobs:
               name=line.split()[0] if line.split() else ""
               if "ppi" in name.lower() and "watch" in name.lower():
                   report["ppi_watch_units"].append({"unit":name,"active":command(["systemctl","is-active",name],10)["output"].strip()})
+          # Focused discriminants; no commands below write to the host.
+          proc=report["containers"].get("porota_critical_approval_rc6",{})
+          pid=proc.get("state_pid")
+          proc_tree=[]
+          if isinstance(pid,int) and pid>0:
+              try:
+                  rel=(pathlib.Path("/proc")/str(pid)/"cgroup").read_text().splitlines()[0].split(":",2)[-1].lstrip("/")
+                  cgroup_path=pathlib.Path("/sys/fs/cgroup")/rel/"cgroup.procs"
+                  for entry in cgroup_path.read_text().splitlines()[:300]:
+                      status=(pathlib.Path("/proc")/entry/"status").read_text().splitlines()
+                      fields={}
+                      for line in status:
+                          if line.startswith(("Name:","State:","PPid:","Threads:")):
+                              k,v=line.split(":",1);fields[k]=v.strip()
+                      proc_tree.append({"pid":int(entry),**fields})
+              except Exception as e: report["critical_process_tree_error"]=type(e).__name__
+          report["critical_process_tree"]={"processes":proc_tree,
+              "name_state_counts":dict(collections.Counter((r.get("Name","?")+"|"+r.get("State","?")) for r in proc_tree)),
+              "thread_sum":sum(int(r.get("Threads",0)) for r in proc_tree)}
+          unit=run(["systemctl","cat","porota-critical-approval-rc6.service"],12,100000,True)
+          unit_text=unit["out"]
+          report["critical_unit"]={"exit":unit["exit"],"sha256":digest(unit_text),
+              "pids_limit_tokens":re.findall(r'--pids-limit(?:=|\\s+)([0-9]+)',unit_text),
+              "exec_start_binary_class":[re.split(r'[/\\s]+',m.group(1))[0] for m in []],
+              "mentions_docker_run":bool(re.search(r'ExecStart=.*docker\\s+run',unit_text)),
+              "mentions_launcher_script":bool(re.search(r'ExecStart=.*\\.sh',unit_text))}
+          raw=run(["docker","logs","--timestamps","--since","24h","--tail","8000","porota_production_observer"],45,1800000,True)
+          lines=raw["out"].splitlines()
+          hours=collections.Counter()
+          callsites=collections.Counter()
+          event_lines=collections.Counter()
+          last_frame=None
+          for line in lines:
+              if re.search("database is locked|sqlite_busy|SQLITE_LOCKED",line,re.I):
+                  hours[line[:13]]+=1
+              m=re.search(r'File "[^"]*/([^/"]+)", line [0-9]+, in ([A-Za-z_][A-Za-z_0-9]*)',line)
+              if m:last_frame=(m.group(1),m.group(2))
+              if re.search(r'(?:sqlite3[.])?OperationalError: database is locked',line,re.I):
+                  callsites[last_frame or ("UNKNOWN","UNKNOWN")]+=1
+                  last_frame=None
+              for label,pattern in (("EXIT_READER_STATUS","EXIT_READER_STATUS_SQLITE_CONTENTION"),
+                  ("EXIT_READER","EXIT_READER_SQLITE_CONTENTION"),
+                  ("CANDLE","candle.*sqlite"),
+                  ("SCALPING","scalping.*sqlite")):
+                  if re.search(pattern,line,re.I):event_lines[label]+=1
+          report["sqlite_log_groups"]={"error_hour_line_counts":dict(hours),
+              "exception_last_frames":[{"file":k[0],"function":k[1],"count":n} for k,n in callsites.most_common(30)],
+              "event_lines":dict(event_lines),"raw_sha256":digest(raw["out"])}
+          pre=run(["journalctl","-u","porota-preopen-rc6.service","--since","2026-10-09 13:00:00",
+              "--until","2026-10-09 14:00:00","--no-pager","-o","cat"],15,120000,True)
+          report["preopen_oct9_journal"]={"exit":pre["exit"],"sha256":digest(pre["out"]),
+              "red_checks":sorted(set(re.findall(r'"(?:release_identity|observer_container|dashboard_container|observer_db|disk|required_rc6_timers|byma_morning_watch|iol_reference_fallback|history_quarantine|foreign_market_policy)"',pre["out"]))),
+              "reason_categories":{key:len(re.findall(key,pre["out"])) for key in
+                  ("RED","NOT_DUE","BYMA_","IOL_","WS15_","UNAVAILABLE","Traceback")}}
+          report["journal_disk"]=command(["journalctl","--disk-usage"],15)
+          rotated=[]
+          for base,dirs,files in os.walk("/var/log",followlinks=False):
+              dirs[:]=[d for d in dirs if not (pathlib.Path(base)/d).is_symlink()]
+              for name in files:
+                  path=pathlib.Path(base)/name
+                  try:
+                      st=path.lstat()
+                      if stat.S_ISREG(st.st_mode) and st.st_dev==os.stat("/").st_dev:
+                          rotated.append({"path":str(path),"inode":st.st_ino,"dev":st.st_dev,
+                              "blocks_bytes":st.st_blocks*512,"size":st.st_size,
+                              "nlink":st.st_nlink,"mtime":datetime.datetime.fromtimestamp(st.st_mtime,datetime.timezone.utc).isoformat(),
+                              "rotated":bool(re.search(r'[.]([0-9]+|gz|xz|zst)
+          print(json.dumps(report,sort_keys=True,indent=2))
+          PY
+          python3 -m json.tool "$RUNNER_TEMP/rc6-sre-deep-readonly.json" >/dev/null
+          python3 - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"rc6-sre-deep-readonly.json"
+          x=json.loads(p.read_text())
+          print("SRE_READONLY=CAPTURED|free_bytes="+str(x["root_fs"]["available_bytes"])+
+                "|critical_health="+str(x["containers"].get("porota_critical_approval_rc6",{}).get("health_status"))+
+                "|paper_state="+str(x["db"].get("state"))+"|mutation=false")
+          PY
+          sha256sum "$RUNNER_TEMP/rc6-sre-deep-readonly.json"
+      - name: Upload original redacted evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-sre-deep-readonly-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-sre-deep-readonly.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Remove runner-only SSH credential
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/rc6-sre-audit"
+,name))})
+                  except OSError: pass
+          report["log_files_top"]=sorted(rotated,key=lambda x:-x["blocks_bytes"])[:40]
+          check='import sqlite3,sys;c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True,timeout=2);c.execute("PRAGMA query_only=ON");print(c.execute("PRAGMA quick_check(1)").fetchone()[0]);c.close()'
+          qc=run(["timeout","85","python3","-c",check,db],90,1000,True)
+          report["db"]["quick_check"]={"exit":qc["exit"],"result":qc["out"].strip()[:40] if qc["exit"]==0 else "NOT_COMPLETED"}
           report["completed_utc"]=now()
           print(json.dumps(report,sort_keys=True,indent=2))
           PY
