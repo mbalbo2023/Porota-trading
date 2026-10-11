@@ -66,7 +66,7 @@ FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRA
     'G5A_REVISION_APPROVAL_URL','G5A_CAPABILITY_REFERENCE_JSON','G5A_BOOTSTRAP_REFERENCE_JSON',
     'RC6_G5A_ROOT_SETUP_AUTHORIZATION','RELEASE_PROFILE','G5P_REVISION_APPROVAL_URL',
     'G5P_CONTRACT_DOCUMENT_SHA256','RC6_G5P_MATERIAL_AUTHORIZATION',
-    'G5P_ACQUISITION_REFERENCE_JSON'}
+    'G5P_ACQUISITION_REFERENCE_JSON','PATHS','PR'}
 COMMENT_PAGES=50
 RUN_PAGES=10
 RECOVERY_OWNER='CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC'
@@ -668,6 +668,30 @@ def dedup_admission(sha,gate):
     return {'prior_same_Source_PR_or_same_gate_runs':seen,'examined_run_ids':sorted(ids),
         'pagination_complete':True,'no_prior_run_reclassified_as_PASS':True}
 
+
+_DISJOINT_SRE_PATHS=frozenset((
+    '.github/workflows/rc6-sre-deep-readonly-20261011.yml',
+    '.github/workflows/rc6-sre-*-20261011.yml',
+    'ops/rc6_deploy_critical_control_plane.sh',
+    'scripts/ops/rc6_sre_*','tests/test_rc6_sre_*','docs/ops/RC6_SRE_*'))
+
+
+def disjoint_sre_writer(f,source_sha,owner):
+    """The separately scoped #491 writer has no claim on G5P Source or paths."""
+    paths=f.get('PATHS','').split(',')
+    return (owner!='WORK_RC6_SRE_20261011_1740Z'
+        and f.get('WORKSTREAM_ID')=='WS-RC6-SRE-REPAIR-DISK-DEEP-20261011'
+        and f.get('SESSION_SUCCESSOR',f.get('SESSION'))=='WORK_RC6_SRE_20261011_1740Z'
+        and f.get('WRITE_OWNER')==f.get('INTEGRATION_OWNER')=='WORK_RC6_SRE_20261011_1740Z'
+        and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
+        and f.get('BRANCH')=='ops/rc6-sre-deep-20261011'
+        and f.get('BASE_SHA')==BASE_SHA
+        and re.fullmatch('[0-9a-f]{40}',f.get('SOURCE_SHA','')) is not None
+        and f['SOURCE_SHA']!=source_sha
+        and f.get('PR')=='https://github.com/'+REPO+'/pull/494'
+        and paths and len(paths)==len(set(paths)) and set(paths)<=_DISJOINT_SRE_PATHS
+        and f.get('MODE')=='PRODUCTION_PAPER / SIMULATION' and f.get('real_orders_sent')=='0')
+
 def latest_writer(rows,issue,sha,tree,owner,now):
     records=[];states={};deploy_states={}
     for row in sorted(rows,key=lambda item:(effective_stamp(item),item['id'])):
@@ -721,17 +745,23 @@ def latest_writer(rows,issue,sha,tree,owner,now):
     # that every historical lease already contain its future release. A later
     # false/unknown status reacquires the scope and blocks again. Expiry never
     # changes release state, including records older than a new transfer.
-    for identifier,(_row,status) in states.items():
+    disjoint=[]
+    for identifier,(foreign_row,status) in states.items():
         if identifier!=owner:
-            require(status.get('RELEASED')=='true',
+            permitted=disjoint_sre_writer(status,sha,owner)
+            require(status.get('RELEASED')=='true' or permitted,
                 'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER_AFTER_SUCCESSOR_ANCHOR')
+            if permitted:disjoint.append({'session':identifier,'comment_id':foreign_row['id'],
+                'branch':status['BRANCH'],'paths':status['PATHS'].split(',')})
     require(all(status.get('DEPLOY_OWNER')=='RELEASED' and status.get('RELEASED')=='true'
                 for _row,status in deploy_states.values()),
             'ACTIVE_DEPLOY_OWNER_AFTER_CONTROLLED_ANCHOR')
-    integrations=[(row,f) for row,f in records if 'INTEGRATION_OWNER' in f]
-    require(integrations and integrations[-1][1]['INTEGRATION_OWNER']==owner,
+    integrations=[(row,f) for row,f in records if f.get('INTEGRATION_OWNER')==owner]
+    require(integrations,
         'LATEST_INTEGRATION_OWNER_NOT_CONTROLLED_RECOVERY')
-    row,f=records[-1]
+    owned=[(row,f) for row,f in records if f.get('WRITE_OWNER')==owner]
+    require(owned,'LATEST_CONTROLLED_WRITER_REQUIRED')
+    row,f=owned[-1]
     require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/'+str(issue))
         and row['created_at']==row['updated_at']
         and f.get('WRITE_OWNER')==owner and f.get('SESSION_SUCCESSOR',f.get('SESSION'))==owner
@@ -746,6 +776,7 @@ def latest_writer(rows,issue,sha,tree,owner,now):
     result={'comment_id':row['id'],'url':row['html_url'],'author':'mbalbo2023','fields':f,
         'body_sha256':hashlib.sha256(row['body'].encode()).hexdigest(),'lease_expires_utc':expires.isoformat().replace('+00:00','Z'),
         'latest_integration_owner_comment_id':integrations[-1][0]['id'],
+        'authenticated_disjoint_active_writers':disjoint,
         'all_post_anchor_owner_record_ids':[item[0]['id'] for item in records],
         'all_post_anchor_records_and_old_comment_edits_checked':True,'maximum_lease_seconds':1200}
     if owner not in (RECOVERY_OWNER,SUCCESSOR_OWNER,CLOSURE_OWNER):

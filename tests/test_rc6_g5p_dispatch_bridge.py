@@ -102,6 +102,37 @@ class HistoricalOwnerReleaseTests(TestCase):
             admission.latest_writer([host, writer_release_only, owner], 471,
                 "a" * 40, "b" * 40, "CODEX_OWNER", now)
 
+    def test_exact_separate_sre_scope_can_coexist_but_any_overlap_blocks(self):
+        owner=self.row(1,1,"WORKSTREAM_ID=WS-RC6-G5P-MATERIAL\nSESSION_SUCCESSOR=CODEX_OWNER\n"
+            "WRITE_OWNER=CODEX_OWNER\nINTEGRATION_OWNER=CODEX_OWNER\nDEPLOY_OWNER=NOT_ACQUIRED\n"
+            "RELEASED=false\nSOURCE_SHA="+"a"*40+"\nSOURCE_TREE="+"b"*40+"\n"
+            "SOURCE_LEASE_EXPIRES_UTC=2026-10-11T17:20:00Z\n"
+            "MODE=PRODUCTION_PAPER / SIMULATION\nreal_orders_sent=0\n")
+        sre=self.row(2,2,"WORKSTREAM_ID=WS-RC6-SRE-REPAIR-DISK-DEEP-20261011\n"
+            "SESSION_SUCCESSOR=WORK_RC6_SRE_20261011_1740Z\n"
+            "WRITE_OWNER=WORK_RC6_SRE_20261011_1740Z\n"
+            "INTEGRATION_OWNER=WORK_RC6_SRE_20261011_1740Z\n"
+            "DEPLOY_OWNER=NOT_ACQUIRED\nRELEASED=false\n"
+            "BRANCH=ops/rc6-sre-deep-20261011\nSOURCE_SHA="+"c"*40+"\n"
+            "BASE_SHA="+admission.BASE_SHA+"\n"
+            "PR=https://github.com/mbalbo2023/Porota-trading/pull/494\n"
+            "PATHS=.github/workflows/rc6-sre-*-20261011.yml,ops/rc6_deploy_critical_control_plane.sh,"
+            "scripts/ops/rc6_sre_*,tests/test_rc6_sre_*,docs/ops/RC6_SRE_*\n"
+            "MODE=PRODUCTION_PAPER / SIMULATION\nreal_orders_sent=0\n")
+        now=datetime(2026,10,11,17,3,tzinfo=timezone.utc)
+        valid=admission.latest_writer([owner,sre],471,"a"*40,"b"*40,"CODEX_OWNER",now)
+        self.assertEqual(valid['comment_id'],1)
+        self.assertEqual(valid['authenticated_disjoint_active_writers'][0]['comment_id'],2)
+        for changed in (sre['body'].replace('docs/ops/RC6_SRE_*',
+                            'scripts/rc6_material_carrier.py'),
+                        sre['body'].replace('pull/494','pull/492'),
+                        sre['body'].replace('ops/rc6-sre-deep-20261011',
+                            'fix/rc6-g5p-paper-v3-20261011')):
+            with self.subTest(changed=changed),self.assertRaisesRegex(
+                    ValueError,'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER'):
+                admission.latest_writer([owner,dict(sre,body=changed)],471,
+                    "a"*40,"b"*40,"CODEX_OWNER",now)
+
 
 if __name__ == "__main__":
     main()
