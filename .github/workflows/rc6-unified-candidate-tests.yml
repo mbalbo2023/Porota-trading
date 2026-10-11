@@ -446,6 +446,12 @@ jobs:
           from scripts.rc6_capacity_comparison import readonly_runner_observation
           path=Path(os.environ['RUNNER_TEMP'])/'rc6-development-controls'/'runner-readonly.json'
           path.write_text(json.dumps(readonly_runner_observation(path.parent),sort_keys=True,indent=2)+'\n')
+          from scripts.rc6_g5a_native_feasibility import observe
+          feasibility=observe({'source':os.environ['GITHUB_WORKSPACE'],
+              'home':os.environ['HOME'], 'runner_temp':os.environ['RUNNER_TEMP'],
+              'tool_cache':os.environ['RUNNER_TOOL_CACHE']})
+          (path.parent/'g5a-native-feasibility.json').write_text(
+              json.dumps(feasibility,sort_keys=True,indent=2)+'\n')
           PY_READONLY
       - name: Prepare bounded Python311 development tooling
         id: dev311

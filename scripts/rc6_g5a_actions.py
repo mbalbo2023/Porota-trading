@@ -270,7 +270,8 @@ class DecisionAPI:
 
     def monitor_factory(self, namespace, label):
         self.accepted_row()
-        require(label in ('g5-reader-collection', 'g5-reader-execution'),
+        require(label in ('g5-reader-product157-preflight', 'g5-reader-collection',
+                          'g5-reader-execution'),
             'G5A_ACTIONS_ORIGINAL_READER_OWNER_MONITOR_SCOPE_REQUIRED')
         receipt = owned.namespace_receipt(namespace)
         require(receipt['binding'] == self.context.binding,
@@ -445,7 +446,13 @@ def record_interpreter(*, source_repo, source_root, source_sha, source_tree, bin
 
 
 def prepare(args, context, reader):
-    row = validate_context(context); args.repo_root = exact_repo(args)
+    row = validate_context(context)
+    from scripts import rc6_g5a_writer_inventory as writers
+    # This is deliberately before even a Git identity subprocess. The current
+    # workflow's checkout and parent Git callers make it a native NO-GO until
+    # a fresh ROOT-owned project encloses Source and every process writer.
+    writers.require_closed(writers.audit(ROOT, project_root=args.work_parent))
+    args.repo_root = exact_repo(args)
     base = calibration.verify_python(args.python311, '311')
     require(sys.executable == base and platform.python_version() == '3.11.16' and sys.prefix == sys.base_prefix,
         'G5A_ACTIONS_PREPARE_REVIEWED_BASE311_REQUIRED')
@@ -544,7 +551,10 @@ def prepared_document(path, context):
 
 def execute(args, context, reader):
     operation_deadline = time.monotonic() + runner.HORIZON_SECONDS
-    validate_context(context); exact_repo(args)
+    validate_context(context)
+    from scripts import rc6_g5a_writer_inventory as writers
+    writers.require_closed(writers.audit(ROOT, project_root=None))
+    exact_repo(args)
     require(platform.python_version() == '3.11.16' and sys.prefix != sys.base_prefix,
         'G5A_ACTIONS_EXECUTE_ACTUAL_PREEXISTING_PRODUCT311_REQUIRED')
     manifest = args.prepared_manifest if args.prepared_manifest is not None else args.prepared_root / 'prepared.json'

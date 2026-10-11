@@ -118,7 +118,8 @@ def require_stage_topology(root, *, stage, project_id, write_roots):
             "launch_authorized": False, "G5_GREEN": False}
 
 
-def trusted_setup(*, root, probe, source, device, project_id, probe_id, owner_uid, owner_gid):
+def trusted_setup(*, root, probe, source, owner_home, device, project_id, probe_id,
+                  owner_uid, owner_gid):
     """Root-only setup on the original ext4, before any installer or reader.
 
     The caller supplies a fresh own pair of sibling directories in a private
@@ -135,9 +136,12 @@ def trusted_setup(*, root, probe, source, device, project_id, probe_id, owner_ui
     root, root_info = _plain_directory(root)
     probe, probe_info = _plain_directory(probe)
     source, source_info = _plain_directory(source)
-    home, home_info = _plain_directory(Path.home())
+    # A ROOT systemd service normally has HOME=/root. The owner home must be
+    # passed from authenticated custody; ROOT's environment is not its owner.
+    home, home_info = _plain_directory(owner_home)
     require(root.parent == probe.parent and root != probe and root.is_relative_to(home)
             and root_info.st_dev == probe_info.st_dev == source_info.st_dev == home_info.st_dev
+            and home_info.st_uid == owner_uid
             and (root_info.st_uid, probe_info.st_uid) == (owner_uid, owner_uid)
             and not any(root.iterdir()) and not any(probe.iterdir())
             and len(os.fsencode(root / "e")) <= 50,
@@ -155,6 +159,13 @@ def trusted_setup(*, root, probe, source, device, project_id, probe_id, owner_ui
     fmt = calibration.quota_format(str(block))
     require(fmt["format_id"] == calibration.FORMAT_VFS_V1,
             "G5A_AGGREGATE_KERNEL_PROJECT_QUOTA_FORMAT_REQUIRED")
+    # A fresh directory is not a fresh project ID. Never overwrite a quota
+    # already in use by another workstream or by an interrupted operation.
+    for identifier in (project_id, probe_id):
+        previous = _quota(block, identifier)
+        require(all(previous[key] == 0 for key in ('hard_bytes', 'soft_bytes',
+                    'hard_inodes', 'soft_inodes', 'used_bytes', 'used_inodes')),
+                "G5A_AGGREGATE_FRESH_UNUSED_PROJECT_ID_REQUIRED")
     aggregate = trusted.setup_project(str(block), root, project_id,
         hard_bytes=LIMIT, hard_inodes=INODES,
         operation_scope="G5A_HOST_STAGE_AGGREGATE_20GIB_V1")
@@ -162,10 +173,15 @@ def trusted_setup(*, root, probe, source, device, project_id, probe_id, owner_ui
         hard_bytes=PROBE_LIMIT, hard_inodes=32768,
         operation_scope="G5A_HOST_STAGE_AGGREGATE_20GIB_V1")
     require(aggregate["kernel_readback"] is True and control["kernel_readback"] is True
-            and _quota(block, project_id)["hard_bytes"] == LIMIT
-            and _quota(block, probe_id)["hard_bytes"] == PROBE_LIMIT,
+            and all(_quota(block, project_id)[key] == expected for key, expected in
+                (("hard_bytes", LIMIT), ("soft_bytes", LIMIT),
+                 ("hard_inodes", INODES), ("soft_inodes", INODES)))
+            and all(_quota(block, probe_id)[key] == expected for key, expected in
+                (("hard_bytes", PROBE_LIMIT), ("soft_bytes", PROBE_LIMIT),
+                 ("hard_inodes", 32768), ("soft_inodes", 32768))),
             "G5A_AGGREGATE_KERNEL_READBACK_REQUIRED")
-    for name in ("home", "tmp", "cache", "builds", "exports", "readers", "source"):
+    for name in ("home", "tmp", "cache", "builds", "exports", "readers", "source",
+                 "config", "data"):
         child = root / name
         child.mkdir(mode=0o700)
         os.chown(child, owner_uid, owner_gid)
@@ -260,6 +276,34 @@ class _PathBeneath(ctypes.Structure):
     _fields_ = (("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32))
 
 
+def require_inherited_descriptors(root, project_id, descriptors):
+    """Reject regular inherited FDs outside the same held project.
+
+    The production caller always passes stdio 0–2 and then closes all other
+    FDs before installing Landlock. A directory path check cannot see an
+    already-open, possibly unlinked file.
+    """
+    root, info = _plain_directory(root)
+    mount_id = calibration.project_attributes(root)["mount_id"]
+    require(type(descriptors) in (tuple, list) and descriptors and
+            all(type(fd) is int and fd >= 0 for fd in descriptors),
+            "G5A_AGGREGATE_INHERITED_DESCRIPTOR_SET_REQUIRED")
+    for fd in descriptors:
+        held = os.fstat(fd)
+        if stat.S_ISREG(held.st_mode):
+            target = Path(os.readlink(f"/proc/self/fd/{fd}"))
+            require(target.is_relative_to(root) and held.st_dev == info.st_dev
+                    and calibration.descriptor_mount_id(fd) == mount_id,
+                    "G5A_AGGREGATE_INHERITED_OUTSIDE_FILE_FORBIDDEN")
+            attrs = bytearray(28)
+            fcntl.ioctl(fd, calibration.FSGETXATTR, attrs, True)
+            require(struct.unpack("=5I8x", attrs)[3] == project_id,
+                    "G5A_AGGREGATE_INHERITED_FD_PROJECT_REBOUND")
+        else:
+            require(stat.S_ISFIFO(held.st_mode) or stat.S_ISCHR(held.st_mode),
+                    "G5A_AGGREGATE_INHERITED_SPECIAL_FD_FORBIDDEN")
+
+
 def install_stage_write_boundary(root, *, outside_control, project_id):
     """Landlock all inherited subprocess writes to the one quota project.
 
@@ -284,21 +328,7 @@ def install_stage_write_boundary(root, *, outside_control, project_id):
             and all(int(status[key].strip(), 16) == 0 for key in
                     ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")),
             "G5A_AGGREGATE_ORIGINAL_NONROOT_SEAL_REQUIRED")
-    for fd in (0, 1, 2):
-        held = os.fstat(fd)
-        if stat.S_ISREG(held.st_mode):
-            target = Path(os.readlink(f"/proc/self/fd/{fd}"))
-            require(target.is_relative_to(root) and held.st_dev == info.st_dev
-                    and calibration.descriptor_mount_id(fd)
-                        == calibration.project_attributes(root)["mount_id"],
-                    "G5A_AGGREGATE_INHERITED_OUTSIDE_FILE_FORBIDDEN")
-            attrs = bytearray(28)
-            fcntl.ioctl(fd, calibration.FSGETXATTR, attrs, True)
-            require(struct.unpack("=5I8x", attrs)[3] == project_id,
-                    "G5A_AGGREGATE_INHERITED_FD_PROJECT_REBOUND")
-        else:
-            require(stat.S_ISFIFO(held.st_mode) or stat.S_ISCHR(held.st_mode),
-                    "G5A_AGGREGATE_INHERITED_SPECIAL_FD_FORBIDDEN")
+    require_inherited_descriptors(root, project_id, (0, 1, 2))
     libc = ctypes.CDLL(None, use_errno=True)
     libc.syscall.restype = ctypes.c_long
     abi = libc.syscall(444, ctypes.c_void_p(), 0, 1)
@@ -382,7 +412,11 @@ def stage_environment(root, existing, *, project_id=None, stage=None):
             and not any(k in existing for k in ("GH_TOKEN", "GITHUB_TOKEN", "RC6_READONLY_GIT_TOKEN")),
             "G5A_AGGREGATE_NO_CHILD_BEARER_REQUIRED")
     paths = {"HOME": root / "home", "TMPDIR": root / "tmp", "TMP": root / "tmp", "TEMP": root / "tmp",
-             "XDG_CACHE_HOME": root / "cache", "PIP_CACHE_DIR": root / "cache",
+             "XDG_CACHE_HOME": root / "cache", "XDG_CONFIG_HOME": root / "config",
+             "XDG_DATA_HOME": root / "data", "XDG_RUNTIME_DIR": root / "tmp",
+             "PIP_CACHE_DIR": root / "cache", "PIP_BUILD_TRACKER": root / "tmp",
+             "PIP_SRC": root / "builds", "CARGO_HOME": root / "builds",
+             "RUSTUP_HOME": root / "builds", "CCACHE_DIR": root / "cache",
              "PYTHONPYCACHEPREFIX": root / "cache"}
     require(all(path.is_dir() and not path.is_symlink() and path.stat().st_dev == root.stat().st_dev
                 for path in paths.values()), "G5A_AGGREGATE_ALL_CHILD_WRITE_ROOTS_REQUIRED")
@@ -394,7 +428,10 @@ def stage_environment(root, existing, *, project_id=None, stage=None):
                 "G5A_AGGREGATE_ALL_ENVIRONMENT_PROJECTS_REQUIRED")
     result = {key: value for key, value in existing.items() if key not in paths}
     result.update({key: str(path) for key, path in paths.items()})
-    result.update(PYTHONDONTWRITEBYTECODE="1", GIT_OPTIONAL_LOCKS="0")
+    result.update(PYTHONDONTWRITEBYTECODE="1", GIT_OPTIONAL_LOCKS="0",
+                  GIT_NO_LAZY_FETCH="1", GIT_CONFIG_NOSYSTEM="1",
+                  GIT_CONFIG_GLOBAL="/dev/null", PIP_NO_CACHE_DIR="1",
+                  PIP_DISABLE_PIP_VERSION_CHECK="1")
     return result
 
 

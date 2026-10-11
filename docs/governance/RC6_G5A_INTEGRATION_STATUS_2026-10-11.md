@@ -46,3 +46,15 @@ en la admisión.
 
 Estado: **desarrollo de enlace, NO CERTIFICADO**. G5A y G0–G8 permanecen
 bloqueados; PAPER/SHADOW ONLY, `real_orders_sent=0`.
+
+## Auditoría sucesora ROOT/cuota/FIN
+
+La [auditoría de cierre ROOT/cuota/FIN](RC6_G5A_ROOT_QUOTA_FIN_CLOSURE_2026-10-11.md)
+registra el primer NO-GO del grafo de escritores: el checkout y tooling de
+Actions, Git del padre y Source todavía preceden o quedan fuera del proyecto
+cuotado. Un inventario AST cierra la preparación antes de su primer Git y un
+preflight read-only de mount/block device/Q_GETFMT entra en la próxima CI de
+desarrollo. `horizon.preflight` ya se ejecuta bajo gestor y FIN original,
+pero los Git del padre y el setup ROOT previo a checkout siguen pendientes.
+No hay aún autoridad provisional emitible ni readbacks ROOT unidos a los tres
+FIN. La propuesta aceptada como diseño y el escritor V3 efectivo no cambian.

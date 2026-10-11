@@ -81,9 +81,34 @@ def execute_post_fin_review(raw_capture, *, source_root, python311, control_root
         if key not in {'GH_TOKEN', 'GITHUB_TOKEN', 'RC6_READONLY_GIT_TOKEN'}
         and not key.startswith(('POROTA_', 'PAPER_', 'PPI_', 'IOL_', 'BYMA_', 'PYTHON'))}
     environment.update(PYTHONDONTWRITEBYTECODE='1', PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', GIT_OPTIONAL_LOCKS='0')
-    qualification = horizon.preflight(Path(python311), '3.11.16', source, environment)
-    manager.pre_capture_kernel_state()
     control.mkdir(mode=0o700)
+    # PRODUCT157 preflight is a real Python subprocess. It must have the same
+    # original manager, project, sealed boundary, owner monitor and FIN as the
+    # collection it precedes. No unsealed check_output may run in this parent.
+    preflight_namespace = lifecycle.create_namespace(aggregate_root/'readers', binding)
+    preflight_monitor = monitor_factory(preflight_namespace, 'g5-reader-product157-preflight')
+    preflight_monitor.prelaunch('g5-reader-product157-preflight')
+    preflight_env = aggregate.stage_environment(aggregate_root, environment,
+        project_id=aggregate_project_id, stage='reader-collection')
+    aggregate.require_stage_topology(aggregate_root, stage='reader-collection',
+        project_id=aggregate_project_id,
+        write_roots={'control': control, 'namespace': preflight_namespace.path})
+    preflight_command = aggregate.guarded_stage_command(stage='reader-collection',
+        root=aggregate_root, outside_control=aggregate_probe,
+        project_id=aggregate_project_id, cwd=aggregate_root,
+        argv=[str(python311), '-I', '-B', '-c', horizon.PREFLIGHT], python=str(python311))
+    preflight_kernel, preflight_fin = lifecycle.execute_owned(preflight_namespace,
+        preflight_command, cwd=aggregate_root, environ=preflight_env,
+        log_relative='product157-preflight-native.log', timeout_seconds=45,
+        fin_label='reader-product157-preflight', progress=preflight_monitor.progress)
+    lifecycle.require_fin(preflight_namespace, preflight_fin)
+    preflight_monitor.after_fin(preflight_kernel)
+    require(manager.managed_phase_green(preflight_kernel),
+        'G5B_READERS_ORIGINAL_MANAGED_PRODUCT157_PREFLIGHT_RED')
+    qualification = horizon.preflight(Path(python311), '3.11.16', source,
+        environment, wire=runner.read_input(
+            preflight_namespace.path/'product157-preflight-native.log', maximum=1024**2))
+    manager.pre_capture_kernel_state()
     records, live = {}, []
     selected_files = sorted(readers.CAS_REVIEW_MODULES)
     for phase in ('collection', 'execution'):

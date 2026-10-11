@@ -813,8 +813,9 @@ class ComponentArchive:
     def _publish_original_plan(self, original, manifest, manifest_sha, plan):
         """One publisher: both ABIs restore all five bytes before native ACK.
 
-        The candidate Source selects V4. Its contract acceptance, native G5
-        qualification and exact artifact join remain independent requirements.
+        V4 is a proposed planner behind a blocked native write capability.
+        The effective build() dispatch remains V3. Native G5 qualification,
+        an owner decision and the exact artifact join are still required.
         """
         if validate_materialized(original, expected_manifest_sha256=manifest_sha) != manifest:
             raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")

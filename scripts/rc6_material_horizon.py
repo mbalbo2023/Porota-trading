@@ -212,8 +212,12 @@ print(json.dumps({"python":platform.python_version(),"executable":sys.executable
 '''
 
 
-def preflight(interpreter, version, source, environment):
-    wire = subprocess.check_output([str(interpreter),"-I","-B","-c",PREFLIGHT], env=environment, timeout=30)
+def preflight(interpreter, version, source, environment, *, wire=None):
+    # A caller that owns an original-manager FIN may supply the exact stdout
+    # captured inside its sealed child. Never run an additional unmanaged
+    # subprocess after that FIN merely to repeat the PRODUCT157 observation.
+    if wire is None:
+        wire = subprocess.check_output([str(interpreter),"-I","-B","-c",PREFLIGHT], env=environment, timeout=30)
     actual = parse(wire)
     policy = parse(capture(source/"ops/policy/rc6-supply-chain-v1.json",keep_bytes=True)[1])
     expected, installed, locks = {}, {}, {}
