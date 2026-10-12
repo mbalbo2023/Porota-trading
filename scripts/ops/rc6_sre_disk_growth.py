@@ -1,5 +1,6 @@
 """Read-only physical disk growth classifier with bounded low-priority scans."""
 import datetime as dt
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -44,6 +45,41 @@ def category(root, glob):
             'oldest_mtime_utc': dt.datetime.fromtimestamp(min(x[1] for x in rows), dt.timezone.utc).isoformat() if rows else None,
             'newest_mtime_utc': dt.datetime.fromtimestamp(max(x[1] for x in rows), dt.timezone.utc).isoformat() if rows else None}
 
+def children(root):
+    rows = []
+    try:
+        entries = list(Path(root).iterdir())[:80]
+    except OSError:
+        entries = []
+    for p in entries:
+        if p.is_symlink():
+            continue
+        try:
+            s = p.stat()
+            if not (p.is_file() or p.is_dir()):
+                continue
+            size = du(str(p)) if p.is_dir() else s.st_blocks * 512
+            rows.append({'name_class': p.name if p.name in
+                         {'paper_v17', 'sre_vector_db', 'artifacts', 'backups', 'data'}
+                         else 'HASHED',
+                         'name_sha256': hashlib.sha256(p.name.encode()).hexdigest(),
+                         'type': 'DIR' if p.is_dir() else 'FILE',
+                         'size_bytes': size, 'inode': s.st_ino, 'device': s.st_dev,
+                         'mtime_utc': dt.datetime.fromtimestamp(s.st_mtime, dt.timezone.utc).isoformat()})
+        except OSError:
+            pass
+    return sorted(rows, key=lambda x: -(x['size_bytes'] if isinstance(x['size_bytes'], int) else 0))[:25]
+
+def image_source_hashes():
+    code = "import hashlib,json,pathlib; print(json.dumps({n:(hashlib.sha256((pathlib.Path('/app')/n).read_bytes()).hexdigest() if (pathlib.Path('/app')/n).is_file() else None) for n in ('bv_paper_runtime.py','be_paper_engine.py')}))"
+    try:
+        p = subprocess.run(['docker', 'exec', 'porota_production_observer', 'python', '-c', code],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           timeout=15, check=False)
+        return json.loads(p.stdout) if p.returncode == 0 else {'exit': p.returncode}
+    except (subprocess.TimeoutExpired, ValueError):
+        return {'exit': 124}
+
 def main():
     fs = os.statvfs('/')
     report = {'schema': 'porota.rc6.sre.disk-growth.v1',
@@ -61,6 +97,9 @@ def main():
               'journal_archived': category('/var/log/journal', '**/*@*.journal'),
               'journal_active': category('/var/log/journal', '**/system.journal'),
               'docker_logs': category('/var/lib/docker/containers', '*/*-json.log')}
+    report['data_children'] = children('/opt/porota-trading/data')
+    report['paper_children'] = children('/opt/porota-trading/data/paper_v17')
+    report['image_source_hashes'] = image_source_hashes()
     c = sqlite3.connect('file:' + str(DB) + '?mode=ro', uri=True, timeout=3)
     try:
         c.execute('PRAGMA query_only=ON')
