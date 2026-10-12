@@ -6174,6 +6174,22 @@
     }
   ],
   "path_evolution": {
+    "ops/rc6_deploy_critical_control_plane.sh": {
+      "reason": "Preserve SRE critical gateway PID 1 init and Issues-only health after the authenticated runtime repair; exact source mode and host postcheck remain required, without conferring deploy or G5P credit.",
+      "requirement_ids": ["U11","U25","U29"]
+    },
+    "scripts/ops/rc6_sre_critical_repair.py": {
+      "reason": "Carry forward the bounded SRE critical systemd repair with exact unit preimage, one-shot plan/apply and postcheck; source provenance is separate from host mutation authorization.",
+      "requirement_ids": ["U11","U25","U29"]
+    },
+    "tests/test_rc6_reader_status_connection_lifecycle.py": {
+      "reason": "Regress the PAPER EXIT_READER SQLite status connection closure across repeated waiting writes and rollback; native collected/executed test receipts remain mandatory.",
+      "requirement_ids": ["U04","U13","U14","U24"]
+    },
+    "tests/test_rc6_sre_critical_health.py": {
+      "reason": "Regress the critical gateway --init and Issues-only health contract plus exact host repair guard; native test evidence and deploy validation remain separate.",
+      "requirement_ids": ["U11","U25","U29"]
+    },
     ".dockerignore": {
       "reason": "Post-handoff Docker build-context exclusion protects the exact governed source and artifact boundary. Final Git blob/mode custody remains mandatory; this traceability entry grants no Predeploy, G5P or deploy result.",
       "requirement_ids": ["U11", "U25", "U29"]
