@@ -705,12 +705,25 @@ class OwnedRunner:
         return {'returncode':kernel['returncode'],'kernel':kernel,'log_path':str(log)}
 
 
+def bounded_v3_owner_readmit(admit, *, gate, release_profile=None, **scope):
+    """Retry only a concurrent paired comment read, never a native command."""
+    consistent = release_profile == 'PAPER_V3_ONLY' and gate not in ('G5P-acquire','G5P-certify')
+    for attempt in range(3 if consistent else 1):
+        try:return admit(gate=gate,**scope)
+        except ValueError as error:
+            if str(error) != 'OWNERSHIP_COMMENT_FUTURE_TIMESTAMP' or attempt == 2 or not consistent:
+                raise
+    raise AssertionError('V3_OWNER_READ_RESTART_UNREACHABLE')
+
+
 def readmit_automatic_pr(a,run,stage):
     if not a.require_pr_admission:return
     module_pin(a.repo_root,'scripts/rc6_material_pr_admission.py',a.source_sha)
     controller=runpy.run_path(str(a.repo_root/'scripts/rc6_material_pr_admission.py'))
-    row=controller['admit'](source_sha=a.source_sha,source_tree=a.source_tree,
-        launch_receipt_url=a.launch_receipt_url,owner_session=a.owner_session,gate=a.gate)
+    scope={'source_sha':a.source_sha,'source_tree':a.source_tree,
+        'launch_receipt_url':a.launch_receipt_url,'owner_session':a.owner_session,'gate':a.gate}
+    row=bounded_v3_owner_readmit(controller['admit'],gate=a.gate,
+        release_profile=getattr(a,'release_profile',None),**{k:v for k,v in scope.items() if k!='gate'})
     a.capacity_peaks=row['capacity_peaks'];a.cheap_files=row['cheap_files'];a.prerequisites_manifest=row['prerequisites_manifest']
     a.private_cas_comparison_template=row.get('private_cas_comparison_template')
     a.release_profile=row.get('release_profile','FULL_G5')
@@ -721,8 +734,8 @@ def readmit_automatic_pr(a,run,stage):
     if a.gate=='cheap' and a.release_profile=='PAPER_V3_ONLY':
         run.lease_context['release_profile']='PAPER_V3_ONLY'
     def after_fin(label):
-        fresh=controller['admit'](source_sha=a.source_sha,source_tree=a.source_tree,
-            launch_receipt_url=a.launch_receipt_url,owner_session=a.owner_session,gate=a.gate)
+        fresh=bounded_v3_owner_readmit(controller['admit'],gate=a.gate,
+            release_profile=a.release_profile,**{k:v for k,v in scope.items() if k!='gate'})
         need(fresh['launch_body_sha256']==row['launch_body_sha256'],'OWNED_GATE_IMMUTABLE_AUTHORITY_EDITED')
         save(run.control/('automatic-pr-'+label+'-after-fin.json'),fresh)
     run.lease_readmit=after_fin

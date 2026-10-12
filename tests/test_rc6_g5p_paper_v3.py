@@ -388,6 +388,33 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
                 admission.admit_g5p(**args)
             read.assert_called_once()
 
+    def test_paper_v3_carrier_restarts_only_concurrent_owner_read(self):
+        scope={'source_sha':'a'*40,'source_tree':'b'*40,'owner_session':'CODEX_G5P_TEST',
+               'launch_receipt_url':'https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1'}
+        calls=[]
+        def admit(**kwargs):
+            calls.append(kwargs)
+            if len(calls)<3:raise ValueError('OWNERSHIP_COMMENT_FUTURE_TIMESTAMP')
+            return {'status':'ADMITTED_NATIVE_NOT_STARTED'}
+        result=carrier.bounded_v3_owner_readmit(admit,gate='cheap',
+            release_profile='PAPER_V3_ONLY',**scope)
+        self.assertEqual(result['status'],'ADMITTED_NATIVE_NOT_STARTED')
+        self.assertEqual(len(calls),3)
+        self.assertTrue(all(call=={**scope,'gate':'cheap'} for call in calls))
+        for profile,gate,reason,expected in (
+                ('PAPER_V3_ONLY','cheap','LATEST_WRITER_OR_DEPLOY_OWNER_CONFLICT',1),
+                ('FULL_G5','cheap','OWNERSHIP_COMMENT_FUTURE_TIMESTAMP',1),
+                ('PAPER_V3_ONLY','G5P-acquire','OWNERSHIP_COMMENT_FUTURE_TIMESTAMP',1),
+                ('PAPER_V3_ONLY','cheap','OWNERSHIP_COMMENT_FUTURE_TIMESTAMP',3)):
+            seen=[]
+            def blocked(**kwargs):
+                seen.append(kwargs)
+                raise ValueError(reason)
+            with self.assertRaisesRegex(ValueError,reason):
+                carrier.bounded_v3_owner_readmit(blocked,gate=gate,
+                    release_profile=profile,**scope)
+            self.assertEqual(len(seen),expected)
+
     def test_g5p_owned_lease_http_budget_is_finite_and_legacy_unchanged(self):
         self.assertEqual(lease.http_budget_for_gate('G5P-acquire'),45)
         self.assertEqual(lease.http_budget_for_gate('G5P-certify'),45)
