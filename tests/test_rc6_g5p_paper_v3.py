@@ -391,6 +391,9 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
     def test_g5p_owned_lease_http_budget_is_finite_and_legacy_unchanged(self):
         self.assertEqual(lease.http_budget_for_gate('G5P-acquire'),45)
         self.assertEqual(lease.http_budget_for_gate('G5P-certify'),45)
+        self.assertEqual(lease.http_budget_for_gate('cheap','PAPER_V3_ONLY'),45)
+        self.assertEqual(lease.http_budget_for_gate('cheap'),5)
+        self.assertEqual(lease.http_budget_for_gate('cheap','FULL_G5'),5)
         self.assertEqual(lease.http_budget_for_gate('full-gov311'),5)
         self.assertLess(lease.G5P_HTTP_BUDGET_SECONDS,lease.API_REFRESH_SECONDS)
         with lease._http_budget(time.monotonic()+20,
@@ -408,12 +411,13 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
             issue:{'comment_id':issue,'lease_expires_utc':
                    (now+timedelta(minutes=10)).isoformat().replace('+00:00','Z')}
             for issue in ('471','473')}}
-        for gate,budget in (('G5P-acquire',45),('full-gov311',5)):
+        for gate,budget,profile in (('G5P-acquire',45,None),('full-gov311',5,None),
+                                    ('cheap',45,'PAPER_V3_ONLY'),('cheap',5,None)):
             with tempfile.TemporaryDirectory() as temp:
                 monitor=lease.GateLeaseMonitor(temp,source_sha='a'*40,
                     source_tree='b'*40,owner_session='CODEX_G5P_TEST',gate=gate,
                     launch_receipt_url='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
-                    run_id=123,run_attempt=1,clock=lambda:now)
+                    run_id=123,run_attempt=1,clock=lambda:now,release_profile=profile)
                 captured=[]
                 def budget_context(_deadline, seconds):
                     captured.append(seconds)
@@ -425,6 +429,28 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
                     monitor._observe('prelaunch')
                 self.assertEqual(captured,[budget])
                 self.assertEqual(saved.call_args.args[0]['value']['http_total_budget_seconds'],budget)
+
+    def test_cheap_v3_monitor_requires_authenticated_profile(self):
+        now=datetime.now(timezone.utc)
+        context={'gate':'cheap','source_sha':'a'*40,'source_tree':'b'*40,
+                 'owner_session':'CODEX_G5P_TEST','release_profile':'PAPER_V3_ONLY'}
+        with patch.object(admission,'owned_gate_control_scope',return_value={
+                'release_profile':'FULL_G5'}) as reader:
+            with self.assertRaisesRegex(lease.LeaseControlFailure,
+                                        'OWNED_LEASE_PROFILE_NOT_AUTHENTICATED'):
+                lease._scope(context,now,lambda _path:None)
+            self.assertNotIn('release_profile',reader.call_args.kwargs)
+        with patch.object(admission,'owned_gate_control_scope',return_value={
+                'release_profile':'PAPER_V3_ONLY'}):
+            self.assertEqual(lease._scope(context,now,lambda _path:None)['release_profile'],
+                             'PAPER_V3_ONLY')
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(lease.LeaseControlFailure,
+                                        'OWNED_LEASE_ONLY_CHEAP_V3_PROFILE_MAY_EXTEND_BUDGET'):
+                lease.GateLeaseMonitor(temp,source_sha='a'*40,source_tree='b'*40,
+                    owner_session='CODEX_G5P_TEST',gate='full-gov311',release_profile='PAPER_V3_ONLY',
+                    launch_receipt_url='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
+                    run_id=123,run_attempt=1)
 
     def test_owned_lease_replays_bare_releases_and_only_authenticated_disjoint_writer(self):
         opened=datetime(2026,10,11,19,0,tzinfo=timezone.utc)

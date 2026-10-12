@@ -1166,6 +1166,8 @@ def owned_gate_control_scope(*,source_sha,source_tree,launch_receipt_url,owner_s
     # record their authenticated workstream; the two legacy owners keep the
     # original return wire and original WORKSTREAM used by lease replay.
     if owner_session not in (SUCCESSOR_OWNER,CLOSURE_OWNER):result['workstream_id']=workstream
+    if auth.get('RELEASE_PROFILE')=='PAPER_V3_ONLY':
+        result['release_profile']='PAPER_V3_ONLY'
     return result
 
 def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=None,gate,now=None):

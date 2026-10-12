@@ -718,6 +718,8 @@ def readmit_automatic_pr(a,run,stage):
     a.g5p_revision_approval_url=row.get('g5p_revision_approval_url')
     save(run.control/('automatic-pr-'+stage+'.json'),row)
     run.lease_context={key:row[key] for key in ('source_sha','source_tree','owner_session','gate','launch_receipt_url')}
+    if a.gate=='cheap' and a.release_profile=='PAPER_V3_ONLY':
+        run.lease_context['release_profile']='PAPER_V3_ONLY'
     def after_fin(label):
         fresh=controller['admit'](source_sha=a.source_sha,source_tree=a.source_tree,
             launch_receipt_url=a.launch_receipt_url,owner_session=a.owner_session,gate=a.gate)

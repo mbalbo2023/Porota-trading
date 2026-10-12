@@ -63,9 +63,10 @@ def text_stamp(value):
     return value.isoformat().replace('+00:00', 'Z')
 
 
-def http_budget_for_gate(gate):
-    """Keep legacy pulse timing; bound G5P's complete live owner/API walk."""
-    return G5P_HTTP_BUDGET_SECONDS if gate in ('G5P-acquire', 'G5P-certify') else HTTP_BUDGET_SECONDS
+def http_budget_for_gate(gate, release_profile=None):
+    """Bound V3's expanded owner walk without changing legacy gate timing."""
+    return (G5P_HTTP_BUDGET_SECONDS if gate in ('G5P-acquire', 'G5P-certify')
+        or gate == 'cheap' and release_profile == 'PAPER_V3_ONLY' else HTTP_BUDGET_SECONDS)
 
 
 def _private_write(path, raw):
@@ -145,7 +146,14 @@ def api_get(path, deadline):
 def _scope(context, checked, get):
     reader = admission.owned_diagnostic_control_scope if context.get('gate') in admission.DIAGNOSTIC_GATES \
         else admission.owned_gate_control_scope
-    return reader(**context, now=checked, get=get)
+    profile = context.get('release_profile')
+    scope = reader(**{key:value for key,value in context.items() if key != 'release_profile'},
+        now=checked, get=get)
+    if profile is not None:
+        require(profile == 'PAPER_V3_ONLY' and context.get('gate') == 'cheap'
+            and scope.get('release_profile') == profile,
+            'OWNED_LEASE_PROFILE_NOT_AUTHENTICATED')
+    return scope
 
 
 def _timelines(calls):
@@ -346,7 +354,7 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
 class GateLeaseMonitor:
     def __init__(self, root, *, source_sha, source_tree, owner_session, gate, launch_receipt_url,
                  run_id=None, run_attempt=None, get=None, clock=None, monotonic=None, diagnostic_binding=None,
-                 g5a_namespace_receipt=None, g5a_revision=None):
+                 g5a_namespace_receipt=None, g5a_revision=None, release_profile=None):
         self.root = Path(root)
         identity = self.root.lstat()
         self.store_key = (str(self.root), identity.st_dev, identity.st_ino, identity.st_uid)
@@ -354,7 +362,11 @@ class GateLeaseMonitor:
             'gate': gate, 'launch_receipt_url': launch_receipt_url,
             'run_id': int(os.environ['GITHUB_RUN_ID']) if run_id is None else run_id,
             'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']) if run_attempt is None else run_attempt}
-        self.http_budget_seconds = http_budget_for_gate(gate)
+        require(release_profile is None or
+            (gate == 'cheap' and release_profile == 'PAPER_V3_ONLY'),
+            'OWNED_LEASE_ONLY_CHEAP_V3_PROFILE_MAY_EXTEND_BUDGET')
+        if release_profile is not None:self.context['release_profile'] = release_profile
+        self.http_budget_seconds = http_budget_for_gate(gate, release_profile)
         require(re.fullmatch('[0-9a-f]{40}', source_sha) and re.fullmatch('[0-9a-f]{40}', source_tree)
             and isinstance(owner_session, str) and re.fullmatch(r'CODEX_[A-Z0-9_]{1,159}', owner_session)
             and gate in (*admission.GATES, *admission.DIAGNOSTIC_GATES)
@@ -763,7 +775,10 @@ def replay_lease_evidence(receipt, *, read_object, kernel, source_sha, source_tr
         and receipt.get('actual_pid') == kernel.get('pid')
         and receipt.get('original_manager_sha256') == '55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8',
         'OWNED_LEASE_ARCHIVED_ACTUAL_NATIVE_FIN_REBOUND')
-    budget_seconds = http_budget_for_gate(context.get('gate'))
+    profile = context.get('release_profile')
+    require(profile is None or (context.get('gate') == 'cheap' and profile == 'PAPER_V3_ONLY'),
+        'OWNED_LEASE_ARCHIVED_PROFILE_REBOUND')
+    budget_seconds = http_budget_for_gate(context.get('gate'), profile)
     require(receipt.get('http_total_budget_seconds') == budget_seconds
         and receipt.get('api_refresh_seconds') == API_REFRESH_SECONDS
         and receipt.get('local_poll_seconds') == LOCAL_POLL_SECONDS,
