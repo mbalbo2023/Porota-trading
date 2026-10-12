@@ -816,6 +816,25 @@ def owned_lease_evidence(a,run,root,label,required_labels):
     path=root/(label+'.ownership-index.json');save(path,value)
     return {'path':'carrier/'+path.name,'sha256':digest(canonical(value))}
 
+def clone_transport_preflight(a,run,root):
+    """Probe the exact local clone transport before installing two Product157 epochs.
+
+    The probe has no gate credit and deletes only its newly owned clone after
+    actual managed FIN. A RED retains the outer command log for diagnosis.
+    """
+    import shutil
+    target=root/'clone-transport-preflight'
+    need(not os.path.lexists(target),'CLONE_TRANSPORT_PREFLIGHT_NEW_TARGET_REQUIRED')
+    preparation_capacity(a,run,root,'before-clone-transport-preflight')
+    row=run(['git','clone','--no-local','--no-hardlinks','--no-checkout',
+             str(a.repo_root),str(target)],cwd=root,label='clone-transport-preflight',limit=300)
+    need(row['returncode']==0,'CLONE_TRANSPORT_PREFLIGHT_LOGICAL_RED')
+    need(target.is_dir() and not target.is_symlink() and (target/'.git').is_dir(),
+         'CLONE_TRANSPORT_PREFLIGHT_NORMAL_GIT_REQUIRED')
+    shutil.rmtree(target)
+    need(not os.path.lexists(target),'CLONE_TRANSPORT_PREFLIGHT_CLEANUP_RED')
+
+
 def installed_env(a,run,root):
     interpreters={}
     for epoch,base in (('311',a.python311),('312',a.python312)):
@@ -1704,7 +1723,7 @@ def preserve_closed_lease_stop(a,run,root):
         seal_generated(a,run,namespace,root,'owned-lease-stop',sorted(set(required)))
     module=runpy.run_path(str(a.repo_root/'scripts/rc6_material_raw.py'))
     groups=[('controls',run.control),('commands',run.raw),*run.sealed_groups]
-    if a.gate in ('G5P-acquire','G5P-certify') and stop['label']=='fullGit-original-inputs':
+    if a.gate in ('cheap','G5P-acquire','G5P-certify') and stop['label']=='fullGit-original-inputs':
         # The original builder writes nested preflight logs in a new private
         # rc6g epoch, not in its outer stdout. Its parent and the selected
         # child have both reached FIN here. Capture only preparation controls;
@@ -1796,6 +1815,7 @@ def main():
         auth=authority(a)
         a.preparation_started_utc=architectural.utc()
         complete_full_git(a,run,root)
+        clone_transport_preflight(a,run,root)
         preparation_capacity(a,run,root,'before-installed-environments')
         interpreters=installed_env(a,run,root)
         preparation_capacity(a,run,root,'before-original-Git-object-preparation')
