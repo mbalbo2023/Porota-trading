@@ -66,7 +66,7 @@ def text_stamp(value):
 def http_budget_for_gate(gate, release_profile=None):
     """Bound V3's expanded owner walk without changing legacy gate timing."""
     return (G5P_HTTP_BUDGET_SECONDS if gate in ('G5P-acquire', 'G5P-certify')
-        or gate == 'cheap' and release_profile == 'PAPER_V3_ONLY' else HTTP_BUDGET_SECONDS)
+        or release_profile == 'PAPER_V3_ONLY' else HTTP_BUDGET_SECONDS)
 
 
 def _private_write(path, raw):
@@ -113,7 +113,7 @@ def api_get(path, deadline, *, retry_transient=False):
     require(type(path) is str and (path == '' or path.startswith('/'))
         and '\n' not in path and '\r' not in path, 'OWNED_LEASE_CANONICAL_API_PATH_REQUIRED')
     require(type(retry_transient) is bool, 'OWNED_LEASE_TRANSIENT_RETRY_SCOPE_REQUIRED')
-    conditional = os.environ.get('RC6_GATE') in ('G5P-acquire', 'G5P-certify', 'cheap')
+    conditional = os.environ.get('RC6_GATE') in admission.GATES
     key = (hashlib.sha256(token.encode()).digest(), path) if conditional else None
     cached = admission._conditional_cache_get(key) if conditional else None
     headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json',
@@ -165,7 +165,7 @@ def _scope(context, checked, get):
     scope = reader(**{key:value for key,value in context.items() if key != 'release_profile'},
         now=checked, get=get)
     if profile is not None:
-        require(profile == 'PAPER_V3_ONLY' and context.get('gate') == 'cheap'
+        require(profile == 'PAPER_V3_ONLY' and context.get('gate') in admission.GATES
             and scope.get('release_profile') == profile,
             'OWNED_LEASE_PROFILE_NOT_AUTHENTICATED')
     return scope
@@ -378,8 +378,8 @@ class GateLeaseMonitor:
             'run_id': int(os.environ['GITHUB_RUN_ID']) if run_id is None else run_id,
             'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']) if run_attempt is None else run_attempt}
         require(release_profile is None or
-            (gate == 'cheap' and release_profile == 'PAPER_V3_ONLY'),
-            'OWNED_LEASE_ONLY_CHEAP_V3_PROFILE_MAY_EXTEND_BUDGET')
+            (gate in admission.GATES and release_profile == 'PAPER_V3_ONLY'),
+            'OWNED_LEASE_ONLY_AUTHENTIC_V3_PROFILE_MAY_EXTEND_BUDGET')
         if release_profile is not None:self.context['release_profile'] = release_profile
         self.http_budget_seconds = http_budget_for_gate(gate, release_profile)
         require(re.fullmatch('[0-9a-f]{40}', source_sha) and re.fullmatch('[0-9a-f]{40}', source_tree)
@@ -395,7 +395,7 @@ class GateLeaseMonitor:
         else:
             require(diagnostic_binding is None, 'OWNED_LEASE_DIAGNOSTIC_PINS_OUTSIDE_DIAGNOSTIC_SCOPE')
         v3_retry=(gate in ('G5P-acquire','G5P-certify')
-            or gate=='cheap' and release_profile=='PAPER_V3_ONLY')
+            or release_profile=='PAPER_V3_ONLY')
         self.get=(get if get is not None else
             lambda path, deadline: api_get(path,deadline,retry_transient=v3_retry))
         self.clock, self.monotonic = clock or utc, monotonic or time.monotonic
@@ -803,7 +803,7 @@ def replay_lease_evidence(receipt, *, read_object, kernel, source_sha, source_tr
         and receipt.get('original_manager_sha256') == '55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8',
         'OWNED_LEASE_ARCHIVED_ACTUAL_NATIVE_FIN_REBOUND')
     profile = context.get('release_profile')
-    require(profile is None or (context.get('gate') == 'cheap' and profile == 'PAPER_V3_ONLY'),
+    require(profile is None or (context.get('gate') in admission.GATES and profile == 'PAPER_V3_ONLY'),
         'OWNED_LEASE_ARCHIVED_PROFILE_REBOUND')
     budget_seconds = http_budget_for_gate(context.get('gate'), profile)
     require(receipt.get('http_total_budget_seconds') == budget_seconds

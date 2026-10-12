@@ -254,10 +254,10 @@ def _conditional_cache_put(key,etag,raw):
 def api(path):
     token=os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
     require(bool(token),'ACTIONS_READONLY_TOKEN_REQUIRED')
-    # G5P and cheap's owned run recheck the same immutable comments and timeline
+    # Owned runs recheck the same immutable comments and timeline
     # pages many times. A server-confirmed 304 is a fresh read of unchanged
     # bytes, not a local TTL or permission to ignore a changed owner/release.
-    conditional=os.environ.get('RC6_GATE') in ('G5P-acquire','G5P-certify','cheap')
+    conditional=os.environ.get('RC6_GATE') in GATES
     key=(hashlib.sha256(token.encode()).digest(),path) if conditional else None
     cached=_conditional_cache_get(key) if conditional else None
     headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json',
@@ -267,7 +267,7 @@ def api(path):
         'resource':path.partition('?')[0],'method':'GET','payload_reads':0}),flush=True)
     if conditional:
         # Carrier readmission uses this reader outside the native lease
-        # monitor. Reuse its bounded live GET for the cheap/G5P control walk:
+        # monitor. Reuse its bounded live GET for the ordered control walk:
         # a gateway burst must not convert a still-current owner into RED.
         # Both readers share the verified ETag cache, but an HTTP 500/502/503/504
         # never authorizes reuse of stale bytes.

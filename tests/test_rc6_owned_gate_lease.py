@@ -197,9 +197,10 @@ def test_paper_v3_live_owner_read_retries_only_transient_gateway_status(monkeypa
 
 
 @pytest.mark.parametrize("gateway_status", (500, 502, 503, 504))
-def test_cheap_carrier_readmission_survives_three_gateway_errors_with_fresh_owner_bytes(monkeypatch,gateway_status):
+@pytest.mark.parametrize("gate", ("cheap", "focal311"))
+def test_ordered_carrier_readmission_survives_three_gateway_errors_with_fresh_owner_bytes(monkeypatch,gateway_status,gate):
     monkeypatch.setenv('GH_TOKEN','unit-readonly-control-token')
-    monkeypatch.setenv('RC6_GATE','cheap')
+    monkeypatch.setenv('RC6_GATE',gate)
     monkeypatch.setattr(lease.time,'sleep',lambda _:None)
     monkeypatch.setattr(admission,'_conditional_cache_get',
         lambda _key:('W/"stale-owner"',b'{"current_owner_authority":false}'))
@@ -244,13 +245,15 @@ def test_only_paper_v3_monitor_selects_bounded_gateway_retry(monkeypatch,tmp_pat
     selected=[]
     monkeypatch.setattr(lease,'api_get',lambda path,deadline,*,retry_transient=False:
         selected.append(retry_transient) or {'path':path})
-    for profile in (None,'PAPER_V3_ONLY'):
-        monitor=lease.GateLeaseMonitor(tmp_path,source_sha=SHA,source_tree=TREE,
-            owner_session=admission.SUCCESSOR_OWNER,gate='cheap',
-            launch_receipt_url='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
-            release_profile=profile)
-        assert monitor.get('/unit',time.monotonic()+5)=={'path':'/unit'}
-    assert selected==[False,True]
+    for gate in ('cheap','focal311'):
+        for profile in (None,'PAPER_V3_ONLY'):
+            monitor=lease.GateLeaseMonitor(tmp_path,source_sha=SHA,source_tree=TREE,
+                owner_session=admission.SUCCESSOR_OWNER,gate=gate,
+                launch_receipt_url='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
+                release_profile=profile)
+            assert monitor.get('/unit',time.monotonic()+5)=={'path':'/unit'}
+            assert monitor.http_budget_seconds==(45 if profile else 5)
+    assert selected==[False,True,False,True]
 
 
 def monitor(tmp_path, monkeypatch, *, gate='full-gov311', real_clock=False):
