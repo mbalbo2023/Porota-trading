@@ -272,6 +272,75 @@ class HistoricalOwnerReleaseTests(TestCase):
                     admission.latest_writer([scoped,active,dict(release,body=altered),owner],471,
                         "a"*40,"b"*40,"CODEX_OWNER",now)
 
+    def test_exact_disjoint_sre_successor_releases_old_deploy_owner(self):
+        old=admission._SRE_OLD_OWNER
+        new=admission._SRE_NEW_OWNER
+        workstream='WS-RC6-SRE-REPAIR-DISK-DEEP-20261011'
+        paths='scripts/ops/rc6_sre_*,tests/test_rc6_sre_*,docs/ops/RC6_SRE_*'
+        scope=self.row(6112057220,1,f'WORKSTREAM_ID={workstream}\n'
+            f'SESSION={old}\nSESSION_SUCCESSOR={old}\nWRITE_OWNER={old}\n'
+            f'INTEGRATION_OWNER={old}\nDEPLOY_OWNER=NOT_ACQUIRED\nRELEASED=false\n'
+            'BRANCH=ops/rc6-sre-deep-20261011\nSOURCE_SHA='+ 'c'*40+'\n'
+            'BASE_SHA='+admission.BASE_SHA+'\n'
+            'PR=https://github.com/mbalbo2023/Porota-trading/pull/494\n'
+            f'PATHS={paths}\nMODE=PRODUCTION_PAPER / SIMULATION\nreal_orders_sent=0\n')
+        active=self.row(2,2,f'WORKSTREAM_ID={workstream}\nSESSION={old}\n'
+            f'WRITE_OWNER={old}\nINTEGRATION_OWNER={old}\nDEPLOY_OWNER={old}\nRELEASED=false\n')
+        apply_body=(f'WORKSTREAM_ID={workstream}\nSESSION={old}\nSESSION_SUCCESSOR={old}\n'
+            f'WRITE_OWNER={old}\nINTEGRATION_OWNER={old}\nDEPLOY_OWNER=NOT_ACQUIRED\n'
+            'RELEASED=false\nBRANCH=ops/rc6-sre-deep-20261011\nSOURCE_SHA='+ 'd'*40+'\n'
+            'SCOPE=Only SRE source/evidence; no further host mutation authorized by this receipt.\n'
+            'APPLY_RUN=38163172961\nAPPLY_ATTEMPT=1\nAPPLY_ARTIFACT=11710093973\n'
+            'APPLY_ZIP_SHA256=0287ef958307e29ba9165b99fe3406bd6b05b8bd75ab5b4bb88e09d54bc21ee5\n'
+            'APPLY_JSON_SHA256=0042f2d17ed63cbb00004eeec2c1aa5787c5a9e7f3f04d57ab93914d0e8f0680\n'
+            'MODE=PRODUCTION_PAPER / SIMULATION\nreal_orders_sent=0\nPAIR_ISSUE=471\n')
+        apply=self.row(6112200132,3,apply_body)
+        transfer_body=(f'WORKSTREAM_ID={workstream}\nSESSION={old}\nSESSION_SUCCESSOR={new}\n'
+            'WRITE_OWNER=RELEASED\nINTEGRATION_OWNER=RELEASED\nDEPLOY_OWNER=RELEASED\n'
+            'RELEASED=true\nBRANCH=ops/rc6-sre-deep-20261011\n'
+            'SOURCE_SHA=f61d30dce6d86b7bec086a65f8b7a656797b9cf4\n'
+            'APPLY_RUN=38163172961\nAPPLY_ARTIFACT=11710093973\n'
+            'POST_RUN=38163695961\nPOST_ARTIFACT=11711606030\n'
+            'PAPER=PRODUCTION_PAPER\nreal_orders_sent=0\nPAIR_ISSUE=471\n')
+        transfer=self.row(6115863183,4,transfer_body)
+        successor_body=(f'WORKSTREAM_ID={workstream}\nSESSION={new}\nSESSION_SUCCESSOR={new}\n'
+            f'WRITE_OWNER={new}\nINTEGRATION_OWNER={new}\nDEPLOY_OWNER=NOT_ACQUIRED\n'
+            'RELEASED=false\nBRANCH=ops/rc6-sre-deep-20261011\n'
+            'SOURCE_SHA=f61d30dce6d86b7bec086a65f8b7a656797b9cf4\n'
+            'BASE_BRANCH='+admission.BASE+'\nBASE_SHA='+admission.BASE_SHA+'\n'
+            'PR=https://github.com/mbalbo2023/Porota-trading/pull/494\n'
+            f'PATHS={paths}\nMODE=PRODUCTION_PAPER / SIMULATION\nreal_orders_sent=0\n'
+            'PAIR_ISSUE=471\n')
+        successor=self.row(6115867410,5,successor_body)
+        owner=self.row(4,6,'WORKSTREAM_ID=WS-RC6-G5P-MATERIAL\n'
+            'SESSION_SUCCESSOR=CODEX_OWNER\nWRITE_OWNER=CODEX_OWNER\n'
+            'INTEGRATION_OWNER=CODEX_OWNER\nDEPLOY_OWNER=NOT_ACQUIRED\nRELEASED=false\n'
+            'SOURCE_SHA='+ 'a'*40+'\nSOURCE_TREE='+ 'b'*40+'\n'
+            'SOURCE_LEASE_EXPIRES_UTC=2026-10-11T17:20:00Z\n'
+            'MODE=PRODUCTION_PAPER / SIMULATION\nreal_orders_sent=0\n')
+        now=datetime(2026,10,11,17,7,tzinfo=timezone.utc)
+        prior=(6112057220,6112200132,hashlib.sha256(apply_body.encode()).hexdigest())
+        succession=(6115863183,hashlib.sha256(transfer_body.encode()).hexdigest(),
+                    6115867410,hashlib.sha256(successor_body.encode()).hexdigest())
+        with patch.dict(admission._SRE_APPLY_RELEASE,{471:prior}),patch.dict(
+                admission._SRE_SUCCESSION,{471:succession}):
+            rows=[scope,active,apply,transfer,successor,owner]
+            result=admission.latest_writer(rows,471,'a'*40,'b'*40,'CODEX_OWNER',now)
+            self.assertTrue(result['latest_status_by_owner'][old]['released'])
+            self.assertFalse(result['latest_status_by_owner'][new]['released'])
+            self.assertEqual(result['authenticated_disjoint_active_writers'][0]['session'],new)
+            with self.assertRaisesRegex(ValueError,'SRE_EXACT_DISJOINT_SUCCESSION_RELEASE_REBOUND'):
+                admission.latest_writer([scope,active,apply,dict(transfer,body=transfer_body.replace(
+                    f'SESSION={old}',f'SESSION={new}')),successor,owner],471,
+                    'a'*40,'b'*40,'CODEX_OWNER',now)
+            with self.assertRaisesRegex(ValueError,'SRE_EXACT_DISJOINT_SUCCESSION_WRITER_REBOUND'):
+                admission.latest_writer([scope,active,apply,transfer,dict(successor,
+                    body=successor_body.replace(paths,'scripts/rc6_material_carrier.py')),owner],471,
+                    'a'*40,'b'*40,'CODEX_OWNER',now)
+            with self.assertRaisesRegex(ValueError,'SRE_EXACT_DISJOINT_SUCCESSION_WRITER_REBOUND'):
+                admission.latest_writer([scope,active,apply,successor,owner],471,
+                    'a'*40,'b'*40,'CODEX_OWNER',now)
+
 
 if __name__ == "__main__":
     main()

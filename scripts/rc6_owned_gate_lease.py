@@ -173,12 +173,22 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
         owner_scope = (authenticated_scope or {}).get('fresh_ownership', {}).get(str(issue), {})
         disjoint = owner_scope.get('authenticated_disjoint_active_writers', [])
         require(type(disjoint) is list, 'OWNED_LEASE_DISJOINT_SCOPE_REQUIRED')
+        succession=owner_scope.get('authenticated_sre_successor')
+        expected_succession=admission._SRE_SUCCESSION[issue]
+        successor_authenticated=(type(succession) is dict
+            and succession.get('released_session')==admission._SRE_OLD_OWNER
+            and succession.get('successor_session')==admission._SRE_NEW_OWNER
+            and succession.get('release_comment_id')==expected_succession[0]
+            and succession.get('release_body_sha256')==expected_succession[1]
+            and succession.get('successor_comment_id')==expected_succession[2]
+            and succession.get('successor_body_sha256')==expected_succession[3])
         allowed = {}
         for item in disjoint:
             require(type(item) is dict and type(item.get('comment_id')) is int
                 and item['comment_id'] > 0 and type(item.get('session')) is str
                 and item['session'] != context['owner_session']
-                and item['session'] == 'WORK_RC6_SRE_20261011_1740Z'
+                and (item['session']==admission._SRE_OLD_OWNER
+                    or successor_authenticated and item['session']==admission._SRE_NEW_OWNER)
                 and item.get('branch') == 'ops/rc6-sre-deep-20261011'
                 and type(item.get('paths')) is list and item['paths']
                 and all(type(path) is str for path in item['paths'])
@@ -187,8 +197,14 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
                 and item['session'] not in allowed,
                 'OWNED_LEASE_DISJOINT_SCOPE_REBOUND')
             allowed[item['session']] = item['comment_id']
-        spans = []; states = {}; state_ids = {}
+        spans = []; states = {}; state_ids = {};succession_seen=set()
         for row in sorted(rows, key=lambda item: (admission.effective_stamp(item), item['id'])):
+            if successor_authenticated and row['id'] in (expected_succession[0],expected_succession[2]):
+                expected_hash=(expected_succession[1] if row['id']==expected_succession[0]
+                               else expected_succession[3])
+                require(hashlib.sha256(row.get('body','').encode()).hexdigest()==expected_hash,
+                    'OWNED_LEASE_SRE_SUCCESSION_BYTES_REBOUND')
+                succession_seen.add(row['id'])
             values = admission.fields(row.get('body', ''))
             # G5P approval and launch records repeat the owner and expiry for
             # binding, but only a SESSION owner receipt can grant lease time.
@@ -207,7 +223,7 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
                 # RELEASED literal. It revokes that session's spans; it must
                 # also update the replayed state instead of leaving a false
                 # active foreign writer behind.
-                released = values.get('SESSION_SUCCESSOR', values.get('SESSION'))
+                released = values.get('SESSION') or values.get('SESSION_SUCCESSOR')
                 prior = states.get(released)
                 require(type(released) is str and prior is not None
                     and values.get('WORKSTREAM_ID') == prior.get('WORKSTREAM_ID'),
@@ -221,14 +237,15 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
                     and row['issue_url'].endswith('/issues/' + str(issue)),
                     'OWNED_LEASE_IMMUTABLE_SCOPE_OR_MODE_REQUIRED')
                 if values.get('RELEASED') == 'true':
-                    require(set(owners) == {values.get('SESSION_SUCCESSOR', values.get('SESSION'))},
+                    require(set(owners) == {values.get('SESSION') or values.get('SESSION_SUCCESSOR')},
                         'OWNED_LEASE_AUTHENTIC_OWN_SESSION_RELEASE_REQUIRED')
                     require(effective < start or context['owner_session'] not in owners,
                         'OWNED_LEASE_OWNER_RELEASE_OVERLAPS_PRODUCER')
                 if foreign and effective >= start and values.get('RELEASED') != 'true':
                     require(all(identifier in allowed and
                         (row['id'] == allowed[identifier] or admission.disjoint_sre_writer(
-                            values, context['source_sha'], context['owner_session']))
+                            values, context['source_sha'], context['owner_session'],
+                            successor_authenticated=successor_authenticated))
                         for identifier in owners if identifier != context['owner_session']),
                         'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')
                 if context['owner_session'] in owners and effective >= start:
@@ -262,7 +279,7 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
                     # A pre-interval release revokes all prior own lease spans.
                     # It grants none, even when it quotes an unexpired lease.
                     # Coverage must come from a later explicit reacquisition.
-                    spans.clear()
+                    if context['owner_session'] in owners:spans.clear()
                     continue
             if values.get('SOURCE_LEASE_EXPIRES_UTC') is None or values.get('WRITE_OWNER') != context['owner_session']:
                 continue
@@ -289,6 +306,9 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
                 require(False, 'OWNED_LEASE_UNBOUNDED_INTERVAL')
             if begin <= end:
                 spans.append((begin, expiry, row['id']))
+        if successor_authenticated:
+            require(succession_seen=={expected_succession[0],expected_succession[2]},
+                'OWNED_LEASE_SRE_SUCCESSION_TIMELINE_REQUIRED')
         require(all(identifier == context['owner_session'] or values.get('RELEASED') == 'true'
             or allowed.get(identifier) == state_ids.get(identifier)
             for identifier, values in states.items()), 'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')

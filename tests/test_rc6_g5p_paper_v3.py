@@ -542,6 +542,79 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
             lease.prove_lease_coverage(unsigned,context,opened,opened+timedelta(minutes=1),
                 workstream='WS-RC6-G5P-MATERIAL-20261011')
 
+    def test_disjoint_sre_successor_release_preserves_g5p_lease_and_exact_bytes(self):
+        opened=datetime(2026,10,12,1,0,tzinfo=timezone.utc)
+        stamp=lambda at:at.isoformat().replace('+00:00','Z')
+        owner='CODEX_G5P_TEST';old=admission._SRE_OLD_OWNER;new=admission._SRE_NEW_OWNER
+        context={'source_sha':'a'*40,'source_tree':'b'*40,'owner_session':owner}
+        def row(issue,identifier,at,fields):
+            return {'id':identifier,'created_at':stamp(at),'updated_at':stamp(at),
+                'user':{'login':'mbalbo2023'},
+                'issue_url':f'https://api.github.com/repos/mbalbo2023/Porota-trading/issues/{issue}',
+                'body':'\n'.join(key+'='+value for key,value in fields.items())}
+        def owner_fields():
+            return {'WORKSTREAM_ID':'WS-RC6-G5P-MATERIAL-20261011',
+                'SESSION':owner,'SESSION_SUCCESSOR':owner,'WRITE_OWNER':owner,
+                'INTEGRATION_OWNER':owner,'DEPLOY_OWNER':'NOT_ACQUIRED','RELEASED':'false',
+                'SOURCE_SHA':'a'*40,'SOURCE_TREE':'b'*40,
+                'SOURCE_LEASE_EXPIRES_UTC':stamp(opened+timedelta(minutes=16)),
+                'MODE':'PRODUCTION_PAPER / SIMULATION','real_orders_sent':'0'}
+        paths='scripts/ops/rc6_sre_*,tests/test_rc6_sre_*'
+        def sre_fields(session):
+            return {'WORKSTREAM_ID':'WS-RC6-SRE-REPAIR-DISK-DEEP-20261011',
+                'SESSION':session,'SESSION_SUCCESSOR':session,'WRITE_OWNER':session,
+                'INTEGRATION_OWNER':session,'DEPLOY_OWNER':'NOT_ACQUIRED','RELEASED':'false',
+                'BRANCH':'ops/rc6-sre-deep-20261011','SOURCE_SHA':'c'*40,
+                'BASE_SHA':admission.BASE_SHA,
+                'PR':'https://github.com/mbalbo2023/Porota-trading/pull/494',
+                'PATHS':paths,'MODE':'PRODUCTION_PAPER / SIMULATION','real_orders_sent':'0'}
+        timelines={};scope={'fresh_ownership':{}};revisions={}
+        for issue in (471,473):
+            prior=row(issue,issue*10+1,opened-timedelta(minutes=2),sre_fields(old))
+            owned=row(issue,issue*10+2,opened-timedelta(minutes=1),owner_fields())
+            released=row(issue,issue*10+3,opened+timedelta(seconds=30),{
+                'WORKSTREAM_ID':'WS-RC6-SRE-REPAIR-DISK-DEEP-20261011',
+                'SESSION':old,'SESSION_SUCCESSOR':new,'WRITE_OWNER':'RELEASED',
+                'INTEGRATION_OWNER':'RELEASED','DEPLOY_OWNER':'RELEASED','RELEASED':'true'})
+            successor=row(issue,issue*10+4,opened+timedelta(minutes=1),sre_fields(new))
+            timelines[issue]=[prior,owned,released,successor]
+            release_hash=hashlib.sha256(released['body'].encode()).hexdigest()
+            writer_hash=hashlib.sha256(successor['body'].encode()).hexdigest()
+            revisions[issue]=(released['id'],release_hash,successor['id'],writer_hash)
+            scope['fresh_ownership'][str(issue)]={
+                'authenticated_sre_successor':{
+                    'released_session':old,'successor_session':new,
+                    'release_comment_id':released['id'],'release_body_sha256':release_hash,
+                    'successor_comment_id':successor['id'],'successor_body_sha256':writer_hash},
+                'authenticated_disjoint_active_writers':[{'session':new,
+                    'comment_id':successor['id'],'branch':'ops/rc6-sre-deep-20261011',
+                    'paths':paths.split(',')}]}
+        end=opened+timedelta(minutes=2)
+        with patch.dict(admission._SRE_SUCCESSION,revisions):
+            proof=lease.prove_lease_coverage(timelines,context,opened,end,
+                workstream='WS-RC6-G5P-MATERIAL-20261011',authenticated_scope=scope)
+            self.assertEqual(proof['471']['comment_ids'],[4712])
+            self.assertEqual(proof['473']['authenticated_disjoint_writer_ids'][new],4734)
+            missing=copy.deepcopy(timelines);missing[471]=[x for x in missing[471] if x['id']!=4713]
+            with self.assertRaisesRegex(lease.LeaseControlFailure,'SRE_SUCCESSION_TIMELINE_REQUIRED'):
+                lease.prove_lease_coverage(missing,context,opened,end,
+                    workstream='WS-RC6-G5P-MATERIAL-20261011',authenticated_scope=scope)
+            altered=copy.deepcopy(timelines)
+            altered[471][2]['body']=altered[471][2]['body'].replace('SESSION='+old,'SESSION='+new)
+            with self.assertRaisesRegex(lease.LeaseControlFailure,'SRE_SUCCESSION_BYTES_REBOUND'):
+                lease.prove_lease_coverage(altered,context,opened,end,
+                    workstream='WS-RC6-G5P-MATERIAL-20261011',authenticated_scope=scope)
+            overlap=copy.deepcopy(timelines)
+            overlap[473][3]['body']=overlap[473][3]['body'].replace(paths,'scripts/rc6_material_carrier.py')
+            with self.assertRaisesRegex(lease.LeaseControlFailure,'SRE_SUCCESSION_BYTES_REBOUND'):
+                lease.prove_lease_coverage(overlap,context,opened,end,
+                    workstream='WS-RC6-G5P-MATERIAL-20261011',authenticated_scope=scope)
+            missing_scope=copy.deepcopy(scope)
+            del missing_scope['fresh_ownership']['471']['authenticated_sre_successor']
+            with self.assertRaisesRegex(lease.LeaseControlFailure,'DISJOINT_SCOPE_REBOUND'):
+                lease.prove_lease_coverage(timelines,context,opened,end,
+                    workstream='WS-RC6-G5P-MATERIAL-20261011',authenticated_scope=missing_scope)
+
     def test_missing_memory_cgroup_uses_measured_vm_and_process_limits(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);v2=root/'memory.max';v1=root/'memory.limit_in_bytes'

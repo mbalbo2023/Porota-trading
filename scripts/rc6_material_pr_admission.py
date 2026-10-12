@@ -76,7 +76,8 @@ FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRA
     'RC6_G5A_ROOT_SETUP_AUTHORIZATION','RELEASE_PROFILE','G5P_REVISION_APPROVAL_URL',
     'G5P_CONTRACT_DOCUMENT_SHA256','RC6_G5P_MATERIAL_AUTHORIZATION',
     'G5P_ACQUISITION_REFERENCE_JSON','PATHS','PR','SCOPE','PAIR_ISSUE',
-    'APPLY_RUN','APPLY_ATTEMPT','APPLY_ARTIFACT','APPLY_ZIP_SHA256','APPLY_JSON_SHA256'}
+    'APPLY_RUN','APPLY_ATTEMPT','APPLY_ARTIFACT','APPLY_ZIP_SHA256','APPLY_JSON_SHA256',
+    'POST_RUN','POST_ARTIFACT','PAPER'}
 COMMENT_PAGES=50
 RUN_PAGES=10
 RECOVERY_OWNER='CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC'
@@ -785,6 +786,18 @@ _SRE_APPLY_RELEASE={
     471:(6112057220,6112200132,'139038315d1f6e8427085f1bd8baa069f2f5a99b0cab33f746468f8f7ae5971e'),
     473:(6112057075,6112200322,'a429849bd7a95a9d434161bdbd6287fae4c705fd8ce6b31469510f1a72eaedca')}
 
+# A separate SRE owner relinquished its already released DEPLOY_OWNER and
+# transferred only the disjoint PR #494 writer. The release names the old
+# owner in SESSION and the incoming owner in SESSION_SUCCESSOR. Both unedited
+# pairs are pinned; this never transfers G5P or global deploy authority.
+_SRE_SUCCESSION={
+    471:(6115863183,'67f3e0e61952512c41995cc69c75bf6a70b6439b00db7d07b9c3983e548dcd22',
+         6115867410,'e52929e75c3677eb142720c3a73b9aa242eb720af616c6b39da9c43c6756bda0'),
+    473:(6115863387,'9c5c75ce616ee6a6046805ac4244c1a0354145f9a4dc24f3b4b5d0edadb975df',
+         6115867610,'4f30a2838049b49dcef6349536baaa229b0257bf767d3e8d81f5675e59e295e3')}
+_SRE_OLD_OWNER='WORK_RC6_SRE_20261011_1740Z'
+_SRE_NEW_OWNER='WORK_RC6_SRE_20261012_0100Z'
+
 
 def exact_sre_apply_release(row,f,issue,prior_deploy,prior_scope):
     scope_id,release_id,body_sha=_SRE_APPLY_RELEASE[issue]
@@ -810,13 +823,14 @@ def exact_sre_apply_release(row,f,issue,prior_deploy,prior_scope):
         and f.get('real_orders_sent')=='0')
 
 
-def disjoint_sre_writer(f,source_sha,owner):
+def disjoint_sre_writer(f,source_sha,owner,*,successor_authenticated=False):
     """The separately scoped #491 writer has no claim on G5P Source or paths."""
     paths=f.get('PATHS','').split(',')
-    return (owner!='WORK_RC6_SRE_20261011_1740Z'
+    session=f.get('SESSION_SUCCESSOR',f.get('SESSION'))
+    return (owner not in (_SRE_OLD_OWNER,_SRE_NEW_OWNER)
         and f.get('WORKSTREAM_ID')=='WS-RC6-SRE-REPAIR-DISK-DEEP-20261011'
-        and f.get('SESSION_SUCCESSOR',f.get('SESSION'))=='WORK_RC6_SRE_20261011_1740Z'
-        and f.get('WRITE_OWNER')==f.get('INTEGRATION_OWNER')=='WORK_RC6_SRE_20261011_1740Z'
+        and (session==_SRE_OLD_OWNER or successor_authenticated and session==_SRE_NEW_OWNER)
+        and f.get('WRITE_OWNER')==f.get('INTEGRATION_OWNER')==session
         and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
         and f.get('BRANCH')=='ops/rc6-sre-deep-20261011'
         and f.get('BASE_SHA')==BASE_SHA
@@ -826,8 +840,41 @@ def disjoint_sre_writer(f,source_sha,owner):
         and paths and len(paths)==len(set(paths)) and set(paths)<=_DISJOINT_SRE_PATHS
         and f.get('MODE')=='PRODUCTION_PAPER / SIMULATION' and f.get('real_orders_sent')=='0')
 
+
+def exact_sre_succession_release(row,f,issue,prior_deploy,prior_writer,prior_scope):
+    release_id,release_hash,_,_=_SRE_SUCCESSION[issue]
+    return (row['id']==release_id
+        and hashlib.sha256(row['body'].encode()).hexdigest()==release_hash
+        and prior_scope is not None and prior_scope[0]['id']==_SRE_APPLY_RELEASE[issue][0]
+        and prior_deploy is not None and prior_deploy[1].get('DEPLOY_OWNER')=='RELEASED'
+        and prior_deploy[1].get('WORKSTREAM_ID')=='WS-RC6-SRE-REPAIR-DISK-DEEP-20261011'
+        and prior_writer is not None and prior_writer[1].get('RELEASED')=='false'
+        and prior_writer[1].get('WORKSTREAM_ID')=='WS-RC6-SRE-REPAIR-DISK-DEEP-20261011'
+        and f.get('WORKSTREAM_ID')=='WS-RC6-SRE-REPAIR-DISK-DEEP-20261011'
+        and f.get('SESSION')==_SRE_OLD_OWNER
+        and f.get('SESSION_SUCCESSOR')==_SRE_NEW_OWNER
+        and f.get('WRITE_OWNER')==f.get('INTEGRATION_OWNER')==f.get('DEPLOY_OWNER')=='RELEASED'
+        and f.get('RELEASED')=='true' and f.get('BRANCH')=='ops/rc6-sre-deep-20261011'
+        and f.get('SOURCE_SHA')=='f61d30dce6d86b7bec086a65f8b7a656797b9cf4'
+        and f.get('APPLY_RUN')=='38163172961' and f.get('APPLY_ARTIFACT')=='11710093973'
+        and f.get('POST_RUN')=='38163695961' and f.get('POST_ARTIFACT')=='11711606030'
+        and f.get('PAPER')=='PRODUCTION_PAPER' and f.get('real_orders_sent')=='0'
+        and f.get('PAIR_ISSUE')==str(issue))
+
+
+def exact_sre_succession_writer(row,f,issue,release,source_sha,owner):
+    _,_,writer_id,writer_hash=_SRE_SUCCESSION[issue]
+    return (release is not None and row['id']==writer_id
+        and hashlib.sha256(row['body'].encode()).hexdigest()==writer_hash
+        and stamp(release['created_at'])<stamp(row['created_at'])
+        and f.get('SESSION')==f.get('SESSION_SUCCESSOR')==_SRE_NEW_OWNER
+        and f.get('BASE_BRANCH')==BASE and f.get('BASE_SHA')==BASE_SHA
+        and f.get('PAIR_ISSUE')==str(issue)
+        and disjoint_sre_writer(f,source_sha,owner,successor_authenticated=True))
+
 def latest_writer(rows,issue,sha,tree,owner,now):
     records=[];states={};deploy_states={};sre_scope=None;sre_releases=[]
+    sre_transfer_release=None;sre_successor_authenticated=False
     for row in sorted(rows,key=lambda item:(effective_stamp(item),item['id'])):
         f=fields(row.get('body',''))
         if any(key in f for key in ('WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER','SOURCE_LEASE_EXPIRES_UTC','RELEASED')):
@@ -839,6 +886,15 @@ def latest_writer(rows,issue,sha,tree,owner,now):
                 require(disjoint_sre_writer(f,sha,owner),'SRE_PRIOR_DISJOINT_PATH_SCOPE_REBOUND')
                 sre_scope=(row,f)
             deploy=f.get('DEPLOY_OWNER')
+            if row['id']==_SRE_SUCCESSION[issue][0]:
+                require(exact_sre_succession_release(row,f,issue,
+                    deploy_states.get(_SRE_OLD_OWNER),states.get(_SRE_OLD_OWNER),sre_scope),
+                    'SRE_EXACT_DISJOINT_SUCCESSION_RELEASE_REBOUND')
+                sre_transfer_release=row
+            if row['id']==_SRE_SUCCESSION[issue][2]:
+                require(exact_sre_succession_writer(row,f,issue,sre_transfer_release,sha,owner),
+                    'SRE_EXACT_DISJOINT_SUCCESSION_WRITER_REBOUND')
+                sre_successor_authenticated=True
             if row['id']==release_id:
                 session='WORK_RC6_SRE_20261011_1740Z'
                 require(exact_sre_apply_release(row,f,issue,deploy_states.get(session),sre_scope),
@@ -853,7 +909,8 @@ def latest_writer(rows,issue,sha,tree,owner,now):
                 sre_releases.append({'comment_id':row['id'],'body_sha256':_body_sha,
                     'prior_scope_comment_id':scope_id,'apply_run_id':38163172961})
             if deploy not in (None,'NOT_ACQUIRED','NONE','null'):
-                session=f.get('SESSION_SUCCESSOR',f.get('SESSION'))
+                session=(f.get('SESSION') if deploy=='RELEASED' and f.get('SESSION')
+                         else f.get('SESSION_SUCCESSOR',f.get('SESSION')))
                 if deploy=='RELEASED':
                     prior=deploy_states.get(session)
                     require(prior is not None and f.get('RELEASED')=='true'
@@ -871,7 +928,8 @@ def latest_writer(rows,issue,sha,tree,owner,now):
                 # WRITE_OWNER=RELEASED. In the latter form, bind the release
                 # to its explicit SESSION and to the preceding workstream;
                 # an unrelated comment must never release another writer.
-                session=f.get('SESSION_SUCCESSOR',f.get('SESSION'))
+                session=(f.get('SESSION') if f.get('SESSION') and f.get('WRITE_OWNER')=='RELEASED'
+                         else f.get('SESSION_SUCCESSOR',f.get('SESSION')))
                 if not scoped and f.get('WRITE_OWNER')=='RELEASED':
                     prior=states.get(session)
                     require(type(session) is str and prior is not None
@@ -899,7 +957,8 @@ def latest_writer(rows,issue,sha,tree,owner,now):
     disjoint=[]
     for identifier,(foreign_row,status) in states.items():
         if identifier!=owner:
-            permitted=disjoint_sre_writer(status,sha,owner)
+            permitted=disjoint_sre_writer(status,sha,owner,
+                successor_authenticated=sre_successor_authenticated)
             require(status.get('RELEASED')=='true' or permitted,
                 'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER_AFTER_SUCCESSOR_ANCHOR')
             if permitted:disjoint.append({'session':identifier,'comment_id':foreign_row['id'],
@@ -931,6 +990,13 @@ def latest_writer(rows,issue,sha,tree,owner,now):
         'authenticated_sre_deploy_release_records':sre_releases,
         'all_post_anchor_owner_record_ids':[item[0]['id'] for item in records],
         'all_post_anchor_records_and_old_comment_edits_checked':True,'maximum_lease_seconds':1200}
+    if sre_successor_authenticated:
+        result['authenticated_sre_successor']={
+            'released_session':_SRE_OLD_OWNER,'successor_session':_SRE_NEW_OWNER,
+            'release_comment_id':sre_transfer_release['id'],
+            'release_body_sha256':_SRE_SUCCESSION[issue][1],
+            'successor_comment_id':_SRE_SUCCESSION[issue][2],
+            'successor_body_sha256':_SRE_SUCCESSION[issue][3]}
     if owner not in (RECOVERY_OWNER,SUCCESSOR_OWNER,CLOSURE_OWNER):
         result['latest_status_by_owner']={identifier:{'comment_id':item[0]['id'],
             'released':item[1].get('RELEASED')=='true'} for identifier,item in sorted(states.items())}
