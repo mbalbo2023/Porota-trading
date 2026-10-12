@@ -72,7 +72,11 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
                                    'rate_limit_reset_epoch':1791753600},
             'transport_cause_class':None})
         self.assertNotIn('SECRET',json.dumps(observation))
+        self.assertEqual(carrier.sanitized_carrier_http_failure(error),observation)
         self.assertEqual(admission.sanitized_http_failure(
+            urllib.error.URLError(TimeoutError('SECRET'))),
+            {'http_status':None,'http_limit_counters':{},'transport_cause_class':'TimeoutError'})
+        self.assertEqual(carrier.sanitized_carrier_http_failure(
             urllib.error.URLError(TimeoutError('SECRET'))),
             {'http_status':None,'http_limit_counters':{},'transport_cause_class':'TimeoutError'})
 

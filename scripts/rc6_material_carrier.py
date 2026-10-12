@@ -17,6 +17,7 @@ import stat
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 import uuid
 import xml.etree.ElementTree as ET
@@ -732,6 +733,22 @@ def native_red_log_index(log,kernel,label):
         if match:error={'class':match.group(1),'reason':match.group(2)}
     row.update(log_classification_available=True,failed_test_nodes=rows,literal_exception=error,
                private_log_sha256=digest(raw))
+    return row
+
+
+def sanitized_carrier_http_failure(error):
+    """Retain only fixed-size HTTP status and numeric quota readbacks."""
+    row={'http_status':None,'http_limit_counters':{},'transport_cause_class':None}
+    if isinstance(error,urllib.error.HTTPError):
+        row['http_status']=error.code if type(error.code) is int and 100<=error.code<=599 else None
+        for header,key in (('X-RateLimit-Remaining','rate_limit_remaining'),
+                           ('X-RateLimit-Reset','rate_limit_reset_epoch'),
+                           ('Retry-After','retry_after_seconds')):
+            value=error.headers.get(header) if error.headers is not None else None
+            if type(value) is str and re.fullmatch('[0-9]{1,12}',value):
+                row['http_limit_counters'][key]=int(value)
+    elif isinstance(error,urllib.error.URLError):
+        row['transport_cause_class']=type(error.reason).__name__
     return row
 
 
@@ -1809,8 +1826,10 @@ def main():
     except BaseException as e:
         code=1
         reason=str(e).split(':',1)[0];reason=reason if re.fullmatch('[A-Z][A-Z0-9_]{0,191}',reason) else 'NON_LITERAL_CARRIER_FAILURE'
-        save(controls/'error.json',{'status':'RED','class':type(e).__name__,'reason':reason,'gate':a.gate,
-            'payload_upload_allowed':False,'original_RED_preserved':True,'real_orders_sent':0})
+        error_row={'status':'RED','class':type(e).__name__,'reason':reason,'gate':a.gate,
+            'payload_upload_allowed':False,'original_RED_preserved':True,'real_orders_sent':0,
+            **sanitized_carrier_http_failure(e)}
+        save(controls/'error.json',error_row)
         if isinstance(e,OwnedLeaseStop) and not run.unknown:
             try:
                 staged=preserve_closed_lease_stop(a,run,root)
@@ -1834,6 +1853,6 @@ def main():
             except BaseException as preservation_error:
                 save(controls/'sealed-logical-red-preservation-blocked.json',{'status':'RED',
                     'reason':type(preservation_error).__name__,'payload_upload_allowed':False,'real_orders_sent':0})
-        print(json.dumps({'gate':a.gate,'status':'RED','reason':reason,'payload_upload_allowed':False}),flush=True)
+        print(json.dumps(error_row,sort_keys=True),flush=True)
     return code
 if __name__=='__main__':raise SystemExit(main())
