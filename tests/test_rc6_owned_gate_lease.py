@@ -8,6 +8,7 @@ from pathlib import Path
 import signal
 import sys
 import time
+import urllib.error
 from types import SimpleNamespace
 
 import pytest
@@ -152,6 +153,61 @@ class ApiFixture:
         if path.startswith('/issues/473/comments?'):
             return copy.deepcopy(self.rows[473])
         return copy.deepcopy(self.documents[path])
+
+
+def test_paper_v3_live_owner_read_retries_only_transient_gateway_status(monkeypatch):
+    monkeypatch.setenv('GH_TOKEN','unit-readonly-control-token')
+    monkeypatch.setenv('RC6_GATE','cheap')
+    class CurrentResponse:
+        status=200
+        headers={}
+        def __enter__(self):return self
+        def __exit__(self,*_args):return False
+        def read(self,_maximum):return b'{"current_owner_authority":true}'
+    path='/unit/owner-live-gateway-retry'
+    calls=[]
+    def transient(_request,timeout):
+        calls.append(timeout)
+        if len(calls)==1:
+            raise urllib.error.HTTPError('https://api.github.com/unit',502,'gateway',{},None)
+        return CurrentResponse()
+    monkeypatch.setattr(lease.urllib.request,'urlopen',transient)
+    assert lease.api_get(path,time.monotonic()+5,retry_transient=True)=={'current_owner_authority':True}
+    assert len(calls)==2 and all(0<value<=5 for value in calls)
+    def unavailable(_request,timeout):
+        calls.append(timeout)
+        raise urllib.error.HTTPError('https://api.github.com/unit',502,'gateway',{},None)
+    calls.clear();monkeypatch.setattr(lease.urllib.request,'urlopen',unavailable)
+    with pytest.raises(urllib.error.HTTPError):
+        lease.api_get(path,time.monotonic()+5,retry_transient=True)
+    assert len(calls)==3
+    calls.clear()
+    with pytest.raises(urllib.error.HTTPError):
+        lease.api_get(path,time.monotonic()+5,retry_transient=False)
+    assert len(calls)==1
+    def forbidden(_request,timeout):
+        calls.append(timeout)
+        raise urllib.error.HTTPError('https://api.github.com/unit',403,'forbidden',{},None)
+    calls.clear();monkeypatch.setattr(lease.urllib.request,'urlopen',forbidden)
+    with pytest.raises(urllib.error.HTTPError):
+        lease.api_get(path,time.monotonic()+5,retry_transient=True)
+    assert len(calls)==1
+
+
+def test_only_paper_v3_monitor_selects_bounded_gateway_retry(monkeypatch,tmp_path):
+    tmp_path.chmod(0o700)
+    monkeypatch.setenv('GITHUB_RUN_ID',str(RUN))
+    monkeypatch.setenv('GITHUB_RUN_ATTEMPT','1')
+    selected=[]
+    monkeypatch.setattr(lease,'api_get',lambda path,deadline,*,retry_transient=False:
+        selected.append(retry_transient) or {'path':path})
+    for profile in (None,'PAPER_V3_ONLY'):
+        monitor=lease.GateLeaseMonitor(tmp_path,source_sha=SHA,source_tree=TREE,
+            owner_session=admission.SUCCESSOR_OWNER,gate='cheap',
+            launch_receipt_url='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
+            release_profile=profile)
+        assert monitor.get('/unit',time.monotonic()+5)=={'path':'/unit'}
+    assert selected==[False,True]
 
 
 def monitor(tmp_path, monkeypatch, *, gate='full-gov311', real_clock=False):

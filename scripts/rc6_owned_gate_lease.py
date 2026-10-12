@@ -107,13 +107,12 @@ def _http_budget(deadline, budget_seconds=HTTP_BUDGET_SECONDS):
         signal.signal(signal.SIGALRM, previous)
 
 
-def api_get(path, deadline):
+def api_get(path, deadline, *, retry_transient=False):
     token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
     require(bool(token), 'OWNED_LEASE_READONLY_TOKEN_REQUIRED')
     require(type(path) is str and (path == '' or path.startswith('/'))
         and '\n' not in path and '\r' not in path, 'OWNED_LEASE_CANONICAL_API_PATH_REQUIRED')
-    remaining = deadline - time.monotonic()
-    require(0 < remaining <= G5P_HTTP_BUDGET_SECONDS, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
+    require(type(retry_transient) is bool, 'OWNED_LEASE_TRANSIENT_RETRY_SCOPE_REQUIRED')
     conditional = os.environ.get('RC6_GATE') in ('G5P-acquire', 'G5P-certify', 'cheap')
     key = (hashlib.sha256(token.encode()).digest(), path) if conditional else None
     cached = admission._conditional_cache_get(key) if conditional else None
@@ -122,20 +121,30 @@ def api_get(path, deadline):
     if cached is not None: headers['If-None-Match'] = cached[0]
     request = urllib.request.Request('https://api.github.com/repos/' + admission.REPO + path,
         headers=headers)
-    try:
-        with urllib.request.urlopen(request, timeout=remaining) as response:
-            status = getattr(response, 'status', 200)
-            if status == 304:
+    for attempt in range(3 if retry_transient else 1):
+        remaining = deadline - time.monotonic()
+        require(0 < remaining <= G5P_HTTP_BUDGET_SECONDS, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
+        try:
+            with urllib.request.urlopen(request, timeout=remaining) as response:
+                status = getattr(response, 'status', 200)
+                if status == 304:
+                    require(cached is not None, 'OWNED_LEASE_304_WITHOUT_VERIFIED_CACHE')
+                    return admission.document(cached[1])
+                require(status == 200, 'OWNED_LEASE_API_HTTP_200_OR_VERIFIED_304_REQUIRED')
+                raw = response.read(MAX_OBJECT_BYTES + 1)
+                etag = response.headers.get('ETag') if conditional else None
+            break
+        except urllib.error.HTTPError as error:
+            if error.code == 304:
                 require(cached is not None, 'OWNED_LEASE_304_WITHOUT_VERIFIED_CACHE')
                 return admission.document(cached[1])
-            require(status == 200, 'OWNED_LEASE_API_HTTP_200_OR_VERIFIED_304_REQUIRED')
-            raw = response.read(MAX_OBJECT_BYTES + 1)
-            etag = response.headers.get('ETag') if conditional else None
-    except urllib.error.HTTPError as error:
-        if error.code == 304:
-            require(cached is not None, 'OWNED_LEASE_304_WITHOUT_VERIFIED_CACHE')
-            return admission.document(cached[1])
-        raise
+            # Only a live PAPER V3 control walk may replay the same read after
+            # a transient gateway failure. It must still finish inside the
+            # original alarm/deadline; never fall back to stale cached state.
+            if (not retry_transient or error.code not in (502, 503, 504)
+                    or attempt == 2 or deadline-time.monotonic() <= 1):
+                raise
+            time.sleep(.15 * (attempt + 1))
     require(0 < len(raw) <= MAX_OBJECT_BYTES, 'OWNED_LEASE_API_RESPONSE_BYTE_BOUND')
     value = admission.document(raw)
     if conditional and type(etag) is str and re.fullmatch(r'(?:W/)?"[A-Za-z0-9._:/+=-]{1,200}"', etag):
@@ -379,7 +388,11 @@ class GateLeaseMonitor:
             self.context['diagnostic_binding'] = diagnostic_binding
         else:
             require(diagnostic_binding is None, 'OWNED_LEASE_DIAGNOSTIC_PINS_OUTSIDE_DIAGNOSTIC_SCOPE')
-        self.get, self.clock, self.monotonic = get or api_get, clock or utc, monotonic or time.monotonic
+        v3_retry=(gate in ('G5P-acquire','G5P-certify')
+            or gate=='cheap' and release_profile=='PAPER_V3_ONLY')
+        self.get=(get if get is not None else
+            lambda path, deadline: api_get(path,deadline,retry_transient=v3_retry))
+        self.clock, self.monotonic = clock or utc, monotonic or time.monotonic
         self.objects, self.object_bytes, self.events = {}, 0, []
         self.last_scope, self.last_calls, self.last_observation = None, None, None
         self.started, self.pid, self.command_label, self.stop_reason = None, None, None, None
