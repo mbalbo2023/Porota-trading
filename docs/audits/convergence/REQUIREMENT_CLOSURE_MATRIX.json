@@ -6690,6 +6690,10 @@
       "reason": "Post-handoff PAPER_V3_ONLY G5P source or focused regression. Exact Source/tree, owner, producer FIN and byte/mode checks remain required; development tests are not certification.",
       "requirement_ids": ["U11", "U25", "U28"]
     },
+    "tests/test_rc6_g5p_scope_interpreter.py": {
+      "reason": "PAPER_V3_ONLY G0 static-scope interpreter and Source-binding regression. Governed policy is evaluated by the reviewed product Python under owner FIN; this mapping authenticates exact test bytes without claiming a native GREEN receipt.",
+      "requirement_ids": ["U11", "U25", "U28"]
+    },
     "tests/test_rc6_governed_evidence_validation.py": {
       "reason": "Post-handoff focused RC6 guard source. The candidate tree authenticates its bytes and mode; a test filename or this traceability row cannot substitute for collected and executed native test evidence.",
       "requirement_ids": ["U11", "U25", "U28"]
@@ -38593,6 +38597,10 @@
         "U28",
         "U29"
       ]
+    },
+    "scripts/rc6_material_static_scope.py": {
+      "reason": "PAPER_V3_ONLY G0 static-scope bridge executes the original governed policy under the reviewed hash-locked product Python as an owned child. Its Source-bound inventory is checked before G0, and this row alone gives no gate credit.",
+      "requirement_ids": ["U11", "U14", "U25", "U28", "U29"]
     },
     "scripts/rc6_material_focal.py": {
       "reason": "Controlled recovery20261007: exact-source supplementary material gate adapter derived from preserved original helpers. Fresh physical owned namespaces, original budgets/INET/PAPER/Source/157/process guards, actual native and parent FIN before lossless RAW; no artifact/image/runtime/deploy approval. Preparation only at source publication; require exact-SHA Actions evidence. Controlled recovery20261007: preserve six original focal modules/119 cohort and add whole runtime hydration, budget custody and scoped-cleanup modules for changed causes. Selected-cohort evidence only, never whole-Gov certificate. Recovery20261007 storage-key/fixture checkpoint: Retain original nine full modules/246 cases and add complete affected storage-codec and provenance modules.416 focal and6069 whole-Gov are static arithmetic only, never executed PASS counts. Original source/INET/custody/FIN/time/resource guards unchanged. Recovery20261007 causal scope: preserve all11 earlier complete modules and every offline/source/nativeFIN guard; include whole existing packed-storage and four actual eleven-input fixture dependent modules. Literal scope only, no scenario filtering, duplicate epoch inflation or wholeGov claim.",
