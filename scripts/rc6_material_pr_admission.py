@@ -254,10 +254,10 @@ def _conditional_cache_put(key,etag,raw):
 def api(path):
     token=os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
     require(bool(token),'ACTIONS_READONLY_TOKEN_REQUIRED')
-    # G5P's long owned run rechecks the same immutable comments and timeline
+    # G5P and cheap's owned run recheck the same immutable comments and timeline
     # pages many times. A server-confirmed 304 is a fresh read of unchanged
     # bytes, not a local TTL or permission to ignore a changed owner/release.
-    conditional=os.environ.get('RC6_GATE') in ('G5P-acquire','G5P-certify')
+    conditional=os.environ.get('RC6_GATE') in ('G5P-acquire','G5P-certify','cheap')
     key=(hashlib.sha256(token.encode()).digest(),path) if conditional else None
     cached=_conditional_cache_get(key) if conditional else None
     headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json',

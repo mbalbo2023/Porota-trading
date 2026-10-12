@@ -40,6 +40,45 @@ from scripts import porota_predeploy_cleanup as cleanup
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_cheap_owner_reads_share_server_revalidated_cache_and_keep_403_red(self):
+        path='/issues/471/comments?since=2026-10-12T00%3A00%3A00Z&page=1'
+        headers=Message();headers['ETag']='W/"cheap-owner-v1"'
+        class Response:
+            status=200
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def __init__(self):self.headers=headers
+            def read(self,size):return b'[{"id":1}]'
+        missing=urllib.error.HTTPError('https://api.github.com/private',304,
+                                       'not modified',Message(),None)
+        forbidden=urllib.error.HTTPError('https://api.github.com/private',403,
+                                         'rate limit',Message(),None)
+        replies=iter((Response(),missing,forbidden));requests=[]
+        def request(value,timeout):
+            requests.append(value.get_header('If-none-match'))
+            item=next(replies)
+            if isinstance(item,BaseException):raise item
+            return item
+        with admission._HTTP_REVALIDATION_LOCK:
+            prior=admission._HTTP_REVALIDATION_CACHE.copy()
+            prior_bytes=admission._HTTP_REVALIDATION_BYTES
+            admission._HTTP_REVALIDATION_CACHE.clear()
+            admission._HTTP_REVALIDATION_BYTES=0
+        try:
+            with patch.dict(os.environ,{'GH_TOKEN':'local-test-token','RC6_GATE':'cheap'}), \
+                 patch.object(admission.urllib.request,'urlopen',side_effect=request):
+                self.assertEqual(admission.api(path),[{'id':1}])
+                self.assertEqual(lease.api_get(path,time.monotonic()+10),[{'id':1}])
+                with self.assertRaises(urllib.error.HTTPError) as red:
+                    admission.api(path)
+                self.assertEqual(red.exception.code,403)
+            self.assertEqual(requests,[None,'W/"cheap-owner-v1"','W/"cheap-owner-v1"'])
+        finally:
+            with admission._HTTP_REVALIDATION_LOCK:
+                admission._HTTP_REVALIDATION_CACHE.clear()
+                admission._HTTP_REVALIDATION_CACHE.update(prior)
+                admission._HTTP_REVALIDATION_BYTES=prior_bytes
+
     def test_post_fin_native_red_names_only_bounded_failed_nodes_and_literal(self):
         with tempfile.TemporaryDirectory() as temporary:
             log=Path(temporary)/'native.log'

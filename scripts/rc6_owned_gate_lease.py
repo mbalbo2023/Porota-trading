@@ -114,7 +114,7 @@ def api_get(path, deadline):
         and '\n' not in path and '\r' not in path, 'OWNED_LEASE_CANONICAL_API_PATH_REQUIRED')
     remaining = deadline - time.monotonic()
     require(0 < remaining <= G5P_HTTP_BUDGET_SECONDS, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
-    conditional = os.environ.get('RC6_GATE') in ('G5P-acquire', 'G5P-certify')
+    conditional = os.environ.get('RC6_GATE') in ('G5P-acquire', 'G5P-certify', 'cheap')
     key = (hashlib.sha256(token.encode()).digest(), path) if conditional else None
     cached = admission._conditional_cache_get(key) if conditional else None
     headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json',
