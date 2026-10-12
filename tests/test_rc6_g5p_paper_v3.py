@@ -4,6 +4,7 @@ import copy
 from datetime import date, datetime, timedelta, timezone
 from email.message import Message
 import hashlib
+import io
 import gzip
 import json
 import os
@@ -12,7 +13,7 @@ import shutil
 import tempfile
 import time
 import urllib.error
-from contextlib import nullcontext
+from contextlib import nullcontext, redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -269,16 +270,24 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
         for failure,reason,status in (
             (urllib.error.HTTPError('https://api.github.com/private',403,'forbidden',headers,None),
              'OWNED_LEASE_HTTP_STATUS_403',403),
-            (TimeoutError('timed out'),'OWNED_LEASE_HTTP_TIMEOUT',None)):
+            (TimeoutError('timed out'),'OWNED_LEASE_HTTP_TIMEOUT',None),
+            (ValueError('OWNERSHIP_COMMENT_FUTURE_TIMESTAMP:secret-unstructured-detail'),
+             'OWNERSHIP_COMMENT_FUTURE_TIMESTAMP',None)):
             with tempfile.TemporaryDirectory() as temp:
                 monitor=lease.GateLeaseMonitor(temp,source_sha='a'*40,source_tree='b'*40,
                     owner_session='CODEX_G5P_TEST',gate='G5P-acquire',
                     launch_receipt_url='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
                     run_id=123,run_attempt=1)
                 monitor.command_label='locked312-0'
-                self.assertEqual(str(monitor._failure(failure)),reason)
+                public=io.StringIO()
+                with redirect_stdout(public):
+                    self.assertEqual(str(monitor._failure(failure)),reason)
                 detail=json.loads((Path(temp)/'owner-locked312-0.first-error.json').read_bytes())
+                exposed=json.loads(public.getvalue())
                 self.assertEqual(detail['reason'],reason)
+                self.assertEqual(exposed['reason'],reason)
+                self.assertEqual(exposed['command_label'],'locked312-0')
+                self.assertEqual(exposed['http_status'],status)
                 self.assertEqual(detail['http_status'],status)
                 self.assertEqual(detail['exception_class'],type(failure).__name__)
                 if status==403:
@@ -286,6 +295,8 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
                         'rate_limit_remaining':0,'rate_limit_reset_epoch':1791753600,
                         'retry_after_seconds':60})
                 self.assertNotIn('https://api.github.com/private',json.dumps(detail))
+                self.assertNotIn('https://api.github.com/private',public.getvalue())
+                self.assertNotIn('secret-unstructured-detail',public.getvalue())
 
     def test_full_git_original_preflight_red_preserves_only_finished_private_controls(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -470,6 +470,14 @@ class GateLeaseMonitor:
                     _private_write(self.root / ('owner-' + self.command_label + '.first-error.json'), wire(detail))
                 except (OSError, LeaseControlFailure):
                     pass
+                # Keep the same bounded classification visible when the private
+                # control ZIP cannot be read by the investigating workspace.
+                print(json.dumps({'schema': detail['schema'],
+                    'command_label': detail['command_label'], 'reason': detail['reason'],
+                    'exception_class': detail['exception_class'],
+                    'http_status': detail['http_status'],
+                    'transport_cause_class': detail['transport_cause_class'],
+                    'real_orders_sent': 0}, sort_keys=True), flush=True)
         return LeaseControlFailure(self.stop_reason)
 
     def _local(self):
