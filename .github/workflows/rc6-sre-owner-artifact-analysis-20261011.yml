@@ -1,0 +1,64 @@
+name: RC6 SRE analyze sealed SQLite attribution artifact
+on:
+  push:
+    branches: [ops/rc6-sre-deep-20261011]
+    paths: [.github/workflows/rc6-sre-owner-artifact-analysis-20261011.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  summarize:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/ops/rc6-sre-deep-20261011' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Fetch exact prior original JSON
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          mkdir "$RUNNER_TEMP/original"
+          gh run download 38190106380 -R mbalbo2023/Porota-trading -n rc6-sre-sqlite-owner-38190106380-1 -D "$RUNNER_TEMP/original"
+          echo 'b899dca1daa030ee889b33874e79137593ad1472383248b3340ad62dbdd07358  '"$RUNNER_TEMP/original/sqlite-owner.json" | sha256sum -c -
+      - name: Analyze lock episodes without a new host scan
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import collections,json,os,pathlib
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])
+          x=json.loads((root/'original/sqlite-owner.json').read_text())
+          counts=collections.Counter()
+          observed={}
+          episode=collections.Counter()
+          peaks=collections.Counter()
+          for i,s in enumerate(x['samples']):
+              seen=set()
+              for z in s['locks']:
+                  key=(z['owner'],z['pid'],z['start_ticks'],z['file'],z['kind'])
+                  counts[key]+=1
+                  seen.add(key)
+              for key in seen:
+                  episode[key]=episode[key]+1 if observed.get(key)==i-1 else 1
+                  peaks[key]=max(peaks[key],episode[key]); observed[key]=i
+          rows=[{'owner':k[0], 'pid':k[1], 'start_ticks':k[2],
+                 'file':k[3], 'kind':k[4], 'samples':n,
+                 'max_consecutive_samples':peaks[k]}
+                for k,n in counts.most_common()]
+          report={'schema':'porota.rc6.sre.artifact-analysis.v1',
+                  'source_run':38190106380,'source_attempt':1,
+                  'source_json_sha256':'b899dca1daa030ee889b33874e79137593ad1472383248b3340ad62dbdd07358',
+                  'sample_count':len(x['samples']),'process_locks':rows,
+                  'container_roots':x['containers'], 'fd_counts':x['fd_counts'],
+                  'log':x['log'],'paper':x['paper'],'host_mutation':False}
+          (root/'sqlite-analysis.json').write_text(json.dumps(report,sort_keys=True,indent=2)+'\n')
+          print(json.dumps({k:report[k] for k in ('sample_count','process_locks','fd_counts','log','paper')},sort_keys=True))
+          PY
+          sha256sum "$RUNNER_TEMP/sqlite-analysis.json"
+      - name: Preserve derived summary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-sre-owner-analysis-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sqlite-analysis.json
+          retention-days: 30
