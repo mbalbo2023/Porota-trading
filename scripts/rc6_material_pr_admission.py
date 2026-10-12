@@ -1308,6 +1308,8 @@ def _admit_source_scope(*,source_sha,source_tree=None,launch_receipt_url=None,ow
     return {'schema':'rc6.material-automatic-pr-admission.v2','status':'ADMITTED_NATIVE_NOT_STARTED','source_sha':source_sha,
         'source_tree':tree,'gate':gate,'owner_session':owner,'launch_receipt_url':launch['html_url'],
         'candidate_scope':scope,
+        **({'development_base_sha':fields(successor[471]['body'])['BASE_SHA']}
+            if owner not in (RECOVERY_OWNER,SUCCESSOR_OWNER,CLOSURE_OWNER) else {}),
         'ownership_transfer':{'kind':fields(successor[471]['body'])['SUCCESSION_KIND'],
             'receipts':{str(issue):{'url':successor[issue]['html_url'],
                 'body_sha256':hashlib.sha256(successor[issue]['body'].encode()).hexdigest()}

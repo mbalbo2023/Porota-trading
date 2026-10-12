@@ -139,6 +139,14 @@ jobs:
           if [ -n "$RC6_LAUNCH_RECEIPT" ]; then args+=(--launch-receipt-url "$RC6_LAUNCH_RECEIPT"); fi
           if [ -n "$RC6_OWNER_SESSION" ]; then args+=(--owner-session "$RC6_OWNER_SESSION"); fi
           python3 -I -B scripts/rc6_material_pr_admission.py "${args[@]}"
+      - name: Reject missing source provenance and changed tests before full-Git work
+        if: env.RC6_GATE == 'cheap'
+        shell: bash
+        env:
+          RC6_ADMISSION_JSON: ${{ steps.admit.outputs.admission_path }}
+        run: |
+          set -Eeuo pipefail
+          python3 -I -B scripts/rc6_fast_source_preflight.py --admission "$RC6_ADMISSION_JSON"
       - name: Measure live compound capacity before reviewed Python tooling
         if: env.RC6_GATE != 'capacity-probe' && env.RC6_GATE != 'capacity-calibration'
         shell: bash

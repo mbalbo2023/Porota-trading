@@ -6174,6 +6174,14 @@
     }
   ],
   "path_evolution": {
+    "scripts/rc6_fast_source_preflight.py": {
+      "reason": "Reject missing exact source provenance and uncollected changed tests before expensive full Git gate work; this negative preflight grants no G0, G1 or deploy credit.",
+      "requirement_ids": ["U11","U25","U29"]
+    },
+    "tests/test_rc6_fast_source_preflight.py": {
+      "reason": "Regress early fail closed checks for unexplained source evolution and cheap test coverage; native collection and gate evidence remain required.",
+      "requirement_ids": ["U11","U25","U29"]
+    },
     "ops/rc6_deploy_critical_control_plane.sh": {
       "reason": "Preserve SRE critical gateway PID 1 init and Issues-only health after the authenticated runtime repair; exact source mode and host postcheck remain required, without conferring deploy or G5P credit.",
       "requirement_ids": ["U11","U25","U29"]
