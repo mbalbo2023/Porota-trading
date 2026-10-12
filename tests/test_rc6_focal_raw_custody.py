@@ -94,7 +94,8 @@ def carrier_control(tmp_path,monkeypatch,case):
         return subprocess.check_output(['git','-C',str(source),*arguments],env=environment).decode().strip()
     git('init','--template=','-q');git('config','user.name','Explicit custody unit')
     git('config','user.email','fixture@example.invalid');git('add','-A');git('commit','-qm','tiny control input')
-    args=SimpleNamespace(gate='focal312',source_sha=git('rev-parse','HEAD'),source_tree=git('rev-parse','HEAD^{tree}'),
+    args=SimpleNamespace(gate='focal312',release_profile='FULL_G5',
+        source_sha=git('rev-parse','HEAD'),source_tree=git('rev-parse','HEAD^{tree}'),
         repo_root=source,owner_session='UNIT_ONLY',capacity_peaks={})
     binding=real_binding();binding.update(candidate_sha=args.source_sha,candidate_tree=args.source_tree)
     monkeypatch.setattr(Path,'home',classmethod(lambda cls:namespaces))

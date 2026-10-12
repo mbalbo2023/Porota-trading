@@ -1189,6 +1189,10 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
         from scripts.rc6_architectural_gates import require_horizon_model_before_material
         require_horizon_model_before_material(gate)
     if gate == 'predeploy':
+        # Reject an untrusted PR event before fetching even the launch profile.
+        # The source-scope admission reads and verifies the event again before
+        # any material work, so a rebound between reads also fails closed.
+        actual_event(gate)
         launch=comment(launch_receipt_url,471) if launch_receipt_url else None
         profile=fields(launch['body']).get('RELEASE_PROFILE') if launch else None
         if profile == 'PAPER_V3_ONLY':

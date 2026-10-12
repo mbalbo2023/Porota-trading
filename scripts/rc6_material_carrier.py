@@ -1526,7 +1526,7 @@ def browser_prerequisite_satisfied(gate,receipts):
 
 
 def horizon(a,run,root,prepared,interpreters):
-    g5p=a.gate in ('G5P-acquire','G5P-certify')
+    g5p=getattr(a,'gate',None) in ('G5P-acquire','G5P-certify')
     if not g5p:architectural.require_horizon_model_before_material('Horizon')
     if g5p:
         need(a.release_profile=='PAPER_V3_ONLY' and a.g5p_revision_approval_url,

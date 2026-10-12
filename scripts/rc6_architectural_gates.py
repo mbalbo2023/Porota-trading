@@ -73,6 +73,7 @@ G1_REQUIRED_CHEAP_FILES = frozenset({
     'tests/test_rc6_stress_phase_timings.py', 'tests/test_rc6_heavy_test_preflight.py',
     'tests/test_rc6_authenticated_fixture_lifecycle.py', 'tests/test_rc6_scoped_infrastructure_lease.py',
     'tests/test_rc6_predeploy_scoped_cleanup.py', 'tests/test_deploy_v2_frozen_artifact_contract.py',
+    'tests/test_rc6_deploy_preopen_gate.py',
     'tests/test_rc6_architectural_gate_order.py',
     'tests/test_rc6_pytest_fixture_lifecycle.py', 'tests/test_rc6_archive_segment_reuse.py',
     'tests/test_rc6_source_schema_startup.py',
