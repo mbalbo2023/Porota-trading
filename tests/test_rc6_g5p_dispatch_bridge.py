@@ -10,9 +10,55 @@ from unittest.mock import patch
 
 from scripts import rc6_g5p_dispatch_bridge as bridge
 from scripts import rc6_material_pr_admission as admission
+from scripts.rc6_g5p_model import DOCUMENT_SHA256
 
 
 class BridgeBodyTests(TestCase):
+    def test_g5p_bridge_requires_fresh_paired_decision_before_dispatch(self):
+        now = datetime(2026, 10, 12, 9, 4, tzinfo=timezone.utc)
+        source, tree, owner = "a" * 40, "b" * 40, "CODEX_OWNER"
+        root = "https://github.com/mbalbo2023/Porota-trading/issues/"
+        def fixture(expires="2026-10-12T09:18:00Z", *, claimed_source=None):
+            common = "\n".join((
+                "CONTRACT_ACCEPTANCE_LIFECYCLE=IMMUTABLE_DECISION_LIVE_OWNER_REVOCATION_V1",
+                "RC6_CONTRACT_REVISION_AUTHORIZATION=APPROVED",
+                "CONTRACT_REVISION=PAPER_V3_ONLY_G5P_V1",
+                "CONTRACT_SCOPE=G5P_V3_MATERIAL",
+                "CONTRACT_DOCUMENT_SHA256=" + DOCUMENT_SHA256,
+                "SOURCE_SHA=" + (claimed_source or source), "SOURCE_TREE=" + tree,
+                "SESSION_SUCCESSOR=" + owner, "SOURCE_LEASE_EXPIRES_UTC=" + expires))
+            twin_body = common + "\n"
+            first_body = (common + "\nOWNER_RECEIPT_473=16\nOWNER_RECEIPT_473_SHA256=" +
+                          hashlib.sha256(twin_body.encode()).hexdigest() + "\n")
+            def row(issue, identifier, body):
+                return {"id": identifier, "body": body,
+                    "created_at": "2026-10-12T09:00:00Z",
+                    "updated_at": "2026-10-12T09:00:00Z",
+                    "html_url": root + str(issue) + "#issuecomment-" + str(identifier),
+                    "issue_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/issues/" + str(issue),
+                    "user": {"login": "mbalbo2023"}}
+            return {"/issues/comments/15": row(471, 15, first_body),
+                    "/issues/comments/16": row(473, 16, twin_body)}
+        auth = {"RELEASE_PROFILE": "PAPER_V3_ONLY",
+                "G5P_REVISION_APPROVAL_URL": root + "471#issuecomment-15"}
+        rows = fixture()
+        bridge.fresh_g5p_decision_for_dispatch(auth, source, tree, owner, now,
+                                                get=rows.__getitem__)
+        for changed in (fixture("2026-10-12T09:03:00Z"),
+                        fixture("2026-10-12T09:08:00Z"),
+                        fixture(claimed_source="c" * 40)):
+            with self.subTest(body=changed["/issues/comments/15"]["body"]), self.assertRaisesRegex(
+                    ValueError, "BRIDGE_G5P_FRESH_PAIRED_DECISION_WITH_QUEUE_MARGIN_REQUIRED"):
+                bridge.fresh_g5p_decision_for_dispatch(auth, source, tree, owner, now,
+                                                        get=changed.__getitem__)
+        changed = fixture()
+        changed["/issues/comments/16"]["body"] += "TAMPERED=true\n"
+        with self.assertRaisesRegex(ValueError, "BRIDGE_G5P_ACCEPTANCE_PAIR_REBOUND"):
+            bridge.fresh_g5p_decision_for_dispatch(auth, source, tree, owner, now,
+                                                    get=changed.__getitem__)
+        bridge.fresh_g5p_decision_for_dispatch({"RELEASE_PROFILE": "FULL_G5"}, source,
+            tree, owner, now, get=lambda path: self.fail("FULL_G5 fetched PAPER decision"))
+
     def test_bridge_http_failure_receipt_preserves_status_without_secret_or_url(self):
         headers = Message()
         headers['X-RateLimit-Remaining'] = '0'

@@ -8,7 +8,7 @@ bridge never issues a gate receipt or treats HTTP 204 as a material PASS.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -64,6 +64,48 @@ def checkout_identity(root, sha):
     return values[1]
 
 
+def fresh_g5p_decision_for_dispatch(auth, sha, tree, owner, now, *, get):
+    """Refuse a bridge request whose acceptance cannot survive a short queue.
+
+    This is an early transport veto. The dispatched job still authenticates
+    the complete decision, revocation history and exact owner before native work.
+    """
+    if auth.get("RELEASE_PROFILE") != "PAPER_V3_ONLY":
+        return
+    from scripts.rc6_g5p_model import DOCUMENT_SHA256
+    pointer = auth.get("G5P_REVISION_APPROVAL_URL")
+    row = admission.comment(pointer, 471, get=get)
+    values = admission.fields(row["body"])
+    created = admission.stamp(row["created_at"])
+    expires = admission.stamp(values.get("SOURCE_LEASE_EXPIRES_UTC"))
+    require(row["created_at"] == row["updated_at"]
+            and values.get("CONTRACT_ACCEPTANCE_LIFECYCLE") ==
+                "IMMUTABLE_DECISION_LIVE_OWNER_REVOCATION_V1"
+            and values.get("RC6_CONTRACT_REVISION_AUTHORIZATION") == "APPROVED"
+            and values.get("CONTRACT_REVISION") == "PAPER_V3_ONLY_G5P_V1"
+            and values.get("CONTRACT_SCOPE") == "G5P_V3_MATERIAL"
+            and values.get("CONTRACT_DOCUMENT_SHA256") == DOCUMENT_SHA256
+            and values.get("SOURCE_SHA") == sha and values.get("SOURCE_TREE") == tree
+            and values.get("SESSION_SUCCESSOR") == owner
+            and created <= now and timedelta(0) < expires-created <= timedelta(minutes=20)
+            and expires-now >= timedelta(minutes=5),
+            "BRIDGE_G5P_FRESH_PAIRED_DECISION_WITH_QUEUE_MARGIN_REQUIRED")
+    twin_id = values.get("OWNER_RECEIPT_473", "")
+    require(re.fullmatch(r"[1-9][0-9]{0,19}", twin_id) is not None,
+            "BRIDGE_G5P_ACCEPTANCE_PAIR_REQUIRED")
+    twin = admission.comment("https://github.com/" + admission.REPO +
+        "/issues/473#issuecomment-" + twin_id, 473, get=get)
+    twin_values = admission.fields(twin["body"])
+    require(twin["created_at"] == twin["updated_at"]
+            and hashlib.sha256(twin["body"].encode()).hexdigest() ==
+                values.get("OWNER_RECEIPT_473_SHA256")
+            and all(twin_values.get(key) == values.get(key) for key in (
+                "SOURCE_SHA", "SOURCE_TREE", "SESSION_SUCCESSOR", "SOURCE_LEASE_EXPIRES_UTC",
+                "CONTRACT_ACCEPTANCE_LIFECYCLE", "CONTRACT_REVISION", "CONTRACT_SCOPE",
+                "CONTRACT_DOCUMENT_SHA256", "RC6_CONTRACT_REVISION_AUTHORIZATION")),
+            "BRIDGE_G5P_ACCEPTANCE_PAIR_REBOUND")
+
+
 def prepare(*, get=None, event_reader=None, checkout=None, now=None):
     """Return exact dispatch inputs only after current owner and Source checks."""
     reader = get or admission.api
@@ -87,6 +129,7 @@ def prepare(*, get=None, event_reader=None, checkout=None, now=None):
     anchors = admission.administrative_anchors(owner, get=reader, now=current)
     auth = admission.launch_fields(launch, sha, tree, owner, gate,
                                    get=reader, anchors=anchors)
+    fresh_g5p_decision_for_dispatch(auth, sha, tree, owner, current, get=reader)
     scope = admission.candidate_scope(auth, owner=owner, anchors=anchors)
     require(scope["pr"] == pr["number"] and scope["branch"] == pr["head"]["ref"]
             and scope["base_sha"] == pr["base"]["sha"]
