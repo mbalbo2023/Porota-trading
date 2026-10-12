@@ -8,6 +8,7 @@ import io
 import gzip
 import json
 import os
+import random
 from pathlib import Path
 import shutil
 import subprocess
@@ -19,7 +20,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts.rc6_material_horizon_producer import require_paper_v3_archive_policy
-from scripts.rc6_g5p_frames import FrameRecorder, verify_frames, wire, capacity
+from scripts.rc6_g5p_frames import (
+    FrameRecorder, _decode_member, verify_frames, wire, capacity,
+)
 from scripts.rc6_g5p_model import build_model, model_wire
 from scripts.rc6_g5p_evidence import verify_material
 from rc6_shadow_runtime.archive_physical_model import horizon_schedule
@@ -1196,6 +1199,57 @@ class PaperV3ProducerTests(unittest.TestCase):
 
 
 class OriginalFrameTests(unittest.TestCase):
+    def test_disjoint_original_changes_fit_raw_bound_and_replay_exact_bytes(self):
+        # The native ERR-RC6-114 reached the 1 GiB transport bound at cut 377.
+        # Scattered changes defeat a one-middle prefix/suffix edit even when
+        # almost all original bytes remain identical between adjacent cuts.
+        source = random.Random(114).randbytes(2 * 1024**2)
+        changed = bytearray(source)
+        for offset in range(0, len(changed), 4096):
+            changed[offset] ^= 0x5a
+        before = gzip.compress(source, mtime=0, compresslevel=1)
+        after = gzip.compress(bytes(changed), mtime=0, compresslevel=1)
+        shifted = b"tag".join(bytes(changed[offset:offset + 4096])
+                              for offset in range(0, len(changed), 4096))
+        shifted_wire = gzip.compress(shifted, mtime=0, compresslevel=1)
+        original = {name: (before if name == "checkpoint.json.gz" else
+                           gzip.compress(b"unchanged", mtime=0, compresslevel=1)
+                           if name.endswith(".gz") else b"unchanged") for name in MEMBERS}
+        updated = dict(original, **{"checkpoint.json.gz": after})
+        shifted_original = dict(original, **{"checkpoint.json.gz": shifted_wire})
+        binding = dict(source_sha="a" * 40, source_tree="b" * 40,
+                       owner_session="TEST_OWNER", run_id=114, run_attempt=1,
+                       writer_binding_sha256="c" * 64)
+        with tempfile.TemporaryDirectory() as temp, patch(
+                "scripts.rc6_g5p_frames.capacity", return_value={}):
+            recorder = FrameRecorder(Path(temp) / "frames", **binding)
+            recorder.record(0, as_of="first", originals=original,
+                            receipt={"source_as_of": "first"}, restored=original)
+            first_bytes = recorder.bytes_written
+            with patch("scripts.rc6_g5p_frames.MAX_CAPTURE_BYTES", first_bytes + 192 * 1024):
+                recorder.record(1, as_of="second", originals=updated,
+                                receipt={"source_as_of": "second"}, restored=updated)
+                recorder.record(2, as_of="third", originals=shifted_original,
+                                receipt={"source_as_of": "third"}, restored=shifted_original)
+            self.assertLess(recorder.bytes_written - first_bytes, 96 * 1024)
+            frame = json.loads(gzip.decompress((recorder.root / "cut-0001.json.gz").read_bytes()))
+            details = frame["originals"]["checkpoint.json.gz"]
+            self.assertEqual(details["codec"], "GZIP_LEVEL1_EXACT_BINARY_PACK_V1")
+            replayed, expanded = _decode_member("checkpoint.json.gz", details, before, source)
+            self.assertEqual(replayed, after)
+            self.assertEqual(expanded, bytes(changed))
+            shifted_frame = json.loads(gzip.decompress(
+                (recorder.root / "cut-0002.json.gz").read_bytes()))
+            shifted_details = shifted_frame["originals"]["checkpoint.json.gz"]
+            self.assertEqual(shifted_details["codec"], "GZIP_LEVEL1_EXACT_BINARY_PACK_V1")
+            shifted_replay, shifted_expanded = _decode_member(
+                "checkpoint.json.gz", shifted_details, after, bytes(changed))
+            self.assertEqual(shifted_replay, shifted_wire)
+            self.assertEqual(shifted_expanded, shifted)
+            rebound = dict(details, binary_pack_sha256="0" * 64)
+            with self.assertRaisesRegex(ValueError, "BINARY_PACK_WIRE_SHA256_OR_LENGTH_INVALID"):
+                _decode_member("checkpoint.json.gz", rebound, before, source)
+
     def complete_capture(self, varying=None):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)

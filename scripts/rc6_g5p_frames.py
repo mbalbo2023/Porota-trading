@@ -18,6 +18,12 @@ import stat
 import zlib
 
 from rc6_shadow_runtime.archive_components import MEMBERS
+from rc6_shadow_runtime.exact_binary_storage import (
+    MAX_MEMBER_BYTES as MAX_BINARY_MEMBER_BYTES,
+    MAX_PACK_BYTES as MAX_BINARY_PACK_BYTES,
+    decode_binary_pack,
+    encode_binary_pack,
+)
 from rc6_shadow_runtime.archive_physical_model import (
     HORIZON_CUTS, original_prefix_obligations,
     require_original_bytes_before_all1202_model,
@@ -146,10 +152,36 @@ def _encode_member(name, raw, previous, previous_expanded=None):
         before = (previous_expanded if previous_expanded is not None else
                   _bounded_gzip(base)[0] if base else b"")
         current, parts = _bounded_gzip(raw)
-        row.update(codec="GZIP_LEVEL1_EXACT_EDIT_V1", expanded_bytes=len(current),
-                   expanded_base_sha256=hashlib.sha256(before).hexdigest(),
-                   gzip_part_bytes=parts,
-                   **_edit(before, current))
+        common = {"expanded_bytes": len(current),
+                  "expanded_base_sha256": hashlib.sha256(before).hexdigest(),
+                  "gzip_part_bytes": parts}
+        edit = {**row, **common, "codec": "GZIP_LEVEL1_EXACT_EDIT_V1",
+                **_edit(before, current)}
+        row = edit
+        # A single prefix/suffix edit can contain nearly the whole checkpoint
+        # when several disjoint original regions change. The existing V3
+        # exact-binary codec finds authenticated COPY runs in those bytes.
+        # This is only a RAW transport alternative; the native V3 writer and
+        # its archive/GC/dependency-depth policy remain untouched.
+        if (before and current and len(edit["middle_base64"]) >= 65536
+                and len(before) <= MAX_BINARY_MEMBER_BYTES
+                and len(current) <= MAX_BINARY_MEMBER_BYTES):
+            try:
+                packed, info = encode_binary_pack(current, before, allow_xor=True)
+            except ValueError as error:
+                if str(error) not in {"BINARY_INSTRUCTION_CAPACITY_REACHED",
+                                      "BINARY_PACK_CAPACITY_REACHED"}:
+                    raise
+            else:
+                binary = {**{key: value for key, value in edit.items()
+                             if key not in ("codec", "prefix_bytes", "suffix_bytes", "middle_base64")},
+                          "codec": "GZIP_LEVEL1_EXACT_BINARY_PACK_V1",
+                          "expanded_sha256": info["target_sha256"],
+                          "binary_pack_sha256": info["pack_sha256"],
+                          "binary_pack_depth": info["dependency_depth"],
+                          "binary_pack_base64": base64.b64encode(packed).decode("ascii")}
+                if len(wire(binary)) < len(wire(edit)):
+                    row = binary
         expanded = current
     elif name == "projection.sqlite":
         changed = []
@@ -192,13 +224,37 @@ def _decode_member(name, details, previous, previous_expanded=None):
             "G5P_FRAME_DELTA_PREVIOUS_ORIGINAL_REBOUND")
     expanded = None
     if name in GZIP_MEMBERS:
-        require(details.get("codec") == "GZIP_LEVEL1_EXACT_EDIT_V1",
+        require(details.get("codec") in ("GZIP_LEVEL1_EXACT_EDIT_V1",
+                                          "GZIP_LEVEL1_EXACT_BINARY_PACK_V1"),
                 "G5P_FRAME_GZIP_CODEC_REBOUND")
         before = (previous_expanded if previous_expanded is not None else
                   _bounded_gzip(base)[0] if base else b"")
         require(details.get("expanded_base_sha256") == hashlib.sha256(before).hexdigest(),
                 "G5P_FRAME_GZIP_BASE_REBOUND")
-        expanded = _apply_edit(before, details)
+        if details["codec"] == "GZIP_LEVEL1_EXACT_EDIT_V1":
+            expanded = _apply_edit(before, details)
+        else:
+            require(type(details.get("expanded_sha256")) is str
+                    and HEX64.fullmatch(details["expanded_sha256"])
+                    and type(details.get("binary_pack_sha256")) is str
+                    and HEX64.fullmatch(details["binary_pack_sha256"])
+                    and type(details.get("binary_pack_depth")) is int
+                    and details["binary_pack_depth"] in (0, 1),
+                    "G5P_FRAME_BINARY_PACK_REFERENCE_INVALID")
+            require(type(details.get("binary_pack_base64")) is str,
+                    "G5P_FRAME_BINARY_PACK_BASE64_INVALID")
+            try:
+                packed = base64.b64decode(details["binary_pack_base64"], validate=True)
+            except (KeyError, TypeError, ValueError) as error:
+                raise ValueError("G5P_FRAME_BINARY_PACK_BASE64_INVALID") from error
+            require(0 < len(packed) <= MAX_BINARY_PACK_BYTES,
+                    "G5P_FRAME_BINARY_PACK_BOUND")
+            depth = details["binary_pack_depth"]
+            expanded = decode_binary_pack(packed,
+                expected_pack_sha256=details["binary_pack_sha256"],
+                expected_target_sha256=details["expanded_sha256"],
+                previous_bytes=before if depth else None,
+                previous_depth=0 if depth else None)
         require(details.get("expanded_bytes") == len(expanded),
                 "G5P_FRAME_GZIP_EXPANDED_LENGTH_REBOUND")
         parts = details.get("gzip_part_bytes")
