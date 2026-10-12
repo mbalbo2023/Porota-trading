@@ -797,6 +797,25 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
             self.assertIs(revisions.validate_revision_approval(context,now=current,**binding),context)
             with self.assertRaisesRegex(ValueError,'CONTRACT_ACCEPTANCE_EXPIRED'):
                 revisions.validate_revision_approval(context,now=current+timedelta(seconds=31),**binding)
+            # Real GitHub reads can consume more than the 30-second transient
+            # window. Issue it after the last revocation read, never at entry.
+            ticks=iter((current,current+timedelta(seconds=31),current+timedelta(seconds=33)))
+            class SlowClock(datetime):
+                @classmethod
+                def now(cls,tz=None):return next(ticks)
+            with patch.object(revisions,'datetime',SlowClock),\
+                 patch.object(revisions,'_g5p_decision_not_revoked') as revocations:
+                slow=revisions.authenticate_revision(Github(),url,owner_session='OWNER',**binding)
+                self.assertEqual(revocations.call_args.kwargs['now'],current+timedelta(seconds=31))
+            self.assertIs(revisions.validate_revision_approval(slow,
+                now=current+timedelta(seconds=34),**binding),slow)
+            with self.assertRaisesRegex(ValueError,'CONTRACT_ACCEPTANCE_EXPIRED'):
+                revisions.validate_revision_approval(slow,
+                    now=current+timedelta(seconds=64),**binding)
+            ticks=iter((current,current+timedelta(seconds=31),started+timedelta(hours=6,seconds=1)))
+            with patch.object(revisions,'datetime',SlowClock),\
+                 self.assertRaisesRegex(ValueError,'G5P_LONG_RUN_CONTEXT_ISSUE_OUTSIDE_ACTUAL_RUN'):
+                revisions.authenticate_revision(Github(),url,owner_session='OWNER',**binding)
             fresh=revisions.authenticate_revision(Github(),url,owner_session='OWNER',
                 now=datetime.now(timezone.utc),**binding)
             with patch.object(admission,'authenticate_g5p_revision',return_value=fresh) as recheck:

@@ -159,10 +159,18 @@ def authenticate_revision(github, approval_url, *, owner_session, revision, scop
             and digest(twin["body"].encode()) == values["OWNER_RECEIPT_473_SHA256"],
             "CONTRACT_OWNER_PAIR_CHANGED_DURING_READ")
     if long_run:
+        # A complete owner/timeline read can outlast the 30-second in-process
+        # context. Start that context only after the final revocation read;
+        # an explicit clock keeps deterministic historical tests unchanged.
+        rechecked_at = current if now is not None else datetime.now(timezone.utc)
         _g5p_decision_not_revoked(github,source_sha=source_sha,revision=revision,
-            decision=decision,owner_session=owner_session,now=current)
+            decision=decision,owner_session=owner_session,now=rechecked_at)
     expiration = datetime.fromisoformat(values["SOURCE_LEASE_EXPIRES_UTC"].replace("Z", "+00:00"))
-    if long_run:expiration=min(current+timedelta(seconds=30),activation+timedelta(hours=6))
+    if long_run:
+        issued_at = current if now is not None else datetime.now(timezone.utc)
+        require(rechecked_at <= issued_at < activation+timedelta(hours=6),
+                'G5P_LONG_RUN_CONTEXT_ISSUE_OUTSIDE_ACTUAL_RUN')
+        expiration=min(issued_at+timedelta(seconds=30),activation+timedelta(hours=6))
     values_for_context = {**binding, "owner_session": owner_session,
         "approval_body_sha256": body_digest, "expires_utc": expiration,
         "approval_url": approval_url, "paired_comment_id": twin['id'],
