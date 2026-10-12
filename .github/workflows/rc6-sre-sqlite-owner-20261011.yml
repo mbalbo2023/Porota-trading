@@ -39,7 +39,10 @@ jobs:
           import json,os,pathlib
           r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'sqlite-owner.json').read_text())
           assert r['host_mutation'] is False and r['paper']==['PRODUCTION_PAPER',0]
-          print('DISK_GROWTH|root_free='+str(r['root_free_bytes'])+'|du='+str(r['du'])+'|db='+str(r['db'])+'|journal_archived='+str(r['journal_archived'])+'|docker_logs='+str(r['docker_logs']))
+          import hashlib
+          expected={name:hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() for name in ('bv_paper_runtime.py','be_paper_engine.py')}
+          print('SOURCE_BYTE_MATCH='+str(r['image_source_hashes']==expected)+'|image='+str(r['image_source_hashes'])+'|checkout='+str(expected))
+          print('DISK_GROWTH|root_free='+str(r['root_free_bytes'])+'|du='+str(r['du'])+'|data_children='+str(r['data_children'])+'|paper_children='+str(r['paper_children']))
           print('PAPER=PRODUCTION_PAPER;REAL_ORDERS_SENT=0;HOST_MUTATION=false')
           PY
       - name: Preserve redacted original JSON
