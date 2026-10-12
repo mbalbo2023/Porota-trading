@@ -1,0 +1,58 @@
+name: RC6 SRE focused forensics READ_ONLY
+on:
+  push:
+    branches: [ops/rc6-sre-deep-20261011]
+    paths: [.github/workflows/rc6-sre-sqlite-owner-20261011.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-sre-sqlite-owner-20261011
+  cancel-in-progress: false
+jobs:
+  inspect:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/ops/rc6-sre-deep-20261011' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify probe and use pinned SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/ops/rc6_sre_disk_growth.py
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS" && test -n "$DO_HOST" && test -n "$DO_USER"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6-sre-owner"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6-sre-owner" "$HOME/.ssh/known_hosts"
+          timeout 230 ssh -i "$HOME/.ssh/rc6-sre-owner" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n nice -n 19 ionice -c3 python3 -' < scripts/ops/rc6_sre_disk_growth.py > "$RUNNER_TEMP/sqlite-owner.json"
+          python3 -m json.tool "$RUNNER_TEMP/sqlite-owner.json" >/dev/null
+          sha256sum scripts/ops/rc6_sre_disk_growth.py "$RUNNER_TEMP/sqlite-owner.json"
+          python3 - <<'PY'
+          import json,os,pathlib
+          r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'sqlite-owner.json').read_text())
+          assert r['host_mutation'] is False and r['paper']==['PRODUCTION_PAPER',0]
+          import hashlib
+          expected={name:hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() for name in ('bv_paper_runtime.py','be_paper_engine.py')}
+          print('SOURCE_BYTE_MATCH='+str(r['image_source_hashes']==expected)+'|image='+str(r['image_source_hashes'])+'|checkout='+str(expected))
+          print('DISK_GROWTH|root_free='+str(r['root_free_bytes'])+'|du='+str(r['du'])+'|data_children='+str(r['data_children'])+'|paper_children='+str(r['paper_children']))
+          print('PAPER=PRODUCTION_PAPER;REAL_ORDERS_SENT=0;HOST_MUTATION=false')
+          PY
+      - name: Preserve redacted original JSON
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-sre-sqlite-owner-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sqlite-owner.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Remove runner-only SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6-sre-owner"

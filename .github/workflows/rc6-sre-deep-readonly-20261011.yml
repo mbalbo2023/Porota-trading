@@ -1,0 +1,310 @@
+name: RC6 SRE deep host forensics READ_ONLY
+on:
+  push:
+    branches: [ops/rc6-sre-deep-20261011]
+    paths: [.github/workflows/rc6-sre-deep-readonly-20261011.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rc6-sre-deep-readonly-20261011
+  cancel-in-progress: false
+jobs:
+  forensics:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/ops/rc6-sre-deep-20261011' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Pinned SSH to existing host
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6-sre-audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6-sre-audit" "$HOME/.ssh/known_hosts"
+      - name: Capture whitelisted host facts and redacted categories
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout 720 ssh -i "$HOME/.ssh/rc6-sre-audit" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15 \
+            "$DO_USER@$DO_HOST" 'sudo -n nice -n 19 ionice -c3 python3 -' \
+            > "$RUNNER_TEMP/rc6-sre-deep-readonly.json" <<'PY'
+          import collections, datetime, hashlib, json, os, pathlib, re, sqlite3, stat, subprocess, time
+          def now():
+              return datetime.datetime.now(datetime.timezone.utc).isoformat()
+          def run(args, timeout=25, max_bytes=400000, merge=False):
+              try:
+                  p=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT if merge else subprocess.PIPE,
+                                   timeout=timeout,check=False)
+                  return {"exit":p.returncode,"out":p.stdout[:max_bytes].decode("utf-8","replace"),
+                          "stderr_class":"ACCESS_DENIED" if not merge and b"Permission denied" in p.stderr else
+                          ("ERROR" if not merge and p.stderr else "NONE")}
+              except subprocess.TimeoutExpired:
+                  return {"exit":124,"out":"","stderr_class":"TIMEOUT"}
+              except Exception as e:
+                  return {"exit":125,"out":"","stderr_class":type(e).__name__}
+          def digest(s):
+              return hashlib.sha256(s.encode("utf-8","replace")).hexdigest()
+          def command(args, timeout=25):
+              r=run(args,timeout)
+              return {"exit":r["exit"],"output":r["out"][:12000],"stderr_class":r["stderr_class"]}
+          report={"schema":"porota.rc6.sre.deep-readonly.v1","captured_utc":now(),
+                  "host_mutation":False,"sensitive_raw_logs_exported":False,
+                  "source":"DROPLET_VIA_PINNED_ACTIONS_SSH"}
+          fs=os.statvfs("/")
+          report["root_fs"]={"dev":os.stat("/").st_dev,"block_bytes":fs.f_frsize,
+              "total_bytes":fs.f_blocks*fs.f_frsize,"available_bytes":fs.f_bavail*fs.f_frsize,
+              "free_inodes":fs.f_ffree,"total_inodes":fs.f_files}
+          report["host"]={"kernel":os.uname().release,
+              "checkout_sha":command(["git","-C","/opt/porota-trading","rev-parse","HEAD"],10),
+              "mount":command(["findmnt","-n","-o","SOURCE,FSTYPE,OPTIONS","/"],10),
+              "docker_root":command(["docker","info","--format","{{.DockerRootDir}}"],20),
+              "docker_mounts":command(["findmnt","-R","-o","TARGET,SOURCE,FSTYPE","/var/lib/docker"],12),
+              "docker_du":"PRIOR_RUN_38161419212",
+              "docker_df":command(["docker","system","df","-v"],40),
+              "memory":command(["free","-b"],10),
+              "failed_units":command(["systemctl","--failed","--no-pager","--no-legend"],10),
+              "timers":command(["systemctl","list-timers","--all","--no-pager","--no-legend"],15)}
+          containers={}
+          for name in ("porota_production_observer","porota_production_dashboard","porota_critical_approval_rc6"):
+              raw=run(["docker","inspect",name],25,500000)
+              if raw["exit"]:
+                  containers[name]={"error":raw["stderr_class"],"exit":raw["exit"]}
+                  continue
+              try:
+                  x=json.loads(raw["out"])[0]
+                  state=x.get("State") or {}; hc=state.get("Health") or {}
+                  cfg=x.get("Config") or {}; host=x.get("HostConfig") or {}
+                  entry={"id":x.get("Id"),"image_id":x.get("Image"),
+                      "status":state.get("Status"),"started_at":state.get("StartedAt"),
+                      "finished_at":state.get("FinishedAt"),"exit_code":state.get("ExitCode"),
+                      "oom_killed":state.get("OOMKilled"),"restart_count":x.get("RestartCount"),
+                      "state_pid":state.get("Pid"),"pids_limit":host.get("PidsLimit"),
+                      "memory_limit":host.get("Memory"),"health_status":hc.get("Status"),
+                      "failing_streak":hc.get("FailingStreak"),
+                      "health_config":cfg.get("Healthcheck"),
+                      "health_log":[{"exit_code":e.get("ExitCode"),"start":e.get("Start"),
+                                    "end":e.get("End"),"output_sha256":digest(str(e.get("Output") or "")),
+                                    "output_class":("FORK_RESOURCE" if re.search("resource temporarily unavailable|fork|unable to start container process|OCI runtime exec failed",str(e.get("Output")),re.I)
+                                       else "TIMEOUT" if re.search("timed out|timeout",str(e.get("Output")),re.I)
+                                       else "PERMISSION" if re.search("permission denied",str(e.get("Output")),re.I)
+                                       else "NOT_FOUND" if re.search("not found|no such file",str(e.get("Output")),re.I)
+                                       else "HTTP_ERROR" if re.search("HTTP.*[45][0-9][0-9]",str(e.get("Output")),re.I)
+                                       else "EMPTY" if not e.get("Output") else "OTHER")}
+                                    for e in hc.get("Log",[])[-10:]]}
+                  # Docker health test may embed secrets. Export only executable names, never args.
+                  if entry["health_config"]:
+                      test=entry["health_config"].get("Test") or []
+                      entry["health_config"]={k:v for k,v in entry["health_config"].items() if k!="Test"}
+                      entry["health_test_kind"]=test[0] if test else None
+                      entry["health_test_sha256"]=digest(json.dumps(test))
+                  pid=state.get("Pid")
+                  if isinstance(pid,int) and pid>0:
+                      cgroup=pathlib.Path("/proc")/str(pid)/"cgroup"
+                      try:
+                          rel=cgroup.read_text().splitlines()[0].split(":",2)[-1].lstrip("/")
+                          base=pathlib.Path("/sys/fs/cgroup")/rel
+                          entry["cgroup_pids"]={f:(base/f).read_text().strip() for f in ("pids.current","pids.max","pids.events") if (base/f).is_file()}
+                          entry["proc"]={"fd_count":len(list((pathlib.Path("/proc")/str(pid)/"fd").iterdir())),
+                              "threads":len(list((pathlib.Path("/proc")/str(pid)/"task").iterdir()))}
+                      except Exception as e: entry["proc_error"]=type(e).__name__
+                  containers[name]=entry
+              except Exception as e:
+                  containers[name]={"parse_error":type(e).__name__}
+          report["containers"]=containers
+          image_ids=sorted({v.get("image_id") for v in containers.values() if v.get("image_id")})
+          report["images"]={}
+          for img in image_ids:
+              raw=run(["docker","image","inspect",img],25,400000)
+              if raw["exit"]: report["images"][img]={"exit":raw["exit"]};continue
+              x=json.loads(raw["out"])[0]; cfg=x.get("Config") or {}; hc=cfg.get("Healthcheck") or {}
+              report["images"][img]={"id":x.get("Id"),"size":x.get("Size"),
+                  "created":x.get("Created"),"healthcheck_parameters":{k:v for k,v in hc.items() if k!="Test"},
+                  "healthcheck_test_sha256":digest(json.dumps(hc.get("Test"))),
+                  "ref_count":sum(v.get("image_id")==img for v in containers.values())}
+          logs={}
+          for name in ("porota_production_observer","porota_critical_approval_rc6"):
+              raw=run(["docker","logs","--timestamps","--since","24h","--tail","8000",name],45,1200000,True)
+              lines=raw["out"].splitlines()
+              sqlite_lines=[line for line in lines if re.search("database is locked|sqlite_busy|OperationalError",line,re.I)]
+              frames=collections.Counter()
+              for line in lines:
+                  m=re.search(r'File "[^"]*/([^/"]+)", line [0-9]+, in ([a-zA-Z_][a-zA-Z_0-9]*)',line)
+                  if m:frames[(m.group(1),m.group(2))]+=1
+              logs[name]={"exit":raw["exit"],"lines_sampled":len(lines),
+                  "raw_sha256":digest(raw["out"]),"sqlite_line_matches":len(sqlite_lines),
+                  "sqlite_first_utc":sqlite_lines[0][:35] if sqlite_lines else None,
+                  "sqlite_last_utc":sqlite_lines[-1][:35] if sqlite_lines else None,
+                  "traceback_frames_top":[{"file":f,"function":fn,"lines":n} for (f,fn),n in frames.most_common(20)],
+                  "error_classes":{tag:sum(bool(re.search(p,line,re.I)) for line in lines)
+                     for tag,p in {"locked":"database is locked|sqlite_busy","operational":"OperationalError",
+                        "traceback":"Traceback","timeout":"timed out|timeout",
+                        "oom":"out of memory|OOMKilled","fork":"resource temporarily unavailable|fork failed"}.items()}}
+          report["logs"]=logs
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          dbstatus={"path_class":"PAPER_DB","exists":pathlib.Path(db).is_file()}
+          if dbstatus["exists"]:
+              try:
+                  c=sqlite3.connect("file:"+db+"?mode=ro",uri=True,timeout=2)
+                  c.execute("PRAGMA query_only=ON")
+                  dbstatus["state"]=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+                  dbstatus["journal_mode"]=c.execute("PRAGMA journal_mode").fetchone()[0]
+                  c.close()
+              except Exception as e:dbstatus["error_class"]=type(e).__name__
+              for suffix in ("","-wal","-shm"):
+                  try:
+                      s=os.stat(db+suffix);dbstatus["file"+suffix]={"inode":s.st_ino,"blocks_bytes":s.st_blocks*512,"size":s.st_size}
+                  except OSError as e:dbstatus["file"+suffix]={"errno":e.errno}
+          report["db"]=dbstatus
+          units=("porota-critical-approval-rc6.service","porota-preopen-rc6.service",
+              "porota-scheduler-export-hf6.service","porota-contract-evidence-weekend-backfill-rc6.service",
+              "porota-gdelt-event-risk-rc6.service","porota-host-general-backup-rc6.service")
+          report["units"]={}
+          for unit in units:
+              r=command(["systemctl","show",unit,"--no-pager","-p","LoadState","-p","ActiveState",
+                "-p","SubState","-p","Result","-p","ExecMainStatus","-p","ExecMainStartTimestamp",
+                "-p","ExecMainExitTimestamp","-p","FragmentPath"],10)
+              report["units"][unit]=r
+          report["occupancy"]={}
+          for root in ("/var/log","/var/lib","/opt/porota-trading"):
+              r=run(["timeout","95","du","-x","-B1","-d1",root],100,100000)
+              rows=[]
+              for line in r["out"].splitlines():
+                  pair=line.split(None,1)
+                  if len(pair)==2 and pair[0].isdigit():
+                      rows.append({"bytes":int(pair[0]),"path_sha256":digest(pair[1]),"root":root if pair[1]==root else "CHILD_OF_"+root, "path":pair[1] if root in ("/opt","/var","/usr") else None})
+              report["occupancy"][root]={"exit":r["exit"],"entries":sorted(rows,key=lambda x:-x["bytes"])[:25],"stderr_class":r["stderr_class"]}
+          deleted=[]
+          for proc in pathlib.Path("/proc").iterdir():
+              if not proc.name.isdigit():continue
+              try:
+                  for fd in (proc/"fd").iterdir():
+                      try:
+                          s=fd.stat()
+                          if s.st_nlink==0 and stat.S_ISREG(s.st_mode):
+                              deleted.append({"pid":int(proc.name),"inode":s.st_ino,"physical_bytes":s.st_blocks*512})
+                      except OSError:pass
+              except OSError:pass
+          report["open_unlinked"]={"count":len(deleted),"top":sorted(deleted,key=lambda r:-r["physical_bytes"])[:30]}
+          report["ppi_watch_units"]=[]
+          r=run(["systemctl","list-unit-files","--no-legend","--no-pager"],15,200000)
+          for line in r["out"].splitlines():
+              name=line.split()[0] if line.split() else ""
+              if "ppi" in name.lower() and "watch" in name.lower():
+                  report["ppi_watch_units"].append({"unit":name,"active":command(["systemctl","is-active",name],10)["output"].strip()})
+          # Focused discriminants; no commands below write to the host.
+          proc=report["containers"].get("porota_critical_approval_rc6",{})
+          pid=proc.get("state_pid")
+          proc_tree=[]
+          rel=""
+          if isinstance(pid,int) and pid>0:
+              try:
+                  rel=(pathlib.Path("/proc")/str(pid)/"cgroup").read_text().splitlines()[0].split(":",2)[-1]
+                  for entry in pathlib.Path("/proc").iterdir():
+                      if not entry.name.isdigit():continue
+                      try:
+                          cg=(entry/"cgroup").read_text()
+                          paths=[line.split(":",2)[-1] for line in cg.splitlines()]
+                          if not any(x==rel or x.startswith(rel.rstrip("/")+"/") for x in paths):continue
+                          status=(entry/"status").read_text().splitlines()
+                          fields={}
+                          for line in status:
+                              if line.startswith(("Name:","State:","PPid:","Threads:")):
+                                  k,v=line.split(":",1);fields[k]=v.strip()
+                          proc_tree.append({"pid":int(entry.name),**fields})
+                      except OSError:pass
+              except Exception as e:report["critical_process_tree_error"]=type(e).__name__
+          report["critical_process_tree"]={"processes":sorted(proc_tree,key=lambda x:x["pid"])[:120],
+              "name_state_counts":dict(collections.Counter((r.get("Name","?")+"|"+r.get("State","?")) for r in proc_tree)),
+              "thread_sum":sum(int(r.get("Threads",0)) for r in proc_tree),
+              "cgroup_path_sha256":digest(rel)}
+          report["critical_docker_top"]=command(["docker","top","porota_critical_approval_rc6","-eo","pid,ppid,stat,nlwp,comm"],15)
+          unit=run(["systemctl","cat","porota-critical-approval-rc6.service"],12,100000,True)
+          unit_text=unit["out"]
+          report["critical_unit"]={"exit":unit["exit"],"sha256":digest(unit_text),
+              "pids_limit_tokens":re.findall(r'--pids-limit(?:=|\\s+)([0-9]+)',unit_text),
+              "exec_start_binary_class":[re.split(r'[/\\s]+',m.group(1))[0] for m in []],
+              "mentions_docker_run":bool(re.search(r'ExecStart=.*docker\\s+run',unit_text)),
+              "mentions_launcher_script":bool(re.search(r'ExecStart=.*\\.sh',unit_text))}
+          raw=run(["docker","logs","--timestamps","--since","24h","--tail","8000","porota_production_observer"],45,1800000,True)
+          lines=raw["out"].splitlines()
+          hours=collections.Counter()
+          callsites=collections.Counter()
+          event_lines=collections.Counter()
+          last_frame=None
+          for line in lines:
+              if re.search("database is locked|sqlite_busy|SQLITE_LOCKED",line,re.I):
+                  hours[line[:13]]+=1
+              m=re.search(r'File "[^"]*/([^/"]+)", line [0-9]+, in ([A-Za-z_][A-Za-z_0-9]*)',line)
+              if m:last_frame=(m.group(1),m.group(2))
+              if re.search(r'(?:sqlite3[.])?OperationalError: database is locked',line,re.I):
+                  callsites[last_frame or ("UNKNOWN","UNKNOWN")]+=1
+                  last_frame=None
+              for label,pattern in (("EXIT_READER_STATUS","EXIT_READER_STATUS_SQLITE_CONTENTION"),
+                  ("EXIT_READER","EXIT_READER_SQLITE_CONTENTION"),
+                  ("CANDLE","candle.*sqlite"),
+                  ("SCALPING","scalping.*sqlite")):
+                  if re.search(pattern,line,re.I):event_lines[label]+=1
+          report["sqlite_log_groups"]={"error_hour_line_counts":dict(hours),
+              "exception_last_frames":[{"file":k[0],"function":k[1],"count":n} for k,n in callsites.most_common(30)],
+              "event_lines":dict(event_lines),"raw_sha256":digest(raw["out"])}
+          pre=run(["journalctl","-u","porota-preopen-rc6.service","--since","2026-10-09 13:00:00",
+              "--until","2026-10-09 14:00:00","--no-pager","-o","cat"],15,120000,True)
+          report["preopen_oct9_journal"]={"exit":pre["exit"],"sha256":digest(pre["out"]),
+              "red_checks":sorted(set(re.findall(r'"(?:release_identity|observer_container|dashboard_container|observer_db|disk|required_rc6_timers|byma_morning_watch|iol_reference_fallback|history_quarantine|foreign_market_policy)"',pre["out"]))),
+              "reason_categories":{key:len(re.findall(key,pre["out"])) for key in
+                  ("RED","NOT_DUE","BYMA_","IOL_","WS15_","UNAVAILABLE","Traceback")}}
+          report["journal_disk"]=command(["journalctl","--disk-usage"],15)
+          rotated=[]
+          for base,dirs,files in os.walk("/var/log",followlinks=False):
+              dirs[:]=[d for d in dirs if not (pathlib.Path(base)/d).is_symlink()]
+              for name in files:
+                  path=pathlib.Path(base)/name
+                  try:
+                      st=path.lstat()
+                      if stat.S_ISREG(st.st_mode) and st.st_dev==os.stat("/").st_dev:
+                          rotated.append({"path":str(path),"inode":st.st_ino,"dev":st.st_dev,
+                              "blocks_bytes":st.st_blocks*512,"size":st.st_size,
+                              "nlink":st.st_nlink,"mtime":datetime.datetime.fromtimestamp(st.st_mtime,datetime.timezone.utc).isoformat(),
+                              "rotated":bool(__import__('re').search(r'\.(?:[0-9]+|gz|xz|zst)$',name))})
+                  except OSError: pass
+          report["log_files_top"]=sorted(rotated,key=lambda x:-x["blocks_bytes"])[:40]
+          check='import sqlite3,sys;c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True,timeout=2);c.execute("PRAGMA query_only=ON");print(c.execute("PRAGMA quick_check(1)").fetchone()[0]);c.close()'
+          report["db"]["quick_check"]={"result":"DEFERRED_AFTER_85S_TIMEOUT_RUN_38161901175"}
+          report["completed_utc"]=now()
+          print(json.dumps(report,sort_keys=True,indent=2))
+          PY
+          python3 -m json.tool "$RUNNER_TEMP/rc6-sre-deep-readonly.json" >/dev/null
+          python3 - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"rc6-sre-deep-readonly.json"
+          x=json.loads(p.read_text())
+          print("SRE_READONLY=CAPTURED|free_bytes="+str(x["root_fs"]["available_bytes"])+
+                "|critical_health="+str(x["containers"].get("porota_critical_approval_rc6",{}).get("health_status"))+
+                "|paper_state="+str(x["db"].get("state"))+"|mutation=false")
+          PY
+          sha256sum "$RUNNER_TEMP/rc6-sre-deep-readonly.json"
+      - name: Upload original redacted evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-sre-deep-readonly-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-sre-deep-readonly.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Remove runner-only SSH credential
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/rc6-sre-audit"
+
