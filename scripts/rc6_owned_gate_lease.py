@@ -121,7 +121,11 @@ def api_get(path, deadline, *, retry_transient=False):
     if cached is not None: headers['If-None-Match'] = cached[0]
     request = urllib.request.Request('https://api.github.com/repos/' + admission.REPO + path,
         headers=headers)
-    for attempt in range(3 if retry_transient else 1):
+    # A gateway can return several 502s during one otherwise live owner walk.
+    # Keep every retry inside the caller's original alarm and monotonic
+    # deadline; no cached document grants authority after an HTTP failure.
+    transient_attempts = 16 if retry_transient else 1
+    for attempt in range(transient_attempts):
         remaining = deadline - time.monotonic()
         require(0 < remaining <= G5P_HTTP_BUDGET_SECONDS, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
         try:
@@ -142,9 +146,11 @@ def api_get(path, deadline, *, retry_transient=False):
             # a transient gateway failure. It must still finish inside the
             # original alarm/deadline; never fall back to stale cached state.
             if (not retry_transient or error.code not in (502, 503, 504)
-                    or attempt == 2 or deadline-time.monotonic() <= 1):
+                    or attempt == transient_attempts - 1
+                    or deadline-time.monotonic() <= 1):
                 raise
-            time.sleep(.15 * (attempt + 1))
+            time.sleep(min(.15 * (attempt + 1), .6,
+                           max(0, deadline-time.monotonic() - 1)))
     require(0 < len(raw) <= MAX_OBJECT_BYTES, 'OWNED_LEASE_API_RESPONSE_BYTE_BOUND')
     value = admission.document(raw)
     if conditional and type(etag) is str and re.fullmatch(r'(?:W/)?"[A-Za-z0-9._:/+=-]{1,200}"', etag):

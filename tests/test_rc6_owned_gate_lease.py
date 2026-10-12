@@ -158,6 +158,7 @@ class ApiFixture:
 def test_paper_v3_live_owner_read_retries_only_transient_gateway_status(monkeypatch):
     monkeypatch.setenv('GH_TOKEN','unit-readonly-control-token')
     monkeypatch.setenv('RC6_GATE','cheap')
+    monkeypatch.setattr(lease.time,'sleep',lambda _:None)
     class CurrentResponse:
         status=200
         headers={}
@@ -180,7 +181,7 @@ def test_paper_v3_live_owner_read_retries_only_transient_gateway_status(monkeypa
     calls.clear();monkeypatch.setattr(lease.urllib.request,'urlopen',unavailable)
     with pytest.raises(urllib.error.HTTPError):
         lease.api_get(path,time.monotonic()+5,retry_transient=True)
-    assert len(calls)==3
+    assert len(calls)==16
     calls.clear()
     with pytest.raises(urllib.error.HTTPError):
         lease.api_get(path,time.monotonic()+5,retry_transient=False)

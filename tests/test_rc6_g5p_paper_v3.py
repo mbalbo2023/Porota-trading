@@ -42,6 +42,35 @@ from scripts import porota_predeploy_cleanup as cleanup
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_long_g5p_owner_read_recovers_after_three_502s_with_fresh_bytes(self):
+        path='/unit/g5p-long-live-owner-three-gateway-errors'
+        attempts=[]
+        class Response:
+            status=200
+            headers={}
+            def __enter__(self):return self
+            def __exit__(self,*_args):return False
+            def read(self,_maximum):return b'{"current_owner_authority":true}'
+        def request(value,timeout):
+            attempts.append((value.get_header('If-none-match'),timeout))
+            if len(attempts)<=3:
+                raise urllib.error.HTTPError('https://api.github.com/unit',502,
+                                             'transient gateway',Message(),None)
+            return Response()
+        stale=('W/"previous-owner"',b'{"current_owner_authority":false}')
+        with patch.dict(os.environ,{'GH_TOKEN':'local-test-token','RC6_GATE':'G5P-acquire'}), \
+             patch.object(admission,'_conditional_cache_get',return_value=stale), \
+             patch.object(lease.urllib.request,'urlopen',side_effect=request), \
+             patch.object(lease.time,'sleep',return_value=None):
+            self.assertEqual(lease.api_get(path,time.monotonic()+45,
+                                            retry_transient=True),
+                             {'current_owner_authority':True})
+        self.assertEqual(len(attempts),4)
+        self.assertTrue(all(tag=='W/"previous-owner"' and 0<timeout<=45
+                            for tag,timeout in attempts))
+        self.assertEqual(sorted(timeout for _,timeout in attempts),
+                         [timeout for _,timeout in reversed(attempts)])
+
     def test_cheap_owner_reads_share_server_revalidated_cache_and_keep_403_red(self):
         path='/issues/471/comments?since=2026-10-12T00%3A00%3A00Z&page=1'
         headers=Message();headers['ETag']='W/"cheap-owner-v1"'
