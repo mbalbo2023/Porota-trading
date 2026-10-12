@@ -817,7 +817,7 @@ def owned_lease_evidence(a,run,root,label,required_labels):
     return {'path':'carrier/'+path.name,'sha256':digest(canonical(value))}
 
 def clone_transport_preflight(a,run,root):
-    """Probe the exact local clone transport before installing two Product157 epochs.
+    """Probe the exact canonical clone transport before installing Product157 epochs.
 
     The probe has no gate credit and deletes only its newly owned clone after
     actual managed FIN. A RED retains the outer command log for diagnosis.
@@ -826,8 +826,11 @@ def clone_transport_preflight(a,run,root):
     target=root/'clone-transport-preflight'
     need(not os.path.lexists(target),'CLONE_TRANSPORT_PREFLIGHT_NEW_TARGET_REQUIRED')
     preparation_capacity(a,run,root,'before-clone-transport-preflight')
+    # The Actions checkout remains a promisor repository after --unshallow.
+    # Local upload-pack cannot lazily obtain omitted blobs; clone from the
+    # canonical public HTTPS origin into this independent owned namespace.
     row=run(['git','clone','--no-local','--no-hardlinks','--no-checkout',
-             str(a.repo_root),str(target)],cwd=root,label='clone-transport-preflight',limit=300)
+             ORIGIN,str(target)],cwd=root,label='clone-transport-preflight',limit=300)
     need(row['returncode']==0,'CLONE_TRANSPORT_PREFLIGHT_LOGICAL_RED')
     need(target.is_dir() and not target.is_symlink() and (target/'.git').is_dir(),
          'CLONE_TRANSPORT_PREFLIGHT_NORMAL_GIT_REQUIRED')
@@ -895,7 +898,7 @@ def prepare_gov(a,run,root,interpreters,auth,manager_pin,native_pin):
         'real_orders_sent':0,'DEPLOY_OWNER':'NOT_ACQUIRED','preparation_receipt_url':a.launch_receipt_url,
         'source_sha':a.source_sha,'source_tree':a.source_tree,'GitHub_authority_file':str(authority_path),
         'GitHub_authority_sha256':authority_sha,'manager_source_root':str(a.repo_root),'manager':manager_pin,
-        'native_runner':native_pin,'new_namespace_parent':str(root),'clone_transport':str(a.repo_root),
+        'native_runner':native_pin,'new_namespace_parent':str(root),'clone_transport':ORIGIN,
         'original_object_transport':str(a.repo_root),'builder_sha256':derived['builder_sha256']}
     preparation=root/'builder-binding.json';save(preparation,binding)
     row=run([interpreters['311'],'-I','-B',derived['builder_path'],'--preparation-binding',str(preparation)],
