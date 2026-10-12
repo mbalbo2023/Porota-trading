@@ -204,11 +204,10 @@ def test_live_custody_receipt_cannot_override_an_unreleased_expired_foreign_writ
             custody.verify_owner(Reader(),receipt['html_url'],sha='a'*40,tree='b'*40,owner=owner,
                 now=datetime(2026,10,9,18,15,tzinfo=timezone.utc))
     else:
-        # Explicit release still needs a fresh current-owner receipt for this
-        # attempt. The released foreign record cannot be its latest owner.
-        with pytest.raises(ValueError,match='LATEST_WRITER_OR_DEPLOY_OWNER_CONFLICT'):
-            custody.verify_owner(Reader(),receipt['html_url'],sha='a'*40,tree='b'*40,owner=owner,
-                now=datetime(2026,10,9,18,15,tzinfo=timezone.utc))
+        # A foreign writer's explicit release is no longer active. The
+        # original current-owner pair remains fresh and authenticated.
+        assert custody.verify_owner(Reader(),receipt['html_url'],sha='a'*40,tree='b'*40,owner=owner,
+            now=datetime(2026,10,9,18,15,tzinfo=timezone.utc)) == custody.digest(receipt['body'].encode())
 
 
 def test_development_tooling_uses_original_hashed_lock_and_exactly_fourteen_wheels():

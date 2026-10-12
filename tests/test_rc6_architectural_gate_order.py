@@ -388,7 +388,8 @@ def carrier_capacity_fixture(tmp_path,monkeypatch):
     from scripts import rc6_heavy_test_preflight as capacity
     monkeypatch.setenv('GITHUB_RUN_ID','111');monkeypatch.setenv('GITHUB_RUN_ATTEMPT','1')
     args=SimpleNamespace(source_sha=SOURCE_SHA,source_tree=SOURCE_TREE,repo_root=Path(__file__).absolute().parents[1],
-        owner_session='CODEX_RC6_ARCHITECTURAL_RCA_20261008_1205UTC')
+        owner_session='CODEX_RC6_ARCHITECTURAL_RCA_20261008_1205UTC',
+        release_profile='FULL_G5',gate='focal311')
     binding=carrier.capacity_binding(args,'focal311')
     measurement={'allocated_bytes':1024**3,'retained_entries':12,
         'assertion_scope':'CONTROLLED_UNIT_FIXTURE_ONLY_NOT_MATERIAL_PEAK_EVIDENCE'}

@@ -249,6 +249,32 @@ jobs:
           retention-days: 14
           path: ${{ steps.gate.outputs.payload_root }}
 
+      - name: Propose exact ordered gate receipt references from closed RAW
+        if: success() && steps.original_raw.outputs.artifact-id != '' && env.RC6_GATE != 'G5P-acquire' && env.RC6_GATE != 'G5P-certify'
+        shell: bash
+        env:
+          RC6_RAW_ARTIFACT_ID: ${{ steps.original_raw.outputs.artifact-id }}
+          RC6_RAW_ARTIFACT_DIGEST: ${{ steps.original_raw.outputs.artifact-digest }}
+          RC6_RAW_PAYLOAD_ROOT: ${{ steps.gate.outputs.payload_root }}
+        run: |
+          set -Eeuo pipefail
+          python3 -I -B scripts/rc6_g5p_reference.py \
+            --payload-root "$RC6_RAW_PAYLOAD_ROOT" --stage "$RC6_GATE" \
+            --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --artifact-id "$RC6_RAW_ARTIFACT_ID" \
+            --artifact-digest "$RC6_RAW_ARTIFACT_DIGEST" \
+            --json-out "$RUNNER_TEMP/rc6-ordered-reference-proposal.json"
+
+      - name: Preserve ordered gate reference proposal
+        if: success() && steps.original_raw.outputs.artifact-id != '' && env.RC6_GATE != 'G5P-acquire' && env.RC6_GATE != 'G5P-certify'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-ordered-reference-${{ env.RC6_GATE }}-${{ env.RC6_SOURCE_SHA }}-${{ github.run_id }}-1
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/rc6-ordered-reference-proposal.json
+
       - name: Propose exact V3 RAW artifact reference for later replay
         if: success() && (env.RC6_GATE == 'G5P-acquire' || env.RC6_GATE == 'G5P-certify')
         shell: bash

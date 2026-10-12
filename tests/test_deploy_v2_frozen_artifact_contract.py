@@ -43,8 +43,10 @@ def test_frozen_artifact_uses_exact_pr_head_and_cannot_be_skipped():
     export = WORKFLOW.index("- name: Export frozen candidate artifacts")
     contract = WORKFLOW.index("- name: Frozen candidate fail-closed contract")
     upload = WORKFLOW.index("- name: Upload predeploy evidence")
+    contract_end = WORKFLOW.index("- name:", contract + len("- name:"))
     export_step = WORKFLOW[export:contract]
-    contract_step = WORKFLOW[contract:upload]
+    contract_step = WORKFLOW[contract:contract_end]
+    assert contract_end < upload
     assert "if:" not in export_step
     assert "if:" not in contract_step
 

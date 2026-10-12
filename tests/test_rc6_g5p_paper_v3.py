@@ -35,6 +35,7 @@ from scripts import rc6_contract_revisions as revisions
 from scripts.rc6_g5p_model import DOCUMENT_SHA256
 from scripts import rc6_owned_gate_lease as lease
 from scripts import rc6_material_derive as derive
+from scripts import rc6_g5p_reference as reference
 from scripts import rc6_heavy_test_preflight as physical_capacity
 from scripts import porota_predeploy_cleanup as cleanup
 
@@ -94,9 +95,22 @@ class G5PBootstrapCapacityTests(unittest.TestCase):
             self.assertEqual(summary['literal_exception'],
                              {'class':'ValueError','reason':'EXACT_NATIVE_FAILURE'})
             self.assertEqual(summary['native_exit_code'],1)
+            self.assertEqual(summary['failed_test_node_count'],1)
             self.assertEqual(summary['real_orders_sent'],0)
             self.assertNotIn('SECRET',json.dumps(summary))
             self.assertNotIn('private.example',json.dumps(summary))
+
+    def test_post_fin_native_red_index_counts_beyond_bounded_node_sample(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log=Path(temporary)/'native.log'
+            log.write_text(''.join(f'FAILED tests/test_focal.py::test_case_{index} - SECRET\n'
+                                   for index in range(40)))
+            summary=carrier.native_red_log_index(log,{'returncode':1,'timed_out':False,
+                'supervisor_errors':[],'residual_descendants_observed':[],
+                'adopted_descendants_reaped':[]},'focal311-execution')
+            self.assertEqual(summary['failed_test_node_count'],40)
+            self.assertEqual(len(summary['failed_test_nodes']),32)
+            self.assertNotIn('SECRET',json.dumps(summary))
 
     def test_admission_http_failure_exposes_status_and_numeric_limits_only(self):
         headers=Message()
@@ -1860,6 +1874,48 @@ class PaperV3PhysicalAdmission(unittest.TestCase):
         self.assertIn("POROTA_G7_CAPACITY_CONTROLS_PROMOTABLE=false", block)
         self.assertNotIn("id: frozen_primary", block)
 
+
+
+class OrderedGateReferenceTests(unittest.TestCase):
+    def test_closed_raw_reference_binds_all_three_cheap_receipts_and_rejects_rebound(self):
+        source="a"*40;tree="b"*40
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/"carrier").mkdir()
+            rows=[]
+            for gate in reference.ORDERED_GATE_RECEIPTS["cheap"]:
+                path="carrier/"+gate+".receipt.json"
+                raw=wire({"gate":gate,"status":"GREEN","source_sha":source,
+                          "source_tree":tree,"run_id":123,"run_attempt":1})
+                (root/path).write_bytes(raw)
+                digest=hashlib.sha256(raw).hexdigest()
+                rows.append({"stored_path":path,"stored_sha256":digest,
+                             "original_sha256":digest})
+            (root/"raw-lossless.manifest.json").write_bytes(wire({
+                "schema":"rc6.supplementary-owned-raw-lossless.v1",
+                "source_sha":source,"source_tree":tree,"gate":"cheap",
+                "files":rows,"file_count":len(rows)}))
+            kwargs={"stage":"cheap","source_sha":source,"source_tree":tree,
+                    "run_id":123,"run_attempt":1,"artifact_id":456,
+                    "artifact_digest":"sha256:"+"c"*64}
+            result=reference.ordered_gate_proposal(root,**kwargs)
+            self.assertEqual([item["path"] for item in result["receipts"]],
+                             ["carrier/"+gate+".receipt.json"
+                              for gate in reference.ORDERED_GATE_RECEIPTS["cheap"]])
+            self.assertEqual(result["artifact_id"],456)
+            self.assertNotIn("gate_credit",result)
+            (root/"carrier/G1.312.receipt.json").write_bytes(b"{}")
+            with self.assertRaisesRegex(ValueError,
+                                        "ORDERED_GATE_CLOSED_RECEIPT_NOT_GREEN_OR_REBOUND"):
+                reference.ordered_gate_proposal(root,**kwargs)
+
+    def test_workflow_only_proposes_after_raw_upload(self):
+        workflow=(Path(__file__).resolve().parents[1]/
+                  ".github/workflows/rc6-unified-candidate-tests.yml").read_text()
+        raw=workflow.index("id: original_raw")
+        proposed=workflow.index("- name: Propose exact ordered gate receipt references from closed RAW")
+        self.assertLess(raw,proposed)
+        self.assertIn("if: success() && steps.original_raw.outputs.artifact-id != ''",workflow[proposed:])
+        self.assertIn("--artifact-digest \"$RC6_RAW_ARTIFACT_DIGEST\"",workflow[proposed:])
 
 
 if __name__ == "__main__":

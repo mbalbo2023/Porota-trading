@@ -725,13 +725,16 @@ def native_red_log_index(log,kernel,label):
     except (OSError,ValueError,UnicodeError):
         row['log_classification_available']=False
         return row
-    rows=[];error=None
+    rows=[];seen=set();error=None
     for line in lines:
         match=re.match(r'^(?:FAILED|ERROR) (tests/[A-Za-z0-9_./-]+\.py::(?:[A-Za-z0-9_]+::)?[A-Za-z0-9_]+)(?:\[|\s|$)',line)
-        if match and match.group(1) not in rows and len(rows)<8:rows.append(match.group(1))
+        if match and match.group(1) not in seen:
+            seen.add(match.group(1))
+            if len(rows)<32:rows.append(match.group(1))
         match=re.match(r'^(ValueError|RuntimeError|AssertionError|ImportError|ModuleNotFoundError|KeyError):\s*([A-Z][A-Z0-9_]{0,191})(?:[:\s]|$)',line)
         if match:error={'class':match.group(1),'reason':match.group(2)}
-    row.update(log_classification_available=True,failed_test_nodes=rows,literal_exception=error,
+    row.update(log_classification_available=True,failed_test_nodes=rows,
+               failed_test_node_count=len(seen),literal_exception=error,
                private_log_sha256=digest(raw))
     return row
 

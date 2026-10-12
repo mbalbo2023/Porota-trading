@@ -17,6 +17,16 @@ ROOT=Path(__file__).absolute().parents[1]
 if str(ROOT) not in sys.path:sys.path.insert(0,str(ROOT))
 from scripts.rc6_g5p_frames import parse, wire
 
+ORDERED_GATE_RECEIPTS={
+    "cheap":("G0","G1.311","G1.312"),
+    "focal311":("G2",),
+    "focal312":("G3",),
+    "BIG-browser":("G4",),
+    "Horizon":("G5",),
+    "full-gov311":("G6.311",),
+    "full-gov312":("G6.312",),
+}
+
 
 def require(value, reason):
     if not value:
@@ -99,10 +109,61 @@ def material_proposal(payload_root, *, source_sha, source_tree, run_id,
                          "sha256":hashlib.sha256(raw).hexdigest()}]}
 
 
+def ordered_gate_proposal(payload_root, *, stage, source_sha, source_tree, run_id,
+                          run_attempt, artifact_id, artifact_digest):
+    """Expose only receipt identities already copied into the closed RAW stage.
+
+    The later gate still downloads and authenticates the actual Actions ZIP.
+    This proposal cannot itself award gate credit.
+    """
+    root=Path(payload_root).absolute()
+    digest=artifact_digest.removeprefix("sha256:")
+    require(stage in ORDERED_GATE_RECEIPTS and root.is_dir() and not root.is_symlink()
+            and re.fullmatch(r"[0-9a-f]{40}",source_sha or "")
+            and re.fullmatch(r"[0-9a-f]{40}",source_tree or "")
+            and type(run_id) is int and run_id>0 and run_attempt==1
+            and type(artifact_id) is int and artifact_id>0
+            and re.fullmatch(r"[0-9a-f]{64}",digest or ""),
+            "ORDERED_GATE_UPLOADED_RAW_EXACT_ORIGIN_REQUIRED")
+    manifest=parse((root/"raw-lossless.manifest.json").read_bytes())
+    require(manifest.get("schema")=="rc6.supplementary-owned-raw-lossless.v1"
+            and manifest.get("source_sha")==source_sha
+            and manifest.get("source_tree")==source_tree
+            and manifest.get("gate")==stage
+            and type(manifest.get("files")) is list
+            and manifest.get("file_count")==len(manifest["files"]),
+            "ORDERED_GATE_CLOSED_RAW_MANIFEST_REQUIRED")
+    index={item.get("stored_path"):item for item in manifest["files"]}
+    require(len(index)==len(manifest["files"]),
+            "ORDERED_GATE_CLOSED_RAW_DUPLICATE_PATH")
+    receipts=[]
+    for gate in ORDERED_GATE_RECEIPTS[stage]:
+        path="carrier/"+gate+".receipt.json"
+        item=index.get(path)
+        file=root/path
+        require(type(item) is dict and file.is_file() and not file.is_symlink()
+                and file.stat().st_nlink==1 and 0<file.stat().st_size<=1024*1024,
+                "ORDERED_GATE_CLOSED_RECEIPT_MEMBER_REQUIRED")
+        raw=file.read_bytes()
+        receipt=parse(raw)
+        receipt_sha=hashlib.sha256(raw).hexdigest()
+        require(item.get("stored_sha256")==receipt_sha
+                and item.get("original_sha256")==receipt_sha
+                and receipt.get("gate")==gate and receipt.get("status")=="GREEN"
+                and receipt.get("source_sha")==source_sha
+                and receipt.get("source_tree")==source_tree
+                and receipt.get("run_id")==run_id
+                and receipt.get("run_attempt")==1,
+                "ORDERED_GATE_CLOSED_RECEIPT_NOT_GREEN_OR_REBOUND")
+        receipts.append({"path":path,"sha256":receipt_sha})
+    return {"artifact_id":artifact_id,"artifact_digest":"sha256:"+digest,
+            "run_id":run_id,"run_attempt":1,"receipts":receipts}
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--payload-root",type=Path,required=True)
-    parser.add_argument("--stage",choices=("acquire","certify"),required=True)
+    parser.add_argument("--stage",choices=("acquire","certify",*ORDERED_GATE_RECEIPTS),required=True)
     parser.add_argument("--source-sha",required=True)
     parser.add_argument("--source-tree",required=True)
     parser.add_argument("--run-id",type=int,required=True)
@@ -115,7 +176,9 @@ def main(argv=None):
             and os.environ.get("GITHUB_REPOSITORY")=="mbalbo2023/Porota-trading"
             and not os.path.lexists(args.json_out),
             "G5P_REFERENCE_FIRST_CANONICAL_ACTIONS_OUTPUT_REQUIRED")
-    builder=proposal if args.stage=="acquire" else material_proposal
+    if args.stage=="acquire":builder=proposal
+    elif args.stage=="certify":builder=material_proposal
+    else:builder=lambda *a,**k: ordered_gate_proposal(*a,stage=args.stage,**k)
     value={"schema":"rc6.g5p-reference-proposal.v1",
            "status":"REFERENCE_PROPOSAL_NOT_CERTIFICATION",
            "stage":args.stage,"reference":builder(args.payload_root,source_sha=args.source_sha,
@@ -126,8 +189,7 @@ def main(argv=None):
            "DEPLOY_OWNER":"NOT_ACQUIRED","real_orders_sent":0}
     with args.json_out.open("xb") as stream:
         stream.write(wire(value));stream.flush();os.fsync(stream.fileno())
-    print(json.dumps({"status":value["status"],
-                      "artifact_id":args.artifact_id,"G5P_GREEN":False}),flush=True)
+    print(json.dumps(value,sort_keys=True,separators=(",",":")),flush=True)
     return 0
 
 
