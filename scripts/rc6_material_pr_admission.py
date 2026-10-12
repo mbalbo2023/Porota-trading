@@ -2071,6 +2071,21 @@ def publish_new(root,row):
     with os.fdopen(fd,'wb') as stream:stream.write(raw);stream.flush();os.fsync(stream.fileno())
     return root/'admission.json'
 
+def sanitized_http_failure(error):
+    """Expose bounded API diagnostics without request URL, body or credentials."""
+    result={'http_status':None,'http_limit_counters':{},'transport_cause_class':None}
+    if isinstance(error,urllib.error.HTTPError):
+        result['http_status']=error.code if type(error.code) is int and 100<=error.code<=599 else None
+        for header,key in (('X-RateLimit-Remaining','rate_limit_remaining'),
+                           ('X-RateLimit-Reset','rate_limit_reset_epoch'),
+                           ('Retry-After','retry_after_seconds')):
+            value=error.headers.get(header) if error.headers is not None else None
+            if type(value) is str and re.fullmatch('[0-9]{1,12}',value):
+                result['http_limit_counters'][key]=int(value)
+    elif isinstance(error,urllib.error.URLError):
+        result['transport_cause_class']=type(error.reason).__name__
+    return result
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--source-sha',required=True);parser.add_argument('--source-tree')
     parser.add_argument('--launch-receipt-url');parser.add_argument('--owner-session');parser.add_argument('--gate',choices=GATES+DIAGNOSTIC_GATES,required=True)
@@ -2088,7 +2103,9 @@ def main():
         return 0
     except BaseException as error:
         literal=str(error).partition(':')[0];reason=literal if re.fullmatch('[A-Z][A-Z0-9_]{0,191}',literal) else 'NON_LITERAL_ADMISSION_FAILURE'
-        row={'status':'RED','reason':reason,'class':type(error).__name__,'gate':args.gate,'native_started':False,'payload_reads':0,'real_orders_sent':0}
+        row={'status':'RED','reason':reason,'class':type(error).__name__,'gate':args.gate,
+             'native_started':False,'payload_reads':0,'real_orders_sent':0,
+             **sanitized_http_failure(error)}
         if not os.path.lexists(args.control_root):publish_new(args.control_root,row)
         if os.environ.get('GITHUB_OUTPUT'):
             with open(os.environ['GITHUB_OUTPUT'],'a') as stream:stream.write('control_root='+str(args.control_root)+'\n')

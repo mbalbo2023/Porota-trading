@@ -40,6 +40,23 @@ from scripts import porota_predeploy_cleanup as cleanup
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_admission_http_failure_exposes_status_and_numeric_limits_only(self):
+        headers=Message()
+        headers['X-RateLimit-Remaining']='0'
+        headers['X-RateLimit-Reset']='1791753600'
+        headers['Retry-After']='secret retry value'
+        error=urllib.error.HTTPError('https://api.github.com/private?token=SECRET',403,
+                                      'SECRET response',headers,None)
+        observation=admission.sanitized_http_failure(error)
+        self.assertEqual(observation,{'http_status':403,
+            'http_limit_counters':{'rate_limit_remaining':0,
+                                   'rate_limit_reset_epoch':1791753600},
+            'transport_cause_class':None})
+        self.assertNotIn('SECRET',json.dumps(observation))
+        self.assertEqual(admission.sanitized_http_failure(
+            urllib.error.URLError(TimeoutError('SECRET'))),
+            {'http_status':None,'http_limit_counters':{},'transport_cause_class':'TimeoutError'})
+
     def test_g5p_owner_reads_revalidate_etag_and_never_reuse_on_403(self):
         path='/issues/471/comments?since=2026-10-11T00%3A00%3A00Z&page=1'
         requests=[]
