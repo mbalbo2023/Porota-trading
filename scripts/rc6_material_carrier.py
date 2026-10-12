@@ -840,10 +840,21 @@ def prepare_gov(a,run,root,interpreters,auth,manager_pin,native_pin):
     need(len(documents)==1,'ACTUAL_PREPARATION_RESULT_REQUIRED')
     return derived,documents[0]['prepared'],authority_path,authority_sha
 
+def reviewed_approved_scope(a,run,root,interpreters):
+    scope_path=root/'G0.reviewed-scope.json'
+    scope=run([interpreters['311'],'-I','-B',str(a.repo_root/'scripts/rc6_material_static_scope.py'),
+               '--repo-root',str(a.repo_root),'--source-sha',a.source_sha,'--output',str(scope_path)],
+              cwd=root,label='G0-reviewed-scope',limit=1800)
+    need(scope['returncode']==0,'G0_REVIEWED_SCOPE_CHILD_FAILED')
+    reviewed=document(read(scope_path,16*1024**2))
+    need(type(reviewed) is dict and reviewed.get('source_sha')==a.source_sha
+        and type(reviewed.get('arguments')) is list and type(reviewed.get('exclusions')) is list
+        and type(reviewed.get('inventory')) is dict,'G0_REVIEWED_SCOPE_RESULT_INVALID')
+    return tuple(reviewed[k] for k in ('arguments','exclusions','inventory'))
+
 def static_admission(a,run,root,prepared,interpreters):
     started=a.preparation_started_utc;evidence={};native=[];heavy_corpora={}
-    g=runpy.run_path(str(a.repo_root/'scripts/rc6_controlled_governed_runner.py'))
-    arguments,exclusions,inventory=g['approved_scope'](a.repo_root,a.source_sha)
+    arguments,exclusions,inventory=reviewed_approved_scope(a,run,root,interpreters)
     fip=inventory
     need(fip['candidate_sha']==a.source_sha and fip['candidate_tree']==a.source_tree
         and fip['software_status']=='INVENTORY_NOT_EXECUTED','G0_CLOSURE_INVENTORY_REBOUND')
