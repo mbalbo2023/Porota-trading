@@ -641,6 +641,31 @@ jobs:
             --candidate-sha "$CANDIDATE_SHA" \
             --tree-sha "$(git rev-parse HEAD^{tree})"
 
+      - name: Preserve factual G7 capacity controls without promotion
+        id: g7_capacity_controls
+        if: always() && env.POROTA_PREDEPLOY_TMP != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: porota-predeploy-v2-capacity-controls-${{ env.CANDIDATE_SHA }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-g7-*-capacity-*.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/g7-*.g5p-capacity.json
+
+      - name: Require published G7 capacity controls on green path
+        if: success()
+        shell: bash
+        env:
+          CAPACITY_CONTROLS_ID: ${{ steps.g7_capacity_controls.outputs.artifact-id }}
+          CAPACITY_CONTROLS_DIGEST: ${{ steps.g7_capacity_controls.outputs.artifact-digest }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$CAPACITY_CONTROLS_ID"
+          test -n "$CAPACITY_CONTROLS_DIGEST"
+          echo 'POROTA_G7_CAPACITY_CONTROLS_PUBLISHED=true'
+          echo 'POROTA_G7_CAPACITY_CONTROLS_PROMOTABLE=false'
+
       - name: Upload predeploy evidence
         id: frozen_primary
         if: always() && steps.pytest_postread.outputs.safe_postread == 'true'

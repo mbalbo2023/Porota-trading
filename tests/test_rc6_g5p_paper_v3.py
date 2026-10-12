@@ -34,6 +34,8 @@ from scripts import rc6_contract_revisions as revisions
 from scripts.rc6_g5p_model import DOCUMENT_SHA256
 from scripts import rc6_owned_gate_lease as lease
 from scripts import rc6_material_derive as derive
+from scripts import rc6_heavy_test_preflight as physical_capacity
+from scripts import porota_predeploy_cleanup as cleanup
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
@@ -615,6 +617,96 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
                 lease.prove_lease_coverage(timelines,context,opened,end,
                     workstream='WS-RC6-G5P-MATERIAL-20261011',authenticated_scope=missing_scope)
 
+    def test_disjoint_documentary_pair_cannot_revoke_g5p_or_borrow_candidate_scope(self):
+        opened=datetime(2026,10,12,2,26,tzinfo=timezone.utc)
+        now=opened+timedelta(minutes=4)
+        stamp=lambda at:at.isoformat().replace('+00:00','Z')
+        owner='CODEX_G5P_TEST';source='a'*40;tree='b'*40
+        context={'source_sha':source,'source_tree':tree,'owner_session':owner}
+        def row(issue,identifier,at,body):
+            return {'id':identifier,'created_at':stamp(at),'updated_at':stamp(at),
+                'user':{'login':'mbalbo2023'},
+                'issue_url':f'https://api.github.com/repos/mbalbo2023/Porota-trading/issues/{issue}',
+                'html_url':f'https://github.com/mbalbo2023/Porota-trading/issues/{issue}#issuecomment-{identifier}',
+                'body':body}
+        def body(values):
+            return '\n'.join(key+'='+value for key,value in values.items())
+        own={'WORKSTREAM_ID':'WS-RC6-G5P-MATERIAL-20261011','SESSION':owner,
+            'SESSION_SUCCESSOR':owner,'WRITE_OWNER':owner,'INTEGRATION_OWNER':owner,
+            'DEPLOY_OWNER':'NOT_ACQUIRED','RELEASED':'false','SOURCE_SHA':source,
+            'SOURCE_TREE':tree,'SOURCE_LEASE_EXPIRES_UTC':stamp(opened+timedelta(minutes=16)),
+            'MODE':'PRODUCTION_PAPER / SIMULATION','real_orders_sent':'0'}
+        pilot={'WORKSTREAM_ID':'WS-RC6-BRIDGE-20261012',
+            'SESSION':admission._DOC_BRIDGE_SESSION,
+            'SESSION_SUCCESSOR':admission._DOC_BRIDGE_SESSION,
+            'WRITE_OWNER':admission._DOC_BRIDGE_SESSION,
+            'INTEGRATION_OWNER':'NOT_ACQUIRED','DEPLOY_OWNER':'NOT_ACQUIRED',
+            'RELEASED':'false','BRANCH':admission._DOC_BRIDGE_BRANCH,
+            'BASE_BRANCH':'main','BASE_SHA':'db020762be06ba71ce1d077c8d3642f4f47b627a',
+            'PATHS':admission._DOC_BRIDGE_PATH,
+            'SCOPE':'New isolated documentary arithmetic pilot only; no overlap with G5P PR492 or SRE PR494; no merge/deploy/host.',
+            'ISSUE':'https://github.com/mbalbo2023/Porota-trading/issues/495',
+            'SOURCE_LEASE_EXPIRES_UTC':stamp(opened+timedelta(minutes=34)),
+            'MODE':'PRODUCTION_PAPER / SIMULATION',
+            'real_orders_sent':'0 (policy, not fresh runtime measurement)',
+            'PPI_WATCH':'UNTOUCHED','FIX_FORWARD_ONLY':'true'}
+        timelines={471:[row(471,47101,opened-timedelta(minutes=1),body(own))],
+                   473:[row(473,47301,opened-timedelta(minutes=1),body(own))]}
+        twin=row(473,47399,opened+timedelta(minutes=2),body(pilot))
+        first=row(471,47199,opened+timedelta(minutes=2,seconds=1),
+            body(dict(pilot,OWNER_RECEIPT_473='47399')))
+        timelines[471].append(first);timelines[473].append(twin)
+        pinned={issue:(item['id'],hashlib.sha256(item['body'].encode()).hexdigest())
+            for issue,item in ((471,first),(473,twin))}
+        with patch.dict(admission._DOC_BRIDGE_INITIAL,pinned):
+            paired=admission.paired_documentary_writer_ids(timelines,source,owner)
+            self.assertEqual(paired,{471:[47199],473:[47399]})
+            fresh=admission.latest_writers(timelines,source,tree,owner,now)
+            self.assertEqual(fresh['471']['authenticated_documentary_writer_ids'],[47199])
+            self.assertEqual(fresh['473']['authenticated_disjoint_active_writers'][0]['paths'],
+                             [admission._DOC_BRIDGE_PATH])
+            proof=lease.prove_lease_coverage(timelines,context,opened,now,
+                workstream='WS-RC6-G5P-MATERIAL-20261011',
+                authenticated_scope={'fresh_ownership':fresh})
+            self.assertEqual(proof['471']['comment_ids'],[47101])
+            self.assertEqual(proof['473']['authenticated_disjoint_writer_ids']
+                             [admission._DOC_BRIDGE_SESSION],47399)
+            renewed=copy.deepcopy(timelines)
+            longer=dict(pilot,SOURCE_LEASE_EXPIRES_UTC=stamp(opened+timedelta(minutes=40)))
+            renewed[473].append(row(473,473100,opened+timedelta(minutes=3),body(longer)))
+            renewed[471].append(row(471,471100,opened+timedelta(minutes=3,seconds=1),
+                body(dict(longer,OWNER_RECEIPT_473='473100'))))
+            self.assertEqual(admission.paired_documentary_writer_ids(renewed,source,owner),
+                             {471:[47199,471100],473:[47399,473100]})
+            renewed_scope=admission.latest_writers(renewed,source,tree,owner,now)
+            self.assertEqual(renewed_scope['471']['authenticated_disjoint_active_writers'][0]
+                             ['comment_id'],471100)
+            lease.prove_lease_coverage(renewed,context,opened,now,
+                workstream='WS-RC6-G5P-MATERIAL-20261011',
+                authenticated_scope={'fresh_ownership':renewed_scope})
+            orphan=copy.deepcopy(renewed);orphan[471].pop()
+            with self.assertRaisesRegex(ValueError,'ORPHAN_OR_INITIAL_PAIR_MISSING'):
+                admission.paired_documentary_writer_ids(orphan,source,owner)
+            for issue,field,value in ((473,'PATHS','scripts/rc6_material_carrier.py'),
+                                      (471,'OWNER_RECEIPT_473','99999'),
+                                      (473,'DEPLOY_OWNER',admission._DOC_BRIDGE_SESSION),
+                                      (471,'INTEGRATION_OWNER',admission._DOC_BRIDGE_SESSION)):
+                with self.subTest(issue=issue,field=field):
+                    changed=copy.deepcopy(timelines)
+                    changed[issue][-1]['body']=changed[issue][-1]['body'].replace(
+                        field+'='+pilot.get(field,'47399'),field+'='+value)
+                    with self.assertRaises(ValueError):
+                        admission.paired_documentary_writer_ids(changed,source,owner)
+            missing=copy.deepcopy(timelines);missing[473].pop()
+            with self.assertRaises(ValueError):
+                admission.paired_documentary_writer_ids(missing,source,owner)
+            altered=copy.deepcopy(fresh)
+            altered['471']['authenticated_documentary_writer_ids']=[]
+            with self.assertRaisesRegex(lease.LeaseControlFailure,'DOCUMENTARY_PAIR_SCOPE_REBOUND'):
+                lease.prove_lease_coverage(timelines,context,opened,now,
+                    workstream='WS-RC6-G5P-MATERIAL-20261011',
+                    authenticated_scope={'fresh_ownership':altered})
+
     def test_missing_memory_cgroup_uses_measured_vm_and_process_limits(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);v2=root/'memory.max';v1=root/'memory.limit_in_bytes'
@@ -693,6 +785,15 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
                  self.assertRaisesRegex(ValueError,'DECISION_BYTES_CHANGED_DURING_LONG_ADMISSION'):
                 admission.refresh_g5p_revision_for_final_admission(
                     {'G5P_REVISION_APPROVAL_URL':url},context,'a'*40,'b'*40,'OWNER')
+            run['event']='pull_request'
+            with patch.dict(os.environ,{'RC6_GATE':'cheap','GITHUB_EVENT_NAME':'pull_request'}):
+                cheap=revisions.authenticate_revision(Github(),url,owner_session='OWNER',
+                    now=current,**binding)
+                self.assertIs(revisions.validate_revision_approval(cheap,now=current,**binding),cheap)
+            with patch.dict(os.environ,{'RC6_GATE':'focal311','GITHUB_EVENT_NAME':'pull_request'}),\
+                 self.assertRaisesRegex(ValueError,'G5P_LONG_RUN_ACTUAL_ACTIONS_OR_SOURCE_REBOUND'):
+                revisions.authenticate_revision(Github(),url,owner_session='OWNER',now=current,**binding)
+            run['event']='workflow_dispatch'
             run['run_started_at']=stamp(opened+timedelta(minutes=11))
             with self.assertRaisesRegex(ValueError,'G5P_LONG_RUN_INITIAL_DECISION_NOT_LIVE'):
                 revisions.authenticate_revision(Github(),url,owner_session='OWNER',now=current,**binding)
@@ -1328,5 +1429,276 @@ class ProfileAndPhysicalGuards(unittest.TestCase):
             verify_g8_report(report,index,dict(files,**{
                 "published-primary-verification.json":payload+b"tamper"}),
                 binding=binding,frozen=frozen,tree_sha="b"*40)
+class PaperV3PhysicalAdmission(unittest.TestCase):
+    def setUp(self):
+        self.binding = {
+            "candidate_sha": "a" * 40, "candidate_tree": "b" * 40,
+            "producer": "focal311", "attempt_id": "123:1", "owner_id": "OWNER",
+            "workload_fingerprint": "c" * 64,
+            "runner_class": "github-hosted/ubuntu-24.04",
+        }
+        self.bound = 4096 + 512 * 1024**2 + 128 * 1024**2 + 512 * 1024**2 + 2 * 1024**3 + 128 * 1024**2
+        self.row = {
+            "schema": physical_capacity.PAPER_V3_PHYSICAL_SCHEMA, "status": "GREEN",
+            "release_profile": "PAPER_V3_ONLY", "source_sha": "a" * 40,
+            "source_tree": "b" * 40, "owner_session": "OWNER",
+            "run_id": 123, "run_attempt": 1, "producer": "focal311",
+            "workload_fingerprint": "c" * 64,
+            "runner_class": "github-hosted/ubuntu-24.04", "stage": "focal311",
+            "G5A_project_quota_required": False, "real_orders_sent": 0,
+            "memory_ceiling_at_least_native_rss": True,
+            "memory_observation": {"status": "GREEN", "required_bytes": 2 * 1024**3,
+                                   "effective_available_bytes": 16 * 1024**3},
+            "blocked_reasons": [], "minimum_free_inode_ratio": 0.1,
+            "native_reserve_bytes": 2 * 1024**3,
+            "bootstrap_reserve_bytes": None,
+            "archive_v3_limit_bytes": 512 * 1024**2,
+            "live_v3_limit_bytes": 128 * 1024**2,
+            "native_scratch_limit_bytes": 512 * 1024**2,
+            "raw_capture_and_closed_stage_upper_bytes": 2 * 1024**3,
+            "control_and_log_envelope_bytes": 128 * 1024**2,
+            "predeploy_build_planning_bytes": 0,
+            "source_export_upper_bytes": 4096,
+            "admission_envelope_bytes": self.bound,
+            "measured_free_bytes": self.bound + 5 * 1024**3,
+            "measured_free_inodes": 90000, "measured_total_inodes": 100000,
+            "measured_at_unix_ns": time.time_ns(), "measured_path": "/tmp",
+        }
+
+    def test_exact_live_source_envelope_is_admissible_without_a_historical_peak(self):
+        physical_capacity.validate_comparable_peak(self.row, self.binding, self.bound)
+        self.assertEqual(physical_capacity.envelope_allocated_bytes(self.row), self.bound)
+
+    def test_source_owner_attempt_and_policy_rebounds_fail_closed(self):
+        changes = (
+            ("source_sha", "d" * 40), ("source_tree", "d" * 40),
+            ("owner_session", "OTHER"), ("run_attempt", 2),
+            ("producer", "BIG-browser"), ("workload_fingerprint", "d" * 64),
+            ("stage", "BIG-browser"),
+            ("release_profile", "FULL_G5"), ("G5A_project_quota_required", True),
+            ("memory_ceiling_at_least_native_rss", False),
+            ("archive_v3_limit_bytes", 256 * 1024**2),
+            ("native_reserve_bytes", 0), ("measured_free_inodes", 1000),
+            ("measured_free_bytes", self.bound),
+            ("admission_envelope_bytes", self.bound - 4096),
+            ("measured_at_unix_ns", time.time_ns() + 61 * 10**9),
+        )
+        for field, value in changes:
+            with self.subTest(field=field):
+                mutated = copy.deepcopy(self.row)
+                mutated[field] = value
+                with self.assertRaises(ValueError):
+                    physical_capacity.validate_comparable_peak(mutated, self.binding, self.bound)
+
+    def test_bootstrap_requires_four_gib_after_the_measured_envelope(self):
+        row = copy.deepcopy(self.row)
+        row["bootstrap_reserve_bytes"] = 4 * 1024**3
+        row["measured_free_bytes"] = self.bound + 3 * 1024**3
+        with self.assertRaisesRegex(ValueError, "PREFLIGHT_PAPER_V3_SOURCE_ENVELOPE_REBOUND"):
+            physical_capacity.validate_comparable_peak(row, self.binding, self.bound)
+
+    def test_bootstrap_producer_needs_the_complete_original_preparation_scope(self):
+        row = copy.deepcopy(self.row)
+        binding = dict(self.binding, producer="bootstrap")
+        row.update(producer="bootstrap", preparation_scope=carrier.PREPARATION_SCOPE,
+                   bootstrap_reserve_bytes=4 * 1024**3)
+        physical_capacity.validate_comparable_peak(row, binding, self.bound)
+        row["preparation_scope"] = {"full_git": True}
+        with self.assertRaisesRegex(ValueError, "PREFLIGHT_PAPER_V3_COMPLETE_BOOTSTRAP_SCOPE_REQUIRED"):
+            physical_capacity.validate_comparable_peak(row, binding, self.bound)
+
+    def test_predeploy_uses_an_explicit_build_budget_and_keeps_the_four_gib_reserve(self):
+        row = copy.deepcopy(self.row)
+        binding = dict(self.binding, producer="predeploy")
+        row.update(stage="predeploy", producer="predeploy",
+                   predeploy_build_planning_bytes=4 * 1024**3,
+                   admission_envelope_bytes=self.bound + 4 * 1024**3,
+                   measured_free_bytes=self.bound + 9 * 1024**3,
+                   bootstrap_reserve_bytes=4 * 1024**3)
+        physical_capacity.validate_comparable_peak(row, binding, self.bound + 4 * 1024**3)
+        row["predeploy_build_planning_bytes"] = 0
+        with self.assertRaisesRegex(ValueError, "PREFLIGHT_PAPER_V3_SOURCE_ENVELOPE_REBOUND"):
+            physical_capacity.validate_comparable_peak(row, binding, self.bound + 4 * 1024**3)
+
+    def test_policy_cannot_relabel_the_v3_envelope_or_drop_g7_budget(self):
+        policy = physical_capacity.load_policy()
+        physical_capacity.validate_paper_v3_policy(policy)
+        for change in ({"source_derived_envelope_is_historical_peak": True},
+                       {"predeploy_build_planning_bytes": 0},
+                       {"original_FIN_and_gate_receipts_remain_required": False}):
+            with self.subTest(change=change):
+                modified = copy.deepcopy(policy)
+                modified["paper_v3_capacity"].update(change)
+                with self.assertRaisesRegex(ValueError, "PREFLIGHT_PAPER_V3_POLICY_CHANGED_OR_MISSING"):
+                    physical_capacity.validate_paper_v3_policy(modified)
+
+    def test_receipt_rejects_a_different_filesystem_path(self):
+        policy = physical_capacity.load_policy()
+        with patch.object(carrier, "v3_memory_capacity", return_value=self.row["memory_observation"]), \
+             self.assertRaisesRegex(ValueError, "PREFLIGHT_PAPER_V3_PHYSICAL_PATH_REBOUND"):
+            physical_capacity.build_receipt(policy=policy, path=Path("/var/tmp"),
+                                   expected_peak_bytes=self.bound,
+                                   binding=self.binding, comparable_peak=self.row)
+
+    def test_paper_v3_focal_uses_live_physical_guard_and_legacy_keeps_prior_peak(self):
+        policy = physical_capacity.load_policy()
+        fs = SimpleNamespace(f_frsize=4096, f_bavail=25_000_000,
+                             f_favail=90_000, f_files=100_000)
+        measured = {"free_bytes": 25_000_000 * 4096,
+                    "free_inodes": 90_000, "total_inodes": 100_000,
+                    "filesystem_type": "ext4", "allocation_unit_bytes": 4096,
+                    "filesystem_device": 1, "mount_id": 1,
+                    "path_identity": [1, 2, 1001, 1001, 16877]}
+        memory = {"status": "GREEN", "required_bytes": 2 * 1024**3,
+                  "effective_available_bytes": 16 * 1024**3,
+                  "cgroup_memory_max": "17179869184"}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            owner = SimpleNamespace(source_sha="a" * 40, source_tree="b" * 40,
+                                    owner_session="OWNER", gate="focal311",
+                                    release_profile="PAPER_V3_ONLY", capacity_peaks={},
+                                    repo_root=root)
+            run = SimpleNamespace(control=root, capacity_records=[], pending_capacity=[])
+            with patch.dict(os.environ, {"GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1"}), \
+                 patch.object(carrier, "git", return_value=b"100644 blob " + b"d" * 40 + b" 4096\tfile\n"), \
+                 patch.object(carrier.os, "statvfs", return_value=fs), \
+                 patch.object(carrier, "v3_memory_capacity", return_value=memory), \
+                 patch.object(physical_capacity, "load_policy", return_value=policy), \
+                 patch.object(physical_capacity, "measure_filesystem", return_value=measured), \
+                 patch.object(physical_capacity, "machine_snapshot", return_value={"github_actions": True}):
+                binding, envelope, live = carrier.heavy_preflight(
+                    owner, run, root, "focal311", "focal311-test")
+            self.assertEqual(binding["producer"], "focal311")
+            self.assertEqual(envelope["schema"], physical_capacity.PAPER_V3_PHYSICAL_SCHEMA)
+            self.assertEqual(live["capacity"]["status"], "GREEN")
+            self.assertEqual(live["admission_basis"],
+                             "SOURCE_DERIVED_PAPER_V3_PHYSICAL_ENVELOPE_WITH_LIVE_RECHECK")
+            self.assertEqual(len(run.capacity_records), 1)
+            self.assertEqual(run.pending_capacity, run.capacity_records)
+            self.assertFalse((root / "focal311-test-source-envelope.g5p-physical_capacity.json").exists())
+            before = json.loads((root / "focal311-test.capacity-before.json").read_text())
+            gates.verify_archived_capacity_pair(before, live,
+                {"source_sha": owner.source_sha, "source_tree": owner.source_tree,
+                 "run_id": 123, "run_attempt": 1}, producer="focal311")
+            owner.release_profile = "FULL_G5"
+            with self.assertRaisesRegex(ValueError, "KNOWN_COMPARABLE_PEAK_REQUIRED_BEFORE_PRODUCER"):
+                carrier.heavy_preflight(owner, run, root, "focal311", "legacy-test")
+
+    def test_exact_paper_v3_cheap_authority_uses_physical_path_only_after_contract_acceptance(self):
+        owner = "CODEX_RC6_G5P_MATERIAL_20261011_1737Z"
+        launch_url = "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-10"
+        approval_url = "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-11"
+        auth = {"SESSION_SUCCESSOR": owner, "GATES_AUTHORIZED": "cheap",
+                "CAPACITY_PEAKS_JSON": "{}", "CHEAP_FILES_JSON": "[]",
+                "RELEASE_PROFILE": "PAPER_V3_ONLY"}
+        issued = SimpleNamespace(owner_session=owner, approval_url=approval_url)
+        launch = {"body": "exact launch", "created_at": "2026-10-12T01:00:00Z",
+                  "html_url": launch_url}
+        successors = {issue: {"body": "SUCCESSION_KIND=EXPLICIT_USER_AUTHORIZATION_AFTER_AUTHENTIC_RELEASE\n",
+                              "created_at": "2026-10-12T00:59:00Z",
+                              "html_url": "https://github.com/mbalbo2023/Porota-trading/issues/" + str(issue)}
+                      for issue in (471, 473)}
+        scope = {"pr": 492, "branch": "fix/rc6-g5p-paper-v3-20261011",
+                 "base_sha": "d" * 40}
+        event = {"number": 492, "action": "reopened",
+                 "pull_request": {"head": {"sha": "a" * 40, "ref": scope["branch"]},
+                                  "base": {"sha": scope["base_sha"]},
+                                  "updated_at": "2026-10-12T01:01:00Z"}}
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": admission.REPO,
+                                  "GITHUB_REPOSITORY_ID": str(admission.REPO_ID),
+                                  "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "pull_request"}), \
+             patch.object(admission.os, "getuid", return_value=1001), \
+             patch.object(admission.os, "geteuid", return_value=1001), \
+             patch.object(admission, "actual_event", return_value=(event, {})), \
+             patch.object(admission, "recovery_anchors", return_value={}), \
+             patch.object(admission, "administrative_anchors", return_value=successors), \
+             patch.object(admission, "comment", return_value=launch), \
+             patch.object(admission, "recent", return_value=[]), \
+             patch.object(admission, "launch_fields", return_value=auth), \
+             patch.object(admission, "candidate_scope", return_value=scope), \
+             patch.object(admission, "fresh_source"), \
+             patch.object(admission, "authenticate_g5p_revision", return_value=issued) as accepted, \
+             patch.object(admission, "refresh_g5p_revision_for_final_admission", return_value=issued), \
+             patch.object(admission, "latest_writer", return_value={}), \
+             patch.object(admission, "ops_admission", return_value={}), \
+             patch.object(admission, "dedup_admission", return_value={}), \
+             patch.object(admission, "verify_capacity_comparison_manifest",
+                          side_effect=ValueError("LEGACY_COMPARISON_MUST_NOT_RUN")) as legacy:
+            row = admission._admit_source_scope(source_sha="a" * 40,
+                                                launch_receipt_url=launch_url,
+                                                gate="cheap", now=datetime(2026, 10, 12, 1, 2,
+                                                                            tzinfo=timezone.utc))
+            self.assertEqual(row["release_profile"], "PAPER_V3_ONLY")
+            self.assertTrue(row["capacity_source_comparison"]
+                            ["stage_physical_source_envelope_and_live_recheck_required"])
+            accepted.assert_called_once()
+            legacy.assert_not_called()
+            auth["RELEASE_PROFILE"] = "FULL_G5"
+            with self.assertRaisesRegex(ValueError, "LEGACY_COMPARISON_MUST_NOT_RUN"):
+                admission._admit_source_scope(source_sha="a" * 40,
+                    launch_receipt_url=launch_url, gate="cheap",
+                    now=datetime(2026, 10, 12, 1, 2, tzinfo=timezone.utc))
+
+    def test_g7_measures_each_actual_storage_role_only_with_paper_v3_authority(self):
+        policy = physical_capacity.load_policy()
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            authority = {"status": "ADMITTED_NATIVE_NOT_STARTED", "gate": "predeploy",
+                         "source_sha": "a" * 40, "source_tree": "b" * 40,
+                         "owner_session": "OWNER", "capacity_peaks": {},
+                         "release_profile": "PAPER_V3_ONLY",
+                         "g5p_revision_approval_url": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1"}
+            envelope = dict(self.row, stage="predeploy", producer="predeploy",
+                            predeploy_build_planning_bytes=4 * 1024**3,
+                            admission_envelope_bytes=self.bound + 4 * 1024**3)
+            context = {"candidate_sha": "a" * 40, "candidate_tree": "b" * 40}
+            with patch.dict(os.environ, {"GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1"}), \
+                 patch.object(cleanup, "execution_context", return_value=context), \
+                 patch.object(cleanup, "cli_owner", return_value=({"private_root": str(root)}, {})), \
+                 patch.object(cleanup, "safe_absolute", side_effect=lambda path: Path(path)), \
+                 patch.object(gates.subprocess, "check_output", return_value=str(root)), \
+                 patch.object(physical_capacity, "load_policy", return_value=policy), \
+                 patch.object(carrier, "g5p_preflight", return_value=(self.binding, envelope, {})) as physical, \
+                 patch.object(physical_capacity, "build_receipt", return_value={"receipt_sha256": "c" * 64}) as receipt, \
+                 patch.object(physical_capacity, "validate_live_receipt", return_value={"capacity": {"status": "GREEN"}}), \
+                 patch.object(cleanup, "publish"):
+                result = gates.predeploy_capacity_gate(authority, scope=root, repo=root,
+                                                        environ={}, stage="build")
+                self.assertEqual(result["status"], "GREEN")
+                self.assertEqual(len(result["measured_storage"]), 3)
+                self.assertEqual(physical.call_count, 3)
+                self.assertEqual(receipt.call_count, 3)
+                denied = dict(authority, g5p_revision_approval_url=None)
+                with self.assertRaisesRegex(ValueError, "G7_PAPER_V3_EXACT_CONTRACT_APPROVAL_REQUIRED"):
+                    gates.predeploy_capacity_gate(denied, scope=root, repo=root,
+                                                  environ={}, stage="build")
+                legacy = dict(authority, release_profile="FULL_G5")
+                with self.assertRaisesRegex(ValueError, "G7_CAPACITY_KNOWN_COMPARABLE_PREDEPLOY_PEAK_REQUIRED"):
+                    gates.predeploy_capacity_gate(legacy, scope=root, repo=root,
+                                                  environ={}, stage="build")
+
+    def test_predeploy_v2_preserves_actual_capacity_receipts_before_private_cleanup(self):
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/porota-predeploy-v2.yml").read_text()
+        controls = workflow.index("- name: Preserve factual G7 capacity controls without promotion")
+        primary = workflow.index("- name: Upload predeploy evidence")
+        cleanup_step = workflow.index("- name: Local cleanup")
+        self.assertLess(controls, cleanup_step)
+        self.assertLess(primary, cleanup_step)
+        block = workflow[controls:primary]
+        self.assertIn("if: always() && env.POROTA_PREDEPLOY_TMP != ''", block)
+        self.assertIn("id: g7_capacity_controls", block)
+        self.assertIn("porota-predeploy-v2-capacity-controls-", block)
+        self.assertIn("${{ env.POROTA_PREDEPLOY_TMP }}/porota-g7-*-capacity-*.json", block)
+        self.assertIn("${{ env.POROTA_PREDEPLOY_TMP }}/g7-*.g5p-capacity.json", block)
+        self.assertIn("- name: Require published G7 capacity controls on green path", block)
+        self.assertIn("if: success()", block)
+        self.assertIn("steps.g7_capacity_controls.outputs.artifact-id", block)
+        self.assertIn("steps.g7_capacity_controls.outputs.artifact-digest", block)
+        self.assertIn("POROTA_G7_CAPACITY_CONTROLS_PROMOTABLE=false", block)
+        self.assertNotIn("id: frozen_primary", block)
+
+
+
 if __name__ == "__main__":
     unittest.main()

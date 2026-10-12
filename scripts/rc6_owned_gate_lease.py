@@ -163,6 +163,11 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
     """Both immutable same-Source lease unions must cover the complete interval."""
     require(start <= end, 'OWNED_LEASE_TIME_ORDER_INVALID')
     g5p = workstream == 'WS-RC6-G5P-MATERIAL-20261011'
+    try:
+        documentary = admission.paired_documentary_writer_ids(
+            timelines, context['source_sha'], context['owner_session'])
+    except ValueError as error:
+        raise LeaseControlFailure(str(error)) from error
     covered = {}
     for issue in (471, 473):
         rows = timelines.get(issue)
@@ -173,6 +178,9 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
         owner_scope = (authenticated_scope or {}).get('fresh_ownership', {}).get(str(issue), {})
         disjoint = owner_scope.get('authenticated_disjoint_active_writers', [])
         require(type(disjoint) is list, 'OWNED_LEASE_DISJOINT_SCOPE_REQUIRED')
+        documentary_ids=owner_scope.get('authenticated_documentary_writer_ids', [])
+        require(type(documentary_ids) is list and documentary_ids==documentary[issue],
+            'OWNED_LEASE_DOCUMENTARY_PAIR_SCOPE_REBOUND')
         succession=owner_scope.get('authenticated_sre_successor')
         expected_succession=admission._SRE_SUCCESSION[issue]
         successor_authenticated=(type(succession) is dict
@@ -184,16 +192,22 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
             and succession.get('successor_body_sha256')==expected_succession[3])
         allowed = {}
         for item in disjoint:
+            require(type(item) is dict, 'OWNED_LEASE_DISJOINT_SCOPE_REBOUND')
+            sre_item=(item.get('session')==admission._SRE_OLD_OWNER
+                or successor_authenticated and item.get('session')==admission._SRE_NEW_OWNER)
+            doc_item=(item.get('session')==admission._DOC_BRIDGE_SESSION
+                and item.get('comment_id') in documentary_ids)
             require(type(item) is dict and type(item.get('comment_id')) is int
                 and item['comment_id'] > 0 and type(item.get('session')) is str
                 and item['session'] != context['owner_session']
-                and (item['session']==admission._SRE_OLD_OWNER
-                    or successor_authenticated and item['session']==admission._SRE_NEW_OWNER)
-                and item.get('branch') == 'ops/rc6-sre-deep-20261011'
+                and (sre_item or doc_item)
+                and item.get('branch') == ('ops/rc6-sre-deep-20261011' if sre_item
+                    else admission._DOC_BRIDGE_BRANCH)
                 and type(item.get('paths')) is list and item['paths']
                 and all(type(path) is str for path in item['paths'])
                 and len(item['paths']) == len(set(item['paths']))
-                and set(item['paths']) <= admission._DISJOINT_SRE_PATHS
+                and (set(item['paths']) <= admission._DISJOINT_SRE_PATHS if sre_item
+                    else item['paths']==[admission._DOC_BRIDGE_PATH])
                 and item['session'] not in allowed,
                 'OWNED_LEASE_DISJOINT_SCOPE_REBOUND')
             allowed[item['session']] = item['comment_id']
@@ -243,7 +257,9 @@ def prove_lease_coverage(timelines, context, start, end, *, workstream=None,
                         'OWNED_LEASE_OWNER_RELEASE_OVERLAPS_PRODUCER')
                 if foreign and effective >= start and values.get('RELEASED') != 'true':
                     require(all(identifier in allowed and
-                        (row['id'] == allowed[identifier] or admission.disjoint_sre_writer(
+                        (row['id'] in documentary_ids and admission.disjoint_documentary_writer(
+                            values, context['source_sha'], context['owner_session'])
+                        or row['id'] == allowed[identifier] or admission.disjoint_sre_writer(
                             values, context['source_sha'], context['owner_session'],
                             successor_authenticated=successor_authenticated))
                         for identifier in owners if identifier != context['owner_session']),

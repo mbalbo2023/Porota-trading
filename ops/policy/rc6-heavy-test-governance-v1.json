@@ -41,6 +41,26 @@
     "full_predeploy_on_missing_red_or_pending_focal_receipt": "BLOCK",
     "isolated_pass_above_qualification_target": "DIAGNOSTIC_ONLY"
   },
+  "paper_v3_capacity": {
+    "schema": "porota.rc6.paper-v3-source-physical-admission.v1",
+    "eligible_stages": ["cheap", "focal311", "focal312", "BIG-browser", "full-gov311", "full-gov312", "predeploy"],
+    "contract_revision": "PAPER_V3_ONLY_G5P_V1",
+    "source_derived_envelope_is_historical_peak": false,
+    "original_native_qualification_from_preflight": false,
+    "same_source_owner_attempt_binding_required": true,
+    "archive_v3_limit_bytes": 536870912,
+    "live_v3_limit_bytes": 134217728,
+    "native_scratch_limit_bytes": 536870912,
+    "raw_capture_and_closed_stage_upper_bytes": 2147483648,
+    "control_and_log_envelope_bytes": 134217728,
+    "predeploy_build_planning_bytes": 4294967296,
+    "native_reserve_bytes": 2147483648,
+    "bootstrap_and_material_residual_reserve_bytes": 4294967296,
+    "minimum_free_inode_ratio": 0.1,
+    "memory_ceiling_bytes": 2147483648,
+    "live_recheck_before_each_producer": true,
+    "original_FIN_and_gate_receipts_remain_required": true
+  },
   "gate_order": ["G0_STATIC_ADMISSION", "G1_CHEAP_DUAL", "G2_FOCAL311", "G3_FOCAL312", "G4_BIG_MATERIAL", "G5_RETENTION_HORIZON_BROWSER", "G6_FULL_GOVERNED", "G7_PREDEPLOY_BUILD_ONCE", "G8_ARTIFACT"],
   "runner": {
     "canonical_label": "ubuntu-24.04",

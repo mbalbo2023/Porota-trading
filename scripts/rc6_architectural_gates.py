@@ -675,9 +675,19 @@ def verify_archived_capacity_pair(before,live,row,*,producer):
             'G0_CAPACITY_ACTUAL_FILESYSTEM_IDENTITY_MISSING')
         peak=capacity.envelope_allocated_bytes(receipt.get('comparable_peak'))
         capacity.validate_comparable_peak(receipt['comparable_peak'],binding,peak)
-        if receipt['comparable_peak']['schema']==capacity.ENVELOPE_SCHEMA:
+        if receipt['comparable_peak']['schema'] in (capacity.ENVELOPE_SCHEMA,
+                                                   capacity.PAPER_V3_PHYSICAL_SCHEMA):
             require(measured.get('allocation_unit_bytes')==4096 and type(measured['allocation_unit_bytes']) is int
                 and measured.get('filesystem_type')=='ext4','G0_CAPACITY_BOUND_MODEL_NOT_ACTUAL_CANONICAL_FILESYSTEM')
+        if receipt['comparable_peak']['schema']==capacity.PAPER_V3_PHYSICAL_SCHEMA:
+            capacity.validate_paper_v3_policy(policy)
+            memory=receipt.get('paper_v3_live_memory')
+            require(receipt['comparable_peak'].get('measured_path')==receipt.get('measured_path')
+                and type(memory) is dict and memory.get('status')=='GREEN'
+                and memory.get('required_bytes')==2*1024**3
+                and type(memory.get('effective_available_bytes')) is int
+                and memory['effective_available_bytes']>=2*1024**3,
+                'G0_PAPER_V3_LIVE_MEMORY_OR_PATH_REBOUND')
         recomputed=capacity.evaluate_capacity(**{key:measured.get(key) for key in
             ('free_bytes','total_inodes','free_inodes')},expected_peak_bytes=peak,
             residual_reserve_bytes=policy['local_capacity']['residual_reserve_bytes'],
@@ -2166,10 +2176,17 @@ def predeploy_capacity_gate(authority,*,scope,repo,environ,stage):
     require(authority.get('status')=='ADMITTED_NATIVE_NOT_STARTED' and authority.get('gate')=='predeploy'
         and authority.get('source_sha')==context['candidate_sha']
         and authority.get('source_tree')==context['candidate_tree'], 'G7_CAPACITY_EXACT_OWNER_SOURCE_REQUIRED')
+    paper_v3=authority.get('release_profile')==PAPER_V3_PROFILE
     peak=authority.get('capacity_peaks',{}).get('predeploy')
-    require(type(peak) is dict,'G7_CAPACITY_KNOWN_COMPARABLE_PREDEPLOY_PEAK_REQUIRED')
+    if paper_v3:
+        require(type(authority.get('g5p_revision_approval_url')) is str
+            and authority['g5p_revision_approval_url'],
+            'G7_PAPER_V3_EXACT_CONTRACT_APPROVAL_REQUIRED')
+    else:
+        require(type(peak) is dict,'G7_CAPACITY_KNOWN_COMPARABLE_PREDEPLOY_PEAK_REQUIRED')
     args=SimpleNamespace(source_sha=context['candidate_sha'],source_tree=context['candidate_tree'],
-        owner_session=authority['owner_session'])
+        owner_session=authority['owner_session'],repo_root=Path(repo),gate='predeploy',
+        release_profile=authority.get('release_profile',FULL_G5_PROFILE))
     binding=carrier.capacity_binding(args,'predeploy')
     policy=capacity.load_policy(Path(repo)/'ops/policy/rc6-heavy-test-governance-v1.json')
     docker_root=subprocess.check_output(['docker','info','--format','{{.DockerRootDir}}'],
@@ -2177,17 +2194,27 @@ def predeploy_capacity_gate(authority,*,scope,repo,environ,stage):
     paths=[('workspace',Path(owner['private_root'])),('candidate_git',Path(repo).absolute()),
         ('docker',cleanup.safe_absolute(docker_root))]
     if stage=='reviewed-tooling':
-        require(peak.get('reviewed_cpython_tooling')=={
-            'setup_python_action_sha':'a26af69be951a213d495a4c3e4e4022e16d87065',
-            'python_versions':['3.11.16'],'tool_cache_population_included':True},
-            'G7_REVIEWED_PYTHON_TOOLING_COMPARISON_UNKNOWN')
+        if paper_v3:
+            workflow=(Path(repo)/PREDEPLOY).read_text()
+            require(workflow.count('uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065')==1
+                and workflow.count('python-version: "3.11.16"')==1,
+                'G7_PAPER_V3_REVIEWED_PYTHON_TOOLING_PIN_CHANGED')
+        else:
+            require(peak.get('reviewed_cpython_tooling')=={
+                'setup_python_action_sha':'a26af69be951a213d495a4c3e4e4022e16d87065',
+                'python_versions':['3.11.16'],'tool_cache_population_included':True},
+                'G7_REVIEWED_PYTHON_TOOLING_COMPARISON_UNKNOWN')
         paths.append(('reviewed_tool_cache',cleanup.safe_absolute(environ['RUNNER_TOOL_CACHE'])))
     if environ.get('TMPDIR'):
         temporary=cleanup.safe_absolute(environ['TMPDIR'])
         require(temporary.is_relative_to(Path(owner['private_root'])),'G7_TEMPORARY_ROOT_OUTSIDE_OWN_NAMESPACE')
         paths.append(('temporary',temporary))
     checks=[]
+    run=SimpleNamespace(control=Path(owner['private_root']),capacity_records=[],pending_capacity=[])
     for label,path in paths:
+        if paper_v3:
+            _,peak,_=carrier.g5p_preflight(args,run,path,'g7-'+stage+'-'+label,
+                bootstrap=True,producer='predeploy',record=False)
         before=capacity.build_receipt(policy=policy,path=path,expected_peak_bytes=capacity.envelope_allocated_bytes(peak),
             binding=binding,comparable_peak=peak)
         cleanup.publish(Path(owner['private_root'])/('porota-g7-'+stage+'-'+label+'-capacity-before.json'),before)

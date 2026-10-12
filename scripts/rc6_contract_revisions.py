@@ -36,8 +36,13 @@ def _g5p_activation(github, decision, values, *, source_sha, now):
             and os.environ.get('GITHUB_RUN_ATTEMPT')=='1',
             'G5P_LONG_RUN_FIRST_ACTIONS_ATTEMPT_REQUIRED')
     run=github.request('/actions/runs/'+run_id+'/attempts/1')
+    event=run.get('event')
+    stage=os.environ.get('RC6_GATE')
+    allowed_event=(event=='workflow_dispatch'
+                   or event=='pull_request' and stage=='cheap'
+                   and os.environ.get('GITHUB_EVENT_NAME')=='pull_request')
     require(run.get('id')==int(run_id) and run.get('run_attempt')==1
-            and run.get('head_sha')==source_sha and run.get('event')=='workflow_dispatch'
+            and run.get('head_sha')==source_sha and allowed_event
             and run.get('status')=='in_progress' and run.get('conclusion') is None
             and run.get('path')=='.github/workflows/rc6-unified-candidate-tests.yml'
             and run.get('repository',{}).get('id')==admission.REPO_ID,

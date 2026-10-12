@@ -77,7 +77,7 @@ FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRA
     'G5P_CONTRACT_DOCUMENT_SHA256','RC6_G5P_MATERIAL_AUTHORIZATION',
     'G5P_ACQUISITION_REFERENCE_JSON','PATHS','PR','SCOPE','PAIR_ISSUE',
     'APPLY_RUN','APPLY_ATTEMPT','APPLY_ARTIFACT','APPLY_ZIP_SHA256','APPLY_JSON_SHA256',
-    'POST_RUN','POST_ARTIFACT','PAPER'}
+    'POST_RUN','POST_ARTIFACT','PAPER','ISSUE','PPI_WATCH','FIX_FORWARD_ONLY'}
 COMMENT_PAGES=50
 RUN_PAGES=10
 RECOVERY_OWNER='CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC'
@@ -798,6 +798,81 @@ _SRE_SUCCESSION={
 _SRE_OLD_OWNER='WORK_RC6_SRE_20261011_1740Z'
 _SRE_NEW_OWNER='WORK_RC6_SRE_20261012_0100Z'
 
+# The #495 pilot can write only one synthetic documentation path. Its first
+# immutable pair anchors the workstream; later renewals need their own matching
+# two-issue pair. Neither branch nor path intersects the G5P candidate.
+_DOC_BRIDGE_SESSION='WORK_RC6_BRIDGE_20261012_0228Z'
+_DOC_BRIDGE_BRANCH='pilot/rc6-work-codex-bridge-20261012'
+_DOC_BRIDGE_PATH='docs/automation/rc6-work-codex-bridge-20261012/synthetic-arithmetic.json'
+_DOC_BRIDGE_INITIAL={
+    471:(6116665999,'c3ce13b591c36edcc6874b86e2f3f6975af5f5a4281c701cb2a94f4812374df4'),
+    473:(6116664529,'b676054d1d2ccc822a7e19c1c5e8b8f6f70ceeba7f434bc44844248a25949866')}
+
+
+def disjoint_documentary_writer(f,source_sha,owner):
+    """An exact #495 documentary writer has no Source, integration or deploy claim."""
+    session=_DOC_BRIDGE_SESSION
+    expected={'WORKSTREAM_ID':'WS-RC6-BRIDGE-20261012','SESSION':session,
+        'SESSION_SUCCESSOR':session,'WRITE_OWNER':session,
+        'INTEGRATION_OWNER':'NOT_ACQUIRED','DEPLOY_OWNER':'NOT_ACQUIRED',
+        'RELEASED':'false','BRANCH':_DOC_BRIDGE_BRANCH,'BASE_BRANCH':'main',
+        'BASE_SHA':'db020762be06ba71ce1d077c8d3642f4f47b627a',
+        'PATHS':_DOC_BRIDGE_PATH,
+        'SCOPE':'New isolated documentary arithmetic pilot only; no overlap with G5P PR492 or SRE PR494; no merge/deploy/host.',
+        'ISSUE':'https://github.com/'+REPO+'/issues/495',
+        'MODE':'PRODUCTION_PAPER / SIMULATION',
+        'real_orders_sent':'0 (policy, not fresh runtime measurement)',
+        'PPI_WATCH':'UNTOUCHED','FIX_FORWARD_ONLY':'true'}
+    return (owner!=session and type(source_sha) is str
+        and all(f.get(key)==value for key,value in expected.items())
+        and 'SOURCE_SHA' not in f and 'SOURCE_TREE' not in f
+        and 'PR' not in f and 'RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION' not in f
+        and type(f.get('SOURCE_LEASE_EXPIRES_UTC')) is str)
+
+
+def paired_documentary_writer_ids(timelines,source_sha,owner):
+    """Authenticate the original #495 pair and every later same-scope renewal."""
+    rows={issue:{row['id']:row for row in timelines[issue]} for issue in (471,473)}
+    active={issue:[row for row in timelines[issue]
+        if fields(row.get('body','')).get('WORKSTREAM_ID')=='WS-RC6-BRIDGE-20261012'
+        and fields(row['body']).get('RELEASED')=='false'] for issue in (471,473)}
+    if not active[471] and not active[473]:return {471:[],473:[]}
+    for issue in (471,473):
+        identifier,body_hash=_DOC_BRIDGE_INITIAL[issue]
+        row=rows[issue].get(identifier)
+        require(row is not None and hashlib.sha256(row['body'].encode()).hexdigest()==body_hash,
+            'DOCUMENTARY_BRIDGE_INITIAL_EXACT_PAIR_REQUIRED')
+    proved={471:[],473:[]};used=set()
+    for row in active[471]:
+        f=fields(row['body']);pointer=f.get('OWNER_RECEIPT_473','')
+        require(disjoint_documentary_writer(f,source_sha,owner)
+            and re.fullmatch('[1-9][0-9]{0,19}',pointer) is not None,
+            'DOCUMENTARY_BRIDGE_EXACT_SCOPE_AND_PAIR_REQUIRED')
+        twin=rows[473].get(int(pointer));require(twin is not None and twin['id'] not in used,
+            'DOCUMENTARY_BRIDGE_PAIRED_473_REQUIRED')
+        other=fields(twin['body'])
+        require(disjoint_documentary_writer(other,source_sha,owner)
+            and other=={key:value for key,value in f.items() if key!='OWNER_RECEIPT_473'},
+            'DOCUMENTARY_BRIDGE_PAIRED_SCOPE_REBOUND')
+        for issue,item in ((471,row),(473,twin)):
+            require(item['user']['login']=='mbalbo2023'
+                and item['issue_url'].endswith('/issues/'+str(issue))
+                and item['created_at']==item['updated_at'],
+                'DOCUMENTARY_BRIDGE_AUTHOR_ISSUE_OR_EDIT_REBOUND')
+            created=stamp(item['created_at']);expires=stamp(f['SOURCE_LEASE_EXPIRES_UTC'])
+            require(timedelta(0)<expires-created<=timedelta(hours=1),
+                'DOCUMENTARY_BRIDGE_LEASE_UNBOUNDED')
+            proved[issue].append(item['id'])
+        require(stamp(twin['created_at'])<=stamp(row['created_at'])
+            and stamp(row['created_at'])-stamp(twin['created_at'])<=timedelta(minutes=5),
+            'DOCUMENTARY_BRIDGE_PAIR_ORDER_OR_GAP_INVALID')
+        used.add(twin['id'])
+    require(set(proved[473])=={row['id'] for row in active[473]}
+        and _DOC_BRIDGE_INITIAL[471][0] in proved[471]
+        and _DOC_BRIDGE_INITIAL[473][0] in proved[473],
+        'DOCUMENTARY_BRIDGE_ORPHAN_OR_INITIAL_PAIR_MISSING')
+    return proved
+
 
 def exact_sre_apply_release(row,f,issue,prior_deploy,prior_scope):
     scope_id,release_id,body_sha=_SRE_APPLY_RELEASE[issue]
@@ -872,7 +947,7 @@ def exact_sre_succession_writer(row,f,issue,release,source_sha,owner):
         and f.get('PAIR_ISSUE')==str(issue)
         and disjoint_sre_writer(f,source_sha,owner,successor_authenticated=True))
 
-def latest_writer(rows,issue,sha,tree,owner,now):
+def latest_writer(rows,issue,sha,tree,owner,now,*,documentary_ids=()):
     records=[];states={};deploy_states={};sre_scope=None;sre_releases=[]
     sre_transfer_release=None;sre_successor_authenticated=False
     for row in sorted(rows,key=lambda item:(effective_stamp(item),item['id'])):
@@ -957,8 +1032,11 @@ def latest_writer(rows,issue,sha,tree,owner,now):
     disjoint=[]
     for identifier,(foreign_row,status) in states.items():
         if identifier!=owner:
-            permitted=disjoint_sre_writer(status,sha,owner,
+            sre_permitted=disjoint_sre_writer(status,sha,owner,
                 successor_authenticated=sre_successor_authenticated)
+            doc_permitted=(foreign_row['id'] in documentary_ids
+                and disjoint_documentary_writer(status,sha,owner))
+            permitted=sre_permitted or doc_permitted
             require(status.get('RELEASED')=='true' or permitted,
                 'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER_AFTER_SUCCESSOR_ANCHOR')
             if permitted:disjoint.append({'session':identifier,'comment_id':foreign_row['id'],
@@ -987,6 +1065,7 @@ def latest_writer(rows,issue,sha,tree,owner,now):
         'body_sha256':hashlib.sha256(row['body'].encode()).hexdigest(),'lease_expires_utc':expires.isoformat().replace('+00:00','Z'),
         'latest_integration_owner_comment_id':integrations[-1][0]['id'],
         'authenticated_disjoint_active_writers':disjoint,
+        'authenticated_documentary_writer_ids':list(documentary_ids),
         'authenticated_sre_deploy_release_records':sre_releases,
         'all_post_anchor_owner_record_ids':[item[0]['id'] for item in records],
         'all_post_anchor_records_and_old_comment_edits_checked':True,'maximum_lease_seconds':1200}
@@ -1001,6 +1080,12 @@ def latest_writer(rows,issue,sha,tree,owner,now):
         result['latest_status_by_owner']={identifier:{'comment_id':item[0]['id'],
             'released':item[1].get('RELEASED')=='true'} for identifier,item in sorted(states.items())}
     return result
+
+
+def latest_writers(timelines,sha,tree,owner,now):
+    documentary=paired_documentary_writer_ids(timelines,sha,owner)
+    return {str(issue):latest_writer(timelines[issue],issue,sha,tree,owner,now,
+        documentary_ids=documentary[issue]) for issue in (471,473)}
 
 def ops_admission(auth,owner,now,anchors,*,get=None):
     response=(get or api)('/contents/'+OPS+'?'+urllib.parse.urlencode({'ref':OPS_REF}))
@@ -1058,8 +1143,7 @@ def owned_gate_control_scope(*,source_sha,source_tree,launch_receipt_url,owner_s
     scope=candidate_scope(auth,owner=owner_session,anchors=successor) if owner_session!=SUCCESSOR_OWNER else None
     fresh_source(source_sha,source_tree,gate,get=get,candidate=scope)
     timelines={issue:recent(issue,successor[issue],now,get=get) for issue in (471,473)}
-    owners={str(issue):latest_writer(timelines[issue],issue,source_sha,source_tree,owner_session,now)
-        for issue in (471,473)}
+    owners=latest_writers(timelines,source_sha,source_tree,owner_session,now)
     workstream=fields(successor[471]['body']).get('WORKSTREAM_ID')
     require(all(fields(row['body']).get('WORKSTREAM_ID')==workstream
         for issue in (471,473) for row in timelines[issue]
@@ -1155,7 +1239,8 @@ def _admit_source_scope(*,source_sha,source_tree=None,launch_receipt_url=None,ow
     successor=administrative_anchors(owner,now=now)
     timelines={issue:recent(issue,successor[issue],now) for issue in (471,473)}
     auth=launch_fields(launch,source_sha,tree,owner_session,gate,anchors=successor)
-    if gate in ('full-gov311','full-gov312','predeploy') and auth.get('RELEASE_PROFILE')=='PAPER_V3_ONLY' and g5p_approval is None:
+    if gate in ('cheap','focal311','focal312','BIG-browser',
+                'full-gov311','full-gov312','predeploy') and auth.get('RELEASE_PROFILE')=='PAPER_V3_ONLY' and g5p_approval is None:
         g5p_approval=authenticate_g5p_revision(auth,source_sha,tree,owner,now)
     scope=candidate_scope(auth,owner=owner,anchors=successor)
     if os.environ['GITHUB_EVENT_NAME']=='pull_request':
@@ -1175,7 +1260,7 @@ def _admit_source_scope(*,source_sha,source_tree=None,launch_receipt_url=None,ow
             'DURABLE_LAUNCH_AUTHORIZATION_MUST_PRECEDE_PR_SOURCE_UPDATE')
     gates=auth['GATES_AUTHORIZED'].split(',')
     require(gate in gates,'GATE_NOT_AUTHORIZED_IN_IMMUTABLE_PREPUSH_SCOPE')
-    owner=auth['SESSION_SUCCESSOR'];owners={str(issue):latest_writer(timelines[issue],issue,source_sha,tree,owner,now) for issue in (471,473)}
+    owner=auth['SESSION_SUCCESSOR'];owners=latest_writers(timelines,source_sha,tree,owner,now)
     ops=ops_admission(auth,owner,now,anchors)
     if g5p_approval is not None:
         # The complete read-only Source/owner/ops/dedup walk may exceed the
@@ -1186,14 +1271,17 @@ def _admit_source_scope(*,source_sha,source_tree=None,launch_receipt_url=None,ow
             auth,g5p_approval,source_sha,tree,owner)
         require(g5p_approval.owner_session==owner,
                 'G5P_APPROVAL_CANNOT_REBIND_EXCLUSIVE_OWNER')
-        manifest=document(auth.get('PREREQUISITES_MANIFEST_JSON','null'))
-        require(type(manifest) is dict and manifest.get('release_profile')=='PAPER_V3_ONLY'
-                and manifest.get('owner_session')==owner
-                and manifest.get('g5p_revision_approval_url')==g5p_approval.approval_url,
-                'G5P_DOWNSTREAM_EXACT_PROFILE_MANIFEST_REQUIRED')
+        if gate!='cheap':
+            manifest=document(auth.get('PREREQUISITES_MANIFEST_JSON','null'))
+            require(type(manifest) is dict and manifest.get('release_profile')=='PAPER_V3_ONLY'
+                    and manifest.get('owner_session')==owner
+                    and manifest.get('g5p_revision_approval_url')==g5p_approval.approval_url,
+                    'G5P_DOWNSTREAM_EXACT_PROFILE_MANIFEST_REQUIRED')
         capacity_source={'status':'V3_NATIVE_MEASUREMENT_REQUIRED_BEFORE_MATERIAL',
             'G5P_GREEN':False,'G5A_legacy_horizon_model_claimed':False,
-            'native_v3_reserve_bytes':2*1024**3,'native_v3_minimum_free_inode_percent':10}
+            'native_v3_reserve_bytes':2*1024**3,'native_v3_minimum_free_inode_percent':10,
+            'historical_comparable_peak_claimed':False,
+            'stage_physical_source_envelope_and_live_recheck_required':True}
     elif g5a_approval is None:
         capacity_source=verify_capacity_comparison_manifest(auth,source_sha,tree)
     else:
@@ -1562,8 +1650,7 @@ def owned_diagnostic_control_scope(*,source_sha,source_tree,launch_receipt_url,o
         'source_manifest_sha256':auth['SOURCE_MANIFEST_SHA256'],'read_contract_sha256':auth['READ_CONTRACT_SHA256'],
         'scope':scope,'capability_prerequisite':prior},'OWNED_DIAGNOSTIC_FULL_ADMISSION_PINS_REBOUND')
     timelines={issue:recent(issue,successor[issue],now,get=get) for issue in (471,473)}
-    owners={str(issue):latest_writer(timelines[issue],issue,source_sha,source_tree,owner_session,now)
-        for issue in (471,473)}
+    owners=latest_writers(timelines,source_sha,source_tree,owner_session,now)
     require(all(fields(row['body']).get('WORKSTREAM_ID')==WORKSTREAM
         for issue in (471,473) for row in timelines[issue]
         if row['id']==owners[str(issue)]['comment_id']),'OWNED_DIAGNOSTIC_WORKSTREAM_REBOUND')
@@ -1632,7 +1719,7 @@ def admit_diagnostic(*,source_sha,source_tree,launch_receipt_url,owner_session,g
     timelines={issue:recent(issue,successor[issue],now) for issue in (471,473)}
     launch=comment(launch_receipt_url,471)
     auth,scope,prior=diagnostic_launch_fields(launch,source_sha,source_tree,owner_session,gate)
-    owners={str(issue):latest_writer(timelines[issue],issue,source_sha,source_tree,owner_session,now) for issue in (471,473)}
+    owners=latest_writers(timelines,source_sha,source_tree,owner_session,now)
     ops=ops_admission(auth,owner_session,now,recovery)
     return {'schema':'porota.rc6.capacity-diagnostic-admission.v1','status':'ADMITTED_DIAGNOSTIC_NOT_STARTED',
         'source_sha':source_sha,'source_tree':source_tree,'gate':gate,'owner_session':owner_session,
@@ -1867,7 +1954,7 @@ def reauthenticate_diagnostic_revision(admission_row,*,get=None,now=None,repo=RO
 
 def _successor_diagnostic_owners(auth,owner,sha,tree,*,anchors,reader,now):
     timelines={issue:recent(issue,anchors[issue],now,get=reader) for issue in (471,473)}
-    owners={str(issue):latest_writer(timelines[issue],issue,sha,tree,owner,now) for issue in (471,473)}
+    owners=latest_writers(timelines,sha,tree,owner,now)
     require(all(fields(row['body']).get('WORKSTREAM_ID')==auth['WORKSTREAM_ID']
         for issue in (471,473) for row in timelines[issue] if row['id']==owners[str(issue)]['comment_id']),
         'DIAGNOSTIC_V2_LIVE_WORKSTREAM_REBOUND')

@@ -30,6 +30,7 @@ BLOCKED_EXIT = 2
 BINDING_KEYS = {"candidate_sha", "candidate_tree", "producer", "attempt_id", "owner_id",
                 "workload_fingerprint", "runner_class"}
 ENVELOPE_SCHEMA = "porota.rc6.comparable-capacity-envelope.v2"
+PAPER_V3_PHYSICAL_SCHEMA = "rc6.g5p-v3-physical-preflight.v1"
 COMPARISON_CHECKS = {"all_scopes_accounted", "bootstrap_pip_fetch_full_source_accounted_if_in_scope",
     "control_and_log_allocations_accounted", "filesystem_allocation_model_validated", "fixture_clone_count_bounded",
     "new_fixture_payloads_bounded", "origin_runner_class_preserved", "same_metric_units", "source_delta_exact",
@@ -83,6 +84,32 @@ def load_policy(path: Path = DEFAULT_POLICY) -> dict[str, Any]:
     policy = custody.decode(path.read_bytes())
     validate_policy(policy)
     return policy
+
+
+def validate_paper_v3_policy(policy: dict[str, Any]) -> None:
+    expected = {
+        "schema": "porota.rc6.paper-v3-source-physical-admission.v1",
+        "eligible_stages": ["cheap", "focal311", "focal312", "BIG-browser",
+                            "full-gov311", "full-gov312", "predeploy"],
+        "contract_revision": "PAPER_V3_ONLY_G5P_V1",
+        "source_derived_envelope_is_historical_peak": False,
+        "original_native_qualification_from_preflight": False,
+        "same_source_owner_attempt_binding_required": True,
+        "archive_v3_limit_bytes": 512 * 1024**2,
+        "live_v3_limit_bytes": 128 * 1024**2,
+        "native_scratch_limit_bytes": 512 * 1024**2,
+        "raw_capture_and_closed_stage_upper_bytes": 2 * 1024**3,
+        "control_and_log_envelope_bytes": 128 * 1024**2,
+        "predeploy_build_planning_bytes": 4 * 1024**3,
+        "native_reserve_bytes": 2 * 1024**3,
+        "bootstrap_and_material_residual_reserve_bytes": 4 * 1024**3,
+        "minimum_free_inode_ratio": 0.1,
+        "memory_ceiling_bytes": 2 * 1024**3,
+        "live_recheck_before_each_producer": True,
+        "original_FIN_and_gate_receipts_remain_required": True,
+    }
+    require(policy.get("paper_v3_capacity") == expected,
+            "PREFLIGHT_PAPER_V3_POLICY_CHANGED_OR_MISSING")
 
 
 def validate_binding(binding: dict[str, Any]) -> None:
@@ -212,6 +239,71 @@ def validate_comparable_envelope(peak: dict[str, Any], binding: dict[str, Any], 
 
 
 def validate_comparable_peak(peak: dict[str, Any], binding: dict[str, Any], expected_peak_bytes: int) -> None:
+    if type(peak) is dict and peak.get("schema") == PAPER_V3_PHYSICAL_SCHEMA:
+        producers = {"cheap": {"bootstrap", "focal311", "focal312", "full-gov311", "full-gov312"},
+                     "focal311": {"bootstrap", "focal311"},
+                     "focal312": {"bootstrap", "focal312"},
+                     "BIG-browser": {"bootstrap", "BIG-browser"},
+                     "full-gov311": {"bootstrap", "full-gov311"},
+                     "full-gov312": {"bootstrap", "full-gov312"},
+                     "predeploy": {"predeploy"}}
+        require(peak.get("status") == "GREEN"
+                and peak.get("release_profile") == "PAPER_V3_ONLY"
+                and peak.get("source_sha") == binding["candidate_sha"]
+                and peak.get("source_tree") == binding["candidate_tree"]
+                and peak.get("owner_session") == binding["owner_id"]
+                and str(peak.get("run_id")) + ":" + str(peak.get("run_attempt")) == binding["attempt_id"]
+                and peak.get("producer") == binding["producer"]
+                and peak.get("workload_fingerprint") == binding["workload_fingerprint"]
+                and peak.get("runner_class") == binding["runner_class"]
+                and peak.get("producer") in producers.get(peak.get("stage"), set())
+                and peak.get("G5A_project_quota_required") is False
+                and peak.get("real_orders_sent") == 0
+                and peak.get("memory_ceiling_at_least_native_rss") is True
+                and type(peak.get("memory_observation")) is dict
+                and peak["memory_observation"].get("status") == "GREEN"
+                and peak["memory_observation"].get("required_bytes") == 2 * 1024**3
+                and type(peak["memory_observation"].get("effective_available_bytes")) is int
+                and peak["memory_observation"]["effective_available_bytes"] >= 2 * 1024**3
+                and peak.get("blocked_reasons") == []
+                and peak.get("minimum_free_inode_ratio") == 0.1
+                and peak.get("native_reserve_bytes") == 2 * 1024**3
+                and peak.get("bootstrap_reserve_bytes") in (None, 4 * 1024**3)
+                and type(peak.get("measured_at_unix_ns")) is int
+                and 0 <= time.time_ns() - peak["measured_at_unix_ns"],
+                "PREFLIGHT_PAPER_V3_PHYSICAL_ORIGIN_REBOUND")
+        if peak["producer"] == "bootstrap":
+            from scripts.rc6_material_carrier import PREPARATION_SCOPE
+            require(peak.get("preparation_scope") == PREPARATION_SCOPE,
+                    "PREFLIGHT_PAPER_V3_COMPLETE_BOOTSTRAP_SCOPE_REQUIRED")
+        else:
+            require(peak.get("preparation_scope") is None,
+                    "PREFLIGHT_PAPER_V3_BOOTSTRAP_SCOPE_REBOUND")
+        limits = (("archive_v3_limit_bytes", 512 * 1024**2),
+                  ("live_v3_limit_bytes", 128 * 1024**2),
+                  ("native_scratch_limit_bytes", 512 * 1024**2),
+                  ("raw_capture_and_closed_stage_upper_bytes", 2 * 1024**3),
+                  ("control_and_log_envelope_bytes", 128 * 1024**2))
+        build=4*1024**3 if peak['stage']=='predeploy' else 0
+        require(all(type(peak.get(name)) is int and peak[name] == limit
+                    for name, limit in limits)
+                and type(peak.get("predeploy_build_planning_bytes")) is int
+                and peak["predeploy_build_planning_bytes"]==build
+                and type(peak.get("source_export_upper_bytes")) is int
+                and peak["source_export_upper_bytes"] > 0
+                and peak.get("admission_envelope_bytes") ==
+                    peak["source_export_upper_bytes"] + sum(limit for _, limit in limits) + build
+                and expected_peak_bytes == peak["admission_envelope_bytes"]
+                and type(peak.get("measured_free_bytes")) is int
+                and peak["measured_free_bytes"] >= expected_peak_bytes +
+                    (peak.get("bootstrap_reserve_bytes") or 2 * 1024**3)
+                and type(peak.get("measured_free_inodes")) is int
+                and type(peak.get("measured_total_inodes")) is int
+                and peak["measured_total_inodes"] > 0
+                and peak["measured_free_inodes"] >= 5000
+                and peak["measured_free_inodes"] / peak["measured_total_inodes"] >= 0.1,
+                "PREFLIGHT_PAPER_V3_SOURCE_ENVELOPE_REBOUND")
+        return
     if type(peak) is dict and peak.get("schema") == ENVELOPE_SCHEMA:
         validate_comparable_envelope(peak, binding, expected_peak_bytes)
         return
@@ -243,8 +335,10 @@ def envelope_allocated_bytes(peak: dict[str, Any]) -> int:
     the complete comparison, exact target binding and actual live filesystem.
     """
     require(type(peak) is dict and peak.get("schema") in
-            (ENVELOPE_SCHEMA, "porota.rc6.comparable-capacity-peak.v1"), "PREFLIGHT_COMPARABLE_PEAK_REQUIRED")
-    value = peak.get("admission_envelope_bytes" if peak["schema"] == ENVELOPE_SCHEMA else "peak_allocated_bytes")
+            (ENVELOPE_SCHEMA, "porota.rc6.comparable-capacity-peak.v1", PAPER_V3_PHYSICAL_SCHEMA),
+            "PREFLIGHT_COMPARABLE_PEAK_REQUIRED")
+    value = peak.get("peak_allocated_bytes" if peak["schema"] == "porota.rc6.comparable-capacity-peak.v1"
+                     else "admission_envelope_bytes")
     positive_int(value, "admission_envelope_bytes")
     return value
 
@@ -323,8 +417,19 @@ def build_receipt(*, policy: dict[str, Any], path: Path, expected_peak_bytes: in
     validate_binding(binding)
     positive_int(expected_peak_bytes, "expected_peak_bytes")
     validate_comparable_peak(comparable_peak, binding, expected_peak_bytes)
+    if comparable_peak["schema"] == PAPER_V3_PHYSICAL_SCHEMA:
+        validate_paper_v3_policy(policy)
+        require(comparable_peak.get("measured_path") == str(Path(path).absolute()),
+                "PREFLIGHT_PAPER_V3_PHYSICAL_PATH_REBOUND")
+        from scripts.rc6_material_carrier import v3_memory_capacity
+        memory_live = v3_memory_capacity()
+        require(memory_live.get("status") == "GREEN"
+                and memory_live.get("required_bytes") == 2 * 1024**3,
+                "PREFLIGHT_PAPER_V3_LIVE_MEMORY_RED")
+    else:
+        memory_live = None
     measured = measure_filesystem(path)
-    if comparable_peak["schema"] == ENVELOPE_SCHEMA:
+    if comparable_peak["schema"] in (ENVELOPE_SCHEMA, PAPER_V3_PHYSICAL_SCHEMA):
         require(type(measured.get("allocation_unit_bytes")) is int and measured["allocation_unit_bytes"] == 4096,
                 "PREFLIGHT_COMPARISON_ALLOCATION_MODEL_NOT_LIVE_VALIDATED")
         if binding["runner_class"] == "github-hosted/ubuntu-24.04":
@@ -341,8 +446,12 @@ def build_receipt(*, policy: dict[str, Any], path: Path, expected_peak_bytes: in
         "measured_path": str(Path(path).absolute()), "measured_at_unix_ns": time.time_ns(),
         "measurement_pid": os.getpid(), "measurement_boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
         "binding": dict(binding), "comparable_peak": comparable_peak, "capacity": capacity,
-        "filesystem": measured, "machine": machine_snapshot(), "destructive_action_performed": False,
-        "admission_basis": ("OBSERVED_ALLOCATION_PLUS_VERIFIED_BOUNDED_ADDITIONS"
+        "filesystem": measured, "machine": machine_snapshot(),
+        **({"paper_v3_live_memory": memory_live} if memory_live is not None else {}),
+        "destructive_action_performed": False,
+        "admission_basis": ("SOURCE_DERIVED_PAPER_V3_PHYSICAL_ENVELOPE_WITH_LIVE_RECHECK"
+                            if comparable_peak["schema"] == PAPER_V3_PHYSICAL_SCHEMA
+                            else "OBSERVED_ALLOCATION_PLUS_VERIFIED_BOUNDED_ADDITIONS"
                             if comparable_peak["schema"] == ENVELOPE_SCHEMA else "COMPARABLE_MEASURED_PEAK"),
         "real_orders_sent": 0, "promotion_or_runtime_validation_claimed": False}
     receipt["receipt_sha256"] = digest(receipt)

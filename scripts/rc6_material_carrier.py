@@ -87,8 +87,15 @@ def capacity_binding(a,producer):
         'runner_class':architectural.RUNNER_CLASS}
 
 def heavy_preflight(a,run,path,producer,label):
-    peak=a.capacity_peaks.get(producer)
-    need(type(peak) is dict,'KNOWN_COMPARABLE_PEAK_REQUIRED_BEFORE_PRODUCER')
+    paper_v3=(a.release_profile=='PAPER_V3_ONLY'
+              and a.gate in ('cheap','focal311','focal312','BIG-browser',
+                             'full-gov311','full-gov312'))
+    if paper_v3:
+        _,peak,_=g5p_preflight(a,run,path,label+'-source-envelope',
+                              producer=producer,bootstrap=producer=='bootstrap',record=False)
+    else:
+        peak=a.capacity_peaks.get(producer)
+        need(type(peak) is dict,'KNOWN_COMPARABLE_PEAK_REQUIRED_BEFORE_PRODUCER')
     binding=capacity_binding(a,producer);policy=capacity.load_policy(a.repo_root/'ops/policy/rc6-heavy-test-governance-v1.json')
     receipt=capacity.build_receipt(policy=policy,path=path,expected_peak_bytes=capacity.envelope_allocated_bytes(peak),
         binding=binding,comparable_peak=peak)
@@ -159,7 +166,7 @@ def v3_memory_capacity(*,v2_path=Path('/sys/fs/cgroup/memory.max'),
             'required_bytes':minimum}
 
 
-def g5p_preflight(a,run,path,label,*,bootstrap=False):
+def g5p_preflight(a,run,path,label,*,bootstrap=False,producer=None,record=True):
     """Measure a V3 physical envelope before bootstrap or native work."""
     from scripts.rc6_g5p_frames import MAX_CAPTURE_BYTES
     path=safe_path(path)
@@ -175,7 +182,8 @@ def g5p_preflight(a,run,path,label,*,bootstrap=False):
     archive=512*1024**2;live=128*1024**2;scratch=512*1024**2
     transfer=2*MAX_CAPTURE_BYTES
     controls=128*1024**2
-    required=source_export_upper+archive+live+scratch+transfer+controls
+    predeploy_build=4*1024**3 if a.gate=='predeploy' else 0
+    required=source_export_upper+archive+live+scratch+transfer+controls+predeploy_build
     free=fs.f_bavail*fs.f_frsize
     inode_ratio=fs.f_favail/fs.f_files if fs.f_files else 0
     memory=v3_memory_capacity()
@@ -187,14 +195,22 @@ def g5p_preflight(a,run,path,label,*,bootstrap=False):
     if fs.f_favail<5000:blocked_reasons.append('FREE_INODES_BELOW_5000')
     if not memory_ok:blocked_reasons.append('MEMORY_CAPACITY_BELOW_2GIB_OR_UNOBSERVED')
     green=not blocked_reasons
+    actual_producer=producer or a.gate
+    binding=capacity_binding(a,actual_producer)
     row={'schema':'rc6.g5p-v3-physical-preflight.v1','status':'GREEN' if green else 'BLOCKED',
          'source_sha':a.source_sha,'source_tree':a.source_tree,'owner_session':a.owner_session,
          'run_id':int(os.environ['GITHUB_RUN_ID']),'run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
-         'stage':a.gate,'label':label,'measured_path':str(path),
+         'stage':a.gate,'producer':actual_producer,
+         'workload_fingerprint':binding['workload_fingerprint'],
+         'runner_class':binding['runner_class'],
+         'release_profile':'PAPER_V3_ONLY','label':label,'measured_path':str(path),
          'source_export_upper_bytes':source_export_upper,'source_file_count':len(sizes),
+         'preparation_scope':PREPARATION_SCOPE if actual_producer=='bootstrap' else None,
          'archive_v3_limit_bytes':archive,'live_v3_limit_bytes':live,
          'native_scratch_limit_bytes':scratch,'raw_capture_and_closed_stage_upper_bytes':transfer,
-         'control_and_log_envelope_bytes':controls,'admission_envelope_bytes':required,
+         'control_and_log_envelope_bytes':controls,
+         'predeploy_build_planning_bytes':predeploy_build,
+         'admission_envelope_bytes':required,
          'native_reserve_bytes':2*1024**3,'bootstrap_reserve_bytes':reserve if bootstrap else None,
          'minimum_free_inode_ratio':.1,
          'measured_free_bytes':free,'measured_free_inodes':fs.f_favail,
@@ -204,21 +220,23 @@ def g5p_preflight(a,run,path,label,*,bootstrap=False):
          'blocked_reasons':blocked_reasons,
          'G5A_project_quota_required':False,'real_orders_sent':0,
          'measured_at_unix_ns':time.time_ns()}
-    save(run.control/(label+'.g5p-capacity.json'),row)
+    if record or not green:
+        save(run.control/(label+'.g5p-capacity.json'),row)
     if not green:print(json.dumps({'G5P_V3_CAPACITY_PREFLIGHT':row},sort_keys=True),flush=True)
     need(green,'G5P_V3_ACTUAL_CAPACITY_PREFLIGHT_BLOCKED:'+','.join(blocked_reasons))
-    record={'label':label,'measured_path':str(path),
+    if record:
+        evidence={'label':label,'measured_path':str(path),
             'before':{'path':'controls/'+label+'.g5p-capacity.json',
                       'sha256':digest(canonical(row))},
             'live':{'path':'controls/'+label+'.g5p-capacity.json',
                     'sha256':digest(canonical(row))},
             'measured_at_unix_ns':row['measured_at_unix_ns']}
-    run.capacity_records.append(record);run.pending_capacity=[record]
-    return capacity_binding(a,a.gate),row,{'capacity':{'status':'GREEN'},'g5p_native_v3':row}
+        run.capacity_records.append(evidence);run.pending_capacity=[evidence]
+    return binding,row,{'capacity':{'status':'GREEN'},'g5p_native_v3':row}
 
 def preparation_capacity(a,run,root,label,*,additional_storage=()):
     """Bootstrap is a compound producer, not a focal/epoch peak assumption."""
-    g5p=a.gate in ('G5P-acquire','G5P-certify')
+    g5p=a.release_profile=='PAPER_V3_ONLY' and a.gate!='Horizon'
     need(not g5p or a.release_profile=='PAPER_V3_ONLY','G5P_BOOTSTRAP_PROFILE_REQUIRED')
     if g5p:
         results=[];launch_proofs=[]
@@ -226,7 +244,10 @@ def preparation_capacity(a,run,root,label,*,additional_storage=()):
             if storage_role not in ('bootstrap_namespace','candidate_git_objects'):
                 need(safe_path(path).is_relative_to(root),
                      'BOOTSTRAP_TEMPORARY_ROOT_OUTSIDE_AUTHENTICATED_NAMESPACE')
-            binding,comparison,live=g5p_preflight(a,run,path,label+'-'+storage_role,bootstrap=True)
+            if a.gate in ('G5P-acquire','G5P-certify'):
+                binding,comparison,live=g5p_preflight(a,run,path,label+'-'+storage_role,bootstrap=True)
+            else:
+                binding,comparison,live=heavy_preflight(a,run,path,'bootstrap',label+'-'+storage_role)
             launch_proofs.extend(run.pending_capacity)
             results.append({'storage_role':storage_role,'measured_path':str(path),'binding':binding,
                 'physical_v3_preflight':comparison,'capacity_live':live})
@@ -294,7 +315,8 @@ def tooling_capacity(admission_path,repo,environ):
     from scripts import rc6_material_pr_admission as controller
     authority=controller.admit(source_sha=authority['source_sha'],source_tree=authority['source_tree'],
         launch_receipt_url=authority['launch_receipt_url'],owner_session=authority['owner_session'],gate=authority['gate'])
-    g5p=authority['gate'] in ('G5P-acquire','G5P-certify')
+    g5p=(authority.get('release_profile')=='PAPER_V3_ONLY'
+         and authority['gate']!='Horizon')
     need(not g5p or authority.get('release_profile')=='PAPER_V3_ONLY',
          'G5P_TOOLING_PROFILE_REQUIRED')
     peak=authority.get('capacity_peaks',{}).get('bootstrap')
@@ -308,12 +330,15 @@ def tooling_capacity(admission_path,repo,environ):
         need(reviewed_g5p_python_tooling(workflow,expected),
              'G5P_REVIEWED_PYTHON_TOOLING_PIN_CHANGED')
     args=SimpleNamespace(repo_root=Path(repo),source_sha=authority['source_sha'],source_tree=authority['source_tree'],
-        owner_session=authority['owner_session'],capacity_peaks=authority['capacity_peaks'],gate=authority['gate'])
+        owner_session=authority['owner_session'],capacity_peaks=authority['capacity_peaks'],
+        gate=authority['gate'],release_profile=authority.get('release_profile','FULL_G5'))
     root=Path(admission_path).parent;control=root/'tooling-controls';control.mkdir(mode=0o700)
     run=SimpleNamespace(control=control,capacity_records=[],pending_capacity=[])
     for label,path in (('candidate_git',Path(repo)),('admission_controls',root),
         ('runner_temporary',safe_path(environ['RUNNER_TEMP'])),('reviewed_tool_cache',safe_path(environ['RUNNER_TOOL_CACHE']))):
-        if g5p:g5p_preflight(args,run,path,'before-reviewed-Python-'+label,bootstrap=True)
+        if g5p and authority['gate'] in ('G5P-acquire','G5P-certify'):
+            g5p_preflight(args,run,path,'before-reviewed-Python-'+label,bootstrap=True)
+        elif g5p:heavy_preflight(args,run,path,'bootstrap','before-reviewed-Python-'+label)
         else:heavy_preflight(args,run,path,'bootstrap','before-reviewed-Python-'+label)
     save(root/'tooling-capacity.json',{'schema':'rc6.reviewed-python-tooling-capacity.v2',
         'release_profile':authority.get('release_profile','FULL_G5'),
@@ -861,7 +886,8 @@ def static_admission(a,run,root,prepared,interpreters):
             'kernel':{'path':'controls/'+kernel.name,'sha256':digest(read(kernel))}})
     capacity_index={'schema':'rc6.G0-actual-capacity-launch-index.v1','source_sha':a.source_sha,
         'source_tree':a.source_tree,'capacity_records':run.capacity_records,'commands':commands,
-        'preparation_scope':a.capacity_peaks['bootstrap']['preparation_scope'],
+        'preparation_scope':(PREPARATION_SCOPE if a.release_profile=='PAPER_V3_ONLY'
+                             else a.capacity_peaks['bootstrap']['preparation_scope']),
         'full_git_transition':{'path':'controls/fullGit-bootstrap-to-qualified.json',
             'sha256':digest(read(run.control/'fullGit-bootstrap-to-qualified.json'))}}
     save(root/'G0.capacity-index.json',capacity_index)
