@@ -26,22 +26,22 @@ jobs:
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -Eeuo pipefail
-          python3 -m py_compile scripts/ops/rc6_sre_sqlite_fd_trend.py
+          python3 -m py_compile scripts/ops/rc6_sre_role_map.py
           test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS" && test -n "$DO_HOST" && test -n "$DO_USER"
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6-sre-owner"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6-sre-owner" "$HOME/.ssh/known_hosts"
-          timeout 240 ssh -i "$HOME/.ssh/rc6-sre-owner" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n nice -n 19 ionice -c3 python3 -' < scripts/ops/rc6_sre_sqlite_fd_trend.py > "$RUNNER_TEMP/sqlite-owner.json"
+          timeout 100 ssh -i "$HOME/.ssh/rc6-sre-owner" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n nice -n 19 ionice -c3 python3 -' < scripts/ops/rc6_sre_role_map.py > "$RUNNER_TEMP/sqlite-owner.json"
           python3 -m json.tool "$RUNNER_TEMP/sqlite-owner.json" >/dev/null
-          sha256sum scripts/ops/rc6_sre_sqlite_fd_trend.py "$RUNNER_TEMP/sqlite-owner.json"
+          sha256sum scripts/ops/rc6_sre_role_map.py "$RUNNER_TEMP/sqlite-owner.json"
           python3 - <<'PY'
           import json,os,pathlib
           r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'sqlite-owner.json').read_text())
           assert r['host_mutation'] is False and r['paper']==['PRODUCTION_PAPER',0]
-          for s in r['samples']:
-              print('FD_TREND|utc='+s['utc']+'|rows='+str([(p['pid'],p['start_ticks'],p['sqlite_fds']) for p in s['processes']]))
-          print('PAPER=PRODUCTION_PAPER;REAL_ORDERS_SENT=0;HOST_MUTATION=false')
+          print('ROLE_MAP='+str([(p['pid'],p['role'],p['sqlite_fds']) for p in r['roles']]))
+          print('CRITICAL='+str(r['containers']['porota_critical_approval_rc6']))
+          print('PAPER=PRODUCTION_PAPER;REAL_ORDERS_SENT=0;HOST_MUTATION=false;FREE_BYTES='+str(r['free_bytes']))
           PY
       - name: Preserve redacted original JSON
         if: always()
