@@ -40,6 +40,25 @@ from scripts import porota_predeploy_cleanup as cleanup
 
 
 class G5PBootstrapCapacityTests(unittest.TestCase):
+    def test_post_fin_native_red_names_only_bounded_failed_nodes_and_literal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log=Path(temporary)/'native.log'
+            log.write_text('https://private.example/?token=SECRET\n'
+                'FAILED tests/test_focal.py::TestGate::test_contract[param-secret] - SECRET detail\n'
+                'FAILED tests/test_focal.py::TestGate::test_contract[other] - duplicate\n'
+                'ValueError: EXACT_NATIVE_FAILURE:SECRET detail\n')
+            summary=carrier.native_red_log_index(log,{'returncode':1,'timed_out':False,
+                'supervisor_errors':[],'residual_descendants_observed':[],
+                'adopted_descendants_reaped':[]},'focal311-execution')
+            self.assertEqual(summary['failed_test_nodes'],
+                             ['tests/test_focal.py::TestGate::test_contract'])
+            self.assertEqual(summary['literal_exception'],
+                             {'class':'ValueError','reason':'EXACT_NATIVE_FAILURE'})
+            self.assertEqual(summary['native_exit_code'],1)
+            self.assertEqual(summary['real_orders_sent'],0)
+            self.assertNotIn('SECRET',json.dumps(summary))
+            self.assertNotIn('private.example',json.dumps(summary))
+
     def test_admission_http_failure_exposes_status_and_numeric_limits_only(self):
         headers=Message()
         headers['X-RateLimit-Remaining']='0'

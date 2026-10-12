@@ -683,6 +683,8 @@ class OwnedRunner:
             self.lease_records[label]={'path':'controls/'+monitor.final_path.name,
                 'sha256':digest(canonical(lease))}
             if lease['status']!='GREEN':
+                if lease.get('stop_reason') is None:
+                    print(json.dumps(native_red_log_index(log,kernel,label),sort_keys=True),flush=True)
                 self.unknown=False;self.closed_logs.append(log)
                 self.lease_stop={'namespace':namespace,'label':label,'command':argv,
                     'kernel':kernel,'lease':lease,'log':log}
@@ -703,6 +705,34 @@ class OwnedRunner:
         self.manager['pre_capture_kernel_state']()
         self.unknown=False;self.closed_logs.append(log)
         return {'returncode':kernel['returncode'],'kernel':kernel,'log_path':str(log)}
+
+
+def native_red_log_index(log,kernel,label):
+    """Name failed native tests after FIN without publishing arbitrary log text."""
+    row={'schema':'rc6.native-red-log-index.v1','command_label':label,
+         'native_exit_code':kernel.get('returncode'),
+         'timed_out':kernel.get('timed_out'),
+         'supervisor_error_count':len(kernel.get('supervisor_errors',[])),
+         'residual_descendant_count':len(kernel.get('residual_descendants_observed',[])),
+         'adopted_nonzero_exit_count':sum(item.get('exit_code')!=0
+             for item in kernel.get('adopted_descendants_reaped',[])),
+         'failed_test_nodes':[],'literal_exception':None,
+         'qualification_claimed':False,'real_orders_sent':0}
+    try:
+        raw=read(log,16*1024**2)
+        lines=raw.decode('utf-8','replace').splitlines()
+    except (OSError,ValueError,UnicodeError):
+        row['log_classification_available']=False
+        return row
+    rows=[];error=None
+    for line in lines:
+        match=re.match(r'^(?:FAILED|ERROR) (tests/[A-Za-z0-9_./-]+\.py::(?:[A-Za-z0-9_]+::)?[A-Za-z0-9_]+)(?:\[|\s|$)',line)
+        if match and match.group(1) not in rows and len(rows)<8:rows.append(match.group(1))
+        match=re.match(r'^(ValueError|RuntimeError|AssertionError|ImportError|ModuleNotFoundError|KeyError):\s*([A-Z][A-Z0-9_]{0,191})(?:[:\s]|$)',line)
+        if match:error={'class':match.group(1),'reason':match.group(2)}
+    row.update(log_classification_available=True,failed_test_nodes=rows,literal_exception=error,
+               private_log_sha256=digest(raw))
+    return row
 
 
 def bounded_v3_owner_readmit(admit, *, gate, release_profile=None, **scope):
