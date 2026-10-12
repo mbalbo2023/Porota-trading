@@ -4,6 +4,7 @@ import copy
 from datetime import date, datetime, timedelta, timezone
 from email.message import Message
 import hashlib
+import gzip
 import json
 import os
 from pathlib import Path
@@ -564,7 +565,7 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
                 meminfo_path=meminfo,physical_bytes=8*1024**3,rlimit_as=-1)['status'],'BLOCKED')
 
     def test_long_acquisition_uses_actual_first_run_start_and_live_readmission(self):
-        opened=datetime(2026,10,11,18,0,tzinfo=timezone.utc)
+        opened=datetime.now(timezone.utc)-timedelta(minutes=25)
         started=opened+timedelta(minutes=2)
         current=opened+timedelta(minutes=25)
         stamp=lambda value:value.isoformat().replace('+00:00','Z')
@@ -815,11 +816,13 @@ class PaperV3ProducerTests(unittest.TestCase):
 
 
 class OriginalFrameTests(unittest.TestCase):
-    def complete_capture(self):
+    def complete_capture(self, varying=None):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         parent = Path(temp.name)
-        originals = {name: (name + ":original").encode() for name in MEMBERS}
+        originals = {name: (gzip.compress((name + ":original").encode(), mtime=0,
+                                        compresslevel=1) if name.endswith(".gz")
+                            else (name + ":original").encode()) for name in MEMBERS}
         binding = dict(source_sha="a" * 40, source_tree="b" * 40,
                        owner_session="TEST_OWNER", run_id=123, run_attempt=1,
                        writer_binding_sha256="c" * 64)
@@ -827,6 +830,8 @@ class OriginalFrameTests(unittest.TestCase):
             recorder = FrameRecorder(parent / "frames", **binding)
             cuts = []
             for index, clock in enumerate(horizon_schedule(date(2026, 10, 5))):
+                if varying is not None:
+                    originals = varying(index)
                 as_of = clock.isoformat()
                 receipt = {"source_as_of": as_of, "generation_id": f"{index + 1:032x}"}
                 recorder.record(index, as_of=as_of, originals=originals,
@@ -850,6 +855,77 @@ class OriginalFrameTests(unittest.TestCase):
                              "recipe_bytes": 64, "native_receipt": receipt})
             manifest = recorder.finish(native_fin_closed=True)
         return parent / "frames", manifest, cuts, binding
+
+    def test_growing_original_gzip_and_sqlite_pages_replay_under_bounded_raw(self):
+        report = bytearray()
+        checkpoint = bytearray()
+        def originals(index):
+            report.extend(hashlib.sha256(b"report" + index.to_bytes(4, "big")).digest() * 4)
+            checkpoint.extend(hashlib.sha256(b"checkpoint" + index.to_bytes(4, "big")).digest() * 2)
+            projection = bytearray(8192)
+            projection[4096:4128] = hashlib.sha256(b"page" + index.to_bytes(4, "big")).digest()
+            midpoint = len(report) // 2
+            report_wire = (gzip.compress(bytes(report[:midpoint]), mtime=0, compresslevel=1)
+                           + gzip.compress(bytes(report[midpoint:]), mtime=0, compresslevel=1))
+            return {"report.json.gz": report_wire,
+                    "checkpoint.json.gz": gzip.compress(bytes(checkpoint), mtime=0, compresslevel=1),
+                    "projection.sqlite": bytes(projection),
+                    "manifest.json": ("manifest:" + str(index)).encode(),
+                    "status.json": ("status:" + str(index)).encode()}
+        with patch("scripts.rc6_g5p_frames.MAX_CAPTURE_BYTES", 2 * 1024**2):
+            root, manifest, cuts, binding = self.complete_capture(originals)
+            self.assertLess(manifest["captured_bytes"], 2 * 1024**2)
+            self.assertGreater(sum(cut["member_bytes"]["report.json.gz"]
+                                   for cut in cuts), 10 * manifest["captured_bytes"])
+            checked = verify_frames(manifest,
+                read_frame=lambda name: (root / name).read_bytes(), cuts=cuts, **binding)
+            self.assertEqual(checked["verified_original_cuts"], 1202)
+
+    def test_delta_base_and_sqlite_page_tampering_rejected_after_frame_rehash(self):
+        root, manifest, cuts, binding = self.complete_capture()
+        for member, key, value in (("report.json.gz", "expanded_base_sha256", "0" * 64),
+                                   ("checkpoint.json.gz", "gzip_part_bytes", [0]),
+                                   ("projection.sqlite", "changed_pages", [{"index": 3,
+                                                                                 "raw_base64": "AA=="}])):
+            with self.subTest(member=member):
+                altered = copy.deepcopy(manifest)
+                name = "cut-0010.json.gz"
+                frame = json.loads(gzip.decompress((root / name).read_bytes()))
+                frame["originals"][member][key] = value
+                changed = gzip.compress(wire(frame), mtime=0)
+                altered["frames"][10]["bytes"] = len(changed)
+                altered["frames"][10]["sha256"] = hashlib.sha256(changed).hexdigest()
+                with self.assertRaisesRegex(ValueError,
+                                            "G5P_FRAME_(GZIP_BASE|GZIP_PART_BOUNDARY|SQLITE_PAGE_INDEX)_REBOUND"):
+                    verify_frames(altered,
+                        read_frame=lambda item: changed if item == name else (root / item).read_bytes(),
+                        cuts=cuts, **binding)
+
+    def test_noncanonical_gzip_and_separate_capture_bounds_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            parent = Path(temp)
+            original = {name:(gzip.compress(b"member", mtime=0, compresslevel=1)
+                              if name.endswith(".gz") else b"member") for name in MEMBERS}
+            binding = dict(source_sha="a" * 40, source_tree="b" * 40,
+                           owner_session="TEST_OWNER", run_id=123, run_attempt=1,
+                           writer_binding_sha256="c" * 64)
+            as_of = "2026-10-05T13:20:00+00:00"
+            receipt = {"source_as_of": as_of}
+            with patch("scripts.rc6_g5p_frames.capacity", return_value={}):
+                altered = dict(original)
+                altered["report.json.gz"] = gzip.compress(b"member", mtime=1, compresslevel=1)
+                with self.assertRaisesRegex(ValueError, "G5P_ORIGINAL_GZIP_REENCODE_NOT_BYTE_EXACT"):
+                    FrameRecorder(parent / "noncanonical", **binding).record(0, as_of=as_of,
+                        originals=altered, receipt=receipt, restored=altered)
+                for limit, field in (("MAX_FRAME_BYTES", "FRAME_BYTES"),
+                                     ("MAX_CAPTURE_BYTES", "CAPTURE_TOTAL")):
+                    with self.subTest(limit=limit), patch("scripts.rc6_g5p_frames." + limit, 1):
+                        recorder = FrameRecorder(parent / limit, **binding)
+                        with self.assertRaisesRegex(ValueError,
+                                                    "G5P_ORIGINAL_" + field + ".*cut=0:actual=[0-9]+:limit=1"):
+                            recorder.record(0, as_of=as_of, originals=original,
+                                            receipt=receipt, restored=original)
+                        self.assertFalse(recorder.frames)
 
     def test_all_original_1202_bytes_and_first_run_bind(self):
         root, manifest, cuts, binding = self.complete_capture()
@@ -891,7 +967,8 @@ class OriginalFrameTests(unittest.TestCase):
     def test_unlinked_open_frame_cannot_be_marked_captured(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)/"frames"
-            originals={name:b"original" for name in MEMBERS}
+            originals={name:(gzip.compress(b"original",mtime=0,compresslevel=1)
+                             if name.endswith(".gz") else b"original") for name in MEMBERS}
             with patch("scripts.rc6_g5p_frames.capacity",return_value={}):
                 recorder=FrameRecorder(root,source_sha="a"*40,source_tree="b"*40,
                     owner_session="TEST_OWNER",run_id=123,run_attempt=1,
