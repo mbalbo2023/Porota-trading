@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import time
 import urllib.error
@@ -1877,6 +1878,32 @@ class PaperV3PhysicalAdmission(unittest.TestCase):
 
 
 class OrderedGateReferenceTests(unittest.TestCase):
+    def test_pull_request_without_tree_input_uses_only_exact_git_checkout(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            env=dict(os.environ,GIT_CONFIG_NOSYSTEM='1',GIT_CONFIG_GLOBAL=os.devnull)
+            def git(*args):
+                return subprocess.run(['git','-C',str(root),*args],env=env,
+                    check=True,capture_output=True,text=True).stdout.strip()
+            git('init','--template=','-q')
+            git('config','user.name','G5P reference control')
+            git('config','user.email','fixture@example.invalid')
+            (root/'source.txt').write_text('first source\n')
+            git('add','source.txt')
+            git('commit','-qm','first exact source')
+            sha=git('rev-parse','HEAD');tree=git('rev-parse','HEAD^{tree}')
+            self.assertEqual(reference.checkout_source_tree(sha,'',repo_root=root),tree)
+            self.assertEqual(reference.checkout_source_tree(sha,tree,repo_root=root),tree)
+            with self.assertRaisesRegex(ValueError,'ORDERED_GATE_CHECKOUT_SHA_OR_TREE_REBOUND'):
+                reference.checkout_source_tree(sha,'f'*40,repo_root=root)
+            with self.assertRaisesRegex(ValueError,'ORDERED_GATE_CHECKOUT_SHA_OR_TREE_REBOUND'):
+                reference.checkout_source_tree('e'*40,'',repo_root=root)
+            (root/'source.txt').write_text('rebound source\n')
+            git('add','source.txt')
+            git('commit','-qm','rebound source')
+            with self.assertRaisesRegex(ValueError,'ORDERED_GATE_CHECKOUT_SHA_OR_TREE_REBOUND'):
+                reference.checkout_source_tree(sha,'',repo_root=root)
+
     def test_closed_raw_reference_binds_all_three_cheap_receipts_and_rejects_rebound(self):
         source="a"*40;tree="b"*40
         with tempfile.TemporaryDirectory() as folder:

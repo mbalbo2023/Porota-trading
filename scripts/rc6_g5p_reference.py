@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 ROOT=Path(__file__).absolute().parents[1]
@@ -31,6 +32,17 @@ ORDERED_GATE_RECEIPTS={
 def require(value, reason):
     if not value:
         raise ValueError(reason)
+
+
+def checkout_source_tree(source_sha, claimed_tree, *, repo_root=ROOT):
+    """Resolve the PR event's absent tree from its exact checked-out Source."""
+    row=subprocess.run(['git','-C',str(repo_root),'rev-parse','HEAD','HEAD^{tree}'],
+        check=True,capture_output=True,text=True,timeout=30).stdout.splitlines()
+    require(len(row)==2 and row[0]==source_sha
+            and re.fullmatch(r'[0-9a-f]{40}',row[1]) is not None
+            and claimed_tree in ('',row[1]),
+            'ORDERED_GATE_CHECKOUT_SHA_OR_TREE_REBOUND')
+    return row[1]
 
 
 def proposal(payload_root, *, source_sha, source_tree, run_id, run_attempt,
@@ -176,13 +188,14 @@ def main(argv=None):
             and os.environ.get("GITHUB_REPOSITORY")=="mbalbo2023/Porota-trading"
             and not os.path.lexists(args.json_out),
             "G5P_REFERENCE_FIRST_CANONICAL_ACTIONS_OUTPUT_REQUIRED")
+    source_tree=checkout_source_tree(args.source_sha,args.source_tree)
     if args.stage=="acquire":builder=proposal
     elif args.stage=="certify":builder=material_proposal
     else:builder=lambda *a,**k: ordered_gate_proposal(*a,stage=args.stage,**k)
     value={"schema":"rc6.g5p-reference-proposal.v1",
            "status":"REFERENCE_PROPOSAL_NOT_CERTIFICATION",
            "stage":args.stage,"reference":builder(args.payload_root,source_sha=args.source_sha,
-               source_tree=args.source_tree,run_id=args.run_id,
+               source_tree=source_tree,run_id=args.run_id,
                run_attempt=args.run_attempt,artifact_id=args.artifact_id,
                artifact_digest=args.artifact_digest),
            "G5P_GREEN":False,"G7_authorized":False,
