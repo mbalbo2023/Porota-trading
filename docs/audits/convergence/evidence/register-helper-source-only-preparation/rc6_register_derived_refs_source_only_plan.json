@@ -1,0 +1,124 @@
+{
+  "schema": "rc6.register-derived-refs-source-only-preparation-plan.v1",
+  "scope": "EXTERNAL_HELPER_SOURCE_AND_CONTROLLED_CODEC_ONLY_NO_ROOT_MUTATION_OR_NATIVE_GOV_BENCH_EXECUTION",
+  "source_selection": {
+    "stable_source_S": null,
+    "stable_tree_T": null,
+    "waiting_for_ROOT_explicit_stable_source": true,
+    "moving_ROOT_d9_metadata_read_is_not_final_source_selection": true
+  },
+  "schemas": {
+    "compact_register": "rc6.remediation-register.v2",
+    "derived_ref": "rc6.remediation-derived-ref.v1",
+    "ROOT_supplement": "rc6.root-supplemental-named-finding-bindings.v1"
+  },
+  "cli": {
+    "generate": [
+      "python",
+      "/tmp/rc6_remediation_register_generate.py",
+      "--repo",
+      "ROOT_REPO",
+      "--source",
+      "FULL_STABLE_SOURCE_S_SHA",
+      "--layout",
+      "derived-ref",
+      "--out",
+      "/tmp/RC6_SOURCE_S_REGISTER.json"
+    ],
+    "verify_existing_external": [
+      "python",
+      "/tmp/rc6_remediation_register_generate.py",
+      "--repo",
+      "ROOT_REPO",
+      "--source",
+      "FULL_STABLE_SOURCE_S_SHA",
+      "--verify-refs",
+      "/tmp/RC6_SOURCE_S_REGISTER.json"
+    ],
+    "ROOT_supplement": [
+      "python",
+      "/tmp/rc6_root_supplemental_named_findings_generate.py",
+      "--repo",
+      "ROOT_REPO",
+      "--source",
+      "FULL_STABLE_SOURCE_S_SHA",
+      "--out",
+      "/tmp/ROOT_SUPPLEMENTAL_NAMED_FINDING_BINDINGS_SOURCE_S.json"
+    ]
+  },
+  "preservation_contract": {
+    "original_catalog_ids": "Exactly E001 through E210, all objects/fields literal and unchanged",
+    "original_RAW": "Exact immutable Git bytes/modes with original capture source/environment/count/scope unchanged",
+    "derived_only": [
+      "added metadata copies",
+      "added current file bindings",
+      "added repeated execution lists"
+    ],
+    "all_refs": "Resolve full source SHA/tree/blob/mode/SHA256/bytes and exact derived value hashes; missing or changed members reject",
+    "gzip": "Exact known .xml.gz single stream CRC/EOF, no concatenation/trailing bytes, 32MiB decoded bound; preserve compressed/uncompressed digest/bytes and declared mtime0",
+    "no_zero_PASS_for_missing_gzip": true,
+    "receipt_case_counts_never_summed": true,
+    "raw_ref_shaped_values_are_literal": true,
+    "signed_zero_and_scalar_types_preserved": true
+  },
+  "ROOT_supplement_contract": {
+    "exact_root_named_membership": true,
+    "exact_upstream_owner_membership": false,
+    "upstream_actual_index_absence_verified": true,
+    "old_owner_path_workstream_and_RAW_scope_preserved": true,
+    "new_original_requirement_or_attack": false,
+    "closure_explicit_scope_required": "ROOT_INTEGRATION_SUPPLEMENTAL_NAMED_FINDING_BINDINGS",
+    "versioned_path_future": "docs/audits/convergence/ROOT_SUPPLEMENTAL_NAMED_FINDING_BINDINGS.json"
+  },
+  "controlled_diagnostic": {
+    "driver": "/tmp/rc6_register_derived_refs_source_only_controls.py",
+    "receipt": "/tmp/rc6_register_derived_refs_source_only_controls.json",
+    "control_count": 30,
+    "native_tests_executed": 0,
+    "product_imports": 0,
+    "controlled_parser_XML_is_not_native_financial_evidence": true,
+    "early_development_correction": "Missing immutable member was initially an untyped FileNotFoundError; normalized to RefResolutionError, not a product RED"
+  },
+  "lightweight_real_RAW_metadata_read": {
+    "receipt": "/tmp/rc6_known_gzip_receipts_d9_source_only.json",
+    "source_sha": "d9e7fb7d567ff745193c125dc9cd8df4e91ec5d6",
+    "recorded_member_counts_separate": [
+      127,
+      12,
+      1
+    ],
+    "own_capture_scope_is_not_ROOT_current_native_execution": true,
+    "new_native_cases_executed": 0
+  },
+  "future_final_gate_sequence_not_yet_executed": [
+    "ROOT stabilizes and authorizes immutable source S/tree T; include exact supplement and closure mapping",
+    "Generate compact output only outside worktrees and verify every reference plus exact v1 documentary expansion",
+    "Compare canonical original E001..E210 objects and per-clause reviewed variants/receipt references with immutable input register",
+    "Inspect raw compressed/uncompressed receipts individually; retain OWN environment/source and real outcomes, do not aggregate",
+    "Publish documentary commit D referencing source S, with no output selfhash or claim of execution on D",
+    "Freeze candidate C after D; canonical raw Gov/FIP/JUnit/image/artifact independently bind C",
+    "Any ROOT source change requires rebind/refreeze and relevant canonical execution; documentary AST counts are never executions"
+  ],
+  "size_plan": {
+    "existing_48a_expanded_bytes": 26136856,
+    "projected_derived_compact_bytes_from_existing_document": [
+      8358330,
+      9514226
+    ],
+    "projection_includes_no_actual_final_v2_size_measurement": true,
+    "full_generator_not_rerun": true,
+    "secondary_32MiB_review_requires_measured_actual_final_size": true
+  },
+  "distribution_boundary": {
+    "resolver_current_backend": "Immutable Git objects",
+    "tablet_without_Git_needs_exact_RAW_members_and_separately_verified_source_inventory": true,
+    "historical_RAW_versions_must_be_preserved": true,
+    "unsigned_manifest_or_missing_member_confers_no_authority": true
+  },
+  "final_frozen_source_sha": null,
+  "final_fip_digest": null,
+  "final_governed_junit_digest": null,
+  "final_artifact_digest": null,
+  "final_material_acceptance": null,
+  "ROOT_files_written": false
+}

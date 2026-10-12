@@ -1,0 +1,290 @@
+{
+  "schema": "rc6.ux-local-integration-receipt.v1",
+  "status": "GREEN_LOCAL_NORMAL_CUT_AWAITING_LARGE_PROJECTION_AND_FINAL_ARTIFACT",
+  "recorded_at": "2026-10-05T03:28:37.456678+00:00",
+  "seed_sha": "0f810c168b0bfb5362148b804f3e15ffd1855610",
+  "dependency_head": "9bda15eff2dc82edf61e110528b1984b2c53df2b",
+  "dependency_source_commits": [
+    "c1337727",
+    "a05e4da2",
+    "efa32b8d",
+    "85dc9353",
+    "beab5a51",
+    "d37d56cc",
+    "24010391",
+    "e950d3d3",
+    "7de2d68b",
+    "f2e6d6bf",
+    "2fb29369",
+    "770fcf30",
+    "ce68413c",
+    "63f5b4f7",
+    "ec9ea4a5",
+    "ab37d007",
+    "b82666db",
+    "a3204c18"
+  ],
+  "own_commit": "Resolve from the Git commit containing this receipt; source blobs are explicit below.",
+  "software": {
+    "python": "3.11.16",
+    "pytest": "9.1.1",
+    "fastapi": "0.141.1",
+    "beautifulsoup4": "4.15.0",
+    "playwright": "1.63.0"
+  },
+  "test_environment": {
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "umask": "022"
+  },
+  "pytest": {
+    "tests": 207,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "junit": "ux-convergence-green.xml",
+    "files": [
+      "tests/test_rc6_dashboard_convergence.py",
+      "tests/test_ws_dash_trader_terminal_08.py",
+      "tests/test_ws_dash_04_full_dashboard_truth.py",
+      "tests/test_ws_dash_05_dashboard_performance.py",
+      "tests/test_rc6_greeks_contract_convergence.py",
+      "tests/test_v161.py",
+      "tests/test_rc6_analysis_bounded_render.py"
+    ]
+  },
+  "browser": {
+    "receipt": "browser-native/browser-gate.json",
+    "status": "GREEN",
+    "canonical_viewport_checks": 294,
+    "legacy_checks": 22,
+    "interaction_checks": 9,
+    "native_contract_checks": 6,
+    "generation_schema": "rc6.shadow-evidence-generation.v2",
+    "generation_id": "3856c65179194ca68791a157a8db5939",
+    "source_cut": "2026-10-05T16:00:00+00:00",
+    "render_ms": {
+      "samples": 331,
+      "p50": 173.64,
+      "p95": 337.41,
+      "max": 614.4
+    },
+    "network": "all HTTP intercepted; native offline PAPER/SHADOW writers; provider_requests=0"
+  },
+  "causality": "Synthetic dated offline fixture; source_cut is not a claim that a live market session occurred.",
+  "guard_mapping": "id-test-mapping.json",
+  "protected_pr344": {
+    "count": 12,
+    "literal_unchanged": 10,
+    "ux_changed": [],
+    "producer_exceptions": [
+      "ROOT_CORE marker full identity",
+      "HISTORY synthetic currency ARS"
+    ],
+    "receipt": "pr344-preservation.json"
+  },
+  "ppi_watch": {
+    "pr": 107,
+    "owned_paths_changed": 0,
+    "runtime_actions": "NOT_CALLED"
+  },
+  "writes": {
+    "broker_real": "NOT_CALLED",
+    "github": "NOT_CALLED",
+    "runtime_host": "NOT_CALLED",
+    "production_databases": "NOT_CALLED",
+    "render_source_sqlite": "NOT_OPENED"
+  },
+  "pending_gates": [
+    "Native 12k catalog/60k observations derived projection: same CURRENT/custody/cut, complete scoped aggregates/pages/search, verification level explicit, render budget and RSS measured.",
+    "Final integrated frozen SHA/tree/artifact import closure, SRE mount/image guards and browser rerun by parent."
+  ],
+  "source_blobs": [
+    {
+      "path": "DASHBOARD_TRUTH_MATRIX_RC6.json",
+      "sha256": "cf7e4ba85ad9e63b677999ae9c263d1b856b1f15626e0fe45fb8295de80644b5",
+      "git_blob": "677fc3406134f7d4f26093f68b56a3a3b12004a4",
+      "bytes": 132725
+    },
+    {
+      "path": "ai_derivatives_engine.py",
+      "sha256": "ea709b1584222bb72aa582297f65be9e8cc099a30d8a4e8099ba0fe2b4284e60",
+      "git_blob": "447b66d50ce238a07aed99088d8e020a86188f7a",
+      "bytes": 29080
+    },
+    {
+      "path": "as_greeks_engine.py",
+      "sha256": "dd4d21dc9c592951e9ca2c74b4b096563c2e9e093f5706c5ed159e3f9eb0d535",
+      "git_blob": "1249557cb9fc3ef6ac9e4c18ff97f47fca6fcc1f",
+      "bytes": 15221
+    },
+    {
+      "path": "o_dashboard.py",
+      "sha256": "cd2527dde6e3d5262909b09a5696ffaae59a92c0aec563447824cc13dc51f991",
+      "git_blob": "e26fcc6c38d26c73cf00bf694fae9ffd0285421f",
+      "bytes": 84076
+    },
+    {
+      "path": "rc6_annual_instrument_analysis.py",
+      "sha256": "76184c97c21b7ff0eb07d5e454a10fc60f0f0620ebd56da5b4e01c90fd69aaa5",
+      "git_blob": "ff534b465773be227d3e275144d7345bea94a632",
+      "bytes": 27911
+    },
+    {
+      "path": "rc6_trader_dashboard/__init__.py",
+      "sha256": "9b2430fdeb6043ef7e91633cbeae77f273dd682bcc18f895ff74bc79d733e6e5",
+      "git_blob": "23146b341c161195ae2fd7961f789d605384e9ce",
+      "bytes": 156
+    },
+    {
+      "path": "rc6_trader_dashboard/components.py",
+      "sha256": "dfb0b823fec0ad827382cd2295c338a459537340d71f4d62f125a9cba5dd05c1",
+      "git_blob": "3b5b0931883e857a8cb90c086b29b09669a1358a",
+      "bytes": 10668
+    },
+    {
+      "path": "rc6_trader_dashboard/datasets.py",
+      "sha256": "d47b983011c32d24bad70b0dc8f15fca01b9d36c2329ea4cd74903bb5cef6e6d",
+      "git_blob": "29c5b2da25da4f73779f6e500e1d484345d10832",
+      "bytes": 23916
+    },
+    {
+      "path": "rc6_trader_dashboard/design_system.py",
+      "sha256": "15659acf999c7053c6c44cc87505dd6069ba50500e49e67e8792909ace0744fb",
+      "git_blob": "7fd8a07142b0ef2947244ba55e63fe83289728b7",
+      "bytes": 14602
+    },
+    {
+      "path": "rc6_trader_dashboard/generation.py",
+      "sha256": "6ab7c07fdb2b5780688bd4720399a0cd3c70e1b1828610e265372fe670ff8519",
+      "git_blob": "6cc751fd9aa99548238bc5b45d797a38b9314385",
+      "bytes": 3920
+    },
+    {
+      "path": "rc6_trader_dashboard/history.py",
+      "sha256": "a80146a30852abd73bcfef935d33230aa3eef362b36e416312a987639c005ccb",
+      "git_blob": "97484401a44d1c0e4326a5b71dce803b8ac1e809",
+      "bytes": 2383
+    },
+    {
+      "path": "rc6_trader_dashboard/navigation.py",
+      "sha256": "29193381d9b826881ffee4af1acccb8d0b39e1c59c3626af7ab557455daf8b04",
+      "git_blob": "5b84629d1e96ece395131464c6409d0612e2b165",
+      "bytes": 4934
+    },
+    {
+      "path": "rc6_trader_dashboard/projection.py",
+      "sha256": "15b554e6e926d4ebea92c6a640643e94fd9d78cc799241c8a6c79504be0d509a",
+      "git_blob": "bed8504a933b2d4f5150e04ca063996892696a69",
+      "bytes": 66336
+    },
+    {
+      "path": "rc6_trader_dashboard/routes.py",
+      "sha256": "bcdd9f7ebafd286843419770d6dea85649e1c5da53f0b26ea66cae13b9af6d33",
+      "git_blob": "887f0540c0baa05a467750fe11f4df95f9eec162",
+      "bytes": 6234
+    },
+    {
+      "path": "rc6_trader_dashboard/shell.py",
+      "sha256": "a7bd9ec2dfc4dbe3298088c4fd9aa2b7829b0be452efe7afa0dae2889de24e87",
+      "git_blob": "110566bb81a222187bf7595cfdea7db9cf9a4292",
+      "bytes": 4520
+    },
+    {
+      "path": "rc6_trader_dashboard/view_common.py",
+      "sha256": "9cda00de8f8801ae9a17e9023d0c741d62eb14e4220fdc6544410b51e98ba1fb",
+      "git_blob": "57407852c41160f260b7fb3dbce7bb77ceadf1ee",
+      "bytes": 10265
+    },
+    {
+      "path": "rc6_trader_dashboard/views_analytics.py",
+      "sha256": "ed1342a1a201b4e738858a647ae19bd9bcb0fbe214ba6ab7aa1fcd891e1809da",
+      "git_blob": "167b8d61b37265c4d5e41b31ef4d7efe0f766960",
+      "bytes": 6777
+    },
+    {
+      "path": "rc6_trader_dashboard/views_home.py",
+      "sha256": "1aaaffee1c17772499a56af29a4016d079984e5e44464a1967b90c466a8d4133",
+      "git_blob": "eef988ee3a68d31ac6f25f05cba8e3ea29c11675",
+      "bytes": 4738
+    },
+    {
+      "path": "rc6_trader_dashboard/views_instruments.py",
+      "sha256": "0d158b0f1fb8cfc533f0e415d1e77ac96734fae56d507421aa588bb859dbe69e",
+      "git_blob": "a9d0d0b9d563a66e2bcd4a7338679fa40706fb8d",
+      "bytes": 2694
+    },
+    {
+      "path": "rc6_trader_dashboard/views_live.py",
+      "sha256": "2ba6ec67c30f8aae43d950be7d083af374658c99d57597b8e687ce8002584cf4",
+      "git_blob": "85a78ef53196a658b169d44cd4afe554c6a3d884",
+      "bytes": 4232
+    },
+    {
+      "path": "rc6_trader_dashboard/views_risk.py",
+      "sha256": "e8e2cf1e5b922cbdddcd4b2ad23fd26e79fb985a98f2e22db2484b914dcc6432",
+      "git_blob": "84ed4b9960215285ef423795ae55d9bbd06de4de",
+      "bytes": 2328
+    },
+    {
+      "path": "rc6_trader_dashboard/views_system.py",
+      "sha256": "3c7a1eb51bd73f9eff7deaa6bd381d2ff4b6bd4d35609ace549828f2434e5cf3",
+      "git_blob": "d8d33fdf4e71f33286b710e4fc10cd0affaf0b95",
+      "bytes": 4442
+    },
+    {
+      "path": "rc6_trader_dashboard/views_trading.py",
+      "sha256": "2aa78a425ebd6eaf4f2221a181b6dedfcce08f3a12090e8aae5c3731c591110e",
+      "git_blob": "630cf356e95396774e9970e1a7cbf0d04b914854",
+      "bytes": 4819
+    },
+    {
+      "path": "rc6_trader_dashboard/views_universe.py",
+      "sha256": "3945f394809e42a1c9480fda18f8a0f9eb37b476e39c7564030377375526ec44",
+      "git_blob": "fa4cd9fea420f3850fff3fbecb390e22f945604f",
+      "bytes": 2393
+    },
+    {
+      "path": "scripts/rc6_dashboard_route_inventory.py",
+      "sha256": "e7b74c46afd4ee949c667492ce61db46939ccd1dd2b9d8e2fc26f61c9425a2f8",
+      "git_blob": "3c356a65bb61fff5544511582633fa9c308e76e3",
+      "bytes": 15135
+    },
+    {
+      "path": "tests/ci_trader_terminal_browser.py",
+      "sha256": "bd5c3d2a0d9d19a83fe612559cdf1e5a957ea8eb1804c0eb9e2ffd89e534961b",
+      "git_blob": "79c685e10236cdab7a329cc5e114adc26651c3c8",
+      "bytes": 10806
+    },
+    {
+      "path": "tests/rc6_dashboard_native_fixture.py",
+      "sha256": "440e72c65cd4f2ef971e20c38749ebdf96ebfe54e3ac507271bbd5fc47a3bd5d",
+      "git_blob": "fa5f840aecb1582664305bd2df83d20c99dedf33",
+      "bytes": 5546
+    },
+    {
+      "path": "tests/test_rc6_dashboard_convergence.py",
+      "sha256": "115af5328d75cb5c42213aac13f00b162edcbc052000335010848f463b1b23aa",
+      "git_blob": "9a9cb510484d34afdb7994e18c613928d3464634",
+      "bytes": 25975
+    },
+    {
+      "path": "tests/test_rc6_greeks_contract_convergence.py",
+      "sha256": "579c9e8c2481fdaed64847c7e58d83f7c6a300bb34f2a86ed99120e02e24d07a",
+      "git_blob": "e459a3b788628a8e2e0885e3eae2809f8c97ef23",
+      "bytes": 3620
+    },
+    {
+      "path": "tests/test_v161.py",
+      "sha256": "6fb2932fc88736f8d169d02ab3afc0bdb0994c791637bbce04e17fac6003548b",
+      "git_blob": "b5ab11f8d258cc42c487807532a07aef7b3c1403",
+      "bytes": 9441
+    },
+    {
+      "path": "tests/test_ws_dash_trader_terminal_08.py",
+      "sha256": "0df1d30f351af3b2a56b0104f4467a473c1a341b0797c42e6cff5a608daaa268",
+      "git_blob": "f000c465a265fc2de63b9b9a55824e88b3fd3e37",
+      "bytes": 26502
+    }
+  ]
+}

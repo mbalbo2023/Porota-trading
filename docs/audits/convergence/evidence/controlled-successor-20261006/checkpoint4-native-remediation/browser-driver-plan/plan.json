@@ -1,0 +1,337 @@
+{
+  "PAPER_SHADOW_ONLY": true,
+  "PPI_Watch_untouched": true,
+  "active_closure_validation": {
+    "bytes": 5153,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/active-closure-validation.json",
+    "sha256": "e793f9132f2b56cdaf7a6ac855714397f41714fc5ca0cd1174b334fdbe28426b"
+  },
+  "browser_BIG_Gov_executed": false,
+  "browsers_downloaded": false,
+  "contract_files_read": [
+    {
+      "bytes": 23894,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/tests/rc6_browser_ipc.py",
+      "sha256": "fcfd4f3e15493a1b866095ae4bb2795ea7623382faca2db42c4e0878e54f0f69"
+    },
+    {
+      "bytes": 17166,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/tests/ci_rc6_projection_large_browser.py",
+      "sha256": "2bfc11b4b75a46a46f8ae6d57ace97a08d18dbbb287f604eeed09c71852b5ff9"
+    },
+    {
+      "bytes": 20883,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/requirements.lock.txt",
+      "sha256": "c521c7503b2930290aa7acb7e549750d761ba36d74849d0981d91dc5e285d6ce"
+    },
+    {
+      "bytes": 458,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/requirements.build.lock.txt",
+      "sha256": "99580ecdbe0eda85a1894ddd4d8cd41aab94da5c40035668c67092c28092344b"
+    }
+  ],
+  "development_disk_observation_not_install_approval": {
+    "available_bytes": 24457347072,
+    "available_inodes": 1936143,
+    "device": 27,
+    "selected_wheel_compressed_total_bytes": 48434718
+  },
+  "four_distribution_lock": {
+    "bytes": 410,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/browser-driver.cp311-linux-x86_64.lock.txt",
+    "sha256": "2089301b3326405b4158363811903de75b416d03529409a5e29f242afe71bd7c"
+  },
+  "installed_environment_created": false,
+  "metadata_evidence": [
+    {
+      "bytes": 8431,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/official-metadata-receipt.json",
+      "sha256": "f1b44ec1cbcb60f2cc47c0688d4041ee6e5e29397a3df79f05530307a70221b3"
+    },
+    {
+      "bytes": 6258,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/selected-wheel-metadata.json",
+      "sha256": "7a7d55dddc7c247942cb598f4f406ee42154286bae70ecd35205ed7bf0e5841f"
+    },
+    {
+      "bytes": 351,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/playwright-v1.62.0-official-tag-ref.json",
+      "sha256": "f873a2d93b99d6cef5baba8d5b25af8f1419b355ae6706523ef0f40862fa3bad"
+    }
+  ],
+  "no_Droplet_access_or_deploy": true,
+  "no_secrets_headers_or_credentials_recorded": true,
+  "official_browser_metadata": {
+    "binary_digest_binding_pending_until_download": true,
+    "browsers_json": {
+      "bytes": 1780,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/playwright-browsers.json",
+      "sha256": "f306eed529599b1eaf2f8a85db9de2b23e1a3fe36c2b66434b7c9434fb627a99"
+    },
+    "bundled_node_version_pending_actual_wheel_not_system_node": "core engines >=20; bundled normal Node must be witnessed after wheel installation",
+    "chromium_install_payloads": [
+      {
+        "browserVersion": "151.0.7922.34",
+        "installByDefault": true,
+        "name": "chromium",
+        "revision": "1234",
+        "title": "Chrome for Testing"
+      },
+      {
+        "browserVersion": "151.0.7922.34",
+        "installByDefault": true,
+        "name": "chromium-headless-shell",
+        "revision": "1234",
+        "title": "Chrome Headless Shell"
+      },
+      {
+        "installByDefault": true,
+        "name": "ffmpeg",
+        "revision": "1011"
+      }
+    ],
+    "core_package": {
+      "bytes": 876,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/playwright-core-package.json",
+      "sha256": "4556ebbf21a31c5e8dabb49c991ec291c5f00ffcad8b18cda45e4070b8a473bd"
+    },
+    "immutable_commit": "e3950d9c140d007bd52853b45813c6274b24e36f",
+    "installed_driver_browsers_json_verified": false,
+    "tag": "v1.62.0"
+  },
+  "official_distributions": [
+    {
+      "metadata_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/playwright-1.62.0-py3-none-manylinux1_x86_64.whl.METADATA",
+      "metadata_sha256": "a1443e21066f73be70ae0f5c21f6c61a830776104052e281ef5559475377071e",
+      "name": "playwright",
+      "official_metadata_url": "https://files.pythonhosted.org/packages/43/6b/b24aebc2b04bffcb342bccf96e287c78b363e1615bed5cea97500cc0393a/playwright-1.62.0-py3-none-manylinux1_x86_64.whl.metadata",
+      "requires_dist": [
+        "pyee<14,>=13",
+        "greenlet<4.0.0,>=3.1.1"
+      ],
+      "requires_python": ">=3.10",
+      "version": "1.62.0",
+      "wheel": {
+        "core_metadata": {
+          "sha256": "a1443e21066f73be70ae0f5c21f6c61a830776104052e281ef5559475377071e"
+        },
+        "dist_info_metadata": null,
+        "filename": "playwright-1.62.0-py3-none-manylinux1_x86_64.whl",
+        "sha256": "ba33bae6a13b3d9d354c751cb618af357d20fe1d57767cbcce52079bbef17ad3",
+        "size": 47748926,
+        "upload_time_iso_8601": "2026-07-31T17:00:56.438925Z",
+        "url": "https://files.pythonhosted.org/packages/43/6b/b24aebc2b04bffcb342bccf96e287c78b363e1615bed5cea97500cc0393a/playwright-1.62.0-py3-none-manylinux1_x86_64.whl",
+        "yanked": false
+      }
+    },
+    {
+      "metadata_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/pyee-13.0.1-py3-none-any.whl.METADATA",
+      "metadata_sha256": "7512d063d60cb405124a6c5fdd2c688d78a4c6b6841b8eeb00a59474ef59d43c",
+      "name": "pyee",
+      "official_metadata_url": "https://files.pythonhosted.org/packages/a0/c4/b4d4827c93ef43c01f599ef31453ccc1c132b353284fc6c87d535c233129/pyee-13.0.1-py3-none-any.whl.metadata",
+      "requires_dist": [
+        "typing-extensions",
+        "build; extra == \"dev\"",
+        "flake8; extra == \"dev\"",
+        "flake8-black; extra == \"dev\"",
+        "pytest; extra == \"dev\"",
+        "pytest-asyncio; python_version >= \"3.4\" and extra == \"dev\"",
+        "pytest-trio; python_version >= \"3.7\" and extra == \"dev\"",
+        "black; extra == \"dev\"",
+        "isort; extra == \"dev\"",
+        "jupyter-console; extra == \"dev\"",
+        "mkdocs; extra == \"dev\"",
+        "mkdocs-include-markdown-plugin; extra == \"dev\"",
+        "mkdocstrings[python]; extra == \"dev\"",
+        "mypy; extra == \"dev\"",
+        "sphinx; extra == \"dev\"",
+        "toml; extra == \"dev\"",
+        "tox; extra == \"dev\"",
+        "trio; extra == \"dev\"",
+        "trio; python_version > \"3.6\" and extra == \"dev\"",
+        "trio-typing; python_version > \"3.6\" and extra == \"dev\"",
+        "twine; extra == \"dev\"",
+        "twisted; extra == \"dev\"",
+        "validate-pyproject[all]; extra == \"dev\""
+      ],
+      "requires_python": ">=3.8",
+      "version": "13.0.1",
+      "wheel": {
+        "core_metadata": {
+          "sha256": "7512d063d60cb405124a6c5fdd2c688d78a4c6b6841b8eeb00a59474ef59d43c"
+        },
+        "dist_info_metadata": null,
+        "filename": "pyee-13.0.1-py3-none-any.whl",
+        "sha256": "af2f8fede4171ef667dfded53f96e2ed0d6e6bd7ee3bb46437f77e3b57689228",
+        "size": 15659,
+        "upload_time_iso_8601": "2026-02-14T21:12:26.263088Z",
+        "url": "https://files.pythonhosted.org/packages/a0/c4/b4d4827c93ef43c01f599ef31453ccc1c132b353284fc6c87d535c233129/pyee-13.0.1-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    {
+      "metadata_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/greenlet-3.5.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.METADATA",
+      "metadata_sha256": "16de87de070796e2e1f18019f963c3ba5972bb9bfca1b856b83096bf73c61f38",
+      "name": "greenlet",
+      "official_metadata_url": "https://files.pythonhosted.org/packages/51/2d/f2c928218ac52f26d7a2c188c171d1b7e728b23782cb3347e7b4fce1493a/greenlet-3.5.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata",
+      "requires_dist": [
+        "Sphinx; extra == \"docs\"",
+        "furo; extra == \"docs\"",
+        "objgraph; extra == \"test\"",
+        "psutil; extra == \"test\"",
+        "setuptools; extra == \"test\""
+      ],
+      "requires_python": ">=3.10",
+      "version": "3.5.5",
+      "wheel": {
+        "core_metadata": {
+          "sha256": "16de87de070796e2e1f18019f963c3ba5972bb9bfca1b856b83096bf73c61f38"
+        },
+        "dist_info_metadata": null,
+        "filename": "greenlet-3.5.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "74cc6df89ec5302337adc9cf096221cbed2510fd444b0e0f1586cf0470740864",
+        "size": 624562,
+        "upload_time_iso_8601": "2026-08-10T13:40:48.064926Z",
+        "url": "https://files.pythonhosted.org/packages/51/2d/f2c928218ac52f26d7a2c188c171d1b7e728b23782cb3347e7b4fce1493a/greenlet-3.5.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+        "yanked": false
+      }
+    },
+    {
+      "metadata_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/typing_extensions-4.16.0-py3-none-any.whl.METADATA",
+      "metadata_sha256": "b05084ca1d50879865178d9fff9fabeab61bdfb1f361bfbde95421ffc8f9be46",
+      "name": "typing_extensions",
+      "official_metadata_url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl.metadata",
+      "requires_dist": [],
+      "requires_python": ">=3.9",
+      "version": "4.16.0",
+      "wheel": {
+        "core_metadata": {
+          "sha256": "b05084ca1d50879865178d9fff9fabeab61bdfb1f361bfbde95421ffc8f9be46"
+        },
+        "dist_info_metadata": null,
+        "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+        "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+        "size": 45571,
+        "upload_time_iso_8601": "2026-07-02T08:40:04.659120Z",
+        "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+        "yanked": false
+      }
+    }
+  ],
+  "output_root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb",
+  "prerequisites_before_LARGE_gate": [
+    "A NEW frozen rawGit whole Source SHA/tree and complete no-overlay index, plus fresh separate exact157 PRODUCT interpreter proof",
+    "Canonical native BIG must have full OPEN generation completed at original12000catalog/60000observation/5positions, budgets and all original kernel/custody/import/resource guards; no PRE/partial/diagnostic dataset",
+    "Source/data physical custody baseline and exact pointers/roles before browser; execution must close real process groups/children before finalread; original render1.0s/IPC4MiB budgets intact",
+    "Use unmodified tests/ci_rc6_projection_large_browser.py through normal driver interpreter, --product-python exact locked157 interpreter and --index complete frozen index; no diagnostic flags",
+    "Retain complete screenshots/render/family/health/interaction evidence and actual environment/source/kernel/digest outputs; no GREEN claim from plan/metadata only"
+  ],
+  "prerequisites_before_install": [
+    "Root authorization for fresh external DRIVER/wheelhouse/browser cache and CPU/IO slot; no overlapping writer or active measured gate",
+    "New paths owned uid with0700 directories, no aliases/hardlinks to Source/PRODUCT/data/cache/sys; create exclusively; fresh space and inode readback",
+    "Select exact CPython3.11Linux x86_64/glibc wheels above; verify downloaded whole-wheel SHA256 against official pin before installing",
+    "Create driver venv --without-pip using the normal CPython3.11 base; external installer may install four wheels offline with --no-index --no-deps --require-hashes; PRODUCT157 unchanged",
+    "After install, validate exact4 installed distributions, actual METADATA/RECORD/files and module origins; bundled Node/greenlet bytes pinned. Metadata alone does not qualify installed artifact",
+    "Read actual installed playwright/driver/package/browsers.json and core package version. Require byte/revision/version equality with official metadata above; any mismatch blocks installation handoff",
+    "Root authorization before playwright install chromium; external PLAYWRIGHT_BROWSERS_PATH only, default packaged browser/headless-shell; no executable_path/channel/system Chromium/Node override or globals rebinding",
+    "Verify native OS runtime libraries using downloaded binary and ldd; if missing, report blocked and use approved canonical setup instead of guessing launch success",
+    "Save actual downloaded/extracted browser artifact digests, executable hashes/modes and revision bindings; official JSON has no complete binary digest proof"
+  ],
+  "proposed_commands_NOT_EXECUTED": [
+    {
+      "argv": [
+        "<CPYTHON311_BASE>",
+        "-I",
+        "-B",
+        "-m",
+        "venv",
+        "--without-pip",
+        "<NEW_EXTERNAL_DRIVER_ENV>"
+      ],
+      "stage": "freshdriver"
+    },
+    {
+      "argv": [
+        "<EXTERNAL_PINNED_INSTALLER_PYTHON>",
+        "-I",
+        "-B",
+        "-m",
+        "pip",
+        "--python",
+        "<NEW_EXTERNAL_DRIVER_ENV>/bin/python",
+        "install",
+        "--no-index",
+        "--find-links",
+        "<NEW_VERIFIED_WHEELHOUSE>",
+        "--no-deps",
+        "--require-hashes",
+        "--only-binary=:all:",
+        "--no-compile",
+        "-r",
+        "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/browser-driver.cp311-linux-x86_64.lock.txt"
+      ],
+      "stage": "offline4wheelinstall"
+    },
+    {
+      "argv": [
+        "<NEW_EXTERNAL_DRIVER_ENV>/bin/python",
+        "-I",
+        "-B",
+        "-m",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "explicit_environment": {
+        "PLAYWRIGHT_BROWSERS_PATH": "<NEW_EXTERNAL_BROWSER_CACHE>"
+      },
+      "stage": "browserinstall_separate_authorization"
+    },
+    {
+      "argv": [
+        "<NEW_EXTERNAL_DRIVER_ENV>/bin/python",
+        "-I",
+        "-B",
+        "<NEW_FROZEN_SOURCE>/tests/ci_rc6_projection_large_browser.py",
+        "--product-python",
+        "<EXACT_FROZEN_PRODUCT157>/bin/python",
+        "--product-python-version",
+        "3.11",
+        "--index",
+        "<COMPLETE_SOURCE_INDEX>",
+        "--database",
+        "<COMPLETED_NATIVE_BIG_DATABASE>",
+        "--root",
+        "<COMPLETED_NATIVE_OPEN_ROOT>",
+        "--output",
+        "<NEW_EXTERNAL_BROWSER_EVIDENCE>"
+      ],
+      "explicit_environment": {
+        "PLAYWRIGHT_BROWSERS_PATH": "<PINNED_EXTERNAL_BROWSER_CACHE>"
+      },
+      "stage": "LARGE_after_completed_OPEN"
+    }
+  ],
+  "real_orders_sent": 0,
+  "role": "BROWSER_DRIVER",
+  "schema": "rc6.browser-driver-official-pin-plan.v1",
+  "separation_contract": {
+    "driver_expected_count": 4,
+    "driver_expected_versions": {
+      "greenlet": "3.5.5",
+      "playwright": "1.62.0",
+      "pyee": "13.0.1",
+      "typing-extensions": "4.16.0"
+    },
+    "driver_may_execute_product_runtime_modules": false,
+    "driver_role_receipt": "environment_receipt(product=False) records driver metadata without requiring PRODUCT157 closure",
+    "interception_scope": "page routes in browser context, not an attestation of binary/kernel/transitive network isolation",
+    "product_env_reuse_or_playwright_injection_allowed": false,
+    "product_role_receipt": "environment_receipt(product=True) requires exact157 locked distributions, canonical product executable/prefix and supported interpreter",
+    "transport": "bounded stdio IPC; browser http://terminal.test routes intercepted by context.route(**/*) and fulfilled from native product.render; no HTTP server/loopback listener required",
+    "unchanged_guards": "driver Python network/SQLite denied; unexpected resource abort; product provider/source custody/PAPER guards intact; any DENIED attempt retains RED"
+  },
+  "source_or_PRODUCT157_modified": false,
+  "state": "PROPUESTO_METADATA_VALIDATED_INSTALL_NOT_AUTHORIZED",
+  "wheels_downloaded": false
+}

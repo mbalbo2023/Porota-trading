@@ -1,0 +1,43 @@
+{
+  "actual_cleanup_seconds": 6.388399924617261e-05,
+  "actual_launch_to_pid_reap_wall_seconds": 16.831398368998634,
+  "checks": {
+    "actual_owned_postmain_echild": true,
+    "exact_main_pid_reaped": true,
+    "exclusive_prespan_echild": true,
+    "native_main_return1_preserved": true,
+    "no_adopted_or_signals": true,
+    "no_owned_residual": true,
+    "no_supervisor_errors": true,
+    "not_late_or_wait4zero": true,
+    "not_timed_out": true,
+    "pgid_absent_after": true,
+    "pgid_absent_at_main": true,
+    "restoration_attempted_on_all_activated_paths": true
+  },
+  "kernel_control": {
+    "all11_raw_stats_unchanged_during_read": true,
+    "bytes": 2901,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/raw-slow/kernel-supervision.json",
+    "sha256": "c9b1cefddffa353e570c7551c1ae115b85878a98a7c0a889b3e0bc25bbc44208",
+    "stat11": {
+      "st_atime_ns": 1791318099948079473,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791318099952047753,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706442,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318099952047753,
+      "st_nlink": 1,
+      "st_size": 2901,
+      "st_uid": 1000
+    }
+  },
+  "native_exitcode": 1,
+  "original_native_red_not_reclassified": true,
+  "schema": "rc6.native-direct-big.postfin-read-authorization.v1",
+  "scope": "READ_AUTHORIZATION_FROM_ACTUAL_OWNED_KERNEL_CONTROL_ONLY_NOT_NATIVE_BUSINESS_GREEN",
+  "source_data_or_raw_payload_reads_allowed_after_this_actual_kernel_verification": true,
+  "utc": "2026-10-06T20:23:39.872167+00:00"
+}

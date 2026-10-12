@@ -1,0 +1,23 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "command": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/pair_owned_launch_v3.py",
+    "--child",
+    "TUPLE_component"
+  ],
+  "cwd": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source",
+  "gate_qualified": false,
+  "maximum_rss_bytes": 2147483648,
+  "maximum_total_evidence_bytes": 134217728,
+  "one_invocation_only": true,
+  "original_copy_and_consumer_deadline_seconds": 0.5,
+  "outer_management_seconds": 60,
+  "owned_cleanup_seconds": 5,
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "status": "DIAGNOSTIC_RED",
+  "variant": "TUPLE_component"
+}

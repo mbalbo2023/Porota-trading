@@ -1,0 +1,36 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-B",
+    "-u",
+    "/tmp/rc6-source-capture-original-flag-f8895434-157-raw/run_original_flag_guard.py"
+  ],
+  "cwd": "/tmp/rc6-v3-big-f8895434-157-source",
+  "diagnostic_only": true,
+  "distribution_count": 157,
+  "external_guard_file": "/tmp/rc6-source-capture-original-flag-f8895434-157-raw/test_rc6_source_capture_deadlines.py",
+  "external_guard_sha256": "94c573c130a29d5fef5800b85bbcfd6723d102286a94e5008f2e2658681b2657",
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "preflight_exact_names_versions": true,
+  "product_overlay_count": 0,
+  "pytest_arguments": [
+    "/tmp/rc6-source-capture-original-flag-f8895434-157-raw/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+    "-q",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "--import-mode=importlib",
+    "--junitxml=/tmp/rc6-source-capture-original-flag-f8895434-157-raw/original-native-guards.xml"
+  ],
+  "runtime_validated": false,
+  "schema": "rc6.source-capture-original-guard-replay.v1",
+  "source_files": 1557,
+  "source_index_sha256": "7409910d6a77248e455d3051247cb88cad830d962d9bda16583c34fad36f39a3",
+  "source_sha": "f8895434e216a5d8e9f13c833f1419e229a162bd",
+  "source_tree": "0b010d334b8d6b9d16a869eb1b46e9899c0ef1d9",
+  "tar_sha256": "3e205bd2bbbad9d50226d1501ae8467cbfd6cbba7a25ae8250486f2f23563386",
+  "umask": "077"
+}

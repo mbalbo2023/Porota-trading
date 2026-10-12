@@ -1,0 +1,101 @@
+{
+  "actual_extracted_main_gate_accepted": true,
+  "actual_gate_rejection_reason": null,
+  "actual_source_function_receipt": {
+    "command": [
+      "/workspace/venv_rc6_frozen311/bin/python",
+      "-I",
+      "-B",
+      "-S",
+      "-c",
+      "import subprocess,sys; subprocess.Popen([sys.executable,\"-I\",\"-B\",\"-S\",\"-c\",\"import time; time.sleep(5)\"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)"
+    ],
+    "cpu_system_seconds": 0.0072759999999999995,
+    "cpu_user_seconds": 0.018701,
+    "peak_rss_bytes": 25264128,
+    "pid": 243413,
+    "returncode": 0,
+    "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+    "timed_out": false,
+    "wall_seconds": 0.10077541100326926
+  },
+  "baseline_gap": {
+    "kernel_wait4_zero_alive_adopted_child": true,
+    "main_returncode": 0,
+    "old_gate_accepted": true,
+    "owned_group_present_after_main_return": true,
+    "scope": "ACTUAL_SYNTHETIC_F4_PROCESS_CUSTODY_GAP_NOT_GOV_OR_PRODUCT_NATIVE_RED"
+  },
+  "control_errors": [],
+  "controlled_injections": [],
+  "driver_own_cleanup_observations": [
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "before_control_case"
+    },
+    {
+      "outcome": "SENT",
+      "pgid": 243413,
+      "phase": "owned_control_cleanup",
+      "signal": 15
+    },
+    {
+      "cpu_system_seconds": null,
+      "cpu_user_seconds": null,
+      "exit_code": null,
+      "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+      "peak_rss_bytes": null,
+      "phase": "owned_control_cleanup",
+      "pid": 0
+    },
+    {
+      "outcome": "SENT",
+      "pgid": 243413,
+      "phase": "owned_control_cleanup",
+      "signal": 15
+    },
+    {
+      "cpu_system_seconds": 0.004438999999999999,
+      "cpu_user_seconds": 0.0047469999999999995,
+      "exit_code": -15,
+      "outcome": "PID_REAPED",
+      "peak_rss_bytes": 14143488,
+      "phase": "owned_control_cleanup",
+      "pid": 243414
+    },
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "owned_control_cleanup"
+    },
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "after_control_case"
+    }
+  ],
+  "driver_own_cleanup_result": {
+    "absolute_management_deadline_monotonic": 88171.275113744,
+    "all_owned_pgids_absent": true,
+    "errors": [],
+    "kernel_exhaustion_verified": true,
+    "owned_group_states": [
+      {
+        "group_absent": true,
+        "pid": 243413
+      }
+    ],
+    "remaining_owned_child_state": "NONE_KERNEL_ECHILD",
+    "scope": "NO_FOREIGN_OR_INDIVIDUAL_PID_SIGNALS_ONLY_TRACKED_POPEN_PGIDS",
+    "wall_seconds": 0.020273179005016573
+  },
+  "owned_popen_registry": [
+    {
+      "group_absent": true,
+      "pid": 243413,
+      "returncode": 0
+    }
+  ],
+  "status": "GREEN"
+}

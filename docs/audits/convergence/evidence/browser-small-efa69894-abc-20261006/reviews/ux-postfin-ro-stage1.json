@@ -1,0 +1,1245 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "big_acceptance_complete": false,
+  "checks": {
+    "all10_families_pagination_nonempty": true,
+    "browser_full_source2398_and_imports": true,
+    "browser_native_GREEN": true,
+    "canonical294_alias22_widths6": true,
+    "committed_four_roles_honest_scope": true,
+    "driver158_product311157": true,
+    "exact_only_external_non_atime_blocks_delta": true,
+    "external_custody_RED_retained": true,
+    "health_B_conservative_authority_scope": true,
+    "health_B_native_and_external_GREEN": true,
+    "health_B_native_custody_source_zero_calls": true,
+    "health_B_under2_current_real_fourroles": true,
+    "health_actual_kernel_clean": true,
+    "interactions10_native_contract8_no_findings": true,
+    "native382_response_bounds": true,
+    "native_primary_custody_and_zero_calls": true,
+    "normal_actual_kernel_clean": true,
+    "prepared_MULTIFAMILY318_full5": true,
+    "prepared_actual10_ticks_coherent_cut": true,
+    "prepared_dlr_exact": true,
+    "prepared_launcher_finalized_under90": true,
+    "prepared_zero_provider_authority": true
+  },
+  "external_code_custody_diff": {
+    "code_atime_changes_observed": 124,
+    "non_atime": [
+      [
+        "/archive/stat/blocks",
+        350560,
+        350568
+      ]
+    ],
+    "policy": "blocks mismatch retained RED; code atimes excluded by original explicit policy only, never restored"
+  },
+  "failed_review_checks": [],
+  "health_B": {
+    "health_observation": {
+      "consumer_state": "GREEN",
+      "health_authority": "NO_VERIFICADO",
+      "native_result": {
+        "candidate_tree_sha": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+        "child_pid": 244442,
+        "child_restarts": 0,
+        "child_spawn_failures": 0,
+        "configuration_fingerprint": "25d27608a7062189ee3e638d402332ed1087c2014936b439fce89e2d780e7dea",
+        "evidence_custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION",
+        "evidence_verification_level": "WIRE_AND_PROJECTION_SEMANTICS",
+        "generation_as_of": "2026-10-06T01:16:18.114310+00:00",
+        "generation_id": "79eaa31db32d4da2aee12b44cf02fa7c",
+        "generation_phase": "CLOSED",
+        "provider_capacity_open": "NO_VERIFICADO",
+        "readiness": "CLOSED_NON_OPERATIONAL",
+        "real_orders_sent": 0,
+        "real_routes": "NOT_CALLED",
+        "schema": "rc6.shadow-post-start-health.v1",
+        "sequence": 1,
+        "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+        "status": "GREEN",
+        "verified_roles": [
+          "checkpoint",
+          "projection",
+          "report",
+          "status"
+        ]
+      },
+      "request_wall_seconds_including_ipc": 0.03509148799639661,
+      "runtime_alive_claim": true
+    },
+    "post_cleanup_live_claim": false,
+    "source_and_custody_scope": "Separate actual fixture and epoch; not transferred into normalC or BIG",
+    "source_cut": "2026-10-06T01:16:18.114310+00:00",
+    "status": "GREEN"
+  },
+  "input_audit": [
+    {
+      "after": {
+        "st_atime_ns": 1791249761812405511,
+        "st_blocks": 3216,
+        "st_ctime_ns": 1791249761815263241,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 943114,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249761815263241,
+        "st_nlink": 1,
+        "st_size": 1645418,
+        "st_uid": 1000
+      },
+      "all11_unchanged": true,
+      "before": {
+        "st_atime_ns": 1791249761812405511,
+        "st_blocks": 3216,
+        "st_ctime_ns": 1791249761815263241,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 943114,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249761815263241,
+        "st_nlink": 1,
+        "st_size": 1645418,
+        "st_uid": 1000
+      },
+      "bytes": 1645418,
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/browser-gate.json",
+      "sha256": "50663ca72613e74330421a27cd35ac1a8df1e55b71ca8b7211fc7a012a880da6"
+    },
+    {
+      "after": {
+        "st_atime_ns": 1791249380207079297,
+        "st_blocks": 2728,
+        "st_ctime_ns": 1791249380211134321,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 938524,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249380211134321,
+        "st_nlink": 1,
+        "st_size": 1395604,
+        "st_uid": 1000
+      },
+      "all11_unchanged": true,
+      "before": {
+        "st_atime_ns": 1791249380207079297,
+        "st_blocks": 2728,
+        "st_ctime_ns": 1791249380211134321,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 938524,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249380211134321,
+        "st_nlink": 1,
+        "st_size": 1395604,
+        "st_uid": 1000
+      },
+      "bytes": 1395604,
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b/health-live-small/health-gate.json",
+      "sha256": "90cf4da1e01d0d903316f97520db35f809dcf3192e7eea741544375bf18b3755"
+    },
+    {
+      "after": {
+        "st_atime_ns": 1791249762912397796,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791249762914372515,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 835910,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249762914372515,
+        "st_nlink": 1,
+        "st_size": 3580,
+        "st_uid": 1000
+      },
+      "all11_unchanged": true,
+      "before": {
+        "st_atime_ns": 1791249762912397796,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791249762914372515,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 835910,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249762914372515,
+        "st_nlink": 1,
+        "st_size": 3580,
+        "st_uid": 1000
+      },
+      "bytes": 3580,
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/normal-supervision.json",
+      "sha256": "f651aa9ad1ee4c26f74ca32e9877e55efa6d872e501e2fa01a88f22e22668eb1"
+    },
+    {
+      "after": {
+        "st_atime_ns": 1791249762688399366,
+        "st_blocks": 56,
+        "st_ctime_ns": 1791249762689446357,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 835909,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249762689446357,
+        "st_nlink": 1,
+        "st_size": 25554,
+        "st_uid": 1000
+      },
+      "all11_unchanged": true,
+      "before": {
+        "st_atime_ns": 1791249762688399366,
+        "st_blocks": 56,
+        "st_ctime_ns": 1791249762689446357,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 835909,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249762689446357,
+        "st_nlink": 1,
+        "st_size": 25554,
+        "st_uid": 1000
+      },
+      "bytes": 25554,
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/normal-stage.json",
+      "sha256": "8f26f382a9cfffc0ac9e349e315da541c6410dc2530fe4963dab35042ad0955f"
+    },
+    {
+      "after": {
+        "st_atime_ns": 1791249762916397768,
+        "st_blocks": 80,
+        "st_ctime_ns": 1791249762919007026,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 835911,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249762919007026,
+        "st_nlink": 1,
+        "st_size": 37528,
+        "st_uid": 1000
+      },
+      "all11_unchanged": true,
+      "before": {
+        "st_atime_ns": 1791249762916397768,
+        "st_blocks": 80,
+        "st_ctime_ns": 1791249762919007026,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 835911,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249762919007026,
+        "st_nlink": 1,
+        "st_size": 37528,
+        "st_uid": 1000
+      },
+      "bytes": 37528,
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/supervisor-final.json",
+      "sha256": "a9aee76a4922675c074d27784ca1d34c5a50f57fe6e01c98e2a490861f6a6b83"
+    },
+    {
+      "after": {
+        "st_atime_ns": 1791249381043073424,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791249381047045392,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 938527,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249381047045392,
+        "st_nlink": 1,
+        "st_size": 2264,
+        "st_uid": 1000
+      },
+      "all11_unchanged": true,
+      "before": {
+        "st_atime_ns": 1791249381043073424,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791249381047045392,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 938527,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249381047045392,
+        "st_nlink": 1,
+        "st_size": 2264,
+        "st_uid": 1000
+      },
+      "bytes": 2264,
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b/health-supervision.json",
+      "sha256": "1f82d3cc8febee62d4c81218248ed70d30c7588429c8a85001afbe2d39915b9d"
+    },
+    {
+      "after": {
+        "st_atime_ns": 1791249380931074218,
+        "st_blocks": 48,
+        "st_ctime_ns": 1791249380936747847,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 938526,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249380936747847,
+        "st_nlink": 1,
+        "st_size": 22390,
+        "st_uid": 1000
+      },
+      "all11_unchanged": true,
+      "before": {
+        "st_atime_ns": 1791249380931074218,
+        "st_blocks": 48,
+        "st_ctime_ns": 1791249380936747847,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 938526,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249380936747847,
+        "st_nlink": 1,
+        "st_size": 22390,
+        "st_uid": 1000
+      },
+      "bytes": 22390,
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b/health-stage.json",
+      "sha256": "05489b35ae3bb6128b151d1e92ac201f2959a53afe4389e19b6f34e84ec1c802"
+    },
+    {
+      "after": {
+        "st_atime_ns": 1791249633429305348,
+        "st_blocks": 3088,
+        "st_ctime_ns": 1791249633436476598,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 835891,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249633436476598,
+        "st_nlink": 1,
+        "st_size": 1580201,
+        "st_uid": 1000
+      },
+      "all11_unchanged": true,
+      "before": {
+        "st_atime_ns": 1791249633429305348,
+        "st_blocks": 3088,
+        "st_ctime_ns": 1791249633436476598,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 835891,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249633436476598,
+        "st_nlink": 1,
+        "st_size": 1580201,
+        "st_uid": 1000
+      },
+      "bytes": 1580201,
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/normal-source-before.json",
+      "sha256": "0592b4cf004646a651832bbebbf5aba0158161cc1eb9bed92e4e89cee34b3eea"
+    },
+    {
+      "after": {
+        "st_atime_ns": 1791249762672399479,
+        "st_blocks": 3088,
+        "st_ctime_ns": 1791249762673596803,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 835908,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249762673596803,
+        "st_nlink": 1,
+        "st_size": 1580201,
+        "st_uid": 1000
+      },
+      "all11_unchanged": true,
+      "before": {
+        "st_atime_ns": 1791249762672399479,
+        "st_blocks": 3088,
+        "st_ctime_ns": 1791249762673596803,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 835908,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249762673596803,
+        "st_nlink": 1,
+        "st_size": 1580201,
+        "st_uid": 1000
+      },
+      "bytes": 1580201,
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/normal-source-after.json",
+      "sha256": "8eb30077ca14b367a7daa1cf4869568f9a15e7f297eb45da8cd781c2d3338fb1"
+    }
+  ],
+  "native_executions_by_review": 0,
+  "normal": {
+    "alias_checks": 22,
+    "canonical_checks": 294,
+    "external_stage_status": "RED",
+    "external_supervisor_status": "RED",
+    "family_pages": [
+      {
+        "catalog_rows": 35,
+        "cohort_total": 74,
+        "coverage": "THREE_NATIVE_PAGES",
+        "currency_channel_scope_total": 1,
+        "exact_selected_cohort": "fc540fbe4b14460b11bb1b832f7693fadccdfb95197ef62e3fba34d1caae22e7",
+        "family": "ACCIONES",
+        "full_page_traversal_claimed": false,
+        "pages": [
+          {
+            "cohort_ids": [
+              "2755e16d867e3d34823ff4bb9b3e9e8642e24909515eefe3136e4350b7fa8b7c",
+              "00eadc5dc95cf5a767bb0d78ca2072b4a2038710f8c87ae9e441c1b722a97d17",
+              "077a43ff27d2812845ee685c4bff69fc7cd2e0cd77d52a3b6608fd83bc06bf37",
+              "07b8b8e5b3a607e967ce4a6905f00a8284159eef4a8047dd85b06d36cfcd018e",
+              "0c2a8ebe24770d208cbdf90651a9059d9086fd1b02518dcd1978bf6a31d9c5d3",
+              "0c2eabcd11ab0c812534c855a15f09ecb5623c877556acb49b2b7ef9ffcd96f5",
+              "0e926e1dac014770ea62205d0a72afa4ed6dd096448a44b4e2f4b3a6e9bc3b30",
+              "13b27f36c48a3956b50f007b0cd2fed900885c2acd729beb185f70b4b26d1921",
+              "13f9bc86b045a5bce4970ccad07650d90f88ce96adf20cdc961a4c0d7f653630",
+              "15de01312a77fe195f7b2af5bb9b9cb0f333e8b5651acf974236161fac4d159a"
+            ],
+            "offset": 0,
+            "request_wall_seconds_including_ipc_html_json": 0.12347928200324532,
+            "response_json_bytes": 36490,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 74
+          },
+          {
+            "cohort_ids": [
+              "1d1aa61a0e7c52d697afe05c549044d7b1a2b5fd99d88cf1397cc17b32c7731d",
+              "1dc0c25e8853d6be418a1efa3fc74978466fd236fd83f097a77e4cd462ddd642",
+              "23713729150b224fd002bea01da41ade1bac4da4ab6b092d23de3b7b135d1428",
+              "25ba205972da7e7c11693843c36e138fdeb95dd568e15b37f05176d8b4f50114",
+              "2619cee9bb6e553ed80c73224821f9c491380363a7f4ef11c90c5e32eb10f156",
+              "2a2b8a386d5a7f969ee2e2d362a258e35199c046040f497bd267ba0e313572d6",
+              "372cac02a9f2c0b40d9dd2090e424364f9af8cca6e2c625d3cb0e36a9a7a6308",
+              "3733e1edb80ba413fa07067881258c90def10b8c98f47fe911977e7aaa9ff30d",
+              "431f1ca1fe1bc04ecf803102d9ffed92b585555c6d8ccbc7a47ed4d37ac2e6d0",
+              "43c1dca020d10756fbc004b38a473966249cc758d55ec6998cb07f64342c43ec"
+            ],
+            "offset": 10,
+            "request_wall_seconds_including_ipc_html_json": 0.12213466700632125,
+            "response_json_bytes": 36820,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 74
+          },
+          {
+            "cohort_ids": [
+              "ed05fd255ef5650d6ac61f08a6dc40255c9509a9961d9abdae028978fcdbfbe5",
+              "ed24fb4fcbe76750e5d93cd991a921aa9191cfee58c4593619427bf3896b1d58",
+              "effe7c8fe925b8e52f9e9a11f396494620714f4761ae34bd8d283f1cb78d1866",
+              "f1c23c785c16a7a88a64c721964cc7e6dec3edad09275dd0ad79a9ff3bf02f91",
+              "f1dee839424608a1c389d33ce72fe68744e85511dd1543c9bb5e5d1fcbc5f5db",
+              "fa32d2afea5f64c18a36bab07c40ac4a7e86795f0258f1372410248331d515fa",
+              "fb8bdcd7388dc0a96f5dfdf1cfb89d48d813561914d236d07fdbdbc0e7aacabb",
+              "fbe31b5d2b67441096d2f95436e49ba4592e7306d05b86fd3136fa079fd4a2ec",
+              "fc23c84cf74b32ba00164577688bcf709952a6caf498ecdc7bc2853de036ff6e",
+              "fc540fbe4b14460b11bb1b832f7693fadccdfb95197ef62e3fba34d1caae22e7"
+            ],
+            "offset": 64,
+            "request_wall_seconds_including_ipc_html_json": 0.13943556799495127,
+            "response_json_bytes": 36722,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 74
+          }
+        ],
+        "selected_channel": "UNIVERSE_SHADOW",
+        "selected_currency": "ARS",
+        "selected_native_identity": [
+          "T010",
+          "ACCIONES",
+          "A-24HS",
+          "ARS",
+          "BYMA"
+        ]
+      },
+      {
+        "catalog_rows": 35,
+        "cohort_total": 70,
+        "coverage": "THREE_NATIVE_PAGES",
+        "currency_channel_scope_total": 1,
+        "exact_selected_cohort": "ff2fd01d2b70271d4a64346f36e34370e0ee7e893f798eb9a8080d171a498889",
+        "family": "BONOS",
+        "full_page_traversal_claimed": false,
+        "pages": [
+          {
+            "cohort_ids": [
+              "0462932077ae06dc8e92838c47f33b304c773143b0b39ba0bc7776be60e72ef8",
+              "0a83d6e0a190049eeb74659a672e948ee9bfc68f644bf4dae42341180b8febc8",
+              "124674a87919b3399c714226f2307639df36154e9d11f078d31b001b26648e83",
+              "133e9cdb68a723c5b535ca6facb3d5dab4447a3db49da2a4e1ed42985c9845b3",
+              "1950fe095792972c4b3c9000048702ec41f055c9f6c92614082ff031c63b3343",
+              "19694f32415a08cd6baea9aa2230678a3fea82ac96bace3f0c4ca40d109d0c4c",
+              "1dffb36d028521202f4eee17b12795812ec3076ff670041f84c9d416b0f60015",
+              "1e4a71064cdb020f0fcdb69d1bbb76a26e5af68365b73a74946f329d6f957e5c",
+              "23542456297958b64f8b9586bfcd9107ed6a14b627b26442d64258de01404ccf",
+              "23ce48c458f0cb4e321352abd6761c2c5fe4f8b6fb524a06114a0b09141f7696"
+            ],
+            "offset": 0,
+            "request_wall_seconds_including_ipc_html_json": 0.11881694300973322,
+            "response_json_bytes": 34117,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "23cf9d3bc6f4f80cda4dfcebc1bdc3fad808e23558c7e376e27b4c05b8e41f9b",
+              "278528b685d9f281d9ce880e51162dca5ee9f3d3891f180243937d38aa948481",
+              "2bdf8ec10176433ef7f5cc39535eb36a8bfa4ff8b68bc495998713c1a24883e4",
+              "34d948d87974023101aab9050530c664382fad764bdff148c0d8efd0190b3b08",
+              "34f0d9942e71bf674ae947529684eafb0558ea84d9cf71d8fed13c7c2bf8f30d",
+              "36b022578770ba773ae21b3e3ac361d6b475ea5cc083f96bec9446912a5d34c5",
+              "37a5d4e11049e530376cff8503f1f30b39a637f2948d7c4ab8e35ad5cf90c328",
+              "37abd1e8bf46332869f9e24dfd18a511f3191ef4ebf1643b0c38bdadbb364753",
+              "41d94a9dd97bef11b28eae590605e24d3768ec416706d6af9d1e1d8adc0aa830",
+              "460fced413a3984b766bcbb63235394ad70faaeb3f3c4e7ca21b3f91a8e590ba"
+            ],
+            "offset": 10,
+            "request_wall_seconds_including_ipc_html_json": 0.1135607160103973,
+            "response_json_bytes": 34348,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "da4cb4eedf2968f4c2a8e34f84b882c93c8026328b6622f90c7445c2b6f7e1d2",
+              "e2f4847d8eb85fbc56feeba0c1752a09c4134db55518d43a916ca02a45cdd5a4",
+              "e3fdbff6debbfec8582967a935d93f9971644afa183a1fed6485910b1a74512a",
+              "e985625b445114dae3f7abafac42b88d5a796ef45e303fe919d50a07ffdd98c9",
+              "f605b0c0af9e108b85c9cf7a050e71754f2d07ee84cc9c9ef004abcc2c3fd1c9",
+              "f76a7f071b1a03335f16f1384b8ed8f39b341889cdc8a19a4cf4a22e68391393",
+              "fbbc15cee3a9e55c5b62d22fa319cee9d11bdf78f433f781961fc5efbf074d6e",
+              "fc5f004eec88915b41bb994580cc395052fed446d23721ce3435935e3c7aaf68",
+              "fd69400df92427c9fc6755e4b17fce8846c9fb36dfe03e13ea9595078d36e7d7",
+              "ff2fd01d2b70271d4a64346f36e34370e0ee7e893f798eb9a8080d171a498889"
+            ],
+            "offset": 60,
+            "request_wall_seconds_including_ipc_html_json": 0.1352841600019019,
+            "response_json_bytes": 34304,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          }
+        ],
+        "selected_channel": "UNIVERSE_SHADOW",
+        "selected_currency": "ARS",
+        "selected_native_identity": [
+          "BONO015",
+          "BONOS",
+          "A-24HS",
+          "ARS",
+          "BYMA"
+        ]
+      },
+      {
+        "catalog_rows": 35,
+        "cohort_total": 70,
+        "coverage": "THREE_NATIVE_PAGES",
+        "currency_channel_scope_total": 1,
+        "exact_selected_cohort": "fffaf1c532b8d2d1c67e80f6e517c22234df07125fa2db95436a7bbc613b0bf6",
+        "family": "CAUCIONES",
+        "full_page_traversal_claimed": false,
+        "pages": [
+          {
+            "cohort_ids": [
+              "001cd7b1f836f9052e39ebfd59857ac45f47c59adfbc1dbde7b40f8efec9f17d",
+              "093e4d55f804908515291deda9eb491cb92e078bbba0e48868043bc7c37fe44e",
+              "0cd6139a6a7c1b0bffc0e573f62ccf6339ff3495856c0043a2aa51695909149b",
+              "100d5224849b45d3241dc9236a5e53e358243b3d90e9a5e302db4af2d82aeaf1",
+              "150e561618be4583e3c1b56ae037c28e41ceaf8c51919c0889c045da3bffbaac",
+              "17321488f0bd8bc7c1e4ac54244842b39af67eb18104e7489a931813fa3e5d95",
+              "17aca97ecedb6f065699158e440d0aa532a4fbf02c9423764e254b66c2996a0a",
+              "21f1f538a67761372c11ede4c44b4bd543a75434f364af12df8bb0961ddf06e8",
+              "269033a43f3385a236ea947385a584d480230a8ec6be426dba9fd4012105b6a3",
+              "26f5d37d39261d26eb455259b39087a245297d92cb08ef5a82b0730500c65f75"
+            ],
+            "offset": 0,
+            "request_wall_seconds_including_ipc_html_json": 0.11912054198910482,
+            "response_json_bytes": 34381,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "2adac623ca31a959c3e23d914dda08c9e2616098880c4f785609cfbc8ecdec7e",
+              "2debab2cde6c36264a6a44628fbbf0a1f6563f2572a9835cb2c29d7425ba76a2",
+              "31db1277d78397f0229e6a4b3a55537d84240ba9a4bc771d1199afe5b843cd3e",
+              "3427f8ee4aaacfed0681c2cc617deddfa42e06ee17e1cdcddb6fac10a0be08e6",
+              "342eb9175ef0c13749b0dc6045e617e7e8dcef54caed5b8313f1851ab12a0814",
+              "3b37a69dc0542cfce98062061a61ec97b2a3fff195e687a4bb2eaa88748bd615",
+              "3b8a29ce944049533a039321dc43b86998fe030c1cea6c4eeaff6c9db0b97a88",
+              "3c55c2e4439b1f5e4bd51442bb74b5c4426e8bbd366b97240e11277d788a95b7",
+              "3d3e0cc5cabacda73495a8a615eff5f76ddfe1d1c73468edd15ce270c9b54746",
+              "421b695ba055c51c52f7c2fe2d22768a06dde48ebb416565c390c8283d87d5cf"
+            ],
+            "offset": 10,
+            "request_wall_seconds_including_ipc_html_json": 0.1244999440095853,
+            "response_json_bytes": 34597,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "eb9e44563a515a401338a2a96e88199e141593a65de608944869de58664b4999",
+              "ec4a1d2051ab6787968d4d36b4296ffe73e560a2a75586d2457f6b40dc996eb8",
+              "eeef0c5f531e0feb53d3f0fb2c1c9086e4a7b0a58824bf1af9f0cb7eff697603",
+              "ef891eadaca35c45e68a900ed389be6cc77d0d844ec52f2e57767002cf7d5a39",
+              "f05c154483f9e437f969c03528867d3af9d439cd3f8165c811653562f2c846a2",
+              "f14b23dee6034c1a69b060b651455ee2c0847aec06f5643cbac92eb85a87f03b",
+              "f3adcb98ea709c9943fe56f22e682726abb0c7cbcf999fa869cba4f3cbdaa85d",
+              "f76f2b4b1b836d76c98101a067946a8816a5d7ab6e1a7f8abfde1e6d3074fd50",
+              "fe3757b9d6ce4ddd17c8537c6b17ae1f14163c9ed478b724a8b296a588834bba",
+              "fffaf1c532b8d2d1c67e80f6e517c22234df07125fa2db95436a7bbc613b0bf6"
+            ],
+            "offset": 60,
+            "request_wall_seconds_including_ipc_html_json": 0.13818091098801233,
+            "response_json_bytes": 34537,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          }
+        ],
+        "selected_channel": "UNIVERSE_SHADOW",
+        "selected_currency": "ARS",
+        "selected_native_identity": [
+          "CAUC024",
+          "CAUCIONES",
+          "INMEDIATA",
+          "ARS",
+          "BYMA"
+        ]
+      },
+      {
+        "catalog_rows": 35,
+        "cohort_total": 70,
+        "coverage": "THREE_NATIVE_PAGES",
+        "currency_channel_scope_total": 1,
+        "exact_selected_cohort": "fba65b80c2dbe9e647e558365715572428ab69130c1b7c8bb71bfaf17151b026",
+        "family": "CEDEARS",
+        "full_page_traversal_claimed": false,
+        "pages": [
+          {
+            "cohort_ids": [
+              "006d8fb32cb5453f31a2c65076662d7bb3f475f8205d5f5ff5234eaeb52f2b05",
+              "0a2a7bb29c98c99d62e2c6030b9556937e6c79549624abed9a190321b60bcf26",
+              "0aac5d3c39981f5eb9b98d214de15e16553893c818bb2add071ad32fa1e8efaf",
+              "0c27f2e8e76fd89f224c592707e14f7c222920651758a18a1f79dfe76af77752",
+              "0c4cae1b382f376c121a5dc1e82297fd991eb2fa44367155ec62d9e3709e4edd",
+              "150bbdf9993acbe664b01e802fff52177b75b83d46cf8df31440df834b381360",
+              "187ccedf54d637a17b3ba334c72112d52eaac05a9d217db42e5ef7c536408a03",
+              "1a194991e46d9a0b1800e65de4315ac004e3d270dd7029ca46c08419010669d7",
+              "1d28658e468ebb2c81aaf5140ee9665ee2713e5c7820a605ef03cff19b811f1c",
+              "1e5b7236dc871774779d0529a0b8567b3eac37f41e534a9d79d3e4a441ab46ab"
+            ],
+            "offset": 0,
+            "request_wall_seconds_including_ipc_html_json": 0.12874606100376695,
+            "response_json_bytes": 36765,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "1eda1d43112d933dfd0db90be29f3ac84f7fb875a3ec519d55271e25f73ff35b",
+              "1f12762c22ecfab7268e286040d4b1ae5818203713e696a339c2ff22cb3e4780",
+              "2b97e062d3a4f05c513102cb9225fccaf4e476227dbeabcafee1864444c5ab75",
+              "2fdfc2dbc2d2ab5190d38de3bd1234745e1893848a123a14bbc1bc6beb11e1d0",
+              "36063d7afcc030ffb23f5af833046185813c1c1abaf93ffed25cd93db1877449",
+              "39da840fbd10dfcdc97d9cbb9029111950cb055a6d91feeb395acff48e2535e8",
+              "3b6778cb0192c7cdfd864a8e882bf98bfbea43fea7e5c400375b513101946e7d",
+              "3d057c69e7f4cf0343f954697457594dc3d802584aea3e238d0b4de4883c84e2",
+              "3d3e03be090a1b27d54eb9a5a1e6af2fc38ff903683607d16412ff3d789315e5",
+              "3e8d9439a4d2d69fe2e53dff55b8783151d1e27dde5128fd53b9aa0b555fd8f3"
+            ],
+            "offset": 10,
+            "request_wall_seconds_including_ipc_html_json": 0.12199777099885978,
+            "response_json_bytes": 37027,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "d6e0d93a91730e7795bdf86ef2fb8fd389b7eee0f7087778ebe1c0415ed4b017",
+              "da0652ae213dc26c2276f29a9a73205fc3cf15536328939afba4885fd4fc874a",
+              "e221195eed441db5bf11f700f4305c75d4f0581b5dccc916e6a9f91c52db707e",
+              "e8a134a604ebb3a1392ca6c4dfc722da88ff9480f3bab02a51561a33cbaeb75d",
+              "ea343b5f4277be78081bda49d4d869a53a10cc83d4eb0b03949c2a629842ae70",
+              "eb28b0ddddaa421360410102c1ca84ff97cbdff4049fa27a5912078e775daec7",
+              "ec50f38041dbd9f896e27eec182a3ccd9f832f9496744f0bca35985e2f5b97d4",
+              "f1288b2432eb9bf918f19ad75b16fffa58d3e33ff136482fecc21bb5078091b6",
+              "f4ce84cf284a29e4aac054e3e4a869af62e768cbef5bfe62625f44f7f38c2881",
+              "fba65b80c2dbe9e647e558365715572428ab69130c1b7c8bb71bfaf17151b026"
+            ],
+            "offset": 60,
+            "request_wall_seconds_including_ipc_html_json": 0.12241420699865557,
+            "response_json_bytes": 36941,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          }
+        ],
+        "selected_channel": "UNIVERSE_SHADOW",
+        "selected_currency": "ARS",
+        "selected_native_identity": [
+          "CEDE012",
+          "CEDEARS",
+          "A-24HS",
+          "ARS",
+          "BYMA"
+        ]
+      },
+      {
+        "catalog_rows": 35,
+        "cohort_total": 70,
+        "coverage": "THREE_NATIVE_PAGES",
+        "currency_channel_scope_total": 1,
+        "exact_selected_cohort": "fd926cc6e56b368702d084e720b29265243a6f4a0f39846511d8bf7a54dc137d",
+        "family": "ETFS",
+        "full_page_traversal_claimed": false,
+        "pages": [
+          {
+            "cohort_ids": [
+              "01d2e0a689fad571df31eeb40ea3955f4bbac9e2f374230ef92216dddd2876ff",
+              "023323778575ed4e3852d39fd6e085167ac055c49538519577b41d6a85f550fc",
+              "027ccc2c5bdfe769e3b7dd2a76957dffaee2545c057202f0b13851087fc32494",
+              "04c9f5efa0f2cc0dd25e0ff5ecfce5d59a462fb30528dcb20e5bea440a13b93b",
+              "0ce5f5b8054200753cb5d373c0da4dbe523e17004184dcd4a6f38f9bbd79bae7",
+              "0e019b79d429c86562192af42aaa717835382d0d5131620ddfec01b4d25cce69",
+              "18dce7fd3660f83e6cb3eca57e9cab05144e797bb160d48e1fe6a81d66a8c680",
+              "1b1f3d98ab1d5d1eeb59076a5fdc5e7d1fb702896874dd7550e52e6054aa9abb",
+              "1c4f221a34fb7b66fc471da451e027a6f1172a4e74ccf89882f869356473fd9d",
+              "21e2ee4f2ac3bc26c2e106ad0e0caabad3ce91ca7bbdc01bd328494aa79d1156"
+            ],
+            "offset": 0,
+            "request_wall_seconds_including_ipc_html_json": 0.11987792199943215,
+            "response_json_bytes": 36608,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "23897e125a17bee24fc1ea59a1b5a1e21a59f9d475e29a21c5f45c0455744a52",
+              "27ead14020febd9d26378cb38ad81b49cd827a6f9dd34b13d802b07a1d03b638",
+              "2beb016cd45b58754dd94269c19a9a9d156c4ced16fb9ef0e4f23a3baf1f3849",
+              "2f07bbaa09947dce4dc902ccbaedd6b413e7a61190d3da08eacf8fbbfbfc751c",
+              "308eb012a12addf0214a0edb64d187b91ed6e216b42ead82e4c50958bbd733ff",
+              "31310fb569e48dbe31d3697774cf7b7c9cabc255add55e7a1a87a0adfaadfdae",
+              "38e8828f543857d071ca291051a83d16322cdb94c6bd757296cac708077555c0",
+              "3aaefc03b7a5d23a481a62666c3f5499b6443283b529bc4676fc126bc373006e",
+              "3f1601b60907348a93dc4528d88f03e6b6693b3f70ebdb3f9d50ecfb9f3617f8",
+              "4251f888d9e8a22d685f55a2d50a9bfce98f49ae43cd2c0d9951973061d0fd18"
+            ],
+            "offset": 10,
+            "request_wall_seconds_including_ipc_html_json": 0.12087794700346421,
+            "response_json_bytes": 36899,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "e841dd2cedd4fd93fb773bb9fa025f19b98a0dd20933b89c4afdb00246cd1b12",
+              "ec333867f7dee7963f9a5daa11510abce6c92fd985b1351b285d4b69a655fe09",
+              "ec8c9522dba7f926449a63ed14ce3c497380ed71ed4d77517d1ad885947e5802",
+              "f3a74cdecc0621e75d2102ce5aed3b4a151249a0e67fbe9e6565cff0932084de",
+              "f4e97241a815dce2b27dfb7e7c12df1da9013da72fbf9100649c12912b8e6dea",
+              "f7033be23515b785bf8651a4c3e5ad5511299b3814f9d5617de0b74cf8312193",
+              "f794a0d69ab3a7ee249de2e09ee2f237d690a2a34871c422ab3264b9c3a81cd6",
+              "fa08b7a2ed0283032b6649b57ca6fd8ca1eba4958db93645a31181ed22ab1fbf",
+              "fb3baca2afea0fd83b02ef3a166a61e4bcef5ba45c6831e5a12cc01e27a51bbe",
+              "fd926cc6e56b368702d084e720b29265243a6f4a0f39846511d8bf7a54dc137d"
+            ],
+            "offset": 60,
+            "request_wall_seconds_including_ipc_html_json": 0.11247336100495886,
+            "response_json_bytes": 36835,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          }
+        ],
+        "selected_channel": "UNIVERSE_SHADOW",
+        "selected_currency": "ARS",
+        "selected_native_identity": [
+          "ETFS004",
+          "ETFS",
+          "A-24HS",
+          "ARS",
+          "BYMA"
+        ]
+      },
+      {
+        "catalog_rows": 35,
+        "cohort_total": 70,
+        "coverage": "THREE_NATIVE_PAGES",
+        "currency_channel_scope_total": 1,
+        "exact_selected_cohort": "f4a669000d4cb6d5a72c51c89a7bfcb6b67d2d46d34949aa731b1be412e15763",
+        "family": "FCI",
+        "full_page_traversal_claimed": false,
+        "pages": [
+          {
+            "cohort_ids": [
+              "0069d041742590ef69d15c0255eb85a8457011e2ea40457742367590f07cb1bd",
+              "06e3361a296b6a99745dd11e976ac49586c8468bc9e00aefd5d2818aa22835d0",
+              "07068b325412b9814f1d6c25866412425aa6307780d0d62b5cf644a489dcd990",
+              "0b381bd2c4b49c4e3f63d7f75fff024de896bd6d0fb77f696efa23766d200b04",
+              "109dd2937380caef21e08cc7d4c29037dc3efc86edc1b905c73079a82b32e709",
+              "12e43140067225c1737ba55c17dcc709296b623813c439d2aeb840752fda2499",
+              "1362a7835489f620eec74afbeb301ac33cf50a85c320e5af9d7c6a9c90c39886",
+              "15594e55f0211795a713993ef404162d4242721547ebc2d8c68df8d8482e885f",
+              "15e67d327cfa2ef5f277e5cae4d060421c9ca9737f68afb79c110719b0809886",
+              "20c9515b8afcdd8f60d3755c234d1fe763b21cf54d440dd2b00713f487e3270d"
+            ],
+            "offset": 0,
+            "request_wall_seconds_including_ipc_html_json": 0.113520906001213,
+            "response_json_bytes": 34020,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "2252e8f07429525c752446d8698c12adb4293f2ac144b9ae0a911b3864d4c140",
+              "233089abf6dcd9f6fa64320b2d2d096a9c1036091f7f14ebb4ad4751fd6ff922",
+              "243d837d4b1f0f864d12e5069f42ec888c4153daf1ef634885423507a1497506",
+              "2b6a91a35c1c6fe6a93910a306972499e7bcd067a815f2f57807802f3ce22c40",
+              "2be550209ca57ea951ff354c708cfcdcb89a333b94990f2e36a7fc78c7d65220",
+              "36f83c1e9c6b7748d752b4e0e902545ecefc15d73cb7e1824ac331ee0a8e400d",
+              "372455ff443bf95caab3a8f11806682839ab3c2b1e6a559b39fea26f9c8a3072",
+              "3782b8a457066093d1dac986e992b982f643dda2ed7d07380d5f743a02eeccb1",
+              "3bd23dc98a6110ff692d23b2cd20e58fa0adc60530a92e8949184f876f97b937",
+              "3d1419de9d86892ec094a88a37cd770f2813b48fc340ef4c5f45aeb30a94484b"
+            ],
+            "offset": 10,
+            "request_wall_seconds_including_ipc_html_json": 0.1288136080111144,
+            "response_json_bytes": 34268,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "c7b370b88e9b85f9d75b8795c93f7672b141c83502ddc31c061e3145465b07e7",
+              "c99b492d581bcca7ff55364ba3ecac23e2533a0b7924fb934b1afc7955a08a64",
+              "d6b7bc4cc0440a82aed7dd319b43cf83a1ed25acd5f55ae96b300bb573c51f26",
+              "da156f5ef97662a7410bde401b2ff18bd258601943f73a8aa814d333af84cbb1",
+              "df1223dfc5338c7e2f0a6240ede0e1ae6d7b433cc10ceaa71d167a141bb42f5d",
+              "e1ac6f8c4e33a1b098133d7a6a84adbb8d902135708ef27e5f12c4bac3f7d2a5",
+              "e74fbe63fa22062fa500ce0e20660f857b50827097f4a2366750adea46a7ce63",
+              "e916051b89d366f411562876a127129e3d1e3814c9d8255e52072b47663a347e",
+              "ee307550a3725821340b8f13e1142b3519a19737ec233092655d2d01755b518a",
+              "f4a669000d4cb6d5a72c51c89a7bfcb6b67d2d46d34949aa731b1be412e15763"
+            ],
+            "offset": 60,
+            "request_wall_seconds_including_ipc_html_json": 0.11369824899884406,
+            "response_json_bytes": 34246,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          }
+        ],
+        "selected_channel": "UNIVERSE_SHADOW",
+        "selected_currency": "ARS",
+        "selected_native_identity": [
+          "FCI020",
+          "FCI",
+          "INMEDIATA",
+          "ARS",
+          "BYMA"
+        ]
+      },
+      {
+        "catalog_rows": 3,
+        "cohort_total": 7,
+        "coverage": "ALL_AVAILABLE_SMALL_NATIVE_GROUPS",
+        "currency_channel_scope_total": 1,
+        "exact_selected_cohort": "d121136dcab7dbb301e91c276a2da6ebba577265ab3f580ad888acb5dc643fb0",
+        "family": "FUTUROS",
+        "full_page_traversal_claimed": true,
+        "pages": [
+          {
+            "cohort_ids": [
+              "7587d967f435dcaed15b9ff94c923f7e771f8f22772e6160be302dfaa5f0c122",
+              "02c83cef3e942cfc6a0bfdba6faf5dd15d2c2dfb09870f7b58f45f4a116888ab",
+              "0beb06508a0b5a9e243ab36e7d3e88dcb447a1937ae3a7b77f3351fc5f1b9772",
+              "257398e594388a469b1092a010f2289affe43205163e1e76280387c3b7a09144",
+              "742ff74eb9061c6320c2e834039199222257680030d29291c07c7da9bde9c7f0",
+              "af69013b598a592d6d45733a34b38a10b6b601313c5b684d8c2de7d4a15b246c",
+              "d121136dcab7dbb301e91c276a2da6ebba577265ab3f580ad888acb5dc643fb0"
+            ],
+            "offset": 0,
+            "request_wall_seconds_including_ipc_html_json": 0.12085343500075396,
+            "response_json_bytes": 31686,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 7
+          }
+        ],
+        "selected_channel": "UNIVERSE_SHADOW",
+        "selected_currency": "ARS",
+        "selected_native_identity": [
+          "DLR/DIC26",
+          "FUTUROS",
+          "INMEDIATA",
+          "ARS",
+          "A3"
+        ]
+      },
+      {
+        "catalog_rows": 35,
+        "cohort_total": 70,
+        "coverage": "THREE_NATIVE_PAGES",
+        "currency_channel_scope_total": 1,
+        "exact_selected_cohort": "faf0a6b819b9cc0539a082469121e382826bc54f455e0f82f62c16b97bce650f",
+        "family": "LETRAS",
+        "full_page_traversal_claimed": false,
+        "pages": [
+          {
+            "cohort_ids": [
+              "04b74dc94d4cd09c92a47b2430eda14bf0215f7e28e4d2498900f9f357327b3e",
+              "101eb1eb0491d77db45636b7c61054f1b84ea3a201db44d0cba8113dc59dcfe7",
+              "15671e78d1cc3bb074cacb6c06e443c736aaba6f1daeb6733bc10aa872ca8cbe",
+              "1b4b7066229d55b8fe73947f29250363a9db9adb450c7ee44d24987dcf6180ba",
+              "1b4e506f9cc57d2ea550962035ff2aeda54c97a12b4f5438f4bc2f6091a306f3",
+              "1e388e4e5cb944f04640c8a053c654af3578bd1bc7265b9132da60183888ba3b",
+              "1f99d839a0ecc529278b42f718307df72266a0f06eefccd55eac14eb6dfb850f",
+              "24ff045905d5ae11dfaf02a626a875b322f5617a42cd86d5a5e7770df35c4962",
+              "2c4bead7eb9e7c3db60c08aef149c7776fcb435aa5f05bc4158a5893c37385fe",
+              "2d6ebee3d24e8b49a4a0c65d7cdf85d27ae906105c64393c777675e73daaf046"
+            ],
+            "offset": 0,
+            "request_wall_seconds_including_ipc_html_json": 0.43349270199541934,
+            "response_json_bytes": 34160,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "2d7cf79ff6d480da50967d79afb76e7c77583f6172f59be3c136b6031e3ed485",
+              "2e534a970489ffcd7a401380c00f24cc2770ed7e90de29556e57bc1294865b21",
+              "33cc4b2c6282eab224271b9600841526dd3f16094cb6112ae3e3ddc106eaa5ea",
+              "37cffad09fabd9637299a67a239668d577cd40c317f8be3f2da1c36486d04bf9",
+              "380d0f8181e5e25237ad27f7be891c8a9b7f912c3fd1b3672baed92947753314",
+              "3ca7a8b78f26bc3ca26a8b724e596cebb8ed4200c95031cf2dd83513992b0801",
+              "3d8dbc6ada89475f2379e71924420e13a4b63adfaa9ed4a6424534fc8975054a",
+              "46076e08f2e304cb8a0df681caede779fdf9b9039ee71429916cb4bfda412613",
+              "46d4cddcfd39a28c931abe2a7ffc211c21add6cc25544c48d7560d13352b1425",
+              "4a120b005f017725eb627b1398774298cb8b459f529db261014371d510d00615"
+            ],
+            "offset": 10,
+            "request_wall_seconds_including_ipc_html_json": 0.1993484660051763,
+            "response_json_bytes": 34421,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "cbf8039bc042b50a0934cffcc9be5a895ef4d36cf5e603754dd80ca4c7414a50",
+              "cc5e6826ea8566258bb5723f07bcf211bca553296a74982b5aa9731e59836809",
+              "d59bd59c8d01b34c14856654abf9afbf76148a5bc17b45de9faca057475b5c82",
+              "dc7fd1a3630eaab2e1169eef85e5b28416ec8b54bb31432479c4ab63cabd1a90",
+              "eb6de8405ec09b3356669505d5ac4de7eb507ae14b6bcb18fc8c34db22182113",
+              "ebf8ea3775119a0c7c23b8ba9821a0557bfc0943053571b200eecb0f02c6a7bf",
+              "ed925db3486ce09f88c3fa83bc7123d19487628bc7ef081ffe3bd54a64a58f3a",
+              "f1fccbc006a28d6148a5394a8c45b74a8f0ced862ffa0dc050066ec6de839939",
+              "f8884b59981c715379d2cb2f8db001fa2d2c5e0807962d6668883ff061bb58c1",
+              "faf0a6b819b9cc0539a082469121e382826bc54f455e0f82f62c16b97bce650f"
+            ],
+            "offset": 60,
+            "request_wall_seconds_including_ipc_html_json": 0.13214166300895158,
+            "response_json_bytes": 34325,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          }
+        ],
+        "selected_channel": "UNIVERSE_SHADOW",
+        "selected_currency": "ARS",
+        "selected_native_identity": [
+          "LETR005",
+          "LETRAS",
+          "A-24HS",
+          "ARS",
+          "BYMA"
+        ]
+      },
+      {
+        "catalog_rows": 35,
+        "cohort_total": 70,
+        "coverage": "THREE_NATIVE_PAGES",
+        "currency_channel_scope_total": 1,
+        "exact_selected_cohort": "ff86775abc8e1c7c74db9a655ca97d9793cfb8d02573473632a917869c989f88",
+        "family": "OBLIGACIONES",
+        "full_page_traversal_claimed": false,
+        "pages": [
+          {
+            "cohort_ids": [
+              "0103b0215ff4e1ded7679adb603127011540ac47902462314f83bd713cdcd5a9",
+              "04cfae5be5422c0086cecfe987fa8bb6cf9170529b4ea8560d463fb3a577781e",
+              "056bb15bcb4707d7bb4444bcb5ba54f9542f6a91bcf772a2da36fb718d2b5878",
+              "05c0c9874a5271660517c491c03929de85673e11e16603731550abd7d3454b83",
+              "083a959743ffc04c6f4bf463c82023f99e578d915b7d4a8a56b4c718d07c09d1",
+              "097fdd515d90368734dc91b71d1943ca36da51eed0990a90b522a706c86d6111",
+              "0a6c36160e5d01f8daf77e892abe755f81815b0525f00ea1085587f8ddf55857",
+              "1232d74bee5759a6514a3112000effdec751de6e0224734688122591870ee72e",
+              "1294d1d11c21a36886828c2764aa56b6e32b63a925d6deb6af0792d7725d7180",
+              "1a6665527330ac39479a7a1bc2d8431991368ca410a1939f843180d893474e82"
+            ],
+            "offset": 0,
+            "request_wall_seconds_including_ipc_html_json": 0.12047791499935556,
+            "response_json_bytes": 34382,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "1aefdbe818b55f3026cb75235b194b1bb178eba3d590ba1cc6ddf487f34c25d5",
+              "1d417eaa60299253c4cb223de4f9e509170c45972d6ad66fafd5914b4721c4c7",
+              "1f59605df38fc58094827a6d9b4784492d4da3595a028f619beea685be83e432",
+              "20fcd738b6c105413fd8078dcf6b81f777ff3e558d01b0bfccf5239592d2c9c2",
+              "24c8975c4c3f7c1e15a24a6c102a90f296f51b98bc11258e0bf9f7583af84cc5",
+              "25a8d8fe4a6061ecfd05dc7c936df0d5853fb4ba590756d8089fe70ae61bd38d",
+              "26831da3e10c458328f8863be944eb5b1f85cabb8040cbe2a497a23b0736ba57",
+              "334db1a78fc97f249d388e221501ade5e76b095880596df0aa2c6a55fcf13622",
+              "3dab85bb520d5eedfe80af6e49847742183d02d46cc0d075cff5cabecf3a207a",
+              "3f084239a1e485b4afea61f5bd5f2ee6f7ef0f113d9e4e4c3c2d2ddcbbb86aae"
+            ],
+            "offset": 10,
+            "request_wall_seconds_including_ipc_html_json": 0.15972499900090043,
+            "response_json_bytes": 34668,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "d0609dcd0292f6c198cef750f9b1f6f1268cdb2780cb769e63682f5e9d41298b",
+              "d1aa27da04fb6dbba8f80c431040fec070136eb3c44363519ff8ae4536d77f06",
+              "dd5857e3dd44df34c8eda70c928351140376ad25f9361df2a0014076687ca4e1",
+              "ddf2473526918a36c40dd91bfc3c2d652fe76048019f11f5f7a5bcb95f275913",
+              "dfcec7d0f2fd0231979c0d1a3e06ab4f25a280edd9c33a0055a8955f9394f2e3",
+              "e171a73568eca01daa710fff4d19b0423bf36a202a548cc6c87d058918abad5b",
+              "efa009bf5e6a3ca0f4071993fa023f4b9c46f2d440082d3495508eb63fa8cbbe",
+              "efe241c2861f090a04a2e9a3558397125ebbc29f440b8c5d4a118c74594669cf",
+              "fc9af8888805188797ba56643174ad22fe7c1145a29942822d7e936a3aa56d07",
+              "ff86775abc8e1c7c74db9a655ca97d9793cfb8d02573473632a917869c989f88"
+            ],
+            "offset": 60,
+            "request_wall_seconds_including_ipc_html_json": 0.12480408400006127,
+            "response_json_bytes": 34596,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          }
+        ],
+        "selected_channel": "UNIVERSE_SHADOW",
+        "selected_currency": "ARS",
+        "selected_native_identity": [
+          "OBLI019",
+          "OBLIGACIONES",
+          "A-24HS",
+          "ARS",
+          "BYMA"
+        ]
+      },
+      {
+        "catalog_rows": 35,
+        "cohort_total": 70,
+        "coverage": "THREE_NATIVE_PAGES",
+        "currency_channel_scope_total": 1,
+        "exact_selected_cohort": "f7d2c732b6e745ae697af2abb9f52313d13c667688ea045ae8ef213ac8bf8135",
+        "family": "OPCIONES",
+        "full_page_traversal_claimed": false,
+        "pages": [
+          {
+            "cohort_ids": [
+              "047e66c568ecaf19ab897074463a788ab58a4a6e74206e73e177b139b959388f",
+              "04c6a895022a7e59b64f52b52c6a57ccd1bb00baa62ca51aa781e44b4a47fb8e",
+              "059d2792344e59c578d68a5fab319dabf797066ae325c972761efe5162e1c76b",
+              "076652fe98bb5ec7d952eaf3bc384b9b8dff93d57fdc5dfd739adee15ccb07ad",
+              "096d63c8db33706d3ef661674f56fb8c004c4f2fdd76388ab16323dc2569dfcd",
+              "0af6e50cac109b7a5b4f328810c3085b647683937fd59d54fd6380c4915dfdae",
+              "114d17c6d00459d7a74180643e36124742b337bfa51a6137ebbdbfdf7908faa9",
+              "172e440223e56a56397ce5a4ea7a46d171d6858a47a487d31a66637392846960",
+              "1c6dd1c73bc911ea1820dea6183faf64dbe185f78f4afa7f5d0b72f8c18bd106",
+              "1edd419f1b61f617836b3b670128c3311bb19f11a0c66305d25eb44559e6141b"
+            ],
+            "offset": 0,
+            "request_wall_seconds_including_ipc_html_json": 0.11630796600366011,
+            "response_json_bytes": 34279,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "1edf7c78aea2378a9249a60b3642662107b50fd5d0328f7c9e01d12999d585c6",
+              "20bfcd208fb7a0799646e8e6d1deee5db74b190ee2f4c5a172df8c76ddeb0575",
+              "220be1a5e7c0e8b6dbd8ed9413629637f9020f2f42eb262356903e5c9ff5a6e9",
+              "241ff52d7eacf2d901dffecfb119757beded35c610a51f053560adb3fe7cc24f",
+              "2bd25edc409110a149f1f83be8d5d6ad6cdec61de22486146d37f35f7f3ca8d3",
+              "2dbfbb3d7b36dce20a4061be6c3af69dd31d76c3406d119c3add0ed29dfefbea",
+              "2f7489e6ac0a7b9abfc3af9b228ff437688dc53ab21d54506322b8f5bf525996",
+              "372dfb865115275221dfa48a6e4dd82d43d7691a8627f5da12c082c9fea78c6d",
+              "37e25528ca316d627c5ad8f9bfbad49e996a0e5641bdde3c40c23586dd41dccc",
+              "3adaa44d870ecd6c8021213aaf9d9d10ed1ce1bd5b0c09c63a15298c4fdc499d"
+            ],
+            "offset": 10,
+            "request_wall_seconds_including_ipc_html_json": 0.13774826501321513,
+            "response_json_bytes": 34584,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          },
+          {
+            "cohort_ids": [
+              "dd0312e4f2c5adc9e6332fe72a64950b3cacaa0271bd0e62695841cfbb39cce5",
+              "de63e97ed89e2f35266dff91fcb3a567cf4161130fd8af67d719076f0fb63863",
+              "e86e009ed46fd25f7ed58b0c8ea66554b06a05ec6f3b301379f6ea4f452873bf",
+              "e93ceac5c428eabe4f716d5b32a52510d62abe4738e00d9f555a973b9abe8a8d",
+              "ed33efc27ad2081417004b8fa69fcd3a6c3cfcba39ffcb53b55ae322205f0a91",
+              "eda06b7e3413f394149bdd49ae625bca49a1db1f04ca8a5ad9654a73a7f3fb1d",
+              "f1ad4f5029eb46ed7476c30b82882db563b359112f2c6596d428dc9b03d64988",
+              "f226c7b54c89ce86aeb0dec9db8695b39b3dec51976607c67995409e00854a39",
+              "f35edf88a8da0351e24edb17bf49ee733bf40d53888499205a9459ac3fcc0b77",
+              "f7d2c732b6e745ae697af2abb9f52313d13c667688ea045ae8ef213ac8bf8135"
+            ],
+            "offset": 60,
+            "request_wall_seconds_including_ipc_html_json": 0.12045817900798284,
+            "response_json_bytes": 34506,
+            "source_cut": "2026-10-05T16:00:00+00:00",
+            "total_groups": 70
+          }
+        ],
+        "selected_channel": "UNIVERSE_SHADOW",
+        "selected_currency": "ARS",
+        "selected_native_identity": [
+          "OPCI016",
+          "OPCIONES",
+          "INMEDIATA",
+          "ARS",
+          "BYMA"
+        ]
+      }
+    ],
+    "generation_id": "1a6f792996f84c65be707aca0bdb66e9",
+    "interaction_checks": [
+      "manual focus",
+      "scroll",
+      "details",
+      "filters",
+      "deep link",
+      "dirty inputs",
+      "interaction during outstanding read",
+      "auto refresh pause",
+      "menu Escape",
+      "cohort pagination and exact selection"
+    ],
+    "max_html_bytes": 92221,
+    "max_json_bytes": 93354,
+    "max_request_wall_seconds": 0.43349270199541934,
+    "native_contract_checks": [
+      "FUT ACTIVE visible",
+      "FUT native supervision intent visible",
+      "same-entry exit lab nonempty",
+      "entry experiment nonempty",
+      "OFF policy separate from OPEN evidence",
+      "unique element IDs",
+      "same four-role sealed generation",
+      "explicit projected verification scope"
+    ],
+    "native_preparation_pid": 244726,
+    "native_status": "GREEN",
+    "preparation_seconds": 27.22588092800288,
+    "render_examples": [
+      {
+        "elapsed_seconds": 0.24678850099735428,
+        "html_bytes": 25311,
+        "path": "/",
+        "queries": 41,
+        "response_json_bytes": 26421,
+        "server_timing": "projection;dur=243.56",
+        "width": 1440
+      },
+      {
+        "elapsed_seconds": 0.15379665099317208,
+        "html_bytes": 24948,
+        "path": "/en-vivo",
+        "queries": 47,
+        "response_json_bytes": 26065,
+        "server_timing": "projection;dur=152.24",
+        "width": 1440
+      }
+    ],
+    "render_path_counts": {
+      "/": 6,
+      "/ai-decisions": 1,
+      "/analisis": 1,
+      "/analitica": 6,
+      "/analitica/cierre-diario": 6,
+      "/analitica/experimentos": 7,
+      "/analitica/historico": 6,
+      "/analitica/reportes": 6,
+      "/analitica/salidas": 7,
+      "/analitica/senales": 6,
+      "/aprendizaje": 1,
+      "/config": 1,
+      "/dashboard/logs": 1,
+      "/en-vivo": 57,
+      "/en-vivo/capacidad": 7,
+      "/en-vivo/cierres": 6,
+      "/en-vivo/decisiones": 6,
+      "/en-vivo/fuentes": 6,
+      "/en-vivo/oportunidades": 6,
+      "/en-vivo/posiciones": 7,
+      "/en-vivo/workers": 6,
+      "/historicos": 1,
+      "/informacion-financiera": 1,
+      "/infra": 1,
+      "/inicio": 1,
+      "/instrumentos": 17,
+      "/instrumentos/contrato": 6,
+      "/instrumentos/evidencia": 6,
+      "/instrumentos/ficha": 6,
+      "/instrumentos/mercado": 6,
+      "/motor-trading": 1,
+      "/observacion": 1,
+      "/postcierre": 1,
+      "/reportes": 1,
+      "/riesgo": 6,
+      "/riesgo/event-risk": 6,
+      "/riesgo/exposicion": 6,
+      "/riesgo/limites": 6,
+      "/riesgo/liquidez": 6,
+      "/riesgo/pnl": 6,
+      "/riesgo/posiciones": 6,
+      "/salud": 1,
+      "/scalping": 1,
+      "/scheduler": 1,
+      "/sistema": 6,
+      "/sistema/backups": 6,
+      "/sistema/configuracion": 6,
+      "/sistema/evidencia": 6,
+      "/sistema/integraciones": 6,
+      "/sistema/logs": 6,
+      "/sistema/salud": 6,
+      "/sistema/scheduler": 6,
+      "/sistema/workers": 6,
+      "/sre": 1,
+      "/telegram": 1,
+      "/testing": 1,
+      "/trading": 6,
+      "/trading/derivados": 6,
+      "/trading/equity-spot": 6,
+      "/trading/renta-fija": 6,
+      "/trading/scalping": 6,
+      "/trading/tesoreria": 6,
+      "/universo": 6,
+      "/universo-operativo": 1,
+      "/universo/coverage": 6,
+      "/universo/discovery": 6,
+      "/universo/excluidos": 6,
+      "/universo/familias": 6,
+      "/universo/tradeability": 6,
+      "/validacion": 1,
+      "/vivo": 1
+    },
+    "render_width_counts": {
+      "1024": 50,
+      "1280": 50,
+      "1440": 50,
+      "360": 50,
+      "600": 50,
+      "800": 132
+    },
+    "renders": 382,
+    "source_cut": "2026-10-05T16:00:00+00:00"
+  },
+  "runtime_validated": false,
+  "schema": "rc6.ux-browser-health-postfin-readonly-review.v1",
+  "screenshots_visual_review": "PENDING",
+  "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+  "status": "READ_ONLY_REVIEW_NATIVE_BROWSER_GREEN_EXTERNAL_CUSTODY_RED"
+}

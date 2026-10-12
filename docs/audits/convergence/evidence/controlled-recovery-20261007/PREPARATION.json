@@ -1,0 +1,128 @@
+{
+  "schema": "rc6.controlled-recovery-prepublication.v1",
+  "session": "CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC",
+  "base_sha": "d2d15200fe825e16ea7fc16fd09866fe694db171",
+  "base_tree": "68e40b18de964f7e4324072da07d7988f1fff9f8",
+  "branch": "recovery/rc6-material-fix-forward-3091e93-20261006",
+  "PR": 476,
+  "files": [
+    {
+      "path": "scripts/rc6_material_big.py",
+      "sha256": "3debec87b9b52ea92b008ede996691edeea10865663f8d7f089e56ce3a31cfef",
+      "bytes": 29802,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "scripts/rc6_material_carrier.py",
+      "sha256": "d7ed7447662c1b2aa2cd0e75cc064768bb452301fc59c850792b1ca4be522a26",
+      "bytes": 38058,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "scripts/rc6_material_derive.py",
+      "sha256": "50c8a42476e33efca8e635294415855783957fb79a32d4f3991d35c4cc25289e",
+      "bytes": 4588,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "scripts/rc6_material_environment.py",
+      "sha256": "6d12cb8617299816eba2eeceb279a120ad8981f88ce434dff4e42df8a8bab047",
+      "bytes": 4103,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "scripts/rc6_material_focal.py",
+      "sha256": "f6932732e299df47d75445f4d7de2eb9474a37449ce92d9551d9d6edc11073a6",
+      "bytes": 5380,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "scripts/rc6_material_raw.py",
+      "sha256": "a6c2f716e1029c5942e2cb5ecb73d7c7728b75e7d8013c04fd426acc5d4f76cd",
+      "bytes": 5875,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": ".github/workflows/rc6-unified-candidate-tests.yml",
+      "sha256": "7e226279fe42e39eafdb3c592be6e76bc36a0921041b19096255b7412454b299",
+      "bytes": 4763,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "scripts/rc6_issue465_stress.py",
+      "sha256": "1e4a980400a676ed5a2db46433ead12fc7a1a6fd2292603580678ef076c53800",
+      "bytes": 61718,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "scripts/rc6_controlled_governed_runner.py",
+      "sha256": "fdfba719d6dde27cf7c59cc3356f2ac492bb958f73646e1c8cde503575febedf",
+      "bytes": 65172,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "tests/test_rc6_stress_native_cli_lifecycle.py",
+      "sha256": "c6da4497a11049819ab77a58597c09003cc3e6aa95e35b74fe3348c2497add17",
+      "bytes": 29729,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "tests/test_rc6_controlled_governed_runner.py",
+      "sha256": "148b379fb6fd174830643efce9cb6415e806b67f09fa99a7c9bfb61af21d2541",
+      "bytes": 30235,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "tests/test_deploy_v2_frozen_artifact_contract.py",
+      "sha256": "4b6f38a169c04582ddd601dd678d3b4d42885a0a14a8a611389529d266426157",
+      "bytes": 2559,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "tests/test_rc6_controlled_native_child_manager.py",
+      "sha256": "b0ac3f0bc0c22a0f74c94bb3772efe59f13c6890c2a227fb303f7b3bbfbeb96f",
+      "bytes": 24712,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "scripts/rc6_material_browser_driver.py",
+      "sha256": "e271b26e17d1c7276348b12410ef2e58d920d4d4848968bfaab2c07d1564bf94",
+      "bytes": 39967,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "scripts/rc6_material_horizon.py",
+      "sha256": "0d7287ff1bde1cd66b0247dcc40b0a08a51c3ef99e590a099b80a32e3e8168eb",
+      "bytes": 47889,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    },
+    {
+      "path": "scripts/rc6_material_horizon_producer.py",
+      "sha256": "0ee03b1a31341d73e3d8be14beb4b3c7205d09db27c5dd63cb1aae1eac29c2c8",
+      "bytes": 68156,
+      "mode": "100644",
+      "validation": "REVIEW_AND_SYNTAX_ONLY_NOT_NATIVE"
+    }
+  ],
+  "native_tests_executed": false,
+  "final_candidate_eligible": false,
+  "artifact_validated": false,
+  "image_validated": false,
+  "runtime_validated": false,
+  "real_orders_sent": 0
+}

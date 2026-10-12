@@ -1,0 +1,241 @@
+{
+  "case": "new_positive",
+  "component_control_condition_observed": true,
+  "diagnostic": {
+    "actual_same_parent_kernel_after": {
+      "kernel_echild_verified": true,
+      "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+      "subreaper_state_after": 0,
+      "subreaper_state_before": 0
+    },
+    "scope": "POST_ORIGINAL_PHASE_DIAGNOSTIC_ONLY_NO_RECLASSIFICATION"
+  },
+  "epoch": "311",
+  "installed_metadata157_equal_before_after": true,
+  "junit_component_only": {
+    "cases": 1,
+    "errors": 0,
+    "failures": 0,
+    "sha256": "0bc30723e4123acdeddd7ed8a5fba2551e3ac876f2f5c1aaf06541728091cfe6",
+    "skips": 0
+  },
+  "live_kernel": null,
+  "original_finalization_control": {
+    "errors": [],
+    "finalization_thread_finished": true,
+    "forced_termination": false,
+    "forced_termination_attempted": false,
+    "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+    "inherited_tracker_preserved": false,
+    "initial": {
+      "forkserver_alive_fd": null,
+      "forkserver_pid": null,
+      "resource_tracker_fd": null,
+      "resource_tracker_pid": null
+    },
+    "joined_children": [],
+    "kernel_echild_before_phase_return": true,
+    "management_bound_seconds": 5,
+    "protocol_steps": [
+      {
+        "completed": true,
+        "stage": "nonnegative_stdlib_finalizers",
+        "wall_seconds": 1.091599915525876e-05
+      },
+      {
+        "completed": true,
+        "stage": "join_owned_children",
+        "wall_seconds": 4.156001523369923e-06
+      },
+      {
+        "completed": true,
+        "stage": "stop_owned_forkserver",
+        "wall_seconds": 1.582000550115481e-06
+      },
+      {
+        "completed": true,
+        "stage": "remaining_stdlib_finalizers",
+        "wall_seconds": 2.2329986677505076e-06
+      },
+      {
+        "completed": true,
+        "stage": "stop_owned_resource_tracker",
+        "wall_seconds": 1.4129982446320355e-06
+      },
+      {
+        "completed": true,
+        "stage": "verify_kernel_echild",
+        "wall_seconds": 2.3033997422317043e-05
+      }
+    ],
+    "signal_guard_installed_and_witnessed": true,
+    "signal_vetoed": false,
+    "status": "GREEN",
+    "stopped_owned_infrastructure": [],
+    "termination_signal_attempts": [],
+    "unexpected_kernel_children": [],
+    "wall_seconds": 0.00032334899879060686
+  },
+  "original_finalization_control_bytes_unchanged": true,
+  "original_finalization_control_sha256": "11a8ab2237264a8ae44f4b622136b2007025a0a6e2881a23d9211dfe8835608e",
+  "original_phase_RED_reclassified": false,
+  "original_phase_status": "GREEN",
+  "original_source_os_postread_events": [],
+  "original_source_pin_post_entries": [
+    {
+      "after_original_finalization": true,
+      "returned_unknown": false
+    }
+  ],
+  "original_source_postread_attempts": 1,
+  "original_unknown_observation_still_sticky": false,
+  "phase_exception": null,
+  "phase_returncode": 0,
+  "pid": 33293,
+  "real_orders_sent": 0,
+  "schema": "rc6.phase-child-postread-natural-component-receipt.v1",
+  "source_after_diagnostic_FIN": {
+    "files": {
+      "tests/test_phase_component.py": {
+        "bytes": 157,
+        "git_blob": "b74ca4819a1793ae9e4ed0f966e5d8f333318bb0",
+        "git_mode": "100644",
+        "sha256": "93467ba6ac0a177cf57373abd1f70e13b51e0df26bc6f8412744fcdb18a4c635",
+        "stat_fields": {
+          "st_atime_ns": 1791318638105833171,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791318637710408493,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1094543,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791318637710408493,
+          "st_nlink": 1,
+          "st_size": 157,
+          "st_uid": 1000
+        }
+      }
+    },
+    "git_metadata": {
+      "scope": "NO_GIT_CLAIM_REAL_COMPONENT_CATALOG_ONLY"
+    },
+    "overlay_count": 0,
+    "physical_directories": {
+      ".": {
+        "st_atime_ns": 1791318638089833239,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791318637708850557,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1094540,
+        "st_mode": 16832,
+        "st_mtime_ns": 1791318637708850557,
+        "st_nlink": 3,
+        "st_size": 4096,
+        "st_uid": 1000
+      },
+      "tests": {
+        "st_atime_ns": 1791318638105833171,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791318637708850557,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1094541,
+        "st_mode": 16877,
+        "st_mtime_ns": 1791318637708850557,
+        "st_nlink": 2,
+        "st_size": 4096,
+        "st_uid": 1000
+      }
+    },
+    "scope": "EXPLICIT_TINY_CATALOG_COMPONENT_ADAPTER_NOT_FULL_GIT_SOURCE_QUALIFICATION",
+    "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+    "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+    "whole_Git_source_qualified": false
+  },
+  "source_atime_evolution": [
+    {
+      "after": 1791318638105833171,
+      "before": 1791318637708850557,
+      "kind": "file",
+      "path": "tests/test_phase_component.py"
+    },
+    {
+      "after": 1791318638089833239,
+      "before": 1791318637708850557,
+      "kind": "directory",
+      "path": "."
+    },
+    {
+      "after": 1791318638105833171,
+      "before": 1791318637708850557,
+      "kind": "directory",
+      "path": "tests"
+    }
+  ],
+  "source_before": {
+    "files": {
+      "tests/test_phase_component.py": {
+        "bytes": 157,
+        "git_blob": "b74ca4819a1793ae9e4ed0f966e5d8f333318bb0",
+        "git_mode": "100644",
+        "sha256": "93467ba6ac0a177cf57373abd1f70e13b51e0df26bc6f8412744fcdb18a4c635",
+        "stat_fields": {
+          "st_atime_ns": 1791318637708850557,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791318637710408493,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1094543,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791318637710408493,
+          "st_nlink": 1,
+          "st_size": 157,
+          "st_uid": 1000
+        }
+      }
+    },
+    "git_metadata": {
+      "scope": "NO_GIT_CLAIM_REAL_COMPONENT_CATALOG_ONLY"
+    },
+    "overlay_count": 0,
+    "physical_directories": {
+      ".": {
+        "st_atime_ns": 1791318637708850557,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791318637708850557,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1094540,
+        "st_mode": 16832,
+        "st_mtime_ns": 1791318637708850557,
+        "st_nlink": 3,
+        "st_size": 4096,
+        "st_uid": 1000
+      },
+      "tests": {
+        "st_atime_ns": 1791318637708850557,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791318637708850557,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1094541,
+        "st_mode": 16877,
+        "st_mtime_ns": 1791318637708850557,
+        "st_nlink": 2,
+        "st_size": 4096,
+        "st_uid": 1000
+      }
+    },
+    "scope": "EXPLICIT_TINY_CATALOG_COMPONENT_ADAPTER_NOT_FULL_GIT_SOURCE_QUALIFICATION",
+    "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+    "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+    "whole_Git_source_qualified": false
+  },
+  "source_byte_observation_scope": "ORIGINAL_PHASE_AFTER_UNKNOWN_BEFORE_DIAGNOSTIC_FIN; DECLARED_CAPTURE_PROVIDERS_AND_AUDITED_CATALOG_OPENS_ONLY; NO_INHERITED_FD_OR_NATIVE_BINARY_ATTESTATION",
+  "source_original10_and_bytes_stable": true,
+  "source_payload_bytes_read_in_original_phase_after_UNKNOWN_before_diagnostic_FIN": 0,
+  "source_veto_registration_witnessed": true,
+  "whole_Git_source_qualification": false,
+  "whole_Gov_gate": false
+}

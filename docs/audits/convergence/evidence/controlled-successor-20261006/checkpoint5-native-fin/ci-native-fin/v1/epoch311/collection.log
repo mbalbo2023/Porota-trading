@@ -1,0 +1,4 @@
+tests/test_ci_productive_predeploy_contract.py: 8
+tests/test_rc6_controlled_native_child_manager.py: 4
+tests/test_rc6_predeploy_scoped_cleanup.py: 55
+

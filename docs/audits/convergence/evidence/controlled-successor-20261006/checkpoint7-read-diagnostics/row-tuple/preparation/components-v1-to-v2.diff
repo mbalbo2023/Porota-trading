@@ -1,0 +1,24 @@
+--- pair_components.py
++++ pair_components_v2.py
+@@ -51,7 +51,9 @@
+                 cursor = connection.execute(f"SELECT * FROM {table} WHERE julianday({cutoff_column})<=julianday(?) ORDER BY {order_column} DESC LIMIT ?", (at.isoformat(), limit+1))
+                 mark(metrics, "select_execute_return", table=table, deadline=deadline)
+                 rows = list(cursor)
+-                mark(metrics, "rows_materialized", table=table, count=len(rows), deadline=deadline)
++                mark(metrics, "rows_materialized", table=table, count=len(rows), deadline=deadline,
++                     first_native_row_type=type(rows[0]).__name__ if rows else None,
++                     per_cursor_row_factory="None" if cursor.row_factory is None else cursor.row_factory.__name__)
+             except sqlite3.OperationalError:
+                 result["errors"].append(table+":READ_BUDGET_OR_SOURCE_UNAVAILABLE")
+                 break
+@@ -113,7 +115,9 @@
+                 mark(metrics, "select_execute_return", table=table, deadline=deadline)
+                 cursor.row_factory = None
+                 rows = list(cursor)
+-                mark(metrics, "rows_materialized", table=table, count=len(rows), deadline=deadline)
++                mark(metrics, "rows_materialized", table=table, count=len(rows), deadline=deadline,
++                     first_native_row_type=type(rows[0]).__name__ if rows else None,
++                     per_cursor_row_factory="None" if cursor.row_factory is None else cursor.row_factory.__name__)
+             except sqlite3.OperationalError:
+                 result["errors"].append(table+":READ_BUDGET_OR_SOURCE_UNAVAILABLE")
+                 break

@@ -1,0 +1,158 @@
+{
+  "actual_failure": {
+    "actual_fin_size_lstat_only": 348070,
+    "original_failure_permanent_red_preserved": true,
+    "over_limit_bytes": 85926,
+    "payload_counts_or_junit_test_failures_unavailable": true,
+    "postread_control_path": "/workspace/scratch/rc6-predeploy375229-controls-rg84015s/porota-predeploy-37522988940-1.pytest-producers-postread.json",
+    "postread_control_sha256": "db46a0d0f83f81267b10a81dd2da36ff74d0ea82b3d71d7d864fb9e8e59336c1",
+    "primary_error": "CONTROL_SIZE_LIMIT",
+    "reader_limit_unchanged": 262144,
+    "run": 37522988940,
+    "safe_postread": "UNKNOWN_OR_UNCLOSED_DUE_UNREADABLE_SIZE_NOT_NEW_PROOF_OF_PHYSICAL_UNKNOWN",
+    "source_junit_data_log_payloads_read": 0
+  },
+  "actual_global348070_compact_size_not_proven": true,
+  "classification": "PROPOSAL_READ_ONLY_REENCODING_NOT_SOURCE_CHANGE_OR_COMPONENT_EXECUTION",
+  "created_utc": "2026-10-06T20:59:33.502201+00:00",
+  "files": {
+    "cleanup_after": {
+      "bytes": 36701,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-compact-proposal-0f73-hco1a9ob/cleanup-after.py.source",
+      "sha256": "834395f0ed3aab232f67e713dc9d712c926aa2b4ab38e6762244f1e2d755cebf"
+    },
+    "cleanup_before": {
+      "bytes": 36582,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-compact-proposal-0f73-hco1a9ob/cleanup-before.py.source",
+      "sha256": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f"
+    },
+    "closed_real100_measurement": {
+      "bytes": 2950,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-compact-proposal-0f73-hco1a9ob/closed-real100-reencoding.json",
+      "sha256": "dac0eb251101ef76530ff9225f4783d49916a48c260a034b7ffaa09cf14a0918"
+    },
+    "diff": {
+      "bytes": 1255,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-compact-proposal-0f73-hco1a9ob/compact-fin.diff",
+      "sha256": "c63de67cbe01797b8f3fec96e57bd14c9abac0c55c98133087210b187d3c7655"
+    },
+    "workspace_after": {
+      "bytes": 50923,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-compact-proposal-0f73-hco1a9ob/workspace-after.py.source",
+      "sha256": "a5f5ff87f6634ac831bd5416f0dea6cb756bd5c88930b0d1fb25028bc6fc2b70"
+    },
+    "workspace_before": {
+      "bytes": 50909,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-compact-proposal-0f73-hco1a9ob/workspace-before.py.source",
+      "sha256": "e768b5ca51df5646cac1c2739fecb35aa394cbcedecc6d428ddf8f47b7b21e85"
+    }
+  },
+  "final_candidate_eligible": false,
+  "full_gov_big_artifact_image_runtime_qualified": false,
+  "github_writes": false,
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "native_manager55325_and_original_driver_hash_unchanged": true,
+  "no_actual_prior_global_test_counts_claimed": true,
+  "no_blind_retry_of_existing0f_predeploy": true,
+  "no_source_payload_read_to_repair_old_control": true,
+  "ppi_watch": "UNTOUCHED_OUT_OF_SCOPE",
+  "proposed_controls_before_any_new_predeploy": [
+    {
+      "id": "actual100_compact_fin",
+      "scope": "Run real existing owned pytest100 fixture through actual candidate Source helpers, require all100 real reaps+ECHILD+PGID+original5 bound and same original phaseRED/exit1. Compare generated compact bytes decoded object to original pretty rendering of exactly that closed actual record; default publisher bytes must match canonical original."
+    },
+    {
+      "id": "bounded_reader_unchanged",
+      "scope": "Read actual future compact FIN through original256KiB/mode0600/NoFollow/mount/nlink/stat11 checks. Oversize control still raises CONTROL_SIZE_LIMIT before payload; do not enlarge caps or truncate observations."
+    },
+    {
+      "id": "genuine_large_control_optional",
+      "scope": "If root approves, use actual100 with declared real pytest --deselect selectors in argv (each<ARG_MAX) to place ORIGINAL pretty control>256KiB while full compact control<=256KiB; this is control-size fixture only, no fields invented. Intent itself must remain<=256KiB. Verify full actual argv/kernel arrays preserved. Alternatively real larger adopted set may be used only within existing1024 cap and actual PID budget; neither proof is run yet."
+    },
+    {
+      "id": "unknown_live_child_stays_blocked",
+      "scope": "Existing real liveDetached6/UNKNOWN fixture keeps original5 bound/phaseRED and all noPayload-beforeFIN assertions. Compact small control must never authorize JUnit/source/log reads without actual physicalFIN."
+    },
+    {
+      "id": "existing_scoped_guard_contracts",
+      "scope": "Run original scoped cleanup/publisher/native100 and CI workflow contract focals without tests/assertion/allowlist edits; review keyword-compatible spies narrowly. Full Predeploy requires a new exact SHA and is not launched here."
+    }
+  ],
+  "proposed_runtime_paths": [
+    "scripts/porota_predeploy_cleanup.py",
+    "scripts/porota_predeploy_test_workspace.py"
+  ],
+  "reader_and_all_atomic_publisher_stat_fd_nofollow_mode0600_link_fsync_previous_guards_ast_unchanged": true,
+  "real100_observations": [
+    {
+      "actual_kernel_fin_closed": true,
+      "actual_phase_exitcode": 1,
+      "actual_phase_green": false,
+      "actual_reaped_descendants": 100,
+      "all_keys_values_arrays_errors_preserved": true,
+      "compact_bytes": 34481,
+      "compact_sha256": "211472289f08cd652e8c187d325007ec37fbd1d11c57e3212fda4ec85be6d346",
+      "default_serializer_bytes_exactly_original": true,
+      "epoch": "311",
+      "measurement_scope": "READ_ONLY_FORMATTING_OF_ALREADY_REAL_CLOSED_COMPONENT_RECORD_NOT_NEW_GATE_EXECUTION",
+      "no_original348070_fin_payload_available": true,
+      "original_raw_path": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch311/pytest/test_real_owned_pytest_failed_0/native-runner/porota-predeploy-471-2-af243396ab394adeba719cd094071a19/porota-pytest-owned-fin.json",
+      "phase_red_not_reclassified": true,
+      "pretty_bytes": 49894,
+      "raw_original_stat11_preserved_during_read": {
+        "st_atime_ns": 1791314770814446536,
+        "st_blocks": 104,
+        "st_ctime_ns": 1791314770816334823,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093737,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791314770816334823,
+        "st_nlink": 1,
+        "st_size": 49894,
+        "st_uid": 1000
+      },
+      "raw_sha256": "528062d7a1b676eaadabb6f7668496aae4285c2714dff12e0c703b744ddb0bb3"
+    },
+    {
+      "actual_kernel_fin_closed": true,
+      "actual_phase_exitcode": 1,
+      "actual_phase_green": false,
+      "actual_reaped_descendants": 100,
+      "all_keys_values_arrays_errors_preserved": true,
+      "compact_bytes": 34047,
+      "compact_sha256": "57a8025b183e65e9ed6d863206e4eaab8452cb5d06e6c6523244d04b3f3c5d66",
+      "default_serializer_bytes_exactly_original": true,
+      "epoch": "312",
+      "measurement_scope": "READ_ONLY_FORMATTING_OF_ALREADY_REAL_CLOSED_COMPONENT_RECORD_NOT_NEW_GATE_EXECUTION",
+      "no_original348070_fin_payload_available": true,
+      "original_raw_path": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest/test_real_owned_pytest_failed_0/native-runner/porota-predeploy-471-2-819307d4925940049839f8e54294764c/porota-pytest-owned-fin.json",
+      "phase_red_not_reclassified": true,
+      "pretty_bytes": 49460,
+      "raw_original_stat11_preserved_during_read": {
+        "st_atime_ns": 1791314916133779845,
+        "st_blocks": 104,
+        "st_ctime_ns": 1791314916136193821,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1609249,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791314916136193821,
+        "st_nlink": 1,
+        "st_size": 49460,
+        "st_uid": 1000
+      },
+      "raw_sha256": "e08af309a36a1ad2cbd7bfda99bd2105fbe71d1bb9475bfdbff32f52b7af7056"
+    }
+  ],
+  "real_orders_sent": 0,
+  "repo_id": 1338680554,
+  "root_scope_and_review_required_before_source_apply_and_component_launch": true,
+  "schema": "rc6.predeploy-fin-compact.external-proposal.v1",
+  "semantics": "Only new FIN call requests compact JSON. canonical/default publisher remains byte-identical. All same fields, list order, values, errors, source bindings and full actual kernel observations remain; no schema/count/limit/predicate changes.",
+  "source_changed": false,
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "tests_executed": false,
+  "workflow_file_and_steps_including18_unchanged": true
+}

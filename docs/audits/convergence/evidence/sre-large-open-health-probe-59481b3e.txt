@@ -1,0 +1,158 @@
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+import time
+from datetime import datetime, timedelta
+
+REPO = Path('/workspace/porota_rc6_sre_large_health_59481b3e')
+SHA = '59481b3e9e0470850232fb78bbc1f583675e4c8a'
+TREE = 'a17f1008a4e14643d9081dd794b9050b13144c2c'
+DB = Path('/tmp/rc6-native-18e9716d-full-slow/source.db')
+ROOT = DB.parent / 'shadow'
+OUT = Path('/tmp/porota-sre-large-health-59481b3e.json')
+sys.path.insert(0, str(REPO))
+
+def read_bytes(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+    with os.fdopen(fd, 'rb') as stream:
+        return stream.read()
+
+def snapshot(path):
+    info = path.lstat()
+    details = {key: getattr(info, key) for key in (
+        'st_dev', 'st_ino', 'st_nlink', 'st_uid', 'st_gid', 'st_mode',
+        'st_size', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')}
+    if stat.S_ISREG(info.st_mode):
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+        with os.fdopen(fd, 'rb') as stream:
+            digest = hashlib.sha256()
+            while data := stream.read(1024 * 1024): digest.update(data)
+        details['sha256'] = digest.hexdigest()
+    return details
+
+def snapshot_tree(path):
+    result = {str(path): snapshot(path)}
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME)
+    try:
+        with os.scandir(fd) as entries:
+            for entry in entries:
+                child = path / entry.name
+                if entry.is_dir(follow_symlinks=False): result.update(snapshot_tree(child))
+                else: result[str(child)] = snapshot(child)
+    finally:
+        os.close(fd)
+    return result
+
+# A full canonical archive is checked against native committed blobs and modes.
+entries = subprocess.check_output(['git', '-C', '/workspace/porota_rc6_convergence',
+    'ls-tree', '-rz', '--full-tree', SHA]).split(b'\0')
+archive_count = 0
+for entry in entries:
+    if not entry: continue
+    description, name = entry.split(b'\t', 1)
+    mode, kind, blob = description.decode().split()
+    path = REPO / name.decode()
+    assert kind == 'blob' and mode in {'100644', '100755'}
+    raw = read_bytes(path)
+    assert hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest() == blob
+    assert not path.is_symlink() and path.stat().st_nlink == 1
+    assert stat.S_IMODE(path.stat().st_mode) == (0o755 if mode == '100755' else 0o644)
+    archive_count += 1
+
+for name in tuple(os.environ):
+    if name.startswith('POROTA_CAPACITY_') or name in {
+        'POROTA_DYNAMIC_SHADOW_ROOT', 'POROTA_SHADOW_RUNTIME_ROOT',
+        'POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT', 'POROTA_IOL_SHADOW_ROOT',
+        'POROTA_IOL_SHADOW_CACHE_PATH'}:
+        os.environ.pop(name, None)
+os.environ['DATA_DIR'] = str(DB.parent)
+os.environ['HIST_DB_PATH'] = str(DB.parent / 'absent-history.db')
+os.environ['POROTA_DYNAMIC_CAPACITY_MODE'] = 'OFF'
+os.environ['POROTA_DYNAMIC_SHADOW_ROOT'] = str(ROOT)
+os.environ['POROTA_SHADOW_RUNTIME_ROOT'] = str(ROOT)
+
+from cg_paper_workspace import artifact_root
+from scripts.rc6_shadow_health_gate import (
+    HEALTH_SCHEMA, MAX_HEALTH_READ_SECONDS, read_child_health,
+    validate_health_cut, read_health, ShadowHealthRejected)
+
+now = datetime.fromisoformat('2026-10-05T13:35:05+00:00')
+health_path = artifact_root(DB) / 'runtime-health.json'
+health_path.parent.mkdir(parents=True, exist_ok=False)
+health = {'schema': HEALTH_SCHEMA, 'recorded_at': now.isoformat(),
+    'source_sha': SHA, 'candidate_tree_sha': TREE,
+    'children': {'dynamic_shadow': {'state': 'RUNNING', 'pid': os.getpid(),
+        'restarts': 0, 'spawn_failures': 0,
+        'started_at': (now - timedelta(seconds=905)).isoformat(),
+        'last_exit_at': None, 'last_error': None}}}
+with health_path.open('x') as stream: json.dump(health, stream, sort_keys=True)
+health_path.chmod(0o600)
+
+protected = [ROOT, ROOT.parent / (ROOT.name + '.authority')]
+before = {str(DB): snapshot(DB), str(health_path): snapshot(health_path)}
+for sibling in (Path(str(DB) + '-wal'), Path(str(DB) + '-shm'), Path(str(DB) + '-journal')):
+    if sibling.exists(): before[str(sibling)] = snapshot(sibling)
+for path in protected: before.update(snapshot_tree(path))
+
+started, cpu = time.monotonic(), time.process_time()
+deadline = started + MAX_HEALTH_READ_SECONDS
+steps = {}
+failure = None
+result = None
+generation = None
+try:
+    child = read_child_health(health_path)
+    steps['child_health_elapsed_seconds'] = time.monotonic() - started
+    from rc6_shadow_runtime.persistence import read_committed_projection
+    generation = read_committed_projection(ROOT, limit=1, deadline=deadline)
+    steps['four_role_projection_elapsed_seconds'] = time.monotonic() - started
+    from rc6_shadow_runtime.worker import ShadowRuntime
+    worker = ShadowRuntime.from_environment(DB, evidence_root=ROOT, source_roots=[])
+    fingerprint = worker.configuration_fingerprint(now)
+    steps['native_fixture_factory_elapsed_seconds'] = time.monotonic() - started
+    assert fingerprint == '1b05dca7694c61eace4b988f5b3047ae25f80ef2e51bd1e3ec71acf2ebbee53d'
+    result = validate_health_cut(child, generation, source_sha=SHA, tree_sha=TREE,
+        now=now, configuration_fingerprint=fingerprint)
+    if time.monotonic() >= deadline:
+        raise ShadowHealthRejected('SHADOW_HEALTH_READ_DEADLINE')
+except (ValueError, OSError, AssertionError) as error:
+    failure = {'class': type(error).__name__, 'reason': str(error)}
+elapsed, cpu_elapsed = time.monotonic() - started, time.process_time() - cpu
+
+after = {str(DB): snapshot(DB), str(health_path): snapshot(health_path)}
+for sibling in (Path(str(DB) + '-wal'), Path(str(DB) + '-shm'), Path(str(DB) + '-journal')):
+    if sibling.exists(): after[str(sibling)] = snapshot(sibling)
+for path in protected: after.update(snapshot_tree(path))
+
+report = {'schema': 'rc6.sre-large-committed-open-health-native.v1',
+    'source_sha': SHA, 'source_tree': TREE, 'canonical_archive_files_verified': archive_count,
+    'generation': json.loads(read_bytes(ROOT / 'CURRENT.json')),
+    'large_source_database': str(DB), 'large_evidence_root': str(ROOT),
+    'simulated_evidence_clock': now.isoformat(),
+    'child_health_scope': 'ISOLATED_FIXTURE_RECORD_AND_REAL_LIVE_PROBE_PROCESS; not production child uptime',
+    'factory_scope': 'Exact native from_environment factory kwargs used by published stress cut; source_roots=[] and evidence_root explicit',
+    'full_launcher_factory_gate': 'PENDING_CANONICAL_ENVIRONMENT_ARCHIVE_WIRING_AND_FRESH_MATCHING_CUT',
+    'maximum_read_seconds': MAX_HEALTH_READ_SECONDS, 'elapsed_seconds': elapsed,
+    'cpu_seconds': cpu_elapsed, 'steps': steps,
+    'status': 'GREEN' if failure is None and result and before == after else 'RED',
+    'failure': failure, 'result': result,
+    'source_and_evidence_all_bytes_and_metadata_unchanged': before == after,
+    'changed_paths': [name for name in sorted(set(before) | set(after)) if before.get(name) != after.get(name)],
+    'before': before, 'after': after,
+    'provider_requests': 0, 'real_orders_sent': 0, 'real_routes': 'NOT_CALLED',
+    'runtime_touched': False, 'edge': 'NO_DEMOSTRADO'}
+if generation:
+    report['verified_payloads'] = generation['export_contract']['verified_payloads']
+    report['phase'] = generation['report']['phase']
+    report['generation_as_of'] = generation['report']['as_of']
+    report['source_catalog_count'] = generation['report'].get('catalog_ready_count')
+with OUT.open('x') as stream: json.dump(report, stream, sort_keys=True, indent=2); stream.write('\n')
+print(json.dumps({key: report[key] for key in (
+    'status', 'elapsed_seconds', 'cpu_seconds', 'steps', 'failure',
+    'source_and_evidence_all_bytes_and_metadata_unchanged', 'changed_paths', 'result')}, sort_keys=True))
+print('RECEIPT=' + str(OUT))
+raise SystemExit(0 if report['status'] == 'GREEN' else 1)

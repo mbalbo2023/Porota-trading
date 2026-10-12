@@ -1,0 +1,512 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-B",
+    "-u",
+    "/workspace/rc6-canonical-1426b284-big-20261005-source/scripts/rc6_issue465_stress.py",
+    "--root",
+    "/workspace/rc6-canonical-1426b284-big-20261005-data",
+    "--out",
+    "/workspace/rc6-canonical-1426b284-big-20261005-raw/native-big-result.json",
+    "--catalog-count",
+    "12000",
+    "--observations-per-identity",
+    "5",
+    "--slow-disk",
+    "--canonical-runtime",
+    "--source-root",
+    "/workspace/rc6-canonical-1426b284-big-20261005-source",
+    "--source-repo",
+    "/workspace/porota_rc6_convergence",
+    "--source-sha",
+    "1426b2844c06b164aa08b765e01676f19845a192",
+    "--source-tree",
+    "983f5a1d3f38edf671eab7d5420bbffdc93ffea2",
+    "--source-index",
+    "/workspace/rc6-canonical-1426b284-big-20261005-source-raw/source.index.json"
+  ],
+  "cwd": "/workspace/rc6-canonical-1426b284-big-20261005-source",
+  "diagnostic_only": false,
+  "distribution_count": 157,
+  "entry_preflight_passed": true,
+  "external_parent_pid": 236738,
+  "factory_contract_fields_are_pinned_source_declarations_not_independent_measurements": true,
+  "failures": [
+    {
+      "class": "ValueError",
+      "reason": "CLEAN_NATIVE_EXIT_REQUIRED",
+      "stage": "native_receipt"
+    }
+  ],
+  "gid": 1000,
+  "import_observation_limits": {
+    "authentication": "INTERPRETER_PATH_METADATA_NOT_EXECUTED_CODE_OR_BINARY_AUTHENTICATION",
+    "bootstrap_before_installation": "OUTSIDE_OBSERVED_WINDOW",
+    "identifier_char_limit": 4096,
+    "identifier_utf8_byte_upper_bound": 16384,
+    "opaque_or_unknown": "UNVERIFIED",
+    "overflow_or_error": "UNVERIFIED",
+    "pending_name_limit": 2048,
+    "record_limit": 2048,
+    "retained_origin_limit_per_snapshot": 2048,
+    "tail_after_final_boundary": "OUTSIDE_OBSERVED_WINDOW"
+  },
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "native_business_and_import_proof_complete": false,
+  "native_launcher_cpu_seconds": 91.909055,
+  "native_launcher_peak_rss_bytes": 1649008640,
+  "native_launcher_reaped": true,
+  "native_launcher_resource_scope": "ACTUAL_WAIT4_REAPED_LAUNCHER_INCLUDING_CHILDREN_NOT_WORKER_ONLY",
+  "native_pid": 236743,
+  "native_result_sha256": "db1f92f24c407869887fca99dd44c5eb1a0b99ffaa939a17d94ed8063a78cb7c",
+  "observed_code_atime_phase_changes": {
+    "POROTA_SECTOR_MAP_V1.csv": {
+      "after_ns": 1791244690408932001,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "_version.py": {
+      "after_ns": 1791244601396006697,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "ak_byma_calendar.py": {
+      "after_ns": 1791244602619998056,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "am_us_equity_calendar_rc6.py": {
+      "after_ns": 1791244601528005767,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "au_fee_schedule.py": {
+      "after_ns": 1791244618043889280,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "bd_ppi_readonly_guard.py": {
+      "after_ns": 1791244601464006218,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "be_paper_engine.py": {
+      "after_ns": 1791244601396006697,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "bf_production_paper_observer.py": {
+      "after_ns": 1791244601436006415,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "bi_operational_services.py": {
+      "after_ns": 1791244601512005879,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "bl_candle_engine.py": {
+      "after_ns": 1791244601420006527,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "bm_exit_supervisor.py": {
+      "after_ns": 1791244601608005202,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "bn_telegram_bus.py": {
+      "after_ns": 1791244601616005145,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "bq_exit_policy.py": {
+      "after_ns": 1791244602671997689,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "bs_instrument_contracts.py": {
+      "after_ns": 1791244601416006556,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "bt_caucion_paper.py": {
+      "after_ns": 1791244601420006527,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "bu_instrument_catalog.py": {
+      "after_ns": 1791244601520005823,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "bw_daily_risk.py": {
+      "after_ns": 1791244601620005117,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "cc_spot_liquidity.py": {
+      "after_ns": 1791244601432006443,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "cd_spot_ledger.py": {
+      "after_ns": 1791244601428006472,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "cf_intraday_scalping.py": {
+      "after_ns": 1791244601540005682,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "cf_sale_settlement.py": {
+      "after_ns": 1791244601428006472,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "cg_paper_workspace.py": {
+      "after_ns": 1791244601392006725,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "ch_empirical_learning.py": {
+      "after_ns": 1791244690403379353,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "ci_operational_context.py": {
+      "after_ns": 1791244690403379353,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "ck_policy_gate_hf6.py": {
+      "after_ns": 1791244690399379382,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "co_market_sessions_hf6.py": {
+      "after_ns": 1791244601556005569,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "cu_history_store_v2_hf6.py": {
+      "after_ns": 1791244603483991955,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "de_concurrent_risk_capacity_hf6.py": {
+      "after_ns": 1791244690408932001,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "dh_paper_dynamic_risk_gate_hf6.py": {
+      "after_ns": 1791244690411379297,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "es_policy_context_rc6.py": {
+      "after_ns": 1791244690403379353,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "eu_telegram_policy_rc6.py": {
+      "after_ns": 1791244601620005117,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "fe_fixed_income_nominal_contract_rc6.py": {
+      "after_ns": 1791244602695997520,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "fg_intraday_contract_policy_rc6.py": {
+      "after_ns": 1791244601556005569,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "ops/policy/rc6-dynamic-capacity-v1.json": {
+      "after_ns": 1791244603215993848,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_audit_evidence/__init__.py": {
+      "after_ns": 1791244602655997802,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_audit_evidence/package.py": {
+      "after_ns": 1791244602655997802,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_audit_evidence/recompute.py": {
+      "after_ns": 1791244602667997718,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_audit_evidence/sqlite_scratch.py": {
+      "after_ns": 1791244602663997745,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_audit_evidence/sqlite_snapshot.py": {
+      "after_ns": 1791244602663997745,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_cost_settlement_takeprofit_shadow.py": {
+      "after_ns": 1791244690399379382,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_dynamic_universe/__init__.py": {
+      "after_ns": 1791244601536005710,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_dynamic_universe/capacity.py": {
+      "after_ns": 1791244602623998028,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_dynamic_universe/common.py": {
+      "after_ns": 1791244601536005710,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_dynamic_universe/economics.py": {
+      "after_ns": 1791244602675997661,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_dynamic_universe/live.py": {
+      "after_ns": 1791244602619998056,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_dynamic_universe/orchestrator.py": {
+      "after_ns": 1791244602623998028,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_dynamic_universe/promotion.py": {
+      "after_ns": 1791244603207993905,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_dynamic_universe/routing.py": {
+      "after_ns": 1791244602627998000,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_dynamic_universe/runtime.py": {
+      "after_ns": 1791244602655997802,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_dynamic_universe/sources.py": {
+      "after_ns": 1791244602599998197,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_dynamic_universe/tradeability.py": {
+      "after_ns": 1791244602635997943,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_multisource_discovery.py": {
+      "after_ns": 1791244601524005795,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_paper_family_lifecycle.py": {
+      "after_ns": 1791244601596005286,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_performance/__init__.py": {
+      "after_ns": 1791244601432006443,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_performance/common.py": {
+      "after_ns": 1791244601436006415,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_performance/costs.py": {
+      "after_ns": 1791244602675997661,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_performance/lineage.py": {
+      "after_ns": 1791244601432006443,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_performance/metrics.py": {
+      "after_ns": 1791244602719997350,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_performance/replay.py": {
+      "after_ns": 1791244602707997435,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_performance/shadow.py": {
+      "after_ns": 1791244602707997435,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/__init__.py": {
+      "after_ns": 1791244601536005710,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/archive_namespace.py": {
+      "after_ns": 1791244603203993933,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/entry_signals.py": {
+      "after_ns": 1791244602711997407,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/families.py": {
+      "after_ns": 1791244602687997576,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/funnel.py": {
+      "after_ns": 1791244602719997350,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/lab.py": {
+      "after_ns": 1791244602699997491,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/packed_storage.py": {
+      "after_ns": 1791244602607998141,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/persistence.py": {
+      "after_ns": 1791244602583998311,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/preopen.py": {
+      "after_ns": 1791244603479762258,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/projection.py": {
+      "after_ns": 1791244602727997293,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/publication_storage.py": {
+      "after_ns": 1791244631071797451,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/retention.py": {
+      "after_ns": 1791244607691962263,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/serialization.py": {
+      "after_ns": 1791244602603998170,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/source_authority.py": {
+      "after_ns": 1791244601536005710,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/source_reads.py": {
+      "after_ns": 1791244602655997802,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/stages.py": {
+      "after_ns": 1791244602671997689,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_shadow_runtime/worker.py": {
+      "after_ns": 1791244602615998084,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_signal_contracts.py": {
+      "after_ns": 1791244601552005597,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "rc6_source_consolidation.py": {
+      "after_ns": 1791244601528005767,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "scripts/rc6_issue465_stress.py": {
+      "after_ns": 1791244600696011629,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "scripts/rc6_native_import_provenance.py": {
+      "after_ns": 1791244600748011263,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    },
+    "scripts/rc6_sqlite_scratch_guard.py": {
+      "after_ns": 1791244602683997604,
+      "before_ns": 1791244457000000000,
+      "kind": "file"
+    }
+  },
+  "overlay_count": 0,
+  "preserved_native_contract": {
+    "catalog": 12000,
+    "cycle_seconds": 90,
+    "evidence_bytes": 134217728,
+    "factory_archive_bytes": 536870912,
+    "factory_live_bytes": 134217728,
+    "factory_scratch_bytes": 536870912,
+    "factory_source_capture_seconds": 0.25,
+    "gc_collect_added": false,
+    "gc_policy_changed": false,
+    "materialized_inputs": 60000,
+    "rss_bytes_strict": 2147483648,
+    "slow_fsync_release_seconds": 15,
+    "stack_sampler_added": false
+  },
+  "rawlog_sha256": "01b9fa6e3a86abda0fd1e2240fb324c8456f0ae8446cbc94938e99fe5efc15f1",
+  "returncode": 1,
+  "runtime_validated": false,
+  "schema": "rc6.native-big-whole-source-trial-wrapper.v3",
+  "scope": "UNINSTRUMENTED_CANONICAL_BIG_NATIVE157_OBSERVED_IMPORT_WINDOWS_NOT_GOV_ARTIFACT_OR_RUNTIME_VALIDATION",
+  "source_custody_scope": "ALL_RAW_HASHED_GIT_TREES_FILES_DIRECTORIES_BYTES_MODES_BLOBS_STATS_MOUNT_IDS_NOATIME",
+  "source_directories": 120,
+  "source_files": 2220,
+  "source_index_sha256": "4a02b247527f400ab5fe35974370fea85d57013da7654b4059e7f95ac568d3b6",
+  "source_phase_comparison_scope": "CODE_BYTES_MODES_BLOBS_NAMESPACE_MOUNTS_AND_STABLE_STAT; CODE_ATIME_OBSERVED_SEPARATELY_NEVER_RESTORED; PRIMARY_DATA_ALL11_AND_SHA_UNCHANGED",
+  "source_repo": "/workspace/porota_rc6_convergence",
+  "source_sha": "1426b2844c06b164aa08b765e01676f19845a192",
+  "source_tree": "983f5a1d3f38edf671eab7d5420bbffdc93ffea2",
+  "status": "RED",
+  "tar_sha256": "b9bcc7c680e4086bf64a62aac8bf3b90dd87ffa9ea577d50138c458109379b0f",
+  "uid": 1000,
+  "umask": "077",
+  "whole_launcher_lifetime_is_not_original_90s_worker_deadline": true,
+  "whole_source_namespace_bytes_modes_stable_stats_mounts_unchanged": true,
+  "wrapper_native_lifetime_wall_seconds": 91.87358117599797
+}

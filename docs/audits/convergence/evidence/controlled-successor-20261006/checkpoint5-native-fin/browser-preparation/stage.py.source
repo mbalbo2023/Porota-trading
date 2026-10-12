@@ -1,0 +1,38 @@
+import argparse,datetime,hashlib,importlib.util,json,os,pathlib,sys
+OUT=pathlib.Path('/workspace/scratch/rc6driver-kba25cdt')
+ROOT=pathlib.Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source')
+BASE='/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/bin/python3.11'
+INSTALLER='/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python'
+LOCK='/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/browser-driver.cp311-linux-x86_64.lock.txt'
+DRIVER=OUT/'driver-env'
+def publish(path,obj):
+ raw=(json.dumps(obj,sort_keys=True,indent=2)+'\n').encode()
+ with path.open('xb') as f:f.write(raw)
+ path.chmod(0o600)
+ return hashlib.sha256(raw).hexdigest()
+def loadgov():
+ spec=importlib.util.spec_from_file_location('rc6_driver_setup_native_kernel',ROOT/'scripts/rc6_controlled_governed_runner.py')
+ module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
+p=argparse.ArgumentParser();p.add_argument('--stage',choices=('venv','install','verify-driver','install-browser','verify-browser'),required=True);args=p.parse_args()
+gov=loadgov();env=os.environ.copy()
+for key in tuple(env):
+ if key.startswith(('PYTHON','PIP_','PLAYWRIGHT_')):del env[key]
+env.update({'PYTHONDONTWRITEBYTECODE':'1','PYTHONNOUSERSITE':'1','PIP_CONFIG_FILE':'/dev/null','PIP_NO_CACHE_DIR':'1','TMPDIR':str(OUT/'tmp'),'RUNNER_TEMP':str(OUT/'tmp'),'PLAYWRIGHT_BROWSERS_PATH':str(OUT/'browser-cache')})
+if args.stage=='venv':
+ assert not DRIVER.exists();command=[BASE,'-I','-B','-m','venv','--without-pip',str(DRIVER)];limit=120
+elif args.stage=='install':
+ assert DRIVER.is_dir();command=[INSTALLER,'-I','-B','-m','pip','--isolated','--disable-pip-version-check','--python',str(DRIVER/'bin/python'),'install','--no-index','--find-links',str(OUT/'wheelhouse'),'--no-deps','--require-hashes','--only-binary=:all:','--no-compile','--no-cache-dir','--report',str(OUT/'receipts/pip-install-report.json'),'-r',LOCK];limit=120
+elif args.stage=='verify-driver':command=[str(DRIVER/'bin/python'),'-I','-B',str(OUT/'verify_driver.py')];limit=120
+elif args.stage=='install-browser':
+ verify=json.loads((OUT/'receipts/driver-validation.json').read_text());assert verify['status']=='GREEN_DRIVER_BYTES_ONLY'
+ command=[str(DRIVER/'bin/python'),'-I','-B',str(OUT/'sanitized_browser_install.py')];limit=600
+else:
+ command=[str(DRIVER/'bin/python'),'-I','-B',str(OUT/'verify_browser.py')];limit=120
+print(json.dumps({'event':'STAGE_START','stage':args.stage,'utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'supervisor_pid':os.getpid(),'command':command,'acceptance_limit_seconds':limit,'cleanup_bound_seconds':5}),flush=True)
+kernel=gov.subprocess_phase(command,OUT,OUT/'logs'/(args.stage+'.log'),env,limit)
+barrier=(kernel['actual_child_reaped'] is True and kernel['owned_children_exhaustion_verified'] is True and kernel['process_group_absent_after_reap'] is True and kernel['remaining_owned_children']==[] and any(x.get('phase')=='after_main_pid_reap' and x.get('outcome')=='ECHILD' for x in kernel['kernel_owned_child_observations']) and not kernel['supervisor_errors'])
+ok=(barrier and kernel['returncode']==0 and not kernel['timed_out'] and not kernel['late_observed_main_reap_irreversible_red'] and not kernel['kernel_wait4_zero_observed_irreversible_red'] and kernel['process_group_absent_at_main_reap'] is True and not kernel['residual_descendants_observed'] and not kernel['adopted_descendants_reaped'] and not kernel['owned_group_signal_observations'] and kernel['termination_reap_restore_cleanup_seconds']<=5)
+receipt={'stage':args.stage,'status':'GREEN_PREPARATION_ONLY' if ok else 'RED','kernel':kernel,'postread_barrier_closed':barrier,'browser_gate_run':False,'source_product_execution':False}
+digest=publish(OUT/'receipts'/(args.stage+'-kernel.json'),receipt)
+print(json.dumps({'event':'STAGE_FIN','stage':args.stage,'utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'status':receipt['status'],'postread_barrier_closed':barrier,'receipt_sha256':digest,'child_pid':kernel['pid']}),flush=True)
+sys.exit(0 if ok else 1)

@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="14" time="2.338" timestamp="2026-10-06T13:25:22.874877+00:00" hostname="ef95cdb90b64"><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_raw_git_pin_rejects_same_names_with_changed_bytes" time="0.037" /><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[.hypothesis/constants/generated]" time="0.039" /><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[data/logs/trading_bot.log]" time="0.038" /><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[.pytest_cache]" time="0.038" /><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_physical_alias_and_code_atime_claims_remain_distinct" time="0.040"><failure message="assert False&#10; +  where False = any(&lt;generator object test_physical_alias_and_code_atime_claims_remain_distinct.&lt;locals&gt;.&lt;genexpr&gt; at 0x7f88c0653440&gt;)">literal_tree = (PosixPath('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic311/fixture/pytest/test_phy...ias_and_code_a0/literal-tree'), '1113e9a6725ebede677041e8ee75f9cd1083c019', '5f7c05a180845d02ad12a87ea679b759be483e29')
+tmp_path = PosixPath('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic311/fixture/pytest/test_physical_alias_and_code_a0')
+
+    def test_physical_alias_and_code_atime_claims_remain_distinct(literal_tree, tmp_path):
+        root, sha, tree = literal_tree
+        path = root/'fixture.py'
+        os.utime(path, ns=(1, path.stat().st_mtime_ns))
+        before = runner.source_pin(root, sha, tree)
+        assert path.read_bytes() == b'VALUE = 1\n'
+        after = runner.source_pin(root, sha, tree)
+        atime = runner.compare_source(before, after)
+&gt;       assert any(row['path'] == 'fixture.py' and row['kind'] == 'file' for row in atime)
+E       assert False
+E        +  where False = any(&lt;generator object test_physical_alias_and_code_atime_claims_remain_distinct.&lt;locals&gt;.&lt;genexpr&gt; at 0x7f88c0653440&gt;)
+
+tests/test_rc6_controlled_governed_runner.py:91: AssertionError</failure></testcase><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_actual_hypothesis_and_eager_logging_outputs_use_fresh_external_namespace" time="0.261"><failure message="AssertionError: Traceback (most recent call last):&#10;    File &quot;&lt;string&gt;&quot;, line 11, in &lt;module&gt;&#10;    File &quot;/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/lib/python3.11/site-packages/hypothesis/database.py&quot;, line 126, in __call__&#10;      return super().__call__(*args, **kwargs)&#10;             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    File &quot;/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/lib/python3.11/site-packages/hypothesis/database.py&quot;, line 447, in __init__&#10;      self.path = Path(path)&#10;                  ^^^^^^^^^^&#10;    File &quot;/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py&quot;, line 871, in __new__&#10;      self = cls._from_parts(args)&#10;             ^^^^^^^^^^^^^^^^^^^^^&#10;    File &quot;/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py&quot;, line 509, in _from_parts&#10;      drv, root, parts = self._parse_args(args)&#10;                         ^^^^^^^^^^^^^^^^^^^^^^&#10;    File &quot;/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py&quot;, line 493, in _parse_args&#10;      a = os.fspath(a)&#10;          ^^^^^^^^^^^^&#10;  TypeError: expected str, bytes or os.PathLike object, not StorageDirectory&#10;  &#10;assert 1 == 0&#10; +  where 1 = CompletedProcess(args=['/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python', '-I', '-B', '-c', &quot;impor... a = os.fspath(a)\n        ^^^^^^^^^^^^\nTypeError: expected str, bytes or os.PathLike object, not StorageDirectory\n').returncode">literal_tree = (PosixPath('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic311/fixture/pytest/test_act...thesis_and_eag0/literal-tree'), '1113e9a6725ebede677041e8ee75f9cd1083c019', '5f7c05a180845d02ad12a87ea679b759be483e29')
+tmp_path = PosixPath('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic311/fixture/pytest/test_actual_hypothesis_and_eag0')
+
+    def test_actual_hypothesis_and_eager_logging_outputs_use_fresh_external_namespace(literal_tree, tmp_path):
+        root, sha, tree = literal_tree
+        output = tmp_path/'external-output'
+        output.mkdir(mode=0o700)
+&gt;       report = native("""
+    from pathlib import Path
+    import json, logging.handlers, os
+    from scripts import rc6_controlled_governed_runner as r
+    root, output = Path(sys.argv[2]), Path(sys.argv[5])
+    before = r.source_pin(root, sys.argv[3], sys.argv[4])
+    namespace = r.phase_namespace(root, output, 'collection')
+    from hypothesis.configuration import storage_directory
+    from hypothesis.database import DirectoryBasedExampleDatabase
+    storage = storage_directory('examples')
+    database = DirectoryBasedExampleDatabase(storage)
+    database.save(b'key', b'controlled-example')
+    handler = logging.handlers.RotatingFileHandler(Path(os.environ['LOG_DIR'])/'trading_bot.log')
+    handler.close()
+    after = r.source_pin(root, sys.argv[3], sys.argv[4])
+    atime = r.compare_source(before, after)
+    print(json.dumps({'namespace':namespace, 'hypothesis_database':str(storage),
+        'code_unchanged':set(before['files']) == set(after['files']), 'atime':atime,
+        'log_exists':(Path(namespace['log_dir'])/'trading_bot.log').is_file()}))
+    """, root, sha, tree, output)
+
+tests/test_rc6_controlled_governed_runner.py:102: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+code = "\nfrom pathlib import Path\nimport json, logging.handlers, os\nfrom scripts import rc6_controlled_governed_runner as ...== set(after['files']), 'atime':atime,\n    'log_exists':(Path(namespace['log_dir'])/'trading_bot.log').is_file()}))\n"
+timeout = 15
+arguments = (PosixPath('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic311/fixture/pytest/test_act...ly-3091e93-ofT80Pum/gov-runner-controls/diagnostic311/fixture/pytest/test_actual_hypothesis_and_eag0/external-output'))
+
+    def native(code, *arguments, timeout=15):
+        env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
+        completed = subprocess.run([sys.executable, '-I', '-B', '-c',
+            "import sys; sys.path.insert(0, sys.argv[1]); " + code, str(SOURCE), *map(str, arguments)],
+            env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+&gt;       assert completed.returncode == 0, completed.stderr
+E       AssertionError: Traceback (most recent call last):
+E           File "&lt;string&gt;", line 11, in &lt;module&gt;
+E           File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/lib/python3.11/site-packages/hypothesis/database.py", line 126, in __call__
+E             return super().__call__(*args, **kwargs)
+E                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/lib/python3.11/site-packages/hypothesis/database.py", line 447, in __init__
+E             self.path = Path(path)
+E                         ^^^^^^^^^^
+E           File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py", line 871, in __new__
+E             self = cls._from_parts(args)
+E                    ^^^^^^^^^^^^^^^^^^^^^
+E           File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py", line 509, in _from_parts
+E             drv, root, parts = self._parse_args(args)
+E                                ^^^^^^^^^^^^^^^^^^^^^^
+E           File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py", line 493, in _parse_args
+E             a = os.fspath(a)
+E                 ^^^^^^^^^^^^
+E         TypeError: expected str, bytes or os.PathLike object, not StorageDirectory
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python', '-I', '-B', '-c', "impor... a = os.fspath(a)\n        ^^^^^^^^^^^^\nTypeError: expected str, bytes or os.PathLike object, not StorageDirectory\n').returncode
+
+tests/test_rc6_controlled_governed_runner.py:25: AssertionError</failure></testcase><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_kernel_creation_denial_prevents_optional_ipv6_bind_without_overriding_modules" time="0.114" /><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_reached_bind_connect_and_dns_stay_denied_and_red_even_with_kernel_filter" time="0.084" /><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_filter_installation_denied_by_kernel_cannot_report_capability_installed" time="0.079" /><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_owned_tracker_and_child_are_really_finished_before_main_pid_return" time="0.276" /><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_inherited_tracker_is_preserved_and_never_reaped_as_owned" time="0.191" /><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_owned_forkserver_protocol_finishes_before_main_pid_return" time="0.326"><failure message="FileNotFoundError: [Errno 2] No such file or directory: '/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic311/fixture/pytest/test_owned_forkserver_protocol0/phase-control.finalization.json'">tmp_path = PosixPath('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic311/fixture/pytest/test_owned_forkserver_protocol0')
+
+    def test_owned_forkserver_protocol_finishes_before_main_pid_return(tmp_path):
+        report = kernel_phase(tmp_path, """
+    import json,multiprocessing as mp,sys,time
+    from pathlib import Path
+    sys.path.insert(0,"""+repr(str(SOURCE))+""")
+    from scripts import rc6_controlled_governed_runner as r
+    if __name__=='__main__':
+        initial=r.child_infrastructure_snapshot()
+        process=mp.get_context('forkserver').Process(target=time.sleep,args=(.05,))
+        process.start();process.join(3)
+        assert process.exitcode==0
+        result=r.finalize_child_infrastructure(initial)
+        Path(__file__).with_suffix('.finalization.json').write_text(json.dumps(result))
+        assert result['status']=='GREEN'
+    """)
+&gt;       finalization = json.loads((tmp_path/'phase-control.finalization.json').read_text())
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_controlled_governed_runner.py:308: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py:1058: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic311/fixture/pytest/test_owned_forkserver_protocol0/phase-control.finalization.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic311/fixture/pytest/test_owned_forkserver_protocol0/phase-control.finalization.json'
+
+../python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py:1044: FileNotFoundError</failure></testcase><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_kernel_live_orphan_stays_irreversibly_red_even_after_cleanup" time="0.269" /><testcase classname="tests.test_rc6_controlled_governed_runner" name="test_native_watchdog_does_not_accept_a_phase_that_reaps_after_its_deadline" time="0.375" /></testsuite></testsuites>

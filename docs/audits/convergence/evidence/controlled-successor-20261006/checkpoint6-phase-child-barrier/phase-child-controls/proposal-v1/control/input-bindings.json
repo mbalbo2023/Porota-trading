@@ -1,0 +1,135 @@
+{
+  "component_only": true,
+  "files": {
+    "frozen157-policy.json.source": {
+      "all11_original_stable_during_copy": true,
+      "bytes": 103636,
+      "original": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/ops/policy/rc6-supply-chain-v1.json",
+      "original_stat": {
+        "st_atime_ns": 1791290621657224726,
+        "st_blocks": 208,
+        "st_ctime_ns": 1791290621244478296,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1050957,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791290621244478296,
+        "st_nlink": 1,
+        "st_size": 103636,
+        "st_uid": 1000
+      },
+      "sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462",
+      "stored_stat": {
+        "st_atime_ns": 1791317850118961304,
+        "st_blocks": 208,
+        "st_ctime_ns": 1791317850122497078,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093908,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850122497078,
+        "st_nlink": 1,
+        "st_size": 103636,
+        "st_uid": 1000
+      }
+    },
+    "new-governed-runner.py.source": {
+      "all11_original_stable_during_copy": true,
+      "bytes": 63436,
+      "original": "/workspace/scratch/rc6-phase-fin-postread-proposal-m3kkg78v/proposed/rc6_controlled_governed_runner.py",
+      "original_stat": {
+        "st_atime_ns": 1791317598222298169,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791317286674350468,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1092715,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317286674350468,
+        "st_nlink": 1,
+        "st_size": 63436,
+        "st_uid": 1000
+      },
+      "sha256": "a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47",
+      "stored_stat": {
+        "st_atime_ns": 1791317850133208977,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791317850139560958,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093909,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850139560958,
+        "st_nlink": 1,
+        "st_size": 63436,
+        "st_uid": 1000
+      }
+    },
+    "old-governed-runner.py.source": {
+      "all11_original_stable_during_copy": true,
+      "bytes": 63436,
+      "original": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/scripts/rc6_controlled_governed_runner.py",
+      "original_stat": {
+        "st_atime_ns": 1791311078418540742,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791311078218541649,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1084469,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791311078218541649,
+        "st_nlink": 1,
+        "st_size": 63436,
+        "st_uid": 1000
+      },
+      "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+      "stored_stat": {
+        "st_atime_ns": 1791317850109209082,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791317850113329056,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093904,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850113329056,
+        "st_nlink": 1,
+        "st_size": 63436,
+        "st_uid": 1000
+      }
+    },
+    "owned-native-child-manager.py.source": {
+      "all11_original_stable_during_copy": true,
+      "bytes": 18113,
+      "original": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/scripts/rc6_controlled_native_child_manager.py",
+      "original_stat": {
+        "st_atime_ns": 1791311058202551068,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791311058201532560,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1092371,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791311058201532560,
+        "st_nlink": 1,
+        "st_size": 18113,
+        "st_uid": 1000
+      },
+      "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+      "stored_stat": {
+        "st_atime_ns": 1791317850113329056,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791317850118961304,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093907,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850118961304,
+        "st_nlink": 1,
+        "st_size": 18113,
+        "st_uid": 1000
+      }
+    }
+  },
+  "fullGov_qualification": false,
+  "schema": "rc6.phase-child-component-control-inputs.v1"
+}

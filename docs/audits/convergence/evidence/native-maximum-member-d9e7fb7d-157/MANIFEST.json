@@ -1,0 +1,67 @@
+{
+  "files": {
+    "DOSSIER.json": {
+      "bytes": 34472,
+      "sha256": "7ab488d61739888762052c8d77942ac89a135ae92416801f25d03de3dc688525"
+    },
+    "README.md": {
+      "bytes": 2947,
+      "sha256": "192058f44ee804b5e8373b91bf430d4654af4f94454007aae4c9dadbaa266756"
+    },
+    "child-resource.json": {
+      "bytes": 805,
+      "sha256": "693f92f935a42c8319ece725a4d8b10e6185fe52a8d7a6d948db10512bd4c98f"
+    },
+    "native-probe.py": {
+      "bytes": 35258,
+      "sha256": "8aa714b5569dc265a72bdf30bfd445c0df6f9236725e8c83d4afd7e616ba9c07"
+    },
+    "native-receipt.json": {
+      "bytes": 428253,
+      "sha256": "1c8eecf8089e0e27b95db8d2009689a2157ab6409348b42ce1a619fed93b6da4"
+    },
+    "native.log": {
+      "bytes": 1374,
+      "sha256": "69624df2b90145991936c0771b6ad6d2579cfce82c96310562166a5f7d762185"
+    },
+    "prelaunch-error.json": {
+      "bytes": 859,
+      "sha256": "fbe21130899b46fa9f604fc0ca03a09d5ebc145bcf0f2a8aae17a4fda44bf8fc"
+    },
+    "prelaunch-native.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "prelaunch-runner.py": {
+      "bytes": 2659,
+      "sha256": "21048c6ffea56ed4974d57ed4120dd24a8e0443fbb37e2e212d007a8233b1a4e"
+    },
+    "prelaunch-source-plan.json": {
+      "bytes": 10478,
+      "sha256": "1efaa12bdb52b11da20c6f141aeceea65236848f201e0277cce587230a12617d"
+    },
+    "prelaunch-wrapper-before.json": {
+      "bytes": 1489,
+      "sha256": "e8cecb0f00b6b67f0e05e6d90b58163290fe5d5221f623579a42fdc689e664ab"
+    },
+    "source-plan.json": {
+      "bytes": 11538,
+      "sha256": "8e12e2899b18f91bdfc47c98052c782ffb5a78f23eeaff68626ed637ffb9906f"
+    },
+    "wait4-runner.py": {
+      "bytes": 6349,
+      "sha256": "ae45dcec2a5d917ded17c9652492de6ee2ad7331d4575f8d1d9497db6847824c"
+    },
+    "wrapper-before.json": {
+      "bytes": 1984,
+      "sha256": "5979285edd5cb848c56369aed6b0d84c5aeae02b1e52c9637bdf01d21aba9359"
+    },
+    "wrapper-final.json": {
+      "bytes": 2428,
+      "sha256": "fd3f5e2a84a870553ba92553b8b3ad8a324456dc35cb33cecf723e0144879dc4"
+    }
+  },
+  "schema": "rc6.external-memory-dossier-file-integrity.v1",
+  "source_sha": "d9e7fb7d567ff745193c125dc9cd8df4e91ec5d6",
+  "source_tree": "95a95d65fe18f1fbe8f108d582d984ee3e7355ac"
+}

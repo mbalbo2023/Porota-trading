@@ -1,0 +1,502 @@
+{
+  "artifact_validated": false,
+  "canonical_big_and_import_gates_closed": false,
+  "data_root_preserved": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/data-slow",
+  "errors": [],
+  "final_candidate_eligible": false,
+  "kernel_protocol_green": false,
+  "native_business_and_import_green": false,
+  "native_import_scope": "OBSERVED_NATIVE_LAUNCHER_AND_WORKER_WINDOWS; BOOTSTRAP_AND_POSTBOUNDARY_FINALIZATION_OUTSIDE",
+  "network_scope": "TRACKED_LAUNCHER_PYTHON_AUDIT_AND_IPV6_CREATION_SECCOMP; NO_TRANSITIVE_NETWORK_ATTESTATION",
+  "observed_code_atime_changes": [
+    {
+      "after": 1791295873112525332,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "es_policy_context_rc6.py"
+    },
+    {
+      "after": 1791295858185541007,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "be_paper_engine.py"
+    },
+    {
+      "after": 1791295858296594953,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "bi_operational_services.py"
+    },
+    {
+      "after": 1791295858185541007,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "cg_paper_workspace.py"
+    },
+    {
+      "after": 1791295858304594914,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "bu_instrument_catalog.py"
+    },
+    {
+      "after": 1791295858208595368,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "bl_candle_engine.py"
+    },
+    {
+      "after": 1791295858212595348,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "cf_sale_settlement.py"
+    },
+    {
+      "after": 1791295858204595386,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "bt_caucion_paper.py"
+    },
+    {
+      "after": 1791295858372594594,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "eu_telegram_policy_rc6.py"
+    },
+    {
+      "after": 1791295873108525352,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "ck_policy_gate_hf6.py"
+    },
+    {
+      "after": 1791295858185541007,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "_version.py"
+    },
+    {
+      "after": 1791295859268590381,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "ak_byma_calendar.py"
+    },
+    {
+      "after": 1791295858316594858,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "cf_intraday_scalping.py"
+    },
+    {
+      "after": 1791295873108525352,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_cost_settlement_takeprofit_shadow.py"
+    },
+    {
+      "after": 1791295858216595330,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "cc_spot_liquidity.py"
+    },
+    {
+      "after": 1791295858372594594,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "bn_telegram_bus.py"
+    },
+    {
+      "after": 1791295858376594576,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "bw_daily_risk.py"
+    },
+    {
+      "after": 1791295858248595179,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "bd_ppi_readonly_guard.py"
+    },
+    {
+      "after": 1791295873108525352,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "au_fee_schedule.py"
+    },
+    {
+      "after": 1791295858212595348,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "cd_spot_ledger.py"
+    },
+    {
+      "after": 1791295873112525332,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "ch_empirical_learning.py"
+    },
+    {
+      "after": 1791295858328594801,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "fg_intraday_contract_policy_rc6.py"
+    },
+    {
+      "after": 1791295858308594896,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_multisource_discovery.py"
+    },
+    {
+      "after": 1791295873112525332,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "POROTA_SECTOR_MAP_V1.csv"
+    },
+    {
+      "after": 1791295859336590062,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "bq_exit_policy.py"
+    },
+    {
+      "after": 1791295858200595405,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "bs_instrument_contracts.py"
+    },
+    {
+      "after": 1791295858328594801,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "co_market_sessions_hf6.py"
+    },
+    {
+      "after": 1791295858355683954,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_paper_family_lifecycle.py"
+    },
+    {
+      "after": 1791295858308594896,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_source_consolidation.py"
+    },
+    {
+      "after": 1791295858220595311,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "bf_production_paper_observer.py"
+    },
+    {
+      "after": 1791295858364594632,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "bm_exit_supervisor.py"
+    },
+    {
+      "after": 1791295873116525314,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "de_concurrent_risk_capacity_hf6.py"
+    },
+    {
+      "after": 1791295858308594896,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "am_us_equity_calendar_rc6.py"
+    },
+    {
+      "after": 1791295873112525332,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "ci_operational_context.py"
+    },
+    {
+      "after": 1791295859956587152,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "cu_history_store_v2_hf6.py"
+    },
+    {
+      "after": 1791295858324594821,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_signal_contracts.py"
+    },
+    {
+      "after": 1791295873116525314,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "dh_paper_dynamic_risk_gate_hf6.py"
+    },
+    {
+      "after": 1791295859368589911,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "fe_fixed_income_nominal_contract_rc6.py"
+    },
+    {
+      "after": 1791295859766860127,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "ops/policy/rc6-dynamic-capacity-v1.json"
+    },
+    {
+      "after": 1791295859276590343,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/orchestrator.py"
+    },
+    {
+      "after": 1791295859316590155,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/runtime.py"
+    },
+    {
+      "after": 1791295859276590343,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/capacity.py"
+    },
+    {
+      "after": 1791295859252590456,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/sources.py"
+    },
+    {
+      "after": 1791295859756588090,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/promotion.py"
+    },
+    {
+      "after": 1791295858316594858,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/common.py"
+    },
+    {
+      "after": 1791295859340590043,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/economics.py"
+    },
+    {
+      "after": 1791295859276590343,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/live.py"
+    },
+    {
+      "after": 1791295858316594858,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/__init__.py"
+    },
+    {
+      "after": 1791295859280590325,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/routing.py"
+    },
+    {
+      "after": 1791295859292590268,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/tradeability.py"
+    },
+    {
+      "after": 1791295859256590437,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/serialization.py"
+    },
+    {
+      "after": 1791295859336590062,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/stages.py"
+    },
+    {
+      "after": 1791295859240590513,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/persistence.py"
+    },
+    {
+      "after": 1791295859384589836,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/entry_signals.py"
+    },
+    {
+      "after": 1791295859953992017,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/preopen.py"
+    },
+    {
+      "after": 1791295864104567653,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/retention.py"
+    },
+    {
+      "after": 1791295859360589949,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/families.py"
+    },
+    {
+      "after": 1791295859316590155,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/source_reads.py"
+    },
+    {
+      "after": 1791295859756588090,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/archive_namespace.py"
+    },
+    {
+      "after": 1791295859396589780,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/projection.py"
+    },
+    {
+      "after": 1791295859392589799,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/funnel.py"
+    },
+    {
+      "after": 1791295859264590399,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/worker.py"
+    },
+    {
+      "after": 1791295858316594858,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/__init__.py"
+    },
+    {
+      "after": 1791295858316594858,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/source_authority.py"
+    },
+    {
+      "after": 1791295859260590419,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/packed_storage.py"
+    },
+    {
+      "after": 1791295859372589892,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/lab.py"
+    },
+    {
+      "after": 1791295859324590119,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_audit_evidence/sqlite_scratch.py"
+    },
+    {
+      "after": 1791295859324590119,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_audit_evidence/sqlite_snapshot.py"
+    },
+    {
+      "after": 1791295859332590080,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_audit_evidence/recompute.py"
+    },
+    {
+      "after": 1791295859316590155,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_audit_evidence/package.py"
+    },
+    {
+      "after": 1791295859316590155,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_audit_evidence/__init__.py"
+    },
+    {
+      "after": 1791295859380589855,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_performance/shadow.py"
+    },
+    {
+      "after": 1791295858216595330,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_performance/lineage.py"
+    },
+    {
+      "after": 1791295859388589818,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_performance/metrics.py"
+    },
+    {
+      "after": 1791295858216595330,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_performance/common.py"
+    },
+    {
+      "after": 1791295859344590025,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_performance/costs.py"
+    },
+    {
+      "after": 1791295859380589855,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_performance/replay.py"
+    },
+    {
+      "after": 1791295858216595330,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_performance/__init__.py"
+    },
+    {
+      "after": 1791295857180600212,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "scripts/porota_dependency_repro_audit.py"
+    },
+    {
+      "after": 1791295859356589968,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "scripts/rc6_sqlite_scratch_guard.py"
+    }
+  ],
+  "raw_root_preserved": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/raw-slow",
+  "real_orders_sent": 0,
+  "runtime_validated": false,
+  "schema": "rc6.recovery.canonical-big-declared-harness.v1",
+  "source_code10stable_stats_and_bytes_modes_rawgit_unchanged": true,
+  "source_index_sha256": "614c7d6d18818008ca4db15f8741ba4336a40a1b1d6587c6b9552d734f6bf779",
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "status": "RED"
+}

@@ -1,0 +1,577 @@
+{
+  "actual_fsync": {
+    "blocked_seconds": 0.0,
+    "fsync_completed": false,
+    "fsync_entered": false,
+    "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"
+  },
+  "actual_handler_families": {
+    "calls": 1,
+    "cpu_seconds": 0.5210646800000003,
+    "elapsed_seconds": 0.5210262540003896
+  },
+  "actual_resource_gates": {
+    "actual_evidence_bytes": 516294,
+    "actual_rss_bytes": 502636544,
+    "actual_slow_fsync_exit_isolation": false,
+    "child_cleanup_completed": true,
+    "complete_committed_cycle": false,
+    "evidence_within_quota": true,
+    "maximum_evidence_bytes": 134217728,
+    "maximum_rss_bytes": 2147483648,
+    "reported_worker_rss_bytes": 502636544,
+    "rss_scope": "PARENT_RUSAGE_CHILDREN_MAXIMUM_OF_ALL_REAPED_CHILDREN_INCLUDING_GIT_PREFLIGHT",
+    "rss_within_two_gib": true,
+    "source_database_unchanged": true
+  },
+  "actual_worker_elapsed_seconds": 13.68576679600028,
+  "artifact_validated": false,
+  "classification": "READ_ONLY_RCA_OF_CLOSED_RED_NOT_NEW_EXECUTION_NOT_GATE_QUALIFICATION",
+  "exact_error_class": "SnapshotError",
+  "exact_error_context": {
+    "frames": [
+      {
+        "function": "_shadow_child_work",
+        "line": 439,
+        "module": "__mp_main__"
+      },
+      {
+        "function": "tick",
+        "line": 366,
+        "module": "rc6_shadow_runtime.worker"
+      },
+      {
+        "function": "measured",
+        "line": 332,
+        "module": "__mp_main__"
+      },
+      {
+        "function": "family_reports",
+        "line": 497,
+        "module": "rc6_shadow_runtime.families"
+      },
+      {
+        "function": "_read",
+        "line": 202,
+        "module": "rc6_shadow_runtime.families"
+      },
+      {
+        "function": "__exit__",
+        "line": 144,
+        "module": "contextlib"
+      },
+      {
+        "function": "source_connection",
+        "line": 28,
+        "module": "rc6_shadow_runtime.source_reads"
+      },
+      {
+        "function": "__exit__",
+        "line": 144,
+        "module": "contextlib"
+      },
+      {
+        "function": "readonly_copy",
+        "line": 164,
+        "module": "rc6_audit_evidence.sqlite_snapshot"
+      },
+      {
+        "function": "_check",
+        "line": 24,
+        "module": "rc6_audit_evidence.sqlite_snapshot"
+      }
+    ],
+    "sqlite_errorcode": null,
+    "sqlite_errorname": null
+  },
+  "full_pipeline_exercised": false,
+  "handler_elapsed_is_not_exact_read_duration": true,
+  "image_validated": false,
+  "limits_of_proof": [
+    "Capture, NOATIME copies and double hashes completed before yield, but remaining deadline headroom at yield was not recorded.",
+    "The consumer interval includes SELECT, rows/mapping/materialization and context return. The receipt does not isolate an individual operation cost.",
+    "Handler elapsed0.521026254s includes work before _read creates its original0.5s deadline, so it is not the exact deadline overrun.",
+    "families._read catches sqlite OperationalError and may return a degraded result before context exit. Final SnapshotError has null sqlite error fields; this does not prove all SELECTs succeeded.",
+    "Whole import proof was false in this prior run due to the then-runpy parent alias classified ALIEN. It remains RED and is not relabeled qualified.",
+    "No evidence proves GC, disk or SQL alone caused this clean deadline failure. Storage serialization changes do not establish a families fix."
+  ],
+  "material_gates_closed": [],
+  "missing_measurements": [
+    "exact _read deadline creation",
+    "remaining headroom at yield",
+    "copy/doublehash/scratch costs",
+    "per SELECT timings, caught SQLite errorcode/errorname and rowcounts",
+    "rowmapping/materialization costs",
+    "immediate post-yield check time and later cleanup delta"
+  ],
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "native_business_resource_complete": false,
+  "native_import_proof_complete": false,
+  "next_interpretation": "Only the new exact-source direct native BIG can provide new acceptance evidence. Preserve original per-capture0.5s, whole cycle90s, all source custody and PAPER/INET guards. No old-SHA retry or profiling was executed to write this note.",
+  "original_families_per_capture_seconds": 0.5,
+  "ppi_watch": "UNTOUCHED",
+  "proven_boundary": "readonly_copy check before yield at162 passed; the immediate check at164 after the consumer returned raised TIME_BUDGET_EXHAUSTED. Expiration is therefore observed at the consumer/return boundary before later cleanup check176.",
+  "raw_receipt": {
+    "bytes": 1595293,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/raw-slow/native-big-result.json",
+    "sha256": "9769aef064e03d571858b9e3e72fae98840b7c6e885e47856dd8338acc318fa3"
+  },
+  "real_orders_sent": 0,
+  "runtime_validated": false,
+  "schema": "rc6.families.closed-red.limited-causal-note.v1",
+  "source_code": [
+    {
+      "blob_id": "6866e762bb0ffc4ad06868cf5c5453d485f66ddd",
+      "line_end": 229,
+      "line_start": 191,
+      "lines": [
+        {
+          "line": 191,
+          "text": "                               \"source_at\": source_at, \"received_at\": received_at, \"valid\": valid,"
+        },
+        {
+          "line": 192,
+          "text": "                               \"unit\": unit, \"native_reason\": envelope.get(\"reason\")})"
+        },
+        {
+          "line": 193,
+          "text": "    result = resolve_field(candidates, as_of=at, ttl_seconds=ttl, static=static)"
+        },
+        {
+          "line": 194,
+          "text": "    result[\"clock_basis\"] = \"STATIC_EVIDENCE_AVAILABILITY_SEPARATE_FROM_NATIVE_TIME\" if static else \"PROVIDER_EVENT_TIME\""
+        },
+        {
+          "line": 195,
+          "text": "    return result"
+        },
+        {
+          "line": 196,
+          "text": ""
+        },
+        {
+          "line": 197,
+          "text": ""
+        },
+        {
+          "line": 198,
+          "text": "def _read(database, at):"
+        },
+        {
+          "line": 199,
+          "text": "    from .source_reads import source_connection"
+        },
+        {
+          "line": 200,
+          "text": "    result = {\"metadata\": [], \"quotes\": [], \"cash\": [], \"truncated\": [], \"errors\": []}"
+        },
+        {
+          "line": 201,
+          "text": "    deadline = monotonic()+QUERY_BUDGET_SECONDS"
+        },
+        {
+          "line": 202,
+          "text": "    with source_connection(database, deadline=deadline) as (connection, _):"
+        },
+        {
+          "line": 203,
+          "text": "        connection.execute(\"PRAGMA query_only=ON\")"
+        },
+        {
+          "line": 204,
+          "text": "        connection.execute(\"BEGIN\")"
+        },
+        {
+          "line": 205,
+          "text": "        connection.set_progress_handler(lambda: int(monotonic() > deadline), 1000)"
+        },
+        {
+          "line": 206,
+          "text": "        state = connection.execute(\"SELECT mode,real_orders_sent FROM observer_state WHERE id=1\").fetchone()"
+        },
+        {
+          "line": 207,
+          "text": "        if not state or state[\"mode\"] != \"PRODUCTION_PAPER\" or state[\"real_orders_sent\"] != 0:"
+        },
+        {
+          "line": 208,
+          "text": "            raise ValueError(\"PAPER_SAFETY_REQUIRED\")"
+        },
+        {
+          "line": 209,
+          "text": "        tables = {r[0] for r in connection.execute(\"SELECT name FROM sqlite_master WHERE type='table' LIMIT 200\")}"
+        },
+        {
+          "line": 210,
+          "text": "        specs = ("
+        },
+        {
+          "line": 211,
+          "text": "            (\"financial_instrument_catalog\", \"metadata\", \"last_seen_at\", \"last_seen_at\", MAX_ROWS),"
+        },
+        {
+          "line": 212,
+          "text": "            (\"market_snapshots\", \"quotes\", \"observed_at\", \"id\", 5000),"
+        },
+        {
+          "line": 213,
+          "text": "            (\"ppi_intraday_points\", \"quotes\", \"last_verified_at\", \"event_at\", 5000),"
+        },
+        {
+          "line": 214,
+          "text": "            (\"paper_equity_by_currency\", \"cash\", \"measured_at\", \"id\", 500),"
+        },
+        {
+          "line": 215,
+          "text": "        )"
+        },
+        {
+          "line": 216,
+          "text": "        for table, kind, cutoff_column, order_column, limit in specs:"
+        },
+        {
+          "line": 217,
+          "text": "            if table not in tables:"
+        },
+        {
+          "line": 218,
+          "text": "                continue"
+        },
+        {
+          "line": 219,
+          "text": "            columns = {r[1] for r in connection.execute(f\"PRAGMA table_info({table})\")}"
+        },
+        {
+          "line": 220,
+          "text": "            if cutoff_column not in columns or order_column not in columns:"
+        },
+        {
+          "line": 221,
+          "text": "                result[\"errors\"].append(table+\":SOURCE_CLOCK_OR_SCHEMA_MISSING\")"
+        },
+        {
+          "line": 222,
+          "text": "                continue"
+        },
+        {
+          "line": 223,
+          "text": "            try:"
+        },
+        {
+          "line": 224,
+          "text": "                rows = list(connection.execute(f\"SELECT * FROM {table} WHERE julianday({cutoff_column})<=julianday(?) ORDER BY {order_column} DESC LIMIT ?\", (at.isoformat(), limit+1)))"
+        },
+        {
+          "line": 225,
+          "text": "            except sqlite3.OperationalError:"
+        },
+        {
+          "line": 226,
+          "text": "                result[\"errors\"].append(table+\":READ_BUDGET_OR_SOURCE_UNAVAILABLE\")"
+        },
+        {
+          "line": 227,
+          "text": "                break"
+        },
+        {
+          "line": 228,
+          "text": "            if len(rows) > limit:"
+        },
+        {
+          "line": 229,
+          "text": "                result[\"truncated\"].append(table)"
+        }
+      ],
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/families.py",
+      "relative_path": "rc6_shadow_runtime/families.py",
+      "sha256": "75634ed7a6fec86e03b47420012d7144693393029de85389cfa631ccd5fc3398"
+    },
+    {
+      "blob_id": "9676a80e2a6a759b0f95625eec4dd2c37fb87853",
+      "line_end": 34,
+      "line_start": 1,
+      "lines": [
+        {
+          "line": 1,
+          "text": "\"\"\"Bounded native reads on verified private bytes; source SQLite never opens."
+        },
+        {
+          "line": 2,
+          "text": ""
+        },
+        {
+          "line": 3,
+          "text": "The yielded identity is always the original source. The copy is ephemeral"
+        },
+        {
+          "line": 4,
+          "text": "derived scratch with the existing canonical byte, space and inode policies."
+        },
+        {
+          "line": 5,
+          "text": "\"\"\""
+        },
+        {
+          "line": 6,
+          "text": "from contextlib import contextmanager"
+        },
+        {
+          "line": 7,
+          "text": "from pathlib import Path"
+        },
+        {
+          "line": 8,
+          "text": "import stat"
+        },
+        {
+          "line": 9,
+          "text": ""
+        },
+        {
+          "line": 10,
+          "text": "from rc6_audit_evidence.sqlite_snapshot import SnapshotError, readonly_copy"
+        },
+        {
+          "line": 11,
+          "text": ""
+        },
+        {
+          "line": 12,
+          "text": ""
+        },
+        {
+          "line": 13,
+          "text": "def original_source_path(database):"
+        },
+        {
+          "line": 14,
+          "text": "    path = Path(database).absolute()"
+        },
+        {
+          "line": 15,
+          "text": "    if path.resolve(strict=True) != path or any(parent.is_symlink() for parent in path.parents):"
+        },
+        {
+          "line": 16,
+          "text": "        raise SnapshotError(\"REGULAR_UNALIASED_FILE_REQUIRED\")"
+        },
+        {
+          "line": 17,
+          "text": "    info = path.lstat()"
+        },
+        {
+          "line": 18,
+          "text": "    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:"
+        },
+        {
+          "line": 19,
+          "text": "        raise SnapshotError(\"REGULAR_UNALIASED_FILE_REQUIRED\")"
+        },
+        {
+          "line": 20,
+          "text": "    return path"
+        },
+        {
+          "line": 21,
+          "text": ""
+        },
+        {
+          "line": 22,
+          "text": ""
+        },
+        {
+          "line": 23,
+          "text": "@contextmanager"
+        },
+        {
+          "line": 24,
+          "text": "def source_connection(database, *, deadline):"
+        },
+        {
+          "line": 25,
+          "text": "    path = original_source_path(database)"
+        },
+        {
+          "line": 26,
+          "text": "    before = path.lstat()"
+        },
+        {
+          "line": 27,
+          "text": "    identity = (before.st_dev, before.st_ino, before.st_uid, before.st_gid, before.st_mode, before.st_nlink)"
+        },
+        {
+          "line": 28,
+          "text": "    with readonly_copy(path, deadline=deadline, validate=False) as connection:"
+        },
+        {
+          "line": 29,
+          "text": "        after = path.lstat()"
+        },
+        {
+          "line": 30,
+          "text": "        if identity != (after.st_dev, after.st_ino, after.st_uid, after.st_gid, after.st_mode, after.st_nlink):"
+        },
+        {
+          "line": 31,
+          "text": "            raise SnapshotError(\"SOURCE_SNAPSHOT_BUSY\")"
+        },
+        {
+          "line": 32,
+          "text": "        yield connection, before"
+        }
+      ],
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/source_reads.py",
+      "relative_path": "rc6_shadow_runtime/source_reads.py",
+      "sha256": "731c2ab234e3534a0f1bcddf5cd2a8156c9bafbcf458e236c3e781561b14e189"
+    },
+    {
+      "blob_id": "7278dd78d299fb3c8843908bf45a28df60b3fa9e",
+      "line_end": 178,
+      "line_start": 144,
+      "lines": [
+        {
+          "line": 144,
+          "text": "            _check(deadline)"
+        },
+        {
+          "line": 145,
+          "text": "            if guard is not None:"
+        },
+        {
+          "line": 146,
+          "text": "                guard.check()"
+        },
+        {
+          "line": 147,
+          "text": "            connection = sqlite3.connect(copy.as_uri() + \"?mode=ro\", uri=True, timeout=.025)"
+        },
+        {
+          "line": 148,
+          "text": "            try:"
+        },
+        {
+          "line": 149,
+          "text": "                connection.row_factory = sqlite3.Row"
+        },
+        {
+          "line": 150,
+          "text": "                connection.execute(\"PRAGMA query_only=ON\")"
+        },
+        {
+          "line": 151,
+          "text": "                connection.execute(\"PRAGMA busy_timeout=25\")"
+        },
+        {
+          "line": 152,
+          "text": "                connection.execute(\"PRAGMA trusted_schema=OFF\")"
+        },
+        {
+          "line": 153,
+          "text": "                # Avoid SQLite sorter spill to an unrelated /tmp tmpfs. Query"
+        },
+        {
+          "line": 154,
+          "text": "                # cardinality and deadlines remain the consumer's own bounds."
+        },
+        {
+          "line": 155,
+          "text": "                connection.execute(\"PRAGMA temp_store=MEMORY\")"
+        },
+        {
+          "line": 156,
+          "text": "                if guard is not None:"
+        },
+        {
+          "line": 157,
+          "text": "                    guard.check()"
+        },
+        {
+          "line": 158,
+          "text": "                connection.set_progress_handler("
+        },
+        {
+          "line": 159,
+          "text": "                    lambda: int(deadline is not None and time.monotonic() >= deadline), 100)"
+        },
+        {
+          "line": 160,
+          "text": "                if validate and connection.execute(\"PRAGMA quick_check\").fetchone()[0] != \"ok\":"
+        },
+        {
+          "line": 161,
+          "text": "                    raise SnapshotError(\"SOURCE_SNAPSHOT_INVALID\")"
+        },
+        {
+          "line": 162,
+          "text": "                _check(deadline)"
+        },
+        {
+          "line": 163,
+          "text": "                yield connection"
+        },
+        {
+          "line": 164,
+          "text": "                _check(deadline)"
+        },
+        {
+          "line": 165,
+          "text": "                if guard is not None:"
+        },
+        {
+          "line": 166,
+          "text": "                    guard.check()"
+        },
+        {
+          "line": 167,
+          "text": "            finally:"
+        },
+        {
+          "line": 168,
+          "text": "                connection.close()"
+        },
+        {
+          "line": 169,
+          "text": "        # The absolute consumer budget includes closing SQLite and deleting"
+        },
+        {
+          "line": 170,
+          "text": "        # our private copy. Check after both contexts have exited completely;"
+        },
+        {
+          "line": 171,
+          "text": "        # an existing caller/custody failure still retains its original code."
+        },
+        {
+          "line": 172,
+          "text": "        _check(deadline)"
+        },
+        {
+          "line": 173,
+          "text": "    except sqlite3.Error:"
+        },
+        {
+          "line": 174,
+          "text": "        _check(deadline)"
+        },
+        {
+          "line": 175,
+          "text": "        raise SnapshotError(\"SOURCE_READ_FAILED\") from None"
+        },
+        {
+          "line": 176,
+          "text": "    except OSError:"
+        },
+        {
+          "line": 177,
+          "text": "        raise SnapshotError(\"SOURCE_UNAVAILABLE\") from None"
+        }
+      ],
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_audit_evidence/sqlite_snapshot.py",
+      "relative_path": "rc6_audit_evidence/sqlite_snapshot.py",
+      "sha256": "c4cb17481d678c1d1b1e05cffb6ed6762e09d26032bc30d245d1b033df5319ea"
+    }
+  ],
+  "source_database_unchanged": true,
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f"
+}

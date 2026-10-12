@@ -1,0 +1,9 @@
+{
+  "management_deadline": 25708.268184493,
+  "owned_log_bytes_fstat_only": 0,
+  "phase": "component-new-liveDetached6",
+  "pid": 23911,
+  "scope": "LOCAL_FOCAL_PARENT_ONLY_NOT_GLOBAL_FIN",
+  "stage": "poll",
+  "wall_seconds": 5.010826589998032
+}

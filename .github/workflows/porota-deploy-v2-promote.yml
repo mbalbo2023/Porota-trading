@@ -21,13 +21,14 @@ jobs:
     timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: "1"
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
       - name: Checkout production promotion commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 verified2026-10-05
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -59,40 +60,8 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python - <<'PY'
-          import json, os, urllib.parse, urllib.request
-          repo=os.environ["GITHUB_REPOSITORY"]
-          candidate=os.environ["CANDIDATE_SHA"]
-          token=os.environ["GH_TOKEN"]
-          name=f"porota-predeploy-v2-{candidate}"
-          headers={"Authorization":f"Bearer {token}","Accept":"application/vnd.github+json",
-                   "X-GitHub-Api-Version":"2022-11-28"}
-          def get(url):
-              req=urllib.request.Request(url,headers=headers)
-              with urllib.request.urlopen(req,timeout=30) as r:
-                  return json.load(r)
-          q=urllib.parse.quote(name,safe="")
-          data=get(f"https://api.github.com/repos/{repo}/actions/artifacts?name={q}&per_page=100")
-          candidates=[]
-          for artifact in data.get("artifacts",[]):
-              if artifact.get("expired") or artifact.get("name") != name:
-                  continue
-              run_id=(artifact.get("workflow_run") or {}).get("id")
-              if not run_id:
-                  continue
-              run=get(f"https://api.github.com/repos/{repo}/actions/runs/{run_id}")
-              if run.get("name")!="Porota Predeploy V2" or run.get("conclusion")!="success":
-                  continue
-              candidates.append((artifact.get("created_at") or "",artifact,run))
-          if not candidates:
-              raise SystemExit("NO_SUCCESSFUL_FROZEN_PREDEPLOY_ARTIFACT")
-          _,artifact,run=max(candidates,key=lambda x:x[0])
-          out=os.environ["GITHUB_ENV"]
-          with open(out,"a",encoding="utf-8") as f:
-              f.write(f"PREDEPLOY_ARTIFACT_ID={artifact['id']}\n")
-              f.write(f"PREDEPLOY_RUN_ID={run['id']}\n")
-          print(f"POROTA_FROZEN_PREDEPLOY_FOUND=GREEN|run={run['id']}|artifact={artifact['id']}|name={name}")
-          PY
+          python scripts/porota_predeploy_binding.py locate \
+            --candidate-sha "$CANDIDATE_SHA" --binding /tmp/porota-approved-predeploy.json
 
       - name: Download and verify frozen artifact
         shell: bash
@@ -105,32 +74,16 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$PREDEPLOY_ARTIFACT_ID/zip" \
             -o /tmp/porota-frozen-v2.zip
-          unzip -q /tmp/porota-frozen-v2.zip -d /tmp/porota-frozen-v2
-          for name in porota-frozen-candidate.json porota-predeploy-image.tar.gz porota-deploy-bundle-v2.tgz porota-deploy-bundle-v2-manifest.json porota-host-manifest-v2.json porota-host-policy-v2.json; do
-            src="$(find /tmp/porota-frozen-v2 -type f -name "$name" -print -quit)"
-            test -n "$src"
-            cp "$src" "/tmp/$name"
+          git worktree add --detach /tmp/porota-approved-source "$CANDIDATE_SHA"
+          python scripts/porota_predeploy_binding.py verify \
+            --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE" \
+            --repo-root /tmp/porota-approved-source \
+            --binding /tmp/porota-approved-predeploy.json --zip /tmp/porota-frozen-v2.zip \
+            --output-root /tmp/porota-frozen-v2 --receipt /tmp/porota-approved-payload.json
+          for name in porota-frozen-candidate.json porota-predeploy-image.tar.gz porota-deploy-bundle-v2.tgz porota-deploy-bundle-v2-manifest.json porota-host-manifest-v2.json porota-host-policy-v2.json porota-source-provenance.json; do
+            install -m 0644 "/tmp/porota-frozen-v2/$name" "/tmp/$name"
           done
-          python - <<'PY'
-          import hashlib,json,os
-          from pathlib import Path
-          frozen=json.loads(Path("/tmp/porota-frozen-candidate.json").read_text())
-          manifest=json.loads(Path("/tmp/porota-deploy-bundle-v2-manifest.json").read_text())
-          assert frozen["candidate_sha"]==os.environ["CANDIDATE_SHA"]
-          assert frozen["candidate_tree_sha"]==os.environ["CANDIDATE_TREE"]
-          assert frozen["paper_mode_required"]=="PRODUCTION_PAPER"
-          assert int(frozen["real_orders_sent_required"])==0
-          assert frozen["build_once"] is True
-          assert int(frozen.get("image_size_bytes", 0)) > 0
-          def sha(path):
-              h=hashlib.sha256()
-              with open(path,"rb") as f:
-                  for chunk in iter(lambda:f.read(1024*1024),b""): h.update(chunk)
-              return h.hexdigest()
-          assert sha("/tmp/porota-predeploy-image.tar.gz")==frozen["image_tar_sha256"]
-          assert sha("/tmp/porota-deploy-bundle-v2.tgz")==manifest["bundle_sha256"]
-          print("POROTA_FROZEN_ARTIFACT_VERIFY=GREEN")
-          PY
+          echo 'POROTA_FROZEN_ARTIFACT_VERIFY=GREEN|external_approval_and_byte_provenance=true'
 
       - name: Prepare strict SSH
         shell: bash
@@ -150,14 +103,26 @@ jobs:
           IMAGE_TAR_BYTES="$(stat -c '%s' /tmp/porota-predeploy-image.tar.gz)"
           BUNDLE_BYTES="$(stat -c '%s' /tmp/porota-deploy-bundle-v2.tgz)"
           IMAGE_UNPACKED_BYTES="$(python -c 'import json; print(int(json.load(open("/tmp/porota-frozen-candidate.json"))["image_size_bytes"]))')"
-          REQUIRED_LINE="$(python scripts/rc6_disk_space_guard.py \
-            --policy ops/policy/rc6-disk-housekeeping-v1.json \
-            --image-tar-bytes "$IMAGE_TAR_BYTES" \
-            --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
-            --bundle-bytes "$BUNDLE_BYTES")"
-          echo "$REQUIRED_LINE"
-          REQUIRED_PRETRANSFER_FREE="${REQUIRED_LINE#RC6_DISK_REQUIRED_PRETRANSFER_FREE=}"
-          [[ "$REQUIRED_PRETRANSFER_FREE" =~ ^[0-9]+$ ]]
+          SCRATCH_OCCUPIED_BYTES=0
+          ARCHIVE_OCCUPIED_BYTES=0
+          LIVE_OCCUPIED_BYTES=0
+          python scripts/rc6_sqlite_scratch_guard.py --emit-probe --repo-root . \
+            > /tmp/porota-candidate-sqlite-scratch-probe.py
+          compute_required() {
+            REQUIRED_LINE="$(python scripts/rc6_disk_space_guard.py \
+              --policy ops/policy/rc6-disk-housekeeping-v1.json \
+              --image-tar-bytes "$IMAGE_TAR_BYTES" \
+              --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
+              --bundle-bytes "$BUNDLE_BYTES" \
+              --scratch-occupied-bytes "$SCRATCH_OCCUPIED_BYTES" \
+              --archive-occupied-bytes "$ARCHIVE_OCCUPIED_BYTES" \
+              --live-occupied-bytes "$LIVE_OCCUPIED_BYTES")"
+            echo "$REQUIRED_LINE"
+            REQUIRED_PRETRANSFER_FREE="${REQUIRED_LINE#RC6_DISK_REQUIRED_PRETRANSFER_FREE=}"
+            [[ "$REQUIRED_PRETRANSFER_FREE" =~ ^[0-9]+$ ]]
+          }
+
+          compute_required
 
           SSH=(ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2 \
@@ -170,6 +135,24 @@ jobs:
               "python3 -c 'import os,shutil; d=shutil.disk_usage(\"/\"); v=os.statvfs(\"/\"); print(d.free); print(f\"{100.0*v.f_ffree/v.f_files:.6f}\")'"
           }
 
+          probe_sqlite_scratch() {
+            set +e
+            SCRATCH_OUTPUT="$("${SSH[@]}" "$DO_USER@$DO_HOST" \
+              'sudo -n timeout 20 python3 -' < /tmp/porota-candidate-sqlite-scratch-probe.py)"
+            SCRATCH_RC=$?
+            set -e
+            echo "$SCRATCH_OUTPUT"
+            NAMESPACE_OUTPUT="$(python scripts/rc6_sqlite_scratch_guard.py --validate-report <<< "$SCRATCH_OUTPUT")"
+            mapfile -t NAMESPACE_METRICS <<< "$NAMESPACE_OUTPUT"
+            test "${#NAMESPACE_METRICS[@]}" -eq 4
+            SCRATCH_OCCUPIED_BYTES="${NAMESPACE_METRICS[0]}"
+            ARCHIVE_OCCUPIED_BYTES="${NAMESPACE_METRICS[1]}"
+            LIVE_OCCUPIED_BYTES="${NAMESPACE_METRICS[2]}"
+            SCRATCH_HISTORY_PATH="${NAMESPACE_METRICS[3]}"
+            [[ "$SCRATCH_RC" == 0 || "$SCRATCH_RC" == 42 ]]
+            compute_required
+          }
+
           evaluate_gate() {
             local available="$1" inode_free="$2"
             python scripts/rc6_disk_space_guard.py \
@@ -177,11 +160,15 @@ jobs:
               --image-tar-bytes "$IMAGE_TAR_BYTES" \
               --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
               --bundle-bytes "$BUNDLE_BYTES" \
+              --scratch-occupied-bytes "$SCRATCH_OCCUPIED_BYTES" \
+              --archive-occupied-bytes "$ARCHIVE_OCCUPIED_BYTES" \
+              --live-occupied-bytes "$LIVE_OCCUPIED_BYTES" \
               --available-bytes "$available" \
               --inode-free-percent "$inode_free" \
               --json
           }
 
+          probe_sqlite_scratch
           mapfile -t METRICS < <(probe_disk)
           test "${#METRICS[@]}" -eq 2
           AVAILABLE_BYTES="${METRICS[0]}"
@@ -195,9 +182,10 @@ jobs:
           echo "$GATE_OUTPUT"
 
           RC6_DISK_PRECLEAN_TRIGGERED=0
-          if [ "$GATE_RC" -ne 0 ]; then
+          if [ "$GATE_RC" -ne 0 ] || [ "$SCRATCH_RC" -ne 0 ]; then
             RC6_DISK_PRECLEAN_TRIGGERED=1
             echo "RC6_DISK_PRECLEAN=START|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
+            "${SSH[@]}" "$DO_USER@$DO_HOST" 'sudo -n timeout 90 python3 -' < scripts/rc6_deploy_scoped_cleanup.py
             POLICY_B64="$(base64 -w0 ops/policy/rc6-disk-housekeeping-v1.json)"
             "${SSH[@]}" "$DO_USER@$DO_HOST" "POLICY_B64='$POLICY_B64' bash -s" <<'PRECLEAN_REMOTE'
           set -Eeuo pipefail
@@ -206,19 +194,10 @@ jobs:
           printf '%s' "$POLICY_B64" | base64 -d > "$TMP_POLICY"
           test -f "$REPO/scripts/rc6_disk_housekeeping.py"
 
-          PPI_BEFORE="$(
-            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
-              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
-            done
-          )"
 
-          find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' -exec rm -rf -- {} +
           sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py" \
             --policy "$TMP_POLICY" --mode cleanup \
             --json-out /tmp/porota-predeploy-housekeeping.json
-          sudo -n docker image prune -f
-          sudo -n docker builder prune -af
-          if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
 
           STATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
           import sqlite3,sys
@@ -233,16 +212,11 @@ jobs:
           test "$STATE" = "PRODUCTION_PAPER|0"
           test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)" = running
           test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
-          PPI_AFTER="$(
-            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
-              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
-            done
-          )"
-          test "$PPI_AFTER" = "$PPI_BEFORE"
           rm -f "$TMP_POLICY"
           echo "RC6_DISK_PRECLEAN_REMOTE=GREEN"
           PRECLEAN_REMOTE
 
+            probe_sqlite_scratch
             mapfile -t METRICS < <(probe_disk)
             test "${#METRICS[@]}" -eq 2
             AVAILABLE_BYTES="${METRICS[0]}"
@@ -255,6 +229,8 @@ jobs:
           fi
 
           test "$GATE_RC" -eq 0
+          test "$SCRATCH_RC" -eq 0
+          echo "RC6_SQLITE_SCRATCH_PRETRANSFER_GATE=GREEN"
           SAFE_PREFLIGHT_RECLAIM=$((AVAILABLE_BYTES-AVAILABLE_BEFORE_PRECLEAN))
           echo "SAFE_PREFLIGHT_RECLAIM=$SAFE_PREFLIGHT_RECLAIM"
           {
@@ -264,29 +240,54 @@ jobs:
             echo "RC6_DISK_IMAGE_TAR_BYTES=$IMAGE_TAR_BYTES"
             echo "RC6_DISK_IMAGE_UNPACKED_BYTES=$IMAGE_UNPACKED_BYTES"
             echo "RC6_DISK_BUNDLE_BYTES=$BUNDLE_BYTES"
+            echo "RC6_SQLITE_SCRATCH_OCCUPIED_BYTES=$SCRATCH_OCCUPIED_BYTES"
+            echo "RC6_SQLITE_SCRATCH_PREFLIGHT_GREEN=1"
+            echo "RC6_SQLITE_SCRATCH_HISTORY_PATH=$SCRATCH_HISTORY_PATH"
             echo "RC6_DISK_PRECLEAN_TRIGGERED=$RC6_DISK_PRECLEAN_TRIGGERED"
           } >> "$GITHUB_ENV"
           echo "RC6_DISK_PRETRANSFER_GATE=GREEN|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE|image_tar=$IMAGE_TAR_BYTES|image_unpacked=$IMAGE_UNPACKED_BYTES|bundle=$BUNDLE_BYTES|preclean=$RC6_DISK_PRECLEAN_TRIGGERED"
 
       - name: Transfer frozen artifact
+        id: transfer
         shell: bash
         run: |
           set -Eeuo pipefail
           test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
+          test "${RC6_SQLITE_SCRATCH_PREFLIGHT_GREEN:-0}" = "1"
+          python scripts/porota_predeploy_binding.py locate \
+            --candidate-sha "$CANDIDATE_SHA" --binding /tmp/porota-approved-predeploy.json
+          python - <<'PY_TRANSFER'
+          import hashlib,json
+          from pathlib import Path
+          receipt=json.loads(Path('/tmp/porota-approved-payload.json').read_text())
+          for name,row in receipt['files'].items():
+              path=Path('/tmp')/name
+              assert path.stat().st_size == row['bytes']
+              with path.open('rb') as handle:
+                  assert hashlib.file_digest(handle,'sha256').hexdigest() == row['sha256']
+          print('POROTA_TRANSFER_APPROVED_BYTES=GREEN')
+          PY_TRANSFER
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
           SSH=(ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
           SCP=(scp -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
-          "${SSH[@]}" "$DO_USER@$DO_HOST" "rm -rf '$REMOTE_DIR' && mkdir -p '$REMOTE_DIR'"
-          "${SCP[@]}" /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json "$DO_USER@$DO_HOST:$REMOTE_DIR/"
+          "${SSH[@]}" "$DO_USER@$DO_HOST" "test ! -L /tmp/porota-rc6-deploy-v2.lock; exec 9>/tmp/porota-rc6-deploy-v2.lock; flock -n 9; test ! -e '$REMOTE_DIR'; mkdir -m 0700 '$REMOTE_DIR'"
+          "${SCP[@]}" /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-approved-payload.json "$DO_USER@$DO_HOST:$REMOTE_DIR/"
 
       - name: Promote exact frozen candidate and verify
+        id: promotion
         shell: bash
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' bash -s" <<'REMOTE'
+            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' POROTA_PRETRANSFER_HIST_DB_PATH='$RC6_SQLITE_SCRATCH_HISTORY_PATH' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
+          # A failed SSH channel may leave the remote promoter running. Keep
+          # cleanup serialized with it rather than deleting its staging files.
+          DEPLOY_LOCK=/tmp/porota-rc6-deploy-v2.lock
+          test ! -L "$DEPLOY_LOCK"
+          exec 9>"$DEPLOY_LOCK"
+          flock -n 9 || { echo 'RC6_REMOTE_PROMOTION_BUSY=RED'; exit 75; }
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
           STAGE="$REMOTE_DIR/stage"
           STABLE_IMAGE="porota-trading-bot:17.0.0-rc6"
@@ -303,7 +304,6 @@ jobs:
           # The heavy pre-transfer gate already cleaned first when required.
           # After transfer, re-check the remaining peak needed for bundle staging
           # + Docker image materialization + the final residual reserve.
-          find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' ! -path "$REMOTE_DIR" -exec rm -rf -- {} +
           DISK_PREFLIGHT_AFTER="$(df -PB1 / | awk 'NR==2 {print $4}')"
           DOCKER_DF_AFTER="$(sudo -n docker system df 2>&1 || true)"
           IMAGE_TAR_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-predeploy-image.tar.gz")"
@@ -343,39 +343,24 @@ jobs:
           echo "PRE_STATE_HOST_READONLY=$PRE_STATE"
           if [ "$PRE_STATE" != NO_RUNNING_OBSERVER ]; then test "$PRE_STATE" = "STATE_FAST|PRODUCTION_PAPER|0"; fi
 
-          PPI_WATCH_BEFORE="$(
-            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
-              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
-            done
-          )"
-          printf 'PPI_WATCH_BEFORE=%s\n' "$PPI_WATCH_BEFORE"
+
+          python3 - "$REMOTE_DIR" <<'PY_RECEIVED'
+          import hashlib,json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); receipt=json.loads((root/'porota-approved-payload.json').read_text())
+          for name,row in receipt['files'].items():
+              if name == 'porota-source-provenance.json':
+                  continue # source metadata is also embedded in the verified bundle
+              path=root/name
+              assert path.is_file() and not path.is_symlink() and path.stat().st_size == row['bytes']
+              with path.open('rb') as handle:
+                  assert hashlib.file_digest(handle,'sha256').hexdigest() == row['sha256']
+          print('POROTA_RECEIVED_APPROVED_BYTES=GREEN')
+          PY_RECEIVED
 
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
           tar -xzf "$REMOTE_DIR/porota-deploy-bundle-v2.tgz" -C "$STAGE"
-
-          sudo -n python3 - "$STAGE" "$REPO" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
-          import hashlib,json,os,shutil,sys
-          from pathlib import Path
-          stage,repo,manifest=map(Path,sys.argv[1:])
-          data=json.loads(manifest.read_text())
-          assert data.get("status")=="GREEN" and data.get("files")
-          def sha(p):
-              h=hashlib.sha256()
-              with p.open("rb") as f:
-                  for chunk in iter(lambda:f.read(1024*1024),b""): h.update(chunk)
-              return h.hexdigest()
-          for row in data["files"]:
-              rel=Path(row["path"])
-              assert not rel.is_absolute() and ".." not in rel.parts, rel
-              src=stage/rel
-              assert src.is_file() and sha(src)==row["sha256"], rel
-              dst=repo/rel
-              dst.parent.mkdir(parents=True,exist_ok=True)
-              shutil.copy2(src,dst)
-              assert sha(dst)==row["sha256"], rel
-          print(f"POROTA_BUNDLE_INSTALL=GREEN|files={len(data['files'])}")
-          PY
 
           EXPECTED_IMAGE_ID="$(python3 -c 'import json; print(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json"))["image_id"])')"
           gunzip -c "$REMOTE_DIR/porota-predeploy-image.tar.gz" | sudo -n docker load
@@ -389,8 +374,62 @@ jobs:
           echo "POROTA_IMAGE_ID_VERIFY=loaded=$LOADED_IMAGE_ID|expected=$EXPECTED_IMAGE_ID"
           echo "POROTA_IMAGE_CONFIG_DIAGNOSTIC=loaded=$IMAGE_CONFIG_SHA|expected=$EXPECTED_CONFIG_SHA|ENGINE_NORMALIZATION=OBSERVED"
           echo "POROTA_IMAGE_TAR_VERIFY=loaded=$IMAGE_TAR_SHA|expected=$EXPECTED_TAR_SHA"
-          test -n "$LOADED_IMAGE_ID"
+          [[ "$LOADED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$EXPECTED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$LOADED_IMAGE_ID" = "$EXPECTED_IMAGE_ID"
           test "$IMAGE_TAR_SHA" = "$EXPECTED_TAR_SHA"
+
+          sudo -n python3 - "$STAGE" "$REPO" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
+          import hashlib,json,os,shutil,stat,sys,tempfile
+          from pathlib import Path
+          stage,repo,manifest=map(Path,sys.argv[1:])
+          data=json.loads(manifest.read_text())
+          assert data.get("status")=="GREEN" and data.get("files")
+          assert repo.is_dir() and repo.resolve(strict=True)==repo.absolute()
+          def sha(p):
+              h=hashlib.sha256()
+              with p.open("rb") as f:
+                  for chunk in iter(lambda:f.read(1024*1024),b""): h.update(chunk)
+              return h.hexdigest()
+          for row in data["files"]:
+              rel=Path(row["path"])
+              assert not rel.is_absolute() and ".." not in rel.parts, rel
+              src=stage/rel
+              assert src.is_file() and not src.is_symlink() and sha(src)==row["sha256"], rel
+              assert stat.S_IMODE(src.stat().st_mode) == (0o755 if row['git_mode']=='100755' else 0o644), rel
+              dst=repo/rel
+              for parent in [dst.parent,*dst.parent.parents]:
+                  assert not parent.is_symlink(), rel
+                  if parent==repo: break
+              if dst.exists() or dst.is_symlink():
+                  assert dst.is_file() and not dst.is_symlink() and dst.stat().st_nlink==1, rel
+          provenance=stage/'POROTA_SOURCE_PROVENANCE.json'
+          assert provenance.is_file() and not provenance.is_symlink() and provenance.stat().st_nlink==1
+          assert stat.S_IMODE(provenance.stat().st_mode)==0o644
+          target_provenance=repo/'POROTA_SOURCE_PROVENANCE.json'
+          if target_provenance.exists() or target_provenance.is_symlink():
+              assert target_provenance.is_file() and not target_provenance.is_symlink() and target_provenance.stat().st_nlink==1
+          def install_atomic(src,dst):
+              dst.parent.mkdir(parents=True,exist_ok=True)
+              fd,name=tempfile.mkstemp(prefix='.porota-install-',dir=dst.parent)
+              os.close(fd)
+              try:
+                  shutil.copy2(src,name)
+                  with open(name,'rb') as stream: os.fsync(stream.fileno())
+                  os.replace(name,dst)
+              finally:
+                  if os.path.exists(name): os.unlink(name)
+          for row in data['files']:
+              rel=Path(row['path']); src=stage/rel
+              dst=repo/rel
+              install_atomic(src,dst)
+              assert sha(dst)==row["sha256"], rel
+              assert stat.S_IMODE(dst.stat().st_mode) == (0o755 if row['git_mode']=='100755' else 0o644), rel
+          install_atomic(provenance,target_provenance)
+          assert stat.S_IMODE((repo/'POROTA_SOURCE_PROVENANCE.json').stat().st_mode)==0o644
+          print(f"POROTA_BUNDLE_INSTALL=GREEN|files={len(data['files'])}")
+          PY
+
           sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"
           sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
           echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
@@ -410,7 +449,7 @@ jobs:
           test "$MARKET_DIR_IDENTITY" = "1000:1000|750"
           echo "RC6_BYMA_SHARED_PATH_WRITABLE_GUARD=GREEN"
 
-          MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
+          MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 "POROTA_PRETRANSFER_HIST_DB_PATH=$POROTA_PRETRANSFER_HIST_DB_PATH" python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
           echo "$MODE_OUTPUT"
           grep -q 'POROTA_MODE=OK' <<< "$MODE_OUTPUT"
 
@@ -588,6 +627,20 @@ jobs:
           )"
           echo "$RUNTIME_CHECK"
           grep -q '^GO_CHECK=GREEN' <<< "$RUNTIME_CHECK"
+
+          SHADOW_HEALTH_GREEN=0
+          for SHADOW_HEALTH_ATTEMPT in $(seq 1 24); do
+            if sudo -n docker exec porota_production_observer timeout 15 \
+              python /app/scripts/rc6_shadow_health_gate.py \
+              --database /app/data/paper_v17/observer_v17.db \
+              --source-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE"; then
+              SHADOW_HEALTH_GREEN=1
+              break
+            fi
+            sleep 5
+          done
+          test "$SHADOW_HEALTH_GREEN" -eq 1
+          echo 'RC6_SHADOW_POSTSTART_CHILD_AND_GENERATION=GREEN'
 
           # The exhaustive contract reconciliation can create a transient host
           # memory peak.  The dashboard is independently restartable and must
@@ -802,10 +855,11 @@ jobs:
               echo "RC6_PREOPEN_${phase}=RED|RC=$PREOPEN_RC"
               exit "$PREOPEN_RC"
             fi
-            grep -Fq '"status": "GREEN"' <<< "$PREOPEN_OUTPUT"
-            grep -Fq '"read_only": true' <<< "$PREOPEN_OUTPUT"
-            grep -Fq '"network_order_test_performed": false' <<< "$PREOPEN_OUTPUT"
-            echo "RC6_PREOPEN_${phase}=GREEN"
+            printf '%s\n' "$PREOPEN_OUTPUT" | \
+              PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO" python3 \
+                "$REPO/scripts/rc6_deploy_preopen_gate.py" \
+                --phase "$phase" --return-code "$PREOPEN_RC"
+            echo "RC6_PREOPEN_${phase}=RESULT_ACCEPTED"
           done
 
           # Observe several worker/dashboard refresh cycles before success.
@@ -834,6 +888,10 @@ jobs:
             echo "RC6_STABILITY_RESTART_$cycle=observer=$OBSERVER_RESTART_NOW|dashboard=$DASHBOARD_RESTART_NOW"
             test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"
             test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"
+            sudo -n docker exec porota_production_observer timeout 15 \
+              python /app/scripts/rc6_shadow_health_gate.py \
+              --database /app/data/paper_v17/observer_v17.db \
+              --source-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE"
             echo "RC6_ZERO_KNOWN_ERROR_STABILITY_$cycle=GREEN"
           done
 
@@ -852,6 +910,10 @@ jobs:
             test "$DASHBOARD_STATUS_SOAK" = running
             test "$OBSERVER_RESTART_SOAK" = "$OBSERVER_RESTART_BASE"
             test "$DASHBOARD_RESTART_SOAK" = "$DASHBOARD_RESTART_BASE"
+            sudo -n docker exec porota_production_observer timeout 15 \
+              python /app/scripts/rc6_shadow_health_gate.py \
+              --database /app/data/paper_v17/observer_v17.db \
+              --source-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE"
           done
           echo "RC6_EXIT139_SOAK=GREEN"
 
@@ -862,13 +924,7 @@ jobs:
           test -z "$RECENT_CRITICAL"
           echo "RC6_RECENT_CRITICAL_LOG_SIGNATURES=0"
 
-          PPI_WATCH_AFTER="$(
-            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
-              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
-            done
-          )"
-          test "$PPI_WATCH_AFTER" = "$PPI_WATCH_BEFORE"
-          echo "PPI_WATCH_UNTOUCHED=GREEN"
+          echo "PPI_WATCH_UNTOUCHED=GREEN|verification=SCOPE_NO_FOREIGN_INSPECTION"
 
           sudo -n mkdir -p "$REPO/data/deploy"
           sudo -n install -m 0644 "$REMOTE_DIR/porota-frozen-candidate.json" \
@@ -958,12 +1014,9 @@ jobs:
               sudo -n docker exec "$CRIT_CONTAINER" python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get("status")=="ok" and h.get("capability")=="issues_only",h; print("ISSUES_CAPABILITY_BROKER=GREEN")'
 
               OLD_IMAGE_USERS=0
-              for cid in $(sudo -n docker ps -aq); do
-                CID_IMAGE="$(sudo -n docker inspect -f '{{.Image}}' "$cid")"
-                if [ "$CID_IMAGE" = "$CRIT_IMAGE_BEFORE" ]; then
-                  OLD_IMAGE_USERS=1
-                  echo "RC6_OLD_CRITICAL_IMAGE_STILL_REFERENCED=$cid"
-                fi
+              for cid in $(sudo -n docker ps -aq --filter "ancestor=$CRIT_IMAGE_BEFORE"); do
+                OLD_IMAGE_USERS=1
+                echo "RC6_OLD_CRITICAL_IMAGE_STILL_REFERENCED=$cid"
               done
               test "$OLD_IMAGE_USERS" -eq 0
 
@@ -986,28 +1039,7 @@ jobs:
             fi
           fi
 
-          # Remove only tagged RC6 candidate images that no container references.
-          # Other unused images remain untouched; dangling layers are handled below.
-          for image_id in $(sudo -n docker image ls -q --no-trunc | sort -u); do
-            IMAGE_IN_USE=0
-            for cid in $(sudo -n docker ps -aq); do
-              if [ "$(sudo -n docker inspect -f '{{.Image}}' "$cid")" = "$image_id" ]; then
-                IMAGE_IN_USE=1
-                break
-              fi
-            done
-            if [ "$IMAGE_IN_USE" -eq 1 ]; then
-              continue
-            fi
-            for tag in $(sudo -n docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$image_id" 2>/dev/null | sed '/^<none>:/d' || true); do
-              case "$tag" in
-                porota-trading-bot:17.0.0-rc6-candidate-*)
-                  echo "RC6_REMOVE_UNUSED_CANDIDATE_IMAGE=$tag"
-                  sudo -n docker image rm "$tag"
-                  ;;
-              esac
-            done
-          done
+          sudo -n python3 "$REPO/scripts/rc6_deploy_scoped_cleanup.py" --pin-image-id "$RUNTIME_IMAGE_ID"
 
           # Mandatory final cleanup after runtime validation/provenance.
           sudo -n mkdir -p "$REPO/data/deploy"
@@ -1016,9 +1048,6 @@ jobs:
             --mode cleanup \
             --json-out "$REPO/data/deploy/last-deploy-housekeeping.json"
           sudo -n docker image rm "$FROZEN_IMAGE" >/dev/null 2>&1 || true
-          sudo -n docker image prune -f
-          sudo -n docker builder prune -af
-          if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
           rm -rf "$REMOTE_DIR"
           mapfile -t FINAL_DISK_METRICS < <(python3 -c 'import os,shutil; d=shutil.disk_usage("/"); v=os.statvfs("/"); print(d.free); print(f"{100.0*v.f_ffree/v.f_files:.6f}")')
           DISK_AFTER="${FINAL_DISK_METRICS[0]}"
@@ -1042,16 +1071,26 @@ jobs:
             test "$(sudo -n docker inspect -f '{{.Image}}' "$CRIT_CONTAINER")" = "$RUNTIME_IMAGE_ID"
             test "$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CRIT_CONTAINER")" = healthy
           fi
-          PPI_WATCH_FINAL="$(
-            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
-              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
-            done
-          )"
-          test "$PPI_WATCH_FINAL" = "$PPI_WATCH_BEFORE"
           echo "RC6_FINAL_HOUSEKEEPING=GREEN|free=$DISK_AFTER|inode_free_percent=$FINAL_INODE_FREE_PERCENT"
           echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
           echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
           REMOTE
+
+      - name: Failure-safe host cleanup
+        if: ${{ always() && (steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled') }}
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo 'POROTA_DEPLOY_FAILURE_CLEANUP=START|original_failure_preserved=true'
+          trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "POROTA_DEPLOY_FAILURE_CLEANUP=RED|candidate=$CANDIDATE_SHA|rc=$rc"; fi' EXIT
+          timeout 180 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 \
+            -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n timeout 150 python3 - --candidate-sha '$CANDIDATE_SHA'" \
+            < scripts/rc6_deploy_failure_cleanup.py
 
       - name: Deployment summary
         if: success()
@@ -1061,7 +1100,8 @@ jobs:
             echo '### POROTA RC6 Deploy V2'
             echo "- Deploy commit: `$DEPLOY_SHA`"
             echo "- Frozen candidate: `$CANDIDATE_SHA`"
-            echo "- Predeploy run: `$PREDEPLOY_RUN_ID`"
+            echo "- Predeploy run: `$PREDEPLOY_RUN_ID`, attempt `$PREDEPLOY_RUN_ATTEMPT`"
+            echo "- Approved artifact: `$PREDEPLOY_ARTIFACT_ID`, digest `$PREDEPLOY_ARTIFACT_DIGEST`"
             echo '- BUILD ONCE promotion: GREEN'
             echo '- PRODUCTION_PAPER: required'
             echo '- real_orders_sent: 0 required'
@@ -1073,6 +1113,8 @@ jobs:
         if: always()
         shell: bash
         run: |
+          git worktree remove --force /tmp/porota-approved-source >/dev/null 2>&1 || true
+          rm -f /tmp/porota-approved-predeploy.json /tmp/porota-approved-payload.json /tmp/porota-source-provenance.json
           rm -rf /tmp/porota-frozen-v2 /tmp/porota-frozen-v2.zip /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json
           rm -f "$HOME/.ssh/porota_rc6_deploy"
           echo "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN"

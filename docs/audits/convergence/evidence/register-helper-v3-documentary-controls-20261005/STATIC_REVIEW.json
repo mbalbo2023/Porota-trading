@@ -1,0 +1,130 @@
+{
+  "schema": "rc6.external-register-helper-extension-static-review.v1",
+  "scope": "Static Git path inventory and helper source review; later ROOT documentary control receipt separately bound below. No product Native/Gov or final register generation.",
+  "review_source": {
+    "sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+    "tree": "b020d609ae5d63440fa74d7967bb250f817f235a"
+  },
+  "files": [
+    {
+      "path": "/tmp/rc6_remediation_register_generate_v3.py",
+      "bytes": 97086,
+      "sha256": "28bbb212b333911634e7ea87fea0042503f744253cee87a4ee05140e7bc8f30e",
+      "AST_compile": "PASS",
+      "static_compile_phase_imported": false
+    },
+    {
+      "path": "/tmp/rc6_root_supplemental_named_findings_generate_v2.py",
+      "bytes": 35668,
+      "sha256": "5a28dac53c6b63e4e21971ebf96bf1eaa1b65b486199125de3bbbe4c904ba708",
+      "AST_compile": "PASS",
+      "static_compile_phase_imported": false
+    },
+    {
+      "path": "/tmp/rc6_register_helpers_v3_controls.py",
+      "bytes": 28031,
+      "sha256": "40981cd324dbf0270a69c025f794bd3150fafbdc8012dba5b3c7ae851899532c",
+      "AST_compile": "PASS",
+      "static_compile_phase_imported": false
+    },
+    {
+      "path": "/tmp/rc6_register_helpers_v3_README.md",
+      "bytes": 9019,
+      "sha256": "91cf285755d2455b3157afd18ff73500e57366f041b9eb71ec80efda968a929c"
+    }
+  ],
+  "shared_function_AST_hashes": {
+    "decode_known_raw_member": "322a138aebd91dc1356d5a4e6c5031a0f9c258358d570f545a8c27497fbfba15",
+    "decode_known_json": "00da23c22ca93ad4df0421f39644fda3ffb76df631d00f3c3b8346f9b737aac7",
+    "declared_raw_dossier_members": "89866a788c4c0fb3566911372baa7d6ce406f77227e30b1e0e19cc3f33dea4fd"
+  },
+  "dossier_path_inventory": [
+    {
+      "directory": "docs/audits/convergence/evidence/native-big-8764e934-157/",
+      "tracked_members": 10,
+      "old_discovery_omitted_members": 5,
+      "prepared_discovery_omitted_members": []
+    },
+    {
+      "directory": "docs/dashboard/evidence/rc6-convergence-ux/family-health-function-scope-9e36e92a/",
+      "tracked_members": 47,
+      "old_discovery_omitted_members": 33,
+      "prepared_discovery_omitted_members": []
+    },
+    {
+      "directory": "docs/audits/rc6-convergence-persistence-evidence/packed_scalar_dispatch/",
+      "tracked_members": 18,
+      "old_discovery_omitted_members": 16,
+      "prepared_discovery_omitted_members": []
+    },
+    {
+      "directory": "docs/audits/convergence/evidence/fresh-github-source-ro-20261005/",
+      "tracked_members": 64,
+      "old_discovery_omitted_members": 27,
+      "prepared_discovery_omitted_members": []
+    },
+    {
+      "directory": "docs/audits/convergence/evidence/source-scratch-cleanup-20261005/",
+      "tracked_members": 3,
+      "old_discovery_omitted_members": 0,
+      "prepared_discovery_omitted_members": []
+    }
+  ],
+  "parser_runtime_controls_executed": 64,
+  "native_tests_executed": 0,
+  "governed_suite_executed": false,
+  "final_register_generated": false,
+  "root_files_written": false,
+  "status": "STATIC_AST_COMPILE_PLUS_ROOT_PRIVATE_DOCUMENTARY_CONTROLS_NOT_FINAL_CORPUS_EXECUTION",
+  "archival_mapping_correction": {
+    "root_independent_review_gap": "Packet original .py names must resolve via CUSTODY exact stored_relative_path, not directory+original or inferred suffix.",
+    "original_source_packet_unchanged": true,
+    "root_schema_mapping_join_prepared": true,
+    "private_archival_program_fixture_count": 15,
+    "mapping_runtime_controls_executed_by_root": 11
+  },
+  "root_documentary_execution": {
+    "executor": "ROOT",
+    "classification": "PRIVATE_DOCUMENTARY_HELPER_CONTROLS_ONLY_NOT_NATIVE_PRODUCT_GOV_OR_MARKET_SCENARIOS",
+    "receipt": {
+      "path": "/tmp/rc6_register_helpers_v3_controls_receipt.json",
+      "bytes": 8119,
+      "sha256": "2c28598fa8f622539deccaae11536657713762661116f08562307237fe4f1cd6",
+      "schema": "rc6.derived-register-ref-controlled-diagnostic.v1",
+      "scope_verbatim": "PRIVATE_SYNTHETIC_GIT_JSON_XML_CODEC_ONLY_NO_PRODUCT_IMPORT_NO_NATIVE_GOV_PROVIDER_IMAGE_RUNTIME_OR_FINANCIAL_EXECUTION"
+    },
+    "recorded_documentary_controls": 64,
+    "native_tests_executed": 0,
+    "governed_suite_executed": false,
+    "product_imports_executed": false,
+    "helper_stdlib_modules_imported_by_root_control": true,
+    "source_hashes_equal_before_after": true,
+    "original_30_controls_added_as_independent_cases": false,
+    "root_reported_cli_exit_code": 0,
+    "root_reported_elapsed_seconds": 0.945,
+    "elapsed_evidence_boundary": "ROOT orchestration report in parent message; not emitted in receipt/RAW timing record, not operational performance.",
+    "raw_files": [
+      {
+        "path": "/workspace/rc6-documentary-controls-v3-20261005-raw/controls.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/workspace/rc6-documentary-controls-v3-20261005-raw/controls.stdout",
+        "bytes": 320,
+        "sha256": "4e699e5a36e3d174a08a82f0b5f36dc0dcb02391c6b4e697c0f5e0f00619095c"
+      },
+      {
+        "path": "/workspace/rc6-documentary-controls-v3-20261005-raw/source-after.sha256",
+        "bytes": 341,
+        "sha256": "b7c753b29ef3204e90163226144cc9c702f70f0b94bec0b96f01c104cb08406f"
+      },
+      {
+        "path": "/workspace/rc6-documentary-controls-v3-20261005-raw/source-before.sha256",
+        "bytes": 341,
+        "sha256": "b7c753b29ef3204e90163226144cc9c702f70f0b94bec0b96f01c104cb08406f"
+      }
+    ],
+    "final_register_or_product_generated": false
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "schema": "rc6.sre-maximum-member-focal-launch.v1",
+  "source_sha": "c43782ba33e23cbb813a4a82416f97df9957fc46",
+  "source_tree": "04ae55d3eb7eb27ec737134ece91f64c27c872ba",
+  "cwd": "/workspace/porota_rc6_worktrees/sre_maximum_member_c437",
+  "command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "-m",
+    "pytest",
+    "tests/test_rc6_archive_maximum_member_guard.py",
+    "-p",
+    "no:cacheprovider",
+    "-o",
+    "pythonpath=.",
+    "-o",
+    "junit_family=legacy",
+    "--junitxml=/tmp/rc6-sre-maximum-member-c437-pythonpath-raw/maximum-member.xml"
+  ],
+  "uid": 1000,
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+  "installed_closure": {
+    "schema": "rc6.installed-distribution-closure.v1",
+    "status": "GREEN",
+    "expected_total": 157,
+    "installed_total": 157,
+    "installed_unique_total": 157,
+    "duplicate_names": [],
+    "missing": [],
+    "unexpected": [],
+    "version_mismatch": []
+  },
+  "collected_nodes_before_fixture": [
+    "tests/test_rc6_archive_maximum_member_guard.py::test_native_near64mib_original_ancestor_depth32_restore_has_real_bounded_rss_and_exact_members",
+    "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation"
+  ],
+  "collection_sha256": "ff98a114f987c2001f3d72a5a0e7b257298d6f9ec57e567bf91a043d10ea4209",
+  "automatic_guard_nodes": 2,
+  "native_executions_requested": 1,
+  "inner_native_full_envelope_seconds": 300,
+  "inner_termination_window_seconds": 330,
+  "outer_pytest_management_only_seconds": 390,
+  "source_clean_before": true,
+  "script_sha256": "8b41c1eb18c6da181d2dd349f286d78f17f97ac2ae74b8206352ae17b792fabf",
+  "test_sha256": "4c80b2435cbd955034f3d423d539c5a091d62b9e6676e9c837f4193a89ff8dd6",
+  "corrected_harness_only": "EXPLICIT_PYTEST_PYTHONPATH_CANONICAL_VERIFIED_CWD; SOURCE_UNCHANGED",
+  "previous_infrastructure_raw": "/tmp/rc6-sre-maximum-member-c437-raw"
+}

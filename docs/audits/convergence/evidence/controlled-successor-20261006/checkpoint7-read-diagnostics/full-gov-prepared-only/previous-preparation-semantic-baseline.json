@@ -1,0 +1,71 @@
+{
+  "no_new_clones_exports_gates": true,
+  "read_scope": "ONLY_EXISTING_PREPARATION_RECEIPTS_AND19_REQUIRED_IMMUTABLE_OBJECTS_NO_HISTORICAL_AUDIT",
+  "receipts": [
+    {
+      "canonical_origin": "https://github.com/mbalbo2023/Porota-trading.git",
+      "epoch": "311",
+      "exclusions": [
+        "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+      ],
+      "full_nonalias_clone": true,
+      "original_receipt": "/workspace/scratch/rc6g2e-eabh7h8t/epoch311/preparation-after-original-object-fetch/preparation-receipt.json",
+      "original_scope_inventory_sha256": "ffacfa2243095c50223f81f44418d3b381e9add3cb7703b10922d300a57c578e",
+      "original_source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+      "original_source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+      "prepared_only_noGatePass": "PREPARED_ONLY_NO_GOV_OR_TEST_GATE_PASS",
+      "scope_arguments": [
+        ".",
+        "--ignore=test_a3_primary_readonly_hf6.py"
+      ],
+      "sha256": "059938fdb425e043630f2674fad68041b4288c8f92b1d7cb9e1afdf61e2167fe",
+      "stat": {
+        "st_atime_ns": 1791309145378599682,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791309000172000988,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1577734,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791309000172000988,
+        "st_nlink": 1,
+        "st_size": 3311,
+        "st_uid": 1000
+      },
+      "umask": "022"
+    },
+    {
+      "canonical_origin": "https://github.com/mbalbo2023/Porota-trading.git",
+      "epoch": "312",
+      "exclusions": [
+        "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+      ],
+      "full_nonalias_clone": true,
+      "original_receipt": "/workspace/scratch/rc6g2e-eabh7h8t/epoch312/preparation-after-original-object-fetch/preparation-receipt.json",
+      "original_scope_inventory_sha256": "a11b8ab9da68dfb9913c9bddb48dd092dc73bc0d82c093d3d5fff729d67ac4d4",
+      "original_source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+      "original_source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+      "prepared_only_noGatePass": "PREPARED_ONLY_NO_GOV_OR_TEST_GATE_PASS",
+      "scope_arguments": [
+        ".",
+        "--ignore=test_a3_primary_readonly_hf6.py"
+      ],
+      "sha256": "80368af5ce346c08486f99c3217ff5d1896380ed5134b3baa3960d05ee7c7700",
+      "stat": {
+        "st_atime_ns": 1791309145378599682,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791309043820473266,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1581422,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791309043820473266,
+        "st_nlink": 1,
+        "st_size": 3581,
+        "st_uid": 1000
+      },
+      "umask": "022"
+    }
+  ],
+  "schema": "rc6.gov-preparation-semantic-baseline.v1"
+}

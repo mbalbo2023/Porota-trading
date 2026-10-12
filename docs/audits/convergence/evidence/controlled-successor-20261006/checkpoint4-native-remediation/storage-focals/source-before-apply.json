@@ -1,0 +1,43 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "base_source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "original_before_apply": [
+    {
+      "path": "rc6_shadow_runtime/serialization.py",
+      "proposed_sha256": "e091aebcd25396134c69876ae14d42d264887240b65fbd9867d6ea4b8b235a8a",
+      "sha256": "d5808446a1c4b964d10a4a5be6e52ab5ef8a69dc12171259df97b187b0e4fc99",
+      "stat": {
+        "st_atime_ns": 1791290621665224688,
+        "st_ctime_ns": 1791290621252873701,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1051121,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791290621252873701,
+        "st_nlink": 1,
+        "st_size": 18686,
+        "st_uid": 1000
+      }
+    },
+    {
+      "path": "rc6_shadow_runtime/packed_storage.py",
+      "proposed_sha256": "fa3bcf1e0813067baa8fd478f6aeedd63b4552bcbefbddd487909690c8d43466",
+      "sha256": "bb2188ce9517107f337de4b6c17c6122028f5d7fe76b6780bab28e3a507b7048",
+      "stat": {
+        "st_atime_ns": 1791290621665224688,
+        "st_ctime_ns": 1791290621252873701,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1051115,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791290621252873701,
+        "st_nlink": 1,
+        "st_size": 34560,
+        "st_uid": 1000
+      }
+    }
+  ],
+  "patch_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/proposal.diff",
+  "patch_sha256": "f7dec4a785659183d16a88ee8819c5b67222b910c2054582fe6a99ed64f08415",
+  "source_root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source"
+}

@@ -1,0 +1,106 @@
+import ctypes
+import errno
+import hashlib
+import json
+import os
+from pathlib import Path
+import runpy
+import sys
+import time
+
+manager_path, expected_sha, producer_path, case, output_root = sys.argv[1:]
+output_root = Path(output_root)
+raw = Path(manager_path).read_bytes()
+assert hashlib.sha256(raw).hexdigest() == expected_sha
+manager = runpy.run_path(manager_path)
+killpg_requests = []
+def observe_killpg(event, arguments):
+    if event == 'os.killpg':
+        killpg_requests.append({'pgid': arguments[0], 'signal': arguments[1]})
+sys.addaudithook(observe_killpg)
+initial = manager['pre_capture_kernel_state']()
+command = [sys.executable, '-I', '-B', producer_path, '--case', case,
+           '--receipt', str(output_root / 'producer-control.json'),
+           '--exit-code', '0' if case == 'simpleExit' else '1']
+kernel = manager['managed_native_child'](command, output_root,
+    output_root / 'producer.log', dict(os.environ, PYTHONDONTWRITEBYTECODE='1'),
+    60, terminate_grace=2, progress_poll=5)
+closed = manager['managed_custody_closed'](kernel)
+phase_green = manager['managed_phase_green'](kernel)
+followup = None
+if closed:
+    final = manager['pre_capture_kernel_state']()
+    assert final['subreaper_state_after'] == initial['subreaper_state_after']
+else:
+    # This is a separate failed-control diagnostic by the SAME supervisor.
+    # It never amends, accepts or converts the original phase's UNKNOWN/RED.
+    assert kernel['actual_child_reaped'] and kernel['wait4_reaped_pid'] == kernel['pid']
+    assert kernel['kernel_pre_popen_echild_verified']
+    assert kernel['subreaper_activation_readback_verified']
+    assert kernel['supervisor_pid'] == os.getpid()
+    libc = ctypes.CDLL(None, use_errno=True)
+    state = ctypes.c_int()
+    assert libc.prctl(37, ctypes.byref(state), 0, 0, 0) == 0 and state.value == 1
+    started = time.monotonic()
+    deadline = started + 5
+    observations = []
+    exhausted = False
+    while len(observations) < 1024 and time.monotonic() < deadline:
+        try:
+            pid, status, usage = os.wait4(-1, os.WNOHANG)
+        except ChildProcessError as error:
+            assert error.errno == errno.ECHILD
+            observations.append({'outcome': 'ECHILD', 'errno': error.errno})
+            exhausted = True
+            break
+        if pid:
+            observations.append({'outcome': 'PID_REAPED', 'pid': pid,
+                'exit_code': os.waitstatus_to_exitcode(status),
+                'kernel_lifetime_peak_rss_bytes': usage.ru_maxrss * 1024})
+        else:
+            observations.append({'outcome': 'LIVE_OWN_CHILD', 'pid': 0})
+            time.sleep(.05)
+    assert exhausted
+    try:
+        os.killpg(kernel['pid'], 0)
+    except ProcessLookupError:
+        absent = True
+    else:
+        absent = False
+    assert absent
+    assert libc.prctl(36, kernel['subreaper_previous_state'], 0, 0, 0) == 0
+    restored = ctypes.c_int()
+    assert libc.prctl(37, ctypes.byref(restored), 0, 0, 0) == 0
+    assert restored.value == kernel['subreaper_previous_state'] == initial['subreaper_state_before']
+    final = manager['pre_capture_kernel_state']()
+    followup = {'scope': 'SEPARATE_SAME_PID_FAILED_CONTROL_DIAGNOSTIC_NOT_PHASE_ACCEPTANCE',
+        'supervisor_pid': os.getpid(), 'original_phase_result_changed': False,
+        'original_phase_owned_fin_closed': closed, 'original_phase_green': phase_green,
+        'diagnostic_bound_seconds': 5, 'diagnostic_wall_seconds': time.monotonic()-started,
+        'kernel_observations': observations, 'ECHILD_verified': exhausted,
+        'original_owned_PGID_absent': absent, 'subreaper_restored': True,
+        'producer_payload_reads_before_diagnostic_FIN': 0, 'termination_signals_sent': []}
+# No Source/producer/log reads between launch and physical kernel FIN.
+path = output_root / 'producer-control.json'
+fd = os.open(path, os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC)
+with os.fdopen(fd, 'rb') as stream:
+    before = os.fstat(stream.fileno())
+    fields = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_uid', 'st_gid',
+              'st_size', 'st_blocks', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')
+    before11 = {name: getattr(before, name) for name in fields}
+    assert before.st_uid == os.geteuid() and before.st_nlink == 1
+    assert before.st_mode & 0o777 == 0o600 and before.st_size <= 65536
+    assert before.st_dev == output_root.lstat().st_dev
+    control_raw = stream.read(65537)
+    assert len(control_raw) == before.st_size
+    assert before11 == {name: getattr(os.fstat(stream.fileno()), name) for name in fields}
+    assert before11 == {name: getattr(path.lstat(), name) for name in fields}
+control = json.loads(control_raw)
+print(json.dumps({'supervisor_pid': os.getpid(), 'manager_sha256': expected_sha,
+    'initial_kernel': initial, 'main_phase_kernel': kernel,
+    'main_phase_owned_fin_closed': closed, 'main_phase_green': phase_green,
+    'diagnostic_followup': followup, 'final_kernel': final,
+    'producer_control_sha256': hashlib.sha256(control_raw).hexdigest(),
+    'producer_control': control, 'producer_control_11stat': before11,
+    'python_killpg_requests': killpg_requests,
+    'producer_or_log_reads_while_owned_child_active': 0}, sort_keys=True))

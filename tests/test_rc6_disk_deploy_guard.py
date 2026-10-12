@@ -68,7 +68,9 @@ def test_dynamic_gate_uses_exact_unpacked_image_and_cleans_before_transfer_when_
     assert "image_size_bytes" in block
     assert "RC6_DISK_PRECLEAN=START" in block
     assert "rc6_disk_housekeeping.py" in block
-    assert "docker image prune -f" in block
+    assert "rc6_deploy_scoped_cleanup.py" in block
+    assert "docker image prune" not in block
+    assert "docker builder prune" not in block
     assert block.index("RC6_DISK_PRECLEAN=START") < block.index("RC6_DISK_PRETRANSFER_GATE=GREEN")
 
 
@@ -80,7 +82,9 @@ def test_final_cleanup_runs_after_runtime_validation_and_is_measured() -> None:
     tail = text[validated:cleanup + 200]
     assert "--mode cleanup" in tail
     assert "last-deploy-housekeeping.json" in tail
-    assert "docker image prune -f" in tail
+    assert "rc6_deploy_scoped_cleanup.py" in tail
+    assert '--pin-image-id "$RUNTIME_IMAGE_ID"' in tail
+    assert "docker image prune" not in tail
     assert "FINAL_INODE_FREE_PERCENT" in tail
 
 
@@ -108,14 +112,15 @@ def test_final_cleanup_reconciles_critical_approval_and_prunes_only_unused_candi
 
     assert "RC6_OLD_CRITICAL_IMAGE_STILL_REFERENCED" in tail
     assert "OLD_IMAGE_USERS" in tail
-    assert "IMAGE_IN_USE" in tail
-    assert "RC6_REMOVE_UNUSED_CANDIDATE_IMAGE" in tail
-    assert "porota-trading-bot:17.0.0-rc6-candidate-*" in tail
-
-    # Keep the broad prune dangling-only. Tagged deletion is limited to
-    # proven-unreferenced RC6 candidate tags above.
-    assert "docker image prune -af" not in tail
-    assert "docker image prune -f" in tail
+    assert "rc6_deploy_scoped_cleanup.py" in tail
+    engine = (REPO / "scripts/rc6_deploy_scoped_cleanup.py").read_text(encoding="utf-8")
+    assert "porota-trading-bot:17.0.0-rc6-candidate-*" in engine
+    assert '"ps", "-aq", "--filter", "ancestor=" + identity' in engine
+    assert 'if identity in pins or users:' in engine
+    assert 'run_docker("image", "rm", tag)' in engine
+    assert "docker image prune" not in tail
+    assert "docker builder prune" not in tail
+    assert 'run_docker("image", "rm", "--force"' not in engine
 
 
 def test_final_cleanup_revalidates_critical_approval_after_cleanup() -> None:

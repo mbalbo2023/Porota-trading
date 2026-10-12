@@ -1,0 +1,35 @@
+{
+  "collected": 92,
+  "command": [
+    "/workspace/scratch/porota_rc6_focal.py",
+    "/workspace/Porota-trading",
+    "/workspace/scratch/porota-recovery-focal311-d56a",
+    "tests/test_rc6_native_big_import_provenance.py",
+    "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+    "tests/test_rc6_source_capture_deadlines.py",
+    "tests/test_rc6_shadow_family_runtime.py",
+    "tests/test_rc6_native_source_reads.py"
+  ],
+  "counts": {
+    "error": 0,
+    "failure": 0,
+    "skipped": 0
+  },
+  "duplicate_collected": 0,
+  "duplicate_executed": 0,
+  "executed": 92,
+  "exit_code": 0,
+  "identities_match": true,
+  "installed_total": 157,
+  "junit_bytes": 15952,
+  "junit_sha256": "a28d8c223bc60379ec03104f4ad91c288b7b3812a28fc186cd0fad4a45f641e2",
+  "python": "3.11.16",
+  "real_orders_sent": 0,
+  "schema": "rc6.controlled-recovery-focal.v1",
+  "scope": "SCOPED_NATIVE_FOCAL_WITH_PHYSICAL_GIT_BLOBS_MODES_AND_STABLE_CODE_STATS; NOT_FULL_GOV_BIG_HORIZON_IMAGE_OR_RUNTIME",
+  "source_files": 2630,
+  "source_sha": "d56ac8300dca68ec9d2e9f39e338cca117df9622",
+  "source_tree": "d47f1448a76f26be17e0faf07a6475ba901528b4",
+  "source_unchanged": true,
+  "wall_seconds": 19.133840273000033
+}

@@ -1,0 +1,10 @@
+{
+  "case": "new_unknown5",
+  "epoch": "311",
+  "management_deadline": 28860.319253088,
+  "owned_log_bytes_fstat_only": 79,
+  "pid": 33290,
+  "scope": "ACTUAL_COMPONENT_MANAGER_ONLY",
+  "stage": "poll",
+  "wall_seconds": 5.011381422998966
+}

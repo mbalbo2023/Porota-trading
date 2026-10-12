@@ -1,0 +1,45 @@
+{
+  "before_parent_allocation": {
+    "VmHWM_bytes": 9699328,
+    "VmRSS_bytes": 9699328,
+    "pid": 1230,
+    "ru_maxrss_bytes": 9568256
+  },
+  "child": {
+    "after_exec": {
+      "VmHWM_bytes": 8585216,
+      "VmRSS_bytes": 8585216,
+      "pid": 1231,
+      "ru_maxrss_bytes": 638713856
+    },
+    "after_own_32MiB_allocation": {
+      "VmHWM_bytes": 42180608,
+      "VmRSS_bytes": 42180608,
+      "pid": 1231,
+      "ru_maxrss_bytes": 638713856
+    },
+    "after_own_free": {
+      "VmHWM_bytes": 42074112,
+      "VmRSS_bytes": 8626176,
+      "pid": 1231,
+      "ru_maxrss_bytes": 638713856
+    }
+  },
+  "maximum_parent_allocation_bytes": 629145600,
+  "network_attempts": 0,
+  "parent_after_free": {
+    "VmHWM_bytes": 638844928,
+    "VmRSS_bytes": 9809920,
+    "pid": 1230,
+    "ru_maxrss_bytes": 638844928
+  },
+  "parent_allocation_live": {
+    "VmHWM_bytes": 638877696,
+    "VmRSS_bytes": 638877696,
+    "pid": 1230,
+    "ru_maxrss_bytes": 638713856
+  },
+  "real_orders_sent": 0,
+  "schema": "rc6-smoke-rss-diagnostic.v1",
+  "scope": "ISOLATED_LOCAL_LINUX_PARENT_FORK_EXEC_ACCOUNTING_ONLY"
+}

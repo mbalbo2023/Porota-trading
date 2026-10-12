@@ -1,0 +1,155 @@
+{
+  "archived_helper_sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313",
+  "code_snapshot_at_checkpoint": {
+    "runner_sha256": "6ee4b4cf2140ec7fd9b89e9fce737f3e70ce76498f3790c20619067cbdf03b75",
+    "tests_sha256": "1f5e458accc1e7c2ec9ca342c9f82712088b1678a12271e78f0fcb6dfec844f4"
+  },
+  "deploy_owner": "NOT_ACQUIRED",
+  "final_candidate_eligible": false,
+  "finalization_scope": "Actual bounded joins/pipe-close stop protocols and witnessed Python nonzero signal veto only during finalization; attempted SIGTERM is RED even when stdlib captures exception; actual child remains alive until original owned RED cleanup.",
+  "guard_scope": "Native IPv6 creation restriction and unchanged Python auditedDNS/bind/connect/send deny+RED; IPv4 unconnected creation and AF_UNIX are retained; no module override or transitive/binary/fullnamespace network attestation.",
+  "kernel_creation_denial_errno_linux": 97,
+  "kernel_creation_denial_errno_name": "EAFNOSUPPORT",
+  "material_gates_closed": [],
+  "parent_checkpoint_sha": "0506e735598e7d5683b97fb8f9e1ecc53e54e542",
+  "ppi_watch": "UNTOUCHED",
+  "raw_files": [
+    {
+      "bytes": 5728,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/handoff.raw.json",
+      "sha256": "f6e2324899ed70134791df9f9dafa1fe8345560f392d5d3651f30fd88d79852a"
+    },
+    {
+      "bytes": 13217,
+      "cases": 14,
+      "error": 0,
+      "fail": 3,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py311.initial-red.xml",
+      "sha256": "42597c3e7d09586867c4aef648be650450ac693ff58d517df5ce65d81e2c1243",
+      "skip": 0
+    },
+    {
+      "bytes": 12596,
+      "cases": 14,
+      "error": 0,
+      "fail": 3,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py312.initial-red.xml",
+      "sha256": "c39142bb9acf7a837f85b3ebbe37cac7b711c5e496748ef2ca348422b150672d",
+      "skip": 0
+    },
+    {
+      "bytes": 2702,
+      "cases": 15,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py311.final.xml",
+      "sha256": "6d2d487af67348eed79a4e3a1e4b78f0cff1bb31e4af38a68a8c30f7c135b126",
+      "skip": 0
+    },
+    {
+      "bytes": 2702,
+      "cases": 15,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py312.final.xml",
+      "sha256": "05646e697799e63e812630c5a61357ecab753fdf54c53e1c578988ac5b55fcec",
+      "skip": 0
+    },
+    {
+      "bytes": 1018,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py311-test_swallowed_stdlib_finalize0-phase-control.finalization.json",
+      "sha256": "3845b65e17af207d0fbe36f5525c4d6c289201c69a1643602ab2075e9582b684"
+    },
+    {
+      "bytes": 2713,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py311-test_swallowed_stdlib_finalize0-phase-control.custody.json",
+      "sha256": "3cf7466aafef4898bdecb5404d142a05ee78e55d48f2e99b900fa5adff0766e5"
+    },
+    {
+      "bytes": 913,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py311-test_owned_tracker_and_child_a0-phase-control.finalization.json",
+      "sha256": "a140a3d0325847e8f2e459ee5e265510e77ba7cc95cfb9dcf1c5a11ad3348dce"
+    },
+    {
+      "bytes": 2042,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py311-test_owned_tracker_and_child_a0-phase-control.custody.json",
+      "sha256": "68249c5fa65d7a7bbbbd3aea598036fe8dad860415064ebc81ee2f303cae7bb9"
+    },
+    {
+      "bytes": 1007,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py311-test_owned_forkserver_protocol0-phase-control.finalization.json",
+      "sha256": "2ee1e7601e13a2fb5039b9aca0d2883c5bfde18940c9d386a98261083cb9037e"
+    },
+    {
+      "bytes": 2044,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py311-test_owned_forkserver_protocol0-phase-control.custody.json",
+      "sha256": "ff0c1ebdc348ae11ed8fd9d7e856f1fb52df3c44359794563ea20513e694e732"
+    },
+    {
+      "bytes": 2132,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py311-test_native_watchdog_does_not_0-phase-control.custody.json",
+      "sha256": "9a7da1f878dffff0a4ad76e7d191f51ec8e63173c24ba7af9e3d26a21f10f334"
+    },
+    {
+      "bytes": 2711,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py311-test_kernel_live_orphan_stays_0-phase-control.custody.json",
+      "sha256": "fd77148b84326fab40f9fce2a0fb10d78f6af5850e28556a62d56b92062497fd"
+    },
+    {
+      "bytes": 1019,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py312-test_swallowed_stdlib_finalize0-phase-control.finalization.json",
+      "sha256": "c6203edb726f7e969d686c55523fc02357af1012a8728a7976df26f4e179e45e"
+    },
+    {
+      "bytes": 2702,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py312-test_swallowed_stdlib_finalize0-phase-control.custody.json",
+      "sha256": "87b580b876c8c0f6379a1c4dc0d8ed3cfcf454eb72842c3a7382df2aad5f0b53"
+    },
+    {
+      "bytes": 912,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py312-test_owned_tracker_and_child_a0-phase-control.finalization.json",
+      "sha256": "501a74020e3fb3824e2c2e281c33b449cf9087c94a968d88153b938f6aeb77b8"
+    },
+    {
+      "bytes": 2042,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py312-test_owned_tracker_and_child_a0-phase-control.custody.json",
+      "sha256": "c314f6d2ce1059e98bb8f36bb729ceb63f84e9fb731243db11702949a7118326"
+    },
+    {
+      "bytes": 1007,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py312-test_owned_forkserver_protocol0-phase-control.finalization.json",
+      "sha256": "7e012f33df60bc5a8ddccdc8cf425dc8bc83cf8e43ab03024bc09c8a5180475c"
+    },
+    {
+      "bytes": 2041,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py312-test_owned_forkserver_protocol0-phase-control.custody.json",
+      "sha256": "da33badefbbf7c7aba7096ebadaff9006d36e7eb4e290809c155fee0f112affa"
+    },
+    {
+      "bytes": 2118,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py312-test_native_watchdog_does_not_0-phase-control.custody.json",
+      "sha256": "281daa8b6ff3146e09eb100cb052e3a356942c0b0f4233e7bd174567ff01e29c"
+    },
+    {
+      "bytes": 2708,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint3-gov-controls/py312-test_kernel_live_orphan_stays_0-phase-control.custody.json",
+      "sha256": "613b0639e4025351ad47dfd5c3d2f487eb4196cf2c99a7687da059786d56dcfc"
+    }
+  ],
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "same_15_scenarios_across_interpreters": true,
+  "schema": "rc6.controlled-successor-diagnostic-checkpoint.v1",
+  "session": "CODEX_SUCCESSOR_RC6_20261006_1246UTC",
+  "source_preserved_functions": [
+    "source_pin",
+    "compare_source",
+    "subprocess_phase",
+    "capture",
+    "physical_namespace",
+    "git_metadata",
+    "installed_closure",
+    "approved_scope"
+  ],
+  "status": "DESARROLLADO_DIAGNOSTIC_ONLY_NOT_FINAL_GOV_QUALIFICATION"
+}

@@ -1,0 +1,65 @@
+{
+  "AST_invariants": [
+    {
+      "AST_IDENTICAL_AFTER_REMOVING_THE_ONE_ADDED_CONTINUE": true,
+      "added_continue_count": 0,
+      "name": "require",
+      "original_body_sha256": "5444d3f5c5a16abe960df903ae8bbeb8ab5f1a846011f787dc3e1f5be11d568d",
+      "original_end_line": 406,
+      "original_start_line": 404
+    },
+    {
+      "AST_IDENTICAL_AFTER_REMOVING_THE_ONE_ADDED_CONTINUE": true,
+      "added_continue_count": 0,
+      "name": "pre_capture_kernel_state",
+      "original_body_sha256": "6f126e137c6c8ae9db69c3faad232a5e1c18a1d1bd30e4298de83fd633237cdd",
+      "original_end_line": 427,
+      "original_start_line": 409
+    },
+    {
+      "AST_IDENTICAL_AFTER_REMOVING_THE_ONE_ADDED_CONTINUE": true,
+      "added_continue_count": 0,
+      "name": "managed_custody_closed",
+      "original_body_sha256": "d980fed7512242ad89c320ff1f0fbe5adb4acd23898a909185d13122c1ea47b7",
+      "original_end_line": 441,
+      "original_start_line": 430
+    },
+    {
+      "AST_IDENTICAL_AFTER_REMOVING_THE_ONE_ADDED_CONTINUE": true,
+      "added_continue_count": 0,
+      "name": "managed_phase_green",
+      "original_body_sha256": "13a3c60354916dd7545b7c579330398d5da365317d324f9bfd27911d2d977728",
+      "original_end_line": 456,
+      "original_start_line": 444
+    },
+    {
+      "AST_IDENTICAL_AFTER_REMOVING_THE_ONE_ADDED_CONTINUE": true,
+      "added_continue_count": 1,
+      "name": "managed_native_child",
+      "original_body_sha256": "f393ff968f0e3d7da8c7e342bf23aa83bb277c2f37ebb310c99d84fd96cf9d4d",
+      "original_end_line": 716,
+      "original_start_line": 468
+    }
+  ],
+  "helper_all_other_functions_AST_identical": true,
+  "helper_diff_sha256": "ecd92195fd2080e25976d126dd48492c3a6fd79127dd2760f0bfcabba2335fb8",
+  "helper_member": "scripts/porota_predeploy_test_workspace.py",
+  "helper_native_loader_AST_identical_except_docstring": true,
+  "historical_origin_bytes": 55671,
+  "historical_origin_git_blob": "2c5709b25cc4548651e9e85aba50eba0eb5121cf",
+  "historical_origin_member": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source",
+  "historical_origin_sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+  "manager_bytes": 18113,
+  "manager_git_blob": "b221f59f4edbb7b04097aec57e91ffbef648100e",
+  "manager_member": "scripts/rc6_controlled_native_child_manager.py",
+  "manager_sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+  "original_helper_sha256": "86678b88af863b3e45e6eac686b73514dee4f107ed1d9d9c9d92eba8868edf56",
+  "pending_tests": "External proposal to follow, no execution authorized.",
+  "proposal_only_not_applied": true,
+  "proposed_helper_sha256": "e768b5ca51df5646cac1c2739fecb35aa394cbcedecc6d428ddf8f47b7b21e85",
+  "schema": "rc6.native-fin-fix-forward-proposal.v1",
+  "source_edits": 0,
+  "source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "tests_launched": 0,
+  "workflow_change_needed": false
+}

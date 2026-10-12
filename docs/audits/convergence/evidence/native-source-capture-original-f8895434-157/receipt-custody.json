@@ -1,0 +1,60 @@
+{
+  "schema": "rc6.component-raw-custody.v1",
+  "scope": "ORIGINAL_NATIVE_TWELVE_GUARDS_SIX_PRODUCT_RED_ONE_INVALID_INTERCEPTOR_FIVE_CONTROLS_WHOLE_F889_FROZEN157_EXTERNAL_DRIVER",
+  "records": [
+    {
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/entry-preflight.json",
+      "path": "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/entry-preflight.json",
+      "bytes": 11412,
+      "sha256": "ca5ce570c563e5428f528e9bd22caa148e5cc3b2cd0d76027d2156e345d39e1f",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/original-guard-receipt.json",
+      "path": "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/original-guard-receipt.json",
+      "bytes": 3717,
+      "sha256": "e7b8315a3371c17171b0a34d6fc2d34c42e8fff6cbedf7b546c431aae1d26814",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/original-native-guards.xml",
+      "path": "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/original-native-guards.xml",
+      "bytes": 24907,
+      "sha256": "032cf5c05baabd02ebcc421e27822961f69891f9ccec33f33f476c2c4e023b48",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/original.log",
+      "path": "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/original.log",
+      "bytes": 24135,
+      "sha256": "5404af8c3699d97de6cf30f1625065e668f0206416e524472a33ca119bb74693",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/run_original_guards.py",
+      "path": "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/run_original_guards.py",
+      "bytes": 4214,
+      "sha256": "02a4e15b8f0bceb2a86df14657430b0a73d995c7721a9a8deee6f7dd79c0f826",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py",
+      "path": "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/test_rc6_source_capture_deadlines.py.source",
+      "bytes": 10693,
+      "sha256": "c71e6278a88f8dd237b1aa040eaf5b71e261f1a86d61b5b3f4747a3a2af0b249",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/wrapper-before.json",
+      "path": "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/wrapper-before.json",
+      "bytes": 1455,
+      "sha256": "c9a19d75a96dd7f182ce69fd9efa400c1c5ab3cb5a12d1c720c58fe367a267b8",
+      "byte_preserved": true
+    }
+  ],
+  "artifact_validated": false,
+  "runtime_validated": false,
+  "final_material_acceptance": false,
+  "original_driver_preservation": "Original guard bytes are kept as .py.source so original-version counterexamples are not auto-collected as current candidate tests.",
+  "classification": "The missing-O_NONBLOCK case in this original driver used an invalid interceptor and is not product evidence. Its later real-FD original-source counterexample is recorded separately; the original RAW bytes remain intact."
+}

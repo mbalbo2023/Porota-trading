@@ -1,0 +1,2 @@
+{"event": "NORMAL_BROWSER_INSTALL_STARTED", "utc": "2026-10-06T17:15:03.808042+00:00", "python_pid": 19245, "cli_pid": 19246, "browser_cache": "/workspace/scratch/rc6driver-kba25cdt/browser-cache", "browser_launch_called": false}
+{"event": "NORMAL_BROWSER_INSTALL_FIN", "status": "GREEN_BROWSER_INSTALL_ONLY", "receipt_sha256": "7999d8ce832c57308a345ca35ad0670e71c8efce1248f017acde1742804fe079", "redactions": 0, "returncode": 0}

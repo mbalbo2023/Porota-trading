@@ -1,0 +1,197 @@
+{
+  "catalog_baseline": 1200,
+  "catalog_count": 12000,
+  "catalog_multiplier": 10.0,
+  "completion_required": true,
+  "cpu_latency_claim": "DESCRIPTIVE_OFFLINE_ONLY",
+  "cycle_deadline_seconds": 90,
+  "factual_exits": {
+    "closed": 5,
+    "cpu_seconds": 0.08614716900000019,
+    "elapsed_seconds": 0.0861478540027747,
+    "finished_at_monotonic": 24262.841931033,
+    "io": {
+      "cancelled_write_bytes": 0,
+      "input_blocks": 0,
+      "output_blocks": 0,
+      "rchar": 2638440,
+      "read_bytes": 0,
+      "syscr": 691,
+      "syscw": 218,
+      "wchar": 449080,
+      "write_bytes": 0
+    },
+    "real_orders_sent": 0,
+    "sell_fills": 5,
+    "stale_current_fresh_book": true,
+    "started_at_monotonic": 24262.755610897
+  },
+  "observation_baseline_per_identity": 1,
+  "observation_multiplier": 5,
+  "observations_materialized": 60000,
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "resource_gates": {
+    "actual_evidence_bytes": 61071372,
+    "actual_rss_bytes": 1373925376,
+    "actual_slow_fsync_exit_isolation": true,
+    "child_cleanup_completed": true,
+    "complete_committed_cycle": true,
+    "evidence_within_quota": true,
+    "maximum_evidence_bytes": 134217728,
+    "maximum_rss_bytes": 2147483648,
+    "rss_within_two_gib": true,
+    "source_database_unchanged": true
+  },
+  "runtime_touched": false,
+  "schema": "rc6.issue465.synthetic-stress.v2",
+  "shadow": {
+    "capacity_policy": {
+      "baseline_limits": {
+        "EQUITY_SPOT": 20,
+        "SCALPING": 40
+      },
+      "configuration_fingerprint": "a6808eaae7da85f0d18b6d22e3a51592ce0ca860af3822396bd9d317ab8ca023",
+      "engine_profiles": {},
+      "fingerprint": "c037ab301d9be8f39eb53ab8b53df02f5368e3d3a89944315879142adf480823",
+      "mode": "OFF",
+      "production_limits_modified": false,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "reason_codes": [],
+      "recommendation_digest": null,
+      "status": "OFF_BASELINE"
+    },
+    "catalog_ready_count": 12000,
+    "child_cleanup_completed": true,
+    "committed_sequence": 2,
+    "configuration_fingerprint": "1b05dca7694c61eace4b988f5b3047ae25f80ef2e51bd1e3ec71acf2ebbee53d",
+    "cpu_seconds": 86.650934152,
+    "cycle_completion": true,
+    "cycle_handled": true,
+    "elapsed_seconds": 87.09868982600165,
+    "evidence_bytes": 61071372,
+    "evidence_files": 13,
+    "family_reports": 10,
+    "fsync": {
+      "blocked_seconds": 0.4066593420029676,
+      "completed_at_monotonic": 24262.842215264,
+      "entered_at_monotonic": 24262.435192651,
+      "fsync_completed": true,
+      "fsync_entered": true,
+      "member": "report.json.gz",
+      "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"
+    },
+    "full_pipeline_exercised": true,
+    "generation_schema": "rc6.shadow-evidence-generation.v2",
+    "handler_resources": {
+      "checkpoint_restore": {
+        "calls": 4,
+        "cpu_seconds": 5.412619103000009,
+        "elapsed_seconds": 5.413599538005656,
+        "peak_rss_bytes": 1249320960,
+        "restored_sequences": [
+          1
+        ]
+      },
+      "entry_signals": {
+        "calls": 2,
+        "cpu_seconds": 0.003906315000001825,
+        "elapsed_seconds": 0.0039021070006128866
+      },
+      "families": {
+        "calls": 2,
+        "cpu_seconds": 4.941816729000003,
+        "elapsed_seconds": 4.947306005000428
+      },
+      "funnel": {
+        "calls": 2,
+        "cpu_seconds": 16.70546983,
+        "elapsed_seconds": 16.708070813998347
+      },
+      "lab": {
+        "calls": 2,
+        "cpu_seconds": 0.01018276100000115,
+        "elapsed_seconds": 0.010177413001656532
+      },
+      "native_orchestrator": {
+        "calls": 3,
+        "cpu_seconds": 18.604232276000005,
+        "elapsed_seconds": 18.610633604999748,
+        "peak_rss_bytes": 932220928
+      },
+      "native_stage_enrichment": {
+        "calls": 2,
+        "cpu_seconds": 0.5657249880000013,
+        "elapsed_seconds": 0.566281273997447,
+        "peak_rss_bytes": 932220928
+      },
+      "projection_header": {
+        "calls": 4,
+        "cpu_seconds": 0.2725507339999993,
+        "elapsed_seconds": 0.27268083699891577
+      },
+      "projection_prepare": {
+        "calls": 2,
+        "cpu_seconds": 7.256805171999996,
+        "elapsed_seconds": 7.26556976899883
+      },
+      "publication": {
+        "calls": 2,
+        "cpu_seconds": 34.044296454,
+        "elapsed_seconds": 34.47436300199843,
+        "peak_rss_bytes": 1373925376
+      },
+      "storage_encode": {
+        "calls": 12,
+        "cpu_seconds": 3.3714928920000204,
+        "elapsed_seconds": 3.37273879400891,
+        "peak_rss_bytes": 1373925376
+      },
+      "storage_metrics": {
+        "calls": 8,
+        "cpu_seconds": 2.6940008579999812,
+        "elapsed_seconds": 2.6946632389954175,
+        "peak_rss_bytes": 1373925376
+      },
+      "storage_prepare": {
+        "calls": 6,
+        "cpu_seconds": 17.47142675599999,
+        "elapsed_seconds": 17.483153389999643,
+        "peak_rss_bytes": 1373925376
+      }
+    },
+    "io": {
+      "cancelled_write_bytes": 6307840,
+      "input_blocks": 0,
+      "output_blocks": 12360,
+      "rchar": 215153534,
+      "read_bytes": 0,
+      "syscr": 19155,
+      "syscw": 1746,
+      "wchar": 91030215,
+      "write_bytes": 6328320
+    },
+    "observation_read_truncated": true,
+    "observations_returned": 20000,
+    "peak_rss_bytes": 1373925376,
+    "phases": [
+      "BOUNDED_READ",
+      "PREOPEN_COMMITTED",
+      "OPEN_CYCLE_COMPLETED"
+    ],
+    "provider_requests": 0,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "source_database_effect": "READ_ONLY",
+    "status": "SHADOW_OBSERVING",
+    "verification_level": "WIRE_AND_PROJECTION_SEMANTICS"
+  },
+  "slow_disk_injected": true,
+  "slow_disk_requested": true,
+  "slow_fsync_exit_isolation_proven": true,
+  "source_database_unchanged": true,
+  "source_sha256": "40d722c508a11f186ecd785e337cf0ef2e0de0f3580fc8f28457a2322b42e9ba",
+  "synthetic": true
+}

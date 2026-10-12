@@ -1,0 +1,80 @@
+{
+  "actual_pytest_pid": 23107,
+  "allocated_bytes_unique_physical_inodes": 69632,
+  "capacity_status": "GREEN",
+  "classification": "RETAINED_ADVERSARIAL_FIXTURES",
+  "context": {
+    "candidate_sha": "d49d81c22a9b385c404c7a3524d7aaaab233ac23",
+    "candidate_tree": "4a39a21dc8e7bf76a69a2cff1b4c6b0fc7079467",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "2",
+    "run_id": "471",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "counts": {
+    "directory_entries": 4,
+    "hardlinked_regular_entries": 0,
+    "regular_entries": 3,
+    "special_entries": 0,
+    "symlinks": 1
+  },
+  "first_64_adversarial_members": [
+    {
+      "kind": "symlink",
+      "relative_path": "pytest/test_controlled_ready_burstcurrent",
+      "removed": false,
+      "stat_fields": {
+        "st_atime_ns": 1791314916076257381,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791314915996352346,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1094468,
+        "st_mode": 41471,
+        "st_mtime_ns": 1791314915996352346,
+        "st_nlink": 1,
+        "st_size": 210,
+        "st_uid": 1000
+      },
+      "target_followed": false
+    }
+  ],
+  "fixture_root": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest/test_real_owned_pytest_failed_0/native-runner/porota-pytest-471-2-819307d4925940049839f8e54294764c",
+  "fixture_root_identity": [
+    27,
+    1094458,
+    1000,
+    1000,
+    448
+  ],
+  "fixture_root_mount_id": 52,
+  "fixture_root_removed": false,
+  "fresh_filesystem": {
+    "filesystem_device": 27,
+    "free_bytes": 20421009408,
+    "free_inodes": 1887850,
+    "total_inodes": 2097152
+  },
+  "hardlinks_deduplicated_by": "ST_DEV_ST_INO",
+  "link_targets_followed": false,
+  "logical_bytes_unique_physical_inodes": 57683,
+  "measured_by_same_owned_fin_supervisor_pid": 23103,
+  "namespace_entries_including_root": 8,
+  "original_capacity_policy": {
+    "min_free_bytes": 2147483648,
+    "min_free_inode_percent": 10
+  },
+  "owned_fin_closed": true,
+  "owner_uid": 1000,
+  "owner_uuid": "819307d4925940049839f8e54294764c",
+  "payload_files_read": 0,
+  "phase": "execution",
+  "pytest_phase_green": false,
+  "real_orders_sent": 0,
+  "resources_removed": 0,
+  "retention_policy": "EXPLICIT_RETAINED_FOR_EPHEMERAL_RUNNER_TEARDOWN",
+  "schema": "rc6.predeploy-retained-pytest-fixtures.v1",
+  "scope": "MEASURED_RETAINED_TEST_FIXTURES_ONLY; NOT_CLEANUP_OR_GLOBAL_CUSTODY",
+  "unique_physical_inodes": 8
+}

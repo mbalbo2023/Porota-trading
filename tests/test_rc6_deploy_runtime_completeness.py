@@ -23,8 +23,10 @@ def test_runtime_dependency_is_packaged_installed_rolled_back_and_verified():
     module = "rc6_source_consolidation.py"
     assert select_bundle_paths([module]) == [module]
     assert 'assert data.get("status")=="GREEN" and data.get("files")' in source
-    assert 'assert src.is_file() and sha(src)==row["sha256"]' in source
-    assert 'shutil.copy2(src,dst)' in source
+    assert 'assert src.is_file() and not src.is_symlink() and sha(src)==row["sha256"]' in source
+    assert "stat.S_IMODE(src.stat().st_mode) == (0o755 if row['git_mode']=='100755' else 0o644)" in source
+    assert 'install_atomic(src,dst)' in source
+    assert 'os.replace(name,dst)' in source
     assert 'assert sha(dst)==row["sha256"]' in source
     assert "rollback" not in source.lower()
 
@@ -115,7 +117,7 @@ def test_sector_map_and_multisource_helpers_are_immutable_deploy_inputs():
     assert "POROTA_SECTOR_MAP_V1.csv" in _predeploy()
     source = _deploy()
     assert 'for row in data["files"]' in source
-    assert 'assert src.is_file() and sha(src)==row["sha256"]' in source
+    assert 'assert src.is_file() and not src.is_symlink() and sha(src)==row["sha256"]' in source
 
 
 def test_iol_fail_safe_contract_is_packaged_and_migrated_before_runtime_audit():
@@ -247,7 +249,13 @@ def test_preopen_failure_preserves_diagnostics_before_fail_closed_exit():
     assert 'RC6_PREOPEN_${phase}=RED|RC=$PREOPEN_RC' in block
     assert 'exit "$PREOPEN_RC"' in block
     assert block.index('echo "$PREOPEN_OUTPUT"') < block.index('exit "$PREOPEN_RC"')
-    assert 'grep -Fq \'"status": "GREEN"\'' in block
+    # The strict result parser replaces GREEN-only grep without weakening
+    # process diagnostics or calendar/readiness validation (see its 13 tests).
+    assert 'printf \'%s\\n\' "$PREOPEN_OUTPUT" |' in block
+    assert '"$REPO/scripts/rc6_deploy_preopen_gate.py"' in block
+    assert '--phase "$phase" --return-code "$PREOPEN_RC"' in block
+    assert 'grep -Fq \'"status": "GREEN"\'' not in block
+    assert 'RC6_PREOPEN_${phase}=RESULT_ACCEPTED' in block
 
 
 def test_deploy_reclaims_own_transient_artifacts_before_preopen_disk_gate():

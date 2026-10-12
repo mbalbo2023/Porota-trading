@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="9" skipped="0" tests="36" time="113.688" timestamp="2026-10-05T11:33:25.870301+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_component_archive" name="test_native_two_cut_archive_exact_five_members_legacy_dispatch_no_encoder_and_readonly_custody" time="0.149" /><testcase classname="tests.test_rc6_component_archive" name="test_repeat_component_verifier_rechecks_bytes_and_never_reuses_a_prior_public_proof" time="0.109" /><testcase classname="tests.test_rc6_component_archive" name="test_real_published_dependency_corruption_prevents_ack_and_source_deletion[pack_bytes]" time="0.126" /><testcase classname="tests.test_rc6_component_archive" name="test_real_published_dependency_corruption_prevents_ack_and_source_deletion[missing_pack]" time="0.098" /><testcase classname="tests.test_rc6_component_archive" name="test_real_published_dependency_corruption_prevents_ack_and_source_deletion[missing_base_receipt]" time="0.098" /><testcase classname="tests.test_rc6_component_archive" name="test_real_published_dependency_corruption_prevents_ack_and_source_deletion[missing_base_recipe]" time="0.126" /><testcase classname="tests.test_rc6_component_archive" name="test_resealed_native_recipe_types_indices_links_and_dependency_graph_fail_closed[member_none]" time="0.110" /><testcase classname="tests.test_rc6_component_archive" name="test_resealed_native_recipe_types_indices_links_and_dependency_graph_fail_closed[array_none]" time="0.109" /><testcase classname="tests.test_rc6_component_archive" name="test_resealed_native_recipe_types_indices_links_and_dependency_graph_fail_closed[bool_depth]" time="0.097" /><testcase classname="tests.test_rc6_component_archive" name="test_resealed_native_recipe_types_indices_links_and_dependency_graph_fail_closed[unknown_schema]" time="0.120" /><testcase classname="tests.test_rc6_component_archive" name="test_resealed_native_recipe_types_indices_links_and_dependency_graph_fail_closed[unknown_key]" time="0.108" /><testcase classname="tests.test_rc6_component_archive" name="test_resealed_native_recipe_types_indices_links_and_dependency_graph_fail_closed[extra_pack]" time="0.098" /><testcase classname="tests.test_rc6_component_archive" name="test_resealed_native_recipe_types_indices_links_and_dependency_graph_fail_closed[bad_manifest_link]" time="0.107" /><testcase classname="tests.test_rc6_component_archive" name="test_resealed_native_recipe_types_indices_links_and_dependency_graph_fail_closed[cycle]" time="0.103" /><testcase classname="tests.test_rc6_component_archive" name="test_resealed_native_recipe_types_indices_links_and_dependency_graph_fail_closed[base_depth]" time="0.120" /><testcase classname="tests.test_rc6_component_archive" name="test_resealed_native_recipe_types_indices_links_and_dependency_graph_fail_closed[member_hash]" time="0.121" /><testcase classname="tests.test_rc6_component_archive" name="test_resealed_native_recipe_types_indices_links_and_dependency_graph_fail_closed[source_clock]" time="0.125" /><testcase classname="tests.test_rc6_component_archive" name="test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication" time="0.079" /><testcase classname="tests.test_rc6_component_archive" name="test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption[archive_after_build_intent]" time="0.036" /><testcase classname="tests.test_rc6_component_archive" name="test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption[archive_before_publish_object]" time="0.043" /><testcase classname="tests.test_rc6_component_archive" name="test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption[archive_after_publish_components]" time="0.040" /><testcase classname="tests.test_rc6_component_archive" name="test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption[archive_after_publish_recipe]" time="0.040" /><testcase classname="tests.test_rc6_component_archive" name="test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption[archive_before_publish_ack]" time="0.048" /><testcase classname="tests.test_rc6_component_archive" name="test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption[archive_before_clear_build_intent]" time="0.032" /><testcase classname="tests.test_rc6_component_archive" name="test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water" time="0.052" /><testcase classname="tests.test_rc6_component_archive" name="test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy" time="0.087" /><testcase classname="tests.test_rc6_component_archive" name="test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation" time="0.030" /><testcase classname="tests.test_rc6_component_archive" name="test_native_rolling_gc_preserves_full_wheel_recovery_transitive_bases_and_receipt_boundary" time="5.148"><failure message="assert (0 &gt; 0)">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-296/test_native_rolling_gc_preserv0')
+gc_base = (PosixPath('/tmp/pytest-of-agent/pytest-296/native-component-gc0'), {'report': {'as_of': '2026-10-06T00:40:00+00:00', ...1af5ff2222a47ec8660c1afe06c7056', 'generation_schema': 'rc6.shadow-evidence-generation.v2', 'sequence': 40, ...}, ...})
+
+    def test_native_rolling_gc_preserves_full_wheel_recovery_transitive_bases_and_receipt_boundary(tmp_path, gc_base):
+        root, archive, cut = copy_gc_base(tmp_path, gc_base)
+        before = snapshot(root)
+        previous = json.loads(bytes_at(archive / "CHECKPOINT.json"))
+        result = policy(root, archive).maintain_archive()
+        head = json.loads(bytes_at(archive / "CHECKPOINT.json"))
+&gt;       assert result["expired_generations"] &gt; 0 and head["compacted_receipt_count"] &gt; 0
+E       assert (0 &gt; 0)
+
+tests/test_rc6_component_archive.py:277: AssertionError</failure></testcase><testcase classname="tests.test_rc6_component_archive" name="test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources[archive_gc_after_intent]" time="15.067"><failure message="AssertionError: NATIVE_GC_FAULT_NOT_ENTERED&#10;assert False&#10; +  where False = poll(15)&#10; +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43e022da90&gt;.poll">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-296/test_real_sigkill_recovers_gc_0')
+gc_base = (PosixPath('/tmp/pytest-of-agent/pytest-296/native-component-gc0'), {'report': {'as_of': '2026-10-06T00:40:00+00:00', ...1af5ff2222a47ec8660c1afe06c7056', 'generation_schema': 'rc6.shadow-evidence-generation.v2', 'sequence': 40, ...}, ...})
+stage = 'archive_gc_after_intent'
+
+    @pytest.mark.parametrize("stage", ("archive_gc_after_intent", "archive_gc_before_checkpoint", "archive_gc_after_checkpoint",
+        "archive_gc_before_unlink", "archive_gc_after_unlink", "archive_gc_before_directory_fsync", "archive_gc_after_directory_fsync"))
+    def test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources(tmp_path, gc_base, stage):
+        root, archive, cut = copy_gc_base(tmp_path, gc_base)
+        source = snapshot(root)
+        read_pipe, child_pipe = multiprocessing.get_context("fork").Pipe(duplex=False)
+        child = multiprocessing.get_context("fork").Process(target=_kill_gc, args=(root, archive, stage, child_pipe))
+        child.start()
+        try:
+&gt;           assert read_pipe.poll(15), "NATIVE_GC_FAULT_NOT_ENTERED"
+E           AssertionError: NATIVE_GC_FAULT_NOT_ENTERED
+E           assert False
+E            +  where False = poll(15)
+E            +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43e022da90&gt;.poll
+
+tests/test_rc6_component_archive.py:304: AssertionError</failure></testcase><testcase classname="tests.test_rc6_component_archive" name="test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources[archive_gc_before_checkpoint]" time="15.011"><failure message="AssertionError: NATIVE_GC_FAULT_NOT_ENTERED&#10;assert False&#10; +  where False = poll(15)&#10; +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43df804ed0&gt;.poll">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-296/test_real_sigkill_recovers_gc_1')
+gc_base = (PosixPath('/tmp/pytest-of-agent/pytest-296/native-component-gc0'), {'report': {'as_of': '2026-10-06T00:40:00+00:00', ...1af5ff2222a47ec8660c1afe06c7056', 'generation_schema': 'rc6.shadow-evidence-generation.v2', 'sequence': 40, ...}, ...})
+stage = 'archive_gc_before_checkpoint'
+
+    @pytest.mark.parametrize("stage", ("archive_gc_after_intent", "archive_gc_before_checkpoint", "archive_gc_after_checkpoint",
+        "archive_gc_before_unlink", "archive_gc_after_unlink", "archive_gc_before_directory_fsync", "archive_gc_after_directory_fsync"))
+    def test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources(tmp_path, gc_base, stage):
+        root, archive, cut = copy_gc_base(tmp_path, gc_base)
+        source = snapshot(root)
+        read_pipe, child_pipe = multiprocessing.get_context("fork").Pipe(duplex=False)
+        child = multiprocessing.get_context("fork").Process(target=_kill_gc, args=(root, archive, stage, child_pipe))
+        child.start()
+        try:
+&gt;           assert read_pipe.poll(15), "NATIVE_GC_FAULT_NOT_ENTERED"
+E           AssertionError: NATIVE_GC_FAULT_NOT_ENTERED
+E           assert False
+E            +  where False = poll(15)
+E            +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43df804ed0&gt;.poll
+
+tests/test_rc6_component_archive.py:304: AssertionError</failure></testcase><testcase classname="tests.test_rc6_component_archive" name="test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources[archive_gc_after_checkpoint]" time="15.092"><failure message="AssertionError: NATIVE_GC_FAULT_NOT_ENTERED&#10;assert False&#10; +  where False = poll(15)&#10; +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43df7bbb10&gt;.poll">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-296/test_real_sigkill_recovers_gc_2')
+gc_base = (PosixPath('/tmp/pytest-of-agent/pytest-296/native-component-gc0'), {'report': {'as_of': '2026-10-06T00:40:00+00:00', ...1af5ff2222a47ec8660c1afe06c7056', 'generation_schema': 'rc6.shadow-evidence-generation.v2', 'sequence': 40, ...}, ...})
+stage = 'archive_gc_after_checkpoint'
+
+    @pytest.mark.parametrize("stage", ("archive_gc_after_intent", "archive_gc_before_checkpoint", "archive_gc_after_checkpoint",
+        "archive_gc_before_unlink", "archive_gc_after_unlink", "archive_gc_before_directory_fsync", "archive_gc_after_directory_fsync"))
+    def test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources(tmp_path, gc_base, stage):
+        root, archive, cut = copy_gc_base(tmp_path, gc_base)
+        source = snapshot(root)
+        read_pipe, child_pipe = multiprocessing.get_context("fork").Pipe(duplex=False)
+        child = multiprocessing.get_context("fork").Process(target=_kill_gc, args=(root, archive, stage, child_pipe))
+        child.start()
+        try:
+&gt;           assert read_pipe.poll(15), "NATIVE_GC_FAULT_NOT_ENTERED"
+E           AssertionError: NATIVE_GC_FAULT_NOT_ENTERED
+E           assert False
+E            +  where False = poll(15)
+E            +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43df7bbb10&gt;.poll
+
+tests/test_rc6_component_archive.py:304: AssertionError</failure></testcase><testcase classname="tests.test_rc6_component_archive" name="test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources[archive_gc_before_unlink]" time="15.031"><failure message="AssertionError: NATIVE_GC_FAULT_NOT_ENTERED&#10;assert False&#10; +  where False = poll(15)&#10; +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43e0259490&gt;.poll">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-296/test_real_sigkill_recovers_gc_3')
+gc_base = (PosixPath('/tmp/pytest-of-agent/pytest-296/native-component-gc0'), {'report': {'as_of': '2026-10-06T00:40:00+00:00', ...1af5ff2222a47ec8660c1afe06c7056', 'generation_schema': 'rc6.shadow-evidence-generation.v2', 'sequence': 40, ...}, ...})
+stage = 'archive_gc_before_unlink'
+
+    @pytest.mark.parametrize("stage", ("archive_gc_after_intent", "archive_gc_before_checkpoint", "archive_gc_after_checkpoint",
+        "archive_gc_before_unlink", "archive_gc_after_unlink", "archive_gc_before_directory_fsync", "archive_gc_after_directory_fsync"))
+    def test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources(tmp_path, gc_base, stage):
+        root, archive, cut = copy_gc_base(tmp_path, gc_base)
+        source = snapshot(root)
+        read_pipe, child_pipe = multiprocessing.get_context("fork").Pipe(duplex=False)
+        child = multiprocessing.get_context("fork").Process(target=_kill_gc, args=(root, archive, stage, child_pipe))
+        child.start()
+        try:
+&gt;           assert read_pipe.poll(15), "NATIVE_GC_FAULT_NOT_ENTERED"
+E           AssertionError: NATIVE_GC_FAULT_NOT_ENTERED
+E           assert False
+E            +  where False = poll(15)
+E            +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43e0259490&gt;.poll
+
+tests/test_rc6_component_archive.py:304: AssertionError</failure></testcase><testcase classname="tests.test_rc6_component_archive" name="test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources[archive_gc_after_unlink]" time="15.028"><failure message="AssertionError: NATIVE_GC_FAULT_NOT_ENTERED&#10;assert False&#10; +  where False = poll(15)&#10; +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43e0259450&gt;.poll">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-296/test_real_sigkill_recovers_gc_4')
+gc_base = (PosixPath('/tmp/pytest-of-agent/pytest-296/native-component-gc0'), {'report': {'as_of': '2026-10-06T00:40:00+00:00', ...1af5ff2222a47ec8660c1afe06c7056', 'generation_schema': 'rc6.shadow-evidence-generation.v2', 'sequence': 40, ...}, ...})
+stage = 'archive_gc_after_unlink'
+
+    @pytest.mark.parametrize("stage", ("archive_gc_after_intent", "archive_gc_before_checkpoint", "archive_gc_after_checkpoint",
+        "archive_gc_before_unlink", "archive_gc_after_unlink", "archive_gc_before_directory_fsync", "archive_gc_after_directory_fsync"))
+    def test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources(tmp_path, gc_base, stage):
+        root, archive, cut = copy_gc_base(tmp_path, gc_base)
+        source = snapshot(root)
+        read_pipe, child_pipe = multiprocessing.get_context("fork").Pipe(duplex=False)
+        child = multiprocessing.get_context("fork").Process(target=_kill_gc, args=(root, archive, stage, child_pipe))
+        child.start()
+        try:
+&gt;           assert read_pipe.poll(15), "NATIVE_GC_FAULT_NOT_ENTERED"
+E           AssertionError: NATIVE_GC_FAULT_NOT_ENTERED
+E           assert False
+E            +  where False = poll(15)
+E            +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43e0259450&gt;.poll
+
+tests/test_rc6_component_archive.py:304: AssertionError</failure></testcase><testcase classname="tests.test_rc6_component_archive" name="test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources[archive_gc_before_directory_fsync]" time="15.033"><failure message="AssertionError: NATIVE_GC_FAULT_NOT_ENTERED&#10;assert False&#10; +  where False = poll(15)&#10; +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43df847850&gt;.poll">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-296/test_real_sigkill_recovers_gc_5')
+gc_base = (PosixPath('/tmp/pytest-of-agent/pytest-296/native-component-gc0'), {'report': {'as_of': '2026-10-06T00:40:00+00:00', ...1af5ff2222a47ec8660c1afe06c7056', 'generation_schema': 'rc6.shadow-evidence-generation.v2', 'sequence': 40, ...}, ...})
+stage = 'archive_gc_before_directory_fsync'
+
+    @pytest.mark.parametrize("stage", ("archive_gc_after_intent", "archive_gc_before_checkpoint", "archive_gc_after_checkpoint",
+        "archive_gc_before_unlink", "archive_gc_after_unlink", "archive_gc_before_directory_fsync", "archive_gc_after_directory_fsync"))
+    def test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources(tmp_path, gc_base, stage):
+        root, archive, cut = copy_gc_base(tmp_path, gc_base)
+        source = snapshot(root)
+        read_pipe, child_pipe = multiprocessing.get_context("fork").Pipe(duplex=False)
+        child = multiprocessing.get_context("fork").Process(target=_kill_gc, args=(root, archive, stage, child_pipe))
+        child.start()
+        try:
+&gt;           assert read_pipe.poll(15), "NATIVE_GC_FAULT_NOT_ENTERED"
+E           AssertionError: NATIVE_GC_FAULT_NOT_ENTERED
+E           assert False
+E            +  where False = poll(15)
+E            +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43df847850&gt;.poll
+
+tests/test_rc6_component_archive.py:304: AssertionError</failure></testcase><testcase classname="tests.test_rc6_component_archive" name="test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources[archive_gc_after_directory_fsync]" time="15.030"><failure message="AssertionError: NATIVE_GC_FAULT_NOT_ENTERED&#10;assert False&#10; +  where False = poll(15)&#10; +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43e03e9b90&gt;.poll">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-296/test_real_sigkill_recovers_gc_6')
+gc_base = (PosixPath('/tmp/pytest-of-agent/pytest-296/native-component-gc0'), {'report': {'as_of': '2026-10-06T00:40:00+00:00', ...1af5ff2222a47ec8660c1afe06c7056', 'generation_schema': 'rc6.shadow-evidence-generation.v2', 'sequence': 40, ...}, ...})
+stage = 'archive_gc_after_directory_fsync'
+
+    @pytest.mark.parametrize("stage", ("archive_gc_after_intent", "archive_gc_before_checkpoint", "archive_gc_after_checkpoint",
+        "archive_gc_before_unlink", "archive_gc_after_unlink", "archive_gc_before_directory_fsync", "archive_gc_after_directory_fsync"))
+    def test_real_sigkill_recovers_gc_checkpoint_then_owned_deletes_without_losing_retained_sources(tmp_path, gc_base, stage):
+        root, archive, cut = copy_gc_base(tmp_path, gc_base)
+        source = snapshot(root)
+        read_pipe, child_pipe = multiprocessing.get_context("fork").Pipe(duplex=False)
+        child = multiprocessing.get_context("fork").Process(target=_kill_gc, args=(root, archive, stage, child_pipe))
+        child.start()
+        try:
+&gt;           assert read_pipe.poll(15), "NATIVE_GC_FAULT_NOT_ENTERED"
+E           AssertionError: NATIVE_GC_FAULT_NOT_ENTERED
+E           assert False
+E            +  where False = poll(15)
+E            +    where poll = &lt;multiprocessing.connection.Connection object at 0x7f43e03e9b90&gt;.poll
+
+tests/test_rc6_component_archive.py:304: AssertionError</failure></testcase><testcase classname="tests.test_rc6_component_archive" name="test_resealed_gc_cannot_delete_a_recent_live_generation_or_move_expiry_clock" time="0.011"><failure message="Failed: DID NOT RAISE OSError">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-296/test_resealed_gc_cannot_delete0')
+gc_base = (PosixPath('/tmp/pytest-of-agent/pytest-296/native-component-gc0'), {'report': {'as_of': '2026-10-06T00:40:00+00:00', ...1af5ff2222a47ec8660c1afe06c7056', 'generation_schema': 'rc6.shadow-evidence-generation.v2', 'sequence': 40, ...}, ...})
+
+    def test_resealed_gc_cannot_delete_a_recent_live_generation_or_move_expiry_clock(tmp_path, gc_base):
+        root, archive, cut = copy_gc_base(tmp_path, gc_base)
+        def stop(point):
+            if point == "archive_gc_after_intent":
+                raise OSError("SYNTHETIC_GC_INTERRUPTION")
+&gt;       with pytest.raises(OSError): policy(root, archive, fault_inject=stop).maintain_archive()
+E       Failed: DID NOT RAISE OSError
+
+tests/test_rc6_component_archive.py:326: Failed</failure></testcase></testsuite></testsuites>

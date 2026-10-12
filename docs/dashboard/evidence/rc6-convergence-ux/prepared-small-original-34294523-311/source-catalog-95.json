@@ -1,0 +1,286 @@
+{
+  "ast_only_no_product_or_pytest_import": true,
+  "case_count": 95,
+  "case_count_per_interpreter": 95,
+  "focal5_is_subset_of_complete95": true,
+  "modules": [
+    {
+      "cases": 35,
+      "functions": [
+        {
+          "line": 60,
+          "name": "test_product_environment_is_exact_lock_and_declared_interpreter_before_native_handlers",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 70,
+          "name": "test_stdio_native_handler_runs_each_request_and_preserves_cut_filters_and_body",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 88,
+          "name": "test_child_real_active_future_and_durable_intent_are_visible_without_driver_native_import",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 96,
+          "name": "test_native_health_missing_evidence_stays_rejected_without_fabricated_health",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 102,
+          "name": "test_driver_module_import_does_not_import_product_or_playwright",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 118,
+          "name": "test_wrong_interpreter_flag_rejects_before_fixture_or_native_import",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 129,
+          "name": "test_protocol_wrong_response_id_rejects_native_response_entirely",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 142,
+          "name": "test_process_death_never_returns_a_previous_body_and_joins_all_resources",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 153,
+          "name": "test_ipc_delay_rejects_real_native_body_against_total_original_one_second",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 179,
+          "name": "test_transport_contract_rejects_invalid_frames_without_truncation",
+          "parameterized_cases": 8
+        },
+        {
+          "line": 184,
+          "name": "test_response_budget_counts_actual_utf8_json_bytes_without_truncation",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 190,
+          "name": "test_whole_raw_source_pin_binds_actual_git_blobs_modes_and_tree_before_native_imports",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 202,
+          "name": "test_source_mode_mutation_rejects_whole_proof_even_when_bytes_are_unchanged",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 220,
+          "name": "test_cli_invalid_outputs_never_write_reports_or_start_native_child",
+          "parameterized_cases": 9
+        },
+        {
+          "line": 270,
+          "name": "test_finish_proof_never_becomes_green_after_exit_error_or_cleanup_timeout",
+          "parameterized_cases": 2
+        },
+        {
+          "line": 282,
+          "name": "test_nonreading_peer_times_out_entire_send_under_original_absolute_deadline",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 296,
+          "name": "test_import_proof_rejects_outside_source_module_in_tmp_without_location_heuristic",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 305,
+          "name": "test_legacy_hash_index_is_partial_and_never_satisfies_final_pin",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 316,
+          "name": "test_native_diagnostic_finish_proves_fresh_four_role_reads_and_source_modes",
+          "parameterized_cases": 1
+        }
+      ],
+      "module": "tests/test_rc6_browser_product_ipc.py",
+      "source_sha256": "682e9251cf1d222b9032bcdcd35b52907245ac2e343429f3c1a48e2d260c50ca"
+    },
+    {
+      "cases": 7,
+      "functions": [
+        {
+          "line": 17,
+          "name": "test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 35,
+          "name": "test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
+          "parameterized_cases": 6
+        }
+      ],
+      "module": "tests/test_rc6_projection_large_browser.py",
+      "source_sha256": "09c06bf08821e3674efe4ad39a43f36c81d2ab99509031aeeae4c9c56ceda09a"
+    },
+    {
+      "cases": 13,
+      "functions": [
+        {
+          "line": 58,
+          "name": "test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 84,
+          "name": "test_v2_trace_roles_remain_separate_in_parallel_native_readers",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 108,
+          "name": "test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+          "parameterized_cases": 2
+        },
+        {
+          "line": 127,
+          "name": "test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 149,
+          "name": "test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 168,
+          "name": "test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 177,
+          "name": "test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+          "parameterized_cases": 5
+        },
+        {
+          "line": 192,
+          "name": "test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+          "parameterized_cases": 1
+        }
+      ],
+      "module": "tests/test_rc6_projection_browser_diagnostic.py",
+      "source_sha256": "5d4dc9852f0db93e8d64e1aac20d52409abc259156388ec2930729c4c67ffcd6"
+    },
+    {
+      "cases": 18,
+      "functions": [
+        {
+          "line": 36,
+          "name": "test_consumer_variant_rejects_jointly_consistent_but_wrong_multifamily_distribution",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 54,
+          "name": "test_multifamily_native_catalog_preserves_supported_dlr_and_actual_page_denominators",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 93,
+          "name": "test_actual_native_family_wire_rejects_clock_cut_identity_or_cursor_drift",
+          "parameterized_cases": 6
+        },
+        {
+          "line": 106,
+          "name": "test_completed_native_producer_health_is_conservative_without_invented_pid_or_clock",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 118,
+          "name": "test_live_health_uses_actual_native_child_canonical_publisher_and_reaps_it",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 150,
+          "name": "test_health_failure_transport_delay_still_obeys_total_two_seconds",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 165,
+          "name": "test_native_health_cleanup_publisher_failure_still_reaps_child_and_restores_environment",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 186,
+          "name": "test_health_cli_rejected_output_never_writes_failure_into_source_or_alias",
+          "parameterized_cases": 3
+        },
+        {
+          "line": 211,
+          "name": "test_health_cli_runs_real_private_shadow_and_reports_joined_custody_proof",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 231,
+          "name": "test_real_health_child_rejects_start_control_before_any_native_tick_or_database",
+          "parameterized_cases": 2
+        }
+      ],
+      "module": "tests/test_rc6_browser_family_health_coverage.py",
+      "source_sha256": "bd5afefe5283cf2c9224ca1c8efe4858162f22e54d5a8a09482004370c012ef8"
+    },
+    {
+      "cases": 22,
+      "functions": [
+        {
+          "line": 27,
+          "name": "test_preparation_finishes_ten_native_ticks_before_readonly_rpc_and_keeps_original_caps",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 51,
+          "name": "test_multifamily_rpc_cannot_generate_fixture_before_its_twenty_second_request",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 59,
+          "name": "test_small_preparation_cannot_satisfy_unchanged_large_acceptance",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 68,
+          "name": "test_rehashed_prepared_receipt_cannot_change_native_source_scope_cut_identity_or_custody",
+          "parameterized_cases": 8
+        },
+        {
+          "line": 95,
+          "name": "test_prepared_receipt_pin_rejects_changed_bytes_even_with_actual_native_data",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 109,
+          "name": "test_consumer_requires_observed_successful_launcher_after_data_ready",
+          "parameterized_cases": 4
+        },
+        {
+          "line": 128,
+          "name": "test_native_preparation_cli_rejects_output_before_fixture_or_source_write",
+          "parameterized_cases": 3
+        },
+        {
+          "line": 149,
+          "name": "test_native_preparation_wrong_interpreter_rejects_before_any_fixture_output",
+          "parameterized_cases": 1
+        },
+        {
+          "line": 161,
+          "name": "test_preparation_transport_cannot_accept_valid_native_frame_with_failed_or_unreaped_process",
+          "parameterized_cases": 2
+        }
+      ],
+      "module": "tests/test_rc6_browser_prepared.py",
+      "source_sha256": "c89e17a862b0d67d96c3778235c907615c329b89a54746cc8cdb06f05f959fa3"
+    }
+  ],
+  "schema": "rc6.ux-prepared-small-source-catalog.v1",
+  "source_sha": "34294523f057abfb308db12c57a74bf0c0dd5eb8",
+  "source_tree": "088f804a6aa72d3db1a11246ba185a7140207bb4"
+}

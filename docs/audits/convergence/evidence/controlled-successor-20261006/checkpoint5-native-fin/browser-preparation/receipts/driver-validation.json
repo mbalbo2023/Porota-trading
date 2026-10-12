@@ -1,0 +1,140 @@
+{
+  "actual_installed_browsers_json": {
+    "byte_equal_official_pinned_json": true,
+    "path": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/playwright/driver/package/browsers.json",
+    "payloads": [
+      {
+        "browserVersion": "151.0.7922.34",
+        "installByDefault": true,
+        "name": "chromium",
+        "revision": "1234",
+        "title": "Chrome for Testing"
+      },
+      {
+        "browserVersion": "151.0.7922.34",
+        "installByDefault": true,
+        "name": "chromium-headless-shell",
+        "revision": "1234",
+        "title": "Chrome Headless Shell"
+      },
+      {
+        "installByDefault": true,
+        "name": "ffmpeg",
+        "revision": "1011"
+      }
+    ],
+    "sha256": "f306eed529599b1eaf2f8a85db9de2b23e1a3fe36c2b66434b7c9434fb627a99"
+  },
+  "actual_installed_core_package": {
+    "path": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/playwright/driver/package/package.json",
+    "sha256": "4556ebbf21a31c5e8dabb49c991ec291c5f00ffcad8b18cda45e4070b8a473bd",
+    "version": "1.62.0"
+  },
+  "browser_gate_run": false,
+  "gate_qualified": false,
+  "installed": {
+    "greenlet": "3.5.5",
+    "playwright": "1.62.0",
+    "pyee": "13.0.1",
+    "typing-extensions": "4.16.0"
+  },
+  "installed_count": 4,
+  "installed_metadata": [
+    {
+      "dist_info": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/playwright-1.62.0.dist-info",
+      "metadata_path": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/playwright-1.62.0.dist-info/METADATA",
+      "name": "playwright",
+      "official_metadata_sha256": "a1443e21066f73be70ae0f5c21f6c61a830776104052e281ef5559475377071e",
+      "record_sha256": "ac8e97c622c9340f5057b4964cde4ac8b9823a27df9710d2a1807ec673c571cb",
+      "sha256": "a1443e21066f73be70ae0f5c21f6c61a830776104052e281ef5559475377071e",
+      "version": "1.62.0"
+    },
+    {
+      "dist_info": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/pyee-13.0.1.dist-info",
+      "metadata_path": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/pyee-13.0.1.dist-info/METADATA",
+      "name": "pyee",
+      "official_metadata_sha256": "7512d063d60cb405124a6c5fdd2c688d78a4c6b6841b8eeb00a59474ef59d43c",
+      "record_sha256": "cc66a1924132b724568079a991f09fd2cc73fc20200c183c436cc89bcf672079",
+      "sha256": "7512d063d60cb405124a6c5fdd2c688d78a4c6b6841b8eeb00a59474ef59d43c",
+      "version": "13.0.1"
+    },
+    {
+      "dist_info": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/greenlet-3.5.5.dist-info",
+      "metadata_path": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/greenlet-3.5.5.dist-info/METADATA",
+      "name": "greenlet",
+      "official_metadata_sha256": "16de87de070796e2e1f18019f963c3ba5972bb9bfca1b856b83096bf73c61f38",
+      "record_sha256": "2360b7d9a9ea504109c355cdabe7f37d5171a6fabd7fd53e957faeba75c2bde2",
+      "sha256": "16de87de070796e2e1f18019f963c3ba5972bb9bfca1b856b83096bf73c61f38",
+      "version": "3.5.5"
+    },
+    {
+      "dist_info": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/typing_extensions-4.16.0.dist-info",
+      "metadata_path": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/typing_extensions-4.16.0.dist-info/METADATA",
+      "name": "typing-extensions",
+      "official_metadata_sha256": "b05084ca1d50879865178d9fff9fabeab61bdfb1f361bfbde95421ffc8f9be46",
+      "record_sha256": "c9683637fd3591b7fc8fe5b5da0bc40c497cd6067d21407365f52663a3ea1446",
+      "sha256": "b05084ca1d50879865178d9fff9fabeab61bdfb1f361bfbde95421ffc8f9be46",
+      "version": "4.16.0"
+    }
+  ],
+  "module_origins": [
+    {
+      "file": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/playwright/__init__.py",
+      "installed_record_match": true,
+      "module": "playwright",
+      "sha256": "06c3acdadd13e2813fcb95ad91d53ee3885c2b5f473beccc45a579d9ceead70b"
+    },
+    {
+      "file": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/pyee/__init__.py",
+      "installed_record_match": true,
+      "module": "pyee",
+      "sha256": "aa4f9a8ede4618ab005b60bf8751769ed424bbdc65ae0a65ed025aebebad9b81"
+    },
+    {
+      "file": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/greenlet/__init__.py",
+      "installed_record_match": true,
+      "module": "greenlet",
+      "sha256": "d33d783010148fd425b28c84483eca9a9753fa59c65ff492dd233fd3dc2a1978"
+    },
+    {
+      "file": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/typing_extensions.py",
+      "installed_record_match": true,
+      "module": "typing_extensions",
+      "sha256": "4040ca1a1ecbee00d1385c12a93084d1c5bd46f0b774f07e5ae7e91c4f55e696"
+    },
+    {
+      "file": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/greenlet/_greenlet.cpython-311-x86_64-linux-gnu.so",
+      "installed_record_match": true,
+      "module": "greenlet._greenlet",
+      "sha256": "a933f358cda2bf507536c9d8f85b43002d33d313db47735c722783db43bc457c"
+    }
+  ],
+  "normal_cli": {
+    "path": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/playwright/driver/package/cli.js",
+    "sha256": "f1c4075aef116c766092250d7f37b3249a7cee6465d953207fc38c8f6145becd"
+  },
+  "normal_node": {
+    "mode": 33225,
+    "normal_default_lookup": true,
+    "path": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/playwright/driver/node",
+    "sha256": "f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a",
+    "version": "v24.18.1",
+    "version_process_returncode": 0
+  },
+  "only_unhashed_record_self_files": [
+    "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/playwright-1.62.0.dist-info/RECORD",
+    "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/pyee-13.0.1.dist-info/RECORD",
+    "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/greenlet-3.5.5.dist-info/RECORD",
+    "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/typing_extensions-4.16.0.dist-info/RECORD"
+  ],
+  "product_modules_imported": false,
+  "provider_network_or_order_paths_called": false,
+  "python": "3.11.16",
+  "record_entries": 314,
+  "record_inventory_sha256": "705179386665e71af2ea39e2b9ed6e3927b24a39d691541b478ac2571a4ff01d",
+  "role": "BROWSER_DRIVER",
+  "status": "GREEN_DRIVER_BYTES_ONLY",
+  "sys_base_prefix": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu",
+  "sys_executable": "/workspace/scratch/rc6driver-kba25cdt/driver-env/bin/python",
+  "sys_prefix": "/workspace/scratch/rc6driver-kba25cdt/driver-env"
+}

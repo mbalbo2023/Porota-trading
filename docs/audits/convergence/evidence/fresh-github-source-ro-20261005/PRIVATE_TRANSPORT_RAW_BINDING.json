@@ -1,0 +1,22 @@
+{
+  "rows": [
+    {
+      "artifact_id": 11344882392,
+      "original_bytes": 668,
+      "original_sha256": "c1331c8b427c35e960562b3a23f9efd9f3b0ffecd3a7fa7650cd7d15a30a5920",
+      "private_path": "/workspace/rc6-sre-github-source-ro-20261005-202431-private-transport/actions.artifact11344882392.stderr",
+      "public_sanitized_path": "actions.artifact11344882392.stderr.sanitized",
+      "signed_redirect_url_in_public_packet": false
+    },
+    {
+      "artifact_id": 11277627152,
+      "original_bytes": 668,
+      "original_sha256": "bcc5cfbb316e3e0d29f15590429a4b94d9788348ab9ce1ca80312df4f0949d0b",
+      "private_path": "/workspace/rc6-sre-github-source-ro-20261005-202431-private-transport/actions.artifact11277627152.stderr",
+      "public_sanitized_path": "actions.artifact11277627152.stderr.sanitized",
+      "signed_redirect_url_in_public_packet": false
+    }
+  ],
+  "schema": "rc6.private-transport-error-source-binding.v1",
+  "scope": "PRIVATE_ORIGINAL_STDERR; PUBLIC_DERIVATIVE_HAS_NO_SIGNED_URL"
+}

@@ -1,0 +1,22 @@
+--- /workspace/scratch/rc6-phase-fin-postread-proposal-m3kkg78v/control/phase_component.py
++++ /workspace/scratch/rc6-phase-fin-postread-control-v2-9d_vv3am/control/phase_component.py
+@@ -122,7 +122,7 @@
+     observation = {'published_finalization_raw': None, 'published_finalization': None,
+                    'finalization_returned_unknown': False, 'snapshot_entries': [],
+                    'documentary_scope_after_exact_parent_FIN': False,
+-                   'source_os_events': [], 'source_physical_bytes_read_after_unknown': 0,
++                   'source_os_events': [], 'source_payload_bytes_read_in_original_phase_after_UNKNOWN_before_diagnostic_FIN': 0,
+                    'audit_witness_seen': False}
+     witness = object()
+ 
+@@ -301,8 +301,8 @@
+         'original_finalization_control_bytes_unchanged': True,
+         'original_source_postread_attempts': source_attempts,
+         'original_source_pin_post_entries': post_entries, 'original_source_os_postread_events': observation['source_os_events'],
+-        'physical_source_bytes_read_after_original_unknown': 0,
+-        'source_byte_observation_scope': 'DECLARED_CAPTURE_PROVIDERS_AND_AUDITED_CATALOG_OPENS_NOT_NATIVE_BINARY_OR_INHERITED_FD_ATTESTATION',
++        'source_payload_bytes_read_in_original_phase_after_UNKNOWN_before_diagnostic_FIN': 0,
++        'source_byte_observation_scope': 'ORIGINAL_PHASE_AFTER_UNKNOWN_BEFORE_DIAGNOSTIC_FIN; DECLARED_CAPTURE_PROVIDERS_AND_AUDITED_CATALOG_OPENS_ONLY; NO_INHERITED_FD_OR_NATIVE_BINARY_ATTESTATION',
+         'source_veto_registration_witnessed': observation['audit_witness_seen'],
+         'live_kernel': live_observation, 'diagnostic': diagnostic, 'source_before': before,
+         'source_after_diagnostic_FIN': after, 'source_original10_and_bytes_stable': True,

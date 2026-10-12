@@ -1,0 +1,351 @@
+{
+  "acceptance_complete": false,
+  "actual_archive_restores": 4,
+  "actual_as_of_span_seconds": 960.0,
+  "actual_wallclock10hours_claimed": false,
+  "additional_gc_rotation_or_pin_requests": 0,
+  "artifact_validated": false,
+  "catalog_count": 1200,
+  "derived_custody_correction": {
+    "actually_observed_database_stat_fields": [
+      "st_atime_ns",
+      "st_ctime_ns",
+      "st_dev",
+      "st_gid",
+      "st_ino",
+      "st_mode",
+      "st_mtime_ns",
+      "st_nlink",
+      "st_size",
+      "st_uid"
+    ],
+    "no_retroactive_eleven_stat_attestation": true,
+    "reason": "The native database snapshot measured ten stat fields plus SHA; st_blocks was absent. The earlier eleven-stat statement was incorrect.",
+    "scope": "DERIVED_LABEL_CORRECTION_RAW_NATIVE_RECORDS_UNCHANGED",
+    "superseded_derived_custody_sha256": "8a433df27cef7b2f5fdd063eda08e1fc13cda2e1769768b3f1518d8388591480"
+  },
+  "distribution_count": 157,
+  "execution_complete": true,
+  "external_wrapper_provenance": "Exact body preserved after execution; no independently recorded prelaunch body-hash attestation.",
+  "factual_exit_wire_exercised": false,
+  "fixed_quotas": {
+    "archive_maximum_bytes": 536870912,
+    "archive_maximum_files": 32768,
+    "filesystem_free_inode_fraction": 0.1,
+    "filesystem_reserve_bytes": 2147483648,
+    "live_maximum_bytes": 134217728,
+    "live_maximum_files": 512,
+    "scratch_maximum_bytes": 536870912
+  },
+  "full_cycle_scope": "Constructor/recovery, native tick, CURRENT/archive/public restore, custody/import checks, cleanup and result publication; restart361/841 not exercised by four cuts.",
+  "full_cycle_wall_seconds": [
+    10.98490207400755,
+    15.250141306998557,
+    15.933325591991888,
+    14.520906063000439
+  ],
+  "horizon_complete": false,
+  "import_scope": "NATIVE_PROFILE_SOURCE_STDLIB_ACTUAL_FROZEN_VENV_PYTHON_HARNESS_NOT_OS_ISOLATION",
+  "input_observation_rows": 6000,
+  "installed_dependency_proof": "EXACT_NAMES_VERSIONS_DUPLICATE_REJECTION_LOCK_HASHES_NOT_INSTALLED_DISTRIBUTION_BYTE_PROOF",
+  "literal_interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "member_contract": "EXACT_FIVE_ORIGINAL_MEMBERS_MANIFEST_CURRENT_CLOCK_AND_PUBLIC_RECEIPT_BINDINGS",
+  "native_ack_compactions": 0,
+  "native_cpu_seconds": 58.195915559,
+  "native_cuts": 4,
+  "native_deleted_archive_members": 0,
+  "native_gc_intents_completed": 0,
+  "native_import_closure_audited": true,
+  "native_peak_rss_bytes": 321073152,
+  "native_phases": [
+    "PREOPEN",
+    "OPEN",
+    "OPEN",
+    "OPEN"
+  ],
+  "native_pid": 213621,
+  "native_retention_method_counters": {
+    "_advance_archive_checkpoint": {
+      "completed": 4,
+      "entered": 4,
+      "failed": 0
+    },
+    "_archive_generation": {
+      "completed": 4,
+      "entered": 4,
+      "failed": 0
+    },
+    "_archive_pins": {
+      "completed": 2,
+      "entered": 2,
+      "failed": 0
+    },
+    "_compact_ack": {
+      "completed": 0,
+      "entered": 0,
+      "failed": 0
+    },
+    "_maintain_archive": {
+      "completed": 4,
+      "entered": 4,
+      "failed": 0
+    },
+    "_pins": {
+      "completed": 7,
+      "entered": 7,
+      "failed": 0
+    },
+    "_recover_archive_gc": {
+      "completed": 9,
+      "entered": 9,
+      "failed": 0
+    },
+    "_rotate": {
+      "completed": 0,
+      "entered": 0,
+      "failed": 0
+    }
+  },
+  "native_returncode": 0,
+  "native_rotations": 0,
+  "native_scratch_measure_calls": 232,
+  "native_wall_seconds": 58.40337632400042,
+  "private_execution_guard": {
+    "network_attempt_count": 0,
+    "network_attempts_first64": [],
+    "primary_sqlite_sealed_after_fixture": true,
+    "scope": "AUDITED_PRIVATE_SQLITE_AND_NO_NETWORK_NOT_PROVIDER_AUTHORITY",
+    "sqlite_allowed": 46,
+    "sqlite_memory": 28,
+    "sqlite_primary_setup": 17,
+    "sqlite_rejected_count": 0,
+    "sqlite_rejected_first64": []
+  },
+  "provider_requests": 0,
+  "raw_records": [
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 11412,
+      "capture_path": "/tmp/rc6-canonical-d9333065-normal4-157-raw/entry-preflight.json",
+      "encoding": "identity",
+      "original_bytes": 11412,
+      "original_sha256": "e9bb5f9bf157bf913c67e0f1333f3d50f9cf5a675da35af714b92a52e3fdfdff",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791226949373058520,
+        "st_blocks": 24,
+        "st_ctime_ns": 1791226949018073343,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3040244,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226949018073343,
+        "st_nlink": 1,
+        "st_size": 11412,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-normal4-d9333065-157/entry-preflight.json",
+      "sha256": "e9bb5f9bf157bf913c67e0f1333f3d50f9cf5a675da35af714b92a52e3fdfdff"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 1895,
+      "capture_path": "/tmp/rc6-canonical-d9333065-normal4-157-raw/wrapper-before.json",
+      "encoding": "identity",
+      "original_bytes": 1895,
+      "original_sha256": "a580cf80349f293ce9ffcb7533116cc63565774d707489b3d9b0634bef68a814",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791226949373058520,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791226949378365645,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3040245,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226949378365645,
+        "st_nlink": 1,
+        "st_size": 1895,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-normal4-d9333065-157/wrapper-before.json",
+      "sha256": "a580cf80349f293ce9ffcb7533116cc63565774d707489b3d9b0634bef68a814"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 1919,
+      "capture_path": "/tmp/rc6-canonical-d9333065-normal4-157-raw/wrapper-started.json",
+      "encoding": "identity",
+      "original_bytes": 1919,
+      "original_sha256": "f5c078769cae004867e6fb6eb5a97b1dddec937ffbed78beb1a65aa1a6dadeed",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791226949378365645,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791226949379059256,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3040247,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226949379059256,
+        "st_nlink": 1,
+        "st_size": 1919,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-normal4-d9333065-157/wrapper-started.json",
+      "sha256": "f5c078769cae004867e6fb6eb5a97b1dddec937ffbed78beb1a65aa1a6dadeed"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 2379,
+      "capture_path": "/tmp/rc6-canonical-d9333065-normal4-157-raw/wrapper-final.json",
+      "encoding": "identity",
+      "original_bytes": 2379,
+      "original_sha256": "82a2243d33e1db0448de9b19f7de4d255de40c676632f5b5c0617747f8fd3235",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791227571867838606,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791227009214904568,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3040249,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791227009214904568,
+        "st_nlink": 1,
+        "st_size": 2379,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-normal4-d9333065-157/wrapper-final.json",
+      "sha256": "82a2243d33e1db0448de9b19f7de4d255de40c676632f5b5c0617747f8fd3235"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 257233,
+      "capture_path": "/tmp/rc6-canonical-d9333065-normal4-157-raw/native-normal4-result.json",
+      "encoding": "identity",
+      "original_bytes": 257233,
+      "original_sha256": "cd97b3b9aff7997c86c93626e65d1e3a547f5a3034f674c3236c33aa7a166473",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791227015748550013,
+        "st_blocks": 504,
+        "st_ctime_ns": 1791227009213413574,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3040248,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791227009213413574,
+        "st_nlink": 1,
+        "st_size": 257233,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-normal4-d9333065-157/native-normal4-result.json",
+      "sha256": "cd97b3b9aff7997c86c93626e65d1e3a547f5a3034f674c3236c33aa7a166473"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 375,
+      "capture_path": "/tmp/rc6-canonical-d9333065-normal4-157-raw/normal4.log",
+      "encoding": "gzip-mtime0",
+      "original_bytes": 845,
+      "original_sha256": "a38f8e029fc0407411d2790a4299ed102585dd84dc69b636f37e4dad647be867",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791227009212597748,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791227008931650532,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3040246,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791227008931650532,
+        "st_nlink": 1,
+        "st_size": 845,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-normal4-d9333065-157/normal4.log.gz",
+      "sha256": "24c9f77ae3e5237a0a1f47893b4b4d4645f8a7012cece65768f0c72e18396053"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 180072,
+      "capture_path": "/tmp/rc6-whole-source-20261005-horizon-d933-raw/source.index.json",
+      "encoding": "gzip-mtime0",
+      "original_bytes": 573431,
+      "original_sha256": "004e0a9bab5c3f015a979e2f41c780afa7de4edf1d7f55d1a50831c4ca95e66f",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791226948780311936,
+        "st_blocks": 1120,
+        "st_ctime_ns": 1791226948780099719,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3040241,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226948780099719,
+        "st_nlink": 1,
+        "st_size": 573431,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-normal4-d9333065-157/source.index.json.gz",
+      "sha256": "0b0b18bf0412fe99d395e05d4736606d8ac1c928c060ca754f3f82dd49e13772"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 9072,
+      "capture_path": "/tmp/rc6-canonical-d9333065-normal4-157-wrapper.py",
+      "encoding": "identity",
+      "original_bytes": 9072,
+      "original_sha256": "251d0fa3cea476fe4c37975ca6a3a18e87fbe214397845d6df85c05f558e3c0e",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791226948837062715,
+        "st_blocks": 24,
+        "st_ctime_ns": 1791226948820142701,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3040243,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791226948820142701,
+        "st_nlink": 1,
+        "st_size": 9072,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-normal4-d9333065-157/run-wrapper.py.source",
+      "sha256": "251d0fa3cea476fe4c37975ca6a3a18e87fbe214397845d6df85c05f558e3c0e"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 4874,
+      "capture_path": "/tmp/rc6_export_whole_git_source.py",
+      "encoding": "identity",
+      "original_bytes": 4874,
+      "original_sha256": "4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791216255471074152,
+        "st_blocks": 16,
+        "st_ctime_ns": 1791216255163077191,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3023952,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791216255163077191,
+        "st_nlink": 1,
+        "st_size": 4874,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-normal4-d9333065-157/export-whole-source.py.source",
+      "sha256": "4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa"
+    }
+  ],
+  "real_fsync_calls": 132,
+  "real_orders_sent": 0,
+  "remaining_requirement": "1201 actual postPRE calls plus PRE, restarts361/841, stale native input behavior, original cadence/quota/custody controls; final candidate governance/browser/image and runtime gates remain pending.",
+  "retention_scope": "Actual maintenance/recovery/pin methods observed; zero compaction, rotation and expired-prefix deletion is not a positive deletion exercise.",
+  "runtime_validated": false,
+  "schema": "rc6.native-normal4-frozen157-source-witness-custody.v2",
+  "scope": "INTERMEDIATE_NATIVE_DESCRIPTIVE_FOUR_CUTS_NOT1201_HORIZON_FINAL_GOV_BROWSER_IMAGE_OR_RUNTIME",
+  "source_database_all11stats_sha_unchanged": false,
+  "source_database_allocated_blocks_attested": false,
+  "source_database_ten_stats_sha_unchanged": true,
+  "source_files": 1866,
+  "source_index_sha256": "004e0a9bab5c3f015a979e2f41c780afa7de4edf1d7f55d1a50831c4ca95e66f",
+  "source_overlay_count": 0,
+  "source_sha": "d9333065a306dc59bc5a58d7b5604d52daf9ff9f",
+  "source_tar_sha256": "28c28b68fca32924199b4a834ed778c23408ef9b394b902e83eb05d3ad3a3e91",
+  "source_tree": "316ad539f2690842e2fb1df4637811826897d6a0",
+  "whole_source_bytes_modes_blobs_unchanged": true
+}

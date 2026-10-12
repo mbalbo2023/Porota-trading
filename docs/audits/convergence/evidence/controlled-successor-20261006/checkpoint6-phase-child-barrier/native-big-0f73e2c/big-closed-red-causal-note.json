@@ -1,0 +1,477 @@
+{
+  "actual_kernel_control": {
+    "all11_output_file_stats_unchanged_during_nofollow_noatime_read": true,
+    "bytes": 2901,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/raw-slow/kernel-supervision.json",
+    "raw_original_preserved": true,
+    "relative_path": "raw-slow/kernel-supervision.json",
+    "sha256": "c9b1cefddffa353e570c7551c1ae115b85878a98a7c0a889b3e0bc25bbc44208",
+    "stat11_after": {
+      "st_atime_ns": 1791318099948079473,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791318099952047753,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706442,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318099952047753,
+      "st_nlink": 1,
+      "st_size": 2901,
+      "st_uid": 1000
+    },
+    "stat11_before": {
+      "st_atime_ns": 1791318099948079473,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791318099952047753,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706442,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318099952047753,
+      "st_nlink": 1,
+      "st_size": 2901,
+      "st_uid": 1000
+    }
+  },
+  "alternatives_considered_not_executed": [
+    "No retry: this frozen native run repeats the actual original deadline failure without a read-performance fix; raw evidence is preserved.",
+    "Do not use external contextual GC diagnostic/ALIEN receipts or aggregate handler time as acceptance.",
+    "Any prospective fix needs evidence tied to actual consumer/capture cost and must preserve original0.5 deadline, bounded SQL, PAPER, source all11 custody and original guards. This note makes no source change."
+  ],
+  "deadline_start_copy_yield_query_mapping_gc_intervals_were_not_instrumented_in_this_native_run": true,
+  "exact_failure_location": "rc6_audit_evidence.sqlite_snapshot.readonly_copy164 _check(deadline) immediately after yield163; _check24 raised SnapshotError TIME_BUDGET_EXHAUSTED",
+  "families_handler_measurement_is_descriptive_not_exact_deadline_interval": true,
+  "final_candidate_eligible": false,
+  "independent_import_and_kernel_custody_evidence_preserved": true,
+  "native_big_retry_count": 0,
+  "native_diagnostic_gc_stacks_profiler_sampler_enabled": false,
+  "native_red_and_prior_red_not_reclassified": true,
+  "no_all_sql_succeeded_or_specific_gc_cause_claim": true,
+  "no_gc_or_read_performance_source_change2e48_to0f73": true,
+  "no_measured_point_five_overrun_duration_claim": true,
+  "observed_enter_final_control_timestamps": [
+    {
+      "child_cpu_seconds": null,
+      "child_elapsed_seconds": null,
+      "entered_at_monotonic": null,
+      "event": "IMPORT_PROVENANCE",
+      "handler_name": null,
+      "handler_names": [],
+      "phases": [],
+      "received_at_monotonic": 28254.384437321
+    },
+    {
+      "child_cpu_seconds": 0.394550545,
+      "child_elapsed_seconds": null,
+      "entered_at_monotonic": 28254.878032251,
+      "event": "ENTER",
+      "handler_name": "checkpoint_restore",
+      "handler_names": [],
+      "phases": [],
+      "received_at_monotonic": 28254.878335089
+    },
+    {
+      "child_cpu_seconds": null,
+      "child_elapsed_seconds": 0.3967267420011922,
+      "entered_at_monotonic": null,
+      "event": "PROGRESS",
+      "handler_name": null,
+      "handler_names": [
+        "checkpoint_restore"
+      ],
+      "phases": [
+        "BOUNDED_READ"
+      ],
+      "received_at_monotonic": 28254.87860577
+    },
+    {
+      "child_cpu_seconds": 0.763205156,
+      "child_elapsed_seconds": null,
+      "entered_at_monotonic": 28255.246834991,
+      "event": "ENTER",
+      "handler_name": "native_orchestrator",
+      "handler_names": [],
+      "phases": [],
+      "received_at_monotonic": 28255.254750622
+    },
+    {
+      "child_cpu_seconds": null,
+      "child_elapsed_seconds": 3.2857821520010475,
+      "entered_at_monotonic": null,
+      "event": "PROGRESS",
+      "handler_name": null,
+      "handler_names": [
+        "checkpoint_restore",
+        "native_orchestrator"
+      ],
+      "phases": [
+        "BOUNDED_READ"
+      ],
+      "received_at_monotonic": 28257.767839874
+    },
+    {
+      "child_cpu_seconds": 4.459340526,
+      "child_elapsed_seconds": null,
+      "entered_at_monotonic": 28258.946023752,
+      "event": "ENTER",
+      "handler_name": "native_orchestrator",
+      "handler_names": [],
+      "phases": [],
+      "received_at_monotonic": 28258.951417821
+    },
+    {
+      "child_cpu_seconds": null,
+      "child_elapsed_seconds": 12.782268432001729,
+      "entered_at_monotonic": null,
+      "event": "PROGRESS",
+      "handler_name": null,
+      "handler_names": [
+        "checkpoint_restore",
+        "native_orchestrator"
+      ],
+      "phases": [
+        "BOUNDED_READ"
+      ],
+      "received_at_monotonic": 28267.264325323
+    },
+    {
+      "child_cpu_seconds": 12.769689507999999,
+      "child_elapsed_seconds": null,
+      "entered_at_monotonic": 28267.264036736,
+      "event": "ENTER",
+      "handler_name": "native_stage_enrichment",
+      "handler_names": [],
+      "phases": [],
+      "received_at_monotonic": 28267.264385672
+    },
+    {
+      "child_cpu_seconds": null,
+      "child_elapsed_seconds": 12.880198745999223,
+      "entered_at_monotonic": null,
+      "event": "PROGRESS",
+      "handler_name": null,
+      "handler_names": [
+        "checkpoint_restore",
+        "native_orchestrator",
+        "native_stage_enrichment"
+      ],
+      "phases": [
+        "BOUNDED_READ"
+      ],
+      "received_at_monotonic": 28267.365962144
+    },
+    {
+      "child_cpu_seconds": 12.867623214,
+      "child_elapsed_seconds": null,
+      "entered_at_monotonic": 28267.361971527,
+      "event": "ENTER",
+      "handler_name": "families",
+      "handler_names": [],
+      "phases": [],
+      "received_at_monotonic": 28267.366011537
+    },
+    {
+      "child_cpu_seconds": null,
+      "child_elapsed_seconds": 13.455293466999137,
+      "entered_at_monotonic": null,
+      "event": "FINAL",
+      "handler_name": null,
+      "handler_names": [
+        "checkpoint_restore",
+        "families",
+        "native_orchestrator",
+        "native_stage_enrichment"
+      ],
+      "phases": [
+        "BOUNDED_READ"
+      ],
+      "received_at_monotonic": 28267.939148886
+    }
+  ],
+  "original_deadline_contract": {
+    "budget_seconds": 0.5,
+    "capture_call_line": "rc6_shadow_runtime/families.py:202",
+    "check_before_yield_line": "rc6_audit_evidence/sqlite_snapshot.py:162",
+    "failure_is_not_postcleanup172": true,
+    "failure_postyield_line": "rc6_audit_evidence/sqlite_snapshot.py:164",
+    "query_progress_check_line": "rc6_shadow_runtime/families.py:205",
+    "start_line": "rc6_shadow_runtime/families.py:201 deadline=monotonic()+QUERY_BUDGET_SECONDS"
+  },
+  "original_native_receipt": {
+    "all11_output_file_stats_unchanged_during_nofollow_noatime_read": true,
+    "bytes": 1593778,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/raw-slow/native-big-result.json",
+    "raw_original_preserved": true,
+    "relative_path": "raw-slow/native-big-result.json",
+    "sha256": "5088043ec19f480c0ad51dd63669e038b746abf08bb47b1c78ae0b1a494ed66f",
+    "stat11_after": {
+      "st_atime_ns": 1791318099872079820,
+      "st_blocks": 3120,
+      "st_ctime_ns": 1791318099875916661,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706446,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318099875916661,
+      "st_nlink": 1,
+      "st_size": 1593778,
+      "st_uid": 1000
+    },
+    "stat11_before": {
+      "st_atime_ns": 1791318099872079820,
+      "st_blocks": 3120,
+      "st_ctime_ns": 1791318099875916661,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706446,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318099875916661,
+      "st_nlink": 1,
+      "st_size": 1593778,
+      "st_uid": 1000
+    }
+  },
+  "postfin_read_authorization": {
+    "all11_output_file_stats_unchanged_during_nofollow_noatime_read": true,
+    "bytes": 1583,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/postfin-read-authorization.json",
+    "raw_original_preserved": true,
+    "relative_path": "postfin-read-authorization.json",
+    "sha256": "74ff10c8c9bea8aac37cebaae73210577dd830b6d2170ace9bbee6e8c876e746",
+    "stat11_after": {
+      "st_atime_ns": 1791318219871536279,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791318219872311649,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1619708,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791318219872311649,
+      "st_nlink": 1,
+      "st_size": 1583,
+      "st_uid": 1000
+    },
+    "stat11_before": {
+      "st_atime_ns": 1791318219871536279,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791318219872311649,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1619708,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791318219872311649,
+      "st_nlink": 1,
+      "st_size": 1583,
+      "st_uid": 1000
+    }
+  },
+  "primary_native_error": {
+    "class": "SnapshotError",
+    "error_context": {
+      "frames": [
+        {
+          "function": "_shadow_child_work",
+          "line": 439,
+          "module": "__mp_main__"
+        },
+        {
+          "function": "tick",
+          "line": 366,
+          "module": "rc6_shadow_runtime.worker"
+        },
+        {
+          "function": "measured",
+          "line": 332,
+          "module": "__mp_main__"
+        },
+        {
+          "function": "family_reports",
+          "line": 497,
+          "module": "rc6_shadow_runtime.families"
+        },
+        {
+          "function": "_read",
+          "line": 202,
+          "module": "rc6_shadow_runtime.families"
+        },
+        {
+          "function": "__exit__",
+          "line": 144,
+          "module": "contextlib"
+        },
+        {
+          "function": "source_connection",
+          "line": 28,
+          "module": "rc6_shadow_runtime.source_reads"
+        },
+        {
+          "function": "__exit__",
+          "line": 144,
+          "module": "contextlib"
+        },
+        {
+          "function": "readonly_copy",
+          "line": 164,
+          "module": "rc6_audit_evidence.sqlite_snapshot"
+        },
+        {
+          "function": "_check",
+          "line": 24,
+          "module": "rc6_audit_evidence.sqlite_snapshot"
+        }
+      ],
+      "sqlite_errorcode": null,
+      "sqlite_errorname": null
+    },
+    "reason": "TIME_BUDGET_EXHAUSTED"
+  },
+  "programming_gates_not_closed": [
+    "families_original0.5_capture",
+    "canonical_full_PRE_OPEN_cycle90",
+    "actual5EXIT_during_slow_fsync",
+    "BIG_combined_original_resource_completion"
+  ],
+  "real_orders_sent": 0,
+  "recorded_handler_resources": {
+    "checkpoint_restore": {
+      "calls": 1,
+      "cpu_seconds": 0.000406102999999991,
+      "elapsed_seconds": 0.0003828469998552464,
+      "peak_rss_bytes": 104603648
+    },
+    "families": {
+      "calls": 1,
+      "cpu_seconds": 0.5215510519999995,
+      "elapsed_seconds": 0.5221184969996102
+    },
+    "native_orchestrator": {
+      "calls": 2,
+      "cpu_seconds": 10.830901188,
+      "elapsed_seconds": 10.8385210919987,
+      "peak_rss_bytes": 503107584
+    },
+    "native_stage_enrichment": {
+      "calls": 1,
+      "cpu_seconds": 0.09782155999999986,
+      "elapsed_seconds": 0.09783709700059262,
+      "peak_rss_bytes": 503107584
+    }
+  },
+  "schema": "rc6.native-direct-big.closed-red-causal-note.v1",
+  "secondary_harness_keyerror": "NATIVE_CANONICAL_COMPLETION_FIELDS_MISSING describes qualification of the already RED typed native receipt; it is not the primary cause",
+  "source_frame_bindings": [
+    {
+      "git_blob": "a04a4a2170ffdb8f070bc00f338b5b1f18620eb7",
+      "literal_source_lines": [
+        {
+          "code": "                return _original(*args, **kwargs)",
+          "line": 332
+        },
+        {
+          "code": "        report = worker.tick(PRE)",
+          "line": 439
+        }
+      ],
+      "path": "scripts/rc6_issue465_stress.py",
+      "source_sha256": "11212f6534759b2b7483b5aaf2fdf367b819ce428b04cd565791dbed8d732456"
+    },
+    {
+      "git_blob": "375e27b82b27f57d82b1baf6f402daedd62dd6ce",
+      "literal_source_lines": [
+        {
+          "code": "            report[\"family_routing\"] = family_reports(self.database, as_of=at,",
+          "line": 366
+        }
+      ],
+      "path": "rc6_shadow_runtime/worker.py",
+      "source_sha256": "1cb017bc1a5c4e80bc4445602170e5467c9f9c174a405c223fbc9f486be279e3"
+    },
+    {
+      "git_blob": "6866e762bb0ffc4ad06868cf5c5453d485f66ddd",
+      "literal_source_lines": [
+        {
+          "code": "def _read(database, at):",
+          "line": 198
+        },
+        {
+          "code": "    deadline = monotonic()+QUERY_BUDGET_SECONDS",
+          "line": 201
+        },
+        {
+          "code": "    with source_connection(database, deadline=deadline) as (connection, _):",
+          "line": 202
+        },
+        {
+          "code": "        connection.set_progress_handler(lambda: int(monotonic() > deadline), 1000)",
+          "line": 205
+        },
+        {
+          "code": "    data = _read(database, at)",
+          "line": 497
+        }
+      ],
+      "path": "rc6_shadow_runtime/families.py",
+      "source_sha256": "75634ed7a6fec86e03b47420012d7144693393029de85389cfa631ccd5fc3398"
+    },
+    {
+      "git_blob": "9676a80e2a6a759b0f95625eec4dd2c37fb87853",
+      "literal_source_lines": [
+        {
+          "code": "    with readonly_copy(path, deadline=deadline, validate=False) as connection:",
+          "line": 28
+        },
+        {
+          "code": "        yield connection, before",
+          "line": 32
+        }
+      ],
+      "path": "rc6_shadow_runtime/source_reads.py",
+      "source_sha256": "731c2ab234e3534a0f1bcddf5cd2a8156c9bafbcf458e236c3e781561b14e189"
+    },
+    {
+      "git_blob": "7278dd78d299fb3c8843908bf45a28df60b3fa9e",
+      "literal_source_lines": [
+        {
+          "code": "def _check(deadline):",
+          "line": 22
+        },
+        {
+          "code": "    if deadline is not None and time.monotonic() >= deadline:",
+          "line": 23
+        },
+        {
+          "code": "        raise SnapshotError(\"TIME_BUDGET_EXHAUSTED\")",
+          "line": 24
+        },
+        {
+          "code": "                _check(deadline)",
+          "line": 162
+        },
+        {
+          "code": "                yield connection",
+          "line": 163
+        },
+        {
+          "code": "                _check(deadline)",
+          "line": 164
+        },
+        {
+          "code": "                connection.close()",
+          "line": 168
+        },
+        {
+          "code": "        _check(deadline)",
+          "line": 172
+        }
+      ],
+      "path": "rc6_audit_evidence/sqlite_snapshot.py",
+      "source_sha256": "c4cb17481d678c1d1b1e05cffb6ed6762e09d26032bc30d245d1b033df5319ea"
+    }
+  ],
+  "source_gc_policy": "ORIGINAL gc.collect171 and442 preserved; no external GC tuning; native failure at439 prevents fullPREOPEN/OPEN, actual GC event durations not recorded",
+  "source_index_sha256": "8f8e46aa0baf5cdf0e0e46dc4e1966a279260a025cbf6d82a580778f2000b79a",
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "structural_inference_only": "Reaching check164 means yielded consumer returned to generator and check162 did not raise before yield. Native receipt does not resolve elapsed capture/query/mapping/GC subphases or a possibly caught sqlite3.OperationalError.",
+  "utc": "2026-10-06T20:30:38.338454+00:00"
+}

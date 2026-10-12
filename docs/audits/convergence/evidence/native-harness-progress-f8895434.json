@@ -1,0 +1,36 @@
+{
+  "acceptance_complete": false,
+  "candidate_sha": "f8895434e216a5d8e9f13c833f1419e229a162bd",
+  "candidate_tree": "0b010d334b8d6b9d16a869eb1b46e9899c0ef1d9",
+  "changed_paths": [],
+  "command_argv": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+    "--junitxml=/tmp/rc6_root_harness_progress_f8895434/native.xml"
+  ],
+  "counts": {
+    "duplicate_nodes": 0,
+    "errors": 0,
+    "executed": 1,
+    "failures": 0,
+    "skipped": 0
+  },
+  "elapsed_wall_seconds": 5.7596488910057815,
+  "eligible_to_deploy": false,
+  "installed_distribution_count": 157,
+  "junit_bytes": 400,
+  "junit_path": "/tmp/rc6_root_harness_progress_f8895434/native.xml",
+  "junit_sha256": "197b7097732a620896da07694a187d9bb7fee0e327df958a1fb84467d74bb93b",
+  "pytest_exit_code": 0,
+  "python": "3.11.16",
+  "schema": "rc6.root-integrated-native-focal.v1",
+  "scope": "SOURCE_ONLY_FOCAL_NOT_FULL_GOVERNED_NOT_IMAGE_NOT_HORIZON",
+  "source_unchanged": true,
+  "tracked_files": 1557
+}

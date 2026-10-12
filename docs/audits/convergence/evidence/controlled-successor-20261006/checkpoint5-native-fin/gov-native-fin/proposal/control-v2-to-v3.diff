@@ -1,0 +1,77 @@
+--- real_gov_component_control_v2.py.UNEXECUTED
++++ real_gov_component_control_v3.py.UNEXECUTED
+@@ -1,6 +1,7 @@
+ """Real kernel component controls; never Gov/BIG/artifact/runtime acceptance."""
+ from __future__ import annotations
+ import argparse
++import ctypes
+ import errno
+ import hashlib
+ import importlib.machinery
+@@ -32,6 +33,9 @@
+     # Observer-only same-parent natural drain, never an extension or rewrite
+     # of the phase's ORIGINAL cleanup5 / immutable UNKNOWN or RED result.
+     begin = time.monotonic()
++    libc = ctypes.CDLL(None, use_errno=True)
++    state_before = ctypes.c_int()
++    assert libc.prctl(37, ctypes.byref(state_before), 0, 0, 0) == 0
+     observations = []
+     echild = False
+     while time.monotonic()-begin < 20:
+@@ -49,11 +53,27 @@
+         observations.append({'outcome': 'ACTIVE_OWN_CHILD_WITHOUT_PID', 'pid': 0})
+         time.sleep(.01)
+     absent = group_absent(phase['pid'])
++    assert echild and absent
++    expected = phase['subreaper_previous_state']
++    assert type(expected) is int and expected in (0, 1)
++    # Only after actual ECHILD and PGID absence. This observer restores kernel
++    # state; it cannot rewrite or qualify the original phase's UNKNOWN/RED.
++    restore_result = libc.prctl(36, expected, 0, 0, 0)
++    assert restore_result == 0
++    state_after = ctypes.c_int()
++    readback_result = libc.prctl(37, ctypes.byref(state_after), 0, 0, 0)
++    assert readback_result == 0 and state_after.value == expected
+     report = {'schema': 'rc6.control.separate-natural-fin-observer.v1',
+               'management_seconds': 20, 'wall_seconds': time.monotonic()-begin,
+               'same_actual_parent_pid': os.getpid(), 'kernel_echild': echild,
+               'phase_pgid_absent_after_followup': absent, 'observations': observations,
+               'signals_sent': [], 'original_phase_receipt_reclassified': False,
++              'kernel_subreaper_before_followup': state_before.value,
++              'kernel_subreaper_expected_prior_state': expected,
++              'actual_subreaper_restore_after_echild_and_pgid': {
++                  'attempted': True, 'returncode': restore_result,
++                  'get_state_returncode': readback_result, 'kernel_readback_after': state_after.value,
++                  'original_prior_state_restored': state_after.value == expected},
+               'original_cleanup_seconds': phase['owned_cleanup_management_bound_seconds']}
+     assert echild and absent
+     return report
+@@ -152,15 +172,26 @@
+     if args.case == 'ready100Red':
+         assert producer['all100_verified_zombie_before_producer_exit'] is True and producer['separate_session'] is True
+         assert len(producer['children']) == len(producer['waitid_wnowait_witnesses']) == 100
+-        assert {row['pid'] for row in producer['children']} == {row['pid'] for row in phase['adopted_descendants_reaped']}
+-        assert len(phase['adopted_descendants_reaped']) == 100 and all(row['exit_code']==0 for row in phase['adopted_descendants_reaped'])
+         assert phase['kernel_wait4_zero_observed_irreversible_red'] is False
+         assert phase['owned_group_signal_observations'] == []
+         if args.variant == 'old':
++            actual_reaps = [
++                {'pid': row['pid'], 'exit_code': row['exit_code'], 'scope': 'ORIGINAL_PHASE'}
++                for row in phase['adopted_descendants_reaped']]
++            actual_reaps.extend(
++                {'pid': row['pid'], 'exit_code': row['exitcode'], 'scope': 'SEPARATE_FOLLOWUP'}
++                for row in followup['observations'] if row['outcome'] == 'PID_REAPED')
++            assert len(actual_reaps) == len({row['pid'] for row in actual_reaps}) == 100
++            assert {row['pid'] for row in producer['children']} == {row['pid'] for row in actual_reaps}
++            assert all(row['exit_code'] == 0 for row in actual_reaps)
+             assert phase['owned_children_exhaustion_verified'] is False
+             assert any(row['reason']=='OWN_CHILD_EXHAUSTION_NOT_PROVED_WITHIN_BOUND' for row in phase['supervisor_errors'])
+             assert phase['termination_reap_restore_cleanup_seconds'] >= 5
+         else:
++            assert len(phase['adopted_descendants_reaped']) == 100
++            assert {row['pid'] for row in producer['children']} == {row['pid'] for row in phase['adopted_descendants_reaped']}
++            assert all(row['exit_code'] == 0 for row in phase['adopted_descendants_reaped'])
++            assert not any(row['outcome'] == 'PID_REAPED' for row in followup['observations'])
+             assert closed(phase) and phase['termination_reap_restore_cleanup_seconds'] < 5
+     elif args.case == 'simpleExit0':
+         assert closed(phase) and phase['adopted_descendants_reaped'] == []

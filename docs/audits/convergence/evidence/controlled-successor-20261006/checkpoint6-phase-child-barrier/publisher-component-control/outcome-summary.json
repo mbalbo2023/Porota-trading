@@ -1,0 +1,178 @@
+{
+  "actual_alien_component_proofs_no_new_native100_exec": true,
+  "actual_root_executions_one311_one312": true,
+  "classification": "LOSSLESS_PUBLISHER_AND_ORIGINAL_BOUNDED_READER_COMPONENT_VERIFIED_ONLY_ALIEN_FOR_SOURCE_IMPORT_PROOF",
+  "complete_RAW_index": {
+    "bytes": 65924,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-publisher-closed-index-mdhf097q/complete-raw-index.json",
+    "sha256": "6e32fab043094a6ff7a0b2bfe0d35956c5ebe09611bdccd9e8b22ab151c4a62d"
+  },
+  "created_utc": "2026-10-06T21:15:07.693339+00:00",
+  "epochs": [
+    {
+      "CODE_actual_atime_values_disclosed": {
+        "manager": [
+          1791316465000000000,
+          1791321127251103570
+        ],
+        "worker": [
+          1791321059575404624,
+          1791321059575404624
+        ]
+      },
+      "CODE_selected_manager_and_worker_bytes_and10_stats_unchanged": true,
+      "actual_157_metadata_before_after_unchanged": true,
+      "actual_PGID_absent_after": true,
+      "actual_cleanup_seconds": 7.657400055904873e-05,
+      "actual_component_input_and_output_stats11_unchanged": true,
+      "actual_component_receipt_sha256": "6e3a98844a89af289b3a34e772f3c6fd08d21b096c97a05faa1c76ab3b0e6f79",
+      "actual_exclusive_pre_ECHILD": true,
+      "actual_kernel_FIN_closed": true,
+      "actual_kernel_main_pid": 34346,
+      "actual_kernel_returncode": 0,
+      "actual_launch_to_reap_seconds": 0.30173066099814605,
+      "actual_post_ECHILD": true,
+      "actual_signals_errors_adoptions_residuals": [],
+      "actual_subreaper_activation_readback_and_restoration_verified": true,
+      "actual_wait4zero_late_timeout_all_false": true,
+      "actual_wall_seconds": 0.30204070000036154,
+      "cleanup_original_bound_seconds": 5,
+      "epoch": "311",
+      "genuine_oversize_reader": {
+        "actual_target_payload_os_read_calls": 0,
+        "exact_error": "CONTROL_SIZE_LIMIT",
+        "original_control_full_bytes_preserved": true,
+        "original_limit": 262144,
+        "qualification": "FORMATTING_READER_NEGATIVE_FROM_ALREADY_CLOSED_CONTROL_NOT_NEW_KERNEL_PROOF",
+        "raw_bytes": 2266447
+      },
+      "outer_original_phase_green": true,
+      "samples": [
+        {
+          "compact_bytes": 34481,
+          "compact_sha256": "211472289f08cd652e8c187d325007ec37fbd1d11c57e3212fda4ec85be6d346",
+          "default_bytes_exact_original": true,
+          "default_original_bytes": 49894,
+          "default_proposed_bytes": 49894,
+          "full_JSON_object_arrays_and_errors_equal": true,
+          "input_sha256": "528062d7a1b676eaadabb6f7668496aae4285c2714dff12e0c703b744ddb0bb3",
+          "label": "closed311",
+          "original_RAW_bytes": 49894,
+          "original_kernel_not_reclassified": true,
+          "original_phase_exitcode": 1,
+          "original_phase_green": false,
+          "original_reader_maximum": 262144
+        },
+        {
+          "compact_bytes": 34047,
+          "compact_sha256": "57a8025b183e65e9ed6d863206e4eaab8452cb5d06e6c6523244d04b3f3c5d66",
+          "default_bytes_exact_original": true,
+          "default_original_bytes": 49460,
+          "default_proposed_bytes": 49460,
+          "full_JSON_object_arrays_and_errors_equal": true,
+          "input_sha256": "e08af309a36a1ad2cbd7bfda99bd2105fbe71d1bb9475bfdbff32f52b7af7056",
+          "label": "closed312",
+          "original_RAW_bytes": 49460,
+          "original_kernel_not_reclassified": true,
+          "original_phase_exitcode": 1,
+          "original_phase_green": false,
+          "original_reader_maximum": 262144
+        }
+      ],
+      "terminal_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-publisher-control-0f73-p3llxhal/epoch311/terminal-receipt.json",
+      "terminal_sha256": "a309c92f32a6e4a20bdc30f204e4155548b400515c0e3bf9c4be39b140127abb"
+    },
+    {
+      "CODE_actual_atime_values_disclosed": {
+        "manager": [
+          1791321127251103570,
+          1791321127251103570
+        ],
+        "worker": [
+          1791321059575404624,
+          1791321059575404624
+        ]
+      },
+      "CODE_selected_manager_and_worker_bytes_and10_stats_unchanged": true,
+      "actual_157_metadata_before_after_unchanged": true,
+      "actual_PGID_absent_after": true,
+      "actual_cleanup_seconds": 7.298800119315274e-05,
+      "actual_component_input_and_output_stats11_unchanged": true,
+      "actual_component_receipt_sha256": "443952aab567ad64f5bd9d4d86754358630097939fdcb70583a352431a26b52a",
+      "actual_exclusive_pre_ECHILD": true,
+      "actual_kernel_FIN_closed": true,
+      "actual_kernel_main_pid": 34354,
+      "actual_kernel_returncode": 0,
+      "actual_launch_to_reap_seconds": 0.30161625199980335,
+      "actual_post_ECHILD": true,
+      "actual_signals_errors_adoptions_residuals": [],
+      "actual_subreaper_activation_readback_and_restoration_verified": true,
+      "actual_wait4zero_late_timeout_all_false": true,
+      "actual_wall_seconds": 0.3019348029993125,
+      "cleanup_original_bound_seconds": 5,
+      "epoch": "312",
+      "genuine_oversize_reader": {
+        "actual_target_payload_os_read_calls": 0,
+        "exact_error": "CONTROL_SIZE_LIMIT",
+        "original_control_full_bytes_preserved": true,
+        "original_limit": 262144,
+        "qualification": "FORMATTING_READER_NEGATIVE_FROM_ALREADY_CLOSED_CONTROL_NOT_NEW_KERNEL_PROOF",
+        "raw_bytes": 2266447
+      },
+      "outer_original_phase_green": true,
+      "samples": [
+        {
+          "compact_bytes": 34481,
+          "compact_sha256": "211472289f08cd652e8c187d325007ec37fbd1d11c57e3212fda4ec85be6d346",
+          "default_bytes_exact_original": true,
+          "default_original_bytes": 49894,
+          "default_proposed_bytes": 49894,
+          "full_JSON_object_arrays_and_errors_equal": true,
+          "input_sha256": "528062d7a1b676eaadabb6f7668496aae4285c2714dff12e0c703b744ddb0bb3",
+          "label": "closed311",
+          "original_RAW_bytes": 49894,
+          "original_kernel_not_reclassified": true,
+          "original_phase_exitcode": 1,
+          "original_phase_green": false,
+          "original_reader_maximum": 262144
+        },
+        {
+          "compact_bytes": 34047,
+          "compact_sha256": "57a8025b183e65e9ed6d863206e4eaab8452cb5d06e6c6523244d04b3f3c5d66",
+          "default_bytes_exact_original": true,
+          "default_original_bytes": 49460,
+          "default_proposed_bytes": 49460,
+          "full_JSON_object_arrays_and_errors_equal": true,
+          "input_sha256": "e08af309a36a1ad2cbd7bfda99bd2105fbe71d1bb9475bfdbff32f52b7af7056",
+          "label": "closed312",
+          "original_RAW_bytes": 49460,
+          "original_kernel_not_reclassified": true,
+          "original_phase_exitcode": 1,
+          "original_phase_green": false,
+          "original_reader_maximum": 262144
+        }
+      ],
+      "terminal_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-publisher-control-0f73-p3llxhal/epoch312/terminal-receipt.json",
+      "terminal_sha256": "38df889d601bc43ff66879b6002511fc29dd1930ff31a7bc7d8e41f13214de35"
+    }
+  ],
+  "final_candidate_eligible": false,
+  "full_Gov_BIG_horizon_browser_artifact_image_runtime_not_closed_by_this_control": true,
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "native_actual100_and_UNKNOWN_live_original_focals_still_pending_on_new_exact_SHA": true,
+  "new_control_input_publication_does_not_prove_missing_actual348070_FIN_fits_compact": true,
+  "new_tests_or_components_executed_by_agent": 0,
+  "original_predeploy375229_RED_size_UNKNOWN_not_reclassified": true,
+  "original_runtime_Source_not_written_and_source_diff_not_applied_here": true,
+  "ppi_watch": "UNTOUCHED_OUT_OF_SCOPE",
+  "raw_namespace_files": 30,
+  "raw_total_bytes": 8122731,
+  "raw_total_files": 43,
+  "real_orders_sent": 0,
+  "root_durable_launch_issue471_comment": "6025539483",
+  "same_checks_per_epoch_not_distinct_business_scenarios": true,
+  "schema": "rc6.publisher-component.closed-outcome.v1",
+  "source_runtime_writes": 0,
+  "source_sha_context_only": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "underlying_historical_native100_records": 2
+}

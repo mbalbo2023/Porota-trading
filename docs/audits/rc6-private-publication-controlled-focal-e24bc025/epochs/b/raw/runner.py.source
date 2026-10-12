@@ -1,0 +1,746 @@
+"""External selected-module focal; SOURCE preparation until Root assigns CPU.
+
+One real pytest invocation collects before fixtures and records call reports.
+There is no receipt-only mode, test retry, installer, provider or deployment.
+Network/import observations are Python process snapshots, not a kernel or
+transitive-child attestation. Management timeout is not a product waiver.
+"""
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import socket
+import sqlite3
+import stat
+import subprocess
+import sys
+import sysconfig
+import tarfile
+import tempfile
+import time
+import traceback
+import types
+from urllib.parse import unquote, urlsplit
+import uuid
+import xml.etree.ElementTree as ET
+
+SOURCE_SHA = "e24bc025edc8bf72b272cb3546ce722dd97c10c8"
+SOURCE_TREE = "79d1e849f44cc433283fbfcadf2680615c9684a5"
+SUPPORT_SHA = "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+INTERPRETER = "/workspace/venv_rc6_frozen311/bin/python"
+MODULES = (
+    "tests/test_rc6_publication_storage.py",
+    "tests/test_rc6_packed_scalar_dispatch.py",
+    "tests/test_rc6_packed_volatile_scalars.py",
+    "tests/test_rc6_packed_small_container.py",
+    "tests/test_rc6_packed_capture_allocations.py",
+    "tests/test_rc6_packed_storage.py",
+    "tests/test_rc6_funnel_storage_codec.py",
+)
+SCOPE = "SEVEN_SELECTED_MODULES_PRIVATE_PUBLICATION_CAPTURE_EQUIVALENCE_AND_NATIVE_SMALL_WRITER_FULL_READER_PROJECTION; NOT_BIG_PERFORMANCE_OR_FULL_GOV"
+MAX_MOUNTINFO = 4 * 1024**2
+MAX_TAR = 512 * 1024**2
+MAX_FOCAL_RSS = 2 * 1024**3
+
+
+def raw_read(path, limit):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    try:
+        parts, total = [], 0
+        while True:
+            part = os.read(descriptor, min(65536, limit + 1 - total))
+            if not part:
+                break
+            total += len(part)
+            if total > limit:
+                raise ValueError("EXTERNAL_FIXED_FILE_BOUND_EXCEEDED")
+            parts.append(part)
+        return b"".join(parts)
+    finally:
+        os.close(descriptor)
+
+
+def infrastructure_capture(path):
+    location = Path(os.path.abspath(path))
+    for parent in (location, *location.parents):
+        if parent.is_symlink():
+            raise ValueError("EXTERNAL_INFRASTRUCTURE_ALIAS_FORBIDDEN")
+    descriptor = os.open(location, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    try:
+        before = os.fstat(descriptor)
+        fields = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
+                  "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_uid != os.geteuid() \
+                or before.st_size > 1024**2:
+            raise ValueError("EXTERNAL_REGULAR_OWNED_BOUNDED_INFRASTRUCTURE_REQUIRED")
+        raw = os.read(descriptor, 1024**2 + 1)
+        after, current = os.fstat(descriptor), location.lstat()
+        if len(raw) != before.st_size or os.read(descriptor, 1) \
+                or any(getattr(before, key) != getattr(after, key) or getattr(before, key) != getattr(current, key) for key in fields):
+            raise ValueError("EXTERNAL_INFRASTRUCTURE_CHANGED_DURING_CAPTURE")
+        return raw
+    finally:
+        os.close(descriptor)
+
+
+def load_support(path):
+    raw = infrastructure_capture(path)
+    if hashlib.sha256(raw).hexdigest() != SUPPORT_SHA:
+        raise ValueError("EXTERNAL_SUPPORT_BYTE_PIN_MISMATCH")
+    support = types.ModuleType("publication_focal_source_support")
+    support.__file__ = str(Path(os.path.abspath(path)))
+    sys.modules[support.__name__] = support
+    exec(compile(raw, support.__file__, "exec"), support.__dict__)
+    return support
+
+
+def check_interpreter(support):
+    support.require(sys.executable == INTERPRETER and sys.platform == "linux"
+                    and sys.version_info[:3] == (3, 11, 16) and os.getuid() == os.geteuid() != 0
+                    and hasattr(os, "wait4") and sys.flags.isolated and sys.dont_write_bytecode,
+                    "LITERAL_FROZEN31116_NONROOT_LINUX_ISOLATED_WAIT4_REQUIRED")
+    support.require(os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") == "1"
+                    and os.environ.get("PYTHONDONTWRITEBYTECODE") == "1"
+                    and not os.environ.get("PYTEST_ADDOPTS"), "CACHE_AND_AUTOLOAD_DISABLED_REQUIRED")
+
+
+def fd_mount_id(support, descriptor):
+    rows = raw_read(f"/proc/self/fdinfo/{descriptor}", 65536).decode("ascii").splitlines()
+    values = [line.partition(":")[2].strip() for line in rows if line.startswith("mnt_id:")]
+    support.require(len(values) == 1 and values[0].isdecimal(), "LINUX_DESCRIPTOR_MOUNT_ID_REQUIRED")
+    return int(values[0])
+
+
+def mount_topology(support, source, private):
+    raw = raw_read("/proc/self/mountinfo", MAX_MOUNTINFO)
+    rows = []
+    for line in raw.decode().splitlines():
+        left, separator, right = line.partition(" - ")
+        values, extra = left.split(), right.split()
+        support.require(separator and len(values) >= 6 and len(extra) >= 3,
+                        "LINUX_MOUNTINFO_SHAPE_REQUIRED")
+        point = Path(values[4].replace("\\040", " ").replace("\\011", "\t").replace("\\134", "\\"))
+        support.require(point.is_absolute(), "LINUX_MOUNTINFO_ABSOLUTE_POINT_REQUIRED")
+        rows.append({"mount_id": int(values[0]), "parent_id": int(values[1]), "major_minor": values[2],
+                     "mount_root": values[3], "mount_point": str(point), "options": values[5],
+                     "filesystem": extra[0]})
+        support.require(not point.is_relative_to(source), "SOURCE_DESCENDANT_BIND_OR_OTHER_MOUNT_FORBIDDEN")
+    selected = {}
+    for label, path in (("source", source), ("private", private)):
+        candidates = [row for row in rows if path.is_relative_to(Path(row["mount_point"]))]
+        support.require(candidates, "FILESYSTEM_MOUNT_BINDING_REQUIRED")
+        row = max(candidates, key=lambda item: len(Path(item["mount_point"]).parts))
+        support.require(row["filesystem"] not in ("tmpfs", "ramfs", "proc", "sysfs", "devtmpfs"),
+                        "DISK_BACKED_SOURCE_AND_PRIVATE_FIXTURES_REQUIRED")
+        selected[label] = row
+    support.require(selected["source"]["mount_id"] == selected["private"]["mount_id"],
+                    "SOURCE_AND_PRIVATE_OUTPUT_SAME_MOUNT_REQUIRED")
+    return {"mountinfo_sha256": support.digest(raw), "mountinfo_bytes": len(raw),
+            "mount_namespace": os.readlink("/proc/self/ns/mnt"), "selected": selected}
+
+
+def opened_mount_inventory(support, source, pin, topology):
+    expected = topology["selected"]["source"]["mount_id"]
+    records = {}
+    for name, fields in sorted(pin["physical_directories"].items()):
+        location = source if name == "." else source / name
+        descriptor = os.open(location, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME)
+        try:
+            before = os.fstat(descriptor)
+            support.require(fd_mount_id(support, descriptor) == expected
+                            and all(getattr(before, key) == fields[key] for key in support.FIELDS),
+                            "SOURCE_DIRECTORY_DESCRIPTOR_MOUNT_OR_CUSTODY_MISMATCH:" + name)
+            records[name + "/"] = {"mount_id": expected, "dev": before.st_dev, "inode": before.st_ino}
+        finally:
+            os.close(descriptor)
+    for name, row in sorted(pin["files"].items()):
+        descriptor = os.open(source / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+        try:
+            before = os.fstat(descriptor)
+            support.require(fd_mount_id(support, descriptor) == expected
+                            and all(getattr(before, key) == row["stat_fields"][key] for key in support.FIELDS),
+                            "SOURCE_FILE_DESCRIPTOR_MOUNT_OR_CUSTODY_MISMATCH:" + name)
+            records[name] = {"mount_id": expected, "dev": before.st_dev, "inode": before.st_ino}
+        finally:
+            os.close(descriptor)
+    support.require(mount_topology(support, source, source.parent) == topology,
+                    "SOURCE_MOUNT_TOPOLOGY_CHANGED_DURING_DESCRIPTOR_PROBE")
+    return {"root_mount_id": expected, "members": records,
+            "scope": "ACTUALLY_OPENED_SOURCE_FILE_AND_DIRECTORY_FDS; NO_CONTINUOUS_KERNEL_MOUNT_ATTESTATION"}
+
+
+def source_state(support, root):
+    pin = support.source_pin(root, SOURCE_SHA, SOURCE_TREE)
+    mounts = mount_topology(support, root, root.parent)
+    opened = opened_mount_inventory(support, root, pin, mounts)
+    return {"pin": pin, "mount_topology": mounts, "opened_mounts": opened}
+
+
+def compare_states(support, before, after):
+    atime = support.compare_source(before["pin"], after["pin"])
+    support.require(before["mount_topology"] == after["mount_topology"]
+                    and before["opened_mounts"] == after["opened_mounts"], "SOURCE_MOUNT_BINDING_CHANGED")
+    return atime
+
+
+def verify_tar(support, path, pin):
+    raw, fields = support.capture(path, limit=MAX_TAR)
+    observed, directories = {}, set()
+    with tarfile.open(fileobj=__import__("io").BytesIO(raw), mode="r:") as archive:
+        support.require(archive.pax_headers.get("comment") == SOURCE_SHA, "RAW_GIT_TAR_COMMIT_BINDING_REQUIRED")
+        for member in archive:
+            name = member.name.rstrip("/")
+            location = Path(name)
+            support.require(name and not location.is_absolute() and ".." not in location.parts
+                            and location.as_posix() == name and "\\" not in name,
+                            "RAW_GIT_TAR_PATH_INVALID")
+            if member.isdir():
+                support.require(name not in directories, "RAW_GIT_TAR_DUPLICATE_DIRECTORY")
+                directories.add(name)
+                continue
+            support.require(member.isfile() and name not in observed and name in pin["files"],
+                            "RAW_GIT_TAR_EXTRA_ALIAS_DUPLICATE_OR_MISSING_ENTRY")
+            data = archive.extractfile(member).read(support.MAX_SOURCE_FILE + 1)
+            expected = pin["files"][name]
+            support.require(len(data) == member.size == expected["bytes"]
+                            and support.digest(data) == expected["sha256"]
+                            and member.mode == int(expected["git_mode"][-3:], 8),
+                            "RAW_GIT_TAR_BYTES_MODES_MISMATCH:" + name)
+            observed[name] = {"bytes": len(data), "sha256": support.digest(data), "mode": member.mode}
+    support.require(set(observed) == set(pin["files"])
+                    and directories == set(pin["physical_directories"]) - {"."},
+                    "RAW_GIT_TAR_LITERAL_TREE_SET_MISMATCH")
+    return {"sha256": support.digest(raw), "bytes": len(raw), "files": len(observed),
+            "directories": len(directories), "commit": SOURCE_SHA, "stat_fields": fields}
+
+
+def retained_imports(support, root, pin, infrastructure, mount_id):
+    libraries = {Path(sysconfig.get_path(key)).resolve() for key in ("stdlib", "platstdlib", "purelib", "platlib")}
+    result = {"source": [], "external_infrastructure": [], "libraries": [], "no_physical_origin": [], "unexpected": []}
+    for name, module in sorted(list(sys.modules.items())):
+        if module is None:
+            continue
+        origin = getattr(module, "__file__", None)
+        if origin is None:
+            result["no_physical_origin"].append(name)
+            continue
+        path = Path(os.path.abspath(origin))
+        if path.is_relative_to(root):
+            relative = path.relative_to(root).as_posix()
+            expected = pin["files"].get(relative)
+            data, _fields = support.capture(path)
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+            try:
+                support.require(fd_mount_id(support, descriptor) == mount_id,
+                                "SOURCE_IMPORT_DESCRIPTOR_MOUNT_MISMATCH")
+            finally:
+                os.close(descriptor)
+            support.require(expected is not None and support.digest(data) == expected["sha256"],
+                            "SOURCE_IMPORT_LITERAL_BYTE_MISMATCH:" + name)
+            result["source"].append({"module": name, "path": relative, "sha256": support.digest(data)})
+        elif path in infrastructure:
+            data, _fields = support.capture(path)
+            support.require(support.digest(data) == infrastructure[path], "EXTERNAL_INFRASTRUCTURE_IMPORT_CHANGED")
+            result["external_infrastructure"].append({"module": name, "path": str(path), "sha256": support.digest(data)})
+        elif any(path.resolve().is_relative_to(location) for location in libraries):
+            result["libraries"].append({"module": name, "path": str(path), "bytes_authenticated": False})
+        else:
+            result["unexpected"].append({"module": name, "path": str(path)})
+    support.require(not result["unexpected"], "UNEXPECTED_RETAINED_PHYSICAL_IMPORT_ORIGIN")
+    result["scope"] = "MODULES_RETAINED_IN_SYS_MODULES_AT_THIS_SNAPSHOT; NOT_REMOVED_IMPORTS_OR_CHILDREN"
+    return result
+
+
+def private_sql_path(support, value, fixture_root, mount_id):
+    text = os.fsdecode(value)
+    if text in ("", ":memory:"):
+        return True
+    if text.startswith("file:"):
+        parsed = urlsplit(text)
+        if parsed.netloc not in ("", "localhost"):
+            return False
+        text = unquote(parsed.path)
+        if text == ":memory:":
+            return True
+    path = Path(os.path.abspath(text))
+    if not path.is_relative_to(fixture_root):
+        return False
+    # Type/path checks never follow an alias to protected original data. Open
+    # each actually used private directory and any existing target NoFollow.
+    try:
+        support.safe_path(path)
+        for directory in (path.parent, *path.parent.parents):
+            if not directory.is_relative_to(fixture_root):
+                break
+            descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME)
+            try:
+                attributes = os.fstat(descriptor)
+                if directory.is_relative_to(fixture_root) and (
+                    fd_mount_id(support, descriptor) != mount_id or attributes.st_uid != os.geteuid()
+                    or stat.S_IMODE(attributes.st_mode) & 0o022
+                ):
+                    return False
+            finally:
+                os.close(descriptor)
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+        except FileNotFoundError:
+            return True  # New SQLite writer target under already checked directories.
+        try:
+            attributes = os.fstat(descriptor)
+            return stat.S_ISREG(attributes.st_mode) and attributes.st_nlink == 1 \
+                and attributes.st_uid == os.geteuid() and fd_mount_id(support, descriptor) == mount_id
+        finally:
+            os.close(descriptor)
+    except (OSError, ValueError):
+        return False
+
+
+def offline_guards(support, fixture_root, observations, mount_id):
+    def reject(label):
+        observations["inet_attempts"].append(label)
+        raise RuntimeError("FOCAL_INET_OR_DNS_OPERATION_FORBIDDEN")
+    def sql_check(value):
+        allowed = private_sql_path(support, value, fixture_root, mount_id)
+        key = "private_sqlite_connects" if allowed else "forbidden_sqlite_connects"
+        observations[key] += 1
+        if not allowed:
+            raise RuntimeError("FOCAL_SQLITE_MUST_BE_NEW_PRIVATE_FIXTURE_OR_MEMORY")
+    def audit(event, arguments):
+        if event in ("socket.getaddrinfo", "socket.gethostbyname", "socket.gethostbyaddr", "socket.getnameinfo"):
+            reject(event)
+        if event in ("socket.connect", "socket.bind", "socket.sendto", "socket.sendmsg") and \
+                getattr(arguments[0], "family", None) in (socket.AF_INET, socket.AF_INET6):
+            reject(event)
+        if event == "sqlite3.connect":
+            sql_check(arguments[0])
+        if event == "subprocess.Popen":
+            executable = os.path.basename(os.fsdecode(arguments[0]))
+            counts = observations["subprocess_executable_counts"]
+            counts[executable] = counts.get(executable, 0) + 1
+            if executable in ("docker", "curl", "wget", "ssh", "scp", "sftp", "nc", "ncat", "socat", "telnet"):
+                observations["forbidden_executable_attempts"].append(executable)
+                raise RuntimeError("FOCAL_REMOTE_OR_DOCKER_EXECUTABLE_FORBIDDEN")
+    sys.addaudithook(audit)
+    for name in ("getaddrinfo", "gethostbyname", "gethostbyname_ex", "gethostbyaddr", "getnameinfo"):
+        def blocked_dns(*_values, _name=name, **_options):
+            reject("socket." + _name)
+        setattr(socket, name, blocked_dns)
+    for name in ("connect", "connect_ex", "send", "sendall", "sendto", "sendmsg", "bind"):
+        if not hasattr(socket.socket, name):
+            continue
+        original = getattr(socket.socket, name)
+        def blocked_inet(instance, *values, _name=name, _original=original, **options):
+            if instance.family in (socket.AF_INET, socket.AF_INET6):
+                reject("socket.socket." + _name)
+            return _original(instance, *values, **options)
+        setattr(socket.socket, name, blocked_inet)
+
+
+def junit_join(support, path, items, reports):
+    data, _fields = support.capture(path)
+    root = ET.fromstring(data)
+    support.require(root.tag == "testsuites" and len(root) == 1 and root[0].tag == "testsuite",
+                    "SINGLE_REAL_JUNIT_SUITE_REQUIRED")
+    suite = root[0]
+    cases = list(suite.findall("testcase"))
+    counts = {name: int(suite.get(name, "-1")) for name in ("tests", "failures", "errors", "skipped")}
+    collected = Counter(row["nodeid"] for row in items)
+    collected_labels = Counter((row["classname"], row["name"]) for row in items)
+    labels = Counter((row.get("classname"), row.get("name")) for row in cases)
+    calls = [row for row in reports if row["phase"] == "call"]
+    executed = Counter(row["nodeid"] for row in calls)
+    support.require(items and all(value == 1 for value in collected.values())
+                    and all(value == 1 for value in collected_labels.values()), "COLLECTION_DUPLICATE_NODE_OR_JUNIT_LABEL")
+    support.require(labels == collected_labels and all(value == 1 for value in labels.values())
+                    and counts["tests"] == len(cases) == len(items), "REAL_JUNIT_COLLECTION_EXACT_LABEL_JOIN_MISMATCH")
+    support.require(executed == collected and all(value == 1 for value in executed.values()),
+                    "CALL_PHASE_UNIQUE_EXECUTED_NODEIDS_MISSING_EXTRA_DUPLICATE")
+    support.require(all(row["outcome"] == "passed" and not row["wasxfail"] for row in reports)
+                    and len(reports) == 3 * len(items), "EXECUTED_SETUP_CALL_TEARDOWN_SKIP_XFAIL_OR_FAILURE")
+    support.require(Counter((row["nodeid"], row["phase"]) for row in reports)
+                    == Counter((row["nodeid"], phase) for row in items for phase in ("setup", "call", "teardown")),
+                    "ACTUAL_EXECUTED_PHASE_IDENTITY_MISMATCH")
+    support.require(counts == {"tests": len(items), "failures": 0, "errors": 0, "skipped": 0}
+                    and all(not case.findall("failure") and not case.findall("error") and not case.findall("skipped")
+                            for case in cases), "JUNIT_NOT_ALL_EXECUTED_GREEN")
+    return {"counts": counts, "cases": len(cases), "call_phase_unique_nodes": len(executed),
+            "sha256": support.digest(data), "bytes": len(data), "exact_classname_name_join": True}
+
+
+def child(args, support):
+    source = support.safe_path(args.source_root)
+    output = support.safe_path(args.output_root)
+    raw = output / "raw"
+    os.chdir(source)
+    before = source_state(support, source)
+    closure = support.installed_closure(source)
+    launch = json.loads(support.capture(raw / "launch.json")[0])
+    infrastructure = {Path(row["path"]): row["sha256"] for row in launch["infrastructure"]}
+    support.require(support.digest(support.capture(__file__)[0]) == infrastructure[Path(__file__)]
+                    and launch["source_sha"] == SOURCE_SHA and launch["source_tree"] == SOURCE_TREE,
+                    "CHILD_DRIVER_OR_LITERAL_SOURCE_CHANGED")
+    tar_before = verify_tar(support, raw / "whole-source.tar", before["pin"])
+    support.require(tar_before == launch["source_tar"], "CHILD_SOURCE_TAR_ORIGINAL_LAUNCH_BINDING_MISMATCH")
+    for witness in launch["preserved_witnesses"]:
+        data, fields = support.capture(raw / witness["name"])
+        support.require(support.digest(data) == witness["sha256"] and len(data) == witness["bytes"]
+                        and fields == witness["stat_fields"], "CHILD_ORIGINAL_RAW_WITNESS_CHANGED:" + witness["name"])
+    fixture_root = output / "fixtures"
+    fixture_root.mkdir(mode=0o700)
+    (fixture_root / "tmp").mkdir(mode=0o700)
+    os.environ["TMPDIR"] = str(fixture_root / "tmp")
+    tempfile.tempdir = None
+    support.publish(raw / "child.source-before.index.json", support.canonical(before))
+    support.publish(raw / "child.prefixture157.json", support.canonical(closure))
+    support.publish(raw / "child.tar-before.json", support.canonical(tar_before))
+    imports = [{"phase": "after_preflight_before_pytest", "snapshot": retained_imports(
+        support, source, before["pin"], infrastructure, before["opened_mounts"]["root_mount_id"])}]
+    observations = {"inet_attempts": [], "forbidden_executable_attempts": [], "subprocess_executable_counts": {},
+                    "private_sqlite_connects": 0, "forbidden_sqlite_connects": 0}
+    offline_guards(support, fixture_root, observations, before["opened_mounts"]["root_mount_id"])
+    import pytest
+    from _pytest.junitxml import mangle_test_address
+    items, reports = [], []
+    descriptor = os.open(raw / "executed-phases.jsonl", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    report_stream = os.fdopen(descriptor, "w", buffering=1)
+    class Observer:
+        def pytest_collection_finish(self, session):
+            support.require(not items, "PYTEST_COLLECTION_MUST_OCCUR_ONCE")
+            for item in session.items:
+                address = mangle_test_address(item.nodeid)
+                items.append({"nodeid": item.nodeid, "classname": ".".join(address[:-1]), "name": address[-1]})
+            support.require(items and set(row["nodeid"].split("::", 1)[0] for row in items) == set(MODULES),
+                            "ACTUAL_COLLECTION_SELECTED_MODULE_SET_MISMATCH")
+            support.require(len({row["nodeid"] for row in items}) == len(items), "ACTUAL_COLLECTION_DUPLICATE_NODE")
+            support.publish(raw / "collection-before-fixtures.json", support.canonical({
+                "phase": "pytest_collection_finish_before_fixtures", "count": len(items), "items": items,
+                "execution_id": launch["execution_id"], "pid": os.getpid(), "preflight157_complete": True}))
+            imports.append({"phase": "collection_finish_before_fixtures", "snapshot": retained_imports(
+                support, source, before["pin"], infrastructure, before["opened_mounts"]["root_mount_id"])})
+        def pytest_runtest_logreport(self, report):
+            row = {"nodeid": report.nodeid, "phase": report.when, "outcome": report.outcome,
+                   "wasxfail": hasattr(report, "wasxfail"), "duration_seconds": report.duration}
+            reports.append(row)
+            report_stream.write(json.dumps(row, sort_keys=True, allow_nan=False) + "\n")
+    argv = ["-q", *MODULES, "-p", "no:cacheprovider", "-o", "pythonpath=.", "-o", "junit_family=legacy",
+            "--junitxml=" + str(raw / "focal.xml"), "--basetemp=" + str(fixture_root / "pytest-private")]
+    result = {"schema": "rc6.private-publication-controlled-focal.v1", "scope": SCOPE,
+              "execution_id": launch["execution_id"], "pid": os.getpid(), "source_sha": SOURCE_SHA,
+              "source_tree": SOURCE_TREE, "status": "RED", "native_completed": False,
+              "pytest_main_invocations": 0, "selected_modules": list(MODULES), "pytest_arguments": argv,
+              "preflight": closure, "observations": observations, "management_timeout_seconds": args.timeout_seconds,
+              "management_scope": "EXTERNAL_FOCAL_WATCHDOG; ORIGINAL_PRODUCT_LIMITS_NOT_MODIFIED",
+              "publisher_performance_measured": False, "acceptance_complete": False,
+              "full_governed_suite_image_runtime_or_big_validated": False}
+    started = time.monotonic()
+    try:
+        result["pytest_main_invocations"] = 1
+        rc = int(pytest.main(argv, plugins=[Observer()]))
+        result.update(pytest_exit_code=rc, native_test_elapsed_seconds=time.monotonic() - started)
+        result["junit"] = junit_join(support, raw / "focal.xml", items, reports)
+        imports.append({"phase": "after_pytest_final_retained_modules", "snapshot": retained_imports(
+            support, source, before["pin"], infrastructure, before["opened_mounts"]["root_mount_id"])})
+        support.require(rc == 0 and not observations["inet_attempts"]
+                        and not observations["forbidden_executable_attempts"]
+                        and observations["forbidden_sqlite_connects"] == 0, "OFFLINE_PRIVATE_SQL_OR_NATIVE_EXIT_NOT_GREEN")
+        result.update(status="GREEN", native_completed=True)
+    except BaseException as error:
+        result["validation_error"] = {"class": type(error).__name__, "reason": str(error)}
+        traceback.print_exc()
+    finally:
+        report_stream.flush()
+        os.fsync(report_stream.fileno())
+        report_stream.close()
+        result.update(collection=items, actual_phase_reports=reports, retained_import_snapshots=imports,
+                      native_test_elapsed_seconds=time.monotonic() - started,
+                      retained_import_snapshot_count=len(imports))
+        try:
+            after = source_state(support, source)
+            atime = compare_states(support, before, after)
+            tar_after = verify_tar(support, raw / "whole-source.tar", after["pin"])
+            support.require(tar_before == tar_after, "PRESERVED_SOURCE_TAR_CHANGED")
+            support.publish(raw / "child.source-after.index.json", support.canonical(after))
+            result.update(source_bytes_modes_gitblobs_stable_ten_stats_namespace_mounts_unchanged=True,
+                          overlay_count=0, source_code_atime_changes_observed_separately=atime,
+                          all_eleven_code_stat_fields_unchanged_claimed=False,
+                          source_tar=tar_after, source_files=len(before["pin"]["files"]),
+                          historical_data400_read_or_inspected=False,
+                          native_fixture_data_custody_scope="OWN_NATIVE_GUARD_ASSERTIONS; NOT_GLOBAL_DATA_CUSTODY",
+                          import_observation_scope="ACTUALLY_RECORDED_RETAINED_SYS_MODULES_SNAPSHOTS; NOT_UNLOADED_OR_TRANSITIVE",
+                          network_observation_scope="THIS_PYTHON_PROCESS_DNS_CONNECT_SEND_AND_KNOWN_CLIENT_EXECUTABLES; NOT_KERNEL_OR_TRANSITIVE_CHILD_ATTESTATION")
+        except BaseException as error:
+            result.update(status="RED", native_completed=False,
+                          source_or_tar_custody_error={"class": type(error).__name__, "reason": str(error)})
+            traceback.print_exc()
+        support.publish(raw / "focal.receipt.json", support.canonical(result))
+        print(json.dumps({"event": "PYTEST_END", "status": result["status"], "pid": os.getpid(),
+                          "collected": len(items), "junit": result.get("junit"), "source_sha": SOURCE_SHA}, sort_keys=True), flush=True)
+    return 0 if result["status"] == "GREEN" and result["native_completed"] else 1
+
+
+def managed_child(support, command, source, output, raw, environment, timeout_seconds, source_files):
+    """Adopt/reap only this runner's descendants, including error paths."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    previous = ctypes.c_int()
+    process, waited, usage, reap_wall = None, 0, None, None
+    started, cleanup_started = time.monotonic(), None
+    timed_out, active, group_absent = False, False, False
+    pending, residual, descendants, errors = [], [], [], []
+    def error_record(label, error):
+        errors.append({"phase": label, "class": type(error).__name__, "reason": str(error)})
+    def signal_group(number):
+        if process is not None:
+            try:
+                os.killpg(process.pid, number)
+            except ProcessLookupError:
+                pass
+    def reap_main():
+        nonlocal waited, usage, reap_wall
+        found, child_status, child_usage = os.wait4(process.pid, os.WNOHANG)
+        if found:
+            waited, usage, reap_wall = found, child_usage, time.monotonic() - started
+            process.returncode = os.waitstatus_to_exitcode(child_status)
+        return found
+    try:
+        support.require(libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0,
+                        "LINUX_OWN_SUBREAPER_INITIAL_STATE_REQUIRED")
+        support.require(libc.prctl(36, 1, 0, 0, 0) == 0, "LINUX_OWN_CHILD_SUBREAPER_REQUIRED")
+        active = True
+        descriptor = os.open(raw / "focal.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        with os.fdopen(descriptor, "wb", buffering=0) as stream:
+            started = time.monotonic()
+            process = subprocess.Popen(command, cwd=source, env=environment, stdout=stream,
+                                       stderr=subprocess.STDOUT, start_new_session=True)
+            print(json.dumps({"event": "NATIVE_START", "pid": process.pid, "source_sha": SOURCE_SHA,
+                              "source_tree": SOURCE_TREE, "interpreter": INTERPRETER, "output": str(output),
+                              "command": command, "source_files": source_files}, sort_keys=True), flush=True)
+            terminated_at = None
+            while not reap_main():
+                now = time.monotonic()
+                if now - started >= timeout_seconds and not timed_out:
+                    timed_out, terminated_at = True, now
+                    signal_group(signal.SIGTERM)
+                elif timed_out and now - terminated_at >= 5:
+                    signal_group(signal.SIGKILL)
+                    if now - terminated_at >= 6:
+                        error_record("watchdog_reap", RuntimeError("KILLED_CHILD_NOT_YET_REAPED_AT_MANAGEMENT_BOUND"))
+                        break
+                time.sleep(0.05)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException as error:
+        error_record("spawn_tracking_or_log", error)
+    finally:
+        # This finally starts before activation/spawn and also covers stdout
+        # failures, signal races and log finalization failures.
+        cleanup_started = time.monotonic()
+        try:
+            if process is not None and not waited:
+                signal_group(signal.SIGTERM)
+                stop_at = time.monotonic() + 5
+                while not reap_main() and time.monotonic() < stop_at:
+                    if time.monotonic() - cleanup_started >= 1:
+                        signal_group(signal.SIGKILL)
+                    time.sleep(0.05)
+                if not waited:
+                    signal_group(signal.SIGKILL)
+                    error_record("main_reap", RuntimeError("OWN_CHILD_NOT_REAPED_WITHIN_CLEANUP_BOUND"))
+            if process is not None:
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    group_absent = True
+            if active:
+                cleaned = set()
+                descendant_started = time.monotonic()
+                while True:
+                    pending = [int(value) for value in raw_read(
+                        f"/proc/self/task/{os.getpid()}/children", 65536).decode().split()]
+                    for descendant in pending:
+                        if process is not None and descendant == process.pid and not waited:
+                            continue  # Main witness must never be reaped as a descendant.
+                        found, child_status, child_usage = os.wait4(descendant, os.WNOHANG)
+                        if found:
+                            descendants.append({"pid": found, "exit_code": os.waitstatus_to_exitcode(child_status),
+                                "cpu_user_seconds": child_usage.ru_utime, "cpu_system_seconds": child_usage.ru_stime,
+                                "kernel_lifetime_peak_rss_bytes": child_usage.ru_maxrss * 1024})
+                        else:
+                            if descendant not in cleaned:
+                                residual.append(descendant)
+                                cleaned.add(descendant)
+                            number = signal.SIGKILL if time.monotonic() - descendant_started >= 1 else signal.SIGTERM
+                            try:
+                                os.kill(descendant, number)
+                            except ProcessLookupError:
+                                pass
+                    if not pending or time.monotonic() - descendant_started >= 5:
+                        break
+                    time.sleep(0.05)
+        except BaseException as error:
+            error_record("termination_or_reap", error)
+        finally:
+            if active:
+                if libc.prctl(36, previous.value, 0, 0, 0) != 0:
+                    error_record("subreaper_restore", RuntimeError("OWN_SUBREAPER_STATE_NOT_RESTORED"))
+    return {"pid": process.pid if process is not None else None, "wait4_reaped_pid": waited,
+            "actual_child_reaped": process is not None and waited == process.pid,
+            "child_exit_code": process.returncode if process is not None else None,
+            "process_group_absent_after_reap": group_absent, "timed_out": timed_out,
+            "elapsed_wall_seconds": time.monotonic() - started,
+            "actual_launch_to_pid_reap_wall_seconds": reap_wall,
+            "termination_reap_restore_cleanup_seconds": time.monotonic() - cleanup_started,
+            "residual_descendants_observed": residual, "adopted_descendants_reaped": descendants,
+            "remaining_owned_children": pending, "supervisor_errors": errors,
+            "cpu_user_seconds": usage.ru_utime if usage is not None else None,
+            "cpu_system_seconds": usage.ru_stime if usage is not None else None,
+            "kernel_lifetime_peak_rss_bytes": usage.ru_maxrss * 1024 if usage is not None else None,
+            "subreaper_restore_attempted_on_all_activated_paths": active}
+
+
+def parent(args, support):
+    repo, output = support.safe_path(args.git_repo), support.safe_path(args.output_root)
+    support.require(not output.exists() and output.parent.is_dir() and not output.is_relative_to(repo)
+                    and not repo.is_relative_to(output), "FRESH_EXTERNAL_CONTROLLED_OUTPUT_REQUIRED")
+    environment = dict(os.environ)
+    support.require(not any(key.startswith(("POROTA_", "PAPER_")) or key in ("DATA_DIR", "HIST_DB_PATH")
+                            for key in environment), "INHERITED_OPERATIONAL_ENVIRONMENT_FORBIDDEN")
+    environment.pop("PYTEST_ADDOPTS", None)
+    environment.pop("PYTHONPATH", None)
+    environment.update(PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PYTHONDONTWRITEBYTECODE="1", GIT_NO_LAZY_FETCH="1")
+    output.mkdir(mode=0o700)
+    raw = output / "raw"
+    raw.mkdir(mode=0o700)
+    source = output / "source"
+    clone_command = ["git", "--no-replace-objects", "-c", "protocol.file.allow=always", "-c", "protocol.http.allow=never",
+                     "-c", "protocol.https.allow=never", "-c", "protocol.ssh.allow=never", "-c", "core.hooksPath=/dev/null",
+                     "clone", "--shared", "--no-checkout", str(repo), str(source)]
+    clone = subprocess.run(clone_command, check=True, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+    support.publish(raw / "clone.stdout", clone.stdout)
+    support.publish(raw / "clone.stderr", clone.stderr)
+    support.git(source, "config", "core.hooksPath", "/dev/null")
+    support.git(source, "checkout", "--detach", SOURCE_SHA)
+    before = source_state(support, source)
+    closure = support.installed_closure(source)
+    support.publish(raw / "parent.source-before.index.json", support.canonical(before))
+    support.publish(raw / "parent.prefixture157.json", support.canonical(closure))
+    support.publish(raw / "literal-commit.raw", support.git(source, "cat-file", "commit", SOURCE_SHA))
+    support.publish(raw / "literal-tree.raw", support.git(source, "cat-file", "tree", SOURCE_TREE))
+    support.git(source, "-c", "tar.umask=0022", "archive", "--format=tar", "--output=" + str(raw / "whole-source.tar"), SOURCE_SHA)
+    tar = verify_tar(support, raw / "whole-source.tar", before["pin"])
+    support.publish(raw / "source-tar.json", support.canonical(tar))
+    preserved = []
+    for name in ("literal-commit.raw", "literal-tree.raw", "parent.source-before.index.json", "parent.prefixture157.json", "source-tar.json"):
+        data, fields = support.capture(raw / name)
+        preserved.append({"name": name, "bytes": len(data), "sha256": support.digest(data), "stat_fields": fields})
+    infrastructure = []
+    for original, name in ((Path(__file__), "runner.py"), (Path(args.support), "source_support.py")):
+        data, _fields = support.capture(original)
+        target = raw / name
+        support.publish(target, data)
+        infrastructure.append({"path": str(target), "bytes": len(data), "sha256": support.digest(data)})
+    command = [INTERPRETER, "-I", "-B", str(raw / "runner.py"), "--child", "--git-repo", str(repo),
+               "--source-root", str(source), "--output-root", str(output), "--support", str(raw / "source_support.py"),
+               "--timeout-seconds", str(args.timeout_seconds)]
+    launch = {"schema": "rc6.private-publication-controlled-focal-launch.v1", "execution_id": uuid.uuid4().hex,
+              "command": command, "source_sha": SOURCE_SHA, "source_tree": SOURCE_TREE,
+              "uid": os.getuid(), "euid": os.geteuid(), "interpreter": sys.executable,
+              "python_version": list(sys.version_info[:3]), "infrastructure": infrastructure,
+              "scope": SCOPE, "timeout_seconds": args.timeout_seconds, "native_fixture_started": False,
+              "selected_modules": list(MODULES), "source_files": len(before["pin"]["files"]),
+              "source_tar": tar, "preflight157": closure, "git_clone_command": clone_command,
+              "preserved_witnesses": preserved,
+              "libraries_distribution_bytes_authenticated": False, "management_cap_is_not_product_deadline": True}
+    support.publish(raw / "launch.json", support.canonical(launch))
+    compare_states(support, before, source_state(support, source))
+    managed = managed_child(support, command, source, output, raw, environment, args.timeout_seconds,
+                            len(before["pin"]["files"]))
+    resources = {"schema": "rc6.private-publication-controlled-focal-kernel.v1", "status": "RED",
+                 "execution_id": launch["execution_id"], **managed, "external_focal_rss_cap_bytes": MAX_FOCAL_RSS,
+                 "resource_scope": "ACTUAL_SINGLE_CHILD_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT_CONCURRENT_RSS_SUM",
+                 "management_timeout_seconds": args.timeout_seconds, "product_deadlines_unchanged": True,
+                 "source_sha": SOURCE_SHA, "source_tree": SOURCE_TREE, "source_files": len(before["pin"]["files"]),
+                 "source_bytes_modes_blobs_stable_ten_stats_dirs_mounts_unchanged": None, "overlay_count": None,
+                 "observed_source_code_atime_changes": None, "all_eleven_source_stats_unchanged_claimed": False,
+                 "native_complete_receipt_verified": False, "native_receipt_sha256": None,
+                 "parent_raw_collection_call_phase_junit_join": None,
+                 "scope": SCOPE, "publisher_performance_or_big_completion_claimed": False,
+                 "raw_log_sha256": support.digest(support.capture(raw / "focal.log")[0]) if (raw / "focal.log").exists() else None}
+    passed = False
+    custody_started = time.monotonic()
+    try:
+        after = source_state(support, source)
+        atime = compare_states(support, before, after)
+        support.publish(raw / "parent.source-after.index.json", support.canonical(after))
+        tar_after = verify_tar(support, raw / "whole-source.tar", after["pin"])
+        support.require(tar_after == tar, "PARENT_PRESERVED_SOURCE_TAR_CHANGED")
+        for witness in preserved:
+            data, fields = support.capture(raw / witness["name"])
+            support.require(support.digest(data) == witness["sha256"] and len(data) == witness["bytes"]
+                            and fields == witness["stat_fields"], "PARENT_PRESERVED_RAW_WITNESS_CHANGED:" + witness["name"])
+        resources.update(source_bytes_modes_blobs_stable_ten_stats_dirs_mounts_unchanged=True,
+                         overlay_count=0, observed_source_code_atime_changes=atime,
+                         parent_preserved_source_tar=tar_after)
+        native_path = raw / "focal.receipt.json"
+        native = json.loads(support.capture(native_path)[0]) if native_path.exists() else None
+        valid_native = type(native) is dict and native.get("native_completed") is True and native.get("status") == "GREEN" \
+            and native.get("pid") == managed["pid"] and native.get("execution_id") == launch["execution_id"] \
+            and native.get("source_sha") == SOURCE_SHA and native.get("source_tree") == SOURCE_TREE \
+            and native.get("pytest_exit_code") == 0 and native.get("pytest_main_invocations") == 1
+        resources.update(native_complete_receipt_verified=valid_native,
+                         native_receipt_sha256=support.digest(support.capture(native_path)[0]) if native else None)
+        if valid_native:
+            collection = json.loads(support.capture(raw / "collection-before-fixtures.json")[0])
+            phase_data, _fields = support.capture(raw / "executed-phases.jsonl")
+            phase_reports = [json.loads(line) for line in phase_data.splitlines()]
+            parent_join = junit_join(support, raw / "focal.xml", collection["items"], phase_reports)
+            support.require(collection["pid"] == managed["pid"] and collection["execution_id"] == launch["execution_id"]
+                            and collection["count"] == len(collection["items"])
+                            and collection["items"] == native.get("collection")
+                            and phase_reports == native.get("actual_phase_reports")
+                            and parent_join == native.get("junit"), "PARENT_REAPED_RAW_JUNIT_NODE_AND_RECEIPT_JOIN_MISMATCH")
+            resources["parent_raw_collection_call_phase_junit_join"] = parent_join
+        passed = managed["actual_child_reaped"] and managed["child_exit_code"] == 0 \
+            and not managed["timed_out"] and managed["actual_launch_to_pid_reap_wall_seconds"] <= args.timeout_seconds \
+            and valid_native and managed["process_group_absent_after_reap"] \
+            and not managed["residual_descendants_observed"] and not managed["remaining_owned_children"] \
+            and not managed["supervisor_errors"] and managed["kernel_lifetime_peak_rss_bytes"] < MAX_FOCAL_RSS
+        resources["status"] = "GREEN" if passed else "RED"
+    except BaseException as error:
+        resources["parent_validation_error"] = {"class": type(error).__name__, "reason": str(error)}
+        traceback.print_exc()
+    resources["post_reap_custody_validation_seconds"] = time.monotonic() - custody_started
+    support.publish(raw / "kernel.resources.json", support.canonical(resources))
+    print(json.dumps({"event": "NATIVE_END", "status": resources["status"], "pid": managed["pid"],
+                      "exit_code": managed["child_exit_code"], "timed_out": managed["timed_out"], "source_sha": SOURCE_SHA,
+                      "elapsed_wall_seconds": managed["elapsed_wall_seconds"], "peak_rss_bytes": managed["kernel_lifetime_peak_rss_bytes"],
+                      "output": str(output)}, sort_keys=True), flush=True)
+    return 0 if passed else 1
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--git-repo", required=True)
+    parser.add_argument("--source-root")
+    parser.add_argument("--output-root", required=True)
+    parser.add_argument("--support", required=True)
+    parser.add_argument("--timeout-seconds", type=int, default=180)
+    parser.add_argument("--child", action="store_true")
+    arguments = parser.parse_args()
+    os.umask(0o022)
+    helper = load_support(arguments.support)
+    check_interpreter(helper)
+    helper.require(arguments.timeout_seconds == 180, "LITERAL_EXTERNAL_FOCAL180_MANAGEMENT_CAP_REQUIRED")
+    try:
+        return_code = child(arguments, helper) if arguments.child else parent(arguments, helper)
+    except BaseException as error:
+        print("FOCAL_EXTERNAL_HARNESS_RED: " + type(error).__name__ + ": " + str(error), file=sys.stderr, flush=True)
+        traceback.print_exc()
+        return_code = 1
+    raise SystemExit(return_code)

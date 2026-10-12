@@ -1,0 +1,21 @@
+{
+  "af_unix_ipc_functional": true,
+  "architecture": "x86_64",
+  "creation_denial_witnesses": [
+    {
+      "errno": 97,
+      "family": 10,
+      "operation": "socket_creation",
+      "socket_created": false
+    }
+  ],
+  "ipv4_creation_grants_operation_authority": false,
+  "kernel_errno": 97,
+  "native_socket_creation_denied_families": [
+    10
+  ],
+  "no_new_privileges": true,
+  "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+  "status": "INSTALLED_AND_KERNEL_WITNESSED",
+  "transitive_kernel_network_attestation": false
+}

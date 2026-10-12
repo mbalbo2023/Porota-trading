@@ -1,0 +1,475 @@
+{
+  "Gov_BIG_Horizon_Browser_Artifact_Runtime_claim": false,
+  "base_source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "base_source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "causal_original_diagnostic": {
+    "ALIEN_kernel_worker_main_aliases_remain_RED": true,
+    "DIAGNOSTIC_ONLY": true,
+    "OPEN_complete": false,
+    "PRE_publication_complete": false,
+    "actual_cpu_measured_separately": true,
+    "eligibility_proof": {
+      "bytes": 6381,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/eligibility-proof.json",
+      "sha256": "ef1712971652a5765f81ccacf9893c43361ebedba3ecd75ef33dc5e9c0491fa2"
+    },
+    "nested_cumulative_times_not_added": true,
+    "original90_seconds_timeout": true,
+    "original_role_cap_intact": 1048576,
+    "profile_time_unit": "PROFILE_SECONDS_WALL_INSTRUMENTAL_NOT_NATIVE_BASELINE_CPU",
+    "raw_index": {
+      "bytes": 10481,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/raw-index.json",
+      "sha256": "15fadd85296de80f809d6ff78dc3816b5277816a3c59513d871de872eb533c99"
+    },
+    "recovery_complete": false,
+    "report_distinct_containers_lower_bound": 1153148,
+    "selective_stats": [
+      {
+        "bytes": 20166,
+        "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/selective-ctor-01-funnel_checkpoint.json",
+        "sha256": "8d7bd6522bc2eacfc2fbb0cc297bafebe2c485a61b2895ccb7bbf10301909175"
+      },
+      {
+        "bytes": 21003,
+        "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/selective-ctor-02-report.json",
+        "sha256": "4d132f7b1d61755b13d8642f6920fa87c37c8e59efacf8f595e371b26fc95938"
+      }
+    ],
+    "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+    "status": "RED"
+  },
+  "epoch_case_counts_not_summed_as_unique": true,
+  "epochs": [
+    {
+      "actual_closure": {
+        "duplicate_names": [],
+        "expected_total": 157,
+        "installed_distribution_bytes_authenticated": false,
+        "installed_total": 157,
+        "installer_executed_by_this_runner": false,
+        "metadata_names_versions_exact": true,
+        "schema": "rc6.frozen-governed-installed-preflight.v1",
+        "source_hash_lock_action_platform_audit": {
+          "action_commit_gaps": [],
+          "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+          "base_image_digest_pinned": true,
+          "binary_distribution_policy_enforced": true,
+          "build_distribution_hash_gaps": [],
+          "build_isolation_disabled": true,
+          "build_tools_require_hashes": true,
+          "build_tools_total": 3,
+          "docker_requires_hashes": true,
+          "docker_uses_lock": true,
+          "hermetic_build": false,
+          "lock_distribution_hash_gaps": [],
+          "lock_exact_requirements": 154,
+          "lock_hashed_requirements": 154,
+          "lock_non_exact_requirements": [],
+          "lock_requirements_total": 154,
+          "platform": {
+            "architecture": "x86_64",
+            "libc_name": "glibc",
+            "libc_version": "2.41",
+            "os": "linux",
+            "python_minor": "3.11"
+          },
+          "platform_supported": true,
+          "reproducibility_scope": "APPROVED_ACTION_COMMITS_AND_HASHED_PYTHON_DISTRIBUTIONS",
+          "residual_boundaries": [
+            "ubuntu-24.04 hosted runner and kernel are externally managed",
+            "apt repository package bytes are not snapshot/hash locked",
+            "source-only packages compile under the pinned image/runtime and hash-locked build backends",
+            "pip resolver and installed closure are checked at Predeploy; same version does not guarantee equal wheel bytes"
+          ],
+          "schema_version": 3,
+          "source_requirements_total": 24,
+          "status": "GREEN",
+          "supply_chain_schema_valid": true
+        },
+        "status": "GREEN"
+      },
+      "actual_python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+      "artifacts": [
+        {
+          "bytes": 81321,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/final.json",
+          "sha256": "3d550c9506a83b41a3ff79c90bccd34de3f3a09ba4c1dda7b182a9881b974d9d"
+        },
+        {
+          "bytes": 2128,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/kernel-result.json",
+          "sha256": "a3a04dffda9fc2b09d347daf622dc56d6093186fff995eb4bfd2d9a51e8019fb"
+        },
+        {
+          "bytes": 119544,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/junit.xml",
+          "sha256": "3cad49c31be8c8f5aaeaece73321bf44dde25bb0c489bebfbf1aecd6dd5305d1"
+        },
+        {
+          "bytes": 560,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/pytest.log",
+          "sha256": "d962bf09516e66094797876c1cee70751b533881e06e57b0f8c5ce646c82009f"
+        },
+        {
+          "bytes": 4524,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/child-start.json",
+          "sha256": "cc26a24571187a76768317288f87fca87bc7f8a79d32c72699aa7def31128997"
+        },
+        {
+          "bytes": 179352,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/child-result.json",
+          "sha256": "e684b9dbd4ccd9b4091354a84e8ef5b0107efff671b1f3eea72517d224ec3dc1"
+        },
+        {
+          "bytes": 1592,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/child-finalization.json",
+          "sha256": "2c2206c61b5307a07d764ac9862c7e74fd325672da794322cc767fb52c237515"
+        },
+        {
+          "bytes": 5062,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/source-before.json",
+          "sha256": "07ad32bc1f6d7f24772e06a138c56c92f78a9c60e2e51378659a890fdf84d056"
+        },
+        {
+          "bytes": 5062,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/source-after.json",
+          "sha256": "07ad32bc1f6d7f24772e06a138c56c92f78a9c60e2e51378659a890fdf84d056"
+        }
+      ],
+      "child_finalization": {
+        "errors": [],
+        "finalization_thread_finished": true,
+        "forced_termination": false,
+        "forced_termination_attempted": false,
+        "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+        "inherited_tracker_preserved": false,
+        "initial": {
+          "forkserver_alive_fd": null,
+          "forkserver_pid": null,
+          "resource_tracker_fd": null,
+          "resource_tracker_pid": null
+        },
+        "joined_children": [],
+        "kernel_echild_before_phase_return": true,
+        "management_bound_seconds": 5,
+        "protocol_steps": [
+          {
+            "completed": true,
+            "stage": "nonnegative_stdlib_finalizers",
+            "wall_seconds": 1.98500001715729e-05
+          },
+          {
+            "completed": true,
+            "stage": "join_owned_children",
+            "wall_seconds": 1.0805999409058131e-05
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_forkserver",
+            "wall_seconds": 4.838000677409582e-06
+          },
+          {
+            "completed": true,
+            "stage": "remaining_stdlib_finalizers",
+            "wall_seconds": 3.82599864678923e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_resource_tracker",
+            "wall_seconds": 4.216000888845883e-06
+          },
+          {
+            "completed": true,
+            "stage": "verify_kernel_echild",
+            "wall_seconds": 4.324400106270332e-05
+          }
+        ],
+        "signal_guard_installed_and_witnessed": true,
+        "signal_vetoed": false,
+        "status": "GREEN",
+        "stopped_owned_infrastructure": [],
+        "termination_signal_attempts": [],
+        "unexpected_kernel_children": [],
+        "wall_seconds": 0.00041770799907681067
+      },
+      "counts": {
+        "cases": 478,
+        "collected": 478,
+        "collected_matches_junit": true,
+        "duplicates": 0,
+        "error": 0,
+        "fail": 0,
+        "pass": 478,
+        "skip": 0
+      },
+      "kernel": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 23.647135034998428,
+        "adopted_descendants_reaped": [],
+        "cpu_system_seconds": 0.38517399999999996,
+        "cpu_user_seconds": 22.830145,
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_children_exhaustion_verified": true,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 123314176,
+        "pid": 11790,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_pid": 11787,
+        "termination_reap_restore_cleanup_seconds": 7.038500007183757e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 11790
+      },
+      "label": "python311",
+      "network_operation_attempts": [],
+      "observed_code_atime_changes": [],
+      "source_bytes_and_all10_stable_fields": true
+    },
+    {
+      "actual_closure": {
+        "duplicate_names": [],
+        "expected_total": 157,
+        "installed_distribution_bytes_authenticated": false,
+        "installed_total": 157,
+        "installer_executed_by_this_runner": false,
+        "metadata_names_versions_exact": true,
+        "schema": "rc6.frozen-governed-installed-preflight.v1",
+        "source_hash_lock_action_platform_audit": {
+          "action_commit_gaps": [],
+          "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+          "base_image_digest_pinned": true,
+          "binary_distribution_policy_enforced": true,
+          "build_distribution_hash_gaps": [],
+          "build_isolation_disabled": true,
+          "build_tools_require_hashes": true,
+          "build_tools_total": 3,
+          "docker_requires_hashes": true,
+          "docker_uses_lock": true,
+          "hermetic_build": false,
+          "lock_distribution_hash_gaps": [],
+          "lock_exact_requirements": 154,
+          "lock_hashed_requirements": 154,
+          "lock_non_exact_requirements": [],
+          "lock_requirements_total": 154,
+          "platform": {
+            "architecture": "x86_64",
+            "libc_name": "glibc",
+            "libc_version": "2.41",
+            "os": "linux",
+            "python_minor": "3.12"
+          },
+          "platform_supported": true,
+          "reproducibility_scope": "APPROVED_ACTION_COMMITS_AND_HASHED_PYTHON_DISTRIBUTIONS",
+          "residual_boundaries": [
+            "ubuntu-24.04 hosted runner and kernel are externally managed",
+            "apt repository package bytes are not snapshot/hash locked",
+            "source-only packages compile under the pinned image/runtime and hash-locked build backends",
+            "pip resolver and installed closure are checked at Predeploy; same version does not guarantee equal wheel bytes"
+          ],
+          "schema_version": 3,
+          "source_requirements_total": 24,
+          "status": "GREEN",
+          "supply_chain_schema_valid": true
+        },
+        "status": "GREEN"
+      },
+      "actual_python": "3.12.14 (main, Sep 24 2026, 17:57:43) [Clang 22.1.3 ]",
+      "artifacts": [
+        {
+          "bytes": 81312,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python312/final.json",
+          "sha256": "70dbac32fc86370cb4cdff450107174d1e0cab7fbc8f33c0077d97aa6502a672"
+        },
+        {
+          "bytes": 2115,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python312/kernel-result.json",
+          "sha256": "0013c5624dd75388e73a5caa73b6f9d9566f23c8bbb278678678e438a7ed8778"
+        },
+        {
+          "bytes": 119544,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python312/junit.xml",
+          "sha256": "06f296331ba7d45743c7f2327e45109b6efc3f4695ce22a0efbf35075808f44b"
+        },
+        {
+          "bytes": 560,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python312/pytest.log",
+          "sha256": "d962bf09516e66094797876c1cee70751b533881e06e57b0f8c5ce646c82009f"
+        },
+        {
+          "bytes": 4524,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python312/child-start.json",
+          "sha256": "9c817545428d542fd274b769760091803b613cf91bb47ab0ca9ec2906c13171a"
+        },
+        {
+          "bytes": 179356,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python312/child-result.json",
+          "sha256": "e84b7d8f07fb0b1be9c5c15e39df6ca359daf4e3d9c5d66fb6c4f5d7a9880393"
+        },
+        {
+          "bytes": 1596,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python312/child-finalization.json",
+          "sha256": "44e6572d182dee9516da0fbe86f3ca804302871a2bc7e7a11e869f686af6222a"
+        },
+        {
+          "bytes": 5062,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python312/source-before.json",
+          "sha256": "07ad32bc1f6d7f24772e06a138c56c92f78a9c60e2e51378659a890fdf84d056"
+        },
+        {
+          "bytes": 5062,
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python312/source-after.json",
+          "sha256": "07ad32bc1f6d7f24772e06a138c56c92f78a9c60e2e51378659a890fdf84d056"
+        }
+      ],
+      "child_finalization": {
+        "errors": [],
+        "finalization_thread_finished": true,
+        "forced_termination": false,
+        "forced_termination_attempted": false,
+        "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+        "inherited_tracker_preserved": false,
+        "initial": {
+          "forkserver_alive_fd": null,
+          "forkserver_pid": null,
+          "resource_tracker_fd": null,
+          "resource_tracker_pid": null
+        },
+        "joined_children": [],
+        "kernel_echild_before_phase_return": true,
+        "management_bound_seconds": 5,
+        "protocol_steps": [
+          {
+            "completed": true,
+            "stage": "nonnegative_stdlib_finalizers",
+            "wall_seconds": 1.6534999303985387e-05
+          },
+          {
+            "completed": true,
+            "stage": "join_owned_children",
+            "wall_seconds": 1.0646001101122238e-05
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_forkserver",
+            "wall_seconds": 5.7989982451545075e-06
+          },
+          {
+            "completed": true,
+            "stage": "remaining_stdlib_finalizers",
+            "wall_seconds": 5.347999831428751e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_resource_tracker",
+            "wall_seconds": 3.846000254270621e-06
+          },
+          {
+            "completed": true,
+            "stage": "verify_kernel_echild",
+            "wall_seconds": 3.468099930614699e-05
+          }
+        ],
+        "signal_guard_installed_and_witnessed": true,
+        "signal_vetoed": false,
+        "status": "GREEN",
+        "stopped_owned_infrastructure": [],
+        "termination_signal_attempts": [],
+        "unexpected_kernel_children": [],
+        "wall_seconds": 0.00037193100069998764
+      },
+      "counts": {
+        "cases": 478,
+        "collected": 478,
+        "collected_matches_junit": true,
+        "duplicates": 0,
+        "error": 0,
+        "fail": 0,
+        "pass": 478,
+        "skip": 0
+      },
+      "kernel": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 21.344076364001012,
+        "adopted_descendants_reaped": [],
+        "cpu_system_seconds": 0.454934,
+        "cpu_user_seconds": 20.566996,
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_children_exhaustion_verified": true,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 115707904,
+        "pid": 11808,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_pid": 11805,
+        "termination_reap_restore_cleanup_seconds": 6.36650001979433e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 11808
+      },
+      "label": "python312",
+      "network_operation_attempts": [],
+      "observed_code_atime_changes": [],
+      "source_bytes_and_all10_stable_fields": true
+    }
+  ],
+  "exact_approved_patch": {
+    "bytes": 6122,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/proposal.diff",
+    "sha256": "f7dec4a785659183d16a88ee8819c5b67222b910c2054582fe6a99ed64f08415"
+  },
+  "external_focal_script": {
+    "bytes": 9574,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/focal_runner_v2.py",
+    "sha256": "33e7d318854e115b36b77d2a490eca498402596087150d9218e22deff7b0dafc"
+  },
+  "guard_contract_preserved": [
+    "MAX_NODES/MAX_DEPTH/key guards and shape memo per original",
+    "each logical alias expansion and each incoming arrival",
+    "strong identity per role and original role cap1048576",
+    "named cache and two scalar cache lookups",
+    "every original buffer append/cut/literal and signedzero",
+    "unknown subclass/defaultstr/metaclass expressions and method dispatch",
+    "native constructor/public/private capability identity and constants"
+  ],
+  "next_work_owned_by_root": [
+    "Freeze new source SHA/rawGit FIP scope, after current root edits finish",
+    "Canonical native BIG at original budgets on new SHA only",
+    "Full Gov3.11/3.12 and remaining material gates on frozen new candidate",
+    "GitHub durable checkpoint/PR/ownership release by sole root writer"
+  ],
+  "no_git_commit_push_ref_or_GitHub_writes_by_subagent": true,
+  "performance_effect_unmeasured": true,
+  "performance_gate_closed": false,
+  "same_case_set_both_epochs": true,
+  "scope_receipts": [
+    "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6020451408",
+    "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6020451844"
+  ],
+  "source_before_apply": {
+    "bytes": 1558,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/source-before-apply.json",
+    "sha256": "f7bb41a231b04457c3baaab352f56d0428fd8186f2db51cd5b37db980a6311bd"
+  },
+  "source_paths_edited_only_by_this_task": {
+    "rc6_shadow_runtime/packed_storage.py": "fa3bcf1e0813067baa8fd478f6aeedd63b4552bcbefbddd487909690c8d43466",
+    "rc6_shadow_runtime/serialization.py": "e091aebcd25396134c69876ae14d42d264887240b65fbd9867d6ea4b8b235a8a"
+  },
+  "source_root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source",
+  "state": "DESARROLLADO_LOCAL_FOCAL_VALIDATED",
+  "unique_scenarios": 478,
+  "whole_uncommitted_source_frozen_qualified": false
+}

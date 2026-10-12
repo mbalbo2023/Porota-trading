@@ -1,0 +1,806 @@
+{
+  "schema": "rc6.convergence-original-scenarios.v1",
+  "source": "ISSUE469_REAUDITORIA_INDEPENDIENTE_466_C27DFD9.md",
+  "rows": [
+    {
+      "id": "R01",
+      "attack": "quote stale",
+      "expected": "No entrar/salir con precio vencido",
+      "original_observed": "Guards freshness; marca stale",
+      "original_code_path": "BE, `bm_exit_supervisor.py`",
+      "original_test": "C/N RA-B exit suite",
+      "original_gap": "Latencia proveedor real",
+      "original_verdict": "PASS acotado"
+    },
+    {
+      "id": "R02",
+      "attack": "timestamp intraday repetido",
+      "expected": "No contar refresh como muestra nueva",
+      "original_observed": "Warmup/interval contract conserva unicidad",
+      "original_code_path": "CF `persist_payload`",
+      "original_test": "N F02 repeat-time",
+      "original_gap": "Rollback intra-read aparte",
+      "original_verdict": "PASS nominal"
+    },
+    {
+      "id": "R03",
+      "attack": "volumen nominal vs shares",
+      "expected": "No inferir participación desde unidad desconocida",
+      "original_observed": "Desconocido bloquea tradeability; fuente real ausente",
+      "original_code_path": "DU/tradeability, SR/families",
+      "original_test": "C/N family-source; P interval",
+      "original_gap": "Unidad real PPI",
+      "original_verdict": "PARTIAL"
+    },
+    {
+      "id": "R04",
+      "attack": "sumar ARS/USD",
+      "expected": "Ledgers separados",
+      "original_observed": "DailyRisk ARS−10100/USD0; recompute por moneda",
+      "original_code_path": "`bw_daily_risk.py`, PKG",
+      "original_test": "P risk/finance",
+      "original_gap": "FX/fees reales",
+      "original_verdict": "PASS local"
+    },
+    {
+      "id": "R05",
+      "attack": "book faltante",
+      "expected": "No inventar fill",
+      "original_observed": "Missing book impide autoridad/fill",
+      "original_code_path": "BE; BD",
+      "original_test": "C/N exit suite",
+      "original_gap": "Carry/outage live",
+      "original_verdict": "PASS_C / X live"
+    },
+    {
+      "id": "R06",
+      "attack": "book cruzado",
+      "expected": "Rechazar puntas inválidas",
+      "original_observed": "Branch de book inválido; sin ejecución propia de toda familia",
+      "original_code_path": "BE quote validation",
+      "original_test": "C/N focal",
+      "original_gap": "Proveedor actual",
+      "original_verdict": "PARTIAL"
+    },
+    {
+      "id": "R07",
+      "attack": "depth cero",
+      "expected": "No fill por last",
+      "original_observed": "Depth ejecutable requerido",
+      "original_code_path": "BE `_close/_open_future`",
+      "original_test": "C/N exit/future",
+      "original_gap": "Cola/partial OPEN",
+      "original_verdict": "PASS_C"
+    },
+    {
+      "id": "R08",
+      "attack": "spread extremo",
+      "expected": "Rechazo/admisión económica conservadora",
+      "original_observed": "CF spread cap; range no demuestra edge",
+      "original_code_path": "CF evaluate_candidate",
+      "original_test": "C; P economics",
+      "original_gap": "Umbral OOS",
+      "original_verdict": "PASS_C / X edge"
+    },
+    {
+      "id": "R09",
+      "attack": "gap a través del stop",
+      "expected": "Fill en bid real peor; no pérdida garantizada",
+      "original_observed": "Stop es trigger sujeto a book",
+      "original_code_path": "BE `_maybe_close`",
+      "original_test": "C; sin gap OPEN",
+      "original_gap": "Tail distribution",
+      "original_verdict": "X / riesgo explícito"
+    },
+    {
+      "id": "R10",
+      "attack": "flash move entre polls",
+      "expected": "No atribuir touch como fill cierto",
+      "original_observed": "No se midió cola/latencia intrapoll",
+      "original_code_path": "exit reader/replay",
+      "original_test": "C; NO EJEC. mercado",
+      "original_gap": "Fill probability",
+      "original_verdict": "X"
+    },
+    {
+      "id": "R11",
+      "attack": "halt/suspensión",
+      "expected": "Bloquear entradas; exposición/alarma explícita",
+      "original_observed": "Sin autoridad de halt vivo probada",
+      "original_code_path": "session/family/BE",
+      "original_test": "C; NO EJEC. halt real",
+      "original_gap": "Feed/horario excepcional",
+      "original_verdict": "X"
+    },
+    {
+      "id": "R12",
+      "attack": "preopen→open",
+      "expected": "Freeze PIT, no futura reescritura",
+      "original_observed": "Freeze y OPEN handlers verificados",
+      "original_code_path": "SR/preopen,worker",
+      "original_test": "N RA-B; P stress chico",
+      "original_gap": "Cohorte real OPEN",
+      "original_verdict": "PASS local"
+    },
+    {
+      "id": "R13",
+      "attack": "EOD sin libro",
+      "expected": "No fabricar cierre ni ocultar carry",
+      "original_observed": "Fresh executable book requerido; no garantía de flat",
+      "original_code_path": "BE/BV/session",
+      "original_test": "C/N boundary",
+      "original_gap": "Outage cierre real",
+      "original_verdict": "PARTIAL"
+    },
+    {
+      "id": "R14",
+      "attack": "fin de semana/feriado",
+      "expected": "Calendario autorizado",
+      "original_observed": "Weekday/time estático no certifica feriado",
+      "original_code_path": "future policy/session",
+      "original_test": "C",
+      "original_gap": "Calendario primario live",
+      "original_verdict": "X"
+    },
+    {
+      "id": "R15",
+      "attack": "feriado USA CEDEAR",
+      "expected": "Clock/subyacente no sustituido por captura local",
+      "original_observed": "Feature/sesión separadas; live no ejecutado",
+      "original_code_path": "SR/families, DU/tradeability",
+      "original_test": "C",
+      "original_gap": "US calendar/CCL/ratio",
+      "original_verdict": "X"
+    },
+    {
+      "id": "R16",
+      "attack": "expiry futuro",
+      "expected": "Serie/contrato/restauración exactos",
+      "original_observed": "Contrato alterado tras restart rechazado",
+      "original_code_path": "future policy/LIFE",
+      "original_test": "P/N finance",
+      "original_gap": "Holiday/serie PPI",
+      "original_verdict": "PASS local / X externo"
+    },
+    {
+      "id": "R17",
+      "attack": "opción expiry/assignment",
+      "expected": "Modelo especializado, sin fallback spot",
+      "original_observed": "OBSERVE_ONLY; no lifecycle operable demostrado",
+      "original_code_path": "SR/families",
+      "original_test": "C",
+      "original_gap": "Assignment/Greeks/OI",
+      "original_verdict": "X operación"
+    },
+    {
+      "id": "R18",
+      "attack": "contrato futuro ausente",
+      "expected": "No apertura sin contrato exacto",
+      "original_observed": "Guard fail-closed",
+      "original_code_path": "BE `_open_future`",
+      "original_test": "C/N future",
+      "original_gap": "Broker series",
+      "original_verdict": "PASS_C"
+    },
+    {
+      "id": "R19",
+      "attack": "multiplier incorrecto",
+      "expected": "Rechazo antes de cash",
+      "original_observed": "DLR 1000 y lote 1 exigidos",
+      "original_code_path": "LIFE/contract policy",
+      "original_test": "P/N finance",
+      "original_gap": "Contrato externo por serie",
+      "original_verdict": "PASS local"
+    },
+    {
+      "id": "R20",
+      "attack": "outage PPI",
+      "expected": "Retries/breaker acotados; no price 0",
+      "original_observed": "Falla lectura, no book inventado",
+      "original_code_path": "BD/BUD",
+      "original_test": "N retries",
+      "original_gap": "Liveness y RTO proveedor",
+      "original_verdict": "PARTIAL"
+    },
+    {
+      "id": "R21",
+      "attack": "IOL parcial",
+      "expected": "Useful separado de error, no autoridad",
+      "original_observed": "PARTIAL_SOURCE_ERRORS y entry false",
+      "original_code_path": "DU/sources, SR/source_authority",
+      "original_test": "P RA-D/E",
+      "original_gap": "Texto libre U16",
+      "original_verdict": "PASS parcial"
+    },
+    {
+      "id": "R22",
+      "attack": "HTTP429",
+      "expected": "Preservar status/global breaker",
+      "original_observed": "Guard/estado durable pasan tests",
+      "original_code_path": "BD/BUD",
+      "original_test": "N F01 before/during EXIT",
+      "original_gap": "Provider real",
+      "original_verdict": "PASS nativo"
+    },
+    {
+      "id": "R23",
+      "attack": "HTTP408/5xx",
+      "expected": "Retry bounded/threshold/cooldown",
+      "original_observed": "Breaker endpoint/global observado",
+      "original_code_path": "BD/BUD",
+      "original_test": "N repeated 408/5xx",
+      "original_gap": "Service recovery real",
+      "original_verdict": "PASS nativo"
+    },
+    {
+      "id": "R24",
+      "attack": "JSON malformado",
+      "expected": "Fallar sin convertir a precio válido",
+      "original_observed": "Native malformed/pending cases pasan",
+      "original_code_path": "BD/CF",
+      "original_test": "N F02",
+      "original_gap": "Payload real adverso",
+      "original_verdict": "PASS nativo"
+    },
+    {
+      "id": "R25",
+      "attack": "LKG stale",
+      "expected": "No rescatar last viejo silencioso",
+      "original_observed": "Nueva evidencia stale invalida rescue",
+      "original_code_path": "SR/source_authority",
+      "original_test": "P source matrix",
+      "original_gap": "Frescura real",
+      "original_verdict": "PASS local"
+    },
+    {
+      "id": "R26",
+      "attack": "PPI/IOL conflicto",
+      "expected": "PPI preferida, review, no entry complementaria",
+      "original_observed": "PPI elegido/review/entry false",
+      "original_code_path": "SR/source_authority",
+      "original_test": "P source matrix",
+      "original_gap": "Feed actual",
+      "original_verdict": "PASS local"
+    },
+    {
+      "id": "R27",
+      "attack": "alias/moneda/mercado",
+      "expected": "Identidad 5 partes end-to-end",
+      "original_observed": "Resolver separa; latest_quote 3 partes oculta stop exacto",
+      "original_code_path": "BE452–466/BV/catalog",
+      "original_test": "P spot+future stop",
+      "original_gap": "Raíz heredada",
+      "original_verdict": "FAIL U08"
+    },
+    {
+      "id": "R28",
+      "attack": "Instrument not found temporal",
+      "expected": "Reprobe D+1/TTL sin BUY inmediato",
+      "original_observed": "#463 no reintenta; #466 warmup pendiente 0 fills",
+      "original_code_path": "CF worker/cache",
+      "original_test": "P OLD y actual; N: 20 variantes",
+      "original_gap": "U03 variante",
+      "original_verdict": "PASS nominal"
+    },
+    {
+      "id": "R29",
+      "attack": "cinco OPENED consumen EXIT",
+      "expected": "lower 0/5; EXIT 5/5",
+      "original_observed": "Contadores 10/5/5/5; reserva intacta",
+      "original_code_path": "BUD acquire/start",
+      "original_test": "P OLD/actual",
+      "original_gap": "Sólo cap compatible",
+      "original_verdict": "PASS fix original"
+    },
+    {
+      "id": "R30",
+      "attack": "current stale/book fresh",
+      "expected": "Exit depende de book nativo",
+      "original_observed": "Cinco posiciones salieron en caso nativo",
+      "original_code_path": "BV collect_exit_books",
+      "original_test": "N F01 stale-scanner",
+      "original_gap": "U08 lookup downstream",
+      "original_verdict": "PASS acotado"
+    },
+    {
+      "id": "R31",
+      "attack": "engines/discovery burst",
+      "expected": "Reserva global no robada",
+      "original_observed": "4 procesos:lower 30 denied,EXIT 5 complete",
+      "original_code_path": "BUD",
+      "original_test": "P stress",
+      "original_gap": "U07 future/U01 flight",
+      "original_verdict": "PASS caso spot"
+    },
+    {
+      "id": "R32",
+      "attack": "retries adicionales",
+      "expected": "Cada send consume/respeta lease",
+      "original_observed": "Retry scanner no evade floor; backpressure no retry",
+      "original_code_path": "BD148–158,267–321",
+      "original_test": "N F01",
+      "original_gap": "Slow-owner EXIT",
+      "original_verdict": "PASS parcial"
+    },
+    {
+      "id": "R33",
+      "attack": "rollback reloj budget",
+      "expected": "No extender autoridad/enviar incierto",
+      "original_observed": "Rechazo off-wire en tests",
+      "original_code_path": "BUD clock/authority",
+      "original_test": "N F01",
+      "original_gap": "CF rollback distinto",
+      "original_verdict": "PASS nativo"
+    },
+    {
+      "id": "R34",
+      "attack": "fingerprint/policy expiry",
+      "expected": "No liberar promesa viva ni usar expiry",
+      "original_observed": "Unión conservadora, denial mid-window",
+      "original_code_path": "BUD/DU promotion",
+      "original_test": "N F01 replacement/expiry",
+      "original_gap": "Activo real desconocido",
+      "original_verdict": "PASS nativo"
+    },
+    {
+      "id": "R35",
+      "attack": "lease huérfano/restart",
+      "expected": "No duplicar wire ni borrar deuda",
+      "original_observed": "Kill antes/después start conservador",
+      "original_code_path": "BUD lease/wire",
+      "original_test": "N F01 process kill",
+      "original_gap": "Crash host físico",
+      "original_verdict": "PASS nativo"
+    },
+    {
+      "id": "R36",
+      "attack": "SQLite BUSY",
+      "expected": "Espera bounded/failclosed/recovery",
+      "original_observed": "3 denials≈0,153 s;release→5 EXIT",
+      "original_code_path": "BUD/LIFE",
+      "original_test": "P lock; N BUSY",
+      "original_gap": "p99 host",
+      "original_verdict": "PASS local"
+    },
+    {
+      "id": "R37",
+      "attack": "dos SHADOW writers/reader",
+      "expected": "No cortes mezclados",
+      "original_observed": "DENIED_NONBLOCKING para conflicto",
+      "original_code_path": "SR/persistence",
+      "original_test": "P atomic_faults",
+      "original_gap": "Hostile lock inode",
+      "original_verdict": "PASS local"
+    },
+    {
+      "id": "R38",
+      "attack": "disco lleno entre writes",
+      "expected": "Sólo corte viejo/nuevo completo",
+      "original_observed": "7/7 fronteras coherentes; ENOSPC test",
+      "original_code_path": "SR/persistence",
+      "original_test": "P/N generation",
+      "original_gap": "Power-cut FS real",
+      "original_verdict": "PASS atomicidad"
+    },
+    {
+      "id": "R39",
+      "attack": "symlink/hardlink/traversal",
+      "expected": "No escapar raíz ni usar alias",
+      "original_observed": "Rechazo member/generation/FIFO/path",
+      "original_code_path": "SR/persistence/retention",
+      "original_test": "N: suite 115",
+      "original_gap": "Races inode no exhaustivas",
+      "original_verdict": "PASS acotado"
+    },
+    {
+      "id": "R40",
+      "attack": "SHA/tree artifact",
+      "expected": "Binding externo exacto",
+      "original_observed": "ZIP/source/bundle/tar/config/layers/app coinciden con SHA/tree",
+      "original_code_path": "PROV/DEPLOY",
+      "original_test": "P sobre artifact11315198085; §13",
+      "original_gap": "Imports ejecutados/host no",
+      "original_verdict": "PASS bytes/estático"
+    },
+    {
+      "id": "R41",
+      "attack": "image mismatch",
+      "expected": "Expected==loaded antes de tag",
+      "original_observed": "Predicados aceptan IDs distintos",
+      "original_code_path": "DEPLOY388–404",
+      "original_test": "P RF-02 fixture",
+      "original_gap": "No mismatch real desplegado",
+      "original_verdict": "FAIL U12"
+    },
+    {
+      "id": "R42",
+      "attack": "rutas reales POST/SDK",
+      "expected": "Bloquear Order/Confirm/Cancel/Budget/Movements",
+      "original_observed": "Allowlist rechaza antes de red",
+      "original_code_path": "BD/call graph",
+      "original_test": "P negativas; C AST",
+      "original_gap": "Host no probado",
+      "original_verdict": "PASS código"
+    },
+    {
+      "id": "R43",
+      "attack": "fills parciales+restart",
+      "expected": "Ledger/cash idempotente",
+      "original_observed": "3 fills conservados; variation/close retry iguales",
+      "original_code_path": "PKG/LIFE",
+      "original_test": "P finance/risk",
+      "original_gap": "Master 151 fills no",
+      "original_verdict": "PASS sintético"
+    },
+    {
+      "id": "R44",
+      "attack": "futuros mark stale / carry",
+      "expected": "No usar dato no ejecutable para cerrar",
+      "original_observed": "Guard stale mantiene ACTIVE/carry",
+      "original_code_path": "BE/LIFE/DailyRisk",
+      "original_test": "C/N future",
+      "original_gap": "Alarma/SLO real",
+      "original_verdict": "PARTIAL"
+    },
+    {
+      "id": "R45",
+      "attack": "stress 10×/5×",
+      "expected": "Degradar explícito; exits vivos",
+      "original_observed": "12 k/60 k,~893 MiB,SHADOW fail;5 exits 0,0518 s",
+      "original_code_path": "SR full pipeline",
+      "original_test": "P stress propio",
+      "original_gap": "Host SLO; ciclo grande incompleto",
+      "original_verdict": "PARTIAL"
+    },
+    {
+      "id": "R46",
+      "attack": "rollback dentro de reprobe",
+      "expected": "Epoch ≥ start durable; 15 muestras posteriores reales",
+      "original_observed": "Retrofecha 13 m 20 s; 1 fill con sólo 1 punto posterior al start",
+      "original_code_path": "CF outcome/worker",
+      "original_test": "P RA-A-F02-01",
+      "original_gap": "Clock / PPI sustituidos",
+      "original_verdict": "FAIL U03"
+    },
+    {
+      "id": "R47",
+      "attack": "gate económico por ruta privada",
+      "expected": "BINDING false no abre ni se reescribe",
+      "original_observed": "RR 0,6703 < 1,2; _open; passed true",
+      "original_code_path": "CF857–949/BE diagnostics",
+      "original_test": "P broker real",
+      "original_gap": "Una estructura sintética",
+      "original_verdict": "FAIL U06"
+    },
+    {
+      "id": "R48",
+      "attack": "estado FUT distinto de spot",
+      "expected": "ACTIVE suma demanda EXIT",
+      "original_observed": "Cuenta 0; discovery 3 admitido; EXIT denegado",
+      "original_code_path": "BUD `_opened`",
+      "original_test": "P futuro durable",
+      "original_gap": "Capacidad real aparte",
+      "original_verdict": "FAIL U07"
+    },
+    {
+      "id": "R49",
+      "attack": "slippage sobre tick DLR",
+      "expected": "Grid 0,5 y rounding adverso",
+      "original_observed": "Precio 4 decimales; gross +368,20 ARS ficticio",
+      "original_code_path": "BE future / contract",
+      "original_test": "P + guía A3",
+      "original_gap": "No fill real",
+      "original_verdict": "FAIL U09"
+    },
+    {
+      "id": "R50",
+      "attack": "evento posterior subms",
+      "expected": "Snapshot t excluye t+1µs",
+      "original_observed": "Close/variation incluidas;garantía liberada",
+      "original_code_path": "LIFE cash/risk",
+      "original_test": "P SQLite",
+      "original_gap": "No clock real",
+      "original_verdict": "FAIL U10"
+    },
+    {
+      "id": "R51",
+      "attack": "estado actual altera pasado",
+      "expected": "Capacity(t) inmutable ante close futuro",
+      "original_observed": "Riesgo 1500100→0 mismo cutoff",
+      "original_code_path": "`dh_paper_dynamic_risk_gate_hf6.py`",
+      "original_test": "P risk",
+      "original_gap": "Sin bypass del guard final probado",
+      "original_verdict": "FAIL U22"
+    },
+    {
+      "id": "R52",
+      "attack": "idempotency key / monto distinto",
+      "expected": "Rechazo colisión semántica",
+      "original_observed": "1000 → 2000 retorna idempotent; durable −1000",
+      "original_code_path": "LIFE apply_paper_event",
+      "original_test": "P FCI",
+      "original_gap": "Sin wiring FCI runtime demostrado",
+      "original_verdict": "FAIL U23 limitado"
+    },
+    {
+      "id": "R53",
+      "attack": "config aprobada desde launcher",
+      "expected": "Inputs llegan a envfile / container",
+      "original_observed": "Faltan 6 claves",
+      "original_code_path": "mode_manager/DU promotion",
+      "original_test": "P RA-B env",
+      "original_gap": "In-process tests no ven frontera",
+      "original_verdict": "FAIL U04"
+    },
+    {
+      "id": "R54",
+      "attack": "child SHADOW caído",
+      "expected": "Gate de salud detecta ausencia / falta CURRENT",
+      "original_observed": "Spawn falla, parent/scanner continúan sanos",
+      "original_code_path": "BV/worker/DEPLOY",
+      "original_test": "P spawn+C gate",
+      "original_gap": "No deploy real",
+      "original_verdict": "FAIL U13"
+    },
+    {
+      "id": "R55",
+      "attack": "rollback de CURRENT + commit",
+      "expected": "Lineage monotónico o reject",
+      "original_observed": "Dos sequence 2 distintas",
+      "original_code_path": "SR/persistence",
+      "original_test": "P rollback_fork",
+      "original_gap": "Corte viejo completo permitido",
+      "original_verdict": "FAIL U20"
+    },
+    {
+      "id": "R56",
+      "attack": "rehash integral malicioso",
+      "expected": "Contrato cross-role consistente/autenticado",
+      "original_observed": "Report orders 7 / status 0 aceptado",
+      "original_code_path": "SR/persistence",
+      "original_test": "P full forgery",
+      "original_gap": "Write sobre raíz completa requerido",
+      "original_verdict": "FAIL U17 condicionado"
+    },
+    {
+      "id": "R57",
+      "attack": "audit ghost / vacío falso",
+      "expected": "Recompute semántico ligado",
+      "original_observed": "Digest de lista correcto basta para aceptar audit falso",
+      "original_code_path": "SR/persistence/DU sources",
+      "original_test": "P source_audit",
+      "original_gap": "Caller actual correcto",
+      "original_verdict": "FAIL U21"
+    },
+    {
+      "id": "R58",
+      "attack": "report duplicado exacto",
+      "expected": "Dedupe / reject o multiplicidad explícita",
+      "original_observed": "Count 2 para mismo report",
+      "original_code_path": "DU/sources",
+      "original_test": "P duplicate",
+      "original_gap": "Caller natural no visto",
+      "original_verdict": "FAIL U26 P3"
+    },
+    {
+      "id": "R59",
+      "attack": "contexto de error con marcador",
+      "expected": "No texto libre sensible durable",
+      "original_observed": "Marcador sintético persistido por full tick",
+      "original_code_path": "IOL collector/DU sources",
+      "original_test": "P secret full tick",
+      "original_gap": "No secreto real",
+      "original_verdict": "FAIL U16"
+    },
+    {
+      "id": "R60",
+      "attack": "ACK sin archivo",
+      "expected": "No borrar sin receipt durable",
+      "original_observed": "URI inexistente / hash inventado autoriza borrado",
+      "original_code_path": "SR/retention",
+      "original_test": "P ACK autoafirmado",
+      "original_gap": "Writer/archiver trust",
+      "original_verdict": "FAIL U18 condicionado"
+    },
+    {
+      "id": "R61",
+      "attack": "crash de rotación tras unlink",
+      "expected": "Recuperación convergente",
+      "original_observed": "EIO deja generación parcial; restart alcanza hard quota",
+      "original_code_path": "SR/retention",
+      "original_test": "P EIO en segundo unlink",
+      "original_gap": "Sin SIGKILL en ese punto exacto",
+      "original_verdict": "FAIL U19"
+    },
+    {
+      "id": "R62",
+      "attack": "horizonte SHADOW sin archivo",
+      "expected": "Evidencia por una rueda",
+      "original_observed": "101 commits;soft 40,5 m / hard 50,5 m",
+      "original_code_path": "SR tick / persistence",
+      "original_test": "P fulltick",
+      "original_gap": "Fixture, sin host",
+      "original_verdict": "FAIL U14"
+    },
+    {
+      "id": "R63",
+      "attack": "ledger ACK sin compactación",
+      "expected": "Rotación no agota su propia metadata",
+      "original_observed": "ACK 506 proyecta 513 > 512",
+      "original_code_path": "SR/retention",
+      "original_test": "P retained ACK",
+      "original_gap": "Estado favorable ideal",
+      "original_verdict": "FAIL U15"
+    },
+    {
+      "id": "R64",
+      "attack": "sidecar lleno + aging",
+      "expected": "Poda permite EXIT sin operador",
+      "original_observed": "SQLITE_FULL; +4000 s denegado; poda en copia recupera",
+      "original_code_path": "BUD `_window_total`",
+      "original_test": "P mínimo / default",
+      "original_gap": "6 denegaciones/s sintético",
+      "original_verdict": "FAIL U02"
+    },
+    {
+      "id": "R65",
+      "attack": "owner inferior de single-flight lento",
+      "expected": "EXIT recibe book con espera acotada y prioridad preservada",
+      "original_observed": "Owner 120 ms; follower 50 ms; EXIT denegado 3/3",
+      "original_code_path": "BUD coalesced_book",
+      "original_test": "P en 3 TTL",
+      "original_gap": "Sin estimación de latencia real",
+      "original_verdict": "FAIL U01"
+    },
+    {
+      "id": "R66",
+      "attack": "cap menor a demanda / fairness",
+      "expected": "Rechazar aprobación incompatible o probar servicio justo",
+      "original_observed": "10 identidades, cap 5; últimas 5 sin servicio durante 3 ventanas",
+      "original_code_path": "BUD / BV orden de posiciones",
+      "original_test": "P/C; RA-B: 30 llamadas",
+      "original_gap": "Posiciones/config del host desconocidas",
+      "original_verdict": "FAIL U05"
+    },
+    {
+      "id": "R67",
+      "attack": "source byte + outer rehash",
+      "expected": "Manifiesto Git detecta cambio de byte",
+      "original_observed": "BUNDLE_SOURCE_BYTE_MISMATCH",
+      "original_code_path": "PROV validate_bundle",
+      "original_test": "P RF attack",
+      "original_gap": "Artifact subido se verifica por separado",
+      "original_verdict": "PASS"
+    },
+    {
+      "id": "R68",
+      "attack": "source manifest rehasheado",
+      "expected": "Git independiente ancla manifest",
+      "original_observed": "SOURCE_MANIFEST_GIT_MISMATCH",
+      "original_code_path": "PROV verify_source_manifest",
+      "original_test": "P RF attack",
+      "original_gap": "Se asume confianza en Git",
+      "original_verdict": "PASS"
+    },
+    {
+      "id": "R69",
+      "attack": "layers repetidas / orden",
+      "expected": "Blob único reutilizable; orden / DiffID exactos",
+      "original_observed": "Referencia lógica repetida PASS; mutación / orden RED",
+      "original_code_path": "validador de imagen",
+      "original_test": "P RF fixtures",
+      "original_gap": "Runtime Docker externo",
+      "original_verdict": "PASS fixtures"
+    },
+    {
+      "id": "R70",
+      "attack": "duplicate physical archive",
+      "expected": "Rechazar ambigüedad de path físico",
+      "original_observed": "DUPLICATE/UNSAFE_IMAGE_ARCHIVE_PATH",
+      "original_code_path": "validadores de archivos",
+      "original_test": "P RF fixtures",
+      "original_gap": "Sin extracción en host",
+      "original_verdict": "PASS"
+    },
+    {
+      "id": "R71",
+      "attack": "contrato descriptor / CRC",
+      "expected": "Digest / size / mediaType / envelope exactos",
+      "original_observed": "Cada corrupción rechazada",
+      "original_code_path": "validadores image / gzip",
+      "original_test": "P RF fixtures agrupadas",
+      "original_gap": "No se cuenta por parámetro",
+      "original_verdict": "PASS"
+    },
+    {
+      "id": "R72",
+      "attack": "permisos no ejecutables writable",
+      "expected": "Modos canonizados",
+      "original_observed": "0644 → 0666 aceptado en bundle e imagen",
+      "original_code_path": "PROV mode check",
+      "original_test": "P RF03",
+      "original_gap": "Hash externo rebindeado",
+      "original_verdict": "FAIL U25"
+    },
+    {
+      "id": "R73",
+      "attack": "artifact homónimo de otro run",
+      "expected": "Head / workflow autorizados vinculantes",
+      "original_observed": "Elegido el más nuevo, con head incorrecto",
+      "original_code_path": "DEPLOY locator",
+      "original_test": "P RF01",
+      "original_gap": "Self-binding posterior existe",
+      "original_verdict": "FAIL U11"
+    },
+    {
+      "id": "R74",
+      "attack": "paquete con costo/qty rehasheado",
+      "expected": "Contabilidad rechaza inconsistencia",
+      "original_observed": "Ledger cost / qty mismatch",
+      "original_code_path": "PKG recompute",
+      "original_test": "P paquete histórico",
+      "original_gap": "Tarifa real no comprobada",
+      "original_verdict": "PASS sintético"
+    },
+    {
+      "id": "R75",
+      "attack": "fill duplicado en paquete",
+      "expected": "IDs únicos y reconciliación",
+      "original_observed": "DUPLICATE_OR_INVALID_FILL",
+      "original_code_path": "PKG verifier",
+      "original_test": "P duplicate+rehash",
+      "original_gap": "Master real ausente",
+      "original_verdict": "PASS"
+    },
+    {
+      "id": "R76",
+      "attack": "lookahead de clocks en paquete",
+      "expected": "Fill ≥ entry exacto",
+      "original_observed": "Entry −1 µs rechazado",
+      "original_code_path": "PKG verifier",
+      "original_test": "P timestamp+rehash",
+      "original_gap": "Clock proveedor externo",
+      "original_verdict": "PASS"
+    },
+    {
+      "id": "R77",
+      "attack": "pseudónimo/determinismo",
+      "expected": "Orden del input no altera bytes; sin IDs crudos",
+      "original_observed": "Sesiones invertidas: iguales; marcadores ausentes",
+      "original_code_path": "PKG export",
+      "original_test": "P bytescan",
+      "original_gap": "Seed/custodia de fuente",
+      "original_verdict": "PASS acotado"
+    },
+    {
+      "id": "R78",
+      "attack": "moneda del paquete / pin rebindeado",
+      "expected": "Pin externo detecta; pin autoafirmado no autentica",
+      "original_observed": "Pin original RED; pin rebindeado permite relabel",
+      "original_code_path": "PKG trust boundary",
+      "original_test": "P mutación coordinada",
+      "original_gap": "Autenticación de fuente externa",
+      "original_verdict": "PARTIAL explícito"
+    },
+    {
+      "id": "R79",
+      "attack": "fuente WAL READ_ONLY",
+      "expected": "Inventario de fuente inmutable",
+      "original_observed": "Se crea SHM 32768 B; main hash igual",
+      "original_code_path": "PKG readonly_snapshot",
+      "original_test": "P WAL sin SHM",
+      "original_gap": "Sólo copia temporal",
+      "original_verdict": "FAIL U24"
+    },
+    {
+      "id": "R80",
+      "attack": "bounds de lectura / paquete",
+      "expected": "Fail-closed, sin truncación silenciosa",
+      "original_observed": "Lectura 101 > 100 rechazada; row budgets RED",
+      "original_code_path": "SR worker/PKG export",
+      "original_test": "P stress/export",
+      "original_gap": "No extrae 20 ruedas reales",
+      "original_verdict": "PASS bounded"
+    }
+  ]
+}

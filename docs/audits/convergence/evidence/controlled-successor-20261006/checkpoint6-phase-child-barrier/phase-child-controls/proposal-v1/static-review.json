@@ -1,0 +1,23 @@
+{
+  "all_other_functions_AST_identical": true,
+  "bytes": 63436,
+  "candidate_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "candidate_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "diff_sha256": "1062f532a519db719481de1fc50a88ca491bc89fdc6ebfc11687cfe5d3839f36",
+  "mode": "EXTERNAL_ONLY_NOT_APPLIED_NOT_EXECUTED",
+  "new_guard_body_index": 22,
+  "new_guard_line": 867,
+  "no_fullGov_qualification": true,
+  "old_guard_body_index": 31,
+  "old_guard_line": 899,
+  "only_statement_moved_verbatim": true,
+  "original_5400_5_NET_scope_source_capture_157_limits_unchanged": true,
+  "original_main_postread_guards_unchanged": true,
+  "original_runner_sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+  "phase_child_AST_identical_after_removing_same_guard_statement": true,
+  "proposed_runner_git_blob": "f32dc64f1844ac5112868a7206f7656f97d26cc3",
+  "proposed_runner_sha256": "a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47",
+  "schema": "rc6.phase-child-fin-postread-static-proposal.v1",
+  "source_edits": 0,
+  "tests_launched": 0
+}

@@ -1,0 +1,347 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "big_acceptance_complete": false,
+  "cosmetic_fix": {
+    "own_commit": "6d6d9c66ee4750aa39b7ecfd3a48e08578a42452",
+    "own_tree": "89011c95fd5f465d459b82b0a3f052b1903a1c64",
+    "root_integration_reported": "930a0dcaad235aa0e36b25e188e0e7142fabb5b5",
+    "scope": "Only two files, readiness th/td class by exact key/kind, desktop9rem and bounded NO_VERIFICADO no-wrap. Original C not changed.",
+    "source_validation": "AST/diff only; no Native or CSS mirror tests. Actual1280 BrowserD meaningful validation pending."
+  },
+  "epochs": {
+    "A": "RED_DRIVER158_LOCK_METADATA_MISMATCH_BEFORE_SOURCE_ADMISSION_FIXTURE_AND_CHROME",
+    "B_health": "ACTUAL_SEPARATE_SMALL_LIVE_HEALTH_GREEN_CLOSED_NON_OPERATIONAL_NO_COMMERCIAL_AUTHORITY",
+    "B_normal": "RED_PREPARATION_RAW_GIT_CONTROLS_REQUIRED_BEFORE_NATIVE_FIXTURE_AND_CHROME",
+    "C_normal": "ACTUAL_PRODUCT_BROWSER_GREEN_EXTERNAL_SOURCE_CUSTODY_RED"
+  },
+  "evidence_references": [
+    {
+      "all11_unchanged": true,
+      "bytes": 52934,
+      "mode": "0o600",
+      "path": "/tmp/rc6-ux-efa69894-browser-health-postfin-ro-stage1.json",
+      "sha256": "ed7245d9e683e5e5bba37a1f0ec7cf532df719760796bc103829d8360a794e33"
+    },
+    {
+      "all11_unchanged": true,
+      "bytes": 52110,
+      "mode": "0o600",
+      "path": "/tmp/rc6-ux-efa69894-browser-actual-route-matrix-ro.json",
+      "sha256": "2df97390ceb60747734409cce78032a9bef94ee8728f5604e7aa4475774047f2"
+    },
+    {
+      "all11_unchanged": true,
+      "bytes": 6021,
+      "mode": "0o600",
+      "path": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/COPY_RECEIPT.json",
+      "sha256": "7ff0b339127e6912e8c66308161f1fe31ef1bcfffdee686ac09d3345a76d1dbd"
+    },
+    {
+      "all11_unchanged": true,
+      "bytes": 1395604,
+      "mode": "0o600",
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b/health-live-small/health-gate.json",
+      "sha256": "90cf4da1e01d0d903316f97520db35f809dcf3192e7eea741544375bf18b3755"
+    },
+    {
+      "all11_unchanged": true,
+      "bytes": 1580201,
+      "mode": "0o600",
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/normal-source-before.json",
+      "sha256": "0592b4cf004646a651832bbebbf5aba0158161cc1eb9bed92e4e89cee34b3eea"
+    },
+    {
+      "all11_unchanged": true,
+      "bytes": 1580201,
+      "mode": "0o600",
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/normal-source-after.json",
+      "sha256": "8eb30077ca14b367a7daa1cf4869568f9a15e7f297eb45da8cd781c2d3338fb1"
+    }
+  ],
+  "family_scope": {
+    "all10families_observed": true,
+    "catalog_currencies": {
+      "ARS": 318
+    },
+    "distinct_cohorts_in_observed_pages": 277,
+    "futures": "Three real DLR2026 contracts;7actualcohorts on one complete page; full_page_traversal_claimed=true",
+    "large_families": 9,
+    "large_family_sampling": "Three native pages0,10,total-10 with full_page_traversal_claimed=false",
+    "native_cohort_denominator": 641,
+    "selected_currency_channel": "ARS / UNIVERSE_SHADOW in this fixture; no USD dataset coverage inferred",
+    "selection": "Last observed exact cohort remains tied to native full-five identity/order/cut/count; complete denominators retained."
+  },
+  "future": "Root plans new SourceD both normal+health with final export custody and actual1280 fix validation. PriorABC remain literal epochs; LARGE still requires qualified nativeBIG.",
+  "gov_qualification_claim": false,
+  "health_B": {
+    "authority": "NO_VERIFICADO",
+    "cleanup_forced": false,
+    "clock_order": "Actual started_at <= generation_as_of <= canonical RUNNING health publication, verified from existing receipt",
+    "exitcode": 0,
+    "gate_sha256": "90cf4da1e01d0d903316f97520db35f809dcf3192e7eea741544375bf18b3755",
+    "generation_id": "79eaa31db32d4da2aee12b44cf02fa7c",
+    "generation_phase": "CLOSED",
+    "health_runtime_and_data_custody_equal": true,
+    "not_transferred_to_C_or_BIG": true,
+    "pid": 244442,
+    "post_cleanup_live_claim": false,
+    "readiness": "CLOSED_NON_OPERATIONAL",
+    "reaped": true,
+    "request_wall_seconds_including_ipc": 0.03509148799639661,
+    "running_health_recorded_at": "2026-10-06T01:16:18.746846+00:00",
+    "runtime_running_child": {
+      "last_error": null,
+      "last_exit_at": null,
+      "pid": 244442,
+      "restarts": 0,
+      "spawn_failures": 0,
+      "started_at": "2026-10-06T01:16:17.377993+00:00",
+      "state": "RUNNING"
+    },
+    "runtime_stopped_child": {
+      "last_error": null,
+      "last_exit_at": null,
+      "pid": null,
+      "restarts": 0,
+      "spawn_failures": 0,
+      "started_at": "2026-10-06T01:16:17.377993+00:00",
+      "state": "STOPPED"
+    },
+    "sequence": 1,
+    "source_cut": "2026-10-06T01:16:18.114310+00:00",
+    "stopped_health_recorded_at": "2026-10-06T01:16:19.085468+00:00",
+    "verification_level": "WIRE_AND_PROJECTION_SEMANTICS",
+    "verified_roles": [
+      "checkpoint",
+      "projection",
+      "report",
+      "status"
+    ]
+  },
+  "native_executions_by_ux_review": 0,
+  "native_render_verification": "All382 recorded renders within total IPC/native snapshot/render/HTML/JSON1s and each body4MiB; actual49canonical paths×6widths and22aliases matched literal navigation Source, not only declared counters.",
+  "normal_C": {
+    "alias_checks": 22,
+    "canonical_checks": 294,
+    "external_stage_status": "RED",
+    "external_supervisor_status": "RED",
+    "generation_id": "1a6f792996f84c65be707aca0bdb66e9",
+    "interaction_checks": [
+      "manual focus",
+      "scroll",
+      "details",
+      "filters",
+      "deep link",
+      "dirty inputs",
+      "interaction during outstanding read",
+      "auto refresh pause",
+      "menu Escape",
+      "cohort pagination and exact selection"
+    ],
+    "max_html_bytes": 92221,
+    "max_json_bytes": 93354,
+    "max_request_wall_seconds": 0.43349270199541934,
+    "native_contract_checks": [
+      "FUT ACTIVE visible",
+      "FUT native supervision intent visible",
+      "same-entry exit lab nonempty",
+      "entry experiment nonempty",
+      "OFF policy separate from OPEN evidence",
+      "unique element IDs",
+      "same four-role sealed generation",
+      "explicit projected verification scope"
+    ],
+    "native_preparation_pid": 244726,
+    "native_status": "GREEN",
+    "preparation_seconds": 27.22588092800288,
+    "render_width_counts": {
+      "1024": 50,
+      "1280": 50,
+      "1440": 50,
+      "360": 50,
+      "600": 50,
+      "800": 132
+    },
+    "renders": 382,
+    "source_cut": "2026-10-05T16:00:00+00:00"
+  },
+  "normal_C_preparation_windows": {
+    "big_sla_claim": false,
+    "observed_transport_startup_emission_cleanup_reap_seconds": 27.22588092800288,
+    "product_before_emission_seconds": 25.437275390999275,
+    "transport_cap_seconds": 90
+  },
+  "read_only_review_checks": {
+    "all_existing_receipt_checks_satisfied": true,
+    "count": 22,
+    "not_new_native_tests": true
+  },
+  "review_operations": "O_NOATIME/NOFOLLOW/NONBLOCK source/receipt reads and private screenshot copies. Original all11 metadata unchanged on reads. No DB opened, no TAR contents read by this diagnostic, no product import, runtime/provider/network operation or Native execution.",
+  "runtime_validated": false,
+  "schema": "rc6.ux-browser-abc-postfin-readonly-closure.v1",
+  "screenshots": [
+    {
+      "bytes": 100901,
+      "height": 980,
+      "name": "instrumentos-1024.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-1024.png",
+      "original_all11_unchanged": true,
+      "original_mode": "0o600",
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-1024.png",
+      "private_copy_mode": "0o600",
+      "sha256": "ede9640b69f380c57334ec312c0b4fde26b20f63ed625eb367059a712c041bcd",
+      "visual_review": "INSPECTED_ACTUAL_CAPTURE",
+      "width": 1024
+    },
+    {
+      "bytes": 138432,
+      "height": 980,
+      "name": "instrumentos-1280.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-1280.png",
+      "original_all11_unchanged": true,
+      "original_mode": "0o600",
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-1280.png",
+      "private_copy_mode": "0o600",
+      "sha256": "f2be69e0eed3c8e1990f9fbc9767b4261dfb811c5b9dd7cb8f63c187cb7f44e8",
+      "visual_review": "INSPECTED_ACTUAL_CAPTURE",
+      "width": 1280
+    },
+    {
+      "bytes": 139777,
+      "height": 980,
+      "name": "instrumentos-1440.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-1440.png",
+      "original_all11_unchanged": true,
+      "original_mode": "0o600",
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-1440.png",
+      "private_copy_mode": "0o600",
+      "sha256": "c5c43c48da3f0dc79306584b554daadf29880de7c83ff44a1cbe2d86616cb5f3",
+      "visual_review": "INSPECTED_ACTUAL_CAPTURE",
+      "width": 1440
+    },
+    {
+      "bytes": 61407,
+      "height": 980,
+      "name": "instrumentos-360.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-360.png",
+      "original_all11_unchanged": true,
+      "original_mode": "0o600",
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-360.png",
+      "private_copy_mode": "0o600",
+      "sha256": "0caf0ece8babb52071798bb413120731c60276f8a80129110b251a5022a71569",
+      "visual_review": "INSPECTED_ACTUAL_CAPTURE",
+      "width": 360
+    },
+    {
+      "bytes": 75443,
+      "height": 980,
+      "name": "instrumentos-600.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-600.png",
+      "original_all11_unchanged": true,
+      "original_mode": "0o600",
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-600.png",
+      "private_copy_mode": "0o600",
+      "sha256": "1fdc2bf399a4b79fa1cfbce60997ed66d6434eaa3b41c0e8d26517e763bf9d30",
+      "visual_review": "INSPECTED_ACTUAL_CAPTURE",
+      "width": 600
+    },
+    {
+      "bytes": 90890,
+      "height": 980,
+      "name": "instrumentos-800.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-800.png",
+      "original_all11_unchanged": true,
+      "original_mode": "0o600",
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-800.png",
+      "private_copy_mode": "0o600",
+      "sha256": "d68e9c218a42e11ac963df67df6f594ec29e8935c4b12600e94c8a1c5eeca81c",
+      "visual_review": "INSPECTED_ACTUAL_CAPTURE",
+      "width": 800
+    },
+    {
+      "bytes": 93098,
+      "height": 980,
+      "name": "native-capacity-off.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/native-capacity-off.png",
+      "original_all11_unchanged": true,
+      "original_mode": "0o600",
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/native-capacity-off.png",
+      "private_copy_mode": "0o600",
+      "sha256": "1e41f3817fb712f6aca51958034a0b947696ffe281f3eec91ef40ad2040b7bfc",
+      "visual_review": "INSPECTED_ACTUAL_CAPTURE",
+      "width": 800
+    }
+  ],
+  "source_custody_C": {
+    "all_original_red_receipts_preserved": true,
+    "allocation_delta_bytes": 4096,
+    "archive_after": {
+      "sha256": "36732d5b4b675d578bb0699c4ac3fb0138f96a80145677933c64ada84d12ba5c",
+      "stat": {
+        "atime_ns": 1791249565009784475,
+        "blocks": 350568,
+        "ctime_ns": 1791249565005784503,
+        "device": 27,
+        "gid": 1000,
+        "inode": 704517,
+        "links": 1,
+        "mode": 33188,
+        "mtime_ns": 1791249565005784503,
+        "size": 179486720,
+        "uid": 1000
+      }
+    },
+    "archive_before": {
+      "sha256": "36732d5b4b675d578bb0699c4ac3fb0138f96a80145677933c64ada84d12ba5c",
+      "stat": {
+        "atime_ns": 1791249565009784475,
+        "blocks": 350560,
+        "ctime_ns": 1791249565005784503,
+        "device": 27,
+        "gid": 1000,
+        "inode": 704517,
+        "links": 1,
+        "mode": 33188,
+        "mtime_ns": 1791249565005784503,
+        "size": 179486720,
+        "uid": 1000
+      }
+    },
+    "external_stage": "RED_WHOLE_SOURCE_CHANGED_AFTER_DRIVER_REAP",
+    "external_supervisor": "RED_SMALL_NATIVE_STAGE_NOT_GREEN",
+    "filesystem_observed": "overlay; specific archive FD mount_id52/device27",
+    "interpretation": "st_blocks reports allocated512-byte sectors. Observed8-sector allocation change while byte SHA256 and remaining ten file metadata fields were identical. Receipts do not establish the cause or prove which operation changed allocation; no metadata restored and no policy waiver.",
+    "non_atime_difference": [
+      [
+        "/archive/stat/blocks",
+        350560,
+        350568
+      ]
+    ],
+    "permitted_explicit_CODE_atime_changes": 124
+  },
+  "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+  "status": "SCOPED_PRODUCT_BROWSER_C_GREEN_HEALTH_B_GREEN_EXTERNAL_CUSTODY_C_RED",
+  "tracked_git_source_files": 2398,
+  "visual_findings": {
+    "1280": "Bounded NO_VERIFICADO readiness token visibly wraps final O; full token remains visible on two lines, no overlap, missing text or failed fetch. Cosmetic limit, not invented gate FAIL.",
+    "capacity_off": "Selector OFF and OPEN authority NO_VERIFICADO remain visibly separated from AVAILABLE committed generation.",
+    "clean_layouts": [
+      "1440",
+      "1024",
+      "800",
+      "600",
+      "360",
+      "capacity-off800"
+    ],
+    "responsive": "Sidebar visible on large widths; menu at<=1024; filters and rows adapt to mobile cards; no visible page overflow in these seven shots.",
+    "scope_limit": "Seven physical captures, not screenshots of all49views, not actual Windows Voice Access execution.",
+    "seven_actual_captures_inspected": true
+  },
+  "wrapper_C": {
+    "path": "/workspace/rc6_root_normal_browser_supervisor_efa69894_v3.py",
+    "sha256": "05b1d1609d0b2b56f14d56b6b6e66d9d0d30ab2cd6eed352f4ef5e14e991f1e2"
+  }
+}

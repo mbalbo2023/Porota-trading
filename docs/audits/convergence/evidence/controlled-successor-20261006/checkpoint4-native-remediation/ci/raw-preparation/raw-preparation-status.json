@@ -1,0 +1,58 @@
+{
+  "classification": "RAW_PREPARATION_STATUS_NOT_TEST_OR_GATE_RESULT",
+  "deleted_resources": 0,
+  "first_assembly_error": {
+    "cause": "External pytest namespace directory matched native-runner iteration; it was not a private producer root. No test/source edit occurred.",
+    "literal": "AssertionError: assert collection in fixture_summary[phases]",
+    "namespace": "/workspace/scratch/rc6-ci-workspace-raw-final-1lz0lhoo",
+    "repair": "External RAW packer only: restrict candidates to exact physical porota-predeploy-run-attempt-UUID directory names.",
+    "retained_not_deleted": true
+  },
+  "global_cleanup_green_asserted": false,
+  "new_test_runs": 0,
+  "real_orders_sent": 0,
+  "resource_measurements": [
+    {
+      "aliases": 0,
+      "allocated_bytes_nofollow_deduplicated": 1392640,
+      "device": 27,
+      "entries": 140,
+      "free_bytes": 24457330688,
+      "free_inodes": 1936142,
+      "inode": 1090301,
+      "logical_bytes_nofollow_deduplicated": 1178040,
+      "original_10pct_inode_floor_ok": true,
+      "original_2GiB_floor_ok": true,
+      "owner_uid": 1000,
+      "payload_files_read": 0,
+      "removed": false,
+      "root": "/workspace/scratch/rc6-ci-workspace-raw-final-1lz0lhoo",
+      "special": 0,
+      "total_inodes": 2097152,
+      "unique_physical_inodes": 141
+    },
+    {
+      "aliases": 0,
+      "allocated_bytes_nofollow_deduplicated": 3719168,
+      "device": 27,
+      "entries": 310,
+      "free_bytes": 24457330688,
+      "free_inodes": 1936142,
+      "inode": 1090606,
+      "logical_bytes_nofollow_deduplicated": 3164891,
+      "original_10pct_inode_floor_ok": true,
+      "original_2GiB_floor_ok": true,
+      "owner_uid": 1000,
+      "payload_files_read": 0,
+      "removed": false,
+      "root": "/workspace/scratch/rc6-ci-workspace-raw-final-9xuz24n4",
+      "special": 0,
+      "total_inodes": 2097152,
+      "unique_physical_inodes": 311
+    }
+  ],
+  "script_path": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/control/index_closed_raw.py",
+  "script_sha256": "f6d1c893928b5a74820e6bff4b431d21f9741784827e9fda18682ac370a64a87",
+  "source_edits": 0,
+  "successful_raw_index_sha256": "007296feb41dfe2a135c9799bd7b891c04d762a05e0c247e9f07a8f4c5b83aa3"
+}

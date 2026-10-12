@@ -65,7 +65,7 @@ def test_contract_never_auto_activates(tmp_path):
     assert r['auto_activation_allowed'] is False
 
 def _candle():
-    return hv2.Candle('AAA','ACCIONES','BYMA','A-24HS','2026-09-01',100,110,90,105,10,'PPI_PRODUCTION_HISTORY',False,'2026-09-02T20:00:00+00:00',{})
+    return hv2.Candle('AAA','ACCIONES','BYMA','A-24HS','2026-09-01',100,110,90,105,10,'PPI_PRODUCTION_HISTORY',False,'2026-09-02T20:00:00+00:00',{'currency':'ARS'})
 
 def test_history_identical_version_is_deduped(tmp_path):
     s=Store(tmp_path/'h.db')

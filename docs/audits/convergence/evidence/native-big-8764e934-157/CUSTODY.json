@@ -1,0 +1,380 @@
+{
+  "acceptance_complete": false,
+  "actual_factual_exits": {
+    "closed": 5,
+    "cpu_seconds": 0.08551220400000004,
+    "elapsed_seconds": 0.10316868701193016,
+    "finished_at_monotonic": 74690.995807904,
+    "io": {
+      "cancelled_write_bytes": 0,
+      "input_blocks": 0,
+      "output_blocks": 984,
+      "rchar": 2638451,
+      "read_bytes": 0,
+      "syscr": 691,
+      "syscw": 218,
+      "wchar": 449080,
+      "write_bytes": 503808
+    },
+    "real_orders_sent": 0,
+    "sell_fills": 5,
+    "stale_current_fresh_book": true,
+    "started_at_monotonic": 74690.892419641
+  },
+  "actual_slow_fsync": {
+    "blocked_seconds": 0.5603598000016063,
+    "completed_at_monotonic": 74691.001127597,
+    "entered_at_monotonic": 74690.435692025,
+    "fsync_completed": true,
+    "fsync_entered": true,
+    "member": "report.json.gz",
+    "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"
+  },
+  "actual_slow_fsync_exit_isolation_proven": true,
+  "actually_measured_source_database_stat_fields": [
+    "st_dev",
+    "st_ino",
+    "st_mode",
+    "st_uid",
+    "st_gid",
+    "st_nlink",
+    "st_size",
+    "st_blocks",
+    "st_atime_ns",
+    "st_mtime_ns",
+    "st_ctime_ns"
+  ],
+  "artifact_validated": false,
+  "browser_validated": false,
+  "child_cleanup_complete": false,
+  "cycle_complete": false,
+  "distribution_count": 157,
+  "external_wrapper_provenance": "Exact wrapper body preserved after execution; no independently recorded prelaunch body-hash attestation.",
+  "horizon_validated": false,
+  "installed_distribution_bytes_authenticated": false,
+  "native_completed_handler_spans": {
+    "checkpoint_restore": {
+      "calls": 3,
+      "cpu_seconds": 8.261459983000002,
+      "elapsed_seconds": 8.265834495003219,
+      "peak_rss_bytes": 1606672384,
+      "restored_sequences": [
+        1
+      ]
+    },
+    "entry_signals": {
+      "calls": 1,
+      "cpu_seconds": 0.05394848899999971,
+      "elapsed_seconds": 0.05388979200506583
+    },
+    "families": {
+      "calls": 1,
+      "cpu_seconds": 1.9219865570000003,
+      "elapsed_seconds": 1.9222192970046308
+    },
+    "funnel": {
+      "calls": 1,
+      "cpu_seconds": 10.283811429,
+      "elapsed_seconds": 10.289628002006793
+    },
+    "lab": {
+      "calls": 1,
+      "cpu_seconds": 0.13164247199999934,
+      "elapsed_seconds": 0.1315090840071207
+    },
+    "native_orchestrator": {
+      "calls": 2,
+      "cpu_seconds": 8.076984444,
+      "elapsed_seconds": 8.07822834799299,
+      "peak_rss_bytes": 497209344
+    },
+    "native_stage_enrichment": {
+      "calls": 1,
+      "cpu_seconds": 0.5040560359999997,
+      "elapsed_seconds": 0.5040123670041794,
+      "peak_rss_bytes": 497209344
+    },
+    "projection_header": {
+      "calls": 2,
+      "cpu_seconds": 0.10408469300000434,
+      "elapsed_seconds": 0.10395896599220578
+    },
+    "projection_prepare": {
+      "calls": 1,
+      "cpu_seconds": 3.638261741000001,
+      "elapsed_seconds": 3.640850618001423
+    },
+    "publication": {
+      "calls": 1,
+      "cpu_seconds": 51.968528106,
+      "elapsed_seconds": 52.587510737997945,
+      "peak_rss_bytes": 1606672384
+    },
+    "storage_encode": {
+      "calls": 7,
+      "cpu_seconds": 8.525187392000003,
+      "elapsed_seconds": 8.531442938983673,
+      "peak_rss_bytes": 1606672384
+    },
+    "storage_metrics": {
+      "calls": 4,
+      "cpu_seconds": 3.8705892309999896,
+      "elapsed_seconds": 3.8745728799985955,
+      "peak_rss_bytes": 1596530688
+    },
+    "storage_prepare": {
+      "calls": 4,
+      "cpu_seconds": 39.577162387,
+      "elapsed_seconds": 39.597361551001086,
+      "peak_rss_bytes": 1278599168
+    }
+  },
+  "native_import_closure_independently_audited": false,
+  "native_last_progress_cpu_seconds": 84.394807332,
+  "native_last_progress_elapsed_seconds": 85.03356837599131,
+  "native_peak_rss_bytes": 1606672384,
+  "native_phases": [
+    "BOUNDED_READ",
+    "PREOPEN_COMMITTED"
+  ],
+  "native_resource_gates": {
+    "actual_evidence_bytes": 36883757,
+    "actual_rss_bytes": 1606672384,
+    "actual_slow_fsync_exit_isolation": true,
+    "child_cleanup_completed": false,
+    "complete_committed_cycle": false,
+    "evidence_within_quota": true,
+    "maximum_evidence_bytes": 134217728,
+    "maximum_rss_bytes": 2147483648,
+    "rss_within_two_gib": true,
+    "source_database_unchanged": true
+  },
+  "native_returncode": 1,
+  "optional_diagnostic_gc_observer_enabled": false,
+  "original_cycle_deadline_seconds": 90,
+  "original_gc_policy_unchanged": true,
+  "raw_records": [
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 11412,
+      "capture_path": "/workspace/rc6-canonical-8764e934-big-raw/entry-preflight.json",
+      "encoding": "identity",
+      "original_bytes": 11412,
+      "original_sha256": "74b871359c6e3c7896a6f291f3e0b8fa7dee96ebcd716c89a3294386390ba432",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791235213236978416,
+        "st_blocks": 24,
+        "st_ctime_ns": 1791235212551239041,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 831700,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791235212551239041,
+        "st_nlink": 1,
+        "st_size": 11412,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-big-8764e934-157/entry-preflight.json",
+      "sha256": "74b871359c6e3c7896a6f291f3e0b8fa7dee96ebcd716c89a3294386390ba432"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 12304,
+      "capture_path": "/workspace/rc6-canonical-8764e934-big-raw/wrapper-before.json",
+      "encoding": "identity",
+      "original_bytes": 12304,
+      "original_sha256": "0c0e9a032bb1537feb9e83e96bac9ace77fbc91bb2e2710af7baf2e9d88ca193",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791235213236978416,
+        "st_blocks": 32,
+        "st_ctime_ns": 1791235213242668301,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 831701,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791235213242668301,
+        "st_nlink": 1,
+        "st_size": 12304,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-big-8764e934-157/wrapper-before.json",
+      "sha256": "0c0e9a032bb1537feb9e83e96bac9ace77fbc91bb2e2710af7baf2e9d88ca193"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 12607,
+      "capture_path": "/workspace/rc6-canonical-8764e934-big-raw/wrapper-final.json",
+      "encoding": "identity",
+      "original_bytes": 12607,
+      "original_sha256": "3831100208fc8ba3067979151b50b584094be34f16fc381738f20b4a1cb53917",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791235348604014955,
+        "st_blocks": 32,
+        "st_ctime_ns": 1791235305527746894,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 831704,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791235305527746894,
+        "st_nlink": 1,
+        "st_size": 12607,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-big-8764e934-157/wrapper-final.json",
+      "sha256": "3831100208fc8ba3067979151b50b584094be34f16fc381738f20b4a1cb53917"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 31833,
+      "capture_path": "/workspace/rc6-canonical-8764e934-big-raw/native-big-result.json",
+      "encoding": "identity",
+      "original_bytes": 31833,
+      "original_sha256": "9d66c84c7a07cddd8ed2b61af9b4331014fd04a039b099150ecc483df890c027",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791235305524321024,
+        "st_blocks": 64,
+        "st_ctime_ns": 1791235305027151386,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 831703,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791235305027151386,
+        "st_nlink": 1,
+        "st_size": 31833,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-big-8764e934-157/native-big-result.json",
+      "sha256": "9d66c84c7a07cddd8ed2b61af9b4331014fd04a039b099150ecc483df890c027"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 105,
+      "capture_path": "/workspace/rc6-canonical-8764e934-big-raw/big.log",
+      "encoding": "gzip-mtime0",
+      "original_bytes": 90,
+      "original_sha256": "da6b23582914533f50bef47d6ebdca080dbb9819167fd328ed1ca127d3b22e04",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791235305524321024,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791235305027151386,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 831702,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791235305027151386,
+        "st_nlink": 1,
+        "st_size": 90,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-big-8764e934-157/big.log.gz",
+      "sha256": "e30ee7d5cdc0c19726d22730920fbc76b3304467fd0daa65330a6db52b5b4234"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 204550,
+      "capture_path": "/workspace/rc6-whole-source-20261005-dispatch-8764-raw/source.index.json",
+      "encoding": "gzip-mtime0",
+      "original_bytes": 696926,
+      "original_sha256": "ad4f8e559a6f9b0c32c5ebdb6c04c35e5f9582e104811cf71ebbf284927a54d9",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791234601125332467,
+        "st_blocks": 1368,
+        "st_ctime_ns": 1791234601124769359,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 831698,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791234601124769359,
+        "st_nlink": 1,
+        "st_size": 696926,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-big-8764e934-157/source.index.json.gz",
+      "sha256": "0ad5a120122671a4cacde562dad57d8f98d0c7e3d675627926c3b773b3dc29d4"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 8747,
+      "capture_path": "/workspace/rc6-canonical-8764e934-big-wrapper.py",
+      "encoding": "identity",
+      "original_bytes": 8747,
+      "original_sha256": "342cf31542114f233061d0c2ee85916c969581287ebd7b45afe7bff18292c58f",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791235212256985388,
+        "st_blocks": 24,
+        "st_ctime_ns": 1791234601197543581,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 306944,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791234601197543581,
+        "st_nlink": 1,
+        "st_size": 8747,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-big-8764e934-157/run-wrapper.py.source",
+      "sha256": "342cf31542114f233061d0c2ee85916c969581287ebd7b45afe7bff18292c58f"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 3075,
+      "capture_path": "/tmp/rc6_prepare_native_big_wrapper.py",
+      "encoding": "identity",
+      "original_bytes": 3075,
+      "original_sha256": "9321000122729053b59687d4f03e9319d0029d2b6fba3ccf6df1a405e0fe2458",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791220049771446988,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791219856208932180,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3026258,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791219856208932180,
+        "st_nlink": 1,
+        "st_size": 3075,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-big-8764e934-157/prepare-wrapper.py.source",
+      "sha256": "9321000122729053b59687d4f03e9319d0029d2b6fba3ccf6df1a405e0fe2458"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 4874,
+      "capture_path": "/tmp/rc6_export_whole_git_source.py",
+      "encoding": "identity",
+      "original_bytes": 4874,
+      "original_sha256": "4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791216255471074152,
+        "st_blocks": 16,
+        "st_ctime_ns": 1791216255163077191,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3023952,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791216255163077191,
+        "st_nlink": 1,
+        "st_size": 4874,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/native-big-8764e934-157/export-whole-source.py.source",
+      "sha256": "4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa"
+    }
+  ],
+  "remaining_blocker": "SHADOW_CONSERVATIVE_CYCLE_DEADLINE_PREOPEN_COMPLETED_NO_OPEN_COMPLETION",
+  "runtime_validated": false,
+  "schema": "rc6.native-big-whole-source-witness-custody.v2",
+  "scope": "ROOT_SOURCE_ONLY_UNINSTRUMENTED_CANONICAL_BIG_NOT_FINAL_GOV_IMAGE_HORIZON_BROWSER_OR_RUNTIME",
+  "source_database_all11stats_sha_unchanged": true,
+  "source_database_scope": "Present MAIN/WAL/SHM/journal members only; absent sidecars are not physical WAL/SHM execution.",
+  "source_files": 2145,
+  "source_index_sha256": "ad4f8e559a6f9b0c32c5ebdb6c04c35e5f9582e104811cf71ebbf284927a54d9",
+  "source_overlay_count": 0,
+  "source_sha": "8764e9348000c4f5dcdc7e63b3cdcc018352c789",
+  "source_tar_capture_path": "/workspace/rc6-whole-source-20261005-dispatch-8764-raw/source.tar",
+  "source_tar_sha256": "1aff37002e698d504d633d33401ba443937f0d6142f761feba329b2a89681f98",
+  "source_tree": "e048bffb5aa6eeb250ab0eb6ec52f647cc95c01f",
+  "timer_scope": "Completed inclusive spans and last progress are partial, overlapping observations. PREOPEN completed at85.034s; no OPEN completion inside90s. No isolated percentage saving is established.",
+  "whole_source_bytes_modes_blobs_unchanged": true
+}

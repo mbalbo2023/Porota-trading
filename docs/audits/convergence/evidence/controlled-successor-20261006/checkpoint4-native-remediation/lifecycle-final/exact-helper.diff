@@ -1,0 +1,169 @@
+diff --git a/scripts/rc6_controlled_governed_runner.py b/scripts/rc6_controlled_governed_runner.py
+index ef98ca9..2dfc51b 100644
+--- a/scripts/rc6_controlled_governed_runner.py
++++ b/scripts/rc6_controlled_governed_runner.py
+@@ -164,7 +164,7 @@ def finalize_child_infrastructure(initial, limit=5):
+               'PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION',
+               'initial': initial, 'joined_children': [], 'stopped_owned_infrastructure': [],
+               'inherited_tracker_preserved': False, 'kernel_echild_before_phase_return': False,
+-              'errors': [], 'unexpected_kernel_children': []}
++              'errors': [], 'unexpected_kernel_children': [], 'protocol_steps': []}
+     signal_guard = {'active': False, 'witness_seen': False}
+     witness = object()
+ 
+@@ -202,51 +202,89 @@ def finalize_child_infrastructure(initial, limit=5):
+                 'INFRASTRUCTURE_NOT_AN_OWN_KERNEL_CHILD')
+         return identity
+ 
+-    def finalize():
++    def protocol_step(stage, action):
++        started = time.monotonic()
++        completed = False
+         try:
+-            util._run_finalizers(0)
+-            require(not report['termination_signal_attempts'], 'CHILD_FINALIZATION_SIGNAL_ATTEMPT_DENIED')
+-            for process in mp.active_children():
+-                process.join(max(0, deadline-time.monotonic()))
+-                require(not process.is_alive(), 'OWN_MULTIPROCESSING_CHILD_DID_NOT_FINISH')
+-                report['joined_children'].append({'pid': process.pid, 'exitcode': process.exitcode})
+-            server, tracker = forkserver._forkserver, resource_tracker._resource_tracker
+-            if server._forkserver_pid is not None:
+-                pid = server._forkserver_pid
+-                identity = own_kernel_child(pid)
+-                server._stop()  # Actual alive-pipe close, specific waitpid and socket removal.
+-                require(server._forkserver_pid is None and server._forkserver_alive_fd is None,
+-                        'OWN_FORKSERVER_NOT_STOPPED')
+-                report['stopped_owned_infrastructure'].append({'kind': 'forkserver', 'pid': pid, 'kernel_identity': identity})
+-            # Keep the concrete forkserver socket's owning temporary directory
+-            # until its real stop/unlink protocol has completed.
+-            util._run_finalizers()
+-            require(not report['termination_signal_attempts'], 'CHILD_FINALIZATION_SIGNAL_ATTEMPT_DENIED')
+-            if tracker._pid is not None:
+-                pid = tracker._pid
+-                identity = own_kernel_child(pid)
+-                tracker._stop()  # Actual tracker alive-pipe close and specific waitpid.
+-                require(tracker._pid is None and tracker._fd is None, 'OWN_RESOURCE_TRACKER_NOT_STOPPED')
+-                report['stopped_owned_infrastructure'].append({'kind': 'resource_tracker', 'pid': pid, 'kernel_identity': identity})
+-            elif tracker._fd is not None:
+-                require(initial['resource_tracker_pid'] is None
+-                        and initial['resource_tracker_fd'] == tracker._fd,
+-                        'UNEXPECTED_INHERITED_RESOURCE_TRACKER_STATE')
+-                report['inherited_tracker_preserved'] = True
+-            try:
+-                found, status, _usage = os.wait4(-1, os.WNOHANG)
+-            except ChildProcessError as error:
+-                require(error.errno == errno.ECHILD, 'CHILD_KERNEL_EXHAUSTION_ERRNO_UNVERIFIED')
+-                report['kernel_echild_before_phase_return'] = True
+-            else:
+-                report['unexpected_kernel_children'].append({'pid': found,
+-                    'exitcode': os.waitstatus_to_exitcode(status) if found else None})
+-                raise RuntimeError('CHILD_KERNEL_EXHAUSTION_NOT_PROVED')
++            require(started <= deadline, 'CHILD_FINALIZATION_DEADLINE_EXCEEDED')
++            action()
+             require(time.monotonic() <= deadline, 'CHILD_FINALIZATION_DEADLINE_EXCEEDED')
+-            require(not report['termination_signal_attempts'], 'CHILD_FINALIZATION_SIGNAL_ATTEMPT_DENIED')
+-            report['status'] = 'GREEN'
++            completed = True
+         except BaseException as error:
+-            report['errors'].append({'class': type(error).__name__, 'reason': str(error)})
++            literal = str(error).partition(':')[0]
++            reason = (literal if re.fullmatch(r'[A-Z][A-Z0-9_]{0,191}', literal)
++                      else 'CHILD_FINALIZATION_PROTOCOL_ERROR')
++            observed = {'stage': stage, 'class': type(error).__name__, 'reason': reason}
++            if isinstance(error, OSError) and type(error.errno) is int:
++                observed['errno'] = error.errno
++            report['errors'].append(observed)
++        finally:
++            report['protocol_steps'].append({'stage': stage, 'completed': completed,
++                'wall_seconds': time.monotonic()-started})
++            if (report['termination_signal_attempts']
++                    and not any(row['reason'] == 'CHILD_FINALIZATION_SIGNAL_ATTEMPT_DENIED'
++                                for row in report['errors'])):
++                report['errors'].append({'stage': stage, 'class': 'RuntimeError',
++                    'reason': 'CHILD_FINALIZATION_SIGNAL_ATTEMPT_DENIED'})
++
++    def join_owned_children():
++        for process in mp.active_children():
++            process.join(max(0, deadline-time.monotonic()))
++            require(not process.is_alive(), 'OWN_MULTIPROCESSING_CHILD_DID_NOT_FINISH')
++            report['joined_children'].append({'pid': process.pid, 'exitcode': process.exitcode})
++
++    def stop_owned_forkserver():
++        server = forkserver._forkserver
++        if server._forkserver_pid is not None:
++            pid = server._forkserver_pid
++            identity = own_kernel_child(pid)
++            server._stop()  # Actual alive-pipe close, specific waitpid and socket removal.
++            require(server._forkserver_pid is None and server._forkserver_alive_fd is None,
++                    'OWN_FORKSERVER_NOT_STOPPED')
++            report['stopped_owned_infrastructure'].append({'kind': 'forkserver', 'pid': pid,
++                'kernel_identity': identity})
++
++    def stop_owned_tracker():
++        tracker = resource_tracker._resource_tracker
++        if tracker._pid is not None:
++            pid = tracker._pid
++            identity = own_kernel_child(pid)
++            tracker._stop()  # Actual tracker alive-pipe close and specific waitpid.
++            require(tracker._pid is None and tracker._fd is None, 'OWN_RESOURCE_TRACKER_NOT_STOPPED')
++            report['stopped_owned_infrastructure'].append({'kind': 'resource_tracker', 'pid': pid,
++                'kernel_identity': identity})
++        elif tracker._fd is not None:
++            require(initial['resource_tracker_pid'] is None
++                    and initial['resource_tracker_fd'] == tracker._fd,
++                    'UNEXPECTED_INHERITED_RESOURCE_TRACKER_STATE')
++            report['inherited_tracker_preserved'] = True
++
++    def verify_kernel_exhaustion():
++        try:
++            found, status, _usage = os.wait4(-1, os.WNOHANG)
++        except ChildProcessError as error:
++            require(error.errno == errno.ECHILD, 'CHILD_KERNEL_EXHAUSTION_ERRNO_UNVERIFIED')
++            report['kernel_echild_before_phase_return'] = True
++        else:
++            report['unexpected_kernel_children'].append({'pid': found,
++                'exitcode': os.waitstatus_to_exitcode(status) if found else None})
++            raise RuntimeError('CHILD_KERNEL_EXHAUSTION_NOT_PROVED')
++
++    def finalize():
++        try:
++            # A veto or earlier error remains irreversible RED. It cannot skip
++            # later safe JOIN/EOF protocols while the same total bound remains.
++            protocol_step('nonnegative_stdlib_finalizers', lambda: util._run_finalizers(0))
++            protocol_step('join_owned_children', join_owned_children)
++            protocol_step('stop_owned_forkserver', stop_owned_forkserver)
++            # Keep concrete forkserver paths until its actual stop/unlink ended.
++            protocol_step('remaining_stdlib_finalizers', util._run_finalizers)
++            protocol_step('stop_owned_resource_tracker', stop_owned_tracker)
++            protocol_step('verify_kernel_echild', verify_kernel_exhaustion)
++            if (not report['errors'] and not report['termination_signal_attempts']
++                    and not report['forced_termination_attempted'] and not report['signal_vetoed']
++                    and report['kernel_echild_before_phase_return'] and time.monotonic() <= deadline):
++                report['status'] = 'GREEN'
+         finally:
+             signal_guard['active'] = False
+ 
+@@ -754,7 +792,11 @@ def subprocess_phase(command, root, output, env, limit):
+ 
+ def install_phase_audit(observations):
+     """Keep every reached DNS/INET operation DENIED and counted as RED."""
++    witness = object()
++    registration = {'witness_seen': False}
+     def observe(event, arguments):
++        if event == 'rc6.governed_inet.operation_audit' and arguments == (witness,):
++            registration['witness_seen'] = True
+         if event == 'socket.__new__' and arguments[1] in (socket.AF_INET, socket.AF_INET6):
+             observations['inet_socket_constructor_requests'].append({
+                 'event': event, 'family': int(arguments[1]),
+@@ -776,6 +818,11 @@ def install_phase_audit(observations):
+                 observations['inet_socket_attempts'].append('NETWORK_CLIENT_EXECUTABLE_FORBIDDEN')
+                 raise RuntimeError('GOVERNED_NETWORK_CLIENT_EXECUTABLE_FORBIDDEN')
+     sys.addaudithook(observe)
++    # Earlier hooks may silently veto addaudithook. This literal event proves
++    # the actual callback ran without reaching DNS/INET or clearing counters.
++    sys.audit('rc6.governed_inet.operation_audit', witness)
++    require(registration['witness_seen'], 'GOVERNED_INET_OPERATION_AUDIT_NOT_INSTALLED')
++    return registration['witness_seen']
+ 
+ 
+ def phase_child(args):

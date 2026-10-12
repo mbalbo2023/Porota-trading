@@ -1,0 +1,20 @@
+{
+  "executed": false,
+  "filter": "exact network call site identifiers; SQL connect and unrelated binding names excluded only from this static diagnostic list",
+  "findings": [
+    {
+      "calls": [
+        {
+          "call": "socket.create_connection(('must-never-resolve.invalid', 443))",
+          "line": 159
+        }
+      ],
+      "git_blob": "6203b782cdbee8094fbebf372b87f4ce9c5e2ce0",
+      "path": "tests/test_rc6_archive_v3_image_smoke.py"
+    }
+  ],
+  "initial_broad_scan_preserved": "GOV_INET_SOURCE_CALLER_SCAN.initial-broad.json",
+  "schema": "rc6.gov-inet-source-caller-review.v1",
+  "scope": "SOURCE_CALL_SITE_CANDIDATES_ONLY; no execution, imported modules or proven branch behavior",
+  "source_sha": "d05078845cd40b37ef75744ea80a1695c2b37dbb"
+}

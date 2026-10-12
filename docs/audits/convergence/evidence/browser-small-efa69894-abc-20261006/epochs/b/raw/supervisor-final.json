@@ -1,0 +1,1229 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "failures": [
+    {
+      "class": "ValueError",
+      "phase": "normal",
+      "reason": "SMALL_NATIVE_STAGE_NOT_GREEN"
+    }
+  ],
+  "helper_scope_literal_is_historical_origin_only": true,
+  "index": "/workspace/rc6-root-efa69894-browser-20261006-source-raw/source.index.json",
+  "normal_browser_pass": false,
+  "original_native_caps": {
+    "health_roundtrip": 2,
+    "preparation": 90,
+    "render_roundtrip": 1,
+    "rpc": 20
+  },
+  "origins": {
+    "require_function_sha256": "3fdec831bc6a8b34347d709354ae8fde3c062ad2c902f070ba93171e01685951",
+    "source_custody_origin_sha256": "c8f872b75544eb5102a0c769847a8ad51872aa3a920fe204b3c78ab41a8a7bfb",
+    "subprocess_phase_function_sha256": "ca89e2f41c41afeaca1c52ef7fa2c0e9817abd833b69b7973f68c2b32e8accb5",
+    "subprocess_phase_source_sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313"
+  },
+  "phase_caps_management_seconds": {
+    "health": 120,
+    "normal": 600
+  },
+  "phase_results": [
+    {
+      "actual_stage_pid": 244402,
+      "kernel_observation": {
+        "actual_child_reaped": true,
+        "actual_child_role": "OWN_STDLIB_STAGE_INCLUDING_ADMISSION_NATIVE_DRIVER_AND_FINAL_CAPTURE",
+        "actual_launch_to_pid_reap_wall_seconds": 3.9117838589882012,
+        "adopted_descendants_reaped": [],
+        "command": [
+          "/workspace/venv_rc6/bin/python",
+          "-I",
+          "-B",
+          "/workspace/rc6_root_normal_browser_supervisor_efa69894_v2.py",
+          "--internal-stage",
+          "normal",
+          "--output-root",
+          "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b",
+          "--ticket",
+          "23727f90206e4824b00d34b95e66d58b"
+        ],
+        "cpu_system_seconds": 1.139536,
+        "cpu_user_seconds": 2.702665,
+        "historical_helper_scope_is_origin_not_pytest_execution": true,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 83197952,
+        "phase_acceptance_deadline_seconds": 600,
+        "pid": 244402,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 1,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "244401",
+          "Tgid": "244401",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 244401,
+        "supervisor_pid": 244401,
+        "termination_reap_restore_cleanup_seconds": 0.00011942299897782505,
+        "timed_out": false,
+        "wait4_reaped_pid": 244402,
+        "wall_seconds": 3.9125104139966425
+      },
+      "phase": "normal",
+      "stage_receipt": {
+        "acceptance_complete": false,
+        "artifact_validated": false,
+        "command": [
+          "/workspace/venv_rc6/bin/python",
+          "-I",
+          "-B",
+          "/workspace/rc6-root-efa69894-browser-20261006-source/tests/ci_trader_terminal_browser.py",
+          "--product-python",
+          "/workspace/venv_rc6_frozen311/bin/python",
+          "--product-python-version",
+          "3.11",
+          "--index",
+          "/workspace/rc6-root-efa69894-browser-20261006-source-raw/source.index.json",
+          "--output",
+          "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b/browser-normal",
+          "--multifamily"
+        ],
+        "cwd": "/workspace/rc6-root-efa69894-browser-20261006-source",
+        "driver_environment": {
+          "driver_extra_pins": {
+            "greenlet": "3.5.6",
+            "playwright": "1.63.0",
+            "pyee": "13.0.1",
+            "setuptools": "84.0.0"
+          },
+          "driver_extra_provenance": "ROOT_OBSERVED_INSTALLED_DISTRIBUTION_METADATA; NOT_PRODUCT_LOCK",
+          "driver_runtime_locked_count": 154,
+          "executable": "/workspace/venv_rc6/bin/python",
+          "installed": {
+            "aiohappyeyeballs": "2.7.1",
+            "aiohttp": "3.14.3",
+            "aiosignal": "1.4.0",
+            "annotated-doc": "0.0.5",
+            "annotated-types": "0.8.0",
+            "anthropic": "1.8.0",
+            "anyio": "4.15.1",
+            "apscheduler": "3.11.3",
+            "asgiref": "3.12.1",
+            "attrs": "26.1.0",
+            "backoff": "2.2.1",
+            "bcrypt": "5.0.0",
+            "beautifulsoup4": "4.15.0",
+            "build": "1.6.1",
+            "certifi": "2026.7.22",
+            "cffi": "2.1.1",
+            "charset-normalizer": "3.5.1",
+            "chroma-hnswlib": "0.7.6",
+            "chromadb": "0.5.23",
+            "click": "8.5.0",
+            "cloudpickle": "3.1.2",
+            "coverage": "7.16.1",
+            "cryptography": "50.0.1",
+            "curl-cffi": "0.16.3",
+            "distro": "1.9.0",
+            "docstring-parser": "0.18.0",
+            "durationpy": "0.11",
+            "fastapi": "0.141.1",
+            "feedparser": "6.0.14",
+            "feedparser-sgmllib": "2.1.0",
+            "filelock": "4.0.3",
+            "flake8": "7.4.1",
+            "flatbuffers": "25.12.19",
+            "frozenlist": "1.8.0",
+            "fsspec": "2026.9.0",
+            "google-auth": "2.58.1",
+            "google-genai": "2.25.0",
+            "googleapis-common-protos": "1.75.4",
+            "greenlet": "3.5.6",
+            "grpcio": "1.84.0",
+            "h11": "0.16.0",
+            "hf-xet": "1.6.0",
+            "httpcore": "1.0.9",
+            "httpcore2": "2.13.1",
+            "httptools": "0.8.0",
+            "httpx": "0.28.1",
+            "httpx2": "2.13.1",
+            "huggingface-hub": "0.36.2",
+            "hypothesis": "6.168.1",
+            "idna": "3.20",
+            "importlib-resources": "7.1.0",
+            "iniconfig": "2.3.0",
+            "jiter": "0.17.0",
+            "joblib": "1.6.0",
+            "jsonpatch": "1.33",
+            "jsonpointer": "3.1.1",
+            "kubernetes": "36.0.3",
+            "langchain-core": "1.6.5",
+            "langchain-protocol": "0.0.19",
+            "langgraph": "1.2.11",
+            "langgraph-checkpoint": "4.2.0",
+            "langgraph-prebuilt": "1.1.0",
+            "langgraph-sdk": "0.4.5",
+            "langsmith": "0.14.0",
+            "lxml": "6.1.3",
+            "markdown-it-py": "4.2.0",
+            "mccabe": "0.7.0",
+            "mdurl": "0.1.2",
+            "mmh3": "5.3.0",
+            "msgpack": "1.0.2",
+            "multidict": "6.9.1",
+            "multitasking": "0.0.13",
+            "narwhals": "2.26.0",
+            "numpy": "2.4.6",
+            "oauthlib": "3.3.1",
+            "onnxruntime": "1.30.0",
+            "opentelemetry-api": "1.44.0",
+            "opentelemetry-exporter-otlp-proto-common": "1.44.0",
+            "opentelemetry-exporter-otlp-proto-grpc": "1.44.0",
+            "opentelemetry-instrumentation": "0.65b0",
+            "opentelemetry-instrumentation-asgi": "0.65b0",
+            "opentelemetry-instrumentation-fastapi": "0.65b0",
+            "opentelemetry-proto": "1.44.0",
+            "opentelemetry-sdk": "1.44.0",
+            "opentelemetry-semantic-conventions": "0.65b0",
+            "opentelemetry-util-http": "0.65b0",
+            "orjson": "3.12.0",
+            "ormsgpack": "1.12.2",
+            "overrides": "7.7.0",
+            "packaging": "26.3",
+            "pandas": "2.3.3",
+            "peewee": "4.5.1",
+            "pillow": "12.3.0",
+            "platformdirs": "4.11.12",
+            "playwright": "1.63.0",
+            "pluggy": "1.6.0",
+            "posthog": "7.60.0",
+            "ppi-client": "1.3.0",
+            "propcache": "0.5.4",
+            "protobuf": "7.36.2",
+            "pyasn1": "0.6.4",
+            "pyasn1-modules": "0.4.2",
+            "pycodestyle": "2.15.0",
+            "pycparser": "3.0",
+            "pydantic": "2.13.5",
+            "pydantic-core": "2.46.5",
+            "pyee": "13.0.1",
+            "pyflakes": "4.0.0",
+            "pygments": "2.21.0",
+            "pypika": "0.51.1",
+            "pyproject-hooks": "1.3.3",
+            "pytest": "9.1.1",
+            "pytest-cov": "7.1.0",
+            "python-dateutil": "2.9.0.post0",
+            "python-dotenv": "1.2.3",
+            "python-multipart": "0.0.32",
+            "pytz": "2026.4",
+            "pyyaml": "6.0.3",
+            "reportlab": "4.5.1",
+            "requests": "2.34.2",
+            "requests-oauthlib": "2.0.0",
+            "requests-toolbelt": "1.0.0",
+            "responses": "0.26.3",
+            "rich": "15.0.0",
+            "scikit-learn": "1.9.1",
+            "scipy": "1.17.1",
+            "setuptools": "84.0.0",
+            "shellingham": "1.5.4",
+            "signalrcoreppi": "0.9.2",
+            "six": "1.17.0",
+            "sniffio": "1.3.1",
+            "sortedcontainers": "2.4.0",
+            "soupsieve": "2.10",
+            "starlette": "1.7.0",
+            "ta": "0.11.0",
+            "tenacity": "9.1.4",
+            "threadpoolctl": "3.7.0",
+            "tokenizers": "0.20.3",
+            "tqdm": "4.70.1",
+            "truststore": "0.10.4",
+            "typer": "0.27.2",
+            "typing-extensions": "4.16.0",
+            "typing-inspection": "0.4.4",
+            "tzdata": "2026.4",
+            "tzlocal": "5.4.4",
+            "urllib3": "2.8.0",
+            "uuid-utils": "0.17.1",
+            "uvicorn": "0.53.0",
+            "uvloop": "0.22.1",
+            "vcrpy": "8.3.0",
+            "watchfiles": "1.3.0",
+            "websocket-client": "1.0.0",
+            "websockets": "16.1.1",
+            "wrapt": "2.4.1",
+            "xxhash": "4.0.1",
+            "yarl": "1.25.1",
+            "yfinance": "1.7.0",
+            "zstandard": "0.25.0"
+          },
+          "installed_count": 158,
+          "locked_product_count": 157,
+          "locks": {
+            "requirements.build.lock.txt": {
+              "pins": 3,
+              "sha256": "99580ecdbe0eda85a1894ddd4d8cd41aab94da5c40035668c67092c28092344b"
+            },
+            "requirements.lock.txt": {
+              "pins": 154,
+              "sha256": "c521c7503b2930290aa7acb7e549750d761ba36d74849d0981d91dc5e285d6ce"
+            }
+          },
+          "prefix": "/workspace/venv_rc6",
+          "python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+          "scope": "DRIVER_METADATA_NOT_DISTRIBUTION_BINARY_AUTHENTICATION; PRODUCT157_PREFLIGHT_OWNED_BY_NATIVE_HANDLERS"
+        },
+        "driver_pid": 244414,
+        "driver_reaped": true,
+        "driver_returncode": 1,
+        "failures": [
+          {
+            "class": "ValueError",
+            "reason": "DRIVER_NATIVE_BROWSER_OR_HEALTH_RETURNED_RED"
+          }
+        ],
+        "observed_code_atime_phase_changes": {
+          "requirements.build.lock.txt": {
+            "after_ns": 1791249372719131833,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "requirements.lock.txt": {
+            "after_ns": 1791249372719131833,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "tests/ci_rc6_browser_prepare.py": {
+            "after_ns": 1791249372547133040,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "tests/ci_trader_terminal_browser.py": {
+            "after_ns": 1791249371919137446,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "tests/rc6_browser_coverage.py": {
+            "after_ns": 1791249372011136801,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "tests/rc6_browser_ipc.py": {
+            "after_ns": 1791249371935137334,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "tests/rc6_browser_prepared.py": {
+            "after_ns": 1791249372011136801,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          }
+        },
+        "owned_pgid": 244402,
+        "phase": "normal",
+        "raw_identity": {
+          "device": 27,
+          "gid": 1000,
+          "inode": 938504,
+          "mount_id": 52,
+          "uid": 1000
+        },
+        "runtime_validated": false,
+        "schema": "rc6.root-small-browser-stage.v1",
+        "source_index_sha256": "9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517",
+        "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+        "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+        "stage_elapsed_seconds": 3.7437366989906877,
+        "stage_pid": 244402,
+        "status": "RED",
+        "supervisor_pid": 244401,
+        "target_output": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b/browser-normal",
+        "whole_source_stable_custody_unchanged": true
+      },
+      "stage_receipt_sha256": "26478213f816e5bafcbf14ca570223df699d081d10224f6c1a1b17b71c98a77f",
+      "status": "RED"
+    },
+    {
+      "actual_stage_pid": 244427,
+      "kernel_observation": {
+        "actual_child_reaped": true,
+        "actual_child_role": "OWN_STDLIB_STAGE_INCLUDING_ADMISSION_NATIVE_DRIVER_AND_FINAL_CAPTURE",
+        "actual_launch_to_pid_reap_wall_seconds": 6.512002988005406,
+        "adopted_descendants_reaped": [],
+        "command": [
+          "/workspace/venv_rc6/bin/python",
+          "-I",
+          "-B",
+          "/workspace/rc6_root_normal_browser_supervisor_efa69894_v2.py",
+          "--internal-stage",
+          "health",
+          "--output-root",
+          "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b",
+          "--ticket",
+          "23727f90206e4824b00d34b95e66d58b"
+        ],
+        "cpu_system_seconds": 1.204563,
+        "cpu_user_seconds": 5.185854,
+        "historical_helper_scope_is_origin_not_pytest_execution": true,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 112332800,
+        "phase_acceptance_deadline_seconds": 120,
+        "pid": 244427,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "244401",
+          "Tgid": "244401",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 244401,
+        "supervisor_pid": 244401,
+        "termination_reap_restore_cleanup_seconds": 0.0002181979943998158,
+        "timed_out": false,
+        "wait4_reaped_pid": 244427,
+        "wall_seconds": 6.512547138001537
+      },
+      "phase": "health",
+      "stage_receipt": {
+        "acceptance_complete": false,
+        "artifact_validated": false,
+        "command": [
+          "/workspace/venv_rc6/bin/python",
+          "-I",
+          "-B",
+          "/workspace/rc6-root-efa69894-browser-20261006-source/tests/ci_rc6_browser_health.py",
+          "--product-python",
+          "/workspace/venv_rc6_frozen311/bin/python",
+          "--product-python-version",
+          "3.11",
+          "--index",
+          "/workspace/rc6-root-efa69894-browser-20261006-source-raw/source.index.json",
+          "--output",
+          "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b/health-live-small"
+        ],
+        "cwd": "/workspace/rc6-root-efa69894-browser-20261006-source",
+        "driver_environment": {
+          "driver_extra_pins": {
+            "greenlet": "3.5.6",
+            "playwright": "1.63.0",
+            "pyee": "13.0.1",
+            "setuptools": "84.0.0"
+          },
+          "driver_extra_provenance": "ROOT_OBSERVED_INSTALLED_DISTRIBUTION_METADATA; NOT_PRODUCT_LOCK",
+          "driver_runtime_locked_count": 154,
+          "executable": "/workspace/venv_rc6/bin/python",
+          "installed": {
+            "aiohappyeyeballs": "2.7.1",
+            "aiohttp": "3.14.3",
+            "aiosignal": "1.4.0",
+            "annotated-doc": "0.0.5",
+            "annotated-types": "0.8.0",
+            "anthropic": "1.8.0",
+            "anyio": "4.15.1",
+            "apscheduler": "3.11.3",
+            "asgiref": "3.12.1",
+            "attrs": "26.1.0",
+            "backoff": "2.2.1",
+            "bcrypt": "5.0.0",
+            "beautifulsoup4": "4.15.0",
+            "build": "1.6.1",
+            "certifi": "2026.7.22",
+            "cffi": "2.1.1",
+            "charset-normalizer": "3.5.1",
+            "chroma-hnswlib": "0.7.6",
+            "chromadb": "0.5.23",
+            "click": "8.5.0",
+            "cloudpickle": "3.1.2",
+            "coverage": "7.16.1",
+            "cryptography": "50.0.1",
+            "curl-cffi": "0.16.3",
+            "distro": "1.9.0",
+            "docstring-parser": "0.18.0",
+            "durationpy": "0.11",
+            "fastapi": "0.141.1",
+            "feedparser": "6.0.14",
+            "feedparser-sgmllib": "2.1.0",
+            "filelock": "4.0.3",
+            "flake8": "7.4.1",
+            "flatbuffers": "25.12.19",
+            "frozenlist": "1.8.0",
+            "fsspec": "2026.9.0",
+            "google-auth": "2.58.1",
+            "google-genai": "2.25.0",
+            "googleapis-common-protos": "1.75.4",
+            "greenlet": "3.5.6",
+            "grpcio": "1.84.0",
+            "h11": "0.16.0",
+            "hf-xet": "1.6.0",
+            "httpcore": "1.0.9",
+            "httpcore2": "2.13.1",
+            "httptools": "0.8.0",
+            "httpx": "0.28.1",
+            "httpx2": "2.13.1",
+            "huggingface-hub": "0.36.2",
+            "hypothesis": "6.168.1",
+            "idna": "3.20",
+            "importlib-resources": "7.1.0",
+            "iniconfig": "2.3.0",
+            "jiter": "0.17.0",
+            "joblib": "1.6.0",
+            "jsonpatch": "1.33",
+            "jsonpointer": "3.1.1",
+            "kubernetes": "36.0.3",
+            "langchain-core": "1.6.5",
+            "langchain-protocol": "0.0.19",
+            "langgraph": "1.2.11",
+            "langgraph-checkpoint": "4.2.0",
+            "langgraph-prebuilt": "1.1.0",
+            "langgraph-sdk": "0.4.5",
+            "langsmith": "0.14.0",
+            "lxml": "6.1.3",
+            "markdown-it-py": "4.2.0",
+            "mccabe": "0.7.0",
+            "mdurl": "0.1.2",
+            "mmh3": "5.3.0",
+            "msgpack": "1.0.2",
+            "multidict": "6.9.1",
+            "multitasking": "0.0.13",
+            "narwhals": "2.26.0",
+            "numpy": "2.4.6",
+            "oauthlib": "3.3.1",
+            "onnxruntime": "1.30.0",
+            "opentelemetry-api": "1.44.0",
+            "opentelemetry-exporter-otlp-proto-common": "1.44.0",
+            "opentelemetry-exporter-otlp-proto-grpc": "1.44.0",
+            "opentelemetry-instrumentation": "0.65b0",
+            "opentelemetry-instrumentation-asgi": "0.65b0",
+            "opentelemetry-instrumentation-fastapi": "0.65b0",
+            "opentelemetry-proto": "1.44.0",
+            "opentelemetry-sdk": "1.44.0",
+            "opentelemetry-semantic-conventions": "0.65b0",
+            "opentelemetry-util-http": "0.65b0",
+            "orjson": "3.12.0",
+            "ormsgpack": "1.12.2",
+            "overrides": "7.7.0",
+            "packaging": "26.3",
+            "pandas": "2.3.3",
+            "peewee": "4.5.1",
+            "pillow": "12.3.0",
+            "platformdirs": "4.11.12",
+            "playwright": "1.63.0",
+            "pluggy": "1.6.0",
+            "posthog": "7.60.0",
+            "ppi-client": "1.3.0",
+            "propcache": "0.5.4",
+            "protobuf": "7.36.2",
+            "pyasn1": "0.6.4",
+            "pyasn1-modules": "0.4.2",
+            "pycodestyle": "2.15.0",
+            "pycparser": "3.0",
+            "pydantic": "2.13.5",
+            "pydantic-core": "2.46.5",
+            "pyee": "13.0.1",
+            "pyflakes": "4.0.0",
+            "pygments": "2.21.0",
+            "pypika": "0.51.1",
+            "pyproject-hooks": "1.3.3",
+            "pytest": "9.1.1",
+            "pytest-cov": "7.1.0",
+            "python-dateutil": "2.9.0.post0",
+            "python-dotenv": "1.2.3",
+            "python-multipart": "0.0.32",
+            "pytz": "2026.4",
+            "pyyaml": "6.0.3",
+            "reportlab": "4.5.1",
+            "requests": "2.34.2",
+            "requests-oauthlib": "2.0.0",
+            "requests-toolbelt": "1.0.0",
+            "responses": "0.26.3",
+            "rich": "15.0.0",
+            "scikit-learn": "1.9.1",
+            "scipy": "1.17.1",
+            "setuptools": "84.0.0",
+            "shellingham": "1.5.4",
+            "signalrcoreppi": "0.9.2",
+            "six": "1.17.0",
+            "sniffio": "1.3.1",
+            "sortedcontainers": "2.4.0",
+            "soupsieve": "2.10",
+            "starlette": "1.7.0",
+            "ta": "0.11.0",
+            "tenacity": "9.1.4",
+            "threadpoolctl": "3.7.0",
+            "tokenizers": "0.20.3",
+            "tqdm": "4.70.1",
+            "truststore": "0.10.4",
+            "typer": "0.27.2",
+            "typing-extensions": "4.16.0",
+            "typing-inspection": "0.4.4",
+            "tzdata": "2026.4",
+            "tzlocal": "5.4.4",
+            "urllib3": "2.8.0",
+            "uuid-utils": "0.17.1",
+            "uvicorn": "0.53.0",
+            "uvloop": "0.22.1",
+            "vcrpy": "8.3.0",
+            "watchfiles": "1.3.0",
+            "websocket-client": "1.0.0",
+            "websockets": "16.1.1",
+            "wrapt": "2.4.1",
+            "xxhash": "4.0.1",
+            "yarl": "1.25.1",
+            "yfinance": "1.7.0",
+            "zstandard": "0.25.0"
+          },
+          "installed_count": 158,
+          "locked_product_count": 157,
+          "locks": {
+            "requirements.build.lock.txt": {
+              "pins": 3,
+              "sha256": "99580ecdbe0eda85a1894ddd4d8cd41aab94da5c40035668c67092c28092344b"
+            },
+            "requirements.lock.txt": {
+              "pins": 154,
+              "sha256": "c521c7503b2930290aa7acb7e549750d761ba36d74849d0981d91dc5e285d6ce"
+            }
+          },
+          "prefix": "/workspace/venv_rc6",
+          "python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+          "scope": "DRIVER_METADATA_NOT_DISTRIBUTION_BINARY_AUTHENTICATION; PRODUCT157_PREFLIGHT_OWNED_BY_NATIVE_HANDLERS"
+        },
+        "driver_pid": 244439,
+        "driver_reaped": true,
+        "driver_returncode": 0,
+        "failures": [],
+        "native_gate_file": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b/health-live-small/health-gate.json",
+        "native_gate_sha256": "90cf4da1e01d0d903316f97520db35f809dcf3192e7eea741544375bf18b3755",
+        "observed_code_atime_phase_changes": {
+          "_version.py": {
+            "after_ns": 1791249377063101355,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "ak_byma_calendar.py": {
+            "after_ns": 1791249377179100542,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "am_us_equity_calendar_rc6.py": {
+            "after_ns": 1791249377163100654,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "au_fee_schedule.py": {
+            "after_ns": 1791249378211840968,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bd_ppi_readonly_guard.py": {
+            "after_ns": 1791249377103101075,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "be_paper_engine.py": {
+            "after_ns": 1791249377043101496,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bf_production_paper_observer.py": {
+            "after_ns": 1791249377083101215,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bi_operational_services.py": {
+            "after_ns": 1791249377147100766,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bl_candle_engine.py": {
+            "after_ns": 1791249377071101299,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bm_exit_supervisor.py": {
+            "after_ns": 1791249377327099503,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bn_telegram_bus.py": {
+            "after_ns": 1791249377343981231,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bq_exit_policy.py": {
+            "after_ns": 1791249377175100570,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bs_instrument_contracts.py": {
+            "after_ns": 1791249377063101355,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bt_caucion_paper.py": {
+            "after_ns": 1791249377067101327,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bu_instrument_catalog.py": {
+            "after_ns": 1791249377155100710,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bv_paper_runtime.py": {
+            "after_ns": 1791249377323099531,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "bw_daily_risk.py": {
+            "after_ns": 1791249377343981231,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "cc_spot_liquidity.py": {
+            "after_ns": 1791249377079101243,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "cd_spot_ledger.py": {
+            "after_ns": 1791249377075101271,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "cf_intraday_scalping.py": {
+            "after_ns": 1791249377179100542,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "cf_sale_settlement.py": {
+            "after_ns": 1791249377075101271,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "cg_paper_workspace.py": {
+            "after_ns": 1791249377155100710,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "co_market_sessions_hf6.py": {
+            "after_ns": 1791249377179100542,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "cp_contract_evidence_v2_hf6.py": {
+            "after_ns": 1791249377355179500,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "cu_history_store_v2_hf6.py": {
+            "after_ns": 1791249378123093919,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "eu_telegram_policy_rc6.py": {
+            "after_ns": 1791249377343981231,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "fe_fixed_income_nominal_contract_rc6.py": {
+            "after_ns": 1791249378175093554,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "fg_intraday_contract_policy_rc6.py": {
+            "after_ns": 1791249377191100457,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "ops/policy/rc6-dynamic-capacity-v1.json": {
+            "after_ns": 1791249378114528676,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_audit_evidence/__init__.py": {
+            "after_ns": 1791249377247100065,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_audit_evidence/package.py": {
+            "after_ns": 1791249377247100065,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_audit_evidence/recompute.py": {
+            "after_ns": 1791249377259099981,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_audit_evidence/sqlite_scratch.py": {
+            "after_ns": 1791249377255100009,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_audit_evidence/sqlite_snapshot.py": {
+            "after_ns": 1791249377255100009,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_contract_bridge.py": {
+            "after_ns": 1791249377355179500,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_dynamic_universe/__init__.py": {
+            "after_ns": 1791249377175100570,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_dynamic_universe/capacity.py": {
+            "after_ns": 1791249377231100177,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_dynamic_universe/common.py": {
+            "after_ns": 1791249377175100570,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_dynamic_universe/economics.py": {
+            "after_ns": 1791249378159093666,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_dynamic_universe/live.py": {
+            "after_ns": 1791249377227100205,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_dynamic_universe/orchestrator.py": {
+            "after_ns": 1791249377231100177,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_dynamic_universe/promotion.py": {
+            "after_ns": 1791249378107094031,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_dynamic_universe/routing.py": {
+            "after_ns": 1791249377239100121,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_dynamic_universe/runtime.py": {
+            "after_ns": 1791249377247100065,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_dynamic_universe/sources.py": {
+            "after_ns": 1791249377207100345,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_dynamic_universe/tradeability.py": {
+            "after_ns": 1791249377243100093,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_multisource_discovery.py": {
+            "after_ns": 1791249377163100654,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_paper_family_lifecycle.py": {
+            "after_ns": 1791249377191100457,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_performance/__init__.py": {
+            "after_ns": 1791249377079101243,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_performance/common.py": {
+            "after_ns": 1791249377079101243,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_performance/costs.py": {
+            "after_ns": 1791249378159093666,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_performance/lineage.py": {
+            "after_ns": 1791249377079101243,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_performance/metrics.py": {
+            "after_ns": 1791249378199093385,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_performance/replay.py": {
+            "after_ns": 1791249378187093469,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_performance/shadow.py": {
+            "after_ns": 1791249378187093469,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_ppi_future_contract_policy.py": {
+            "after_ns": 1791249377331099475,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_ppi_global_budget.py": {
+            "after_ns": 1791249378743089569,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/__init__.py": {
+            "after_ns": 1791249377175100570,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/archive_namespace.py": {
+            "after_ns": 1791249378103094059,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/entry_signals.py": {
+            "after_ns": 1791249378191093441,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/families.py": {
+            "after_ns": 1791249378169838037,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/funnel.py": {
+            "after_ns": 1791249378199093385,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/lab.py": {
+            "after_ns": 1791249378179093526,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/packed_storage.py": {
+            "after_ns": 1791249377215100289,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/persistence.py": {
+            "after_ns": 1791249377199100401,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/preopen.py": {
+            "after_ns": 1791249378122189369,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/projection.py": {
+            "after_ns": 1791249378243093077,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/publication_storage.py": {
+            "after_ns": 1791249378227093190,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/retention.py": {
+            "after_ns": 1791249378139093807,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/serialization.py": {
+            "after_ns": 1791249377211100317,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/source_authority.py": {
+            "after_ns": 1791249377175100570,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/source_reads.py": {
+            "after_ns": 1791249377247100065,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/stages.py": {
+            "after_ns": 1791249378157232274,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_shadow_runtime/worker.py": {
+            "after_ns": 1791249377223100233,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_signal_contracts.py": {
+            "after_ns": 1791249377191100457,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_source_consolidation.py": {
+            "after_ns": 1791249377167100626,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/__init__.py": {
+            "after_ns": 1791249378767562712,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/components.py": {
+            "after_ns": 1791249378995087801,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/datasets.py": {
+            "after_ns": 1791249378767562712,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/design_system.py": {
+            "after_ns": 1791249378999087773,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/generation.py": {
+            "after_ns": 1791249378779089316,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/navigation.py": {
+            "after_ns": 1791249378779089316,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/projected_generation.py": {
+            "after_ns": 1791249378783089288,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/projection.py": {
+            "after_ns": 1791249378771089373,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/routes.py": {
+            "after_ns": 1791249378783089288,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/shell.py": {
+            "after_ns": 1791249378991087829,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/view_common.py": {
+            "after_ns": 1791249378999087773,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/views_analytics.py": {
+            "after_ns": 1791249379003087745,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/views_home.py": {
+            "after_ns": 1791249378999087773,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/views_instruments.py": {
+            "after_ns": 1791249378999087773,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/views_live.py": {
+            "after_ns": 1791249378999087773,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/views_risk.py": {
+            "after_ns": 1791249379003087745,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/views_system.py": {
+            "after_ns": 1791249379003087745,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/views_trading.py": {
+            "after_ns": 1791249378999087773,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "rc6_trader_dashboard/views_universe.py": {
+            "after_ns": 1791249378999087773,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "scripts/porota_artifact_provenance.py": {
+            "after_ns": 1791249379019087633,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "scripts/rc6_shadow_health_gate.py": {
+            "after_ns": 1791249379016766623,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "tests/ci_rc6_browser_health.py": {
+            "after_ns": 1791249375651111261,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "tests/ci_rc6_browser_product.py": {
+            "after_ns": 1791249376303106688,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "tests/ci_rc6_projection_large_reader.py": {
+            "after_ns": 1791249379003087745,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "tests/rc6_dashboard_native_fixture.py": {
+            "after_ns": 1791249377039101524,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          },
+          "tests/test_rc6_future_programming_complete.py": {
+            "after_ns": 1791249377263099953,
+            "before_ns": 1791248331000000000,
+            "kind": "file"
+          }
+        },
+        "owned_pgid": 244427,
+        "phase": "health",
+        "raw_identity": {
+          "device": 27,
+          "gid": 1000,
+          "inode": 938504,
+          "mount_id": 52,
+          "uid": 1000
+        },
+        "runtime_validated": false,
+        "schema": "rc6.root-small-browser-stage.v1",
+        "source_index_sha256": "9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517",
+        "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+        "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+        "stage_elapsed_seconds": 6.329253824005718,
+        "stage_pid": 244427,
+        "status": "GREEN",
+        "supervisor_pid": 244401,
+        "target_output": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b/health-live-small",
+        "whole_source_stable_custody_unchanged": true
+      },
+      "stage_receipt_sha256": "05489b35ae3bb6128b151d1e92ac201f2959a53afe4389e19b6f34e84ec1c802",
+      "status": "GREEN"
+    }
+  ],
+  "phases_requested": [
+    "normal",
+    "health"
+  ],
+  "raw_identity": {
+    "device": 27,
+    "gid": 1000,
+    "inode": 938504,
+    "mount_id": 52,
+    "uid": 1000
+  },
+  "runtime_validated": false,
+  "schema": "rc6.root-small-browser-external-supervisor.v1",
+  "scope": "ROOT_SMALL_FULL_ROUTES_AND_SEPARATE_PRIVATE_HEALTH; NO_BIG_OR_GOV_ARTIFACT_RUNTIME_CLAIM",
+  "separate_live_health_pass": true,
+  "source": "/workspace/rc6-root-efa69894-browser-20261006-source",
+  "source_index_sha256": "9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517",
+  "source_repo": "/workspace/porota_rc6_convergence",
+  "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+  "status": "RED",
+  "supervisor_pid": 244401,
+  "whole_git_files": 2398,
+  "wrapper": {
+    "path": "/workspace/rc6_root_normal_browser_supervisor_efa69894_v2.py",
+    "sha256": "7111265b27213809180e71d33df930f402693593a11dd2732f0e89f8fa7b3b30",
+    "stat": {
+      "atime_ns": 1791249338139374389,
+      "blocks": 96,
+      "ctime_ns": 1791249305999600492,
+      "device": 27,
+      "gid": 1000,
+      "inode": 310144,
+      "links": 1,
+      "mode": 33152,
+      "mtime_ns": 1791249305999600492,
+      "size": 46688,
+      "uid": 1000
+    }
+  }
+}

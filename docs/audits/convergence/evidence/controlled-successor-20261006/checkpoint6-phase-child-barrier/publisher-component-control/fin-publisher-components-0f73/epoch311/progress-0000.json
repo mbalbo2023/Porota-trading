@@ -1,0 +1,8 @@
+{
+  "elapsed": 0.0005865089988219552,
+  "log_bytes_fstat_only": 0,
+  "management_deadline": 31356.465819031,
+  "pid": 34346,
+  "source_data_log_payload_reads_while_active": 0,
+  "stage": "started"
+}

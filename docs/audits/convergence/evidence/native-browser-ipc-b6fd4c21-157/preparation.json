@@ -1,0 +1,16 @@
+{
+  "bytes": 35358482,
+  "files": 1638,
+  "functional_acceptance": "PENDING",
+  "git_dir_readonly_control": "/workspace/porota_rc6_convergence/.git/worktrees/ux-driver",
+  "git_work_tree": "/workspace/rc6-ux-ipc-b6fd4c21-whole",
+  "index": "/tmp/rc6-ux-ipc-b6fd4c21-raw/source.index.json",
+  "native_fixture_started": false,
+  "overlay_count": 0,
+  "raw_git_commit_sha256": "4b5d5d499ca84900df4c0e53bbb970a66a854ff4ac4ceb4f779eb61b7a9a40ec",
+  "schema": "rc6.ux-ipc-whole-source-preparation.v1",
+  "source_sha": "b6fd4c21e308c4457e800941e24dc9fbc78a8cbc",
+  "source_tree": "0fd20b4b063b17cc317501ff5436ea4a2c9883fc",
+  "tar_sha256": "96c768405a3c1658c6fe5fab78e73b4f89ad24405d167b11768f255638e87864",
+  "whole_source": "/workspace/rc6-ux-ipc-b6fd4c21-whole"
+}

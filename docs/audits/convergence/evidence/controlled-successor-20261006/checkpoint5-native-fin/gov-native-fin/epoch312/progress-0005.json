@@ -1,0 +1,9 @@
+{
+  "management_deadline": 25794.267579858,
+  "owned_log_bytes_fstat_only": 0,
+  "phase": "component-new-ready100Red",
+  "pid": 24741,
+  "scope": "LOCAL_FOCAL_PARENT_ONLY_NOT_GLOBAL_FIN",
+  "stage": "started",
+  "wall_seconds": 0.0005450570024549961
+}

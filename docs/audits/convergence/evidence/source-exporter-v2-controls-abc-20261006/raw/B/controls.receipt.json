@@ -1,0 +1,207 @@
+{
+  "canonical_source_exported_or_old_tar_read": false,
+  "controls": [
+    {
+      "id": "REAL_OWN_FSYNC_HASH_ALL11",
+      "observations": {
+        "capture": {
+          "all_eleven_fields_stable_during_capture": true,
+          "bytes": 800,
+          "sha256": "2151af25ec94cb7fb2a0994f6721705bf936eac96e8521a50f48a8ee23ff3905",
+          "stat_fields": {
+            "st_atime_ns": 1791251511855419617,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791251511855419617,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 836086,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791251511855419617,
+            "st_nlink": 1,
+            "st_size": 800,
+            "st_uid": 1000
+          }
+        },
+        "kind": "REAL_OWN_644_SINGLELINK_FILE_FSYNC_AND_NOATIME_ALL11_HASH",
+        "sync": {
+          "after_own_fsync_stat_fields": {
+            "st_atime_ns": 1791251511855419617,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791251511855419617,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 836086,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791251511855419617,
+            "st_nlink": 1,
+            "st_size": 800,
+            "st_uid": 1000
+          },
+          "before_own_fsync_stat_fields": {
+            "st_atime_ns": 1791251511855419617,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791251511855419617,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 836086,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791251511855419617,
+            "st_nlink": 1,
+            "st_size": 800,
+            "st_uid": 1000
+          },
+          "file_fsync_completed": true,
+          "parent_fsync_completed": true,
+          "schema": "rc6.owned-source-archive-fsync.v1",
+          "scope": "OWN_EXPORT_PREPARATION_BEFORE_EXTERNAL_BASELINE_NOT_NATIVE_CUSTODY"
+        }
+      },
+      "status": "GREEN"
+    },
+    {
+      "id": "SYMLINK_REJECTED",
+      "observations": {
+        "exception_class": "OSError",
+        "reason": "[Errno 40] Too many levels of symbolic links: 'alias.bin'"
+      },
+      "status": "GREEN"
+    },
+    {
+      "id": "HARDLINK_REJECTED",
+      "observations": {
+        "exception_class": "ValueError",
+        "reason": "OWN_EXPORT_REGULAR_FILE_CUSTODY_REQUIRED"
+      },
+      "status": "GREEN"
+    },
+    {
+      "id": "NONREG_FIFO_REJECTED",
+      "observations": {
+        "exception_class": "ValueError",
+        "reason": "OWN_EXPORT_REGULAR_FILE_CUSTODY_REQUIRED"
+      },
+      "status": "GREEN"
+    },
+    {
+      "id": "WRONG_REGULAR_MODE_REJECTED",
+      "observations": {
+        "exception_class": "ValueError",
+        "reason": "OWN_EXPORT_REGULAR_FILE_CUSTODY_REQUIRED"
+      },
+      "status": "GREEN"
+    },
+    {
+      "id": "OUTPUT_PARENT_UID_REJECTED",
+      "observations": {
+        "adapter": "CONTROLLED_DIRECTORY_FSTAT_UID; NO_FOREIGN_CHOWN",
+        "exception_class": "ValueError",
+        "reason": "OWN_OUTPUT_PARENT_REQUIRED"
+      },
+      "status": "GREEN"
+    },
+    {
+      "id": "CURRENT_BLOCKS_MUTATION_REJECTED",
+      "observations": {
+        "adapter": "CONTROLLED_POSTREAD_FSTAT_BLOCKS_DELTA; CONTENT_NOT_CHANGED",
+        "exception_class": "ValueError",
+        "reason": "SOURCE_EXPORT_ALL11_CHANGED_DURING_NOATIME_CAPTURE"
+      },
+      "status": "GREEN"
+    },
+    {
+      "id": "SOURCE_ARCHIVE512_BOUND_REJECTED",
+      "observations": {
+        "exception_class": "ValueError",
+        "reason": "SOURCE_ARCHIVE_BOUND"
+      },
+      "status": "GREEN"
+    },
+    {
+      "id": "FSYNC_FAILURE_REJECTED",
+      "observations": {
+        "exception_class": "OSError",
+        "reason": "[Errno 5] controlled-own-fsync"
+      },
+      "status": "GREEN"
+    },
+    {
+      "id": "EXISTING_COMMIT_AND_INDEX_NO_OVERWRITE",
+      "observations": [
+        {
+          "exception_class": "FileExistsError",
+          "name": "source.commit.raw",
+          "reason": "[Errno 17] File exists: 'source.commit.raw'"
+        },
+        {
+          "exception_class": "FileExistsError",
+          "name": "source.index.json",
+          "reason": "[Errno 17] File exists: 'source.index.json'"
+        }
+      ],
+      "status": "GREEN"
+    },
+    {
+      "id": "REAL_PRIVATE_GIT_SOURCE_EXPORT_COMMIT_INDEX_JOIN",
+      "observations": {
+        "commit_sha256": "0f69ecfe7e2dc6f1f831ac20250290771c757edd49df7f7c961829a9281ee80d",
+        "index_sha256": "c13c5228575b2d789563b9506d593788c563e754c718914123aa24d58d1f047d",
+        "native_qualification": false,
+        "private_commit": "c11bc0c2f780a60fc97a4e287f8149cd655b5e08",
+        "private_git_files": 2,
+        "tar_sha256": "e86724ef3fc35283e86e805ae35cc8e191c5bf3213ef1c1723aa6d698dd038ec"
+      },
+      "status": "GREEN"
+    },
+    {
+      "id": "REAL_PRIVATE_GIT_COMMIT_TAMPER_REJECTED",
+      "observations": {
+        "exception_class": "ValueError",
+        "reason": "SOURCE_RAW_COMMIT_ALL11_CHANGED_BEFORE_EXPORT_BASELINE"
+      },
+      "status": "GREEN"
+    },
+    {
+      "id": "REAL_PRIVATE_GIT_INDEX_TAMPER_REJECTED",
+      "observations": {
+        "exception_class": "ValueError",
+        "reason": "SOURCE_INDEX_ALL11_CHANGED_BEFORE_EXPORT_BASELINE"
+      },
+      "status": "GREEN"
+    }
+  ],
+  "elapsed_before_publication": 0.14705200500611681,
+  "exporter_sha256": "6bb2b5b82ae63317afcf16124dd677eaea324482dc6009708a60e19da3d865fd",
+  "exporter_source_after": {
+    "st_atime_ns": 1791250389088363052,
+    "st_blocks": 32,
+    "st_ctime_ns": 1791250389088363052,
+    "st_dev": 33,
+    "st_gid": 1000,
+    "st_ino": 3117906,
+    "st_mode": 33188,
+    "st_mtime_ns": 1791250389088363052,
+    "st_nlink": 1,
+    "st_size": 12388,
+    "st_uid": 1000
+  },
+  "exporter_source_before": {
+    "st_atime_ns": 1791250389088363052,
+    "st_blocks": 32,
+    "st_ctime_ns": 1791250389088363052,
+    "st_dev": 33,
+    "st_gid": 1000,
+    "st_ino": 3117906,
+    "st_mode": 33188,
+    "st_mtime_ns": 1791250389088363052,
+    "st_nlink": 1,
+    "st_size": 12388,
+    "st_uid": 1000
+  },
+  "private_git_popen_observed_count": 39,
+  "product_imports": 0,
+  "schema": "rc6.source-exporter-fsync-controls.v1",
+  "scope": "STDLIB_PRIVATE_FILES_AND_PRIVATE_GIT_SOURCE_CONTROLS_NOT_PRODUCT_NATIVE_GOV_BROWSER_OR_HISTORICAL_TAR",
+  "status": "GREEN",
+  "total_acceptance_seconds": 20.0,
+  "unique_control_count": 13
+}

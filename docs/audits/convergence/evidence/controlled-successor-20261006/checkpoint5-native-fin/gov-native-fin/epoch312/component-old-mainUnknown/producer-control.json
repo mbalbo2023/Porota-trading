@@ -1,0 +1,43 @@
+{
+  "all100_verified_zombie_before_producer_exit": false,
+  "case": "liveDetached6",
+  "child_reaps_by_producer": 0,
+  "children": [
+    {
+      "pgid": 25129,
+      "pid": 25129,
+      "ppid": 25128,
+      "session": 25129,
+      "state": "S",
+      "uid": [
+        1000,
+        1000,
+        1000,
+        1000
+      ]
+    }
+  ],
+  "classification": "PROCESS_CONTROL_ONLY_NOT_GOV_BIG_IMAGE_RUNTIME_QUALIFICATION",
+  "live6_does_not_change_cleanup5_or_phase_budget": true,
+  "live_detached_seconds": 6,
+  "network_operations": false,
+  "producer": {
+    "pgid": 25128,
+    "pid": 25128,
+    "ppid": 24848,
+    "session": 25128,
+    "state": "R",
+    "uid": [
+      1000,
+      1000,
+      1000,
+      1000
+    ]
+  },
+  "producer_exit_code": 0,
+  "schema": "rc6.real-owned-process-control.v1",
+  "separate_session": false,
+  "source_or_data_reads": false,
+  "termination_signals_sent": [],
+  "waitid_wnowait_witnesses": []
+}

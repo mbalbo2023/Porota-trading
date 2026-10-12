@@ -1,0 +1,48 @@
+{
+  "broker_or_provider_calls_authorized": false,
+  "command": [
+    "/workspace/venv_rc6/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "--tb=short",
+    "tests/test_rc6_convergence_persistence.py",
+    "-k",
+    "default_full_tick",
+    "--junitxml=/workspace/porota_rc6_worktrees/persistence/docs/audits/rc6-convergence-persistence-evidence/horizon.junit.xml"
+  ],
+  "environment": {
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "umask": "022"
+  },
+  "exit_code": 0,
+  "external_archive_authentication_certified": false,
+  "finished_at": "2026-10-05T02:34:46.163085+00:00",
+  "junit": "horizon.junit.xml",
+  "junit_sha256": "35f3fae9322885d68ec83e069642341debca140241156fbe2f973f0cd2e7bffc",
+  "ppi_watch": "UNTOUCHED",
+  "production_capacity_certified": false,
+  "proof": "U14-full-tick-horizon.json",
+  "proof_sha256": "d07ecaf622b94cc3005a57dffceebe290f18edd22c1afb66cf271fef0c78c0a4",
+  "python_version": "3.11.16",
+  "run_id": "RC6-PERSISTENCE-HORIZON-b82666db",
+  "schema": "rc6.persistence-offline-test-run.v1",
+  "scope": "PAPER_SHADOW_SYNTHETIC_OFFLINE",
+  "source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+  "source_tracked_clean_before_and_after": true,
+  "source_tree_sha": "775ba49f7dbd091ed3deccc499e9b0e953103df1",
+  "started_at": "2026-10-05T02:30:58.637456+00:00",
+  "suites": [
+    {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "skipped": "0",
+      "tests": "1",
+      "time": "226.667",
+      "timestamp": "2026-10-05T02:30:59.347054+00:00"
+    }
+  ]
+}

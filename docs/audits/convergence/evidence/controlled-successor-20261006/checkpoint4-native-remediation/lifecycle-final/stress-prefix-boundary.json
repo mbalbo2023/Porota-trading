@@ -1,0 +1,10 @@
+{
+  "byte_count": 46907,
+  "comparison": "ALL_BYTES_BEFORE_LITERAL_def_main_INCLUDING_LEADING_NEWLINE",
+  "frozen_base_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "identical": true,
+  "schema": "rc6.stress.cli-only.prefix-boundary.v1",
+  "sha256": "6a62683afd5de217cafe1b29c4a59e6a31334dbbc648abd2c825a3b0e9da19da",
+  "summary_prefix_excludes_one_leading_delimiter_newline_sha256": "c39f011fba09a20f69f4d012f067d42420658204cb399d41832b0d5039bf0327",
+  "summary_receipt_sha256": "8d0cde9729709cfa5b2c7af948d7ad32c82b27e35937abc81ba7a60a1252fea3"
+}

@@ -1,0 +1,16 @@
+{
+  "source_file_sha256": "75634ed7a6fec86e03b47420012d7144693393029de85389cfa631ccd5fc3398",
+  "control_normalized_AST_identical_to_original": true,
+  "shared_adaptations": [
+    "external_function_name_and_metrics_argument",
+    "absolute_Source_import",
+    "families_qualified_constants_mapping_fresh",
+    "bounded_sparse_mark_statements",
+    "split_execute_and_list_same_cursor_no_extra_SQL"
+  ],
+  "row_to_tuple_only": [
+    "per_cursor_row_factory_None",
+    "names_from_cursor_description_instead_of_first_Row_keys"
+  ],
+  "no_source_function_execution_or_replacement": true
+}

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.642" timestamp="2026-10-05T05:44:40.147379+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_convergence_provenance" name="test_mode_only_change_to_unchanged_original_source_requires_a_guarded_evolution" time="1.434"><failure message="AssertionError: assert 0 != 0&#10; +  where 0 = CompletedProcess(args=['/workspace/venv_rc6_frozen311/bin/python', '/workspace/porota_rc6_convergence/scripts/rc6_conv..._NATIVE_GREEN|sha=ef41bd253e1a6009b8ca6b858742f74cae3fa166|source_union=170|requirements=55|scenarios=80\n', stderr='').returncode">candidate = (PosixPath('/tmp/pytest-of-agent/pytest-224/test_mode_only_change_to_uncha0/repo'), PosixPath('/tmp/pytest-of-agent/py...0/actual-input-fixture.xml'), PosixPath('/tmp/pytest-of-agent/pytest-224/test_mode_only_change_to_uncha0/report.json'))
+
+    def test_mode_only_change_to_unchanged_original_source_requires_a_guarded_evolution(candidate):
+        root = candidate[0]
+        manifest = json.loads((root / provenance.INPUT_ROOT / provenance.MANIFEST).read_text())
+        final = provenance.tree(root, "HEAD")
+        originals = [provenance.tree(root, manifest["product"]["sha"])]
+        changed = set()
+        for source in manifest["sources"]:
+            current = provenance.tree(root, source["head_sha"])
+            baseline = provenance.tree(root, source["base_sha"])
+            originals.append(current)
+            changed.update(path for path in current if current[path] != baseline.get(path))
+        filename = next(path for path, value in sorted(final.items()) if value["git_mode"] == "100644"
+                        and path not in changed and any(tree.get(path) == value for tree in originals))
+        source = root / filename; source.chmod(0o755)
+        matrix_path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+        matrix = json.loads(matrix_path.read_text()); matrix["path_evolution"].pop(filename)
+        write_json(matrix_path, matrix); commit(root)
+        assert provenance.tree(root, "HEAD")[filename]["blob"] == final[filename]["blob"]
+&gt;       assert_rejected(candidate, "UNEXPLAINED_SOURCE_EVOLUTION")
+
+tests/test_rc6_convergence_provenance.py:274: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+candidate = (PosixPath('/tmp/pytest-of-agent/pytest-224/test_mode_only_change_to_uncha0/repo'), PosixPath('/tmp/pytest-of-agent/py...0/actual-input-fixture.xml'), PosixPath('/tmp/pytest-of-agent/pytest-224/test_mode_only_change_to_uncha0/report.json'))
+signature = 'UNEXPLAINED_SOURCE_EVOLUTION', kwargs = {}
+
+    def assert_rejected(candidate, signature, **kwargs):
+        result = cli(candidate, **kwargs)
+&gt;       assert result.returncode != 0
+E       AssertionError: assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/workspace/venv_rc6_frozen311/bin/python', '/workspace/porota_rc6_convergence/scripts/rc6_conv..._NATIVE_GREEN|sha=ef41bd253e1a6009b8ca6b858742f74cae3fa166|source_union=170|requirements=55|scenarios=80\n', stderr='').returncode
+
+tests/test_rc6_convergence_provenance.py:148: AssertionError</failure></testcase></testsuite></testsuites>

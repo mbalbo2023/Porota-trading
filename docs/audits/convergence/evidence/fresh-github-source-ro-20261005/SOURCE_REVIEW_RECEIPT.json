@@ -1,0 +1,251 @@
+{
+  "actions": {
+    "canonical_runner_full_primary_plus_bounded_secondary_still_required": true,
+    "captured_runs": [
+      37308983612,
+      37308106428,
+      37131712187,
+      37125515526
+    ],
+    "future_connector_secondary_transfer_proven": false,
+    "historical_small_zip_reads": [
+      {
+        "artifact_id": 11344882392,
+        "expected_api_bytes": 2419,
+        "failure": "SIGNED_AZURE_REDIRECT_FORBIDDEN",
+        "observed_bytes": 0,
+        "run_id": 37308983612,
+        "status": "RED",
+        "zip_crc_verified": false
+      },
+      {
+        "artifact_id": 11277627152,
+        "expected_api_bytes": 7757,
+        "failure": "SIGNED_AZURE_REDIRECT_FORBIDDEN",
+        "observed_bytes": 0,
+        "run_id": 37131712187,
+        "status": "RED",
+        "zip_crc_verified": false
+      }
+    ],
+    "large_primary_direct_gh_download_proven": false,
+    "no_more_downloads": true,
+    "private_raw_stderr_preserved": true,
+    "signed_urls_publicly_preserved": false,
+    "source_jobs_and_artifact_metadata_only": true
+  },
+  "closed_at": "2026-10-05T20:43:03.957321+00:00",
+  "compact_packet_root": "/workspace/rc6-sre-github-source-ro-20261005-202431-compact-source-packet",
+  "final_artifact_validated": false,
+  "integration": {
+    "branch": "integration/rc6-convergence-468-469-470-20261005",
+    "captured_actions_count": 0,
+    "exact_head_ref_pulls_captured": 0,
+    "final_candidate_frozen": false,
+    "first_read_sha": "c42bfdba71d6b5f046c79ff8da8cd57eeedf78dd",
+    "later_read_sha": "14906096d2e2786e9983700b95a2f28fdb907748",
+    "later_root_declared_tree": "55e8ccc9f53615551d9f2da95d3eec1ee7e14423",
+    "open_pulls_captured": 43
+  },
+  "material_limits": [
+    "Source C not frozen; material BIG/horizon/browser/final Gov and image gates remain separate",
+    "Runtime channel declares REAL_ROUTE_CALL_STATE_UNVERIFIED and missing deploy SHA/state timestamp",
+    "gh artifact ZIP redirects returned Forbidden for two small historical reads; no large primary access established"
+  ],
+  "merge_or_deploy_authorized": false,
+  "ownership": {
+    "new_session_or_deploy_authorization_inferred": false,
+    "night_automation_disabled_declared": true,
+    "night_comment": 5993692352,
+    "night_issue": 473,
+    "night_status": "BLOCKED_WINDOW_EXPIRED_NO_PROMOTION",
+    "owner_comment": 5986480121,
+    "owner_comment_count": 3,
+    "owner_issue": 471,
+    "status": "ACTIVE_NOT_RELEASED"
+  },
+  "product": {
+    "branch": "deploy/rc6-pr69-isolated-20260915",
+    "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+    "tree": "96a112a55ed779df3f7056b1e30d81aac8d0b791",
+    "verified_git_blob_members": [
+      {
+        "bytes": 2777,
+        "git_blob": "4dfe11fbf8c0ea9bb8bdde3adff011ba0295ce75",
+        "git_mode": "100644",
+        "original_path": "AGENTS.md",
+        "raw_path": "product.source.AGENTS.md",
+        "sha256": "ec4ead8c78be4511851f2a5f9f94fdd083a116a0aafceaa4b41a70db6531b29e"
+      },
+      {
+        "bytes": 3885,
+        "git_blob": "b4ffad53345d88a7f6b94cac0db837bbcea33314",
+        "git_mode": "100644",
+        "original_path": "ops/policy/porota-policy.yaml",
+        "raw_path": "product.source.ops__policy__porota-policy.yaml",
+        "sha256": "dd88c6f09368323c93c13ede84225a15a8ae2e3348abec7f878f1a682c7af340"
+      },
+      {
+        "bytes": 2650,
+        "git_blob": "9c8f4869757ee434fa939d25e171e63695d93724",
+        "git_mode": "100644",
+        "original_path": "docs/releases/RC6_UNIFIED_HANDOFF_2026-10-02.md",
+        "raw_path": "product.source.docs__releases__RC6_UNIFIED_HANDOFF_2026-10-02.md",
+        "sha256": "30860e387cdd6946e4f0c59a52d531c55efa8b2e55e783521b6280403fda641a"
+      },
+      {
+        "bytes": 2887,
+        "git_blob": "4c0ca76e629bc813263f1d97d69f85a4fcb891df",
+        "git_mode": "100644",
+        "original_path": "docs/releases/RC6_UNIFIED_INPUTS_2026-10-02.json",
+        "raw_path": "product.source.docs__releases__RC6_UNIFIED_INPUTS_2026-10-02.json",
+        "sha256": "29cedc12d1b05d423daee9a6c7fd4651419c9e0a9392ca9d97e70b861e681f05"
+      },
+      {
+        "bytes": 4338,
+        "git_blob": "1ac2def49e32515f5f083e6c526383ef5506c42f",
+        "git_mode": "100644",
+        "original_path": "docs/RUNTIME_EVIDENCE_CHANNEL_RC6.md",
+        "raw_path": "product.source.docs__RUNTIME_EVIDENCE_CHANNEL_RC6.md",
+        "sha256": "b4b884a5d0ecc4bb179280d53e381e2763d55596513ebf580cd5ad4ea8e9277d"
+      }
+    ]
+  },
+  "raw_snapshot_root": "/workspace/rc6-sre-github-source-ro-20261005-202431",
+  "runner": {
+    "archive_without_git_metadata_allowed": false,
+    "compared_source_sha": "d05078845cd40b37ef75744ea80a1695c2b37dbb",
+    "compared_source_tree": "e852da3496e7356fbf0a11cc50c697d69309e6d4",
+    "earlier_epoch_preserved": {
+      "sha": "6cbe68c3e26d87223d82ee9c94eba2584efcfdee",
+      "tree": "766e161f30cf73e1413523a5501e957a90333590"
+    },
+    "extra_exclusions_or_overlays_proposed": false,
+    "final_native_311_312_pending": true,
+    "fresh_complete_git_worktrees_required": true,
+    "installed_distribution_bytes_authenticated": false,
+    "material_new_pers_ux_incompatibility_observed": false,
+    "original_governed_exclusions": [
+      "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+    ],
+    "original_ref_head_base_total": 30,
+    "original_refs_locally_available": 30,
+    "pinned_source_members": 19,
+    "prior_front_total": 7,
+    "prior_front_trees_matching": 7,
+    "product_imported": false,
+    "pytest_collected": false,
+    "pytest_executed": false,
+    "review_scope": "STATIC_AST_AND_RAW_NO_REPLACE_GIT_BLOBS; NO_COMPATIBILITY_PASS_FROM_EXECUTION",
+    "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+  },
+  "runtime_channel": {
+    "bytes": 29557023,
+    "commit": "51154cb8686a59eeb1a45d4963db3abe823e715f",
+    "compact_contains_raw_body": false,
+    "current_runtime_validated": false,
+    "git_blob": "57c7b8e65c97fab82b1a4ae4138649d29494c698",
+    "git_bytes_verified": true,
+    "host_or_producer_executed": false,
+    "raw_body_external_only": true,
+    "selected_payload_declarations": {
+      "blockers": [
+        "REAL_ROUTE_CALL_STATE_UNVERIFIED"
+      ],
+      "generated_at": "2026-10-05T19:50:26.104051+00:00",
+      "observer": {
+        "heartbeat_at": "2026-10-05T19:48:23.442003+00:00",
+        "last_market_data_at": "2026-10-05T19:47:57.498726+00:00",
+        "ppi_auth": "OK",
+        "process_state": "RUNNING",
+        "session_state": "MARKET_OPEN"
+      },
+      "observer_available_keys": [
+        "heartbeat_at",
+        "last_market_data_at",
+        "ppi_auth",
+        "process_state",
+        "session_state"
+      ],
+      "ppi_watch": {
+        "state": "NOT_PRESENT"
+      },
+      "ppi_watch_available_keys": [
+        "checked_at",
+        "contract_schema_version",
+        "enumeration_succeeded",
+        "mutation_attempted",
+        "owner",
+        "reason",
+        "state",
+        "systemd_presence_expectation",
+        "units"
+      ],
+      "provenance": {
+        "bundle_sha256": "e36325de597ab1c6c0c6a795eade793d885b01f4024e5983c982be69b637f8c2",
+        "candidate_sha": "9ca8cb13bfc6664597e313e5d1874710e3263ec4",
+        "deploy_sha": "NO_VERIFICADO",
+        "deploy_state_recorded_at": null,
+        "image_identity": "sha256:2c2c953081429c0e1cddef378531c3f18b8bb0494d02abb6a3364cde2bb157c7",
+        "image_tar_sha256": "3141b01932b9c81f27bb50e8040f4b47de835402bf120f3dc82c624125f9285d",
+        "manifest_schema_version": 1,
+        "tree_sha": "96a112a55ed779df3f7056b1e30d81aac8d0b791"
+      },
+      "provenance_available_keys": [
+        "bundle_sha256",
+        "candidate_sha",
+        "deploy_sha",
+        "deploy_state_recorded_at",
+        "image_identity",
+        "image_tar_sha256",
+        "manifest_schema_version",
+        "tree_sha"
+      ],
+      "provenance_missing": [
+        "deploy_sha",
+        "deploy_state_recorded_at"
+      ],
+      "publication": {
+        "consumer_contract": "FIX_COMMIT_AND_BLOB_SHA",
+        "latest_path": "runtime/evidence/latest.json",
+        "target_branch": "runtime-observability"
+      },
+      "publication_available_keys": [
+        "consumer_contract",
+        "latest_path",
+        "target_branch"
+      ],
+      "safety": {
+        "execution": "SIMULATED",
+        "mode": "PRODUCTION_PAPER",
+        "operation_mode": "PRODUCTION_PAPER",
+        "paper_shadow_only": true,
+        "real_order_route_capability": "BLOCKED",
+        "real_order_routes": "NO_VERIFICADO",
+        "real_orders_sent": 0
+      },
+      "safety_available_keys": [
+        "execution",
+        "mode",
+        "operation_mode",
+        "paper_shadow_only",
+        "real_order_route_capability",
+        "real_order_routes",
+        "real_orders_sent"
+      ],
+      "schema": "porota-runtime-evidence-v1",
+      "schema_version": 1,
+      "source_runtime_timestamp": "2026-10-05T19:48:23.442003+00:00",
+      "status": "BLOCKED"
+    },
+    "sha256": "33cf7619b798807b229c0dada5b3a8f567438fc51d7eced9e3b0304d2d05d1c4"
+  },
+  "schema": "rc6.sre-final-preparation-github-and-gov-source-readonly.v1",
+  "status": "SOURCE_REVIEW_ONLY_NO_NATIVE_GOV_IMAGE_OR_RUNTIME_ACCEPTANCE",
+  "writes": {
+    "github": false,
+    "host": false,
+    "root_repository": false,
+    "runtime_data_added_to_candidate_git": false
+  }
+}

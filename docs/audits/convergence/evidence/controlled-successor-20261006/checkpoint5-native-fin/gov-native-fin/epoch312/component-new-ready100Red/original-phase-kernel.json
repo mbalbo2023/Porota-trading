@@ -1,0 +1,1665 @@
+{
+  "actual_child_reaped": true,
+  "actual_launch_to_pid_reap_wall_seconds": 0.10057007700015674,
+  "adopted_descendants_reaped": [
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000252,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24743
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000271,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24744
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000208,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24745
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00026,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24746
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00017999999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24747
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000165,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24748
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24749
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000156,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24750
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24751
+    },
+    {
+      "cpu_system_seconds": 0.000408,
+      "cpu_user_seconds": 0.0,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24752
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24753
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00026199999999999997,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24754
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000372,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24755
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000226,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24756
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000173,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24757
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000216,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24758
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000153,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24759
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000205,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24760
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000332,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24761
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00020999999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24762
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24763
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015999999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24764
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00021799999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24765
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000163,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24766
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00018199999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24767
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00018099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24768
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00016199999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24769
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000225,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24770
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000154,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24771
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00016099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24772
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000177,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24773
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000154,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "pid": 24774
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000148,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24775
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015999999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24776
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000159,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24777
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000158,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24778
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000133,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24779
+    },
+    {
+      "cpu_system_seconds": 0.00017199999999999998,
+      "cpu_user_seconds": 0.0,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24780
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000143,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24781
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000147,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24782
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000156,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24783
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000192,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24784
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015999999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24785
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000178,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24786
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00016099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24787
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015199999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24788
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000135,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24789
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24790
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000144,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24791
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000154,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24792
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000149,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24793
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000254,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24794
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000148,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24795
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000153,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24796
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24797
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000147,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24798
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24799
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00013199999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24800
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24801
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000128,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24802
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000259,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24803
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000148,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24804
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000158,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24805
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000137,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24806
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00021899999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24807
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000136,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24808
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24809
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00013099999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24810
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000145,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24811
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000134,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24812
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000167,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24813
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000198,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24814
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000136,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24815
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000153,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24816
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000135,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24817
+    },
+    {
+      "cpu_system_seconds": 0.000154,
+      "cpu_user_seconds": 0.0,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24818
+    },
+    {
+      "cpu_system_seconds": 0.000148,
+      "cpu_user_seconds": 0.0,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24819
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24820
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00014199999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24821
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000144,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24822
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000144,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24823
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000128,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24824
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00023899999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24825
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000143,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24826
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000213,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24827
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000135,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24828
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000153,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24829
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000133,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24830
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24831
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00013099999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24832
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000178,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24833
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00014099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24834
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000134,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24835
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000128,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24836
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000127,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24837
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000129,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24838
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00013099999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24839
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00013099999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24840
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000527,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24841
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00016999999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "pid": 24842
+    }
+  ],
+  "command": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/owned_process_control.py",
+    "--case",
+    "ready100",
+    "--receipt",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/epoch312/component-new-ready100Red/producer-control.json",
+    "--exit-code",
+    "1",
+    "--separate-session"
+  ],
+  "cpu_system_seconds": 0.020805,
+  "cpu_user_seconds": 0.023216,
+  "kernel_owned_child_observations": [
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "before_popen_after_subreaper_activation"
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000252,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24743
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000271,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24744
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000208,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24745
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00026,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24746
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00017999999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24747
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000165,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24748
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24749
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000156,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24750
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24751
+    },
+    {
+      "cpu_system_seconds": 0.000408,
+      "cpu_user_seconds": 0.0,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24752
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24753
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00026199999999999997,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24754
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000372,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24755
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000226,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24756
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000173,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24757
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000216,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24758
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000153,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24759
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000205,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24760
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000332,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24761
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00020999999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24762
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24763
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015999999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24764
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00021799999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24765
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000163,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24766
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00018199999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24767
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00018099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24768
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00016199999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24769
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000225,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24770
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000154,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24771
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00016099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24772
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000177,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24773
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000154,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8765440,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24774
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000148,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24775
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015999999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24776
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000159,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24777
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000158,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24778
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000133,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24779
+    },
+    {
+      "cpu_system_seconds": 0.00017199999999999998,
+      "cpu_user_seconds": 0.0,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24780
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000143,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24781
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000147,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24782
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000156,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24783
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000192,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24784
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015999999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24785
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000178,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24786
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00016099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24787
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015199999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24788
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000135,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24789
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24790
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000144,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24791
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000154,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24792
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000149,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24793
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000254,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24794
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000148,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24795
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000153,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24796
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00015099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24797
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000147,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24798
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24799
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00013199999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24800
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24801
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000128,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24802
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000259,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24803
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000148,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24804
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000158,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24805
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000137,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24806
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00021899999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24807
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000136,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24808
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24809
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00013099999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24810
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000145,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24811
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000134,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24812
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000167,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24813
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000198,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24814
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000136,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24815
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000153,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24816
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000135,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24817
+    },
+    {
+      "cpu_system_seconds": 0.000154,
+      "cpu_user_seconds": 0.0,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24818
+    },
+    {
+      "cpu_system_seconds": 0.000148,
+      "cpu_user_seconds": 0.0,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24819
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24820
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00014199999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24821
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000144,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24822
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000144,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24823
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000128,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24824
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00023899999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24825
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000143,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24826
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000213,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24827
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000135,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24828
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000153,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24829
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000133,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24830
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000146,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24831
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00013099999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24832
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000178,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24833
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00014099999999999998,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24834
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000134,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24835
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000128,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24836
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000127,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24837
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000129,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24838
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00013099999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24839
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00013099999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24840
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.000527,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24841
+    },
+    {
+      "cpu_system_seconds": 0.0,
+      "cpu_user_seconds": 0.00016999999999999999,
+      "exit_code": 0,
+      "kernel_lifetime_peak_rss_bytes": 8769536,
+      "outcome": "PID_REAPED",
+      "phase": "after_main_pid_reap",
+      "pid": 24842
+    },
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "after_main_pid_reap"
+    }
+  ],
+  "kernel_pre_popen_echild_verified": true,
+  "kernel_wait4_zero_observed_irreversible_red": false,
+  "late_observed_main_reap_irreversible_red": false,
+  "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+  "owned_children_exhaustion_verified": true,
+  "owned_cleanup_management_bound_seconds": 5,
+  "owned_group_signal_observations": [],
+  "peak_rss_bytes": 23781376,
+  "phase_acceptance_deadline_seconds": 5400,
+  "pid": 24742,
+  "proc_task_children_examined": false,
+  "process_group_absent_after_reap": true,
+  "process_group_absent_at_main_reap": true,
+  "remaining_owned_children": [],
+  "residual_descendants_observed": [],
+  "returncode": 1,
+  "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+  "sigint_failure_grace_seconds": 20,
+  "subreaper_previous_state": 0,
+  "subreaper_restore_attempted_on_all_activated_paths": true,
+  "supervisor_errors": [],
+  "supervisor_kernel_identity_before_spawn": {
+    "Pid": "24741",
+    "Tgid": "24741",
+    "Uid": "1000\t1000\t1000\t1000"
+  },
+  "supervisor_native_tid": 24741,
+  "supervisor_pid": 24741,
+  "termination_reap_restore_cleanup_seconds": 0.0007565900014014915,
+  "timed_out": false,
+  "wait4_reaped_pid": 24742,
+  "wall_seconds": 0.10157786900163046
+}

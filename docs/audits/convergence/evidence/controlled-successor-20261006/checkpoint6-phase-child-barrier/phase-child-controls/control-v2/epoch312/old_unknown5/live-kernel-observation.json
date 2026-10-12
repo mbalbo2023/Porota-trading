@@ -1,0 +1,22 @@
+{
+  "actual_wait4_own_pid_wnohang_found": 0,
+  "kernel_identity": {
+    "kernel_status": {
+      "PPid": "33306",
+      "Pid": "33307",
+      "State": "S (sleeping)",
+      "Uid": "1000\t1000\t1000\t1000"
+    },
+    "pgid": 33306,
+    "pid": 33307,
+    "sid": 33306
+  },
+  "native_tid": 33308,
+  "original_phase_remains_RED": true,
+  "pid": 33307,
+  "scope": "SAME_PHASE_PARENT_REAL_OWN_WORKER_AND_THREAD_CONTROL_ONLY",
+  "source_payload_reads": 0,
+  "thread_alive": true,
+  "thread_daemon": true,
+  "thread_ident": 140599635891904
+}

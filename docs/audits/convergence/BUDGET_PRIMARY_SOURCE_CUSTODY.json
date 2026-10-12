@@ -1,0 +1,3406 @@
+{
+  "artifact_validated": false,
+  "base_sha": "b26f4d9360e2f0a7d31abf08d9f29dc79409b64d",
+  "base_tree": "2e712cbfb2dbc8f27bf7692e29f251c5981ec080",
+  "branch": "work/rc6-budget-source-custody-20261005",
+  "counts_policy": "Original55/80/90/6 remain unchanged. Two reader invocations,16base guards,42 configured ownedvariants and prior21/44/219/65/23/current3 executions are not summed into new requirements or a single GREEN suite.",
+  "deployed": false,
+  "error": "Two budget helpers open the original PAPER primary SQLite path with mode=ro. Read-only SQL does not guarantee unchanged atime or WAL SHM metadata. These helpers are also called by APPROVED runtime capacity and the EXIT round observer.",
+  "evidence_catalog": [
+    {
+      "bytes": 15236,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/416e-interop-focal.junit.xml",
+      "sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea"
+    },
+    {
+      "bytes": 34731,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/416e-original-budget-suites.junit.xml",
+      "sha256": "2ab610138632e16fd91b28bf6814482a3d4fd3f6c6960e5ebffe30e5fe8e227a"
+    },
+    {
+      "bytes": 597,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/505a-frozen157-environment.json",
+      "sha256": "ce3945e0167adb0cd0659f590c02fd85a3d5edeb4573be0b8a31607c54e98e99"
+    },
+    {
+      "bytes": 17905,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/505a-invalidated-harness-diagnostic.json",
+      "sha256": "d564090cae08091f99b86b158f32af688753c2889af5c47bf8c269fbd2d5dc9f"
+    },
+    {
+      "bytes": 13294,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/505a-invalidated-native-focal.junit.xml",
+      "sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf"
+    },
+    {
+      "bytes": 780,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/7e66-frozen157-environment.json",
+      "sha256": "32472bbd62e08a8b0e08b099e30480d6799bb10ca069a427f9c85a479bc04989"
+    },
+    {
+      "bytes": 106832,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/7e66-growth-controls-native-receipt.json",
+      "sha256": "6d3e6057ac23d2e4c577cf5aa422d1d461775672c59ca0b8412e6c28ef33b196"
+    },
+    {
+      "bytes": 732,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/7e66-growth-controls.junit.xml",
+      "sha256": "de0b2a082f6df12dee49bfb9b6ee80129314f882e5ed9a63bdd3b8769c459688"
+    },
+    {
+      "bytes": 7238,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/af56-initial-guards.junit.xml",
+      "sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0"
+    },
+    {
+      "bytes": 298903,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/b8b9-affected-controls-native-receipt.json",
+      "sha256": "8afbf78520b98d26d4e5523e098fe5a47435926997c288eb0d16f2ee2340dae4"
+    },
+    {
+      "bytes": 7518,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/b8b9-affected-controls.junit.xml",
+      "sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74"
+    },
+    {
+      "bytes": 35332,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/current-af56-native-replay.json",
+      "sha256": "56b8f1e8553a25319a15728efa752d6d65993b6dc790528338195f3f40d14966"
+    },
+    {
+      "bytes": 537,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/frozen157-environment-metadata.json",
+      "sha256": "8570349e32c0fbb7aa0a64c716255607e45da61070d9f8e3dedfe947dab535a8"
+    },
+    {
+      "bytes": 35607,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/original-b26-native-replay.json",
+      "sha256": "558abdd69d3970766c2872fe584730e909979513a5e754631baafe7e5709852e"
+    }
+  ],
+  "execution_phases": [
+    {
+      "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+      "execution_count_scope": "THIS_ONE_XML_ONLY_DO_NOT_ADD_TO_ANY_OTHER_RUN",
+      "final_artifact_or_runtime_acceptance": false,
+      "id": "AF56_INITIAL_GUARDS",
+      "junit": {
+        "bytes": 7238,
+        "cases": [
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[count]",
+            "seconds": 2.071,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[digests]",
+            "seconds": 1.893,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[controller]",
+            "seconds": 2.26,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[runtime]",
+            "seconds": 2.149,
+            "status": "FAIL"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[round]",
+            "seconds": 2.518,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[count]",
+            "seconds": 1.289,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[digests]",
+            "seconds": 1.202,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[controller]",
+            "seconds": 1.551,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[runtime]",
+            "seconds": 1.532,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[2.0-0.2]",
+            "seconds": 1.219,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[0.01-0.02]",
+            "seconds": 1.218,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+            "seconds": 1.246,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[symlink]",
+            "seconds": 1.531,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[parent_symlink]",
+            "seconds": 1.501,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[hardlink]",
+            "seconds": 1.57,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+            "seconds": 1.584,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+            "seconds": 1.356,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[OFF]",
+            "seconds": 1.252,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[SHADOW]",
+            "seconds": 1.32,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+            "seconds": 0.352,
+            "status": "FAIL"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+            "seconds": 2.229,
+            "status": "PASS"
+          }
+        ],
+        "errors": 0,
+        "failures": 2,
+        "path": "docs/audits/convergence/evidence/budget-primary-source-custody/af56-initial-guards.junit.xml",
+        "seconds": 34.082,
+        "sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+        "skipped": 0,
+        "tests": 21
+      },
+      "limits": [
+        "Runtime fixture gave the entire controller an artificial0.15s producer deadline; no private SQLite capture then occurred. Fixed by passing the existing5s producer deadline while each ledger capture remains capped0.15s.",
+        "UPDATE mode=mode was optimized without a real rollback journal. Fixed by changing process_state in the actual isolated fixture writer.",
+        "Two failed harness preconditions are not production defects. Raw21/19/2 remains intact."
+      ],
+      "native_receipt": null,
+      "proof_boundary": "Raw JUnit and recorded exact source context. No separate before/after import/network/full-source JSON receipt is supplied for this earlier pytest execution.",
+      "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+      "source_tree": "9a21488ba3ea254a42e4f0fea95756763ca8ce43"
+    },
+    {
+      "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+      "execution_count_scope": "THIS_ONE_XML_ONLY_DO_NOT_ADD_TO_ANY_OTHER_RUN",
+      "final_artifact_or_runtime_acceptance": false,
+      "id": "F416_INTEROP",
+      "junit": {
+        "bytes": 15236,
+        "cases": [
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[count]",
+            "seconds": 2.179,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[digests]",
+            "seconds": 1.963,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[controller]",
+            "seconds": 2.26,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[runtime]",
+            "seconds": 2.277,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[round]",
+            "seconds": 2.606,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[count]",
+            "seconds": 1.331,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[digests]",
+            "seconds": 1.394,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[controller]",
+            "seconds": 2.011,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[runtime]",
+            "seconds": 1.687,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[2.0-0.2]",
+            "seconds": 1.4,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[0.01-0.02]",
+            "seconds": 1.452,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+            "seconds": 1.443,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[symlink]",
+            "seconds": 2.542,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[parent_symlink]",
+            "seconds": 2.111,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[hardlink]",
+            "seconds": 2.794,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+            "seconds": 2.086,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+            "seconds": 1.49,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[OFF]",
+            "seconds": 1.498,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[SHADOW]",
+            "seconds": 1.391,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+            "seconds": 0.363,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+            "seconds": 2.414,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[feasible]",
+            "seconds": 42.791,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[slow_round]",
+            "seconds": 17.782,
+            "status": "FAIL"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[OFF]",
+            "seconds": 1.379,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[SHADOW]",
+            "seconds": 1.357,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[late]",
+            "seconds": 9.388,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[read_failure]",
+            "seconds": 10.437,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[incomplete]",
+            "seconds": 13.557,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[stale]",
+            "seconds": 17.022,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[unknown_ledger]",
+            "seconds": 10.487,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_busy_has_durable_cross_process_barrier_and_read_only_evidence",
+            "seconds": 3.915,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_degradation_after_acquire_blocks_lower_start_without_wire_or_debt_loss",
+            "seconds": 2.663,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[elapsed_nan]",
+            "seconds": 0.009,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[elapsed_bool]",
+            "seconds": 0.01,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[elapsed_negative]",
+            "seconds": 0.011,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[deadline_changed]",
+            "seconds": 0.01,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[failures_bool]",
+            "seconds": 0.011,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[failures_negative]",
+            "seconds": 0.01,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[unverified_scope]",
+            "seconds": 0.01,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_marker_aliases_fail_closed_without_modifying_target[symlink]",
+            "seconds": 0.004,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_marker_aliases_fail_closed_without_modifying_target[hardlink]",
+            "seconds": 0.002,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_cannot_acknowledge_completion_when_barrier_directory_sync_fails",
+            "seconds": 0.013,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
+            "seconds": 3.176,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
+            "seconds": 3.141,
+            "status": "PASS"
+          }
+        ],
+        "errors": 0,
+        "failures": 1,
+        "path": "docs/audits/convergence/evidence/budget-primary-source-custody/416e-interop-focal.junit.xml",
+        "seconds": 177.452,
+        "sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+        "skipped": 0,
+        "tests": 44
+      },
+      "limits": [
+        "The unmodified original slow_round assertion expected required_identities_count10. Deadline-safe current inspection returnedNone, losing the historical admission display count. Degradation/LOWER/debt stayed safe.",
+        "Fixed without a fresh post-deadline read by real first-admission historical scope; the original assert10 is unchanged."
+      ],
+      "native_receipt": null,
+      "proof_boundary": "Raw JUnit and recorded exact source context. No separate before/after import/network/full-source JSON receipt is supplied for this earlier pytest execution.",
+      "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+      "source_tree": "3abfd620f5a4c929a1b2e15cb597839da1462edd"
+    },
+    {
+      "classification": "SCOPED_RAW_JUNIT_GREEN_ON_OLDER_416_SOURCE",
+      "execution_count_scope": "THIS_ONE_XML_ONLY_DO_NOT_ADD_TO_ANY_OTHER_RUN",
+      "final_artifact_or_runtime_acceptance": false,
+      "id": "F416_ORIGINAL_BUDGET_SUITES",
+      "junit": {
+        "bytes": 34731,
+        "cases": [
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_exit_reserve_cannot_be_consumed_by_discovery",
+            "seconds": 0.024,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_scalping_hot_reservation_precedes_other_strategy_and_discovery",
+            "seconds": 0.021,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_all_endpoints_and_consumers_share_one_global_allowance",
+            "seconds": 0.02,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_serial_lease_survives_restart_and_uses_conservative_abandoned_timeout",
+            "seconds": 0.012,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_global_and_endpoint_breaker_crosses_engine_and_policy_boundaries[PPI_HTTP_429]",
+            "seconds": 0.009,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_global_and_endpoint_breaker_crosses_engine_and_policy_boundaries[PPI_SESSION_INVALID]",
+            "seconds": 0.009,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_global_and_endpoint_breaker_crosses_engine_and_policy_boundaries[PPI_HTTP_401]",
+            "seconds": 0.009,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_global_and_endpoint_breaker_crosses_engine_and_policy_boundaries[PPI_HTTP_403]",
+            "seconds": 0.01,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_repeated_408_5xx_opens_both_affected_endpoint_and_global",
+            "seconds": 0.015,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_instrument_gap_is_scoped_and_empty_body_never_becomes_provider_zero",
+            "seconds": 0.021,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_clock_rollback_and_expired_capacity_deny_off_wire",
+            "seconds": 0.007,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_approved_envelope_reserves_actual_opened_demand_once",
+            "seconds": 0.409,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_actual_adapter_and_retry_are_budgeted_once_and_denial_never_sends",
+            "seconds": 0.022,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_real_sdk_reader_scopes_and_http_breaker_account_actual_market_endpoints",
+            "seconds": 0.017,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_sdk_session_error_after_http200_is_global_not_a_provider_zero",
+            "seconds": 0.007,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_budget_cannot_weaken_original_real_route_guard[Order/Confirm]",
+            "seconds": 0.004,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_budget_cannot_weaken_original_real_route_guard[Order/Budget]",
+            "seconds": 0.003,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_budget_cannot_weaken_original_real_route_guard[Order/Cancel]",
+            "seconds": 0.004,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_budget_cannot_weaken_original_real_route_guard[Account/Movements]",
+            "seconds": 0.004,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_budget_sidecar_rejects_trading_db_symlink_hardlink_and_private_quota",
+            "seconds": 0.003,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_disappearing_sqlite_auxiliary_metadata_is_safe[-journal]",
+            "seconds": 0.007,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_disappearing_sqlite_auxiliary_metadata_is_safe[-wal]",
+            "seconds": 0.006,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_disappearing_sqlite_auxiliary_metadata_is_safe[-shm]",
+            "seconds": 0.005,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_auxiliary_disappearance_after_exists_cannot_race_validated_metadata",
+            "seconds": 0.005,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_auxiliary_aliases_and_quota_remain_fail_closed[symlink]",
+            "seconds": 0.002,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_auxiliary_aliases_and_quota_remain_fail_closed[dangling_symlink]",
+            "seconds": 0.003,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_auxiliary_aliases_and_quota_remain_fail_closed[hardlink]",
+            "seconds": 0.003,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_auxiliary_aliases_and_quota_remain_fail_closed[directory]",
+            "seconds": 0.002,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_auxiliary_aliases_and_quota_remain_fail_closed[fifo]",
+            "seconds": 0.003,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_auxiliary_aliases_and_quota_remain_fail_closed[protected]",
+            "seconds": 0.003,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_auxiliary_aliases_and_quota_remain_fail_closed[quota]",
+            "seconds": 0.003,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_auxiliary_metadata_os_errors_are_not_ignored[error0]",
+            "seconds": 0.003,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_auxiliary_metadata_os_errors_are_not_ignored[error1]",
+            "seconds": 0.006,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_initialized_budget_restart_does_not_write_under_an_active_sqlite_writer",
+            "seconds": 0.013,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_admission_waits_bounded_for_a_changing_native_sqlite_writer",
+            "seconds": 0.07,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_two_processes_cannot_claim_the_same_full_budget",
+            "seconds": 0.053,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_previously_active_budget_falls_back_and_exit_reader_remains_live[expired]",
+            "seconds": 0.331,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_previously_active_budget_falls_back_and_exit_reader_remains_live[approval_corrupt]",
+            "seconds": 0.482,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_previously_active_budget_falls_back_and_exit_reader_remains_live[policy_corrupt]",
+            "seconds": 0.32,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_previously_active_budget_falls_back_and_exit_reader_remains_live[native_env_invalid]",
+            "seconds": 0.486,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_previously_active_budget_falls_back_and_exit_reader_remains_live[opened_ledger_missing]",
+            "seconds": 0.471,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_ppi_global_budget.py::test_invalid_approval_and_restart_cannot_erase_prior_global_circuit",
+            "seconds": 0.484,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_auditor_exact_five_opened_cannot_steal_last_exit_capacity",
+            "seconds": 0.026,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_every_lower_priority_preserves_each_endpoint_floor[OPENED_CRITICAL]",
+            "seconds": 0.025,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_every_lower_priority_preserves_each_endpoint_floor[SCALPING_HOT]",
+            "seconds": 0.025,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_every_lower_priority_preserves_each_endpoint_floor[STRATEGY_HOT]",
+            "seconds": 0.025,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_every_lower_priority_preserves_each_endpoint_floor[WARM]",
+            "seconds": 0.024,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_every_lower_priority_preserves_each_endpoint_floor[DISCOVERY]",
+            "seconds": 0.025,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_reverse_order_burst_endpoint_and_global_remain_coherent[False]",
+            "seconds": 0.087,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_reverse_order_burst_endpoint_and_global_remain_coherent[True]",
+            "seconds": 0.103,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap",
+            "seconds": 0.001,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_independent_opened_floor_precedes_scalping_and_discovery",
+            "seconds": 0.02,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_other_process_policy_cannot_lower_promised_exit_floor",
+            "seconds": 0.013,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_exit_demand_metrics_are_independent_of_planned_lower_reservations",
+            "seconds": 0.0,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_other_window_and_live_authority_cannot_erase_exit_promise[16-15]",
+            "seconds": 0.031,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_other_window_and_live_authority_cannot_erase_exit_promise[16-60]",
+            "seconds": 0.033,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_other_window_and_live_authority_cannot_erase_exit_promise[31-15]",
+            "seconds": 0.028,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_other_window_and_live_authority_cannot_erase_exit_promise[31-60]",
+            "seconds": 0.06,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_shorter_window_or_greater_caps_cannot_forget_actual_used_debt[current]",
+            "seconds": 0.014,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_shorter_window_or_greater_caps_cannot_forget_actual_used_debt[book]",
+            "seconds": 0.015,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_shorter_window_or_greater_caps_cannot_forget_actual_used_debt[intraday]",
+            "seconds": 0.015,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_longer_window_counts_preexisting_wire_until_its_own_boundary",
+            "seconds": 0.012,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_expired_authority_keeps_unelapsed_promise_but_cannot_emit",
+            "seconds": 0.01,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_replacement_policy_clock_rollback_does_not_discard_original_promise",
+            "seconds": 0.011,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_known_legacy_authority_is_migrated_without_losing_its_floor",
+            "seconds": 0.008,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_unknown_legacy_authority_is_explicitly_closed_and_preserved",
+            "seconds": 0.004,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_delayed_actual_start_renews_serial_lease_from_wire_timestamp",
+            "seconds": 0.012,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_actual_delayed_wire_remains_in_rolling_cap_after_admission_ages_out",
+            "seconds": 0.026,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_new_stronger_promise_between_admission_and_start_is_rechecked",
+            "seconds": 0.008,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_live_authority_cardinality_is_bounded_without_clearing_earlier_floors",
+            "seconds": 0.252,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_same_window_larger_policy_cap_cannot_spend_another_authority_exit_floor[endpoint]",
+            "seconds": 0.028,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_same_window_larger_policy_cap_cannot_spend_another_authority_exit_floor[global]",
+            "seconds": 0.036,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_wire_scope_preserves_transport_failure_type_and_releases_os_lock",
+            "seconds": 0.015,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_process_wire_mutex_prevents_live_overlap_and_preserves_crash_lease[False]",
+            "seconds": 0.035,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_process_wire_mutex_prevents_live_overlap_and_preserves_crash_lease[True]",
+            "seconds": 0.038,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_native_streaming_body_retains_actual_wire_ownership[False]",
+            "seconds": 0.025,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_native_streaming_body_retains_actual_wire_ownership[True]",
+            "seconds": 0.017,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_explicit_unowned_http_streaming_is_denied_before_admission_or_wire",
+            "seconds": 0.004,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_native_body_failure_is_sanitized_and_preserves_global_http_semantics[200]",
+            "seconds": 0.009,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_native_body_failure_is_sanitized_and_preserves_global_http_semantics[429]",
+            "seconds": 0.011,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_native_body_failure_is_sanitized_and_preserves_global_http_semantics[401]",
+            "seconds": 0.012,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_native_body_failure_is_sanitized_and_preserves_global_http_semantics[403]",
+            "seconds": 0.012,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_fresh_native_cache_hit_publishes_increased_exit_demand_before_other_process_reads[False]",
+            "seconds": 0.069,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_fresh_native_cache_hit_publishes_increased_exit_demand_before_other_process_reads[True]",
+            "seconds": 0.084,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_accepted_fetch_completion_publishes_latest_valid_exit_metadata",
+            "seconds": 0.009,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_429_preserves_semantics_and_durable_floor_across_restart[OPENED_CRITICAL-SCANNER]",
+            "seconds": 0.018,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_429_preserves_semantics_and_durable_floor_across_restart[EXIT_CRITICAL-EXIT_READER]",
+            "seconds": 0.015,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_db_locked_is_bounded_and_no_wire_while_uncertain",
+            "seconds": 0.179,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_initialized_restart_only_reads_journal_schema_and_keeps_promises",
+            "seconds": 0.076,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_constructor_exclusive_writer_is_bounded_typed_and_recovers_exact_floor",
+            "seconds": 0.095,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_constructor_bootstrap_mutex_is_bounded_and_keeps_initialized_bytes",
+            "seconds": 0.074,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_existing_wal_mode_is_rejected_without_conversion_or_state_reset[False]",
+            "seconds": 0.013,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_existing_wal_mode_is_rejected_without_conversion_or_state_reset[True]",
+            "seconds": 0.003,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_unfinished_bootstrap_keeps_existing_receipts_counters_and_promises",
+            "seconds": 0.045,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_real_process_flapping_writer_startup_denials_preserve_exact_exit_floor",
+            "seconds": 0.993,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_constructor_io_uncertainty_has_only_sanitized_public_reason",
+            "seconds": 0.004,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_finish_sqlite_uncertainty_is_typed_and_preserves_claim_or_wire_debt[False]",
+            "seconds": 0.091,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_finish_sqlite_uncertainty_is_typed_and_preserves_claim_or_wire_debt[True]",
+            "seconds": 0.091,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_wire_scope_enter_sqlite_uncertainty_cannot_release_or_spend_claim",
+            "seconds": 0.084,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_actual_guarded_pre_wire_sqlite_fault_cleanup_recovers_all_five_exits",
+            "seconds": 0.27,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_pre_wire_cleanup_never_hides_an_unknown_lease_failure[unknown_lease]",
+            "seconds": 0.007,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_pre_wire_cleanup_never_hides_an_unknown_lease_failure[expired_available]",
+            "seconds": 0.007,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_actual_sdk_post_body_finish_lock_keeps_used_debt_and_never_resends",
+            "seconds": 0.127,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_completed_finish_recovery_never_hides_unknown_or_unverified_work[unverified_body]",
+            "seconds": 0.037,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_completed_finish_recovery_never_hides_unknown_or_unverified_work[unknown_io]",
+            "seconds": 0.019,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_completed_finish_recovery_never_hides_unknown_or_unverified_work[deadline_locked]",
+            "seconds": 0.022,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_completed_finish_recovery_never_hides_unknown_or_unverified_work[deadline_available]",
+            "seconds": 0.022,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_completed_finish_recovery_never_hides_unknown_or_unverified_work[after_debt_read]",
+            "seconds": 0.021,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_completed_finish_recovery_never_hides_unknown_or_unverified_work[after_finish]",
+            "seconds": 0.031,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_abandoned_lease_cannot_be_started_after_expiry_even_without_new_owner",
+            "seconds": 0.008,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_expiry_between_admission_and_actual_send_is_fail_closed",
+            "seconds": 0.008,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_missing_policy_is_rejected_and_fresh_off_budget_is_original_baseline",
+            "seconds": 0.18,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_actual_http_scanner_retry_cannot_evade_exit_floor",
+            "seconds": 0.029,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_window_metrics_have_full_scope_denial_reservation_and_borrowing",
+            "seconds": 0.013,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_only_higher_priority_may_borrow_lower_floor_and_reports_donor",
+            "seconds": 0.012,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_reserved_remaining_uses_exact_wire_boundary_despite_rounded_borrow_counter[0]",
+            "seconds": 0.017,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_reserved_remaining_uses_exact_wire_boundary_despite_rounded_borrow_counter[0.6]",
+            "seconds": 0.015,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_donated_exhausted_endpoint_does_not_hold_phantom_global_reserve",
+            "seconds": 0.02,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_five_real_positions_stale_scanner_current_fresh_exit_book_independent[False]",
+            "seconds": 0.519,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_five_real_positions_stale_scanner_current_fresh_exit_book_independent[True]",
+            "seconds": 0.829,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_exact_native_exit_caller_survives_all_five_opened_book_denials",
+            "seconds": 0.428,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_approved_dynamic_rejects_insufficient_capacity_for_real_durable_positions",
+            "seconds": 0.547,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_malformed_stale_or_future_book_never_coalesces[stale]",
+            "seconds": 0.014,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_malformed_stale_or_future_book_never_coalesces[future]",
+            "seconds": 0.01,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_malformed_stale_or_future_book_never_coalesces[clock_missing]",
+            "seconds": 0.011,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_malformed_stale_or_future_book_never_coalesces[empty]",
+            "seconds": 0.01,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_malformed_stale_or_future_book_never_coalesces[crossed]",
+            "seconds": 0.012,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_malformed_stale_or_future_book_never_coalesces[invalid_quantity]",
+            "seconds": 0.009,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_full_identity_native_book_cache_does_not_collapse_same_ticker",
+            "seconds": 0.024,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_shared_book_preserves_provider_clock_has_five_second_ttl_and_no_secrets",
+            "seconds": 0.014,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_book_error_does_not_cache_or_rescue_previous_response",
+            "seconds": 0.012,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_off_reader_repeats_original_wire_reads_without_coalescing",
+            "seconds": 0.197,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_three_real_processes_exit_scanner_scalping_burst_cannot_steal_floor",
+            "seconds": 0.124,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_shared_book_single_flight_has_no_duplicate_fetch_across_real_processes",
+            "seconds": 0.038,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_book_cache_and_single_flight_are_cardinality_bounded",
+            "seconds": 0.551,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_cache_cannot_bypass_expiry_circuit_or_clock_rollback",
+            "seconds": 0.012,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_changed_policy_fingerprint_forces_new_native_book_probe",
+            "seconds": 0.012,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_process_kill_during_book_flight_fails_closed_until_durable_lease_expires",
+            "seconds": 1.021,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_book_cache_db_lock_never_uses_uncertain_cached_bytes",
+            "seconds": 0.059,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_native_sdk_current_error_code_keeps_exact_sanitized_http_reason[429]",
+            "seconds": 0.019,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_native_sdk_current_error_code_keeps_exact_sanitized_http_reason[401]",
+            "seconds": 0.02,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_issue465_budget_adversarial.py::test_native_sdk_current_error_code_keeps_exact_sanitized_http_reason[403]",
+            "seconds": 0.015,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u01_real_exit_caller_joins_slow_opened_owner_in_three_windows",
+            "seconds": 0.488,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u01_deadline_is_monotonic_and_degradation_survives_restart_without_second_wire",
+            "seconds": 1.114,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_impossible_exit_envelope_blocks_every_identity_in_three_windows[15-60]",
+            "seconds": 0.385,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_impossible_exit_envelope_blocks_every_identity_in_three_windows[30-10]",
+            "seconds": 0.399,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_impossible_exit_envelope_blocks_every_identity_in_three_windows[5-45]",
+            "seconds": 0.985,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u02_six_scopes_per_second_stay_bounded_and_exit_recovers_after_aging[65536-120]",
+            "seconds": 0.933,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u02_six_scopes_per_second_stay_bounded_and_exit_recovers_after_aging[8388608-3100]",
+            "seconds": 35.686,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u02_genuinely_full_legacy_sqlite_recovers_on_restart_and_keeps_live_wire_debt[65536-scopes0]",
+            "seconds": 0.049,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u02_genuinely_full_legacy_sqlite_recovers_on_restart_and_keeps_live_wire_debt[8388608-scopes1]",
+            "seconds": 0.366,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u07_five_spots_and_five_active_futures_share_reserved_exit_capacity_after_restart",
+            "seconds": 0.595,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u07_unknown_ledger_is_not_misreported_as_zero",
+            "seconds": 0.001,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_capacity_cannot_claim_more_identities_than_complete_round_can_observe",
+            "seconds": 0.001,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_absent_is_read_only_and_does_not_bootstrap",
+            "seconds": 0.003,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_exposes_committed_sanitized_state_without_writes[False]",
+            "seconds": 0.116,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_exposes_committed_sanitized_state_without_writes[True]",
+            "seconds": 0.111,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_foreign_state_stays_explicitly_unverified_and_unchanged[wal]",
+            "seconds": 0.102,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_foreign_state_stays_explicitly_unverified_and_unchanged[alias]",
+            "seconds": 0.11,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_foreign_state_stays_explicitly_unverified_and_unchanged[corrupt]",
+            "seconds": 0.106,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_foreign_state_stays_explicitly_unverified_and_unchanged[future_clock]",
+            "seconds": 0.11,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_foreign_state_stays_explicitly_unverified_and_unchanged[toxic_field]",
+            "seconds": 0.108,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_does_not_publish_uncommitted_pressure_or_touch_locked_source[False]",
+            "seconds": 0.2,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_does_not_publish_uncommitted_pressure_or_touch_locked_source[True]",
+            "seconds": 0.126,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u01_slow_opened_owner_coalesces_across_real_processes_without_duplicate_fetch",
+            "seconds": 0.171,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u01_exit_owner_alarms_during_its_existing_http_body_without_cancelling_wire",
+            "seconds": 1.196,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_real_controller_cold_activation_failure_blocks_every_native_market_send[five_spots_cap15]",
+            "seconds": 0.931,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_real_controller_cold_activation_failure_blocks_every_native_market_send[five_spots_cap5]",
+            "seconds": 0.886,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_real_controller_cold_activation_failure_blocks_every_native_market_send[five_spots_five_active_cap5]",
+            "seconds": 0.957,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_real_controller_cold_activation_failure_blocks_every_native_market_send[missing_ledger]",
+            "seconds": 0.884,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_blocked_reactivation_reuses_only_existing_exit_caps_cadence_and_debt[insufficient-False]",
+            "seconds": 1.357,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_blocked_reactivation_reuses_only_existing_exit_caps_cadence_and_debt[insufficient-True]",
+            "seconds": 1.336,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_blocked_reactivation_reuses_only_existing_exit_caps_cadence_and_debt[missing_ledger-False]",
+            "seconds": 1.284,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_blocked_reactivation_reuses_only_existing_exit_caps_cadence_and_debt[missing_ledger-True]",
+            "seconds": 1.339,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_intentional_cold_baseline_keeps_original_native_reads_and_no_sidecar[OFF]",
+            "seconds": 0.165,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_intentional_cold_baseline_keeps_original_native_reads_and_no_sidecar[SHADOW]",
+            "seconds": 0.172,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_native_start_revalidates_original_lower_scope_and_preserves_used_debt[new_positions]",
+            "seconds": 0.882,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_native_start_revalidates_original_lower_scope_and_preserves_used_debt[missing_ledger]",
+            "seconds": 0.576,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_native_start_revalidates_original_lower_scope_and_preserves_used_debt[approval_revoked]",
+            "seconds": 0.579,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_native_start_cannot_renew_expired_admission_through_baseline_fallback",
+            "seconds": 0.435,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_f01_interleaved_native_scanner_and_exit_preserve_complete_floor",
+            "seconds": 0.084,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_f01_native_exit_transient_retry_is_bounded_and_cannot_retry_backpressure",
+            "seconds": 0.028,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_f01_native_process_kill_preserves_exact_pre_or_post_wire_receipt[before_start]",
+            "seconds": 0.063,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_convergence_budget_liveness.py::test_f01_native_process_kill_preserves_exact_pre_or_post_wire_receipt[after_start]",
+            "seconds": 0.042,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_native_reviewed_activation_blocks_20000_retained_lower_receipts_before_wire",
+            "seconds": 7.105,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_actual_sdk_three_windows_and_restart_keep_exit_receipt_headroom",
+            "seconds": 14.769,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_static_exit_retention_capacity_never_invents_room_for_own_critical_demand[15]",
+            "seconds": 0.002,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_static_exit_retention_capacity_never_invents_room_for_own_critical_demand[30]",
+            "seconds": 0.001,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_static_exit_retention_capacity_never_invents_room_for_own_critical_demand[60]",
+            "seconds": 0.001,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_physical_retention_preflight_blocks_small_quota_without_bootstrap_and_keeps_baseline",
+            "seconds": 0.001,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_pending_lower_start_rechecks_new_retained_exit_floor_without_using_receipt",
+            "seconds": 0.428,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_genuine_sql_full_retained_binding_debt_stays_off_wire_until_legal_aging",
+            "seconds": 0.034,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_recent_used_exit_debt_is_not_mistaken_for_spare_retained_capacity",
+            "seconds": 0.283,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files[busy]",
+            "seconds": 0.018,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files[WAL]",
+            "seconds": 0.007,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files[hardlink]",
+            "seconds": 0.006,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files[invalid_authority]",
+            "seconds": 0.008,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_readonly_aging_credit_never_releases_an_inflight_token_or_invents_free_pages",
+            "seconds": 0.221,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_receipt_retention.py::test_native_cold_missing_main_checks_every_orphan_before_new_sdk_wire",
+            "seconds": 7.081,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_shipped_policy_off_has_stable_fingerprint_and_no_activation",
+            "seconds": 0.002,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_open_recommendation_requires_explicit_separate_review_and_exact_config",
+            "seconds": 0.351,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[approval_missing]",
+            "seconds": 0.161,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[approval_false]",
+            "seconds": 0.202,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[reviewer_missing]",
+            "seconds": 0.216,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[approval_hash]",
+            "seconds": 0.194,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[configured_hash]",
+            "seconds": 0.201,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[recommendation_hash]",
+            "seconds": 0.163,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[evidence_hash]",
+            "seconds": 0.171,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[fingerprint]",
+            "seconds": 0.156,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[unmeasured_concurrency]",
+            "seconds": 0.165,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[faster_cadence]",
+            "seconds": 0.159,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[future_approval]",
+            "seconds": 0.187,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[stale]",
+            "seconds": 0.161,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_invalid_capacity_or_approval_falls_to_safe_baseline[market_closed]",
+            "seconds": 0.163,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_shadow_mode_retains_baseline_even_with_approved_evidence",
+            "seconds": 0.162,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_approved_selector_consumes_real_planner_limit_cadence_without_entry_authority",
+            "seconds": 0.536,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_family_fairness_cannot_force_illiquid_series_into_deep_basket",
+            "seconds": 0.253,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_scalping_hot_precedes_equity_hot_while_opened_remains_first",
+            "seconds": 0.0,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_promotion.py::test_benchmark_workflow_emits_review_artifact_without_activation",
+            "seconds": 0.001,
+            "status": "PASS"
+          }
+        ],
+        "errors": 0,
+        "failures": 0,
+        "path": "docs/audits/convergence/evidence/budget-primary-source-custody/416e-original-budget-suites.junit.xml",
+        "seconds": 103.091,
+        "sha256": "2ab610138632e16fd91b28bf6814482a3d4fd3f6c6960e5ebffe30e5fe8e227a",
+        "skipped": 0,
+        "tests": 219
+      },
+      "limits": [
+        "219/219 is this older-source original budget/controller/liveness/retention execution. It is not a rerun of4eaa or7e66, a sum with44/65/23/3, or final governed acceptance.",
+        "Compatibility is preserved by omitting the new deadline keyword when _current receivesNone; real absolute deadlines are forwarded."
+      ],
+      "native_receipt": null,
+      "proof_boundary": "Raw JUnit and recorded exact source context. No separate before/after import/network/full-source JSON receipt is supplied for this earlier pytest execution.",
+      "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+      "source_tree": "3abfd620f5a4c929a1b2e15cb597839da1462edd"
+    },
+    {
+      "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+      "execution_count_scope": "THIS_ONE_XML_ONLY_DO_NOT_ADD_TO_ANY_OTHER_RUN",
+      "final_artifact_or_runtime_acceptance": false,
+      "id": "F505_EXPANDED_GUARDS",
+      "junit": {
+        "bytes": 13294,
+        "cases": [
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[count]",
+            "seconds": 2.504,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[digests]",
+            "seconds": 2.51,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[controller]",
+            "seconds": 2.687,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[runtime]",
+            "seconds": 2.667,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[round]",
+            "seconds": 3.053,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[count]",
+            "seconds": 1.464,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[digests]",
+            "seconds": 1.465,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[controller]",
+            "seconds": 1.769,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[runtime]",
+            "seconds": 1.803,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[2.0-0.2]",
+            "seconds": 1.453,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[0.01-0.02]",
+            "seconds": 1.414,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+            "seconds": 1.391,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[symlink]",
+            "seconds": 1.717,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[parent_symlink]",
+            "seconds": 1.705,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[hardlink]",
+            "seconds": 1.688,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+            "seconds": 1.723,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+            "seconds": 1.419,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[OFF]",
+            "seconds": 1.416,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[SHADOW]",
+            "seconds": 1.417,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+            "seconds": 0.484,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+            "seconds": 2.739,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[verified]",
+            "seconds": 5.615,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[no_admission]",
+            "seconds": 3.561,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[unverified_source]",
+            "seconds": 4.359,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[discarded]",
+            "seconds": 4.495,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[read_error]",
+            "seconds": 4.717,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[foreign_observer]",
+            "seconds": 4.598,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+            "seconds": 14.749,
+            "status": "FAIL"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+            "seconds": 16.973,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[False]",
+            "seconds": 4.223,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[True]",
+            "seconds": 3.93,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+            "seconds": 3.621,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[other_valid_bindings]",
+            "seconds": 0.045,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[valid_empty_historical_scope]",
+            "seconds": 0.039,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_bool]",
+            "seconds": 0.033,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_over_limit]",
+            "seconds": 0.03,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[reserved_too_small]",
+            "seconds": 0.036,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_bool]",
+            "seconds": 0.031,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_negative]",
+            "seconds": 0.033,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_missing]",
+            "seconds": 0.029,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[configuration_malformed]",
+            "seconds": 0.03,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[recommendation_malformed]",
+            "seconds": 0.028,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[feasible]",
+            "seconds": 50.57,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[slow_round]",
+            "seconds": 21.245,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[OFF]",
+            "seconds": 1.939,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[SHADOW]",
+            "seconds": 1.591,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[late]",
+            "seconds": 10.17,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[read_failure]",
+            "seconds": 12.383,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[incomplete]",
+            "seconds": 11.026,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[stale]",
+            "seconds": 13.902,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[unknown_ledger]",
+            "seconds": 12.189,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_busy_has_durable_cross_process_barrier_and_read_only_evidence",
+            "seconds": 4.97,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_degradation_after_acquire_blocks_lower_start_without_wire_or_debt_loss",
+            "seconds": 3.724,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[elapsed_nan]",
+            "seconds": 0.059,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[elapsed_bool]",
+            "seconds": 0.057,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[elapsed_negative]",
+            "seconds": 0.068,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[deadline_changed]",
+            "seconds": 0.058,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[failures_bool]",
+            "seconds": 0.048,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[failures_negative]",
+            "seconds": 0.06,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[unverified_scope]",
+            "seconds": 0.072,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_marker_aliases_fail_closed_without_modifying_target[symlink]",
+            "seconds": 0.016,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_marker_aliases_fail_closed_without_modifying_target[hardlink]",
+            "seconds": 0.014,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_round_cannot_acknowledge_completion_when_barrier_directory_sync_fails",
+            "seconds": 0.074,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
+            "seconds": 3.914,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
+            "seconds": 3.554,
+            "status": "PASS"
+          }
+        ],
+        "errors": 0,
+        "failures": 1,
+        "path": "docs/audits/convergence/evidence/budget-primary-source-custody/505a-invalidated-native-focal.junit.xml",
+        "seconds": 263.248,
+        "sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+        "skipped": 0,
+        "tests": 65
+      },
+      "limits": [
+        "65 raw cases contain64PASS/one unsupported-contract fixture failure. The cacheprovider also invalidated the source closure after tests; consult the permanent diagnostic. No completed GREEN receipt/import closure exists."
+      ],
+      "native_receipt": null,
+      "proof_boundary": "Raw JUnit and recorded exact source context. No separate before/after import/network/full-source JSON receipt is supplied for this earlier pytest execution.",
+      "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+      "source_tree": "bb3b65870a694dde5b22ca79e02f8bb34cc41444"
+    },
+    {
+      "alien_imports": 0,
+      "authorized_private_sqlite_opens": 4005,
+      "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+      "command": [
+        "-q",
+        "--strict-markers",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[feasible]",
+        "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[slow_round]",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--junitxml=/tmp/rc6-budget-source-b8b9-affected-controls.junit.xml",
+        "--basetemp=/workspace/rc6_budget_primary_custody_replays/fixture-focal-b8b9/pytest"
+      ],
+      "executable": "/workspace/venv_rc6_frozen311/bin/python",
+      "execution_count_scope": "THIS_ONE_XML_ONLY_DO_NOT_ADD_TO_ANY_OTHER_RUN",
+      "final_artifact_or_runtime_acceptance": false,
+      "id": "B8B_AFFECTED_CONTROLS",
+      "installed_distributions": 157,
+      "internal_imports": 81,
+      "junit": {
+        "bytes": 7518,
+        "cases": [
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+            "seconds": 15.541,
+            "status": "FAIL"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+            "seconds": 21.307,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[verified]",
+            "seconds": 7.327,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[no_admission]",
+            "seconds": 3.752,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[unverified_source]",
+            "seconds": 4.984,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[discarded]",
+            "seconds": 4.995,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[read_error]",
+            "seconds": 5.01,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[foreign_observer]",
+            "seconds": 5.139,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[False]",
+            "seconds": 4.517,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[True]",
+            "seconds": 3.899,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+            "seconds": 3.642,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[other_valid_bindings]",
+            "seconds": 0.044,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[valid_empty_historical_scope]",
+            "seconds": 0.039,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_bool]",
+            "seconds": 0.034,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_over_limit]",
+            "seconds": 0.032,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[reserved_too_small]",
+            "seconds": 0.036,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_bool]",
+            "seconds": 0.029,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_negative]",
+            "seconds": 0.042,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_missing]",
+            "seconds": 0.034,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[configuration_malformed]",
+            "seconds": 0.033,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[recommendation_malformed]",
+            "seconds": 0.034,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[feasible]",
+            "seconds": 45.524,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[slow_round]",
+            "seconds": 20.495,
+            "status": "PASS"
+          }
+        ],
+        "errors": 0,
+        "failures": 1,
+        "path": "docs/audits/convergence/evidence/budget-primary-source-custody/b8b9-affected-controls.junit.xml",
+        "seconds": 147.925,
+        "sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+        "skipped": 0,
+        "tests": 23
+      },
+      "limits": [
+        "23/22/one failed assertion: actual PaperBroker._open correctly rejected DAILY_RISK_STALE_MARKS from native August future carry. This is not a budget product RED.",
+        "This failed fixture temporarily used synthetic initial_cash1e9. The final7e66 guard restores the standard native fixture/default cash and explicitly preserves the entry veto.",
+        "The22 other passing case outcomes and successful whole-source/import/network closure are preserved as intermediate evidence of this exact older source."
+      ],
+      "native_receipt": {
+        "bytes": 298903,
+        "path": "docs/audits/convergence/evidence/budget-primary-source-custody/b8b9-affected-controls-native-receipt.json",
+        "sha256": "8afbf78520b98d26d4e5523e098fe5a47435926997c288eb0d16f2ee2340dae4"
+      },
+      "provider_attempts": 0,
+      "source_files": 1557,
+      "source_inventory_sha256": "afe5698b7dc3e6b5ca2c14f6854533adba41e564de7e4a8ef59ef136913cbb9c",
+      "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+      "source_tree": "be46cedebf2faab32e76acc747a9cf906b9bb635",
+      "whole_source_before_after_unchanged": true
+    },
+    {
+      "alien_imports": 0,
+      "authorized_private_sqlite_opens": 1236,
+      "classification": "NATIVE_SCOPED_GREEN",
+      "command": [
+        "-q",
+        "--strict-markers",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[slow_round]",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--junitxml=/tmp/rc6-budget-source-7e66-growth-controls.junit.xml",
+        "--basetemp=/workspace/rc6_budget_primary_custody_replays/fixture-focal-7e66/pytest"
+      ],
+      "executable": "/workspace/venv_rc6_frozen311/bin/python",
+      "execution_count_scope": "THIS_ONE_XML_ONLY_DO_NOT_ADD_TO_ANY_OTHER_RUN",
+      "final_artifact_or_runtime_acceptance": false,
+      "id": "LATEST_GROWTH_AND_TWO_CONTROLS",
+      "installed_distributions": 157,
+      "internal_imports": 81,
+      "junit": {
+        "bytes": 732,
+        "cases": [
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+            "seconds": 18.487,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+            "seconds": 15.944,
+            "status": "PASS"
+          },
+          {
+            "node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence[slow_round]",
+            "seconds": 17.445,
+            "status": "PASS"
+          }
+        ],
+        "errors": 0,
+        "failures": 0,
+        "path": "docs/audits/convergence/evidence/budget-primary-source-custody/7e66-growth-controls.junit.xml",
+        "seconds": 53.179,
+        "sha256": "de0b2a082f6df12dee49bfb9b6ee80129314f882e5ed9a63bdd3b8769c459688",
+        "skipped": 0,
+        "tests": 3
+      },
+      "limits": [
+        "Exactly3 targeted cases passed, after the fixture correction. No65/219 suite was rerun; no summed fullsuite GREEN is claimed.",
+        "The ledger growth is an isolated typed PRIMARY SQL adversary with NO_ENTRY_AUTHORITY; no sixth real financial fill or financial coherence is asserted."
+      ],
+      "native_receipt": {
+        "bytes": 106832,
+        "path": "docs/audits/convergence/evidence/budget-primary-source-custody/7e66-growth-controls-native-receipt.json",
+        "sha256": "6d3e6057ac23d2e4c577cf5aa422d1d461775672c59ca0b8412e6c28ef33b196"
+      },
+      "provider_attempts": 0,
+      "source_files": 1557,
+      "source_inventory_sha256": "7fed30ddfa8c76b7a0f9ef140820f9ee9cc7f1ecc1383e04f6c7ac1a55df6b08",
+      "source_sha": "7e66f757754252be408249c6124cda5a3ba9cd7c",
+      "source_tree": "70e6df5ac13c5e7dd941b6124291c9262cc35997",
+      "whole_source_before_after_unchanged": true
+    }
+  ],
+  "final_acceptance_pending": [
+    "Final ROOT integrated full governed JUnit on its exact source pin",
+    "Final frozen FIP/GovernedReceipt/immutableartifact/imagebinding",
+    "External provider commercial/capacity/clock/currentaccount evidence",
+    "Material source-copy performance/BIG, ARCH9h/512quota and UI deadlines are separate owners and remain outside this scoped evidence"
+  ],
+  "final_input_provenance": null,
+  "final_source_commit_sha": null,
+  "fix": {
+    "busy_timeout_milliseconds": 5,
+    "deadline_rule": "min(inherited monotonic absolute deadline, capture entry+0.15); one bound covers capture, SQL and mandatory cleanup; neither10s readonly_copy default nor a new5s cadence is introduced",
+    "failure_contract": "missing/busy/concurrent/aliased/unprivileged/oversized/scratch-full/expired source returns None or caller-supplied unverified, never inferred zero. APPROVED activation and LOWER fail closed; existing warm EXIT keeps only saved caps/cadence/expiry/debt under its existing blocked activation contract.",
+    "limit_origin": "NEW conservative total custody guard; the original5ms SQLite busy timeout was never an absolute execution deadline.0.15s matches the existing native worker metadata capture bound.",
+    "new_standalone_capture_limit_seconds": 0.15,
+    "observer_contract": "derive one absolute deadline from remaining producer cadence at observer entry; pass it through _current/count/digests/state; include observer elapsed time before publishing round evidence",
+    "optional_deadline_apis": [
+      "supervisable_position_count(database,unverified=None,*,deadline=None)",
+      "_supervisable_identity_digests(database,*,deadline=None)",
+      "RuntimeCapacityController.state(as_of=None,*,deadline=None)",
+      "RuntimePPIBudget._current(priority='DISCOVERY',deadline=None)"
+    ],
+    "optional_deadline_compatibility": "When deadline isNone, Runtime._current preserves the old controller.state(clock()) duck API. A real inherited absolute is always forwarded.",
+    "paths": [
+      "rc6_ppi_global_budget.py",
+      "rc6_dynamic_universe/promotion.py"
+    ],
+    "progress_check_steps": 100,
+    "query_contract": "PAPER observer_state=('PRODUCTION_PAPER',0), OPEN paper_positions plus ACTIVE paper_future_positions, including expired/pending ACTIVE futures, exact five-key identity digests and original64 tracking ceiling",
+    "sidecar": "arbiter global.sqlite SQL, maintenance, receipts, policy debt, real wire leasing and intentional writer ownership unchanged",
+    "sql_and_math": "unchanged SQL predicates, family/state counts, reserve/capacity/cadence/retention arithmetic and successful capacity fingerprints; sqlite3.Row is converted to tuple for PAPER state comparison",
+    "transport": "existing source_connection -> readonly_copy: source-owner NoAtime capture, coherent private main+WAL, SHM reconstructed exclusively in scratch, double source byte/identity verification",
+    "vm_step_ceiling": 100000
+  },
+  "guards": [
+    {
+      "contract": "Source main/WAL/SHM bytes+metadata unchanged;10 real native OPEN/ACTIVE; capacity/fingerprint/exactfloor60 unchanged; private SQL only.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[count]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[digests]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[controller]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[runtime]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "FAIL"
+        },
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[round]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[count]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[digests]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[controller]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[runtime]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[round]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[count]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[digests]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[controller]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[runtime]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[round]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+      "role": "NATIVE_CUSTODY_AND_MATH_POSITIVE"
+    },
+    {
+      "contract": "Expired inherited deadline prevents source capture and never infers zero/approved floor.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[count]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[digests]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[controller]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[runtime]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[count]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[digests]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[controller]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[runtime]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[count]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[digests]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[controller]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[runtime]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+      "role": "ADVERSARIAL_DEADLINE"
+    },
+    {
+      "contract": "One min(inherited,entry+.15) bound; a delayed native read cannot restart it.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[2.0-0.2]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[0.01-0.02]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[2.0-0.2]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[0.01-0.02]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[2.0-0.2]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[0.01-0.02]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+      "role": "ADVERSARIAL_ELAPSED_CAPTURE"
+    },
+    {
+      "contract": "Cleanup belongs to the same new.15 bound; expired capture returnsunknown.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+      "role": "ADVERSARIAL_CLEANUP"
+    },
+    {
+      "contract": "File symlink, parent symlink and hardlink failclosed without primary SQLite or repair.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[symlink]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[parent_symlink]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[hardlink]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[symlink]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[parent_symlink]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[hardlink]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[symlink]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[parent_symlink]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair[hardlink]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+      "role": "ADVERSARIAL_ALIAS"
+    },
+    {
+      "contract": "Private scratch quota failure keeps native source custody and blocks activation.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+      "role": "ADVERSARIAL_SCRATCH_QUOTA"
+    },
+    {
+      "contract": "A distinct native fixture writer changes source during capture; unknown, notzero; reader addsnoeffects.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+      "role": "ADVERSARIAL_ACTUAL_PRIMARY_WRITER"
+    },
+    {
+      "contract": "OFF/SHADOW retain earlyreturn; no new ledger capture or dynamic authority.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[OFF]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[SHADOW]",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[OFF]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[SHADOW]",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[OFF]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[SHADOW]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+      "role": "BASELINE_POSITIVE_CONTROL"
+    },
+    {
+      "contract": "Real BEGINIMMEDIATE/write creates DELETEjournal; reader staysunknown until writerrollback.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "FAIL"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+      "role": "ADVERSARIAL_NATIVE_HOT_JOURNAL"
+    },
+    {
+      "contract": "Capture/cleanup time is included in the remaining5s round and cannot release existing EXIT debt.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_INITIAL_NATIVE_TEST_HARNESS_PRECONDITIONS",
+          "junit_sha256": "f57fa425287b8a815fac4cfb4c618cd7334852496f8c563b921cd19247c41ce0",
+          "node": "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+          "phase": "AF56_INITIAL_GUARDS",
+          "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_CALLER_INTEROP_METADATA_REGRESSION_RED",
+          "junit_sha256": "59fd0b0a8bbbe2e57186d5c825c94541f19cb4ad5024447a5fabacc67cc7a3ea",
+          "node": "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+          "phase": "F416_INTEROP",
+          "source_sha": "416e6f4f7501c97db71d508939e48e0aa75027e8",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+      "role": "ADVERSARIAL_ROUND_ELAPSED"
+    },
+    {
+      "contract": "Late round has freshNone. Only verified same-owner first-admission real five-key set preserves historic10; noadmission/unverified/discarded/error/foreign observer cannotborrow; nextgenerationclears.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[verified]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[no_admission]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[unverified_source]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[discarded]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[read_error]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[foreign_observer]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[verified]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[no_admission]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[unverified_source]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[discarded]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[read_error]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count[foreign_observer]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+      "role": "NATIVE_HISTORICAL_CONTROL_AND_ADVERSARIES"
+    },
+    {
+      "contract": "Entry remains riskblocked/count10; explicit NO_ENTRY_AUTHORITY PRIMARY row causes native count/digests11 and receipt-storageBLOCKED; frozen10/freshNone/currentfalse/covered0/degraded/LOWER/debt/savedbook60/receipts remain; nextblockedgeneration hasnohistoricalcount.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "FAIL"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "FAIL"
+        },
+        {
+          "classification": "NATIVE_SCOPED_GREEN",
+          "junit_sha256": "de0b2a082f6df12dee49bfb9b6ee80129314f882e5ed9a63bdd3b8769c459688",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+          "phase": "LATEST_GROWTH_AND_TWO_CONTROLS",
+          "source_sha": "7e66f757754252be408249c6124cda5a3ba9cd7c",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+      "role": "NATIVE_ENTRY_VETO_PLUS_ADVERSARIAL_PRIMARY_GROWTH"
+    },
+    {
+      "contract": "Native identity swap keeps count10 but coverage9; fresh exactset drivesdebt, never frozen count.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_GREEN",
+          "junit_sha256": "de0b2a082f6df12dee49bfb9b6ee80129314f882e5ed9a63bdd3b8769c459688",
+          "node": "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+          "phase": "LATEST_GROWTH_AND_TWO_CONTROLS",
+          "source_sha": "7e66f757754252be408249c6124cda5a3ba9cd7c",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+      "role": "ADVERSARIAL_EXACT_FIVE_KEY_SWAP"
+    },
+    {
+      "contract": "Two actual readers and optionally discardwhilebodyactive invalidate scope; exactlyoneHTTP/usedlease remains; observation cannotclearLOWERdebt.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[False]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[True]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[False]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[True]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+      "role": "ADVERSARIAL_NATIVE_CONCURRENT_READER"
+    },
+    {
+      "contract": "Real firstscope then synthetic sidecar captured_at=recorded+1us: writerDEGRADED and readerUNVERIFIED, barrierpreserved.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+      "role": "ADVERSARIAL_TEMPORAL_METADATA"
+    },
+    {
+      "contract": "Typed invalid counts/reserve/demand/FP/reco rejected in writer+reader; validotherorigins andemptyhistoricalcounts remain historical and cannotreleasefreshNone debt.",
+      "current_source_scope": "Only LATEST_GROWTH_AND_TWO_CONTROLS cases were executed on7e66. Other recorded guards retain their actual historical source pins; full final ROOT execution is pending.",
+      "execution_evidence": [
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[other_valid_bindings]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[valid_empty_historical_scope]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_bool]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_over_limit]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[reserved_too_small]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_bool]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_negative]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_missing]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[configuration_malformed]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "INVALIDATED_HARNESS_AFTER_TESTS",
+          "junit_sha256": "e0848e718d438978976b89ee31604aef0ea07e5675cdced743351b2560c207bf",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[recommendation_malformed]",
+          "phase": "F505_EXPANDED_GUARDS",
+          "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[other_valid_bindings]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[valid_empty_historical_scope]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_bool]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_over_limit]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[reserved_too_small]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_bool]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_negative]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_missing]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[configuration_malformed]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        },
+        {
+          "classification": "NATIVE_SCOPED_NOT_GREEN_FIXTURE_ENTRY_RISK_PRECONDITION",
+          "junit_sha256": "44b136b6bc5eaa6065ed108fd0739769824197fb83cd30801c5de7e85929ac74",
+          "node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[recommendation_malformed]",
+          "phase": "B8B_AFFECTED_CONTROLS",
+          "source_sha": "b8b91aa9cce5a314065101d4dda9863fbf219d3e",
+          "status": "PASS"
+        }
+      ],
+      "guard_source_sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778",
+      "pytest_node": "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+      "role": "SYNTHETIC_METADATA_SCHEMA_NOT_NATIVE_LEDGER_CAPTURE"
+    }
+  ],
+  "inspected_own_source": {
+    "sha": "7e66f757754252be408249c6124cda5a3ba9cd7c",
+    "source_bindings": {
+      "rc6_dynamic_universe/promotion.py": {
+        "bytes": 21403,
+        "sha256": "e79152faa786bdf90eb7700aa4543aec280ecc6fa01b2b882ee05b7f83ab4ae4"
+      },
+      "rc6_ppi_global_budget.py": {
+        "bytes": 121464,
+        "sha256": "795de3360cf42424cb8a18fa68fda862204732390d1a643477d74c6b8d897d7b"
+      },
+      "tests/probes/rc6_budget_primary_custody_probe.py": {
+        "bytes": 12113,
+        "sha256": "be1330f0e8f16baea806382b2602a9a40fefdb7ae7bb99f17de726ee14d9d437"
+      },
+      "tests/probes/rc6_budget_source_custody_pytest_runner.py": {
+        "bytes": 7501,
+        "sha256": "1640948d4997c62c934cdeed141c726d5bb689bd3eddea17a1c9268a7812554a"
+      },
+      "tests/test_rc6_budget_source_custody.py": {
+        "bytes": 36477,
+        "sha256": "0833abb2467f86338ffe2b5a2c267fad3d6a34700f37f00ae01dbf42dcd78778"
+      },
+      "tests/test_rc6_convergence_budget_liveness.py": {
+        "bytes": 46857,
+        "sha256": "7f3321eaa82f78553b063f8a8616ee234879878c2d3e2a22312a6c4d504c2e0d"
+      }
+    },
+    "tree": "70e6df5ac13c5e7dd941b6124291c9262cc35997"
+  },
+  "intermediate_frozen_scope_contract": {
+    "basis": "FROZEN_AT_FIRST_ADMISSION",
+    "binding_fields": [
+      "identity_count",
+      "identity_scope_digest",
+      "captured_at",
+      "configuration_fingerprint",
+      "recommendation_digest",
+      "expires_at",
+      "reserved_open_positions_count",
+      "reserved_exit_demand"
+    ],
+    "cleanup": "Public discard_exit_round_scope() is memoryonly; Root bridge calls beforeeachround and in finally for success/errors/abort/stop. Runtime observe always consumes the scope in finally.",
+    "clock_and_schema_contract": "Validate typed counts/demand/digests/capture<expiry and captured_at<=recorded_at in writer and reader. Valid historical policy/recommendation changes are keptasoriginalbindings, notrewrittenascurrent.",
+    "elapsed_contract": "Firstcapture adds real bounded0.15s cost included by producer round_started; no new5s deadline or PRIMARY capture after expiration.",
+    "fix_commit": "4eaa23bfcf11febc0862e8c2c2a27b268e129128",
+    "memory_bound": "At most64digests underScopeLock. Same object is a transient generation; ownerthread and active-reader invalidation prevent crossround/concurrent authority borrowing.",
+    "native_capture": "First eligible coalesced EXIT_READER/EXIT_CRITICAL verifies actual PRIMARY five-key digests with PAPER0 and READY reserve. Count comes from that real bounded set, notpolicymax,entries,orconstant10.",
+    "policy_debt": "Receipts/livewireownership/caps/cadence/expiry/retainedfloor60 unchanged. Frozen evidence cannotclearcriticalrounddebt or raise demand to66.",
+    "rca": "A safe late observer could not recapture PRIMARY after5s and lost the required-count display10. The fix records historical evidence at the first actually admitted EXIT reader, without replacing a fresh current scope.",
+    "root_bridge_dependency_sha": "f383e814380a608fa70c8c4e7ffd8d647bfc0053",
+    "trust_limit": "Historical metadata is a local producer attestation, not external authentication of a past ledger/policy. Synthetic schema payload guards cannot prove a native admission.",
+    "unknown_contract": "FreshNone alwaysDEGRADED/LOWERsuspended; frozen historicalcount10 can be displayed but fresh_required_count=None, required_scope_verified_current=False, covered_identities_count=0. Only an actual current fresh exactset drivescoverage/debtclear."
+  },
+  "invalidated_505_harness": {
+    "bytes": 17905,
+    "path": "docs/audits/convergence/evidence/budget-primary-source-custody/505a-invalidated-harness-diagnostic.json",
+    "sha256": "d564090cae08091f99b86b158f32af688753c2889af5c47bf8c269fbd2d5dc9f"
+  },
+  "limits": [
+    "Executed source/scoped evidence is explicitly pinned per phase. RAW passes, failedfixture, invalidatedharness, priorProductRED and current3-case GREEN are kept separate.",
+    "Synthetic native five OPEN plus five ACTIVE positions are not five actual live A3 contracts or PPI authority.",
+    "Checks detect exhausted elapsed budget and require cleanup; they do not preempt blocking kernel IO or claim a host/provider timing SLO.",
+    "No standalone execution deadline existed in state/_current/_opened/start. Producer5s round observation and coalescer5s follower deadline are distinct existing boundaries.",
+    "A complete source replay is intermediate development evidence, not final FIP, immutable image, deployment or runtime attestation.",
+    "No original requirement count, history123/217 count, or final acceptance is enlarged by these guards."
+  ],
+  "native_growth_precondition": {
+    "adversary": "One isolated typed OPEN row with fresh unique paper_id/symbol and exact ACCIONES/BYMA/ARS/A-24HS. Native columns and Decimal scaffold are retained; nofinancialadmissionkey is copied; features explicitlydenyentryauthority. All other native tables unchanged bythisSQLwriter.",
+    "capacity_contract": "Default8MiB budget and unchanged3endpoint75/global225/30swindow/5scadence:11 requiresbook66 but retainedreceiptstorage exceeds mainquota. Actual controller reportsACTIVATION_BLOCKED_EXIT_CAPACITY/PPI_EXIT_RECEIPT_STORAGE_INSUFFICIENT; noapproved11/fresh11 or raisedbook66 claim.",
+    "classification": "ENTRY_BLOCKED_CONTROL_PLUS_DRIVER_ADVERSARIAL_PRIMARY_LEDGER_WRITER_NO_ENTRY_AUTHORITY",
+    "entry_control": "Actual PaperBroker._open rejects DAILY_RISK_STALE_MARKS from five August ACTIVE futures/carry; nativecount10 remains. No mark/risk/latch/calendar/capital/cash/fee/quota bypass.",
+    "next_generation": "Blocked warm EXIT may retain exact oldauthority. Consumedhistorical10 is not inherited and blockedactivation cannotmint a verified11scope.",
+    "node": "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+    "observed_native_counts": {
+      "future_active": 5,
+      "spot_open": 6,
+      "supervisable": 11,
+      "unique_identity_digests": 11
+    },
+    "observer_expected": {
+      "covered_identities_count": 0,
+      "fresh_required_count": null,
+      "lower_suspended": true,
+      "required_identities_count": 10,
+      "required_scope_basis": "FROZEN_AT_FIRST_ADMISSION",
+      "required_scope_verified_current": false,
+      "saved_book_demand": 60,
+      "status": "DEGRADED"
+    },
+    "source_sha": "7e66f757754252be408249c6124cda5a3ba9cd7c"
+  },
+  "native_reader_fix_control": {
+    "alien_imports": 0,
+    "boundary": "Two native invocations on a separate fresh exactaf56 source/fixture, not a pytest suite or a finalimage/runtime proof.",
+    "classification": "NATIVE_PRIMARY_CUSTODY_CONTROL_GREEN",
+    "internal_imports": 77,
+    "native_results": [
+      {
+        "caller": "count",
+        "observed_count": 10,
+        "positive_math_control": true,
+        "source_custody_preserved": true
+      },
+      {
+        "caller": "digests",
+        "observed_count": 10,
+        "positive_math_control": true,
+        "source_custody_preserved": true
+      }
+    ],
+    "provider_attempts": 0,
+    "receipt": {
+      "bytes": 35332,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/current-af56-native-replay.json",
+      "sha256": "56b8f1e8553a25319a15728efa752d6d65993b6dc790528338195f3f40d14966"
+    },
+    "source_files": 1556,
+    "source_sha": "af56c1c3296f10277a7d53ba9d86ecb35c9ebddf",
+    "source_tree": "9a21488ba3ea254a42e4f0fea95756763ca8ce43",
+    "source_unchanged": true
+  },
+  "original_native_error": {
+    "alien_imports": 0,
+    "boundary": "Both native reader invocations returned10 and changed only MAIN atime in this probe. WAL/SHM bytes and metadata were unchanged; do not relabel this as a new SHM mutation RED.",
+    "classification": "OLD_NATIVE_PRIMARY_CUSTODY_RED_WITH_PRESERVED_MATH_CONTROLS",
+    "internal_imports": 77,
+    "native_results": [
+      {
+        "caller": "count",
+        "changes": {
+          "": {
+            "st_atime_ns": {
+              "after": 1791210623560029320,
+              "before": 0
+            }
+          }
+        },
+        "observed_count": 10,
+        "positive_math_control": true
+      },
+      {
+        "caller": "digests",
+        "changes": {
+          "": {
+            "st_atime_ns": {
+              "after": 1791210623563480606,
+              "before": 0
+            }
+          }
+        },
+        "observed_count": 10,
+        "positive_math_control": true
+      }
+    ],
+    "provider_attempts": 0,
+    "receipt": {
+      "bytes": 35607,
+      "path": "docs/audits/convergence/evidence/budget-primary-source-custody/original-b26-native-replay.json",
+      "sha256": "558abdd69d3970766c2872fe584730e909979513a5e754631baafe7e5709852e"
+    },
+    "source_files": 1553,
+    "source_sha": "b26f4d9360e2f0a7d31abf08d9f29dc79409b64d",
+    "source_tree": "2e712cbfb2dbc8f27bf7692e29f251c5981ec080",
+    "source_unchanged": true
+  },
+  "prior_probe": "tests/probes/rc6_budget_primary_custody_probe.py",
+  "rca": {
+    "fingerprint_fields_unchanged": [
+      "status",
+      "mode",
+      "configuration_fingerprint",
+      "recommendation_digest",
+      "approval_digest",
+      "reason_codes",
+      "exit_capacity"
+    ],
+    "original_budget_sha256": "f4109344794f02ef0bec511af8f41042069aaee48226acfb5d96f677da987dc8",
+    "original_primary_connect_lines": [
+      49,
+      76
+    ],
+    "other_callers": [
+      "RuntimePPIBudget._current/_opened",
+      "RuntimePPIBudget.start -> controller.state/_current",
+      "RuntimePPIBudget.observe_exit_round -> _supervisable_identity_digests and controller.state",
+      "bv.run_reader -> exit_reader_cadence and ProductionMarketReader.observe_exit_round"
+    ],
+    "root_caller": "RuntimeCapacityController.state(APPROVED_DYNAMIC) -> supervisable_position_count",
+    "scope": "PAPER ledger only; no PPI Watch files, provider calls, broker mutations, cash changes or real orders"
+  },
+  "related_existing_additional_finding": "NEW_SOURCE_SQLITE_SIDECAR_METADATA_MUTATION",
+  "related_original_requirement_ids": [
+    "U01",
+    "U05",
+    "U07",
+    "AUD-468-04"
+  ],
+  "runtime_validated": false,
+  "schema": "rc6.budget-primary-source-custody-development.v2",
+  "self_commit_sha": null,
+  "status": "COMMITTEADO_WITH_INTERMEDIATE_NATIVE_EVIDENCE_FINAL_ROOT_ACCEPTANCE_PENDING",
+  "workstream": "BUDGET_SOURCE_CUSTODY"
+}

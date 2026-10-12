@@ -1,0 +1,41 @@
+{
+  "acceptance_complete": false,
+  "actual_capture": {
+    "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-1280.png",
+    "private_view_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-1280.png",
+    "sha256": "f2be69e0eed3c8e1990f9fbc9767b4261dfb811c5b9dd7cb8f63c187cb7f44e8"
+  },
+  "browser_C_reclassified": false,
+  "native_execution": false,
+  "observed_limit": "RUNTIME_READY badge NO_VERIFICADO wraps its final O onto a separate line at1280. Both lines remain visible; no overlap, fetch failure or recorded gate failure. Native C GREEN and external custody RED are unchanged.",
+  "observed_source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "observed_source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+  "owned_paths_proposed": [
+    {
+      "change": "Add readiness-column semantic class to generated th and td only when Field.key==readiness and Field.kind==status. Existing secondary class and all data-label/status/IDs/text remain unchanged.",
+      "observed_sha256": "dfb0b823fec0ad827382cd2295c338a459537340d71f4d62f125a9cba5dd05c1",
+      "path": "rc6_trader_dashboard/components.py"
+    },
+    {
+      "change": "Add two desktop-only selectors below; retain all original global wrapping and mobile rules.",
+      "observed_sha256": "15659acf999c7053c6c44cc87505dd6069ba50500e49e67e8792909ace0744fb",
+      "path": "rc6_trader_dashboard/design_system.py"
+    }
+  ],
+  "product_edit": false,
+  "proposed_css": "@media(min-width:1025px){.terminal-table th.readiness-column{width:9rem}.terminal-table td.readiness-column .badge[data-status=\"NO_VERIFICADO\"]{white-space:nowrap;overflow-wrap:normal}}",
+  "root_source_write": false,
+  "schema": "rc6.ux-readiness-badge-1280-minimal-source-proposal.v1",
+  "scope": "Only readiness status column and the bounded thirteen-character NO_VERIFICADO token at desktop sizes. Longer status labels retain wrapping; <=1024 layouts receive no new CSS.",
+  "semantic_contracts_unchanged": [
+    "full labels and native status authority",
+    "49routes/22aliases/8menus",
+    "focus/fetch/refresh and existing IDs",
+    "mobile cards and secondary fields",
+    "pagination/counts/cut/full5/currency/channel",
+    "source read-only/native math/provider authority"
+  ],
+  "source_cause": "Fixed table layout, details column25%, six other columns share75%. Badge inline-flex has max-width100% plus overflow-wrap:anywhere, allowing anonymous text to break inside a short readiness token in the narrower1280 cell.",
+  "status": "SOURCE_ONLY_PROPOSAL_NO_PRODUCT_EDIT",
+  "validation_plan": "Root SOURCE RO first; isolated UX commit after approval. No CSS-mirroring tests. Future already-required BrowserD actual1280 screenshot plus49x6/22aliases is the meaningful validation; no new screenshot or Native now."
+}

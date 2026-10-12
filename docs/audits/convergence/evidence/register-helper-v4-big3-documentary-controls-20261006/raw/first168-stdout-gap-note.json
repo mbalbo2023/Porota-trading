@@ -1,0 +1,19 @@
+{
+  "final_register_generated": false,
+  "first_epoch": {
+    "actual_cli_exit_code": 0,
+    "full_stdout_reconstruction_claimed": false,
+    "legacy_receipt": "/tmp/rc6_register_helpers_v4_publication_big3_legacy_controls_v2_receipt.json",
+    "legacy_receipt_sha256": "d7b60faf593faf4c62d364a63c7efcfb45646f9d36eee2b020ddfd965608f471",
+    "predeploy_stdout_full_raw_file_captured": false,
+    "session_id": 16872,
+    "tool_stdout_was_truncated": true
+  },
+  "next_epoch": {
+    "driver_unchanged_sha256": "88e52e188d981c5eaf70820bd60b3f66d50be282997b61dbf71a60d77738c1d7",
+    "reason": "CAPTURE_EXACT_STDOUT_RECEIPT_IN_NEW_PRIVATE_RAW_WITHOUT_CHANGING_HELPER_DRIVER_OR_EXPECTED_CONTROLS",
+    "scope": "REPEATED_168_DOCUMENTARY_INVOCATIONS_NOT_ADDITIONAL_SCENARIOS_OR_NATIVE_EXECUTION"
+  },
+  "product_native_executions": 0,
+  "schema": "rc6.documentary-control-dispatch-custody-note.v1"
+}

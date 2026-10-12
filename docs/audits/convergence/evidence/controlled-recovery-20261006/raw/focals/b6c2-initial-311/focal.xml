@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="50" time="101.449" timestamp="2026-10-06T10:14:19.808402+00:00" hostname="e3a19f0fe025"><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_retained_pinned_module_origin_is_reported" time="0.146" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_exec_of_alien_module_deleted_after_import_remains_blocked" time="0.147" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_opaque_exec_is_unverified_without_generic_allowlist" time="0.164" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_unresolved_filename_none_is_not_treated_as_a_closed_import" time="0.159" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_bounded_audit_overflow_keeps_complete_counter_and_refuses_closure" time="0.156" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_audit_hook_deactivation_does_not_contaminate_next_observer" time="0.218" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_snapshot_failure_unconditionally_deactivates_owned_hook" time="0.168" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_stress_early_failure_deactivates_hook_before_next_observer[root_abort]" time="0.262" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_stress_early_failure_deactivates_hook_before_next_observer[fixture_abort]" time="0.294" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_child_startup_base_exception_deactivates_owned_hook[child_initial_abort]" time="0.275" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_child_startup_base_exception_deactivates_owned_hook[child_queue_abort]" time="0.274" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_nonzero_actual_child_preserves_initial_and_failure_proof_in_typed_evidence" time="0.405" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_partial_source_cli_is_rejected_before_fixture_or_business_import" time="0.058" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_wrong_source_pin_rejects_before_environment_or_fixture" time="0.002" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_wrong_actual_parent_pid_reports_incomplete_before_product_startup" time="0.001" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_late_proof_allocation_is_covered_by_actual_reaped_children_peak" time="0.056" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_unreaped_child_does_not_claim_a_lifetime_rss" time="0.003" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_callback_source_has_no_hash_io_profile_or_gc_operation" time="0.031" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_exact_typing_public_aliases_are_classified_without_pretending_module_type" time="0.242" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_audit_hook_installation_requires_unique_owned_sentinel_and_restores_after_failure[audit_hook_veto-0-ValueError]" time="0.333" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_audit_hook_installation_requires_unique_owned_sentinel_and_restores_after_failure[audit_hook_duplicate-2-ValueError]" time="0.275" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_audit_hook_installation_requires_unique_owned_sentinel_and_restores_after_failure[audit_hook_error-0-KeyboardInterrupt]" time="0.260" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_false_typing_alias_with_real_metaclass_and_matching_name_stays_unverified[false_typing_alias]" time="0.234" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_false_typing_alias_with_real_metaclass_and_matching_name_stays_unverified[false_typing_metadata]" time="0.243" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_loader_metaclass_descriptors_are_not_invoked_by_observer_and_original_delegation_survives[foreign_loader_result]" time="0.245" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_loader_metaclass_descriptors_are_not_invoked_by_observer_and_original_delegation_survives[foreign_loader_abort]" time="0.233" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_real_language_factory_exec_has_exact_code_and_callsite_evidence[namedtuple-collections.namedtuple]" time="0.249" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_real_language_factory_exec_has_exact_code_and_callsite_evidence[dataclass-dataclasses._create_fn]" time="0.227" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_cloned_factory_with_same_code_but_foreign_globals_is_rejected" time="0.302" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_valid_language_generation_over_text_bound_does_not_raise_provenance_cap" time="0.237" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_frozen_filename_requires_actual_interpreter_code_reference[real_frozen-True]" time="0.225" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_frozen_filename_requires_actual_interpreter_code_reference[fake_frozen-False]" time="0.217" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_optional_missing_outcome_is_bounded_and_distinct_from_final_absence[optional_missing-1]" time="0.216" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_optional_missing_outcome_is_bounded_and_distinct_from_final_absence[missing_repeated-100]" time="0.230" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_fabricated_missing_audit_event_has_no_actual_import_outcome" time="0.225" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_user_finder_constructed_module_not_found_is_not_core_optional_absence" time="0.218" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_pinned_transient_module_is_joined_to_loader_and_execution_after_deletion" time="0.218" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_private_alien_loader_and_base_exception_preserve_evidence_and_restore_protocol[transient_alien]" time="0.223" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_private_alien_loader_and_base_exception_preserve_evidence_and_restore_protocol[loader_abort]" time="0.223" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage" time="0.261" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_replaced_or_unknown_native_runtime_module_has_no_name_based_exemption[false_cython_after-cython_runtime]" time="0.243" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_replaced_or_unknown_native_runtime_module_has_no_name_based_exemption[unknown_runtime_module-rc6_unknown_extension_runtime]" time="0.230" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_runtime_registry_proof_rejects_ambiguous_concurrent_stale_or_late_type_authority[cython_ambiguous_companion]" time="0.319" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_runtime_registry_proof_rejects_ambiguous_concurrent_stale_or_late_type_authority[cython_concurrent_loader]" time="0.292" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_runtime_registry_proof_rejects_ambiguous_concurrent_stale_or_late_type_authority[cython_companion_replaced]" time="0.229" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_runtime_registry_proof_rejects_ambiguous_concurrent_stale_or_late_type_authority[cython_parent_type_replaced]" time="0.238" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_runtime_registry_proof_rejects_ambiguous_concurrent_stale_or_late_type_authority[cython_parent_type_added_after]" time="0.289" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_runtime_registry_proof_rejects_ambiguous_concurrent_stale_or_late_type_authority[cython_preexisting]" time="0.287" /><testcase classname="tests.test_rc6_native_big_import_provenance" name="test_runtime_registry_proof_rejects_ambiguous_concurrent_stale_or_late_type_authority[cython_runtime_same_object_namespace_mutated]" time="0.225" /><testcase classname="tests.test_issue465_stress" name="test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint" time="90.611"><failure message="AssertionError: SHADOW_CHILD_EXIT:1">def test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint():
+        from rc6_shadow_runtime.worker import ShadowRuntime
+        from rc6_shadow_runtime.persistence import shadow_evidence_root, shadow_archive_root
+        from unittest.mock import patch
+        from cg_paper_workspace import artifact_root
+        from rc6_audit_evidence.sqlite_scratch import LOCK
+        from scripts.rc6_sqlite_scratch_guard import runtime_settings
+        # Canonical scratch requires real disk, while pytest's /tmp may be tmpfs.
+        with tempfile.TemporaryDirectory(prefix=".rc6-canonical-stress-", dir=Path.cwd()) as directory:
+&gt;           result = run_stress(Path(directory) / "canonical", catalog_count=20, canonical_runtime=True, slow_disk=True)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../../Porota-trading/tests/test_issue465_stress.py:83: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../Porota-trading/scripts/rc6_issue465_stress.py:591: in run_stress
+    return _run_stress(root,catalog_count=catalog_count,observations_per_identity=observations_per_identity,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/workspace/scratch/porota-native-focal311-b6c2/.rc6-canonical-stress-65m157ra/canonical')
+catalog_count = 20, observations_per_identity = 5, slow_disk = True
+maximum_bytes = 134217728, allow_fail_closed = False, canonical_runtime = True
+diagnostic_stacks = None, binding = None, parent_observer = None
+parent_before = None
+
+    def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, maximum_bytes,
+                    allow_fail_closed, canonical_runtime, diagnostic_stacks, binding, parent_observer, parent_before):
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        if any(root.iterdir()):
+            raise ValueError("EMPTY_SYNTHETIC_WORKSPACE_REQUIRED")
+        if type(canonical_runtime) is not bool:
+            raise ValueError("CANONICAL_RUNTIME_FLAG_INVALID")
+        if diagnostic_stacks is not None:
+            diagnostic_stacks = Path(diagnostic_stacks).absolute()
+            if (diagnostic_stacks.exists() or diagnostic_stacks.is_symlink()
+                    or diagnostic_stacks.parent.resolve(strict=True) != diagnostic_stacks.parent):
+                raise ValueError("NEW_PRIVATE_DIAGNOSTIC_STACK_FILE_REQUIRED")
+            diagnostic_stacks = str(diagnostic_stacks)
+        database = root / "data" / "paper_v17" / "observer_v17.db" if canonical_runtime else root / "source.db"
+        database.parent.mkdir(parents=True, exist_ok=True)
+        if canonical_runtime:
+            from cg_paper_workspace import artifact_root
+            output = artifact_root(database) / "dynamic-shadow"
+        else:
+            output = root / "shadow"
+        fixture_database(database, catalog_count=catalog_count,
+                         observations_per_identity=observations_per_identity)
+        source_before = source_custody_snapshot(database)
+        before = source_before[""]["sha256"]
+        ctx = mp.get_context("spawn")
+        started, release, queue = ctx.Event(), ctx.Event(), ctx.Queue()
+        child_args = (str(database), str(output), started, release, queue, slow_disk, maximum_bytes,
+                      canonical_runtime, diagnostic_stacks)
+        if binding is not None:
+            child_args += (binding,)
+        child = ctx.Process(target=_shadow_child,args=child_args)
+        cycle_begin = time.monotonic(); deadline = cycle_begin+90
+        child.start()
+        shadow = {"status": "SHADOW_FAIL_CLOSED", "cycle_completion": False, "cycle_handled": False,
+            "reason": "SHADOW_CONSERVATIVE_CYCLE_DEADLINE", "handler_resources": {}, "phases": [],
+            "fsync": {"fsync_entered": False, "fsync_completed": False, "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"},
+            "elapsed_seconds": 90., "cpu_seconds": 0., "peak_rss_bytes": 0}
+        completed = False
+        progress_receipts = []
+        child_import_before = None
+    
+        def receive(message):
+            nonlocal completed, shadow, child_import_before
+            event = message.pop("_probe_event", None)
+            progress_receipts.append({"event": event,
+                "received_at_monotonic": time.monotonic(),
+                "handler_name": message.get("handler_name"),
+                "entered_at_monotonic": message.get("entered_at_monotonic"),
+                "child_cpu_seconds": message.get("child_cpu_seconds"),
+                "child_elapsed_seconds": message.get("elapsed_seconds"),
+                "phases": list(message.get("phases", [])),
+                "handler_names": sorted(message.get("handler_resources", {}))})
+            if event == "IMPORT_PROVENANCE":
+                child_import_before = message.get("import_provenance")
+            elif event == "FINAL":
+                if message.get("reason") == "NATIVE_IMPORT_WORKER_EXCEPTION":
+                    # Preserve already received native progress/fsync fields. The
+                    # exception wrapper cannot reconstruct unobserved work state.
+                    shadow.update(message)
+                else:
+                    shadow = message
+                completed = True
+            elif event in {"PROGRESS", "FSYNC"}:
+                shadow.update(message)
+    
+        try:
+            # Drain native progress before fsync as well as afterwards. Waiting only
+            # on the fsync event loses the actual completed stages when the original
+            # ninety-second deadline expires first, and can stall a queue feeder.
+            while not started.is_set() and not completed and time.monotonic() &lt; deadline:
+                try:
+                    message = queue.get(timeout=min(.05, max(.001, deadline-time.monotonic())))
+                except Empty:
+                    continue
+                receive(message)
+            # The SHADOW child has separate source/IO ownership; it cannot call exits.
+            exits = factual_exit_probe(root/"exit-paper.db")
+            release.set()
+            # Consume before joining: the multiprocessing feeder cannot finish a
+            # large resource receipt while the parent is waiting for its exit.
+            while not completed and time.monotonic() &lt; deadline:
+                try: message = queue.get(timeout=max(.01, deadline-time.monotonic()))
+                except Empty: break
+                receive(message)
+            if not completed:
+                # Read only already available messages, without extending the cycle
+                # deadline or claiming that a missing fsync was entered.
+                while not completed:
+                    try:
+                        message = queue.get_nowait()
+                    except Empty:
+                        break
+                    receive(message)
+                shadow.update(status="SHADOW_FAIL_CLOSED", cycle_completion=False,
+                    cycle_handled=False, reason="SHADOW_CONSERVATIVE_CYCLE_DEADLINE")
+                proc = Path("/proc") / str(child.pid) / "status"
+                if proc.is_file():
+                    for line in proc.read_text().splitlines():
+                        if line.startswith("VmHWM:"):
+                            shadow["peak_rss_bytes"] = max(shadow["peak_rss_bytes"], int(line.split()[1])*1024)
+            child.join(max(0., deadline-time.monotonic()))
+            if child.is_alive():
+                shadow.update(child_cleanup_completed=False, child_cleanup_reason="SHADOW_CHILD_CLEANUP_DEADLINE")
+            else:
+                shadow["child_cleanup_completed"] = True
+            if not child.is_alive() and child.exitcode != 0:
+                if binding is None:
+&gt;                   raise AssertionError(f"SHADOW_CHILD_EXIT:{child.exitcode}")
+E                   AssertionError: SHADOW_CHILD_EXIT:1
+
+../../Porota-trading/scripts/rc6_issue465_stress.py:708: AssertionError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,20 @@
+--- preserved-v1/run_focals.py
++++ v2/run_focals.py
+@@ -8,7 +8,7 @@
+ assert sys.executable==str(PY)
+ assert tuple(sys.version_info[:2])==((3,11) if EPOCH=='311' else (3,12))
+ os.umask(0o022)
+-OUT=ROOT/('epoch'+EPOCH)
++OUT=ROOT/('v2-epoch'+EPOCH)
+ OUT.mkdir(mode=0o700)
+ for name in ('hypothesis','logs','tmp'):(OUT/name).mkdir(mode=0o700)
+ EXPECTED={'scripts/rc6_controlled_native_child_manager.py': '55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8', 'scripts/porota_predeploy_test_workspace.py': 'e768b5ca51df5646cac1c2739fecb35aa394cbcedecc6d428ddf8f47b7b21e85', 'scripts/rc6_controlled_governed_runner.py': '316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67', 'tests/test_rc6_controlled_native_child_manager.py': 'c91be232136465265fc3971d0516d8c503620f402c20a9aacf4bf06aa2cdff33', 'tests/test_rc6_predeploy_scoped_cleanup.py': '6443a48ad2ca5a68ee281062c392ff97c27eec836638707eb8556228e31e727f', 'scripts/porota_predeploy_cleanup.py': '31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f', 'docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source': 'ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec', '.github/workflows/porota-predeploy-v2.yml': '45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125', 'tests/test_ci_productive_predeploy_contract.py': '18e0840717256861c2f9a187aac88a96e36252339a6b854da2a29bb328c3c1f2'}
+@@ -60,7 +60,7 @@
+ env.update(PYTHONDONTWRITEBYTECODE='1',PYTEST_DISABLE_PLUGIN_AUTOLOAD='1',HYPOTHESIS_STORAGE_DIRECTORY=str(OUT/'hypothesis'),LOG_DIR=str(OUT/'logs'),RUNNER_TEMP=str(OUT),TMPDIR=str(OUT/'tmp'))
+ files=['tests/test_ci_productive_predeploy_contract.py','tests/test_rc6_predeploy_scoped_cleanup.py','tests/test_rc6_controlled_native_child_manager.py']
+ common=[str(PY),'-B','-m','pytest','-q',*files,'-p','no:cacheprovider']
+-collection_argv=common+['--collect-only']
++collection_argv=common+['--collect-only','-v']
+ execution_argv=common+['--basetemp='+str(OUT/'pytest'),'--junitxml='+str(OUT/'junit.xml')]
+ save(OUT/'launch.json',{'epoch':EPOCH,'collection_argv':collection_argv,'execution_argv':execution_argv,'cwd':str(SOURCE),'source_before':source_before,'python':sys.version,'actual_kernel_before':before_kernel,'git_head_before':head_before,'installed_metadata_before':closure_before,'source_qualification':'UNCOMMITTED_DIAGNOSTIC_ONLY_SOURCE_SHA_QUALIFICATION_PENDING','expected_cases':67,'producer_scope':'PROGRAMMATIC_FOCALS_NOT_FULL_GOV_OR_PREDEPLOY','real_orders_sent':0,'PAPER_SHADOW_ONLY':True})
+ progress_seq=0

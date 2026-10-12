@@ -1,0 +1,149 @@
+{
+  "INET_guards_not_modified_or_relaxed": true,
+  "actual_unavailable_348070_global_FIN_compact_size_not_proven": true,
+  "argv311": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-publisher-control-0f73-p3llxhal/control/run_control_v2.py",
+    "311"
+  ],
+  "argv312": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-publisher-control-0f73-p3llxhal/control/run_control_v2.py",
+    "312"
+  ],
+  "classification": "DECLARED_EXTERNAL_ALIEN_COMPONENT_FORMATTING_NOT_NATIVE_SOURCE_IMPORT_OR_NEW_BUSINESS_KERNEL_PROOF",
+  "controls": [
+    {
+      "actual_input": "Already closed actual100 CI failure control49894B SHA528062d7a1b676eaadabb6f7668496aae4285c2714dff12e0c703b744ddb0bb3",
+      "assertions": [
+        "original default bytes exactly real raw and canonical",
+        "proposed default bytes exactly same raw",
+        "proposed compact decoded JSON object equals complete actual original",
+        "original reader262144/mode0600/NoFollow/nlink/mount/stat unchanged",
+        "all100 real historical reaps and exit1 phaseRED preserved; no new kernel classification"
+      ],
+      "id": "closed311_default_and_compact"
+    },
+    {
+      "actual_input": "Already closed actual100 CI failure control49460B SHAe08af309a36a1ad2cbd7bfda99bd2105fbe71d1bb9475bfdbff32f52b7af7056",
+      "assertions": "Same complete checks as closed311, arrays and all values preserved",
+      "id": "closed312_default_and_compact"
+    },
+    {
+      "actual_bytes": 2266447,
+      "actual_input": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/epoch311/component-new-mainUnknown/governed-main/collection.parent-source-before.index.json",
+      "actual_input_sha256": "3a156c936f6d7182bdfb577660e86e6cf5c2a91a12f35482847e7b9ef31d8201",
+      "assertions": [
+        "copy every original raw byte O_EXCL0600; no invented fields/kernel arrays/argv growth",
+        "original read_file unchanged maximum262144 raises exactCONTROL_SIZE_LIMIT",
+        "declared original component os.read delegation spy verifies target FD zero payload calls",
+        "original raw file and controlled copy all11stat unchanged"
+      ],
+      "existing_closed_index_binding": {
+        "index_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/complete-raw-index-v2.json",
+        "sha256": "2731d379219ca60d0b6421036a7188b133a45aae92fc7af0137560b0d93230fd"
+      },
+      "id": "genuine_oversize_original_reader_deny",
+      "qualification": "ALREADY_CLOSED_RAW_READER_CONTROL_NOT_NEW_KERNEL_OR_NATIVE_SCOPE_PROOF"
+    }
+  ],
+  "created_utc": "2026-10-06T21:10:37.925622+00:00",
+  "custody": {
+    "actual_CODE_atime_evolution_declared": true,
+    "all_input_stat11_unchanged_before_after": true,
+    "all_output_roots_fresh_mkdir700_all_files_OEXCL_or_original_atomic_publisher600": true,
+    "all_preexisting_input_raw_open_NOFOLLOW_NOATIME": true,
+    "manager_and_worker_CODE_bytes_plus10stable_stats_required": true,
+    "no_Source_or_control_data_log_payload_reads_by_parent_while_child_active": true,
+    "no_old_controls_mutated": true,
+    "output_paths": {
+      "311": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-publisher-control-0f73-p3llxhal/epoch311",
+      "312": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-publisher-control-0f73-p3llxhal/epoch312"
+    }
+  },
+  "execution_sequence": "Only if root authorizes:311 then312 only after actual311 FIN resolved. No retry after RED without new cause/evidence.",
+  "files": [
+    {
+      "bytes": 9620,
+      "launch_allowed_after_root_review_only": false,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-publisher-control-0f73-p3llxhal/control/publisher_control.py",
+      "prepared_only_never_executed": true,
+      "sha256": "0da9a5c42f4640c3ac375a5de25326030d9f79fec1393732f88afdeff7007e88"
+    },
+    {
+      "bytes": 7573,
+      "launch_allowed_after_root_review_only": false,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-publisher-control-0f73-p3llxhal/control/run_control.py",
+      "prepared_only_never_executed": true,
+      "sha256": "33c8ed011fd379885c11403a7a0d76c14c8e4049559bee6f7720ab13d1f3d9cf"
+    },
+    {
+      "bytes": 7718,
+      "launch_allowed_after_root_review_only": true,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-publisher-control-0f73-p3llxhal/control/run_control_v2.py",
+      "prepared_only_never_executed": true,
+      "sha256": "55bb0390adda4433cb11f817169922b33d1209a60024c6b42eb0a2ee7b2a5b79"
+    }
+  ],
+  "final_candidate_eligible": false,
+  "full_gov_big_artifact_image_runtime_qualified": false,
+  "further_native_stage_NOT_PART_OF_THIS_SCRIPT": {
+    "after_root_applies_minimal_diff_and_publishes_new_exact_commit": true,
+    "no_old100_manager_rerun_due_unaffected": true,
+    "no_predeploy0f_duplicate": true,
+    "nodes_unchanged_original_oracles": [
+      "tests/test_rc6_predeploy_scoped_cleanup.py::test_real_owned_pytest_failed_ready100_has_fin_and_never_becomes_green",
+      "tests/test_rc6_controlled_native_child_manager.py::test_live_detached6_remains_unknown_at_cleanup5_and_vetoes_absent_group_signals",
+      "tests/test_rc6_controlled_native_child_manager.py::test_normal_exit0_has_same_parent_kernel_fin_without_residuals"
+    ]
+  },
+  "management": {
+    "UNKNOWN_payload_reads": 0,
+    "actual_main_wait4_ECHILD_PGID_absent_restore_required_before_postreads": true,
+    "actual_manager_call_seconds": 60,
+    "initial_actual_exclusive_ECHILD_required": true,
+    "meaning": "60 is this external short component management, not a changed product/Gov/BIG resource budget",
+    "original1024_adoption_cap_unchanged": true,
+    "original_cleanup_management_seconds": 5,
+    "phaseRED_or_wait4zero_or_late_never_GREEN": true,
+    "termination_grace_seconds": 2
+  },
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "no_real_host_or_docker_or_network_operations_in_control": true,
+  "original_components": {
+    "actual_owned_manager": {
+      "binding": "Preserved V2 literal functions, declared component supervisor only; no product module alias rebinding or overlay.",
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source",
+      "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec"
+    },
+    "cleanup_copy": {
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-compact-proposal-0f73-hco1a9ob/cleanup-before.py.source",
+      "sha256": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f"
+    },
+    "proposed_cleanup_copy": {
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-compact-proposal-0f73-hco1a9ob/cleanup-after.py.source",
+      "sha256": "834395f0ed3aab232f67e713dc9d712c926aa2b4ab38e6762244f1e2d755cebf"
+    }
+  },
+  "original_predeploy_RED_and_control_size_UNKNOWN_not_reclassified": true,
+  "ppi_watch": "UNTOUCHED_OUT_OF_SCOPE",
+  "prepared_only": true,
+  "real_orders_sent": 0,
+  "review_required_before_any_execution": true,
+  "root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-fin-publisher-control-0f73-p3llxhal",
+  "root_only_source_writer": true,
+  "schema": "rc6.publisher-lossless.control-plan.v2",
+  "source_binding_context_only": {
+    "export_index_sha256": "8f8e46aa0baf5cdf0e0e46dc4e1966a279260a025cbf6d82a580778f2000b79a",
+    "original_native_source_import_proof_alien_components_not_accepted": true,
+    "sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+    "source_files_count3680_not_recaptured_or_requalified_by_this_control": true,
+    "tree": "36227e546cb311546f08b80880064dde86a6f630"
+  },
+  "source_runtime_writes": 0,
+  "tests_or_components_executed": false
+}

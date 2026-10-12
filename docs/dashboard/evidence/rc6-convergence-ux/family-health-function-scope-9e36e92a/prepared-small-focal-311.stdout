@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0 -- /workspace/venv_rc6_frozen311/bin/python
+rootdir: /workspace/rc6-ux-family-health-9e36e92a-whole
+configfile: pytest.ini
+collecting ... collected 2 items
+
+tests/test_rc6_browser_family_health_coverage.py::test_multifamily_native_catalog_preserves_supported_dlr_and_actual_page_denominators PASSED [ 50%]
+tests/test_rc6_browser_family_health_coverage.py::test_native_health_cleanup_publisher_failure_still_reaps_child_and_restores_environment PASSED [100%]
+
+- generated xml file: /tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-focal-311.xml -
+============================== 2 passed in 37.93s ==============================

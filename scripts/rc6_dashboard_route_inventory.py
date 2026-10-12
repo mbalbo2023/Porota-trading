@@ -21,6 +21,7 @@ os.environ.setdefault("POROTA_DASHBOARD_TOKEN", "inventory-read-only")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import o_dashboard  # noqa: E402
+from rc6_trader_dashboard.navigation import CANONICAL_PATHS, LEGACY, resolve  # noqa: E402
 
 
 FRAMEWORK_ROUTES = {"/docs", "/docs/oauth2-redirect", "/openapi.json", "/redoc"}
@@ -84,11 +85,29 @@ API_CONCEPTS: dict[str, tuple[list[str], list[str], str]] = {
 def classify(path: str) -> tuple[list[str], list[str], str, str]:
     if path in FRAMEWORK_ROUTES:
         return [], ["FastAPI schema/UI"], "framework", "FRAMEWORK"
+    destination, tab = resolve(path)
+    if destination is not None and (path in CANONICAL_PATHS or path in LEGACY):
+        concepts, datasets = TERMINAL_DATASETS[destination.key]
+        return concepts, datasets, f"{destination.label} > {dict(destination.tabs)[tab]}", "VISIBLE_SURFACE"
+    if path == "/api/trader/logs/download":
+        return ["runtime"], ["bounded sanitized log snapshot"], "sanitized log tail", "API"
     values = ROUTE_CONCEPTS.get(path) or API_CONCEPTS.get(path)
     if values is None:
         raise KeyError(f"UNCLASSIFIED_ROUTE:{path}")
     concepts, datasets, surface = values
     return concepts, datasets, surface, "API" if path.startswith("/api/") else "VISIBLE_SURFACE"
+
+
+TERMINAL_DATASETS = {
+    "inicio": (["runtime", "safety"], ["observer_state", "paper_equity_by_currency", "paper_daily_risk", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "read_committed_projection V2 four roles: operational_funnel"]),
+    "en-vivo": (["runtime", "strategy_eligibility", "readiness"], ["observer_state", "candidate_identity_v2", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "paper_future_exit_intents", "paper_decisions", "decision_evidence_snapshots", "trade_gate_evaluations", "runtime-health.json", "read_committed_projection V2 four roles: operational_funnel/engines"]),
+    "trading": (["readiness", "strategy_eligibility", "contract"], ["candidate_identity_v2", "financial_instrument_catalog", "contract_evidence_v2_current", "committed SHADOW generation adapter"]),
+    "universo": (["readiness", "strategy_eligibility", "catalog"], ["candidate_identity_v2", "financial_instrument_catalog", "committed SHADOW generation adapter"]),
+    "instrumentos": (["catalog", "readiness", "contract"], ["financial_instrument_catalog", "candidate_identity_v2", "contract_evidence_v2_current", "contract_evidence_v2_snapshots", "market_snapshots"]),
+    "riesgo": (["runtime", "safety"], ["paper_daily_risk", "paper_equity_by_currency", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "paper_exit_intents", "paper_future_exit_intents", "read_committed_projection V2 four roles: event_risk if published"]),
+    "analitica": (["history", "learning_history"], ["paper_positions", "paper_future_positions", "paper_family_lifecycle_events", "history_versions_v2", "history_checks_v2", "report_registry", "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"]),
+    "sistema": (["runtime", "timers"], ["observer_state", "api_health", "runtime-health.json: child liveness and runtime_budget_snapshot", "canonical worker states", "systemd snapshot", "bounded sanitized log snapshot", "non-secret configuration allowlist", "read_committed_projection V2 four roles: independent generation integrity/freshness"]),
+}
 
 
 def inventory() -> dict[str, Any]:
@@ -118,12 +137,33 @@ def inventory() -> dict[str, Any]:
             "accessibility": "ARIA + foco + texto además de color + Voice Access" if kind == "VISIBLE_SURFACE" else "JSON/HTTP",
             "locale": "es-AR" if kind == "VISIBLE_SURFACE" else "JSON canónico",
             "write_route": any(method not in {"GET", "HEAD", "OPTIONS"} for method in methods),
+            "presentation_endpoint": ("rc6_trader_dashboard.routes.trader_terminal" if route.path in CANONICAL_PATHS or route.path in LEGACY else "NOT_APPLICABLE"),
+            "canonical_view": ("/".join(CANONICAL_PATHS.get(route.path) or LEGACY.get(route.path)) if route.path in CANONICAL_PATHS or route.path in LEGACY else "NOT_APPLICABLE"),
+            "legacy_compatible_alias": route.path in LEGACY,
         })
     return {
         "schema": "rc6-dashboard-route-inventory-v1",
         "route_count": len(routes),
         "registered_paths": len({row["path"] for row in routes}),
         "routes": routes,
+        "terminal_contracts": {
+            "generation": "rc6.shadow-evidence-generation.v2; same CURRENT/manifest/custody for report/checkpoint/status/derived projection",
+            "projection": "read_committed_projection; rc6.shadow-ui-committed-projection.v1; WIRE_AND_PROJECTION_SEMANTICS; all four wire members verified without materializing original report/checkpoint",
+            "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION; projection derivation links all three original logical digests",
+            "projection_budget": "4 MiB query output; at most ten visible rows/groups; one shared absolute 1-second render deadline; measured resource gates are separate evidence",
+            "shadow_root": "shadow_evidence_root(db): artifact_root(db)/dynamic-shadow; matching frozen overrides only",
+            "sqlite": "readonly_copy(validate=False); coherent private main+WAL copy; source is never opened by SQLite",
+            "positions": "Spot OPEN and future ACTIVE at exact UTC microsecond cut; full identity, family ledger and currency preserved",
+            "funnel": "rc6.prospective-operational-funnel.v1; complete matching counts/denominators; one currency/channel/native cohort for widget and stage cards; independent ten-group pagination does not change selection",
+            "labs": "rc6.runtime-entry-signals.v1 experiments/cohorts; rc6.runtime-shadow-lab.v2 entries; entry_authority=false",
+            "history": "immutable versions selected by known_at/source authority; currency/price_basis/adjustment_basis isolated",
+            "annual_fixed_income": "price variation excludes coupon/amortization/accrual/reinvestment; total return/TIR NO_VERIFICADO",
+            "worker_health": "rc6.runtime-child-health.v1; child liveness, generation freshness and operational readiness are independent",
+            "capacity": "native OFF/SHADOW/APPROVED/BASELINE_FAIL_CLOSED policy separate from measured OPEN evidence",
+            "ppi_budget": "RC6_RUNTIME_BUDGET_SNAPSHOT_V1; read-only observed counters/EXIT pressure, never capacity certification",
+            "greeks": "European Black-Scholes-Merton orientative; explicit exercise/dividend/rate contract; entry_authority=false",
+            "source_closure": "o_dashboard.py and rc6_trader_dashboard Python package must belong to the same frozen SHA/tree/image",
+        },
     }
 
 

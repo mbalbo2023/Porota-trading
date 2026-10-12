@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="44" time="177.452" timestamp="2026-10-05T14:34:52.161501+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[count]" time="2.179" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[digests]" time="1.963" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[controller]" time="2.260" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[runtime]" time="2.277" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[round]" time="2.606" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[count]" time="1.331" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[digests]" time="1.394" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[controller]" time="2.011" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[runtime]" time="1.687" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[2.0-0.2]" time="1.400" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[0.01-0.02]" time="1.452" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success" time="1.443" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_ledger_alias_is_unknown_without_source_sqlite_or_repair[symlink]" time="2.542" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_ledger_alias_is_unknown_without_source_sqlite_or_repair[parent_symlink]" time="2.111" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_ledger_alias_is_unknown_without_source_sqlite_or_repair[hardlink]" time="2.794" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary" time="2.086" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects" time="1.490" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[OFF]" time="1.498" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[SHADOW]" time="1.391" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_hot_rollback_journal_is_unknown_until_writer_finishes" time="0.363" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_observer_includes_its_own_capture_time_and_never_borrows_another_round" time="2.414" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_exit_worker_services_mixed_positions_with_honest_cadence[feasible]" time="42.791" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_exit_worker_services_mixed_positions_with_honest_cadence[slow_round]" time="17.782"><failure message="assert None == 10">wire = (&lt;tests.test_rc6_ppi_capacity_benchmark.Clock object at 0x7f16b4973a10&gt;, [('POST', 'https://clientapi.portfoliopersona...01&amp;type=ACCIONES&amp;settlement=A-24HS'), ...], {'status': 200, 'mode': 'fresh', 'latency': 0.8, 'fail_calls': set(), ...})
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-326/test_native_exit_worker_servic1')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f16b4972a50&gt;
+scenario = 'slow_round'
+
+    @pytest.mark.parametrize("scenario", ["feasible", "slow_round", "OFF", "SHADOW"])
+    def test_native_exit_worker_services_mixed_positions_with_honest_cadence(wire, tmp_path, monkeypatch, scenario):
+        clock, calls, behavior = wire
+        values = reviewed_native_capacity(wire)
+        store = native_mixed_store(tmp_path, clock, monkeypatch)
+        policy, rec, report, approval = values
+        if scenario in {"OFF", "SHADOW"}:
+            policy["mode"] = scenario
+        ctl = promotion.RuntimeCapacityController(store.path, environ={}, policy=policy,
+            recommendation=rec, report=report, approval=approval)
+        arbiter = RuntimePPIBudget(store.path, ctl, clock=clock.now)
+        if scenario not in {"OFF", "SHADOW"}:
+            state = ctl.state(clock.now())
+            assert state["status"] == "APPROVED_DYNAMIC"
+            assert state["exit_capacity"]["open_positions_count"] == 10
+            assert state["exit_capacity"]["exit_demand"]["book"] == 60
+            assert state["exit_capacity"]["status"] == "READY"
+        if scenario == "slow_round":
+            # Each book remains within the per-request deadline. Their accumulated
+            # elapsed time still misses the fleet cadence and must be observable.
+            behavior["latency"] = .8
+    
+        completed, starts, readers = [], [], []
+        actual_reader = readonly.ProductionMarketReader
+        actual_collect = runtime_module.collect_exit_books
+        actual_status = runtime_module._reader_status_write
+    
+        def reader_factory(*args, **kwargs):
+            result = actual_reader(*args, **kwargs, budget=arbiter)
+            readers.append(result)
+            return result
+    
+        def traced_collect(*args, **kwargs):
+            starts.append(clock.mono())
+            return actual_collect(*args, **kwargs)
+    
+        def traced_status(source, state, detail=""):
+            result = actual_status(source, state, detail)
+            if "round_seconds=" in detail:
+                row = {"state": state, "detail": detail, "at": clock.mono()}
+                if "exit_round=" in detail and completed:
+                    completed[-1] = row
+                else:
+                    completed.append(row)
+            return result
+    
+        monkeypatch.setattr(promotion, "capacity_controller_from_environment", lambda database=None: ctl)
+        monkeypatch.setattr(readonly, "ProductionMarketReader", reader_factory)
+        monkeypatch.setattr(observer, "_secret", lambda: ("OFFLINE_KEY", "OFFLINE_SECRET"))
+        monkeypatch.setattr(observer, "_market_phase", lambda: "OPEN")
+        monkeypatch.setattr(observer, "now_iso", lambda: clock.now().isoformat())
+        monkeypatch.setattr(runtime_module, "now_iso", lambda: clock.now().isoformat())
+        monkeypatch.setattr(runtime_module, "time", SimpleNamespace(monotonic=clock.mono))
+        monkeypatch.setattr(runtime_module, "collect_exit_books", traced_collect)
+        monkeypatch.setattr(runtime_module, "_reader_status_write", traced_status)
+        limit = 3 if scenario == "feasible" else 1
+        stop = NativeRoundStop(clock, completed, limit)
+        before = len(calls)
+        runtime_module.run_reader(store, stop)
+        assert len(readers) == 1 and len(starts) == len(completed) == limit
+        native_calls = calls[before:]
+        books = [url for _, url in native_calls if urlsplit(url).path.lower().endswith("/book")]
+        expected_symbols = {"GGAL", "EXIT1", "EXIT2", "EXIT3", "EXIT4", "DLR/AGO26", "DLR/SEP26", "DLR/OCT26", "DLR/NOV26", "DLR/DIC26"}
+        from urllib.parse import parse_qs
+        assert {parse_qs(urlsplit(url).query)["ticker"][0] for url in books} == expected_symbols
+        with store.connect() as c:
+            assert c.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0] == 5
+            assert c.execute("SELECT COUNT(*) FROM paper_future_positions WHERE status='ACTIVE'").fetchone()[0] == 5
+            assert c.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
+        if scenario == "feasible":
+            assert starts[1]-starts[0] == pytest.approx(5)
+            assert starts[2]-starts[1] == pytest.approx(5)
+            assert all(row["state"] == "READY" and "deadline_missed=False" in row["detail"] for row in completed)
+            assert all(wait &gt; 4 for wait in stop.waits)
+            metrics = arbiter.budget.metrics()
+            assert metrics["by_endpoint"]["book"]["used"] == len(books)
+            assert len(metrics["exit_service"]["by_identity_digest"]) == 10
+            assert metrics["exit_service"]["round"]["status"] == "COMPLETE"
+            assert metrics["exit_service"]["round"]["required_identities_count"] == 10
+            # Probe actual lower wire after the three native rounds. Only common
+            # book capacity is usable; complete remaining EXIT/OPENED floors hold.
+            scanner = actual_reader("OFFLINE_KEY", "OFFLINE_SECRET", budget=arbiter, consumer="SCANNER")
+            try:
+                scanner.login_once()
+                accepted = 0
+                for index in range(20):
+                    try:
+                        scanner.book(f"LOWER{index}", "ACCIONES", "A-24HS")
+                        accepted += 1
+                    except BudgetBackpressure as error:
+                        assert "RESERVE" in str(error)
+                        break
+                assert accepted == 5
+            finally:
+                scanner.close()
+            # The real financial supervisor also visits all five exact futures.
+            # Overnight carry is due for the August fixture, including its two
+            # expired contracts. The native daily-risk latch has higher priority
+            # and supplies the final close reason; no policy ordering is changed.
+            supervisor = PaperBroker(store, clock_fn=lambda: clock.now().isoformat())
+            from rc6_paper_family_lifecycle import future_position_contract
+            for position in store.active_future_positions():
+                assert supervisor._future_time_exit_cause(position,
+                    future_position_contract(position), clock.now().isoformat()) == "OVERNIGHT_CARRY_EXIT"
+            supervisor.supervise_futures(clock.now().isoformat())
+            with store.connect() as c:
+                intents = c.execute("SELECT lifecycle_id,cause,state FROM paper_future_exit_intents").fetchall()
+                assert len(intents) == 5
+                assert all(row["cause"] in {"DAILY_RISK_STALE_MARKS", "DAILY_RISK_LATCHED"} for row in intents)
+                assert all(row["state"] == "CLOSED" for row in intents)
+            assert supervisable_position_count(store.path) == 5
+        elif scenario == "slow_round":
+            assert completed[0]["state"] == "DEGRADED"
+            assert "deadline_missed=True" in completed[0]["detail"]
+            assert completed[0]["at"]-starts[0] &gt; 5
+            assert stop.waits == [0.0]
+            metrics = arbiter.budget.metrics()
+            assert metrics["exit_service"]["round"]["status"] == "DEGRADED"
+&gt;           assert metrics["exit_service"]["round"]["required_identities_count"] == 10
+E           assert None == 10
+
+tests/test_rc6_exit_reader_cadence.py:185: AssertionError</failure></testcase><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_exit_worker_services_mixed_positions_with_honest_cadence[OFF]" time="1.379" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_exit_worker_services_mixed_positions_with_honest_cadence[SHADOW]" time="1.357" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[late]" time="9.388" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[read_failure]" time="10.437" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[incomplete]" time="13.557" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[stale]" time="17.022" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears[unknown_ledger]" time="10.487" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_round_busy_has_durable_cross_process_barrier_and_read_only_evidence" time="3.915" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_round_degradation_after_acquire_blocks_lower_start_without_wire_or_debt_loss" time="2.663" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[elapsed_nan]" time="0.009" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[elapsed_bool]" time="0.010" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[elapsed_negative]" time="0.011" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[deadline_changed]" time="0.010" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[failures_bool]" time="0.011" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[failures_negative]" time="0.010" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_round_measurement_cannot_forge_completion_or_clear_durable_lower_barrier[unverified_scope]" time="0.010" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_round_marker_aliases_fail_closed_without_modifying_target[symlink]" time="0.004" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_round_marker_aliases_fail_closed_without_modifying_target[hardlink]" time="0.002" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_round_cannot_acknowledge_completion_when_barrier_directory_sync_fails" time="0.013" /><testcase classname="tests.test_rc6_capacity_retention_activation" name="test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire" time="3.176" /><testcase classname="tests.test_rc6_capacity_retention_activation" name="test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration" time="3.141" /></testsuite></testsuites>

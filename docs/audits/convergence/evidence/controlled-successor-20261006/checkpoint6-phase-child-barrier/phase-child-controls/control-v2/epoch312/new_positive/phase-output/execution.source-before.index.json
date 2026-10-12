@@ -1,0 +1,59 @@
+{
+  "files": {
+    "tests/test_phase_component.py": {
+      "bytes": 157,
+      "git_blob": "b74ca4819a1793ae9e4ed0f966e5d8f333318bb0",
+      "git_mode": "100644",
+      "sha256": "93467ba6ac0a177cf57373abd1f70e13b51e0df26bc6f8412744fcdb18a4c635",
+      "stat_fields": {
+        "st_atime_ns": 1791318701785553007,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791318701786458738,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1094615,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791318701786458738,
+        "st_nlink": 1,
+        "st_size": 157,
+        "st_uid": 1000
+      }
+    }
+  },
+  "git_metadata": {
+    "scope": "NO_GIT_CLAIM_REAL_COMPONENT_CATALOG_ONLY"
+  },
+  "overlay_count": 0,
+  "physical_directories": {
+    ".": {
+      "st_atime_ns": 1791318701785553007,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791318701785553007,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1094612,
+      "st_mode": 16832,
+      "st_mtime_ns": 1791318701785553007,
+      "st_nlink": 3,
+      "st_size": 4096,
+      "st_uid": 1000
+    },
+    "tests": {
+      "st_atime_ns": 1791318701785553007,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791318701785553007,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1094613,
+      "st_mode": 16877,
+      "st_mtime_ns": 1791318701785553007,
+      "st_nlink": 2,
+      "st_size": 4096,
+      "st_uid": 1000
+    }
+  },
+  "scope": "EXPLICIT_TINY_CATALOG_COMPONENT_ADAPTER_NOT_FULL_GIT_SOURCE_QUALIFICATION",
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "whole_Git_source_qualified": false
+}

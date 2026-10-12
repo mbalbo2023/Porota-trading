@@ -1,0 +1,63 @@
+{
+  "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /workspace/venv_rc6_frozen311/bin/python -m pytest tests/test_rc6_convergence_provenance.py tests/test_rc6_convergence_scenario_preservation.py --junitxml=/tmp/rc6_original_closure_rebinding_green.xml",
+  "environment": {
+    "counting": "4 new negative variants across 2 guard templates; green56 includes shared prior provenance controls and is not an independent scenario count",
+    "market_execution": "NOT_CLAIMED",
+    "network": "NOT_USED",
+    "provider_requests": 0,
+    "real_orders_sent": 0,
+    "source_freeze": "PENDING_FINAL_CANDIDATE",
+    "test_plugin_autoload": false
+  },
+  "error": "An executed guard could accompany rewritten original requirement or scenario statements in closure rows.",
+  "fix": "Bind all 55 original_requirement and 80 original_scenario rows by ID and exact value before issuing execution receipts.",
+  "green_code_sha256": {
+    "scripts/rc6_convergence_provenance.py": "82d0bcc3272ad77fc332e75727fa436f6af0f11af379d7e60ef6ab8757a9b01e",
+    "tests/test_rc6_convergence_provenance.py": "56bf3774c01b021c3450d9f222611de7d49e9f1dc5cd3efb4790d315aec2f7ac"
+  },
+  "guard_nodes": [
+    "tests/test_rc6_convergence_provenance.py::test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard",
+    "tests/test_rc6_convergence_provenance.py::test_closure_requirement_cannot_rebind_pinned_registry_with_a_valid_executed_guard"
+  ],
+  "installed_distributions": 157,
+  "installed_versions_sha256": "257646d123aa9661bf633fb3db749d60776e785c407bd3dedd643c912dc510a2",
+  "junit": {
+    "green": {
+      "bytes": 9439,
+      "path": "docs/audits/convergence/evidence/original-closure-rebinding-green.xml",
+      "sha256": "1f011d8b5c9e023dd095515db25a5d71a0b5c050432112397aa3bddcf72bf6b6",
+      "summary": {
+        "errors": "0",
+        "failures": "0",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "56",
+        "time": "31.037",
+        "timestamp": "2026-10-05T05:10:29.980648+00:00"
+      }
+    },
+    "red": {
+      "bytes": 9417,
+      "path": "docs/audits/convergence/evidence/original-closure-rebinding-red.xml",
+      "sha256": "6b3a79dc45f3d7e7dd75166b731af7d5152ff8007dacd0aefdd7edfa71edbbd3",
+      "summary": {
+        "errors": "0",
+        "failures": "4",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "4",
+        "time": "3.733",
+        "timestamp": "2026-10-05T05:09:29.621305+00:00"
+      }
+    }
+  },
+  "native_caller": "Real isolated Git clones/commits and the actual CLI process; XML is explicitly synthetic parser input.",
+  "python": "3.11.16",
+  "rca": "The verifier pinned the input corpus but omitted exact closure-row comparisons with that corpus.",
+  "red_candidate_base": "98153a8f",
+  "red_cli_sha256": "9da4ab21022ef249d57f295978aecb19616ab066e8e34b4f30ce6353bb4a4572",
+  "schema": "rc6.convergence-original-binding-regression.v1",
+  "status": "PASS_NATIVE_OFFLINE_NOT_FINAL_FROZEN"
+}

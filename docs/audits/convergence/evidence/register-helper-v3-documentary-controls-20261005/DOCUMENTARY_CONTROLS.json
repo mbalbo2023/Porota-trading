@@ -1,0 +1,284 @@
+{
+  "schema": "rc6.derived-register-ref-controlled-diagnostic.v1",
+  "scope": "PRIVATE_SYNTHETIC_GIT_JSON_XML_CODEC_ONLY_NO_PRODUCT_IMPORT_NO_NATIVE_GOV_PROVIDER_IMAGE_RUNTIME_OR_FINANCIAL_EXECUTION",
+  "helper_sha256": "28bbb212b333911634e7ea87fea0042503f744253cee87a4ee05140e7bc8f30e",
+  "controls": [
+    {
+      "control": "ROUNDTRIP_ORIGINAL210_SIGNED_ZERO_NULL_SCOPE_AND_CLAUSE_VARIANTS",
+      "result": "PRESERVED",
+      "resolved_refs": 10,
+      "verified_RAW_members": 6
+    },
+    {
+      "control": "RAW_BYTE_DIGEST_MISMATCH",
+      "result": "REJECTED"
+    },
+    {
+      "control": "RAW_GIT_MODE_MISMATCH",
+      "result": "REJECTED"
+    },
+    {
+      "control": "RAW_TREE_MISMATCH",
+      "result": "REJECTED"
+    },
+    {
+      "control": "ABBREVIATED_RAW_SOURCE_SHA",
+      "result": "REJECTED"
+    },
+    {
+      "control": "RAW_LENGTH_BOOL_NOT_INT",
+      "result": "REJECTED"
+    },
+    {
+      "control": "RAW_PATH_ESCAPE",
+      "result": "REJECTED"
+    },
+    {
+      "control": "DERIVED_METADATA_HASH_MISMATCH",
+      "result": "REJECTED"
+    },
+    {
+      "control": "UNKNOWN_REFERENCE_KIND",
+      "result": "REJECTED"
+    },
+    {
+      "control": "FALSE_NEW_EXECUTION_AUTHORITY",
+      "result": "REJECTED"
+    },
+    {
+      "control": "ORIGINAL210_FIELD_MUTATION",
+      "result": "REJECTED"
+    },
+    {
+      "control": "ORIGINAL210_ID_SUBSTITUTION",
+      "result": "REJECTED"
+    },
+    {
+      "control": "ABSENT_LOCAL_PAYLOAD_KEY",
+      "result": "REJECTED"
+    },
+    {
+      "control": "LOCAL_PAYLOAD_HASH_MISMATCH",
+      "result": "REJECTED"
+    },
+    {
+      "control": "DOCUMENT_SOURCE_SNAPSHOT_MISMATCH",
+      "result": "REJECTED"
+    },
+    {
+      "control": "GZIP_UNCOMPRESSED_HASH_MISMATCH",
+      "result": "REJECTED"
+    },
+    {
+      "control": "GZIP_COMPRESSED_LENGTH_MISMATCH",
+      "result": "REJECTED"
+    },
+    {
+      "control": "GZIP_MTIME_FALSE_DECLARATION",
+      "result": "REJECTED"
+    },
+    {
+      "control": "ABSENT_GZIP_RAW_MEMBER_NOT_ZERO_PASS",
+      "result": "REJECTED"
+    },
+    {
+      "control": "GZIP_CRC_CHANGED",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "GZIP_TRUNCATED_TRAILER",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "GZIP_CONCATENATED_MEMBERS",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "GZIP_UNDECLARED_TRAILING_BYTES",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "ARBITRARY_ZIP_MEMBER_UNSUPPORTED",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "KNOWN_GZIP_MTIME0_EXACT_RAW_SCOPES_AND_TWO_CASES",
+      "result": "PRESERVED_WITHOUT_NATIVE_EXECUTION",
+      "compressed_bytes": 130,
+      "uncompressed_bytes": 241,
+      "recorded_case_outcomes": {
+        "PASS": 1,
+        "SKIP": 1
+      }
+    },
+    {
+      "control": "DECLARED_GZIP_RAW_HASH_CHANGED",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "DECLARED_GZIP_UNCOMPRESSED_HASH_CHANGED",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "DECLARED_GZIP_LENGTH_BOOL",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "DECLARED_GZIP_MISSING_PATH_NOT_ZERO_PASS",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "JSON_GZIP_ROUNDTRIP_ORIGINAL_SCOPE_FIELDS_SIGNED_ZERO_AND_LITERAL_REFS",
+      "result": "PRESERVED_WITHOUT_NATIVE_EXECUTION"
+    },
+    {
+      "control": "JSON_GZIP_UNCOMPRESSED_HASH_MISMATCH",
+      "result": "REJECTED"
+    },
+    {
+      "control": "JSON_GZIP_MTIME_FALSE_DECLARATION",
+      "result": "REJECTED"
+    },
+    {
+      "control": "JSON_GZIP_REQUIRED_ENCODING_REMOVED",
+      "result": "REJECTED"
+    },
+    {
+      "control": "RAW_CATALOG_ENCODING_ALTERED",
+      "result": "REJECTED"
+    },
+    {
+      "control": "JSON_GZIP_CRC_CHANGED",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "JSON_GZIP_TRUNCATED_STREAM",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "JSON_GZIP_CONCATENATED_MEMBERS",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "JSON_GZIP_TRAILING_BYTES",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "UNKNOWN_GZIP_ARCHIVE_SUFFIX",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "JSON_DUPLICATE_KEYS_COMPRESSED",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "JSON_NONFINITE_COMPRESSED",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "JSON_GZIP_DECODED_BOUNDARY_SHIM_128_BYTES",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS",
+      "controlled_boundary_shim_bytes": 128,
+      "decoded_fixture_bytes": 129,
+      "operational_limit_measured": false,
+      "production_bound_restored": true
+    },
+    {
+      "control": "ARCHIVAL_SOURCE_AND_LOG_GZIP_BYTES_ONLY_NO_IMPORT_OR_EXECUTION",
+      "result": "PRESERVED"
+    },
+    {
+      "control": "LEGACY_PLAIN_JSON_REF_WITHOUT_ENCODING_REMAINS_EXACT",
+      "result": "PRESERVED"
+    },
+    {
+      "control": "DOSSIER_DECLARES_RELATIVE_MEMBER_HASHES_NO_OVERLAP_COUNT_INFERENCE",
+      "result": "PRESERVED"
+    },
+    {
+      "control": "DOSSIER_STORED_HASH_CHANGED",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "DOSSIER_ORIGINAL_HASH_CHANGED",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "DOSSIER_LENGTH_BOOL",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "DOSSIER_ENCODING_DISAGREES",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "DOSSIER_PATH_ESCAPE",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "DOSSIER_MEMBER_MISSING_NOT_ZERO_PASS",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "DOSSIER_DUPLICATE_MEMBER",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "PACKET_LITERAL_MANIFEST_15_ARCHIVAL_PATHS_THROUGH_PUBLISHED_CUSTODY",
+      "result": "PRESERVED_NO_ARCHIVAL_IMPORT_OR_EXECUTION"
+    },
+    {
+      "control": "PACKET_CUSTODY_MISSING_MAPPING",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "PACKET_CUSTODY_DUPLICATE_STORED",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "PACKET_CUSTODY_MAPPING_HASH",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "PACKET_CUSTODY_MAPPING_MODE",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "PACKET_CUSTODY_CONTROL_HASH",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "PACKET_CUSTODY_WRONG_SCHEMA",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "PACKET_CUSTODY_MISSING_CUSTODY",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "PACKET_CUSTODY_MISSING_RAW",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "PACKET_CUSTODY_ORIGINAL_NAME",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "PACKET_CUSTODY_STORED_ESCAPE",
+      "result": "REJECTED_BY_BOTH_STANDALONE_HELPERS"
+    },
+    {
+      "control": "CONTROLLED_EXTERNAL_COMPACT_CLI_VERIFICATION",
+      "result": "VERIFIED_DOCUMENTARY_REFS_ONLY",
+      "resolved_refs": 10,
+      "verified_RAW_members": 6
+    }
+  ],
+  "supplement_helper_sha256": "5a28dac53c6b63e4e21971ebf96bf1eaa1b65b486199125de3bbbe4c904ba708",
+  "driver_sha256": "40981cd324dbf0270a69c025f794bd3150fafbdc8012dba5b3c7ae851899532c",
+  "control_count": 64,
+  "native_tests_executed": 0,
+  "root_files_modified": false,
+  "generator26MB_executed": false,
+  "claim_boundary": "Controlled parser/codec cases are not native product regression, real final receipt or final freeze."
+}

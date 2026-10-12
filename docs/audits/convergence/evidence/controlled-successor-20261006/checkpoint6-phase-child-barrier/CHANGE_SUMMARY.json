@@ -1,0 +1,106 @@
+{
+  "BIG0f": {
+    "all_original_Data_11_stats_preserved": true,
+    "error": "TIME_BUDGET_EXHAUSTED_AT_POST_YIELD_CHECK",
+    "full_PRE_OPEN_cycle": false,
+    "handler_wall_seconds_descriptive_not_exact_capture_span": 0.522118497,
+    "no_new_performance_source_fix": true,
+    "original_family_budget_seconds": 0.5,
+    "raw_bytes": 265103999,
+    "raw_files": 43,
+    "same_parent_kernel_FIN_closed": true,
+    "scope": "ONE_CANONICAL_12000_X_5_ORIGINAL_BUDGET_RUN",
+    "slow_fsync_closed": false,
+    "source_payload_import_proof": true,
+    "status": "RED"
+  },
+  "DEPLOY_OWNER": "NOT_ACQUIRED",
+  "PAPER_SHADOW_ONLY": true,
+  "PPI_Watch": "UNTOUCHED_OUT_OF_SCOPE",
+  "Predeploy0f": {
+    "actual_zip_bytes": 3741,
+    "actual_zip_sha256": "a8291cbad5f1855198f1a71d496ac507d8830961fe9de63959121f1197c81418",
+    "artifact_id": 11442997716,
+    "counts_and_test_failures": "UNAVAILABLE",
+    "error": "CONTROL_SIZE_LIMIT",
+    "fin_size_lstat_only": 348070,
+    "original_RED_not_reclassified": true,
+    "original_reader_cap": 262144,
+    "postread_control_sha256": "db46a0d0f83f81267b10a81dd2da36ff74d0ea82b3d71d7d864fb9e8e59336c1",
+    "program_artifact_image_runtime_qualified": false,
+    "run": 37522988940,
+    "source_junit_data_log_payload_reads": 0,
+    "status": "TERMINAL_FAIL",
+    "underlying_global_fin_compact_size": "UNOBSERVED"
+  },
+  "changes": [
+    "Move the unchanged seven-line phase_child finalization requirement before every product Source postread. The original five-second finalization, errors, signal veto and all actual kernel witnesses remain required.",
+    "Add optional compact=False to atomic control publication; default canonical bytes and every guard remain unchanged. Only future owned pytest FIN publication requests compact=True; preserve all JSON fields, values, arrays and schema with original 262144-byte reader limit.",
+    "Preserve complete already-closed BIG0f RED, both interpreters of the three phase_child conditions, native publisher formatting/reader controls, original unavailable-global-FIN error artifact and plans. Whole RAW bytes are recoverable from explicit manifests; no old evidence is overwritten."
+  ],
+  "final_candidate_eligible": false,
+  "original_requirements": 55,
+  "original_scenarios": 80,
+  "parent_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "parent_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "pending": [
+    "U14",
+    "UX470-I01",
+    "UX470-I02",
+    "UX470-I03",
+    "UX470-I05",
+    "fullGov311/312 exact final Source",
+    "BIG original budgets and proven cause",
+    "HorizonV3 1201 plus recovery",
+    "BrowserLARGE full OPEN",
+    "newPredeploy/programartifact/digest/image",
+    "supervisor promotion/deploy/runtime"
+  ],
+  "phase_child_controls": {
+    "classification": "DECLARED_EXTERNAL_COMPONENTS_NOT_FULL_GOV",
+    "new_unknown_source_attempts": 0,
+    "old_unknown_attempted_source_vetoed": 1,
+    "original_unknown_RED_at_5_seconds_preserved": true,
+    "payload_reads_after_unknown_before_separate_natural_FIN": 0,
+    "positive_real_ECHILD_allowed_source": true,
+    "raw_index_sha256": "9a410519eaac94318daff3feea40235b2b239a24c14dede81cc7ee00d39f50af",
+    "same_conditions_both_interpreters": 3
+  },
+  "publisher_controls": {
+    "actual_global348070_compact_size": "NOT_PROVEN",
+    "both_311_312_passed": true,
+    "classification": "EXTERNAL_ALIEN_FORMATTING_AND_READER_ONLY",
+    "compact_bytes_full_JSON_equal": [
+      34481,
+      34047
+    ],
+    "default_bytes_exact": [
+      49894,
+      49460
+    ],
+    "genuine_oversize_bytes": 2266447,
+    "historical_closed100_records": 2,
+    "negative_error": "CONTROL_SIZE_LIMIT",
+    "new_native100_tests_on_new_SHA": "PENDING",
+    "original_phase_exit1_RED_preserved": true,
+    "original_reader_limit": 262144,
+    "real_outer_FIN_ECHILD_PGID_restore_both_epochs": true,
+    "same_checks_per_interpreter_not_distinct_business_scenarios": true,
+    "target_payload_read_calls": 0
+  },
+  "raw_manifest_sha256": {
+    "RAW_PRESERVATION.json": "463c49b61ecff6b16088964c7ac3a5a99178f41186fed8e6ee54bfa820626170",
+    "additional-closed-evidence/RAW_PRESERVATION_EXTRA.json": "5acb33fe812ad1622c97ef9bd07f37066b441f739d79f9c2ca888a3e3cb91ba7",
+    "publisher-component-control/RAW_PRESERVATION_PUBLISHER.json": "688ce13a4faa3efe3dd6f699a10052e80779d940bc48545d1edd20a0cfb9b220"
+  },
+  "real_orders_sent": 0,
+  "real_routes": "BLOCKED_NOT_CALLED",
+  "runtime_sha256": {
+    "scripts/porota_predeploy_cleanup.py": "834395f0ed3aab232f67e713dc9d712c926aa2b4ab38e6762244f1e2d755cebf",
+    "scripts/porota_predeploy_test_workspace.py": "a5f5ff87f6634ac831bd5416f0dea6cb756bd5c88930b0d1fb25028bc6fc2b70",
+    "scripts/rc6_controlled_governed_runner.py": "a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47"
+  },
+  "schema": "rc6.controlled-successor.checkpoint6.change-summary.v1",
+  "session": "CODEX_SUCCESSOR_RC6_20261006_1246UTC",
+  "source_qualification": "MINIMUM_FIX_APPLIED_COMPONENTS_ONLY_NEW_SHA_REQUIRES_EXACT_AFFECTED_TESTS_AND_PREDEPLOY_ARTIFACT"
+}

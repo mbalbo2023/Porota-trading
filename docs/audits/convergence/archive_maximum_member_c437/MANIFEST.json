@@ -1,0 +1,100 @@
+{
+  "compression": "LOSSLESS_GZIP_MTIME_ZERO; BOTH_ORIGINAL_AND_STORED_SHA256_AND_BYTES_ARE_BOUND",
+  "files": {
+    "docs/audits/convergence/archive_maximum_member_c437/DOSSIER.json": {
+      "bytes": 66363,
+      "sha256": "5bcfe696daf957b198e4923619ecaf6f34ba11c51c06d3d570d8bb6dd48217d7"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/README.md": {
+      "bytes": 5703,
+      "sha256": "85a1f77ed415d335c6192c126e203eacdead12de7c4f69f0ea7cea0a797b5a1f"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/collection.log": {
+      "bytes": 324,
+      "sha256": "ff98a114f987c2001f3d72a5a0e7b257298d6f9ec57e567bf91a043d10ea4209"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/launch.json": {
+      "bytes": 2054,
+      "sha256": "965de0a3ded347b7ab182eeb3d690078825818877266a447360581e9af52edde"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/maximum-member.xml": {
+      "bytes": 1969,
+      "sha256": "10f67f80b694e2b344c324fe2b7eba2adc7b84a38f18dc73f882a766fb15349e"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/pytest-resource.json": {
+      "bytes": 455,
+      "sha256": "d4565e27aad371010e60ce37a4ad6668a326eab2c0b53790803338acde54e96a"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/pytest.log": {
+      "bytes": 110,
+      "sha256": "2ea7f77f63d2f1dfb0cd433e844264aea2c7f485839b5cd236d7c0c3259c420a"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/pytest.pid": {
+      "bytes": 7,
+      "sha256": "0014ec9fb7bfefdda1bf12968b1db1c801752bc02c275b2946eb4c82e09338c0"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/source.index.json.gz": {
+      "bytes": 168176,
+      "sha256": "21fc54488c67f1f611e8dbb880c45313244d44be54f66fdcbff297ece402a19f"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_outer.stdin.py": {
+      "bytes": 4568,
+      "sha256": "c834d792dd12ee4979792bab2a2ffa04d19a1cba7bc77c704a280f65e3cd0226"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_collection_infra/launch.json": {
+      "bytes": 1398,
+      "sha256": "3f4b936453229297a0501ae133b91e6e988f51185a1ca3f77837918646efab88"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_collection_infra/maximum-member.xml": {
+      "bytes": 1102,
+      "sha256": "da266c3878db3fd61edc118ddc35b1c5eb9b6d707415f41154309780045c7c1f"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_collection_infra/pytest-resource.json": {
+      "bytes": 454,
+      "sha256": "da488268f4e72ec5a39667a18707e99bf26c11dc46992d117725a497cb2d0d4d"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_collection_infra/pytest.log": {
+      "bytes": 1048,
+      "sha256": "b12a2f4b46a4eb0c830663cd08a4fcb3e68a1e10f90cd068404534c7b3f0f0e3"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_collection_infra/pytest.pid": {
+      "bytes": 7,
+      "sha256": "3ae9a19b1154690802c1bc7e8476233e68e8e0221cda05e3f5cbff6f1b980034"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_outer.stdin.py": {
+      "bytes": 3494,
+      "sha256": "ab511f79c11c00bb654076d96d5b1b1dea67998626f2d7c86ba74177c51957a3"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/native/child-resource.json": {
+      "bytes": 738,
+      "sha256": "35fccaa3e9b6b3c96dfa6f17b18e080adaacdadc14a87246a593a9b2bb1ba7a7"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/native/launch-before.json": {
+      "bytes": 1985,
+      "sha256": "953b15935bbe20474a9174f3347d83e1a99ac6a7e05464f46f2aed0aec0f1697"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/native/launch-final.json": {
+      "bytes": 2732,
+      "sha256": "0e4f2de7558ffb455e79ac88f7fdb8c184c394f75ec60484912b0c98487f3aad"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/native/native-receipt.json.gz": {
+      "bytes": 55377,
+      "sha256": "596ab64bbdde839f673a3e0d24e877ac14a0b6fec362690cfe5431c27eb6c558"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/native/native.log": {
+      "bytes": 1372,
+      "sha256": "beb5730d50fe8ef3024848fb1c2cb9558fe22a6d88b8430f6796f1a3678fd90a"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/rc6_archive_maximum_member_probe.py.gz": {
+      "bytes": 16200,
+      "sha256": "242f8370597fa14511014c9c59928cf4d1101495144d1c02105336ce962bc6ee"
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/test_rc6_archive_maximum_member_guard.py.gz": {
+      "bytes": 3088,
+      "sha256": "0864c62c75daf1fdf96faf63d9cb010bfe9da0e6aa48503eed2c96b084580fc8"
+    }
+  },
+  "schema": "rc6.maximum-archive-member-raw-dossier-manifest.v1",
+  "source_sha": "c43782ba33e23cbb813a4a82416f97df9957fc46",
+  "source_tree": "04ae55d3eb7eb27ec737134ece91f64c27c872ba"
+}

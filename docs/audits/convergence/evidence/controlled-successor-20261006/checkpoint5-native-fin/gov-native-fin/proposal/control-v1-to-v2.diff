@@ -1,0 +1,20 @@
+--- real_gov_component_control.py.V1_UNEXECUTED
++++ real_gov_component_control_v2.py.V2_UNEXECUTED
+@@ -83,7 +83,7 @@
+     parser.add_argument('--runner-source', type=Path, required=True)
+     parser.add_argument('--variant', choices=('old', 'new'), required=True)
+     parser.add_argument('--producer', type=Path, required=True)
+-    parser.add_argument('--repo-root', type=Path, required=True)
++    parser.add_argument('--repo-root', type=Path, default=Path('/workspace/scratch/rc6g2e-eabh7h8t/epoch311/source'))
+     parser.add_argument('--source-sha', required=True)
+     parser.add_argument('--source-tree', required=True)
+     parser.add_argument('--output', type=Path, required=True)
+@@ -153,7 +153,7 @@
+         assert producer['all100_verified_zombie_before_producer_exit'] is True and producer['separate_session'] is True
+         assert len(producer['children']) == len(producer['waitid_wnowait_witnesses']) == 100
+         assert {row['pid'] for row in producer['children']} == {row['pid'] for row in phase['adopted_descendants_reaped']}
+-        assert len(phase['adopted_descendants_reaped']) == 100 and all(row['exitcode']==0 for row in phase['adopted_descendants_reaped'])
++        assert len(phase['adopted_descendants_reaped']) == 100 and all(row['exit_code']==0 for row in phase['adopted_descendants_reaped'])
+         assert phase['kernel_wait4_zero_observed_irreversible_red'] is False
+         assert phase['owned_group_signal_observations'] == []
+         if args.variant == 'old':

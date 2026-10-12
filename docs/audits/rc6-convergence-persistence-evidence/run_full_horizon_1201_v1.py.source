@@ -1,0 +1,554 @@
+"""Source preparation only: supervise one exact native full1201 profile.
+
+This is a separate external supervisor, not the historical NORMAL4 driver.
+Its management watchdog never changes the native30s per-cycle contract.
+"""
+from __future__ import annotations
+
+import argparse
+from datetime import datetime
+import hashlib
+import json
+import math
+import os
+from pathlib import Path, PurePosixPath
+import re
+import signal
+import stat
+import subprocess
+import sys
+import time
+import traceback
+
+STATS = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
+         "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
+MEMBERS = {"report.json.gz", "checkpoint.json.gz", "status.json", "manifest.json", "projection.sqlite"}
+PROFILE = "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py"
+DRIVER = "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v1.py.source"
+HEX40, HEX64 = re.compile(r"[0-9a-f]{40}\Z"), re.compile(r"[0-9a-f]{64}\Z")
+
+
+def unique(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("DUPLICATE_JSON_KEY")
+        result[key] = value
+    return result
+
+
+def parse(wire):
+    return json.loads(wire, object_pairs_hook=unique,
+        parse_constant=lambda _: (_ for _ in ()).throw(ValueError("NONFINITE_JSON")))
+
+
+def attributes(info):
+    return {name: getattr(info, name) for name in STATS}
+
+
+def capture(path, *, keep_bytes=False):
+    """Single-link regular bytes plus all11 physical stats; NOATIME reads."""
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+        raise ValueError("REGULAR_SINGLELINK_FILE_REQUIRED:"+str(path))
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    sha, blob, chunks, size = hashlib.sha256(), hashlib.sha1(
+        b"blob "+str(before.st_size).encode()+b"\0"), [], 0
+    try:
+        if attributes(os.fstat(descriptor)) != attributes(before):
+            raise ValueError("FILE_CHANGED_BEFORE_CAPTURE")
+        while block := os.read(descriptor, 1024*1024):
+            sha.update(block); blob.update(block); size += len(block)
+            if keep_bytes:
+                chunks.append(block)
+        if (size != before.st_size or attributes(os.fstat(descriptor)) != attributes(before)
+                or attributes(path.lstat()) != attributes(before)):
+            raise ValueError("FILE_CHANGED_DURING_CAPTURE")
+    finally:
+        os.close(descriptor)
+    return {**attributes(before), "sha256": sha.hexdigest(), "git_blob": blob.hexdigest()}, b"".join(chunks)
+
+
+def directory_names(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    try:
+        before = attributes(os.fstat(descriptor))
+        names = os.listdir(descriptor)
+        if len(names) > 32768 or before != attributes(os.fstat(descriptor)) or before != attributes(path.lstat()):
+            raise ValueError("DIRECTORY_CHANGED_OR_UNBOUNDED")
+        return names
+    finally:
+        os.close(descriptor)
+
+
+def canonical(path, *, existing):
+    path = Path(path).absolute()
+    if path.resolve(strict=existing) != path or any(parent.is_symlink() for parent in path.parents):
+        raise ValueError("CANONICAL_UNALIASED_PATH_REQUIRED:"+str(path))
+    return path
+
+
+def git(repository, *arguments, payload=None):
+    return subprocess.check_output(["git", "--no-replace-objects", "-C", str(repository), *arguments],
+        input=payload, env={**os.environ, "GIT_NO_REPLACE_OBJECTS":"1", "GIT_NO_LAZY_FETCH":"1", "GIT_OPTIONAL_LOCKS":"0"})
+
+
+def raw_objects(repository, identifiers, kind):
+    identifiers = list(dict.fromkeys(identifiers))
+    if not identifiers or any(not HEX40.fullmatch(value) for value in identifiers):
+        raise ValueError("RAW_GIT_IDENTIFIERS_INVALID")
+    wire = git(repository, "cat-file", "--batch", payload=("\n".join(identifiers)+"\n").encode())
+    offset, result = 0, {}
+    for identifier in identifiers:
+        end = wire.find(b"\n", offset)
+        row = wire[offset:end].split()
+        if end < offset or len(row) != 3 or row[:2] != [identifier.encode(), kind.encode()]:
+            raise ValueError("RAW_GIT_OBJECT_HEADER_INVALID")
+        size = int(row[2]); offset = end+1
+        body = wire[offset:offset+size]; offset += size
+        if size < 0 or len(body) != size or wire[offset:offset+1] != b"\n":
+            raise ValueError("RAW_GIT_OBJECT_SIZE_INVALID")
+        offset += 1
+        if hashlib.sha1(kind.encode()+b" "+str(size).encode()+b"\0"+body).hexdigest() != identifier:
+            raise ValueError("RAW_GIT_OBJECT_HASH_INVALID")
+        result[identifier] = body
+    if offset != len(wire):
+        raise ValueError("RAW_GIT_EXTRA_BYTES")
+    return result
+
+
+def inventory(source):
+    files, directories, queue = {}, set(), [source]
+    while queue:
+        parent = queue.pop()
+        for name in directory_names(parent):
+            path = parent/name; info = path.lstat(); relative = path.relative_to(source).as_posix()
+            if stat.S_ISDIR(info.st_mode):
+                if stat.S_IMODE(info.st_mode) != 0o755:
+                    raise ValueError("SOURCE_DIRECTORY_MODE_INVALID")
+                directories.add(relative); queue.append(path)
+            else:
+                snapshot, _ = capture(path)
+                mode = stat.S_IMODE(info.st_mode)
+                if mode not in (0o644, 0o755):
+                    raise ValueError("SOURCE_FILE_MODE_INVALID")
+                files[relative] = {"sha256":snapshot["sha256"], "mode":"100"+format(mode,"03o"), "blob_id":snapshot["git_blob"]}
+    implicit = {p.as_posix() for name in files for p in PurePosixPath(name).parents if p.as_posix() != "."}
+    if directories != implicit:
+        raise ValueError("SOURCE_DIRECTORY_NAMESPACE_NOT_EXACT")
+    return files
+
+
+def verify_source(repository, source, sha, tree, pin):
+    if (not HEX40.fullmatch(sha) or not HEX40.fullmatch(tree)
+            or pin.get("schema") != "rc6.complete-archive-source-pin.v1"
+            or pin.get("source_sha") != sha or pin.get("source_tree") != tree
+            or type(pin.get("overlay_count")) is not int or pin["overlay_count"] != 0
+            or any(not isinstance(pin.get(key), dict) for key in ("files","modes","blob_ids"))):
+        raise ValueError("COMPLETE_SOURCE_PIN_REQUIRED")
+    if git(repository,"for-each-ref","--format=%(refname)","refs/replace").strip():
+        raise ValueError("GIT_REPLACE_REFERENCES_FORBIDDEN")
+    commit = raw_objects(repository, [sha], "commit")[sha]
+    if not commit.startswith(b"tree "+tree.encode()+b"\n") or hashlib.sha256(commit).hexdigest() != pin.get("raw_git_commit_sha256"):
+        raise ValueError("RAW_GIT_COMMIT_TREE_MISMATCH")
+    expected, trees = {}, [tree]
+    for row in git(repository,"ls-tree","-r","-t","-z","--full-tree",sha).split(b"\0"):
+        if not row:
+            continue
+        metadata, encoded = row.split(b"\t",1)
+        mode, kind, identifier = metadata.decode().split(); name = encoded.decode(); path = PurePosixPath(name)
+        if path.is_absolute() or ".." in path.parts or path.as_posix() != name or not HEX40.fullmatch(identifier):
+            raise ValueError("RAW_GIT_PATH_INVALID")
+        if kind == "tree" and mode == "040000":
+            trees.append(identifier)
+        elif kind == "blob" and mode in ("100644","100755") and name not in expected:
+            expected[name] = {"mode":mode,"blob_id":identifier}
+        else:
+            raise ValueError("RAW_GIT_MEMBER_INVALID")
+    raw_objects(repository, trees, "tree")
+    actual = inventory(source)
+    if (set(actual) != set(expected) or set(actual) != set(pin["files"])
+            or set(actual) != set(pin["modes"]) or set(actual) != set(pin["blob_ids"])
+            or any(row != {"sha256":pin["files"][name],"mode":pin["modes"][name],"blob_id":pin["blob_ids"][name]}
+                   or row["mode"] != expected[name]["mode"] or row["blob_id"] != expected[name]["blob_id"] for name,row in actual.items())):
+        raise ValueError("WHOLE_SOURCE_HASH_MODE_BLOB_OR_NAMESPACE_MISMATCH")
+    return actual, {"source_sha":sha,"source_tree":tree,"source_files":len(actual),"tree_objects_rehashed":len(set(trees)),
+                    "raw_commit_sha256":hashlib.sha256(commit).hexdigest(),"scope":"RAW_GIT_ALL_TREES_BLOBS_AND_COMPLETE_PHYSICAL_NAMESPACE"}
+
+
+def normalized(value):
+    return re.sub(r"[-_.]+","-",value).lower()
+
+
+def lock_rows(wire):
+    result, current = {}, None
+    for line in wire.decode().splitlines():
+        text = line.strip().removesuffix("\\").strip()
+        if not text or text.startswith("#"):
+            continue
+        match = re.fullmatch(r"([A-Za-z0-9_.-]+)==([^\s;]+)",text)
+        if match:
+            name = normalized(match[1])
+            if name in result:
+                raise ValueError("DUPLICATE_HASH_LOCK_NAME")
+            result[name] = {"version":match[2],"hashes":set()}; current = name
+        elif current is not None and re.fullmatch(r"--hash=sha256:[0-9a-f]{64}",text):
+            result[current]["hashes"].add(text.removeprefix("--hash=sha256:"))
+        else:
+            raise ValueError("UNSUPPORTED_HASH_LOCK_RECORD")
+    return result
+
+
+PREFLIGHT = r'''
+import importlib.metadata, json, platform, sys, sysconfig
+rows = [{"name":d.metadata["Name"],"version":d.version} for d in importlib.metadata.distributions()]
+print(json.dumps({"python":platform.python_version(),"executable":sys.executable,"prefix":sys.prefix,"base_prefix":sys.base_prefix,
+ "os":platform.system(),"architecture":platform.machine(),"libc":platform.libc_ver(),"distributions":rows,
+ "stdlib":sysconfig.get_path("stdlib"),"venv_sites":[sysconfig.get_path(k) for k in ("purelib","platlib")]}))
+'''
+
+
+def preflight(interpreter, version, source, environment):
+    wire = subprocess.check_output([str(interpreter),"-I","-B","-c",PREFLIGHT], env=environment, timeout=30)
+    actual = parse(wire)
+    policy = parse(capture(source/"ops/policy/rc6-supply-chain-v1.json",keep_bytes=True)[1])
+    expected, installed, locks = {}, {}, {}
+    for key, name in (("packages","requirements.lock.txt"),("build_tools","requirements.build.lock.txt")):
+        snapshot, body = capture(source/name,keep_bytes=True); rows = lock_rows(body)
+        package_rows = policy[key]
+        canonical_rows = {normalized(row["name"]):row for row in package_rows}
+        if len(canonical_rows) != len(package_rows) or set(rows) != set(canonical_rows):
+            raise ValueError("POLICY_AND_HASH_LOCK_NAMES_MISMATCH")
+        for distribution, row in rows.items():
+            allowed = {item["sha256"] for item in canonical_rows[distribution]["distributions"]}
+            if (distribution in expected or row["version"] != canonical_rows[distribution]["version"]
+                    or not row["hashes"] or row["hashes"] != allowed):
+                raise ValueError("POLICY_AND_HASH_LOCK_VERSIONS_OR_HASHES_MISMATCH")
+            expected[distribution] = row["version"]
+        locks[name] = {"sha256":snapshot["sha256"],"pins":len(rows)}
+    for row in actual["distributions"]:
+        name = normalized(row["name"])
+        if name in installed:
+            raise ValueError("DUPLICATE_INSTALLED_DISTRIBUTION")
+        installed[name] = row["version"]
+    if (actual["python"] != version or version not in ("3.11.16","3.12.14")
+            or actual["os"] != "Linux" or actual["architecture"] != "x86_64"
+            or actual["libc"][0] != "glibc" or tuple(map(int,actual["libc"][1].split("."))) < (2,36)
+            or actual["prefix"] == actual["base_prefix"] or len(installed) != len(expected) or len(expected) != 157
+            or installed != expected or policy.get("schema") != "rc6.hashed-distribution-lock.v1"):
+        raise ValueError("EXACT_FROZEN157_PLATFORM_ENVIRONMENT_REQUIRED")
+    return {**actual,"expected_total":157,"installed_total":len(actual["distributions"]),"installed_unique_total":len(installed),
+            "locks":locks,"policy_sha256":capture(source/"ops/policy/rc6-supply-chain-v1.json")[0]["sha256"],
+            "scope":"INSTALLED_METADATA_VERSIONS_AND_HASH_LOCKS_NOT_DISTRIBUTION_BYTES_OR_IMAGE"}
+
+
+def database_snapshot(database):
+    result = {}
+    for suffix in ("","-wal","-shm","-journal"):
+        path = Path(str(database)+suffix)
+        try:
+            snapshot, _ = capture(path)
+        except FileNotFoundError:
+            if not suffix:
+                raise
+            result[suffix] = None
+        else:
+            result[suffix] = {key:value for key,value in snapshot.items() if key != "git_blob"}
+    return result
+
+
+def positive(value):
+    return type(value) is int and value > 0
+
+
+def inspect_native(native, source, pin, qualification, database, errors):
+    def require(condition, name):
+        if not condition:
+            errors.append(name)
+    require(isinstance(native,dict) and native.get("schema") == "rc6.native-archive-v3-profile.v2","NATIVE_SCHEMA")
+    require(native.get("source_sha") == pin["source_sha"] and native.get("source_tree") == pin["source_tree"],"NATIVE_SOURCE_PIN")
+    require(type(native.get("overlay_count")) is int and native["overlay_count"] == 0,"NATIVE_OVERLAY")
+    for name in ("execution_complete","native_horizon_contract_verified","horizon_complete","complete","acceptance_complete",
+                 "code_source_unchanged","source_database_unchanged","import_graph_verified","source_index_and_tar_unchanged"):
+        require(native.get(name) is True,"NATIVE_FLAG:"+name)
+    require(not any(name in native for name in ("error","finalization_error")),"NATIVE_ERRORS")
+    require(native.get("ticks_requested") == 1201 and native.get("native_ticks_executed") == 1202,"ACTUAL1202_NATIVE_CALLS")
+    cuts = native.get("cuts",[])
+    require(len(cuts) == 1202 and len({cut["generation_id"] for cut in cuts}) == 1202,"1202_DISTINCT_CUTS")
+    if len(cuts) != 1202:
+        return
+    clocks = [datetime.fromisoformat(cut["as_of"]) for cut in cuts]
+    require(all(clock.utcoffset() is not None for clock in clocks) and clocks[0] < clocks[1],"NATIVE_AWARE_PRE_AND_POSTPRE_CLOCKS")
+    require(all((b-a).total_seconds() == 30 for a,b in zip(clocks[1:],clocks[2:]))
+        and (clocks[-1]-clocks[1]).total_seconds() == 36000 and native.get("measured_horizon_seconds") == 36000,"TENH_ASOF_NOT_WALLCLOCK")
+    require(native.get("restarts") == [361,841] and all(cuts[i]["checkpoint_reused"] is True for i in (361,841)),"REAL_FACTORY_RESTART_CHECKPOINT_REUSE")
+    require(all(type(cut["full_cycle_wall_seconds"]) in (int,float) and math.isfinite(cut["full_cycle_wall_seconds"])
+        and 0 <= cut["full_cycle_wall_seconds"] <= 30 for cut in cuts[1:]),"EXISTING30S_POSTPRE_FULL_CYCLE")
+    for index,cut in enumerate(cuts):
+        require(cut["tick_index"] == index and cut["preopen_seed"] is (index == 0),"CUT_INDEX_AND_SEED")
+        require(isinstance(cut["phase"],str) and bool(cut["phase"]),"ACTUAL_NATIVE_PHASE_NOT_FORCED_OPEN")
+        require(set(cut["member_bytes"]) == set(cut["original_member_sha256"]) == MEMBERS,"EXACT_FIVE_BYTE_MEMBERS")
+        require(all(type(size) is int and size >= 0 for size in cut["member_bytes"].values())
+            and all(HEX64.fullmatch(value) for value in cut["original_member_sha256"].values()),"MEMBER_BYTES_AND_HASHES")
+        require(cut["original_manifest_sha256"] == cut["original_member_sha256"]["manifest.json"]
+            and cut["original_manifest_clock"] == cut["as_of"] and cut["original_generation_custody_unchanged"] is True,"ORIGINAL_MANIFEST_AND_CUSTODY")
+        receipt = cut["native_receipt"]
+        require(receipt["generation_id"] == cut["generation_id"] and receipt["manifest_sha256"] == cut["original_manifest_sha256"]
+            and receipt["source_as_of"] == cut["as_of"],"NATIVE_RECEIPT_BINDING")
+        require(cut["catalog_ready_count"] == 1200 and cut["provider_requests"] == cut["real_orders_sent"] == 0
+            and cut["real_routes"] == "NOT_CALLED","CUT_CARDINALITY_AND_NO_AUTHORITY")
+    reads = native.get("native_input_reads",[])
+    require(len(reads) == 1202,"ACTUAL_NATIVE_SOURCE_READS")
+    for cut,clock,read in zip(cuts,clocks,reads,strict=True):
+        require(read["as_of"] == cut["as_of"],"SOURCE_READ_CLOCK_MATCHES_ACTUAL_NATIVE_CUT")
+        after_stale = (clock-clocks[1]).total_seconds() > 120
+        require(read["fixed_source_contract_must_be_stale"] is after_stale and (not after_stale or read["intraday_confirmed_observations"] == 0)
+            and read["entry_authorized_observations"] == 0 and read["source_database_effect"] == "READ_ONLY","FIXED_SOURCE_STALE_AND_NO_DATA_REWRITE")
+    require(native.get("archive_restore_count") == 1202 and native.get("first_restored_tick_index") == 1
+        and native.get("first_original_public_restore_completed") is True,"EVERY_RESTORE_AND_FINAL_FIRST_OPERATIONAL_RESTORE")
+    require(native.get("live_maximum_files") == 512 and native.get("live_maximum_bytes") == 128*1024**2
+        and native.get("archive_maximum_files") == 32768 and native.get("archive_maximum_bytes") == 512*1024**2,"ORIGINAL_NATIVE_NAMESPACE_AND_QUOTAS")
+    for name,byte_limit,file_limit in (("live",128*1024**2,512),("archive",512*1024**2,32768)):
+        peak = native["peak_"+name]
+        require(max(peak["logical_bytes_including_directories"],peak["allocated_bytes_including_directories"]) <= byte_limit
+            and peak["entries_excluding_root"] <= file_limit,"TEMPORARY_PEAK:"+name)
+    reserve = native["filesystem_reserve_observation"]
+    require(reserve["reserve_bytes"] == 2*1024**3 and reserve["minimum_free_inode_percent"] == 10
+        and reserve["minimum_observed_free_bytes"] >= 2*1024**3 and reserve["minimum_observed_free_inode_percent"] >= 10,"ORIGINAL_FILESYSTEM_RESERVE")
+    require(native["peak_scratch_native_policy_occupied_bytes"] <= 512*1024**2 and native["peak_rss_bytes"] <= 2*1024**3
+        and positive(native["native_scratch_measure_calls"]) and positive(native["real_fsync_calls"]),"NATIVE_SCRATCH_RSS_AND_REAL_DURABILITY")
+    observations = native["native_retention_observations"]
+    require(observations["additional_gc_rotation_or_pin_requests"] == 0
+        and positive(observations["native_ack_compactions"]) and positive(observations["native_rotations"]),"ACTUAL_MAINTENANCE_NO_ADDITIONAL_CALLS")
+    require(all(type(row[key]) is int and row[key] >= 0 for row in observations["counters"].values() for key in ("entered","completed","failed"))
+        and all(row["entered"] == row["completed"] and row["failed"] == 0 for row in observations["counters"].values()),"MAINTENANCE_COUNTER_CLOSURE")
+    head = native["verified_final_archive_head"]
+    require(head["contracted_horizon_seconds"] == 32400 and head["recovery_margin_seconds"] == 3600
+        and head["source_as_of_max"] == cuts[-1]["as_of"],"VERIFIED_NATIVE_HEAD_WHEEL_PLUS_RECOVERY")
+    require(native.get("final_as_of") == cuts[-1]["as_of"]
+        and type(native.get("final_sequence")) is int and native["final_sequence"] == cuts[-1]["sequence"],
+        "FINAL_CURRENT_CLOCK_AND_SEQUENCE_MATCH_LAST_NATIVE_CUT")
+    guard = native["private_execution_guard"]
+    require(guard["network_attempt_count"] == guard["sqlite_rejected_count"] == native["provider_requests"] == 0
+        and guard["primary_sqlite_sealed_after_fixture"] is True,"PRIVATE_SQLITE_AND_PYTHON_TRANSPORT_BARRIER")
+    require(native.get("source_database") == str(database) and native["source_database_changes"] == [],"SOURCE_DB_BINDING")
+    require(native["source_database_before"] == native["source_database_after"],"NATIVE_ALL11_DB_BEFORE_AFTER")
+    physical = database_snapshot(database)
+    require(physical == native["source_database_before"],"DRIVER_POSTREAP11_STATS_AND_SHA_MATCH_NATIVE_BASELINE")
+    for row in physical.values():
+        if row is not None:
+            require(set(row) == set(STATS)|{"sha256"},"EXACT11_STATS_SHA_NOT_COUNTING_HASH_AS_STAT")
+    for key in ("import_graph_before_fixtures","import_graph_after"):
+        graph = native[key]
+        require(graph["unexpected"] == [] and Path(graph["stdlib"]).resolve() == Path(qualification["stdlib"]).resolve(),"NATIVE_CAPTURED_IMPORT_GRAPH")
+        sites = {Path(value).resolve() for value in qualification["venv_sites"]}
+        require({Path(value).resolve() for value in graph["actual_venv_sites"]} == sites,"ACTUAL_VENV_IMPORT_ROOTS")
+        for origins in graph["modules"].values():
+            for row in origins:
+                path = Path(row["path"])
+                if row["origin"] == "PINNED_COMPLETE_SOURCE":
+                    require(path.is_relative_to(source),"PINNED_PROJECT_IMPORT_PATH")
+                    name = path.relative_to(source).as_posix()
+                    if row.get("sha256") is not None:
+                        require(row["sha256"] == pin["files"].get(name) and row["blob_id"] == pin["blob_ids"].get(name)
+                            and row["mode"] == pin["modes"].get(name),"PINNED_PROJECT_IMPORT_BYTES")
+                elif row["origin"] == "ACTUAL_VENV":
+                    require(any(path.is_relative_to(site) for site in sites),"VENV_IMPORT_PATH")
+                elif row["origin"] == "STDLIB":
+                    require(path.is_relative_to(Path(qualification["stdlib"]).resolve()) and "site-packages" not in path.parts,"STDLIB_IMPORT_PATH")
+                else:
+                    require(False,"UNRECOGNIZED_IMPORT_ORIGIN")
+
+
+def write_json(path, value):
+    path.write_text(json.dumps(value,sort_keys=True,indent=2)+"\n")
+
+
+def reap(child):
+    pid, status, usage = os.wait4(child.pid,os.WNOHANG)
+    if not pid:
+        return None
+    child.returncode = os.waitstatus_to_exitcode(status)
+    return {"pid":pid,"wait_status":status,"returncode":child.returncode,"user_cpu_seconds":usage.ru_utime,
+            "system_cpu_seconds":usage.ru_stime,"peak_rss_bytes":usage.ru_maxrss*1024,
+            "input_blocks":usage.ru_inblock,"output_blocks":usage.ru_oublock,"reaped":True}
+
+
+def terminate(child, grace):
+    try:
+        os.killpg(child.pid,signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    deadline = time.monotonic()+grace
+    while time.monotonic() < deadline:
+        result = reap(child)
+        if result is not None:
+            return result
+        time.sleep(.05)
+    try:
+        os.killpg(child.pid,signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    deadline = time.monotonic()+grace
+    while time.monotonic() < deadline:
+        result = reap(child)
+        if result is not None:
+            return result
+        time.sleep(.05)
+    return {"pid":child.pid,"reaped":False,"signals_sent":"SIGTERM_THEN_SIGKILL","reason":"KERNEL_EXIT_NOT_OBSERVED_WITHIN_MANAGEMENT_GRACE"}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ("source-repo","source-root","source-sha","source-tree","source-index","raw-root","data-root","python","python-version"):
+        parser.add_argument("--"+name,required=True)
+    parser.add_argument("--watchdog-seconds",type=float,required=True,help="Management watchdog; never changes native30s cadence")
+    parser.add_argument("--terminate-grace-seconds",type=float,default=2)
+    parser.add_argument("--progress-poll-seconds",type=float,default=5)
+    args = parser.parse_args()
+    if any(not math.isfinite(value) or value <= 0 for value in (args.watchdog_seconds,args.terminate_grace_seconds,args.progress_poll_seconds)):
+        raise ValueError("FINITE_POSITIVE_MANAGEMENT_LIMITS_REQUIRED")
+    repository, source = canonical(args.source_repo,existing=True), canonical(args.source_root,existing=True)
+    index = canonical(args.source_index,existing=True)
+    raw, data = canonical(args.raw_root,existing=False), canonical(args.data_root,existing=False)
+    if raw.exists() or data.exists():
+        raise ValueError("NEW_RAW_AND_DATA_NAMESPACES_REQUIRED")
+    for a,b in ((raw,source),(raw,repository),(data,source),(data,repository),(raw,data)):
+        if a == b or a.is_relative_to(b) or b.is_relative_to(a):
+            raise ValueError("SEPARATE_RAW_DATA_SOURCE_REPOSITORY_REQUIRED")
+    if not raw.parent.exists() or not data.parent.exists() or index.is_relative_to(data):
+        raise ValueError("EXISTING_CANONICAL_PARENTS_AND_INDEPENDENT_INDEX_REQUIRED")
+    interpreter = Path(args.python).absolute()
+    if not interpreter.is_file() or not os.access(interpreter,os.X_OK):
+        raise ValueError("EXPLICIT_EXECUTABLE_INTERPRETER_REQUIRED")
+    os.umask(0o022)
+    raw.mkdir(mode=0o700)
+    result = {"schema":"rc6.full1201-external-driver-receipt.v1","source_sha":args.source_sha,"source_tree":args.source_tree,
+        "classification":"IN_PROGRESS_NOT_ACCEPTED","native_horizon_validated":False,"raw_root":str(raw),"data_root":str(data),
+        "management_watchdog_seconds":args.watchdog_seconds,"native_full_cycle_limit_seconds":30,"native_ticks_expected":1202,
+        "management_grace_seconds":args.terminate_grace_seconds,"source_overlays_allowed":0,
+        "native_pid":None,"process_reaped":False,"management_watchdog_exhausted":False,"errors":[],
+        "native_completion_observed_within_management_deadline":False,"termination_attempted":False,
+        "final_input_provenance":None,"artifact_validated":False,"runtime_validated":False,"deployed":False,
+        "scope":"LOCAL_SYNTHETIC_NATIVE1201_POSTPRE_PLUS_PRE_WHEEL_NOT_CONTINUOUS_OPEN_REAL_SESSION_OR_FINAL_ARTIFACT",
+        "limits":["The native producer records its own actual import graph and initial11-stat/sha baseline. The driver validates that captured graph and independently captures DB custody after reap; it does not inspect a running child sys.modules.",
+          "Python transport/SQLite hooks are local harness controls, not kernel network isolation or external source authentication.",
+          "Management watchdog/termination grace is distinct from the unchanged native30s postPRE full-cycle gate. A signal sent is not proof of reap; unreaped child prevents acceptance.",
+          "Zero GC deletion/intent counters never establish positive deletion. Native phases/UNKNOWN/stale inputs remain factual and are not rewritten.",
+          "Installed metadata157 and approved source hash locks do not authenticate all installed distribution bytes or an image.",
+          "Source tar/index/native result/log are retained losslessly. This scope does not close finalFIP/Gov/browser/image/runtime gates."]}
+    child, before, pin, started = None, None, None, None
+    environment = {key:value for key,value in os.environ.items()
+        if not key.startswith(("POROTA_","PAPER_","PPI_","IOL_","BYMA_","PYTHON")) and key not in {"DATA_DIR","HIST_DB_PATH"}}
+    environment.update(PYTHONDONTWRITEBYTECODE="1",PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
+    try:
+        index_stat,index_wire = capture(index,keep_bytes=True); pin = parse(index_wire)
+        tar = index.parent/"source.tar"; tar_stat,_ = capture(tar)
+        if tar_stat["sha256"] != pin.get("tar_sha256"):
+            raise ValueError("SOURCE_TAR_INDEX_HASH_MISMATCH")
+        before, authority = verify_source(repository,source,args.source_sha,args.source_tree,pin)
+        driver_stat,driver_wire = capture(Path(__file__).absolute(),keep_bytes=True)
+        if before.get(DRIVER,{}).get("sha256") != driver_stat["sha256"]:
+            raise ValueError("EXTERNAL_DRIVER_BYTES_NOT_THE_SOURCE_PINNED_MEMBER")
+        (raw/"driver.py.source").write_bytes(driver_wire)
+        (raw/"source.index.json").write_bytes(index_wire)
+        qualification = preflight(interpreter,args.python_version,source,environment)
+        if data.exists():
+            raise ValueError("DATA_APPEARED_BEFORE_ENVIRONMENT_QUALIFICATION")
+        result.update(source_authority_before=authority,source_inventory_before_sha256=hashlib.sha256(
+            json.dumps(before,sort_keys=True,separators=(",",":")).encode()).hexdigest(),source_file_count=len(before),
+            source_index_sha256=index_stat["sha256"],source_tar_sha256=tar_stat["sha256"],source_index_origin=str(index),
+            source_tar_origin=str(tar),driver_source_sha256=driver_stat["sha256"],driver_source_member=DRIVER,
+            environment_qualification_before_fixtures=qualification,fixture_existed_before_qualification=False)
+        command = [str(interpreter),"-I","-B","-u",str(source/PROFILE),"--source-repo",str(repository),"--source-root",str(source),
+            "--source-sha",args.source_sha,"--source-tree",args.source_tree,"--source-index",str(index),"--root",str(data),
+            "--catalog-count","1200","--ticks","1201"]
+        result.update(command=command,cwd=str(source),uid=os.geteuid(),gid=os.getegid(),umask="022")
+        write_json(raw/"driver-before.json",result)
+        started = time.monotonic()
+        with (raw/"native1201.log").open("xb") as log:
+            child = subprocess.Popen(command,cwd=source,env=environment,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+            result["native_pid"] = child.pid
+            write_json(raw/"driver-started.json",result)
+            deadline = started+args.watchdog_seconds
+            while True:
+                completed = reap(child)
+                observed_at = time.monotonic()
+                if completed is not None:
+                    within_deadline = observed_at < deadline
+                    result.update(wait4=completed,process_reaped=True,
+                        native_completion_observation_elapsed_seconds=observed_at-started,
+                        native_completion_observed_within_management_deadline=within_deadline,
+                        management_watchdog_exhausted=not within_deadline)
+                    break
+                if observed_at >= deadline:
+                    result["management_watchdog_exhausted"] = True
+                    result["termination_attempted"] = True
+                    completed = terminate(child,args.terminate_grace_seconds)
+                    result.update(wait4=completed,process_reaped=completed["reaped"])
+                    break
+                # No tick/GC/restore/SQLite or live source observation is added.
+                # Native stdout and result.json are the only progress producers.
+                write_json(raw/"driver-progress.json",{"native_pid":child.pid,"process_reaped":False,
+                    "management_elapsed_seconds":time.monotonic()-started,"management_seconds_remaining":max(0,deadline-time.monotonic()),
+                    "native_stdout_bytes":os.fstat(log.fileno()).st_size,"classification":"IN_PROGRESS_NOT_ACCEPTED",
+                    "native_result_path":str(data/"result.json"),"native_results_not_rewritten_or_inferred_complete":True})
+                time.sleep(min(args.progress_poll_seconds,max(0,deadline-time.monotonic())))
+        if not result["process_reaped"]:
+            raise ValueError("CHILD_NOT_REAPED_SOURCE_CAPTURE_AND_ACCEPTANCE_REFUSED")
+        peak_rss = result["wait4"]["peak_rss_bytes"]
+        if type(peak_rss) is not int or peak_rss < 0 or peak_rss > 2*1024**3:
+            result["errors"].append("WAIT4_CHILD_LIFETIME_RSS_EXCEEDS_EXISTING2GIB_LIMIT_OR_INVALID")
+        native_path = data/"result.json"
+        if native_path.exists():
+            snapshot,native_wire = capture(native_path,keep_bytes=True)
+            (raw/"native-horizon-result.json").write_bytes(native_wire)
+            result.update(native_result_sha256=snapshot["sha256"],native_result_bytes=len(native_wire))
+            native = parse(native_wire)
+            inspect_native(native,source,pin,qualification,data/"data/paper_v17/observer_v17.db",result["errors"])
+            result["native_retention_observed_counts"] = {name:value for name,value in native["native_retention_observations"].items() if name.startswith("native_")}
+            result["driver_independent_postreap_database_snapshot"] = database_snapshot(data/"data/paper_v17/observer_v17.db")
+        else:
+            result["errors"].append("NATIVE_RESULT_MISSING")
+        if result["wait4"]["returncode"] != 0 or result["management_watchdog_exhausted"]:
+            result["errors"].append("NATIVE_EXIT_OR_MANAGEMENT_WATCHDOG_NOT_GREEN")
+    except BaseException as error:
+        result["errors"].append("DRIVER_EXCEPTION:"+type(error).__name__+":"+str(error))
+        result["exception_traceback"] = traceback.format_exc()
+        if child is not None and child.returncode is None and not result["process_reaped"] and not result["termination_attempted"]:
+            result["termination_attempted"] = True
+            completion = terminate(child,args.terminate_grace_seconds)
+            result.update(wait4=completion,process_reaped=completion["reaped"])
+    finally:
+        if started is not None:
+            result["supervisor_elapsed_before_final_custody_seconds"] = time.monotonic()-started
+        try:
+            safe_to_capture = child is None or result["process_reaped"]
+            if not safe_to_capture:
+                result.update(postreap_custody_observed=False,
+                    postreap_custody_reason="CHILD_UNREAPED_NO_SOURCE_INDEX_TAR_DATABASE_OR_LOG_POSTCAPTURE")
+            if safe_to_capture and before is not None:
+                after, authority = verify_source(repository,source,args.source_sha,args.source_tree,pin)
+                result.update(source_authority_after=authority,source_inventory_after_sha256=hashlib.sha256(
+                    json.dumps(after,sort_keys=True,separators=(",",":")).encode()).hexdigest(),whole_source_bytes_modes_blobs_and_namespace_unchanged=before==after)
+                if before != after or capture(index)[0]["sha256"] != result["source_index_sha256"] or capture(index.parent/"source.tar")[0]["sha256"] != result["source_tar_sha256"]:
+                    result["errors"].append("SOURCE_OR_INDEX_TAR_CHANGED")
+            if safe_to_capture and (raw/"native1201.log").exists():
+                log_snapshot,_ = capture(raw/"native1201.log")
+                result.update(native_log_sha256=log_snapshot["sha256"],native_log_bytes=log_snapshot["st_size"])
+            if child is not None and safe_to_capture:
+                result["postreap_custody_observed"] = True
+        except BaseException as error:
+            result["errors"].append("FINAL_CUSTODY_EXCEPTION:"+type(error).__name__+":"+str(error))
+        accepted = (result["process_reaped"] and result["native_completion_observed_within_management_deadline"]
+            and not result["management_watchdog_exhausted"] and not result["errors"] and before is not None)
+        result.update(native_horizon_validated=accepted,classification="LOCAL_SYNTHETIC_FULL1201_NATIVE_HORIZON_GREEN" if accepted else "FULL1201_NOT_ACCEPTED")
+        write_json(raw/"driver-final.json",result)
+        print(json.dumps({"classification":result["classification"],"source_sha":args.source_sha,"native_pid":result["native_pid"],
+            "process_reaped":result["process_reaped"],"management_watchdog_exhausted":result["management_watchdog_exhausted"],
+            "errors":result["errors"],"receipt":str(raw/"driver-final.json")}),flush=True)
+    return 0 if result["native_horizon_validated"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

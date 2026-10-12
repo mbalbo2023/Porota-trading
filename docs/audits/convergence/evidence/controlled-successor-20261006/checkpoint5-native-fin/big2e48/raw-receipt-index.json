@@ -1,0 +1,90 @@
+{
+  "data_root_not_read": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/data-slow",
+  "material_gates_closed": [],
+  "raw_files": [
+    {
+      "absolute_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/harness-final.json",
+      "bytes": 20137,
+      "relative_path": "harness-final.json",
+      "sha256": "266ddd9cd604709b346852fde636be12ae512fc70fafae7863ddf1d0c4d4d46e",
+      "stored_raw_bytes_unmodified": true
+    },
+    {
+      "absolute_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/kernel-supervision.json",
+      "bytes": 2890,
+      "relative_path": "kernel-supervision.json",
+      "sha256": "5b8e6955e6a815bfe6ae27f5184dbb9d2020cf4bac831eeb8004169a22ca80e4",
+      "stored_raw_bytes_unmodified": true
+    },
+    {
+      "absolute_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/launch.json",
+      "bytes": 2647,
+      "relative_path": "launch.json",
+      "sha256": "022788f4a362feaaaf238c5ef0f481235a04d0c999184d5cd2dd7a0c6ead14b9",
+      "stored_raw_bytes_unmodified": true
+    },
+    {
+      "absolute_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/namespace.json",
+      "bytes": 629,
+      "relative_path": "namespace.json",
+      "sha256": "826d0be5e1cd257f54b3dc69d75108353fd07d69b65ef4563459bf70d08c7b60",
+      "stored_raw_bytes_unmodified": true
+    },
+    {
+      "absolute_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/native-big-result.json",
+      "bytes": 1593772,
+      "relative_path": "native-big-result.json",
+      "sha256": "37ba6f845457fa16aac07393acd9b9a80b102cfa3c16158e68fd8c9679193043",
+      "stored_raw_bytes_unmodified": true
+    },
+    {
+      "absolute_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/native-result-capture.json",
+      "bytes": 493,
+      "relative_path": "native-result-capture.json",
+      "sha256": "2b249cc05563d5dd2f92f9b8e5b0bb1aa7e0788616eb0fd6420ccbdc56d18b98",
+      "stored_raw_bytes_unmodified": true
+    },
+    {
+      "absolute_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/native.log",
+      "bytes": 138,
+      "relative_path": "native.log",
+      "sha256": "95d84653405748df540db81f509be3fc56508bbf8a17dda9bf398a52ee7c09c7",
+      "stored_raw_bytes_unmodified": true
+    },
+    {
+      "absolute_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/original-families-budget.json",
+      "bytes": 336,
+      "relative_path": "original-families-budget.json",
+      "sha256": "5e6974689bbd5ac3d76ebf26c9dc80a79ab8af89abd78ff5415f36db2c133ac8",
+      "stored_raw_bytes_unmodified": true
+    },
+    {
+      "absolute_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/parent-installed-closure.json",
+      "bytes": 1806,
+      "relative_path": "parent-installed-closure.json",
+      "sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439",
+      "stored_raw_bytes_unmodified": true
+    },
+    {
+      "absolute_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/source-after.json",
+      "bytes": 2267301,
+      "relative_path": "source-after.json",
+      "sha256": "1b1f84a85eb498941bc1ae4e56d3f585d217a7af3bd3db9ea78ff712dd9fe708",
+      "stored_raw_bytes_unmodified": true
+    },
+    {
+      "absolute_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/source-before.json",
+      "bytes": 2267301,
+      "relative_path": "source-before.json",
+      "sha256": "ae1f6c7a74647696999bab543f602be4f0f520b6c82e7468f6dc908699590e29",
+      "stored_raw_bytes_unmodified": true
+    }
+  ],
+  "raw_root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow",
+  "real_kernel_fin_verified_before_payload_reads": true,
+  "schema": "rc6.big.direct.complete-raw-index.v1",
+  "source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "source_tar_and_index_are_separate_whole_source_pin": true,
+  "source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "status": "RED_PRESERVED_NOT_RELABELED"
+}
