@@ -31,7 +31,7 @@ class ReviewedScopeInterpreterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             tmp_path=Path(temporary)
             source=_source(tmp_path);output=tmp_path/'output';output.mkdir()
-            args=SimpleNamespace(repo_root=source,source_sha='a'*40)
+            args=SimpleNamespace(repo_root=source,source_sha='a'*40,source_tree='b'*40)
             observed=[]
             def managed(command,*,cwd,label,limit):
                 observed.append((command,cwd,label,limit))
@@ -54,10 +54,23 @@ class ReviewedScopeInterpreterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             tmp_path=Path(temporary)
             source=_source(tmp_path);output=tmp_path/'output';output.mkdir()
-            args=SimpleNamespace(repo_root=source,source_sha='a'*40)
+            args=SimpleNamespace(repo_root=source,source_sha='a'*40,source_tree='b'*40)
             def tampered(command,*,cwd,label,limit):
                 Path(command[-1]).write_text(json.dumps({'source_sha':'c'*40,
                     'arguments':['.'],'exclusions':[],'inventory':{}}))
                 return {'returncode':0}
             with self.assertRaisesRegex(ValueError,'G0_REVIEWED_SCOPE_RESULT_INVALID'):
+                carrier.reviewed_approved_scope(args,tampered,output,{'311':sys.executable})
+
+    def test_scope_rejects_inventory_tree_rebinding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            tmp_path=Path(temporary)
+            source=_source(tmp_path);output=tmp_path/'output';output.mkdir()
+            args=SimpleNamespace(repo_root=source,source_sha='a'*40,source_tree='b'*40)
+            def tampered(command,*,cwd,label,limit):
+                Path(command[-1]).write_text(json.dumps({'source_sha':'a'*40,
+                    'arguments':['.'],'exclusions':[],
+                    'inventory':{'candidate_sha':'a'*40,'candidate_tree':'c'*40}}))
+                return {'returncode':0}
+            with self.assertRaisesRegex(ValueError,'G0_REVIEWED_SCOPE_SOURCE_REBOUND'):
                 carrier.reviewed_approved_scope(args,tampered,output,{'311':sys.executable})

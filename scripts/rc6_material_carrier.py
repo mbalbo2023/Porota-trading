@@ -850,6 +850,9 @@ def reviewed_approved_scope(a,run,root,interpreters):
     need(type(reviewed) is dict and reviewed.get('source_sha')==a.source_sha
         and type(reviewed.get('arguments')) is list and type(reviewed.get('exclusions')) is list
         and type(reviewed.get('inventory')) is dict,'G0_REVIEWED_SCOPE_RESULT_INVALID')
+    need(reviewed['inventory'].get('candidate_sha')==a.source_sha
+        and reviewed['inventory'].get('candidate_tree')==a.source_tree,
+        'G0_REVIEWED_SCOPE_SOURCE_REBOUND')
     return tuple(reviewed[k] for k in ('arguments','exclusions','inventory'))
 
 def static_admission(a,run,root,prepared,interpreters):
