@@ -195,6 +195,46 @@ def test_paper_v3_live_owner_read_retries_only_transient_gateway_status(monkeypa
     assert len(calls)==1
 
 
+def test_cheap_carrier_readmission_survives_three_502s_with_fresh_owner_bytes(monkeypatch):
+    monkeypatch.setenv('GH_TOKEN','unit-readonly-control-token')
+    monkeypatch.setenv('RC6_GATE','cheap')
+    monkeypatch.setattr(lease.time,'sleep',lambda _:None)
+    monkeypatch.setattr(admission,'_conditional_cache_get',
+        lambda _key:('W/"stale-owner"',b'{"current_owner_authority":false}'))
+    class CurrentResponse:
+        status=200
+        headers={}
+        def __enter__(self):return self
+        def __exit__(self,*_args):return False
+        def read(self,_maximum):return b'{"current_owner_authority":true}'
+    requests=[]
+    def gateway(request,timeout):
+        requests.append((request.get_header('If-none-match'),timeout))
+        if len(requests)<=3:
+            raise urllib.error.HTTPError('https://api.github.com/unit',502,'gateway',{},None)
+        return CurrentResponse()
+    monkeypatch.setattr(admission.urllib.request,'urlopen',gateway)
+    assert admission.api('/unit/cheap-carrier-live-owner')=={'current_owner_authority':True}
+    assert len(requests)==4
+    assert all(tag=='W/"stale-owner"' and 0<timeout<=45 for tag,timeout in requests)
+    requests.clear()
+    def unavailable(request,timeout):
+        requests.append(timeout)
+        raise urllib.error.HTTPError('https://api.github.com/unit',502,'gateway',{},None)
+    monkeypatch.setattr(admission.urllib.request,'urlopen',unavailable)
+    with pytest.raises(urllib.error.HTTPError):
+        admission.api('/unit/cheap-carrier-live-owner')
+    assert len(requests)==16
+    requests.clear()
+    def forbidden(request,timeout):
+        requests.append(timeout)
+        raise urllib.error.HTTPError('https://api.github.com/unit',403,'forbidden',{},None)
+    monkeypatch.setattr(admission.urllib.request,'urlopen',forbidden)
+    with pytest.raises(urllib.error.HTTPError):
+        admission.api('/unit/cheap-carrier-live-owner')
+    assert len(requests)==1
+
+
 def test_only_paper_v3_monitor_selects_bounded_gateway_retry(monkeypatch,tmp_path):
     tmp_path.chmod(0o700)
     monkeypatch.setenv('GITHUB_RUN_ID',str(RUN))

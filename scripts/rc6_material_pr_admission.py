@@ -265,6 +265,16 @@ def api(path):
     if cached is not None:headers['If-None-Match']=cached[0]
     print(json.dumps({'scope':'READ_ONLY_GITHUB_SOURCE_OWNER_CONTROL',
         'resource':path.partition('?')[0],'method':'GET','payload_reads':0}),flush=True)
+    if conditional:
+        # Carrier readmission uses this reader outside the native lease
+        # monitor. Reuse its bounded live GET for the cheap/G5P control walk:
+        # a gateway burst must not convert a still-current owner into RED.
+        # Both readers share the verified ETag cache, but an HTTP 502/503/504
+        # never authorizes reuse of stale bytes.
+        from scripts import rc6_owned_gate_lease as lease
+        deadline=time.monotonic()+lease.G5P_HTTP_BUDGET_SECONDS
+        with lease._http_budget(deadline,lease.G5P_HTTP_BUDGET_SECONDS):
+            return lease.api_get(path,deadline,retry_transient=True)
     request=urllib.request.Request('https://api.github.com/repos/'+REPO+path,
         headers=headers)
     try:
