@@ -121,7 +121,7 @@ def api_get(path, deadline, *, retry_transient=False):
     if cached is not None: headers['If-None-Match'] = cached[0]
     request = urllib.request.Request('https://api.github.com/repos/' + admission.REPO + path,
         headers=headers)
-    # A gateway can return several 502s during one otherwise live owner walk.
+    # A gateway can return transient 500/502/503/504 errors during one live owner walk.
     # Keep every retry inside the caller's original alarm and monotonic
     # deadline; no cached document grants authority after an HTTP failure.
     transient_attempts = 16 if retry_transient else 1
@@ -145,7 +145,7 @@ def api_get(path, deadline, *, retry_transient=False):
             # Only a live PAPER V3 control walk may replay the same read after
             # a transient gateway failure. It must still finish inside the
             # original alarm/deadline; never fall back to stale cached state.
-            if (not retry_transient or error.code not in (502, 503, 504)
+            if (not retry_transient or error.code not in (500, 502, 503, 504)
                     or attempt == transient_attempts - 1
                     or deadline-time.monotonic() <= 1):
                 raise

@@ -155,7 +155,8 @@ class ApiFixture:
         return copy.deepcopy(self.documents[path])
 
 
-def test_paper_v3_live_owner_read_retries_only_transient_gateway_status(monkeypatch):
+@pytest.mark.parametrize("gateway_status", (500, 502, 503, 504))
+def test_paper_v3_live_owner_read_retries_only_transient_gateway_status(monkeypatch,gateway_status):
     monkeypatch.setenv('GH_TOKEN','unit-readonly-control-token')
     monkeypatch.setenv('RC6_GATE','cheap')
     monkeypatch.setattr(lease.time,'sleep',lambda _:None)
@@ -170,14 +171,14 @@ def test_paper_v3_live_owner_read_retries_only_transient_gateway_status(monkeypa
     def transient(_request,timeout):
         calls.append(timeout)
         if len(calls)==1:
-            raise urllib.error.HTTPError('https://api.github.com/unit',502,'gateway',{},None)
+            raise urllib.error.HTTPError('https://api.github.com/unit',gateway_status,'gateway',{},None)
         return CurrentResponse()
     monkeypatch.setattr(lease.urllib.request,'urlopen',transient)
     assert lease.api_get(path,time.monotonic()+5,retry_transient=True)=={'current_owner_authority':True}
     assert len(calls)==2 and all(0<value<=5 for value in calls)
     def unavailable(_request,timeout):
         calls.append(timeout)
-        raise urllib.error.HTTPError('https://api.github.com/unit',502,'gateway',{},None)
+        raise urllib.error.HTTPError('https://api.github.com/unit',gateway_status,'gateway',{},None)
     calls.clear();monkeypatch.setattr(lease.urllib.request,'urlopen',unavailable)
     with pytest.raises(urllib.error.HTTPError):
         lease.api_get(path,time.monotonic()+5,retry_transient=True)
@@ -195,7 +196,8 @@ def test_paper_v3_live_owner_read_retries_only_transient_gateway_status(monkeypa
     assert len(calls)==1
 
 
-def test_cheap_carrier_readmission_survives_three_502s_with_fresh_owner_bytes(monkeypatch):
+@pytest.mark.parametrize("gateway_status", (500, 502, 503, 504))
+def test_cheap_carrier_readmission_survives_three_gateway_errors_with_fresh_owner_bytes(monkeypatch,gateway_status):
     monkeypatch.setenv('GH_TOKEN','unit-readonly-control-token')
     monkeypatch.setenv('RC6_GATE','cheap')
     monkeypatch.setattr(lease.time,'sleep',lambda _:None)
@@ -211,7 +213,7 @@ def test_cheap_carrier_readmission_survives_three_502s_with_fresh_owner_bytes(mo
     def gateway(request,timeout):
         requests.append((request.get_header('If-none-match'),timeout))
         if len(requests)<=3:
-            raise urllib.error.HTTPError('https://api.github.com/unit',502,'gateway',{},None)
+            raise urllib.error.HTTPError('https://api.github.com/unit',gateway_status,'gateway',{},None)
         return CurrentResponse()
     monkeypatch.setattr(admission.urllib.request,'urlopen',gateway)
     assert admission.api('/unit/cheap-carrier-live-owner')=={'current_owner_authority':True}
@@ -220,7 +222,7 @@ def test_cheap_carrier_readmission_survives_three_502s_with_fresh_owner_bytes(mo
     requests.clear()
     def unavailable(request,timeout):
         requests.append(timeout)
-        raise urllib.error.HTTPError('https://api.github.com/unit',502,'gateway',{},None)
+        raise urllib.error.HTTPError('https://api.github.com/unit',gateway_status,'gateway',{},None)
     monkeypatch.setattr(admission.urllib.request,'urlopen',unavailable)
     with pytest.raises(urllib.error.HTTPError):
         admission.api('/unit/cheap-carrier-live-owner')
