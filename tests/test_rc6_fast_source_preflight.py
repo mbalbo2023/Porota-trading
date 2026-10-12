@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from scripts.rc6_fast_source_preflight import validate
+from scripts.rc6_material_derive import expected_candidate_scope
 
 
 class FastSourcePreflight(unittest.TestCase):
@@ -41,7 +42,14 @@ class FastSourcePreflight(unittest.TestCase):
         self.git("commit", "-qm", "source")
         return {"source_sha": self.git("rev-parse", "HEAD"),
                 "source_tree": self.git("rev-parse", "HEAD^{tree}"),
-                "development_base_sha": self.base, "cheap_files": []}
+                "development_base_sha": self.base, "cheap_files": [],
+                "candidate_scope": expected_candidate_scope()}
+
+    def test_builder_pr_scope_rejected_before_full_git(self):
+        admission = self.commit("ops/new_control.sh", explained=True)
+        admission["candidate_scope"]["pr"] = 492
+        with self.assertRaisesRegex(ValueError, "FAST_PREFLIGHT_BUILDER_AUTHENTICATED_PR_SCOPE_MISMATCH"):
+            validate(self.root, admission)
 
     def test_missing_evolution_fails_before_material(self):
         admission = self.commit("ops/new_control.sh")

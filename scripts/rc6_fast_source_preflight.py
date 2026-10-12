@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 MATRIX = "docs/audits/convergence/REQUIREMENT_CLOSURE_MATRIX.json"
@@ -27,6 +28,12 @@ def git(root: Path, *args: str, timeout: int = 180) -> bytes:
 
 
 def validate(root: Path, admission: dict) -> dict:
+    # Reuse the producer's exact PR scope before building two locked Python
+    # environments. A mismatch has no possible successful heavy continuation.
+    sys.path.insert(0, str(root))
+    from scripts.rc6_material_derive import expected_candidate_scope
+    if admission.get("candidate_scope") != expected_candidate_scope():
+        raise ValueError("FAST_PREFLIGHT_BUILDER_AUTHENTICATED_PR_SCOPE_MISMATCH")
     source = admission.get("source_sha")
     tree = admission.get("source_tree")
     base = admission.get("development_base_sha")
