@@ -30,6 +30,40 @@ RUN = 71
 START = datetime(2026, 10, 8, 18, 45, tzinfo=timezone.utc)
 
 
+def test_physical_get_counter_includes_retries_and_304_without_authority_reuse(monkeypatch):
+    monkeypatch.setenv('GH_TOKEN', 'unit-readonly-control-token')
+    monkeypatch.setenv('RC6_GATE', 'cheap')
+    monkeypatch.setattr(lease.time, 'sleep', lambda _: None)
+    monkeypatch.setattr(admission, '_conditional_cache_get',
+        lambda _key: ('"owner-etag"', b'{"fresh":true}'))
+    class Response:
+        status = 200
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def read(self, _maximum): return b'{"fresh":true}'
+    attempts = []
+    def transport(request, timeout):
+        attempts.append(request)
+        if len(attempts) == 1:
+            raise urllib.error.HTTPError('https://api.github.com/unit', 503, 'gateway', {}, None)
+        if len(attempts) == 2:
+            raise urllib.error.HTTPError('https://api.github.com/unit', 304, 'unchanged', {}, None)
+        return Response()
+    monkeypatch.setattr(lease.urllib.request, 'urlopen', transport)
+    metrics = {'attempts': 0, 'statuses': {}, 'disconnects': 0}
+    assert lease.api_get('/unit/owner', time.monotonic() + 5,
+        retry_transient=True, metrics=metrics) == {'fresh': True}
+    assert metrics == {'attempts': 2, 'statuses': {'503': 1, '304': 1}, 'disconnects': 0}
+    assert len(attempts) == 2 and all(request.get_header('If-none-match') == '"owner-etag"'
+        for request in attempts)
+    assert 'unit-readonly-control-token' not in json.dumps(metrics)
+    metrics = {'attempts': 0, 'statuses': {}, 'disconnects': 0}
+    assert lease.api_get('/unit/owner', time.monotonic() + 5,
+        retry_transient=False, metrics=metrics) == {'fresh': True}
+    assert metrics == {'attempts': 1, 'statuses': {'200': 1}, 'disconnects': 0}
+
+
 def test_owner_observation_reuses_complete_earlier_window_and_replays_exact_bytes(monkeypatch):
     base = datetime(2026, 10, 13, 15, tzinfo=timezone.utc)
     rows = []
