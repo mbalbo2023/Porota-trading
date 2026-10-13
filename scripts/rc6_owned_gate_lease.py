@@ -10,6 +10,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
+import http.client
 import json
 import math
 import os
@@ -147,6 +148,14 @@ def api_get(path, deadline, *, retry_transient=False):
             # original alarm/deadline; never fall back to stale cached state.
             if (not retry_transient or error.code not in (500, 502, 503, 504)
                     or attempt == transient_attempts - 1
+                    or deadline-time.monotonic() <= 1):
+                raise
+            time.sleep(min(.15 * (attempt + 1), .6,
+                           max(0, deadline-time.monotonic() - 1)))
+        except http.client.RemoteDisconnected:
+            # A closed gateway connection carries no current authority.
+            # Repeat the same live GET within the original alarm and deadline.
+            if (not retry_transient or attempt == transient_attempts - 1
                     or deadline-time.monotonic() <= 1):
                 raise
             time.sleep(min(.15 * (attempt + 1), .6,

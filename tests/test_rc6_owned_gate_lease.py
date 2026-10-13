@@ -3,6 +3,7 @@ import base64
 import copy
 from datetime import datetime, timedelta, timezone
 import hashlib
+import http.client
 import os
 from pathlib import Path
 import signal
@@ -193,6 +194,42 @@ def test_paper_v3_live_owner_read_retries_only_transient_gateway_status(monkeypa
     calls.clear();monkeypatch.setattr(lease.urllib.request,'urlopen',forbidden)
     with pytest.raises(urllib.error.HTTPError):
         lease.api_get(path,time.monotonic()+5,retry_transient=True)
+    assert len(calls)==1
+
+
+@pytest.mark.parametrize("gate", ("cheap", "focal311"))
+def test_paper_v3_live_owner_read_retries_remote_disconnect_but_exhaustion_vetoes(monkeypatch,gate):
+    monkeypatch.setenv('GH_TOKEN','unit-readonly-control-token')
+    monkeypatch.setenv('RC6_GATE',gate)
+    monkeypatch.setattr(lease.time,'sleep',lambda _:None)
+    monkeypatch.setattr(admission,'_conditional_cache_get',
+        lambda _key:('W/"stale-owner"',b'{"current_owner_authority":false}'))
+    class CurrentResponse:
+        status=200
+        headers={}
+        def __enter__(self):return self
+        def __exit__(self,*_args):return False
+        def read(self,_maximum):return b'{"current_owner_authority":true}'
+    calls=[]
+    def disconnected_then_live(request,timeout):
+        calls.append((request.get_header('If-none-match'),timeout))
+        if len(calls)==1:
+            raise http.client.RemoteDisconnected('gateway closed without response')
+        return CurrentResponse()
+    path='/unit/owner-live-remote-disconnect'
+    monkeypatch.setattr(lease.urllib.request,'urlopen',disconnected_then_live)
+    assert lease.api_get(path,time.monotonic()+5,retry_transient=True)=={'current_owner_authority':True}
+    assert len(calls)==2 and all(tag=='W/"stale-owner"' and 0<timeout<=5 for tag,timeout in calls)
+    def always_disconnected(request,timeout):
+        calls.append((request.get_header('If-none-match'),timeout))
+        raise http.client.RemoteDisconnected('gateway closed without response')
+    calls.clear();monkeypatch.setattr(lease.urllib.request,'urlopen',always_disconnected)
+    with pytest.raises(http.client.RemoteDisconnected):
+        lease.api_get(path,time.monotonic()+5,retry_transient=True)
+    assert len(calls)==16
+    calls.clear()
+    with pytest.raises(http.client.RemoteDisconnected):
+        lease.api_get(path,time.monotonic()+5,retry_transient=False)
     assert len(calls)==1
 
 
