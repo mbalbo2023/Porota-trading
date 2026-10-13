@@ -15,9 +15,18 @@ import subprocess
 import tempfile
 import time
 import urllib.error
-from contextlib import nullcontext, redirect_stdout
+from contextlib import contextmanager, nullcontext, redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import patch
+
+
+@contextmanager
+def case_context(**details):
+    """Keep variant context without pytest's extra unittest subTest reports."""
+    try:
+        yield
+    except AssertionError as error:
+        raise AssertionError(f'{details}: {error}') from error
 
 from scripts.rc6_material_horizon_producer import require_paper_v3_archive_policy
 from scripts.rc6_g5p_frames import (
@@ -379,7 +388,7 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
         self.assertEqual(len(known_unexplained),154)
         requirements={row['id'] for row in matrix['requirements']}
         for path in known_unexplained:
-            with self.subTest(path=path):
+            with case_context(path=path):
                 binding=matrix['path_evolution'].get(path)
                 self.assertIsNotNone(binding)
                 self.assertTrue(binding['reason'].strip())
@@ -898,7 +907,7 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
                                       (471,'OWNER_RECEIPT_473','99999'),
                                       (473,'DEPLOY_OWNER',admission._DOC_BRIDGE_SESSION),
                                       (471,'INTEGRATION_OWNER',admission._DOC_BRIDGE_SESSION)):
-                with self.subTest(issue=issue,field=field):
+                with case_context(issue=issue,field=field):
                     changed=copy.deepcopy(timelines)
                     changed[issue][-1]['body']=changed[issue][-1]['body'].replace(
                         field+'='+pilot.get(field,'47399'),field+'='+value)
@@ -1085,7 +1094,7 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
                         dict(manifest,source_sha='c'*40),
                         dict(manifest,g5p_acquisition={'run_id':123}),
                         dict(manifest,qualification_claimed=True)):
-            with self.subTest(changed=changed),self.assertRaisesRegex(
+            with case_context(changed=changed),self.assertRaisesRegex(
                     ValueError,'G5P_ACQUISITION_MUST_BE_EXACT_NONCERTIFYING_EMPTY_MANIFEST'):
                 admission.validate_g5p_acquisition_manifest(changed,'a'*40,'b'*40,
                     'OWNER',manifest['g5p_revision_approval_url'])
@@ -1210,7 +1219,7 @@ class PaperV3ProducerTests(unittest.TestCase):
                         dict(maximum_files=513),
                         dict(maximum_bytes=129 * 1024**2),
                         dict(archive_maximum_bytes=513 * 1024**2)):
-            with self.subTest(changes=changes):
+            with case_context(changes=changes):
                 with self.assertRaisesRegex(ValueError, "CANONICAL_FACTORY_POLICY_MISMATCH"):
                     require_paper_v3_archive_policy(self.policy(**changes))
 
@@ -1338,7 +1347,7 @@ class OriginalFrameTests(unittest.TestCase):
                                    ("checkpoint.json.gz", "gzip_part_bytes", [0]),
                                    ("projection.sqlite", "changed_pages", [{"index": 3,
                                                                                  "raw_base64": "AA=="}])):
-            with self.subTest(member=member):
+            with case_context(member=member):
                 altered = copy.deepcopy(manifest)
                 name = "cut-0010.json.gz"
                 frame = json.loads(gzip.decompress((root / name).read_bytes()))
@@ -1370,7 +1379,7 @@ class OriginalFrameTests(unittest.TestCase):
                         originals=altered, receipt=receipt, restored=altered)
                 for limit, field in (("MAX_FRAME_BYTES", "FRAME_BYTES"),
                                      ("MAX_CAPTURE_BYTES", "CAPTURE_TOTAL")):
-                    with self.subTest(limit=limit), patch("scripts.rc6_g5p_frames." + limit, 1):
+                    with case_context(limit=limit), patch("scripts.rc6_g5p_frames." + limit, 1):
                         recorder = FrameRecorder(parent / limit, **binding)
                         with self.assertRaisesRegex(ValueError,
                                                     "G5P_ORIGINAL_" + field + ".*cut=0:actual=[0-9]+:limit=1"):
@@ -1397,7 +1406,7 @@ class OriginalFrameTests(unittest.TestCase):
         ):
             altered = copy.deepcopy(manifest)
             altered.update(changed)
-            with self.subTest(changed=list(changed)):
+            with case_context(changed=list(changed)):
                 with self.assertRaises(ValueError):
                     verify_frames(altered, read_frame=lambda name: (root / name).read_bytes(),
                                   cuts=cuts, **binding)
@@ -1480,7 +1489,7 @@ class OriginalFrameTests(unittest.TestCase):
                             ("archive_maximum_bytes",513*1024**2),
                             ("restarts",[361])):
             altered=copy.deepcopy(native);altered[field]=value
-            with self.subTest(field=field),self.assertRaises(ValueError):
+            with case_context(field=field),self.assertRaises(ValueError):
                 build_model(wire(altered),manifest_raw,
                     read_frame=lambda name:(root/name).read_bytes(),
                     owner_session=binding["owner_session"],
@@ -1528,7 +1537,7 @@ class OriginalFrameTests(unittest.TestCase):
                 dict(origin,actions_zip_authenticated=False),
                 dict(origin,run_id=123),
                 dict(origin,exact_model_sha256="0"*64)):
-                with self.subTest(changed=changed),self.assertRaises(ValueError):
+                with case_context(changed=changed),self.assertRaises(ValueError):
                     verify_material(row,captured,
                         read_frame=lambda name:(root/name).read_bytes(),
                         source_root=Path(__file__).resolve().parents[1],model_origin=changed)
@@ -1589,7 +1598,7 @@ class ProfileAndPhysicalGuards(unittest.TestCase):
             for receipts,profile in (([dict(base,gate="G5")],"PAPER_V3_ONLY"),
                                      ([dict(base,gate="G5P",release_profile="PAPER_V3_ONLY")],"FULL_G5"),
                                      ([dict(base,gate="G6.311")],"PAPER_V3_ONLY")):
-                with self.subTest(profile=profile,receipts=receipts),self.assertRaises(ValueError):
+                with case_context(profile=profile,receipts=receipts),self.assertRaises(ValueError):
                     gates.validate_chain(receipts,source_sha="a"*40,source_tree="b"*40,
                                          target_gate="G7",release_profile=profile)
             with self.assertRaisesRegex(ValueError,"GATE_UNKNOWN_TARGET_FOR_PROFILE"):
@@ -1699,7 +1708,7 @@ class ProfileAndPhysicalGuards(unittest.TestCase):
             dict(report,G8_primary_artifact_digest="sha256:"+"0"*64),
             dict(report,DEPLOY_OWNER="ACQUIRED"),
             dict(report,actual_image_execution={"status":"RED"})):
-            with self.subTest(changed=altered),self.assertRaises(BindingRejected):
+            with case_context(changed=altered),self.assertRaises(BindingRejected):
                 verify_g8_report(altered,index,files,binding=binding,
                                  frozen=frozen,tree_sha="b"*40)
         with self.assertRaises(BindingRejected):
@@ -1761,7 +1770,7 @@ class PaperV3PhysicalAdmission(unittest.TestCase):
             ("measured_at_unix_ns", time.time_ns() + 61 * 10**9),
         )
         for field, value in changes:
-            with self.subTest(field=field):
+            with case_context(field=field):
                 mutated = copy.deepcopy(self.row)
                 mutated[field] = value
                 with self.assertRaises(ValueError):
@@ -1803,7 +1812,7 @@ class PaperV3PhysicalAdmission(unittest.TestCase):
         for change in ({"source_derived_envelope_is_historical_peak": True},
                        {"predeploy_build_planning_bytes": 0},
                        {"original_FIN_and_gate_receipts_remain_required": False}):
-            with self.subTest(change=change):
+            with case_context(change=change):
                 modified = copy.deepcopy(policy)
                 modified["paper_v3_capacity"].update(change)
                 with self.assertRaisesRegex(ValueError, "PREFLIGHT_PAPER_V3_POLICY_CHANGED_OR_MISSING"):
