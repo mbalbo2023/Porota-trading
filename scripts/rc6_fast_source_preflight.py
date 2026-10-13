@@ -56,13 +56,16 @@ def validate(root: Path, admission: dict) -> dict:
         raise ValueError("FAST_PREFLIGHT_UNEXPLAINED_SOURCE_EVOLUTION:" + ",".join(missing))
     if any(re.search(r"(^|/)ppi[-_]watch(/|\.|$)", path, re.I) for path in changed):
         raise ValueError("FAST_PREFLIGHT_PPI_WATCH_SOURCE_CHANGED")
-    cheap = admission.get("cheap_files")
-    if not isinstance(cheap, list) or not all(isinstance(p, str) for p in cheap):
-        raise ValueError("FAST_PREFLIGHT_CHEAP_SCOPE_REQUIRED")
-    untested = sorted(p for p in changed if re.fullmatch(r"tests/test_[A-Za-z0-9_]+\.py", p)
-                      and p not in cheap)
-    if untested:
-        raise ValueError("FAST_PREFLIGHT_CHANGED_TEST_OUTSIDE_CHEAP:" + ",".join(untested))
+    if admission.get("gate") == "cheap":
+        cheap = admission.get("cheap_files")
+        if not isinstance(cheap, list) or not all(isinstance(p, str) for p in cheap):
+            raise ValueError("FAST_PREFLIGHT_CHEAP_SCOPE_REQUIRED")
+        untested = sorted(p for p in changed if re.fullmatch(r"tests/test_[A-Za-z0-9_]+\.py", p)
+                          and p not in cheap)
+        if untested:
+            raise ValueError("FAST_PREFLIGHT_CHANGED_TEST_OUTSIDE_CHEAP:" + ",".join(untested))
+    elif admission.get("gate") != "G5P-acquire":
+        raise ValueError("FAST_PREFLIGHT_GATE_SCOPE_REQUIRED")
     return {"status": "NEGATIVE_PREFLIGHT_GREEN_NO_GATE_CREDIT",
             "source_sha": source, "source_tree": tree, "development_base_sha": base,
             "changed_paths": len(changed), "real_orders_sent": 0}
