@@ -275,6 +275,38 @@ def test_ordered_carrier_readmission_survives_three_gateway_errors_with_fresh_ow
     assert len(requests)==1
 
 
+@pytest.mark.parametrize("gate", ("cheap", "focal311"))
+def test_carrier_readmission_recovers_remote_disconnect_with_fresh_owner_bytes(monkeypatch,gate):
+    monkeypatch.setenv('GH_TOKEN','unit-readonly-control-token')
+    monkeypatch.setenv('RC6_GATE',gate)
+    monkeypatch.setattr(lease.time,'sleep',lambda _:None)
+    monkeypatch.setattr(admission,'_conditional_cache_get',
+        lambda _key:('W/"stale-owner"',b'{"current_owner_authority":false}'))
+    class CurrentResponse:
+        status=200
+        headers={}
+        def __enter__(self):return self
+        def __exit__(self,*_args):return False
+        def read(self,_maximum):return b'{"current_owner_authority":true}'
+    calls=[]
+    def disconnected_then_live(request,timeout):
+        calls.append((request.get_header('If-none-match'),timeout))
+        if len(calls)==1:
+            raise http.client.RemoteDisconnected('gateway closed without response')
+        return CurrentResponse()
+    monkeypatch.setattr(admission.urllib.request,'urlopen',disconnected_then_live)
+    assert admission.api('/unit/carrier-live-remote-disconnect')=={'current_owner_authority':True}
+    assert len(calls)==2 and all(tag=='W/"stale-owner"' and 0<timeout<=45 for tag,timeout in calls)
+    calls.clear()
+    def always_disconnected(request,timeout):
+        calls.append((request.get_header('If-none-match'),timeout))
+        raise http.client.RemoteDisconnected('gateway closed without response')
+    monkeypatch.setattr(admission.urllib.request,'urlopen',always_disconnected)
+    with pytest.raises(http.client.RemoteDisconnected):
+        admission.api('/unit/carrier-live-remote-disconnect')
+    assert len(calls)==16
+
+
 def test_only_paper_v3_monitor_selects_bounded_gateway_retry(monkeypatch,tmp_path):
     tmp_path.chmod(0o700)
     monkeypatch.setenv('GITHUB_RUN_ID',str(RUN))
