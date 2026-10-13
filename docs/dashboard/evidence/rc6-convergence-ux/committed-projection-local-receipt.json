@@ -1,0 +1,160 @@
+{
+  "schema": "rc6.ux-committed-projection-local-receipt.v1",
+  "status": "NATIVE_SMALL_PROJECTION_GREEN_LARGE_GATE_PENDING",
+  "recorded_at": "2026-10-05T05:41:03.281344+00:00",
+  "archive_integrated_base_sha": "10a3cc172791b87c9a735c9f7762f4ffc7ca0e75",
+  "archive_workspace": "/workspace/porota_rc6_ux_projection_validation_10a3cc17",
+  "owned_overlays": [
+    {
+      "path": "rc6_trader_dashboard/datasets.py",
+      "sha256": "9a62255acda588f1e00dc3950fc00a1373f4218f808a89f73c16688164c30e78",
+      "git_blob": "01461c713cb9c5863246629065721c7771737047"
+    },
+    {
+      "path": "rc6_trader_dashboard/generation.py",
+      "sha256": "60b317b8d7ad9079d620924ca1ff9c485a375f04d2957875ab76e1cac646ea23",
+      "git_blob": "df12bdaf1a89aeb5dfbbed2eaa8f246efa7c04d0"
+    },
+    {
+      "path": "rc6_trader_dashboard/projection.py",
+      "sha256": "54a7013bf55c5d7e8d9e30cdf277e6c2db7c64ed5fc41a105c75155a4b19389b",
+      "git_blob": "d6b8a3450bcebca8977a2e68d1356a49a2d2991b"
+    },
+    {
+      "path": "rc6_trader_dashboard/routes.py",
+      "sha256": "40342ba514d4bac681961f7d8d85725224abdf0141cab83c7be4afd0be3ca193",
+      "git_blob": "bdec87577699911940dff3e48af2a3470621c27c"
+    },
+    {
+      "path": "rc6_trader_dashboard/view_common.py",
+      "sha256": "86036532179f8b72191dfdbdddf9877dcc3acb900e74135f7154e3b3f02747b3",
+      "git_blob": "2a4f438021b688c8326447f75f0d322d9a03c74c"
+    },
+    {
+      "path": "rc6_trader_dashboard/projected_generation.py",
+      "sha256": "a74b85d32f498b5260c1964b3fcb73344abbd4aeff107daacb94b2aa1f6b88f7",
+      "git_blob": "0fb89f94be5c008c83fed5831bf4f01b82f480ee"
+    },
+    {
+      "path": "tests/test_rc6_dashboard_convergence.py",
+      "sha256": "a42e717bf6296a7a0436c14e38f76d5c82bda926b8d8dc866a770da17af4a833",
+      "git_blob": "6ec53fa744336ccee18ed3d5cc377c57fa9e955e"
+    },
+    {
+      "path": "tests/test_rc6_dashboard_projection.py",
+      "sha256": "1ec6e239aa42f0634274a36c5947827ceedcc6a21dcd6b2ab05a39c1826d5534",
+      "git_blob": "a13aed612fd3aa53e2ca3e4aa1c0761501886aa8"
+    },
+    {
+      "path": "tests/test_ws_dash_trader_terminal_08.py",
+      "sha256": "75b83ecca7f4ea36b5afb6ac751a8e2e362723551dc62a0a7b727c108dd9d426",
+      "git_blob": "d46945b792dd737a121f075b10d8e3a7a1b34e35"
+    },
+    {
+      "path": "tests/ci_trader_terminal_browser.py",
+      "sha256": "d0414e0882cf577be44addaeb7553459d86374154c09698df6d96437a01d80b1",
+      "git_blob": "f3742d0f4c5c6629423119ca8a81f54d2ef5a4ce"
+    },
+    {
+      "path": "scripts/rc6_dashboard_route_inventory.py",
+      "sha256": "cd803fdae505c4717c45cd3f7b9ee057459a1e60dcc7d2deb7c3318d7ed00962",
+      "git_blob": "1cbbd936f782c4491eb2980ecdfe52969745eda3"
+    }
+  ],
+  "canonical_api_dependency": {
+    "source_sha": "7b5960522c312de8a48ea66ac341a918bfb50c08",
+    "local_copy": "e321d8ad",
+    "root_integration": "ea769931"
+  },
+  "verification_contract": {
+    "schema": "rc6.shadow-ui-committed-projection.v1",
+    "roles": [
+      "report",
+      "checkpoint",
+      "status",
+      "projection"
+    ],
+    "level": "WIRE_AND_PROJECTION_SEMANTICS",
+    "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION",
+    "same_current_cut_and_original_derivation": true,
+    "financial_authority": false,
+    "full_logical_decode_claimed": false
+  },
+  "test_receipts": [
+    {
+      "tests": 49,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "receipt": "projection-native-guard.xml",
+      "elapsed_seconds": 66.168
+    },
+    {
+      "tests": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "receipt": "projection-affected-guard.xml",
+      "elapsed_seconds": 24.829
+    },
+    {
+      "tests": 42,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "receipt": "projection-scope-guard.xml",
+      "elapsed_seconds": 15.326
+    }
+  ],
+  "browser": {
+    "receipt": "browser-projected/browser-gate.json",
+    "canonical_viewport_checks": 294,
+    "legacy_checks": 22,
+    "interaction_checks": 10,
+    "native_contract_checks": 8,
+    "renders": 334,
+    "p50_ms": 33.58,
+    "p95_ms": 62.68,
+    "max_ms": 81.97,
+    "scope": "Normal offline native PAPER/SHADOW fixture; not the 12000/60000 resource gate",
+    "network": "all HTTP intercepted; native offline PAPER/SHADOW writers; provider_requests=0"
+  },
+  "rca_notes": [
+    "Native factual cohort can omit CATALOG_READY; its card stays unknown rather than using catalog or invented zero.",
+    "Unpublished dataset filter preserves unknown total and exposes source_population_total.",
+    "Visible payload/index filter contradictions reject the whole page; producer index digest fix remains separate."
+  ],
+  "large_gate": {
+    "status": "PENDING",
+    "harness": "tests/ci_rc6_projection_large_reader.py",
+    "harness_executed_on_large_artifact": false,
+    "required_catalog_full_identities": 12000,
+    "required_observations": 60000,
+    "request_output_limit_bytes": 4194304,
+    "whole_request_limit_seconds": 1,
+    "sampled_queries_vs_complete_population_explicit": true,
+    "harness_source_sha256": "926c07f5343c920482ce8abd5e11eaf346a6e2faa674ff1de09dac05e9d910f1",
+    "harness_small_fixture_self_test": {
+      "status": "PASS_EXPECTED_REJECTION",
+      "receipt": "large-harness-small-rejection.json",
+      "expected_gate": "NATIVE_LARGE_REPORT_NOT_EXERCISED",
+      "source_and_custody_unchanged": true
+    }
+  },
+  "preservation": {
+    "navigation_destinations": 8,
+    "canonical_subviews": 49,
+    "legacy_aliases": 22,
+    "protected_pr344_ux_changes": [],
+    "protected_pr344_receipt": "pr344-preservation.json",
+    "ppi_watch_owned_changes": 0,
+    "production_runtime_actions": 0,
+    "o_dashboard_owned_changes": 0
+  },
+  "limits": [
+    "Final native 12000/60000 publisher completion and reader/render metrics remain blocking.",
+    "Producer must bind SQL filter/order fields into logical projection derivation; UI scope checks do not replace that fix.",
+    "Parent must rerun import/source closure, mount/image provenance and browser on one final frozen SHA/tree/artifact.",
+    "Local durable custody does not provide independent external authentication."
+  ]
+}

@@ -229,97 +229,124 @@ def _commit_rotation(universe: list[str], fingerprint: str, start: int, selected
 def _parse_time(value: Any) -> datetime | None:
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-    except (TypeError, ValueError):
+        return parsed.astimezone(timezone.utc) if parsed.tzinfo and parsed.utcoffset() is not None else None
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
 def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    from rc6_dynamic_universe.sources import _canonical_identity
+    from rc6_shadow_runtime.source_authority import native_time, receipt_time, source_rank
+
+    current = datetime.now(timezone.utc)
+
+    def bind(records, *, capture=None):
+        by_symbol, reviews = {}, []
+        for record in records:
+            row = dict(record)
+            native = _parse_time(native_time(row))
+            received = _parse_time(receipt_time(row) or capture)
+            try:
+                key = tuple(_canonical_identity(row))
+            except (ValueError, TypeError):
+                if len(reviews) < 1000:
+                    reviews.append({"symbol": row.get("symbol"), "reason": "EXACT_IDENTITY_REQUIRED", "identity_assigned": False})
+                continue
+            if not native or not received or not native <= received <= current or not 0 <= (current-native).total_seconds() <= PRIMARY_MAX_AGE_SECONDS:
+                if len(reviews) < 1000:
+                    reviews.append({"symbol": key[0], "identity": list(key), "reason": "NATIVE_QUOTE_CLOCK_MISSING_STALE_OR_UNAVAILABLE", "identity_assigned": False})
+                continue
+            row.update(provider_observed_at=native.isoformat(), captured_at=received.isoformat(),
+                       canonical_identity=list(key), provider_clock_basis="NATIVE_EVENT_TIME")
+            by_symbol.setdefault(key[0], {}).setdefault(key, []).append(row)
+        values = {}
+        for symbol, identities in by_symbol.items():
+            if len(identities) != 1:
+                reviews.append({"symbol": symbol, "identities": [list(key) for key in sorted(identities)],
+                                "reason": "MULTIPLE_CURRENCY_MARKET_SETTLEMENT_IDENTITIES", "identity_assigned": False})
+                continue
+            candidates = next(iter(identities.values()))
+            latest = max(_parse_time(row["captured_at"]) for row in candidates)
+            candidates = [row for row in candidates if _parse_time(row["captured_at"]) == latest]
+            # Same receipt with incompatible observations cannot select a scalar.
+            signatures = {json.dumps({name: row.get(name) for name in ("last", "bid", "ask", "bid_size", "ask_size", "provider_observed_at", "book_at")}, sort_keys=True) for row in candidates}
+            if len(signatures) != 1:
+                reviews.append({"symbol": symbol, "reason": "DUPLICATE_SOURCE_EVIDENCE_CONFLICT", "identity_assigned": False})
+                continue
+            values[symbol] = candidates[0]
+        return values, reviews[:1000]
+
     for candidate in (os.getenv("POROTA_PRIMARY_LAST_CACHE_PATH", "").strip(), str(DEFAULT_ROOT / "primary_last.json"), "/app/data/market/primary_last.json"):
         if not candidate:
             continue
         try:
-            payload: Any = json.loads(Path(candidate).read_text(encoding="utf-8"))
+            payload = json.loads(Path(candidate).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        values = (payload.get("quotes_by_symbol") or payload.get("last_by_symbol")) if isinstance(payload, dict) else {}
-        if isinstance(values, dict):
-            values = {str(symbol).upper(): (quote if isinstance(quote, dict) else {"last": quote}) for symbol, quote in values.items()}
-        timestamp = _parse_time(payload.get("observed_at") or payload.get("refreshed_at") or payload.get("captured_at")) if isinstance(payload, dict) else None
-        source = str(payload.get("source") or "").upper() if isinstance(payload, dict) else ""
-        market = str(payload.get("market") or "").upper() if isinstance(payload, dict) else ""
-        age = (datetime.now(timezone.utc) - timestamp.astimezone(timezone.utc)).total_seconds() if timestamp else None
-        valid = isinstance(values, dict) and bool(values) and timestamp is not None and age is not None and 0 <= age <= PRIMARY_MAX_AGE_SECONDS and source.startswith("PPI") and market in {"BYMA", "BCBA"}
-        contract = {"state": "READY" if valid else "UNAVAILABLE", "source": source or "UNKNOWN", "market": market or "UNKNOWN", "observed_at": timestamp.isoformat() if timestamp else None, "age_seconds": round(age, 1) if age is not None else None, "reason": "OK" if valid else "PRIMARY_CACHE_CONTRACT_INVALID_OR_STALE"}
-        return (values if valid else {}), contract
-    # The dashboard's authoritative PPI quote path is market_snapshots. Read it
-    # in SQLite read-only mode when the legacy cache is absent; never write here.
+        if not isinstance(payload, dict):
+            continue
+        raw = payload.get("quotes_by_symbol") or payload.get("last_by_symbol")
+        capture = payload.get("received_at") or payload.get("captured_at") or payload.get("observed_at") or payload.get("refreshed_at")
+        source = str(payload.get("source") or "").upper()
+        records = []
+        for symbol, quote in raw.items() if isinstance(raw, dict) else []:
+            row = dict(quote) if isinstance(quote, dict) else {"last": quote}
+            row.setdefault("symbol", str(symbol).strip().upper())
+            if row["symbol"] != str(symbol).strip().upper():
+                row["ticker"] = str(symbol).strip().upper()  # explicit conflicting claim, never overwrite
+            if payload.get("market"):
+                row.setdefault("market", payload["market"])
+            records.append(row)
+        values, reviews = bind(records, capture=capture)
+        if source_rank(source) != 0:
+            values = {}
+        return values, {"state": "READY" if values else "UNAVAILABLE", "source": source or "UNKNOWN",
+            "market": payload.get("market") or "UNKNOWN", "capture_observed_at": capture,
+            "capture_clock_basis": "AVAILABILITY_ONLY", "provider_clock_basis": "PER_ROW_NATIVE_EVENT_TIME",
+            "identity_binding": "EXACT_FIVE_PART_IDENTITY", "identity_reviews": reviews,
+            "provider_available": None, "reason": "OK" if values else "PRIMARY_CACHE_NATIVE_CLOCK_OR_IDENTITY_NO_VERIFICADO"}
+
+    # Existing SQLite read-only fallback. LAST requires trade_at; BOOK keeps its
+    # independent book_at. observed_at is receipt and never provider time.
     for database in (os.getenv("POROTA_OBSERVER_DB", "").strip(), DEFAULT_DB,
-                     "/opt/porota-trading/data/paper_v17/observer_v17.db",
-                     "/app/data/paper_v17/observer_v17.db"):
+                     "/opt/porota-trading/data/paper_v17/observer_v17.db", "/app/data/paper_v17/observer_v17.db"):
         if not database:
             continue
+        conn = None
         try:
             conn = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=10)
             conn.execute("PRAGMA query_only=ON")
-            tables = {str(row[0]) for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'")}
-            if "market_snapshots" not in tables:
-                conn.close()
-                continue
-            columns = {str(row[1]) for row in conn.execute(
-                "PRAGMA table_info(market_snapshots)")}
+            columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(market_snapshots)")}
             if not {"symbol", "last"}.issubset(columns):
-                conn.close()
                 continue
-            selected = [name for name in (
-                "id", "symbol", "asset_class", "settlement", "currency", "market",
-                "observed_at", "book_at", "bid", "ask", "bid_size", "ask_size", "last"
-            ) if name in columns]
-            clauses = []
-            if "market" in columns:
-                clauses.append("upper(COALESCE(market,'')) IN ('BYMA','BCBA','A3','ROFEX')")
-            where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+            selected = [name for name in ("id", "source", "symbol", "asset_class", "settlement", "currency", "market",
+                "observed_at", "trade_at", "book_at", "bid", "ask", "bid_size", "ask_size", "last") if name in columns]
             order = "id DESC" if "id" in columns else "rowid DESC"
-            rows = conn.execute(
-                f"SELECT {', '.join(selected)} FROM market_snapshots{where} ORDER BY {order}"
-            ).fetchall()
-            conn.close()
+            rows = conn.execute(f"SELECT {', '.join(selected)} FROM market_snapshots ORDER BY {order} LIMIT 20001").fetchall()
             index = {name: position for position, name in enumerate(selected)}
-            values: dict[str, dict[str, Any]] = {}
-            for raw in rows:
-                symbol = str(raw[index["symbol"]] or "").strip().upper()
-                if not symbol or symbol in values:
+            records = []
+            for raw in rows[:20000]:
+                row = {name: raw[position] for name, position in index.items() if raw[position] is not None}
+                if row.get("source") and source_rank(row["source"]) != 0:
                     continue
-                timestamp = (
-                    raw[index["observed_at"]] if "observed_at" in index else None
-                ) or (raw[index["book_at"]] if "book_at" in index else None)
-                if not timestamp:
-                    continue
-                values[symbol] = {
-                    key: raw[index[key]] for key in index
-                    if key not in {"id", "symbol"} and raw[index[key]] is not None
-                }
-                values[symbol]["symbol"] = symbol
-                values[symbol]["provider_observed_at"] = timestamp
-                values[symbol]["market"] = values[symbol].get("market") or "BYMA"
-            timestamps = [_parse_time(row.get("provider_observed_at")) for row in values.values()]
-            timestamps = [value for value in timestamps if value is not None]
-            latest = max(timestamps) if timestamps else None
-            age = ((datetime.now(timezone.utc) - latest.astimezone(timezone.utc)).total_seconds()
-                   if latest else None)
-            valid = bool(values) and latest is not None and age is not None and 0 <= age <= PRIMARY_MAX_AGE_SECONDS
-            contract = {
-                "state": "READY" if valid else "UNAVAILABLE",
-                "source": "PPI_SQLITE_MARKET_SNAPSHOTS", "market": "MULTI_MARKET",
-                "observed_at": latest.isoformat() if latest else None,
-                "age_seconds": round(age, 1) if age is not None else None,
-                "reason": "OK" if valid else "PRIMARY_SQLITE_CONTRACT_INVALID_OR_STALE",
-            }
-            return (values if valid else {}), contract
+                # Never infer a currency/market/settlement from a ticker or default.
+                row["source_at"] = row.get("trade_at")
+                row["received_at"] = row.get("observed_at")
+                records.append(row)
+            values, reviews = bind(records)
+            times = [_parse_time(row["provider_observed_at"]) for row in values.values()]
+            latest = max(times) if times else None
+            return values, {"state": "READY" if values else "UNAVAILABLE", "source": "PPI_SQLITE_MARKET_SNAPSHOTS", "market": "MULTI_MARKET",
+                "observed_at": latest.isoformat() if latest else None, "provider_clock_basis": "NATIVE_TRADE_AT",
+                "capture_clock_basis": "OBSERVED_AT_IS_RECEIPT_ONLY", "identity_binding": "EXACT_FIVE_PART_IDENTITY",
+                "identity_reviews": reviews, "provider_available": None, "read_truncated": len(rows) > 20000,
+                "reason": "OK" if values else "PRIMARY_SQLITE_NATIVE_CLOCK_OR_IDENTITY_NO_VERIFICADO"}
         except (sqlite3.Error, OSError):
             continue
-    return {}, {"state": "UNAVAILABLE", "reason": "PRIMARY_CACHE_AND_SQLITE_NOT_FOUND"}
+        finally:
+            if conn is not None:
+                conn.close()
+    return {}, {"state": "UNAVAILABLE", "provider_available": None, "reason": "PRIMARY_CACHE_AND_SQLITE_NOT_FOUND"}
 
 
 def _publish_progress(universe: list[str] | int, batch: list[str], source: str, fingerprint: str, cycle: dict[str, Any], primary_contract: dict[str, Any]) -> dict[str, Any]:
@@ -456,7 +483,9 @@ def main() -> int:
                 if not isinstance(raw, dict):
                     continue
                 row = dict(raw)
-                row.setdefault("provider_observed_at", observed)
+                # Collection proves availability, not the provider event time.
+                # A missing native timestamp stays unknown downstream.
+                row.setdefault("captured_at", observed)
                 row.setdefault("market", "BYMA")
                 official_rows.append(row)
     except (OSError, ValueError, json.JSONDecodeError):

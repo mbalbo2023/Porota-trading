@@ -1,0 +1,349 @@
+FFF.FFFF....                                                             [100%]
+=================================== FAILURES ===================================
+_ test_capture_rejects_success_after_complete_close_and_cleanup[connection_close] _
+
+private_inputs = (PosixPath('/workspace/rc6-capture-boundaries-djmze1hh/observer.sqlite'), PosixPath('/workspace/rc6-capture-boundaries-djmze1hh/scratch'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fa63e5b9650>
+exit_boundary = 'connection_close'
+
+    @pytest.mark.parametrize("exit_boundary", ("connection_close", "disk_cleanup", "offline_cleanup"))
+    def test_capture_rejects_success_after_complete_close_and_cleanup(private_inputs, monkeypatch, exit_boundary):
+        source, root = private_inputs
+        before = source_custody(source)
+        events = {}
+        deadline = time.monotonic() + .25
+        options = {} if exit_boundary == "offline_cleanup" else disk_options(root)
+        if exit_boundary == "connection_close":
+            original_connect = sqlite3.connect
+            class DelayedClose(sqlite3.Connection):
+                def close(self):
+                    super().close()
+                    events["connection_closed"] = True
+                    delay_until_expired(deadline)
+            def connect(*args, **kwargs):
+                return original_connect(*args, factory=DelayedClose, **kwargs)
+            monkeypatch.setattr(sqlite3, "connect", connect)
+        else:
+            original_scratch = snapshots.private_scratch
+            @contextmanager
+            def delayed_cleanup(*args, **kwargs):
+                with original_scratch(*args, **kwargs) as captured:
+                    events["captured_root"] = captured[0]
+                    yield captured
+                events["cleanup_completed"] = True
+                assert not events["captured_root"].exists()
+                delay_until_expired(deadline)
+            monkeypatch.setattr(snapshots, "private_scratch", delayed_cleanup)
+>       with pytest.raises(snapshots.SnapshotError, match="^TIME_BUDGET_EXHAUSTED$"):
+E       Failed: DID NOT RAISE SnapshotError
+
+../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py:105: Failed
+_ test_capture_rejects_success_after_complete_close_and_cleanup[disk_cleanup] __
+
+private_inputs = (PosixPath('/workspace/rc6-capture-boundaries-5356rftj/observer.sqlite'), PosixPath('/workspace/rc6-capture-boundaries-5356rftj/scratch'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fa63e1f3750>
+exit_boundary = 'disk_cleanup'
+
+    @pytest.mark.parametrize("exit_boundary", ("connection_close", "disk_cleanup", "offline_cleanup"))
+    def test_capture_rejects_success_after_complete_close_and_cleanup(private_inputs, monkeypatch, exit_boundary):
+        source, root = private_inputs
+        before = source_custody(source)
+        events = {}
+        deadline = time.monotonic() + .25
+        options = {} if exit_boundary == "offline_cleanup" else disk_options(root)
+        if exit_boundary == "connection_close":
+            original_connect = sqlite3.connect
+            class DelayedClose(sqlite3.Connection):
+                def close(self):
+                    super().close()
+                    events["connection_closed"] = True
+                    delay_until_expired(deadline)
+            def connect(*args, **kwargs):
+                return original_connect(*args, factory=DelayedClose, **kwargs)
+            monkeypatch.setattr(sqlite3, "connect", connect)
+        else:
+            original_scratch = snapshots.private_scratch
+            @contextmanager
+            def delayed_cleanup(*args, **kwargs):
+                with original_scratch(*args, **kwargs) as captured:
+                    events["captured_root"] = captured[0]
+                    yield captured
+                events["cleanup_completed"] = True
+                assert not events["captured_root"].exists()
+                delay_until_expired(deadline)
+            monkeypatch.setattr(snapshots, "private_scratch", delayed_cleanup)
+>       with pytest.raises(snapshots.SnapshotError, match="^TIME_BUDGET_EXHAUSTED$"):
+E       Failed: DID NOT RAISE SnapshotError
+
+../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py:105: Failed
+_ test_capture_rejects_success_after_complete_close_and_cleanup[offline_cleanup] _
+
+private_inputs = (PosixPath('/workspace/rc6-capture-boundaries-oh0w9hy9/observer.sqlite'), PosixPath('/workspace/rc6-capture-boundaries-oh0w9hy9/scratch'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fa63e3dc2d0>
+exit_boundary = 'offline_cleanup'
+
+    @pytest.mark.parametrize("exit_boundary", ("connection_close", "disk_cleanup", "offline_cleanup"))
+    def test_capture_rejects_success_after_complete_close_and_cleanup(private_inputs, monkeypatch, exit_boundary):
+        source, root = private_inputs
+        before = source_custody(source)
+        events = {}
+        deadline = time.monotonic() + .25
+        options = {} if exit_boundary == "offline_cleanup" else disk_options(root)
+        if exit_boundary == "connection_close":
+            original_connect = sqlite3.connect
+            class DelayedClose(sqlite3.Connection):
+                def close(self):
+                    super().close()
+                    events["connection_closed"] = True
+                    delay_until_expired(deadline)
+            def connect(*args, **kwargs):
+                return original_connect(*args, factory=DelayedClose, **kwargs)
+            monkeypatch.setattr(sqlite3, "connect", connect)
+        else:
+            original_scratch = snapshots.private_scratch
+            @contextmanager
+            def delayed_cleanup(*args, **kwargs):
+                with original_scratch(*args, **kwargs) as captured:
+                    events["captured_root"] = captured[0]
+                    yield captured
+                events["cleanup_completed"] = True
+                assert not events["captured_root"].exists()
+                delay_until_expired(deadline)
+            monkeypatch.setattr(snapshots, "private_scratch", delayed_cleanup)
+>       with pytest.raises(snapshots.SnapshotError, match="^TIME_BUDGET_EXHAUSTED$"):
+E       Failed: DID NOT RAISE SnapshotError
+
+../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py:105: Failed
+_____ test_source_open_race_to_fifo_is_bounded_and_rejected_before_read[] ______
+
+private_inputs = (PosixPath('/workspace/rc6-capture-boundaries-iq_t107_/observer.sqlite'), PosixPath('/workspace/rc6-capture-boundaries-iq_t107_/scratch'))
+suffix = ''
+
+    @pytest.mark.parametrize("suffix", ("", "-wal"))
+    def test_source_open_race_to_fifo_is_bounded_and_rejected_before_read(private_inputs, suffix):
+        source, root = private_inputs
+        if suffix:
+            # Actual committed SQLite WAL bytes, copied before its writer closes.
+            writer_path = source.parent / "wal-writer.sqlite"
+            writer = sqlite3.connect(writer_path)
+            try:
+                writer.execute("PRAGMA journal_mode=WAL")
+                writer.execute("CREATE TABLE observer_state(mode, real_orders_sent)")
+                writer.execute("INSERT INTO observer_state VALUES('PRODUCTION_PAPER', 0)")
+                writer.commit()
+                source.write_bytes(writer_path.read_bytes())
+                Path(str(source) + "-wal").write_bytes(Path(str(writer_path) + "-wal").read_bytes())
+            finally:
+                writer.close()
+        environment = {name: value for name, value in os.environ.items() if not name.startswith(scratch.ENV_PREFIX)}
+        child = subprocess.Popen([sys.executable, "-B", "-u", "-c", FIFO_CHILD, str(source), str(root), suffix],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment)
+        try:
+            try:
+>               output, errors = child.communicate(timeout=1.5)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py:197: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:1209: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:2116: in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Popen: returncode: -9 args: ['/workspace/venv_rc6_frozen311/bin/python', '-...>
+endtime = 53854.44892643, orig_timeout = 1.5
+stdout_seq = [b'{"event": "SWAPPED_BEFORE_SOURCE_OPEN", "flags": 393216}\n', b'']
+stderr_seq = [b''], skip_check_and_raise = False
+
+    def _check_timeout(self, endtime, orig_timeout, stdout_seq, stderr_seq,
+                       skip_check_and_raise=False):
+        """Convenience for checking if a timeout has expired."""
+        if endtime is None:
+            return
+        if skip_check_and_raise or _time() > endtime:
+>           raise TimeoutExpired(
+                    self.args, orig_timeout,
+                    output=b''.join(stdout_seq) if stdout_seq else None,
+                    stderr=b''.join(stderr_seq) if stderr_seq else None)
+E           subprocess.TimeoutExpired: Command '['/workspace/venv_rc6_frozen311/bin/python', '-B', '-u', '-c', "\nimport json, os, sys, time\nfrom pathlib import Path\nfrom rc6_audit_evidence import sqlite_snapshot as snapshots\nsource, root, suffix = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]\nmember = Path(str(source) + suffix)\nactual_open = os.open\nswapped = []\ndef swap_at_open(path, flags, *args, **kwargs):\n    if Path(path) == member and flags & os.O_NOATIME and not swapped:\n        member.rename(Path(str(member) + '.saved'))\n        os.mkfifo(member, 0o600)\n        swapped.append(True)\n        print(json.dumps({'event':'SWAPPED_BEFORE_SOURCE_OPEN', 'flags':flags}), flush=True)\n    return actual_open(path, flags, *args, **kwargs)\nsnapshots.os.open = swap_at_open\nstarted = time.monotonic()\ndeadline = started + .25\ntry:\n    with snapshots.readonly_copy(source, deadline=deadline, validate=False,\n            scratch_root=root, max_scratch_bytes=134217728,\n            reserve_bytes=0, min_free_inode_percent=0):\n        raise AssertionError('SWAPPED_FIFO_WAS_ACCEPTED')\nexcept snapshots.SnapshotError as error:\n    print(json.dumps({'event':'REJECTED', 'reason':str(error),\n        'elapsed_seconds':time.monotonic()-started,\n        'residue':sorted(p.name for p in root.iterdir())}), flush=True)\n", '/workspace/rc6-capture-boundaries-iq_t107_/observer.sqlite', '/workspace/rc6-capture-boundaries-iq_t107_/scratch', '']' timed out after 1.5 seconds
+
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:1253: TimeoutExpired
+
+During handling of the above exception, another exception occurred:
+
+private_inputs = (PosixPath('/workspace/rc6-capture-boundaries-iq_t107_/observer.sqlite'), PosixPath('/workspace/rc6-capture-boundaries-iq_t107_/scratch'))
+suffix = ''
+
+    @pytest.mark.parametrize("suffix", ("", "-wal"))
+    def test_source_open_race_to_fifo_is_bounded_and_rejected_before_read(private_inputs, suffix):
+        source, root = private_inputs
+        if suffix:
+            # Actual committed SQLite WAL bytes, copied before its writer closes.
+            writer_path = source.parent / "wal-writer.sqlite"
+            writer = sqlite3.connect(writer_path)
+            try:
+                writer.execute("PRAGMA journal_mode=WAL")
+                writer.execute("CREATE TABLE observer_state(mode, real_orders_sent)")
+                writer.execute("INSERT INTO observer_state VALUES('PRODUCTION_PAPER', 0)")
+                writer.commit()
+                source.write_bytes(writer_path.read_bytes())
+                Path(str(source) + "-wal").write_bytes(Path(str(writer_path) + "-wal").read_bytes())
+            finally:
+                writer.close()
+        environment = {name: value for name, value in os.environ.items() if not name.startswith(scratch.ENV_PREFIX)}
+        child = subprocess.Popen([sys.executable, "-B", "-u", "-c", FIFO_CHILD, str(source), str(root), suffix],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment)
+        try:
+            try:
+                output, errors = child.communicate(timeout=1.5)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                output, errors = child.communicate(timeout=2)
+>               pytest.fail("SOURCE_OPEN_FIFO_EXCEEDED_ABSOLUTE_DEADLINE: " + output.strip())
+E               Failed: SOURCE_OPEN_FIFO_EXCEEDED_ABSOLUTE_DEADLINE: {"event": "SWAPPED_BEFORE_SOURCE_OPEN", "flags": 393216}
+
+../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py:201: Failed
+___ test_source_open_race_to_fifo_is_bounded_and_rejected_before_read[-wal] ____
+
+private_inputs = (PosixPath('/workspace/rc6-capture-boundaries-elu7zyi9/observer.sqlite'), PosixPath('/workspace/rc6-capture-boundaries-elu7zyi9/scratch'))
+suffix = '-wal'
+
+    @pytest.mark.parametrize("suffix", ("", "-wal"))
+    def test_source_open_race_to_fifo_is_bounded_and_rejected_before_read(private_inputs, suffix):
+        source, root = private_inputs
+        if suffix:
+            # Actual committed SQLite WAL bytes, copied before its writer closes.
+            writer_path = source.parent / "wal-writer.sqlite"
+            writer = sqlite3.connect(writer_path)
+            try:
+                writer.execute("PRAGMA journal_mode=WAL")
+                writer.execute("CREATE TABLE observer_state(mode, real_orders_sent)")
+                writer.execute("INSERT INTO observer_state VALUES('PRODUCTION_PAPER', 0)")
+                writer.commit()
+                source.write_bytes(writer_path.read_bytes())
+                Path(str(source) + "-wal").write_bytes(Path(str(writer_path) + "-wal").read_bytes())
+            finally:
+                writer.close()
+        environment = {name: value for name, value in os.environ.items() if not name.startswith(scratch.ENV_PREFIX)}
+        child = subprocess.Popen([sys.executable, "-B", "-u", "-c", FIFO_CHILD, str(source), str(root), suffix],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment)
+        try:
+            try:
+>               output, errors = child.communicate(timeout=1.5)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py:197: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:1209: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:2116: in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Popen: returncode: -9 args: ['/workspace/venv_rc6_frozen311/bin/python', '-...>
+endtime = 53856.045060086, orig_timeout = 1.5
+stdout_seq = [b'{"event": "SWAPPED_BEFORE_SOURCE_OPEN", "flags": 393216}\n', b'']
+stderr_seq = [b''], skip_check_and_raise = False
+
+    def _check_timeout(self, endtime, orig_timeout, stdout_seq, stderr_seq,
+                       skip_check_and_raise=False):
+        """Convenience for checking if a timeout has expired."""
+        if endtime is None:
+            return
+        if skip_check_and_raise or _time() > endtime:
+>           raise TimeoutExpired(
+                    self.args, orig_timeout,
+                    output=b''.join(stdout_seq) if stdout_seq else None,
+                    stderr=b''.join(stderr_seq) if stderr_seq else None)
+E           subprocess.TimeoutExpired: Command '['/workspace/venv_rc6_frozen311/bin/python', '-B', '-u', '-c', "\nimport json, os, sys, time\nfrom pathlib import Path\nfrom rc6_audit_evidence import sqlite_snapshot as snapshots\nsource, root, suffix = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]\nmember = Path(str(source) + suffix)\nactual_open = os.open\nswapped = []\ndef swap_at_open(path, flags, *args, **kwargs):\n    if Path(path) == member and flags & os.O_NOATIME and not swapped:\n        member.rename(Path(str(member) + '.saved'))\n        os.mkfifo(member, 0o600)\n        swapped.append(True)\n        print(json.dumps({'event':'SWAPPED_BEFORE_SOURCE_OPEN', 'flags':flags}), flush=True)\n    return actual_open(path, flags, *args, **kwargs)\nsnapshots.os.open = swap_at_open\nstarted = time.monotonic()\ndeadline = started + .25\ntry:\n    with snapshots.readonly_copy(source, deadline=deadline, validate=False,\n            scratch_root=root, max_scratch_bytes=134217728,\n            reserve_bytes=0, min_free_inode_percent=0):\n        raise AssertionError('SWAPPED_FIFO_WAS_ACCEPTED')\nexcept snapshots.SnapshotError as error:\n    print(json.dumps({'event':'REJECTED', 'reason':str(error),\n        'elapsed_seconds':time.monotonic()-started,\n        'residue':sorted(p.name for p in root.iterdir())}), flush=True)\n", '/workspace/rc6-capture-boundaries-elu7zyi9/observer.sqlite', '/workspace/rc6-capture-boundaries-elu7zyi9/scratch', '-wal']' timed out after 1.5 seconds
+
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:1253: TimeoutExpired
+
+During handling of the above exception, another exception occurred:
+
+private_inputs = (PosixPath('/workspace/rc6-capture-boundaries-elu7zyi9/observer.sqlite'), PosixPath('/workspace/rc6-capture-boundaries-elu7zyi9/scratch'))
+suffix = '-wal'
+
+    @pytest.mark.parametrize("suffix", ("", "-wal"))
+    def test_source_open_race_to_fifo_is_bounded_and_rejected_before_read(private_inputs, suffix):
+        source, root = private_inputs
+        if suffix:
+            # Actual committed SQLite WAL bytes, copied before its writer closes.
+            writer_path = source.parent / "wal-writer.sqlite"
+            writer = sqlite3.connect(writer_path)
+            try:
+                writer.execute("PRAGMA journal_mode=WAL")
+                writer.execute("CREATE TABLE observer_state(mode, real_orders_sent)")
+                writer.execute("INSERT INTO observer_state VALUES('PRODUCTION_PAPER', 0)")
+                writer.commit()
+                source.write_bytes(writer_path.read_bytes())
+                Path(str(source) + "-wal").write_bytes(Path(str(writer_path) + "-wal").read_bytes())
+            finally:
+                writer.close()
+        environment = {name: value for name, value in os.environ.items() if not name.startswith(scratch.ENV_PREFIX)}
+        child = subprocess.Popen([sys.executable, "-B", "-u", "-c", FIFO_CHILD, str(source), str(root), suffix],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment)
+        try:
+            try:
+                output, errors = child.communicate(timeout=1.5)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                output, errors = child.communicate(timeout=2)
+>               pytest.fail("SOURCE_OPEN_FIFO_EXCEEDED_ABSOLUTE_DEADLINE: " + output.strip())
+E               Failed: SOURCE_OPEN_FIFO_EXCEEDED_ABSOLUTE_DEADLINE: {"event": "SWAPPED_BEFORE_SOURCE_OPEN", "flags": 393216}
+
+../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py:201: Failed
+__ test_missing_nonblocking_open_support_fails_closed_without_opening_source ___
+
+private_inputs = (PosixPath('/workspace/rc6-capture-boundaries-ycf7ksqd/observer.sqlite'), PosixPath('/workspace/rc6-capture-boundaries-ycf7ksqd/scratch'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fa63e100710>
+
+    def test_missing_nonblocking_open_support_fails_closed_without_opening_source(private_inputs, monkeypatch):
+        source, _ = private_inputs
+        expected = snapshots._metadata(source.lstat())
+        opened = []
+        with monkeypatch.context() as absent:
+            absent.delattr(snapshots.os, "O_NONBLOCK")
+            absent.setattr(snapshots.os, "open", lambda *a, **k: opened.append((a, k)))
+            with pytest.raises(snapshots.SnapshotError, match="^SOURCE_OWNER_CAPTURE_REQUIRED$"):
+>               snapshots._read(source, expected, deadline=time.monotonic() + .25)
+
+../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py:226: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rc6_audit_evidence/sqlite_snapshot.py:59: in _read
+    with os.fdopen(descriptor, "rb") as stream:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fd = None, mode = 'rb', buffering = -1, encoding = None, args = (), kwargs = {}
+
+>   ???
+E   TypeError: invalid fd type (<class 'NoneType'>, expected integer)
+
+<frozen os>:1027: TypeError
+_ test_capture_timeout_reason_is_the_exact_nonsecret_contract[TIME_BUDGET_EXHAUSTED] _
+
+token = 'TIME_BUDGET_EXHAUSTED'
+
+    @pytest.mark.parametrize("token", ("TIME_BUDGET_EXHAUSTED",))
+    def test_capture_timeout_reason_is_the_exact_nonsecret_contract(token):
+>       assert failure_reason(snapshots.SnapshotError(token)) == token
+E       AssertionError: assert 'SnapshotError' == 'TIME_BUDGET_EXHAUSTED'
+E         
+E         - TIME_BUDGET_EXHAUSTED
+E         + SnapshotError
+
+../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py:232: AssertionError
+=========================== short test summary info ============================
+FAILED ../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup[connection_close]
+FAILED ../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup[disk_cleanup]
+FAILED ../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup[offline_cleanup]
+FAILED ../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read[]
+FAILED ../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read[-wal]
+FAILED ../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source
+FAILED ../rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract[TIME_BUDGET_EXHAUSTED]
+7 failed, 5 passed in 4.51s
+{"acceptance_complete": false, "artifact_validated": false, "diagnostic_only": true, "distribution_count": 157, "elapsed_seconds": 4.723322076999466, "external_guard_file": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py", "external_guard_sha256": "c71e6278a88f8dd237b1aa040eaf5b71e261f1a86d61b5b3f4747a3a2af0b249", "interpreter": "/workspace/venv_rc6_frozen311/bin/python", "junit_sha256": "032cf5c05baabd02ebcc421e27822961f69891f9ccec33f33f476c2c4e023b48", "network_attempts": 0, "product_overlay_count": 0, "pytest_returncode": 1, "runtime_validated": false, "schema": "rc6.source-capture-original-guard-replay-result.v1", "source_files": 1557, "source_sha": "f8895434e216a5d8e9f13c833f1419e229a162bd", "source_tree": "0b010d334b8d6b9d16a869eb1b46e9899c0ef1d9", "whole_source_sha_modes_git_blobs_unchanged": true}

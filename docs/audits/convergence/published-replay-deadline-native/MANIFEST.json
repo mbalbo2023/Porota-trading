@@ -1,0 +1,253 @@
+{
+  "artifact_image_or_horizon_acceptance": false,
+  "assertion_scope": "SELECTED_MODULE_CONTROLLED_CLOCK_SUBPROCESS; NO_DOCKER_REMOTE_API_FULL_GOV_OR_IMAGE_ACCEPTANCE",
+  "baseline_commit": "d9333065a306dc59bc5a58d7b5604d52daf9ff9f",
+  "child_command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/runner.py",
+    "--child",
+    "--git-repo",
+    "/workspace/porota_rc6_worktrees/sre_replay_deadline",
+    "--source-root",
+    "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/source",
+    "--source-sha",
+    "bd69e8a111f355eb6ab8a07f8f9e6e660f5a2bdf",
+    "--source-tree",
+    "7dbe4152206081c3523b6fc8c179777e67ff9bfd",
+    "--output-root",
+    "/workspace/rc6-replay-deadline-bd69-focal-20261005-a",
+    "--support",
+    "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/source_support.py",
+    "--timeout-seconds",
+    "180"
+  ],
+  "docker_or_remote_api_executed": false,
+  "execution_id": "2afaadf83346467ba60b4a58842341ac",
+  "files": [
+    {
+      "bytes": 1806,
+      "encoding": "ORIGINAL_RAW_BYTES",
+      "original_bytes": 1806,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/child.prefixture157.json",
+      "original_sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439",
+      "path": "child.prefixture157.json",
+      "sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439"
+    },
+    {
+      "bytes": 180912,
+      "encoding": "gzip_mtime_0_lossless",
+      "original_bytes": 1193730,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/child.source-after.index.json",
+      "original_sha256": "5845f656b2feb2fc50e45500ff90f28ed751b465f057dc47262f4889f9288f70",
+      "path": "child.source-after.index.json.gz",
+      "sha256": "11ad8f4aadb632014cae77b4606379c241d7b546bb4f1e5bbc00c4649389c45f"
+    },
+    {
+      "bytes": 180908,
+      "encoding": "gzip_mtime_0_lossless",
+      "original_bytes": 1193730,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/child.source-before.index.json",
+      "original_sha256": "4a2b3921c50852ecf0378b083b8b83a8bceb8101a64dc130c44bbc6d6c1df3ed",
+      "path": "child.source-before.index.json.gz",
+      "sha256": "be509efc180d1bcb218bb13590e2aa3b569c9bdf1969de539c6595637f748d12"
+    },
+    {
+      "bytes": 14768,
+      "encoding": "ORIGINAL_RAW_BYTES",
+      "original_bytes": 14768,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/collection-before-fixtures.json",
+      "original_sha256": "fde92d8a94cb079ff47bc03cb0c26ac022a9cd1af55ae381cd64da0318da0587",
+      "path": "collection-before-fixtures.json",
+      "sha256": "fde92d8a94cb079ff47bc03cb0c26ac022a9cd1af55ae381cd64da0318da0587"
+    },
+    {
+      "bytes": 220,
+      "encoding": "ORIGINAL_RAW_BYTES",
+      "original_bytes": 220,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/focal.log",
+      "original_sha256": "9e6f41006df5c3197da566265332446049f192834a680fc680b248091252c7b6",
+      "path": "focal.log",
+      "sha256": "9e6f41006df5c3197da566265332446049f192834a680fc680b248091252c7b6"
+    },
+    {
+      "bytes": 89849,
+      "encoding": "ORIGINAL_RAW_BYTES",
+      "original_bytes": 89849,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/focal.receipt.json",
+      "original_sha256": "caa403a1f4b15bf4ce5d887847f6fc4b9f5b23669f04d03e8c4712be7c9cdf60",
+      "path": "focal.receipt.json",
+      "sha256": "caa403a1f4b15bf4ce5d887847f6fc4b9f5b23669f04d03e8c4712be7c9cdf60"
+    },
+    {
+      "bytes": 11063,
+      "encoding": "ORIGINAL_RAW_BYTES",
+      "original_bytes": 11063,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/focal.xml",
+      "original_sha256": "5f165ceeb7ef3c6090b978357d8863d3ece273b52ea824aa2617828f5ee501e9",
+      "path": "focal.xml",
+      "sha256": "5f165ceeb7ef3c6090b978357d8863d3ece273b52ea824aa2617828f5ee501e9"
+    },
+    {
+      "bytes": 1315,
+      "encoding": "ORIGINAL_RAW_BYTES",
+      "original_bytes": 1315,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/kernel.resources.json",
+      "original_sha256": "914368670451c4de6c55af87e8dcd96a71eff56f6c591da830f2e6f7d83bbc08",
+      "path": "kernel.resources.json",
+      "sha256": "914368670451c4de6c55af87e8dcd96a71eff56f6c591da830f2e6f7d83bbc08"
+    },
+    {
+      "bytes": 1740,
+      "encoding": "ORIGINAL_RAW_BYTES",
+      "original_bytes": 1740,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/launch.json",
+      "original_sha256": "c1840ad39e3a8d4274386a3a049d28717a4aed103e715d658673ff3b3c8f9729",
+      "path": "launch.json",
+      "sha256": "c1840ad39e3a8d4274386a3a049d28717a4aed103e715d658673ff3b3c8f9729"
+    },
+    {
+      "bytes": 1806,
+      "encoding": "ORIGINAL_RAW_BYTES",
+      "original_bytes": 1806,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/parent.prefixture157.json",
+      "original_sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439",
+      "path": "parent.prefixture157.json",
+      "sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439"
+    },
+    {
+      "bytes": 180912,
+      "encoding": "gzip_mtime_0_lossless",
+      "original_bytes": 1193730,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/parent.source-after.index.json",
+      "original_sha256": "5845f656b2feb2fc50e45500ff90f28ed751b465f057dc47262f4889f9288f70",
+      "path": "parent.source-after.index.json.gz",
+      "sha256": "11ad8f4aadb632014cae77b4606379c241d7b546bb4f1e5bbc00c4649389c45f"
+    },
+    {
+      "bytes": 180910,
+      "encoding": "gzip_mtime_0_lossless",
+      "original_bytes": 1193730,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/parent.source-before.index.json",
+      "original_sha256": "02538ba2143b6a36e2333d964bceb53bde2113d1aefa337af64a1c6e4d4a7d68",
+      "path": "parent.source-before.index.json.gz",
+      "sha256": "617d6ff9bde8e319fcc9140951af8b897387b0b200f4ed8c0da5258dba8c5ae4"
+    },
+    {
+      "bytes": 16999,
+      "encoding": "ORIGINAL_RAW_BYTES",
+      "original_bytes": 16999,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/runner.py",
+      "original_sha256": "82488085c74b3827ea29ab18d685ef5e7cefa85cb7b0c4b7247765df6b7af9c2",
+      "path": "runner.py",
+      "sha256": "82488085c74b3827ea29ab18d685ef5e7cefa85cb7b0c4b7247765df6b7af9c2"
+    },
+    {
+      "bytes": 31518,
+      "encoding": "ORIGINAL_RAW_BYTES",
+      "original_bytes": 31518,
+      "original_raw_path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/source_support.py",
+      "original_sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21",
+      "path": "source_support.py",
+      "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+    }
+  ],
+  "final_candidate_eligible": false,
+  "forbidden_executable_attempts": 0,
+  "full_governed_suite": false,
+  "imports": {
+    "external_infrastructure": 2,
+    "libraries": 328,
+    "no_physical_origin": 69,
+    "source": 16,
+    "unexpected": 0
+  },
+  "inet_attempts": 0,
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "native_resources": {
+    "cpu_system_seconds": 2.876365,
+    "cpu_user_seconds": 11.205023,
+    "elapsed_wall_seconds": 14.24155033500574,
+    "peak_rss_bytes": 96149504,
+    "scope": "ACTUAL_SINGLE_CHILD_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT_CONCURRENT_RSS_SUM",
+    "timed_out": false
+  },
+  "observations_scope": "THIS_PYTHON_PROCESS_PLUS_KNOWN_CLIENT_EXECUTABLES; NOT_KERNEL_OR_TRANSITIVE",
+  "original_requirement_or_independent_market_attack_count_added": 0,
+  "outer_command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "/tmp/rc6_run_replay_deadline_focal.py",
+    "--git-repo",
+    "/workspace/porota_rc6_worktrees/sre_replay_deadline",
+    "--source-sha",
+    "bd69e8a111f355eb6ab8a07f8f9e6e660f5a2bdf",
+    "--source-tree",
+    "7dbe4152206081c3523b6fc8c179777e67ff9bfd",
+    "--output-root",
+    "/workspace/rc6-replay-deadline-bd69-focal-20261005-a",
+    "--support",
+    "/tmp/rc6_run_frozen_governed_v2.py",
+    "--timeout-seconds",
+    "180"
+  ],
+  "outer_environment": {
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "pid": 215623,
+  "prefixture_closure": {
+    "duplicate_names": [],
+    "expected_total": 157,
+    "installed_distribution_bytes_authenticated": false,
+    "installed_total": 157,
+    "installer_executed": false,
+    "metadata_names_versions_exact": true,
+    "source_hash_lock_platform_actions_status": "GREEN"
+  },
+  "pytest": {
+    "collected": 45,
+    "duplicates": 0,
+    "errors": 0,
+    "executed": 45,
+    "exit_code": 0,
+    "failures": 0,
+    "invocations": 1,
+    "junit_bytes": 11063,
+    "junit_sha256": "5f165ceeb7ef3c6090b978357d8863d3ece273b52ea824aa2617828f5ee501e9",
+    "module": "tests/test_rc6_convergence_sre_published_evidence.py",
+    "skipped": 0
+  },
+  "python_version": [
+    3,
+    11,
+    16
+  ],
+  "schema": "rc6.published-replay-deadline-controlled-native-dossier.v1",
+  "source_atime_changes": [
+    {
+      "after": 1791229492572429847,
+      "before": 1791229490361182766,
+      "kind": "directory",
+      "path": "tests"
+    }
+  ],
+  "source_atime_claim": "OBSERVED_SEPARATELY; NOT_ALL_STAT_FIELDS_UNCHANGED",
+  "source_byte_mode_blob_and_stable_custody_unchanged": true,
+  "source_data_db_all_stat_custody_claimed": false,
+  "source_fix_commits": [
+    "76d37d8ca394b01b0cfc08e8cd683db0c7d54998",
+    "bd69e8a111f355eb6ab8a07f8f9e6e660f5a2bdf"
+  ],
+  "source_git_files": 1868,
+  "source_overlay_count": 0,
+  "source_physical_namespace_exact": true,
+  "source_sha": "bd69e8a111f355eb6ab8a07f8f9e6e660f5a2bdf",
+  "source_tree": "7dbe4152206081c3523b6fc8c179777e67ff9bfd",
+  "sqlite_attempts": 0,
+  "status": "CONTROLLED_NATIVE_FOCAL_GREEN",
+  "uid": 1000,
+  "virtual_clock_controls_are_real_waits": false
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "rc6.exact-early-failures.fix-forward.v1",
+  "source_parent": "ce5f7ec0ac41066cea35de009d5e945f83fddd1d",
+  "parent_tree": "d14d32e71a9e54eafead2790c4d3fbf8d0410f52",
+  "Predeploy": {
+    "run": 37555888563,
+    "job": 112581901929,
+    "attempt": 1,
+    "conclusion": "failure",
+    "native_Gov_executed": false,
+    "exact_error": "UNEXPLAINED_SOURCE_EVOLUTION:.github/workflows/rc6-unified-candidate-tests.yml"
+  },
+  "supplementary_focal": {
+    "run": 37556142343,
+    "job": 112582717702,
+    "attempt": 1,
+    "conclusion": "failure",
+    "native_tests_executed": false,
+    "exact_error": "rg: command not found",
+    "exit": 127
+  },
+  "changed_paths": [
+    ".github/workflows/rc6-unified-candidate-tests.yml",
+    "docs/audits/convergence/REQUIREMENT_CLOSURE_MATRIX.json",
+    "docs/audits/convergence/evidence/controlled-recovery-20261007/checkpoint-early-runner-provenance-fix.json"
+  ],
+  "all_original_matrix_fields_except_path_evolution_identical": true,
+  "prior_evolution_entries_preserved": 3020,
+  "new_evolution_entries": 18,
+  "requirements": 55,
+  "material_statuses_unchanged": true,
+  "workflow_only_equivalent_tool_replacement": true,
+  "native_SUCCESS_claim": false,
+  "new_SHA_validation_required": true,
+  "real_orders_sent": 0
+}

@@ -1,0 +1,88 @@
+{
+  "schema": "rc6.ws-dash-trader-terminal-08.local-gates.v1",
+  "scope": "temporary synthetic fixtures; no deployed runtime access",
+  "status": "GREEN",
+  "suite_command": "umask 0022; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest . --ignore=test_a3_primary_readonly_hf6.py",
+  "governed_existing_exclusion": {
+    "path": "test_a3_primary_readonly_hf6.py",
+    "successor": "tests/test_a3_primary_readonly_hf6.py",
+    "policy": "ops/policy/test-policy.yaml"
+  },
+  "gates": {
+    "full": {
+      "tests": 2595,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfail": 0,
+      "seconds": 72.674,
+      "timestamp": "2026-10-04T23:06:23.079342+00:00",
+      "junit_sha256": "f31c03f0c7df7edc69b37f0ecb3eb224ee94ff3b8ca96a1819e384c7086ac010"
+    },
+    "focal": {
+      "tests": 171,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfail": 0,
+      "seconds": 3.29,
+      "timestamp": "2026-10-04T23:05:14.849492+00:00",
+      "junit_sha256": "b3896162d367cad1d8f41bc89430f272be3202e6f8b4bd2f42740adc84daef90"
+    }
+  },
+  "negative_fixtures": {
+    "CORRUPT_MANIFEST": "FAIL_CLOSED:MANIFEST_OR_METADATA_CORRUPT",
+    "INVALID_IMAGE_SIZE": "FAIL_CLOSED:IMAGE_SIZE_INVALID",
+    "MISSING_FILE": "FAIL_CLOSED:FROZEN_FILE_MISSING",
+    "NON_PAPER_MODE": "FAIL_CLOSED:NON_PAPER_MODE",
+    "REAL_ROUTE_ENABLED": "FAIL_CLOSED:REAL_ROUTE_ENABLED",
+    "WRONG_DIGEST": "FAIL_CLOSED:IMAGE_DIGEST_MISMATCH",
+    "WRONG_SHA": "FAIL_CLOSED:CANDIDATE_SHA_MISMATCH"
+  },
+  "bundle": {
+    "status": "GREEN",
+    "file_count": 441,
+    "new_package_files": 18
+  },
+  "artifact": {
+    "status": "GREEN",
+    "artifact_runtime_files": 433,
+    "missing_runtime_files": [],
+    "missing_local_imports": []
+  },
+  "browser": {
+    "status": "GREEN",
+    "widths": [
+      1440,
+      1280,
+      1024,
+      800,
+      600,
+      360
+    ],
+    "canonical_viewport_checks": 294,
+    "legacy_checks": 22,
+    "interaction_checks": [
+      "manual focus",
+      "scroll",
+      "details",
+      "filters",
+      "deep link",
+      "dirty inputs",
+      "interaction during outstanding read",
+      "auto refresh pause",
+      "menu Escape"
+    ],
+    "findings": [],
+    "as_of": "2026-10-04T23:10:59.689751+00:00"
+  },
+  "secret_scan": "GREEN",
+  "dependency_reproducibility": "GREEN",
+  "compile": "GREEN",
+  "diff_check": "GREEN",
+  "protected_path_overlap": {
+    "pr_466": 0,
+    "pr_344": 0
+  },
+  "native_exact_ci": "Evidence attached to final draft PR and issue #467 handoff after Predeploy V2; this file records local gates only."
+}

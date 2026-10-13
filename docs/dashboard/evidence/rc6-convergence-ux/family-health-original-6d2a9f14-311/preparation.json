@@ -1,0 +1,16 @@
+{
+  "git_dir_readonly_control": "/workspace/porota_rc6_convergence/.git/worktrees/ux-browser-coverage",
+  "native_or_browser_executed": false,
+  "overlay_count": 0,
+  "planned_cases_per_interpreter": 72,
+  "prior55_scope_is_separate": true,
+  "raw": "/tmp/rc6-ux-family-health-6d2a9f14-raw",
+  "raw_commit_sha256": "de8fa2f9b3dfeab1f1ff05533568aa93d8757641afa02f06e841846cac0bfcae",
+  "schema": "rc6.ux-whole-family-health-source-preparation.v1",
+  "scope": "SOURCE_ONLY_NOT_NATIVE_EXECUTION",
+  "source": "/workspace/rc6-ux-family-health-6d2a9f14-whole",
+  "source_files": 1776,
+  "source_sha": "6d2a9f144da872b9066cc1ffb531386d5dba56da",
+  "source_tar_sha256": "fc74606d8e017f7cfbb71e187bedc24f2674545c3b3dde893e550b785d436a33",
+  "source_tree": "7b01f90025b251e9c3a72a79b949b561b7a45933"
+}

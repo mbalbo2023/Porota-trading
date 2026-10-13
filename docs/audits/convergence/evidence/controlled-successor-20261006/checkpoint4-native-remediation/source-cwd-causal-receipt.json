@@ -1,0 +1,64 @@
+{
+  "all_tracked_source_bytes_modes_blobs_unchanged": true,
+  "artifact_validated": false,
+  "candidate_source_root_modified": false,
+  "fresh_github_clone": "/workspace/scratch/rc6-cwd-repro-86615bd-022-20261006",
+  "full_gov_executed": false,
+  "git_status_after": "CLEAN",
+  "interpreter": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+  "metadata_restoration_or_reset_attempted": false,
+  "native_temporary_directory": {
+    "path": "/workspace/scratch/rc6-cwd-repro-86615bd-022-20261006/.rc6-canonical-stress-4f1mjznv",
+    "source_root_during": {
+      "st_atime_ns": 1791295671481475717,
+      "st_blocks": 56,
+      "st_ctime_ns": 1791295672685470051,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1342818,
+      "st_mode": 16877,
+      "st_mtime_ns": 1791295672685470051,
+      "st_nlink": 18,
+      "st_size": 28672,
+      "st_uid": 1000
+    },
+    "stat_fields": {
+      "st_atime_ns": 1791295672685470051,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791295672685470051,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1345869,
+      "st_mode": 16832,
+      "st_mtime_ns": 1791295672685470051,
+      "st_nlink": 2,
+      "st_size": 4096,
+      "st_uid": 1000
+    }
+  },
+  "orders_or_provider_operations": false,
+  "original_control": "tempfile.TemporaryDirectory(prefix=.rc6-canonical-stress-, dir=literal_repository_root)",
+  "original_guard_signature": "SOURCE_DIRECTORY_STABLE_CUSTODY_CHANGED:.",
+  "original_test_location": "tests/test_issue465_stress.py:125",
+  "original_tracked_runner_sha256": "6ee4b4cf2140ec7fd9b89e9fce737f3e70ce76498f3790c20619067cbdf03b75",
+  "python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+  "real_orders_sent": 0,
+  "remaining_fixture": false,
+  "runtime_validated": false,
+  "schema": "rc6.actual-cwd-fixture-original-source-custody-red.v1",
+  "source_namespace_exact_after_cleanup": true,
+  "source_remote": "https://github.com/mbalbo2023/Porota-trading.git",
+  "source_root_actual_stat_changes_after_cleanup": {
+    "st_ctime_ns": [
+      1791295573852667352,
+      1791295672688696658
+    ],
+    "st_mtime_ns": [
+      1791295573852667352,
+      1791295672688696658
+    ]
+  },
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "status": "EXPECTED_CAUSAL_RED"
+}

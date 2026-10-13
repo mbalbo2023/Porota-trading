@@ -1,0 +1,566 @@
+"""Published ZIP and evidence-only replay; no Docker daemon or remote API calls."""
+from copy import copy, deepcopy
+import hashlib
+import io
+import json
+import gzip
+from pathlib import Path
+from types import SimpleNamespace
+import tarfile
+import time
+import subprocess
+import signal
+import shutil
+import sys
+import urllib.request
+
+import pytest
+import yaml
+
+from scripts.porota_artifact_http import (
+    ArtifactHTTPRejected, MAX_METADATA_BYTES, RemoveAuthorizationRedirect, api_get, download_artifact,
+)
+from scripts.porota_artifact_provenance import canonical_bytes, sha256_file, validate_image_archive
+from scripts.porota_predeploy_binding import artifact_name, validate_binding, verify_frozen_payload
+from scripts import rc6_archive_v3_image_smoke as codec_smoke
+from scripts import porota_published_artifact_evidence as published_replay
+from scripts.porota_published_artifact_evidence import (
+    MAX_EVIDENCE_BYTES, MAX_SECONDARY_ARTIFACT_BYTES, current_primary_binding, main,
+    replay_remaining,
+    verify_loaded_image_and_imports, verify_saved_app_rootfs, write_evidence,
+)
+from tests.test_rc6_convergence_sre_binding import NOW, approved_origin, candidate, frozen_payload, saved_source_image
+
+
+@pytest.fixture
+def github_context(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mbalbo2023/Porota-trading")
+    monkeypatch.setenv("GH_TOKEN", "unit-test")
+
+
+class Response(io.BytesIO):
+    pass
+
+
+class MemoryOpener:
+    def __init__(self, data): self.data, self.requests = data, []
+    def open(self, request, timeout):
+        self.requests.append((request, timeout))
+        return Response(self.data)
+
+
+def test_native_urllib_redirect_does_not_forward_authorization():
+    request = urllib.request.Request("https://api.github.com/artifact", headers={"Authorization": "Bearer unit-test"})
+    request.add_unredirected_header("Authorization", "Bearer another-unit-test")
+    handler = RemoveAuthorizationRedirect()
+    redirect = handler.redirect_request(request, None, 302, "Found", {}, "https://signed-download.example/object?signature=fixture")
+    assert "authorization" not in {key.lower() for key, _ in redirect.header_items()}
+    assert request.get_header("Authorization") is not None
+    with pytest.raises(ArtifactHTTPRejected, match="TRANSPORT_REJECTED"):
+        handler.redirect_request(request, None, 302, "Found", {}, "http://signed-download.example/object")
+
+
+@pytest.mark.parametrize("drift", ["none", "changed_bytes", "oversize", "truncated", "deadline"])
+def test_bounded_stream_download_and_digest_execute_the_real_io_algorithm(tmp_path, github_context, drift):
+    data = b"verified immutable outer ZIP bytes" * 2000
+    expected = "sha256:" + hashlib.sha256(data).hexdigest()
+    returned = data if drift not in {"changed_bytes", "oversize", "truncated"} else {
+        "changed_bytes": b"x" + data[1:], "oversize": data + b"x", "truncated": data[:-1]}[drift]
+    opener = MemoryOpener(returned); output = tmp_path / "primary.zip"
+    kwargs = dict(expected_size=len(data), expected_digest=expected,
+                  deadline=99 if drift == "deadline" else 200, opener=opener, clock=lambda: 100)
+    if drift == "none":
+        result = download_artifact(303, output, **kwargs)
+        assert output.read_bytes() == data and result["status"] == "GREEN"
+    else:
+        with pytest.raises(ArtifactHTTPRejected): download_artifact(303, output, **kwargs)
+        assert not output.exists()
+    assert all(0 < timeout <= 30 for _, timeout in opener.requests)
+
+
+def test_existing_download_file_is_never_deleted_or_overwritten(tmp_path, github_context):
+    data = b"new"; output = tmp_path / "primary.zip"; output.write_bytes(b"preserved")
+    with pytest.raises(FileExistsError):
+        download_artifact(303, output, expected_size=len(data),
+            expected_digest="sha256:" + hashlib.sha256(data).hexdigest(), deadline=200,
+            opener=MemoryOpener(data), clock=lambda: 100)
+    assert output.read_bytes() == b"preserved"
+
+
+def test_metadata_response_is_bounded_and_uses_fixed_repository_url(github_context):
+    opener = MemoryOpener(b'{"id":303}')
+    assert api_get("/actions/artifacts/303", opener=opener, deadline=200, clock=lambda: 100) == {"id": 303}
+    assert opener.requests[0][0].full_url == "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/303"
+    with pytest.raises(ArtifactHTTPRejected, match="SIZE_LIMIT"):
+        api_get("/actions/artifacts/303", opener=MemoryOpener(b" "*(MAX_METADATA_BYTES+1)), deadline=200, clock=lambda: 100)
+
+
+def test_current_upload_binding_is_evidence_only_until_completed_success(monkeypatch):
+    approval, workflow, run, attempt, artifact, inventory = approved_origin()
+    for execution in (run, attempt): execution.update(status="in_progress", conclusion=None)
+    env = {"GITHUB_REPOSITORY": approval["repository"], "GITHUB_EVENT_NAME": "pull_request",
+        "GITHUB_WORKFLOW_REF": approval["repository"] + "/" + approval["workflow_path"] + "@refs/pull/472/merge",
+        "GITHUB_RUN_ID": "202", "GITHUB_RUN_ATTEMPT": "3"}
+    for name, value in env.items(): monkeypatch.setenv(name, value)
+    values = {"/actions/workflows/porota-predeploy-v2.yml": workflow, "/actions/runs/202": run,
+        "/actions/runs/202/attempts/3": attempt, "/actions/artifacts/303": artifact,
+        "/actions/runs/202/artifacts?per_page=100": {"total_count": 1, "artifacts": inventory}}
+    binding = current_primary_binding(approval["candidate_sha"], 303, approval["artifact_digest"][7:],
+        deadline=200, get=lambda path, **kwargs: deepcopy(values[path]))
+    assert binding["execution_state"] == "IN_PROGRESS_EVIDENCE_ONLY"
+    with pytest.raises(ValueError): validate_binding(approval, workflow, run, attempt, artifact, inventory, now=NOW)
+
+
+def test_real_saved_layer_replay_matches_git_bytes_and_all_modes(frozen_payload):
+    c, output, _, _ = frozen_payload
+    image = output / "porota-predeploy-image.tar.gz"
+    result = verify_saved_app_rootfs(image, c["manifest"])
+    assert result["status"] == "GREEN"
+    assert result["source_files_and_generated_metadata_verified"] == sum(row["image_required"] for row in c["manifest"]["files"]) + 1
+    assert any(row["mode"] == 0o755 for row in result["files"])
+
+
+@pytest.mark.parametrize("mutation", ["same_bytes_writable", "changed_bytes", "deleted_file", "parent_alias", "extra_source"])
+def test_fully_rehashed_saved_image_rootfs_drift_rejects(frozen_payload, mutation):
+    c, output, _, _ = frozen_payload
+    image = output / "porota-predeploy-image.tar.gz"
+    if mutation == "same_bytes_writable": (c["image"] / "worker.py").chmod(0o666)
+    elif mutation == "changed_bytes": (c["image"] / "worker.py").write_bytes(b"changed\n")
+    elif mutation == "deleted_file": (c["image"] / "worker.py").unlink()
+    elif mutation == "parent_alias":
+        policy = c["image"] / "ops/policy/paper.json"; policy.unlink(); policy.symlink_to("../not-paper.json")
+    elif mutation == "extra_source": (c["image"] / "untracked.py").write_bytes(b"not Git source\n")
+    identity = saved_source_image(c, image)
+    # Raw config/layers and their hashes remain internally consistent. The
+    # independent Git->rootfs proof must still detect changed bytes/modes/aliases.
+    assert validate_image_archive(image, c["manifest"], identity)["status"] == "GREEN"
+    with pytest.raises(ValueError, match="ROOTFS"):
+        verify_saved_app_rootfs(image, c["manifest"])
+
+
+def test_opaque_whiteouts_and_repeated_compressed_layers_replay_native_order(frozen_payload):
+    c, output, _, _ = frozen_payload
+    image = output / "porota-predeploy-image.tar.gz"
+    with tarfile.open(image, "r:gz") as archive:
+        base = archive.extractfile("layer.tar").read()
+    def layer(entries):
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode="w") as archive:
+            for name, value in entries:
+                info = tarfile.TarInfo(name); info.size = len(value); info.mode = 0o644
+                archive.addfile(info, io.BytesIO(value))
+        return stream.getvalue()
+    layers = [base, layer([("app/stale.py", b"stale"), ("app/assets/stale.txt", b"stale")]),
+        layer([("app/.wh.stale.py", b""), ("app/assets/.wh..wh..opq", b""),
+               ("app/assets/new.runtime.asset", (c["image"] / "assets/new.runtime.asset").read_bytes())]),
+        layer([])]
+    references = (0, 1, 2, 3, 3)
+    config = canonical_bytes({"config": {"Labels": c["labels"]}, "rootfs": {"type": "layers", "diff_ids": [
+        "sha256:" + hashlib.sha256(layers[index]).hexdigest() for index in references]}})
+    identity = "sha256:" + hashlib.sha256(config).hexdigest()
+    manifest = [{"Config": "config.json", "Layers": [f"layer-{index}.tar.gz" for index in references], "RepoTags": ["fixture:exact"]}]
+    members = [(f"layer-{index}.tar.gz", gzip.compress(value, mtime=0)) for index, value in enumerate(layers)]
+    members += [("config.json", config), ("manifest.json", canonical_bytes(manifest))]
+    with tarfile.open(image, "w:gz") as archive:
+        for name, value in members:
+            info = tarfile.TarInfo(name); info.size = len(value); archive.addfile(info, io.BytesIO(value))
+    assert validate_image_archive(image, c["manifest"], identity)["status"] == "GREEN"
+    replay = verify_saved_app_rootfs(image, c["manifest"])
+    assert replay["status"] == "GREEN" and replay["ordered_layer_references"] == 5 and replay["unique_layer_blobs"] == 4
+
+
+def retag_fixture(output, candidate_sha):
+    path = output / "porota-predeploy-image.tar.gz"
+    with tarfile.open(path, "r:gz") as archive:
+        members = [(copy(info), archive.extractfile(info).read()) for info in archive]
+    with tarfile.open(path, "w:gz") as archive:
+        for info, data in members:
+            if info.name == "manifest.json":
+                value = json.loads(data); value[0]["RepoTags"] = ["porota-predeploy-v2:" + candidate_sha]
+                data = canonical_bytes(value); info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    frozen = json.loads((output / "porota-frozen-candidate.json").read_text())
+    frozen["image_tar_sha256"] = sha256_file(path)
+    (output / "porota-frozen-candidate.json").write_bytes(canonical_bytes(frozen))
+
+
+@pytest.mark.parametrize("wrong_id", [False, True])
+def test_downloaded_image_load_and_offline_smoke_require_exact_actual_id(frozen_payload, wrong_id):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    calls = []
+    def docker(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["docker", "image", "inspect"]:
+            stdout = "sha256:" + "f"*64 if wrong_id else frozen["image_id"]
+        elif "scripts.rc6_archive_v3_image_smoke" in argv:
+            stdout = (output / "porota-runtime-codec-smoke.json").read_text()
+            assert 0 < kwargs["timeout"] <= 30
+        elif argv[:2] == ["docker", "run"]: stdout = "POROTA_PUBLISHED_EXACT_IMAGE_IMPORT_AND_CLOSURE=GREEN"
+        else: stdout = "Loaded image"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+    kwargs = dict(candidate_sha=binding["candidate_sha"], image_ref="porota-predeploy-v2:"+binding["candidate_sha"],
+                  deadline=time.monotonic()+60, run=docker)
+    if wrong_id:
+        with pytest.raises(ValueError, match="LOADED_IMAGE_ID_MISMATCH"):
+            verify_loaded_image_and_imports(output, **kwargs)
+        assert len(calls) == 2
+    else:
+        result = verify_loaded_image_and_imports(output, **kwargs)
+        assert result["status"] == "GREEN" and result["network"] == "NONE"
+        assert calls[-1][calls[-1].index("--network") + 1] == "none"
+        assert "-v" not in calls[-1] and "--mount" not in calls[-1]
+        assert "--read-only" in calls[-1] and calls[-1][calls[-1].index("--user") + 1] == "1000:1000"
+        assert "size=33554432" in calls[-1][calls[-1].index("--tmpfs") + 1]
+        assert calls[-1][calls[-1].index("--entrypoint") + 2] == frozen["image_id"]
+        assert result["runtime_codec_smoke"]["actual_image_id"] == frozen["image_id"]
+    assert not any(argv[1] == "build" for argv in calls)
+
+
+class ReplayClock:
+    """Controlled monotonic time: no sleeping or actual container execution."""
+    def __init__(self): self.now = 100.0
+    def __call__(self): return self.now
+    def advance(self, elapsed): self.now += elapsed
+
+
+def test_replay_load_and_import_use_total_budget_while_http_and_codec_keep_thirty_seconds(
+        frozen_payload, tmp_path, github_context):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    clock = ReplayClock(); deadline = clock() + 600
+    calls = []
+    def docker(argv, **kwargs):
+        calls.append((argv, kwargs["timeout"]))
+        if argv[:2] == ["docker", "load"]:
+            assert kwargs["timeout"] == 600
+            clock.advance(45); stdout = "Loaded image"
+        elif argv[:3] == ["docker", "image", "inspect"]:
+            assert kwargs["timeout"] == 555
+            clock.advance(2); stdout = frozen["image_id"]
+        elif "scripts.rc6_archive_v3_image_smoke" in argv:
+            assert kwargs["timeout"] == codec_smoke.MAX_SECONDS == 30
+            clock.advance(20); stdout = (output / "porota-runtime-codec-smoke.json").read_text()
+        else:
+            assert argv[:2] == ["docker", "run"] and kwargs["timeout"] == 553
+            clock.advance(45); stdout = "POROTA_PUBLISHED_EXACT_IMAGE_IMPORT_AND_CLOSURE=GREEN"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+    result = verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+        image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=deadline, run=docker, clock=clock)
+    assert result["status"] == "GREEN" and result["loaded_image_id"] == frozen["image_id"]
+    assert len(calls) == 4 and replay_remaining(deadline, clock=clock) == 488
+    assert not any(argv[1] in {"build", "rm"} for argv, _ in calls)
+    # These are the original real HTTP algorithms with an in-memory transport.
+    metadata_opener = MemoryOpener(b'{"id":303}')
+    assert api_get("/actions/artifacts/303", opener=metadata_opener, deadline=deadline, clock=clock) == {"id":303}
+    data = b"controlled immutable ZIP transport bytes"
+    download_opener = MemoryOpener(data)
+    target = tmp_path / "http-control.zip"
+    assert download_artifact(303, target, expected_size=len(data),
+        expected_digest="sha256:"+hashlib.sha256(data).hexdigest(), deadline=deadline,
+        opener=download_opener, clock=clock)["status"] == "GREEN"
+    assert target.read_bytes() == data
+    assert [timeout for _, timeout in metadata_opener.requests+download_opener.requests] == [30,30]
+
+
+@pytest.mark.parametrize("deadline", [99.0, 100.0, float("nan"), float("inf")],
+                         ids=["expired", "exact-boundary", "nan", "infinite"])
+def test_expired_or_nonfinite_replay_budget_forbids_even_docker_load(frozen_payload, deadline):
+    c, output, binding, frozen = frozen_payload
+    calls = []
+    def docker(argv, **kwargs): calls.append(argv); pytest.fail("Expired replay started Docker")
+    with pytest.raises(ValueError, match="PUBLISHED_REPLAY_TOTAL_DEADLINE_EXCEEDED"):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=deadline,
+            run=docker, clock=ReplayClock())
+    assert calls == []
+
+
+def test_completed_load_past_total_deadline_cannot_start_image_or_emit_green(frozen_payload):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    clock = ReplayClock(); calls = []
+    def docker(argv, **kwargs):
+        calls.append(argv)
+        assert argv[:2] == ["docker", "load"] and kwargs["timeout"] == 600
+        clock.advance(601)
+        return SimpleNamespace(returncode=0, stdout="Loaded image", stderr="")
+    with pytest.raises(ValueError, match="PUBLISHED_REPLAY_TOTAL_DEADLINE_EXCEEDED"):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=clock()+600,
+            run=docker, clock=clock)
+    assert len(calls) == 1
+
+
+def test_codec_uses_remaining_total_budget_and_expiry_cleans_only_its_private_container(frozen_payload):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    clock = ReplayClock(); calls = []
+    def docker(argv, **kwargs):
+        calls.append((argv, kwargs["timeout"]))
+        if argv[:2] == ["docker", "load"]:
+            assert kwargs["timeout"] == 600; clock.advance(570); stdout = "Loaded image"
+        elif argv[:3] == ["docker", "image", "inspect"]:
+            assert kwargs["timeout"] == 30; clock.advance(1); stdout = frozen["image_id"]
+        elif "scripts.rc6_archive_v3_image_smoke" in argv:
+            assert kwargs["timeout"] == 28 < codec_smoke.MAX_SECONDS
+            clock.advance(28); stdout = (output / "porota-runtime-codec-smoke.json").read_text()
+        elif argv[:3] == ["docker", "rm", "--force"]:
+            assert kwargs["timeout"] == 5; stdout = "Removed own private container"
+        else:
+            assert kwargs["timeout"] == 29; clock.advance(1)
+            stdout = "POROTA_PUBLISHED_EXACT_IMAGE_IMPORT_AND_CLOSURE=GREEN"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+    with pytest.raises(ValueError, match="PUBLISHED_REPLAY_TOTAL_DEADLINE_EXCEEDED"):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=clock()+600,
+            run=docker, clock=clock)
+    assert len(calls) == 5
+    created = calls[-2][0][calls[-2][0].index("--name")+1]
+    assert created.startswith("porota-rc6-codec-replay-")
+    assert calls[-1][0] == ["docker", "rm", "--force", created]
+    assert not any(argv[1] == "build" for argv, _ in calls)
+
+
+def test_import_timeout_cleans_only_its_private_container_without_starting_codec(frozen_payload):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    clock = ReplayClock(); calls = []
+    def docker(argv, **kwargs):
+        calls.append((argv, kwargs["timeout"]))
+        if argv[:3] == ["docker", "image", "inspect"]: stdout = frozen["image_id"]
+        elif argv[:2] == ["docker", "run"]:
+            assert "scripts.rc6_archive_v3_image_smoke" not in argv
+            assert kwargs["timeout"] == 600
+            clock.advance(600)
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        elif argv[:3] == ["docker", "rm", "--force"]:
+            assert kwargs["timeout"] == 5; stdout = "Removed own private container"
+        else: stdout = "Loaded image"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+    with pytest.raises(subprocess.TimeoutExpired):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=clock()+600,
+            run=docker, clock=clock)
+    assert len(calls) == 4
+    created = calls[-2][0][calls[-2][0].index("--name")+1]
+    assert created.startswith("porota-rc6-import-replay-")
+    assert calls[-1][0] == ["docker", "rm", "--force", created]
+    assert not any("scripts.rc6_archive_v3_image_smoke" in argv or argv[1] == "build" for argv, _ in calls)
+
+
+@pytest.mark.parametrize("cleanup_returncode", [1, False])
+def test_failed_or_boolean_import_cleanup_cannot_claim_container_termination(frozen_payload, cleanup_returncode):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    clock = ReplayClock(); calls = []
+    def docker(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["docker", "image", "inspect"]: stdout = frozen["image_id"]
+        elif argv[:2] == ["docker", "run"]:
+            clock.advance(600)
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        elif argv[:3] == ["docker", "rm", "--force"]:
+            assert kwargs["timeout"] == 5
+            return SimpleNamespace(returncode=cleanup_returncode, stdout="", stderr="")
+        else: stdout = "Loaded image"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+    with pytest.raises(ValueError, match="PUBLISHED_PRIVATE_CONTAINER_CLEANUP_UNCONFIRMED"):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=clock()+600,
+            run=docker, clock=clock)
+    assert len(calls) == 4 and calls[-1][-1] == calls[-2][calls[-2].index("--name")+1]
+    assert not any("scripts.rc6_archive_v3_image_smoke" in argv or argv[1] == "build" for argv in calls)
+
+
+@pytest.fixture
+def replay_main_tail_control(frozen_payload, tmp_path, monkeypatch):
+    """Real receipt/file checks with controlled download/container/time adapters."""
+    c, output, original_binding, frozen = frozen_payload
+    clock = ReplayClock(); clock.now = time.monotonic()
+    private = tmp_path / "private-transfer"
+    evidence = tmp_path / "evidence"
+    state = {"cleanup_delay":0, "cleanup_calls":0}
+    raw_zip = b"controlled primary transfer raw"
+    binding = {**original_binding, "artifact_size_bytes":len(raw_zip),
+               "artifact_digest":"sha256:"+hashlib.sha256(raw_zip).hexdigest()}
+    class Directory:
+        def __enter__(self): private.mkdir(); return str(private)
+        def __exit__(self, *_arguments):
+            state["cleanup_calls"] += 1
+            # Preserve this controlled raw fixture: no real removal/sleep.
+            clock.advance(state["cleanup_delay"])
+    def download(_artifact, target, **kwargs):
+        target.write_bytes(raw_zip)
+        return {"status":"GREEN", "bytes":len(raw_zip), "digest":binding["artifact_digest"]}
+    def extract(_archive, target, _binding, **_kwargs): shutil.copytree(output, target)
+    def execute(_extracted, **kwargs):
+        assert kwargs["clock"] is clock
+        return {"loaded_image_id":frozen["image_id"],
+                "fixture_scope":"CONTROLLED_RESPONSE_NO_ACTUAL_DOCKER_OR_IMAGE_EXECUTION"}
+    monkeypatch.setattr(published_replay, "current_primary_binding", lambda *_args, **_kwargs:binding)
+    monkeypatch.setattr(published_replay, "download_artifact", download)
+    monkeypatch.setattr(published_replay, "safe_extract", extract)
+    monkeypatch.setattr(published_replay, "verify_loaded_image_and_imports", execute)
+    monkeypatch.setattr(published_replay, "tempfile", SimpleNamespace(TemporaryDirectory=lambda **_kwargs:Directory()))
+    arguments = ["--candidate-sha",binding["candidate_sha"],"--tree-sha",frozen["candidate_tree_sha"],
+        "--artifact-id","303","--upload-digest",binding["artifact_digest"],
+        "--image-ref","porota-predeploy-v2:"+binding["candidate_sha"],"--repo-root",str(c["repo"]),
+        "--evidence-root",str(evidence),"--deadline-seconds","600"]
+    return clock, state, arguments, private, evidence, raw_zip
+
+
+def test_main_rejects_total_expiry_during_context_cleanup_and_preserves_emitted_raw(
+        replay_main_tail_control, capsys):
+    clock, state, arguments, private, evidence, raw_zip = replay_main_tail_control
+    state["cleanup_delay"] = 600
+    assert main(arguments, clock=clock) == 1
+    result = capsys.readouterr().out
+    assert "POROTA_PUBLISHED_PRIMARY_REPLAY=RED" in result
+    assert "POROTA_PUBLISHED_PRIMARY_REPLAY=GREEN" not in result
+    assert state["cleanup_calls"] == 1 and (private / "primary.zip").read_bytes() == raw_zip
+    assert (evidence / "evidence-inventory.json").is_file()
+    assert (evidence / "porota-governed-tests.xml").read_bytes()
+
+
+def test_main_completes_cleanup_and_flushed_result_within_original_total_budget(replay_main_tail_control, capsys):
+    clock, state, arguments, private, evidence, raw_zip = replay_main_tail_control
+    assert main(arguments, clock=clock) == 0
+    result = capsys.readouterr().out
+    assert "POROTA_PUBLISHED_PRIMARY_REPLAY=GREEN" in result
+    assert "POROTA_PUBLISHED_PRIMARY_REPLAY=RED" not in result
+    assert state["cleanup_calls"] == 1 and (private / "primary.zip").read_bytes() == raw_zip
+    assert json.loads((evidence / "evidence-inventory.json").read_bytes())["promotable"] is False
+
+
+@pytest.mark.parametrize("delay_at", ["json_write","json_flush","green_write","green_flush"])
+def test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active(
+        replay_main_tail_control, monkeypatch, capsys, delay_at):
+    clock, state, arguments, private, evidence, raw_zip = replay_main_tail_control
+    original = sys.stdout
+    class DelayedOutput:
+        phase = None
+        delayed = False
+        def __getattr__(self, name): return getattr(original, name)
+        def delay(self, event):
+            if not self.delayed and self.phase+"_"+event == delay_at:
+                assert signal.getitimer(signal.ITIMER_REAL)[0] > 0
+                self.delayed = True
+                clock.advance(600)
+        def write(self, data):
+            if data.startswith("{"): self.phase = "json"
+            elif data.startswith("POROTA_PUBLISHED_PRIMARY_REPLAY=GREEN"): self.phase = "green"
+            elif data.startswith("POROTA_PUBLISHED_PRIMARY_REPLAY=RED"): self.phase = "red"
+            result = original.write(data)
+            if self.phase is not None: self.delay("write")
+            return result
+        def flush(self):
+            original.flush()
+            if self.phase is not None: self.delay("flush")
+    sink = DelayedOutput()
+    with monkeypatch.context() as output_patch:
+        output_patch.setattr(sys, "stdout", sink)
+        assert main(arguments, clock=clock) == 1
+    assert sink.delayed and state["cleanup_calls"] == 1
+    result = capsys.readouterr().out
+    assert "POROTA_PUBLISHED_PRIMARY_REPLAY=RED" in result
+    assert (private / "primary.zip").read_bytes() == raw_zip
+    assert (evidence / "evidence-inventory.json").is_file()
+    # A partially emitted GREEN marker cannot replace the final nonzero exit.
+    if delay_at.startswith("json_"): assert "POROTA_PUBLISHED_PRIMARY_REPLAY=GREEN" not in result
+
+
+@pytest.mark.parametrize("mutation", ["nonzero", "missing_json", "red", "foreign_image", "source_drift", "oversize", "timeout"])
+def test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt(frozen_payload, mutation):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    primary = json.loads((output / "porota-runtime-codec-smoke.json").read_bytes())
+    calls = []
+    def docker(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["docker", "image", "inspect"]: stdout = frozen["image_id"]
+        elif "scripts.rc6_archive_v3_image_smoke" in argv:
+            if mutation == "timeout": raise __import__("subprocess").TimeoutExpired(argv, 30)
+            if mutation == "nonzero": return SimpleNamespace(returncode=1, stdout="", stderr="RED")
+            row = deepcopy(primary)
+            if mutation == "red": row["status"] = "RED"
+            elif mutation == "foreign_image": row["image_id_argument"] = "sha256:" + "f" * 64
+            elif mutation == "source_drift": row["source_components"][codec_smoke.SOURCE_PATHS[0]] = "f" * 64
+            stdout = "not JSON" if mutation == "missing_json" else "x" * 65537 if mutation == "oversize" else json.dumps(row)
+        elif argv[:2] == ["docker", "run"]: stdout = "POROTA_PUBLISHED_EXACT_IMAGE_IMPORT_AND_CLOSURE=GREEN"
+        else: stdout = "Loaded image"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+    with pytest.raises((ValueError, __import__("subprocess").TimeoutExpired)):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:" + binding["candidate_sha"], deadline=time.monotonic()+60, run=docker)
+    assert not any(argv[1] == "build" for argv in calls)
+    if mutation in {"timeout", "nonzero", "oversize"}:
+        assert calls[-1][:3] == ["docker", "rm", "--force"]
+        assert calls[-1][-1] == calls[-2][calls[-2].index("--name") + 1]
+
+
+def test_evidence_only_is_small_and_contains_no_image_or_bundle(frozen_payload, tmp_path):
+    c, output, binding, frozen = frozen_payload
+    receipt = verify_frozen_payload(c["repo"], output, binding, c["manifest"]["candidate_tree_sha"])
+    rootfs = verify_saved_app_rootfs(output / "porota-predeploy-image.tar.gz", c["manifest"])
+    evidence = tmp_path / "secondary"
+    result = write_evidence(evidence, binding=binding, payload={"extracted_root": output, "receipt": receipt},
+        rootfs=rootfs, download={"status": "GREEN"}, loaded_image_id=frozen["image_id"])
+    assert result["promotable"] is False and result["evidence_payload_bytes"] < MAX_EVIDENCE_BYTES < MAX_SECONDARY_ARTIFACT_BYTES
+    assert {path.name for path in evidence.iterdir() if path.suffix != ".json"} == {"porota-governed-tests.xml"}
+    assert (evidence / "porota-governed-tests.xml").read_bytes() == (output / "porota-governed-tests.xml").read_bytes()
+    index = json.loads((evidence / "evidence-inventory.json").read_text())
+    assert all(row["sha256"] == sha256_file(evidence/name) for name,row in index["files"].items())
+    report = json.loads((evidence / "published-primary-verification.json").read_text())
+    assert report["primary"]["artifact_id"] == binding["artifact_id"] and report["image_rebuilt"] is False
+    assert (evidence / "porota-runtime-codec-smoke.json").read_bytes() == (output / "porota-runtime-codec-smoke.json").read_bytes()
+
+
+def test_secondary_preserves_downloaded_primary_final_input_provenance_bytes(frozen_payload, tmp_path):
+    c, output, binding, frozen = frozen_payload
+    name = "porota-final-input-provenance.json"
+    raw = b'{\n  "schema": "convergence-fixture",\n  "original_input_order": [15, 55, 80]\n}\n'
+    (output / name).write_bytes(raw)
+    receipt = verify_frozen_payload(c["repo"], output, binding, c["manifest"]["candidate_tree_sha"])
+    evidence = tmp_path / "secondary"
+    write_evidence(evidence, binding=binding,
+        payload={"extracted_root": output, "receipt": receipt},
+        rootfs=verify_saved_app_rootfs(output / "porota-predeploy-image.tar.gz", c["manifest"]),
+        download={"status": "GREEN"}, loaded_image_id=frozen["image_id"])
+    assert (evidence / name).read_bytes() == raw
+    index = json.loads((evidence / "evidence-inventory.json").read_text())
+    assert index["files"][name]["sha256"] == hashlib.sha256(raw).hexdigest()
+    assert index["files"][name]["bytes"] == len(raw)
+
+
+def test_replay_errors_do_not_disclose_signed_urls_headers_or_tokens(monkeypatch, capsys, tmp_path):
+    def fail(*args, **kwargs): raise ValueError("https://signed.example?private-token=unit-test-secret")
+    monkeypatch.setattr("scripts.porota_published_artifact_evidence.current_primary_binding", fail)
+    assert main(["--candidate-sha", "a"*40, "--tree-sha", "b"*40, "--artifact-id", "303",
+        "--upload-digest", "d"*64, "--image-ref", "porota-predeploy-v2:"+"a"*40,
+        "--evidence-root", str(tmp_path / "evidence")]) == 1
+    output = capsys.readouterr().out
+    assert "RED" in output and "signed.example" not in output and "unit-test-secret" not in output
+
+
+def test_workflow_secondary_cannot_replace_primary_or_trigger_another_build():
+    workflow = yaml.safe_load(Path(".github/workflows/porota-predeploy-v2.yml").read_text())
+    steps = workflow["jobs"]["artifact-gate"]["steps"]
+    primary = next(i for i, step in enumerate(steps) if step.get("id") == "frozen_primary")
+    replay = next(i for i, step in enumerate(steps) if "Replay exact published primary" in step["name"])
+    secondary = next(i for i, step in enumerate(steps) if step.get("id") == "primary_evidence_only")
+    provenance = next(i for i, step in enumerate(steps) if step["name"] == "Final convergence input and guard provenance")
+    assert provenance < primary < replay < secondary
+    assert "scripts/rc6_convergence_provenance.py" in steps[provenance]["run"]
+    assert '--candidate-sha "$CANDIDATE_SHA"' in steps[provenance]["run"]
+    assert '--junit "${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml"' in steps[provenance]["run"]
+    assert '--out "${POROTA_PREDEPLOY_TMP}/porota-final-input-provenance.json" --fetch-source-refs' in steps[provenance]["run"]
+    assert "${{ env.POROTA_PREDEPLOY_TMP }}/porota-final-input-provenance.json" in steps[primary]["with"]["path"]
+    assert "porota-predeploy-image.tar.gz" in steps[primary]["with"]["path"]
+    assert "evidence-only" in steps[secondary]["with"]["name"]
+    assert steps[secondary]["with"]["path"].splitlines() == [
+        "${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-published-evidence/*.json",
+        "${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-published-evidence/*.xml",
+    ]
+    assert "docker build" not in steps[replay]["run"]
+    assert artifact_name(approved_origin()[0]).startswith("porota-predeploy-v2-" + "a"*40)

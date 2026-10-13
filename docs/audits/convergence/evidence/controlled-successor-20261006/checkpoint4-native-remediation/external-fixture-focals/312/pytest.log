@@ -1,0 +1,7 @@
+.........................................                                [100%]
+=============================== warnings summary ===============================
+tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[metadata]
+  /workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/rc6_shadow_runtime/worker.py:169: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    for r in c.execute("""SELECT event_at,event_type,detail FROM paper_events
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+"""SOURCE-planned stdlib documentary v2 reference controls; no product imports."""
+import builtins
+import collections
+import contextlib
+import copy
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+HELPERS = (
+    ("REGISTER", Path("/tmp/rc6_remediation_register_generate_v4_identity_reference_candidate_v2.py"),
+     "f5fc8a253f318eb86bbfd21b3e1dbd12e326b12b68d8ddda37ec4ac1e1903d8c"),
+    ("SUPPLEMENT", Path("/tmp/rc6_root_supplemental_named_findings_generate_v3_identity_reference_candidate_v2.py"),
+     "cc4207797345e195792cde09bafb42f318a7dfa4f057bee2c677f4cb3efcea65"),
+)
+ROOT = "docs/audits/rc6-private-publication-type-identity-controlled-11111111"
+CUSTODY = ROOT + "/CUSTODY.json"
+CAPSULE = ROOT + "/CAPSULE.json"
+AUTHORITY = ROOT + "/epochs/b/raw/source-tar.json"
+REGISTER = "docs/audits/convergence/REMEDIATION_REGISTER.json"
+EXTERNAL_ROOT = "/MUST_NEVER_BE_OPENED_DOCUMENTARY_EXTERNAL_TAR"
+SCOPE = "PRIVATE_DOCUMENTARY_REFERENCE_BINDING_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_OR_FINANCIAL_EXECUTION"
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def wire(value):
+    return (json.dumps(value, sort_keys=True, allow_nan=False) + "\n").encode()
+
+
+def pins():
+    result = {}
+    for label, path, expected in HELPERS:
+        data = path.read_bytes()
+        if sha(data) != expected:
+            raise AssertionError("helper differs from exact reviewed Source: " + label)
+        result[label] = {"path": str(path), "bytes": len(data), "sha256": expected}
+    return result
+
+
+def load():
+    pins()  # Before the first module-scope helper instruction.
+    result = {}
+    for label, path, _ in HELPERS:
+        spec = importlib.util.spec_from_file_location("controlled_reference_" + label, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        result[label] = module
+    return result
+
+
+def own_source(helper, label, repo, revision):
+    return helper.Source(repo, revision) if label == "REGISTER" else helper.GitSource(repo, revision)
+
+
+def close(source):
+    if hasattr(source, "close"):
+        source.close()
+
+
+@contextlib.contextmanager
+def forbid_external_io(source):
+    """Real own adapter; trap body/hint IO independently of nonexistent paths."""
+    reads = []
+    source_read = source.read
+    def read(path):
+        reads.append(path)
+        if path.startswith("/") or path.endswith((".tar", ".tar.gz")):
+            raise AssertionError("documentary parser attempted external/TAR body Source.read")
+        return source_read(path)
+    source.read = read
+    originals = [(builtins, "open", builtins.open), (os, "open", os.open),
+                 (os, "stat", os.stat), (os, "lstat", os.lstat)]
+    def guard(function):
+        def guarded(path, *args, **kwargs):
+            if isinstance(path, (str, bytes, os.PathLike)):
+                value = os.fsdecode(path)
+                if value == EXTERNAL_ROOT or value.startswith(EXTERNAL_ROOT + "/"):
+                    raise AssertionError("external reference path was opened/stat'ed/probed")
+            return function(path, *args, **kwargs)
+        return guarded
+    for module, name, original in originals:
+        setattr(module, name, guard(original))
+    try:
+        yield reads
+    finally:
+        source.read = source_read
+        for module, name, original in originals:
+            setattr(module, name, original)
+
+
+def state():
+    fields = {"st_dev": 1, "st_ino": 2, "st_mode": 33188, "st_uid": 1000, "st_gid": 1000,
+              "st_nlink": 1, "st_size": 171868160, "st_blocks": 335680,
+              "st_atime_ns": 3, "st_mtime_ns": 4, "st_ctime_ns": 5}
+    reference = {"artifact_role": "EXTERNAL_WHOLE_GIT_SOURCE_SNAPSHOT_OPAQUE", "protocol_epoch": "B",
+                 "recorded_original_root": EXTERNAL_ROOT, "recorded_original_relative_path": "whole-source.tar",
+                 "recorded_original_path": EXTERNAL_ROOT + "/whole-source.tar",
+                 "original_sha256": "5" * 64, "original_bytes": 171868160,
+                 "original_stat_mode_octal": "0644", "original_stat_fields_at_preservation": fields,
+                 "source_sha": "1" * 40, "source_tree": "2" * 40, "driver_sha256": "3" * 64,
+                 "support_sha256": "4" * 64, "copied_into_git": False, "reference_only": True,
+                 "verification_scope": "STREAM_SHA_LENGTH_AND_RAW_CUSTODY; NO_TAR_BODY_PARSE_OR_ARTIFACT_EXECUTION",
+                 "original_stream_sha256_and_eleven_stats_verified_by_preserver": True,
+                 "authority_capsule_relative_path": "epochs/b/raw/source-tar.json"}
+    authority = {"bytes": reference["original_bytes"], "commit": reference["source_sha"],
+                 "sha256": reference["original_sha256"], "stat_fields": copy.deepcopy(fields), "files": 2254,
+                 "directories": 126}
+    raw = wire(authority)
+    reference["authority_original_sha256"] = sha(raw)
+    row = {"protocol_epoch": "B", "artifact_role": "ORIGINAL_CONTROLLED_RAW",
+           "recorded_original_root": EXTERNAL_ROOT, "recorded_original_relative_path": "source-tar.json",
+           "recorded_original_path": EXTERNAL_ROOT + "/source-tar.json",
+           "capsule_relative_path": "epochs/b/raw/source-tar.json", "original_sha256": sha(raw),
+           "original_bytes": len(raw), "original_stat_mode_octal": "0644", "encoding": "IDENTITY",
+           "stored_sha256": sha(raw), "stored_bytes": len(raw), "stored_git_mode": "100644",
+           "source_sha": reference["source_sha"], "source_tree": reference["source_tree"],
+           "driver_sha256": reference["driver_sha256"], "support_sha256": reference["support_sha256"]}
+    receipt = {"schema": "rc6.external-diagnostic-original-byte-custody.v2",
+               "capsule_root_relative_to_repository": ROOT,
+               "inventory_kind": "EXPLICIT_COPIED_SMALL_RAW_MEMBERS_AND_ONE_EXTERNAL_SOURCE_ARCHIVE_REFERENCE",
+               "members_count": 1, "members": [row], "external_source_archive": reference}
+    capsule = {"schema": "rc6.private-publication-type-identity-controlled-capsule.v1",
+               "capsule_root_relative_to_repository": ROOT,
+               "source": {"sha": reference["source_sha"], "tree": reference["source_tree"], "files": 2254},
+               "external_source_archive_policy": {"body_copied_into_git": False,
+                   "custody_reference_field": "external_source_archive",
+                   "source_tar_member_parse_or_executed_artifact_authority_claimed": False},
+               "epochs": [{"protocol_epoch": "A", "status": "PREPARATION_RED", "native_started": False},
+                          {"protocol_epoch": "B", "status": "CONTROLLED_LITERAL_ONLY_NOT_NATIVE_RUN"}]}
+    originals = {"E%03d" % i: {"literal_synthetic_original": i} for i in range(1, 211)}
+    return {"receipt": receipt, "capsule": capsule, "authority": authority, "originals": originals,
+            "files": {AUTHORITY: raw, ROOT + "/README.md": b"CONTROLLED DERIVED README; NO BODY OR NATIVE\n",
+                      REGISTER: wire({"schema": "rc6.remediation-register.v1", "evidence_catalog": originals})}}
+
+
+def authority_change(data, mutation):
+    mutation(data["authority"])
+    raw = wire(data["authority"])
+    data["files"][AUTHORITY] = raw
+    row = next(r for r in data["receipt"]["members"] if r["capsule_relative_path"] == "epochs/b/raw/source-tar.json")
+    row.update(stored_sha256=sha(raw), original_sha256=sha(raw), stored_bytes=len(raw), original_bytes=len(raw))
+    data["receipt"]["external_source_archive"]["authority_original_sha256"] = sha(raw)
+
+
+def materialize(folder, data):
+    repo = folder / "repo"
+    repo.mkdir()
+    files = dict(data["files"])
+    files[CUSTODY] = wire(data["receipt"])
+    data["capsule"]["custody"] = {"path": "CUSTODY.json", "sha256": sha(files[CUSTODY]), "bytes": len(files[CUSTODY])}
+    files[CAPSULE] = wire(data["capsule"])
+    for name, raw in files.items():
+        target = repo / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+        target.chmod(0o644)
+    def git(*args):
+        return subprocess.check_output(["git", "--no-replace-objects", "--no-optional-locks", "-C", str(repo),
+            "-c", "protocol.allow=never", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgSign=false",
+            "-c", "user.name=Private Documentary Control", "-c", "user.email=control@example.invalid", *args],
+            stderr=subprocess.PIPE)
+    git("init", "-q"); git("add", "--all"); git("commit", "-qm", "Controlled reference-only metadata; no external body")
+    return repo, git("rev-parse", "HEAD").decode().strip()
+
+
+def exercise(helper, label, name, results, mutate=None, preserved=False, direct_callee=False):
+    data = state()
+    if mutate:
+        mutate(data)
+    with tempfile.TemporaryDirectory(prefix="rc6-reference-documentary-") as temp:
+        repo, revision = materialize(Path(temp), data)
+        source = own_source(helper, label, repo, revision)
+        try:
+            with forbid_external_io(source) as reads:
+                try:
+                    if direct_callee:
+                        helper.declared_private_publication_custody_members(source, CUSTODY, data["receipt"])
+                    else:
+                        metadata = helper.identity_external_source_archive_reference_metadata(source, CUSTODY, data["receipt"])
+                        members = helper.declared_raw_dossier_members(source, CAPSULE, data["capsule"])
+                except (helper.RefResolutionError, ValueError, subprocess.SubprocessError):
+                    if preserved:
+                        raise
+                    status = "REJECTED"
+                else:
+                    if not preserved:
+                        raise AssertionError("altered reference accepted: " + name)
+                    assert metadata["state"] == "NOT_BYTE_VERIFIED_BY_DOCUMENTARY_HELPER"
+                    assert metadata["external_body_read_or_hashed"] is False
+                    assert metadata["external_declaration_verbatim"] == data["receipt"]["external_source_archive"]
+                    assert len(members) == len(data["receipt"]["members"]) + 2
+                    assert all(not m["publication_binding"]["path"].endswith((".tar", ".tar.gz")) for m in members)
+                    status = "PRESERVED"
+                results.append({"helper": label, "control": name, "result": status,
+                                "own_source_adapter": type(source).__name__, "external_io_attempts": 0,
+                                "scope": SCOPE})
+        finally:
+            close(source)
+
+
+def pipeline(helper, results):
+    data = state()
+    with tempfile.TemporaryDirectory(prefix="rc6-reference-pipeline-") as temp:
+        repo, revision = materialize(Path(temp), data)
+        source = helper.Source(repo, revision)
+        try:
+            with forbid_external_io(source):
+                builder = object.__new__(helper.Builder)
+                builder.s, builder.values, builder.issues = source, {}, []
+                builder.executions = collections.defaultdict(list)
+                catalog = copy.deepcopy(data["originals"])
+                for identifier, path in (("E211", CAPSULE), ("E212", CUSTODY)):
+                    raw = source.read(path)
+                    entry = {"path": path, "sha256": sha(raw), "bytes": len(raw),
+                             "current_publication_binding": source.binding(path)}
+                    builder.metadata(identifier, entry, raw)
+                    assert entry["external_source_archive_reference_metadata"]["state"] == "NOT_BYTE_VERIFIED_BY_DOCUMENTARY_HELPER"
+                    catalog[identifier] = entry
+                document = {"schema": "rc6.remediation-register.v1", "source_snapshot": {"sha": source.sha, "tree": source.tree},
+                            "evidence_catalog": catalog, "current_source_inventory": {"files": [], "guards": []}}
+                compact = helper.compact_derived(document, data["originals"], source)
+                expanded = helper.RefResolver(source, compact).expand()
+                assert expanded["evidence_catalog"] == catalog
+                results.append({"helper": "REGISTER", "control": "BUILDER_COMPACT_RESOLVER_REFERENCE_HINT_ROUNDTRIP_NO_BODY_IO",
+                                "result": "PRESERVED", "scope": SCOPE})
+                for name, field, value in (("FALSE_BODY_VERIFIED_DERIVATION_REJECTED", "state", "SOURCE_ARCHIVE_BYTES_VERIFIED_ONLY"),
+                                           ("FALSE_BODY_READ_DERIVATION_REJECTED", "external_body_read_or_hashed", True)):
+                    altered = copy.deepcopy(document)
+                    altered["evidence_catalog"]["E211"]["external_source_archive_reference_metadata"][field] = value
+                    encoded = helper.compact_derived(altered, data["originals"], source)
+                    try:
+                        helper.RefResolver(source, encoded).expand()
+                    except (helper.RefResolutionError, ValueError, subprocess.SubprocessError):
+                        results.append({"helper": "REGISTER", "control": name, "result": "REJECTED", "scope": SCOPE})
+                    else:
+                        raise AssertionError("external-body claim accepted after recomputation")
+        finally:
+            close(source)
+
+
+def run():
+    before = pins()
+    modules = load()
+    results = []
+    try:
+        for label, helper in modules.items():
+            exercise(helper, label, "REFERENCE_ONLY_SMALL_AUTHORITY_JOIN_NO_BODY_IO", results, preserved=True)
+            exercise(helper, label, "PRESERVER_FALSE_CLAIM_STAYS_LITERAL_NOT_FRESH_BODY_PROOF", results, preserved=True,
+                     mutate=lambda d: d["receipt"]["external_source_archive"].update(original_stream_sha256_and_eleven_stats_verified_by_preserver=False))
+            cases = [
+                ("MISSING_EXTERNAL_REFERENCE_REJECTED", lambda d: d["receipt"].pop("external_source_archive")),
+                ("COPIED_INTO_GIT_TRUE_REJECTED", lambda d: d["receipt"]["external_source_archive"].update(copied_into_git=True)),
+                ("REFERENCE_ONLY_FALSE_REJECTED", lambda d: d["receipt"]["external_source_archive"].update(reference_only=False)),
+                ("FABRICATED_STORED_HASH_REJECTED", lambda d: d["receipt"]["external_source_archive"].update(stored_sha256="f" * 64)),
+                ("EXTERNAL_PATH_JOIN_CONTRADICTION_REJECTED", lambda d: d["receipt"]["external_source_archive"].update(recorded_original_path=EXTERNAL_ROOT + "/other.tar")),
+                ("MISSING_SMALL_AUTHORITY_REJECTED", lambda d: d["receipt"].update(members=[], members_count=0)),
+                ("SMALL_AUTHORITY_COMMIT_CONTRADICTION_REJECTED", lambda d: authority_change(d, lambda a: a.update(commit="f" * 40))),
+                ("SMALL_AUTHORITY_TAR_SHA_CONTRADICTION_REJECTED", lambda d: authority_change(d, lambda a: a.update(sha256="f" * 64))),
+                ("SMALL_AUTHORITY_STAT_BOOL_REJECTED", lambda d: authority_change(d, lambda a: a["stat_fields"].update(st_nlink=True))),
+                ("CAPSULE_POLICY_BODY_STORED_TRUE_REJECTED", lambda d: d["capsule"]["external_source_archive_policy"].update(body_copied_into_git=True)),
+                ("CAPSULE_CAPTURE_TREE_CONTRADICTION_REJECTED", lambda d: d["capsule"]["source"].update(tree="f" * 40)),
+            ]
+            for name, mutation in cases:
+                exercise(helper, label, name, results, mutate=mutation)
+            for schema in (None, "unknown.schema"):
+                exercise(helper, label, "DIRECT_COMMON_CALLEE_SCHEMA_" + ("NONE" if schema is None else "UNKNOWN") + "_AND_INVENTORY_NONE_REJECTED",
+                         results, direct_callee=True, mutate=lambda d, schema=schema: d["receipt"].update(schema=schema, inventory_kind=None))
+        pipeline(modules["REGISTER"], results)
+    finally:
+        after = pins()
+        if before != after:
+            raise AssertionError("helper Source changed during documentary controls")
+    assert len({(r["helper"], r["control"]) for r in results}) == len(results)
+    return {"schema": "rc6.external-source-reference-documentary-controls.v1", "scope": SCOPE,
+            "sources_before": before, "sources_after": after, "sources_unchanged": True,
+            "results": results, "unique_helper_control_invocations": len(results),
+            "outcomes": dict(collections.Counter(r["result"] for r in results)),
+            "external_body_or_origins_opened": False, "tar_entries_parsed_or_extracted": False,
+            "product_imports_or_native_executions": 0, "gov_executed": False, "final_register_generated": False,
+            "prior64_168_70_and_actual91_receipts_unchanged": True,
+            "counting_boundary": "Documentary compatibility only, separate overlapping scopes; no market scenarios, no old or current478 product tests executed by this driver."}
+
+
+if __name__ == "__main__":
+    print(json.dumps(run(), sort_keys=True))

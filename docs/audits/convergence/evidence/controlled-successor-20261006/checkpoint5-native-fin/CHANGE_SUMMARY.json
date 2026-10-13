@@ -1,0 +1,72 @@
+{
+  "PAPER_SHADOW_ONLY": true,
+  "PPI_Watch": "UNTOUCHED",
+  "changes": [
+    "New Git-pinned standalone manager preserves historicalV2 and only continues after positive wait4 instead of sleeping.",
+    "CI workspace pins that manager. Gov runner applies identical ready-child drain and checks existing phase/custody guards before Sourcepostreads.",
+    "Original5s/5400s/INET/PAPER/Source/DATA/process/resource guards unchanged. Real100zombies and failedpytest remain RED despite physicalFIN."
+  ],
+  "controls_artifact": {
+    "actual_ZIP_bytes": 7551,
+    "actual_digest": "sha256:7241e5d16923c9cee64feaf76f1c316a8732482631be50251156444655dc065f",
+    "artifact_id": 11432626347,
+    "program_artifact_or_image_qualified": false,
+    "run": 37501612071
+  },
+  "diagnostics": {
+    "isolated_family_read": "Not causal qualification: did not reproduce clean BIG error; external ALIEN and marshal uncertainty retained.",
+    "passive_contextual_GC": "RED/ALIEN. Did not reproduce family error; GCgen2 after_read is not SQLdeadline attribution. Later OPEN read_runtime TIME_BUDGET_EXHAUSTED. No GCpolicy/source performance patch justified."
+  },
+  "final_candidate_eligible": false,
+  "local_focals": {
+    "CI": {
+      "python311": {
+        "duplicate": 0,
+        "error": 0,
+        "fail": 0,
+        "pass": 67,
+        "skip": 0
+      },
+      "python312": {
+        "duplicate": 0,
+        "error": 0,
+        "fail": 0,
+        "pass": 67,
+        "skip": 0
+      },
+      "same_cases": 67
+    },
+    "Gov": {
+      "both_epochs_PASS": true,
+      "full_Gov_qualified": false,
+      "same_external_component_controls": 6,
+      "same_pytest_cases": 15
+    }
+  },
+  "native_BIG2e": {
+    "cycle_seconds": 90,
+    "full_cycle_and_slow_fsync_closed": false,
+    "original_family_read_budget_seconds": 0.5,
+    "status": "RED"
+  },
+  "parent_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "parent_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "pending": [
+    "U14",
+    "UX470-I01",
+    "UX470-I02",
+    "UX470-I03",
+    "UX470-I05",
+    "fullGov311/312 exact source",
+    "BIG original budgets",
+    "HorizonV3 1201+recovery",
+    "BrowserLARGE fullOPEN",
+    "newPredeploy/artifact/digest/image",
+    "supervisorpromotion/deploy/runtime"
+  ],
+  "raw_manifest_sha256": "34e93ae8bd4019a36fdd3c48a7ec162a0a8809ed9f22e3f160f4669c0f4580d4",
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "schema": "rc6.controlled-successor.checkpoint5.change-summary.v1",
+  "source_qualification": "UNCOMMITTED_FOCALS_ONLY_NEW_SHA_REQUIRES_EXACT_GATES"
+}

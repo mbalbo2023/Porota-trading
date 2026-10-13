@@ -1,0 +1,104 @@
+{
+  "context": {
+    "candidate_sha": "649a4e90468598f679c63b6ac71516b0e2cab9f7",
+    "candidate_tree": "4a39a21dc8e7bf76a69a2cff1b4c6b0fc7079467",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "2",
+    "run_id": "471",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "final_actual_own_kernel": {
+    "kernel_echild_verified": true,
+    "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+    "subreaper_state_after": 0,
+    "subreaper_state_before": 0
+  },
+  "initial_actual_own_kernel": {
+    "kernel_echild_verified": true,
+    "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+    "subreaper_state_after": 0,
+    "subreaper_state_before": 0
+  },
+  "kernel": {
+    "actual_child_reaped": true,
+    "actual_launch_to_pid_reap_wall_seconds": 0.40250480599934235,
+    "adopted_descendants_reaped": [],
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "--collect-only",
+      "-q",
+      "test_native_owned.py",
+      "-p",
+      "no:cacheprovider"
+    ],
+    "cpu_system_seconds": 0.011915,
+    "cpu_user_seconds": 0.334136,
+    "kernel_owned_child_observations": [
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "before_popen_after_subreaper_activation"
+      },
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "after_main_pid_reap"
+      }
+    ],
+    "kernel_pre_popen_echild_verified": true,
+    "kernel_wait4_zero_observed_irreversible_red": false,
+    "late_observed_main_reap_irreversible_red": false,
+    "launcher_management_deadline_seconds": 60,
+    "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+    "owned_children_exhaustion_verified": true,
+    "owned_cleanup_management_bound_seconds": 5,
+    "owned_group_signal_observations": [],
+    "peak_rss_bytes": 34922496,
+    "pid": 22632,
+    "proc_task_children_examined": false,
+    "process_group_absent_after_reap": true,
+    "process_group_absent_at_main_reap": true,
+    "remaining_owned_children": [],
+    "residual_descendants_observed": [],
+    "returncode": 0,
+    "scope": "EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS",
+    "sigint_failure_grace_seconds": 0,
+    "subreaper_activation_readback_verified": true,
+    "subreaper_previous_state": 0,
+    "subreaper_restoration_readback_verified": true,
+    "subreaper_restore_attempted": true,
+    "supervisor_errors": [],
+    "supervisor_kernel_identity_before_spawn": {
+      "Pid": "22628",
+      "Tgid": "22628",
+      "Uid": "1000\t1000\t1000\t1000"
+    },
+    "supervisor_native_tid": 22628,
+    "supervisor_pid": 22628,
+    "termination_reap_restore_cleanup_seconds": 6.584800212294795e-05,
+    "timed_out": false,
+    "wait4_reaped_pid": 22632,
+    "wall_seconds": 0.4028201530018123
+  },
+  "launch_intent_sha256": "febfb96d23d456480bef0123e878e70430181e5ad1e1702d64e5fa3fdd494063",
+  "management_acceptance": true,
+  "management_seconds": 60,
+  "original_manager_source": {
+    "git_blob": "b221f59f4edbb7b04097aec57e91ffbef648100e",
+    "member": "scripts/rc6_controlled_native_child_manager.py",
+    "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
+  },
+  "owned_fin_closed": true,
+  "owner_uuid": "af243396ab394adeba719cd094071a19",
+  "phase": "collection",
+  "phase_green": true,
+  "post_fin_errors": [],
+  "retained_capacity_status": "GREEN",
+  "retention_receipt": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch311/pytest/test_real_owned_pytest_failed_0/native-runner/porota-predeploy-471-2-af243396ab394adeba719cd094071a19/porota-pytest-collection-retained.json",
+  "schema": "rc6.predeploy-pytest-owned-fin.v1",
+  "scope": "ACTUAL_PYTEST_MAIN_WAIT4_AND_ADOPTED_WAIT4; MAX_RSS_NOT_SUM; NO_TRANSITIVE_BINARY_NETWORK_ATTESTATION",
+  "supervisor_pid": 22628
+}

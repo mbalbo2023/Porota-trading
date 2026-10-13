@@ -1,0 +1,41 @@
+{
+  "code_sha256": {
+    "rc6_audit_evidence/sqlite_scratch.py": "6dffababd6d851b2d43774b9dcfa8caa5fdf77513582a9b2a228d7aedcc51634",
+    "rc6_audit_evidence/sqlite_snapshot.py": "34e6ea35351897bc79ccb8299d1d66dc99db360a77a2b92ad41e80003b282c46",
+    "rc6_dynamic_universe/promotion.py": "baca6590e5adbd1ddd86ffdeb9e0b42e4480ac61bd8aa862baae0b3f47a09b2b",
+    "rc6_ppi_global_budget.py": "f4109344794f02ef0bec511af8f41042069aaee48226acfb5d96f677da987dc8",
+    "rc6_shadow_runtime/persistence.py": "32c66ad8aed28acbc55b6aaa53fddf01ce18795ff246edbe9967ccfdb791da85",
+    "rc6_shadow_runtime/projection.py": "f356c798bcbbc858774966919abfc31a740f225f33f65ca06eb5dceadd9f7e30",
+    "rc6_trader_dashboard/projected_generation.py": "a74b85d32f498b5260c1964b3fcb73344abbd4aeff107daacb94b2aa1f6b88f7"
+  },
+  "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /workspace/venv_rc6_frozen311/bin/python -m pytest tests/test_rc6_capacity_retention_activation.py tests/test_rc6_sqlite_disk_scratch.py tests/test_rc6_dashboard_projection.py tests/test_rc6_committed_projection.py --junitxml=/tmp/rc6_budget_scratch_projection_cross_layer.xml -q",
+  "limits": [
+    "Native local synthetic fixtures; no productive provider, runtime or economic evidence.",
+    "69 executions are not69 new independent original scenarios.",
+    "Large publication, exact final full governed run and exact published artifact remain pending."
+  ],
+  "native_modules": [
+    "tests/test_rc6_capacity_retention_activation.py",
+    "tests/test_rc6_sqlite_disk_scratch.py",
+    "tests/test_rc6_dashboard_projection.py",
+    "tests/test_rc6_committed_projection.py"
+  ],
+  "receipt": {
+    "path": "docs/audits/convergence/evidence/budget-scratch-projection-cross-layer-green.xml",
+    "sha256": "35799cc6d6e1cde7d26b5587026f094437a672b424d480a75ce14dd61e7ad0a8",
+    "summary": {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "skipped": "0",
+      "tests": "69",
+      "time": "34.785",
+      "timestamp": "2026-10-05T06:10:02.159251+00:00"
+    }
+  },
+  "schema": "rc6.native-budget-scratch-projection-cross-layer.v1",
+  "source_head": "8720458c50285464e6577b5522733be158e9683f",
+  "source_tree": "e68b071e4a3fc182c9d7ea01efda2fca0a982d66",
+  "status": "GREEN_INTERMEDIATE_NATIVE_NOT_FINAL_FROZEN"
+}

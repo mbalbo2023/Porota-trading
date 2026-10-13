@@ -1,0 +1,11 @@
+{
+  "PGID_absent": true,
+  "actual_reap": true,
+  "full_original_kernel_resource_guards_closed": true,
+  "historical_timeout_signal_late_reap_or_residual_RED_never_reset": true,
+  "owned_exhaustion": true,
+  "post_main_actual_ECHILD": true,
+  "postread_allowed": true,
+  "remaining_children": [],
+  "subreaper_restore_attempted": true
+}

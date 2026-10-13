@@ -1,0 +1,45 @@
+{
+  "classification": "UNKNOWN_OR_UNCLOSED",
+  "cleanup_performed": false,
+  "context": {
+    "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "candidate_tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "2",
+    "run_id": "471",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "control_observations": {},
+  "errors": [
+    "PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT"
+  ],
+  "expected_management_seconds": 5400,
+  "new_or_global_kernel_fin_asserted": false,
+  "owner_uid": 1000,
+  "owner_uuid": "86fea0260f1d4b469c47837839a64d16",
+  "phase": "execution",
+  "pytest_producer_witness": false,
+  "real_orders_sent": 0,
+  "safe_postread": false,
+  "schema": "rc6.predeploy-pytest-postread-safety.v1",
+  "source_junit_data_log_payloads_read": 0,
+  "trace_presence_lstat_only": {
+    "porota-pytest-launch-intent.json": null,
+    "porota-pytest-native.log": null,
+    "porota-pytest-owned-fin.json": null,
+    "porota-pytest-progress.json": {
+      "st_atime_ns": 1791305131591243186,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791305131592713833,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1090202,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791305131592713833,
+      "st_nlink": 1,
+      "st_size": 33,
+      "st_uid": 1000
+    }
+  }
+}

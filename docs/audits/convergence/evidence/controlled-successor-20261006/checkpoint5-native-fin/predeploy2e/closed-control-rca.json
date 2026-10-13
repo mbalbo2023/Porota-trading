@@ -1,0 +1,297 @@
+{
+  "artifact_11stat": {
+    "st_atime_ns": 1791309906387476993,
+    "st_blocks": 152,
+    "st_ctime_ns": 1791309897838695853,
+    "st_dev": 27,
+    "st_gid": 1000,
+    "st_ino": 1585076,
+    "st_mode": 33152,
+    "st_mtime_ns": 1791309897838695853,
+    "st_nlink": 1,
+    "st_size": 73920,
+    "st_uid": 1000
+  },
+  "artifact_bytes": 73920,
+  "artifact_id": 11432626347,
+  "artifact_sha256": "3e2b2cdd1329b684b52066bd8d7d115374f86c8bf647cabcfc0fca4bfe24d136",
+  "artifact_source": "/workspace/scratch/rc6-predeploy375016-controls-7kv4p3oe/porota-predeploy-37501612071-1.pytest-producers-postread.json",
+  "attempt": 1,
+  "candidate_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "candidate_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "classification": "UNKNOWN_OR_UNCLOSED",
+  "errors": [
+    "PYTEST_OWNED_FIN_NOT_CLOSED_OR_REBOUND",
+    "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+  ],
+  "mode": "READ_ONLY_RCA_NO_SOURCE_EDITS_NO_TESTS_NO_PAYLOAD_READS",
+  "phases": {
+    "collection": {
+      "adopted_count": 0,
+      "adopted_exit_code_counts": {},
+      "fin_bytes": 3917,
+      "fin_member": "porota-pytest-collection-owned-fin.json",
+      "fin_sha256": "84cbf92963384718bd69cfe8e0e69d4fde7adc926fa996a7e4d973e899f479d4",
+      "kernel_scalars": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 15.836701008000006,
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "launcher_management_deadline_seconds": 5400,
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "pid": 3004,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "subreaper_activation_readback_verified": true,
+        "subreaper_restoration_readback_verified": true,
+        "subreaper_restore_attempted": true,
+        "supervisor_errors": [],
+        "supervisor_native_tid": 3000,
+        "supervisor_pid": 3000,
+        "termination_reap_restore_cleanup_seconds": 7.38180000041666e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 3004
+      },
+      "management_acceptance": true,
+      "measurement_refused": null,
+      "observation_outcomes": {
+        "ECHILD": 2
+      },
+      "observations_count": 2,
+      "observations_phase_outcomes": {
+        "after_main_pid_reap:ECHILD": 1,
+        "before_popen_after_subreaper_activation:ECHILD": 1
+      },
+      "original_manager_source": {
+        "git_blob": "2c5709b25cc4548651e9e85aba50eba0eb5121cf",
+        "member": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source",
+        "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec"
+      },
+      "owned_fin_closed": true,
+      "phase_green": true
+    },
+    "execution": {
+      "adopted_count": 100,
+      "adopted_exit_code_counts": {
+        "0": 100
+      },
+      "fin_bytes": 49094,
+      "fin_member": "porota-pytest-owned-fin.json",
+      "fin_sha256": "efeeec10ffc1f81d3f9caa0132d2b837d67fb3e4e81a459b08caf2fd8bcb733a",
+      "kernel_scalars": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 2404.8757673269997,
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "launcher_management_deadline_seconds": 5400,
+        "owned_children_exhaustion_verified": false,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "pid": 3017,
+        "process_group_absent_after_reap": false,
+        "process_group_absent_at_main_reap": false,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 1,
+        "subreaper_activation_readback_verified": true,
+        "subreaper_restoration_readback_verified": false,
+        "subreaper_restore_attempted": false,
+        "supervisor_errors": [
+          {
+            "class": "RuntimeError",
+            "phase": "kernel_owned_child_cleanup",
+            "reason": "OWN_CHILD_EXHAUSTION_NOT_PROVED_WITHIN_BOUND"
+          },
+          {
+            "class": "ValueError",
+            "phase": "subreaper_restore",
+            "reason": "OWN_SUBREAPER_RESTORE_REQUIRES_KERNEL_EXHAUSTION_AND_ABSENT_OWNED_GROUP"
+          }
+        ],
+        "supervisor_native_tid": 3013,
+        "supervisor_pid": 3013,
+        "termination_reap_restore_cleanup_seconds": 5.011628090000158,
+        "timed_out": false,
+        "wait4_reaped_pid": 3017
+      },
+      "management_acceptance": false,
+      "measurement_refused": "ACTUAL_OWNED_FIN_NOT_CLOSED_NO_FIXTURE_PAYLOAD_OR_NAMESPACE_POSTREAD",
+      "observation_outcomes": {
+        "ECHILD": 1,
+        "PID_REAPED": 100
+      },
+      "observations_count": 101,
+      "observations_phase_outcomes": {
+        "after_main_pid_reap:PID_REAPED": 100,
+        "before_popen_after_subreaper_activation:ECHILD": 1
+      },
+      "original_manager_source": {
+        "git_blob": "2c5709b25cc4548651e9e85aba50eba0eb5121cf",
+        "member": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source",
+        "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec"
+      },
+      "owned_fin_closed": false,
+      "phase_green": false
+    }
+  },
+  "proposed_fix_not_applied": {
+    "algorithm": "After positive wait4, continue immediately to the next guarded iteration; sleep(.05) only in the original found==0 branch. Preserve deadline per iteration, observation cap1024, original 5400/5/TERM2, actual wait4, ECHILD/PGID/subreaper and sticky RED requirements.",
+    "gov_note": "The current tracked governed runner has the same unconditional positive-reap sleep at line749; do not assume planned Gov will be immune.",
+    "natural_controls": [
+      "A real exclusive same-parent supervisor with main exit1 and 128 already-exited own descendants, whose producer used waitid(WEXITED|WNOWAIT) to verify death without reaping; new manager must actually wait4 all128, ECHILD, absent PGID, restore within original5, FIN closed but phase RED/rc1.",
+      "A real active descendant causes actual wait4-zero; preserve irreversible RED, original SIGTERM/SIGKILL timing and5s ceiling; payload remains blocked until physical FIN legitimately proved.",
+      "Real normal collection/execution preserve no-error FIN and producer result; mismatched pinned manager or missing/sticky UNKNOWN retains no-payload behavior."
+    ],
+    "provenance": "Retain historical V2 source byte-identical; pin a separately reviewed tracked fix-forward manager and its Git blob/sha. No module overlay, runtime source rewriting or reclassification of current UNKNOWN. Root chooses exact paths/scope.",
+    "qualification": "No control run has been launched for this proposal; existing run remains FAILURE and UNKNOWN. A source change requires fresh source qualification and canonical Predeploy, not a retry of current artifact."
+  },
+  "proven_cause": {
+    "actual_failed_cleanup_seconds": 5.011628090000158,
+    "limits": "No assertion that all descendants had exited, no identity/origin inference for unreaped descendants, no testcase result/cause inference from main rc=1.",
+    "mechanism": "Main rc=1 selects original 5s failed-phase cleanup. Every ready PID successfully reaped is followed by sleep(.05). 100 positive reaps consume nominal 5s; loop deadline stops before any post-main ECHILD. There was no wait4-zero observation. Missing post-main ECHILD and absent PGID proof leave FIN UNKNOWN correctly.",
+    "nominal_scheduling_delay_seconds": 5.0,
+    "successful_adopted_wait4_calls": 100,
+    "unconditional_sleep_seconds_per_successful_wait4": 0.05
+  },
+  "run_id": 37501612071,
+  "safe_postread": false,
+  "safety": {
+    "PAPER_SHADOW_ONLY": true,
+    "PPI_Watch": "UNTOUCHED",
+    "no_deploy": true,
+    "no_host_access": true,
+    "real_orders_sent": 0
+  },
+  "schema": "rc6.predeploy-owned-fin-control-only-rca.v1",
+  "source_files": {
+    ".github/workflows/porota-predeploy-v2.yml": {
+      "bytes": 42690,
+      "lines": [
+        {
+          "end": 207,
+          "source": "          mapfile -t TEST_ARGS < \"${POROTA_PREDEPLOY_TMP}/porota-test-args.txt\"\n          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \"$BOOTSTRAP_PYTHON\" scripts/porota_predeploy_test_workspace.py supervise-pytest --phase collection --scope \"$POROTA_PREDEPLOY_OWNER\" -- python -m pytest --collect-only -q \"${TEST_ARGS[@]}\" -p no:cacheprovider\n          \"$BOOTSTRAP_PYTHON\" scripts/porota_predeploy_test_workspace.py require-owned-fin --phase collection --scope \"$POROTA_PREDEPLOY_OWNER\"\n          set +e\n          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \"$BOOTSTRAP_PYTHON\" scripts/porota_predeploy_test_workspace.py supervise-pytest --scope \"$POROTA_PREDEPLOY_OWNER\" -- python -m pytest -q \"${TEST_ARGS[@]}\" -p no:cacheprovider --basetemp=\"$POROTA_PREDEPLOY_PYTEST_BASETEMP\" --junitxml=\"${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml\"\n          TEST_RC=$?\n          set -e\n          \"$BOOTSTRAP_PYTHON\" scripts/porota_predeploy_test_workspace.py require-owned-fin --scope \"$POROTA_PREDEPLOY_OWNER\"\n",
+          "start": 200
+        },
+        {
+          "end": 272,
+          "source": "        id: pytest_postread\n        if: always()\n        shell: bash\n        run: |\n          set -Eeuo pipefail\n          \"${POROTA_PREDEPLOY_BOOTSTRAP_PYTHON:-python}\" scripts/porota_predeploy_test_workspace.py safe-postread \\\n            --scope \"$POROTA_PREDEPLOY_OWNER\"\n",
+          "start": 266
+        },
+        {
+          "end": 662,
+          "source": "      - name: Upload only bounded owned pytest custody controls after unknown FIN\n        if: always() && steps.pytest_postread.outputs.safe_postread != 'true' && steps.pytest_postread.outputs.control_receipt_available == 'true'\n        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 verified2026-10-05\n        with:\n          name: porota-predeploy-v2-custody-controls-${{ env.CANDIDATE_SHA }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}\n          if-no-files-found: error\n          retention-days: 7\n          path: ${{ steps.pytest_postread.outputs.control_receipt }}\n",
+          "start": 655
+        }
+      ],
+      "sha256": "45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125",
+      "stable_11stat": {
+        "st_atime_ns": 1791303517485763014,
+        "st_blocks": 88,
+        "st_ctime_ns": 1791303295418691756,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1048755,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791303295418691756,
+        "st_nlink": 1,
+        "st_size": 42690,
+        "st_uid": 1000
+      }
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": {
+      "bytes": 55671,
+      "lines": [
+        {
+          "end": 665,
+          "source": "    finally:\n        # This scope covers activation, Popen, logs, signal races and errors.\n        # Five seconds is cleanup management after an already failed phase,\n        # not an extension of the phase's acceptance deadline.\n        cleanup_started = time.monotonic()\n        failed_phase = bool(errors) or timed_out or late_reap or not waited or (process is not None and process.returncode != 0)\n        cleanup_deadline = cleanup_started + 5 if failed_phase else management_deadline\n        try:\n            if process is not None and not waited:\n                cleanup_signal(signal.SIGTERM)\n                while time.monotonic() < cleanup_deadline and not reap_main():\n                    if time.monotonic() - cleanup_started >= terminate_grace:\n                        cleanup_signal(signal.SIGKILL)\n                    time.sleep(.05)\n                if not waited:\n                    cleanup_signal(signal.SIGKILL)\n                    reap_main()  # One final nonblocking observation, no invented reap.\n                if not waited:\n                    error_record('main_reap', RuntimeError('OWN_PHASE_PID_NOT_REAPED_WITHIN_CLEANUP_BOUND'))\n        except BaseException as error:\n            error_record('main_termination_or_reap', error)\n        try:\n            if process is not None and waited == process.pid:\n                group_absent_at_main_reap = observe_group_absence()\n        except BaseException as error:\n            error_record('owned_group_after_main_reap', error)\n        try:\n            if active:\n                require(pre_spawn_echild and (process is None or waited == process.pid),\n                        'KERNEL_DRAIN_REQUIRES_REAPED_MAIN_PID_OR_NO_SPAWN_AND_EXCLUSIVE_SUBREAPER')\n                while True:\n                    if len(observations) >= 1024 or time.monotonic() >= cleanup_deadline:\n                        error_record('kernel_owned_child_cleanup',\n                                     RuntimeError('OWN_CHILD_EXHAUSTION_NOT_PROVED_WITHIN_BOUND'))\n                        break\n                    try:\n                        found, child_status, child_usage = os.wait4(-1, os.WNOHANG)\n                    except ChildProcessError as error:\n                        if error.errno != errno.ECHILD:\n                            raise\n                        observations.append({'phase': 'after_main_pid_reap',\n                                             'outcome': 'ECHILD', 'errno': error.errno})\n                        exhausted, pending = True, []\n                        break\n                    if found:\n                        require(process is None or found != process.pid, 'MAIN_PID_CANNOT_BE_REAPED_AS_AN_ADOPTED_CHILD')\n                        row = child_row(found, child_status, child_usage)\n                        descendants.append(row)\n                        observations.append({'phase': 'after_main_pid_reap', 'outcome': 'PID_REAPED', **row})\n                    else:\n                        pending = ['KERNEL_ACTIVE_OWN_CHILD_WITHOUT_PID']\n                        if not wait4_zero:\n                            residual.append('KERNEL_WAIT4_ZERO_OBSERVED')\n                            observations.append({'phase': 'after_main_pid_reap',\n                                                 'outcome': 'ACTIVE_OWN_CHILD_WITHOUT_PID', 'pid': 0})\n                        if not wait4_zero:\n                            cleanup_started = time.monotonic()\n                            cleanup_deadline = min(cleanup_deadline, cleanup_started + 5)\n                        wait4_zero = True  # Irreversible RED even if cleanup later reaches ECHILD.\n                        cleanup_signal(signal.SIGKILL if time.monotonic() - cleanup_started >= terminate_grace else signal.SIGTERM)\n                    time.sleep(.05)\n",
+          "start": 605
+        },
+        {
+          "end": 687,
+          "source": "            if active:\n                try:\n                    require(exhausted and not pending and (process is None or group_absent),\n                            'OWN_SUBREAPER_RESTORE_REQUIRES_KERNEL_EXHAUSTION_AND_ABSENT_OWNED_GROUP')\n                    restore_attempted = True\n                    require(libc.prctl(36, previous.value, 0, 0, 0) == 0,\n                            'OWN_SUBREAPER_STATE_NOT_RESTORED')\n                    restored = ctypes.c_int()\n                    require(libc.prctl(37, ctypes.byref(restored), 0, 0, 0) == 0\n                            and restored.value == previous.value,\n                            'OWN_SUBREAPER_RESTORATION_READBACK_REQUIRED')\n                    restore_verified = True\n                except BaseException as error:\n                    error_record('subreaper_restore', error)\n",
+          "start": 674
+        }
+      ],
+      "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+      "stable_11stat": {
+        "st_atime_ns": 1791290621389225996,
+        "st_blocks": 112,
+        "st_ctime_ns": 1791290621081430034,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1050460,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791290621081430034,
+        "st_nlink": 1,
+        "st_size": 55671,
+        "st_uid": 1000
+      }
+    },
+    "scripts/porota_predeploy_test_workspace.py": {
+      "bytes": 50951,
+      "lines": [
+        {
+          "end": 349,
+          "source": "def native_manager(repo, context):\n    \"\"\"Load the exact reviewed tracked V2 helper, never a source overlay.\"\"\"\n    path = Path(repo) / DRIVER\n    raw, _ = cleanup.read_file(path, maximum=128 * 1024)\n    env = dict(os.environ, GIT_NO_REPLACE_OBJECTS=\"1\", GIT_NO_LAZY_FETCH=\"1\",\n               GIT_TERMINAL_PROMPT=\"0\")\n    blob = subprocess.check_output([\"git\", \"--no-replace-objects\", \"-C\", str(repo),\n                                   \"rev-parse\", context[\"candidate_sha\"] + \":\" + DRIVER],\n                                  env=env, timeout=10).decode().strip()\n    actual = hashlib.sha1(b\"blob \" + str(len(raw)).encode() + b\"\\0\" + raw).hexdigest()\n    cleanup.require(actual == blob and hashlib.sha256(raw).hexdigest() == ORIGINAL_DRIVER_SHA256,\n                    \"ORIGINAL_OWNED_FIN_DRIVER_BYTES_MISMATCH\")\n    return runpy.run_path(str(path)), {\"member\": DRIVER, \"git_blob\": blob,\n                                      \"sha256\": hashlib.sha256(raw).hexdigest()}\n",
+          "start": 336
+        },
+        {
+          "end": 554,
+          "source": "            custody, _ = captured(names[\"fin\"])\n            kernel = custody.get(\"kernel\")\n            cleanup.require(custody.get(\"schema\") == \"rc6.predeploy-pytest-owned-fin.v1\"\n                            and custody.get(\"supervisor_pid\") == intent[\"supervisor_pid\"]\n                            and custody.get(\"phase\") == phase\n                            and custody.get(\"launch_intent_sha256\") == intent_sha\n                            and custody.get(\"original_manager_source\") == provenance\n                            and custody.get(\"owned_fin_closed\") is True\n                            and recorded_original_custody_closed(kernel)\n                            and kernel.get(\"supervisor_pid\") == intent[\"supervisor_pid\"]\n                            and kernel.get(\"supervisor_native_tid\") == intent[\"supervisor_native_tid\"]\n                            and kernel.get(\"command\") == intent[\"command\"]\n                            and custody.get(\"management_seconds\") == expected_management_seconds\n                            and kernel.get(\"launcher_management_deadline_seconds\") == expected_management_seconds\n                            and kernel.get(\"owned_cleanup_management_bound_seconds\") == 5\n                            and kernel.get(\"supervisor_kernel_identity_before_spawn\", {}).get(\"Tgid\")\n                            == str(intent[\"supervisor_pid\"])\n                            and kernel.get(\"supervisor_kernel_identity_before_spawn\", {}).get(\"Pid\")\n                            == str(intent[\"supervisor_native_tid\"])\n                            and kernel.get(\"supervisor_kernel_identity_before_spawn\", {}).get(\"Uid\", \"\").split()[:2]\n                            == [str(intent[\"supervisor_real_uid\"]), str(intent[\"supervisor_effective_uid\"])],\n                            \"PYTEST_OWNED_FIN_NOT_CLOSED_OR_REBOUND\")\n",
+          "start": 533
+        },
+        {
+          "end": 776,
+          "source": "    child_environment = dict(environ, RUNNER_TEMP=str(private), PYTEST_DISABLE_PLUGIN_AUTOLOAD=\"1\")\n    kernel = manager[\"managed_native_child\"](command, Path(repo), private / names[\"log\"],\n                                               child_environment, timeout_seconds,\n                                               terminate_grace=2, progress_poll=5, progress=progress)\n    custody = {\"schema\": \"rc6.predeploy-pytest-owned-fin.v1\", \"context\": context,\n               \"owner_uuid\": control[\"owner_uuid\"], \"original_manager_source\": provenance,\n               \"supervisor_pid\": os.getpid(), \"launch_intent_sha256\": intent_sha,\n               \"phase\": phase,\n               \"management_seconds\": timeout_seconds, \"management_acceptance\": False,\n               \"initial_actual_own_kernel\": initial, \"kernel\": kernel,\n               \"owned_fin_closed\": False, \"phase_green\": False, \"post_fin_errors\": [],\n               \"scope\": \"ACTUAL_PYTEST_MAIN_WAIT4_AND_ADOPTED_WAIT4; MAX_RSS_NOT_SUM; NO_TRANSITIVE_BINARY_NETWORK_ATTESTATION\"}\n    # FIN permits measurement, never converts a failed/late/signalled phase\n    # into GREEN. In particular a post-main wait4-zero remains irreversible.\n    try:\n        if manager[\"managed_custody_closed\"](kernel):\n            after = manager[\"pre_capture_kernel_state\"]()\n            cleanup.require(after[\"subreaper_state_after\"] == initial[\"subreaper_state_after\"],\n                            \"PYTEST_SUPERVISOR_SUBREAPER_NOT_RESTORED\")\n            custody.update(owned_fin_closed=True, final_actual_own_kernel=after,\n                           phase_green=manager[\"managed_phase_green\"](kernel),\n                           management_acceptance=recorded_management_accepted(kernel, timeout_seconds))\n            retained = measure_retained_workspace(scope, repo, context, environ)\n            retained.update(measured_by_same_owned_fin_supervisor_pid=os.getpid(),\n                            actual_pytest_pid=kernel[\"pid\"], owned_fin_closed=True,\n                            pytest_phase_green=custody[\"phase_green\"])\n            retained[\"phase\"] = phase\n            cleanup.publish(private / names[\"retained\"], retained)\n            custody[\"retention_receipt\"] = str(private / names[\"retained\"])\n            custody[\"retained_capacity_status\"] = retained[\"capacity_status\"]\n        else:\n            custody[\"measurement_refused\"] = \"ACTUAL_OWNED_FIN_NOT_CLOSED_NO_FIXTURE_PAYLOAD_OR_NAMESPACE_POSTREAD\"\n    except (ValueError, OSError, KeyError, TypeError) as error:\n        custody[\"post_fin_errors\"].append(str(error) if isinstance(error, cleanup.CleanupRejected)\n                                          else type(error).__name__)\n    finally:\n        cleanup.publish(private / names[\"fin\"], custody)\n    print(json.dumps({\"owned_fin_closed\": custody[\"owned_fin_closed\"],\n                      \"pytest_phase_green\": custody[\"phase_green\"],\n                      \"phase\": phase, \"retained_fixtures_removed\": False,\n                      \"receipt\": str(private / names[\"fin\"])}, sort_keys=True), flush=True)\n    if (not custody[\"post_fin_errors\"] and custody[\"owned_fin_closed\"] and custody[\"phase_green\"]\n            and custody[\"management_acceptance\"]\n            and custody.get(\"retained_capacity_status\") == \"GREEN\"):\n        return 0\n    return kernel[\"returncode\"] if type(kernel[\"returncode\"]) is int and kernel[\"returncode\"] > 0 else 1\n",
+          "start": 731
+        }
+      ],
+      "sha256": "86678b88af863b3e45e6eac686b73514dee4f107ed1d9d9c9d92eba8868edf56",
+      "stable_11stat": {
+        "st_atime_ns": 1791303744600742755,
+        "st_blocks": 104,
+        "st_ctime_ns": 1791303744388743756,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1087992,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791303744388743756,
+        "st_nlink": 1,
+        "st_size": 50951,
+        "st_uid": 1000
+      }
+    },
+    "scripts/rc6_controlled_governed_runner.py": {
+      "bytes": 63403,
+      "lines": [
+        {
+          "end": 752,
+          "source": "            error_record('main_termination_or_reap', error)\n        try:\n            if process is not None and waited == process.pid:\n                group_absent_at_main_reap = observe_group_absence()\n        except BaseException as error:\n            error_record('owned_group_after_main_reap', error)\n        try:\n            if active:\n                require(process is not None and waited == process.pid and pre_spawn_echild,\n                        'KERNEL_DRAIN_REQUIRES_REAPED_MAIN_PID_AND_EXCLUSIVE_SUBREAPER')\n                while True:\n                    if len(observations) >= 1024 or time.monotonic() >= cleanup_deadline:\n                        error_record('kernel_owned_child_cleanup',\n                                     RuntimeError('OWN_CHILD_EXHAUSTION_NOT_PROVED_WITHIN_BOUND'))\n                        break\n                    try:\n                        found, child_status, child_usage = os.wait4(-1, os.WNOHANG)\n                    except ChildProcessError as error:\n                        if error.errno != errno.ECHILD:\n                            raise\n                        observations.append({'phase': 'after_main_pid_reap',\n                                             'outcome': 'ECHILD', 'errno': error.errno})\n                        exhausted, pending = True, []\n                        break\n                    if found:\n                        require(found != process.pid, 'MAIN_PID_CANNOT_BE_REAPED_AS_AN_ADOPTED_CHILD')\n                        row = child_row(found, child_status, child_usage)\n                        descendants.append(row)\n                        observations.append({'phase': 'after_main_pid_reap', 'outcome': 'PID_REAPED', **row})\n                    else:\n                        pending = ['KERNEL_ACTIVE_OWN_CHILD_WITHOUT_PID']\n                        if not wait4_zero:\n                            residual.append('KERNEL_WAIT4_ZERO_OBSERVED')\n                            observations.append({'phase': 'after_main_pid_reap',\n                                                 'outcome': 'ACTIVE_OWN_CHILD_WITHOUT_PID', 'pid': 0})\n                        wait4_zero = True  # Irreversible RED even if cleanup later reaches ECHILD.\n                        signal_group(signal.SIGKILL if time.monotonic() - cleanup_started >= 1 else signal.SIGTERM)\n                    time.sleep(.05)\n        except BaseException as error:\n            error_record('kernel_owned_child_cleanup', error)\n        finally:\n",
+          "start": 712
+        }
+      ],
+      "sha256": "b86a04368c92607eeb3eb6fc4b04393312de69a1d5a80ed7e2564025a41ec404",
+      "stable_11stat": {
+        "st_atime_ns": 1791299170684987309,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791299169248994201,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1084469,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791299169248994201,
+        "st_nlink": 1,
+        "st_size": 63403,
+        "st_uid": 1000
+      }
+    }
+  },
+  "source_junit_data_log_payloads_read": 0
+}

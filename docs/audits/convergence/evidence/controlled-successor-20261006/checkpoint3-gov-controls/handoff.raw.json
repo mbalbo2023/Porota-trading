@@ -1,0 +1,124 @@
+{
+  "schema": "rc6.controlled-governed-runner.diagnostic-handoff.v1",
+  "scope": "UNCOMMITTED_SHARED_TREE_DIAGNOSTIC_ONLY",
+  "reserved_source_paths": [
+    "scripts/rc6_controlled_governed_runner.py",
+    "tests/test_rc6_controlled_governed_runner.py"
+  ],
+  "review": {
+    "schema": "rc6.controlled-governed-runner.review.v1",
+    "scope": "UNCOMMITTED_NEW_RESERVED_PATHS_ONLY",
+    "production_path": "scripts/rc6_controlled_governed_runner.py",
+    "tests_path": "tests/test_rc6_controlled_governed_runner.py",
+    "preserved_archived_helper": "docs/audits/convergence/evidence/controlled-recovery-20261006/helpers/porota-governed311-external-runner.py.source",
+    "preserved_archive_sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313",
+    "preserved_archive_unchanged_since_initial_diagnostic": true,
+    "original_guard_function_ast_unchanged": {
+      "source_pin": true,
+      "compare_source": true,
+      "subprocess_phase": true,
+      "capture": true,
+      "physical_namespace": true,
+      "git_metadata": true,
+      "installed_closure": true,
+      "approved_scope": true
+    },
+    "production_sha256": "6ee4b4cf2140ec7fd9b89e9fce737f3e70ce76498f3790c20619067cbdf03b75",
+    "tests_sha256": "1f5e458accc1e7c2ec9ca342c9f82712088b1678a12271e78f0fcb6dfec844f4",
+    "diff_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/governed-runner-reviewed.diff",
+    "diff_sha256": "56005eb4a90a111c582af5d139f1e2a8a266851cf74793ed918b984d8a0be3d2",
+    "full_gov_executed": false,
+    "artifact_validated": false,
+    "runtime_validated": false,
+    "real_orders_sent": 0
+  },
+  "native_controls": [
+    {
+      "version": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+      "root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic-final311",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "duplicates": 0,
+      "native_exact_installed_distributions": 157,
+      "junit_sha256": "6d2d487af67348eed79a4e3a1e4b78f0cff1bb31e4af38a68a8c30f7c135b126",
+      "signal_control": {
+        "finalization_red": true,
+        "forced_termination_attempted": true,
+        "signal_vetoed_before_syscall": true,
+        "child_alive_after_veto": true,
+        "original_parent_irreversible_orphan_red": true,
+        "owned_cleanup_only": true,
+        "kernel_echild_and_group_absence_after_failed_cleanup": true
+      },
+      "manifest": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic-final311.manifest.json"
+    },
+    {
+      "version": "3.12.14 (main, Sep 24 2026, 17:57:43) [Clang 22.1.3 ]",
+      "root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic-final312",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "duplicates": 0,
+      "native_exact_installed_distributions": 157,
+      "junit_sha256": "05646e697799e63e812630c5a61357ecab753fdf54c53e1c578988ac5b55fcec",
+      "signal_control": {
+        "finalization_red": true,
+        "forced_termination_attempted": true,
+        "signal_vetoed_before_syscall": true,
+        "child_alive_after_veto": true,
+        "original_parent_irreversible_orphan_red": true,
+        "owned_cleanup_only": true,
+        "kernel_echild_and_group_absence_after_failed_cleanup": true
+      },
+      "manifest": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic-final312.manifest.json"
+    }
+  ],
+  "same_15_scenarios_both_interpreters": true,
+  "changes": [
+    "Fresh external Hypothesis and explicit LOG_DIR outputs; original physical namespace remains exact",
+    "Native Linux AF_INET6 creation capability unavailable before optional urllib3 probe, no module overrides; AF_UNIX and original IPv4 adversarial guards remain usable",
+    "Real owned multiprocessing child, forkserver and tracker lifecycle finalization within original 5-second bound; inherited tracker preserved",
+    "Witnessed Python finalization signal guard vetoes nonzero os.kill/os.killpg before syscall and makes swallowed callback attempts RED",
+    "Original whole-root scope, raw Git/custody pin, stable10 fields/atime disclosure, 5400-second watchdog and irreversible post-main ECHILD/PGID guards preserved"
+  ],
+  "prior_diagnostics_preserved": [
+    "diagnostic311",
+    "diagnostic312",
+    "diagnostic-fixed311",
+    "diagnostic-fixed312",
+    "diagnostic-signals311",
+    "diagnostic-signals312"
+  ],
+  "initial_diagnostic_red_cause_and_correction": [
+    "atime control incorrectly assumed relatime advances on each read: now tests separate atime disclosure with controlled readback and retains stable ctime rejection",
+    "installed Hypothesis StorageDirectory API requires .path: use real API/database, no Hypothesis module override",
+    "native forkserver AF_UNIX path exceeded physical length: fresh short owned same-filesystem TMPDIR, retain actual listener directory until real stop protocol"
+  ],
+  "not_attested": [
+    "Full governed collection/execution",
+    "Committed final SHA or tree",
+    "all11 data guard closure",
+    "wheel binary bytes",
+    "native binary or transitive child networking/signal isolation",
+    "BIG",
+    "horizon",
+    "browser",
+    "artifact",
+    "image",
+    "runtime"
+  ],
+  "next_required": [
+    "Root review and source freeze commit",
+    "Native frozen whole-root Gov on both exact157 environments",
+    "Durable GitHub checkpoint by sole owner"
+  ],
+  "git_or_github_writes_by_this_agent": false,
+  "production_ops_or_ppi_watch_modified": false,
+  "host_operations": false,
+  "provider_network_or_real_routes_called": false,
+  "real_orders_sent": 0,
+  "paper_shadow_only": true
+}

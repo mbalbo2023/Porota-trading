@@ -30,13 +30,23 @@
 - swap: untouched
 
 ## Disk thresholds
+Current admission follows the operator-authorized dynamic policy of 2026-10-01.
+The initial 6 GiB floor and 5 GiB reserve were superseded. See
+`ops/policy/rc6-disk-housekeeping-v1.json`, aligned
+`ops/policy/porota-policy.yaml`, and `docs/runbooks/RC6_CONVERGENCE_SRE.md`.
+
 - GREEN target: 7 GiB
 - automatic cleanup below: 7 GiB
-- pre-transfer absolute floor: 6 GiB
-- pre-transfer required free: max(6 GiB, 5*image_tar + 3*bundle + 5 GiB)
-- post-cleanup minimum: 5 GiB
-- CRITICAL: below 3 GiB
+- pre-transfer absolute floor: 0; admission uses the artifact-specific formula
+- pre-transfer required free: image_tar + exact_image_unpacked + 2*bundle + 2 GiB
+- post-cleanup residual minimum: 2 GiB
+- CRITICAL: below 1 GiB
 - inode free minimum for deploy: 10%
+
+Canonical promotion removes only unreferenced RC6 candidate tags through
+`scripts/rc6_deploy_scoped_cleanup.py`. Stable/current images, running and stopped
+container references, and explicit image pins are retained. Shared Docker build
+caches are untouched; global prune and PPI Watch inspection are absent.
 
 ## Regression guards
 - exact retention values asserted by tests

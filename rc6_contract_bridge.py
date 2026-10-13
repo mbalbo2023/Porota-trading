@@ -33,6 +33,9 @@ MAP.update({
        "paper_margin_reserve": "initial_margin",
     "paper_margin_policy": "paper_margin_policy",
     "paper_margin_rate": "paper_margin_rate",
+    "price_tick": "price_tick", "price_tick_source": "price_tick_source",
+    "price_tick_known_at": "price_tick_known_at",
+    "price_tick_effective_at": "price_tick_effective_at",
     "side": "side", "term_days": "term_days", "start_date": "start_date",
     "maturity_at": "maturity_at", "quoted_at": "quoted_at",
     "minimum_principal": "minimum_principal", "principal_step": "principal_step",
@@ -43,7 +46,7 @@ MAP.update({
     "fee_authority": "fee_authority",
     "operable": "operable", "market_session_state": "market_session_state",
 })
-NUMERIC = {"cash_multiplier", "quantity_step", "minimum_quantity", "strike",
+NUMERIC = {"cash_multiplier", "quantity_step", "minimum_quantity", "strike", "price_tick",
            "initial_margin", "maintenance_margin", "subscription_min", "subscription_step",
            "paper_subscription_min", "paper_amount_unit", "paper_margin_rate", "term_days", "minimum_principal",
            "principal_step", "paper_notional_cap", "paper_principal_step",

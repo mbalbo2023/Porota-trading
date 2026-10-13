@@ -1,0 +1,32 @@
+{
+  "classification": "NO_PYTEST_LAUNCH_ATTEMPTED",
+  "cleanup_performed": false,
+  "context": {
+    "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "candidate_tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "2",
+    "run_id": "471",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "control_observations": {},
+  "errors": [],
+  "expected_management_seconds": 5400,
+  "new_or_global_kernel_fin_asserted": false,
+  "owner_uid": 1000,
+  "owner_uuid": "6dc4a2d77e4a4644978f22e2184804eb",
+  "phase": "collection",
+  "pytest_producer_witness": false,
+  "real_orders_sent": 0,
+  "safe_postread": true,
+  "schema": "rc6.predeploy-pytest-postread-safety.v1",
+  "source_junit_data_log_payloads_read": 0,
+  "trace_presence_lstat_only": {
+    "porota-pytest-collection-launch-intent.json": null,
+    "porota-pytest-collection-owned-fin.json": null,
+    "porota-pytest-collection-progress.json": null,
+    "porota-test-collection.txt": null
+  },
+  "witness_scope": "NO_PYTEST_PRODUCER_WITNESS; ORIGINAL_SCOPED_CLEANUP_ONLY"
+}

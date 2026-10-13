@@ -1,0 +1,472 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "bytes": 26663810,
+  "capture_scope": "ALL_RAW_REGULAR_UNALIASED_OWNED_FILES_NOATIME_ALL11",
+  "file_count": 27,
+  "files": {
+    "closed-gc-context-join.json": {
+      "bytes": 1279774,
+      "sha256": "96fba324fa7f1a21081c2ecdc32a627d930f056153bde850ef6dc666084f9583",
+      "stat_fields": {
+        "st_atime_ns": 1791315604854916508,
+        "st_blocks": 2504,
+        "st_ctime_ns": 1791315604858361967,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613693,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315604858361967,
+        "st_nlink": 1,
+        "st_size": 1279774,
+        "st_uid": 1000
+      }
+    },
+    "collection.installed-closure.json": {
+      "bytes": 1806,
+      "sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439",
+      "stat_fields": {
+        "st_atime_ns": 1791315515095279364,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315515098730534,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613631,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315515098730534,
+        "st_nlink": 1,
+        "st_size": 1806,
+        "st_uid": 1000
+      }
+    },
+    "collection.namespace.json": {
+      "bytes": 632,
+      "sha256": "2fca63f32303780699b25f9e1cb220efe5808102565daec9b096094bb25c2ca9",
+      "stat_fields": {
+        "st_atime_ns": 1791315515019279685,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315515020547464,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613629,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315515020547464,
+        "st_nlink": 1,
+        "st_size": 632,
+        "st_uid": 1000
+      }
+    },
+    "collection.offline-capability.json": {
+      "bytes": 604,
+      "sha256": "5d4fb73194874469a92a5a8cde6da5e78c7499bdb81b5ef6a3c880253e98ffb8",
+      "stat_fields": {
+        "st_atime_ns": 1791315515020547464,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315515021598289,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613630,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315515021598289,
+        "st_nlink": 1,
+        "st_size": 604,
+        "st_uid": 1000
+      }
+    },
+    "final.json": {
+      "bytes": 16076,
+      "sha256": "73208ad36ed3443f9d2ce403c548572c7d748653c510539ca3d7dd9c6dac25b3",
+      "stat_fields": {
+        "st_atime_ns": 1791315604858916491,
+        "st_blocks": 32,
+        "st_ctime_ns": 1791315604860649894,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613694,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315604860649894,
+        "st_nlink": 1,
+        "st_size": 16076,
+        "st_uid": 1000
+      }
+    },
+    "kernel-supervision.json": {
+      "bytes": 2038,
+      "sha256": "0f6cb896a136117727774b0551b66e5f086cd13024d3a366e8c7712f13eb8472",
+      "stat_fields": {
+        "st_atime_ns": 1791315603010924029,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315603012511679,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613675,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315603012511679,
+        "st_nlink": 1,
+        "st_size": 2038,
+        "st_uid": 1000
+      }
+    },
+    "launch.json": {
+      "bytes": 2149,
+      "sha256": "c502939b527ef24453cbfb8b071e542aec8d8a1fac71050c607e68b2bfdcd5a0",
+      "stat_fields": {
+        "st_atime_ns": 1791315517358127143,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315517359404895,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613635,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315517359404895,
+        "st_nlink": 1,
+        "st_size": 2149,
+        "st_uid": 1000
+      }
+    },
+    "native-stress-result.json": {
+      "bytes": 1644210,
+      "sha256": "80be1ad38b5743db3aebcd8f70a1c6dfc1f1e98ebdcd8f70fba9e5df93485fef",
+      "stat_fields": {
+        "st_atime_ns": 1791315602958924241,
+        "st_blocks": 3216,
+        "st_ctime_ns": 1791315602963517816,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613672,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315602963517816,
+        "st_nlink": 1,
+        "st_size": 1644210,
+        "st_uid": 1000
+      }
+    },
+    "native.log": {
+      "bytes": 141,
+      "sha256": "f366360e36fe4782eb98808426f64eaf4c17f24d7d5c2f38ebc910500129430f",
+      "stat_fields": {
+        "st_atime_ns": 1791315517359404895,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315602966924208,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613636,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791315602966924208,
+        "st_nlink": 1,
+        "st_size": 141,
+        "st_uid": 1000
+      }
+    },
+    "parent.native-data-after-fin.json": {
+      "bytes": 388,
+      "sha256": "85d57619c5c9efc0dbb8279e7ce53a8fa09b88c809beee4954d6b01dc1947916",
+      "stat_fields": {
+        "st_atime_ns": 1791315604490917992,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315604492188456,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613692,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315604492188456,
+        "st_nlink": 1,
+        "st_size": 388,
+        "st_uid": 1000
+      }
+    },
+    "parent.original-data-after.json": {
+      "bytes": 388,
+      "sha256": "b078375ff2b9031ee0b16d20f42f7111ce212f79050c7276b948f7c5670c58f9",
+      "stat_fields": {
+        "st_atime_ns": 1791315604462918107,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315604465514647,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613679,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315604465514647,
+        "st_nlink": 1,
+        "st_size": 388,
+        "st_uid": 1000
+      }
+    },
+    "parent.original-data-before.json": {
+      "bytes": 388,
+      "sha256": "b078375ff2b9031ee0b16d20f42f7111ce212f79050c7276b948f7c5670c58f9",
+      "stat_fields": {
+        "st_atime_ns": 1791315517355269859,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315517358127143,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613634,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315517358127143,
+        "st_nlink": 1,
+        "st_size": 388,
+        "st_uid": 1000
+      }
+    },
+    "parent.original-source-after.json": {
+      "bytes": 2266460,
+      "sha256": "8b9aa3c5c5abff1ad050699cecee681356cbdc9a34171220478e97e7d45df912",
+      "stat_fields": {
+        "st_atime_ns": 1791315604430918237,
+        "st_blocks": 4432,
+        "st_ctime_ns": 1791315604433992634,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613678,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315604433992634,
+        "st_nlink": 1,
+        "st_size": 2266460,
+        "st_uid": 1000
+      }
+    },
+    "parent.original-source-before.json": {
+      "bytes": 2266460,
+      "sha256": "8b9aa3c5c5abff1ad050699cecee681356cbdc9a34171220478e97e7d45df912",
+      "stat_fields": {
+        "st_atime_ns": 1791315517351269875,
+        "st_blocks": 4432,
+        "st_ctime_ns": 1791315517354432377,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613633,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315517354432377,
+        "st_nlink": 1,
+        "st_size": 2266460,
+        "st_uid": 1000
+      }
+    },
+    "parent.source-after.json": {
+      "bytes": 2266460,
+      "sha256": "817d257d73f381d4396216c21de5f03948e4793d5b50b5948fe985c0f2dbd96e",
+      "stat_fields": {
+        "st_atime_ns": 1791315604374918465,
+        "st_blocks": 4432,
+        "st_ctime_ns": 1791315604377223930,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613677,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315604377223930,
+        "st_nlink": 1,
+        "st_size": 2266460,
+        "st_uid": 1000
+      }
+    },
+    "parent.source-before.json": {
+      "bytes": 2266460,
+      "sha256": "04b3b32641b8446a81b36438306e42e29e66c2d15c4404c2c78d079c9ba41b4b",
+      "stat_fields": {
+        "st_atime_ns": 1791315517287270134,
+        "st_blocks": 4432,
+        "st_ctime_ns": 1791315517291538861,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613632,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315517291538861,
+        "st_nlink": 1,
+        "st_size": 2266460,
+        "st_uid": 1000
+      }
+    },
+    "postread-kernel-barrier.json": {
+      "bytes": 337,
+      "sha256": "8d6134a62b67a4b8690761c1a6002bb000a4d050df62207a7f87aecf24dcf61e",
+      "stat_fields": {
+        "st_atime_ns": 1791315603012511679,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315603013568453,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613676,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315603013568453,
+        "st_nlink": 1,
+        "st_size": 337,
+        "st_uid": 1000
+      }
+    },
+    "process-25509/gc-events.jsonl": {
+      "bytes": 120149,
+      "sha256": "f03f08028c342c9f83768d52538bcc0fdbdb8f56c39505f9a06ae49eb853e4d6",
+      "stat_fields": {
+        "st_atime_ns": 1791315517424934104,
+        "st_blocks": 240,
+        "st_ctime_ns": 1791315602963517816,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613644,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791315602963517816,
+        "st_nlink": 1,
+        "st_size": 120149,
+        "st_uid": 1000
+      }
+    },
+    "process-25509/gc-observer-final.json": {
+      "bytes": 857,
+      "sha256": "fe4b11db9c21fb4151767a0cf065a40323e6a981b75fbab127e114531a5516ec",
+      "stat_fields": {
+        "st_atime_ns": 1791315602963517816,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315602966890595,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613673,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791315602966890595,
+        "st_nlink": 1,
+        "st_size": 857,
+        "st_uid": 1000
+      }
+    },
+    "process-25509/inet-audit-final.json": {
+      "bytes": 659,
+      "sha256": "272af9cc30f1dd5b3335fe0942f61dc4dbc894a5440223b8b3aea65e0588cbde",
+      "stat_fields": {
+        "st_atime_ns": 1791315602966924208,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315602968008415,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613674,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315602968008415,
+        "st_nlink": 1,
+        "st_size": 659,
+        "st_uid": 1000
+      }
+    },
+    "process-25509/namespace.json": {
+      "bytes": 671,
+      "sha256": "21d788b608be86916dc7c8166a6b4bd32949c2b9ecce63813fde604fca038d94",
+      "stat_fields": {
+        "st_atime_ns": 1791315517422690882,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315517423472109,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613642,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315517423472109,
+        "st_nlink": 1,
+        "st_size": 671,
+        "st_uid": 1000
+      }
+    },
+    "process-25509/offline-capability.json": {
+      "bytes": 604,
+      "sha256": "5d4fb73194874469a92a5a8cde6da5e78c7499bdb81b5ef6a3c880253e98ffb8",
+      "stat_fields": {
+        "st_atime_ns": 1791315517423472109,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315517424934104,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613643,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315517424934104,
+        "st_nlink": 1,
+        "st_size": 604,
+        "st_uid": 1000
+      }
+    },
+    "process-25515/gc-events.jsonl": {
+      "bytes": 14523835,
+      "sha256": "896e294a263f2a58145fd783f7b6979879403816989c146f69c2656c5d92b258",
+      "stat_fields": {
+        "st_atime_ns": 1791315519220937279,
+        "st_blocks": 28368,
+        "st_ctime_ns": 1791315602062927895,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613655,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791315602062927895,
+        "st_nlink": 1,
+        "st_size": 14523835,
+        "st_uid": 1000
+      }
+    },
+    "process-25515/gc-observer-final.json": {
+      "bytes": 876,
+      "sha256": "83c9c58e83c301f18fd0450ebc1af3d56ac26d08899c1fcd9eb5d20dc16486bf",
+      "stat_fields": {
+        "st_atime_ns": 1791315602070927862,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315602073643955,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613670,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791315602073643955,
+        "st_nlink": 1,
+        "st_size": 876,
+        "st_uid": 1000
+      }
+    },
+    "process-25515/inet-audit-final.json": {
+      "bytes": 113,
+      "sha256": "f39dd13a8a2a12afbe27e5cf206802b9052f31fc1f489bbeff3f0f65daa8c015",
+      "stat_fields": {
+        "st_atime_ns": 1791315602073643955,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315602074606940,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613671,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315602074606940,
+        "st_nlink": 1,
+        "st_size": 113,
+        "st_uid": 1000
+      }
+    },
+    "process-25515/namespace.json": {
+      "bytes": 671,
+      "sha256": "120ba053e4ac62466be6053e2f370f550bcb3ca7098f134ceba4004954de1247",
+      "stat_fields": {
+        "st_atime_ns": 1791315519218297650,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315519219297350,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613653,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315519219297350,
+        "st_nlink": 1,
+        "st_size": 671,
+        "st_uid": 1000
+      }
+    },
+    "process-25515/offline-capability.json": {
+      "bytes": 604,
+      "sha256": "5d4fb73194874469a92a5a8cde6da5e78c7499bdb81b5ef6a3c880253e98ffb8",
+      "stat_fields": {
+        "st_atime_ns": 1791315519219297350,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791315519220937279,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613654,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315519220937279,
+        "st_nlink": 1,
+        "st_size": 604,
+        "st_uid": 1000
+      }
+    }
+  },
+  "qualified": false,
+  "real_FIN_verified_before_inventory": true,
+  "root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-contextual-gc-plan-2e48-mi933bw3/raw",
+  "schema": "rc6.passive-gc-closed-raw-index.v1",
+  "status": "RED"
+}

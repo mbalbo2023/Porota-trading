@@ -1,0 +1,29 @@
+{
+  "assertion_scope": "The native CLI runs on isolated actual Git repos; fixture XML is explicitly synthetic validation input, not historical execution or economic evidence.",
+  "code_sha256": {
+    "scripts/rc6_convergence_provenance.py": "47e931cefa40771780eaab63888fe9af3114f5a40ab955a3173eaeeb69788dcc",
+    "tests/test_rc6_convergence_provenance.py": "ddbb637db6d8e5d782df795065781e97349359424405bfd51d5b30cd4ab207b5"
+  },
+  "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /workspace/venv_rc6_frozen311/bin/python -m pytest tests/test_rc6_convergence_provenance.py tests/test_rc6_convergence_scenario_preservation.py --junitxml=/tmp/rc6_all_restored_controls_guard.xml",
+  "coverage": "Exact six original restored-control IDs and native guards plus all twelve protected PR344 test modules (ten byte-identical; two exclusive literal adaptations with all other bytes unchanged).",
+  "receipt": {
+    "path": "docs/audits/convergence/evidence/restored-controls-provenance-green.xml",
+    "sha256": "2ec3d00ac631087ca42c4c94e96c53bffa78c001ee2c3c6b8506b0196e6d4537",
+    "summary": {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "skipped": "0",
+      "tests": "61",
+      "time": "45.366",
+      "timestamp": "2026-10-05T05:20:31.415318+00:00"
+    }
+  },
+  "schema": "rc6.restored-control-provenance.v1",
+  "scope_limits": [
+    "Final frozen governed execution pending.",
+    "Shared and parametrized parser controls are not additional independent original scenarios."
+  ],
+  "status": "PASS_OFFLINE_NATIVE_CLI_NOT_FINAL_FROZEN"
+}

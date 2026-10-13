@@ -1,0 +1,39 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "dependencies": {
+    "CANONICAL_SCRATCH_SETTINGS": "scripts/rc6_sqlite_scratch_guard.py::runtime_settings is already imported from pinnedsource only",
+    "ROOT_WIP_SCRIPT": "scripts/rc6_issue465_stress.py supplies source_custody_snapshot and deterministic fixture writer closing. Not available in this OWNbase until ROOT integration; no fallback, no overlay, no executionclaim."
+  },
+  "deployed": false,
+  "probe_v1": {
+    "path": "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe.py",
+    "sha256": "fd8b6453400e49dab6af26123bf999e78e7960036081248b2188a6e15a488081",
+    "status": "EXACT_HISTORICAL_RUNNER_107A_DIAGNOSTIC_RED_NOT_AN_ACCEPTANCE_GATE"
+  },
+  "probe_v2": {
+    "failures": "strict explicitnonzero executionfailure; RAWreceipts/sourceperfieldchanges preserved",
+    "fourcuts": "PRE,OPEN,OPEN+30,OPEN+60;descriptive only;acceptance_complete alwaysfalse",
+    "input_coverage": "actualnativeworker read counts andtruncation recorded;physical6000/60000rows notmisrepresented asallconsumed",
+    "longhorizon": "1201actualoperationalticks at30secondasof cadence plusexplicitseparatePREseed chargedinfull1202calls;tenhoursbetweenfirstandlastOPEN-series ticks, two actualnativefactory restarts, firstoperationalcut originalbytes recovery atcutoff;all fullcycles mustcomplete within30seconds",
+    "original_recovery": "all5originalmemberbytes+manifest/clocks+sourcegenerationcustody checked under native V3 publicrestore eachtick;noencoderrestore",
+    "path": "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
+    "physical_peak": "actualfsync before+after observes simultaneousdirs/controls/originals/temps under unchangedbyteandfilequotas;native scratchmeasure instrumentation records existing completeallocation-rounded policyoccupation",
+    "required_source_index": "rc6.complete-archive-source-pin.v1 with exactsourceSHA/tree/files andtypedoverlay0",
+    "runtime_factory": "ShadowRuntime.from_environment, fixed128MiBlive/512files/512MiBarchive;native20kreadbudget unchanged",
+    "scratch": "scripts.rc6_sqlite_scratch_guard.runtime_settings yields4immutable env values;disk-backed artifact_root(primary)/sqlite-read-scratch root0700 initialized only in empty fixture; native512MiB/2GiBreserve/10percentinodes guard preserved",
+    "sha256": "3faf770c2bc62454ec86cd8a3711517ef2c6cc4a13a22e4fa7db48b603a92785",
+    "source_custody": "ROOT public scripts.rc6_issue465_stress.source_custody_snapshot;MAIN/WAL/SHM/journal NoAtime originalSHA+dev/inode/UID/GID/mode/nlink/size/atime/mtime/ctime checked after pipeline,archive+restore,final. Sourceperfield failures stay explicit; no hash-only equality."
+  },
+  "remaining_uncertainty": [
+    "New probe native execution pending completeROOTpin incorporating ROOTstresshelper; syntax alone is not native proof.",
+    "Canonical normal4fresh sourcecustody/default512 and actualphysical/archive/scratch footprint pending.",
+    "Canonical12000/60000 COMPLETE<=90seconds+2GiB+5EXITrealfsync/sourceallstats pending.",
+    "Full literal1201normal9h+recovery/2000archives/physicalquota+GC sustainability pending.",
+    "Fresh V2large UX1second and SRE2seconds consumers pending."
+  ],
+  "runtime_validated": false,
+  "schema": "rc6.native-capacity-witness-source-checkpoint.v1",
+  "scope": "OFFLINE_SYNTHETIC_SOURCE_ONLY_NO_PROVIDER_NO_RUNTIME",
+  "verification": "SYNTAX_ONLY_NOT_EXECUTED"
+}

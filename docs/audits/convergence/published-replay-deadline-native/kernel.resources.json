@@ -1,0 +1,39 @@
+{
+  "cpu_system_seconds": 2.876365,
+  "cpu_user_seconds": 11.205023,
+  "elapsed_wall_seconds": 14.24155033500574,
+  "execution_id": "2afaadf83346467ba60b4a58842341ac",
+  "exit_code": 0,
+  "peak_rss_bytes": 96149504,
+  "pid": 215623,
+  "raw_log_sha256": "9e6f41006df5c3197da566265332446049f192834a680fc680b248091252c7b6",
+  "resource_scope": "ACTUAL_SINGLE_CHILD_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT_CONCURRENT_RSS_SUM",
+  "schema": "rc6.published-replay-deadline-focal-kernel.v1",
+  "scope": "SELECTED_MODULE_CONTROLLED_CLOCK_SUBPROCESS; NO_DOCKER_REMOTE_API_FULL_GOV_OR_IMAGE_ACCEPTANCE",
+  "source_atime_changes_observed_separately": [
+    {
+      "after": 1791229491100440673,
+      "before": 1791229490080448134,
+      "kind": "directory",
+      "path": "."
+    },
+    {
+      "after": 1791229491100440673,
+      "before": 1791229490348969579,
+      "kind": "directory",
+      "path": "scripts"
+    },
+    {
+      "after": 1791229492572429847,
+      "before": 1791229490361182766,
+      "kind": "directory",
+      "path": "tests"
+    }
+  ],
+  "source_bytes_modes_blobs_stable_custody_unchanged": true,
+  "source_files": 1868,
+  "source_overlay_count": 0,
+  "source_sha": "bd69e8a111f355eb6ab8a07f8f9e6e660f5a2bdf",
+  "source_tree": "7dbe4152206081c3523b6fc8c179777e67ff9bfd",
+  "timed_out": false
+}

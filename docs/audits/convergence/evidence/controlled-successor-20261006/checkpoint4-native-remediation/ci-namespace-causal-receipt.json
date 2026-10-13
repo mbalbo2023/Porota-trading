@@ -1,0 +1,865 @@
+{
+  "actual_own_kernel_after": {
+    "kernel_echild_verified": true,
+    "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+    "subreaper_state_after": 0,
+    "subreaper_state_before": 0
+  },
+  "actual_own_kernel_before": {
+    "kernel_echild_verified": true,
+    "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+    "subreaper_state_after": 0,
+    "subreaper_state_before": 0
+  },
+  "artifact_validated": false,
+  "cases": {
+    "pytest-hardlink": {
+      "aliases": [
+        {
+          "kind": "hardlink",
+          "path": "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-hardlink/runner/porota-predeploy-37475359176-1-56f8c6233fe74520bd1516bb4cad3764/pytest-private/test_private_namespace_alias_n0/outside/protected",
+          "relative": "pytest-private/test_private_namespace_alias_n0/outside/protected",
+          "stat_fields": {
+            "st_atime_ns": 1791298387991036179,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791298387990345728,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1348846,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791298387990345728,
+            "st_nlink": 2,
+            "st_size": 10,
+            "st_uid": 1000
+          },
+          "target_not_followed": true
+        },
+        {
+          "kind": "hardlink",
+          "path": "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-hardlink/runner/porota-predeploy-37475359176-1-56f8c6233fe74520bd1516bb4cad3764/pytest-private/test_private_namespace_alias_n0/runner/porota-predeploy-471-2-5d0c02b64d8d4bc6919bbac3e030d338/untrusted",
+          "relative": "pytest-private/test_private_namespace_alias_n0/runner/porota-predeploy-471-2-5d0c02b64d8d4bc6919bbac3e030d338/untrusted",
+          "stat_fields": {
+            "st_atime_ns": 1791298387991036179,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791298387990345728,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1348846,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791298387990345728,
+            "st_nlink": 2,
+            "st_size": 10,
+            "st_uid": 1000
+          },
+          "target_not_followed": true
+        },
+        {
+          "kind": "symlink",
+          "path": "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-hardlink/runner/porota-predeploy-37475359176-1-56f8c6233fe74520bd1516bb4cad3764/pytest-private/test_private_namespace_alias_ncurrent",
+          "relative": "pytest-private/test_private_namespace_alias_ncurrent",
+          "stat_fields": {
+            "st_atime_ns": 1791298387994970092,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791298387985436733,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1348839,
+            "st_mode": 41471,
+            "st_mtime_ns": 1791298387985436733,
+            "st_nlink": 1,
+            "st_size": 185,
+            "st_uid": 1000
+          },
+          "target": "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-hardlink/runner/porota-predeploy-37475359176-1-56f8c6233fe74520bd1516bb4cad3764/pytest-private/test_private_namespace_alias_n0",
+          "target_not_followed": true
+        }
+      ],
+      "baseline": {
+        "allocated_bytes": 4096,
+        "guard_source_unchanged": true,
+        "rows": 1,
+        "status": "ACCEPTED"
+      },
+      "child_observations": {
+        "sha256": "9baf8a8ff8daa47dab7d7d096589d9ac0b69b6c0e7746437b99012b4a05f6559",
+        "stat_fields": {
+          "st_atime_ns": 1791298388000702126,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791298388004702108,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1348835,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791298388004702108,
+          "st_nlink": 1,
+          "st_size": 893,
+          "st_uid": 1000
+        }
+      },
+      "docker_real_calls": 0,
+      "docker_stub_calls": [
+        {
+          "args": [
+            "image",
+            "ls",
+            "--quiet",
+            "--no-trunc",
+            "--filter",
+            "reference=porota-predeploy-v2:86615bd8c669209e8d391d114016d923fe084dc0"
+          ],
+          "timeout": 10
+        },
+        {
+          "args": [
+            "info",
+            "--format",
+            "{{.DockerRootDir}}"
+          ],
+          "timeout": 10
+        }
+      ],
+      "fixture_root_retained_no_cleanup_or_follow": true,
+      "junit": {
+        "sha256": "3a21f8c310b4afc7838b12e8ba0faaa8a007964801e5f649519c2e24c971465e",
+        "stat_fields": {
+          "st_atime_ns": 1791298387994611882,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791298387994970092,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1348847,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791298387994970092,
+          "st_nlink": 1,
+          "st_size": 399,
+          "st_uid": 1000
+        }
+      },
+      "native_fixture_kernel_fin": {
+        "actual_kernel_after": {
+          "kernel_echild_verified": true,
+          "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+          "subreaper_state_after": 0,
+          "subreaper_state_before": 0
+        },
+        "original_manager_kernel": {
+          "actual_child_reaped": true,
+          "actual_launch_to_pid_reap_wall_seconds": 0.40103090000047814,
+          "adopted_descendants_reaped": [],
+          "command": [
+            "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+            "-I",
+            "-B",
+            "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/control/selected_native_fixture.py",
+            "/workspace/scratch/rc6-gov-86615bd-aowtk9tt/repo",
+            "tests/test_rc6_predeploy_scoped_cleanup.py::test_private_namespace_alias_never_deletes_external_data[hardlink]",
+            "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-hardlink/runner/porota-predeploy-37475359176-1-56f8c6233fe74520bd1516bb4cad3764/pytest-private",
+            "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/control/pytest-hardlink"
+          ],
+          "cpu_system_seconds": 0.006986,
+          "cpu_user_seconds": 0.323995,
+          "kernel_owned_child_observations": [
+            {
+              "errno": 10,
+              "outcome": "ECHILD",
+              "phase": "before_popen_after_subreaper_activation"
+            },
+            {
+              "errno": 10,
+              "outcome": "ECHILD",
+              "phase": "after_main_pid_reap"
+            }
+          ],
+          "kernel_pre_popen_echild_verified": true,
+          "kernel_wait4_zero_observed_irreversible_red": false,
+          "late_observed_main_reap_irreversible_red": false,
+          "launcher_management_deadline_seconds": 60,
+          "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+          "owned_children_exhaustion_verified": true,
+          "owned_cleanup_management_bound_seconds": 5,
+          "owned_group_signal_observations": [],
+          "peak_rss_bytes": 41693184,
+          "pid": 9301,
+          "proc_task_children_examined": false,
+          "process_group_absent_after_reap": true,
+          "process_group_absent_at_main_reap": true,
+          "remaining_owned_children": [],
+          "residual_descendants_observed": [],
+          "returncode": 0,
+          "scope": "EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS",
+          "sigint_failure_grace_seconds": 0,
+          "subreaper_activation_readback_verified": true,
+          "subreaper_previous_state": 0,
+          "subreaper_restoration_readback_verified": true,
+          "subreaper_restore_attempted": true,
+          "supervisor_errors": [],
+          "supervisor_kernel_identity_before_spawn": {
+            "Pid": "9284",
+            "Tgid": "9284",
+            "Uid": "1000\t1000\t1000\t1000"
+          },
+          "supervisor_native_tid": 9284,
+          "supervisor_pid": 9284,
+          "termination_reap_restore_cleanup_seconds": 7.609300155309029e-05,
+          "timed_out": false,
+          "wait4_reaped_pid": 9301,
+          "wall_seconds": 0.4012525580001238
+        },
+        "scope": "ACTUAL_LOCAL_CAUSAL_CHILD_ONLY_NOT_HORIZON_OR_GOV"
+      },
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_private_namespace_alias_never_deletes_external_data[hardlink]",
+      "original_outer_guard_after_native_pytest": {
+        "guard_source_unchanged": true,
+        "signature": "RESOURCE_HARDLINK",
+        "status": "REJECTED"
+      },
+      "owner_cli_binding": "ACTUAL_ORIGINAL_CLI_OWNER_VALIDATED",
+      "owner_uuid": "56f8c6233fe74520bd1516bb4cad3764"
+    },
+    "pytest-positive": {
+      "aliases": [
+        {
+          "kind": "symlink",
+          "path": "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-positive/runner/porota-predeploy-37475359176-1-66e34569cfdb4229ad8b60017d933ec6/pytest-private/test_cleanup_removes_only_bouncurrent",
+          "relative": "pytest-private/test_cleanup_removes_only_bouncurrent",
+          "stat_fields": {
+            "st_atime_ns": 1791298387261156642,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791298387245676512,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1348795,
+            "st_mode": 41471,
+            "st_mtime_ns": 1791298387245676512,
+            "st_nlink": 1,
+            "st_size": 185,
+            "st_uid": 1000
+          },
+          "target": "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-positive/runner/porota-predeploy-37475359176-1-66e34569cfdb4229ad8b60017d933ec6/pytest-private/test_cleanup_removes_only_boun0",
+          "target_not_followed": true
+        }
+      ],
+      "baseline": {
+        "allocated_bytes": 4096,
+        "guard_source_unchanged": true,
+        "rows": 1,
+        "status": "ACCEPTED"
+      },
+      "child_observations": {
+        "sha256": "9baf8a8ff8daa47dab7d7d096589d9ac0b69b6c0e7746437b99012b4a05f6559",
+        "stat_fields": {
+          "st_atime_ns": 1791298387268705570,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791298387275272454,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1348791,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791298387275272454,
+          "st_nlink": 1,
+          "st_size": 893,
+          "st_uid": 1000
+        }
+      },
+      "docker_real_calls": 0,
+      "docker_stub_calls": [
+        {
+          "args": [
+            "image",
+            "ls",
+            "--quiet",
+            "--no-trunc",
+            "--filter",
+            "reference=porota-predeploy-v2:86615bd8c669209e8d391d114016d923fe084dc0"
+          ],
+          "timeout": 10
+        },
+        {
+          "args": [
+            "info",
+            "--format",
+            "{{.DockerRootDir}}"
+          ],
+          "timeout": 10
+        }
+      ],
+      "fixture_root_retained_no_cleanup_or_follow": true,
+      "junit": {
+        "sha256": "f16b10a1a8ff143bb8c8fb366a79b4726fd3153d470301d7b17e9542525add05",
+        "stat_fields": {
+          "st_atime_ns": 1791298387260733256,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791298387261156642,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1348798,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791298387261156642,
+          "st_nlink": 1,
+          "st_size": 404,
+          "st_uid": 1000
+        }
+      },
+      "native_fixture_kernel_fin": {
+        "actual_kernel_after": {
+          "kernel_echild_verified": true,
+          "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+          "subreaper_state_after": 0,
+          "subreaper_state_before": 0
+        },
+        "original_manager_kernel": {
+          "actual_child_reaped": true,
+          "actual_launch_to_pid_reap_wall_seconds": 0.4010840270002518,
+          "adopted_descendants_reaped": [],
+          "command": [
+            "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+            "-I",
+            "-B",
+            "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/control/selected_native_fixture.py",
+            "/workspace/scratch/rc6-gov-86615bd-aowtk9tt/repo",
+            "tests/test_rc6_predeploy_scoped_cleanup.py::test_cleanup_removes_only_bound_run_resources_and_measures_actual_delta",
+            "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-positive/runner/porota-predeploy-37475359176-1-66e34569cfdb4229ad8b60017d933ec6/pytest-private",
+            "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/control/pytest-positive"
+          ],
+          "cpu_system_seconds": 0.040358,
+          "cpu_user_seconds": 0.270874,
+          "kernel_owned_child_observations": [
+            {
+              "errno": 10,
+              "outcome": "ECHILD",
+              "phase": "before_popen_after_subreaper_activation"
+            },
+            {
+              "errno": 10,
+              "outcome": "ECHILD",
+              "phase": "after_main_pid_reap"
+            }
+          ],
+          "kernel_pre_popen_echild_verified": true,
+          "kernel_wait4_zero_observed_irreversible_red": false,
+          "late_observed_main_reap_irreversible_red": false,
+          "launcher_management_deadline_seconds": 60,
+          "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+          "owned_children_exhaustion_verified": true,
+          "owned_cleanup_management_bound_seconds": 5,
+          "owned_group_signal_observations": [],
+          "peak_rss_bytes": 41775104,
+          "pid": 9296,
+          "proc_task_children_examined": false,
+          "process_group_absent_after_reap": true,
+          "process_group_absent_at_main_reap": true,
+          "remaining_owned_children": [],
+          "residual_descendants_observed": [],
+          "returncode": 0,
+          "scope": "EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS",
+          "sigint_failure_grace_seconds": 0,
+          "subreaper_activation_readback_verified": true,
+          "subreaper_previous_state": 0,
+          "subreaper_restoration_readback_verified": true,
+          "subreaper_restore_attempted": true,
+          "supervisor_errors": [],
+          "supervisor_kernel_identity_before_spawn": {
+            "Pid": "9284",
+            "Tgid": "9284",
+            "Uid": "1000\t1000\t1000\t1000"
+          },
+          "supervisor_native_tid": 9284,
+          "supervisor_pid": 9284,
+          "termination_reap_restore_cleanup_seconds": 7.19560011930298e-05,
+          "timed_out": false,
+          "wait4_reaped_pid": 9296,
+          "wall_seconds": 0.40127768399906927
+        },
+        "scope": "ACTUAL_LOCAL_CAUSAL_CHILD_ONLY_NOT_HORIZON_OR_GOV"
+      },
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_cleanup_removes_only_bound_run_resources_and_measures_actual_delta",
+      "original_outer_guard_after_native_pytest": {
+        "guard_source_unchanged": true,
+        "signature": "PRIVATE_NAMESPACE_ALIAS_OR_SPECIAL",
+        "status": "REJECTED"
+      },
+      "owner_cli_binding": "ACTUAL_ORIGINAL_CLI_OWNER_VALIDATED",
+      "owner_uuid": "66e34569cfdb4229ad8b60017d933ec6"
+    },
+    "pytest-symlink": {
+      "aliases": [
+        {
+          "kind": "symlink",
+          "path": "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-symlink/runner/porota-predeploy-37475359176-1-8ab2b781a2c0433b81d8e35d7af5a2d1/pytest-private/test_private_namespace_alias_n0/runner/porota-predeploy-471-2-077ad0ea6b9d4a459609a74108b1ac2a/untrusted",
+          "relative": "pytest-private/test_private_namespace_alias_n0/runner/porota-predeploy-471-2-077ad0ea6b9d4a459609a74108b1ac2a/untrusted",
+          "stat_fields": {
+            "st_atime_ns": 1791298387644507207,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791298387644507207,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1348823,
+            "st_mode": 41471,
+            "st_mtime_ns": 1791298387644507207,
+            "st_nlink": 1,
+            "st_size": 192,
+            "st_uid": 1000
+          },
+          "target": "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-symlink/runner/porota-predeploy-37475359176-1-8ab2b781a2c0433b81d8e35d7af5a2d1/pytest-private/test_private_namespace_alias_n0/outside",
+          "target_not_followed": true
+        },
+        {
+          "kind": "symlink",
+          "path": "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-symlink/runner/porota-predeploy-37475359176-1-8ab2b781a2c0433b81d8e35d7af5a2d1/pytest-private/test_private_namespace_alias_ncurrent",
+          "relative": "pytest-private/test_private_namespace_alias_ncurrent",
+          "stat_fields": {
+            "st_atime_ns": 1791298387649481629,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791298387639875902,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1348815,
+            "st_mode": 41471,
+            "st_mtime_ns": 1791298387639875902,
+            "st_nlink": 1,
+            "st_size": 184,
+            "st_uid": 1000
+          },
+          "target": "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-symlink/runner/porota-predeploy-37475359176-1-8ab2b781a2c0433b81d8e35d7af5a2d1/pytest-private/test_private_namespace_alias_n0",
+          "target_not_followed": true
+        }
+      ],
+      "baseline": {
+        "allocated_bytes": 4096,
+        "guard_source_unchanged": true,
+        "rows": 1,
+        "status": "ACCEPTED"
+      },
+      "child_observations": {
+        "sha256": "9baf8a8ff8daa47dab7d7d096589d9ac0b69b6c0e7746437b99012b4a05f6559",
+        "stat_fields": {
+          "st_atime_ns": 1791298387656703745,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791298387660045213,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1348811,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791298387660045213,
+          "st_nlink": 1,
+          "st_size": 893,
+          "st_uid": 1000
+        }
+      },
+      "docker_real_calls": 0,
+      "docker_stub_calls": [
+        {
+          "args": [
+            "image",
+            "ls",
+            "--quiet",
+            "--no-trunc",
+            "--filter",
+            "reference=porota-predeploy-v2:86615bd8c669209e8d391d114016d923fe084dc0"
+          ],
+          "timeout": 10
+        },
+        {
+          "args": [
+            "info",
+            "--format",
+            "{{.DockerRootDir}}"
+          ],
+          "timeout": 10
+        }
+      ],
+      "fixture_root_retained_no_cleanup_or_follow": true,
+      "junit": {
+        "sha256": "fd2ae3b7b6ef270ca2d3734397d73ac762787c41727eb15613d62059f8b46352",
+        "stat_fields": {
+          "st_atime_ns": 1791298387644703801,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791298387649481629,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1348824,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791298387649481629,
+          "st_nlink": 1,
+          "st_size": 398,
+          "st_uid": 1000
+        }
+      },
+      "native_fixture_kernel_fin": {
+        "actual_kernel_after": {
+          "kernel_echild_verified": true,
+          "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+          "subreaper_state_after": 0,
+          "subreaper_state_before": 0
+        },
+        "original_manager_kernel": {
+          "actual_child_reaped": true,
+          "actual_launch_to_pid_reap_wall_seconds": 0.30091230799916957,
+          "adopted_descendants_reaped": [],
+          "command": [
+            "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+            "-I",
+            "-B",
+            "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/control/selected_native_fixture.py",
+            "/workspace/scratch/rc6-gov-86615bd-aowtk9tt/repo",
+            "tests/test_rc6_predeploy_scoped_cleanup.py::test_private_namespace_alias_never_deletes_external_data[symlink]",
+            "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/pytest-symlink/runner/porota-predeploy-37475359176-1-8ab2b781a2c0433b81d8e35d7af5a2d1/pytest-private",
+            "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/control/pytest-symlink"
+          ],
+          "cpu_system_seconds": 0.016007999999999998,
+          "cpu_user_seconds": 0.275873,
+          "kernel_owned_child_observations": [
+            {
+              "errno": 10,
+              "outcome": "ECHILD",
+              "phase": "before_popen_after_subreaper_activation"
+            },
+            {
+              "errno": 10,
+              "outcome": "ECHILD",
+              "phase": "after_main_pid_reap"
+            }
+          ],
+          "kernel_pre_popen_echild_verified": true,
+          "kernel_wait4_zero_observed_irreversible_red": false,
+          "late_observed_main_reap_irreversible_red": false,
+          "launcher_management_deadline_seconds": 60,
+          "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+          "owned_children_exhaustion_verified": true,
+          "owned_cleanup_management_bound_seconds": 5,
+          "owned_group_signal_observations": [],
+          "peak_rss_bytes": 41308160,
+          "pid": 9300,
+          "proc_task_children_examined": false,
+          "process_group_absent_after_reap": true,
+          "process_group_absent_at_main_reap": true,
+          "remaining_owned_children": [],
+          "residual_descendants_observed": [],
+          "returncode": 0,
+          "scope": "EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS",
+          "sigint_failure_grace_seconds": 0,
+          "subreaper_activation_readback_verified": true,
+          "subreaper_previous_state": 0,
+          "subreaper_restoration_readback_verified": true,
+          "subreaper_restore_attempted": true,
+          "supervisor_errors": [],
+          "supervisor_kernel_identity_before_spawn": {
+            "Pid": "9284",
+            "Tgid": "9284",
+            "Uid": "1000\t1000\t1000\t1000"
+          },
+          "supervisor_native_tid": 9284,
+          "supervisor_pid": 9284,
+          "termination_reap_restore_cleanup_seconds": 7.031399945844896e-05,
+          "timed_out": false,
+          "wait4_reaped_pid": 9300,
+          "wall_seconds": 0.30110046600020723
+        },
+        "scope": "ACTUAL_LOCAL_CAUSAL_CHILD_ONLY_NOT_HORIZON_OR_GOV"
+      },
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_private_namespace_alias_never_deletes_external_data[symlink]",
+      "original_outer_guard_after_native_pytest": {
+        "guard_source_unchanged": true,
+        "signature": "PRIVATE_NAMESPACE_ALIAS_OR_SPECIAL",
+        "status": "REJECTED"
+      },
+      "owner_cli_binding": "ACTUAL_ORIGINAL_CLI_OWNER_VALIDATED",
+      "owner_uuid": "8ab2b781a2c0433b81d8e35d7af5a2d1"
+    },
+    "venv_only": {
+      "aliases_before": [
+        {
+          "kind": "symlink",
+          "path": "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/venv-only/runner/porota-predeploy-37475359176-1-94d0e338a86a4f289f8c0ec3db3d8939/venv/lib64",
+          "relative": "venv/lib64",
+          "stat_fields": {
+            "st_atime_ns": 1791298384108134629,
+            "st_blocks": 0,
+            "st_ctime_ns": 1791298384108134629,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1346632,
+            "st_mode": 41471,
+            "st_mtime_ns": 1791298384108134629,
+            "st_nlink": 1,
+            "st_size": 3,
+            "st_uid": 1000
+          },
+          "target": "lib",
+          "target_not_followed": true
+        }
+      ],
+      "baseline": {
+        "allocated_bytes": 4096,
+        "guard_source_unchanged": true,
+        "rows": 1,
+        "status": "ACCEPTED"
+      },
+      "docker_real_calls": 0,
+      "docker_stub_calls": [
+        {
+          "args": [
+            "image",
+            "ls",
+            "--quiet",
+            "--no-trunc",
+            "--filter",
+            "reference=porota-predeploy-v2:86615bd8c669209e8d391d114016d923fe084dc0"
+          ],
+          "timeout": 10
+        },
+        {
+          "args": [
+            "info",
+            "--format",
+            "{{.DockerRootDir}}"
+          ],
+          "timeout": 10
+        }
+      ],
+      "guard_after_construction_only_link_removal": {
+        "allocated_bytes": 94715904,
+        "guard_source_unchanged": true,
+        "rows": 2154,
+        "status": "ACCEPTED"
+      },
+      "lib_directory_all11_unchanged": true,
+      "native_creation": {
+        "actual_kernel_after": {
+          "kernel_echild_verified": true,
+          "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+          "subreaper_state_after": 0,
+          "subreaper_state_before": 0
+        },
+        "original_manager_kernel": {
+          "actual_child_reaped": true,
+          "actual_launch_to_pid_reap_wall_seconds": 2.7055360409995046,
+          "adopted_descendants_reaped": [],
+          "command": [
+            "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+            "-I",
+            "-B",
+            "-m",
+            "venv",
+            "--copies",
+            "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/venv-only/runner/porota-predeploy-37475359176-1-94d0e338a86a4f289f8c0ec3db3d8939/venv"
+          ],
+          "cpu_system_seconds": 0.2773,
+          "cpu_user_seconds": 2.398736,
+          "kernel_owned_child_observations": [
+            {
+              "errno": 10,
+              "outcome": "ECHILD",
+              "phase": "before_popen_after_subreaper_activation"
+            },
+            {
+              "errno": 10,
+              "outcome": "ECHILD",
+              "phase": "after_main_pid_reap"
+            }
+          ],
+          "kernel_pre_popen_echild_verified": true,
+          "kernel_wait4_zero_observed_irreversible_red": false,
+          "late_observed_main_reap_irreversible_red": false,
+          "launcher_management_deadline_seconds": 60,
+          "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+          "owned_children_exhaustion_verified": true,
+          "owned_cleanup_management_bound_seconds": 5,
+          "owned_group_signal_observations": [],
+          "peak_rss_bytes": 80531456,
+          "pid": 9287,
+          "proc_task_children_examined": false,
+          "process_group_absent_after_reap": true,
+          "process_group_absent_at_main_reap": true,
+          "remaining_owned_children": [],
+          "residual_descendants_observed": [],
+          "returncode": 0,
+          "scope": "EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS",
+          "sigint_failure_grace_seconds": 0,
+          "subreaper_activation_readback_verified": true,
+          "subreaper_previous_state": 0,
+          "subreaper_restoration_readback_verified": true,
+          "subreaper_restore_attempted": true,
+          "supervisor_errors": [],
+          "supervisor_kernel_identity_before_spawn": {
+            "Pid": "9284",
+            "Tgid": "9284",
+            "Uid": "1000\t1000\t1000\t1000"
+          },
+          "supervisor_native_tid": 9284,
+          "supervisor_pid": 9284,
+          "termination_reap_restore_cleanup_seconds": 0.00012084899935871363,
+          "timed_out": false,
+          "wait4_reaped_pid": 9287,
+          "wall_seconds": 2.7058013119985844
+        },
+        "scope": "ACTUAL_LOCAL_CAUSAL_CHILD_ONLY_NOT_HORIZON_OR_GOV"
+      },
+      "native_venv_after_known_fresh_link_removal": {
+        "actual_kernel_after": {
+          "kernel_echild_verified": true,
+          "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+          "subreaper_state_after": 0,
+          "subreaper_state_before": 0
+        },
+        "original_manager_kernel": {
+          "actual_child_reaped": true,
+          "actual_launch_to_pid_reap_wall_seconds": 0.10062836200086167,
+          "adopted_descendants_reaped": [],
+          "command": [
+            "/workspace/scratch/rc6-cleanup-rca-86615bd-x65pkyqm/venv-only/runner/porota-predeploy-37475359176-1-94d0e338a86a4f289f8c0ec3db3d8939/venv/bin/python",
+            "-I",
+            "-B",
+            "-c",
+            "import json,sys;assert sys.prefix!=sys.base_prefix;print(json.dumps({\"executable\":sys.executable,\"prefix\":sys.prefix,\"base_prefix\":sys.base_prefix,\"python\":sys.version}))"
+          ],
+          "cpu_system_seconds": 0.0,
+          "cpu_user_seconds": 0.017603,
+          "kernel_owned_child_observations": [
+            {
+              "errno": 10,
+              "outcome": "ECHILD",
+              "phase": "before_popen_after_subreaper_activation"
+            },
+            {
+              "errno": 10,
+              "outcome": "ECHILD",
+              "phase": "after_main_pid_reap"
+            }
+          ],
+          "kernel_pre_popen_echild_verified": true,
+          "kernel_wait4_zero_observed_irreversible_red": false,
+          "late_observed_main_reap_irreversible_red": false,
+          "launcher_management_deadline_seconds": 60,
+          "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+          "owned_children_exhaustion_verified": true,
+          "owned_cleanup_management_bound_seconds": 5,
+          "owned_group_signal_observations": [],
+          "peak_rss_bytes": 27607040,
+          "pid": 9292,
+          "proc_task_children_examined": false,
+          "process_group_absent_after_reap": true,
+          "process_group_absent_at_main_reap": true,
+          "remaining_owned_children": [],
+          "residual_descendants_observed": [],
+          "returncode": 0,
+          "scope": "EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS",
+          "sigint_failure_grace_seconds": 0,
+          "subreaper_activation_readback_verified": true,
+          "subreaper_previous_state": 0,
+          "subreaper_restoration_readback_verified": true,
+          "subreaper_restore_attempted": true,
+          "supervisor_errors": [],
+          "supervisor_kernel_identity_before_spawn": {
+            "Pid": "9284",
+            "Tgid": "9284",
+            "Uid": "1000\t1000\t1000\t1000"
+          },
+          "supervisor_native_tid": 9284,
+          "supervisor_pid": 9284,
+          "termination_reap_restore_cleanup_seconds": 7.494099918403663e-05,
+          "timed_out": false,
+          "wait4_reaped_pid": 9292,
+          "wall_seconds": 0.10086353999940911
+        },
+        "scope": "ACTUAL_LOCAL_CAUSAL_CHILD_ONLY_NOT_HORIZON_OR_GOV"
+      },
+      "no_existing_venv_modified": true,
+      "no_package_installation": true,
+      "original_rejection": {
+        "guard_source_unchanged": true,
+        "signature": "PRIVATE_NAMESPACE_ALIAS_OR_SPECIAL",
+        "status": "REJECTED"
+      },
+      "owner_cli_binding": "ACTUAL_ORIGINAL_CLI_OWNER_VALIDATED",
+      "owner_uuid": "94d0e338a86a4f289f8c0ec3db3d8939",
+      "removed_only_fresh_known_lib64_relative_link": true
+    }
+  },
+  "context_is_local_diagnostic_not_actions_execution": true,
+  "deployed": false,
+  "docker_real_calls": 0,
+  "euid": 1000,
+  "fresh_known_venv_lib64_link_only_removed_during_controlled_fixture_construction": true,
+  "guard_overlays": 0,
+  "host_calls": 0,
+  "original_namespace_guard_preserved": true,
+  "python": "3.11.16",
+  "real_orders_sent": 0,
+  "runtime_validated": false,
+  "schema": "rc6.local-predeploy-cleanup-alias-causal.v1",
+  "scope": "ONLY_NEW_LOCAL_OWNED_PRIVATE_FIXTURES",
+  "source_data_overwrite": false,
+  "source_edits": 0,
+  "source_inputs": {
+    ".github/workflows/porota-predeploy-v2.yml": {
+      "sha256": "ecca8793ff07f9e5266bc85b5548dbb5d1b6cb20faf69c59b60815b83d5b7bf8",
+      "stat_fields": {
+        "st_atime_ns": 1791295167635870103,
+        "st_blocks": 80,
+        "st_ctime_ns": 1791294761666124658,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1087430,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791294761666124658,
+        "st_nlink": 1,
+        "st_size": 39818,
+        "st_uid": 1000
+      }
+    },
+    "scripts/porota_predeploy_cleanup.py": {
+      "sha256": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f",
+      "stat_fields": {
+        "st_atime_ns": 1791294762281837187,
+        "st_blocks": 72,
+        "st_ctime_ns": 1791294762105837985,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1333111,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791294762105837985,
+        "st_nlink": 1,
+        "st_size": 36582,
+        "st_uid": 1000
+      }
+    },
+    "scripts/rc6_controlled_governed_runner.py": {
+      "sha256": "6ee4b4cf2140ec7fd9b89e9fce737f3e70ce76498f3790c20619067cbdf03b75",
+      "stat_fields": {
+        "st_atime_ns": 1791294762281837187,
+        "st_blocks": 120,
+        "st_ctime_ns": 1791294762105837985,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1333133,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791294762105837985,
+        "st_nlink": 1,
+        "st_size": 61199,
+        "st_uid": 1000
+      }
+    },
+    "tests/test_rc6_predeploy_scoped_cleanup.py": {
+      "sha256": "9ded940a643507419fee0094cd39d9d01a22f496e0fd794b5a8fd0790e24ec6e",
+      "stat_fields": {
+        "st_atime_ns": 1791294762293837133,
+        "st_blocks": 48,
+        "st_ctime_ns": 1791294762129837876,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1333524,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791294762129837876,
+        "st_nlink": 1,
+        "st_size": 21037,
+        "st_uid": 1000
+      }
+    }
+  },
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "status": "CAUSAL_REPRODUCED_NOT_GOV_OR_PREDEPLOY_ACCEPTANCE",
+  "uid": 1000,
+  "umask": "022"
+}

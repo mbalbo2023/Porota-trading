@@ -1,0 +1,231 @@
+--- a/tests/test_issue465_stress.py
++++ b/tests/test_issue465_stress.py
+@@ -8,7 +8,6 @@
+ import shutil
+ import sqlite3
+ import sys
+-import tempfile
+ import time
+ from queue import SimpleQueue
+ 
+@@ -18,6 +17,7 @@
+                                        fixture_database, run_stress, sha256)
+ from rc6_dynamic_universe.runtime import read_runtime
+ from rc6_ppi_global_budget import BudgetBackpressure, GlobalPPIBudget, SCHEMA
++from tests.rc6_external_disk_fixture import external_disk_fixture
+ 
+ 
+ def record(result, name):
+@@ -121,8 +121,8 @@
+     from cg_paper_workspace import artifact_root
+     from rc6_audit_evidence.sqlite_scratch import LOCK
+     from scripts.rc6_sqlite_scratch_guard import runtime_settings
+-    # Canonical scratch requires real disk, while pytest's /tmp may be tmpfs.
+-    with tempfile.TemporaryDirectory(prefix=".rc6-canonical-stress-", dir=Path.cwd()) as directory:
++    # Canonical scratch requires real disk and an external owned fixture root.
++    with external_disk_fixture(prefix=".rc6-canonical-stress-") as directory:
+         result = run_stress_recorded(Path(directory) / "canonical", "canonical-factory-stress",
+             catalog_count=20, canonical_runtime=True, slow_disk=True)
+         shadow = result["shadow"]
+--- a/tests/test_rc6_history_large_preopen.py
++++ b/tests/test_rc6_history_large_preopen.py
+@@ -6,7 +6,6 @@
+ import shutil
+ import socket
+ import sqlite3
+-import tempfile
+ from time import monotonic, process_time
+ 
+ import pytest
+@@ -18,6 +17,7 @@
+ from rc6_shadow_runtime import preopen
+ from tests.test_rc6_history_snapshot_copy import inventory
+ from tests.test_rc6_shadow_preopen_runtime import _make_database, AS_OF, OPEN, CUT
++from tests.rc6_external_disk_fixture import make_external_disk_fixture
+ 
+ 
+ @pytest.fixture(autouse=True)
+@@ -29,9 +29,8 @@
+ 
+ @pytest.fixture(scope="module")
+ def large_native_history(tmp_path_factory):
+-    # Native runtime scratch must use disk. /tmp in this execution environment
+-    # is tmpfs, so keep this source and its PRIMARY artifact root on checkout FS.
+-    root = Path(tempfile.mkdtemp(prefix=".rc6-native-12k-60k-", dir=Path.cwd()))
++    # Keep native source and PRIMARY artifacts on checkout FS, outside its root.
++    root = make_external_disk_fixture(prefix=".rc6-native-12k-60k-")
+     assets = [{"ticker": f"L{index:05d}", "instrument_type": "ACCIONES", "market": "BYMA",
+                "currency": "ARS", "settlement": "A-24HS"} for index in range(12000)]
+     trading = _make_database(root/"trading.sqlite", catalogue=assets)
+--- a/tests/test_rc6_native_source_reads.py
++++ b/tests/test_rc6_native_source_reads.py
+@@ -7,7 +7,6 @@
+ import os
+ from pathlib import Path
+ import sqlite3
+-import tempfile
+ import time
+ 
+ import pytest
+@@ -19,6 +18,7 @@
+ from rc6_shadow_runtime import entry_signals, families, lab, source_reads, stages
+ from rc6_shadow_runtime.worker import ShadowRuntime
+ from tests.rc6_dashboard_native_fixture import native_fixture
++from tests.rc6_external_disk_fixture import external_disk_fixture
+ 
+ 
+ def source_inventory(database):
+@@ -44,8 +44,8 @@
+ 
+ @pytest.fixture(scope="module")
+ def native():
+-    # /tmp can be tmpfs. The canonical scratch policy requires actual disk.
+-    with tempfile.TemporaryDirectory(prefix=".rc6-native-source-", dir=Path.cwd()) as directory:
++    # The canonical scratch policy requires actual disk, outside source custody.
++    with external_disk_fixture(prefix=".rc6-native-source-") as directory:
+         fixture = native_fixture(Path(directory), count=5)
+         # Keep a native, quiescent source connection alive so this guard also
+         # covers real WAL/SHM files. It performs no operation after baseline.
+@@ -225,7 +225,7 @@
+     factory = ShadowRuntime.from_environment
+     def incumbent_factory(cls, database, **kwargs):
+         return factory(database, maximum_files=512, **kwargs)
+-    with tempfile.TemporaryDirectory(prefix=".rc6-incumbent-512-", dir=Path.cwd()) as directory:
++    with external_disk_fixture(prefix=".rc6-incumbent-512-") as directory:
+         with monkeypatch.context() as incumbent:
+             incumbent.setattr(source_reads, "readonly_copy", incumbent_connection)
+             incumbent.setattr(ShadowRuntime, "from_environment", classmethod(incumbent_factory))
+--- a/tests/test_rc6_sqlite_disk_scratch.py
++++ b/tests/test_rc6_sqlite_disk_scratch.py
+@@ -17,16 +17,62 @@
+ from rc6_audit_evidence.sqlite_snapshot import SnapshotError, readonly_copy, snapshot_peak_bytes
+ from rc6_audit_evidence import sqlite_scratch as scratch
+ from tests.test_rc6_history_snapshot_copy import inventory, wal_transport
++from tests.rc6_external_disk_fixture import SOURCE_ROOT, external_disk_fixture
++from tests.test_rc6_controlled_governed_runner import literal_tree as literal_tree
+ 
+ 
+ @pytest.fixture
+ def disk_root():
+-    # pytest's standard /tmp can itself be tmpfs. The checkout's filesystem
+-    # must be the same disk-backed kind required by the runtime root.
+-    with tempfile.TemporaryDirectory(prefix=".rc6-scratch-test-", dir=Path.cwd()) as directory:
++    # Preserve real-disk runtime constraints without changing checkout custody.
++    with external_disk_fixture(prefix=".rc6-scratch-test-") as directory:
+         root = Path(directory)/"private"
+         root.mkdir(mode=0o700)
+         yield root
++
++
++def test_external_disk_fixture_keeps_real_literal_source_and_stable_root_custody(literal_tree):
++    from scripts import rc6_controlled_governed_runner as governed
++    source, sha, tree = literal_tree
++    before = governed.source_pin(source, sha, tree)
++    root_before = SOURCE_ROOT.lstat()
++    with external_disk_fixture(prefix=".rc6-external-fixture-control-") as root:
++        info = root.lstat()
++        assert info.st_uid == os.geteuid() and info.st_mode & 0o777 == 0o700
++        assert info.st_dev == root_before.st_dev and not root.is_relative_to(SOURCE_ROOT)
++        assert scratch._storage_type(root) not in {"tmpfs", "ramfs"}
++        (root/"actual-fixture-member").write_bytes(b"native private fixture")
++        during = governed.source_pin(source, sha, tree)
++        governed.compare_source(before, during)
++    assert not root.exists()
++    after = governed.source_pin(source, sha, tree)
++    governed.compare_source(before, after)
++    root_after = SOURCE_ROOT.lstat()
++    assert all(getattr(root_before, key) == getattr(root_after, key)
++               for key in governed.STABLE_CODE_FIELDS)
++
++
++@pytest.mark.parametrize("kind", ("alias", "source_subtree", "wrong_device"))
++def test_configured_external_disk_fixture_parent_cannot_fall_back_after_custody_rejection(monkeypatch, kind):
++    base = "/dev/shm" if kind == "wrong_device" else SOURCE_ROOT.parent
++    with tempfile.TemporaryDirectory(prefix="rc6-fixture-parent-rejection-", dir=base) as directory:
++        private = Path(directory)
++        if kind == "alias":
++            parent = private/"alias"
++            parent.symlink_to(private, target_is_directory=True)
++            reason = "EXTERNAL_DISK_FIXTURE_LITERAL_PARENT_REQUIRED"
++        elif kind == "source_subtree":
++            parent = SOURCE_ROOT/"tests"
++            reason = "EXTERNAL_DISK_FIXTURE_LITERAL_PARENT_REQUIRED"
++        else:
++            parent = private
++            assert parent.lstat().st_dev != SOURCE_ROOT.lstat().st_dev
++            reason = "EXTERNAL_DISK_FIXTURE_SAME_FILESYSTEM_REQUIRED"
++        baseline = sorted(path.name for path in private.iterdir())
++        monkeypatch.setenv("TMPDIR", str(parent))
++        with pytest.raises(SnapshotError, match=reason):
++            with external_disk_fixture(prefix="rc6-rejected-fixture-"):
++                raise AssertionError("REJECTED_PARENT_CREATED_A_FIXTURE")
++        assert sorted(path.name for path in private.iterdir()) == baseline
+ 
+ 
+ @pytest.fixture(autouse=True)
+--- /dev/null
++++ b/tests/rc6_external_disk_fixture.py
+@@ -0,0 +1,63 @@
++"""Owned native test fixtures on source's real filesystem, outside its custody."""
++from __future__ import annotations
++
++from contextlib import contextmanager
++import os
++from pathlib import Path
++import re
++import shutil
++import stat
++import tempfile
++
++from rc6_audit_evidence.sqlite_scratch import SnapshotError, _storage_type
++
++
++SOURCE_ROOT = Path(__file__).absolute().parents[1]
++
++
++def external_disk_parent(parent=None):
++    """Configured TMPDIR is strict; absent configuration uses an owned sibling."""
++    if parent is None:
++        configured = os.environ.get("TMPDIR")
++        parent = Path(configured) if configured is not None else SOURCE_ROOT.parent
++    parent = Path(parent)
++    if (not parent.is_absolute() or ".." in parent.parts
++            or any(path.is_symlink() for path in (parent, *parent.parents))
++            or parent.is_relative_to(SOURCE_ROOT)):
++        raise SnapshotError("EXTERNAL_DISK_FIXTURE_LITERAL_PARENT_REQUIRED")
++    parent_info, source_info = parent.lstat(), SOURCE_ROOT.lstat()
++    if (not stat.S_ISDIR(parent_info.st_mode) or parent_info.st_uid != os.geteuid()
++            or stat.S_IMODE(parent_info.st_mode) & 0o022):
++        raise SnapshotError("EXTERNAL_DISK_FIXTURE_OWNED_PARENT_REQUIRED")
++    if parent_info.st_dev != source_info.st_dev:
++        raise SnapshotError("EXTERNAL_DISK_FIXTURE_SAME_FILESYSTEM_REQUIRED")
++    _storage_type(parent)  # Original native disk policy, including volatile-FS denial.
++    return parent
++
++
++def make_external_disk_fixture(prefix, *, parent=None):
++    if not isinstance(prefix, str) or re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", prefix) is None:
++        raise SnapshotError("EXTERNAL_DISK_FIXTURE_SAFE_PREFIX_REQUIRED")
++    parent = external_disk_parent(parent)
++    root = Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
++    info = root.lstat()
++    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
++            or stat.S_IMODE(info.st_mode) != 0o700 or info.st_dev != SOURCE_ROOT.lstat().st_dev
++            or root.is_symlink() or root.parent != parent or root.is_relative_to(SOURCE_ROOT)):
++        raise SnapshotError("EXTERNAL_DISK_FIXTURE_PRIVATE_ROOT_REQUIRED")
++    return root
++
++
++@contextmanager
++def external_disk_fixture(prefix, *, parent=None):
++    root = make_external_disk_fixture(prefix, parent=parent)
++    initial = root.lstat()
++    identity = (initial.st_dev, initial.st_ino, initial.st_uid, initial.st_mode)
++    try:
++        yield root
++    finally:
++        current = root.lstat()
++        if ((current.st_dev, current.st_ino, current.st_uid, current.st_mode) != identity
++                or root.is_symlink()):
++            raise SnapshotError("EXTERNAL_DISK_FIXTURE_CLEANUP_CUSTODY_CHANGED")
++        shutil.rmtree(root)  # Only the fresh owned root, never its parent/source.

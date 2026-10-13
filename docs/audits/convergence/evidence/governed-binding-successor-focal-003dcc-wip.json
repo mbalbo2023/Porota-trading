@@ -1,0 +1,25 @@
+{
+  "base_sha": "003dccb5d07ebf7f443e58e0bb6499837a0a8a52",
+  "cases": 212,
+  "deploy_authorized": false,
+  "errors": 0,
+  "failures": 0,
+  "final_source_acceptance": false,
+  "merge_authorized": false,
+  "schema": "rc6.intermediate-test-receipt.v1",
+  "scope": "INTERMEDIATE_WORKING_TREE_DIAGNOSTIC_ONLY",
+  "skipped": 0,
+  "source_freeze": "NOT_FROZEN_WORKING_TREE",
+  "suite": {
+    "errors": "0",
+    "failures": "0",
+    "hostname": "9905252a2cbf",
+    "name": "pytest",
+    "skipped": "0",
+    "tests": "212",
+    "time": "97.245",
+    "timestamp": "2026-10-05T11:37:19.382645+00:00"
+  },
+  "xml_file": "governed-binding-successor-focal-003dcc-wip.xml",
+  "xml_sha256": "95dd499c6d3630cbaf4b6114104c83fe11846b37e467f51c5ab6de500d47bffc"
+}

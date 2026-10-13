@@ -1,0 +1,15 @@
+{
+  "claim": "NO_NATIVE_BENCHMARK_EXECUTION; not a productRED or maximum-member memory result",
+  "classification": "HARNESS_TOOL_NOT_AVAILABLE",
+  "fixture_root_present": false,
+  "missing_tool": "/usr/bin/time",
+  "native_calibrations_executed": 0,
+  "native_child_started": false,
+  "native_log_bytes": 0,
+  "native_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "next_source_only_action": "Replace unavailable externaltime tool with OS wait4(childrusage)/monotonic and existing native childRSS; preserve all other source/data/limits.",
+  "schema": "rc6.maximum-member-wrapper-prelaunch-tool-error.v1",
+  "source_sha": "d9e7fb7d567ff745193c125dc9cd8df4e91ec5d6",
+  "source_tree": "95a95d65fe18f1fbe8f108d582d984ee3e7355ac",
+  "wrapper_before_sha256": "e8cecb0f00b6b67f0e05e6d90b58163290fe5d5221f623579a42fdc689e664ab"
+}

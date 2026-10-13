@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "git",
+    "clone",
+    "--no-checkout",
+    "--no-local",
+    "--no-hardlinks",
+    "--single-branch",
+    "--branch",
+    "recovery/rc6-material-fix-forward-3091e93-20261006",
+    "https://github.com/mbalbo2023/Porota-trading.git",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/repository"
+  ],
+  "classification": "READ_ONLY_SOURCE_PREPARATION_NOT_BIG",
+  "credential_values_logged": false,
+  "elapsed_seconds": 5.529115664001438,
+  "exit": 0,
+  "status": "CLONED",
+  "stderr_bytes": 110,
+  "stdout_bytes": 0,
+  "timed_out": false,
+  "transport": "CANONICAL_GITHUB_HTTPS"
+}

@@ -1,0 +1,1 @@
+{"adopted_descendants_reaped": [], "kernel_acceptance_claim": false, "kernel_echild_and_pgid_absent_after_owned_drain": true, "kernel_wait4_zero_observed_irreversible_red": false, "process_group_absent_at_main_reap": true, "status": "RED_NATIVE_CLI_NOT_QUALIFIED", "tracked_resource_tracker_pid_after_failed_cli": null}

@@ -1,0 +1,823 @@
+"""External SMALL browser/health supervisor; Source preparation only until Root SLOT.
+
+c430 require/subprocess_phase are copied literally, never imported. c8 Source
+custody functions are copied literally. Only this wrapper's own descendant
+family is supervised; phase600/120 and failure cleanup5/SIGINT20 are management
+bounds, independent of original preparation90/render1/health2. No BIG claim.
+"""
+from contextlib import contextmanager
+import argparse
+import ctypes
+import errno
+import hashlib
+from importlib import metadata
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import stat
+import subprocess
+import sys
+import threading
+import time
+import uuid
+
+SOURCE = Path('/workspace/rc6-root-efa69894-browser-20261006-source')
+SOURCE_REPO = Path('/workspace/porota_rc6_convergence')
+PIN_PATH = Path('/workspace/rc6-root-efa69894-browser-20261006-source-raw/source.index.json')
+TAR_PATH = PIN_PATH.parent / 'source.tar'
+DRIVER = Path('/workspace/venv_rc6/bin/python')
+PRODUCT = Path('/workspace/venv_rc6_frozen311/bin/python')
+MAX_INDEX = 32 * 1024**2
+PIN_SCHEMA = 'rc6.complete-archive-source-pin.v1'
+CONFIG = {'sha': 'efa69894870ef6c05b63713666a904bbe88b6103',
+          'tree': 'e2187b082a4b9af907795dfa83bbf9b82ea345df',
+          'index_sha256': '9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517'}
+ORIGINS = {'subprocess_phase_source_sha256': 'c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313',
+           'subprocess_phase_function_sha256': 'ca89e2f41c41afeaca1c52ef7fa2c0e9817abd833b69b7973f68c2b32e8accb5',
+           'require_function_sha256': '3fdec831bc6a8b34347d709354ae8fde3c062ad2c902f070ba93171e01685951',
+           'source_custody_origin_sha256': 'c8f872b75544eb5102a0c769847a8ad51872aa3a920fe204b3c78ab41a8a7bfb'}
+CAPS = {'normal': 600, 'health': 120}
+
+def require(condition, reason):
+    if not condition:
+        raise ValueError(reason)
+
+def safe_path(value):
+    path = Path(value)
+    require(path.is_absolute() and path != Path('/')
+            and '..' not in path.parts, 'CANONICAL_ABSOLUTE_PATH_REQUIRED')
+    return path
+
+@contextmanager
+def directory(value, *, readable=False):
+    path = safe_path(value)
+    descriptor = os.open('/', os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        for position, name in enumerate(path.parts[1:]):
+            final = position == len(path.parts) - 2
+            flags = os.O_NOFOLLOW | os.O_DIRECTORY | os.O_CLOEXEC
+            flags |= os.O_RDONLY | os.O_NOATIME if final and readable else os.O_PATH
+            child = os.open(name, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+def mount_id(descriptor):
+    fd = os.open('/proc/self/fdinfo/' + str(descriptor),
+                 os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        raw = os.read(fd, 4096)
+        found = re.findall(rb'^mnt_id:\s*([0-9]+)$', raw, re.MULTILINE)
+        require(len(raw) < 4096 and len(found) == 1, 'MOUNT_ID_UNAVAILABLE')
+        return int(found[0])
+    finally:
+        os.close(fd)
+
+def details(value):
+    return dict(device=value.st_dev, inode=value.st_ino, uid=value.st_uid,
+                gid=value.st_gid, mode=value.st_mode, links=value.st_nlink,
+                size=value.st_size, blocks=value.st_blocks,
+                atime_ns=value.st_atime_ns, mtime_ns=value.st_mtime_ns,
+                ctime_ns=value.st_ctime_ns)
+
+def read_file(path, *, maximum):
+    path = safe_path(path)
+    with directory(path.parent) as parent:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
+                     | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
+        try:
+            initial = os.fstat(fd)
+            require(stat.S_ISREG(initial.st_mode) and initial.st_nlink == 1
+                    and initial.st_uid == os.geteuid(), 'UNALIASED_OWNED_FILE_REQUIRED')
+            require(mount_id(fd) == mount_id(parent), 'FILE_MOUNT_REJECTED')
+            require(initial.st_size <= maximum, 'FILE_BUDGET_EXCEEDED')
+            blocks, total = [], 0
+            while True:
+                block = os.read(fd, min(1048576, maximum + 1 - total))
+                if not block:
+                    break
+                blocks.append(block)
+                total += len(block)
+                require(total <= maximum, 'FILE_BUDGET_EXCEEDED')
+            require(details(initial) == details(os.fstat(fd))
+                    == details(os.stat(path.name, dir_fd=parent, follow_symlinks=False)),
+                    'FILE_CHANGED_DURING_CAPTURE')
+            return b''.join(blocks), details(initial)
+        finally:
+            os.close(fd)
+
+def unique_json(raw):
+    def pairs(items):
+        result = {}
+        for name, value in items:
+            require(name not in result, 'DUPLICATE_JSON_KEY')
+            result[name] = value
+        return result
+    def constant(_value):
+        raise ValueError('NONFINITE_JSON_VALUE')
+    return json.loads(raw, object_pairs_hook=pairs, parse_constant=constant)
+
+def git(*arguments, input_data=None):
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith('GIT_')}
+    environment.update(GIT_NO_REPLACE_OBJECTS='1', GIT_NO_LAZY_FETCH='1',
+                       GIT_TERMINAL_PROMPT='0')
+    return subprocess.check_output(['git', '--no-replace-objects', '-C',
+        str(SOURCE_REPO), *arguments], env=environment, input=input_data, timeout=20)
+
+def raw_tree_namespace():
+    identifiers = {CONFIG['tree']}
+    for entry in git('ls-tree', '-r', '-t', '-z', '--full-tree', CONFIG['tree']).split(b'\0'):
+        if entry:
+            header, _ = entry.split(b'\t', 1)
+            _mode, kind, identifier = header.split()
+            if kind == b'tree':
+                identifiers.add(identifier.decode())
+    request = ''.join(identifier + '\n' for identifier in sorted(identifiers)).encode()
+    batch = git('cat-file', '--batch', input_data=request)
+    cursor, trees, receipts = 0, {}, {}
+    for identifier in sorted(identifiers):
+        end = batch.index(b'\n', cursor)
+        actual, kind, size = batch[cursor:end].split()
+        length = int(size)
+        require(actual.decode() == identifier and kind == b'tree' and 0 <= length <= MAX_INDEX,
+                'RAW_GIT_TREE_HEADER_REJECTED')
+        cursor = end + 1
+        wire = batch[cursor:cursor + length]
+        cursor += length
+        require(len(wire) == length and batch[cursor:cursor + 1] == b'\n', 'RAW_GIT_TREE_TRUNCATED')
+        cursor += 1
+        require(hashlib.sha1(b'tree ' + str(length).encode() + b'\0' + wire).hexdigest()
+                == identifier, 'RAW_GIT_TREE_OBJECT_ID_MISMATCH')
+        trees[identifier] = wire
+        receipts[identifier] = {'sha256': hashlib.sha256(wire).hexdigest(), 'bytes': length}
+    require(cursor == len(batch), 'RAW_GIT_TREE_BATCH_RESIDUE')
+    files, directories = {}, {'.'}
+    def expand(identifier, prefix, ancestry):
+        require(identifier in trees and identifier not in ancestry, 'RAW_GIT_TREE_LINK_REJECTED')
+        wire, position, names = trees[identifier], 0, set()
+        while position < len(wire):
+            end = wire.index(b'\0', position)
+            mode, name = wire[position:end].split(b' ', 1)
+            name = name.decode('utf-8')
+            require(name not in ('', '.', '..') and '/' not in name and name not in names,
+                    'RAW_GIT_TREE_PATH_REJECTED')
+            names.add(name)
+            object_bytes = wire[end + 1:end + 21]
+            require(len(object_bytes) == 20, 'RAW_GIT_TREE_LINK_TRUNCATED')
+            position = end + 21
+            relative = name if prefix == '.' else prefix + '/' + name
+            if mode == b'40000':
+                require(relative not in directories, 'RAW_GIT_DIRECTORY_DUPLICATE')
+                directories.add(relative)
+                expand(object_bytes.hex(), relative, ancestry | {identifier})
+            else:
+                require(mode in (b'100644', b'100755') and relative not in files,
+                        'RAW_GIT_FILE_MODE_OR_ALIAS_REJECTED')
+                files[relative] = {'mode': mode.decode(), 'blob': object_bytes.hex()}
+        require(position == len(wire), 'RAW_GIT_TREE_PARSE_RESIDUE')
+    expand(CONFIG['tree'], '.', set())
+    return files, directories, receipts
+
+def source_authority(pin):
+    require(pin.get('schema') == PIN_SCHEMA and pin.get('source_sha') == CONFIG['sha']
+            and pin.get('source_tree') == CONFIG['tree']
+            and type(pin.get('overlay_count')) is int and pin['overlay_count'] == 0,
+            'COMPLETE_RAW_SOURCE_PIN_REQUIRED')
+    files, modes, blobs = pin.get('files'), pin.get('modes'), pin.get('blob_ids')
+    require(all(type(value) is dict for value in (files, modes, blobs))
+            and 0 < len(files) <= 100000 and set(files) == set(modes) == set(blobs),
+            'COMPLETE_SOURCE_MAPS_REQUIRED')
+    for name in files:
+        path = Path(name)
+        require(type(name) is str and path.as_posix() == name and not path.is_absolute()
+                and name not in ('', '.') and '..' not in path.parts,
+                'GIT_PATH_REJECTED')
+        require(type(files[name]) is str and re.fullmatch('[0-9a-f]{64}', files[name])
+                and modes[name] in ('100644', '100755')
+                and type(blobs[name]) is str and re.fullmatch('[0-9a-f]{40}', blobs[name]),
+                'SOURCE_MAP_VALUE_REJECTED')
+    with directory(SOURCE_REPO) as repo:
+        require(stat.S_ISDIR(os.fstat(repo).st_mode), 'EXPLICIT_SOURCE_REPO_REQUIRED')
+    commit = git('cat-file', 'commit', CONFIG['sha'])
+    require(hashlib.sha1(b'commit ' + str(len(commit)).encode() + b'\0' + commit).hexdigest()
+            == CONFIG['sha'], 'RAW_GIT_COMMIT_ID_MISMATCH')
+    require(hashlib.sha256(commit).hexdigest() == pin.get('raw_git_commit_sha256')
+            and commit.splitlines()[0] == ('tree ' + CONFIG['tree']).encode(),
+            'RAW_GIT_COMMIT_OR_TREE_MISMATCH')
+    raw_files, raw_directories, tree_receipts = raw_tree_namespace()
+    expected = {}
+    for entry in git('ls-tree', '-r', '-l', '-z', '--full-tree', CONFIG['tree']).split(b'\0'):
+        if not entry:
+            continue
+        header, name = entry.split(b'\t', 1)
+        mode, kind, blob, size = header.split()
+        name = name.decode('utf-8')
+        require(kind == b'blob' and name not in expected, 'RAW_GIT_TREE_ENTRY_REJECTED')
+        expected[name] = {'mode': mode.decode(), 'blob': blob.decode(), 'size': int(size)}
+    require(set(expected) == set(files), 'RAW_GIT_NAMESPACE_MISMATCH')
+    require(set(raw_files) == set(expected) and all(
+        row['mode'] == raw_files[name]['mode'] and row['blob'] == raw_files[name]['blob']
+        for name, row in expected.items()), 'RAW_HASHED_TREE_EXPANSION_MISMATCH')
+    require(all(row['mode'] == modes[name] and row['blob'] == blobs[name]
+                for name, row in expected.items()), 'RAW_GIT_MODES_OR_BLOBS_MISMATCH')
+    return expected, raw_directories, tree_receipts
+
+def source_snapshot(expected, pin, wanted_dirs):
+    rows = {}
+    with directory(SOURCE.parent) as parent:
+        parent_mount = mount_id(parent)
+    with directory(SOURCE, readable=True) as root:
+        root_stat = os.fstat(root)
+        require(root_stat.st_uid == os.geteuid() and mount_id(root) == parent_mount,
+                'SOURCE_ROOT_OWNER_OR_MOUNT_REJECTED')
+        source_mount = mount_id(root)
+        source_device = root_stat.st_dev
+        def walk(fd, prefix):
+            initial = os.fstat(fd)
+            require(initial.st_dev == source_device and initial.st_uid == os.geteuid()
+                    and mount_id(fd) == source_mount, 'SOURCE_DIRECTORY_OWNER_OR_MOUNT_REJECTED')
+            names = sorted(os.listdir(fd))
+            rows[prefix] = {'kind': 'directory', 'stat': details(initial), 'mount_id': source_mount}
+            for name in names:
+                relative = name if prefix == '.' else prefix + '/' + name
+                value = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                require(value.st_uid == os.geteuid() and value.st_dev == source_device,
+                        'SOURCE_MEMBER_OWNER_OR_DEVICE_REJECTED')
+                flags = os.O_NOFOLLOW | os.O_CLOEXEC
+                if stat.S_ISDIR(value.st_mode):
+                    require(relative in wanted_dirs, 'SOURCE_EXTRA_DIRECTORY')
+                    child = os.open(name, flags | os.O_RDONLY | os.O_DIRECTORY | os.O_NOATIME,
+                                    dir_fd=fd)
+                    try:
+                        require(details(os.fstat(child)) == details(value)
+                                and mount_id(child) == source_mount, 'SOURCE_DIRECTORY_ALIAS_OR_MOUNT')
+                        walk(child, relative)
+                    finally:
+                        os.close(child)
+                else:
+                    require(stat.S_ISREG(value.st_mode) and value.st_nlink == 1
+                            and relative in expected, 'SOURCE_ALIAS_OR_EXTRA_MEMBER')
+                    specification = expected[relative]
+                    require(value.st_size == specification['size'], 'SOURCE_GIT_SIZE_MISMATCH')
+                    child = os.open(name, flags | os.O_RDONLY | os.O_NOATIME | os.O_NONBLOCK,
+                                    dir_fd=fd)
+                    try:
+                        require(details(os.fstat(child)) == details(value)
+                                and mount_id(child) == source_mount, 'SOURCE_FILE_ALIAS_OR_MOUNT')
+                        sha = hashlib.sha256()
+                        blob = hashlib.sha1(b'blob ' + str(value.st_size).encode() + b'\0')
+                        remaining = value.st_size
+                        while remaining:
+                            block = os.read(child, min(1048576, remaining))
+                            require(bool(block), 'SOURCE_FILE_TRUNCATED')
+                            remaining -= len(block)
+                            sha.update(block)
+                            blob.update(block)
+                        require(not os.read(child, 1) and details(os.fstat(child)) == details(value),
+                                'SOURCE_FILE_GREW_OR_CHANGED')
+                        row = {'kind': 'file', 'stat': details(value), 'mount_id': source_mount,
+                               'sha256': sha.hexdigest(), 'git_blob': blob.hexdigest(),
+                               'git_mode': '100' + format(stat.S_IMODE(value.st_mode), '03o')}
+                        require(row['sha256'] == pin['files'][relative]
+                                and row['git_blob'] == specification['blob']
+                                and row['git_mode'] == specification['mode'], 'SOURCE_BYTES_MODES_BLOBS_MISMATCH')
+                        rows[relative] = row
+                    finally:
+                        os.close(child)
+                require(details(os.stat(name, dir_fd=fd, follow_symlinks=False)) == details(value),
+                        'SOURCE_MEMBER_CHANGED')
+            require(details(os.fstat(fd)) == details(initial) and sorted(os.listdir(fd)) == names,
+                    'SOURCE_DIRECTORY_CHANGED')
+        walk(root, '.')
+    require({name for name, row in rows.items() if row['kind'] == 'file'} == set(expected)
+            and {name for name, row in rows.items() if row['kind'] == 'directory'} == wanted_dirs,
+            'COMPLETE_PHYSICAL_SOURCE_NAMESPACE_MISMATCH')
+    return rows
+
+def capture_archive(pin):
+    path = safe_path(TAR_PATH)
+    with directory(path.parent) as parent:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
+                     | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
+        try:
+            initial = os.fstat(fd)
+            require(stat.S_ISREG(initial.st_mode) and initial.st_nlink == 1
+                    and initial.st_uid == os.geteuid() and mount_id(fd) == mount_id(parent),
+                    'SOURCE_TAR_CUSTODY_REJECTED')
+            digest = hashlib.sha256()
+            remaining = initial.st_size
+            while remaining:
+                block = os.read(fd, min(1048576, remaining))
+                require(bool(block), 'SOURCE_TAR_TRUNCATED')
+                digest.update(block)
+                remaining -= len(block)
+            require(not os.read(fd, 1) and details(initial) == details(os.fstat(fd))
+                    == details(os.stat(path.name, dir_fd=parent, follow_symlinks=False)),
+                    'SOURCE_TAR_CHANGED')
+            require(digest.hexdigest() == pin.get('tar_sha256'), 'SOURCE_TAR_HASH_MISMATCH')
+            return {'stat': details(initial), 'sha256': digest.hexdigest()}
+        finally:
+            os.close(fd)
+
+def verify_source():
+    raw, index_stat = read_file(PIN_PATH, maximum=MAX_INDEX)
+    require(hashlib.sha256(raw).hexdigest() == CONFIG['index_sha256'], 'SOURCE_INDEX_CHANGED')
+    pin = unique_json(raw)
+    expected, directories, raw_trees = source_authority(pin)
+    return pin, {'schema': 'rc6.physical-source-custody.v2',
+        'source_sha': CONFIG['sha'], 'source_tree': CONFIG['tree'],
+        'source_index_sha256': CONFIG['index_sha256'], 'index_stat': index_stat,
+        'archive': capture_archive(pin), 'raw_git_tree_objects': raw_trees,
+        'namespace': source_snapshot(expected, pin, directories),
+        'scope': 'ALL_RAW_HASHED_GIT_TREES_FILES_DIRECTORIES_BYTES_MODES_BLOBS_STATS_MOUNT_IDS_NOATIME'}
+
+def stable_code_custody(capture):
+    # Imports legitimately read code under relatime. Never restore atime. All
+    # eleven attributes still match twice DURING each capture; only observed
+    # CODE atime is excluded from the comparison between native phases.
+    result = dict(capture)
+    result['namespace'] = {name: {**row,
+        'stat': {key: value for key, value in row['stat'].items() if key != 'atime_ns'}}
+        for name, row in capture['namespace'].items()}
+    return result
+
+def observed_code_atime_changes(before, after):
+    return {name: {'kind': row['kind'], 'before_ns': row['stat']['atime_ns'],
+                   'after_ns': after['namespace'][name]['stat']['atime_ns']}
+        for name, row in before['namespace'].items()
+        if name in after['namespace']
+        and row['stat']['atime_ns'] != after['namespace'][name]['stat']['atime_ns']}
+
+def subprocess_phase(command, root, output, env, limit):
+    """Require exclusive kernel child custody before accepting a pytest phase.
+
+    The PID-specific wait4 witness and its adopted-child drain are separate.
+    Missing proc children files are never used as exhaustion evidence. Only
+    ECHILD after the actual main PID reap proves this supervisor is exhausted.
+    Signals address only the PGID created by this phase's Popen; once absence
+    is observed, this invocation never sends another signal to that PGID.
+    """
+    phase_entered = time.monotonic()
+    started, interrupted, cleanup_started = None, None, None
+    process, waited, usage, reap_wall = None, 0, None, None
+    active, pre_spawn_echild, exhausted = False, False, False
+    timed_out, late_reap, wait4_zero = False, False, False
+    group_absent, group_absent_at_main_reap = False, False
+    pending, residual, descendants, errors, observations, signals = [], [], [], [], [], []
+    supervisor_pid, supervisor_tid = os.getpid(), threading.get_native_id()
+    task_root = '/proc/' + str(supervisor_pid) + '/task/' + str(supervisor_tid)
+    identity = {}
+    libc = ctypes.CDLL(None, use_errno=True)
+    previous = ctypes.c_int()
+
+    def error_record(label, error):
+        errors.append({'phase': label, 'class': type(error).__name__, 'reason': str(error)})
+
+    def observe_group_absence():
+        nonlocal group_absent
+        if process is None or group_absent:
+            return group_absent
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            group_absent = True
+        return group_absent
+
+    def signal_group(number):
+        nonlocal group_absent
+        if process is None or group_absent or observe_group_absence():
+            return
+        try:
+            os.killpg(process.pid, number)
+        except ProcessLookupError:
+            group_absent = True
+            signals.append({'pgid': process.pid, 'signal': number, 'outcome': 'ESRCH'})
+        else:
+            signals.append({'pgid': process.pid, 'signal': number, 'outcome': 'SENT'})
+
+    def reap_main():
+        nonlocal waited, usage, reap_wall, late_reap, timed_out
+        if waited:
+            return waited
+        found, child_status, child_usage = os.wait4(process.pid, os.WNOHANG)
+        if found:
+            require(found == process.pid, 'SPECIFIC_PHASE_PID_WAIT4_IDENTITY_MISMATCH')
+            waited, usage = found, child_usage
+            reap_wall = time.monotonic() - started
+            process.returncode = os.waitstatus_to_exitcode(child_status)
+            late_reap = reap_wall > limit
+            timed_out = timed_out or late_reap
+        return found
+
+    def child_row(found, child_status, child_usage):
+        return {'pid': found, 'exit_code': os.waitstatus_to_exitcode(child_status),
+                'cpu_user_seconds': child_usage.ru_utime,
+                'cpu_system_seconds': child_usage.ru_stime,
+                'kernel_lifetime_peak_rss_bytes': child_usage.ru_maxrss * 1024}
+
+    try:
+        # This is the supervisor's own kernel status only, never a global /proc
+        # scan or a dependency on the kernel's optional task children facility.
+        descriptor = os.open(task_root + '/status', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            status_data = os.read(descriptor, 65537)
+            require(len(status_data) <= 65536, 'SUPERVISOR_KERNEL_STATUS_BOUND_EXCEEDED')
+        finally:
+            os.close(descriptor)
+        identity = {line.partition(':')[0]: line.partition(':')[2].strip()
+                    for line in status_data.decode().splitlines()
+                    if line.startswith(('Pid:', 'Tgid:', 'Uid:'))}
+        require(identity.get('Pid') == str(supervisor_tid)
+                and identity.get('Tgid') == str(supervisor_pid)
+                and identity.get('Uid', '').split()[:2] == [str(os.getuid()), str(os.geteuid())],
+                'EXPLICIT_SUPERVISOR_KERNEL_PID_TID_UID_BINDING_REQUIRED')
+        require(libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0,
+                'LINUX_OWN_SUBREAPER_INITIAL_STATE_REQUIRED')
+        require(libc.prctl(36, 1, 0, 0, 0) == 0, 'LINUX_OWN_CHILD_SUBREAPER_REQUIRED')
+        active = True
+        try:
+            pre_pid, pre_status, pre_usage = os.wait4(-1, os.WNOHANG)
+        except ChildProcessError as error:
+            if error.errno != errno.ECHILD:
+                raise
+            pre_spawn_echild = True
+            observations.append({'phase': 'before_popen_after_subreaper_activation',
+                                 'outcome': 'ECHILD', 'errno': error.errno})
+        else:
+            observations.append({'phase': 'before_popen_after_subreaper_activation',
+                                 'outcome': 'PID_REAPED' if pre_pid else 'ACTIVE_OWN_CHILD_WITHOUT_PID',
+                                 **(child_row(pre_pid, pre_status, pre_usage) if pre_pid else {'pid': 0})})
+            raise RuntimeError('EXCLUSIVE_SUPERVISOR_REQUIRES_PRESPAWN_KERNEL_ECHILD')
+        with output.open('xb') as stream:
+            started = time.monotonic()
+            process = subprocess.Popen(command, cwd=root, env=env, stdout=stream,
+                                       stderr=subprocess.STDOUT, start_new_session=True)
+            while not reap_main():
+                now = time.monotonic()
+                if now - started >= limit and interrupted is None:
+                    timed_out, interrupted = True, now
+                    signal_group(signal.SIGINT)
+                if interrupted is not None and now - interrupted >= 20:
+                    signal_group(signal.SIGKILL)
+                    break  # The finally below uses bounded WNOHANG; never wait4(..., 0).
+                time.sleep(.1)
+    except BaseException as error:
+        error_record('spawn_tracking_or_log', error)
+    finally:
+        # This scope covers activation, Popen, logs, signal races and errors.
+        # Five seconds is cleanup management after an already failed phase,
+        # not an extension of the phase's acceptance deadline.
+        cleanup_started = time.monotonic()
+        cleanup_deadline = cleanup_started + 5
+        try:
+            if process is not None and not waited:
+                signal_group(signal.SIGTERM)
+                while time.monotonic() < cleanup_deadline and not reap_main():
+                    if time.monotonic() - cleanup_started >= 1:
+                        signal_group(signal.SIGKILL)
+                    time.sleep(.05)
+                if not waited:
+                    signal_group(signal.SIGKILL)
+                    reap_main()  # One final nonblocking observation, no invented reap.
+                if not waited:
+                    error_record('main_reap', RuntimeError('OWN_PHASE_PID_NOT_REAPED_WITHIN_CLEANUP_BOUND'))
+        except BaseException as error:
+            error_record('main_termination_or_reap', error)
+        try:
+            if process is not None and waited == process.pid:
+                group_absent_at_main_reap = observe_group_absence()
+        except BaseException as error:
+            error_record('owned_group_after_main_reap', error)
+        try:
+            if active:
+                require(process is not None and waited == process.pid and pre_spawn_echild,
+                        'KERNEL_DRAIN_REQUIRES_REAPED_MAIN_PID_AND_EXCLUSIVE_SUBREAPER')
+                while True:
+                    if len(observations) >= 1024 or time.monotonic() >= cleanup_deadline:
+                        error_record('kernel_owned_child_cleanup',
+                                     RuntimeError('OWN_CHILD_EXHAUSTION_NOT_PROVED_WITHIN_BOUND'))
+                        break
+                    try:
+                        found, child_status, child_usage = os.wait4(-1, os.WNOHANG)
+                    except ChildProcessError as error:
+                        if error.errno != errno.ECHILD:
+                            raise
+                        observations.append({'phase': 'after_main_pid_reap',
+                                             'outcome': 'ECHILD', 'errno': error.errno})
+                        exhausted, pending = True, []
+                        break
+                    if found:
+                        require(found != process.pid, 'MAIN_PID_CANNOT_BE_REAPED_AS_AN_ADOPTED_CHILD')
+                        row = child_row(found, child_status, child_usage)
+                        descendants.append(row)
+                        observations.append({'phase': 'after_main_pid_reap', 'outcome': 'PID_REAPED', **row})
+                    else:
+                        pending = ['KERNEL_ACTIVE_OWN_CHILD_WITHOUT_PID']
+                        if not wait4_zero:
+                            residual.append('KERNEL_WAIT4_ZERO_OBSERVED')
+                            observations.append({'phase': 'after_main_pid_reap',
+                                                 'outcome': 'ACTIVE_OWN_CHILD_WITHOUT_PID', 'pid': 0})
+                        wait4_zero = True  # Irreversible RED even if cleanup later reaches ECHILD.
+                        signal_group(signal.SIGKILL if time.monotonic() - cleanup_started >= 1 else signal.SIGTERM)
+                    time.sleep(.05)
+        except BaseException as error:
+            error_record('kernel_owned_child_cleanup', error)
+        finally:
+            try:
+                if process is not None:
+                    observe_group_absence()
+            except BaseException as error:
+                error_record('owned_group_final_observation', error)
+            if active:
+                try:
+                    require(libc.prctl(36, previous.value, 0, 0, 0) == 0,
+                            'OWN_SUBREAPER_STATE_NOT_RESTORED')
+                except BaseException as error:
+                    error_record('subreaper_restore', error)
+    return {'pid': process.pid if process is not None else None,
+            'returncode': process.returncode if process is not None else None,
+            'timed_out': timed_out, 'wall_seconds': time.monotonic() - phase_entered,
+            'cpu_user_seconds': usage.ru_utime if usage is not None else None,
+            'cpu_system_seconds': usage.ru_stime if usage is not None else None,
+            'peak_rss_bytes': usage.ru_maxrss * 1024 if usage is not None else None,
+            'scope': 'EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS',
+            'command': command, 'supervisor_pid': supervisor_pid, 'supervisor_native_tid': supervisor_tid,
+            'supervisor_kernel_identity_before_spawn': identity,
+            'proc_task_children_examined': False,
+            'owned_child_exhaustion_method': 'EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD',
+            'kernel_pre_popen_echild_verified': pre_spawn_echild,
+            'wait4_reaped_pid': waited, 'actual_child_reaped': process is not None and waited == process.pid,
+            'actual_launch_to_pid_reap_wall_seconds': reap_wall,
+            'late_observed_main_reap_irreversible_red': late_reap,
+            'phase_acceptance_deadline_seconds': limit, 'sigint_failure_grace_seconds': 20,
+            'owned_cleanup_management_bound_seconds': 5,
+            'process_group_absent_at_main_reap': group_absent_at_main_reap,
+            'process_group_absent_after_reap': group_absent,
+            'owned_children_exhaustion_verified': exhausted,
+            'kernel_wait4_zero_observed_irreversible_red': wait4_zero,
+            'kernel_owned_child_observations': observations, 'owned_group_signal_observations': signals,
+            'residual_descendants_observed': residual, 'adopted_descendants_reaped': descendants,
+            'remaining_owned_children': pending, 'supervisor_errors': errors,
+            'termination_reap_restore_cleanup_seconds': time.monotonic() - cleanup_started,
+            'subreaper_restore_attempted_on_all_activated_paths': active,
+            'subreaper_previous_state': previous.value if active else None}
+
+def write_new(path, value):
+    wire = (json.dumps(value, sort_keys=True, indent=2, allow_nan=False) + '\n').encode()
+    with directory(path.parent) as parent:
+        fd = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                     0o600, dir_fd=parent)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(wire); stream.flush(); os.fsync(stream.fileno())
+
+
+def check_raw(path, *, fresh):
+    path = safe_path(path)
+    for protected in (SOURCE, SOURCE_REPO, PIN_PATH.parent):
+        require(path != protected and protected not in path.parents and path not in protected.parents,
+                'PRIVATE_OUTPUT_OVERLAPS_PROTECTED_SOURCE')
+    with directory(path.parent) as parent:
+        parent_mount = mount_id(parent)
+        if fresh:
+            require(not os.path.lexists(path), 'NEW_PRIVATE_RAW_REQUIRED')
+            os.mkdir(path.name, 0o700, dir_fd=parent)
+    with directory(path, readable=True) as fd:
+        info = os.fstat(fd)
+        require(info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700
+                and mount_id(fd) == parent_mount, 'PRIVATE_RAW_OWNER_MODE_OR_MOUNT_REJECTED')
+        return {'device': info.st_dev, 'inode': info.st_ino, 'uid': info.st_uid,
+                'gid': info.st_gid, 'mount_id': mount_id(fd)}
+
+
+def wrapper_identity():
+    path = safe_path(Path(__file__).absolute())
+    raw, info = read_file(path, maximum=MAX_INDEX)
+    return {'path': str(path), 'sha256': hashlib.sha256(raw).hexdigest(), 'stat': info}
+
+
+def driver_admission():
+    require(sys.executable == str(DRIVER) and sys.prefix == str(DRIVER.parent.parent)
+            and sys.prefix != sys.base_prefix, 'DRIVER_INTERPRETER_PREFIX_MISMATCH')
+    required, locks = {}, {}
+    for name in ('requirements.lock.txt', 'requirements.build.lock.txt'):
+        raw, _ = read_file(SOURCE / name, maximum=MAX_INDEX)
+        pins = 0
+        for line in raw.decode().splitlines():
+            row = re.fullmatch(r'([A-Za-z0-9_.-]+)==([^\s;]+)', line.strip().removesuffix('\\').strip())
+            if row:
+                key = re.sub(r'[-_.]+', '-', row[1]).lower()
+                require(key not in required, 'DUPLICATE_LOCK_PIN')
+                required[key] = row[2]; pins += 1
+        locks[name] = {'sha256': hashlib.sha256(raw).hexdigest(), 'pins': pins}
+    installed = {}
+    for distribution in metadata.distributions():
+        key = re.sub(r'[-_.]+', '-', distribution.metadata['Name']).lower()
+        require(key not in installed, 'DUPLICATE_DRIVER_DISTRIBUTION')
+        installed[key] = distribution.version
+    require(len(required) == 157 and locks['requirements.lock.txt']['pins'] == 154
+            and locks['requirements.build.lock.txt']['pins'] == 3
+            and len(installed) == 158 and set(installed) == set(required) | {'playwright'}
+            and all(installed[key] == version for key, version in required.items()),
+            'DRIVER158_LOCK_METADATA_MISMATCH')
+    return {'executable': sys.executable, 'prefix': sys.prefix, 'python': sys.version,
+            'installed_count': len(installed), 'locked_product_count': len(required),
+            'installed': installed, 'locks': locks,
+            'scope': 'DRIVER_METADATA_NOT_DISTRIBUTION_BINARY_AUTHENTICATION; PRODUCT157_PREFLIGHT_OWNED_BY_NATIVE_HANDLERS'}
+
+
+def source_admission():
+    pin, capture = verify_source()
+    require(len(pin['files']) == 2398, 'EXPECTED_WHOLE_SOURCE_COUNT_2398_REQUIRED')
+    require(git('rev-parse', 'HEAD').decode().strip() == CONFIG['sha']
+            and git('rev-parse', 'HEAD^{tree}').decode().strip() == CONFIG['tree'],
+            'ROOT_AUTHORITY_HEAD_OR_TREE_CHANGED')
+    require(git('status', '--porcelain=v1', '--untracked-files=all') == b'',
+            'ROOT_AUTHORITY_WORKTREE_NOT_CLEAN_BEFORE_FIXTURES')
+    return capture
+
+
+def actual_command(phase, root):
+    name = 'ci_trader_terminal_browser.py' if phase == 'normal' else 'ci_rc6_browser_health.py'
+    output = root / ('browser-normal' if phase == 'normal' else 'health-live-small')
+    command = [str(DRIVER), '-I', '-B', str(SOURCE / 'tests' / name),
+               '--product-python', str(PRODUCT), '--product-python-version', '3.11',
+               '--index', str(PIN_PATH), '--output', str(output)]
+    if phase == 'normal': command.append('--multifamily')
+    return command, output
+
+
+def stage(phase, root, ticket):
+    # This admission/capture/CLI/finalization process is itself the c430 child,
+    # hence every blocking descendant call remains under the outer600/120 cap.
+    require(os.environ.get('RC6_SMALL_SUPERVISOR_TICKET') == ticket
+            and os.environ.get('RC6_SMALL_SUPERVISOR_PID') == str(os.getppid())
+            and os.getpgrp() == os.getpid(), 'OWN_STAGE_PARENT_TICKET_AND_PGID_REQUIRED')
+    started = time.monotonic()
+    identity = check_raw(root, fresh=False)
+    receipt = {'schema': 'rc6.root-small-browser-stage.v1', 'phase': phase,
+               'source_sha': CONFIG['sha'], 'source_tree': CONFIG['tree'],
+               'source_index_sha256': CONFIG['index_sha256'], 'stage_pid': os.getpid(),
+               'supervisor_pid': os.getppid(), 'owned_pgid': os.getpgrp(),
+               'raw_identity': identity, 'status': 'RED', 'failures': [],
+               'acceptance_complete': False, 'artifact_validated': False, 'runtime_validated': False}
+    before, process, reaped = None, None, False
+    try:
+        receipt['driver_environment'] = driver_admission()
+        before = source_admission()
+        write_new(root / (phase + '-source-before.json'), before)
+        command, output = actual_command(phase, root)
+        receipt.update(command=command, cwd=str(SOURCE), target_output=str(output))
+        # Parent owns actual process group; no additional group is created here.
+        environment = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1'}
+        environment.pop('PYTHONPATH', None); environment.pop('PYTHONHOME', None)
+        with (root / (phase + '-driver.log')).open('xb') as stream:
+            process = subprocess.Popen(command, cwd=SOURCE, env=environment,
+                                       stdout=stream, stderr=subprocess.STDOUT)
+            receipt['driver_pid'] = process.pid
+            write_new(root / (phase + '-driver-start.json'), {**receipt, 'source_admitted_before_fixtures': True})
+            print(json.dumps({'event': 'DRIVER_START', 'phase': phase, 'pid': process.pid,
+                              'stage_pid': os.getpid(), 'command': command}), flush=True)
+            code = process.wait()  # Bounded externally by the stage's owned-PGID supervisor.
+            reaped = process.poll() is not None
+            receipt.update(driver_returncode=code, driver_reaped=reaped)
+        require(reaped, 'DRIVER_POSTCAPTURE_REQUIRES_ACTUAL_REAP')
+        after = source_admission()
+        write_new(root / (phase + '-source-after.json'), after)
+        receipt['whole_source_stable_custody_unchanged'] = stable_code_custody(before) == stable_code_custody(after)
+        receipt['observed_code_atime_phase_changes'] = observed_code_atime_changes(before, after)
+        require(receipt['whole_source_stable_custody_unchanged'], 'WHOLE_SOURCE_CHANGED_AFTER_DRIVER_REAP')
+        require(check_raw(root, fresh=False) == identity, 'RAW_IDENTITY_CHANGED')
+        require(code == 0, 'DRIVER_NATIVE_BROWSER_OR_HEALTH_RETURNED_RED')
+        result_path = output / ('browser-gate.json' if phase == 'normal' else 'health-gate.json')
+        raw, _ = read_file(result_path, maximum=MAX_INDEX)
+        result = unique_json(raw)
+        receipt['native_gate_file'] = str(result_path)
+        receipt['native_gate_sha256'] = hashlib.sha256(raw).hexdigest()
+        require(result.get('status') == 'GREEN', 'NATIVE_GATE_STATUS_NOT_GREEN')
+        if phase == 'normal':
+            require(result.get('schema') == 'rc6.trader-terminal-browser-gate.v1'
+                    and result.get('canonical_viewport_checks') == 294 and result.get('legacy_checks') == 22
+                    and result.get('widths') == [1440,1280,1024,800,600,360]
+                    and len(result.get('family_pagination', [])) == 10,
+                    'NORMAL_FULL_ROUTES_ALIASES_OR_FAMILIES_INCOMPLETE')
+            receipt['normal_route_scope'] = {'canonical_viewport_checks': 294, 'legacy_checks': 22,
+                                            'scope': 'SMALL_MULTIFAMILY_FULL_ROUTES_NOT_LARGE'}
+        else:
+            require(result.get('schema') == 'rc6.browser-offline-live-health-proof.v1'
+                    and result.get('big_render_acceptance_claim') is False,
+                    'SEPARATE_LIVE_HEALTH_SCOPE_REJECTED')
+        receipt['status'] = 'GREEN'
+    except BaseException as error:
+        receipt['failures'].append({'class': type(error).__name__, 'reason': str(error)})
+        if not reaped:
+            receipt['postreap_custody'] = 'POSTREAP_CUSTODY_NOT_OBSERVED'
+    receipt['stage_elapsed_seconds'] = time.monotonic() - started
+    write_new(root / (phase + '-stage.json'), receipt)
+    print(json.dumps({'event': 'STAGE_END', 'phase': phase, 'status': receipt['status'],
+                      'stage_pid': os.getpid(), 'driver_pid': receipt.get('driver_pid')}), flush=True)
+    return 0 if receipt['status'] == 'GREEN' else 1
+
+
+def kernel_clean(observation):
+    return (observation.get('kernel_pre_popen_echild_verified') is True
+            and observation.get('actual_child_reaped') is True
+            and observation.get('process_group_absent_after_reap') is True
+            and observation.get('owned_children_exhaustion_verified') is True
+            and observation.get('timed_out') is False
+            and observation.get('late_observed_main_reap_irreversible_red') is False
+            and observation.get('kernel_wait4_zero_observed_irreversible_red') is False
+            and observation.get('remaining_owned_children') == []
+            and observation.get('residual_descendants_observed') == []
+            and observation.get('supervisor_errors') == [])
+
+
+def supervise(root, phases):
+    raw_identity = check_raw(root, fresh=True)
+    own = wrapper_identity()
+    ticket = uuid.uuid4().hex
+    start = {'schema': 'rc6.root-small-browser-external-supervisor.v1', 'status': 'STARTED',
+             'source_sha': CONFIG['sha'], 'source_tree': CONFIG['tree'],
+             'source_index_sha256': CONFIG['index_sha256'], 'source': str(SOURCE),
+             'source_repo': str(SOURCE_REPO), 'index': str(PIN_PATH),
+             'whole_git_files': 2398, 'wrapper': own, 'origins': ORIGINS,
+             'supervisor_pid': os.getpid(), 'raw_identity': raw_identity,
+             'phase_caps_management_seconds': CAPS, 'phases_requested': phases,
+             'scope': 'ROOT_SMALL_FULL_ROUTES_AND_SEPARATE_PRIVATE_HEALTH; NO_BIG_OR_GOV_ARTIFACT_RUNTIME_CLAIM',
+             'helper_scope_literal_is_historical_origin_only': True,
+             'original_native_caps': {'preparation':90,'render_roundtrip':1,'health_roundtrip':2,'rpc':20},
+             'acceptance_complete': False, 'artifact_validated': False, 'runtime_validated': False}
+    write_new(root / 'supervisor-start.json', start)
+    print(json.dumps({'event':'START','supervisor_pid':os.getpid(),'source_sha':CONFIG['sha'],
+                      'raw':str(root),'phases':phases}),flush=True)
+    observations, failures = [], []
+    for phase in phases:
+        command = [str(DRIVER), '-I', '-B', str(Path(__file__).absolute()),
+                   '--internal-stage', phase, '--output-root', str(root), '--ticket', ticket]
+        environment = {**os.environ, 'RC6_SMALL_SUPERVISOR_TICKET':ticket,
+                       'RC6_SMALL_SUPERVISOR_PID':str(os.getpid()), 'PYTHONDONTWRITEBYTECODE':'1'}
+        observed = subprocess_phase(command, SOURCE, root / (phase + '-supervision.log'), environment, CAPS[phase])
+        observed['actual_child_role'] = 'OWN_STDLIB_STAGE_INCLUDING_ADMISSION_NATIVE_DRIVER_AND_FINAL_CAPTURE'
+        observed['historical_helper_scope_is_origin_not_pytest_execution'] = True
+        write_new(root / (phase + '-supervision.json'), observed)
+        item={'phase':phase,'actual_stage_pid':observed.get('pid'),'kernel_observation':observed,'status':'RED'}
+        if not kernel_clean(observed):
+            failures.append({'phase':phase,'reason':'OWN_PHASE_KERNEL_CUSTODY_OR_DEADLINE_NOT_CLEAN'})
+        else:
+            try:
+                raw,_=read_file(root / (phase + '-stage.json'), maximum=MAX_INDEX)
+                report=unique_json(raw)
+                item['stage_receipt_sha256']=hashlib.sha256(raw).hexdigest()
+                require(report.get('stage_pid')==observed['pid'] and report.get('supervisor_pid')==os.getpid()
+                        and report.get('source_sha')==CONFIG['sha'] and report.get('source_tree')==CONFIG['tree']
+                        and report.get('source_index_sha256')==CONFIG['index_sha256']
+                        and report.get('raw_identity')==raw_identity,
+                        'SAME_EPOCH_STAGE_PID_SOURCE_RAW_BINDING_REQUIRED')
+                item['stage_receipt']=report
+                require(observed.get('returncode')==0 and report.get('status')=='GREEN',
+                        'SMALL_NATIVE_STAGE_NOT_GREEN')
+                item['status']='GREEN'
+            except BaseException as error:
+                failures.append({'phase':phase,'class':type(error).__name__,'reason':str(error)})
+        observations.append(item)
+        # A negative native gate may leave useful independent health evidence;
+        # kernel/Source uncertainty stops all further native launches.
+        if (not kernel_clean(observed) or item.get('stage_receipt',{}).get('whole_source_stable_custody_unchanged') is not True):
+            break
+    final={**start,'status':'GREEN' if not failures and len(observations)==len(phases) else 'RED',
+           'phase_results':observations,'failures':failures,
+           'normal_browser_pass':any(x['phase']=='normal' and x['status']=='GREEN' for x in observations),
+           'separate_live_health_pass':any(x['phase']=='health' and x['status']=='GREEN' for x in observations)}
+    require(check_raw(root,fresh=False)==raw_identity,'FINAL_RAW_IDENTITY_CHANGED')
+    write_new(root/'supervisor-final.json',final)
+    print(json.dumps({'event':'END','status':final['status'],'supervisor_pid':os.getpid(),
+                      'source_sha':CONFIG['sha'],'normal_browser_pass':final['normal_browser_pass'],
+                      'separate_live_health_pass':final['separate_live_health_pass'],
+                      'acceptance_complete':False}),flush=True)
+    return 0 if final['status']=='GREEN' else 1
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output-root',type=Path,required=True)
+    parser.add_argument('--phase',choices=('normal','health','both'),default='both')
+    parser.add_argument('--internal-stage',choices=('normal','health'),help=argparse.SUPPRESS)
+    parser.add_argument('--ticket',help=argparse.SUPPRESS)
+    args=parser.parse_args()
+    os.umask(0o077)
+    if args.internal_stage:
+        return stage(args.internal_stage,args.output_root,args.ticket)
+    return supervise(args.output_root,['normal','health'] if args.phase=='both' else [args.phase])
+
+
+if __name__=='__main__':
+    try:
+        raise SystemExit(main())
+    except Exception as error:
+        print(json.dumps({'status':'RED','stage':'external_supervisor_entry_or_finalization',
+                          'class':type(error).__name__,'reason':str(error),'acceptance_complete':False}),flush=True)
+        raise SystemExit(1)

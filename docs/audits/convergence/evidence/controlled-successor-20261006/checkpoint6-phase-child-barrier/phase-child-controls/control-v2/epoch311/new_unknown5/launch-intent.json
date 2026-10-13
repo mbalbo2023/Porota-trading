@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-phase-fin-postread-control-v2-9d_vv3am/control/phase_component.py",
+    "--epoch",
+    "311",
+    "--case",
+    "new_unknown5",
+    "--case-root",
+    "/workspace/scratch/rc6-phase-fin-postread-control-v2-9d_vv3am/epoch311/new_unknown5"
+  ],
+  "case": "new_unknown5",
+  "epoch": "311",
+  "no_Gov_scope_claim": true,
+  "original_finalizer_seconds": 5,
+  "outer_component_seconds": 60,
+  "parent_pid": 33282
+}

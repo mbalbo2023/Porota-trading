@@ -1,0 +1,1739 @@
+{
+  "ALIEN": true,
+  "DIAGNOSTIC_ONLY": true,
+  "PPI_Watch": "UNTOUCHED",
+  "Source_DATA_SQL_original_blob_not_reopened_or_rehashed_for_this_note": true,
+  "Source_performance_fix_justified": false,
+  "Source_working_tree_not_used_or_written": true,
+  "actual_final_whole_RAW_regular_bytes": 35778883,
+  "actual_whole_RAW_member_count": 40,
+  "all_four_original_SELECTs_including_empty_futurequote_reads_retained": true,
+  "canonical_BIG_qualified": false,
+  "canonical_RED_failure_not_reproduced": "Original canonical0f families handler wall0.522118497/CPU0.521551052 failed snapshot164 postyield; fresh isolated ROW0.114404491 and TUPLE0.105327254 both returned within original0.5. Canonical handler bounds are not exactly isolated _read bounds; canonical500MB heap/context absent.",
+  "causal_limit": "No measured exact copy/SQL/GC/deadline subinterval from canonical failing invocation. This pair demonstrates local output equivalence and observed phase costs only. It does not isolate the unexplained canonical slowdown or justify a Source performance patch.",
+  "complete_RAW_index": {
+    "bytes": 41442,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/closed-pair-raw-index.json",
+    "sha256": "a0d24953ec8cce464f771ea469adac0b6fe7d1f0c316cca249713f37f1d9f611"
+  },
+  "custody_read_cache_limits": "Required NOATIME custody hash reads and sequential order may affect OS cache/allocation state. No dummy heap, cache priming/reset, additional SQL or GC policy/collection/threshold change occurred.",
+  "full_ordered_typed_native_bytes_equal": true,
+  "full_original_outputs_actual": {
+    "cash": 0,
+    "errors": 0,
+    "metadata": 12000,
+    "quotes": 0,
+    "truncated": 0
+  },
+  "gate_qualified": false,
+  "material_gates_closed": [],
+  "metadata_or_namespace_Green_not_artifact_or_import_qualification": true,
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "native_empty_metadata_private_per_row_witnessed": true,
+  "native_import_qualified": false,
+  "network_scope": "Both native PID operation audit counters0 and constructor counters0 after witness registration. Separate offline filters explicitly attempted and denied IPv6 creations with EAFNOSUPPORT97 and witnessed AF_UNIX. Never infer zero total attempted constructors from operation counters; no binary/kernel-transitive network isolation claim.",
+  "no_statistical_or_canonical_saving_claim": true,
+  "observed_isolated_read_difference_ROW_minus_TUPLE_cpu_seconds": 0.00911189400000012,
+  "observed_isolated_read_difference_ROW_minus_TUPLE_wall_seconds": 0.009077237005840288,
+  "one_ROW_and_one_TUPLE_completed_no_retry": true,
+  "only_intended_representation_difference": "Observed Row/Row-factory versus tuple/None-factory on the private cursor; description names preserved exact typed outputs for this DB. Original Source helpers untouched.",
+  "original_data_closed_source": {
+    "": {
+      "sha256": "d0268e7d50c7509c14c5f77e6f5bed7c00b3552aac619b450c8df391528ac2a5",
+      "st_atime_ns": 1791318084980147805,
+      "st_blocks": 45240,
+      "st_ctime_ns": 1791318084952147932,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706424,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791318084952147932,
+      "st_nlink": 1,
+      "st_size": 23162880,
+      "st_uid": 1000
+    }
+  },
+  "original_limits": {
+    "cleanup_seconds": 5,
+    "limit_plus_one_order_julianday_and_all_schema_guards_preserved": true,
+    "max_RSS_bytes": 2147483648,
+    "max_whole_RAW_bytes": 134217728,
+    "outer_seconds_each": 60,
+    "read_and_capture_seconds": 0.5,
+    "tables_limits": [
+      20000,
+      5000,
+      5000,
+      500
+    ]
+  },
+  "phase_interpretation": "Rows list combines native stepping, materialization and any allocation/collector cost. Row transform similarly includes helpers/allocations. Tuple list was faster while its transform was slower in this one pair; no exclusive Row wrapper cost or stable saving is proved. Phase intervals are disjoint; total read is inclusive and not added to them.",
+  "plan_script_provenance": {
+    "V1_V2_driver_and_plans_preserved_but_unused": [
+      "pair_owned_launch.py",
+      "pair_owned_launch_v2.py",
+      "plan.json",
+      "pair_components.py"
+    ],
+    "V3_used": [
+      "pair_owned_launch_v3.py",
+      "plan.v3.json",
+      "pair_components_v2.py"
+    ],
+    "all_preparation_artifacts_preserved": {
+      "ast-normalization-proof.json": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 587,
+        "sha256": "64662b8d8f78da166bc8fe27edf1dc1f4ca9d23c365edde03225f8ccc0f1f90e",
+        "stat11_after": {
+          "st_atime_ns": 1791320978100235520,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791320978100274788,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706472,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100274788,
+          "st_nlink": 1,
+          "st_size": 587,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791320978100235520,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791320978100274788,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706472,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100274788,
+          "st_nlink": 1,
+          "st_size": 587,
+          "st_uid": 1000
+        }
+      },
+      "ast-normalization-proof.v2.json": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 730,
+        "sha256": "e0b3dc2fea1d7f66b330c5fc741a110725434b83981341fe4b4af77245e7d0e1",
+        "stat11_after": {
+          "st_atime_ns": 1791321591817195928,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321435657494445,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706821,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321435657494445,
+          "st_nlink": 1,
+          "st_size": 730,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791321591817195928,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321435657494445,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706821,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321435657494445,
+          "st_nlink": 1,
+          "st_size": 730,
+          "st_uid": 1000
+        }
+      },
+      "components-v1-to-v2.diff": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 1678,
+        "sha256": "41f99d9612664696d01f0831c40a3b5fd78ef0993f615b3a2d22b38f7c9ff483",
+        "stat11_after": {
+          "st_atime_ns": 1791321322964151552,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321322964661066,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706764,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321322964661066,
+          "st_nlink": 1,
+          "st_size": 1678,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791321322964151552,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321322964661066,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706764,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321322964661066,
+          "st_nlink": 1,
+          "st_size": 1678,
+          "st_uid": 1000
+        }
+      },
+      "launcher-v1-to-v2.diff": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 2715,
+        "sha256": "be9998e6a60a4376a29d81e57b2141c4deba5221686b8c62d8c7a78129b5195f",
+        "stat11_after": {
+          "st_atime_ns": 1791321322963522010,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321322964151552,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706763,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321322964151552,
+          "st_nlink": 1,
+          "st_size": 2715,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791321322963522010,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321322964151552,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706763,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321322964151552,
+          "st_nlink": 1,
+          "st_size": 2715,
+          "st_uid": 1000
+        }
+      },
+      "launcher-v2-to-v3.diff": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 9537,
+        "sha256": "f3a862b650b7780161323dd7838bd25b5ef7e79b402c4bcd843dd2d9b133fdb9",
+        "stat11_after": {
+          "st_atime_ns": 1791321896112008048,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791321777524982254,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706826,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321777524982254,
+          "st_nlink": 1,
+          "st_size": 9537,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791321896112008048,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791321777524982254,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706826,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321777524982254,
+          "st_nlink": 1,
+          "st_size": 9537,
+          "st_uid": 1000
+        }
+      },
+      "original-read.py.txt": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 3335,
+        "sha256": "57449f72ed5102b76bd6a0235da600d0d8efe5a1bd86d16989076f8786f00199",
+        "stat11_after": {
+          "st_atime_ns": 1791320978099968235,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791320978100069935,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706467,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100069935,
+          "st_nlink": 1,
+          "st_size": 3335,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791320978099968235,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791320978100069935,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706467,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100069935,
+          "st_nlink": 1,
+          "st_size": 3335,
+          "st_uid": 1000
+        }
+      },
+      "original-vs-row-adaptations.diff": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 4110,
+        "sha256": "33e40e9ffd3e3b216ec9084d007ecf2c37a7e4fb69c1d0e2a6c53d21c1b05430",
+        "stat11_after": {
+          "st_atime_ns": 1791320978100212837,
+          "st_blocks": 16,
+          "st_ctime_ns": 1791320978100235520,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706471,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100235520,
+          "st_nlink": 1,
+          "st_size": 4110,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791320978100212837,
+          "st_blocks": 16,
+          "st_ctime_ns": 1791320978100235520,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706471,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100235520,
+          "st_nlink": 1,
+          "st_size": 4110,
+          "st_uid": 1000
+        }
+      },
+      "pair_components.py": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 8810,
+        "sha256": "17534aefdfb690a353578e510ae60b8421679c59abb3ccef4c8d2068f4fd3744",
+        "stat11_after": {
+          "st_atime_ns": 1791320978095764370,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791320978099968235,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706466,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978099968235,
+          "st_nlink": 1,
+          "st_size": 8810,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791320978095764370,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791320978099968235,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706466,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978099968235,
+          "st_nlink": 1,
+          "st_size": 8810,
+          "st_uid": 1000
+        }
+      },
+      "pair_components_v2.py": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 9210,
+        "sha256": "c79ac44ab2c4eb9316abfd42df008bfcf6c50e9aac5689dd6f5a53ac5df73029",
+        "stat11_after": {
+          "st_atime_ns": 1791321547173350332,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791321322959367881,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706761,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321322959367881,
+          "st_nlink": 1,
+          "st_size": 9210,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791321547173350332,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791321322959367881,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706761,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321322959367881,
+          "st_nlink": 1,
+          "st_size": 9210,
+          "st_uid": 1000
+        }
+      },
+      "pair_owned_launch.py": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 24071,
+        "sha256": "f347f3a7aae3b30d256b22b227efa84638575569d6cffd1d824d2ef8504548dc",
+        "stat11_after": {
+          "st_atime_ns": 1791321176890874132,
+          "st_blocks": 48,
+          "st_ctime_ns": 1791321176892500257,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706505,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321176892500257,
+          "st_nlink": 1,
+          "st_size": 24071,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791321176890874132,
+          "st_blocks": 48,
+          "st_ctime_ns": 1791321176892500257,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706505,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321176892500257,
+          "st_nlink": 1,
+          "st_size": 24071,
+          "st_uid": 1000
+        }
+      },
+      "pair_owned_launch_v2.py": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 24165,
+        "sha256": "3748ed9a1b0d5c1b89841a746338f1eef70cbed6cbf7cbade76bfd6b3ae27c0c",
+        "stat11_after": {
+          "st_atime_ns": 1791321547173350332,
+          "st_blocks": 48,
+          "st_ctime_ns": 1791321322963522010,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706762,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321322963522010,
+          "st_nlink": 1,
+          "st_size": 24165,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791321547173350332,
+          "st_blocks": 48,
+          "st_ctime_ns": 1791321322963522010,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706762,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321322963522010,
+          "st_nlink": 1,
+          "st_size": 24165,
+          "st_uid": 1000
+        }
+      },
+      "pair_owned_launch_v3.py": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 29990,
+        "sha256": "16e21114ce5965cf0a93b2525a45a211c108fbf9ed4f6dd3b1bbb837b516f479",
+        "stat11_after": {
+          "st_atime_ns": 1791322156226871486,
+          "st_blocks": 64,
+          "st_ctime_ns": 1791321777524233305,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706825,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321777524233305,
+          "st_nlink": 1,
+          "st_size": 29990,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791322156226871486,
+          "st_blocks": 64,
+          "st_ctime_ns": 1791321777524233305,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706825,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321777524233305,
+          "st_nlink": 1,
+          "st_size": 29990,
+          "st_uid": 1000
+        }
+      },
+      "plan-v2-to-v3.diff": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 10013,
+        "sha256": "cc8c6471d218797cd06e51e92de1f3a48245935beb3ba5285c2c6b8d40b8a038",
+        "stat11_after": {
+          "st_atime_ns": 1791322156194871625,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791321841430259121,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706828,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321841430259121,
+          "st_nlink": 1,
+          "st_size": 10013,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791322156194871625,
+          "st_blocks": 24,
+          "st_ctime_ns": 1791321841430259121,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706828,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321841430259121,
+          "st_nlink": 1,
+          "st_size": 10013,
+          "st_uid": 1000
+        }
+      },
+      "plan.json": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 15027,
+        "sha256": "7d2c9b14e0b77b6374552b3da5124787eda0a8d1db3e227227f7de2834b9701b",
+        "stat11_after": {
+          "st_atime_ns": 1791321547581349186,
+          "st_blocks": 32,
+          "st_ctime_ns": 1791321435658793027,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706822,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321435658793027,
+          "st_nlink": 1,
+          "st_size": 15027,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791321547581349186,
+          "st_blocks": 32,
+          "st_ctime_ns": 1791321435658793027,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706822,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321435658793027,
+          "st_nlink": 1,
+          "st_size": 15027,
+          "st_uid": 1000
+        }
+      },
+      "plan.v3.json": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 18789,
+        "sha256": "3f97b21f418164eefe4c391c86cfe9619ce636b5d6315f49f470e138726881c4",
+        "stat11_after": {
+          "st_atime_ns": 1791322003399543612,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791321841429669798,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706827,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321841429669798,
+          "st_nlink": 1,
+          "st_size": 18789,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791322003399543612,
+          "st_blocks": 40,
+          "st_ctime_ns": 1791321841429669798,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706827,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321841429669798,
+          "st_nlink": 1,
+          "st_size": 18789,
+          "st_uid": 1000
+        }
+      },
+      "preparation-handoff.json": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 704,
+        "sha256": "16a740b28d239d3bdd808f3dea929b5055159701326036ca8d5be5fa63e02cc0",
+        "stat11_after": {
+          "st_atime_ns": 1791321435658793027,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321435658936429,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706823,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321435658936429,
+          "st_nlink": 1,
+          "st_size": 704,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791321435658793027,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321435658936429,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706823,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321435658936429,
+          "st_nlink": 1,
+          "st_size": 704,
+          "st_uid": 1000
+        }
+      },
+      "preparation-handoff.v3.json": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 1097,
+        "sha256": "7d6a0c2d967eddeff19aed42edf12b422033b7cd9e1cdc2a0188bc5911ec3374",
+        "stat11_after": {
+          "st_atime_ns": 1791321841430259121,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321841430360701,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706829,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321841430360701,
+          "st_nlink": 1,
+          "st_size": 1097,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791321841430259121,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321841430360701,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706829,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321841430360701,
+          "st_nlink": 1,
+          "st_size": 1097,
+          "st_uid": 1000
+        }
+      },
+      "row-control.py.txt": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 3915,
+        "sha256": "52f7e4c3494d6e21323b020dec6fc3120b43dd2ed7cb1e95ccd4a75e58279788",
+        "stat11_after": {
+          "st_atime_ns": 1791320978100069935,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791320978100141010,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706468,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100141010,
+          "st_nlink": 1,
+          "st_size": 3915,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791320978100069935,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791320978100141010,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706468,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100141010,
+          "st_nlink": 1,
+          "st_size": 3915,
+          "st_uid": 1000
+        }
+      },
+      "row-vs-tuple.diff": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 1031,
+        "sha256": "e1784f2509a692b61cdcd7ff0f2fd2b0e950e09face584b11502191d77975f99",
+        "stat11_after": {
+          "st_atime_ns": 1791320978100174340,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791320978100212837,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706470,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100212837,
+          "st_nlink": 1,
+          "st_size": 1031,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791320978100174340,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791320978100212837,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706470,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100212837,
+          "st_nlink": 1,
+          "st_size": 1031,
+          "st_uid": 1000
+        }
+      },
+      "row-vs-tuple.v2.diff": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 1077,
+        "sha256": "80edfa2c00509ecf7454cc5b41e08e6b7fbca1ba144fc257fe4ed545e579ef4e",
+        "stat11_after": {
+          "st_atime_ns": 1791321547581349186,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321322966146345,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706765,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321322966146345,
+          "st_nlink": 1,
+          "st_size": 1077,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791321547581349186,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791321322966146345,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706765,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791321322966146345,
+          "st_nlink": 1,
+          "st_size": 1077,
+          "st_uid": 1000
+        }
+      },
+      "tuple-component.py.txt": {
+        "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+        "bytes": 3996,
+        "sha256": "d2e1fa5984ed13ffb698a424183fc7a818e381147b0b00713162d189d29590f1",
+        "stat11_after": {
+          "st_atime_ns": 1791320978100141010,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791320978100174340,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706469,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100174340,
+          "st_nlink": 1,
+          "st_size": 3996,
+          "st_uid": 1000
+        },
+        "stat11_before": {
+          "st_atime_ns": 1791320978100141010,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791320978100174340,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 1706469,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791320978100174340,
+          "st_nlink": 1,
+          "st_size": 3996,
+          "st_uid": 1000
+        }
+      }
+    }
+  },
+  "quota_difference_exact_pair_final_bytes": 36188,
+  "real_orders_sent": 0,
+  "reported_quota_before_pair_final_bytes": 35742695,
+  "root_authorized_launch": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6025820899",
+  "root_supervisor_pid": 38424,
+  "schema": "rc6.row-tuple.closed-causal-note.v1",
+  "signal_scope": "Original native-finalizer Python os.kill/os.killpg window reported no attempted/vetoed/sent nonzero signals; outer original manager sent no signals. No binary/kernel-transitive no-signal assertion.",
+  "source_index_sha256": "8f8e46aa0baf5cdf0e0e46dc4e1966a279260a025cbf6d82a580778f2000b79a",
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "status": "DIAGNOSTIC_RED",
+  "timestamp_utc": "2026-10-06T21:41:28.889282+00:00",
+  "typed_native_sha256_each": {
+    "ROW_control": "e40b6b68ba00d75f442ce9f33361bd3260be3a4f8d5c43c40fe0d4553c3b97e7",
+    "TUPLE_component": "e40b6b68ba00d75f442ce9f33361bd3260be3a4f8d5c43c40fe0d4553c3b97e7"
+  },
+  "variants": {
+    "ROW_control": {
+      "Data_original11_and_SHA_unchanged": true,
+      "INET_operation_and_constructor_observations": {
+        "inet_socket_attempts": [],
+        "inet_socket_constructor_requests": [],
+        "subprocess_executable_counts": {
+          "git": 4
+        }
+      },
+      "actual_locked157_names_versions": {
+        "duplicate_names": [],
+        "expected_total": 157,
+        "installed_distribution_bytes_authenticated": false,
+        "installed_total": 157,
+        "installer_executed_by_this_runner": false,
+        "metadata_names_versions_exact": true,
+        "schema": "rc6.frozen-governed-installed-preflight.v1",
+        "source_hash_lock_action_platform_audit": {
+          "action_commit_gaps": [],
+          "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+          "base_image_digest_pinned": true,
+          "binary_distribution_policy_enforced": true,
+          "build_distribution_hash_gaps": [],
+          "build_isolation_disabled": true,
+          "build_tools_require_hashes": true,
+          "build_tools_total": 3,
+          "docker_requires_hashes": true,
+          "docker_uses_lock": true,
+          "hermetic_build": false,
+          "lock_distribution_hash_gaps": [],
+          "lock_exact_requirements": 154,
+          "lock_hashed_requirements": 154,
+          "lock_non_exact_requirements": [],
+          "lock_requirements_total": 154,
+          "platform": {
+            "architecture": "x86_64",
+            "libc_name": "glibc",
+            "libc_version": "2.41",
+            "os": "linux",
+            "python_minor": "3.11"
+          },
+          "platform_supported": true,
+          "reproducibility_scope": "APPROVED_ACTION_COMMITS_AND_HASHED_PYTHON_DISTRIBUTIONS",
+          "residual_boundaries": [
+            "ubuntu-24.04 hosted runner and kernel are externally managed",
+            "apt repository package bytes are not snapshot/hash locked",
+            "source-only packages compile under the pinned image/runtime and hash-locked build backends",
+            "pip resolver and installed closure are checked at Predeploy; same version does not guarantee equal wheel bytes"
+          ],
+          "schema_version": 3,
+          "source_requirements_total": 24,
+          "status": "GREEN",
+          "supply_chain_schema_valid": true
+        },
+        "status": "GREEN"
+      },
+      "actual_main_exitcode": 1,
+      "actual_pid": 38431,
+      "code_custody": {
+        "all11_code_unchanged_claim": false,
+        "all_git_modes_observed": [
+          "100644",
+          "100755"
+        ],
+        "all_source_bytes_modes_rawGit_and_original10_fields_unchanged": true,
+        "atime_changes_child": [],
+        "atime_changes_parent": [],
+        "directories_including_root": 472,
+        "files": 3680,
+        "raw_git_binding": {
+          "raw_git_bound": true,
+          "source_repo": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/repository",
+          "source_root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source"
+        },
+        "source_index_sha256": "8f8e46aa0baf5cdf0e0e46dc4e1966a279260a025cbf6d82a580778f2000b79a"
+      },
+      "control_member_refs": {
+        "child-finalization-control.json": {
+          "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+          "bytes": 2090,
+          "filename": "child-finalization-control.json",
+          "relative_member": "raw/ROW_control/child-finalization-control.json",
+          "sha256": "ce85541fe5d137dfd859667c2b6681e59ead655b850b1f79017cb50486162ee3",
+          "stat11_after": {
+            "st_atime_ns": 1791322243178488709,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322243180294821,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706853,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322243180294821,
+            "st_nlink": 1,
+            "st_size": 2090,
+            "st_uid": 1000
+          },
+          "stat11_before": {
+            "st_atime_ns": 1791322243178488709,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322243180294821,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706853,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322243180294821,
+            "st_nlink": 1,
+            "st_size": 2090,
+            "st_uid": 1000
+          }
+        },
+        "child.result.json": {
+          "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+          "bytes": 14217,
+          "filename": "child.result.json",
+          "relative_member": "raw/ROW_control/child.result.json",
+          "sha256": "bf1fdf71153807410c7029feee220533aa94b9aca24dd7d044483376cbfcb46d",
+          "stat11_after": {
+            "st_atime_ns": 1791322244638482251,
+            "st_blocks": 32,
+            "st_ctime_ns": 1791322244639766274,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706859,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322244639766274,
+            "st_nlink": 1,
+            "st_size": 14217,
+            "st_uid": 1000
+          },
+          "stat11_before": {
+            "st_atime_ns": 1791322244638482251,
+            "st_blocks": 32,
+            "st_ctime_ns": 1791322244639766274,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706859,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322244639766274,
+            "st_nlink": 1,
+            "st_size": 14217,
+            "st_uid": 1000
+          }
+        },
+        "kernel-supervision.json": {
+          "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+          "bytes": 2034,
+          "filename": "kernel-supervision.json",
+          "relative_member": "raw/ROW_control/kernel-supervision.json",
+          "sha256": "5305d490063742ba20ab82398d4c41099123f0a5be23fc1029c764cf65d0bac9",
+          "stat11_after": {
+            "st_atime_ns": 1791322244730481847,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322244734279293,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706860,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322244734279293,
+            "st_nlink": 1,
+            "st_size": 2034,
+            "st_uid": 1000
+          },
+          "stat11_before": {
+            "st_atime_ns": 1791322244730481847,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322244734279293,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706860,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322244734279293,
+            "st_nlink": 1,
+            "st_size": 2034,
+            "st_uid": 1000
+          }
+        },
+        "native-finalization-readback-control.json": {
+          "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+          "bytes": 1485,
+          "filename": "native-finalization-readback-control.json",
+          "relative_member": "raw/ROW_control/native-finalization-readback-control.json",
+          "sha256": "4d1da53475c25e3daf9e24825f3950ee751560b0cfcf6ab2e50ccaab6e898d0b",
+          "stat11_after": {
+            "st_atime_ns": 1791322244734481829,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322244736872021,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706862,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322244736872021,
+            "st_nlink": 1,
+            "st_size": 1485,
+            "st_uid": 1000
+          },
+          "stat11_before": {
+            "st_atime_ns": 1791322244734481829,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322244736872021,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706862,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322244736872021,
+            "st_nlink": 1,
+            "st_size": 1485,
+            "st_uid": 1000
+          }
+        },
+        "typed-native-result.json": {
+          "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+          "bytes": 8592168,
+          "filename": "typed-native-result.json",
+          "relative_member": "raw/ROW_control/typed-native-result.json",
+          "sha256": "e40b6b68ba00d75f442ce9f33361bd3260be3a4f8d5c43c40fe0d4553c3b97e7",
+          "stat11_after": {
+            "st_atime_ns": 1791322243802485949,
+            "st_blocks": 16784,
+            "st_ctime_ns": 1791322243805806968,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706854,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322243805806968,
+            "st_nlink": 1,
+            "st_size": 8592168,
+            "st_uid": 1000
+          },
+          "stat11_before": {
+            "st_atime_ns": 1791322243802485949,
+            "st_blocks": 16784,
+            "st_ctime_ns": 1791322243805806968,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706854,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322243805806968,
+            "st_nlink": 1,
+            "st_size": 8592168,
+            "st_uid": 1000
+          }
+        }
+      },
+      "counts": {
+        "cash": 0,
+        "errors": 0,
+        "metadata": 12000,
+        "quotes": 0,
+        "truncated": 0
+      },
+      "deadline_original_seconds": 0.5,
+      "intentional_ALIEN_nonzero_preserved": true,
+      "kernel_CONTROL": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 3.7065715540011297,
+        "adopted_descendants_reaped": [],
+        "cpu_system_seconds": 0.522833,
+        "cpu_user_seconds": 3.108952,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 150339584,
+        "phase_acceptance_deadline_seconds": 60,
+        "pid": 38431,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 1,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "38424",
+          "Tgid": "38424",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 38424,
+        "supervisor_pid": 38424,
+        "termination_reap_restore_cleanup_seconds": 7.791600000928156e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 38431,
+        "wall_seconds": 3.7068832959994324
+      },
+      "namespaces": {
+        "hypothesis_storage_directory": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/raw/ROW_control/execution-private/hypothesis",
+        "log_dir": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/raw/ROW_control/execution-private/logs",
+        "pytest_cache_provider_disabled": true,
+        "root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/raw/ROW_control/execution-private",
+        "tmpdir": "/workspace/rc6gov-oyjdy4oy",
+        "tmpdir_device": 27,
+        "tmpdir_owner_uid": 1000,
+        "tmpdir_retained_for_diagnostics": true,
+        "writable_source_exclusions_added": []
+      },
+      "native_finalization_CONTROL": {
+        "CONTROL_ONLY": true,
+        "DIAGNOSTIC_ONLY": true,
+        "child_pid": 38431,
+        "gate_qualified": false,
+        "original_finalization_report": {
+          "errors": [],
+          "finalization_thread_finished": true,
+          "forced_termination": false,
+          "forced_termination_attempted": false,
+          "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+          "inherited_tracker_preserved": false,
+          "initial": {
+            "forkserver_alive_fd": null,
+            "forkserver_pid": null,
+            "resource_tracker_fd": null,
+            "resource_tracker_pid": null
+          },
+          "joined_children": [],
+          "kernel_echild_before_phase_return": true,
+          "management_bound_seconds": 5,
+          "protocol_steps": [
+            {
+              "completed": true,
+              "stage": "nonnegative_stdlib_finalizers",
+              "wall_seconds": 1.0766001651063561e-05
+            },
+            {
+              "completed": true,
+              "stage": "join_owned_children",
+              "wall_seconds": 4.986999556422234e-06
+            },
+            {
+              "completed": true,
+              "stage": "stop_owned_forkserver",
+              "wall_seconds": 1.972999598365277e-06
+            },
+            {
+              "completed": true,
+              "stage": "remaining_stdlib_finalizers",
+              "wall_seconds": 3.254001057939604e-06
+            },
+            {
+              "completed": true,
+              "stage": "stop_owned_resource_tracker",
+              "wall_seconds": 2.3430002329405397e-06
+            },
+            {
+              "completed": true,
+              "stage": "verify_kernel_echild",
+              "wall_seconds": 2.7500998839968815e-05
+            }
+          ],
+          "signal_guard_installed_and_witnessed": true,
+          "signal_vetoed": false,
+          "status": "GREEN",
+          "stopped_owned_infrastructure": [],
+          "termination_signal_attempts": [],
+          "unexpected_kernel_children": [],
+          "wall_seconds": 0.00044411199996829964
+        },
+        "original_manager_sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+        "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+        "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+        "variant": "ROW_control"
+      },
+      "native_private_capture_entry_observed_cpu_seconds": 0.03932518699999976,
+      "native_private_capture_entry_observed_wall_seconds": 0.039323920998867834,
+      "native_readback_revalidated_predicates": {
+        "CONTROL_only_actual_variant_PID_Source_binding": true,
+        "actual_wall_bounded5": true,
+        "all_six_original_protocol_steps_completed": true,
+        "finalization_thread_finished": true,
+        "fresh_original_infrastructure_not_inherited": true,
+        "native_kernel_ECHILD_before_phase_return": true,
+        "no_forced_termination_attempt": true,
+        "no_original_finalization_error": true,
+        "no_reported_forced_termination": true,
+        "no_signal_veto": true,
+        "no_termination_signal_attempts": true,
+        "no_unexpected_kernel_child": true,
+        "original_bound_exact5": true,
+        "original_report_GREEN": true,
+        "signal_guard_installed_and_witnessed": true,
+        "signal_observation_scope_original_literal": true
+      },
+      "no_binary_or_kernel_transitive_network_or_signal_attestation": true,
+      "phase_CPU_is_observed_with_instrumentation_never_overhead_subtracted": true,
+      "phase_intervals_nonoverlapping": [
+        {
+          "actual_per_cursor_factory": "Row",
+          "count": 12000,
+          "execute_observed_cpu_seconds": 0.00739462599999996,
+          "execute_observed_wall_seconds": 0.007394336000288604,
+          "first_actual_native_row_type": "Row",
+          "list_materialization_observed_cpu_seconds": 0.03523072000000038,
+          "list_materialization_observed_wall_seconds": 0.03522988999975496,
+          "row_transform_observed_cpu_seconds": 0.015862643999999815,
+          "row_transform_observed_wall_seconds": 0.015862630996707594,
+          "table": "financial_instrument_catalog"
+        },
+        {
+          "actual_per_cursor_factory": "Row",
+          "count": 0,
+          "execute_observed_cpu_seconds": 0.00013492999999975552,
+          "execute_observed_wall_seconds": 0.00013492899961420335,
+          "first_actual_native_row_type": null,
+          "list_materialization_observed_cpu_seconds": 0.0006831640000002359,
+          "list_materialization_observed_wall_seconds": 0.0006822299983468838,
+          "row_transform_observed_cpu_seconds": 5.49799999971512e-06,
+          "row_transform_observed_wall_seconds": 6.510003004223108e-06,
+          "table": "market_snapshots"
+        },
+        {
+          "actual_per_cursor_factory": "Row",
+          "count": 0,
+          "execute_observed_cpu_seconds": 0.010328749999999776,
+          "execute_observed_wall_seconds": 0.01032731700252043,
+          "first_actual_native_row_type": null,
+          "list_materialization_observed_cpu_seconds": 1.4612000000191472e-05,
+          "list_materialization_observed_wall_seconds": 1.6023997886804864e-05,
+          "row_transform_observed_cpu_seconds": 4.265999999919501e-06,
+          "row_transform_observed_wall_seconds": 4.276000254321843e-06,
+          "table": "ppi_intraday_points"
+        },
+        {
+          "actual_per_cursor_factory": "Row",
+          "count": 0,
+          "execute_observed_cpu_seconds": 7.786600000025956e-05,
+          "execute_observed_wall_seconds": 7.771499804221094e-05,
+          "first_actual_native_row_type": null,
+          "list_materialization_observed_cpu_seconds": 2.6439999998295605e-06,
+          "list_materialization_observed_wall_seconds": 2.6840025384444743e-06,
+          "row_transform_observed_cpu_seconds": 1.9230000001257963e-06,
+          "row_transform_observed_wall_seconds": 2.092998329317197e-06,
+          "table": "paper_equity_by_currency"
+        }
+      ],
+      "private_dict_identity_facts": {
+        "metadata_rows_are_exact_distinct_dicts": true,
+        "metadata_values_are_exact_distinct_private_dicts": true
+      },
+      "read_observed_cpu_seconds": 0.11440319100000007,
+      "read_observed_wall_seconds": 0.11440449100336991,
+      "returned_with_actual_component_deadline_headroom_seconds": 0.38560219799910556,
+      "separate_offline_capability": {
+        "af_unix_ipc_functional": true,
+        "architecture": "x86_64",
+        "creation_denial_witnesses": [
+          {
+            "errno": 97,
+            "family": 10,
+            "operation": "socket_creation",
+            "socket_created": false
+          }
+        ],
+        "ipv4_creation_grants_operation_authority": false,
+        "kernel_errno": 97,
+        "native_socket_creation_denied_families": [
+          10
+        ],
+        "no_new_privileges": true,
+        "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+        "status": "INSTALLED_AND_KERNEL_WITNESSED",
+        "transitive_kernel_network_attestation": false
+      },
+      "sparse_callback_record_body_lower_bound_cpu_seconds": 4.642700000001554e-05,
+      "sparse_callback_record_body_lower_bound_wall_seconds": 3.8930003938730806e-05,
+      "sparse_event_count": 18,
+      "sqlite_open_audit": [
+        {
+          "original_source_sqlite_opened": false,
+          "path": "/workspace/rc6gov-oyjdy4oy/rc6-sqlite-copy-xf2te6os/snapshot.sqlite",
+          "private_scratch_only": true,
+          "uri_query": "mode=ro"
+        }
+      ]
+    },
+    "TUPLE_component": {
+      "Data_original11_and_SHA_unchanged": true,
+      "INET_operation_and_constructor_observations": {
+        "inet_socket_attempts": [],
+        "inet_socket_constructor_requests": [],
+        "subprocess_executable_counts": {
+          "git": 4
+        }
+      },
+      "actual_locked157_names_versions": {
+        "duplicate_names": [],
+        "expected_total": 157,
+        "installed_distribution_bytes_authenticated": false,
+        "installed_total": 157,
+        "installer_executed_by_this_runner": false,
+        "metadata_names_versions_exact": true,
+        "schema": "rc6.frozen-governed-installed-preflight.v1",
+        "source_hash_lock_action_platform_audit": {
+          "action_commit_gaps": [],
+          "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+          "base_image_digest_pinned": true,
+          "binary_distribution_policy_enforced": true,
+          "build_distribution_hash_gaps": [],
+          "build_isolation_disabled": true,
+          "build_tools_require_hashes": true,
+          "build_tools_total": 3,
+          "docker_requires_hashes": true,
+          "docker_uses_lock": true,
+          "hermetic_build": false,
+          "lock_distribution_hash_gaps": [],
+          "lock_exact_requirements": 154,
+          "lock_hashed_requirements": 154,
+          "lock_non_exact_requirements": [],
+          "lock_requirements_total": 154,
+          "platform": {
+            "architecture": "x86_64",
+            "libc_name": "glibc",
+            "libc_version": "2.41",
+            "os": "linux",
+            "python_minor": "3.11"
+          },
+          "platform_supported": true,
+          "reproducibility_scope": "APPROVED_ACTION_COMMITS_AND_HASHED_PYTHON_DISTRIBUTIONS",
+          "residual_boundaries": [
+            "ubuntu-24.04 hosted runner and kernel are externally managed",
+            "apt repository package bytes are not snapshot/hash locked",
+            "source-only packages compile under the pinned image/runtime and hash-locked build backends",
+            "pip resolver and installed closure are checked at Predeploy; same version does not guarantee equal wheel bytes"
+          ],
+          "schema_version": 3,
+          "source_requirements_total": 24,
+          "status": "GREEN",
+          "supply_chain_schema_valid": true
+        },
+        "status": "GREEN"
+      },
+      "actual_main_exitcode": 1,
+      "actual_pid": 38437,
+      "code_custody": {
+        "all11_code_unchanged_claim": false,
+        "all_git_modes_observed": [
+          "100644",
+          "100755"
+        ],
+        "all_source_bytes_modes_rawGit_and_original10_fields_unchanged": true,
+        "atime_changes_child": [],
+        "atime_changes_parent": [],
+        "directories_including_root": 472,
+        "files": 3680,
+        "raw_git_binding": {
+          "raw_git_bound": true,
+          "source_repo": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/repository",
+          "source_root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source"
+        },
+        "source_index_sha256": "8f8e46aa0baf5cdf0e0e46dc4e1966a279260a025cbf6d82a580778f2000b79a"
+      },
+      "control_member_refs": {
+        "child-finalization-control.json": {
+          "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+          "bytes": 2093,
+          "filename": "child-finalization-control.json",
+          "relative_member": "raw/TUPLE_component/child-finalization-control.json",
+          "sha256": "1ff5f61e6260987a81d88ed5ba3d2713fce14cb88212a6ca9c968ae1ec083f13",
+          "stat11_after": {
+            "st_atime_ns": 1791322247786477094,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322247788457568,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706876,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322247788457568,
+            "st_nlink": 1,
+            "st_size": 2093,
+            "st_uid": 1000
+          },
+          "stat11_before": {
+            "st_atime_ns": 1791322247786477094,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322247788457568,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706876,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322247788457568,
+            "st_nlink": 1,
+            "st_size": 2093,
+            "st_uid": 1000
+          }
+        },
+        "child.result.json": {
+          "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+          "bytes": 14237,
+          "filename": "child.result.json",
+          "relative_member": "raw/TUPLE_component/child.result.json",
+          "sha256": "cd5b0cdbc7155a56cd313d341f028e61dbb0efedbf77bfbbc95e1ddeb84476c5",
+          "stat11_after": {
+            "st_atime_ns": 1791322249190476472,
+            "st_blocks": 32,
+            "st_ctime_ns": 1791322249195364596,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706883,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322249195364596,
+            "st_nlink": 1,
+            "st_size": 14237,
+            "st_uid": 1000
+          },
+          "stat11_before": {
+            "st_atime_ns": 1791322249190476472,
+            "st_blocks": 32,
+            "st_ctime_ns": 1791322249195364596,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706883,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322249195364596,
+            "st_nlink": 1,
+            "st_size": 14237,
+            "st_uid": 1000
+          }
+        },
+        "kernel-supervision.json": {
+          "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+          "bytes": 2037,
+          "filename": "kernel-supervision.json",
+          "relative_member": "raw/TUPLE_component/kernel-supervision.json",
+          "sha256": "ec2eeab07d8a8aebdefa09952b8187c4e963ed327624d2d6e4aebae842f1c544",
+          "stat11_after": {
+            "st_atime_ns": 1791322249238476450,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322249241489067,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706884,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322249241489067,
+            "st_nlink": 1,
+            "st_size": 2037,
+            "st_uid": 1000
+          },
+          "stat11_before": {
+            "st_atime_ns": 1791322249238476450,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322249241489067,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706884,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322249241489067,
+            "st_nlink": 1,
+            "st_size": 2037,
+            "st_uid": 1000
+          }
+        },
+        "native-finalization-readback-control.json": {
+          "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+          "bytes": 1485,
+          "filename": "native-finalization-readback-control.json",
+          "relative_member": "raw/TUPLE_component/native-finalization-readback-control.json",
+          "sha256": "af0c44bb4c91c461be0c202a01c7a373bd16dbc4fbbe08c012dc761df6f94a0f",
+          "stat11_after": {
+            "st_atime_ns": 1791322249242503343,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322249244890786,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706886,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322249244890786,
+            "st_nlink": 1,
+            "st_size": 1485,
+            "st_uid": 1000
+          },
+          "stat11_before": {
+            "st_atime_ns": 1791322249242503343,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791322249244890786,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706886,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322249244890786,
+            "st_nlink": 1,
+            "st_size": 1485,
+            "st_uid": 1000
+          }
+        },
+        "typed-native-result.json": {
+          "all11_unchanged_during_NOFOLLOW_NOATIME_capture": true,
+          "bytes": 8592168,
+          "filename": "typed-native-result.json",
+          "relative_member": "raw/TUPLE_component/typed-native-result.json",
+          "sha256": "e40b6b68ba00d75f442ce9f33361bd3260be3a4f8d5c43c40fe0d4553c3b97e7",
+          "stat11_after": {
+            "st_atime_ns": 1791322248414476816,
+            "st_blocks": 16784,
+            "st_ctime_ns": 1791322248416861408,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706880,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322248416861408,
+            "st_nlink": 1,
+            "st_size": 8592168,
+            "st_uid": 1000
+          },
+          "stat11_before": {
+            "st_atime_ns": 1791322248414476816,
+            "st_blocks": 16784,
+            "st_ctime_ns": 1791322248416861408,
+            "st_dev": 27,
+            "st_gid": 1000,
+            "st_ino": 1706880,
+            "st_mode": 33188,
+            "st_mtime_ns": 1791322248416861408,
+            "st_nlink": 1,
+            "st_size": 8592168,
+            "st_uid": 1000
+          }
+        }
+      },
+      "counts": {
+        "cash": 0,
+        "errors": 0,
+        "metadata": 12000,
+        "quotes": 0,
+        "truncated": 0
+      },
+      "deadline_original_seconds": 0.5,
+      "intentional_ALIEN_nonzero_preserved": true,
+      "kernel_CONTROL": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 3.611644406999403,
+        "adopted_descendants_reaped": [],
+        "cpu_system_seconds": 0.527843,
+        "cpu_user_seconds": 3.054219,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 155242496,
+        "phase_acceptance_deadline_seconds": 60,
+        "pid": 38437,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 1,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "38424",
+          "Tgid": "38424",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 38424,
+        "supervisor_pid": 38424,
+        "termination_reap_restore_cleanup_seconds": 7.178699888754636e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 38437,
+        "wall_seconds": 3.6119803150031657
+      },
+      "namespaces": {
+        "hypothesis_storage_directory": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/raw/TUPLE_component/execution-private/hypothesis",
+        "log_dir": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/raw/TUPLE_component/execution-private/logs",
+        "pytest_cache_provider_disabled": true,
+        "root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/raw/TUPLE_component/execution-private",
+        "tmpdir": "/workspace/rc6gov-1wpxjcv0",
+        "tmpdir_device": 27,
+        "tmpdir_owner_uid": 1000,
+        "tmpdir_retained_for_diagnostics": true,
+        "writable_source_exclusions_added": []
+      },
+      "native_finalization_CONTROL": {
+        "CONTROL_ONLY": true,
+        "DIAGNOSTIC_ONLY": true,
+        "child_pid": 38437,
+        "gate_qualified": false,
+        "original_finalization_report": {
+          "errors": [],
+          "finalization_thread_finished": true,
+          "forced_termination": false,
+          "forced_termination_attempted": false,
+          "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+          "inherited_tracker_preserved": false,
+          "initial": {
+            "forkserver_alive_fd": null,
+            "forkserver_pid": null,
+            "resource_tracker_fd": null,
+            "resource_tracker_pid": null
+          },
+          "joined_children": [],
+          "kernel_echild_before_phase_return": true,
+          "management_bound_seconds": 5,
+          "protocol_steps": [
+            {
+              "completed": true,
+              "stage": "nonnegative_stdlib_finalizers",
+              "wall_seconds": 1.9879000319633633e-05
+            },
+            {
+              "completed": true,
+              "stage": "join_owned_children",
+              "wall_seconds": 6.328999006655067e-06
+            },
+            {
+              "completed": true,
+              "stage": "stop_owned_forkserver",
+              "wall_seconds": 4.417001036927104e-06
+            },
+            {
+              "completed": true,
+              "stage": "remaining_stdlib_finalizers",
+              "wall_seconds": 3.555000148480758e-06
+            },
+            {
+              "completed": true,
+              "stage": "stop_owned_resource_tracker",
+              "wall_seconds": 3.5849989217240363e-06
+            },
+            {
+              "completed": true,
+              "stage": "verify_kernel_echild",
+              "wall_seconds": 3.6804998671868816e-05
+            }
+          ],
+          "signal_guard_installed_and_witnessed": true,
+          "signal_vetoed": false,
+          "status": "GREEN",
+          "stopped_owned_infrastructure": [],
+          "termination_signal_attempts": [],
+          "unexpected_kernel_children": [],
+          "wall_seconds": 0.0006339920000755228
+        },
+        "original_manager_sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+        "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+        "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+        "variant": "TUPLE_component"
+      },
+      "native_private_capture_entry_observed_cpu_seconds": 0.03715506700000004,
+      "native_private_capture_entry_observed_wall_seconds": 0.03715336599998409,
+      "native_readback_revalidated_predicates": {
+        "CONTROL_only_actual_variant_PID_Source_binding": true,
+        "actual_wall_bounded5": true,
+        "all_six_original_protocol_steps_completed": true,
+        "finalization_thread_finished": true,
+        "fresh_original_infrastructure_not_inherited": true,
+        "native_kernel_ECHILD_before_phase_return": true,
+        "no_forced_termination_attempt": true,
+        "no_original_finalization_error": true,
+        "no_reported_forced_termination": true,
+        "no_signal_veto": true,
+        "no_termination_signal_attempts": true,
+        "no_unexpected_kernel_child": true,
+        "original_bound_exact5": true,
+        "original_report_GREEN": true,
+        "signal_guard_installed_and_witnessed": true,
+        "signal_observation_scope_original_literal": true
+      },
+      "no_binary_or_kernel_transitive_network_or_signal_attestation": true,
+      "phase_CPU_is_observed_with_instrumentation_never_overhead_subtracted": true,
+      "phase_intervals_nonoverlapping": [
+        {
+          "actual_per_cursor_factory": "None",
+          "count": 12000,
+          "execute_observed_cpu_seconds": 0.007333404999999793,
+          "execute_observed_wall_seconds": 0.007333364999794867,
+          "first_actual_native_row_type": "tuple",
+          "list_materialization_observed_cpu_seconds": 0.019999113999999985,
+          "list_materialization_observed_wall_seconds": 0.02000993000183371,
+          "row_transform_observed_cpu_seconds": 0.029012872000000023,
+          "row_transform_observed_wall_seconds": 0.029033032998995623,
+          "table": "financial_instrument_catalog"
+        },
+        {
+          "actual_per_cursor_factory": "None",
+          "count": 0,
+          "execute_observed_cpu_seconds": 0.00014614699999970782,
+          "execute_observed_wall_seconds": 0.00014639700020779856,
+          "first_actual_native_row_type": null,
+          "list_materialization_observed_cpu_seconds": 0.0006229550000003137,
+          "list_materialization_observed_wall_seconds": 0.0006223240015970077,
+          "row_transform_observed_cpu_seconds": 5.166999999861588e-06,
+          "row_transform_observed_wall_seconds": 5.998001142870635e-06,
+          "table": "market_snapshots"
+        },
+        {
+          "actual_per_cursor_factory": "None",
+          "count": 0,
+          "execute_observed_cpu_seconds": 0.008980589000000094,
+          "execute_observed_wall_seconds": 0.008979247999377549,
+          "first_actual_native_row_type": null,
+          "list_materialization_observed_cpu_seconds": 1.0436000000169088e-05,
+          "list_materialization_observed_wall_seconds": 1.1717002053046599e-05,
+          "row_transform_observed_cpu_seconds": 3.0440000000631073e-06,
+          "row_transform_observed_wall_seconds": 3.1149975256994367e-06,
+          "table": "ppi_intraday_points"
+        },
+        {
+          "actual_per_cursor_factory": "None",
+          "count": 0,
+          "execute_observed_cpu_seconds": 6.467599999959717e-05,
+          "execute_observed_wall_seconds": 6.461600059992634e-05,
+          "first_actual_native_row_type": null,
+          "list_materialization_observed_cpu_seconds": 2.3630000001162443e-06,
+          "list_materialization_observed_wall_seconds": 2.4229993869084865e-06,
+          "row_transform_observed_cpu_seconds": 2.5539999999324436e-06,
+          "row_transform_observed_wall_seconds": 2.5939989427570254e-06,
+          "table": "paper_equity_by_currency"
+        }
+      ],
+      "private_dict_identity_facts": {
+        "metadata_rows_are_exact_distinct_dicts": true,
+        "metadata_values_are_exact_distinct_private_dicts": true
+      },
+      "read_observed_cpu_seconds": 0.10529129699999995,
+      "read_observed_wall_seconds": 0.10532725399752962,
+      "returned_with_actual_component_deadline_headroom_seconds": 0.39468012700308464,
+      "separate_offline_capability": {
+        "af_unix_ipc_functional": true,
+        "architecture": "x86_64",
+        "creation_denial_witnesses": [
+          {
+            "errno": 97,
+            "family": 10,
+            "operation": "socket_creation",
+            "socket_created": false
+          }
+        ],
+        "ipv4_creation_grants_operation_authority": false,
+        "kernel_errno": 97,
+        "native_socket_creation_denied_families": [
+          10
+        ],
+        "no_new_privileges": true,
+        "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+        "status": "INSTALLED_AND_KERNEL_WITNESSED",
+        "transitive_kernel_network_attestation": false
+      },
+      "sparse_callback_record_body_lower_bound_cpu_seconds": 4.3795000000734774e-05,
+      "sparse_callback_record_body_lower_bound_wall_seconds": 4.0832001104718074e-05,
+      "sparse_event_count": 18,
+      "sqlite_open_audit": [
+        {
+          "original_source_sqlite_opened": false,
+          "path": "/workspace/rc6gov-1wpxjcv0/rc6-sqlite-copy-trp2tmja/snapshot.sqlite",
+          "private_scratch_only": true,
+          "uri_query": "mode=ro"
+        }
+      ]
+    }
+  }
+}

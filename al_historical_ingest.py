@@ -70,10 +70,11 @@ describe ningún mercado que haya existido nunca.
 
 import json
 import logging
+import math
 import os
 import sqlite3
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional
 
 logger = logging.getLogger("historical_ingest")
@@ -99,6 +100,9 @@ CREATE TABLE IF NOT EXISTS market_historical_ohlcv (
     open REAL, high REAL, low REAL, close REAL, volume REAL,
     source TEXT NOT NULL,
     adjusted INTEGER DEFAULT 0,
+    currency TEXT NOT NULL DEFAULT 'UNKNOWN',
+    volume_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+    cash_turnover REAL,
     ingested_at TEXT DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (symbol, date)
 );
@@ -128,7 +132,23 @@ def _conn() -> sqlite3.Connection:
 def init_db() -> None:
     with _conn() as conn:
         conn.executescript(ESQUEMA)
+        columns = {r[1] for r in conn.execute('PRAGMA table_info(market_historical_ohlcv)')}
+        for name, declaration in (
+                ('currency', "TEXT NOT NULL DEFAULT 'UNKNOWN'"),
+                ('volume_kind', "TEXT NOT NULL DEFAULT 'UNKNOWN'"), ('cash_turnover', 'REAL')):
+            if name not in columns:
+                conn.execute('ALTER TABLE market_historical_ohlcv ADD COLUMN '+name+' '+declaration)
         conn.commit()
+
+
+class HistoricalRow(tuple):
+    """Six positional OHLCV fields plus explicit monetary/unit provenance."""
+    def __new__(cls, values, *, currency='UNKNOWN', volume_kind='UNKNOWN', cash_turnover=None):
+        value = super().__new__(cls, values)
+        value.currency = str(currency or 'UNKNOWN').upper()
+        value.volume_kind = str(volume_kind or 'UNKNOWN').upper()
+        value.cash_turnover = cash_turnover
+        return value
 
 
 def _normalizar_fila_iol(p: dict) -> Optional[tuple]:
@@ -139,33 +159,72 @@ def _normalizar_fila_iol(p: dict) -> Optional[tuple]:
     cierre = p.get("ultimoPrecio", p.get("cierre"))
     if not fecha or cierre in (None, 0):
         return None
-    return (fecha,
+    # montoOperado is monetary turnover. Never put it in the quantity column;
+    # no endpoint/family unit or currency is inferred from a ticker.
+    amount = p.get('montoOperado')
+    if amount is not None:
+        try:
+            amount = float(amount)
+            if not math.isfinite(amount) or amount < 0: return None
+        except (TypeError, ValueError): return None
+    return HistoricalRow((fecha,
             p.get("apertura"), p.get("maximo"), p.get("minimo"),
-            cierre, p.get("montoOperado", p.get("volumen", 0)))
+            cierre, p.get("volumen")),
+            currency=p.get('currency') or p.get('moneda') or 'UNKNOWN',
+            volume_kind=p.get('volume_kind') or 'UNKNOWN', cash_turnover=amount)
 
 
 def guardar_velas(symbol: str, asset_class: str, velas: List[tuple],
                   source: str, adjusted: bool) -> int:
-    """UPSERT masivo. Se sobrescribe la vela existente porque una serie
-    ajustada que llega después es más correcta que la sin ajustar que ya
-    estaba: el ajuste por dividendos reescribe el pasado, y así debe ser."""
+    """Legacy advisory UPSERT with atomic family/monetary collision guards.
+
+    Comparable adjusted/raw series belong in History v2, not this legacy key.
+    Existing data are retained; a different family/currency never overwrites
+    the same symbol/day merely because the historical PK omitted them.
+    """
     if not velas:
         return 0
-    filas = [(symbol, asset_class, v[0], v[1], v[2], v[3], v[4], v[5],
-              source, int(adjusted)) for v in velas]
+    from cu_history_store_v2_hf6 import validate_daily_values,MAX_BATCH_ROWS
+    if len(velas)>MAX_BATCH_ROWS:raise ValueError('HISTORY_BATCH_ROW_BUDGET_EXHAUSTED')
+    known=datetime.now(timezone.utc)
+    filas=[]
+    for v in velas:
+        values=validate_daily_values(date=v[0],open=v[1],high=v[2],low=v[3],close=v[4],
+                                     volume=v[5],known_at=known,market='UNKNOWN')
+        cash=getattr(v,'cash_turnover',None)
+        if cash is not None and (not math.isfinite(float(cash)) or float(cash)<0):
+            raise ValueError('HISTORY_CASH_TURNOVER_INVALID')
+        filas.append((symbol,asset_class,v[0],*(values[field] for field in ('open','high','low','close','volume')),
+                      source,int(adjusted),getattr(v,'currency','UNKNOWN'),getattr(v,'volume_kind','UNKNOWN'),cash))
     sql = """
         INSERT INTO market_historical_ohlcv
-            (symbol, asset_class, date, open, high, low, close, volume, source, adjusted)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (symbol, asset_class, date, open, high, low, close, volume, source, adjusted,
+             currency,volume_kind,cash_turnover)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(symbol, date) DO UPDATE SET
             open=excluded.open, high=excluded.high, low=excluded.low,
             close=excluded.close, volume=excluded.volume,
             source=excluded.source, adjusted=excluded.adjusted,
+            currency=excluded.currency,volume_kind=excluded.volume_kind,
+            cash_turnover=excluded.cash_turnover,
             ingested_at=CURRENT_TIMESTAMP
     """
     with _conn() as conn:
-        conn.executemany(sql, filas)
-        conn.commit()
+        conn.execute('BEGIN IMMEDIATE')
+        try:
+            for row in filas:
+                prior=conn.execute('SELECT asset_class,currency,adjusted FROM market_historical_ohlcv WHERE symbol=? AND date=?',(row[0],row[2])).fetchone()
+                if prior and str(prior[0]).upper()!=str(asset_class).upper():
+                    raise ValueError('LEGACY_HISTORY_FAMILY_COLLISION')
+                if prior and prior[1]!=row[10]:
+                    raise ValueError('LEGACY_HISTORY_CURRENCY_COLLISION')
+                if prior and bool(prior[2])!=bool(adjusted):
+                    raise ValueError('LEGACY_HISTORY_PRICE_BASIS_COLLISION')
+                conn.execute(sql,row)
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
     return len(filas)
 
 

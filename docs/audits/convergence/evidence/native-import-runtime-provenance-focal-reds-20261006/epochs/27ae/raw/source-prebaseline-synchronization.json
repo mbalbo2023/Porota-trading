@@ -1,0 +1,146 @@
+{
+  "controls": [
+    {
+      "after_noatime_hash": {
+        "st_atime_ns": 1791250343211091975,
+        "st_blocks": 166560,
+        "st_ctime_ns": 1791250343204861684,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 573735,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791250343204861684,
+        "st_nlink": 1,
+        "st_size": 85278720,
+        "st_uid": 1000
+      },
+      "after_prebaseline_fsync": {
+        "st_atime_ns": 1791250343211091975,
+        "st_blocks": 166560,
+        "st_ctime_ns": 1791250343204861684,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 573735,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791250343204861684,
+        "st_nlink": 1,
+        "st_size": 85278720,
+        "st_uid": 1000
+      },
+      "all11_stable_after_fsync": true,
+      "before_prebaseline_fsync": {
+        "st_atime_ns": 1791250343211091975,
+        "st_blocks": 166560,
+        "st_ctime_ns": 1791250343204861684,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 573735,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791250343204861684,
+        "st_nlink": 1,
+        "st_size": 85278720,
+        "st_uid": 1000
+      },
+      "bytes": 85278720,
+      "file": "source.tar",
+      "sha256": "cb16e61d5a486b3462bce583d1467e81ca85d38e3d88bf42ad526cc6f56e135f"
+    },
+    {
+      "after_noatime_hash": {
+        "st_atime_ns": 1791250344091020844,
+        "st_blocks": 1440,
+        "st_ctime_ns": 1791250344089461901,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 574302,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791250344089461901,
+        "st_nlink": 1,
+        "st_size": 736889,
+        "st_uid": 1000
+      },
+      "after_prebaseline_fsync": {
+        "st_atime_ns": 1791250344091020844,
+        "st_blocks": 1440,
+        "st_ctime_ns": 1791250344089461901,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 574302,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791250344089461901,
+        "st_nlink": 1,
+        "st_size": 736889,
+        "st_uid": 1000
+      },
+      "all11_stable_after_fsync": true,
+      "before_prebaseline_fsync": {
+        "st_atime_ns": 1791250344091020844,
+        "st_blocks": 1440,
+        "st_ctime_ns": 1791250344089461901,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 574302,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791250344089461901,
+        "st_nlink": 1,
+        "st_size": 736889,
+        "st_uid": 1000
+      },
+      "bytes": 736889,
+      "file": "source.index.json",
+      "sha256": "88c22be049a50db70428ddb3aa39a9e75fcd77998b85c1e77721436a34b9467d"
+    },
+    {
+      "after_noatime_hash": {
+        "st_atime_ns": 1791250370904555922,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791250370904555922,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 574303,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791250370904555922,
+        "st_nlink": 1,
+        "st_size": 257,
+        "st_uid": 1000
+      },
+      "after_prebaseline_fsync": {
+        "st_atime_ns": 1791250370904555922,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791250370904555922,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 574303,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791250370904555922,
+        "st_nlink": 1,
+        "st_size": 257,
+        "st_uid": 1000
+      },
+      "all11_stable_after_fsync": true,
+      "before_prebaseline_fsync": {
+        "st_atime_ns": 1791250370904555922,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791250370904555922,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 574303,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791250370904555922,
+        "st_nlink": 1,
+        "st_size": 257,
+        "st_uid": 1000
+      },
+      "bytes": 257,
+      "file": "source.commit.raw",
+      "sha256": "f38d58e739d588fdf6c2f0fcf2d42a63b16b14f45291131f443395869b099583"
+    }
+  ],
+  "exporter_sha256": "4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa",
+  "schema": "rc6.new-export-prebaseline-own-control-synchronization.v1",
+  "scope": "PREPARATION_ONLY_NOT_RETROACTIVE_PRIOR_BROWSER_RED_ACCEPTANCE_OR_EXECUTION_PROOF",
+  "source_files": 2244,
+  "source_sha": "27aec1bf8c0e4be779252e98e42d25cbfc5dee5d",
+  "source_tree": "601e5427ad2d0791b93bae5f54fb9693e6055646",
+  "status": "OWN_CONTROLS_SYNCHRONIZED_BEFORE_ANY_NATIVE_BASELINE"
+}

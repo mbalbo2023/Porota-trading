@@ -6,12 +6,13 @@ marcada PRODUCTION_PAPER/SIMULATED y los identificadores comienzan con PAPER-.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import os
 import sqlite3
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, ROUND_DOWN
 from typing import Optional
@@ -19,11 +20,13 @@ from zoneinfo import ZoneInfo
 
 from _version import VERSION
 from bs_instrument_contracts import (CASH_CURRENCIES, InstrumentContract, SPOT_FAMILIES,
-                                     aware_datetime, cash_currency, decimal_value, family_name)
+                                     aware_datetime, cash_currency, decimal_value, family_name,
+                                     utc_microseconds)
 from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
                               pending_proceeds, record_sale)
 import cc_spot_liquidity as spot_liquidity
 import cd_spot_ledger as spot_ledger
+from rc6_performance.lineage import trace_spot_signal, mark as mark_lineage, native_clock
 
 # PAPER/SHADOW scope covers every known family. Specialized families
 # still fail closed in decide/_open unless their own contract and simulator
@@ -38,6 +41,9 @@ OPERATIONAL_FAMILIES = frozenset(
 # Options are admitted only with an explicit InstrumentContract and are sized
 # against full premium loss. Futures/FCI/cauciones retain specialized lifecycles.
 PAPER_POSITION_FAMILIES = frozenset(set(SPOT_FAMILIES) | {"OPCIONES"})
+# FUTUROS may reuse only the normalized price signal. Execution remains on its
+# dedicated margin/variation lifecycle and never enters paper_positions.
+PAPER_SIGNAL_FAMILIES = frozenset(set(PAPER_POSITION_FAMILIES) | {"FUTUROS"})
 
 def _family_operable(family: str) -> bool:
     return str(family or "").upper() in OPERATIONAL_FAMILIES
@@ -56,6 +62,13 @@ EVIDENCE_SECRET_MARKERS = (
 )
 ZERO = Decimal("0")
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+
+
+class NativeSignalPrices(list):
+    """Unchanged factual price vector with its contemporaneous source evidence."""
+    def __init__(self, values, observations):
+        super().__init__(values)
+        self.observations = observations
 
 
 def D(value, default="0") -> Decimal:
@@ -98,9 +111,9 @@ class Quote:
         Para una entrada por señal, también se exige último negocio fresco.
         """
         try:
-            at = aware_datetime(as_of)
-            received = aware_datetime(self.observed_at, "recepción")
-            if not 0 <= (at - received).total_seconds() <= max_age_seconds:
+            at = utc_microseconds(as_of)
+            received = utc_microseconds(self.observed_at)
+            if not 0 <= at - received <= D(max_age_seconds) * 1_000_000:
                 return "RECEIPT_STALE_OR_FUTURE"
             fields = [(self.book_at, "BOOK", max_age_seconds)]
             if require_trade:
@@ -112,10 +125,10 @@ class Quote:
             for value, label, allowed_age in fields:
                 if not value:
                     return label + "_TIME_MISSING"
-                source_at = aware_datetime(value, label)
+                source_at = utc_microseconds(value)
                 if source_at > received or source_at > at:
                     return label + "_TIME_FUTURE"
-                if (at - source_at).total_seconds() > allowed_age:
+                if at - source_at > D(allowed_age) * 1_000_000:
                     return label + "_STALE"
         except (ValueError, TypeError):
             return "INVALID_OR_NAIVE_TIMESTAMP"
@@ -196,10 +209,16 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
         }
     inputs_used = dict(detail) if isinstance(detail, dict) else {"detail": detail}
     inputs_used["iol"] = iol_input
+    lineage = inputs_used.get("performance_lineage") or {}
     return _evidence_safe({
         "schema": DECISION_EVIDENCE_SCHEMA,
+        "capture_phase": "NATIVE_DECISION",
         "decision_key": decision_key,
         "captured_at": q.observed_at,
+        "signal_at": lineage.get("signal_at"),
+        "decision_at": lineage.get("decision_at"),
+        "intent_at": lineage.get("intent_at"),
+        "entry_fill_committed_at": lineage.get("entry_fill_committed_at"),
         "decision": {
             "symbol": q.symbol,
             "action": action,
@@ -209,6 +228,7 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
             "patrimonial_gate": patrimonial,
             "final_result": final,
             "reason": str(reason),
+            "reason_code": inputs_used.get("reason_code"),
             "paper_id": paper_id,
         },
         "quote_used": {
@@ -234,11 +254,12 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
             "strategy_version": STRATEGY_VERSION,
             "execution_mode": "PRODUCTION_PAPER_SIMULATED",
             "real_money_authorized": False,
+            **lineage,
         },
         "inputs_used": inputs_used,
     })
 
-def _insert_evidence_snapshot(connection, evidence: dict) -> None:
+def _insert_evidence_snapshot(connection, evidence: dict) -> str:
     """Insert once in the caller's existing transaction; never overwrite evidence."""
     evidence_json = json.dumps(
         evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -248,10 +269,45 @@ def _insert_evidence_snapshot(connection, evidence: dict) -> None:
       VALUES(?,?,?,?,?)""",
       (evidence["decision_key"], evidence["captured_at"], DECISION_EVIDENCE_SCHEMA,
        evidence_hash, evidence_json))
+    return evidence_hash
+
+
+def _atomic_admission_snapshot(q, features, paper_id, at, recorded_at, score, *, financial_commit=None):
+    native_key = features.get("native_decision_key")
+    key = ("PAPER_ADMISSION:" + native_key if native_key else
+           ("PAPER_FUTURE_FILL:" if financial_commit is not None else "PAPER_FILL:") + paper_id)
+    evidence = _decision_evidence_payload(
+        q, key, "APPROVE", "NOT_USED", "APPROVE", "OPENED_SIMULATED",
+        "ATOMIC_PAPER_ADMISSION", paper_id, features, action="BUY", score=score, include_iol=False)
+    evidence.update(capture_phase="ATOMIC_PAPER_ADMISSION", native_decision_key=native_key,
+                    captured_at=recorded_at, admission_at=at, entry_fill_recorded_at=recorded_at,
+                    entry_fill_committed_at=None)
+    evidence["runtime"]["entry_fill_committed_at"] = None
+    if not features.get("entry_signal_inputs"):
+        evidence["inputs_used"]["signal_contract_status"] = "DIRECT_CANDIDATE_SIGNAL_VECTOR_UNAVAILABLE"
+    if financial_commit is not None:
+        evidence["inputs_used"]["financial_commit"] = dict(financial_commit)
+    from rc6_performance.common import decision_snapshot_phase
+    decision_snapshot_phase(evidence)
+    return evidence
 
 
 
 class PaperStore:
+    @contextmanager
+    def schema_preparation(self):
+        """Own and close every native schema connection before readers start."""
+        if hasattr(self, "_schema_connections"):
+            raise RuntimeError("PAPER_SCHEMA_CONNECTION_SCOPE_REENTRY")
+        self._schema_connections = []
+        try:
+            yield self
+        finally:
+            connections = self._schema_connections
+            del self._schema_connections
+            for connection in connections:
+                connection.close()
+
     def __init__(self, path: str):
         self.path = path
         new_file = not os.path.exists(path)
@@ -259,16 +315,19 @@ class PaperStore:
         # El runtime padre migra una única vez antes de crear hijos. Repetir
         # DDL/índices grandes desde scanner, velas y salida puede bloquear SQLite.
         runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
-        if new_file or not runtime_schema_ready:
-            self.init_db()
-        if new_file:
-            from cg_paper_workspace import mark_new_database
-            with self.connect() as c:
-                mark_new_database(c)
+        with self.schema_preparation():
+            if new_file or not runtime_schema_ready:
+                self.init_db()
+            if new_file:
+                from cg_paper_workspace import mark_new_database
+                with self.connect() as c:
+                    mark_new_database(c)
 
     def connect(self):
         conn = sqlite3.connect(self.path, timeout=20)
         conn.row_factory = sqlite3.Row
+        from rc6_signal_contracts import register_exact_time
+        register_exact_time(conn)
         # Runtime RC6 has several PAPER child processes sharing this DB. Keep
         # lock waiting bounded and explicit at SQLite level.
         conn.execute("PRAGMA busy_timeout=20000")
@@ -285,6 +344,9 @@ class PaperStore:
                 conn.close()
                 raise RuntimeError("PAPER_SQLITE_WAL_INIT_FAILED")
         conn.execute("PRAGMA foreign_keys=ON")
+        connections = getattr(self, "_schema_connections", None)
+        if connections is not None:
+            connections.append(conn)
         return conn
 
     def init_db(self):
@@ -416,10 +478,9 @@ class PaperStore:
             c.execute(f"UPDATE observer_state SET {sql} WHERE id=1", tuple(updates.values()))
 
     def add_quote(self, q: Quote):
-        try:
-            currency, market = q.monetary_identity()
-        except ValueError:
-            currency, market = "UNKNOWN", q.market or "UNKNOWN"
+        # Invalid latest evidence remains a tombstone for its requested identity.
+        # A validation error must not move it to UNKNOWN and revive an old book.
+        currency, market = str(q.currency or "UNKNOWN"), str(q.market or "UNKNOWN")
         with self.connect() as c:
             c.execute("""INSERT INTO market_snapshots
               (source,observed_at,symbol,asset_class,settlement,last,bid,ask,bid_size,ask_size,currency,market,
@@ -432,12 +493,15 @@ class PaperStore:
                        q.metadata_source, q.opening_block_reason))
 
     def latest_quote(self, position):
+        if any(not position.get(k) or position[k] == "UNKNOWN" for k in
+               ("symbol", "asset_class", "settlement", "currency", "market")):
+            return None
         # La última respuesta recibida gana: una respuesta vacía/no válida no
         # permite rescatar silenciosamente una punta anterior que ya desapareció.
         with self.connect() as c:
             row = c.execute("""SELECT * FROM market_snapshots WHERE symbol=? AND asset_class=?
-              AND settlement=? ORDER BY id DESC LIMIT 1""",
-              tuple(position[k] for k in ("symbol", "asset_class", "settlement"))).fetchone()
+              AND settlement=? AND currency=? AND market=? ORDER BY id DESC LIMIT 1""",
+              tuple(position[k] for k in ("symbol", "asset_class", "settlement", "currency", "market"))).fetchone()
         if not row:
             return None
         values = dict(row)
@@ -448,34 +512,37 @@ class PaperStore:
                      contract=InstrumentContract(**spec) if spec else None)
 
     def signal_prices(self, q, as_of, limit=20, window_minutes=30):
-        """Negocios distintos, disponibles al decidir, de una sola identidad.
-
-        Son muestras de último negocio; no se presentan como velas ni volumen.
-        """
+        """Distinct source events known at cutoff, from the exact five-part key."""
+        from rc6_signal_contracts import register_exact_time
         end = aware_datetime(as_of)
         currency, market = q.monetary_identity()
-        start = (end - timedelta(minutes=window_minutes)).isoformat()
+        start = end - timedelta(minutes=window_minutes)
         with self.connect() as c:
-            rows = c.execute("""SELECT trade_at,last,observed_at FROM market_snapshots
+            register_exact_time(c)
+            rows = c.execute("""SELECT id,source,trade_at,last,observed_at FROM market_snapshots
               WHERE symbol=? AND asset_class=? AND settlement=? AND currency=? AND market=?
                 AND last_kind='TRADE' AND trade_at IS NOT NULL
-                AND julianday(trade_at)>=julianday(?) AND julianday(trade_at)<=julianday(?)
-                AND julianday(observed_at)<=julianday(?)
-              ORDER BY julianday(trade_at) DESC,id DESC""",
-              (q.symbol,q.asset_class,q.settlement,currency,market,start,end.isoformat(),end.isoformat())).fetchall()
+                AND rc6_instant_us(trade_at)>=rc6_instant_us(?)
+                AND rc6_instant_us(trade_at)<=rc6_instant_us(?)
+                AND rc6_instant_us(observed_at)<=rc6_instant_us(?)
+              ORDER BY rc6_instant_us(trade_at) DESC,id DESC""",
+              (q.symbol,q.asset_class,q.settlement,currency,market,start.isoformat(),end.isoformat(),end.isoformat())).fetchall()
         unique = {}
         for row in rows:
-            try:
-                source_at = aware_datetime(row["trade_at"])
-                if source_at > aware_datetime(row["observed_at"]):
-                    continue
-                if D(row["last"]) > 0:
-                    unique.setdefault(source_at, D(row["last"]))
-            except (ValueError, TypeError):
+            source_at = aware_datetime(row["trade_at"])
+            if source_at in unique:
                 continue
-            if len(unique) >= limit:
-                break
-        return list(reversed(list(unique.values())))
+            # Latest revision, including invalid evidence, revokes the older one.
+            unique[source_at] = None
+            if source_at <= aware_datetime(row["observed_at"]) and D(row["last"]) > 0:
+                unique[source_at] = (D(row["last"]), {
+                    "price": str(D(row["last"])), "source_at": row["trade_at"],
+                    "received_at": row["observed_at"], "known_at": row["observed_at"],
+                    "source": row["source"], "source_row_id": row["id"],
+                    "symbol": q.symbol, "asset_class": q.asset_class,
+                    "settlement": q.settlement, "currency": currency, "market": market})
+        ordered = list(reversed([value for value in unique.values() if value is not None][:limit]))
+        return NativeSignalPrices([item[0] for item in ordered], [item[1] for item in ordered])
 
     def prices(self, symbol: str, limit=30, *, asset_class=None, settlement=None, currency=None, market=None):
         filters, params = ["symbol=?"], [symbol]
@@ -530,13 +597,17 @@ class PaperStore:
                     invalid.append((dict(row),f'SPOT_LEDGER_INVALID: {type(exc).__name__}: {exc}'[:240]))
         return opened, invalid
 
+    def active_future_positions(self):
+        from rc6_paper_family_lifecycle import future_positions
+        return future_positions(self, active_only=True)
+
     def recent_closed(self, limit=50, *, strategy_version=None, closed_before=None):
         with self.connect() as c:
             c.execute('BEGIN')
             if strategy_version is not None:
                 rows = [dict(r) for r in c.execute("""SELECT * FROM paper_positions
                   WHERE status='CLOSED' AND strategy_version=?
-                  AND (? IS NULL OR julianday(closed_at)<=julianday(?)) ORDER BY closed_at DESC LIMIT ?""",
+                  AND (? IS NULL OR rc6_instant_us(closed_at)<=rc6_instant_us(?)) ORDER BY closed_at DESC LIMIT ?""",
                   (strategy_version, closed_before, closed_before, limit))]
             else:
                 rows = [dict(r) for r in c.execute(
@@ -599,16 +670,49 @@ class PaperStore:
             # Nunca reescribir el fill: conservar la anomalía de forma
             # explícita para que introspección bloquee el GO.
             reason = "INVARIANTE_DE_PORTONES_INCUMPLIDA: " + str(reason)
+        if isinstance(detail, dict) and "performance_lineage" in detail:
+            if final == "OPENED_SIMULATED":
+                detail["reason_code"] = "OPENED_SIMULATED"
+            elif economic_violation:
+                detail["reason_code"] = "ECONOMICS_MODEL_GATE"
+            elif ai in {"VETO", "REJECT", "ERROR"}:
+                detail["reason_code"] = "AI_GATE_VETO"
+            elif patrimonial == "BLOCKED":
+                detail["reason_code"] = "PATRIMONIAL_ADMISSION_REJECTED"
+            else:
+                detail["reason_code"] = "GATE_REJECTED_UNMAPPED"
         evidence = _decision_evidence_payload(
             q, decision_key, technical, ai, patrimonial, final, reason, paper_id, detail)
         with self.connect() as c:
+            admission_key = detail.get("financial_admission_snapshot_key") if isinstance(detail, dict) else None
+            if final == "OPENED_SIMULATED" and admission_key:
+                receipt = c.execute("SELECT payload_json,payload_sha256 FROM decision_evidence_snapshots "
+                                    "WHERE decision_key=?", (admission_key,)).fetchone()
+                if (not receipt or hashlib.sha256(receipt[0].encode()).hexdigest() != receipt[1]
+                        or receipt[1] != detail.get("financial_admission_snapshot_sha256")):
+                    raise ValueError("FINANCIAL_ADMISSION_SNAPSHOT_LINK_INVALID")
+                frozen = json.loads(receipt[0])
+                from rc6_performance.common import decision_snapshot_phase
+                if (decision_snapshot_phase(frozen) != "ATOMIC_PAPER_ADMISSION"
+                        or frozen.get("native_decision_key") != decision_key
+                        or frozen["decision"].get("paper_id") != paper_id):
+                    raise ValueError("FINANCIAL_ADMISSION_SNAPSHOT_LINK_INVALID")
+                # Financial inputs and price vectors come from the receipt that
+                # committed with the fill. Only the later native stage clocks
+                # and final gate result are added after the physical COMMIT.
+                evidence["quote_used"] = frozen["quote_used"]
+                evidence["inputs_used"] = frozen["inputs_used"]
+                for field in ("performance_lineage", "reason_code", "financial_admission_snapshot_key",
+                              "financial_admission_snapshot_sha256"):
+                    if field in detail:
+                        evidence["inputs_used"][field] = _evidence_safe(detail[field])
             c.execute("""INSERT OR REPLACE INTO trade_gate_evaluations
               (evaluated_at,decision_key,symbol,technical_gate,ai_gate,
                patrimonial_gate,final_result,reason,paper_id,detail_json)
               VALUES(?,?,?,?,?,?,?,?,?,?)""",
               (q.observed_at, decision_key, q.symbol, technical, ai,
                patrimonial, final, str(reason)[:1000], paper_id,
-               json.dumps(detail, ensure_ascii=False, default=str)[:8000]))
+               json.dumps(detail, ensure_ascii=False, default=str)))
             # First capture wins. A later retry may refresh the mutable gate
             # projection, but it must never rewrite evidence from the instant
             # the decision was made.
@@ -710,7 +814,18 @@ class PaperBroker:
                              max_trade_age_seconds=self.trade_max_age_seconds)
         if error:
             return error
-        if self.session_policy:
+        try:
+            family = family_name(q.asset_class)
+        except ValueError:
+            return "DAILY_RISK_UNKNOWN_FAMILY"
+        if family == "FUTUROS":
+            if q.contract is None or q.contract.family != "FUTUROS":
+                return "FUTURES_CONTRACT_REQUIRED"
+            from rc6_ppi_future_contract_policy import admission_error as future_admission_error
+            error = future_admission_error(at, q.contract)
+            if error:
+                return error
+        elif self.session_policy:
             error = self.session_policy.admission_error(q, at)
             if error:
                 return error
@@ -729,29 +844,33 @@ class PaperBroker:
 
     def _cost(self, price, qty, asset_class="ACCIONES"):
         """Costo de una punta; el spread ya vive en bid/ask y no se duplica."""
-        import au_fee_schedule
+        from rc6_performance.costs import ledger_leg_cost
         family = family_name(asset_class)
         if family not in PAPER_POSITION_FAMILIES:
             raise ValueError("La familia requiere un cálculo de costos específico")
-        rate = D(au_fee_schedule.costo_por_tramo(family), "-1")
-        if rate < 0:
-            raise ValueError("tarifario no valido para el costo por tramo")
-        return (D(price) * D(qty) * rate).quantize(Decimal("0.01"))
+        return ledger_leg_cost(price, qty, family)
 
     def _leg_rate(self, asset_class, *, rebated=False):
         """Tasa de una punta; la reducida exige elegibilidad intradiaria."""
-        import au_fee_schedule
+        from rc6_performance.costs import ledger_leg_rate
         family = family_name(asset_class)
         if family not in PAPER_POSITION_FAMILIES:
             raise ValueError("La familia requiere un cálculo de costos específico")
-        if (rebated and self.intraday_fee_rebate
-                and family in au_fee_schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA):
-            rate = D(au_fee_schedule.costo_por_tramo_bonificado(family), "-1")
-        else:
-            rate = D(au_fee_schedule.costo_por_tramo(family), "-1")
-        if rate < 0:
-            raise ValueError("tarifario no valido para el costo por tramo")
-        return rate
+        return ledger_leg_rate(family, rebated=rebated and self.intraday_fee_rebate)
+
+    def record_observation_rejection(self, q, reason_code):
+        """Persist a pre-signal rejection through the existing decision writer."""
+        if str(q.asset_class).upper() == "FUTUROS":
+            return
+        from rc6_performance.lineage import frozen_source, resolved_configuration
+        lineage = {**frozen_source(), **resolved_configuration(self),
+                   "strategy_id": "SPOT_MOMENTUM_BASELINE",
+                   "decision_at": native_clock(self), "signal_at": None,
+                   "clock_mode": "NATIVE" if self.clock_fn else "EVENT_TIME_SIMULATION_UNVERIFIED"}
+        features = {"performance_lineage": lineage, "pre_signal_rejection": True,
+                    "reason_code": reason_code}
+        key = f"{STRATEGY_VERSION}:{q.symbol}:{q.asset_class}:{q.settlement}:{q.currency}:{q.market}:{q.observed_at[:16]}:OBSERVATION_REJECTED:{reason_code}"
+        self.store.record_decision(key, q, "HOLD", ZERO, reason_code, features)
 
     @staticmethod
     def _quantity_in_budget(unit_amount, budget, extra_cost):
@@ -795,11 +914,18 @@ class PaperBroker:
             for table, fields in (('paper_positions',('opened_at','closed_at')),
                                   ('paper_cauciones',('opened_at','settled_at'))):
                 for row in connection.execute('SELECT '+','.join(fields)+' FROM '+table+' WHERE currency=?',(currency,)):
-                    if any(value and aware_datetime(value)>at for value in row):
+                    if any(value and utc_microseconds(value)>utc_microseconds(at) for value in row):
                         raise ValueError('CASH_CLOCK_ROLLBACK')
+            if connection.execute("""SELECT 1
+                FROM paper_family_lifecycle_events e
+                JOIN paper_family_lifecycle l ON l.lifecycle_id=e.lifecycle_id
+                WHERE e.family='FUTUROS' AND l.currency=?
+                  AND rc6_instant_us(e.occurred_at)>rc6_instant_us(?) LIMIT 1""",
+                (currency,at.isoformat())).fetchone():
+                raise ValueError('CASH_CLOCK_ROLLBACK')
             if connection.execute("""SELECT 1 FROM paper_spot_sales s JOIN paper_fills f ON f.id=s.fill_id
                 JOIN paper_positions p ON p.paper_id=s.paper_id
-                WHERE p.currency=? AND julianday(f.filled_at)>julianday(?) LIMIT 1""",
+                WHERE p.currency=? AND rc6_instant_us(f.filled_at)>rc6_instant_us(?) LIMIT 1""",
                 (currency,at.isoformat())).fetchone():
                 raise ValueError('CASH_CLOCK_ROLLBACK')
         opened, closed = self._positions_at(at, connection)
@@ -808,7 +934,11 @@ class PaperBroker:
                          decimal_value(p['quantity'],'cantidad',positive=True) * self._position_multiplier(p) +
                          decimal_value(p['entry_cost'],'costo',nonnegative=True)
                          for p in opened if p['currency']==currency), ZERO)
-        return (self.initial_balances[currency] + realized - committed + self.cauciones.cash_effect(currency,at,connection=connection)
+        from rc6_paper_family_lifecycle import future_cash_effect
+        futures = future_cash_effect(self.store, currency, at, connection=connection)
+        return (self.initial_balances[currency] + realized - committed
+                + self.cauciones.cash_effect(currency,at,connection=connection)
+                + futures
                 - pending_proceeds(self.store, at, currency, connection=connection))
 
     def place_caucion(self, offer, principal, request_id, as_of=None, *, reserve="0"):
@@ -872,13 +1002,60 @@ class PaperBroker:
                                  closed_before=as_of)
         return self.score_threshold
 
+    def _entry_signal_inputs(self, values, q, at, *, momentum=None, spread=None):
+        """Freeze the exact factual vector; SHADOW never rereads it later."""
+        observations = getattr(values, "observations", [])
+        exact = (len(observations) == len(values)
+                 and [item["price"] for item in observations] == [str(v) for v in values])
+        result = {"schema": "rc6.native-entry-signal-input.v1",
+                  "price_samples": [dict(item) for item in observations] if exact else [],
+                  "price_sample_status": "NATIVE_EXACT_VECTOR" if exact else "NO_VERIFICADO",
+                  "samples": len(values), "signal_window_minutes": self.signal_window_minutes,
+                  "available_at": aware_datetime(at).isoformat(),
+                  "source": "PPI_NATIVE_DISTINCT_TRADES; exact factual signal_prices query",
+                  "temporal_contract": {
+                      "schema": "rc6.event-signal-contract.v1", "version": "main-events-v1",
+                      "sample_kind": "DISTINCT_SOURCE_EVENTS", "short_event_count": 3,
+                      "long_event_count": min(8, len(values)), "minimum_samples": self.signal_min_samples,
+                      "lookback_limit_minutes": self.signal_window_minutes,
+                      "bar_duration_seconds": None,
+                      "observed_span_seconds": ((aware_datetime(observations[-1]["source_at"]) -
+                         aware_datetime(observations[0]["source_at"])).total_seconds() if exact and len(observations)>1 else None),
+                      "strategy_validation": "PAPER_HYPOTHESIS; OOS_EDGE_NO_VERIFICADO"},
+                  "eod_at": None, "eod_reason": "EOD_POLICY_UNAVAILABLE"}
+        if momentum is not None:
+            result["momentum"] = str(momentum)
+        if spread is not None:
+            result["spread"] = str(spread)
+        local = aware_datetime(at).astimezone(TZ)
+        if q.asset_class == "FUTUROS" and q.contract is not None:
+            from rc6_ppi_future_contract_policy import PAPER_CLOSE, PAPER_EXIT_MINUTES
+            deadline = datetime.combine(local.date(), PAPER_CLOSE, TZ) - timedelta(minutes=PAPER_EXIT_MINUTES)
+            result.update(eod_at=min(deadline, aware_datetime(q.contract.expires_at)).isoformat(),
+                          eod_reason="EXACT_DLR_PAPER_EXIT_POLICY",
+                          cash_multiplier=str(q.contract.cash_multiplier))
+            import au_fee_schedule
+            result.update(fee_rate=str(au_fee_schedule.costo_por_tramo("FUTUROS")),
+                          fee_provenance="PAPER_ESTIMATE:au_fee_schedule.costo_por_tramo:FUTUROS",
+                          cost_model_scope="PAPER_ESTIMATE_NOT_BROKER_TERMS")
+        elif (self.session_policy is not None and getattr(self.session_policy, "close_at_eod", False)
+              and callable(getattr(self.session_policy, "bounds", None))
+              and isinstance(getattr(self.session_policy, "exit_minutes", None), int)):
+            _, end = self.session_policy.bounds(at, q)
+            result.update(eod_at=(end - timedelta(minutes=self.session_policy.exit_minutes)).isoformat(),
+                          eod_reason="NATIVE_PAPER_SESSION_POLICY")
+        return result
+
+    @trace_spot_signal
     def decide(self, q: Quote):
         try:
             currency, market = q.monetary_identity()
             family = family_name(q.asset_class)
         except ValueError as exc:
             return "HOLD", ZERO, str(exc), {"samples": 0}
-        if family not in PAPER_POSITION_FAMILIES:
+        if family == "FUTUROS":
+            return "HOLD", ZERO, "FUTURES_SPECIALIZED_SIGNAL_REQUIRED", {"samples": 0, "family": family}
+        if family not in PAPER_SIGNAL_FAMILIES:
             return ("HOLD", ZERO,
                     f"{family}: requiere su ciclo financiero específico",
                     {"samples": 0, "family": family})
@@ -891,12 +1068,33 @@ class PaperBroker:
                 return "HOLD", ZERO, "Opción sin contrato financiero explícito", {"samples": 0, "family": family}
             if q.contract.option_right not in {"CALL","PUT"} or not q.contract.underlying:
                 return "HOLD", ZERO, "Opción sin subyacente/derecho confirmado", {"samples": 0, "family": family}
+        if family == "FUTUROS":
+            if (q.contract is None or q.contract.family != "FUTUROS"
+                    or q.contract.market != "A3"
+                    or q.contract.paper_margin_policy != "CONSERVATIVE_NOTIONAL_RATE"
+                    or q.contract.paper_margin_rate != D("1")
+                    or not q.contract.underlying):
+                return "HOLD", ZERO, "FUTURES_EXACT_PAPER_CONTRACT_REQUIRED", {"samples": 0, "family": family}
         if q.opening_block_reason:
             return "HOLD", ZERO, q.opening_block_reason, {"samples": 0}
         at = self.execution_time(q)
         error = self.admission_error(q, at)
         if error:
             return "HOLD", ZERO, error, {"samples": 0}
+        # Contract readiness is not a validated directional strategy. Existing
+        # specialized lifecycle and native contract/admission gaps take priority;
+        # fixed income/options must never inherit equity momentum BUY authority.
+        from rc6_dynamic_universe.routing import strategy_route
+        route = strategy_route(family)
+        # Preserve #453's explicit signal allowlist + dedicated binding when
+        # reconciled, without adding that authority or modifying its lifecycle.
+        futures_owned_signal = (family == "FUTUROS" and
+            "FUTUROS" in globals().get("PAPER_SIGNAL_FAMILIES", ()) and
+            callable(getattr(self, "_on_future_quote", None)))
+        if not route["generic_equity"] and not futures_owned_signal:
+            return ("HOLD", ZERO, "STRATEGY_NOT_VALIDATED: " + route["engine"],
+                    {"samples": 0, "family": family, "strategy_route": route,
+                     "reason_codes": route["reason_codes"], "signal_ready": False})
         if self.initial_balances[currency] <= 0:
             return "HOLD", ZERO, f"Sin capital asignado en {currency}; no se usa otra moneda/plaza", {"samples": 0}
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
@@ -906,7 +1104,9 @@ class PaperBroker:
             window_minutes=self.signal_window_minutes)
         if len(values) < self.signal_min_samples:
             return "HOLD", D("0"), (f"Aprendiendo serie: {len(values)}/"
-                                      f"{self.signal_min_samples} muestras"), {"samples": len(values)}
+                                      f"{self.signal_min_samples} muestras"), {
+                "samples": len(values), "reason_code": "SIGNAL_WARMUP",
+                "entry_signal_inputs": self._entry_signal_inputs(values, q, at)}
         short = sum(values[-3:], ZERO) / D(3)
         long_span = min(8, len(values))
         long = sum(values[-long_span:], ZERO) / D(long_span)
@@ -919,6 +1119,8 @@ class PaperBroker:
         # the later patrimonial/risk gates required for a simulated position.
         features = {"sma3": str(short), f"sma{long_span}": str(long), "momentum": str(momentum),
                     "spread": str(spread), "samples": len(values),
+                    "entry_signal_inputs": self._entry_signal_inputs(
+                        values, q, at, momentum=momentum, spread=spread),
                     "signal_window_minutes": self.signal_window_minutes,
                     "paper_threshold": str(threshold),
                     "candidate": {
@@ -940,7 +1142,9 @@ class PaperBroker:
         if os.getenv("PAPER_HISTORICAL_CANDLE_SHADOW", "ON").upper() in {"ON", "SHADOW", "TRUE", "1"}:
             try:
                 import historical_candle_shadow_rc6
-                shadow = historical_candle_shadow_rc6.collect(self.store, q, at)
+                from cv_history_store_adapter_hf6 import default_history_store
+                shadow = historical_candle_shadow_rc6.collect(self.store, q, at,
+                    history_store=default_history_store())
                 features["historical_candle_shadow"] = shadow
                 features["decision_shadow"] = (
                     "BUY" if D(score) + D(shadow.get("shadow_score_delta", "0")) >= threshold
@@ -955,8 +1159,10 @@ class PaperBroker:
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
             return "HOLD", score, "Puntas o profundidad insuficientes", features
         if spread > D("0.02"):
+            features["reason_code"] = "SPREAD_LIMIT"
             return "HOLD", score, "Spread superior al 2%", features
         if score < threshold:
+            features["reason_code"] = "BASELINE_SCORE_THRESHOLD"
             return "HOLD", score, "Score paper debajo del umbral versionado", features
         # BCRA macro context retired by operator decision 2026-10-02.
         # Preserve a provenance marker only; no cache/network read and no decision effect.
@@ -974,6 +1180,38 @@ class PaperBroker:
         }
         return "BUY", score, "Momentum positivo y friccion admisible", features
 
+    def _economic_admission(self, q, features):
+        """One truthful economic contract, used by every PAPER admission caller."""
+        try:
+            economics = self._economic_diagnostics(q)
+        except (ValueError, TypeError, ArithmeticError):
+            features["economics"] = {"passed": False, "reason_code": "ECONOMICS_CONTRACT_UNAVAILABLE"}
+            features["economics_mode"] = self.economics_mode
+            return "ECONOMICS_CONTRACT_UNAVAILABLE"
+        features["economics"] = economics
+        features["economics_mode"] = self.economics_mode
+        if self.economics_mode == "BINDING" and economics.get("passed") is not True:
+            return economics.get("reason_code") or "ECONOMICS_BINDING_NET_REWARD_RISK_INSUFFICIENT"
+        return ""
+
+    def admit_paper_candidate(self, q, score, features):
+        """Public shared admission; no caller may assert that economics passed."""
+        if family_name(q.asset_class) == "FUTUROS":
+            return self._open_future(q, score, features)
+        return self._open(q, score, features)
+
+    @staticmethod
+    def _decision_key_error(connection, features):
+        key=features.get("native_decision_key")
+        if key is None:
+            return ""
+        if not isinstance(key,str) or not key or len(key.encode("utf-8"))>1024:
+            return "PAPER_DECISION_KEY_INVALID"
+        if connection.execute("SELECT 1 FROM decision_evidence_snapshots WHERE decision_key IN (?,?)",
+                              (key, "PAPER_ADMISSION:" + key)).fetchone():
+            return "PAPER_DECISION_KEY_ALREADY_COMMITTED"
+        return ""
+
     def _economic_diagnostics(self, q):
         """Economía ex ante coherente con el cierre intradiario obligatorio."""
         entry = q.ask * (1 + self.slippage)
@@ -986,11 +1224,15 @@ class PaperBroker:
         # La bonificacion corresponde a la operacion de menor valor. En una
         # ganancia es la compra; en una perdida, la venta. Si no es elegible,
         # low == full y se conserva el modelo previo.
-        net_reward = target_fill - entry - entry * low - target_fill * full
-        net_loss = entry - stop_fill + entry * full + stop_fill * low
+        from rc6_performance.costs import price_sensitivity_fees
+        net_reward = target_fill - entry - price_sensitivity_fees(entry, target_fill, full, low)
+        net_loss = entry - stop_fill + price_sensitivity_fees(entry, stop_fill, full, low)
         ratio = net_reward / net_loss if net_loss > 0 else ZERO
         breakeven = net_loss / (net_loss + max(ZERO, net_reward)) if net_loss > 0 else D(1)
-        passed = net_reward > 0 and ratio >= self.min_net_reward_risk
+        from rc6_performance.costs import paper_cost_contract
+        costs = paper_cost_contract(q.asset_class, q.currency, self.execution_time(q))
+        cost_error = costs.binding_error(self.execution_time(q))
+        passed = not cost_error and net_reward > 0 and ratio >= self.min_net_reward_risk
         try:
             import rc6_cost_settlement_takeprofit_shadow as shadow_costs
             tax_shadow = shadow_costs.published_cost_diagnostic(net_reward)
@@ -1009,21 +1251,33 @@ class PaperBroker:
             "breakeven_win_rate": str(breakeven),
             "minimum_net_reward_risk": str(self.min_net_reward_risk),
             "passed": passed,
+            "cost_contract": costs.diagnostic(), "reason_code": cost_error or ("" if passed else "ECONOMICS_BINDING_NET_REWARD_RISK_INSUFFICIENT"),
             "published_costs_note": tax_shadow,
             "personal_taxes": "OUT_OF_SCOPE",
         }
 
     def on_quote(self, q: Quote, *, allow_new_openings=True,
                  opening_block_reason=""):
+        try:
+            family = family_name(q.asset_class)
+        except ValueError:
+            return
+        if family == "FUTUROS":
+            return self._on_future_quote(
+                q, allow_new_openings=allow_new_openings,
+                opening_block_reason=opening_block_reason)
         if self._maybe_close(q):
             return
         if self.store.open_position(q.symbol):
             return
         if not allow_new_openings:
+            self.record_observation_rejection(q, opening_block_reason or "OPENING_NOT_AUTHORIZED")
             return
         action, score, reason, features = self.decide(q)
+        mark_lineage(features, "decision", self)
         bucket = q.observed_at[:16]
         key = f"{STRATEGY_VERSION}:{q.symbol}:{q.asset_class}:{q.settlement}:{q.currency}:{q.market}:{bucket}:{action}"
+        features["native_decision_key"] = key
         if not self.store.record_decision(key, q, action, score, reason, features):
             return
         self.store.event("DECISION_PAPER", f"{q.symbol} {action}: {reason}")
@@ -1075,12 +1329,546 @@ class PaperBroker:
                                             str(ai.get("reason") or "Gemini vetó la apertura"),
                                             detail=features)
                     return
-            opened, gate_reason, paper_id = self._open(q, score, features)
+            opened, gate_reason, paper_id = self.admit_paper_candidate(q, score, features)
             self.store.record_gates(
                 q, key, "APPROVE", ai_result,
                 "APPROVE" if opened else "BLOCKED",
                 "OPENED_SIMULATED" if opened else "BLOCKED", gate_reason,
                 paper_id=paper_id, detail=features)
+
+    def _future_cost(self, price, quantity, contract):
+        """Versioned PAPER estimate; never presented as an exact broker margin."""
+        import au_fee_schedule
+        rate = D(au_fee_schedule.costo_por_tramo("FUTUROS"), "-1")
+        if rate < 0:
+            raise ValueError("FUTURES_FEE_MODEL_INVALID")
+        return (contract.notional(price, quantity) * rate).quantize(Decimal("0.01"))
+
+    def _future_exposure(self, currency, *, connection=None, as_of=None):
+        from rc6_paper_family_lifecycle import future_positions
+        rows = future_positions(
+            self.store, currency, connection=connection, active_only=True, as_of=as_of)
+        return sum((
+            decimal_value(row["last_mark_price"], "mark futuro", positive=True)
+            * decimal_value(row["quantity"], "cantidad futura", positive=True)
+            * decimal_value(row["cash_multiplier"], "multiplicador futuro", positive=True)
+            for row in rows), ZERO)
+
+    def _future_locked_admission(self, q, at, candidate_notional, emergency_cap,
+                                 candidate_risk,
+                                 *, connection):
+        error = q.time_error(
+            at, require_trade=True, max_age_seconds=self.quote_max_age_seconds,
+            max_trade_age_seconds=self.trade_max_age_seconds)
+        if error:
+            return error
+        from rc6_ppi_future_contract_policy import admission_error as future_admission_error
+        error = future_admission_error(at, q.contract)
+        if error:
+            return error
+        if self.daily_risk:
+            error = self.daily_risk.admission_error(
+                q.currency, at, connection=connection, quotes={q.symbol: q})
+            if error:
+                return error
+        from dh_paper_dynamic_risk_gate_hf6 import portfolio_capacity, ConcurrentRiskGateError
+        try:
+            capacity = portfolio_capacity(self, q.currency, at, candidate_risk=candidate_risk,
+                                          connection=connection, quotes={q.symbol: q})
+            if not capacity.admitted:
+                return capacity.reason
+        except ConcurrentRiskGateError as exc:
+            return str(exc)
+        from rc6_paper_family_lifecycle import future_positions
+        future_open = future_positions(
+            self.store, q.currency, connection=connection, active_only=True, as_of=at)
+        spot_open = spot_ledger.positions_at(connection, aware_datetime(at))[0]
+        if len(spot_open) + len(future_open) >= emergency_cap:
+            return "EMERGENCY_POSITION_CAP"
+        if any(row["symbol"] == q.symbol for row in future_open):
+            return "FUTURES_POSITION_ALREADY_OPEN"
+        import ck_policy_gate_hf6 as policy_gate
+        if policy_gate.active_policies().get("sector_concentration") == "BINDING":
+            from rc6_paper_family_lifecycle import future_position_contract
+            same_underlying = sum(future_position_contract(row).underlying == q.contract.underlying
+                                  for row in future_open)
+            if same_underlying >= int(os.getenv("PAPER_MAX_POSITIONS_PER_SECTOR", "2")):
+                return "FUTURES_UNDERLYING_CONCENTRATION_CAP"
+        equity_row = connection.execute("""SELECT equity FROM paper_equity_by_currency
+          WHERE currency=? ORDER BY id DESC LIMIT 1""", (q.currency,)).fetchone()
+        capital = self.initial_balances[q.currency]
+        if equity_row:
+            capital = min(capital, max(ZERO, decimal_value(
+                equity_row[0], "equity", nonnegative=True)))
+        spot_exposure = sum((
+            D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
+            for p in spot_open if p["currency"] == q.currency), ZERO)
+        future_exposure = self._future_exposure(q.currency, connection=connection, as_of=at)
+        if spot_exposure + future_exposure + candidate_notional > capital * self.max_total_exposure_pct:
+            return "FUTURES_TOTAL_EXPOSURE_CAP"
+        return ""
+
+    def _open_future(self, q: Quote, score: Decimal, features: dict):
+        contract = q.contract
+        try:
+            currency, market = q.monetary_identity()
+        except ValueError as exc:
+            return False, str(exc), None
+        if (contract is None or contract.family != "FUTUROS"
+                or q.asset_class != "FUTUROS"
+                or market != "A3" or contract.market != "A3"
+                or contract.currency != currency
+                or contract.symbol != q.symbol
+                or contract.settlement != q.settlement
+                or contract.paper_margin_policy != "CONSERVATIVE_NOTIONAL_RATE"
+                or contract.paper_margin_rate != D("1")):
+            return False, "FUTURES_EXACT_PAPER_CONTRACT_REQUIRED", None
+        if not str(q.metadata_source or "").startswith("PPI_CATALOG:"):
+            return False, "FUTURES_PPI_PRIMARY_IDENTITY_REQUIRED", None
+        from rc6_paper_family_lifecycle import _validate_future_contract
+        try:
+            _validate_future_contract(contract)
+            contract.price(q.bid, price_kind="QUOTE")
+            contract.price(q.ask, price_kind="QUOTE")
+            if q.last_kind == "TRADE":
+                contract.price(q.last, price_kind="TRADE")
+        except ValueError as exc:
+            return False, str(exc), None
+        at = self.execution_time(q)
+        error = self.admission_error(q, at)
+        if error:
+            return False, error, None
+        if q.opening_block_reason:
+            return False, q.opening_block_reason, None
+        if self.economics_mode == "BINDING":
+            return False, "FUTURES_EXACT_COST_MODEL_REQUIRED_FOR_BINDING_ECONOMICS", None
+        if self.ai_mode == "BINDING":
+            return False, "FUTURES_AI_BINDING_PATH_NOT_VALIDATED", None
+        try:
+            import ck_policy_gate_hf6 as policy_gate
+            # Equity sector groups cannot be an authority for DLR. Its binding
+            # concentration guard uses the durable underlying under the same lock.
+            if any(str(value or "").upper() == "BINDING"
+                   for key, value in policy_gate.active_policies().items()
+                   if key not in {"sector_concentration", "sector_limit"}):
+                return False, "FUTURES_BINDING_LEARNING_POLICY_NOT_VALIDATED", None
+        except Exception:
+            return False, "FUTURES_POLICY_AUTHORITY_UNAVAILABLE", None
+        if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
+            return False, "FUTURES_BOOK_INVALID", None
+        if self.family_paper.active_future(q.symbol):
+            return False, "FUTURES_POSITION_ALREADY_OPEN", None
+        if self.daily_risk is None:
+            return False, "CONCURRENT_RISK_NOT_CONFIGURED", None
+
+        from de_concurrent_risk_capacity_hf6 import derive_emergency_position_cap
+        try:
+            emergency_cap, emergency_cap_source = derive_emergency_position_cap(
+                soft_stop_pct=self.daily_risk.soft_limit_pct,
+                risk_per_trade_fraction=self.risk_pct,
+                configured=os.getenv("PAPER_EMERGENCY_MAX_OPEN_POSITIONS", "AUTO"),
+            )
+        except ValueError:
+            return False, "EMERGENCY_POSITION_CAP_CONFIG_INVALID", None
+
+        entry = contract.executable_fill(q.ask * (1 + self.slippage), side="BUY")
+        stop = entry * (1 - self.stop_loss_pct)
+        target = entry * (1 + self.target_gain_pct)
+        modeled_stop = contract.executable_fill(stop * (1 - self.slippage), side="SELL")
+        capital, capital_source = self._risk_capital(currency)
+        step = contract.quantity_step
+        if step < 1 or step != step.to_integral_value():
+            return False, "FUTURES_INTEGER_CONTRACT_STEP_REQUIRED", None
+
+        per_contract_notional = contract.notional(entry, step)
+        entry_cost_one = self._future_cost(entry, step, contract)
+        stop_cost_one = self._future_cost(modeled_stop, step, contract)
+        stop_loss_one = abs(contract.pnl(entry, modeled_stop, step)) + entry_cost_one + stop_cost_one
+        if stop_loss_one <= 0:
+            return False, "FUTURES_RISK_MODEL_INVALID", None
+        from dh_paper_dynamic_risk_gate_hf6 import portfolio_capacity, ConcurrentRiskGateError
+        try:
+            shared_capacity = portfolio_capacity(self, currency, at, quotes={q.symbol: q})
+        except ConcurrentRiskGateError as exc:
+            return False, str(exc), None
+        risk_budget = min(capital * self.risk_pct, shared_capacity.remaining_before_candidate)
+        by_risk = (risk_budget / stop_loss_one).to_integral_value(ROUND_DOWN) * step
+        cash = max(ZERO, self._cash(as_of=at, currency=currency))
+        by_cash = (cash / (per_contract_notional + entry_cost_one)).to_integral_value(ROUND_DOWN) * step
+        by_book = (D(q.ask_size) * self.participation / step).to_integral_value(ROUND_DOWN) * step
+        by_position_cap = (
+            capital * self.max_position_pct / per_contract_notional
+        ).to_integral_value(ROUND_DOWN) * step
+        with self.store.connect() as connection:
+            current_exposure = sum((
+                D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
+                for p in spot_ledger.positions_at(connection, aware_datetime(at))[0]
+                if p["currency"] == currency), ZERO)
+            current_exposure += self._future_exposure(currency, connection=connection, as_of=at)
+        exposure_remaining = max(
+            ZERO, capital * self.max_total_exposure_pct - current_exposure)
+        by_total_cap = (
+            exposure_remaining / per_contract_notional
+        ).to_integral_value(ROUND_DOWN) * step
+        qty = min(by_risk, by_cash, by_book, by_position_cap, by_total_cap)
+        if qty <= 0:
+            return False, "FUTURES_CAPITAL_LIQUIDITY_OR_RISK_INSUFFICIENT", None
+        try:
+            qty = contract.quantity(qty)
+        except ValueError as exc:
+            return False, "FUTURES_CONTRACT_QUANTITY_INVALID:" + str(exc), None
+
+        notional = contract.notional(entry, qty)
+        entry_cost = self._future_cost(entry, qty, contract)
+        lifecycle_id = "PAPER-FUT-" + uuid.uuid4().hex
+        event_id = lifecycle_id + ":OPEN"
+        features.update({
+            "future_execution": "SPECIALIZED_PAPER_LIFECYCLE",
+            "financial_contract": asdict(contract),
+            "side": "LONG",
+            "entry_price": str(entry),
+            "stop_loss_price": str(stop),
+            "take_profit_price": str(target),
+            "cash_multiplier": str(contract.cash_multiplier),
+            "paper_margin_policy": contract.paper_margin_policy,
+            "paper_margin_rate": str(contract.paper_margin_rate),
+            "margin_reserved": str(contract.cash_required(entry, qty)),
+            "notional": str(notional),
+            "entry_cost_model": str(entry_cost),
+            "cost_model_scope": "PAPER_ESTIMATE_NOT_BROKER_MARGIN",
+            "quantity": str(qty),
+            "risk_budget": str(risk_budget),
+            "qty_by_risk": str(by_risk),
+            "qty_by_cash": str(by_cash),
+            "qty_by_liquidity": str(by_book),
+            "qty_by_position_cap": str(by_position_cap),
+            "qty_by_total_cap": str(by_total_cap),
+            "risk_capital": str(capital),
+            "risk_capital_source": capital_source,
+            "emergency_position_cap": emergency_cap,
+            "emergency_position_cap_source": emergency_cap_source,
+            "max_hold_minutes": int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360")),
+            "real_routes_used": [],
+        })
+        if "entry_signal_inputs" in features:
+            features["entry_signal_inputs"]["quantity"] = str(qty)
+
+        def locked_guard(connection):
+            key_error=self._decision_key_error(connection,features)
+            if key_error:
+                return key_error
+            fresh_at = self.execution_time(q)
+            error = self._future_locked_admission(
+                q, fresh_at, notional, emergency_cap,
+                stop_loss_one * qty / step, connection=connection)
+            if not error:
+                mark_lineage(features, "intent", self)
+            return error
+
+        def commit_evidence(connection, result):
+            evidence = _atomic_admission_snapshot(q, features, lifecycle_id, at,
+                self.execution_time(q), score, financial_commit=result)
+            sha = _insert_evidence_snapshot(connection, evidence)
+            features.update(financial_admission_snapshot_key=evidence["decision_key"],
+                            financial_admission_snapshot_sha256=sha)
+
+        try:
+            result = self.family_paper.open_future(
+                contract, lifecycle_id=lifecycle_id, event_id=event_id,
+                entry_price=entry, quantity=qty, entry_cost=entry_cost,
+                occurred_at=at, detail=features,
+                book_at=q.book_at, max_mark_age_seconds=self.quote_max_age_seconds,
+                cash_guard=lambda connection: self._cash(
+                    as_of=at, currency=currency, connection=connection,
+                    for_execution=True),
+                admission_guard=locked_guard,commit_evidence=commit_evidence)
+        except ValueError as exc:
+            return False, str(exc), None
+        mark_lineage(features, "entry_fill_committed", self)
+        if self.daily_risk:
+            self.daily_risk.evaluate(at, quotes={q.symbol: q})
+        self.store.event(
+            "PAPER_FUTURE_OPEN",
+            f"{q.symbol} LONG {qty} @ {entry}; reserve={result['margin_reserved']}; real_routes=[]",
+            lifecycle_id)
+        return True, "FUTURES_PAPER_OPENED_SIMULATED", lifecycle_id
+
+    def _close_future(self, q, position, reason):
+        from rc6_paper_family_lifecycle import future_position_contract
+        try:
+            contract = future_position_contract(position)
+            if (q.symbol, q.asset_class, q.market, q.currency, q.settlement) != (
+                    contract.symbol, "FUTUROS", contract.market, contract.currency, contract.settlement):
+                return False
+            q = replace(q, contract=contract)
+            contract.price(q.bid, price_kind="QUOTE")
+            contract.price(q.ask, price_kind="QUOTE")
+            if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.bid_size) <= 0:
+                return False
+        except (ValueError, TypeError, KeyError):
+            return False
+        at = self.execution_time(q)
+        if q.time_error(at, max_age_seconds=self.quote_max_age_seconds):
+            return False
+        if D(q.bid) <= 0:
+            return False
+        exit_price = contract.executable_fill(q.bid * (1 - self.slippage), side="SELL")
+        qty = decimal_value(position["quantity"], "cantidad futura", positive=True)
+        if D(q.bid_size) * self.participation < qty:
+            return False
+        exit_cost = self._future_cost(exit_price, qty, contract)
+        event_id = (
+            f"{position['lifecycle_id']}:CLOSE:{q.book_at or q.observed_at}:{reason}")
+        try:
+            if reason in {"EOD_PAPER", "EXPIRY", "OVERNIGHT_CARRY_EXIT"}:
+                self.family_paper.mark_future(
+                    contract, lifecycle_id=position["lifecycle_id"],
+                    event_id=f"{position['lifecycle_id']}:PAPER_CUT:{q.book_at}",
+                    mark_price=q.bid, book_at=q.book_at, occurred_at=at,
+                    settlement=True, max_mark_age_seconds=self.quote_max_age_seconds,
+                    detail={"source": "PPI_BOOK_PAPER_EOD_VARIATION",
+                            "broker_settlement": "NO_VERIFICADO", "reason": reason})
+            result = self.family_paper.close_future(
+                contract, lifecycle_id=position["lifecycle_id"], event_id=event_id,
+                exit_price=exit_price, exit_cost=exit_cost,
+                book_at=q.book_at or q.observed_at, occurred_at=at,
+                reason=reason, expiry=(reason == "EXPIRY"),
+                max_mark_age_seconds=self.quote_max_age_seconds)
+        except ValueError:
+            return False
+        if self.daily_risk:
+            self.daily_risk.evaluate(at, quotes={q.symbol: q})
+        self.store.event(
+            "PAPER_FUTURE_CLOSE",
+            f"{q.symbol} @ {exit_price}; reason={reason}; pnl={result.get('realized_pnl')}; real_routes=[]",
+            position["lifecycle_id"])
+        return True
+
+    def _future_exit_state(self, position, at, state, reason="", *, cause=None, attempted=False):
+        """Durable futures intent; the lifecycle ledger remains fill authority."""
+        key=position["lifecycle_id"]
+        with self.store.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            actual=c.execute("SELECT status FROM paper_future_positions WHERE lifecycle_id=?",(key,)).fetchone()
+            previous=c.execute("SELECT state,cause,due_at,supervised_at,attempts FROM paper_future_exit_intents WHERE lifecycle_id=?",(key,)).fetchone()
+            if not actual:
+                return "WATCH_POSITION_MISSING"
+            if previous and utc_microseconds(at)<utc_microseconds(previous["supervised_at"]):
+                return "WATCH_INVALID_CLOCK"
+            cause=(previous["cause"] if previous else None) or cause
+            due=(previous["due_at"] if previous else None) or (at if cause else None)
+            if actual[0]=="CLOSED":
+                state="CLOSED"
+                reason="Canonical futures close event committed"
+            elif cause and state.startswith("WATCH_"):
+                state="EXIT_PENDING_"+state[6:]
+            c.execute("""INSERT INTO paper_future_exit_intents VALUES(?,?,?,?,?,?,?)
+              ON CONFLICT(lifecycle_id) DO UPDATE SET state=excluded.state,cause=excluded.cause,
+              due_at=excluded.due_at,blocked_reason=excluded.blocked_reason,
+              supervised_at=excluded.supervised_at,attempts=excluded.attempts""",
+              (key,state,cause,due,reason,at,(previous["attempts"] if previous else 0)+int(attempted)))
+            return state
+
+    def _future_time_exit_cause(self, position, contract, at):
+        opened=aware_datetime(position["opened_at"])
+        now=aware_datetime(at)
+        elapsed=(utc_microseconds(now)-utc_microseconds(opened))/60_000_000
+        if elapsed<0:
+            raise ValueError("FUTURE_SUPERVISION_CLOCK_ROLLBACK")
+        metadata=json.loads(position.get("metadata_json") or "{}")
+        max_hold=int(metadata.get("max_hold_minutes") or os.getenv("PAPER_MAX_HOLD_MINUTES","360"))
+        if opened.astimezone(TZ).date()<now.astimezone(TZ).date():
+            return "OVERNIGHT_CARRY_EXIT"
+        if elapsed>=max_hold:
+            return "MAX_HOLD_PAPER"
+        from rc6_ppi_future_contract_policy import exit_due
+        if exit_due(now,contract):
+            return "EXPIRY" if utc_microseconds(now)>=utc_microseconds(contract.expires_at) else "EOD_PAPER"
+        return ""
+
+    def _on_future_quote(self, q: Quote, *, allow_new_openings=True,
+                         opening_block_reason=""):
+        at = self.execution_time(q)
+        position = self.family_paper.active_future(q.symbol)
+        if position:
+            try:
+                from rc6_paper_family_lifecycle import future_position_contract
+                restored = future_position_contract(position)
+                if (q.symbol, q.asset_class, q.market, q.currency, q.settlement) != (
+                        position["symbol"], "FUTUROS", position["market"], position["currency"], position["settlement"]):
+                    self._future_exit_state(position,at,"WATCH_IDENTITY_MISMATCH","Exact futures identity required")
+                    return
+                q = replace(q, contract=restored)
+            except (TypeError, ValueError, KeyError):
+                self._future_exit_state(position,at,"WATCH_INVALID_CONTRACT","Durable futures contract unavailable")
+                return
+        if q.contract is None or q.contract.family != "FUTUROS":
+            return
+        if position:
+            try:
+                time_cause=self._future_time_exit_cause(position,q.contract,at)
+            except (ValueError,TypeError,KeyError):
+                self._future_exit_state(position,at,"WATCH_INVALID_CLOCK","Futures supervision clock invalid")
+                return
+            error=q.time_error(at,max_age_seconds=self.quote_max_age_seconds)
+            if error:
+                self._future_exit_state(position,at,"WATCH_STALE_QUOTE",error,cause=time_cause or None)
+                return
+            try:
+                q.contract.price(q.bid,price_kind="QUOTE")
+                q.contract.price(q.ask,price_kind="QUOTE")
+                if D(q.bid)<=0 or D(q.ask)<D(q.bid):
+                    raise ValueError("FUTURES_BOOK_INVALID")
+            except ValueError as exc:
+                self._future_exit_state(position,at,"WATCH_INVALID_BOOK",str(exc),cause=time_cause or None)
+                return
+            mark_id = f"{position['lifecycle_id']}:MARK:{q.book_at or q.observed_at}"
+            try:
+                self.family_paper.mark_future(
+                    q.contract, lifecycle_id=position["lifecycle_id"],
+                    event_id=mark_id, mark_price=q.bid,
+                    book_at=q.book_at or q.observed_at, occurred_at=at,
+                    detail={"source": "PPI_BOOK"},
+                    max_mark_age_seconds=self.quote_max_age_seconds)
+                position = self.family_paper.active_future(q.symbol) or position
+            except ValueError:
+                self._future_exit_state(position,at,"WATCH_INVALID_MARK","Canonical mark rejected",cause=time_cause or None)
+                return
+            risk_row = None
+            if self.daily_risk:
+                risk_row = self.daily_risk.evaluate(
+                    at, quotes={q.symbol: q}).get(q.currency)
+            metadata = json.loads(position.get("metadata_json") or "{}")
+            stop = D(metadata.get("stop_loss_price"), "-1")
+            target = D(metadata.get("take_profit_price"), "-1")
+            with self.store.connect() as c:
+                previous=c.execute("SELECT cause FROM paper_future_exit_intents WHERE lifecycle_id=?",(position["lifecycle_id"],)).fetchone()
+            reason=(previous[0] if previous else None) or ""
+            if not reason and risk_row and risk_row.get("state") != "READY":
+                reason = "DAILY_RISK_" + str(risk_row.get("state") or "UNKNOWN")
+            elif not reason and stop > 0 and D(q.bid) <= stop:
+                reason = "STOP_PAPER"
+            elif not reason and target > 0 and D(q.bid) >= target:
+                reason = "TAKE_PROFIT_PAPER"
+            if not reason:
+                reason=time_cause
+            if reason:
+                self._future_exit_state(position,at,"EXIT_DUE","Futures exit intent committed",cause=reason)
+                closed=self._close_future(q,position,reason)
+                self._future_exit_state(position,at,"CLOSED" if closed else "EXIT_PENDING_EXECUTION",
+                    "Fill committed" if closed else "Fresh executable depth or canonical close required",
+                    cause=reason,attempted=True)
+            else:
+                self._future_exit_state(position,at,"OPEN","Within supervised futures parameters")
+            return
+
+        if not allow_new_openings or opening_block_reason:
+            return
+        action, score, reason, features = self._decide_future(q)
+        mark_lineage(features, "decision", self)
+        bucket = q.observed_at[:16]
+        key = (
+            f"futures-dlr-paper-v1:{q.symbol}:{q.asset_class}:{q.settlement}:"
+            f"{q.currency}:{q.market}:{bucket}:{action}")
+        if not self.store.record_decision(key, q, action, score, reason, features):
+            return
+        if action != "BUY":
+            return
+        features["economics"] = {
+            "passed": False,
+            "state": "FUTURES_FIXED_COMPONENTS_NOT_EXACT",
+            "decision_effect": ("BLOCK" if self.economics_mode == "BINDING" else "SHADOW"),
+        }
+        features["economics_mode"] = self.economics_mode
+        features["native_decision_key"]=key
+        opened, gate_reason, lifecycle_id = self._open_future(q, score, features)
+        self.store.record_gates(
+            q, key, "APPROVE", "NOT_USED",
+            "APPROVE" if opened else "BLOCKED",
+            "OPENED_SIMULATED" if opened else "BLOCKED",
+            gate_reason, paper_id=lifecycle_id, detail=features)
+
+    def _decide_future(self, q):
+        """Explicit DLR PAPER signal; equity decide() has no FUTUROS authority."""
+        from rc6_performance.lineage import frozen_source, resolved_configuration
+        from rc6_performance.common import digest
+        import au_fee_schedule
+        configuration = resolved_configuration(self)
+        configuration["configuration_fingerprint"] = digest({
+            "engine_configuration": configuration["configuration_fingerprint"],
+            "strategy_version": "futures-dlr-paper-v1",
+            "future_fee_rate": str(au_fee_schedule.costo_por_tramo("FUTUROS")),
+            "future_policy": "EXACT_DLR_2026_CONSERVATIVE_NOTIONAL_RATE_1"})
+        configuration["configuration_scope"] = "RESOLVED_FUTURES_DLR_PAPER_ENGINE+FEE+EXACT_POLICY"
+        lineage = {**frozen_source(), **configuration,
+                   "strategy_id": "futures-dlr-paper-v1",
+                   "strategy_version": "futures-dlr-paper-v1",
+                   "signal_started_at": native_clock(self)}
+        action, score, reason, features = self._future_signal_components(q)
+        lineage.update(signal_at=native_clock(self),
+                       clock_mode="NATIVE" if self.clock_fn else "EVENT_TIME_SIMULATION_UNVERIFIED")
+        features.update(performance_lineage=lineage, reason_code=reason)
+        return action, score, reason, features
+
+    def _future_signal_components(self, q):
+        """Frozen mathematical DLR baseline with causal input capture only."""
+        from rc6_paper_family_lifecycle import _validate_future_contract
+        features = {"family": "FUTUROS", "strategy": "futures-dlr-paper-v1",
+                    "execution": "SPECIALIZED_PAPER_LIFECYCLE", "score_is_probability": False}
+        try:
+            _validate_future_contract(q.contract)
+            if not str(q.metadata_source or "").startswith("PPI_CATALOG:"):
+                raise ValueError("FUTURES_PPI_PRIMARY_IDENTITY_REQUIRED")
+            if q.contract.key != (q.symbol, q.asset_class, q.market, q.currency, q.settlement):
+                raise ValueError("FUTURES_QUOTE_CONTRACT_IDENTITY_MISMATCH")
+            at = self.execution_time(q)
+            error = self.admission_error(q, at)
+            if error:
+                raise ValueError(error)
+            if not _family_operable("FUTUROS") or q.opening_block_reason:
+                raise ValueError(q.opening_block_reason or "FUTURES_DISABLED_BY_SCOPE")
+            if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
+                raise ValueError("FUTURES_BOOK_INVALID")
+        except (ValueError, TypeError) as exc:
+            return "HOLD", ZERO, str(exc), features
+        values = self.store.signal_prices(q, at, limit=max(20, self.signal_min_samples),
+                                          window_minutes=self.signal_window_minutes)
+        features["samples"] = len(values)
+        features["entry_signal_inputs"] = self._entry_signal_inputs(values, q, at)
+        if len(values) < self.signal_min_samples:
+            return "HOLD", ZERO, "FUTURES_NATIVE_WARMUP_INCOMPLETE", features
+        short = sum(values[-3:], ZERO) / D(3)
+        long = sum(values[-min(8, len(values)):], ZERO) / D(min(8, len(values)))
+        momentum = short / long - 1 if long else ZERO
+        spread = q.ask / q.bid - 1
+        score = max(ZERO, min(D(1), D("0.5") + momentum * D(40) - spread * D(10)))
+        features.update(momentum=str(momentum), spread=str(spread), score=str(score),
+                        signal_window_minutes=self.signal_window_minutes,
+                        paper_threshold=str(self.threshold(at)),
+                        entry_signal_inputs=self._entry_signal_inputs(
+                            values, q, at, momentum=momentum, spread=spread))
+        features["candidate"] = {"action": "BUY", "score": str(score),
+                                 "score_threshold": features["paper_threshold"]}
+        if spread > D("0.02"):
+            return "HOLD", score, "FUTURES_SPREAD_TOO_WIDE", features
+        if score < self.threshold(at):
+            return "HOLD", score, "FUTURES_SCORE_BELOW_VERSIONED_THRESHOLD", features
+        return "BUY", score, "FUTURES_SPECIALIZED_DLR_SIGNAL", features
+
+    def supervise_futures(self, at):
+        """Existing runtime clock services all active futures independent of scanner."""
+        from rc6_paper_family_lifecycle import future_positions
+        for position in future_positions(self.store, active_only=True):
+            q = self.store.latest_quote({**position, "asset_class": "FUTUROS"})
+            if q is not None:
+                self._on_future_quote(q, allow_new_openings=False)
+            else:
+                try:
+                    from rc6_paper_family_lifecycle import future_position_contract
+                    cause=self._future_time_exit_cause(position,future_position_contract(position),at)
+                    self._future_exit_state(position,at,"WATCH_NO_QUOTE","No exact futures book",cause=cause or None)
+                except (ValueError,TypeError,KeyError):
+                    self._future_exit_state(position,at,"WATCH_INVALID_CONTRACT","Futures supervision requires durable contract")
 
     def _open(self, q: Quote, score: Decimal, features: dict):
         try:
@@ -1099,6 +1887,16 @@ class PaperBroker:
             return False, error, None
         if q.opening_block_reason:
             return False, q.opening_block_reason, None
+        error = self._economic_admission(q, features)
+        if error:
+            return False, error, None
+        from rc6_performance.costs import paper_cost_contract
+        cost_policy = paper_cost_contract(family, currency, at)
+        cost_policy_sha = cost_policy.diagnostic()["policy_sha256"]
+        if cost_policy.binding_error(at):
+            return False, cost_policy.binding_error(at), None
+        if cost_policy_sha != features["economics"]["cost_contract"]["policy_sha256"]:
+            return False, "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION", None
         if family not in PAPER_POSITION_FAMILIES:
             return False, f"{family} requiere su ciclo financiero específico", None
         if not _family_operable(family):
@@ -1178,7 +1976,7 @@ class PaperBroker:
         except ValueError:
             return False, "EMERGENCY_POSITION_CAP_CONFIG_INVALID", None
         opened_now = self.store.open_positions()
-        if emergency_position_guard(len(opened_now), emergency_cap=emergency_cap):
+        if emergency_position_guard(len(opened_now) + len(self.store.active_future_positions()), emergency_cap=emergency_cap):
             self.store.event("REJECTED_PAPER", f"{q.symbol}: cap técnico anti-runaway")
             return False, "EMERGENCY_POSITION_CAP", None
         entry = (q.ask * (1 + self.slippage)).quantize(Decimal("0.0001"))
@@ -1225,6 +2023,7 @@ class PaperBroker:
         by_position_cap = (capital * self.max_position_pct / (entry * factor)).to_integral_value(ROUND_DOWN)
         current_exposure = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
                                 for p in self.store.open_positions() if p["currency"] == currency), ZERO)
+        current_exposure += self._future_exposure(currency, as_of=at)
         exposure_remaining = max(
             ZERO, capital * self.max_total_exposure_pct - current_exposure
         )
@@ -1298,17 +2097,36 @@ class PaperBroker:
             # Serializa contra otras compras y colocaciones de caución.
             # No se hace red ni IA dentro de esta transacción.
             c.execute("BEGIN IMMEDIATE")
+            key_error=self._decision_key_error(c,features)
+            if key_error:
+                return False,key_error,None
             at = self.execution_time(q)
             error = self.admission_error(q, at, connection=c)
             if error:
                 return False, error, None
+            error = self._economic_admission(q, features)
+            if error:
+                return False, error, None
+            if features["economics"]["cost_contract"]["policy_sha256"] != cost_policy_sha:
+                return False, "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION", None
+            if cost_policy.binding_error(at):
+                return False, cost_policy.binding_error(at), None
+            # The exact policy captured before sizing also owns the locked cash
+            # and risk amounts; a mutable environment cannot mix two tariffs.
+            cost = cost_policy.leg_cost(entry * factor * qty, decision_at=at)
+            candidate_risk_value = (entry * factor * qty + cost if family == "OPCIONES"
+                else (entry - modeled_stop_fill) * factor * qty + cost
+                + cost_policy.leg_cost(modeled_stop_fill * factor * qty, decision_at=at))
+            features["candidate_stop_risk"] = str(candidate_risk_value)
             try:
                 if qty > spot_liquidity.available(c,q,'BUY_SIMULATED',self.participation):
                     return False, 'SPOT_BOOK_DEPTH_CHANGED', None
             except ValueError as exc:
                 return False, str(exc), None
             opened = spot_ledger.positions_at(c, at)[0]
-            if emergency_position_guard(len(opened), emergency_cap=emergency_cap):
+            from rc6_paper_family_lifecycle import future_positions
+            future_open = future_positions(self.store, connection=c, active_only=True, as_of=at)
+            if emergency_position_guard(len(opened) + len(future_open), emergency_cap=emergency_cap):
                 return False, "EMERGENCY_POSITION_CAP", None
             try:
                 concurrent_locked = portfolio_capacity(
@@ -1321,10 +2139,12 @@ class PaperBroker:
             features["concurrent_risk_locked"] = snapshot_dict(concurrent_locked)
             exposure_now = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
                                 for p in opened if p["currency"] == currency), ZERO)
+            exposure_now += self._future_exposure(currency, connection=c, as_of=at)
             if (any(p["symbol"] == q.symbol for p in opened)
                     or entry * qty * factor + cost > self._cash(as_of=at, currency=currency, connection=c, for_execution=True)
                     or exposure_now + entry * qty * factor > capital * self.max_total_exposure_pct):
                 return False, "Caja, identidad o exposición cambiaron antes de registrar la compra", None
+            mark_lineage(features, "intent", self)
             c.execute("""INSERT INTO paper_positions
               (paper_id,source,strategy_version,symbol,asset_class,settlement,status,
                quantity,entry_price,entry_cost,stop_price,target_price,opened_at,features_json,currency,market,currency_source)
@@ -1337,6 +2157,10 @@ class PaperBroker:
                       (paper_id, SOURCE, "BUY_SIMULATED", at, str(qty),
                        str(entry), str(cost), str(entry-q.ask)))
             spot_liquidity.record(c,fill.lastrowid,q)
+            evidence = _atomic_admission_snapshot(q, features, paper_id, at, self.execution_time(q), score)
+            sha = _insert_evidence_snapshot(c, evidence)
+            features.update(financial_admission_snapshot_key=evidence["decision_key"],
+                            financial_admission_snapshot_sha256=sha)
             c.execute("INSERT INTO paper_learning_samples VALUES(?,?,?,?,?,?,?,?,?)",
                       (paper_id, SOURCE, STRATEGY_VERSION, q.observed_at,
                        json.dumps(features, ensure_ascii=False, default=str), None, None, None, None))
@@ -1345,6 +2169,7 @@ class PaperBroker:
                        f"Compra simulada {qty} {q.symbol} @ {entry}"))
             if self.daily_risk:
                 self.daily_risk.evaluate(at,connection=c,quotes={q.symbol:q})
+        mark_lineage(features, "entry_fill_committed", self)
         return True, "Todos los portones aprobaron; compra simulada registrada", paper_id
 
     def _risk_capital(self, currency):
@@ -1377,6 +2202,8 @@ class PaperBroker:
         """
         at = as_of or self.execution_time(q)
         if q.time_error(at, max_age_seconds=self.quote_max_age_seconds):
+            return False
+        if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.bid_size) <= 0:
             return False
         if self.session_policy and self.session_policy.execution_error(p, at):
             return False
@@ -1417,9 +2244,9 @@ class PaperBroker:
             try:
                 observed = aware_datetime(at)
                 opened = aware_datetime(root['opened_at'])
-                if observed < opened or aware_datetime(q.book_at) < opened:
+                if utc_microseconds(observed) < utc_microseconds(opened) or utc_microseconds(q.book_at) < utc_microseconds(opened):
                     return False
-                if any(aware_datetime(r['closed_at'])>observed for r in prior):
+                if any(utc_microseconds(r['closed_at'])>utc_microseconds(observed) for r in prior):
                     return False
                 depth = spot_liquidity.available(c,q,'SELL_SIMULATED',self.participation)
             except (ValueError,TypeError):
@@ -1456,8 +2283,8 @@ class PaperBroker:
                     # Por fills parciales se acredita por la porcion
                     # emparejada. Es conservador frente a netear fills mixtos
                     # y nunca concede mas que la bonificacion oficial.
-                    rebate = (min(matched_buy, matched_sell) * (full-low)).quantize(
-                        Decimal('0.01'))
+                    from rc6_performance.costs import smaller_leg_rebate
+                    rebate = smaller_leg_rebate(matched_buy, matched_sell, full, low, rounded=True)
                     exit_cost = max(ZERO, exit_cost-rebate)
             gross = (exit_price-D(root['entry_price']))*qty*factor
             net = gross-entry_cost-exit_cost
@@ -1556,9 +2383,19 @@ class PaperBroker:
             caucion = self.cauciones.valuation(measured_at, currency, connection=c)
             unrealized += caucion["unrealized"]
             realized += caucion["realized"]
+            from rc6_paper_family_lifecycle import future_risk_snapshot
+            futures = future_risk_snapshot(
+                self.store, currency, measured_at, connection=c,
+                max_mark_age_seconds=self.quote_max_age_seconds)
+            unrealized += futures["unrealized"]
+            realized += futures["realized"]
+            exposure += futures["collateral"]
+            if futures["stale"] or futures["carry"]:
+                stale += 1
             cash = self._cash(as_of=measured_at, currency=currency, connection=c)
             receivable = pending_proceeds(self.store, measured_at, currency, connection=c)
-            equity = cash + exposure + receivable + caucion["principal"] + caucion["accrued"]
+            equity = (cash + exposure + receivable + caucion["principal"]
+                      + caucion["accrued"] + futures["unrealized"])
             results[currency] = {"cash": cash, "exposure": exposure, "pending_proceeds": receivable,
                                  "caucion_principal": caucion["principal"], "caucion_accrued": caucion["accrued"],
                                  "unrealized_pnl": unrealized, "realized_pnl": realized, "equity": equity}

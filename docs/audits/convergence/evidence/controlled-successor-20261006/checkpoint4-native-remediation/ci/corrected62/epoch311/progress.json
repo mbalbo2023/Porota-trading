@@ -1,0 +1,8 @@
+{
+  "management_deadline": 15590.661177056,
+  "owned_log_bytes_fstat_only": 61,
+  "pid": 12232,
+  "scope": "LOCAL_TWO_CI_FILES_ONLY_NOT_GOV_OR_PREDEPLOY",
+  "stage": "poll",
+  "wall_seconds": 85.19093046099988
+}

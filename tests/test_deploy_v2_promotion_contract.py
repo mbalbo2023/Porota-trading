@@ -20,10 +20,16 @@ def test_deploy_v2_is_the_only_rc6_production_push_path():
 
 
 def test_deploy_v2_requires_merge_tree_identity_and_successful_predeploy():
+    binding = Path("scripts/porota_predeploy_binding.py").read_text(encoding="utf-8")
     assert 'CANDIDATE_TREE="$(git rev-parse "$CANDIDATE_SHA^{tree}")"' in PROMOTE
     assert 'test "$CANDIDATE_TREE" = "$DEPLOY_TREE"' in PROMOTE
-    assert 'run.get("name")!="Porota Predeploy V2"' in PROMOTE
-    assert 'run.get("conclusion")!="success"' in PROMOTE
+    assert "porota_predeploy_binding.py locate" in PROMOTE
+    assert 'execution.get("conclusion") != ("success" if require_completed else None)' in binding
+    assert 'require_completed=True' in binding
+    assert 'execution.get("workflow_id") != approval["workflow_id"]' in binding
+    assert 'execution.get("run_attempt") != approval["run_attempt"]' in binding
+    assert 'execution.get("head_sha") != approval["candidate_sha"]' in binding
+    assert "parse_merge_approval" in binding
 
 
 def test_deploy_v2_preserves_paper_and_ppi_watch_invariants():
@@ -88,7 +94,7 @@ def test_deploy_v2_separates_fast_state_guard_from_contract_quick_check():
 
 def test_deploy_v2_preflight_state_guard_is_bounded_and_never_scans_full_db():
     preflight = PROMOTE.split('PRE_STATE="NO_RUNNING_OBSERVER"', 1)[1].split(
-        'PPI_WATCH_BEFORE=', 1)[0]
+        'python3 - "$REMOTE_DIR"', 1)[0]
     assert 'timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db"' in preflight
     assert "PRE_STATE_HOST_READONLY=" in preflight
     assert "PRAGMA quick_check" not in preflight

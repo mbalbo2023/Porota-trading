@@ -1,0 +1,30 @@
+{
+  "schema": "rc6.component-raw-custody.v1",
+  "scope": "TWO_ISOLATED_INSTRUMENTED_SOURCE_CAPTURES_NOT_FULL_TICK_OR_CAPACITY_ACCEPTANCE",
+  "records": [
+    {
+      "original_path": "/tmp/rc6-source-capture-f8895434-157-diagnostic-raw/capture_probe.py",
+      "path": "docs/audits/convergence/evidence/native-capture-components-f8895434-157/capture_probe.py",
+      "bytes": 14218,
+      "sha256": "caa0141e51bf71513df4f987cc997a1f297b403643d29885d6b26f4f0f132741",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-source-capture-f8895434-157-diagnostic-raw/result.json",
+      "path": "docs/audits/convergence/evidence/native-capture-components-f8895434-157/result.json",
+      "bytes": 195888,
+      "sha256": "7504a92ea789ed38993711d943f21466b2493ee92204785cd74f74f56e3cbd80",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-source-capture-f8895434-157-diagnostic-raw/run.log",
+      "path": "docs/audits/convergence/evidence/native-capture-components-f8895434-157/run.log",
+      "bytes": 205,
+      "sha256": "cda265b525e79f5b42dd686edf74d0fb81d762e7995cb14936cc5ebff1bc17c4",
+      "byte_preserved": true
+    }
+  ],
+  "artifact_validated": false,
+  "runtime_validated": false,
+  "final_material_acceptance": false
+}

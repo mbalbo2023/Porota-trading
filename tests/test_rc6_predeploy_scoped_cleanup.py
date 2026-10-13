@@ -1,0 +1,1621 @@
+"""Controlled runner cleanup guards: no real Docker, Actions or deployment."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import time
+
+import pytest
+import yaml
+
+from scripts import porota_predeploy_cleanup as cleanup
+from scripts import porota_predeploy_test_workspace as test_workspace
+
+IMAGE = "sha256:" + "d" * 64
+CONTAINER = "e" * 64
+FOREIGN = "f" * 64
+CONTEXT = {
+    "repository": cleanup.REPOSITORY, "workflow_path": cleanup.WORKFLOW,
+    "event": "pull_request", "run_id": "471", "run_attempt": "2",
+    "candidate_sha": "a" * 40, "candidate_tree": "b" * 40,
+}
+
+
+def metrics(_paths, *, free=4 * 1024**3, inodes=1000):
+    return {"1": {"filesystem_device": 1, "measured_paths": ["controlled-filesystem"],
+                  "free_bytes": free, "free_inodes": inodes, "total_inodes": 2000}}
+
+
+class Docker:
+    def __init__(self, root):
+        self.root = root
+        self.images = {}
+        self.containers = {}
+        self.calls = []
+        self.fail = None
+        self.leave_image = False
+        self.on_remove = None
+
+    def __call__(self, *args, timeout):
+        self.calls.append((args, timeout))
+        assert 0 < timeout <= 10
+        if self.fail is not None and args[:len(self.fail)] == self.fail:
+            raise cleanup.CleanupRejected("DOCKER_COMMAND_FAILED")
+        if args == ("info", "--format", "{{.DockerRootDir}}"):
+            return str(self.root)
+        if args[:2] == ("image", "ls"):
+            item = args[-1]
+            if item.startswith("reference="):
+                tag = item.split("=", 1)[1]
+                return "\n".join(key for key, value in self.images.items()
+                                 if tag in value["RepoTags"])
+            assert item.startswith("label=porota.predeploy.owner=")
+            owner = item.split("=", 2)[2]
+            return "\n".join(key for key, value in self.images.items()
+                             if value["Config"]["Labels"].get("porota.predeploy.owner") == owner)
+        if args[:2] == ("container", "ls"):
+            assert args[-1].startswith("label=porota.predeploy.owner=")
+            owner = args[-1].split("=", 2)[2]
+            return "\n".join(key for key, value in self.containers.items()
+                             if value["Config"]["Labels"].get("porota.predeploy.owner") == owner)
+        if args[:2] in (("image", "inspect"), ("container", "inspect")):
+            inventory = self.images if args[0] == "image" else self.containers
+            return json.dumps([inventory[args[2]]])
+        if args[:2] == ("container", "rm"):
+            assert args[2] == "--force"
+            del self.containers[args[3]]
+            return args[3]
+        if args[:2] == ("image", "rm"):
+            assert args[2] == "--no-prune" and "--force" not in args
+            if any(value["Image"] == args[3] for value in self.containers.values()):
+                raise cleanup.CleanupRejected("DOCKER_COMMAND_FAILED")
+            if not self.leave_image:
+                del self.images[args[3]]
+            if self.on_remove:
+                self.on_remove()
+            return args[3]
+        raise AssertionError(args)
+
+
+@pytest.fixture
+def owned(tmp_path):
+    repo, runner = tmp_path / "source", tmp_path / "runner"
+    repo.mkdir(mode=0o755)
+    runner.mkdir(mode=0o755)
+    daemon = Docker(tmp_path)
+    scope, control = cleanup.prepare(repo, runner, CONTEXT, run=daemon, probe=metrics)
+    return {"repo": repo, "runner": runner, "scope": scope,
+            "control": control, "root": Path(control["private_root"]), "docker": daemon}
+
+
+def source_claim(owned):
+    source = owned["repo"] / cleanup.SOURCE
+    source.write_bytes(b'{"scope":"CONTROLLED_CLEANUP_METADATA_ONLY"}\n')
+    source.chmod(0o644)
+    cleanup.claim_source(owned["scope"], source, hashlib.sha256(source.read_bytes()).hexdigest())
+    return source
+
+
+def built(owned, *, capture=True, container=True):
+    source_claim(owned)
+    cleanup.begin_build(owned["scope"], run=owned["docker"])
+    control, _ = cleanup.load(owned["scope"])
+    labels = cleanup.expected_labels(control)
+    owned["docker"].images[IMAGE] = {
+        "Id": IMAGE, "Config": {"Labels": labels},
+        "RepoTags": [control["image_ref"]], "RepoDigests": [],
+    }
+    if capture:
+        cleanup.claim_image(owned["scope"], IMAGE, run=owned["docker"])
+    if container:
+        owned["docker"].containers[CONTAINER] = {
+            "Id": CONTAINER, "Image": IMAGE, "Config": {"Labels": dict(labels)}, "Mounts": []}
+    owned["control"], _ = cleanup.load(owned["scope"])
+    return owned
+
+
+def run_cleanup(owned, **kwargs):
+    return cleanup.cleanup(owned["scope"], context=CONTEXT,
+                           run=owned["docker"], probe=metrics, **kwargs)
+
+
+def assert_no_removals(daemon):
+    assert not any(args[:2] in {("container", "rm"), ("image", "rm")}
+                   for args, _ in daemon.calls)
+
+
+def test_fifo_control_is_rejected_before_blocking_for_a_writer(tmp_path):
+    fifo = tmp_path / "replaced-control.json"
+    os.mkfifo(fifo, mode=0o600)
+    before = fifo.stat()
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+    started = time.monotonic()
+    def stalled(_signum, _frame):
+        raise AssertionError("FIFO control open blocked before type rejection")
+    signal.signal(signal.SIGALRM, stalled)
+    signal.setitimer(signal.ITIMER_REAL, 1.0)
+    try:
+        with pytest.raises(cleanup.CleanupRejected, match="RESOURCE_CUSTODY_INVALID"):
+            cleanup.read_file(fifo)
+        assert time.monotonic() - started < 1.0
+        after = fifo.stat()
+        assert cleanup.identity(before) == cleanup.identity(after)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer[0]:
+            signal.setitimer(signal.ITIMER_REAL,
+                max(0.001, previous_timer[0] - (time.monotonic() - started)), previous_timer[1])
+
+
+def test_cleanup_removes_only_bound_run_resources_and_measures_actual_delta(owned):
+    built(owned)
+    foreign = owned["runner"] / "unowned-evidence.json"
+    foreign.write_bytes(b"foreign")
+    nested = owned["root"] / "image-app"
+    nested.mkdir()
+    (nested / "Dockerfile").write_bytes(b"controlled image output")
+    owned["docker"].containers[FOREIGN] = {
+        "Id": FOREIGN, "Image": "sha256:" + "c" * 64,
+        "Config": {"Labels": {"porota.predeploy.owner": "0" * 32}}, "Mounts": []}
+    probes = iter([metrics([], free=4 * 1024**3), metrics([], free=4 * 1024**3 + 8192)])
+    result = cleanup.cleanup(owned["scope"], context=CONTEXT,
+                             run=owned["docker"], probe=lambda _paths: next(probes))
+    assert result["status"] == "GREEN" and result["failures"] == []
+    assert result["removed_image_ids"] == [IMAGE]
+    assert result["removed_container_ids"] == [CONTAINER]
+    assert result["source_manifest_removed"] is True
+    assert result["private_files_removed"] == 2 and result["private_directories_removed"] == 1
+    assert not owned["root"].exists() and foreign.read_bytes() == b"foreign"
+    assert set(owned["docker"].containers) == {FOREIGN}
+    assert result["filesystem_deltas"]["1"]["free_byte_delta"] == 8192
+    assert result["filesystem_deltas"]["1"]["reclaimed_free_bytes_observed"] == 8192
+    assert all("ancestor=" not in str(args) and "prune" not in args
+               and args != ("container", "inspect", FOREIGN)
+               for args, _ in owned["docker"].calls)
+
+
+@pytest.mark.parametrize("operation", [("container", "rm"), ("image", "rm")])
+def test_docker_removal_failure_is_red_and_retains_private_evidence(owned, operation):
+    built(owned)
+    owned["docker"].fail = operation
+    result = run_cleanup(owned)
+    assert result["status"] == "RED" and "DOCKER_COMMAND_FAILED" in result["failures"]
+    assert owned["root"].exists() and (owned["repo"] / cleanup.SOURCE).exists()
+    assert IMAGE in owned["docker"].images
+
+
+def test_successful_command_with_remaining_owned_image_is_red(owned):
+    built(owned, container=False)
+    owned["docker"].leave_image = True
+    result = run_cleanup(owned)
+    assert result["status"] == "RED" and "OWN_DOCKER_RESOURCES_REMAIN" in result["failures"]
+    assert owned["root"].exists() and IMAGE in owned["docker"].images
+
+
+@pytest.mark.parametrize("shared", ["tag", "digest", "foreign_reference"])
+def test_shared_image_is_retained_without_removing_or_inspecting_foreign_resources(owned, shared):
+    built(owned, container=False)
+    if shared == "tag":
+        owned["docker"].images[IMAGE]["RepoTags"].append("other-owner:preserved")
+    elif shared == "digest":
+        owned["docker"].images[IMAGE]["RepoDigests"] = ["example/image@sha256:" + "1" * 64]
+    else:
+        owned["docker"].containers[FOREIGN] = {
+            "Id": FOREIGN, "Image": IMAGE,
+            "Config": {"Labels": {"porota.predeploy.owner": "0" * 32}}, "Mounts": []}
+    result = run_cleanup(owned)
+    assert result["status"] == "RED" and IMAGE in owned["docker"].images
+    assert owned["root"].exists()
+    assert not any(args == ("container", "inspect", FOREIGN)
+                   or args[:2] == ("container", "rm") for args, _ in owned["docker"].calls)
+    if shared != "foreign_reference":
+        assert "SHARED_IMAGE_RETAINED" in result["failures"]
+        assert_no_removals(owned["docker"])
+    else:
+        assert set(owned["docker"].containers) == {FOREIGN}
+
+
+def test_missing_capture_after_finished_build_requires_complete_owned_image_binding(owned):
+    built(owned, capture=False)
+    result = run_cleanup(owned)
+    assert result["status"] == "GREEN" and result["owner"]["image_id"] is None
+    assert result["owner"]["build_phase"] == "STARTED"
+    assert result["removed_image_ids"] == [IMAGE] and not owned["root"].exists()
+
+
+@pytest.mark.parametrize("field", [
+    "porota.commit", "porota.tree", "porota.predeploy.run-id",
+    "porota.predeploy.run-attempt", "porota.source-manifest-sha256"])
+def test_uncaptured_image_with_any_wrong_origin_label_is_retained(owned, field):
+    built(owned, capture=False)
+    owned["docker"].images[IMAGE]["Config"]["Labels"][field] = "wrong"
+    result = run_cleanup(owned)
+    assert result["status"] == "RED" and "OWNER_IMAGE_LABEL_MISMATCH" in result["failures"]
+    assert IMAGE in owned["docker"].images and owned["root"].exists()
+    assert_no_removals(owned["docker"])
+
+
+def test_early_failure_without_build_cleans_only_private_files_and_claims_no_image(owned):
+    (owned["root"] / "diagnostic.json").write_bytes(b"early failed gate")
+    result = run_cleanup(owned)
+    assert result["status"] == "GREEN"
+    assert result["owner"]["build_phase"] == "NOT_STARTED"
+    assert result["removed_image_ids"] == result["removed_container_ids"] == []
+    assert result["source_manifest_removed"] is False and not owned["root"].exists()
+    assert result["filesystem_deltas"]["1"]["reclaimed_free_bytes_observed"] == 0
+
+
+def test_early_phase_cannot_hide_an_unexpected_owned_image(owned):
+    labels = cleanup.expected_labels(owned["control"])
+    owned["docker"].images[IMAGE] = {
+        "Id": IMAGE, "Config": {"Labels": labels},
+        "RepoTags": [owned["control"]["image_ref"]], "RepoDigests": []}
+    result = run_cleanup(owned)
+    assert result["status"] == "RED" and "UNEXPECTED_OWN_IMAGE_RETAINED" in result["failures"]
+    assert_no_removals(owned["docker"])
+
+
+def test_foreign_candidate_tag_never_grants_cleanup_ownership(owned):
+    owned["docker"].images[IMAGE] = {
+        "Id": IMAGE, "Config": {"Labels": {"porota.predeploy.owner": "0" * 32}},
+        "RepoTags": [owned["control"]["image_ref"]], "RepoDigests": []}
+    result = run_cleanup(owned)
+    assert result["status"] == "RED" and "CANDIDATE_TAG_FOREIGN_OR_UNBOUND" in result["failures"]
+    assert_no_removals(owned["docker"])
+    assert not any(args == ("image", "inspect", IMAGE)
+                   for args, _ in owned["docker"].calls)
+    assert owned["root"].exists()
+
+
+@pytest.mark.parametrize("change", ["labels", "image", "mount"])
+def test_container_binding_is_verified_before_any_removal(owned, change):
+    built(owned)
+    child = owned["docker"].containers[CONTAINER]
+    if change == "labels":
+        child["Config"]["Labels"]["porota.tree"] = "wrong"
+    elif change == "image":
+        child["Image"] = "sha256:" + "1" * 64
+    else:
+        child["Mounts"] = [{"Source": "/foreign", "Destination": "/app/data"}]
+    result = run_cleanup(owned)
+    assert result["status"] == "RED" and "CONTAINER_OWNER_BINDING_INVALID" in result["failures"]
+    assert_no_removals(owned["docker"])
+
+
+@pytest.mark.parametrize("alias", ["symlink", "hardlink", "same_device_mount"])
+def test_private_namespace_alias_never_deletes_external_data(owned, tmp_path, monkeypatch, alias):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    payload = outside / "protected"
+    payload.write_bytes(b"keep bytes")
+    member = owned["root"] / "untrusted"
+    if alias == "symlink":
+        member.symlink_to(outside, target_is_directory=True)
+    elif alias == "hardlink":
+        os.link(payload, member)
+    else:
+        member.mkdir()
+        (member / "protected").write_bytes(b"same-device mount witness")
+        actual_mount = cleanup.mount_id
+        def mounted(descriptor):
+            target = os.readlink("/proc/self/fd/" + str(descriptor))
+            value = actual_mount(descriptor)
+            return value + 1 if target == str(member) else value
+        monkeypatch.setattr(cleanup, "mount_id", mounted)
+    result = run_cleanup(owned)
+    assert result["status"] == "RED" and owned["root"].exists()
+    assert payload.read_bytes() == b"keep bytes"
+    assert_no_removals(owned["docker"])
+    if alias == "same_device_mount":
+        assert "PRIVATE_NAMESPACE_MOUNT" in result["failures"]
+        assert (member / "protected").read_bytes() == b"same-device mount witness"
+
+
+def test_changed_source_manifest_is_retained_with_all_private_data(owned):
+    built(owned)
+    source = owned["repo"] / cleanup.SOURCE
+    source.write_bytes(b"replacement owned by a different producer")
+    result = run_cleanup(owned)
+    assert result["status"] == "RED" and "SOURCE_MANIFEST_CUSTODY_CHANGED" in result["failures"]
+    assert source.read_bytes() == b"replacement owned by a different producer"
+    assert owned["root"].exists()
+    assert_no_removals(owned["docker"])
+
+
+@pytest.mark.parametrize("field", ["repo_root", "runner_temp", "private_root", "owner_uuid"])
+def test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory(owned, tmp_path, field):
+    outside = tmp_path / "other-run"
+    outside.mkdir()
+    protected = outside / cleanup.SOURCE
+    protected.write_bytes(b"unrelated source")
+    control, details = cleanup.load(owned["scope"])
+    control[field] = "0" * 32 if field == "owner_uuid" else str(outside)
+    cleanup.publish(owned["scope"], control, previous=details)
+    result = run_cleanup(owned)
+    assert result["status"] == "RED" and protected.read_bytes() == b"unrelated source"
+    assert owned["root"].exists()
+    assert_no_removals(owned["docker"])
+
+
+def configure_cli(owned, monkeypatch):
+    monkeypatch.chdir(owned["repo"])
+    monkeypatch.setenv("RUNNER_TEMP", str(owned["runner"]))
+    monkeypatch.setenv("POROTA_PREDEPLOY_OWNER", str(owned["scope"]))
+    monkeypatch.setenv("POROTA_PREDEPLOY_OWNER_UUID", owned["control"]["owner_uuid"])
+    monkeypatch.setattr(cleanup, "execution_context", lambda *_args: CONTEXT)
+
+
+@pytest.mark.parametrize("output", ["wrong_path", "existing", "symlink"])
+def test_cli_output_rejection_precedes_cleanup(owned, tmp_path, monkeypatch, capsys, output):
+    configure_cli(owned, monkeypatch)
+    receipt = Path(owned["control"]["receipt_path"])
+    external = tmp_path / "keep"
+    external.write_bytes(b"protected output")
+    if output == "wrong_path":
+        receipt = tmp_path / "unexpected.json"
+    elif output == "existing":
+        receipt.write_bytes(b"existing receipt")
+    else:
+        receipt.symlink_to(external)
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("cleanup ran before output validation")
+    monkeypatch.setattr(cleanup, "cleanup", forbidden)
+    assert cleanup.main(["cleanup", "--scope", str(owned["scope"]), "--receipt", str(receipt)]) == 1
+    assert "RED" in capsys.readouterr().out
+    assert owned["root"].exists() and external.read_bytes() == b"protected output"
+
+
+def test_cli_rejects_uuid_mismatch_before_mutating(owned, monkeypatch, capsys):
+    configure_cli(owned, monkeypatch)
+    monkeypatch.setenv("POROTA_PREDEPLOY_OWNER_UUID", "0" * 32)
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("cleanup ran before CLI ownership validation")
+    monkeypatch.setattr(cleanup, "cleanup", forbidden)
+    assert cleanup.main(["cleanup", "--scope", str(owned["scope"]),
+                         "--receipt", owned["control"]["receipt_path"]]) == 1
+    assert "OWNER_CLI_ROOT_OR_UUID_MISMATCH" in capsys.readouterr().out
+    assert owned["root"].exists()
+
+
+@pytest.mark.parametrize("free,inodes", [
+    (cleanup.MIN_FREE_BYTES - 1, 1000), (4 * 1024**3, 199)])
+def test_post_cleanup_capacity_is_checked_without_raising_authorized_bounds(owned, free, inodes):
+    result = cleanup.cleanup(owned["scope"], context=CONTEXT, run=owned["docker"],
+        probe=lambda paths: metrics(paths, free=free, inodes=inodes))
+    assert result["status"] == "RED" and "POST_CLEANUP_CAPACITY_RED" in result["failures"]
+    assert not owned["root"].exists()
+
+
+def test_negative_filesystem_delta_is_not_reported_as_reclaimed_bytes(owned):
+    probes = iter([metrics([], free=4 * 1024**3), metrics([], free=4 * 1024**3 - 4096)])
+    result = cleanup.cleanup(owned["scope"], context=CONTEXT,
+                             run=owned["docker"], probe=lambda _paths: next(probes))
+    assert result["status"] == "GREEN"
+    assert result["filesystem_deltas"]["1"]["free_byte_delta"] == -4096
+    assert result["filesystem_deltas"]["1"]["reclaimed_free_bytes_observed"] == 0
+
+
+def test_total_deadline_expiry_cannot_certify_success_or_delete_remaining_evidence(owned):
+    built(owned, container=False)
+    current = [0.0]
+    owned["docker"].on_remove = lambda: current.__setitem__(0, cleanup.MAX_SECONDS + 1.0)
+    result = run_cleanup(owned, clock=lambda: current[0])
+    assert result["status"] == "RED" and "CLEANUP_DEADLINE_EXCEEDED" in result["failures"]
+    assert owned["root"].exists() and (owned["repo"] / cleanup.SOURCE).exists()
+
+
+def test_workflow_private_uuid_root_preserves_primary_tag_build_and_upload_order():
+    workflow = yaml.safe_load(Path(".github/workflows/porota-predeploy-v2.yml").read_text())
+    job = workflow["jobs"]["artifact-gate"]
+    steps = job["steps"]
+    locations = {step["name"]: index for index, step in enumerate(steps)}
+    initialized = locations["Initialize proven private runner workspace"]
+    freeze = locations["Freeze checkout byte provenance before build"]
+    build = locations["Build candidate exactly once"]
+    primary = locations["Upload predeploy evidence"]
+    secondary = locations["Upload small published-primary verification receipts"]
+    cleaning = locations["Local cleanup"]
+    summary = locations["Predeploy summary"]
+    predecessors = locations["Require exact G0 through G6 native evidence before any Predeploy workspace or build"]
+    assert predecessors < initialized < freeze < build < primary < secondary < cleaning < summary
+    assert "--target-gate G7" in steps[predecessors]["run"]
+    assert "--gate predeploy" in steps[predecessors]["run"]
+    assert job["env"]["IMAGE"] == "porota-predeploy-v2:${{ github.event.pull_request.head.sha }}"
+    assert sum(step.get("run", "").count("docker build") for step in steps) == 1
+    assert "begin-build" in steps[build]["run"] and "claim-image" in steps[build]["run"]
+    for label in ("porota.predeploy.owner=${POROTA_PREDEPLOY_OWNER_UUID}",
+                  "porota.predeploy.run-id=${GITHUB_RUN_ID}",
+                  "porota.predeploy.run-attempt=${GITHUB_RUN_ATTEMPT}"):
+        assert label in steps[build]["run"]
+    assert all("/tmp/porota-" not in step.get("run", "") for step in steps)
+    governed = next(step for step in steps
+                    if step["name"] == "Governed automatic test discovery and execution - verify authenticated external G6")
+    assert 'import_verified_governed' in governed["run"]
+    assert "verified['source_sha']==os.environ['CANDIDATE_SHA']" in governed["run"]
+    assert "verified['source_tree']==os.environ['CANDIDATE_TREE']" in governed["run"]
+    assert 'supervise-pytest' not in governed["run"]
+    assert 'POROTA_G7_PYTEST_FIN_CLAIMED=false' in governed["run"]
+    assert 'POROTA_G7_SOURCE_SUITE_REEXECUTED=false' in governed["run"]
+    assert "RUNNER_TEMP" not in steps[cleaning].get("env", {})
+    assert "${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-evidence/" in steps[primary]["with"]["path"]
+    assert steps[secondary]["with"]["path"].splitlines() == [
+        "${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-published-evidence/*.json",
+        "${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-published-evidence/*.xml",
+    ]
+    guarded_always = "always() && steps.pytest_postread.outputs.safe_postread == 'true'"
+    assert steps[cleaning]["if"] == guarded_always and steps[cleaning]["id"] == "local_cleanup"
+    assert "set -Eeuo pipefail" in steps[cleaning]["run"]
+    assert "ancestor=" not in steps[cleaning]["run"] and "rm -rf" not in steps[cleaning]["run"]
+    assert steps[summary]["if"] == "success() && steps.local_cleanup.outcome == 'success'"
+    assert "result['status'] == 'GREEN'" in steps[summary]["run"]
+    assert "result['owner']['owner_uuid']" in steps[summary]["run"]
+    assert "POROTA_PREDEPLOY_V2=GREEN" in steps[summary]["run"]
+    postread = next(step for step in steps if step["name"] == "Prove owned pytest post-read safety")
+    assert postread["if"] == "always()" and postread["id"] == "pytest_postread"
+    assert 'safe-postread' in postread["run"]
+    assert 'NO_PYTEST_LAUNCH_ATTEMPTED' in steps[summary]["run"]
+    assert 'external G6 FIN separately verified' in steps[summary]["run"]
+    assert steps[cleaning]["run"].index("require-owned-fin") < steps[cleaning]["run"].index("porota_predeploy_cleanup.py cleanup")
+    assert steps[primary]["if"] == guarded_always
+    controls = next(step for step in steps if step["name"] == "Upload only bounded owned pytest custody controls after unknown FIN")
+    assert "safe_postread != 'true'" in controls["if"]
+    assert controls["with"]["path"] == "${{ steps.pytest_postread.outputs.control_receipt }}"
+    assert "POROTA_PREDEPLOY_TMP" not in controls["with"]["path"]
+
+
+def workspace_environment(owned):
+    return {'RUNNER_TEMP': str(owned['runner']), 'POROTA_PREDEPLOY_OWNER': str(owned['scope']),
+            'POROTA_PREDEPLOY_OWNER_UUID': owned['control']['owner_uuid']}
+
+
+def test_unknown_predeploy_peak_blocks_build_before_docker_or_storage_mutation(owned,monkeypatch):
+    from scripts import rc6_architectural_gates as gates
+    monkeypatch.setattr(cleanup,'execution_context',lambda _repo,_env:CONTEXT)
+    authority={'status':'ADMITTED_NATIVE_NOT_STARTED','gate':'predeploy',
+        'source_sha':CONTEXT['candidate_sha'],'source_tree':CONTEXT['candidate_tree'],
+        'owner_session':'CODEX_RC6_ARCHITECTURAL_RCA_20261008_1205UTC','capacity_peaks':{}}
+    def forbidden(*_args,**_kwargs):
+        raise AssertionError('Unknown capacity must block before Docker probe or build')
+    monkeypatch.setattr(gates.subprocess,'check_output',forbidden)
+    before=sorted(path.relative_to(owned['root']).as_posix() for path in owned['root'].rglob('*'))
+    with pytest.raises(ValueError,match='KNOWN_COMPARABLE_PREDEPLOY_PEAK_REQUIRED'):
+        gates.predeploy_capacity_gate(authority,scope=owned['scope'],repo=owned['repo'],
+            environ=workspace_environment(owned),stage='build')
+    assert before==sorted(path.relative_to(owned['root']).as_posix() for path in owned['root'].rglob('*'))
+    assert owned['control']['build_phase']=='NOT_STARTED' and owned['docker'].images=={}
+
+
+def test_native_workspace_preserves_strict_guard_and_measures_retained_adversarial_fixtures(owned, monkeypatch):
+    import stat
+    import subprocess
+
+    env = workspace_environment(owned)
+    claim = test_workspace.create_workspace(owned['scope'], owned['repo'], CONTEXT, env)
+    assert claim['venv']['original_strict_inventory_accepted'] is True
+    assert not os.path.lexists(owned['root'] / 'venv/lib64')
+    observed = json.loads(subprocess.check_output([str(owned['root'] / 'venv/bin/python'), '-I', '-B', '-c',
+        'import json,sys;assert sys.prefix!=sys.base_prefix;print(json.dumps([sys.prefix,sys.base_prefix]))'], text=True))
+    assert observed[0] == str(owned['root'] / 'venv') and observed[0] != observed[1]
+    fixture = Path(claim['fixture_root'])
+    assert fixture.parent == owned['runner'] and not fixture.is_relative_to(owned['root'])
+    assert stat.S_IMODE(fixture.stat().st_mode) == 0o700
+    outside = owned['runner'] / 'outside-retained-target'
+    outside.write_bytes(b'protected outside own fixture')
+    payload = fixture / 'payload'
+    payload.write_bytes(b'retained hardlinked payload')
+    os.link(payload, fixture / 'second-link')
+    (fixture / 'adversarial-link').symlink_to(outside)
+    os.mkfifo(fixture / 'adversarial-fifo', mode=0o600)
+    before = test_workspace.attributes(outside.lstat())
+    actual_open = os.open
+
+    def metadata_or_control_open(path, flags, *args, **kwargs):
+        # No payload or external link target may be opened for reading.
+        if os.fsdecode(path) in {'payload', 'second-link', 'outside-retained-target'}:
+            assert flags & os.O_PATH
+        return actual_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(test_workspace.os, 'open', metadata_or_control_open)
+    measured = test_workspace.measure_retained_workspace(owned['scope'], owned['repo'], CONTEXT, env)
+    assert measured['classification'] == 'RETAINED_ADVERSARIAL_FIXTURES'
+    assert measured['counts']['symlinks'] == 1
+    assert measured['counts']['hardlinked_regular_entries'] == 2
+    assert measured['counts']['special_entries'] == 1
+    assert measured['payload_files_read'] == measured['resources_removed'] == 0
+    assert measured['link_targets_followed'] is False and measured['fixture_root_removed'] is False
+    assert test_workspace.attributes(outside.lstat()) == before
+    assert measured['namespace_entries_including_root'] == 6
+    assert measured['unique_physical_inodes'] == 5
+    native = [fixture.lstat(), (fixture / test_workspace.MARKER).lstat(), payload.lstat(),
+              (fixture / 'adversarial-link').lstat(), (fixture / 'adversarial-fifo').lstat()]
+    assert measured['allocated_bytes_unique_physical_inodes'] == sum(item.st_blocks * 512 for item in native)
+    assert measured['fresh_filesystem']['filesystem_device'] == owned['control']['root_identity'][0]
+    assert measured['original_capacity_policy'] == {'min_free_bytes': 2 * 1024**3, 'min_free_inode_percent': 10}
+    usage = os.statvfs(fixture)
+    assert measured['capacity_status'] == ('GREEN' if usage.f_bavail * usage.f_frsize >= 2 * 1024**3
+                                          and usage.f_favail * 100 >= usage.f_files * 10 else 'RED')
+    assert cleanup.inventory(owned['control'], deadline=time.monotonic() + 30, clock=time.monotonic)
+    before_lib = test_workspace.attributes((owned['root'] / 'venv/lib').lstat())
+
+    def forbidden_creation(*_args, **_kwargs):
+        pytest.fail('a second invocation edited an existing environment')
+
+    monkeypatch.setattr(test_workspace.venv.EnvBuilder, 'create', forbidden_creation)
+    with pytest.raises(cleanup.CleanupRejected, match='TEST_WORKSPACE_ALREADY_EXISTS'):
+        test_workspace.create_workspace(owned['scope'], owned['repo'], CONTEXT, env)
+    assert test_workspace.attributes((owned['root'] / 'venv/lib').lstat()) == before_lib
+    assert fixture.exists() and (fixture / 'adversarial-link').is_symlink()
+
+
+@pytest.mark.parametrize('fault', ['target', 'construction_identity', 'sibling_mode', 'alias_mount'])
+def test_new_venv_seal_rejects_unproven_alias_without_unlinking(owned, monkeypatch, fault):
+    import stat
+
+    path = owned['root'] / 'venv'
+    path.mkdir(mode=0o755)
+    (path / 'lib').mkdir(mode=0o755)
+    (path / 'lib64').symlink_to('bad' if fault == 'target' else 'lib')
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME)
+    try:
+        identity = test_workspace.root_identity(os.fstat(descriptor))
+        if fault == 'construction_identity':
+            identity[1] += 1
+        elif fault == 'sibling_mode':
+            (path / 'lib').chmod(0o700)
+        elif fault == 'alias_mount':
+            actual = cleanup.mount_id
+
+            def other_mount(fd):
+                value = actual(fd)
+                return value + 1 if stat.S_ISLNK(os.fstat(fd).st_mode) else value
+
+            monkeypatch.setattr(cleanup, 'mount_id', other_mount)
+        with pytest.raises(cleanup.CleanupRejected):
+            test_workspace.seal_fresh_lib64_link(descriptor, owned['control'], identity)
+        assert (path / 'lib64').is_symlink()
+        assert os.readlink(path / 'lib64') == ('bad' if fault == 'target' else 'lib')
+    finally:
+        os.close(descriptor)
+
+
+def test_workspace_wrong_owner_uuid_is_rejected_before_native_creation(owned):
+    env = workspace_environment(owned)
+    env['POROTA_PREDEPLOY_OWNER_UUID'] = '0' * 32
+    with pytest.raises(cleanup.CleanupRejected, match='OWNER_CLI_ROOT_OR_UUID_MISMATCH'):
+        test_workspace.create_workspace(owned['scope'], owned['repo'], CONTEXT, env)
+    assert not (owned['root'] / 'venv').exists()
+    assert not test_workspace.workspace_path(owned['control']).exists()
+
+
+def test_no_pytest_launch_has_no_producer_witness_and_allows_only_original_scope_guard(owned):
+    env = workspace_environment(owned)
+    test_workspace.create_workspace(owned['scope'], owned['repo'], CONTEXT, env)
+    result = test_workspace.safe_postread(owned['scope'], owned['repo'], CONTEXT, env)
+    assert result['safe_postread'] is True
+    assert result['classification'] == 'NO_PYTEST_LAUNCH_ATTEMPTED'
+    assert result['pytest_producer_witness'] is False and result['new_or_global_kernel_fin_asserted'] is False
+    assert 'NO_PYTEST_PRODUCER_WITNESS' in result['witness_scope']
+    assert all(row is None for row in result['trace_presence_lstat_only'].values())
+    assert result['source_junit_data_log_payloads_read'] == 0 and result['cleanup_performed'] is False
+    assert cleanup.inventory(owned['control'], deadline=time.monotonic() + 30, clock=time.monotonic)
+
+
+@pytest.mark.parametrize('trace', [test_workspace.FIN, test_workspace.PROGRESS, test_workspace.NATIVE_LOG])
+def test_unknown_pytest_trace_never_opens_payload_or_source_and_is_irreversible(owned, monkeypatch, trace):
+    path = owned['root'] / trace
+    path.write_bytes(b'producer payload must not be read')
+    before = test_workspace.attributes(path.lstat())
+    actual_read = cleanup.read_file
+
+    def controls_only(path_arg, *args, **kwargs):
+        candidate = Path(path_arg)
+        assert candidate != path and candidate != owned['repo'] / test_workspace.DRIVER
+        return actual_read(path_arg, *args, **kwargs)
+
+    monkeypatch.setattr(cleanup, 'read_file', controls_only)
+    result = test_workspace.safe_postread(owned['scope'], owned['repo'], CONTEXT, workspace_environment(owned))
+    assert result['safe_postread'] is False and result['classification'] == 'UNKNOWN_OR_UNCLOSED'
+    assert result['errors'] == ['PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT']
+    assert result['source_junit_data_log_payloads_read'] == 0 and result['cleanup_performed'] is False
+    assert test_workspace.attributes(path.lstat()) == before
+    again = test_workspace.safe_postread(owned['scope'], owned['repo'], CONTEXT, workspace_environment(owned))
+    assert again['safe_postread'] is False and 'PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED' in again['errors']
+    assert test_workspace.attributes(path.lstat()) == before
+
+
+def publish_unfinished_intent(owned, *, phase="execution"):
+    raw = (Path.cwd() / test_workspace.DRIVER).read_bytes()
+    provenance = {'member': test_workspace.DRIVER, 'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob': hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()}
+    command = (['python', '-m', 'pytest', '--collect-only', '-q', '.'] if phase == 'collection' else
+               ['python', '-m', 'pytest', '.', '--basetemp=' + str(test_workspace.workspace_path(owned['control']) / 'pytest')])
+    # This fixture deliberately stops after the real exclusive intent. It
+    # supplies no kernel FIN and must never be treated as a producer witness.
+    initial = {'classification': 'NO_KERNEL_FIN_WITNESS_SUPPLIED'}
+    return test_workspace.publish_launch_intent(owned['control'], CONTEXT, command, provenance, initial, 5400, phase=phase)
+
+
+def test_exclusive_launch_intent_without_fin_blocks_postread_and_cannot_be_replaced(owned):
+    intent, digest = publish_unfinished_intent(owned)
+    path = owned['root'] / test_workspace.LAUNCH
+    before = test_workspace.attributes(path.lstat())
+    with pytest.raises(FileExistsError):
+        publish_unfinished_intent(owned)
+    assert test_workspace.attributes(path.lstat()) == before
+    result = test_workspace.safe_postread(owned['scope'], owned['repo'], CONTEXT, workspace_environment(owned))
+    assert result['safe_postread'] is False and result['classification'] == 'UNKNOWN_OR_UNCLOSED'
+    assert result['errors'] == ['PYTEST_LAUNCH_WITHOUT_CLOSED_FIN']
+    observed = result['phase_results']['execution']['control_observations'][test_workspace.LAUNCH]
+    assert observed['sha256'] == digest and json.loads(observed['raw_utf8']) == intent
+    assert observed['stat_fields']['st_nlink'] == 1 and observed['stat_fields']['st_mode'] & 0o777 == 0o600
+    assert result['source_junit_data_log_payloads_read'] == 0 and result['cleanup_performed'] is False
+    assert test_workspace.attributes(path.lstat()) == before
+
+
+@pytest.mark.parametrize('alias', ['symlink', 'hardlink'])
+def test_aliased_fin_is_never_followed_or_uploaded_as_a_control_receipt(owned, alias):
+    publish_unfinished_intent(owned)
+    external = owned['runner'] / 'outside-fin-target'
+    external.write_bytes(b'external payload must not be read')
+    external.chmod(0o600)
+    fin = owned['root'] / test_workspace.FIN
+    if alias == 'symlink':
+        fin.symlink_to(external)
+    else:
+        os.link(external, fin)
+    before = test_workspace.attributes(external.lstat())
+    result = test_workspace.safe_postread(owned['scope'], owned['repo'], CONTEXT, workspace_environment(owned))
+    assert result['safe_postread'] is False and result['classification'] == 'UNKNOWN_OR_UNCLOSED'
+    assert test_workspace.FIN not in result['phase_results']['execution']['control_observations']
+    assert test_workspace.attributes(external.lstat()) == before
+    assert result['source_junit_data_log_payloads_read'] == 0 and result['cleanup_performed'] is False
+    assert fin.is_symlink() if alias == 'symlink' else fin.lstat().st_nlink == 2
+
+
+def copied_locked_pytest_fixture(venv):
+    """A normal new site-packages fixture; not original wheel attestation."""
+    import base64
+    from importlib import metadata
+    import re
+    import stat
+    import sys
+
+    expected = {'pytest': '9.1.1', 'iniconfig': '2.3.0', 'packaging': '26.3',
+                'pluggy': '1.6.0', 'pygments': '2.21.0'}
+    modules = {'pytest': {'pytest', '_pytest', 'py.py'}, 'iniconfig': {'iniconfig'},
+               'packaging': {'packaging'}, 'pluggy': {'pluggy'}, 'pygments': {'pygments'}}
+    lock = Path('requirements.lock.txt').read_text()
+    target = venv / 'lib' / ('python' + str(sys.version_info.major) + '.' + str(sys.version_info.minor)) / 'site-packages'
+    assert target.is_dir() and not target.is_symlink()
+    manifest = []
+    compatibility_member = None
+    for name, version in expected.items():
+        assert re.search(r'^' + re.escape(name) + r'==' + re.escape(version) + r'\s', lock, re.MULTILINE)
+        distribution = metadata.distribution(name)
+        assert distribution.version == version
+        files = list(distribution.files)
+        metadir = {row.parts[0] for row in files if row.name == 'METADATA' and row.parts[0].endswith('.dist-info')}
+        assert len(metadir) == 1
+        allowed = modules[name] | metadir
+        selected = [row for row in files if row.parts[0] in allowed
+                    and '__pycache__' not in row.parts and row.suffix != '.pyc']
+        assert selected and len(selected) < 10000
+        for member in selected:
+            assert '..' not in member.parts and member.suffix != '.pth'
+            source = Path(distribution.locate_file(member)).absolute()
+            before = source.lstat()
+            assert stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_uid == os.geteuid()
+            raw, observed = cleanup.read_file(source, maximum=8 * 1024 * 1024)
+            assert test_workspace.attributes(before) == test_workspace.attributes(observed)
+            assert test_workspace.attributes(before) == test_workspace.attributes(source.lstat())
+            is_pytest_compatibility = name == 'pytest' and str(member) == 'py.py'
+            if is_pytest_compatibility:
+                assert compatibility_member is None and member.hash is not None
+                assert member.hash.mode == 'sha256' and member.size == len(raw)
+                digest = base64.urlsafe_b64encode(hashlib.sha256(raw).digest()).rstrip(b'=').decode('ascii')
+                assert digest == member.hash.value
+            destination = target / Path(*member.parts)
+            destination.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+            with cleanup.directory(destination.parent) as parent:
+                descriptor = os.open(destination.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                                     | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644, dir_fd=parent)
+                with os.fdopen(descriptor, 'wb') as output:
+                    output.write(raw)
+                    output.flush()
+                    os.fsync(output.fileno())
+            copied, details = cleanup.read_file(destination, maximum=8 * 1024 * 1024)
+            assert copied == raw and details.st_nlink == 1 and details.st_uid == os.geteuid()
+            assert hashlib.sha256(raw).hexdigest() == hashlib.sha256(copied).hexdigest()
+            row = {'distribution': name, 'version': version, 'relative_path': str(member),
+                   'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)}
+            manifest.append(row)
+            if is_pytest_compatibility:
+                compatibility_member = dict(row, record_hash_mode=member.hash.mode,
+                                            record_hash=member.hash.value,
+                                            source_record_matches_copied_bytes=True,
+                                            private_destination=str(destination))
+    assert compatibility_member is not None
+    return {'classification': 'COPIED_LOCKED_CURRENT_INSTALLED_BYTES_NOT_WHEEL_BYTE_ATTESTATION',
+            'expected_distributions': expected, 'normal_new_site_packages': str(target),
+            'pytest_owned_compatibility_member': compatibility_member,
+            'files': manifest, 'additional_pth_or_sys_path_overlay': False, 'pyc_copied': False, 'inet_calls': 0,
+            'source_product_environment_modified': False}
+
+
+def selected_native_create_stdout_signature(output):
+    """Fixed literals only; never emit arbitrary captured stdout or credentials."""
+    if type(output) is not str or len(output) > 4096:
+        return "REDACTED_OR_UNRECOGNIZED"
+    rows = output.splitlines()
+    prefix = "POROTA_PREDEPLOY_TEST_WORKSPACE=RED|"
+    if len(rows) != 1 or not rows[0].startswith(prefix):
+        return "REDACTED_OR_UNRECOGNIZED"
+    signature = rows[0][len(prefix):]
+    # Offline AST extraction of exact pinned cleanup/workspace reason literals.
+    # This finite set grants no new execution or artifact authority.
+    allowed = {
+        'BOUND_EXTERNAL_PYTEST_BASETEMP_REQUIRED',
+        'BUILD_PHASE_INVALID',
+        'CANDIDATE_CHECKOUT_MISMATCH',
+        'CANDIDATE_TAG_ALREADY_PRESENT',
+        'CANDIDATE_TAG_FOREIGN_OR_UNBOUND',
+        'CANDIDATE_TREE_MISMATCH',
+        'CLEANUP_DEADLINE_EXCEEDED',
+        'CLEANUP_RECEIPT_PATH_MISMATCH',
+        'CLEANUP_RECEIPT_REQUIRED',
+        'CONTAINER_OWNER_BINDING_INVALID',
+        'CONTAINER_OWNER_CONFIG_INVALID',
+        'CONTROL_CHANGED_BEFORE_WRITE',
+        'CONTROL_CHANGED_DURING_READ',
+        'CONTROL_DUPLICATE_KEY',
+        'CONTROL_FILE_MOUNT',
+        'CONTROL_MODE_INVALID',
+        'CONTROL_SIZE_LIMIT',
+        'CREATE_WORKSPACE_UNEXPECTED_ARGUMENTS',
+        'CalledProcessError',
+        'DOCKER_COMMAND_FAILED',
+        'DOCKER_INSPECTION_INVALID',
+        'DOCKER_INVENTORY_INVALID',
+        'DOCKER_OUTPUT_LIMIT',
+        'FRESH_NATIVE_LIB64_ALIAS_REMAINS',
+        'FRESH_NATIVE_LIB64_LINK_CHANGED_BEFORE_UNLINK',
+        'FRESH_NATIVE_LIB64_LINK_CUSTODY_INVALID',
+        'FRESH_NATIVE_LIB64_LINK_IDENTITY_CHANGED',
+        'FRESH_NATIVE_LIB64_UNEXPECTED_TARGET',
+        'FRESH_NATIVE_LIB_DIRECTORY_CHANGED',
+        'FRESH_NATIVE_LIB_DIRECTORY_CHANGED_AFTER_UNLINK',
+        'FRESH_VENV_CONSTRUCTION_IDENTITY_CHANGED',
+        'FRESH_VENV_DIRECTORY_REBOUND',
+        'FileExistsError',
+        'FileNotFoundError',
+        'IMAGE_CLAIM_INVALID',
+        'IMAGE_CLAIM_INVENTORY_MISMATCH',
+        'IsADirectoryError',
+        'KeyError',
+        'MEASUREMENT_FILESYSTEM_CHANGED',
+        'MOUNT_ID_INFORMATION_LIMIT',
+        'MOUNT_ID_UNAVAILABLE',
+        'MULTIPLE_OWN_IMAGES_RETAINED',
+        'NotADirectoryError',
+        'OBSERVED_IMAGE_ID_MISMATCH',
+        'ORIGINAL_OWNED_FIN_DRIVER_BYTES_MISMATCH',
+        'ORIGINAL_PRIVATE_TEST_INTERPRETER_REQUIRED',
+        'ORIGINAL_PYTEST_COMMAND_AND_MANAGEMENT_CAP_REQUIRED',
+        'OSError',
+        'OWNER_BUILD_STATE_INVALID',
+        'OWNER_CANDIDATE_INVALID',
+        'OWNER_CLI_ROOT_OR_UUID_MISMATCH',
+        'OWNER_CLI_SCOPE_MISMATCH',
+        'OWNER_CONTEXT_FIELDS',
+        'OWNER_EXECUTION_MISMATCH',
+        'OWNER_IDENTITY_INVALID',
+        'OWNER_IMAGE_CONFIG_INVALID',
+        'OWNER_IMAGE_ID_MISMATCH',
+        'OWNER_IMAGE_LABEL_MISMATCH',
+        'OWNER_IMAGE_STATE_INVALID',
+        'OWNER_PRIVATE_PATH_MISMATCH',
+        'OWNER_RUN_INVALID',
+        'OWNER_SCHEMA_INVALID',
+        'OWNER_WORKFLOW_MISMATCH',
+        'OWNER_WORKFLOW_REF_MISMATCH',
+        'OWN_CONTAINER_WITHOUT_BOUND_IMAGE',
+        'OWN_DOCKER_RESOURCES_REMAIN',
+        'PATH_NOT_CANONICAL_ABSOLUTE',
+        'POSTREAD_ORIGINAL_MANAGEMENT_BIND_REQUIRED',
+        'POSTREAD_UNEXPECTED_ARGUMENTS',
+        'POST_CLEANUP_CAPACITY_RED',
+        'PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED',
+        'PRIVATE_DIRECTORY_CHANGED',
+        'PRIVATE_DIRECTORY_NOT_EMPTY',
+        'PRIVATE_NAMESPACE_ALIAS_OR_SPECIAL',
+        'PRIVATE_NAMESPACE_CHANGED',
+        'PRIVATE_NAMESPACE_CHANGED_BEFORE_DELETE',
+        'PRIVATE_NAMESPACE_FOREIGN_OWNER_OR_MOUNT',
+        'PRIVATE_NAMESPACE_LIMIT',
+        'PRIVATE_NAMESPACE_MOUNT',
+        'PRIVATE_RESOURCE_CHANGED',
+        'PRIVATE_ROOT_CHANGED_BEFORE_DELETE',
+        'PRIVATE_ROOT_CUSTODY_CHANGED',
+        'PRIVATE_ROOT_MARKER_CHANGED',
+        'PRIVATE_ROOT_MOUNT',
+        'PRIVATE_ROOT_NOT_EMPTY',
+        'PRIVATE_ROOT_OVERLAPS_SOURCE',
+        'PRIVATE_ROOT_REMAINS',
+        'PYTEST_COLLECTION_NOT_CLOSED_GREEN_EXECUTION_NOT_LAUNCHED',
+        'PYTEST_EXECUTION_ALREADY_ATTEMPTED_COLLECTION_NOT_LAUNCHED',
+        'PYTEST_FIN_CONTROL_CONTEXT_OR_OWNER_MISMATCH',
+        'PYTEST_FIN_KERNEL_READBACK_OR_PHASE_MISMATCH',
+        'PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT',
+        'PYTEST_LAUNCH_INTENT_CHANGED',
+        'PYTEST_LAUNCH_INTENT_CUSTODY_INVALID',
+        'PYTEST_LAUNCH_INTENT_INVALID',
+        'PYTEST_LAUNCH_WITHOUT_CLOSED_FIN',
+        'PYTEST_OWNED_FIN_NOT_CLOSED_OR_REBOUND',
+        'PYTEST_PHASE_ALREADY_ATTEMPTED_OR_UNKNOWN',
+        'PYTEST_POSTREAD_CONTROL_RECEIPT_SIZE',
+        'PYTEST_POSTREAD_PRIMARY_CONTROL_REBOUND',
+        'PYTEST_POSTREAD_RECEIPT_REBOUND',
+        'PYTEST_PREVIOUS_AGGREGATE_UNKNOWN_NO_NEW_LAUNCH',
+        'PYTEST_PRODUCER_PHASE_REQUIRED',
+        'PYTEST_SUPERVISOR_SUBREAPER_NOT_RESTORED',
+        'PermissionError',
+        'RESOURCE_CUSTODY_INVALID',
+        'RESOURCE_HARDLINK',
+        'RETAINED_LIMIT_DIAGNOSTIC_CONTROL_SIZE',
+        'RETAINED_LIMIT_DIAGNOSTIC_KERNEL_NOT_RESTORED',
+        'RETAINED_LIMIT_DIAGNOSTIC_PREPUBLICATION_BOUND',
+        'RETAINED_LIMIT_DIAGNOSTIC_PUBLICATION_LATE',
+        'RETAINED_LIMIT_DIAGNOSTIC_REQUIRES_ACTUAL_SAME_PARENT_FIN',
+        'RETAINED_LIMIT_DIAGNOSTIC_ROOT_CHANGED',
+        'RETAINED_LIMIT_DIAGNOSTIC_ROOT_REBOUND',
+        'RETAINED_TEST_DIRECTORY_CHANGED',
+        'RETAINED_TEST_DIRECTORY_REBOUND',
+        'RETAINED_TEST_INODE_CAPACITY_UNKNOWN',
+        'RETAINED_TEST_MEMBER_CHANGED',
+        'RETAINED_TEST_MEMBER_FOREIGN_OR_CHANGED',
+        'RETAINED_TEST_NAMESPACE_LIMIT',
+        'REVIEWED_NATIVE_VENV_PLATFORM_REQUIRED',
+        'SELECTED_FIXTURE_AUTHENTICATED_ARGUMENTS_REQUIRED',
+        'SELECTED_FIXTURE_CANNOT_AUTHORIZE_WHOLE_GOV_COMMAND',
+        'SELECTED_FIXTURE_COMPLETE_COMPONENT_INPUT_REQUIRED',
+        'SELECTED_FIXTURE_COMPLETE_NATIVE_MANAGER_INPUT_REQUIRED',
+        'SELECTED_FIXTURE_CONTROLLED_AUTHORITY_REQUIRED',
+        'SELECTED_FIXTURE_EXPLICIT_BOOL_REQUIRED',
+        'SELECTED_FIXTURE_EXTERNAL_GIT_BINDING_REFUSED',
+        'SELECTED_FIXTURE_GIT_ALTERNATES_REFUSED',
+        'SELECTED_FIXTURE_GIT_BYTES_OR_CUSTODY_MISMATCH',
+        'SELECTED_FIXTURE_NATIVE_GIT_PROOF_FAILED',
+        'SELECTED_FIXTURE_OPTION_REQUIRES_CREATE',
+        'SELECTED_FIXTURE_OWNER_BINDING_CHANGED',
+        'SELECTED_FIXTURE_OWN_NATIVE_GIT_REQUIRED',
+        'SELECTED_FIXTURE_REAL_CLEAN_HEAD_REQUIRED',
+        'SELECTED_FIXTURE_TRACKED_COMPONENT_INPUT_INVALID',
+        'SHARED_IMAGE_RETAINED',
+        'SOURCE_CLAIM_HASH_MISMATCH',
+        'SOURCE_CLAIM_INVALID',
+        'SOURCE_MANIFEST_ALREADY_PRESENT',
+        'SOURCE_MANIFEST_CHANGED_BEFORE_DELETE',
+        'SOURCE_MANIFEST_CUSTODY_CHANGED',
+        'SOURCE_MANIFEST_PATH_MISMATCH',
+        'SOURCE_MANIFEST_REMAINS',
+        'SubprocessError',
+        'TEST_WORKSPACE_ALREADY_EXISTS',
+        'TEST_WORKSPACE_CLAIM_MISMATCH',
+        'TEST_WORKSPACE_DIRECTORY_CUSTODY_INVALID',
+        'TEST_WORKSPACE_MARKER_CHANGED',
+        'TEST_WORKSPACE_NATIVE_VENV_ROLE_INVALID',
+        'TEST_WORKSPACE_OVERLAPS_STRICT_ROOT',
+        'TEST_WORKSPACE_PARENT_MOUNT_CHANGED',
+        'TEST_WORKSPACE_ROOT_REBOUND',
+        'TimeoutExpired',
+        'TypeError',
+        'UNCLAIMED_SOURCE_MANIFEST_RETAINED',
+        'UNEXPECTED_OWN_IMAGE_RETAINED',
+        'ValueError',
+    }
+    return signature if signature in allowed else "REDACTED_OR_UNRECOGNIZED"
+
+def native_owned_pytest_fixture(tmp_path, body):
+    import subprocess
+    import sys
+
+    original_root = Path.cwd()
+    repo, runner = tmp_path / 'native-source', tmp_path / 'native-runner'
+    repo.mkdir(mode=0o755)
+    runner.mkdir(mode=0o755)
+    for name in ('scripts/porota_predeploy_cleanup.py', 'scripts/porota_predeploy_test_workspace.py',
+                 test_workspace.DRIVER):
+        target = repo / name
+        target.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+        target.write_bytes((original_root / name).read_bytes())
+    (repo / 'test_native_owned.py').write_text(body)
+    subprocess.run(['git', 'init', '-q', str(repo)], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Controlled RC6 test',
+                    '-c', 'user.email=rc6-local@example.invalid', 'commit', '-qm', 'Owned native pytest fixture'],
+                   check=True, capture_output=True)
+    sha = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+    tree = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+    context = dict(CONTEXT, candidate_sha=sha, candidate_tree=tree)
+    daemon = Docker(tmp_path)
+    scope, control = cleanup.prepare(repo, runner, context, run=daemon)
+    private = Path(control['private_root'])
+    env = dict(os.environ, RUNNER_TEMP=str(runner), POROTA_PREDEPLOY_OWNER=str(scope),
+               POROTA_PREDEPLOY_OWNER_UUID=control['owner_uuid'], CANDIDATE_SHA=sha, CANDIDATE_TREE=tree,
+               GITHUB_REPOSITORY=cleanup.REPOSITORY, GITHUB_WORKFLOW_REF=cleanup.REPOSITORY + '/' + cleanup.WORKFLOW + '@controlled-test',
+               GITHUB_EVENT_NAME='pull_request', GITHUB_RUN_ID=context['run_id'], GITHUB_RUN_ATTEMPT=context['run_attempt'],
+               GITHUB_ENV=str(tmp_path / 'native-github-env'), PYTHONDONTWRITEBYTECODE='1',
+               PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
+    env.pop('PYTHONPATH', None)
+    # The actual CLI enters with 077; its reviewed scoped main must create
+    # the new native 755 venv using 022, without changing the caller/host.
+    try:
+        created = subprocess.run(['bash', '-c', 'umask 077; exec "$@"', 'controlled-create', sys.executable,
+                                  '-B', str(repo / 'scripts/porota_predeploy_test_workspace.py'), 'create', '--scope', str(scope),
+                                  '--selected-pytest-fixture-without-pip'],
+                                 cwd=repo, env=env, check=True, capture_output=True, text=True, timeout=30)
+    except subprocess.CalledProcessError as error:
+        # Keep check=True and re-raise the same exception; disclose only a fixed
+        # pinned literal after its direct subprocess has actually returned.
+        signature = selected_native_create_stdout_signature(error.stdout)
+        error.add_note("CONTROLLED_NATIVE_CREATE_CLOSED_STDOUT_SIGNATURE=" + signature
+                       + ";RAW_STDOUT_STDERR_ENV_NOT_DISCLOSED")
+        raise
+    assert 'CREATED' in created.stdout
+    assert (private / 'venv').stat().st_mode & 0o777 == 0o755
+    assert (private / 'venv/lib').stat().st_mode & 0o777 == 0o755
+    copied = copied_locked_pytest_fixture(private / 'venv')
+    cleanup.publish(private / 'porota-pytest-selected-fixture.json', copied)
+    check = ('import importlib,importlib.metadata as m,hashlib,json,sys;from pathlib import Path;'
+             'expected=' + repr(copied['expected_distributions']) + ';'
+             'assert sys.prefix!=sys.base_prefix;'
+             'assert all(m.version(n)==v for n,v in expected.items());'
+             'assert all(Path(importlib.import_module(n).__file__).is_relative_to(sys.prefix) for n in expected);'
+             'py=importlib.import_module("py");'
+             'assert Path(py.__file__).is_relative_to(sys.prefix);'
+             'assert Path(py.__file__)==Path(' + repr(copied['pytest_owned_compatibility_member']['private_destination']) + ');'
+             'assert hashlib.sha256(Path(py.__file__).read_bytes()).hexdigest()=='
+             + repr(copied['pytest_owned_compatibility_member']['sha256']) + ';'
+             'print(json.dumps({"prefix":sys.prefix,"base":sys.base_prefix,"versions":expected}))')
+    observed = json.loads(subprocess.check_output([str(private / 'venv/bin/python'), '-I', '-B', '-c', check],
+                                                  env=env, text=True, timeout=10))
+    assert observed['prefix'] == str(private / 'venv')
+    env['PATH'] = str(private / 'venv/bin') + os.pathsep + env['PATH']
+    command = ['python', '-m', 'pytest', '-q', 'test_native_owned.py', '-p', 'no:cacheprovider',
+               '--basetemp=' + str(test_workspace.workspace_path(control) / 'pytest'),
+               '--junitxml=' + str(private / 'native-owned-junit.xml')]
+    collection_command = ['python', '-m', 'pytest', '--collect-only', '-q', 'test_native_owned.py', '-p', 'no:cacheprovider']
+    return {'repo': repo, 'runner': runner, 'scope': scope, 'control': control,
+            'private': private, 'context': context, 'env': env, 'command': command,
+            'collection_command': collection_command, 'copied': copied}
+
+
+def execute_native_pytest_cli(owned, *, phase='execution'):
+    import subprocess
+    import sys
+
+    # Like the workflow, the original owned manager and execute function share
+    # one fresh supervisor PID. No global FIN is inferred for this test parent.
+    command = [sys.executable, '-B', str(owned['repo'] / 'scripts/porota_predeploy_test_workspace.py'),
+               'supervise-pytest', '--phase', phase, '--scope', str(owned['scope']), '--timeout-seconds', '60', '--']
+    command += owned['collection_command'] if phase == 'collection' else owned['command']
+    process = subprocess.Popen(command, cwd=owned['repo'], env=owned['env'],
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    stdout, _ = process.communicate(timeout=90)
+    cleanup.publish(owned['private'] / ('porota-pytest-' + phase + '-cli-control.json'),
+                    {'scope': 'ACTUAL_FRESH_HELPER_SUPERVISOR_ONLY_NOT_GOV_FIN', 'pid': process.pid,
+                     'returncode': process.returncode, 'stdout': stdout})
+    return process.returncode, process.pid
+
+
+def test_real_owned_pytest_direct_execution_has_fin_and_retained_adversarial_fixtures(tmp_path):
+    owned = native_owned_pytest_fixture(tmp_path, '''def test_real_payload(tmp_path):
+    import os
+    payload = tmp_path / 'payload'
+    payload.write_bytes(b'owned native fixture')
+    os.link(payload, tmp_path / 'second')
+    (tmp_path / 'link').symlink_to(payload)
+    assert payload.read_bytes() == b'owned native fixture'
+''')
+    collected_rc, collected_supervisor = execute_native_pytest_cli(owned, phase='collection')
+    assert collected_rc == 0
+    collected = json.loads(cleanup.read_file(owned['private'] / test_workspace.phase_controls('collection')['fin'], mode=0o600)[0])
+    assert collected['owned_fin_closed'] is collected['phase_green'] is collected['management_acceptance'] is True
+    assert collected['supervisor_pid'] == collected_supervisor == collected['kernel']['supervisor_pid']
+    assert collected['phase'] == 'collection' and collected['kernel']['owned_children_exhaustion_verified'] is True
+    rc, supervisor_pid = execute_native_pytest_cli(owned)
+    assert rc == 0
+    custody = json.loads(cleanup.read_file(owned['private'] / test_workspace.FIN, mode=0o600)[0])
+    kernel = custody['kernel']
+    assert custody['owned_fin_closed'] is True and custody['phase_green'] is True
+    assert custody['management_seconds'] == kernel['launcher_management_deadline_seconds'] == 60
+    assert custody['management_acceptance'] is True
+    assert kernel['wait4_reaped_pid'] == kernel['pid'] and kernel['actual_child_reaped'] is True
+    assert kernel['owned_children_exhaustion_verified'] is True and kernel['remaining_owned_children'] == []
+    assert kernel['process_group_absent_at_main_reap'] is kernel['process_group_absent_after_reap'] is True
+    assert kernel['subreaper_restoration_readback_verified'] is True
+    assert kernel['owned_group_signal_observations'] == [] and kernel['supervisor_errors'] == []
+    assert custody['supervisor_pid'] == supervisor_pid == kernel['supervisor_pid']
+    retained = json.loads(cleanup.read_file(owned['private'] / test_workspace.RETAINED, mode=0o600)[0])
+    assert retained['owned_fin_closed'] is True and retained['pytest_phase_green'] is True
+    assert retained['measured_by_same_owned_fin_supervisor_pid'] == supervisor_pid
+    assert retained['counts']['symlinks'] >= 1 and retained['counts']['hardlinked_regular_entries'] == 2
+    assert retained['resources_removed'] == retained['payload_files_read'] == 0
+    result = test_workspace.safe_postread(owned['scope'], owned['repo'], owned['context'], owned['env'],
+                                        expected_management_seconds=60)
+    assert result['classification'] == 'FIN_REAL_CLOSED' and result['safe_postread'] is True
+    assert result['pytest_producer_witness'] is True and result['management_acceptance'] is True
+    assert result['new_or_global_kernel_fin_asserted'] is False
+    assert result['phase_results']['collection']['classification'] == 'FIN_REAL_CLOSED'
+    assert result['phase_results']['execution']['classification'] == 'FIN_REAL_CLOSED'
+    assert cleanup.inventory(owned['control'], deadline=time.monotonic() + 30, clock=time.monotonic)
+
+
+def test_real_owned_pytest_timeout_keeps_red_and_rejects_another_management_budget(tmp_path):
+    owned = native_owned_pytest_fixture(tmp_path, 'def test_owned_timeout():\n    import time\n    time.sleep(65)\n')
+    assert execute_native_pytest_cli(owned, phase='collection')[0] == 0
+    rc, supervisor_pid = execute_native_pytest_cli(owned)
+    assert rc != 0
+    custody = json.loads(cleanup.read_file(owned['private'] / test_workspace.FIN, mode=0o600)[0])
+    kernel = custody['kernel']
+    assert kernel['timed_out'] is True and kernel['owned_group_signal_observations']
+    assert custody['phase_green'] is False and custody['management_acceptance'] is False
+    assert kernel['launcher_management_deadline_seconds'] == 60 and kernel['owned_cleanup_management_bound_seconds'] == 5
+    assert custody['owned_fin_closed'] is True and kernel['actual_child_reaped'] is True
+    assert custody['supervisor_pid'] == supervisor_pid == kernel['supervisor_pid']
+    assert kernel['owned_children_exhaustion_verified'] is True and kernel['process_group_absent_after_reap'] is True
+    result = test_workspace.safe_postread(owned['scope'], owned['repo'], owned['context'], owned['env'],
+                                        expected_management_seconds=60)
+    assert result['classification'] == 'FIN_REAL_CLOSED' and result['safe_postread'] is True
+    assert result['pytest_phase_green'] is False and result['management_acceptance'] is False
+    wrong_budget = test_workspace.safe_postread(owned['scope'], owned['repo'], owned['context'], owned['env'])
+    assert wrong_budget['safe_postread'] is False and wrong_budget['classification'] == 'UNKNOWN_OR_UNCLOSED'
+    assert 'PYTEST_LAUNCH_INTENT_INVALID' in wrong_budget['errors']
+    irreversible = test_workspace.safe_postread(owned['scope'], owned['repo'], owned['context'], owned['env'],
+                                              expected_management_seconds=60)
+    assert irreversible['safe_postread'] is False
+    assert 'PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED' in irreversible['errors']
+
+
+def test_real_collection_failure_has_fin_and_execution_is_never_launched(tmp_path):
+    owned = native_owned_pytest_fixture(tmp_path, 'raise RuntimeError("CONTROLLED_COLLECTION_FAILURE")\n')
+    collected_rc, supervisor_pid = execute_native_pytest_cli(owned, phase='collection')
+    assert collected_rc != 0
+    names = test_workspace.phase_controls('collection')
+    custody = json.loads(cleanup.read_file(owned['private'] / names['fin'], mode=0o600)[0])
+    assert custody['owned_fin_closed'] is True and custody['phase_green'] is False
+    assert custody['management_acceptance'] is False
+    assert custody['supervisor_pid'] == supervisor_pid == custody['kernel']['supervisor_pid']
+    assert custody['kernel']['actual_child_reaped'] is True
+    assert custody['kernel']['owned_children_exhaustion_verified'] is True
+    assert custody['kernel']['process_group_absent_after_reap'] is True
+    attempted_rc, _ = execute_native_pytest_cli(owned)
+    assert attempted_rc != 0
+    rejected = json.loads(cleanup.read_file(owned['private'] / 'porota-pytest-execution-cli-control.json', mode=0o600)[0])
+    assert 'PYTEST_COLLECTION_NOT_CLOSED_GREEN_EXECUTION_NOT_LAUNCHED' in rejected['stdout']
+    assert all(not os.path.lexists(owned['private'] / value)
+               for key, value in test_workspace.phase_controls('execution').items()
+               if key in {'launch', 'fin', 'progress', 'log'})
+    result = test_workspace.safe_postread(owned['scope'], owned['repo'], owned['context'], owned['env'],
+                                        expected_management_seconds=60)
+    assert result['safe_postread'] is True  # Physical FIN permits failure evidence only.
+    assert result['phase_results']['collection']['classification'] == 'FIN_REAL_CLOSED'
+    assert result['phase_results']['collection']['pytest_phase_green'] is False
+    assert result['phase_results']['execution']['classification'] == 'NO_PYTEST_LAUNCH_ATTEMPTED'
+    assert result['phase_results']['execution']['pytest_producer_witness'] is False
+
+
+def test_unknown_collection_blocks_execution_before_any_source_or_log_read(owned, monkeypatch):
+    env = workspace_environment(owned)
+    claim = test_workspace.create_workspace(owned['scope'], owned['repo'], CONTEXT, env)
+    env['PATH'] = str(owned['root'] / 'venv/bin') + os.pathsep + os.environ['PATH']
+    publish_unfinished_intent(owned, phase='collection')
+    command = ['python', '-m', 'pytest', '-q', '.', '--basetemp=' + claim['pytest_basetemp']]
+
+    def forbidden_source_preparation(*_args, **_kwargs):
+        pytest.fail('Source was opened before collection FIN was proved')
+
+    monkeypatch.setattr(test_workspace, 'native_manager', forbidden_source_preparation)
+    with pytest.raises(cleanup.CleanupRejected, match='PYTEST_COLLECTION_NOT_CLOSED_GREEN_EXECUTION_NOT_LAUNCHED'):
+        test_workspace.execute_pytest_owned(owned['scope'], owned['repo'], CONTEXT, env, command)
+    result = test_workspace.safe_postread(owned['scope'], owned['repo'], CONTEXT, env)
+    assert result['safe_postread'] is False and result['classification'] == 'UNKNOWN_OR_UNCLOSED'
+    assert result['phase_results']['collection']['classification'] == 'UNKNOWN_OR_UNCLOSED'
+    assert result['phase_results']['execution']['classification'] == 'NO_PYTEST_LAUNCH_ATTEMPTED'
+    assert result['source_junit_data_log_payloads_read'] == 0 and result['cleanup_performed'] is False
+    assert all(not os.path.lexists(owned['root'] / value)
+               for key, value in test_workspace.phase_controls('execution').items()
+               if key in {'launch', 'fin', 'progress', 'log'})
+
+
+def test_real_owned_pytest_failed_ready100_has_fin_and_never_becomes_green(tmp_path):
+    from test_rc6_controlled_native_child_manager import PRODUCER_SOURCE
+
+    body = ('def test_controlled_ready_burst(tmp_path):\n'
+            '    import os, subprocess, sys\n'
+            '    child_root = tmp_path / "ready-burst"\n'
+            '    os.mkdir(child_root, 0o700)\n'
+            '    path = child_root / "producer.py"\n'
+            '    fd = os.open(path, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600)\n'
+            '    with os.fdopen(fd, "w") as stream:\n'
+            '        stream.write(' + repr(PRODUCER_SOURCE) + ')\n'
+            '    completed = subprocess.run([sys.executable, "-I", "-B", str(path),\n'
+            '        "--case", "ready100", "--receipt", str(child_root / "producer-control.json"),\n'
+            '        "--exit-code", "1"], check=False, timeout=30)\n'
+            '    assert completed.returncode == 1\n'
+            '    raise AssertionError("CONTROLLED_FAILED_READY100_NOT_GOV_PASS")\n')
+    owned = native_owned_pytest_fixture(tmp_path, body)
+    assert execute_native_pytest_cli(owned, phase='collection')[0] == 0
+    rc, supervisor = execute_native_pytest_cli(owned)
+    assert rc == 1
+    custody = json.loads(cleanup.read_file(owned['private'] / test_workspace.FIN, mode=0o600)[0])
+    kernel = custody['kernel']
+    assert custody['supervisor_pid'] == supervisor == kernel['supervisor_pid']
+    assert custody['original_manager_source']['member'] == test_workspace.DRIVER
+    assert custody['original_manager_source']['sha256'] == test_workspace.ORIGINAL_DRIVER_SHA256
+    assert custody['owned_fin_closed'] is True
+    assert custody['phase_green'] is custody['management_acceptance'] is False
+    assert kernel['returncode'] == 1 and kernel['owned_children_exhaustion_verified'] is True
+    assert kernel['process_group_absent_after_reap'] is True
+    assert kernel['subreaper_restoration_readback_verified'] is True
+    assert kernel['kernel_wait4_zero_observed_irreversible_red'] is False
+    assert kernel['owned_group_signal_observations'] == kernel['supervisor_errors'] == []
+    assert kernel['owned_cleanup_management_bound_seconds'] == 5
+    assert kernel['termination_reap_restore_cleanup_seconds'] < 5
+    assert len(kernel['adopted_descendants_reaped']) == 100
+    assert all(row['exit_code'] == 0 for row in kernel['adopted_descendants_reaped'])
+    postread = test_workspace.safe_postread(owned['scope'], owned['repo'], owned['context'], owned['env'],
+                                         expected_management_seconds=60)
+    assert postread['safe_postread'] is True and postread['classification'] == 'FIN_REAL_CLOSED'
+    assert postread['phase_results']['execution']['pytest_phase_green'] is False
+    assert postread['phase_results']['execution']['management_acceptance'] is False
+    # Only actual same-supervisor FIN permits these retained fixture/JUnit reads.
+    retained = json.loads(cleanup.read_file(owned['private'] / test_workspace.RETAINED, mode=0o600)[0])
+    assert retained['owned_fin_closed'] is True and retained['pytest_phase_green'] is False
+    assert retained['resources_removed'] == retained['payload_files_read'] == 0
+    fixture_root = test_workspace.workspace_path(owned['control']) / 'pytest'
+    receipts = list(fixture_root.glob('**/ready-burst/producer-control.json'))
+    assert len(receipts) == 1
+    producer = json.loads(cleanup.read_file(receipts[0], mode=0o600)[0])
+    assert producer['all100_verified_zombie_before_producer_exit'] is True
+    assert producer['child_reaps_by_producer'] == 0
+    assert {row['pid'] for row in producer['children']} == {row['pid'] for row in kernel['adopted_descendants_reaped']}
+    import xml.etree.ElementTree as ET
+    junit_raw, _ = cleanup.read_file(owned['private'] / 'native-owned-junit.xml', mode=0o644)
+    cases = list(ET.fromstring(junit_raw).iter('testcase'))
+    assert len(cases) == 1 and len(cases[0].findall('failure')) == 1
+    assert not cases[0].findall('error') and not cases[0].findall('skipped')
+
+
+RETAINED_LIMIT_SUPERVISOR_SOURCE = r"""
+import json, os, runpy, sys
+from pathlib import Path
+config = json.loads(sys.argv[1])
+repo = Path(config['repo'])
+helper = runpy.run_path(str(repo / 'scripts/porota_predeploy_test_workspace.py'))
+cleanup = helper['cleanup']
+fixture = helper['workspace_path'](config['control'])
+fixture_identity = (fixture.lstat().st_dev, fixture.lstat().st_ino)
+private = Path(config['private'])
+original_listdir = os.listdir
+injected = False
+
+def fixture_fd_dirent_fault(descriptor):
+    global injected
+    names = original_listdir(descriptor)
+    if isinstance(descriptor, int) and not injected:
+        value = os.fstat(descriptor)
+        if (value.st_dev, value.st_ino) == fixture_identity:
+            injected = True
+            # Explicit fault seam: these are unvalidated injected dirents,
+            # not a claim that 100001 physical fixture members exist.
+            fake = ['injected-unvalidated-dirent-' + str(index)
+                    for index in range(cleanup.MAX_FILES + 1)]
+            cleanup.publish(private / 'retained-limit-fault-control.json', {
+                'scope': 'EXPLICIT_FIXTURE_FD_DIRENT_FAULT_NOT_PRODUCT_ROOTCOUNT',
+                'actual_fixture_fd_identity': list(fixture_identity),
+                'actual_immediate_names_before_injection': len(names),
+                'injected_dirent_count': len(fake),
+                'returned_unvalidated_dirent_count': len(names) + len(fake),
+                'MAX_FILES_unchanged': cleanup.MAX_FILES,
+                'kernel_or_FIN_mocked': False, 'physical_files_created_for_fake_dirents': 0})
+            return names + fake
+    return names
+
+execute = helper['execute_pytest_owned']
+# Execution requires this real, closed collection phase. Both phases use the
+# same native supervisor; neither a kernel nor a FIN receipt is synthesized.
+collection_code = execute(
+    Path(config['scope']), repo, config['context'], os.environ,
+    config['collection_command'], timeout_seconds=60, phase='collection')
+if collection_code != 0:
+    raise SystemExit(collection_code)
+original_measure = execute.__globals__['measure_retained_workspace']
+
+def execution_retained_measurement(*args, **kwargs):
+    # The original execute function reaches this call only AFTER its actual
+    # managed child custody and same-parent kernel readback have closed. Keep
+    # the dirent fault out of every preflight and out of collection entirely.
+    os.listdir = fixture_fd_dirent_fault
+    try:
+        return original_measure(*args, **kwargs)
+    finally:
+        os.listdir = original_listdir
+
+if config['fault']:
+    execute.__globals__['measure_retained_workspace'] = execution_retained_measurement
+try:
+    code = execute(
+        Path(config['scope']), repo, config['context'], os.environ,
+        config['command'], timeout_seconds=60, phase='execution')
+finally:
+    execute.__globals__['measure_retained_workspace'] = original_measure
+    os.listdir = original_listdir
+raise SystemExit(code)
+"""
+
+
+def execute_retained_limit_diagnostic_fixture(owned, *, fault):
+    import subprocess
+    import sys
+
+    path = owned['runner'] / 'retained-limit-real-supervisor.py'
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, 'w') as stream:
+        stream.write(RETAINED_LIMIT_SUPERVISOR_SOURCE)
+    config = {key: str(owned[key]) for key in ('repo', 'private', 'scope')}
+    config.update(control=owned['control'], context=owned['context'],
+                  command=owned['command'], collection_command=owned['collection_command'], fault=fault)
+    process = subprocess.Popen([sys.executable, '-B', str(path), json.dumps(config)],
+                               cwd=owned['repo'], env=owned['env'], stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True)
+    stdout, _ = process.communicate(timeout=90)
+    cleanup.publish(owned['private'] / 'retained-limit-supervisor-outer-control.json',
+                    {'scope': 'REAL_FRESH_HELPER_SUPERVISOR_ONLY_NOT_GOV_FIN',
+                     'pid': process.pid, 'returncode': process.returncode, 'stdout': stdout})
+    return process.returncode, process.pid, stdout
+
+
+def retained_limit_supervisor_diagnostic(rc, supervisor, stdout):
+    # communicate() has reaped this actual fresh wrapper. Preserve its literal
+    # closed stdout in JUnit if collection/preflight aborts before a FIN exists;
+    # this evidence is diagnostic and does not supply any native FIN witness.
+    return json.dumps({'scope': 'CLOSED_FRESH_WRAPPER_STDOUT_NOT_NATIVE_FIN',
+                       'pid': supervisor, 'returncode': rc, 'stdout': stdout}, sort_keys=True)
+
+
+def assert_retained_collection_closed(owned, supervisor, diagnostic):
+    path = owned['private'] / test_workspace.phase_controls('collection')['fin']
+    assert os.path.lexists(path), diagnostic
+    collection = json.loads(cleanup.read_file(path, mode=0o600)[0])
+    assert collection['supervisor_pid'] == supervisor == collection['kernel']['supervisor_pid'], diagnostic
+    assert collection['phase'] == 'collection', diagnostic
+    assert collection['owned_fin_closed'] is collection['phase_green'] is collection['management_acceptance'] is True, diagnostic
+    assert collection['post_fin_errors'] == [], diagnostic
+    assert collection['kernel']['command'] == owned['collection_command'], diagnostic
+
+
+@pytest.mark.parametrize('collision', [False, True])
+def test_retained_limit_real_fin_keeps_quota_red_and_create_only_partial_control(tmp_path, collision):
+    owned = native_owned_pytest_fixture(tmp_path, "def test_tiny_actual_fixture(tmp_path):\n    value = tmp_path / 'payload'\n    value.write_bytes(b'actual small retained fixture')\n    assert value.read_bytes() == b'actual small retained fixture'\n")
+    limit_path = owned['private'] / (test_workspace.RETAINED.removesuffix('.json') + '-limit.json')
+    sentinel = {'scope': 'OWN_PREEXISTING_CONTROL_MUST_NOT_BE_REPLACED', 'marker': 'exclusive'}
+    if collision:
+        cleanup.publish(limit_path, sentinel)
+        original_bytes, original_stat = cleanup.read_file(limit_path, mode=0o600)
+    rc, supervisor, stdout = execute_retained_limit_diagnostic_fixture(owned, fault=True)
+    diagnostic = retained_limit_supervisor_diagnostic(rc, supervisor, stdout)
+    assert rc == 1, diagnostic
+    assert_retained_collection_closed(owned, supervisor, diagnostic)
+    fin_path = owned['private'] / test_workspace.FIN
+    assert os.path.lexists(fin_path), diagnostic
+    fin = json.loads(cleanup.read_file(fin_path, mode=0o600)[0])
+    kernel = fin['kernel']
+    assert fin['supervisor_pid'] == supervisor == kernel['supervisor_pid']
+    assert fin['owned_fin_closed'] is fin['phase_green'] is fin['management_acceptance'] is True
+    assert kernel['pid'] == kernel['wait4_reaped_pid'] and kernel['actual_child_reaped'] is True
+    assert kernel['returncode'] == 0 and kernel['owned_children_exhaustion_verified'] is True
+    assert kernel['process_group_absent_at_main_reap'] is kernel['process_group_absent_after_reap'] is True
+    assert kernel['subreaper_restoration_readback_verified'] is True
+    assert kernel['owned_cleanup_management_bound_seconds'] == 5
+    assert kernel['termination_reap_restore_cleanup_seconds'] <= 5
+    assert kernel['kernel_wait4_zero_observed_irreversible_red'] is False
+    assert kernel['late_observed_main_reap_irreversible_red'] is False
+    assert kernel['owned_group_signal_observations'] == kernel['supervisor_errors'] == []
+    assert fin['post_fin_errors'] == ['RETAINED_TEST_NAMESPACE_LIMIT']
+    assert 'retention_receipt' not in fin and 'retained_capacity_status' not in fin
+    fault = json.loads(cleanup.read_file(owned['private'] / 'retained-limit-fault-control.json', mode=0o600)[0])
+    assert fault['MAX_FILES_unchanged'] == cleanup.MAX_FILES == 100_000
+    assert fault['kernel_or_FIN_mocked'] is False
+    assert fault['physical_files_created_for_fake_dirents'] == 0
+    assert fault['injected_dirent_count'] == cleanup.MAX_FILES + 1
+    if collision:
+        now_bytes, now_stat = cleanup.read_file(limit_path, mode=0o600)
+        assert now_bytes == original_bytes and cleanup.identity(now_stat) == cleanup.identity(original_stat)
+        assert fin['retention_limit_diagnostic_errors'] == ['FileExistsError']
+        assert 'retention_limit_diagnostic' not in fin
+    else:
+        raw, info = cleanup.read_file(limit_path, maximum=256 * 1024, mode=0o600)
+        partial = json.loads(raw)
+        assert info.st_nlink == 1 and info.st_uid == os.geteuid()
+        assert partial['classification'] == 'INCOMPLETE_RETAINED_MEASUREMENT_RED'
+        assert partial['measurement_complete'] is partial['aggregate_rootcount_claimed'] is False
+        assert partial['full_Gov_certificate'] is partial['GLOBAL_CLEANUP_GREEN'] is False
+        assert partial['owned_fin_closed'] is True and partial['supervisor_pid'] == supervisor
+        assert partial['payload_files_read'] == partial['real_orders_sent'] == 0
+        assert partial['fixture_root_removed'] is partial['link_targets_followed'] is False
+        assert partial['root_before_all11'] == partial['root_after_all11']
+        observed = partial['partial_measurement']
+        assert observed['guard'] == 'directory_preflight' and observed['current_relative_path'] == '.'
+        assert observed['entries_counter_at_stop'] == 1
+        assert sum(observed['validated_completed_entry_counts'].values()) == 1
+        assert observed['direct_child_dirent_count_unvalidated'] == fault['returned_unvalidated_dirent_count']
+        assert observed['completed_subtrees'] == 0 and observed['first_64_completed_subtrees'] == []
+        assert observed['measurement_complete'] is False and observed['payload_files_read'] == 0
+        assert partial['fresh_filesystem']['minimum_free_bytes'] == cleanup.MIN_FREE_BYTES
+        assert partial['fresh_filesystem']['minimum_free_inode_percent'] == cleanup.MIN_FREE_INODE_PERCENT
+        assert fin['retention_limit_diagnostic']['sha256'] == hashlib.sha256(raw).hexdigest()
+        assert fin['retention_limit_diagnostic']['native_cleanup_budget_extended'] is False
+    # Actual FIN permits negative diagnostic reads but never erases quota RED.
+    rechecked = test_workspace.safe_postread(owned['scope'], owned['repo'], owned['context'], owned['env'],
+                                           expected_management_seconds=60)
+    assert rechecked['safe_postread'] is True and rechecked['classification'] == 'FIN_REAL_CLOSED'
+    assert rechecked['phase_results']['execution']['producer_post_fin_errors'] == ['RETAINED_TEST_NAMESPACE_LIMIT']
+    assert owned['control']['owner_uuid'] == fin['owner_uuid']
+    assert test_workspace.workspace_path(owned['control']).is_dir()
+
+
+def test_retained_small_real_native_fin_has_complete_original_receipt_without_limit_sidecar(tmp_path):
+    owned = native_owned_pytest_fixture(tmp_path, 'def test_tiny():\n    assert 3 + 4 == 7\n')
+    rc, supervisor, stdout = execute_retained_limit_diagnostic_fixture(owned, fault=False)
+    diagnostic = retained_limit_supervisor_diagnostic(rc, supervisor, stdout)
+    assert rc == 0, diagnostic
+    assert_retained_collection_closed(owned, supervisor, diagnostic)
+    fin_path = owned['private'] / test_workspace.FIN
+    assert os.path.lexists(fin_path), diagnostic
+    fin = json.loads(cleanup.read_file(fin_path, mode=0o600)[0])
+    assert fin['supervisor_pid'] == supervisor == fin['kernel']['supervisor_pid']
+    assert fin['owned_fin_closed'] is fin['phase_green'] is fin['management_acceptance'] is True
+    assert fin['post_fin_errors'] == [] and fin['retained_capacity_status'] == 'GREEN'
+    assert 'retention_limit_diagnostic' not in fin and 'retention_limit_diagnostic_errors' not in fin
+    limit_path = owned['private'] / (test_workspace.RETAINED.removesuffix('.json') + '-limit.json')
+    assert not os.path.lexists(limit_path)
+    retained = json.loads(cleanup.read_file(owned['private'] / test_workspace.RETAINED, mode=0o600)[0])
+    assert retained['owned_fin_closed'] is True and retained['pytest_phase_green'] is True
+    assert retained['measured_by_same_owned_fin_supervisor_pid'] == supervisor
+    assert retained['namespace_entries_including_root'] < cleanup.MAX_FILES
+    assert retained['resources_removed'] == retained['payload_files_read'] == 0
+
+
+
+def test_retained_observer_attributes_only_completed_direct_pytest_members_without_tail_reads(owned, monkeypatch):
+    """Real own metadata fixture; test-only cap, not a native Gov rootcount."""
+    env = workspace_environment(owned)
+    claim = test_workspace.create_workspace(owned['scope'], owned['repo'], CONTEXT, env)
+    fixture = Path(claim['fixture_root'])
+    base = fixture / 'pytest'; base.mkdir()
+    completed = base / 'a-completed'; completed.mkdir()
+    nested = completed / 'nested'; nested.mkdir()
+    (completed / 'payload-a').write_bytes(b'own completed fixture bytes')
+    (nested / 'payload-n').write_bytes(b'own nested fixture bytes')
+    target = owned['runner'] / 'observer-protected-outside'
+    target.write_bytes(b'protected outside target')
+    (completed / 'z-link').symlink_to(target)
+    partial = base / 'b-stopped'; partial.mkdir()
+    (partial / 'payload-b0').write_bytes(b'not traversed at the preflight')
+    (partial / 'payload-b1').write_bytes(b'not traversed at the preflight')
+    outside_before = test_workspace.attributes(target.lstat())
+    old_open = os.open
+
+    def own_metadata_only_open(path, flags, *args, **kwargs):
+        if os.fsdecode(path) in {'payload-a', 'payload-n', 'payload-b0', 'payload-b1', 'observer-protected-outside'}:
+            assert flags & os.O_PATH
+        return old_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(test_workspace.os, 'open', own_metadata_only_open)
+    monkeypatch.setattr(cleanup, 'MAX_FILES', 10)  # Original100000 untouched outside this native unit fixture.
+    observations = []
+    with pytest.raises(cleanup.CleanupRejected, match='RETAINED_TEST_NAMESPACE_LIMIT'):
+        test_workspace.measure_retained_workspace(owned['scope'], owned['repo'], CONTEXT, env,
+                                                 on_limit=observations.append)
+    assert len(observations) == 1
+    row = observations[0]
+    assert row['guard'] == 'directory_preflight'
+    assert row['current_relative_path'] == 'pytest/b-stopped'
+    assert row['entries_counter_at_stop'] == 9 and row['quota_check_value'] == 11
+    assert row['direct_child_dirent_count_unvalidated'] == 2
+    completed_rows = row['largest_64_completed_direct_pytest_members']
+    assert len(completed_rows) == 1
+    actual = completed_rows[0]
+    assert actual['relative_path'] == 'pytest/a-completed' and actual['complete'] is True
+    assert actual['entries_counter_delta'] == actual['validated_kind_entries_delta'] == 5
+    assert actual['kind_counts_delta'] == {'directory_entries': 2, 'regular_entries': 2, 'symlinks': 1,
+                                         'hardlinked_regular_entries': 0, 'special_entries': 0}
+    physical = [completed.lstat(), nested.lstat(), (completed / 'payload-a').lstat(),
+                (nested / 'payload-n').lstat(), (completed / 'z-link').lstat()]
+    assert actual['globally_first_visited_unique_inodes_delta'] == 5
+    assert actual['globally_first_visited_allocated_bytes_delta'] == sum(st.st_blocks * 512 for st in physical)
+    assert actual['globally_first_visited_logical_bytes_delta'] == sum(st.st_size for st in physical)
+    assert actual['physical_attribution_scope'] == 'GLOBAL_FIRST_VISIT_DELTAS_NOT_ISOLATED_SUBTREE_ALLOCATION'
+    active = row['active_direct_pytest_member_partial']
+    assert active['relative_path'] == 'pytest/b-stopped' and active['complete'] is False
+    assert active['entries_counter_delta'] == active['validated_kind_entries_delta'] == 1
+    assert active['kind_counts_delta']['regular_entries'] == 0
+    assert active['measurement_scope'] == 'VISITED_VALIDATED_PARTIAL_ONLY'
+    assert row['payload_files_read'] == 0 and row['measurement_complete'] is False
+    assert test_workspace.attributes(target.lstat()) == outside_before
+    assert (completed / 'z-link').is_symlink()
+
+
+def test_retained_observer_small_positive_keeps_original_receipt_and_no_limit_callback(owned):
+    """Physical own fixture, no extra positive/FIN certificate or cleanup."""
+    env = workspace_environment(owned)
+    claim = test_workspace.create_workspace(owned['scope'], owned['repo'], CONTEXT, env)
+    fixture = Path(claim['fixture_root'])
+    base = fixture / 'pytest'; base.mkdir()
+    completed = base / 'small-completed'; completed.mkdir()
+    payload = completed / 'payload'; payload.write_bytes(b'retained bytes')
+    observed = []
+    result = test_workspace.measure_retained_workspace(owned['scope'], owned['repo'], CONTEXT, env,
+                                                     on_limit=observed.append)
+    assert observed == []
+    assert result['namespace_entries_including_root'] == 5
+    assert result['counts']['regular_entries'] == 2 and result['counts']['directory_entries'] == 3
+    assert result['payload_files_read'] == result['resources_removed'] == 0
+    assert result['fixture_root_removed'] is False
+    assert 'largest_64_completed_direct_pytest_members' not in result
+    assert 'active_direct_pytest_member_partial' not in result
+    physical = [fixture.lstat(), (fixture / test_workspace.MARKER).lstat(), base.lstat(), completed.lstat(), payload.lstat()]
+    assert result['unique_physical_inodes'] == 5
+    assert result['allocated_bytes_unique_physical_inodes'] == sum(st.st_blocks * 512 for st in physical)
+    assert result['original_capacity_policy'] == {'min_free_bytes': 2 * 1024**3, 'min_free_inode_percent': 10}
+    for phase in ('collection', 'execution'):
+        name = test_workspace.phase_controls(phase)['retained'].removesuffix('.json') + '-limit.json'
+        assert not os.path.lexists(owned['root'] / name)
+
+
+def test_selected_pytest_component_fixture_has_complete_normal_dependencies_and_real_phase_fin(tmp_path):
+    import subprocess
+
+    owned = native_owned_pytest_fixture(tmp_path, 'def test_selected_actual_payload():\n    assert 5 + 6 == 11\n')
+    claim = json.loads(cleanup.read_file(owned['private'] / test_workspace.CLAIM, mode=0o600)[0])
+    native = claim['venv']
+    assert native['with_pip'] is False
+    assert native['construction_role'] == 'EXPLICIT_SELECTED_PYTEST_COMPONENT_FIXTURE_WITHOUT_PIP'
+    assert native['whole_Gov_artifact_runtime_or_material_authority_granted'] is False
+    authority = native['selected_fixture_authority']
+    assert authority['context'] == owned['context']
+    assert authority['owner_uuid'] == owned['control']['owner_uuid']
+    assert authority['source_sha'] == owned['context']['candidate_sha']
+    assert authority['source_tree'] == owned['context']['candidate_tree']
+    assert set(authority['complete_component_input_records']) == {
+        'scripts/porota_predeploy_cleanup.py', 'scripts/porota_predeploy_test_workspace.py',
+        test_workspace.DRIVER, 'test_native_owned.py'}
+    assert authority['whole_Gov_artifact_runtime_or_material_authority_granted'] is False
+    assert owned['copied']['classification'] == 'COPIED_LOCKED_CURRENT_INSTALLED_BYTES_NOT_WHEEL_BYTE_ATTESTATION'
+    assert owned['copied']['source_product_environment_modified'] is False
+    assert owned['copied']['additional_pth_or_sys_path_overlay'] is owned['copied']['pyc_copied'] is False
+    assert owned['copied']['pytest_owned_compatibility_member']['source_record_matches_copied_bytes'] is True
+    expected = sorted(owned['copied']['expected_distributions'].items())
+    check = ('import importlib.util,importlib.metadata as m,json,sys;'
+             'assert sys.prefix!=sys.base_prefix;'
+             'assert importlib.util.find_spec("pip") is None;'
+             'assert importlib.util.find_spec("setuptools") is None;'
+             'observed=sorted((d.metadata["Name"].lower(),d.version) for d in m.distributions());'
+             'assert observed==' + repr(expected) + ';'
+             'print(json.dumps({"prefix":sys.prefix,"distributions":observed}))')
+    observed = json.loads(subprocess.check_output([str(owned['private'] / 'venv/bin/python'), '-I', '-B', '-c', check],
+                                                  cwd=owned['repo'], env=owned['env'], text=True, timeout=10))
+    assert observed['prefix'] == str(owned['private'] / 'venv')
+    assert observed['distributions'] == [list(row) for row in expected]
+    invalid_claim = dict(claim, venv=dict(native, construction_role='UNKNOWN_NATIVE_ROLE'))
+    with pytest.raises(cleanup.CleanupRejected, match='TEST_WORKSPACE_NATIVE_VENV_ROLE_INVALID'):
+        test_workspace.validate_workspace_venv_role(invalid_claim, owned['control'])
+    original_full_scope = ['python', '-m', 'pytest', '-q', '.', '--basetemp=' + claim['pytest_basetemp']]
+    with pytest.raises(cleanup.CleanupRejected, match='SELECTED_FIXTURE_CANNOT_AUTHORIZE_WHOLE_GOV_COMMAND'):
+        test_workspace.execute_pytest_owned(owned['scope'], owned['repo'], owned['context'], owned['env'],
+                                           original_full_scope, timeout_seconds=60, phase='execution')
+    for phase in ('collection', 'execution'):
+        assert all(not os.path.lexists(owned['private'] / value)
+                   for key, value in test_workspace.phase_controls(phase).items()
+                   if key in {'launch', 'fin', 'progress', 'log'})
+    for phase in ('collection', 'execution'):
+        rc, supervisor = execute_native_pytest_cli(owned, phase=phase)
+        assert rc == 0
+        control = json.loads(cleanup.read_file(owned['private'] / test_workspace.phase_controls(phase)['fin'], mode=0o600)[0])
+        kernel = control['kernel']
+        assert control['phase'] == phase
+        assert control['native_venv_construction'] == native
+        assert control['supervisor_pid'] == supervisor == kernel['supervisor_pid']
+        assert control['owned_fin_closed'] is control['phase_green'] is control['management_acceptance'] is True
+        assert control['post_fin_errors'] == []
+        assert control['management_seconds'] == kernel['launcher_management_deadline_seconds'] == 60
+        assert kernel['pid'] == kernel['wait4_reaped_pid'] and kernel['actual_child_reaped'] is True
+        assert kernel['owned_children_exhaustion_verified'] is True and kernel['remaining_owned_children'] == []
+        assert kernel['process_group_absent_at_main_reap'] is kernel['process_group_absent_after_reap'] is True
+        assert kernel['subreaper_restoration_readback_verified'] is True
+        assert kernel['owned_cleanup_management_bound_seconds'] == 5
+        assert kernel['termination_reap_restore_cleanup_seconds'] <= 5
+        assert kernel['kernel_wait4_zero_observed_irreversible_red'] is False
+        assert kernel['late_observed_main_reap_irreversible_red'] is False
+        assert kernel['owned_group_signal_observations'] == kernel['supervisor_errors'] == []
+    result = test_workspace.safe_postread(owned['scope'], owned['repo'], owned['context'], owned['env'],
+                                        expected_management_seconds=60)
+    assert result['safe_postread'] is True and result['classification'] == 'FIN_REAL_CLOSED'
+    assert result['source_junit_data_log_payloads_read'] == 0 and result['cleanup_performed'] is False
+
+
+def test_selected_pytest_component_profile_refuses_production_authority_before_any_venv_creation(owned):
+    env = dict(workspace_environment(owned),
+               GITHUB_WORKFLOW_REF=cleanup.REPOSITORY + '/' + cleanup.WORKFLOW + '@refs/heads/product')
+    with pytest.raises(cleanup.CleanupRejected, match='SELECTED_FIXTURE_CONTROLLED_AUTHORITY_REQUIRED'):
+        test_workspace.create_workspace(owned['scope'], owned['repo'], CONTEXT, env,
+                                        selected_pytest_fixture=True)
+    assert not os.path.lexists(owned['root'] / 'venv')
+    assert not os.path.lexists(test_workspace.workspace_path(owned['control']))
+    assert not os.path.lexists(owned['root'] / test_workspace.CLAIM)
+
+
+def test_selected_fixture_input_directory_fd_lists_real_members_without_alias_or_atime_drift(tmp_path):
+    import errno
+    import fcntl
+
+    directory = tmp_path / 'complete-component-inputs'
+    directory.mkdir(mode=0o755)
+    (directory / 'test_native_owned.py').write_bytes(b'explicit owned directory witness')
+    (directory / 'scripts').mkdir(mode=0o755)
+    before = test_workspace.attributes(directory.lstat())
+    with cleanup.directory(directory) as descriptor:
+        assert fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_PATH
+        with pytest.raises(OSError) as rejected:
+            os.listdir(descriptor)
+        assert rejected.value.errno == errno.EBADF
+    assert test_workspace.attributes(directory.lstat()) == before
+    with cleanup.directory(directory, readable=True) as descriptor:
+        flags = fcntl.fcntl(descriptor, fcntl.F_GETFL)
+        assert flags & os.O_PATH == 0 and flags & os.O_ACCMODE == os.O_RDONLY
+        assert flags & os.O_NOATIME and flags & os.O_NOFOLLOW
+        assert set(os.listdir(descriptor)) == {'scripts', 'test_native_owned.py'}
+        assert test_workspace.attributes(os.fstat(descriptor)) == before
+    assert test_workspace.attributes(directory.lstat()) == before
+    alias = tmp_path / 'foreign-input-alias'
+    alias.symlink_to(directory, target_is_directory=True)
+    with pytest.raises(OSError):
+        with cleanup.directory(alias, readable=True):
+            pytest.fail('Native directory alias must never be followed')
+    assert test_workspace.attributes(directory.lstat()) == before
+
+
+@pytest.mark.parametrize('signature', ['ValueError', 'SELECTED_FIXTURE_COMPLETE_COMPONENT_INPUT_REQUIRED'])
+def test_controlled_native_create_diagnostic_exposes_only_known_pinned_literals(signature):
+    output = 'POROTA_PREDEPLOY_TEST_WORKSPACE=RED|' + signature + '\n'
+    assert selected_native_create_stdout_signature(output) == signature
+
+
+@pytest.mark.parametrize('mutation', ['uppercase_canary', 'extra_line', 'duplicate_status',
+                                     'oversized', 'bytes', 'text_subclass'])
+def test_controlled_native_create_diagnostic_redacts_foreign_or_ambiguous_stdout(mutation):
+    prefix = 'POROTA_PREDEPLOY_TEST_WORKSPACE=RED|'
+    known = prefix + 'ValueError\n'
+    if mutation == 'uppercase_canary':
+        output = prefix + 'FOREIGN_UPPERCASE_PRIVATE_CANARY_7654321\n'
+    elif mutation == 'extra_line':
+        output = known + 'foreign private field must remain unprinted\n'
+    elif mutation == 'duplicate_status':
+        output = known + known
+    elif mutation == 'oversized':
+        output = prefix + 'X' * 4097
+    elif mutation == 'bytes':
+        output = known.encode('ascii')
+    else:
+        class ForeignText(str):
+            def splitlines(self, *_args, **_kwargs):
+                pytest.fail('A foreign text subclass must not be consulted')
+        output = ForeignText(known)
+    observed = selected_native_create_stdout_signature(output)
+    assert observed == 'REDACTED_OR_UNRECOGNIZED'
+    assert 'FOREIGN_UPPERCASE_PRIVATE_CANARY_7654321' not in observed
+    assert 'foreign private field' not in observed

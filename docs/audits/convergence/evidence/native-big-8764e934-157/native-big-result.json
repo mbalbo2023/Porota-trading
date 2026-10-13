@@ -1,0 +1,1099 @@
+{
+  "canonical_runtime_requested": true,
+  "catalog_baseline": 1200,
+  "catalog_count": 12000,
+  "catalog_multiplier": 10.0,
+  "completion_required": true,
+  "cpu_latency_claim": "DESCRIPTIVE_OFFLINE_ONLY",
+  "cycle_deadline_seconds": 90,
+  "database": "/workspace/rc6-canonical-8764e934-big/data/paper_v17/observer_v17.db",
+  "diagnostic_only": false,
+  "diagnostic_stack_file": null,
+  "evidence_root": "/workspace/rc6-canonical-8764e934-big/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow",
+  "factual_exits": {
+    "closed": 5,
+    "cpu_seconds": 0.08551220400000004,
+    "elapsed_seconds": 0.10316868701193016,
+    "finished_at_monotonic": 74690.995807904,
+    "io": {
+      "cancelled_write_bytes": 0,
+      "input_blocks": 0,
+      "output_blocks": 984,
+      "rchar": 2638451,
+      "read_bytes": 0,
+      "syscr": 691,
+      "syscw": 218,
+      "wchar": 449080,
+      "write_bytes": 503808
+    },
+    "real_orders_sent": 0,
+    "sell_fills": 5,
+    "stale_current_fresh_book": true,
+    "started_at_monotonic": 74690.892419641
+  },
+  "observation_baseline_per_identity": 1,
+  "observation_multiplier": 5,
+  "observations_materialized": 60000,
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "resource_gates": {
+    "actual_evidence_bytes": 36883757,
+    "actual_rss_bytes": 1606672384,
+    "actual_slow_fsync_exit_isolation": true,
+    "child_cleanup_completed": false,
+    "complete_committed_cycle": false,
+    "evidence_within_quota": true,
+    "maximum_evidence_bytes": 134217728,
+    "maximum_rss_bytes": 2147483648,
+    "rss_within_two_gib": true,
+    "source_database_unchanged": true
+  },
+  "runtime_touched": false,
+  "schema": "rc6.issue465.synthetic-stress.v2",
+  "shadow": {
+    "child_cleanup_completed": false,
+    "child_cleanup_reason": "SHADOW_CHILD_CLEANUP_DEADLINE",
+    "cpu_seconds": 84.394807332,
+    "cycle_completion": false,
+    "cycle_handled": false,
+    "cycle_started_at_monotonic": 74614.540676736,
+    "elapsed_seconds": 85.03356837599131,
+    "evidence_bytes": 36883757,
+    "evidence_files": 8,
+    "fsync": {
+      "blocked_seconds": 0.5603598000016063,
+      "completed_at_monotonic": 74691.001127597,
+      "entered_at_monotonic": 74690.435692025,
+      "fsync_completed": true,
+      "fsync_entered": true,
+      "member": "report.json.gz",
+      "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"
+    },
+    "full_pipeline_exercised": true,
+    "handler_resources": {
+      "checkpoint_restore": {
+        "calls": 3,
+        "cpu_seconds": 8.261459983000002,
+        "elapsed_seconds": 8.265834495003219,
+        "peak_rss_bytes": 1606672384,
+        "restored_sequences": [
+          1
+        ]
+      },
+      "entry_signals": {
+        "calls": 1,
+        "cpu_seconds": 0.05394848899999971,
+        "elapsed_seconds": 0.05388979200506583
+      },
+      "families": {
+        "calls": 1,
+        "cpu_seconds": 1.9219865570000003,
+        "elapsed_seconds": 1.9222192970046308
+      },
+      "funnel": {
+        "calls": 1,
+        "cpu_seconds": 10.283811429,
+        "elapsed_seconds": 10.289628002006793
+      },
+      "lab": {
+        "calls": 1,
+        "cpu_seconds": 0.13164247199999934,
+        "elapsed_seconds": 0.1315090840071207
+      },
+      "native_orchestrator": {
+        "calls": 2,
+        "cpu_seconds": 8.076984444,
+        "elapsed_seconds": 8.07822834799299,
+        "peak_rss_bytes": 497209344
+      },
+      "native_stage_enrichment": {
+        "calls": 1,
+        "cpu_seconds": 0.5040560359999997,
+        "elapsed_seconds": 0.5040123670041794,
+        "peak_rss_bytes": 497209344
+      },
+      "projection_header": {
+        "calls": 2,
+        "cpu_seconds": 0.10408469300000434,
+        "elapsed_seconds": 0.10395896599220578
+      },
+      "projection_prepare": {
+        "calls": 1,
+        "cpu_seconds": 3.638261741000001,
+        "elapsed_seconds": 3.640850618001423
+      },
+      "publication": {
+        "calls": 1,
+        "cpu_seconds": 51.968528106,
+        "elapsed_seconds": 52.587510737997945,
+        "peak_rss_bytes": 1606672384
+      },
+      "storage_encode": {
+        "calls": 7,
+        "cpu_seconds": 8.525187392000003,
+        "elapsed_seconds": 8.531442938983673,
+        "peak_rss_bytes": 1606672384
+      },
+      "storage_metrics": {
+        "calls": 4,
+        "cpu_seconds": 3.8705892309999896,
+        "elapsed_seconds": 3.8745728799985955,
+        "peak_rss_bytes": 1596530688
+      },
+      "storage_prepare": {
+        "calls": 4,
+        "cpu_seconds": 39.577162387,
+        "elapsed_seconds": 39.597361551001086,
+        "peak_rss_bytes": 1278599168
+      }
+    },
+    "peak_rss_bytes": 1606672384,
+    "phases": [
+      "BOUNDED_READ",
+      "PREOPEN_COMMITTED"
+    ],
+    "probe_event_receipts": [
+      {
+        "child_cpu_seconds": 0.6536194320000001,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74615.416065822,
+        "event": "ENTER",
+        "handler_name": "checkpoint_restore",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74615.416952323
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 0.6576179580006283,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74615.41831044
+      },
+      {
+        "child_cpu_seconds": 1.421815653,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74616.184133635,
+        "event": "ENTER",
+        "handler_name": "native_orchestrator",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74616.189715085
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 4.792213848995743,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "native_orchestrator"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74619.552277843
+      },
+      {
+        "child_cpu_seconds": 6.0873209489999995,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74620.856077121,
+        "event": "ENTER",
+        "handler_name": "native_orchestrator",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74620.861525881
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 10.807185911995475,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "native_orchestrator"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74625.567188909
+      },
+      {
+        "child_cpu_seconds": 10.797769759,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74625.566809723,
+        "event": "ENTER",
+        "handler_name": "native_stage_enrichment",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74625.567260016
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 11.311302520000027,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "native_orchestrator",
+          "native_stage_enrichment"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74626.074930257
+      },
+      {
+        "child_cpu_seconds": 11.302278362,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74626.071115189,
+        "event": "ENTER",
+        "handler_name": "families",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74626.075060092
+      },
+      {
+        "child_cpu_seconds": 13.224278309,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74627.993366664,
+        "event": "ENTER",
+        "handler_name": "lab",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74627.994001594
+      },
+      {
+        "child_cpu_seconds": 13.355929286,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74628.124888162,
+        "event": "ENTER",
+        "handler_name": "entry_signals",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74628.125350731
+      },
+      {
+        "child_cpu_seconds": 13.409885633,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74628.178789214,
+        "event": "ENTER",
+        "handler_name": "funnel",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74628.179285006
+      },
+      {
+        "child_cpu_seconds": 18.131601682000003,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74632.9007639,
+        "event": "ENTER",
+        "handler_name": "storage_prepare",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74632.906433418
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 22.989053409997723,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74637.754123345
+      },
+      {
+        "child_cpu_seconds": 22.974070200000003,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74637.748649992,
+        "event": "ENTER",
+        "handler_name": "storage_encode",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74637.759139972
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 23.592403461996582,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "storage_encode",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74638.364863432
+      },
+      {
+        "child_cpu_seconds": 23.693750964000003,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74638.468477994,
+        "event": "ENTER",
+        "handler_name": "publication",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74638.468830165
+      },
+      {
+        "child_cpu_seconds": 23.693807402,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74638.468534299,
+        "event": "ENTER",
+        "handler_name": "checkpoint_restore",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74638.468961052
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 23.71067531099834,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "publication",
+          "storage_encode",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74638.471056987
+      },
+      {
+        "child_cpu_seconds": 23.696596928,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74638.471078916,
+        "event": "ENTER",
+        "handler_name": "storage_prepare",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74638.476590691
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 50.71192221499223,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "publication",
+          "storage_encode",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74665.479353242
+      },
+      {
+        "child_cpu_seconds": 50.691599421,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74665.471708776,
+        "event": "ENTER",
+        "handler_name": "storage_prepare",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74665.483860181
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 58.460797902997,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "publication",
+          "storage_encode",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74673.231578638
+      },
+      {
+        "child_cpu_seconds": 58.431087977000004,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74673.22039972,
+        "event": "ENTER",
+        "handler_name": "storage_prepare",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74673.231647128
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 58.46147333999397,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "publication",
+          "storage_encode",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74673.231670935
+      },
+      {
+        "child_cpu_seconds": 58.442299785,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74673.231528967,
+        "event": "ENTER",
+        "handler_name": "projection_prepare",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74673.232810558
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 62.11294679999992,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74676.87510252
+      },
+      {
+        "child_cpu_seconds": 62.081526454,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74676.873220933,
+        "event": "ENTER",
+        "handler_name": "storage_metrics",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74676.875332618
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 64.1599232449953,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74678.921918848
+      },
+      {
+        "child_cpu_seconds": 64.12552585499999,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74678.91962002,
+        "event": "ENTER",
+        "handler_name": "storage_metrics",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74678.92205897
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 65.23565392899036,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74680.003506641
+      },
+      {
+        "child_cpu_seconds": 65.19959972,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74679.995279163,
+        "event": "ENTER",
+        "handler_name": "storage_encode",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74680.015497839
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 68.26720519999799,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74683.062360287
+      },
+      {
+        "child_cpu_seconds": 68.517110709,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74683.31824895,
+        "event": "ENTER",
+        "handler_name": "storage_encode",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74683.32444942
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 70.01862759899814,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74684.810583611
+      },
+      {
+        "child_cpu_seconds": 70.37638745299999,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74685.177455119,
+        "event": "ENTER",
+        "handler_name": "storage_encode",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74685.179709664
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 70.41863269099849,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74685.180999688
+      },
+      {
+        "child_cpu_seconds": 70.389794509,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74685.190635634,
+        "event": "ENTER",
+        "handler_name": "projection_header",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74685.192126587
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 70.48496600499493,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_header",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74685.244915115
+      },
+      {
+        "child_cpu_seconds": 70.470221572,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74685.270821921,
+        "event": "ENTER",
+        "handler_name": "storage_metrics",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74685.271576809
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 71.02407649999077,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_header",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74685.784151652
+      },
+      {
+        "child_cpu_seconds": 70.982943979,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74685.783671959,
+        "event": "ENTER",
+        "handler_name": "storage_metrics",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74685.784241506
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 71.26443612499861,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_header",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74686.03199456
+      },
+      {
+        "child_cpu_seconds": 71.223447907,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74686.024065894,
+        "event": "ENTER",
+        "handler_name": "storage_encode",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74686.033319652
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 73.45769341700361,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_header",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74688.246186946
+      },
+      {
+        "child_cpu_seconds": 73.68408584699999,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74688.484914248,
+        "event": "ENTER",
+        "handler_name": "storage_encode",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74688.490000157
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 74.96836542899837,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_header",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74689.782141848
+      },
+      {
+        "child_cpu_seconds": 75.400874663,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74690.201243324,
+        "event": "ENTER",
+        "handler_name": "storage_encode",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74690.202615894
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 75.44215104400064,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_header",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74690.202673718
+      },
+      {
+        "child_cpu_seconds": 75.41379400599999,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74690.21397099,
+        "event": "ENTER",
+        "handler_name": "projection_header",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74690.214694234
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 75.50453623700014,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_header",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74690.264441962
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": null,
+        "event": "FSYNC",
+        "handler_name": null,
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74690.436188039
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": null,
+        "event": "FSYNC",
+        "handler_name": null,
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74691.0014564
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 76.29650662199128,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_header",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 74691.060535168
+      },
+      {
+        "child_cpu_seconds": 76.136334515,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74691.530016648,
+        "event": "ENTER",
+        "handler_name": "checkpoint_restore",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74691.530533928
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 85.03356837599131,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "projection_header",
+          "projection_prepare",
+          "publication",
+          "storage_encode",
+          "storage_metrics",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ",
+          "PREOPEN_COMMITTED"
+        ],
+        "received_at_monotonic": 74699.793907094
+      },
+      {
+        "child_cpu_seconds": 87.15602916499999,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 74702.555050062,
+        "event": "ENTER",
+        "handler_name": "native_orchestrator",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 74702.560841886
+      }
+    ],
+    "reason": "SHADOW_CONSERVATIVE_CYCLE_DEADLINE",
+    "status": "SHADOW_FAIL_CLOSED"
+  },
+  "slow_disk_injected": true,
+  "slow_disk_requested": true,
+  "slow_fsync_exit_isolation_proven": true,
+  "source_custody_after": {
+    "": {
+      "sha256": "f3decf986266dbf3c33f8cb9f8d7b3eae0fd238bc69590567aaf43e8fa7c8655",
+      "st_atime_ns": 1791235214892966644,
+      "st_blocks": 45240,
+      "st_ctime_ns": 1791235214868966815,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 306942,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791235214868966815,
+      "st_nlink": 1,
+      "st_size": 23162880,
+      "st_uid": 1000
+    }
+  },
+  "source_custody_before": {
+    "": {
+      "sha256": "f3decf986266dbf3c33f8cb9f8d7b3eae0fd238bc69590567aaf43e8fa7c8655",
+      "st_atime_ns": 1791235214892966644,
+      "st_blocks": 45240,
+      "st_ctime_ns": 1791235214868966815,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 306942,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791235214868966815,
+      "st_nlink": 1,
+      "st_size": 23162880,
+      "st_uid": 1000
+    }
+  },
+  "source_custody_scope": "MAIN_WAL_SHM_JOURNAL_BYTES_AND_ALL_CUSTODY_STATS_NOATIME",
+  "source_database_unchanged": true,
+  "source_sha256": "f3decf986266dbf3c33f8cb9f8d7b3eae0fd238bc69590567aaf43e8fa7c8655",
+  "synthetic": true
+}

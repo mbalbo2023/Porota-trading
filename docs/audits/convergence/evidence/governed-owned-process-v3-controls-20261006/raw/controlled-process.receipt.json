@@ -1,0 +1,357 @@
+{
+  "all_eleven_source_fields_unchanged": true,
+  "artifact_or_runtime_qualified": false,
+  "audit_scope": "THIS_STDLIB_DRIVER_PROCESS; CHILD_COMMANDS_ARE_FIXED_SYNTHETIC_SOURCE_NOT_A_KERNEL_NETWORK_NAMESPACE",
+  "cleanup_management_seconds": 5,
+  "driver_audit": {
+    "network_attempts": [],
+    "popen_commands": [
+      {
+        "executable": "/workspace/venv_rc6_frozen311/bin/python",
+        "script_sha256": "3aecc0a5d4c1d8954505ec64a2439b77fcc3892f6e95ff1b865c03effa3002db"
+      },
+      {
+        "executable": "/workspace/venv_rc6_frozen311/bin/python",
+        "script_sha256": "c0311cadf16c6a9aae1b26af05d1a95d7d5039c23946a754b74d73637b5af233"
+      },
+      {
+        "executable": "/workspace/venv_rc6_frozen311/bin/python",
+        "script_sha256": "3aecc0a5d4c1d8954505ec64a2439b77fcc3892f6e95ff1b865c03effa3002db"
+      },
+      {
+        "executable": "/workspace/venv_rc6_frozen311/bin/python",
+        "script_sha256": "2e19ecdd6381aa3b76d4f9ba687f84337a6709fd0020dfe484c9db9639d56611"
+      },
+      {
+        "executable": "/workspace/venv_rc6_frozen311/bin/python",
+        "script_sha256": "314d3f1ea599df7148f233ec9979188556228fdf76bf5039e80cfdf43bb8733b"
+      },
+      {
+        "executable": "/workspace/venv_rc6_frozen311/bin/python",
+        "script_sha256": "2e19ecdd6381aa3b76d4f9ba687f84337a6709fd0020dfe484c9db9639d56611"
+      },
+      {
+        "executable": "/workspace/venv_rc6_frozen311/bin/python",
+        "script_sha256": "3aecc0a5d4c1d8954505ec64a2439b77fcc3892f6e95ff1b865c03effa3002db"
+      },
+      {
+        "executable": "/workspace/venv_rc6_frozen311/bin/python",
+        "script_sha256": "2e19ecdd6381aa3b76d4f9ba687f84337a6709fd0020dfe484c9db9639d56611"
+      },
+      {
+        "executable": "/workspace/venv_rc6_frozen311/bin/python",
+        "script_sha256": "314d3f1ea599df7148f233ec9979188556228fdf76bf5039e80cfdf43bb8733b"
+      }
+    ],
+    "sqlite_attempts": []
+  },
+  "driver_peak_rss_bytes": 25264128,
+  "end_to_end_acceptance_wall_limit_seconds": 20,
+  "errors": [],
+  "executed_synthetic_process_controls": 10,
+  "expected_controls": 10,
+  "full_gov_executed": false,
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "outer_kernel_observations": [
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "before_first_control_spawn"
+    },
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "after_last_control_spawn"
+    },
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "owned_control_cleanup"
+    }
+  ],
+  "outer_owned_cleanup_result": {
+    "absolute_management_deadline_monotonic": 88171.298201476,
+    "all_owned_pgids_absent": true,
+    "errors": [],
+    "kernel_exhaustion_verified": true,
+    "owned_group_states": [
+      {
+        "group_absent": true,
+        "pid": 243404
+      },
+      {
+        "group_absent": true,
+        "pid": 243405
+      },
+      {
+        "group_absent": true,
+        "pid": 243406
+      },
+      {
+        "group_absent": true,
+        "pid": 243407
+      },
+      {
+        "group_absent": true,
+        "pid": 243408
+      },
+      {
+        "group_absent": true,
+        "pid": 243410
+      },
+      {
+        "group_absent": true,
+        "pid": 243411
+      },
+      {
+        "group_absent": true,
+        "pid": 243412
+      },
+      {
+        "group_absent": true,
+        "pid": 243413
+      }
+    ],
+    "remaining_owned_child_state": "NONE_KERNEL_ECHILD",
+    "scope": "NO_FOREIGN_OR_INDIVIDUAL_PID_SIGNALS_ONLY_TRACKED_POPEN_PGIDS",
+    "wall_seconds": 1.443600922357291e-05
+  },
+  "pid": 243403,
+  "product_imports": 0,
+  "pytest_collection_or_tests_executed": 0,
+  "python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+  "results": [
+    {
+      "actual_main_gate_accepted": true,
+      "actual_phase_receipt_relative_path": "NORMAL_ZERO/actual-phase.resources.json",
+      "control": "NORMAL_ZERO",
+      "control_errors": [],
+      "expected": "ACCEPTED",
+      "owned_resources_cleared": true,
+      "raw_publication_error": null,
+      "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+      "status": "GREEN"
+    },
+    {
+      "actual_main_gate_accepted": false,
+      "actual_phase_receipt_relative_path": "EXIT_ONE/actual-phase.resources.json",
+      "control": "EXIT_ONE",
+      "control_errors": [],
+      "expected": "REJECTED",
+      "owned_resources_cleared": true,
+      "raw_publication_error": null,
+      "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+      "status": "GREEN"
+    },
+    {
+      "actual_main_gate_accepted": false,
+      "actual_phase_receipt_relative_path": "LATE_OBSERVED_REAP/actual-phase.resources.json",
+      "control": "LATE_OBSERVED_REAP",
+      "control_errors": [],
+      "expected": "REJECTED",
+      "owned_resources_cleared": true,
+      "raw_publication_error": null,
+      "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+      "status": "GREEN"
+    },
+    {
+      "actual_main_gate_accepted": false,
+      "actual_phase_receipt_relative_path": "TIMEOUT/actual-phase.resources.json",
+      "control": "TIMEOUT",
+      "control_errors": [],
+      "expected": "REJECTED",
+      "owned_resources_cleared": true,
+      "raw_publication_error": null,
+      "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+      "status": "GREEN"
+    },
+    {
+      "actual_main_gate_accepted": false,
+      "actual_phase_receipt_relative_path": "ADOPTED_ALIVE/actual-phase.resources.json",
+      "control": "ADOPTED_ALIVE",
+      "control_errors": [],
+      "expected": "REJECTED",
+      "owned_resources_cleared": true,
+      "raw_publication_error": null,
+      "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+      "status": "GREEN"
+    },
+    {
+      "actual_main_gate_accepted": false,
+      "actual_phase_receipt_relative_path": "SIGNAL_ERROR/actual-phase.resources.json",
+      "control": "SIGNAL_ERROR",
+      "control_errors": [],
+      "expected": "REJECTED",
+      "owned_resources_cleared": true,
+      "raw_publication_error": null,
+      "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+      "status": "GREEN"
+    },
+    {
+      "actual_main_gate_accepted": false,
+      "actual_phase_receipt_relative_path": "SPAWN_ERROR/actual-phase.resources.json",
+      "control": "SPAWN_ERROR",
+      "control_errors": [],
+      "expected": "REJECTED",
+      "owned_resources_cleared": true,
+      "raw_publication_error": null,
+      "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+      "status": "GREEN"
+    },
+    {
+      "actual_main_gate_accepted": false,
+      "actual_phase_receipt_relative_path": "LOG_EXIT_ERROR/actual-phase.resources.json",
+      "control": "LOG_EXIT_ERROR",
+      "control_errors": [],
+      "expected": "REJECTED",
+      "owned_resources_cleared": true,
+      "raw_publication_error": null,
+      "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+      "status": "GREEN"
+    },
+    {
+      "actual_main_gate_accepted": false,
+      "actual_phase_receipt_relative_path": "PRESPAWN_OWN_CHILD/actual-phase.resources.json",
+      "control": "PRESPAWN_OWN_CHILD",
+      "control_errors": [],
+      "expected": "REJECTED",
+      "owned_resources_cleared": true,
+      "raw_publication_error": null,
+      "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+      "status": "GREEN"
+    },
+    {
+      "actual_main_gate_accepted": true,
+      "actual_phase_receipt_relative_path": "BASELINE_F4_ORPHAN/actual-phase.resources.json",
+      "control": "BASELINE_F4_ORPHAN",
+      "control_errors": [],
+      "expected": "BASELINE_GAP_REPRODUCED",
+      "owned_resources_cleared": true,
+      "raw_publication_error": null,
+      "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+      "status": "GREEN"
+    }
+  ],
+  "schema": "rc6.governed-owned-process-controls.v1",
+  "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+  "source_after": {
+    "baseline": {
+      "bytes": 31518,
+      "path": "/tmp/rc6_run_frozen_governed_v2.py",
+      "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21",
+      "stat_fields": {
+        "st_atime_ns": 1791226398642026887,
+        "st_blocks": 64,
+        "st_ctime_ns": 1791226398374029969,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3037265,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226398374029969,
+        "st_nlink": 1,
+        "st_size": 31518,
+        "st_uid": 1000
+      }
+    },
+    "candidate": {
+      "bytes": 43365,
+      "path": "/tmp/rc6_run_frozen_governed_v3_candidate.py",
+      "sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313",
+      "stat_fields": {
+        "st_atime_ns": 1791247550292317629,
+        "st_blocks": 88,
+        "st_ctime_ns": 1791247439485790596,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3092363,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791247439485790596,
+        "st_nlink": 1,
+        "st_size": 43365,
+        "st_uid": 1000
+      }
+    },
+    "driver": {
+      "bytes": 29521,
+      "path": "/tmp/rc6_governed_v3_owned_process_controls_candidate_v2.py",
+      "sha256": "c262ebcc57184b839e15b2023f1b12b8eb8064d864902d2b01f9aa2a5852d623",
+      "stat_fields": {
+        "st_atime_ns": 1791248583324715256,
+        "st_blocks": 64,
+        "st_ctime_ns": 1791248530559994909,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3099538,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791248530559994909,
+        "st_nlink": 1,
+        "st_size": 29521,
+        "st_uid": 1000
+      }
+    }
+  },
+  "source_before": {
+    "baseline": {
+      "bytes": 31518,
+      "path": "/tmp/rc6_run_frozen_governed_v2.py",
+      "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21",
+      "stat_fields": {
+        "st_atime_ns": 1791226398642026887,
+        "st_blocks": 64,
+        "st_ctime_ns": 1791226398374029969,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3037265,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226398374029969,
+        "st_nlink": 1,
+        "st_size": 31518,
+        "st_uid": 1000
+      }
+    },
+    "candidate": {
+      "bytes": 43365,
+      "path": "/tmp/rc6_run_frozen_governed_v3_candidate.py",
+      "sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313",
+      "stat_fields": {
+        "st_atime_ns": 1791247550292317629,
+        "st_blocks": 88,
+        "st_ctime_ns": 1791247439485790596,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3092363,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791247439485790596,
+        "st_nlink": 1,
+        "st_size": 43365,
+        "st_uid": 1000
+      }
+    },
+    "driver": {
+      "bytes": 29521,
+      "path": "/tmp/rc6_governed_v3_owned_process_controls_candidate_v2.py",
+      "sha256": "c262ebcc57184b839e15b2023f1b12b8eb8064d864902d2b01f9aa2a5852d623",
+      "stat_fields": {
+        "st_atime_ns": 1791248583324715256,
+        "st_blocks": 64,
+        "st_ctime_ns": 1791248530559994909,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3099538,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791248530559994909,
+        "st_nlink": 1,
+        "st_size": 29521,
+        "st_uid": 1000
+      }
+    }
+  },
+  "status": "GREEN",
+  "subreaper_previous_state": 0,
+  "subreaper_restored_state": 0,
+  "subreaper_retained_for_unverified_children": false,
+  "uid": 1000,
+  "wall_seconds_before_final_publish": 1.1643887469981564,
+  "watchdog_fired": false,
+  "watchdog_preempt_seconds": 15
+}

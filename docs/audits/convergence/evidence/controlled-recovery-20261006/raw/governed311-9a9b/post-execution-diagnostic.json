@@ -1,0 +1,2034 @@
+{
+  "acceptance_complete": false,
+  "code_atime_scope": "GOV_V3_COMPARES_TEN_STABLE_CODE_FIELDS_AND_REPORTS_CODE_ATIME_SEPARATELY; DATA_ALL_ELEVEN_UNCHANGED_NOT_CLAIMED",
+  "created_utc": "2026-10-06T11:27:09.032401+00:00",
+  "custody_claim_scope": "CURRENT_POST_EXECUTION_COMPARISON_WITH_EXISTING_BEFORE_INDEX; NOT A SUCCESSFUL_GOV_SOURCE_AFTER_RECEIPT",
+  "diagnostic_only": true,
+  "error_groups": [
+    {
+      "count": 110,
+      "message": "failed on setup with \"scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:.dockerignore\""
+    },
+    {
+      "count": 10,
+      "message": "failed on setup with \"ValueError: NATIVE_PROFILE_CODE_DIRECTORY_MODE_MISMATCH\""
+    }
+  ],
+  "extra_directories": [
+    ".hypothesis",
+    ".hypothesis/constants",
+    ".hypothesis/unicode_data",
+    ".hypothesis/unicode_data/14.0.0",
+    "data",
+    "data/logs"
+  ],
+  "extra_files": [
+    ".hypothesis/.gitignore",
+    ".hypothesis/constants/0033e9c42fd54515",
+    ".hypothesis/constants/003de4d87c468dd7",
+    ".hypothesis/constants/00e6bb281e663d78",
+    ".hypothesis/constants/0266f4a915ae5ff0",
+    ".hypothesis/constants/0326d199a9ecc357",
+    ".hypothesis/constants/04698efd3d53ade6",
+    ".hypothesis/constants/05afce0623f09a83",
+    ".hypothesis/constants/0663713f65858483",
+    ".hypothesis/constants/066c9c4b5b9945f1",
+    ".hypothesis/constants/0764d8de732a928d",
+    ".hypothesis/constants/08339cce177298d8",
+    ".hypothesis/constants/0a6b37e8124b38af",
+    ".hypothesis/constants/0b2232c5be54acc0",
+    ".hypothesis/constants/0b36354f2d75d926",
+    ".hypothesis/constants/0bcc592674495359",
+    ".hypothesis/constants/0c69f05f2eeaab74",
+    ".hypothesis/constants/0f499da148308d57",
+    ".hypothesis/constants/100dfc1c10b91bae",
+    ".hypothesis/constants/1086adde6134735c",
+    ".hypothesis/constants/11c0165f7a4eba21",
+    ".hypothesis/constants/11c697a0bccf5290",
+    ".hypothesis/constants/128c665f2163bf10",
+    ".hypothesis/constants/12c41b9cd617b130",
+    ".hypothesis/constants/1394802736b14845",
+    ".hypothesis/constants/13b31f30e0752557",
+    ".hypothesis/constants/153df7f267a55722",
+    ".hypothesis/constants/166f3ce7d8bc3e46",
+    ".hypothesis/constants/1b1efbe45f8668f0",
+    ".hypothesis/constants/1bab9ea1e7dfdfb9",
+    ".hypothesis/constants/1c1f4321bd353cd9",
+    ".hypothesis/constants/1cedbf710e1d28b0",
+    ".hypothesis/constants/1d86c03f5bfb8695",
+    ".hypothesis/constants/1f426c7fccca1150",
+    ".hypothesis/constants/1fdd946bd5e0db03",
+    ".hypothesis/constants/200c4c44fa3ab9d2",
+    ".hypothesis/constants/20562f40dfe72708",
+    ".hypothesis/constants/20c1588b81887cd4",
+    ".hypothesis/constants/213141774bf851ba",
+    ".hypothesis/constants/215daa6c7e24462b",
+    ".hypothesis/constants/21ab36054ee49d77",
+    ".hypothesis/constants/226dda128e89e027",
+    ".hypothesis/constants/228366b595d63ee4",
+    ".hypothesis/constants/2312e9bb9ec13cc2",
+    ".hypothesis/constants/241126f1cfddf3b0",
+    ".hypothesis/constants/26a09157a48668f4",
+    ".hypothesis/constants/26be6be5aa019698",
+    ".hypothesis/constants/26cec5f5d3fb080b",
+    ".hypothesis/constants/27b6d302bd9ef9b9",
+    ".hypothesis/constants/27eb2a9cf68dc1f1",
+    ".hypothesis/constants/286976db04320c45",
+    ".hypothesis/constants/29cf310cda0dbd69",
+    ".hypothesis/constants/2c0186fe19fb3f00",
+    ".hypothesis/constants/2c73c098080277d9",
+    ".hypothesis/constants/2f079241082de115",
+    ".hypothesis/constants/3073f33696a1a43d",
+    ".hypothesis/constants/311b495eb225dfdc",
+    ".hypothesis/constants/323f78f88458b03e",
+    ".hypothesis/constants/32646bbfbf9a4461",
+    ".hypothesis/constants/3271a2e21e020553",
+    ".hypothesis/constants/3397c5bcc472eaaa",
+    ".hypothesis/constants/3407ef6771e824ea",
+    ".hypothesis/constants/363bf60437d652d6",
+    ".hypothesis/constants/379cd494702cb567",
+    ".hypothesis/constants/391c56999469135a",
+    ".hypothesis/constants/3a4df0c20c7d472a",
+    ".hypothesis/constants/3a6d646cad84d6fe",
+    ".hypothesis/constants/3bbeb432e8cb650a",
+    ".hypothesis/constants/3c53479cced12a8a",
+    ".hypothesis/constants/3d05e43a1060b18e",
+    ".hypothesis/constants/3d788634a0ff30bb",
+    ".hypothesis/constants/3da7d6d39fc3e9f0",
+    ".hypothesis/constants/40894d03158e06a6",
+    ".hypothesis/constants/4234be296cc5e3ba",
+    ".hypothesis/constants/42821722dae60d6b",
+    ".hypothesis/constants/43a2c3d0c21769e1",
+    ".hypothesis/constants/44756284b4fee6fa",
+    ".hypothesis/constants/4517d92a7f086d88",
+    ".hypothesis/constants/46009d31083278d6",
+    ".hypothesis/constants/4671d069a561bf2c",
+    ".hypothesis/constants/4699952240517949",
+    ".hypothesis/constants/47c7cc3cb0a69117",
+    ".hypothesis/constants/4ae79e07b3ca4ad2",
+    ".hypothesis/constants/4b3a49de6a1b2292",
+    ".hypothesis/constants/4c308808e0145a28",
+    ".hypothesis/constants/4c60ace3e2a29271",
+    ".hypothesis/constants/4d36aea077d52cfb",
+    ".hypothesis/constants/4e31e74eba21f59a",
+    ".hypothesis/constants/4e5023c38b5e3932",
+    ".hypothesis/constants/4e63761c9b5a9a41",
+    ".hypothesis/constants/4f69865c0513b8c4",
+    ".hypothesis/constants/4ffeadfc55409799",
+    ".hypothesis/constants/51d64de7425014a9",
+    ".hypothesis/constants/5299dd1121aafbdf",
+    ".hypothesis/constants/5339f83b9938daf9",
+    ".hypothesis/constants/53a180ed5c14db7e",
+    ".hypothesis/constants/53a55f8236af3b3a",
+    ".hypothesis/constants/53c26ebe27aef3e4",
+    ".hypothesis/constants/53c497336cbb53ab",
+    ".hypothesis/constants/558f8015ae6b8b99",
+    ".hypothesis/constants/5591ce4cba6095aa",
+    ".hypothesis/constants/572409c1b5842f97",
+    ".hypothesis/constants/58a7dd8176a261d9",
+    ".hypothesis/constants/5918454904bf2b8d",
+    ".hypothesis/constants/59812d304399ccb0",
+    ".hypothesis/constants/5a5df9df75116493",
+    ".hypothesis/constants/5b9ef80941a2f52d",
+    ".hypothesis/constants/5bcfeb2cbfee33e3",
+    ".hypothesis/constants/5d427ddf8fd5d8dc",
+    ".hypothesis/constants/5e8702783de1dad4",
+    ".hypothesis/constants/5f7730f5116e8591",
+    ".hypothesis/constants/5fe96cb5727cfa33",
+    ".hypothesis/constants/6090c8176c368f67",
+    ".hypothesis/constants/60c828e7d9817cf9",
+    ".hypothesis/constants/6113995497760d5f",
+    ".hypothesis/constants/63c463f842249da8",
+    ".hypothesis/constants/63d1d7e4a7435428",
+    ".hypothesis/constants/64271e0ffc0ce815",
+    ".hypothesis/constants/6475e0ba3d176a81",
+    ".hypothesis/constants/651eeeb709f64c08",
+    ".hypothesis/constants/6593dafeab6a29e6",
+    ".hypothesis/constants/65a188a8b6a4e9f7",
+    ".hypothesis/constants/665ec43a60a74105",
+    ".hypothesis/constants/66f1af40ed7df8af",
+    ".hypothesis/constants/671ce2b550e05798",
+    ".hypothesis/constants/6962970d5d776416",
+    ".hypothesis/constants/6b1af48756e5f62e",
+    ".hypothesis/constants/6c1732eb18fb92be",
+    ".hypothesis/constants/6db79068ef48e118",
+    ".hypothesis/constants/6e1f9ed5a3ec96cb",
+    ".hypothesis/constants/6e39c7f9da6f68e6",
+    ".hypothesis/constants/6f1246b5fd761d00",
+    ".hypothesis/constants/6f2ce091a7bf05d6",
+    ".hypothesis/constants/72a8c19528137e66",
+    ".hypothesis/constants/72de100c45cefac4",
+    ".hypothesis/constants/734ea679162c2c8b",
+    ".hypothesis/constants/74094e2e46bda756",
+    ".hypothesis/constants/7498d637c569d310",
+    ".hypothesis/constants/7702b98de470d9af",
+    ".hypothesis/constants/7710d096ea75397d",
+    ".hypothesis/constants/781e5f9cb21cc53e",
+    ".hypothesis/constants/78a1fddafb4fe33c",
+    ".hypothesis/constants/78b02ed87966a4e7",
+    ".hypothesis/constants/7b128207f16724a4",
+    ".hypothesis/constants/7bb914853168a7a2",
+    ".hypothesis/constants/7c7a544a7a1ca482",
+    ".hypothesis/constants/7cf3644c93a66435",
+    ".hypothesis/constants/7d1d27b788f5e4f7",
+    ".hypothesis/constants/7dca7ac221aeba1f",
+    ".hypothesis/constants/7efe11f558c1bb78",
+    ".hypothesis/constants/7f6f28ec2eb1bc5e",
+    ".hypothesis/constants/7fce81f81e47ba28",
+    ".hypothesis/constants/80cb77c8215a2f98",
+    ".hypothesis/constants/812970fb1438dfa3",
+    ".hypothesis/constants/829473661a53377c",
+    ".hypothesis/constants/83ad76536706d1a6",
+    ".hypothesis/constants/83e87e3e873fbe8b",
+    ".hypothesis/constants/85249dbde0beb6a4",
+    ".hypothesis/constants/85be5f1f626304e0",
+    ".hypothesis/constants/895e1803d22f595c",
+    ".hypothesis/constants/8a57df23cd11f2a6",
+    ".hypothesis/constants/8b1682690a7342b2",
+    ".hypothesis/constants/8c138f73513fe28e",
+    ".hypothesis/constants/8ca4890f6ca650ae",
+    ".hypothesis/constants/8cea6a7c67bafbf9",
+    ".hypothesis/constants/8da811d95283f9c0",
+    ".hypothesis/constants/8db8dfa522625af3",
+    ".hypothesis/constants/8e16f80abc521040",
+    ".hypothesis/constants/8f039a4e5c8e928b",
+    ".hypothesis/constants/90e9415493df506d",
+    ".hypothesis/constants/9113c505e69ce687",
+    ".hypothesis/constants/925a42aca22686d4",
+    ".hypothesis/constants/929edbf09a4ab8fc",
+    ".hypothesis/constants/92c5a44d43ceef56",
+    ".hypothesis/constants/9385f657a5e13763",
+    ".hypothesis/constants/93c6fd2533082b6f",
+    ".hypothesis/constants/94e95149f6fa4b2b",
+    ".hypothesis/constants/94f4fbf01abfded1",
+    ".hypothesis/constants/961610c4958179af",
+    ".hypothesis/constants/983e5757c34bcc3d",
+    ".hypothesis/constants/9a002cd82d0bf538",
+    ".hypothesis/constants/9a577a0e35ad96d7",
+    ".hypothesis/constants/9a840a9997611024",
+    ".hypothesis/constants/9b0a1caf65fd22c7",
+    ".hypothesis/constants/9b5a46473faae05d",
+    ".hypothesis/constants/9c1ce7ec3d7a8b11",
+    ".hypothesis/constants/9cb274ffc6dc8ba7",
+    ".hypothesis/constants/9d661b31b21d69dc",
+    ".hypothesis/constants/9f0530d7a1b34413",
+    ".hypothesis/constants/a011721983c2824d",
+    ".hypothesis/constants/a0d35e8117df9526",
+    ".hypothesis/constants/a11ac4c44202daa3",
+    ".hypothesis/constants/a1d94e19d50dc3ff",
+    ".hypothesis/constants/a25c56b2b56bcc06",
+    ".hypothesis/constants/a28a1cf8e01a86da",
+    ".hypothesis/constants/a3372a6c8e400888",
+    ".hypothesis/constants/a45d07df5b8e8bf4",
+    ".hypothesis/constants/a5af7603f4a7efb6",
+    ".hypothesis/constants/a61bb19e3f2d745a",
+    ".hypothesis/constants/a647f70777fd7e9d",
+    ".hypothesis/constants/a6af5ec31324ff4e",
+    ".hypothesis/constants/a7faf02faed38cf3",
+    ".hypothesis/constants/a826461453c044d0",
+    ".hypothesis/constants/a87daf1e61a441fd",
+    ".hypothesis/constants/a8b03e0763e2115b",
+    ".hypothesis/constants/aa88c2993398e555",
+    ".hypothesis/constants/aac0a9054e0a64cc",
+    ".hypothesis/constants/acdcfba6bc3e69a8",
+    ".hypothesis/constants/acefced9d80c750b",
+    ".hypothesis/constants/adb56c7d0c0e1f3a",
+    ".hypothesis/constants/af49816719feb046",
+    ".hypothesis/constants/b035cc3370598692",
+    ".hypothesis/constants/b03c176caf9103b7",
+    ".hypothesis/constants/b2b7629319bc2ce7",
+    ".hypothesis/constants/b31424808c37304e",
+    ".hypothesis/constants/b78429e64c96af08",
+    ".hypothesis/constants/b95c0755ad326863",
+    ".hypothesis/constants/bc323b69f88c7d5c",
+    ".hypothesis/constants/bc878fad29922fa4",
+    ".hypothesis/constants/bc99fd6e5294c87a",
+    ".hypothesis/constants/bc9d27a6751defe4",
+    ".hypothesis/constants/be61a78a3a25abd4",
+    ".hypothesis/constants/bf25a2c407e8839d",
+    ".hypothesis/constants/c0b8222d976b80f6",
+    ".hypothesis/constants/c1b41fd3f3122ffb",
+    ".hypothesis/constants/c25a7a3765d14095",
+    ".hypothesis/constants/c29e3054c29cbf12",
+    ".hypothesis/constants/c33d4098ea8a773d",
+    ".hypothesis/constants/c4226ee0f66c469d",
+    ".hypothesis/constants/c4adf96a7f307b47",
+    ".hypothesis/constants/c4c534f8446850bc",
+    ".hypothesis/constants/c4e1b7941aa95f8d",
+    ".hypothesis/constants/c54526dd23bcffa0",
+    ".hypothesis/constants/c5695ce0322c14b1",
+    ".hypothesis/constants/c5fc9889ece1fdbe",
+    ".hypothesis/constants/c60cdaa952dd3598",
+    ".hypothesis/constants/c60fec565a4b1ea2",
+    ".hypothesis/constants/c62cbc75082d130f",
+    ".hypothesis/constants/c7979932ede14efc",
+    ".hypothesis/constants/c8a9b53f5e1812c0",
+    ".hypothesis/constants/c90d9470f5c5e1ea",
+    ".hypothesis/constants/ca02d12654958687",
+    ".hypothesis/constants/cb8cf747ba3905ff",
+    ".hypothesis/constants/cd255577e63010cc",
+    ".hypothesis/constants/cf1fea72d300da48",
+    ".hypothesis/constants/d025b9fbc3e4b014",
+    ".hypothesis/constants/d09458b65d87f6c1",
+    ".hypothesis/constants/d095c719fa35b97a",
+    ".hypothesis/constants/d0dbbc62da37b14a",
+    ".hypothesis/constants/d14751440473e11f",
+    ".hypothesis/constants/d1bea9393de2dfac",
+    ".hypothesis/constants/d228919742dcf6d1",
+    ".hypothesis/constants/d2b535d2b4cce02e",
+    ".hypothesis/constants/d3cbeff1a53d99e7",
+    ".hypothesis/constants/d42591bf19004779",
+    ".hypothesis/constants/d45785fee684ccdb",
+    ".hypothesis/constants/d5249fad4140eb95",
+    ".hypothesis/constants/d6839a008672e9f4",
+    ".hypothesis/constants/d78bbff125720b41",
+    ".hypothesis/constants/d7b6d40e8129e1be",
+    ".hypothesis/constants/d805a99bb95824c2",
+    ".hypothesis/constants/d975711e175d9dcb",
+    ".hypothesis/constants/da9c1b610e696b8e",
+    ".hypothesis/constants/dc113a48e2e54ccb",
+    ".hypothesis/constants/dd747c95e6ad7f29",
+    ".hypothesis/constants/de0b6feadf413c58",
+    ".hypothesis/constants/df18de7ad0367c94",
+    ".hypothesis/constants/dff68c225ada4cc8",
+    ".hypothesis/constants/e002c4ddb6869cbf",
+    ".hypothesis/constants/e0617d2c5e79d06c",
+    ".hypothesis/constants/e2342a8a8f5e2a71",
+    ".hypothesis/constants/e2763b2fefefb5ff",
+    ".hypothesis/constants/e308cfe0da3d1e15",
+    ".hypothesis/constants/e3c99f2fdc36a385",
+    ".hypothesis/constants/e3e65f8a9f056c3a",
+    ".hypothesis/constants/e40e7d8e74bdaebb",
+    ".hypothesis/constants/e494e7effd7624b5",
+    ".hypothesis/constants/e4c9764489ac2df5",
+    ".hypothesis/constants/e50552c1e31c2843",
+    ".hypothesis/constants/e50c5ed2255602d7",
+    ".hypothesis/constants/e6ba81c63080833c",
+    ".hypothesis/constants/e79387b036c32e8f",
+    ".hypothesis/constants/e7d1921bfaf5e6ee",
+    ".hypothesis/constants/e7d8bc16ede80d48",
+    ".hypothesis/constants/e879bb7bec9059fc",
+    ".hypothesis/constants/e89c02cb124006e6",
+    ".hypothesis/constants/eab8834c7fd6f350",
+    ".hypothesis/constants/eb2f7edaebc9dbe6",
+    ".hypothesis/constants/ebb455950880eaf1",
+    ".hypothesis/constants/ec0c1187f2a28611",
+    ".hypothesis/constants/ec9ff0b3ed050a8e",
+    ".hypothesis/constants/ecb46e3973a5ed3a",
+    ".hypothesis/constants/ecb8ac79c6f7bdcf",
+    ".hypothesis/constants/ee51b6d0e910d1d5",
+    ".hypothesis/constants/ee5784dc319f858e",
+    ".hypothesis/constants/ef1c63da91bda85e",
+    ".hypothesis/constants/efa45f4d62fe0f37",
+    ".hypothesis/constants/efebb914a80f1185",
+    ".hypothesis/constants/f033d780a6b700eb",
+    ".hypothesis/constants/f09d1cd75d5bf904",
+    ".hypothesis/constants/f142f84fb5afcb16",
+    ".hypothesis/constants/f23db98568d19190",
+    ".hypothesis/constants/f34ae09dd1736221",
+    ".hypothesis/constants/f511b42a8f156513",
+    ".hypothesis/constants/f51db6c2f5d00e76",
+    ".hypothesis/constants/f5377afa17bb93a1",
+    ".hypothesis/constants/f5fe69fe21aa4abe",
+    ".hypothesis/constants/f75e3aa8510e23d1",
+    ".hypothesis/constants/f7ce56d4ac08a847",
+    ".hypothesis/constants/f88a66e98ab8946a",
+    ".hypothesis/constants/f89337d66989ed55",
+    ".hypothesis/constants/fb9cdf225b1813c8",
+    ".hypothesis/constants/fbf3e30f50af9c9b",
+    ".hypothesis/constants/fcfd0c4c70a33b5b",
+    ".hypothesis/constants/fd58b8f438190bcb",
+    ".hypothesis/constants/fe08c38b075a31bb",
+    ".hypothesis/constants/fe6e1bab80c88719",
+    ".hypothesis/constants/feafb3b81e0e8181",
+    ".hypothesis/constants/ff3c2247adbd86d4",
+    ".hypothesis/constants/ff5179feda82a424",
+    ".hypothesis/constants/ffb5857b145a69af",
+    ".hypothesis/constants/fff68641d4c2537f",
+    ".hypothesis/unicode_data/14.0.0/charmap.json.gz",
+    ".hypothesis/unicode_data/14.0.0/codec-v2-utf-8.json.gz",
+    "data/dashboard_sessions.json",
+    "data/logs/trading_bot.log",
+    "data/market_history.db",
+    "data/market_history.db-shm",
+    "data/market_history.db-wal",
+    "data/testing_trace.jsonl",
+    "data/trading_system.db"
+  ],
+  "failures": [
+    {
+      "message": "assert '--junit /tmp/porota-governed-tests.xml' in 'set -Eeuo pipefail\\npython scripts/rc6_issue465_audit_gate.py verify \\\\\\n  --repo-root . \\\\\\n  --junit \"${POROTA_PRED...OTA_PREDEPLOY_TMP}/porota-governed-tests.json\" \\\\\\n  --out \"${POROTA_PREDEPLOY_TMP}/porota-issue465-audit-gate.json\"\\n'",
+      "node": "tests.test_issue465_provenance::test_predeploy_executes_strict_provenance_in_final_single_build"
+    },
+    {
+      "message": "scripts.rc6_issue465_stress.StressResourceLimit: {\"resource_gates\": {\"actual_evidence_bytes\": 36884143, \"actual_rss_bytes\": 1725100032, \"actual_slow_fsync_exit_isolation\": true, \"child_cleanup_completed\": false, \"complete_committed_cycle\": false, \"evidence_within_quota\": true, \"maximum_evidence_bytes\": 134217728, \"maximum_rss_bytes\": 2147483648, \"rss_within_two_gib\": true, \"source_database_unchanged\": true}, \"shadow_reason\": \"SHADOW_CONSERVATIVE_CYCLE_DEADLINE\"}",
+      "node": "tests.test_issue465_stress::test_10x_catalog_5x_observations_exercises_all_shadow_labs_and_five_factual_exits"
+    },
+    {
+      "message": "AssertionError: assert {PosixPath('....1283706), ...} == {PosixPath('....1283706), ...}\n  \n  Omitting 4 identical items, use -vv to show\n  Differing items:\n  {PosixPath('.'): os.stat_result(st_mode=16832, st_ino=1219169, st_dev=27, st_nlink=2, st_uid=1000, st_gid=1000, st_size=4096, st_atime=1791283705, st_mtime=1791283706, st_ctime=1791283706)} != {PosixPath('.'): os.stat_result(st_mode=16832, st_ino=1219169, st_dev=27, st_nlink=2, st_uid=1000, st_gid=1000, st_size=4096, st_atime=1791283706, st_mtime=1791283706, st_ctime=1791283706)}\n  Use -v to get more diff",
+      "node": "tests.test_rc6_archive_namespace::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes"
+    },
+    {
+      "message": "AssertionError: {\"elapsed_seconds\":0.336046104000161,\"image_id_authority\":\"CALLER_MUST_VERIFY_DOCKER_AND_EXTERNAL_GITHUB_TUPLE\",\"runtime_approval\":false,\"schema\":\"rc6.archive-codec-tiny-image-smoke.v1\",\"scope\":\"NATIVE_PRIVATE_SYNTHETIC_CODEC_AND_ARCHIVE_FIXTURES_ONLY\",\"signature\":\"SMOKE_RSS_LIMIT\",\"status\":\"RED\"}\n  \nassert 1 == 0\n +  where 1 = CompletedProcess(args=['/workspace/porota-rc6-venv311/bin/python', '-B', '-m', 'scripts.rc6_archive_v3_image_smoke', '...NATIVE_PRIVATE_SYNTHETIC_CODEC_AND_ARCHIVE_FIXTURES_ONLY\",\"signature\":\"SMOKE_RSS_LIMIT\",\"status\":\"RED\"}\\n', stderr=b'').returncode",
+      "node": "tests.test_rc6_archive_v3_image_smoke::test_native_tiny_cli_executes_all_legacy_v3_corruption_and_missing_dependency_controls"
+    },
+    {
+      "message": "AssertionError: assert [] == ['6e41ca77aec...5ea3731cc5e5']\n  \n  Right contains 3 more items, first extra item: '6e41ca77aec2bf0759244117cde002a8686cab3becb1cb719190e5e553d158d3'\n  Use -v to get more diff",
+      "node": "tests.test_rc6_committed_projection::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once"
+    },
+    {
+      "message": "AssertionError: assert Counter() == Counter({'a8f...67b6e899': 1})\n  \n  Right contains 3 more items:\n  {'5a5178ffd3a251f36dedb7c1e6f0921f26ab7753ac32c74ee797fe3a67b6e899': 1,\n   '8b0a1106e5279b3e35472c205566d4d3319e098b61643c7e90a1b1d8c0171b8a': 2,\n   'a8fa41eba1edf59e37a0c10d0210310bc85da6ff02c0b30f93f2f42f8014bb08': 3}\n  Use -v to get more diff",
+      "node": "tests.test_rc6_committed_projection::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph"
+    },
+    {
+      "message": "scripts.rc6_issue465_audit_gate.AuditGateError: FROZEN_DISK_MODE_MISMATCH",
+      "node": "tests.test_rc6_convergence_provenance::test_prior_audit_gate_accepts_actual_native_convergence_parser_with_controlled_junit"
+    },
+    {
+      "message": "AssertionError: Regex pattern did not match.\n  Expected regex: 'TRACKED_CHECKOUT_CHANGED'\n  Actual message: 'FROZEN_DISK_MODE_MISMATCH'",
+      "node": "tests.test_rc6_convergence_provenance::test_late_nonfront_tracked_mutation_is_rejected_after_actual_full_provenance"
+    },
+    {
+      "message": "controlled_original_receipt_binding_gate.AuditGateError: FROZEN_DISK_MODE_MISMATCH",
+      "node": "tests.test_rc6_convergence_provenance::test_original_gate_receipt_binding_counterexample_and_current_native_rejection"
+    },
+    {
+      "message": "assert '--junit /tmp/porota-governed-tests.xml' in 'set -Eeuo pipefail\\npython scripts/rc6_convergence_provenance.py \\\\\\n  --repo-root . --candidate-sha \"$CANDIDATE_SHA\"...TMP\"], \\'porota-governed-tests.xml\\')))\\nprint(\\'POROTA_FINAL_MATERIAL_PROGRAMMING_GATES=GREEN\\')\\nPY_FINAL_MATERIAL\\n'",
+      "node": "tests.test_rc6_convergence_provenance::test_predeploy_inventory_fetches_before_governed_tests_and_the_only_build"
+    },
+    {
+      "message": "Failed: DID NOT RAISE ValueError",
+      "node": "tests.test_rc6_convergence_sre_archive::test_foreign_archive_namespace_is_not_repaired[public_mode]"
+    },
+    {
+      "message": "scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:bd_ppi_readonly_guard.py",
+      "node": "tests.test_rc6_convergence_sre_archive::test_native_launcher_rejects_unknown_archive_before_container_stop_and_preserves_namespace"
+    },
+    {
+      "message": "assert (1 == 0) is ('none' == 'none'\n +  where 1 = CompletedProcess(args=['/workspace/porota-rc6-venv311/bin/python', '-', '/workspace/scratch/porota-governed311-9a9b/py...stdout='', stderr='Traceback (most recent call last):\\n  File \"<stdin>\", line 17, in <module>\\nAssertionError: a.py\\n').returncode\n  \n    none)",
+      "node": "tests.test_rc6_convergence_sre_binding::test_actual_install_checks_all_inputs_and_aliases_before_first_atomic_copy[none]"
+    },
+    {
+      "message": "scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:bd_ppi_readonly_guard.py",
+      "node": "tests.test_rc6_convergence_sre_launcher::test_package_and_hook_match_same_image_source_before_container_mutation"
+    },
+    {
+      "message": "scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:bd_ppi_readonly_guard.py",
+      "node": "tests.test_rc6_convergence_sre_launcher::test_correct_files_with_wrong_image_source_labels_are_rejected"
+    },
+    {
+      "message": "scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:bd_ppi_readonly_guard.py",
+      "node": "tests.test_rc6_convergence_sre_launcher::test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked[missing_module]"
+    },
+    {
+      "message": "scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:bd_ppi_readonly_guard.py",
+      "node": "tests.test_rc6_convergence_sre_launcher::test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked[extra_module]"
+    },
+    {
+      "message": "scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:bd_ppi_readonly_guard.py",
+      "node": "tests.test_rc6_convergence_sre_launcher::test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked[hardlink]"
+    },
+    {
+      "message": "scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:bd_ppi_readonly_guard.py",
+      "node": "tests.test_rc6_convergence_sre_launcher::test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked[world_writable]"
+    },
+    {
+      "message": "scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:bd_ppi_readonly_guard.py",
+      "node": "tests.test_rc6_convergence_sre_launcher::test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked[metadata_mode]"
+    },
+    {
+      "message": "scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:bd_ppi_readonly_guard.py",
+      "node": "tests.test_rc6_convergence_sre_launcher::test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_children"
+    },
+    {
+      "message": "scripts.porota_artifact_provenance.ProvenanceError: CHECKOUT_MODE_MISMATCH:bd_ppi_readonly_guard.py",
+      "node": "tests.test_rc6_convergence_sre_scratch::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy"
+    },
+    {
+      "message": "rc6_audit_evidence.sqlite_scratch.SnapshotError: SOURCE_SNAPSHOT_BUSY",
+      "node": "tests.test_rc6_shadow_runtime_wiring::test_configured_iol_cache_is_reused_and_protected_as_an_input"
+    }
+  ],
+  "governed_suite_attributes": [
+    {
+      "errors": "120",
+      "failures": "23",
+      "hostname": "e3a19f0fe025",
+      "name": "pytest",
+      "skipped": "0",
+      "tests": "5890",
+      "time": "2075.700",
+      "timestamp": "2026-10-06T10:42:07.990777+00:00"
+    }
+  ],
+  "missing_files": [],
+  "other_open_failures": [
+    "BIG_CONSERVATIVE_CYCLE_DEADLINE",
+    "TINY_SMOKE_RSS_LIMIT",
+    "SQLITE_SOURCE_SNAPSHOT_BUSY",
+    "GOV_OWNED_CHILD_EXHAUSTION_NOT_PROVED",
+    "FROZEN_NAMESPACE_DATA_AND_HYPOTHESIS_EXTRA"
+  ],
+  "physical_namespace_exact": false,
+  "ppi_watch": "UNTOUCHED",
+  "raw_governed_root": "/workspace/scratch/porota-governed311-9a9b",
+  "real_orders_sent": 0,
+  "root_cause_confirmed": "diagnostic.main set umask077 before rejected preflight without restoring; subsequent controlled checkout files600 and source dirs700 fail their strict custody checks",
+  "schema": "rc6.controlled-recovery.post-governed-diagnostic.v1",
+  "source_root": "/workspace/scratch/porota-source-9a9b0f3",
+  "source_sha": "9a9b0f3860453ce47bee520d70b1957201679966",
+  "source_tree": "96f7ae24d75abc2a6c27866bb7e3fdfad6e9f18a",
+  "tracked_bytes_and_modes_changed": [],
+  "tracked_files": 2630,
+  "tracked_stat_drift_count": 172,
+  "tracked_stat_drifts": [
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132970404728,
+          1791283394705929839
+        ]
+      },
+      "path": ".dockerignore"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972621320,
+          1791283347952571005
+        ]
+      },
+      "path": ".github/workflows/ci.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972621320,
+          1791283310549683798
+        ]
+      },
+      "path": ".github/workflows/porota-deploy-v2-promote.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283309689691511
+        ]
+      },
+      "path": ".github/workflows/porota-predeploy-v2.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-a3-history.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-active-legacy-reference-audit-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-apply-active-tests.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-audit-gap-proof-v3-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-audit-take-profit-regression-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-audit-waves-01-18-subsystems-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-audit-waves-runtime-v2-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-byma-calendar-failclosed-hotfix-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-byma-calendar-failclosed-hotfix-v2-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-candle-inmarket-evidence-tests.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-canonical-binding-source-fix-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-canonicalize-historical-sector-expectation-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-clean-integrated-suite-after-dashboard-fix-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-consolidated-bounded-runtime-progress.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-consolidated-controlplane-tests.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-consolidated-iol-oauth-tests.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-consolidated-iol-sourcepath-readonly.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp1-cp2-cp5-final-runtime-proof-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp1-cp2-cp5-final-runtime-proof-v2-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp1-cp2-cp5-runtime-rca-v2-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp1-parallel-runtime-audit-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp2-cp5-exact-rca-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp2-cp5-parallel-next-proof-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp3-blocked-nonread-rca-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp3-collector-shape-proof-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp3-cp4-final-readonly-proof-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp3-cp4-semantic-gates-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp3-dom-evidence-forwardfix-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp3-dom-failure-rca-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp3-dom-shape-cp4-overlay-forwardfix-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp3-final-green-proof-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp3-freshness-root-cause-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp3-postbackoff-cp4-runtime-probe-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp3-runtime-layout-inspect-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp4-a3-dlr-runtime-discovery-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp4-a3-final-green-proof-v4-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp4-a3-junjul-rca-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp4-a3-overlay-forwardfix-v2-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp4-a3-overlay-verify-v3-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp4-a3-zero-candle-forwardfix-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-cp5-final-runtime-proof-v3-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-current-host-contract-evidence-readonly-audit-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-dashboard-operator-ux-v2-index-autopatch-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-dashboard-operator-ux-v2-nav-autopatch-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-dashboard-trading-7d-readonly-20260915.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-dashboard-workers-forward-fix-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-deploy-rca-scalping-health-readonly-20260930.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-diagnostic-failures.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-economic-binding-forward-fix-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-final-candidate-certify-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-final-host-readonly-preflight-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-final-shadow-test-alignment-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-final-w12-health-wiring-readonly-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-fix-problem1-sector-map-test-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-fix-stale-eod-acceptance-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-full-candidate.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-functional-health-enable-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ghcr-archive-proof.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-history-cutoff-repair-authorized-20260930.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-history-partial-semantics-fix-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-history-partial-semantics-generate-20260907.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-history-partial-semantics-validate-20260907.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-host-backup-autocheck-deep-forensics.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-host-enabled-failures-forensics.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-host-fix-hf6-export-permissions.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-host-legacy-source-forensics.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-host-legacy-timer-forensics.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-host-readonly-inventory.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-hotfix-cedear-labor-day.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-iol-fixed-income-readonly-20261001.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-iol-oauth-proactive-live-smoke.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-iol-oauth-store-readonly-audit-20261001.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-iol-runtime-state-readonly-20261001.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-iol-shadow-observation-tests.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-iol-shadow-runtime-tests.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-isolate-legacy-ledger-fixtures-from-w10-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-legacy-control-plane-retirement-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-paper-cycle-binding-composition-forwardfix-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-paper-open-fixtures-binding-forwardfix-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-paper-t1-settlement-hotfix.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-paperbroker-binding-forwardfix-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132972719776,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-parallel-rca-w12-orphans-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-persist-canonical-binding-and-diag-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-policy-sector-convergence-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-post-w10-next-failure-rca-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ppi-capacity-shadow.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-pr76-candidate-preflight.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-probe-now.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-public-probe-caucion-contract-forwardfix-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-public-probe-caucion-contract-forwardfix-v2-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-restore-canonical-risk-default.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-retire-intraday-ai-regression-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-runner-probe-20260911.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-runtime-safety-fixes.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-scalping-intraday-contract-validation-20260907.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-shadow-validation-view.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-storage-capacity-recalibration-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-storage-headroom-policy-gate-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-telegram-policy.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-unified-candidate-tests.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w10-forward-fix-validation-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-auth-lifecycle-rca-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-capture-permission-rca-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-current-service-failure-readonly-rca-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-exact-blocked-post-readonly-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-fresh-import-green-proof-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-import-candidate-ce-rca-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-import-rc1-rca-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-import-source-schema-rca-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-import-stage-rca-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-permission-boundary-hotfix-proof-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-postpath-and-orphan-proof-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-w12-runtime-wiring-readonly-rca-20260910.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave10-live-sector-policy-config-proof-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave10-materialize-binding-policy-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave10-sector-binding-focused-proof-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave10-sector-binding-proof-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave10-sector-binding-semantic-proof-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave10-sector-binding-semantic-proof-v2-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave10-sector-binding-static-proof-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave11-currentbase-readiness-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave13-materialize-currentbase-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave14-materialize-currentbase-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave15-materialize-currentbase-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave16-currentbase-final-readiness-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave16-currentbase-final-readiness-v2-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave16-materialize-safe-housekeeping-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave17-currentbase-live-ux-proof-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave17-currentbase-live-ux-proof-v2-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave18-materialize-safe-control-plane-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave18-materialize-safe-control-plane-v2-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave18-materialize-safe-control-plane-v3-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave18-materialize-safe-control-plane-v4-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave1b-sla-scraping-validate-20260908.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave2-ppi130-runtime-validate-20260908.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave4-definitive-patch-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave6-8-convergence-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave6-history-web-shadow-validate-20260908.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave7-event-risk-binding-validate-20260908.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave8-final-ux-closure-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave8-learning-ux-validate-20260908.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave8-live-css-diagnostic-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-wave9-currentbase-readiness-20260909.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-write-probe.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-caucion-11-reconciled.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-controlplane-16-bounded-probe.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-dash-06-oct01.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-dash-07-history-truth.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-history-08-oct01.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-history-09-progress.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-instrumentation-09-oct01.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-instrumentation-10.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-integ-03-runtime-http-rca-20260930.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-integ-13-reconciled.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-ops-dashboard-exact-probe-20260930.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-ops-focused-regression-20260930.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-ops-history-exact-probe-20260930.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-ops-preopen-closure-20260930.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-runtime-07-oct01-truth.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-tests-12-current-contract.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/rc6-ws-tests-15-governed-root.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/validate-rc5-candidate.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132975257306,
+          1791283352898571190
+        ]
+      },
+      "path": ".github/workflows/validate-rc5-release.yml"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132980775278,
+          1791283348032817270
+        ]
+      },
+      "path": "Dockerfile"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132996369890,
+          1791283348135567435
+        ]
+      },
+      "path": "deploy/systemd/porota-contract-evidence-rc5.service"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132996369890,
+          1791283348135567435
+        ]
+      },
+      "path": "deploy/systemd/porota-contract-evidence-rc5.timer"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132996369890,
+          1791283380023788087
+        ]
+      },
+      "path": "deploy/systemd/porota-introspection-publish.service"
+    },
+    {
+      "changes": {
+        "st_atime_ns": [
+          1791283132996369890,
+          1791283348032338334
+        ]
+      },
+      "path": "docker-compose.yml"
+    }
+  ]
+}

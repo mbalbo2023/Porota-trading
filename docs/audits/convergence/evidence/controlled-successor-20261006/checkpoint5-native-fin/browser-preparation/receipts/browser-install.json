@@ -1,0 +1,27 @@
+{
+  "aborted_own_cli_on_failure": false,
+  "browser_gate_run": false,
+  "browser_launch_called": false,
+  "cli_pid": 19246,
+  "command": [
+    "/workspace/scratch/rc6driver-kba25cdt/driver-env/bin/python",
+    "-I",
+    "-B",
+    "-m",
+    "playwright",
+    "install",
+    "chromium"
+  ],
+  "download_failures_observed": 0,
+  "first_download_failure_aborts_no_blind_retry": true,
+  "log_bytes": 6892,
+  "log_path": "/workspace/scratch/rc6driver-kba25cdt/logs/browser-install.sanitized.log",
+  "log_sha256": "b85ca3070e48187c2c69578376cab26537fe321ac29dd6d684a5c2371dec98a2",
+  "package_globals_rebound": false,
+  "redactions": 0,
+  "returncode": 0,
+  "sanitized_lines": 39,
+  "seconds": 21.26284578600098,
+  "status": "GREEN_BROWSER_INSTALL_ONLY",
+  "system_browser_override": false
+}

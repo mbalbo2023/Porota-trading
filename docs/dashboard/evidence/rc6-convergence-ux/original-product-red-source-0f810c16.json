@@ -1,0 +1,363 @@
+{
+  "archive_sha256": "32d28cbf5fd051f1357e06f774dc86a49610fa01b18f61a75ad343d0df98f606",
+  "candidate_tree_sha": "764229fb8807d15022834fc422f9d6baf56437ad",
+  "frozen_source_sqlite_attempts": 0,
+  "imported_product_modules": [
+    {
+      "matches_archived_blob": true,
+      "module": "_version",
+      "path": "_version.py",
+      "sha256": "17a594100f02a0f4e7a36b8bb95ae88d2b85c21b93f68678da60c687d4a691b4"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "am_us_equity_calendar_rc6",
+      "path": "am_us_equity_calendar_rc6.py",
+      "sha256": "dfe64bcd4a90a77c510aa71fa7a08f92cdde32ded86e9317de3c521b84e3a612"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "bd_ppi_readonly_guard",
+      "path": "bd_ppi_readonly_guard.py",
+      "sha256": "1119c7b7e1c5bd62287edecba6a5177182f32e048e5b3db2eedf5d878116ae0f"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "be_paper_engine",
+      "path": "be_paper_engine.py",
+      "sha256": "d4a765b8a5c082683755f489fd62e3921b923a341b1fda561aac68b677aa407e"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "bf_production_paper_observer",
+      "path": "bf_production_paper_observer.py",
+      "sha256": "c6ecdd48e1c3c8ac9a2fdc826f6edacfe6afc2395a300c8baa8d4b58f3030e12"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "bi_operational_services",
+      "path": "bi_operational_services.py",
+      "sha256": "4be7d696eb4c4292a44535fb0bf6e64b8abb2ac37c009e94192f72b989a66c8f"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "bl_candle_engine",
+      "path": "bl_candle_engine.py",
+      "sha256": "bc2f3ae2b743847acc979896b97197584756ae16e5bb62171064f60944697750"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "bm_exit_supervisor",
+      "path": "bm_exit_supervisor.py",
+      "sha256": "e93f5b588919be711eb4059074ae5a3585a8dcf7f2ae782e99cdd391fa07ce2b"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "bn_telegram_bus",
+      "path": "bn_telegram_bus.py",
+      "sha256": "3e64b7641999aff82f31b7a6ebbf7a101fc29f04d9c0e4b5157083d316369d66"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "bs_instrument_contracts",
+      "path": "bs_instrument_contracts.py",
+      "sha256": "32cbfbb593517ccb34d8be9d594e8feb4085964acd76163a9470b3a5126f96ec"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "bt_caucion_paper",
+      "path": "bt_caucion_paper.py",
+      "sha256": "d552755ec8330c026d4e6d2698ef003e8cec14c67eb092940508e829e879b942"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "bu_instrument_catalog",
+      "path": "bu_instrument_catalog.py",
+      "sha256": "5307de94d8cd20a0a9bc3e946dc96ee741b72ed5a0ad6fca512fc37c8f80a247"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "bw_daily_risk",
+      "path": "bw_daily_risk.py",
+      "sha256": "2409efce2d3eff41c8c7ca350dca6be275a69f6126b7b80edd6bd00088393532"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "cc_spot_liquidity",
+      "path": "cc_spot_liquidity.py",
+      "sha256": "fecaf8ecbe31fea5091bdf328ac96d1fb22782441c89fa8395ed3f25a050c3e0"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "cd_spot_ledger",
+      "path": "cd_spot_ledger.py",
+      "sha256": "e90b5a1c5964f987f8cea6ef0b9ff38e4bec0f9632ca985a2129f0f3bf5329b2"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "cf_sale_settlement",
+      "path": "cf_sale_settlement.py",
+      "sha256": "45ecfa70351d86bab486947406bd896f96c1c5db5049aa0ee8e536f9a2e85655"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "cg_paper_workspace",
+      "path": "cg_paper_workspace.py",
+      "sha256": "722bfffe99c39667b435eb7f642bd167cea04fa3716f736f6aee19e8aae216fa"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "cu_history_store_v2_hf6",
+      "path": "cu_history_store_v2_hf6.py",
+      "sha256": "84d47bcc379302902619d90e6938561202a048d111123a933cedd95619f08766"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "cy_market_source_arbitration_hf6",
+      "path": "cy_market_source_arbitration_hf6.py",
+      "sha256": "4dc6b6a1364a28574dc9d8106f0590f9af1d474fa3f4bd2a1fa596280af5f26a"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "er_dashboard_truth_projection_rc6",
+      "path": "er_dashboard_truth_projection_rc6.py",
+      "sha256": "df6c3756612989460d89239374c84908b57cc2e3ed9df3debb9f59602855e956"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "eu_telegram_policy_rc6",
+      "path": "eu_telegram_policy_rc6.py",
+      "sha256": "37511844ded2927ee6ce25e7e409ecdc755cc455ee14a9e2cf4193e337f40d24"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "iol_shadow_observation_rc6",
+      "path": "iol_shadow_observation_rc6.py",
+      "sha256": "b12f858f45858505d67c24ef20062b8a640c20d99d2aaf8b28ee3894e6c5b96d"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_annual_instrument_analysis",
+      "path": "rc6_annual_instrument_analysis.py",
+      "sha256": "459864a38a6491fddf76081af4bc011df5b136106e0417c779d0357c88b6fc2a"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_dynamic_universe",
+      "path": "rc6_dynamic_universe/__init__.py",
+      "sha256": "509d7cc6e5378e62e80f19e7cb91090eb2c1395766697fbe28342e0d0a4b7b0d"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_dynamic_universe.common",
+      "path": "rc6_dynamic_universe/common.py",
+      "sha256": "c825d64bde0d1814536dfd82d45bb1d39987918d16dc6aa8df063d0a12adb21f"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_multisource_discovery",
+      "path": "rc6_multisource_discovery.py",
+      "sha256": "562ad536751316068e03ade030d529fd0692a9f6b33971dc8f4598c39bb0aa68"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_paper_family_lifecycle",
+      "path": "rc6_paper_family_lifecycle.py",
+      "sha256": "32d8e1b4000a2527b414e176d9ce0266c4ab878d778eef22cfcc2110b2e1e669"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_performance",
+      "path": "rc6_performance/__init__.py",
+      "sha256": "f14e98aad51984f3ac156a60d200e0eb2ac728367e48b1ec58e9ccbbfed2dcd0"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_performance.common",
+      "path": "rc6_performance/common.py",
+      "sha256": "9c845296d845f33b4c86f153b722fd90c8e2f8f9d278afc1c3fe519b2ecd2cd3"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_performance.lineage",
+      "path": "rc6_performance/lineage.py",
+      "sha256": "065328c196ada5792af428a1f5f6b40e890154292b350d92e7df2c0879c8e1f8"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_ppi_future_contract_policy",
+      "path": "rc6_ppi_future_contract_policy.py",
+      "sha256": "1fdfedd59767cb25a563fccf74f5ddd9084923b252a31bf3313e0bd35cb8df01"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_shadow_runtime",
+      "path": "rc6_shadow_runtime/__init__.py",
+      "sha256": "38de867a361db0f93625c3beb8d4a6f31e772e66db5af076a7fcc87a62cf3051"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_shadow_runtime.persistence",
+      "path": "rc6_shadow_runtime/persistence.py",
+      "sha256": "68ec70f86275e4e68570126e5587a3dd548642adfeb49b1f98cec35b80d4eedb"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_shadow_runtime.source_authority",
+      "path": "rc6_shadow_runtime/source_authority.py",
+      "sha256": "b9277923784464adf61b9f78cd1f7952bcba97e7e6fe6a4bfcdc4f724eadfe35"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_source_consolidation",
+      "path": "rc6_source_consolidation.py",
+      "sha256": "ca8f5a90ac841b7b2b03a1f2e47fcb13a9afac874f5e3336f5a5e3b314f8fe07"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard",
+      "path": "rc6_trader_dashboard/__init__.py",
+      "sha256": "9b2430fdeb6043ef7e91633cbeae77f273dd682bcc18f895ff74bc79d733e6e5"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.components",
+      "path": "rc6_trader_dashboard/components.py",
+      "sha256": "48d389f0aa386704fd1e1432696f1bfa9ac09861ad7e9ed3297421414b683ea5"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.datasets",
+      "path": "rc6_trader_dashboard/datasets.py",
+      "sha256": "50582c7789183c625d9a270b72021cbef05965b0fe399f09f2b3f62e4c7377a8"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.design_system",
+      "path": "rc6_trader_dashboard/design_system.py",
+      "sha256": "15659acf999c7053c6c44cc87505dd6069ba50500e49e67e8792909ace0744fb"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.generation",
+      "path": "rc6_trader_dashboard/generation.py",
+      "sha256": "7983fc6d58a4c8fffd6af1d951b51c94e8086c21e6f06a10fecf3e12d67fb0b4"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.navigation",
+      "path": "rc6_trader_dashboard/navigation.py",
+      "sha256": "29193381d9b826881ffee4af1acccb8d0b39e1c59c3626af7ab557455daf8b04"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.projection",
+      "path": "rc6_trader_dashboard/projection.py",
+      "sha256": "be46e735aec62760f3831d3f7aa1590cca990653f1bdb30bbd7bf6a9f5b34802"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.routes",
+      "path": "rc6_trader_dashboard/routes.py",
+      "sha256": "1f5688167fec751c9941c303e8ea581205fca5638811163be14df3ecf4f66daa"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.shell",
+      "path": "rc6_trader_dashboard/shell.py",
+      "sha256": "6bc418e1ba5d675da3026a56af0c5da6b4b160575f2c4606c2ed7ef793d12068"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.view_common",
+      "path": "rc6_trader_dashboard/view_common.py",
+      "sha256": "5809224be6bfd1c5be5fb53294e49bc1d50030b80831ee2bcc55ca03132aaf93"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_analytics",
+      "path": "rc6_trader_dashboard/views_analytics.py",
+      "sha256": "d098412bf96f0ae9a58581780b4203fcd7fdda7e0ca072d16b085284895cbe06"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_home",
+      "path": "rc6_trader_dashboard/views_home.py",
+      "sha256": "dca1c40cdab0c8091aa8fd271443717b0c8917803422fd0cf8134704fa05469b"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_instruments",
+      "path": "rc6_trader_dashboard/views_instruments.py",
+      "sha256": "0d158b0f1fb8cfc533f0e415d1e77ac96734fae56d507421aa588bb859dbe69e"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_live",
+      "path": "rc6_trader_dashboard/views_live.py",
+      "sha256": "f368d34c643055148cf3d9dd4ebac5fc539ff0c8b60098f96c16bde792f3d8ab"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_risk",
+      "path": "rc6_trader_dashboard/views_risk.py",
+      "sha256": "e8e2cf1e5b922cbdddcd4b2ad23fd26e79fb985a98f2e22db2484b914dcc6432"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_system",
+      "path": "rc6_trader_dashboard/views_system.py",
+      "sha256": "3c7a1eb51bd73f9eff7deaa6bd381d2ff4b6bd4d35609ace549828f2434e5cf3"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_trading",
+      "path": "rc6_trader_dashboard/views_trading.py",
+      "sha256": "6dfd6de4401300b54c43bd54a596ddd25c2bc283f97da97bff5b0124c267f0a0"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_universe",
+      "path": "rc6_trader_dashboard/views_universe.py",
+      "sha256": "ae0b97bc3d58549478c543f894db5fd7b3991a59df03f7e22e088b9abd097514"
+    }
+  ],
+  "native_source_inventory": {
+    "/tmp/rc6-ux-original-product-red-0f810c16/native/history.db": {
+      "/tmp/rc6-ux-original-product-red-0f810c16/native/history.db": {
+        "atime_ns": 1791186000828098382,
+        "bytes": 372736,
+        "ctime_ns": 1791186000860079781,
+        "inode": 1981339,
+        "mtime_ns": 1791186000860079781,
+        "sha256": "508a6ed25ce3ae79c902020681adf95799f9b7a1c2ab2672e650aedf4e5929d9"
+      }
+    },
+    "/tmp/rc6-ux-original-product-red-0f810c16/native/paper.db": {
+      "/tmp/rc6-ux-original-product-red-0f810c16/native/paper.db": {
+        "atime_ns": 1791186000761026930,
+        "bytes": 503808,
+        "ctime_ns": 1791186000804080177,
+        "inode": 1981326,
+        "mtime_ns": 1791186000804080177,
+        "sha256": "17cf916cfb52672e9f359e1c6dfc93532015a2a2474fb43577345961b681465c"
+      }
+    }
+  },
+  "native_sources_unchanged_after_projection": true,
+  "network_attempts": 0,
+  "overlays": [],
+  "parents": [
+    "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "4a5fc6384260b31f9a07e791093add6ee83102a1"
+  ],
+  "ppi_watch_touched": false,
+  "probe_sha256": "67539f012201cdf27d4b4ba733fe8966ee902cfbbcf5d1c74bc9c24f91d0ee7d",
+  "runtime_touched": false,
+  "schema": "rc6.original-ux-native-product-red-source-proof.v1",
+  "source_hashes_unchanged": true,
+  "source_sha": "0f810c168b0bfb5362148b804f3e15ffd1855610",
+  "synthetic": true,
+  "tracked_source_files": 1136,
+  "unexpected_product_imports": []
+}

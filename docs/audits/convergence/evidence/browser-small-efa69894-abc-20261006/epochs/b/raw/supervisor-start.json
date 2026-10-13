@@ -1,0 +1,61 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "helper_scope_literal_is_historical_origin_only": true,
+  "index": "/workspace/rc6-root-efa69894-browser-20261006-source-raw/source.index.json",
+  "original_native_caps": {
+    "health_roundtrip": 2,
+    "preparation": 90,
+    "render_roundtrip": 1,
+    "rpc": 20
+  },
+  "origins": {
+    "require_function_sha256": "3fdec831bc6a8b34347d709354ae8fde3c062ad2c902f070ba93171e01685951",
+    "source_custody_origin_sha256": "c8f872b75544eb5102a0c769847a8ad51872aa3a920fe204b3c78ab41a8a7bfb",
+    "subprocess_phase_function_sha256": "ca89e2f41c41afeaca1c52ef7fa2c0e9817abd833b69b7973f68c2b32e8accb5",
+    "subprocess_phase_source_sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313"
+  },
+  "phase_caps_management_seconds": {
+    "health": 120,
+    "normal": 600
+  },
+  "phases_requested": [
+    "normal",
+    "health"
+  ],
+  "raw_identity": {
+    "device": 27,
+    "gid": 1000,
+    "inode": 938504,
+    "mount_id": 52,
+    "uid": 1000
+  },
+  "runtime_validated": false,
+  "schema": "rc6.root-small-browser-external-supervisor.v1",
+  "scope": "ROOT_SMALL_FULL_ROUTES_AND_SEPARATE_PRIVATE_HEALTH; NO_BIG_OR_GOV_ARTIFACT_RUNTIME_CLAIM",
+  "source": "/workspace/rc6-root-efa69894-browser-20261006-source",
+  "source_index_sha256": "9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517",
+  "source_repo": "/workspace/porota_rc6_convergence",
+  "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+  "status": "STARTED",
+  "supervisor_pid": 244401,
+  "whole_git_files": 2398,
+  "wrapper": {
+    "path": "/workspace/rc6_root_normal_browser_supervisor_efa69894_v2.py",
+    "sha256": "7111265b27213809180e71d33df930f402693593a11dd2732f0e89f8fa7b3b30",
+    "stat": {
+      "atime_ns": 1791249338139374389,
+      "blocks": 96,
+      "ctime_ns": 1791249305999600492,
+      "device": 27,
+      "gid": 1000,
+      "inode": 310144,
+      "links": 1,
+      "mode": 33152,
+      "mtime_ns": 1791249305999600492,
+      "size": 46688,
+      "uid": 1000
+    }
+  }
+}

@@ -1,0 +1,227 @@
+{
+  "origin_unchanged": true,
+  "provider_requests": 0,
+  "results": [
+    {
+      "after": {
+        "": {
+          "sha256": "00935eb64179eb1ed760c4730ce070186407be891fd7cdcf30fc34c2c4e9361d",
+          "st_atime_ns": 1791203765811060348,
+          "st_ctime_ns": 1791203765798256931,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834345,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765798256931,
+          "st_nlink": 1,
+          "st_size": 2777088,
+          "st_uid": 1000
+        },
+        "-shm": {
+          "sha256": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb",
+          "st_atime_ns": 1791203765813791000,
+          "st_ctime_ns": 1791203765813791000,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834347,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765813791000,
+          "st_nlink": 1,
+          "st_size": 32768,
+          "st_uid": 1000
+        },
+        "-wal": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "st_atime_ns": 1791203765799060433,
+          "st_ctime_ns": 1791203765799060433,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834346,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765799060433,
+          "st_nlink": 1,
+          "st_size": 0,
+          "st_uid": 1000
+        }
+      },
+      "before": {
+        "": {
+          "sha256": "00935eb64179eb1ed760c4730ce070186407be891fd7cdcf30fc34c2c4e9361d",
+          "st_atime_ns": 1791203765795060462,
+          "st_ctime_ns": 1791203765798256931,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834345,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765798256931,
+          "st_nlink": 1,
+          "st_size": 2777088,
+          "st_uid": 1000
+        },
+        "-shm": {
+          "sha256": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb",
+          "st_atime_ns": 1791203765799060433,
+          "st_ctime_ns": 1791203765802014525,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834347,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765802014525,
+          "st_nlink": 1,
+          "st_size": 32768,
+          "st_uid": 1000
+        },
+        "-wal": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "st_atime_ns": 1791203765799060433,
+          "st_ctime_ns": 1791203765799060433,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834346,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765799060433,
+          "st_nlink": 1,
+          "st_size": 0,
+          "st_uid": 1000
+        }
+      },
+      "caller": "read_runtime",
+      "changes": {
+        "": {
+          "st_atime_ns": [
+            1791203765795060462,
+            1791203765811060348
+          ]
+        },
+        "-shm": {
+          "st_atime_ns": [
+            1791203765799060433,
+            1791203765813791000
+          ],
+          "st_ctime_ns": [
+            1791203765802014525,
+            1791203765813791000
+          ],
+          "st_mtime_ns": [
+            1791203765802014525,
+            1791203765813791000
+          ]
+        }
+      },
+      "elapsed_seconds": 0.12362918700091541,
+      "source_unchanged": false
+    },
+    {
+      "after": {
+        "": {
+          "sha256": "00935eb64179eb1ed760c4730ce070186407be891fd7cdcf30fc34c2c4e9361d",
+          "st_atime_ns": 1791203765963059269,
+          "st_ctime_ns": 1791203765937994711,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834349,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765937994711,
+          "st_nlink": 1,
+          "st_size": 2777088,
+          "st_uid": 1000
+        },
+        "-shm": {
+          "sha256": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb",
+          "st_atime_ns": 1791203765968995465,
+          "st_ctime_ns": 1791203765968995465,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834351,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765968995465,
+          "st_nlink": 1,
+          "st_size": 32768,
+          "st_uid": 1000
+        },
+        "-wal": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "st_atime_ns": 1791203765937994711,
+          "st_ctime_ns": 1791203765937994711,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834350,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765937994711,
+          "st_nlink": 1,
+          "st_size": 0,
+          "st_uid": 1000
+        }
+      },
+      "before": {
+        "": {
+          "sha256": "00935eb64179eb1ed760c4730ce070186407be891fd7cdcf30fc34c2c4e9361d",
+          "st_atime_ns": 1791203765935059468,
+          "st_ctime_ns": 1791203765937994711,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834349,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765937994711,
+          "st_nlink": 1,
+          "st_size": 2777088,
+          "st_uid": 1000
+        },
+        "-shm": {
+          "sha256": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb",
+          "st_atime_ns": 1791203765937994711,
+          "st_ctime_ns": 1791203765939173642,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834351,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765939173642,
+          "st_nlink": 1,
+          "st_size": 32768,
+          "st_uid": 1000
+        },
+        "-wal": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "st_atime_ns": 1791203765937994711,
+          "st_ctime_ns": 1791203765937994711,
+          "st_dev": 33,
+          "st_gid": 1000,
+          "st_ino": 2834350,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791203765937994711,
+          "st_nlink": 1,
+          "st_size": 0,
+          "st_uid": 1000
+        }
+      },
+      "caller": "metadata",
+      "changes": {
+        "": {
+          "st_atime_ns": [
+            1791203765935059468,
+            1791203765963059269
+          ]
+        },
+        "-shm": {
+          "st_atime_ns": [
+            1791203765937994711,
+            1791203765968995465
+          ],
+          "st_ctime_ns": [
+            1791203765939173642,
+            1791203765968995465
+          ],
+          "st_mtime_ns": [
+            1791203765939173642,
+            1791203765968995465
+          ]
+        }
+      },
+      "elapsed_seconds": 0.032794364997243974,
+      "source_unchanged": false
+    }
+  ],
+  "schema": "rc6.native-source-sidecar-ro-probe.v1",
+  "scope": "PRIVATE_CLONES_OF_COMPLETED_SYNTHETIC_FIXTURE;ORIGIN_READ_NOATIME_NO_WRITES",
+  "source_sha": "107a83197a5f80e299fbe63c9b5ef27f853945be"
+}

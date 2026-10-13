@@ -1,0 +1,137 @@
+{
+  "actual_pytest_pid": 12285,
+  "allocated_bytes_unique_physical_inodes": 28672,
+  "capacity_status": "GREEN",
+  "classification": "RETAINED_ADVERSARIAL_FIXTURES",
+  "context": {
+    "candidate_sha": "90df21321f7f75eeccecb87b166c637d3680cd84",
+    "candidate_tree": "9954b2fa230f151c9a9d62af780e4f300d6bd79f",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "2",
+    "run_id": "471",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "counts": {
+    "directory_entries": 3,
+    "hardlinked_regular_entries": 2,
+    "regular_entries": 3,
+    "special_entries": 0,
+    "symlinks": 2
+  },
+  "first_64_adversarial_members": [
+    {
+      "kind": "symlink",
+      "relative_path": "pytest/test_real_payload0/link",
+      "removed": false,
+      "stat_fields": {
+        "st_atime_ns": 1791305136297599672,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791305136297599672,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1352377,
+        "st_mode": 41471,
+        "st_mtime_ns": 1791305136297599672,
+        "st_nlink": 1,
+        "st_size": 210,
+        "st_uid": 1000
+      },
+      "target_followed": false
+    },
+    {
+      "kind": "hardlink",
+      "relative_path": "pytest/test_real_payload0/payload",
+      "removed": false,
+      "stat_fields": {
+        "st_atime_ns": 1791305136297650347,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791305136297599672,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1352376,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791305136297599672,
+        "st_nlink": 2,
+        "st_size": 20,
+        "st_uid": 1000
+      },
+      "target_followed": false
+    },
+    {
+      "kind": "hardlink",
+      "relative_path": "pytest/test_real_payload0/second",
+      "removed": false,
+      "stat_fields": {
+        "st_atime_ns": 1791305136297650347,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791305136297599672,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1352376,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791305136297599672,
+        "st_nlink": 2,
+        "st_size": 20,
+        "st_uid": 1000
+      },
+      "target_followed": false
+    },
+    {
+      "kind": "symlink",
+      "relative_path": "pytest/test_real_payloadcurrent",
+      "removed": false,
+      "stat_fields": {
+        "st_atime_ns": 1791305136301700427,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791305136297337073,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1352375,
+        "st_mode": 41471,
+        "st_mtime_ns": 1791305136297337073,
+        "st_nlink": 1,
+        "st_size": 202,
+        "st_uid": 1000
+      },
+      "target_followed": false
+    }
+  ],
+  "fixture_root": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch311/pytest/test_real_owned_pytest_direct_0/native-runner/porota-pytest-471-2-0326fcdbfe0347b79b2a67a38bfb904c",
+  "fixture_root_identity": [
+    27,
+    1352368,
+    1000,
+    1000,
+    448
+  ],
+  "fixture_root_mount_id": 52,
+  "fixture_root_removed": false,
+  "fresh_filesystem": {
+    "filesystem_device": 27,
+    "free_bytes": 25430179840,
+    "free_inodes": 1952521,
+    "total_inodes": 2097152
+  },
+  "hardlinks_deduplicated_by": "ST_DEV_ST_INO",
+  "link_targets_followed": false,
+  "logical_bytes_unique_physical_inodes": 15659,
+  "measured_by_same_owned_fin_supervisor_pid": 12281,
+  "namespace_entries_including_root": 8,
+  "original_capacity_policy": {
+    "min_free_bytes": 2147483648,
+    "min_free_inode_percent": 10
+  },
+  "owned_fin_closed": true,
+  "owner_uid": 1000,
+  "owner_uuid": "0326fcdbfe0347b79b2a67a38bfb904c",
+  "payload_files_read": 0,
+  "phase": "execution",
+  "pytest_phase_green": true,
+  "real_orders_sent": 0,
+  "resources_removed": 0,
+  "retention_policy": "EXPLICIT_RETAINED_FOR_EPHEMERAL_RUNNER_TEARDOWN",
+  "schema": "rc6.predeploy-retained-pytest-fixtures.v1",
+  "scope": "MEASURED_RETAINED_TEST_FIXTURES_ONLY; NOT_CLEANUP_OR_GLOBAL_CUSTODY",
+  "unique_physical_inodes": 7
+}

@@ -1,0 +1,11 @@
+{
+  "hypothesis_storage_directory": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gcdiag-86615-h07w9s7d/raw-diagnostic/execution-private/hypothesis",
+  "log_dir": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gcdiag-86615-h07w9s7d/raw-diagnostic/execution-private/logs",
+  "pytest_cache_provider_disabled": true,
+  "root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gcdiag-86615-h07w9s7d/raw-diagnostic/execution-private",
+  "tmpdir": "/workspace/rc6gov-dq6wq4l1",
+  "tmpdir_device": 27,
+  "tmpdir_owner_uid": 1000,
+  "tmpdir_retained_for_diagnostics": true,
+  "writable_source_exclusions_added": []
+}

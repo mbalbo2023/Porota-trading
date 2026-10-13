@@ -1,0 +1,5 @@
+"""Positive natural phase lifecycle; one component test, never Gov evidence."""
+
+
+def test_no_owned_children_and_no_network_or_orders():
+    assert 2+2 == 4

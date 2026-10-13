@@ -1,0 +1,13 @@
+{
+  "claim": "WIP_NATIVE_V3_FOCAL_NOT_COMMITTED_NOT_HORIZON_OR_BIG",
+  "head": "32da316afd94ad9016e2cb5c3e6ef3e94c49e2fd",
+  "tree": "7218e4734ba5e3a419f4982c3a2978f0395e1272",
+  "working_source_sha256": {
+    "rc6_shadow_runtime/archive_components.py": "c5d4f14a0592c5764759a54bbd52f04528668b91be170e98810a4f318226e358",
+    "rc6_shadow_runtime/archive_namespace.py": "38dfc2b991135a098acf5c56fbe35ec9b93634f1f5056c3b1ca1d9b3eae62595",
+    "rc6_shadow_runtime/persistence.py": "731ba3ecad9ed4dd97f9e300b8e5987382c181a665f82f1191b14122d49f0fc6",
+    "rc6_shadow_runtime/retention.py": "88e716358e1fbcbe3c4b9521605d67eb01fc5fd54e93ec01fb9e43fdaa45c3f9",
+    "rc6_shadow_runtime/worker.py": "2d15f9faffdd26ce73ba5f2b581b3f0e49714270dcf952cfd20721d4483c5059",
+    "tests/test_rc6_component_archive.py": "d9dff7ae7fc3f5d29647fd0f230b9ea0455870ebc7f6208fc4243ccafddf3034"
+  }
+}

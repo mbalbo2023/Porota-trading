@@ -1,0 +1,55 @@
+{
+  "after_code_sha256": {
+    "bf_production_paper_observer.py": "29b08bf1d5853e51c722913f7dae25dfb27ae92ca343eb93531084f7d3c463d7",
+    "tests/test_rc6_observer_history_diagnostics.py": "475c932196d6c0ce28a202cd89ea7e3ced749cd919b10ee6063d68ab0cc38849"
+  },
+  "baseline_before_code_sha256": "39507bb7464456a30f11268491913ac8f32cda96bf93b223db30c2e6bde0e919",
+  "baseline_sha": "b2cd09efda3f42e9879ed5a6ad80e0b34cd15ccc",
+  "error": "The native observer repair-status diagnostic opened the history source with the writer adapter, changing DELETE header bytes, creating WAL/SHM, updating access metadata and creating a missing dataset.",
+  "fix": "Capture a coherent private main/WAL snapshot with no source SQLite open or atime change; use the same one-second absolute read deadline; missing, invalid and unsafe sources return false without repair or creation.",
+  "guards": [
+    "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source",
+    "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_missing_history_diagnostic_creates_no_database_or_directory",
+    "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_invalid_history_diagnostic_preserves_evidence_and_stays_closed"
+  ],
+  "limits": [
+    "This literal2026-09-21 repair milestone does not certify current coverage,20 complete sessions, current currency/basis inventory or PAPER eligibility.",
+    "Native offline fixture proof; no productive migration, dataset ingestion or current host validation.",
+    "Final frozen governed execution and exact artifact validation pending."
+  ],
+  "native_caller": "bf_production_paper_observer._history_cutoff_repair_complete",
+  "rca": "A dated read-only milestone query used HistoricalStore.connect, which negotiates writer journal mode and bootstraps directories.",
+  "receipts": {
+    "green": {
+      "path": "docs/audits/convergence/evidence/observer-history-diagnostic-green.xml",
+      "sha256": "2f5579dd3b7ab7716d1faf43ca6306f7aef209590254db7d7cafd66da3a9a5c0",
+      "summary": {
+        "errors": "0",
+        "failures": "0",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "6",
+        "time": "0.318",
+        "timestamp": "2026-10-05T06:24:31.421590+00:00"
+      }
+    },
+    "red": {
+      "path": "docs/audits/convergence/evidence/observer-history-diagnostic-red.xml",
+      "sha256": "a4f971c5432843b66e0d43d9b4e3360c36a6edcef416feef557fa17dd66d8058",
+      "summary": {
+        "errors": "0",
+        "failures": "6",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "6",
+        "time": "1.788",
+        "timestamp": "2026-10-05T06:21:47.176366+00:00"
+      }
+    }
+  },
+  "schema": "rc6.observer-history-diagnostic-autocorrection.v1",
+  "status": "GREEN_NATIVE_WORKTREE_REQUIRES_FINAL_FROZEN_EXECUTION",
+  "variant_scope": "Two dated marker states x DELETE/WAL-without-SHM, plus actually absent and malformed sources; six executions are not six additional original scenarios."
+}

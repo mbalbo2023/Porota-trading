@@ -1,0 +1,6 @@
+tree 601e5427ad2d0791b93bae5f54fb9693e6055646
+parent 1d60ec2ced05ce7793028f5a04f707cb66fa5cda
+author Codex <codex@openai.com> 1791250004 +0000
+committer Codex <codex@openai.com> 1791250004 +0000
+
+test: preserve bounded physical Cython namespace diagnostics

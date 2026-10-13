@@ -1,0 +1,34 @@
+[
+  {
+    "cpu_seconds": 10.866179868,
+    "durable_limit": 33554432,
+    "engines_identity": null,
+    "expansion_limit": 67108864,
+    "native_graph_identity": 140020546759296,
+    "native_instance_identity": 140020486876816,
+    "ordinal": 1,
+    "original_constructor_code_identity_verified": true,
+    "original_constructor_code_sha256": "e921a52648a3ec1af3713a0057132c02b0bd3f2a92ad4cfb53b51fe07ea0fc84",
+    "peak_rss_bytes": 773992448,
+    "pstats_filename": "ctor-01-funnel_checkpoint.pstats",
+    "returned_normally": true,
+    "role": "funnel_checkpoint",
+    "wall_seconds": 10.875159051000082
+  },
+  {
+    "cpu_seconds": 56.275961568,
+    "durable_limit": 67108736,
+    "engines_identity": 140020927781184,
+    "expansion_limit": 536870912,
+    "native_graph_identity": 140020479659328,
+    "native_instance_identity": 140020478622160,
+    "ordinal": 2,
+    "original_constructor_code_identity_verified": true,
+    "original_constructor_code_sha256": "e921a52648a3ec1af3713a0057132c02b0bd3f2a92ad4cfb53b51fe07ea0fc84",
+    "peak_rss_bytes": 1211416576,
+    "pstats_filename": "ctor-02-report.pstats",
+    "returned_normally": false,
+    "role": "report",
+    "wall_seconds": 56.281922124999255
+  }
+]

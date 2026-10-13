@@ -1,0 +1,224 @@
+"""Fresh sequential launcher for natural phase-child barrier components.
+
+This uses the actual source-pinned owned native child manager. A successful
+negative control preserves the phase's original RED and is never Gov GREEN.
+"""
+import argparse
+import hashlib
+from importlib import metadata
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import runpy
+import stat
+import sys
+import time
+
+CONTROL = Path(__file__).absolute().parent
+ROOT = CONTROL.parent
+SOURCE = Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source')
+FIELDS = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink',
+          'st_size', 'st_blocks', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')
+WORKING_INPUTS = {
+    'scripts/rc6_controlled_governed_runner.py': '316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67',
+    'scripts/rc6_controlled_native_child_manager.py': '55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8',
+    'ops/policy/rc6-supply-chain-v1.json': 'b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462',
+    'docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source':
+        'ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec',
+}
+PINNED_PREPARED_INPUTS = {
+    'old-governed-runner.py.source': '316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67',
+    'new-governed-runner.py.source': 'a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47',
+    'owned-native-child-manager.py.source': '55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8',
+    'frozen157-policy.json.source': 'b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462',
+}
+
+
+def check(condition, reason):
+    if not condition:
+        raise RuntimeError(reason)
+
+
+def attrs(value):
+    return {name: getattr(value, name) for name in FIELDS}
+
+
+def read_owned(path, maximum=1024**2):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
+    try:
+        before = os.fstat(descriptor)
+        check(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+              and before.st_uid == os.geteuid() and before.st_size <= maximum,
+              'OWNED_SINGLE_LINK_CONTROL_MEMBER_REQUIRED')
+        raw = os.read(descriptor, maximum+1)
+        check(len(raw) == before.st_size and attrs(before) == attrs(os.fstat(descriptor))
+              == attrs(path.lstat()), 'CONTROL_ALL11_STABILITY_FAILED')
+        return raw, attrs(before)
+    finally:
+        os.close(descriptor)
+
+
+def write_raw(path, raw, mode=0o600):
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, mode)
+    with os.fdopen(descriptor, 'wb') as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def save(path, value):
+    raw = (json.dumps(value, indent=2, sort_keys=True, allow_nan=False)+'\n').encode()
+    write_raw(path, raw)
+    return hashlib.sha256(raw).hexdigest()
+
+
+def snapshot_working():
+    rows = {}
+    for name, expected in WORKING_INPUTS.items():
+        raw, actual = read_owned(SOURCE/name)
+        check(hashlib.sha256(raw).hexdigest() == expected, 'FROZEN_WORKING_INPUT_REBOUND:'+name)
+        rows[name] = {'sha256': expected, 'bytes': len(raw), 'stat': actual}
+    return rows
+
+
+def real157(policy):
+    normal = lambda name: re.sub(r'[-_.]+', '-', name.lower())
+    expected = {normal(row['name']): row['version'] for row in policy['packages']+policy['build_tools']}
+    rows = sorted((normal(item.metadata['Name']), item.version) for item in metadata.distributions())
+    check(len(expected) == len(rows) == len(dict(rows)) == 157 and expected == dict(rows),
+          'LOCKED_REAL157_METADATA_NOT_EXPECTED')
+    return [{'name': name, 'version': version} for name, version in rows]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('epoch', choices=('311', '312'))
+    args = parser.parse_args()
+    check(sys.executable == str(SOURCE.parent/('venv'+args.epoch)/'bin/python')
+          and platform.python_version() == ('3.11.16' if args.epoch == '311' else '3.12.14'),
+          'ACTUAL_LOCKED_INTERPRETER_REQUIRED')
+    os.umask(0o022)
+    for name, expected in PINNED_PREPARED_INPUTS.items():
+        check(hashlib.sha256(read_owned(CONTROL/name)[0]).hexdigest() == expected,
+              'PREPARED_PINNED_INPUT_REBOUND:'+name)
+    # Bootstrap loading is declared. All productive Source snapshots below
+    # are preceded by the actual same-parent pre_capture kernel witness.
+    manager = runpy.run_path(str(CONTROL/'owned-native-child-manager.py.source'))
+    kernel_before = manager['pre_capture_kernel_state']()
+    before = snapshot_working()
+    policy = json.loads(read_owned(CONTROL/'frozen157-policy.json.source')[0])
+    metadata_before = real157(policy)
+    prepared_manifest = json.loads(read_owned(CONTROL/'launch-inputs.final.json')[0])
+    for name, claimed in prepared_manifest['control_inputs'].items():
+        raw, _actual = read_owned(CONTROL/name)
+        check(hashlib.sha256(raw).hexdigest() == claimed['sha256'], 'FINAL_PREPARED_CONTROL_REBOUND:'+name)
+    out = ROOT/('epoch'+args.epoch)
+    check(not out.exists(), 'FRESH_EPOCH_NAMESPACE_REQUIRED_NO_RETRY_OVERWRITE')
+    out.mkdir(mode=0o700)
+    cases = ('old_unknown5', 'new_unknown5', 'new_positive')
+    save(out/'launch.json', {'schema': 'rc6.phase-child-source-barrier-natural-component-launch.v1',
+        'epoch': args.epoch, 'python': sys.version, 'interpreter': sys.executable,
+        'source_sha_context': '0f73e2cd681672b7a9a3065e99a72915ba93f4fd',
+        'source_tree_context': '36227e546cb311546f08b80880064dde86a6f630',
+        'cases': list(cases), 'outer_component_management_seconds': 60,
+        'original_finalizer_seconds': 5, 'real_live_worker_seconds': 6,
+        'original_manager_term_grace': 2, 'original_manager_progress_poll': 5,
+        'original_manager_failed_cleanup_seconds': 5, 'kernel_before': kernel_before,
+        'working_source_before': before, 'installed_metadata157_before': metadata_before,
+        'prepared_inputs': prepared_manifest, 'component_only_not_whole_Gov': True,
+        'source_overlay_count': 0, 'PAPER_SHADOW_ONLY': True, 'real_orders_sent': 0})
+    results = []
+    sequence = 0
+    for case in cases:
+        manager['pre_capture_kernel_state']()
+        case_root = out/case
+        case_root.mkdir(mode=0o700)
+        catalog, phase_output = case_root/'source', case_root/'phase-output'
+        catalog.mkdir(mode=0o700)
+        (catalog/'tests').mkdir(mode=0o755)
+        phase_output.mkdir(mode=0o700)
+        template = CONTROL/('test_positive_component.py.source' if case == 'new_positive'
+                            else 'test_live_component.py.source')
+        raw, _actual = read_owned(template)
+        write_raw(catalog/'tests/test_phase_component.py', raw, mode=0o644)
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith(('POROTA_', 'PAPER_', 'PPI_', 'IOL_', 'BYMA_', 'PYTHON'))
+               and key not in ('DATA_DIR', 'HIST_DB_PATH')}
+        env.update(PYTHONDONTWRITEBYTECODE='1', PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
+        argv = [sys.executable, '-I', '-B', str(CONTROL/'phase_component.py'),
+                '--epoch', args.epoch, '--case', case, '--case-root', str(case_root)]
+        save(case_root/'launch-intent.json', {'case': case, 'epoch': args.epoch, 'argv': argv,
+            'parent_pid': os.getpid(), 'outer_component_seconds': 60,
+            'original_finalizer_seconds': 5, 'no_Gov_scope_claim': True})
+
+        def progress(stage, pid, entered, deadline, descriptor):
+            nonlocal sequence
+            row = {'case': case, 'epoch': args.epoch, 'stage': stage, 'pid': pid,
+                   'wall_seconds': time.monotonic()-entered,
+                   'owned_log_bytes_fstat_only': os.fstat(descriptor).st_size,
+                   'management_deadline': deadline, 'scope': 'ACTUAL_COMPONENT_MANAGER_ONLY'}
+            save(out/('progress-'+str(sequence).zfill(4)+'.json'), row)
+            sequence += 1
+            print(json.dumps({'progress': row}), flush=True)
+
+        print(json.dumps({'epoch': args.epoch, 'case': case, 'start': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                          'argv': argv}), flush=True)
+        kernel = manager['managed_native_child'](argv, catalog, case_root/'component.log', env,
+                    60, terminate_grace=2, progress_poll=5, progress=progress)
+        save(case_root/'outer-kernel.json', kernel)
+        if not manager['managed_custody_closed'](kernel):
+            save(out/'UNKNOWN-control-only.json', {'case': case, 'kernel': kernel,
+                'source_payload_junit_log_postreads': 0, 'no_cleanup_attempted': True,
+                'component_only_not_Gov': True, 'real_orders_sent': 0})
+            print(json.dumps({'epoch': args.epoch, 'case': case, 'outer_FIN_UNKNOWN': True, 'payload_reads': 0}), flush=True)
+            return 1
+        same_parent_after = manager['pre_capture_kernel_state']()
+        # Read the component report only AFTER exact parent's wait4/ECHILD/PGID.
+        condition_ok = manager['managed_phase_green'](kernel)
+        component = None
+        if condition_ok:
+            component_raw, _actual = read_owned(case_root/'component-receipt.json')
+            component = json.loads(component_raw)
+            condition_ok = component['component_control_condition_observed'] is True
+        result = {'case': case, 'component_expected_condition_observed': condition_ok,
+            'outer_kernel': kernel, 'actual_same_parent_kernel_after': same_parent_after,
+            'original_phase_status': component['original_phase_status'] if component else 'UNQUALIFIED',
+            'original_phase_RED_reclassified': False,
+            'source_postattempts': component['original_source_postread_attempts'] if component else None,
+            'component_receipt_sha256': hashlib.sha256(component_raw).hexdigest() if component else None}
+        save(case_root/'closed-result.json', result)
+        results.append(result)
+        print(json.dumps({'epoch': args.epoch, 'case': case, 'physical_FIN': True,
+            'condition_observed': condition_ok, 'original_phase_status': result['original_phase_status'],
+            'source_postattempts': result['source_postattempts']}), flush=True)
+        if not condition_ok:
+            save(out/'RED-closed-control.json', {'results': results,
+                 'no_next_case_launched': True, 'no_Gov_claim': True})
+            return 1
+    after_kernel = manager['pre_capture_kernel_state']()
+    after = snapshot_working()
+    metadata_after = real157(policy)
+    stable10 = all(before[name]['sha256'] == after[name]['sha256']
+        and {key: value for key, value in before[name]['stat'].items() if key != 'st_atime_ns'}
+         == {key: value for key, value in after[name]['stat'].items() if key != 'st_atime_ns'} for name in before)
+    check(stable10 and metadata_before == metadata_after, 'FROZEN_SOURCE_OR_LOCKED157_CHANGED')
+    receipt = {'schema': 'rc6.phase-child-source-barrier-components-epoch.v1', 'epoch': args.epoch,
+        'results': results, 'actual_same_parent_kernel_after': after_kernel,
+        'working_source_before': before, 'working_source_after': after,
+        'working_source_bytes10_stable': stable10,
+        'working_code_atime_evolution': {name: [before[name]['stat']['st_atime_ns'], after[name]['stat']['st_atime_ns']]
+                                       for name in before},
+        'real_installed_metadata157_equal_before_after': metadata_before == metadata_after,
+        'component_control_conditions_observed': len(results), 'whole_Gov_gate': False,
+        'whole_Git_source_qualification': False, 'no_namespace_deleted': True,
+        'PAPER_SHADOW_ONLY': True, 'real_orders_sent': 0}
+    sha = save(out/'receipt.json', receipt)
+    print(json.dumps({'epoch': args.epoch, 'receipt_sha256': sha,
+        'component_conditions_observed': len(results), 'physical_FIN': True, 'whole_Gov_gate': False}), flush=True)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

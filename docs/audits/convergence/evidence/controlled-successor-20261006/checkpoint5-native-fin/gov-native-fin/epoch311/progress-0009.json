@@ -1,0 +1,9 @@
+{
+  "management_deadline": 25714.384165506,
+  "owned_log_bytes_fstat_only": 0,
+  "phase": "component-old-mainUnknown",
+  "pid": 23914,
+  "scope": "LOCAL_FOCAL_PARENT_ONLY_NOT_GLOBAL_FIN",
+  "stage": "started",
+  "wall_seconds": 0.0005886010003450792
+}

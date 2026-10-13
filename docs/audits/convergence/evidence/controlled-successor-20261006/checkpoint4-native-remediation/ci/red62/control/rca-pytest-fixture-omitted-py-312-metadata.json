@@ -1,0 +1,180 @@
+{
+  "python": "3.12.14",
+  "environment": {
+    "implementation_name": "cpython",
+    "implementation_version": "3.12.14",
+    "os_name": "posix",
+    "platform_machine": "x86_64",
+    "platform_release": "6.18.44",
+    "platform_system": "Linux",
+    "platform_version": "#1 SMP Sat Sep 26 20:02:31 UTC 2026",
+    "python_full_version": "3.12.14",
+    "platform_python_implementation": "CPython",
+    "python_version": "3.12",
+    "sys_platform": "linux",
+    "extra": ""
+  },
+  "closure": [
+    {
+      "distribution": "pytest",
+      "version": "9.1.1",
+      "requirements": [
+        {
+          "raw": "colorama>=0.4; sys_platform == \"win32\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "colorama",
+          "installed_version": null
+        },
+        {
+          "raw": "exceptiongroup>=1; python_version < \"3.11\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "exceptiongroup",
+          "installed_version": null
+        },
+        {
+          "raw": "iniconfig>=1.0.1",
+          "active_current_epoch_no_extra": true,
+          "distribution": "iniconfig",
+          "installed_version": "2.3.0"
+        },
+        {
+          "raw": "packaging>=22",
+          "active_current_epoch_no_extra": true,
+          "distribution": "packaging",
+          "installed_version": "26.3"
+        },
+        {
+          "raw": "pluggy<2,>=1.5",
+          "active_current_epoch_no_extra": true,
+          "distribution": "pluggy",
+          "installed_version": "1.6.0"
+        },
+        {
+          "raw": "pygments>=2.7.2",
+          "active_current_epoch_no_extra": true,
+          "distribution": "pygments",
+          "installed_version": "2.21.0"
+        },
+        {
+          "raw": "tomli>=1; python_version < \"3.11\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "tomli",
+          "installed_version": null
+        },
+        {
+          "raw": "argcomplete; extra == \"dev\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "argcomplete",
+          "installed_version": null
+        },
+        {
+          "raw": "attrs>=19.2; extra == \"dev\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "attrs",
+          "installed_version": null
+        },
+        {
+          "raw": "hypothesis>=3.56; extra == \"dev\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "hypothesis",
+          "installed_version": null
+        },
+        {
+          "raw": "mock; extra == \"dev\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "mock",
+          "installed_version": null
+        },
+        {
+          "raw": "requests; extra == \"dev\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "requests",
+          "installed_version": null
+        },
+        {
+          "raw": "setuptools; extra == \"dev\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "setuptools",
+          "installed_version": null
+        },
+        {
+          "raw": "xmlschema; extra == \"dev\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "xmlschema",
+          "installed_version": null
+        }
+      ]
+    },
+    {
+      "distribution": "iniconfig",
+      "version": "2.3.0",
+      "requirements": []
+    },
+    {
+      "distribution": "packaging",
+      "version": "26.3",
+      "requirements": []
+    },
+    {
+      "distribution": "pluggy",
+      "version": "1.6.0",
+      "requirements": [
+        {
+          "raw": "pre-commit; extra == \"dev\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "pre-commit",
+          "installed_version": null
+        },
+        {
+          "raw": "tox; extra == \"dev\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "tox",
+          "installed_version": null
+        },
+        {
+          "raw": "pytest; extra == \"testing\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "pytest",
+          "installed_version": null
+        },
+        {
+          "raw": "pytest-benchmark; extra == \"testing\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "pytest-benchmark",
+          "installed_version": null
+        },
+        {
+          "raw": "coverage; extra == \"testing\"",
+          "active_current_epoch_no_extra": false,
+          "distribution": "coverage",
+          "installed_version": null
+        }
+      ]
+    },
+    {
+      "distribution": "pygments",
+      "version": "2.21.0",
+      "requirements": [
+        {
+          "raw": "colorama>=0.4.6; extra == 'windows-terminal'",
+          "active_current_epoch_no_extra": false,
+          "distribution": "colorama",
+          "installed_version": null
+        }
+      ]
+    }
+  ],
+  "pytest_owned_shim": {
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/lib/python3.12/site-packages/py.py",
+    "member": "py.py",
+    "mode": "0o600",
+    "uid": 1000,
+    "gid": 1000,
+    "nlink": 1,
+    "bytes": 329,
+    "sha256": "b71675b5d9845ba0814e9e88767f88dac3b3cc0d3128da028bd45edbb523e871",
+    "record_hash_mode": "sha256",
+    "record_hash": "txZ1tdmEW6CBTp6Idn-I2sOzzA0xKNoCi9Re27Uj6HE",
+    "record_matches_actual": true
+  }
+}

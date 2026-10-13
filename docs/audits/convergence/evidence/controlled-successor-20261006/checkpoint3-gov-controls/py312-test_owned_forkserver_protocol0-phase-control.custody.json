@@ -1,0 +1,57 @@
+{
+  "actual_child_reaped": true,
+  "actual_launch_to_pid_reap_wall_seconds": 0.3008335909999005,
+  "adopted_descendants_reaped": [],
+  "command": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/gov-runner-controls/diagnostic-final312/fixture/pytest/test_owned_forkserver_protocol0/phase-control.py"
+  ],
+  "cpu_system_seconds": 0.040056,
+  "cpu_user_seconds": 0.208179,
+  "kernel_owned_child_observations": [
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "before_popen_after_subreaper_activation"
+    },
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "after_main_pid_reap"
+    }
+  ],
+  "kernel_pre_popen_echild_verified": true,
+  "kernel_wait4_zero_observed_irreversible_red": false,
+  "late_observed_main_reap_irreversible_red": false,
+  "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+  "owned_children_exhaustion_verified": true,
+  "owned_cleanup_management_bound_seconds": 5,
+  "owned_group_signal_observations": [],
+  "peak_rss_bytes": 24936448,
+  "phase_acceptance_deadline_seconds": 5.0,
+  "pid": 6047,
+  "proc_task_children_examined": false,
+  "process_group_absent_after_reap": true,
+  "process_group_absent_at_main_reap": true,
+  "remaining_owned_children": [],
+  "residual_descendants_observed": [],
+  "returncode": 0,
+  "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+  "sigint_failure_grace_seconds": 20,
+  "subreaper_previous_state": 0,
+  "subreaper_restore_attempted_on_all_activated_paths": true,
+  "supervisor_errors": [],
+  "supervisor_kernel_identity_before_spawn": {
+    "Pid": "6045",
+    "Tgid": "6045",
+    "Uid": "1000\t1000\t1000\t1000"
+  },
+  "supervisor_native_tid": 6045,
+  "supervisor_pid": 6045,
+  "termination_reap_restore_cleanup_seconds": 5.667400000675116e-05,
+  "timed_out": false,
+  "wait4_reaped_pid": 6047,
+  "wall_seconds": 0.3011672239999825
+}

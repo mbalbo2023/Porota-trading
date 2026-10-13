@@ -1,0 +1,153 @@
+{
+  "bounds": {
+    "cleanup_management_loop_seconds": 5,
+    "cleanup_observation_cap": 1024,
+    "expected_total_seconds": "approximately2-3 for normal responsive local processes; actual timing not yet measured",
+    "native_phase_timeout_policy_unchanged": "Gov CLI original60..5400; synthetic direct phase function arguments do not change CLI or product policy",
+    "percase_phase_limit_seconds": {
+      "other_cases": 1,
+      "short_cases": 0.05
+    },
+    "same_global_deadline_shared_by_all_cleanup": "No reset or second5second budget after originalmainstart+20",
+    "source_file_cap_bytes": 131072,
+    "total_end_to_end_acceptance_seconds": 20,
+    "watchdog_preemption_seconds": 15
+  },
+  "case_count": 10,
+  "created_at_utc": "2026-10-06T01:03:43Z",
+  "execution_counts_at_freeze": {
+    "docker_build_or_artifact_or_runtime": 0,
+    "driver_executions": 0,
+    "external_origins_or_data_or_tar_body_reads": 0,
+    "gov_or_pytest_collection": 0,
+    "product_imports_or_native_tests": 0,
+    "synthetic_process_controls": 0
+  },
+  "implementation": {
+    "baseline_protection": "Original f4 orphan scenario always runs under outer own subreaper and tracked PGID. Its partial acceptance is recorded as a controlled process-custody finding; bounded finally terminates group and drains ECHILD before driver proceeds/exits.",
+    "candidate_custody": "Actual immutable Sourcefunction controls and actual extracted gate; resources are real PID-specific wait4 observations, not synthetic JSON PASS.",
+    "candidate_selection": "Extract only exact require and subprocess_phase function AST; never exec full candidate/baseline modules. Compile both actual candidate main require statements and original baseline main gate unchanged.",
+    "child_scripts": "Four fixed tiny scripts: normal sleep.005, exit1, sleep5, own inherited-PGID grandchild sleep5. Exact same interpreter -I-B-S and minimal constant environment; no product files or operational environment used.",
+    "observations": "Socket/SQL attempts denied in this driver process; Popen allowed only fixed own sys.executable scripts. No kernel network namespace/transitive child traffic attestation claimed.",
+    "outer_custody": "Own outer subreaper restored only after total cleanup verifies kernelECHILD and every known PopenPGID absent; residual/unknown retains active subreaper and RED, with explicit errors/raw states. No foreign or individual PID signals/globalproc scans.",
+    "publication": "Per-case source resources/errors and cleanup-result are preserved even on failed cleanup; main maintains complete global registry for final bounded verification; master RED receipt records all errors. Fresh exclusive external outputs only.",
+    "sources": "Before/after NOFOLLOW+NOATIME+NONBLOCK capture of candidate,baseline,driver byteSHA and all11 stats. Byte-exact .py.source copies preserve executable inputs without collection implications.",
+    "stdlib_interpreter": "current approved frozen sys.executable, outer -I -B -S; only311/312 Linux nonroot wait4. No installed157 or wheel proof claimed by this stdlib process diagnostic.",
+    "watchdog": "Installed and armed at main entry before any Source reads/copies/fsync. Enclosing whole-main finally always cancels/restores handler, including failed prctl observations. Management cancels alarm before cleanup so it cannot interrupt reaping; next case rearms only remaining original preempt15 budget. Cleanup deadline MIN(now+5, originalmainstart+20) is shared, never extended."
+  },
+  "original_f4_control": {
+    "expected": "BASELINE_GAP_REPRODUCED",
+    "id": "BASELINE_F4_ORPHAN",
+    "meaning": "Original gate accepts main0/timedfalse while ownedgroup alive and wait4(-1) returns0. Outer ownedcustody guarantees bounded own cleanup. Not actualfullGov/financial/redproduction."
+  },
+  "pending": [
+    "Root and Finance Source review of v2 literal pin",
+    "Root separate controlled-stdlib slot grant; e803 unexecuted",
+    "Actual raw stdout/stderr and own kernel reap measurement by approved executor",
+    "No fullGov until final source C and all material gates closed"
+  ],
+  "pins": {
+    "baseline": {
+      "bytes": 31518,
+      "mode_octal": "0644",
+      "path": "/tmp/rc6_run_frozen_governed_v2.py",
+      "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+    },
+    "candidate": {
+      "bytes": 43365,
+      "mode_octal": "0644",
+      "path": "/tmp/rc6_run_frozen_governed_v3_candidate.py",
+      "sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313"
+    },
+    "driver": {
+      "bytes": 29521,
+      "mode_octal": "0644",
+      "path": "/tmp/rc6_governed_v3_owned_process_controls_candidate_v2.py",
+      "sha256": "c262ebcc57184b839e15b2023f1b12b8eb8064d864902d2b01f9aa2a5852d623"
+    }
+  },
+  "recipe": {
+    "argv": [
+      "<approved frozen311 sys.executable>",
+      "-I",
+      "-B",
+      "-S",
+      "/tmp/rc6_governed_v3_owned_process_controls_candidate_v2.py",
+      "--output-root",
+      "<new external private output path>"
+    ],
+    "executor_must_capture_raw_stdout_stderr_and_actual_mainreap": true,
+    "expected_exit0_only_if_all10_and_end_to_end20_and_all_owned_resources_cleared": true,
+    "source_plan_is_not_execution": true
+  },
+  "same_source_c430_actual_controls": [
+    {
+      "expected": "ACCEPTED",
+      "id": "NORMAL_ZERO",
+      "meaning": "Main0 exactreap, pre/post ECHILD, group absent, noerrors/late/zero."
+    },
+    {
+      "expected": "REJECTED",
+      "id": "EXIT_ONE",
+      "meaning": "Actualmainexit1 and kernelreap; original maingate remains mandatory."
+    },
+    {
+      "expected": "REJECTED",
+      "id": "LATE_OBSERVED_REAP",
+      "meaning": "Fastexit0 observed after .05s due actual .1 poll; late flag irreversible and both gates reject."
+    },
+    {
+      "expected": "REJECTED",
+      "id": "TIMEOUT",
+      "meaning": "Alive sleep5 after .05; actual SIGINT, specificmainreap and ownedcleanup."
+    },
+    {
+      "expected": "REJECTED",
+      "id": "ADOPTED_ALIVE",
+      "meaning": "Main0 leaves inherited-PGID child alive, postmainwait4zero irreversible; groupTERM+adoptedpositive+ECHILD, nowaiver aftercleanup."
+    },
+    {
+      "expected": "REJECTED",
+      "id": "SIGNAL_ERROR",
+      "meaning": "Controlled SIGINT EIO before delivery, errorrecord; finally actualTERM/reap/restores previous subreaper."
+    },
+    {
+      "expected": "REJECTED",
+      "id": "SPAWN_ERROR",
+      "meaning": "Controlled Popen EIO before child exists; nofalsemainreap/noempty interpreted asNativepass."
+    },
+    {
+      "expected": "REJECTED",
+      "id": "LOG_EXIT_ERROR",
+      "meaning": "Controlled stream-exit EIO afteractualmainreap; kernelcustody+restore remains, error blocks gate."
+    },
+    {
+      "expected": "REJECTED",
+      "id": "PRESPAWN_OWN_CHILD",
+      "meaning": "An explicitly tracked fixture child alreadyalive yields prePopen kernel0; candidate never spawns its phase, outer boundedcleanup removes onlyknown fixture PGID."
+    }
+  ],
+  "schema": "rc6.governed-owned-process-controls-source-plan.v1",
+  "scope": "SYNTHETIC_OWNED_KERNEL_PROCESS_CUSTODY_CONTROLS_ONLY_NOT_PRODUCT_NATIVE_GOV_FINANCIAL_OR_ARTIFACT_EXECUTION",
+  "source_checks_performed": [
+    "read exact three source bytes and SHA256",
+    "AST parse and compile only",
+    "candidate normalized full module AST from prior Sourceplan; baseline f4 immutable",
+    "AST all definitions unchanged except finish_owned/run_case/main; exact same10 controls and exact baseline/candidate case gate assertions preserved"
+  ],
+  "source_execution_counts_unchanged_zero": true,
+  "source_findings_closed_in_v2": [
+    "Root: cleanup exceptions could abort per-case RAW/publication and outer restore even without verifiedECHILD",
+    "Root: live SIGALRM could interrupt finally cleanup",
+    "Finance: source prep/fsync preceded timer arming",
+    "Finance: prctl_state observation could raise before alarm-restoration finally"
+  ],
+  "source_findings_were_source_inferences_not_executed_baseline_red": true,
+  "source_forward_from": {
+    "bytes": 24215,
+    "mode_octal": "0644",
+    "path": "/tmp/rc6_governed_v3_owned_process_controls_candidate.py",
+    "sha256": "e8032918e8476a7d41d39acfeeb54e33122884a0dec0f8805be056f757375a81"
+  },
+  "status": "SOURCE_PREPARATION_ONLY_CONTROLS_NOT_EXECUTED"
+}

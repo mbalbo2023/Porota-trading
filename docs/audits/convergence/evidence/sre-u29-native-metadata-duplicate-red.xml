@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="0.124" timestamp="2026-10-05T07:41:37.492757+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_convergence_sre_supply_cleanup" name="test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure[wheel]" time="0.006"><failure message="AssertionError: assert 'GREEN' == 'REPRODUCIBILITY_GAP'&#10;  &#10;  - REPRODUCIBILITY_GAP&#10;  + GREEN">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-264/test_native_distribution_metad0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f48abeb1c50&gt;
+duplicate_name = 'wheel'
+
+    @pytest.mark.parametrize("duplicate_name", ["wheel", "Wheel"])
+    def test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure(
+            tmp_path, monkeypatch, duplicate_name):
+        _, _, kwargs = hashed_inputs()
+        # Real importlib.metadata reads these isolated synthetic dist-info files.
+        # No package install, module bytes, interpreter metadata, or pip is changed.
+        monkeypatch.setattr(sys, "path", [str(tmp_path)])
+        for directory, name, version in (("requests", "requests", "2.34.2"),
+                                         ("pandas", "pandas", "2.3.3"),
+                                         ("wheel", "wheel", "0.45.1")):
+            path = tmp_path / (directory + "-" + version + ".dist-info")
+            path.mkdir()
+            (path / "METADATA").write_text(
+                "Metadata-Version: 2.1\nName: " + name + "\nVersion: " + version + "\n")
+        positive = installed_distribution_audit(kwargs["supply_chain_policy"])
+        assert positive["status"] == "GREEN" and positive["installed_total"] == 3
+        extra = tmp_path / "duplicate-witness-0.45.1.dist-info"
+        extra.mkdir()
+        (extra / "METADATA").write_text(
+            "Metadata-Version: 2.1\nName: " + duplicate_name + "\nVersion: 0.45.1\n")
+        rejected = installed_distribution_audit(kwargs["supply_chain_policy"])
+&gt;       assert rejected["status"] == "REPRODUCIBILITY_GAP"
+E       AssertionError: assert 'GREEN' == 'REPRODUCIBILITY_GAP'
+E         
+E         - REPRODUCIBILITY_GAP
+E         + GREEN
+
+tests/test_rc6_convergence_sre_supply_cleanup.py:80: AssertionError</failure></testcase><testcase classname="tests.test_rc6_convergence_sre_supply_cleanup" name="test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure[Wheel]" time="0.003"><failure message="AssertionError: assert 'GREEN' == 'REPRODUCIBILITY_GAP'&#10;  &#10;  - REPRODUCIBILITY_GAP&#10;  + GREEN">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-264/test_native_distribution_metad1')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f48abeb2310&gt;
+duplicate_name = 'Wheel'
+
+    @pytest.mark.parametrize("duplicate_name", ["wheel", "Wheel"])
+    def test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure(
+            tmp_path, monkeypatch, duplicate_name):
+        _, _, kwargs = hashed_inputs()
+        # Real importlib.metadata reads these isolated synthetic dist-info files.
+        # No package install, module bytes, interpreter metadata, or pip is changed.
+        monkeypatch.setattr(sys, "path", [str(tmp_path)])
+        for directory, name, version in (("requests", "requests", "2.34.2"),
+                                         ("pandas", "pandas", "2.3.3"),
+                                         ("wheel", "wheel", "0.45.1")):
+            path = tmp_path / (directory + "-" + version + ".dist-info")
+            path.mkdir()
+            (path / "METADATA").write_text(
+                "Metadata-Version: 2.1\nName: " + name + "\nVersion: " + version + "\n")
+        positive = installed_distribution_audit(kwargs["supply_chain_policy"])
+        assert positive["status"] == "GREEN" and positive["installed_total"] == 3
+        extra = tmp_path / "duplicate-witness-0.45.1.dist-info"
+        extra.mkdir()
+        (extra / "METADATA").write_text(
+            "Metadata-Version: 2.1\nName: " + duplicate_name + "\nVersion: 0.45.1\n")
+        rejected = installed_distribution_audit(kwargs["supply_chain_policy"])
+&gt;       assert rejected["status"] == "REPRODUCIBILITY_GAP"
+E       AssertionError: assert 'GREEN' == 'REPRODUCIBILITY_GAP'
+E         
+E         - REPRODUCIBILITY_GAP
+E         + GREEN
+
+tests/test_rc6_convergence_sre_supply_cleanup.py:80: AssertionError</failure></testcase></testsuite></testsuites>

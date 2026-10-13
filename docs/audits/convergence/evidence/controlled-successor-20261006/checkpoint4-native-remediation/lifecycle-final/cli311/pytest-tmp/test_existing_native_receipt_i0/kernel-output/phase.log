@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/scripts/rc6_issue465_stress.py", line 903, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/scripts/rc6_issue465_stress.py", line 825, in main
+    lifecycle.require(not output.exists() and not output.is_relative_to(ROOT),
+  File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/scripts/rc6_controlled_governed_runner.py", line 312, in require
+    raise ValueError(reason)
+ValueError: FRESH_EXTERNAL_NATIVE_CLI_RECEIPT_REQUIRED

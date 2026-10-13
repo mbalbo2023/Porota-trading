@@ -1,0 +1,46 @@
+{
+  "actual_product_imports": [],
+  "child_infrastructure_finalized_before_main_exit": true,
+  "final_exit_code": 1,
+  "inet_observation_scope": "THIS_LAUNCHER_ONLY; NO_TRANSITIVE_CHILD_NETWORK_ATTESTATION",
+  "inet_socket_attempts": [],
+  "inet_socket_constructor_requests": [
+    {
+      "capability_policy": "NATIVE_IPV6_CREATION_DENIED_EAFNOSUPPORT; SUPPLIED_DESCRIPTORS_NOT_ATTESTED",
+      "event": "socket.__new__",
+      "family": 10,
+      "observation_scope": "PYTHON_CONSTRUCTOR_FAMILY_REQUEST_NOT_INDIVIDUAL_KERNEL_RESULT"
+    }
+  ],
+  "invocation_error": null,
+  "ipv6_creation_policy": {
+    "af_unix_ipc_functional": true,
+    "architecture": "x86_64",
+    "creation_denial_witnesses": [
+      {
+        "errno": 97,
+        "family": 10,
+        "operation": "socket_creation",
+        "socket_created": false
+      }
+    ],
+    "ipv4_creation_grants_operation_authority": false,
+    "kernel_errno": 97,
+    "native_socket_creation_denied_families": [
+      10
+    ],
+    "no_new_privileges": true,
+    "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+    "status": "INSTALLED_AND_KERNEL_WITNESSED",
+    "transitive_kernel_network_attestation": false
+  },
+  "native_cli_exit_code": 1,
+  "parent_pid": 8687,
+  "pid": 8694,
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "subprocess_executable_counts": {
+    "git": 4
+  },
+  "unexpected_product_imports": []
+}

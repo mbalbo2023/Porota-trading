@@ -1,0 +1,10 @@
+{"phase": "CALIBRATION", "attempt": 1, "native_rows": 512, "projection_bytes": 704512, "status": "GREEN"}
+{"phase": "CALIBRATION", "attempt": 2, "native_rows": 53090, "projection_bytes": 67833856, "status": "RED"}
+{"phase": "CALIBRATION", "attempt": 3, "native_rows": 51906, "projection_bytes": 66314240, "status": "GREEN"}
+{"phase": "NATIVE_PUBLICATION_AND_ARCHIVE", "sequence": 1, "projection_bytes": 66314240, "archived": true, "elapsed_wall_seconds": 21.770253488997696}
+{"phase": "NATIVE_PUBLICATION_AND_ARCHIVE", "sequence": 8, "projection_bytes": 380928, "archived": true, "elapsed_wall_seconds": 37.679005884994694}
+{"phase": "NATIVE_PUBLICATION_AND_ARCHIVE", "sequence": 16, "projection_bytes": 380928, "archived": true, "elapsed_wall_seconds": 58.459090281998215}
+{"phase": "NATIVE_PUBLICATION_AND_ARCHIVE", "sequence": 24, "projection_bytes": 380928, "archived": true, "elapsed_wall_seconds": 86.70569305100071}
+{"phase": "NATIVE_PUBLICATION_AND_ARCHIVE", "sequence": 32, "projection_bytes": 380928, "archived": false, "elapsed_wall_seconds": 115.76543622600002}
+{"phase": "NATIVE_PUBLICATION_AND_ARCHIVE", "sequence": 34, "projection_bytes": 380928, "archived": true, "elapsed_wall_seconds": 123.42722186599713}
+{"source_sha": "d9e7fb7d567ff745193c125dc9cd8df4e91ec5d6", "complete": true, "elapsed_wall_seconds": 126.30421641599969, "peak_rss_bytes": 340795392}

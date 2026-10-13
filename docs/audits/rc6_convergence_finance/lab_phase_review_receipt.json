@@ -1,0 +1,49 @@
+{
+  "completed_at": "2026-10-05T02:55:50.827314+00:00",
+  "configuration": {
+    "authority": "SHADOW; entry_authority=false; real_routes=[]",
+    "budget": 200,
+    "fixtures": "OFFLINE_SYNTHETIC_REAL_SQLITE_PAPER_AND_SHADOW_CALLERS; no mocked capture/clocks/writer",
+    "lab_schema": "rc6.runtime-shadow-lab.v2",
+    "native_clock_increment_microseconds": 1,
+    "small_budget_case": 1
+  },
+  "configuration_sha256": "d885834a7d05cf9200f40485fe2f87203447efec8317b14449c69e4e54921136",
+  "economic_edge": "EDGE_NO_DEMOSTRADO",
+  "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
+  "final_frozen_rerun": "REQUIRED_PENDING_PARENT_FREEZE",
+  "fixture_cut": "2026-10-05T15:58:02+00:00",
+  "lab_overlay": "/workspace/porota_rc6_worktrees/finance/rc6_shadow_runtime/lab.py",
+  "network_attempts": [],
+  "pytest_exit_code": 0,
+  "real_orders_sent": 0,
+  "root_sha": "d5b2a0a7e871333411807052dc2bcfd55c7f5327",
+  "root_sha_after": "d5b2a0a7e871333411807052dc2bcfd55c7f5327",
+  "schema": "rc6.finance-lab-phase-review.v1",
+  "seed": "NO_RANDOM_INPUTS",
+  "source_hashes_after": {
+    "/workspace/porota_rc6_convergence/be_paper_engine.py": "b7edde695875c49a75da2d125b276ea19e53350b650ee5a4c3dbba3ff1791283",
+    "/workspace/porota_rc6_convergence/rc6_paper_family_lifecycle.py": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44",
+    "/workspace/porota_rc6_convergence/rc6_performance/common.py": "d0f2a1f69e441ae260511e57f147d8edd6b797217afcd04cff2bfb281934cc3e",
+    "/workspace/porota_rc6_convergence/rc6_shadow_runtime/entry_signals.py": "3e29b1b25a1857fe96adad8c21a7db838ef0d457e188e5b9cb37df2ed72ab8f2",
+    "/workspace/porota_rc6_convergence/rc6_shadow_runtime/funnel.py": "05ba2f2b10dafddf51536b946d2cc166129f23668b8c10a5eefa5abbdbfb2837",
+    "/workspace/porota_rc6_convergence/rc6_shadow_runtime/worker.py": "c01bae2541194221dc8f770fde7d1e701f4646c78a8a8bd4d1bbcd3e5adeef54",
+    "/workspace/porota_rc6_worktrees/finance/rc6_shadow_runtime/lab.py": "779915104c49b7dce230e4fb5aae1c292b1530f0a4c9656df62e41d7fa17df32",
+    "/workspace/porota_rc6_worktrees/finance/tests/test_rc6_convergence_finance_review.py": "b2e96da65dbfed4c8fe0d4e7ecc505a2bbc972f5bd40354a1fe094d0858765aa",
+    "/workspace/porota_rc6_worktrees/finance/tests/test_rc6_shadow_lab_atomic_capture.py": "7948b6a5e9513fa91d0f960c5ae8e0a21f6603492fa2d66dcf1177753a3f27a1"
+  },
+  "source_hashes_before": {
+    "/workspace/porota_rc6_convergence/be_paper_engine.py": "b7edde695875c49a75da2d125b276ea19e53350b650ee5a4c3dbba3ff1791283",
+    "/workspace/porota_rc6_convergence/rc6_paper_family_lifecycle.py": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44",
+    "/workspace/porota_rc6_convergence/rc6_performance/common.py": "d0f2a1f69e441ae260511e57f147d8edd6b797217afcd04cff2bfb281934cc3e",
+    "/workspace/porota_rc6_convergence/rc6_shadow_runtime/entry_signals.py": "3e29b1b25a1857fe96adad8c21a7db838ef0d457e188e5b9cb37df2ed72ab8f2",
+    "/workspace/porota_rc6_convergence/rc6_shadow_runtime/funnel.py": "05ba2f2b10dafddf51536b946d2cc166129f23668b8c10a5eefa5abbdbfb2837",
+    "/workspace/porota_rc6_convergence/rc6_shadow_runtime/worker.py": "c01bae2541194221dc8f770fde7d1e701f4646c78a8a8bd4d1bbcd3e5adeef54",
+    "/workspace/porota_rc6_worktrees/finance/rc6_shadow_runtime/lab.py": "779915104c49b7dce230e4fb5aae1c292b1530f0a4c9656df62e41d7fa17df32",
+    "/workspace/porota_rc6_worktrees/finance/tests/test_rc6_convergence_finance_review.py": "b2e96da65dbfed4c8fe0d4e7ecc505a2bbc972f5bd40354a1fe094d0858765aa",
+    "/workspace/porota_rc6_worktrees/finance/tests/test_rc6_shadow_lab_atomic_capture.py": "7948b6a5e9513fa91d0f960c5ae8e0a21f6603492fa2d66dcf1177753a3f27a1"
+  },
+  "source_hashes_unchanged": true,
+  "source_status": "WORKTREE_OVERLAY_NOT_FINAL_FROZEN_ARTIFACT",
+  "started_at": "2026-10-05T02:55:42.667043+00:00"
+}

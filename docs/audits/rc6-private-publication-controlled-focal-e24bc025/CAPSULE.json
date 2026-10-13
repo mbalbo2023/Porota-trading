@@ -1,0 +1,418 @@
+{
+  "big90_full_pipeline_validated": false,
+  "capsule_root_relative_to_repository": "docs/audits/rc6-private-publication-controlled-focal-e24bc025",
+  "counts_across_epochs_are_not_independent": true,
+  "custody": {
+    "bytes": 138302,
+    "encoding": "IDENTITY",
+    "path": "CUSTODY.json",
+    "sha256": "b58784b9c9a3a376503bb8bb64908b65bb0ebea1f9689fe97e76d796e27ac317",
+    "stored_git_mode": "100644"
+  },
+  "epochs": [
+    {
+      "actual_unique_tests": 0,
+      "cause": "GIT_ARCHIVE_DEFAULT_TAR_MODE_0664_VS_GIT_100644",
+      "driver_sha256": "9b26f2d611bddc107a48e78a9ebfa720b5735281e4f52ff98310959baf69812c",
+      "harness_status": "RED",
+      "native_started": false,
+      "preparation_root": "/workspace/rc6-publication-e24bc025-controlled-preparation",
+      "product_red": false,
+      "protocol_epoch": "A",
+      "raw_root": "/workspace/rc6-publication-e24bc025-controlled-focal-20261005-a/raw",
+      "source_sha": "e24bc025edc8bf72b272cb3546ce722dd97c10c8",
+      "source_tree": "79d1e849f44cc433283fbfcadf2680615c9684a5",
+      "stage": "PREPARATION",
+      "support_sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+    },
+    {
+      "actual_child_reaped": true,
+      "actual_unique_tests": 468,
+      "child_pid": 235147,
+      "code_overlay_count": 0,
+      "driver_sha256": "8acc9a1865d4c8d83b3064ff78df3d3baba75f044f0d733367fddee2f3243883",
+      "harness_status": "RED",
+      "junit": {
+        "bytes": 117208,
+        "call_phase_unique_nodes": 468,
+        "cases": 468,
+        "counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 468
+        },
+        "exact_classname_name_join": true,
+        "sha256": "e6e4fcc66a02f5d124368c7887d12269e1c9d96144061fa72dba9767ba989528"
+      },
+      "kernel_receipt_sha256": "5d4894089bc645adedd4713f0ab4d9212764251713dae5d7c6419dbb560ad61a",
+      "native_receipt_sha256": "099fc3381953e4bf30a66a1fe308bca855c370f0db71aaaf64673386c0aaae1b",
+      "native_started": true,
+      "network_observations": [
+        "socket.socket.bind"
+      ],
+      "new_parameter_cases": 103,
+      "overlapping_existing_cases": 365,
+      "preparation_root": "/workspace/rc6-publication-e24bc025-controlled-preparation-b",
+      "product_red": false,
+      "protocol_epoch": "B",
+      "pytest_exit_code": 0,
+      "raw_root": "/workspace/rc6-publication-e24bc025-controlled-focal-20261005-b/raw",
+      "source_files": 2158,
+      "source_sha": "e24bc025edc8bf72b272cb3546ce722dd97c10c8",
+      "source_tree": "79d1e849f44cc433283fbfcadf2680615c9684a5",
+      "stage": "COMPLETED_REAL_PYTEST_AND_HARNESS_VALIDATION",
+      "support_sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+    },
+    {
+      "actual_child_reaped": true,
+      "actual_unique_tests": 468,
+      "child_pid": 235672,
+      "code_overlay_count": 0,
+      "driver_sha256": "4b9101f04439edf53cb040ba4677632370ec0ed060f2a73e7453db855c2fb58a",
+      "harness_status": "RED",
+      "junit": {
+        "bytes": 117207,
+        "call_phase_unique_nodes": 468,
+        "cases": 468,
+        "counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 468
+        },
+        "exact_classname_name_join": true,
+        "sha256": "5f9f8900137361748e208c83efc52e143a0c26a0ee4dd0d08b18d2f4a82a905b"
+      },
+      "kernel_receipt_sha256": "ffc078c8834241289ea8c9cde3b13c9d97180f6793baa8645994ee96ed964ad7",
+      "native_receipt_sha256": "323e5afdb1d62e844767ae944e0a6edb0b5bf78cde5096aef53e6f5afe5ce44d",
+      "native_started": true,
+      "network_observations": [
+        {
+          "address": {
+            "classification": "NON_APPROVED_ENDPOINT_NOT_SERIALIZED"
+          },
+          "bounded_denial_stack": [
+            {
+              "function": "blocked_inet",
+              "line": 413,
+              "module": "__main__",
+              "path": "/workspace/rc6-publication-e24bc025-controlled-focal-20261005-c/raw/runner.py"
+            },
+            {
+              "function": "_has_ipv6",
+              "line": 127,
+              "module": "urllib3.util.connection",
+              "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/urllib3/util/connection.py"
+            },
+            {
+              "function": "<module>",
+              "line": 137,
+              "module": "urllib3.util.connection",
+              "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/urllib3/util/connection.py"
+            },
+            {
+              "function": "_call_with_frames_removed",
+              "line": 241,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "exec_module",
+              "line": 940,
+              "module": "importlib._bootstrap_external",
+              "path": "<frozen importlib._bootstrap_external>"
+            },
+            {
+              "function": "_load_unlocked",
+              "line": 690,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_find_and_load_unlocked",
+              "line": 1147,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_find_and_load",
+              "line": 1176,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "<module>",
+              "line": 4,
+              "module": "urllib3.util",
+              "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/urllib3/util/__init__.py"
+            },
+            {
+              "function": "_call_with_frames_removed",
+              "line": 241,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "exec_module",
+              "line": 940,
+              "module": "importlib._bootstrap_external",
+              "path": "<frozen importlib._bootstrap_external>"
+            },
+            {
+              "function": "_load_unlocked",
+              "line": 690,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_find_and_load_unlocked",
+              "line": 1147,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_find_and_load",
+              "line": 1176,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_call_with_frames_removed",
+              "line": 241,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_find_and_load_unlocked",
+              "line": 1126,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            }
+          ],
+          "exact_narrow_probe_attribution": {
+            "caller_function": "<module>",
+            "caller_line": 137,
+            "exact_module_spec_initializing": true,
+            "function": "_has_ipv6",
+            "function_code_sha256": "94e4dfc4aa461bc3448716a5e4351d09e795613cfc5266629adb5bae4aebb6dc",
+            "line": 127,
+            "module": "urllib3.util.connection",
+            "source_path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/urllib3/util/connection.py",
+            "source_sha256": "2633bbdb69731e5ccb5cf4e4afd65605d86c7979cc5633126f50c92d5ad74a74"
+          },
+          "expected_import_probe_denied": false,
+          "family": 10,
+          "label": "socket.socket.bind",
+          "phase": {
+            "nodeid": "tests/test_rc6_publication_storage.py::test_native_worker_publisher_full_reader_and_projection_consume_the_same_exact_role_wire",
+            "phase": "call"
+          },
+          "physical_operation_called": false
+        }
+      ],
+      "new_parameter_cases": 103,
+      "overlapping_existing_cases": 365,
+      "preparation_root": "/workspace/rc6-publication-e24bc025-controlled-preparation-c",
+      "product_red": false,
+      "protocol_epoch": "C",
+      "pytest_exit_code": 0,
+      "raw_root": "/workspace/rc6-publication-e24bc025-controlled-focal-20261005-c/raw",
+      "source_files": 2158,
+      "source_sha": "e24bc025edc8bf72b272cb3546ce722dd97c10c8",
+      "source_tree": "79d1e849f44cc433283fbfcadf2680615c9684a5",
+      "stage": "COMPLETED_REAL_PYTEST_AND_HARNESS_VALIDATION",
+      "support_sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+    },
+    {
+      "actual_child_reaped": true,
+      "actual_unique_tests": 468,
+      "child_pid": 236544,
+      "code_overlay_count": 0,
+      "driver_sha256": "fc7513a4abe621a223a402d3e6e609b0a654ded30c8f931c286e268826ae6b56",
+      "harness_status": "GREEN",
+      "junit": {
+        "bytes": 117208,
+        "call_phase_unique_nodes": 468,
+        "cases": 468,
+        "counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 468
+        },
+        "exact_classname_name_join": true,
+        "sha256": "c5ccf2c98324dd28b641d55ff9774b6c55572b6f8493bbe0156115c19ec23814"
+      },
+      "kernel_receipt_sha256": "4f03521f6308de9366bbb0824c16293c49e5e09cec13abf95389e5751aa4500b",
+      "native_receipt_sha256": "e9a341f44370e371dc72954ee11984946619c4dd26f46fd1b2d73726710b212e",
+      "native_started": true,
+      "network_observations": [
+        {
+          "address": {
+            "host": "::1",
+            "port": 0
+          },
+          "bounded_denial_stack": [
+            {
+              "function": "blocked_inet",
+              "line": 417,
+              "module": "__main__",
+              "path": "/workspace/rc6-publication-e24bc025-controlled-focal-20261005-d/raw/runner.py"
+            },
+            {
+              "function": "_has_ipv6",
+              "line": 127,
+              "module": "urllib3.util.connection",
+              "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/urllib3/util/connection.py"
+            },
+            {
+              "function": "<module>",
+              "line": 137,
+              "module": "urllib3.util.connection",
+              "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/urllib3/util/connection.py"
+            },
+            {
+              "function": "_call_with_frames_removed",
+              "line": 241,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "exec_module",
+              "line": 940,
+              "module": "importlib._bootstrap_external",
+              "path": "<frozen importlib._bootstrap_external>"
+            },
+            {
+              "function": "_load_unlocked",
+              "line": 690,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_find_and_load_unlocked",
+              "line": 1147,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_find_and_load",
+              "line": 1176,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "<module>",
+              "line": 4,
+              "module": "urllib3.util",
+              "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/urllib3/util/__init__.py"
+            },
+            {
+              "function": "_call_with_frames_removed",
+              "line": 241,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "exec_module",
+              "line": 940,
+              "module": "importlib._bootstrap_external",
+              "path": "<frozen importlib._bootstrap_external>"
+            },
+            {
+              "function": "_load_unlocked",
+              "line": 690,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_find_and_load_unlocked",
+              "line": 1147,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_find_and_load",
+              "line": 1176,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_call_with_frames_removed",
+              "line": 241,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            },
+            {
+              "function": "_find_and_load_unlocked",
+              "line": 1126,
+              "module": "importlib._bootstrap",
+              "path": "<frozen importlib._bootstrap>"
+            }
+          ],
+          "exact_narrow_probe_attribution": {
+            "caller_function": "<module>",
+            "caller_line": 137,
+            "exact_module_spec_initializing": true,
+            "function": "_has_ipv6",
+            "function_code_sha256": "94e4dfc4aa461bc3448716a5e4351d09e795613cfc5266629adb5bae4aebb6dc",
+            "line": 127,
+            "module": "urllib3.util.connection",
+            "source_path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/urllib3/util/connection.py",
+            "source_sha256": "2633bbdb69731e5ccb5cf4e4afd65605d86c7979cc5633126f50c92d5ad74a74"
+          },
+          "expected_import_probe_denied": true,
+          "family": 10,
+          "label": "socket.socket.bind",
+          "phase": {
+            "nodeid": "tests/test_rc6_publication_storage.py::test_native_worker_publisher_full_reader_and_projection_consume_the_same_exact_role_wire",
+            "phase": "call"
+          },
+          "physical_operation_called": false
+        }
+      ],
+      "new_parameter_cases": 103,
+      "overlapping_existing_cases": 365,
+      "preparation_root": "/workspace/rc6-publication-e24bc025-controlled-preparation-d",
+      "product_red": false,
+      "protocol_epoch": "D",
+      "pytest_exit_code": 0,
+      "raw_root": "/workspace/rc6-publication-e24bc025-controlled-focal-20261005-d/raw",
+      "source_files": 2158,
+      "source_sha": "e24bc025edc8bf72b272cb3546ce722dd97c10c8",
+      "source_tree": "79d1e849f44cc433283fbfcadf2680615c9684a5",
+      "stage": "COMPLETED_REAL_PYTEST_AND_HARNESS_VALIDATION",
+      "support_sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+    }
+  ],
+  "full_governed_or_image_validated": false,
+  "incident": {
+    "current_historical_directory_all_eleven_field_custody": "NOT_VERIFIED",
+    "historical_execution_receipts_scope": "ORIGINAL_EXECUTION_TIME_ONLY",
+    "protocol_epoch": "INCIDENT",
+    "restoration_or_global_rescan": false,
+    "source_sha": null,
+    "source_tree": null,
+    "tool_timestamp_and_pid": "NOT_OBSERVED",
+    "visited_protected_historical_directories": "UNKNOWN"
+  },
+  "native_small_scope_only": true,
+  "new_parameter_cases": 103,
+  "nine_hour_archive_horizon_validated": false,
+  "overlapping_existing_cases": 365,
+  "performance_improvement_claimed": false,
+  "qualified_epoch": "D",
+  "qualified_unique_test_count": 468,
+  "readme": {
+    "bytes": 4413,
+    "encoding": "IDENTITY",
+    "path": "README.md",
+    "sha256": "aa60fa14f210dbe5d53b9094341964b351902f1de92aff1efe427dfc785b93b7",
+    "stored_git_mode": "100644"
+  },
+  "recorded_at": "2026-10-06T00:03:24.591755+00:00",
+  "schema": "rc6.private-publication-controlled-focal-capsule.v1",
+  "source_sha": "e24bc025edc8bf72b272cb3546ce722dd97c10c8",
+  "source_tree": "79d1e849f44cc433283fbfcadf2680615c9684a5"
+}

@@ -1,0 +1,16 @@
+{
+  "duplicate_names": [],
+  "executable": "/workspace/venv_rc6_frozen311/bin/python",
+  "expected_total": 157,
+  "installed_total": 157,
+  "installed_unique_total": 157,
+  "missing": [],
+  "policy_sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462",
+  "python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+  "schema": "rc6.installed-distribution-closure.v1",
+  "scope": "NATIVE_ENVIRONMENT_METADATA_VERSIONS_PRETEST_NOT_ARTIFACT",
+  "source_sha": "505aa6b834592211b1f0ee221b5e6e967c9f4fd9",
+  "status": "GREEN",
+  "unexpected": [],
+  "version_mismatch": []
+}

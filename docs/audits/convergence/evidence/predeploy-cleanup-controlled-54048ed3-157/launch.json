@@ -1,0 +1,52 @@
+{
+  "command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/runner.py",
+    "--child",
+    "--git-repo",
+    "/workspace/porota_rc6_worktrees/sre_predeploy_cleanup",
+    "--source-root",
+    "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/source",
+    "--source-sha",
+    "54048ed3c366999922d7668cec9b5b1082db8ec6",
+    "--source-tree",
+    "d5cd117ba75edf03eb33bb9c6fdafc5a29c6190f",
+    "--output-root",
+    "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a",
+    "--support",
+    "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/source_support.py",
+    "--timeout-seconds",
+    "180"
+  ],
+  "euid": 1000,
+  "execution_id": "44b98585ea3b48ed8b8fc033f1667a5f",
+  "infrastructure": [
+    {
+      "bytes": 17203,
+      "path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/runner.py",
+      "sha256": "5b7666be5e2744a69b4da175b0568df573c907e3cd6d9560e5a93e065eaf72de"
+    },
+    {
+      "bytes": 31518,
+      "path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/source_support.py",
+      "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+    }
+  ],
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "native_fixture_started": false,
+  "preflight157_status": "GREEN",
+  "python_version": [
+    3,
+    11,
+    16
+  ],
+  "schema": "rc6.predeploy-scoped-cleanup-controlled-focal-launch.v1",
+  "scope": "THREE_SELECTED_MODULES_CONTROLLED_DOCKER_ADAPTER_AND_METADATA; NO_ACTUAL_DOCKER_ACTIONS_BUILD_FULL_GOV_OR_IMAGE_ACCEPTANCE",
+  "source_files": 2162,
+  "source_sha": "54048ed3c366999922d7668cec9b5b1082db8ec6",
+  "source_tree": "d5cd117ba75edf03eb33bb9c6fdafc5a29c6190f",
+  "timeout_seconds": 180,
+  "uid": 1000
+}

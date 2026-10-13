@@ -1,0 +1,8 @@
+Looking in links: /workspace/scratch/rc6driver-kba25cdt/wheelhouse
+Processing ./wheelhouse/playwright-1.62.0-py3-none-manylinux1_x86_64.whl (from -r /workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/browser-driver.cp311-linux-x86_64.lock.txt (line 2))
+Processing ./wheelhouse/pyee-13.0.1-py3-none-any.whl (from -r /workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/browser-driver.cp311-linux-x86_64.lock.txt (line 3))
+Processing ./wheelhouse/greenlet-3.5.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (from -r /workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/browser-driver.cp311-linux-x86_64.lock.txt (line 4))
+Processing ./wheelhouse/typing_extensions-4.16.0-py3-none-any.whl (from -r /workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/browser-driver.cp311-linux-x86_64.lock.txt (line 5))
+Installing collected packages: typing-extensions, pyee, playwright, greenlet
+
+Successfully installed greenlet-3.5.5 playwright-1.62.0 pyee-13.0.1 typing-extensions-4.16.0

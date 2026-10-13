@@ -1,0 +1,218 @@
+{
+  "archival_red_preserved": "Each archive focal initially45PASS/1FAIL due to shallow Git missing immutable anchor; the same one node laterPASS after fetching required Git ancestry. Other45cases not rerun.",
+  "base_sha": "3091e93c05cf89f9a0c16ca912d0af98f036ff17",
+  "base_tree": "00efec0f39f70f5a4ba1ba9c215647b92e05eeb7",
+  "branch": "recovery/rc6-material-fix-forward-3091e93-20261006",
+  "ci_namespace_change": "Initial7PASS per epoch qualified venv/cleanup; after moving temp/log/hypothesis outputs, the same behavior node was rechecked1PASS per epoch. These are overlapping diagnostics, not new scenarios.",
+  "code_snapshot_at_checkpoint": [
+    {
+      "path": ".github/workflows/porota-predeploy-v2.yml",
+      "sha256": "ecca8793ff07f9e5266bc85b5548dbb5d1b6cb20faf69c59b60815b83d5b7bf8"
+    },
+    {
+      "path": "rc6_ppi_global_budget.py",
+      "sha256": "095384e3e3296fb0d12f60c34a1cf0245970d8af831f8a815ac1fa4cdea335c9"
+    },
+    {
+      "path": "scripts/rc6_archive_v3_image_smoke.py",
+      "sha256": "8d0ceae86a3098e8eecabe7a71ac071b61de2078126df97031e1f85a33084dab"
+    },
+    {
+      "path": "scripts/rc6_issue465_stress.py",
+      "sha256": "078ef44ed58f55fe4a1439c058f9581bde083d5b81834617aba0e7bd45cc42ad"
+    },
+    {
+      "path": "tests/test_ci_productive_predeploy_contract.py",
+      "sha256": "9da51612543227284bd3142075c9451cf56442373443e3e778bf72ea6116a239"
+    },
+    {
+      "path": "tests/test_issue465_stress.py",
+      "sha256": "115b80da213824ae173a5d7a80ce56a021d889dd21d85076e80801bf32996d19"
+    },
+    {
+      "path": "tests/test_rc6_archive_namespace.py",
+      "sha256": "870c0a809274647cd0f0dea2333339ae1e47e2cae2aa0238fc677fbd58a49e79"
+    },
+    {
+      "path": "tests/test_rc6_archive_v3_image_smoke.py",
+      "sha256": "07c5008e24ef8cf270aa53e3c0b117b4b1132df409a981809e613a43b4cd3c09"
+    },
+    {
+      "path": "tests/test_rc6_budget_source_custody.py",
+      "sha256": "0b0d5e8bf521d4f05957959a860ee5480c622e6f5e7a883fcb344b756a6bd94f"
+    },
+    {
+      "path": "tests/test_rc6_component_archive.py",
+      "sha256": "27874d57771b84cd8cae7a9d0a666665fa959f6629234c0fa1642367feeb212c"
+    },
+    {
+      "path": "tests/test_rc6_convergence_persistence.py",
+      "sha256": "496cdca2b12fef354b3a494b9d3f3471130821fa26da2f29d84adfac547d51bd"
+    }
+  ],
+  "deploy_owner": "NOT_ACQUIRED",
+  "final_candidate_eligible": false,
+  "material_gates_closed": [],
+  "mode": "PAPER_SHADOW_ONLY / PRODUCTION_PAPER / SIMULATION",
+  "network": "Original urllib3 bind attempts in separate diagnostics were DENIED; these executions do not close Gov zero INET-operation gate. No exception added.",
+  "pending_material_gates": [
+    "U14",
+    "UX470-I01",
+    "UX470-I02",
+    "UX470-I03",
+    "UX470-I05",
+    "BIG12000/60000 original budgets and slow-fsync",
+    "Gov whole-root3.11/3.12 custody and child closure",
+    "V3horizon1201 and recovery",
+    "browserLARGE completeOPEN",
+    "exact new source/artifact/image binding; runtime supervisor-only"
+  ],
+  "ppi_watch": "UNTOUCHED",
+  "predecessor_predeploy": {
+    "actual_download_sha256": "fa5309698c93e4d399b27173ce1c5b40e97f6630563cb19fa18ad6766d1de715",
+    "artifact_id": 11413579059,
+    "attempt": 1,
+    "cases": 5934,
+    "conclusion": "failure",
+    "error": 0,
+    "fail": 53,
+    "github_digest_matches_actual_zip": true,
+    "image_built": false,
+    "run": 37461053027,
+    "skip": 0,
+    "status": "completed",
+    "zip_bytes": 1656312
+  },
+  "proven_causes": [
+    "Actual native import proof requires a real private venv, not only installed locked packages",
+    "Synthetic private fixtures must explicitly bind actual creating UID; production default1000 unchanged",
+    "Linux ru_maxrss can inherit launcher peak across exec; current image VmHWM records its own process memory high-water mark",
+    "Repeated follower BEGIN IMMEDIATE conflicts with a committed native SQLite writer; a read-only pending-flight observation grants no cache/service/send authority",
+    "Typed BIG RED must preserve full evidence and the same exception"
+  ],
+  "python_epochs": [
+    "CPython3.11.16",
+    "CPython3.12.14"
+  ],
+  "raw_files": [
+    {
+      "bytes": 7526,
+      "cases": 44,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/budget-py311.xml",
+      "sha256": "7ed45505ea270479b1beb9da3443bd3dc5594195267b54116c87c1043150f939",
+      "skip": 0
+    },
+    {
+      "bytes": 7526,
+      "cases": 44,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/budget-py312.xml",
+      "sha256": "e6bfa503a03b0d3ea9fb4bb121b12ab29b8a343ec8107749213163ec5dd2e1d7",
+      "skip": 0
+    },
+    {
+      "bytes": 78262,
+      "cases": 46,
+      "error": 0,
+      "fail": 1,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/archive-py311.initial.xml",
+      "sha256": "625da8c52c71e635566514298ecad7dd29e72ae0ed6a174d16365a689ace800d",
+      "skip": 0
+    },
+    {
+      "bytes": 78272,
+      "cases": 46,
+      "error": 0,
+      "fail": 1,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/archive-py312.initial.xml",
+      "sha256": "9b77277f8f093ac7b6276cd7eaf340715c681c8f17140644b0bb9bb24c54ccf4",
+      "skip": 0
+    },
+    {
+      "bytes": 417,
+      "cases": 1,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/archive-py311.anchor-recheck.xml",
+      "sha256": "46cb32672c77cacd008b8bf08dee81a16d48a9f5f898aa7790a8faadab90d94a",
+      "skip": 0
+    },
+    {
+      "bytes": 417,
+      "cases": 1,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/archive-py312.anchor-recheck.xml",
+      "sha256": "547c686d4235872f18976c5c381536d128aadc5257fd4437f0572d1bc9ee536b",
+      "skip": 0
+    },
+    {
+      "bytes": 565,
+      "cases": 2,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/typed-red-py311.xml",
+      "sha256": "3ad751936b496804b709308765672e1290031f89ddc68932af5a3b8722216bef",
+      "skip": 0
+    },
+    {
+      "bytes": 565,
+      "cases": 2,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/typed-red-py312.xml",
+      "sha256": "f94c0ddf1f8c8bbf0407cd6060a9fb56b82913c981b43a300ba861d0308fdb02",
+      "skip": 0
+    },
+    {
+      "bytes": 1283,
+      "cases": 7,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/ci-py311.initial.xml",
+      "sha256": "98ed6510a80586b1b29ef7b7a7bba3b11ebe39bf0214c604d2f2d79460f74241",
+      "skip": 0
+    },
+    {
+      "bytes": 1283,
+      "cases": 7,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/ci-py312.initial.xml",
+      "sha256": "a4be1137414e3ce67f308725a1f7b57e6fd62cc63e9afcbbb2e9bf824e42c49c",
+      "skip": 0
+    },
+    {
+      "bytes": 1099,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/rss-fork-exec-witness.json",
+      "sha256": "8d7b945b38c1aedccb69c356a101429880103e2810e68b0e18520ccf25450d32"
+    },
+    {
+      "bytes": 419,
+      "cases": 1,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/ci-py311.namespace-recheck.xml",
+      "sha256": "197b7aae1c8d139f1b360b3d368330876726cf02e52430b87e27bd95ff336bea",
+      "skip": 0
+    },
+    {
+      "bytes": 419,
+      "cases": 1,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/ci-py312.namespace-recheck.xml",
+      "sha256": "90b11cc554aa85bcfbaeeea5a2e4388e6745dc142fd94e29059709239c27cc86",
+      "skip": 0
+    }
+  ],
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "same_cases_across_epochs": true,
+  "schema": "rc6.controlled-successor-diagnostic-checkpoint.v1",
+  "session": "CODEX_SUCCESSOR_RC6_20261006_1246UTC",
+  "status": "DESARROLLADO_DIAGNOSTIC_ONLY_NOT_FROZEN_SOURCE_QUALIFICATION"
+}

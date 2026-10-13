@@ -1,0 +1,40 @@
+{
+  "actual_cut_generation_id": "8fca0b4616da43f1b96a475f2efaad3c",
+  "actual_cut_phase": "OPEN",
+  "actual_cut_sequence": 2,
+  "artifacts": [
+    {
+      "bytes": 21529,
+      "path": "docs/audits/convergence/evidence/sre-large-open-health-59481b3e.json",
+      "sha256": "e09704723f9c4d44195f5a0da968ef8b96b4510ed2666c1aa437b12d6e8e2a9b"
+    },
+    {
+      "bytes": 7869,
+      "path": "docs/audits/convergence/evidence/sre-large-open-health-probe-59481b3e.txt",
+      "sha256": "773057f8a8df28cfbdea027ed2136647b8324003dc0603ccb15f37fffd358b6b"
+    }
+  ],
+  "canonical_committed_blobs_and_modes": 1339,
+  "protected_paths_verified": 20,
+  "provider_requests": 0,
+  "read_cpu_seconds": 1.0483967,
+  "read_deadline_seconds": 2,
+  "read_elapsed_seconds": 1.0484786719971453,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "recorded_probe_file_count": 2,
+  "schema": "rc6.sre-large-open-health-evidence-binder.v1",
+  "scope": {
+    "child_record": "ISOLATED_FIXTURE_RECORD; actual live probe PID, simulated evidence clock, no production-child uptime claim",
+    "edge": "NO_DEMOSTRADO",
+    "final_frozen_source_artifact_gate": "PENDING",
+    "launcher_default_environment_gate": "PENDING_CANONICAL_ARCHIVE_WIRING_AND_FRESH_MATCHING_CUT",
+    "market_runtime": "NOT_EXECUTED",
+    "read_scope": "Four sealed roles wire/hash/CRC, typed headers, custody and projection semantics; FULL_LOGICAL_SEMANTICS not claimed",
+    "source_factory": "Actual native from_environment with the explicit stress constructor evidence_root and source_roots=[]; no replaced functions or fake generation",
+    "trust": "LOCAL_NATIVE_EXECUTION_RECEIPT; byte hashes bind saved files and do not authenticate themselves externally"
+  },
+  "side_effects": "ALL_PROTECTED_BYTES_AND_STAT_METADATA_UNCHANGED",
+  "source_sha": "59481b3e9e0470850232fb78bbc1f583675e4c8a",
+  "source_tree": "a17f1008a4e14643d9081dd794b9050b13144c2c"
+}

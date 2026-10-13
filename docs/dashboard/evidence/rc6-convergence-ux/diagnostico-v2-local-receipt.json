@@ -1,0 +1,166 @@
+{
+  "acceptance_complete": false,
+  "chromium_launched": false,
+  "fixture_contract": {
+    "format_threshold_override": 1,
+    "negative_faults": [
+      "Expired unchanged absolute deadline",
+      "Wrong schema type in a copy of native wire",
+      "Protected output path",
+      "Native small-cut rejection before browser"
+    ],
+    "scope": "Supported wire representation is forced only in the private guard fixture; financial fields and clocks remain native.",
+    "shape_source": "NATIVE_PAPER_CALLER_AND_SHADOW_PUBLISHER_READER_ONLY"
+  },
+  "large_temporal_acceptance_claim": false,
+  "measurement_scope": {
+    "aggregation": "PER_RENDER_ROLE_DIGEST_THREAD_NO_EVENT_PER_TEMPLATE_BINDING_OR_REFERENCE",
+    "codec_counts": "DECLARED_BEFORE_NATIVE_VERIFICATION",
+    "gc": "CALLBACK_OBSERVATION_ONLY_POLICY_UNCHANGED",
+    "member_read_counts": "OBSERVATIONS_NOT_INDEPENDENT_CACHE_ABSENCE_OR_LOGICAL_SEMANTICS_PROOF",
+    "native_request_deadline_seconds": 1,
+    "schema": "rc6.native-browser-components-diagnostic.v2",
+    "times": "NESTED_AND_OVERLAPPING_TOTALS_NOT_ADDITIVE",
+    "window_seconds": 60
+  },
+  "native_big_producer_executed": false,
+  "pending": [
+    "Canonical final V3/codec producer 12000/60000",
+    "Single diagnostic of that new completed OPEN on integrated frozen source",
+    "Uninstrumented final reader/browser acceptance",
+    "Archive nine-hour actual resource proof"
+  ],
+  "ppi_watch_touched": false,
+  "product_dashboard_storage_core_owned_changes": 0,
+  "protected_344_owned_changes": 0,
+  "recorded_at": "2026-10-05T11:59:21.882947+00:00",
+  "run": {
+    "command": [
+      "/workspace/venv_rc6/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "tests/test_rc6_projection_browser_diagnostic.py",
+      "tests/test_rc6_projection_large_browser.py",
+      "--junitxml=/tmp/rc6-ux-diagnostic-v2-guards.xml"
+    ],
+    "elapsed_seconds": 11.282,
+    "environment": {
+      "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "umask": "022"
+    },
+    "errors": 0,
+    "failures": 0,
+    "junit_xml_path": "/tmp/rc6-ux-diagnostic-v2-guards.xml",
+    "junit_xml_sha256": "91a06e2ab0a77d387ae1f589c38e6e6f0c929b41e949df8df0ed49c288841393",
+    "nodes": [
+      {
+        "elapsed_seconds": 3.742,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha"
+      },
+      {
+        "elapsed_seconds": 0.023,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers"
+      },
+      {
+        "elapsed_seconds": 0.001,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context[expired_deadline]"
+      },
+      {
+        "elapsed_seconds": 0.001,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context[schema_list]"
+      },
+      {
+        "elapsed_seconds": 0.067,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests"
+      },
+      {
+        "elapsed_seconds": 0.009,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only"
+      },
+      {
+        "elapsed_seconds": 0.001,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check"
+      },
+      {
+        "elapsed_seconds": 0.012,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import[archive]"
+      },
+      {
+        "elapsed_seconds": 0.011,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import[custody]"
+      },
+      {
+        "elapsed_seconds": 0.012,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import[authority]"
+      },
+      {
+        "elapsed_seconds": 0.011,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import[source]"
+      },
+      {
+        "elapsed_seconds": 0.01,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import[existing]"
+      },
+      {
+        "elapsed_seconds": 1.503,
+        "node": "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance"
+      },
+      {
+        "elapsed_seconds": 4.726,
+        "node": "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright"
+      },
+      {
+        "elapsed_seconds": 0.012,
+        "node": "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite[root]"
+      },
+      {
+        "elapsed_seconds": 0.029,
+        "node": "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite[authority]"
+      },
+      {
+        "elapsed_seconds": 0.017,
+        "node": "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite[database]"
+      },
+      {
+        "elapsed_seconds": 0.011,
+        "node": "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite[wal]"
+      },
+      {
+        "elapsed_seconds": 0.011,
+        "node": "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite[existing]"
+      },
+      {
+        "elapsed_seconds": 0.015,
+        "node": "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite[symlink]"
+      }
+    ],
+    "skipped": 0,
+    "tests": 20
+  },
+  "runtime_actions": "NOT_CALLED",
+  "schema": "rc6.dashboard-native-diagnostic-v2-guards.v1",
+  "small_native_cli": {
+    "acceptance_complete": false,
+    "gate": "NATIVE_LARGE_REPORT_NOT_EXERCISED",
+    "native_custody_unchanged": true,
+    "native_gate_acceptance_claim": false,
+    "network_attempts": 0,
+    "path": "docs/dashboard/evidence/rc6-convergence-ux/diagnostico-v2-small-native-cli.json",
+    "result": "DIAGNOSTIC_ONLY_NATIVE_OR_BROWSER_FAILURE_RETAINED",
+    "sha256": "0d11025c443778f425131939026f980b7045aecb58596a324a142005b5b2afbc",
+    "source_proof_pass": true,
+    "source_scope": "COMPLETE_ARCHIVE_OF_003DCCB5_WITH_EXTERNAL_SOURCEOWN_DIAGNOSTIC",
+    "source_sqlite_attempts": 0
+  },
+  "source_branch": "work/rc6-ux-diagnostic-v2-20261005",
+  "source_owned_files_sha256": {
+    "tests/ci_rc6_projection_browser_diagnostic.py": "85d05ec6da075f9d344a09b19bbebcc3e9cb1a637de267e18fd5e3385e3587d1",
+    "tests/test_rc6_projection_browser_diagnostic.py": "dacb851e0e86ca1289f0b61539c77d512aa0cca77ae5492d8ee124c3a020161e"
+  },
+  "source_parent_sha": "003dccb5d07ebf7f443e58e0bb6499837a0a8a52",
+  "source_pin_final": false,
+  "status": "LOCAL_NATIVE_GUARDS_GREEN_BIG_PENDING",
+  "workstream_id": "RC6-UX-DIAGNOSTIC-V2"
+}

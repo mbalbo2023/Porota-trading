@@ -1,0 +1,53 @@
+# RC6 PAPER V3: dispatch order for an exact Source
+
+Incident: G5P-acquire run #574 failed admission before payload with
+`G5P_LONG_RUN_INITIAL_DECISION_NOT_LIVE_AT_ACTUAL_START`. Cheap run #573
+closed GREEN for Source `65622b017b3f3ffec3d57704483611b30643b66b`,
+but its 63-minute duration exhausted the separately bounded G5P contract
+acceptance. Owner renewal does not renew an immutable decision.
+
+For a new Source, create and inspect the commit and tree before moving the
+candidate ref. Keep the candidate PR draft. Arrange the first material
+dispatch so that G5P-acquire starts with a newly posted, paired owner lease,
+a fresh exact Source contract acceptance, and one immutable single-gate
+launch. Its prerequisite manifest is the contracted empty acquisition
+manifest. At admission the PR must be open, draft, owned by the canonical
+repository, and based on `deploy/rc6-pr69-isolated-20260915`.
+
+G5P-acquire is acquisition only. It does not qualify cheap, G2, G3, G4,
+G5P-certify, full governance, Predeploy V2, or the final candidate.
+Run cheap for the same exact Source after acquisition under its own fresh
+acceptance and exactly one prepush launch; preserve its original tests,
+JUnit accounting, controls, and RAW. Each later gate consumes the exact
+ordered artifacts required by its own admission.
+
+A failed first attempt consumes the gate/Source identity even if no payload
+starts. Fix forward with a new evidenced commit and fresh receipts; do not
+re-run the same gate for the same Source or repurpose old artifacts.
+For a long producer, renew the paired owner lease before expiry throughout
+the actual interval. Never extend or reinterpret an expired acceptance.
+PAPER/SHADOW only, real orders sent zero, and PPI Watch untouched.
+
+## Paired contract acceptance wire format
+
+Run #575 on Source `0e8665da95c1768ba62b62df88daa5ee24d5631f` failed
+before payload with `CUSTODY_OWNER_PAIR_REQUIRED`. The #471 contract
+acceptance used a GitHub URL for `OWNER_RECEIPT_473`, while
+`rc6_actions_custody.verify_owner` requires the decimal comment ID alone
+(`^[1-9][0-9]{0,9}$`). Its `OWNER_RECEIPT_473_SHA256` is the SHA-256 of
+the exact immutable #473 acceptance body. The candidate launch uses URL
+pointers for its separate owner receipt fields; never copy that format into
+the contract acceptance. Check this wire distinction before dispatch. The
+failed first attempt consumes G5P-acquire for its Source; use a new evidenced
+Source and freshly paired acceptance, owner lease, and launch.
+
+## Launch transfer anchors versus live lease
+
+Run #576 on Source `98ad479dbdfa54568b21af450827f60d5ffb4ee1`
+failed before payload with `CANDIDATE_CURRENT_OWNER_TRANSFER_BINDING_REQUIRED`.
+The candidate launch's `OWNER_RECEIPT_471/473` and hashes must bind the
+immutable released-successor transfer returned by `administrative_anchors`
+(`#471/6133264940`, `#473/6133263471` for this session), not the fresh
+paired lease renewals. The latter remain necessary and are checked in both
+issue timelines as current ownership. Preserve both scopes without replacing
+one with the other. A failed attempt consumes its gate/Source identity.

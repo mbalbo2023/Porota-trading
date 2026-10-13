@@ -124,7 +124,7 @@ def runtime_store(path=None, *, environ=None):
                 raise ValueError('PAPER_V17_INITIAL_CAPITAL_OR_ORIGIN_MISMATCH')
             return PaperStore(str(target))
         store = PaperStore(str(target))
-        with store.connect() as c:
+        with closing(store.connect()) as c, c:
             identity_from_connection(c)
             c.execute('UPDATE paper_workspace SET initial_capital_json=? WHERE id=1', (profile,))
         return store

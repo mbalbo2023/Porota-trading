@@ -1,0 +1,136 @@
+{
+  "capsule_root_relative_to_repository": "docs/audits/convergence/evidence/native-import-runtime-provenance-focal-reds-20261006",
+  "classification": "PRESERVED_THREE_SEPARATE_RED_FOCALS_NOT_QUALIFICATION",
+  "custody": {
+    "bytes": 131301,
+    "path": "CUSTODY.json",
+    "sha256": "48fc4a071c30f13c27e0c5a4358ceb9a8d6e240301835e8d4d3e258cf578b567"
+  },
+  "external_source_archives_policy": {
+    "body_copied_into_git": false,
+    "custody_reference_field": "external_source_archives",
+    "source_tar_body_read_or_fresh_verified_by_documentary_helper": false,
+    "source_tar_member_parse_or_executed_artifact_authority_claimed": false
+  },
+  "members_count": 50,
+  "new_native_executions_or_product_imports_or_product_changes": 0,
+  "protocol_epochs": [
+    {
+      "actual_native_pid_recorded": 243502,
+      "actual_wait4_reaped_recorded": true,
+      "classification": "PRESERVED_FOCAL_RED",
+      "cython_control_output": {
+        "available": false,
+        "scope": "ORIGINAL_CE932_NO_CAPTURE_HELPER_NO_RECONSTRUCTION; XML/LOG_CALLEDPROCESSERROR_REMAINS_AUTHORITY"
+      },
+      "errors": 0,
+      "failures": [
+        "test_cloned_factory_with_same_code_but_foreign_globals_is_rejected",
+        "test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage"
+      ],
+      "identity_join_recomputed": true,
+      "passed": 41,
+      "protocol_epoch": "ce932",
+      "skipped": 0,
+      "source_sha": "ce9323625e89fd8a10979d9b1eaf353c55c176e5",
+      "source_tree": "cedd0a34e444526b504d06329b3fe0c8ce9d9ec1",
+      "unique_nodeids": 43
+    },
+    {
+      "actual_native_pid_recorded": 244565,
+      "actual_wait4_reaped_recorded": true,
+      "classification": "PRESERVED_FOCAL_RED",
+      "cython_control_output": {
+        "actual_returncode": 0,
+        "available": true,
+        "output_complete": true,
+        "scope": "HISTORICAL_CAPTURE_RECEIPT_AND_CURRENT_EXPLICIT_BYTES_NOT_NEW_RUNTIME",
+        "stderr": {
+          "byte_exact_complete_capture": true,
+          "capture_limit_bytes": 4194304,
+          "copy_read_all11_unchanged": true,
+          "original_captured_bytes": 0,
+          "path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0/runtime-control-stderr.bin",
+          "saved_bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "truncated": false
+        },
+        "stdout": {
+          "byte_exact_complete_capture": true,
+          "capture_limit_bytes": 4194304,
+          "copy_read_all11_unchanged": true,
+          "original_captured_bytes": 95991,
+          "path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0/runtime-control-stdout.bin",
+          "saved_bytes": 95991,
+          "sha256": "497990a18baa7ff9543d68e3514ce95155ab0231c60b186677aa2fc151ef108f",
+          "truncated": false
+        }
+      },
+      "errors": 0,
+      "failures": [
+        "test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage"
+      ],
+      "identity_join_recomputed": true,
+      "passed": 42,
+      "protocol_epoch": "1d60",
+      "skipped": 0,
+      "source_sha": "1d60ec2ced05ce7793028f5a04f707cb66fa5cda",
+      "source_tree": "a21e16b7d365b202996c835eda6baebbc8b0ffb4",
+      "unique_nodeids": 43
+    },
+    {
+      "actual_native_pid_recorded": 246326,
+      "actual_wait4_reaped_recorded": true,
+      "classification": "PRESERVED_FOCAL_RED",
+      "cython_control_output": {
+        "actual_returncode": 0,
+        "available": true,
+        "output_complete": true,
+        "scope": "HISTORICAL_CAPTURE_RECEIPT_AND_CURRENT_EXPLICIT_BYTES_NOT_NEW_RUNTIME",
+        "stderr": {
+          "byte_exact_complete_capture": true,
+          "capture_limit_bytes": 4194304,
+          "copy_read_all11_unchanged": true,
+          "original_captured_bytes": 0,
+          "path": "/workspace/rc6-budget-runtime-provenance-27ae-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0/runtime-control-stderr.bin",
+          "saved_bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "truncated": false
+        },
+        "stdout": {
+          "byte_exact_complete_capture": true,
+          "capture_limit_bytes": 4194304,
+          "copy_read_all11_unchanged": true,
+          "original_captured_bytes": 103703,
+          "path": "/workspace/rc6-budget-runtime-provenance-27ae-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0/runtime-control-stdout.bin",
+          "saved_bytes": 103703,
+          "sha256": "ba13b5c39b6d8759dfac70ddc52d8f2768af834d268f31ba266cc17a668de80b",
+          "truncated": false
+        }
+      },
+      "errors": 0,
+      "failures": [
+        "test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage"
+      ],
+      "identity_join_recomputed": true,
+      "passed": 42,
+      "protocol_epoch": "27ae",
+      "skipped": 0,
+      "source_sha": "27aec1bf8c0e4be779252e98e42d25cbfc5dee5d",
+      "source_tree": "601e5427ad2d0791b93bae5f54fb9693e6055646",
+      "unique_nodeids": 43
+    }
+  ],
+  "same_43_unique_cases_no_epoch_count_sum": true,
+  "schema": "rc6.native-import-runtime-provenance-focal-reds-capsule.v1",
+  "source_preparation_loader_failure": {
+    "errno": 1,
+    "forward_fix": "O_PATH|O_DIRECTORY|O_NOFOLLOW_ANCESTORS_NO_GETDENTS; PROTECTED_FILES_STRICT_NOATIME",
+    "observed_error": "PermissionError: [Errno 1] Operation not permitted: '/'",
+    "operation": "O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_NOATIME_OPEN_ROOT_ANCESTOR",
+    "path": "/",
+    "phase": "BEFORE_ANY_DECLARED_TARGET_READ",
+    "product_or_native_failure": false,
+    "timestamp_or_pid_observed": false
+  }
+}

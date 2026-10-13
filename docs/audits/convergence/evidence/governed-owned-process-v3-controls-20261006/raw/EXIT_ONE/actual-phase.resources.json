@@ -1,0 +1,106 @@
+{
+  "actual_extracted_main_gate_accepted": false,
+  "actual_gate_rejection_reason": "ACTUAL_GOVERNED_PHASE_NOT_GREEN:controlled",
+  "actual_source_function_receipt": {
+    "actual_child_reaped": true,
+    "actual_launch_to_pid_reap_wall_seconds": 0.10077933200227562,
+    "adopted_descendants_reaped": [],
+    "command": [
+      "/workspace/venv_rc6_frozen311/bin/python",
+      "-I",
+      "-B",
+      "-S",
+      "-c",
+      "raise SystemExit(1)"
+    ],
+    "cpu_system_seconds": 0.003691,
+    "cpu_user_seconds": 0.009334,
+    "kernel_owned_child_observations": [
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "before_popen_after_subreaper_activation"
+      },
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "after_main_pid_reap"
+      }
+    ],
+    "kernel_pre_popen_echild_verified": true,
+    "kernel_wait4_zero_observed_irreversible_red": false,
+    "late_observed_main_reap_irreversible_red": false,
+    "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+    "owned_children_exhaustion_verified": true,
+    "owned_cleanup_management_bound_seconds": 5,
+    "owned_group_signal_observations": [],
+    "peak_rss_bytes": 25264128,
+    "phase_acceptance_deadline_seconds": 1,
+    "pid": 243405,
+    "proc_task_children_examined": false,
+    "process_group_absent_after_reap": true,
+    "process_group_absent_at_main_reap": true,
+    "remaining_owned_children": [],
+    "residual_descendants_observed": [],
+    "returncode": 1,
+    "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+    "sigint_failure_grace_seconds": 20,
+    "subreaper_previous_state": 1,
+    "subreaper_restore_attempted_on_all_activated_paths": true,
+    "supervisor_errors": [],
+    "supervisor_kernel_identity_before_spawn": {
+      "Pid": "243403",
+      "Tgid": "243403",
+      "Uid": "1000\t1000\t1000\t1000"
+    },
+    "supervisor_native_tid": 243403,
+    "supervisor_pid": 243403,
+    "termination_reap_restore_cleanup_seconds": 7.971799641381949e-05,
+    "timed_out": false,
+    "wait4_reaped_pid": 243405,
+    "wall_seconds": 0.10108926400425844
+  },
+  "baseline_gap": null,
+  "control_errors": [],
+  "controlled_injections": [],
+  "driver_own_cleanup_observations": [
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "before_control_case"
+    },
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "owned_control_cleanup"
+    },
+    {
+      "errno": 10,
+      "outcome": "ECHILD",
+      "phase": "after_control_case"
+    }
+  ],
+  "driver_own_cleanup_result": {
+    "absolute_management_deadline_monotonic": 88170.372628741,
+    "all_owned_pgids_absent": true,
+    "errors": [],
+    "kernel_exhaustion_verified": true,
+    "owned_group_states": [
+      {
+        "group_absent": true,
+        "pid": 243405
+      }
+    ],
+    "remaining_owned_child_state": "NONE_KERNEL_ECHILD",
+    "scope": "NO_FOREIGN_OR_INDIVIDUAL_PID_SIGNALS_ONLY_TRACKED_POPEN_PGIDS",
+    "wall_seconds": 1.1601994629018009e-05
+  },
+  "owned_popen_registry": [
+    {
+      "group_absent": true,
+      "pid": 243405,
+      "returncode": 1
+    }
+  ],
+  "status": "GREEN"
+}

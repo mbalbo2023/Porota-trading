@@ -1,0 +1,42 @@
+{
+  "Native_executed": false,
+  "argv_planned": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/rc6-publication-1e2fddc1-controlled-preparation-20261006/runner.py",
+    "--git-repo",
+    "/workspace/porota_rc6_worktrees/persistence_publication_capture",
+    "--source-root",
+    "/workspace/rc6-publication-1e2fddc1-controlled-focal-20261006-a/whole-source",
+    "--output-root",
+    "/workspace/rc6-publication-1e2fddc1-controlled-focal-20261006-a",
+    "--support",
+    "/workspace/rc6-publication-1e2fddc1-controlled-preparation-20261006/source_support.py",
+    "--timeout-seconds",
+    "180"
+  ],
+  "changed_assignments_only": [
+    "SOURCE_SHA",
+    "SOURCE_TREE",
+    "MODULES",
+    "SCOPE"
+  ],
+  "count_authority": "FUTURE_ACTUAL_COLLECTION_AND_JUNIT_ONLY",
+  "created_at_utc": "2026-10-06T00:40:30.031642+00:00",
+  "driver_bytes": 57773,
+  "driver_sha256": "210c510c80274280085c3d53ae5d64e16fbb02223cc7d0be5cda062b19cfb47b",
+  "historical_driver_sha256": "fc7513a4abe621a223a402d3e6e609b0a654ded30c8f931c286e268826ae6b56",
+  "management_limit_is_product_budget": false,
+  "management_limit_seconds": 180,
+  "other_ast_identical": true,
+  "output_or_fixture_root_created": false,
+  "product_imported": false,
+  "schema": "rc6.external-source-only-focal-driver-derivation.v1",
+  "source_exported": false,
+  "source_only_syntax": "PASS",
+  "source_sha": "1e2fddc10d0e313bc5a6298e8fa60fe7c9f560f8",
+  "source_tree": "b984539931a25a5f77eae55116c4fa9543d53748",
+  "support_bytes": 31518,
+  "support_sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+}

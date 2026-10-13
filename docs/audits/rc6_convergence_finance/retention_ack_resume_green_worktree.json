@@ -1,0 +1,44 @@
+{
+  "checkpoint_digest_is_receipt2": true,
+  "checkpoint_receipt_count": 2,
+  "configuration": {
+    "archive_destination": "TEMP_PRIVATE_SEPARATE_ROOT",
+    "fault_boundary": "archive_before_publish_ack",
+    "generations": 3,
+    "intermediate_archive": "GENERATION_2",
+    "process_model": "fork+SIGKILL",
+    "retry": "IDENTICAL_GENERATION_1_ARCHIVE",
+    "schema": "RC6_SHADOW_ARCHIVE_ACK_V2",
+    "seed": "SYNTHETIC_ACK_RESUME_V1"
+  },
+  "configuration_sha256": "118fff36d08d23da3be5b9251c63e2f276e136b67a2306bfd1a375a333a3e6ba",
+  "current_cut": "2026-10-05T13:20:03+00:00",
+  "current_pointer_unchanged": true,
+  "custody": "TEMP_LOCAL_PRIVATE_FSYNC_NOT_WORM",
+  "immutable_receipt_files": 2,
+  "killed_exit_code": -9,
+  "network_attempts": 0,
+  "old_ack_regenerated": true,
+  "old_generation_preserved": true,
+  "old_receipt_and_object_preserved": true,
+  "passed": true,
+  "probe_sha256": "308d6e20b34a39ecb3c6e6ea09b3142f46c9f6901b86a88ebb135234a72b22e7",
+  "real_orders_sent": 0,
+  "real_routes_used": [],
+  "retry_error": null,
+  "scope": "OFFLINE_SYNTHETIC_PAPER_SHADOW_ONLY",
+  "source_changed_during_probe": false,
+  "source_files_after_sha256": {
+    "rc6_shadow_runtime/persistence.py": "1df6586e2ce07224d9d96ec698bc2c7c315afda5da4029c11099cc9daca94132",
+    "rc6_shadow_runtime/retention.py": "5b2940d62fdb9afe6960779011cb2bf259174b454dc9030993176739d07dc44b",
+    "tests/test_rc6_convergence_persistence.py": "e7809d1c7b4eb956bc92456feb94673410962d809a0198146aa5454536f5cfa5"
+  },
+  "source_files_sha256": {
+    "rc6_shadow_runtime/persistence.py": "1df6586e2ce07224d9d96ec698bc2c7c315afda5da4029c11099cc9daca94132",
+    "rc6_shadow_runtime/retention.py": "5b2940d62fdb9afe6960779011cb2bf259174b454dc9030993176739d07dc44b",
+    "tests/test_rc6_convergence_persistence.py": "e7809d1c7b4eb956bc92456feb94673410962d809a0198146aa5454536f5cfa5"
+  },
+  "source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+  "source_state": "WORKTREE_NOT_FROZEN",
+  "source_tree": "775ba49f7dbd091ed3deccc499e9b0e953103df1"
+}

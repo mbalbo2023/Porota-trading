@@ -1,0 +1,98 @@
+"""Temporary controlled runner: exact OWN Git source; wrapper guards only."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import runpy
+import sys
+import time
+import xml.etree.ElementTree as ET
+
+repository = Path('/workspace/porota_rc6_worktrees/budget_horizon_wrapper')
+execution = Path('/tmp/rc6-budget-horizon-ed97-28-20261005')
+source = execution/'source'
+source_sha = 'ed97efb2ede2ca4b4dc5cbc30f35b0c2b3cfa39b'
+source_tree = '5e42c97350684585c26cacee6d9bbb41ed1f4ef5'
+profile = 'docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py'
+runner = Path('/tmp/rc6_budget_horizon_ed97_guard_runner.py')
+if (os.getenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD') != '1'
+        or os.getenv('PYTHONDONTWRITEBYTECODE') != '1'
+        or sys.version_info[:2] != (3, 11)
+        or sys.prefix != '/workspace/venv_rc6_frozen311'):
+    raise AssertionError('EXACT_LITERAL_FROZEN311_ENVIRONMENT_REQUIRED')
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(source))
+os.chdir(source)
+probe = runpy.run_path(str(source/profile))
+index_path = execution/'source.index.json'
+index_bytes = probe['raw'](index_path)
+index_sha256 = hashlib.sha256(index_bytes).hexdigest()
+pin = json.loads(index_bytes)
+before, authority = probe['verify_source'](repository, source, source_sha, source_tree, pin)
+qualification = probe['environment_qualification'](source)
+import pytest
+imports_before = probe['import_inventory'](source, before)
+fixtures = execution/'fixtures'
+if fixtures.exists():
+    raise AssertionError('PRIVATE_FIXTURE_MUST_NOT_EXIST_BEFORE_QUALIFICATION')
+fixtures.mkdir(mode=0o700)
+guard = probe['PrivateExecutionGuard'](fixtures, fixtures/'unused-primary.sqlite')
+junit = execution/'native-wrapper-guards.junit.xml'
+command = ['tests/test_rc6_native_archive_horizon_wrapper.py', '-q', '-p', 'no:cacheprovider',
+    '--junitxml='+str(junit), '--basetemp='+str(fixtures/'pytest')]
+started = time.monotonic()
+exit_code = pytest.main(command)
+wall = time.monotonic()-started
+guard_summary = guard.summary()
+guard.close()
+after, authority_after = probe['verify_source'](repository, source, source_sha, source_tree, pin)
+imports_after = probe['import_inventory'](source, before)
+raw_junit = probe['raw'](junit)
+xml = ET.fromstring(raw_junit)
+cases = xml.findall('.//testcase')
+failures = sum(case.find('failure') is not None for case in cases)
+errors = sum(case.find('error') is not None for case in cases)
+skipped = sum(case.find('skipped') is not None for case in cases)
+index_unchanged = hashlib.sha256(probe['raw'](index_path)).hexdigest() == index_sha256
+tar_unchanged = probe['signature'](execution/'source.tar')['sha256'] == pin['tar_sha256']
+green = (exit_code == 0 and len(cases) == 28 and not (failures or errors or skipped)
+    and before == after and index_unchanged and tar_unchanged
+    and guard_summary['network_attempt_count'] == 0 and guard_summary['sqlite_rejected_count'] == 0)
+result = {
+    'schema': 'rc6.native-horizon-wrapper-scoped-guard-receipt.v1',
+    'classification': 'SCOPED_WRAPPER_GUARDS_GREEN' if green else 'SCOPED_WRAPPER_GUARDS_NOT_GREEN',
+    'phase': 'INTERMEDIATE_EXACT_COMPLETE_OWN_GIT_SOURCE_NOT_FINAL_CANDIDATE',
+    'scope': '28_CONTROLLED_CLOCK_METADATA_MINIATURE_GIT_FIFO_SOCKET_GUARDS_NOT_NATIVE_HORIZON',
+    'source_sha': source_sha, 'source_tree': source_tree, 'source_file_count': len(before['files']),
+    'source_authority_before': authority, 'source_authority_after': authority_after,
+    'source_inventory_before_sha256': hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
+    'source_inventory_after_sha256': hashlib.sha256(json.dumps(after, sort_keys=True).encode()).hexdigest(),
+    'source_index_sha256': index_sha256, 'source_index_unchanged': index_unchanged,
+    'source_tar_sha256': pin['tar_sha256'], 'source_tar_unchanged': tar_unchanged,
+    'source_bytes_modes_and_git_blobs_unchanged': before == after, 'overlay_count': 0,
+    'environment_qualification_before_fixtures': qualification,
+    'fixture_created_after_literal157_and_hashlocks_qualification': True,
+    'fixture_namespace': str(fixtures), 'command': command, 'pytest_exit_code': int(exit_code),
+    'wall_seconds': wall, 'private_execution_guard': guard_summary,
+    'import_graph_before_fixtures': imports_before, 'import_graph_after': imports_after,
+    'runner': {'path': str(runner), 'sha256': hashlib.sha256(probe['raw'](runner)).hexdigest(),
+        'scope': 'EXTERNAL_CONTROLLED_HARNESS_EXECUTED_AS_MAIN_WITHOUT_IMPORTED_OUTSIDE_PROJECT_SOURCE'},
+    'junit': {'path': str(junit), 'sha256': hashlib.sha256(raw_junit).hexdigest(), 'bytes': len(raw_junit),
+        'tests': len(cases), 'failures': failures, 'errors': errors, 'skipped': skipped,
+        'cases': [{'classname': case.attrib['classname'], 'name': case.attrib['name'],
+            'seconds': case.attrib.get('time'), 'status': 'FAIL' if case.find('failure') is not None
+                else 'ERROR' if case.find('error') is not None else 'SKIP' if case.find('skipped') is not None else 'PASS'}
+            for case in cases]},
+    'native_horizon_ticks_executed': 0, 'native_full_worker_cycles_executed': 0,
+    'real_orders_sent': 0, 'real_routes': 'NOT_CALLED', 'artifact_validated': False,
+    'runtime_validated': False, 'deployed': False, 'final_input_provenance': None,
+    'limits': ['One scoped test execution; no addition to old suite counts or original55/R counts.',
+        'No actual1201-wheel, normal4, provider/PPI timing, OS isolation, image or finalFIP authority.',
+        'Two intentional unconnected-INET negative sends are rejected by test-local guards; outer transport counter remains zero.']}
+destination = execution/'native-wrapper-guards-receipt.json'
+destination.write_text(json.dumps(result, sort_keys=True, indent=2)+'\n')
+print(json.dumps({'classification': result['classification'], 'source_sha': source_sha,
+    'tests':len(cases), 'failures':failures, 'errors':errors, 'skipped':skipped,
+    'source_unchanged':before == after, 'wall_seconds':wall, 'receipt':str(destination),
+    'receipt_sha256':hashlib.sha256(probe['raw'](destination)).hexdigest()}), flush=True)
+raise SystemExit(0 if green else 1)

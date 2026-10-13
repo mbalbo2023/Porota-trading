@@ -1,3 +1,7 @@
+from datetime import datetime, timezone
+
+import pytest
+
 import rc6_source_consolidation as m
 
 def test_consolidate_keeps_ppi_primary_and_compares_iol():
@@ -24,7 +28,8 @@ def test_consolidate_records_cascade_provenance():
     assert fields["bid"] == {"value": 99.0, "source": "IOL", "ppi": None, "iol": 99.0, "byma": None}
     assert fields["vwap"]["source"] == "BYMA"
     assert result["rows"][0]["decision_effect"] == "OBSERVE_ONLY"
-    assert result["rows"][0]["shadow_promotion"] is True
+    assert result["rows"][0]["advisory_comparison_ready"] is True
+    assert "shadow_promotion" not in result["rows"][0]
 
 def test_html_public_page_is_reference_only():
     result = m.parse_public_payload("BYMA", "https://example.test", b"<title>BYMA</title>")
@@ -143,3 +148,57 @@ def test_consolidate_unions_complementary_identity_and_canonicalizes_bcba_t1():
     assert row["effective_fields"]["last"]["source"] == "IOL"
     assert row["effective_fields"]["vwap"]["source"] == "BYMA"
     assert result["source_order"] == "PPI_PRIMARY_IOL_COMPLEMENTARY_BYMA_PUBLIC_COMPLEMENTARY"
+
+
+def comparison_quote(**changes):
+    return {"family": "ACCIONES", "symbol": "GGAL", "market": "BYMA",
+            "currency": "ARS", "term": "A-24HS", "last": 100,
+            "bid": 99, "ask": 101, "source_at": "2026-09-25T15:00:00+00:00",
+            "book_at": "2026-09-25T15:00:00+00:00",
+            "received_at": "2026-09-25T15:00:00+00:00", **changes}
+
+
+@pytest.mark.parametrize("source", ["IOL", "BYMA"])
+def test_complement_only_ready_means_advisory_and_never_authority(source):
+    now = datetime(2026, 9, 25, 15, tzinfo=timezone.utc)
+    quote = comparison_quote(source=source)
+    result = m.consolidate([], [quote] if source == "IOL" else [],
+                           [quote] if source == "BYMA" else [], as_of=now)
+    row = result["rows"][0]
+    assert result["schema"] == "rc6-consolidated-source-evidence-v2"
+    assert row["advisory_comparison_ready"] is True
+    assert "shadow_promotion" not in row
+    assert row["identity_primary_source"] == "COMPLEMENT_REFERENCE_ONLY"
+    assert row["canonical_identity"] == ["GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS"]
+    assert row["validated_effective_fields"]["last"]["source"] == source
+    assert row["selection_eligible"] is False
+    assert row["entry_authority"] is row["live_decision_authority"] is row["real_money_authorized"] is False
+    assert row["decision_effect"] == result["decision_effect"] == "OBSERVE_ONLY"
+
+
+@pytest.mark.parametrize("field,value", [("symbol", "YPFD"), ("family", "CEDEARS"),
+    ("market", "A3"), ("currency", "USD"), ("term", "INMEDIATA")])
+def test_advisory_complement_never_borrows_any_part_of_primary_scope(field, value):
+    now = datetime(2026, 9, 25, 15, tzinfo=timezone.utc)
+    primary = comparison_quote(source="PPI", last=None)
+    complement = comparison_quote(source="BYMA", **{field: value})
+    result = m.consolidate([primary], [], [complement], as_of=now)
+    expected = ["GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS"]
+    row = next(row for row in result["rows"] if row["canonical_identity"] == expected)
+    assert row["identity_primary_source"] == "PPI"
+    assert row["validated_effective_fields"]["last"]["value"] is None
+    assert row["official_complement"] == {}
+    assert row["selection_eligible"] is False
+    assert row["entry_authority"] is row["live_decision_authority"] is False
+    assert "shadow_promotion" not in row
+    assert len(result["rows"]) == 2
+
+
+def test_advisory_conflicts_require_review_and_cannot_look_ready():
+    now = datetime(2026, 9, 25, 15, tzinfo=timezone.utc)
+    quote = comparison_quote(source="PPI")
+    row = m.consolidate([quote], [comparison_quote(source="IOL", last=110)], as_of=now)["rows"][0]
+    assert row["advisory_comparison_ready"] is False
+    assert row["selection_eligible"] is False
+    assert row["review_status"] == "CONFLICT_REVIEW_REQUIRED"
+    assert row["entry_authority"] is row["live_decision_authority"] is False

@@ -1,0 +1,112 @@
+{
+  "copy_time_custody_pending_root_preserver": true,
+  "counting_boundary": "Original64 legacy replay separate; 168 same-helper/control repeat retains168 unique invocations/84semantics and14preserve154reject. No336, no financial/Native/Gov scenario sum.",
+  "earlier_v3_and_f893_capsules_must_not_be_overwritten": true,
+  "no_final_register_generated": true,
+  "originals_to_be_preserved_byte_exact": true,
+  "record_count": 11,
+  "record_total_bytes": 282903,
+  "records": [
+    {
+      "artifact_role": "REVIEWED_DOCUMENTARY_HELPER_SOURCE",
+      "bytes": 124732,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "549aaf8920f6da76f8080fabbc4ae9ba2021a9512951f80912e8364541f7dda4",
+      "source_path": "/tmp/rc6_remediation_register_generate_v4_publication_big3_candidate.py",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/sources/register-helper-v4.py.source"
+    },
+    {
+      "artifact_role": "REVIEWED_DOCUMENTARY_HELPER_SOURCE",
+      "bytes": 63314,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "fe26d269425e2cb461bb20ddee6da013b242b66fc77aa867d887f4362718a83b",
+      "source_path": "/tmp/rc6_root_supplemental_named_findings_generate_v3_publication_big3_candidate.py",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/sources/supplement-helper-v3.py.source"
+    },
+    {
+      "artifact_role": "ACTUAL_LEGACY64_DOCUMENTARY_DRIVER_SOURCE",
+      "bytes": 29369,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "084cf5a414b8678d18d776ace255ed127073e2006a22b4e56a053586f8a74367",
+      "source_path": "/tmp/rc6_register_helpers_v4_publication_big3_legacy_controls_candidate_v2.py",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/sources/legacy64-controls-v2.py.source"
+    },
+    {
+      "artifact_role": "ACTUAL_FIRST_AND_REPEAT168_DOCUMENTARY_DRIVER_SOURCE",
+      "bytes": 28120,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "88e52e188d981c5eaf70820bd60b3f66d50be282997b61dbf71a60d77738c1d7",
+      "source_path": "/tmp/rc6_register_helpers_v4_publication_big3_predeploy_controls_candidate_v2.py",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/sources/predeploy168-controls-v2.py.source"
+    },
+    {
+      "artifact_role": "ACTUAL_ORIGINAL_LEGACY64_DOCUMENTARY_RECEIPT",
+      "bytes": 8438,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "d7b60faf593faf4c62d364a63c7efcfb45646f9d36eee2b020ddfd965608f471",
+      "source_path": "/tmp/rc6_register_helpers_v4_publication_big3_legacy_controls_v2_receipt.json",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/raw/legacy64-original-receipt.json"
+    },
+    {
+      "artifact_role": "ACTUAL_REPEAT168_STDOUT_RECEIPT_NOT_FIRST_STDOUT_RECONSTRUCTION",
+      "bytes": 18999,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "d480a9d4c19c3e6630eb8882ad65d11e6acb4d6b6c9838d3079dcc51b057967e",
+      "source_path": "/workspace/rc6-documentary-controls-v4-big3-20261006-raw/predeploy-controls.stdout.json",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/raw/repeat168-original.stdout.json"
+    },
+    {
+      "artifact_role": "ACTUAL_REPEAT168_EMPTY_STDERR",
+      "bytes": 0,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_path": "/workspace/rc6-documentary-controls-v4-big3-20261006-raw/predeploy-controls.stderr",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/raw/repeat168-original.stderr"
+    },
+    {
+      "artifact_role": "ORIGINAL_FIRST_EPOCH_GAP_NOTE_NOT_RECONSTRUCTED_STDOUT",
+      "bytes": 895,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "387f80dda0d2d4cced65095e36c67393b166ca6246a242e43445d95955afa72a",
+      "source_path": "/workspace/rc6-documentary-controls-v4-big3-20261006-raw/first-epoch-custody-note.json",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/raw/first168-stdout-gap-note.json"
+    },
+    {
+      "artifact_role": "ORIGINAL_SOURCE_ONLY_REVIEW_NOTE_NOT_EXECUTION",
+      "bytes": 2201,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "e26ffaecfe60b34a42466fef3d82ba531a2ff286b84b0fffc9e413af236f8c0b",
+      "source_path": "/tmp/rc6_register_helpers_v4_publication_big3_sre_source_review_note.json",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/notes/independent-source-review-original-note.json"
+    },
+    {
+      "artifact_role": "NEW_DERIVED_PLAN_SOURCE_AND_REPORTED_ROOT_EXECUTION_SCOPES",
+      "bytes": 3620,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "b2b9ac8c71d6c8c8b1489b7641da75089e0964fc6fcc7090b1a02f80f51e23cc",
+      "source_path": "/tmp/rc6_register_helpers_v4_big3_controls_preservation_plan.json",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/notes/limited-execution-scope-preservation-plan.json"
+    },
+    {
+      "artifact_role": "NEW_DERIVED_PRESERVATION_README_NOT_RAW_EXECUTION",
+      "bytes": 3215,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "0d21effc81facd8ec8b965108e75aa5853ce1dbbef9f52d29d1d05975fb9bafe",
+      "source_path": "/tmp/rc6_register_helpers_v4_big3_preservation_readme.md",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/notes/README_SOURCE.md"
+    }
+  ],
+  "schema": "rc6.register-helper-v4-big3-preservation-inputs.v1",
+  "suggested_capsule_prefix": "docs/audits/convergence/evidence/register-helper-v4-big3-documentary-controls-20261006/"
+}

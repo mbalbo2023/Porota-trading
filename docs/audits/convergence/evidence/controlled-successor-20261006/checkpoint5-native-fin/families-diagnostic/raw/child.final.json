@@ -1,0 +1,47 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "PPI_Watch": "UNTOUCHED",
+  "actual_child_finalization_status": "GREEN",
+  "body_error": null,
+  "body_returncode": 1,
+  "gate_qualified": false,
+  "native_read_body": {
+    "DIAGNOSTIC_ONLY": true,
+    "PPI_Watch": "UNTOUCHED",
+    "diagnostic_errors": [
+      {
+        "reason": "DIAGNOSTIC_GUARD_OR_BINDING_RED",
+        "stage": "diagnostic_integrity"
+      }
+    ],
+    "final_candidate_eligible": false,
+    "gate_qualified": false,
+    "inet_audit": {
+      "inet_socket_attempts": [],
+      "inet_socket_constructor_requests": [],
+      "subprocess_executable_counts": {
+        "git": 4
+      }
+    },
+    "native_import_proof_qualified": false,
+    "original_read_returned": true,
+    "profile_overhead_can_cause_original_deadline_RED": true,
+    "read_errors": [],
+    "real_orders_sent": 0,
+    "source_sqlite_connect_requests": {
+      "denied": [],
+      "registered_and_witnessed": true,
+      "requests": [
+        {
+          "original_or_cloned_source": false,
+          "private_derived_copy": true
+        }
+      ],
+      "scope": "PYTHON_SQLITE3_CONNECT_AUDIT_ONLY",
+      "source_sqlite_opened": false
+    },
+    "status": "RED"
+  },
+  "real_orders_sent": 0,
+  "status": "RED"
+}

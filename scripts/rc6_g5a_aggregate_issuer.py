@@ -1,0 +1,452 @@
+"""Native 20 GiB host-stage quota emitter; no G5A admission authority.
+
+The trusted setup and the NONROOT stage process are deliberately separate.
+The original manager must own their birth, FIN and cleanup. In particular a
+JSON copy of either result cannot unlock rc6_g5a_host_capacity.BARRIER.
+No module loading, host remount, fallback counter or directory census occurs.
+"""
+from __future__ import annotations
+
+import ctypes
+import errno
+import fcntl
+import os
+from pathlib import Path
+import platform
+import stat
+import struct
+import sys
+
+if __name__ == "__main__":
+    source_root = str(Path(__file__).absolute().parents[1])
+    if source_root not in sys.path:
+        sys.path.insert(0, source_root)
+
+from scripts import rc6_capacity_calibration as calibration
+from scripts import rc6_trusted_quota_setup as trusted
+
+SCHEMA = "porota.rc6.g5a-host-stage-aggregate-native.v1"
+LIMIT = 20 * 1024**3
+INODES = 100000
+PROBE_LIMIT = 1024**2
+STAGES = frozenset(("preparation", "reader-collection", "reader-execution"))
+WRITE_BITS = (1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
+
+
+def require(value, reason):
+    if not value:
+        raise ValueError(reason)
+
+
+def _plain_directory(path):
+    path = Path(path).absolute()
+    require(not any(part.is_symlink() for part in (path, *path.parents)),
+            "G5A_AGGREGATE_PATH_ALIAS_FORBIDDEN")
+    info = path.lstat()
+    require(stat.S_ISDIR(info.st_mode) and info.st_nlink >= 2,
+            "G5A_AGGREGATE_OWN_DIRECTORY_REQUIRED")
+    return path, info
+
+
+def _mount(root):
+    fd = os.open(root, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        held, mount_id = os.fstat(fd), calibration.descriptor_mount_id(fd)
+        require(held.st_dev == root.lstat().st_dev and mount_id > 0,
+                "G5A_AGGREGATE_HELD_MOUNT_REBOUND")
+        rows = []
+        for line in Path("/proc/self/mountinfo").read_text().splitlines():
+            left, separator, right = line.partition(" - ")
+            require(separator, "G5A_AGGREGATE_MOUNTINFO_INVALID")
+            fields, tail = left.split(), right.split()
+            if int(fields[0]) == mount_id:
+                rows.append((fields, tail))
+        require(len(rows) == 1 and len(rows[0][0]) >= 6 and len(rows[0][1]) >= 2,
+                "G5A_AGGREGATE_EXACT_MOUNT_REQUIRED")
+        fields, tail = rows[0]
+        major, minor = (int(item) for item in fields[2].split(":"))
+        require(tail[0] == "ext4" and "rw" in fields[5].split(",")
+                and os.makedev(major, minor) == held.st_dev,
+                "G5A_AGGREGATE_ORIGINAL_EXT4_PROJECT_MOUNT_REQUIRED")
+        return {"mount_id": mount_id, "device": held.st_dev,
+                "major": major, "minor": minor, "filesystem": tail[0]}
+    finally:
+        os.close(fd)
+
+
+def _quota(device, project_id):
+    record = calibration.Dqblk()
+    operation = calibration.quota_operation(str(device), project_id, calibration.Q_GETQUOTA, record)
+    return {"hard_bytes": record.bhard * 1024, "soft_bytes": record.bsoft * 1024,
+            "hard_inodes": record.ihard, "soft_inodes": record.isoft,
+            "used_bytes": record.space, "used_inodes": record.inodes,
+            "native_operation": operation}
+
+
+def require_stage_topology(root, *, stage, project_id, write_roots):
+    """Check live inode/project membership before an original-manager launch.
+
+    This observation grants no stage admission. All paths that can receive
+    manager logs, installer output, Source exports or reader output must be
+    included. The kernel quota, not this path check, bounds unlinked files.
+    """
+    require(stage in STAGES and type(project_id) is int and project_id > 0
+            and type(write_roots) is dict and write_roots,
+            "G5A_AGGREGATE_EXACT_STAGE_TOPOLOGY_REQUIRED")
+    root, info = _plain_directory(root)
+    require(info.st_uid == os.geteuid() and os.getuid() == os.geteuid() > 0,
+            "G5A_AGGREGATE_NONROOT_STAGE_ROOT_REQUIRED")
+    root_attr = calibration.project_attributes(root)
+    require(root_attr["project_id"] == project_id and root_attr["inheritance"] is True,
+            "G5A_AGGREGATE_STAGE_PROJECT_READBACK_REQUIRED")
+    observed = {}
+    for label, value in write_roots.items():
+        require(type(label) is str and label.isidentifier(),
+                "G5A_AGGREGATE_WRITE_ROOT_LABEL_REQUIRED")
+        path, child = _plain_directory(value)
+        require(path == root or path.is_relative_to(root),
+                "G5A_AGGREGATE_OUTSIDE_PROJECT_WRITE_ROOT_FORBIDDEN")
+        attr = calibration.project_attributes(path)
+        require(child.st_dev == info.st_dev and child.st_uid == info.st_uid
+                and attr["project_id"] == project_id
+                and attr["mount_id"] == root_attr["mount_id"],
+                "G5A_AGGREGATE_STAGE_CHILD_PROJECT_REBOUND")
+        observed[label] = {"path": str(path), "device": child.st_dev,
+                           "inode": child.st_ino, "project_id": attr["project_id"]}
+    return {"stage": stage, "root": str(root), "root_identity": [info.st_dev, info.st_ino],
+            "project_id": project_id, "write_roots": observed,
+            "launch_authorized": False, "G5_GREEN": False}
+
+
+def trusted_setup(*, root, probe, source, owner_home, device, project_id, probe_id,
+                  owner_uid, owner_gid):
+    """Root-only setup on the original ext4, before any installer or reader.
+
+    The caller supplies a fresh own pair of sibling directories in a private
+    mount namespace and an authenticated device. Failure retains both paths
+    for original-manager FIN/capture; this function never removes them.
+    """
+    require(os.getresuid() == (0, 0, 0) and len(os.listdir("/proc/self/task")) == 1,
+            "G5A_AGGREGATE_TRUSTED_SINGLE_ROOT_REQUIRED")
+    require(type(project_id) is int and type(probe_id) is int and project_id > 0
+            and probe_id > 0 and project_id != probe_id
+            and type(owner_uid) is int and type(owner_gid) is int
+            and owner_uid > 0 and owner_gid > 0,
+            "G5A_AGGREGATE_DISTINCT_OWN_PROJECTS_REQUIRED")
+    root, root_info = _plain_directory(root)
+    probe, probe_info = _plain_directory(probe)
+    source, source_info = _plain_directory(source)
+    # A ROOT systemd service normally has HOME=/root. The owner home must be
+    # passed from authenticated custody; ROOT's environment is not its owner.
+    home, home_info = _plain_directory(owner_home)
+    require(root.parent == probe.parent and root != probe and root.is_relative_to(home)
+            and root_info.st_dev == probe_info.st_dev == source_info.st_dev == home_info.st_dev
+            and home_info.st_uid == owner_uid
+            and (root_info.st_uid, probe_info.st_uid) == (owner_uid, owner_uid)
+            and not any(root.iterdir()) and not any(probe.iterdir())
+            and len(os.fsencode(root / "e")) <= 50,
+            "G5A_AGGREGATE_ORIGINAL_FILESYSTEM_FRESH_SHORT_ROOT_REQUIRED")
+    mount = _mount(root)
+    block = Path(device)
+    require(block.is_absolute() and not block.is_symlink()
+            and stat.S_ISBLK(block.lstat().st_mode)
+            and block.stat().st_rdev == mount["device"],
+            "G5A_AGGREGATE_EXACT_BLOCK_DEVICE_REQUIRED")
+    original = calibration.filesystem(root)
+    require(original["available_bytes"] >= LIMIT + 4 * 1024**3
+            and original["free_inodes"] * 10 >= original["total_inodes"],
+            "G5A_AGGREGATE_ORIGINAL_RESERVE_AND_INODES_REQUIRED")
+    fmt = calibration.quota_format(str(block))
+    require(fmt["format_id"] == calibration.FORMAT_VFS_V1,
+            "G5A_AGGREGATE_KERNEL_PROJECT_QUOTA_FORMAT_REQUIRED")
+    # A fresh directory is not a fresh project ID. Never overwrite a quota
+    # already in use by another workstream or by an interrupted operation.
+    for identifier in (project_id, probe_id):
+        previous = _quota(block, identifier)
+        require(all(previous[key] == 0 for key in ('hard_bytes', 'soft_bytes',
+                    'hard_inodes', 'soft_inodes', 'used_bytes', 'used_inodes')),
+                "G5A_AGGREGATE_FRESH_UNUSED_PROJECT_ID_REQUIRED")
+    aggregate = trusted.setup_project(str(block), root, project_id,
+        hard_bytes=LIMIT, hard_inodes=INODES,
+        operation_scope="G5A_HOST_STAGE_AGGREGATE_20GIB_V1")
+    control = trusted.setup_project(str(block), probe, probe_id,
+        hard_bytes=PROBE_LIMIT, hard_inodes=32768,
+        operation_scope="G5A_HOST_STAGE_AGGREGATE_20GIB_V1")
+    require(aggregate["kernel_readback"] is True and control["kernel_readback"] is True
+            and all(_quota(block, project_id)[key] == expected for key, expected in
+                (("hard_bytes", LIMIT), ("soft_bytes", LIMIT),
+                 ("hard_inodes", INODES), ("soft_inodes", INODES)))
+            and all(_quota(block, probe_id)[key] == expected for key, expected in
+                (("hard_bytes", PROBE_LIMIT), ("soft_bytes", PROBE_LIMIT),
+                 ("hard_inodes", 32768), ("soft_inodes", 32768))),
+            "G5A_AGGREGATE_KERNEL_READBACK_REQUIRED")
+    for name in ("home", "tmp", "cache", "builds", "exports", "readers", "source",
+                 "config", "data"):
+        child = root / name
+        child.mkdir(mode=0o700)
+        os.chown(child, owner_uid, owner_gid)
+        require(calibration.project_attributes(child)["project_id"] == project_id,
+                "G5A_AGGREGATE_CHILD_PROJECT_INHERITANCE_REQUIRED")
+    return {"schema": SCHEMA, "phase": "TRUSTED_SETUP_ONLY", "root": str(root),
+            "probe": str(probe), "source": str(source), "device": str(block),
+            "mount": mount, "root_identity": [root_info.st_dev, root_info.st_ino],
+            "owner_uid": owner_uid, "owner_gid": owner_gid, "project_id": project_id,
+            "probe_id": probe_id, "quota_format": fmt, "aggregate": aggregate,
+            "probe_quota": control, "launch_authorized": False,
+            "G5_GREEN": False, "qualification_claimed": False}
+
+
+def nonroot_unlinked_edquot_probe(probe, *, expected_id, hard_bytes=PROBE_LIMIT):
+    """Actual EDQUOT on an open unlinked inode, including the exact 20 GiB project.
+
+    The 20 GiB call is a material disk operation and must only be made after
+    admission by the original manager. The 1 MiB control uses another project.
+    A caught ENOSPC does not count as EDQUOT or as aggregate enforcement.
+    """
+    require(type(hard_bytes) is int and hard_bytes in (PROBE_LIMIT, LIMIT),
+            "G5A_AGGREGATE_EXACT_PROBE_LIMIT_REQUIRED")
+    require(os.getuid() == os.geteuid() > 0 and type(expected_id) is int and expected_id > 0,
+            "G5A_AGGREGATE_NONROOT_PROBE_REQUIRED")
+    status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines() if ":" in line)
+    require(status["NoNewPrivs"].strip() == "1" and status["Seccomp"].strip() == "2"
+            and all(int(status[key].strip(), 16) == 0 for key in
+                    ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")),
+            "G5A_AGGREGATE_ORIGINAL_NONROOT_SEAL_REQUIRED")
+    probe, info = _plain_directory(probe)
+    require(info.st_uid == os.getuid()
+            and calibration.project_attributes(probe)["project_id"] == expected_id,
+            "G5A_AGGREGATE_PROBE_PROJECT_REBOUND")
+    if hard_bytes == LIMIT:
+        calibration.require_capacity(calibration.filesystem(probe), LIMIT)
+    path = probe / "open-unlinked-edquot"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        os.unlink(path)
+        require(os.fstat(fd).st_nlink == 0, "G5A_AGGREGATE_UNLINKED_FD_REQUIRED")
+        try:
+            os.posix_fallocate(fd, 0, hard_bytes + 4096)
+        except OSError as error:
+            require(error.errno == errno.EDQUOT,
+                    "G5A_AGGREGATE_ACTUAL_UNLINKED_EDQUOT_REQUIRED")
+            result = {"errno": error.errno, "name": errno.errorcode[error.errno],
+                "open_unlinked": True, "allocated_bytes": os.fstat(fd).st_blocks * 512,
+                "same_project_id": expected_id, "hard_bytes": hard_bytes}
+        else:
+            raise ValueError("G5A_AGGREGATE_UNLINKED_QUOTA_NOT_ENFORCED")
+    finally:
+        os.close(fd)
+    return result
+
+
+def trusted_stage_kernel_readback(setup, *, stage):
+    """Root readback after the original manager's stage FIN, not an admission.
+
+    A captured JSON copy cannot attest the preceding seal, original manager,
+    actual workload or its FIN. The live ROOT parent must bind those facts.
+    """
+    require(os.getresuid() == (0, 0, 0) and len(os.listdir("/proc/self/task")) == 1,
+            "G5A_AGGREGATE_TRUSTED_SINGLE_ROOT_REQUIRED")
+    require(type(setup) is dict and setup.get("schema") == SCHEMA
+            and setup.get("phase") == "TRUSTED_SETUP_ONLY" and stage in STAGES,
+            "G5A_AGGREGATE_ORIGINAL_STAGE_SETUP_REQUIRED")
+    root, info = _plain_directory(setup["root"])
+    require([info.st_dev, info.st_ino] == setup["root_identity"]
+            and _mount(root) == setup["mount"]
+            and calibration.project_attributes(root)["project_id"] == setup["project_id"]
+            and calibration.project_attributes(root)["inheritance"] is True,
+            "G5A_AGGREGATE_STAGE_ROOT_REBOUND")
+    quota = _quota(setup["device"], setup["project_id"])
+    require(quota["hard_bytes"] == quota["soft_bytes"] == LIMIT
+            and quota["hard_inodes"] == quota["soft_inodes"] == INODES
+            and 0 <= quota["used_bytes"] <= LIMIT
+            and 0 <= quota["used_inodes"] <= INODES,
+            "G5A_AGGREGATE_STAGE_KERNEL_QUOTA_REBOUND")
+    physical = calibration.filesystem(root)
+    require(physical["available_bytes"] >= 4 * 1024**3
+            and physical["free_inodes"] * 10 >= physical["total_inodes"],
+            "G5A_AGGREGATE_STAGE_PHYSICAL_RESERVE_REBOUND")
+    return {"schema": SCHEMA, "phase": "POST_ORIGINAL_STAGE_FIN_READBACK_ONLY",
+            "stage": stage, "root_identity": setup["root_identity"],
+            "mount": setup["mount"], "kernel_quota": quota, "physical": physical,
+            "original_manager_fin_verified": False, "launch_authorized": False,
+            "G5_GREEN": False, "qualification_claimed": False}
+
+
+class _PathBeneath(ctypes.Structure):
+    _fields_ = (("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32))
+
+
+def require_inherited_descriptors(root, project_id, descriptors):
+    """Reject regular inherited FDs outside the same held project.
+
+    The production caller always passes stdio 0–2 and then closes all other
+    FDs before installing Landlock. A directory path check cannot see an
+    already-open, possibly unlinked file.
+    """
+    root, info = _plain_directory(root)
+    mount_id = calibration.project_attributes(root)["mount_id"]
+    require(type(descriptors) in (tuple, list) and descriptors and
+            all(type(fd) is int and fd >= 0 for fd in descriptors),
+            "G5A_AGGREGATE_INHERITED_DESCRIPTOR_SET_REQUIRED")
+    for fd in descriptors:
+        held = os.fstat(fd)
+        if stat.S_ISREG(held.st_mode):
+            target = Path(os.readlink(f"/proc/self/fd/{fd}"))
+            require(target.is_relative_to(root) and held.st_dev == info.st_dev
+                    and calibration.descriptor_mount_id(fd) == mount_id,
+                    "G5A_AGGREGATE_INHERITED_OUTSIDE_FILE_FORBIDDEN")
+            attrs = bytearray(28)
+            fcntl.ioctl(fd, calibration.FSGETXATTR, attrs, True)
+            require(struct.unpack("=5I8x", attrs)[3] == project_id,
+                    "G5A_AGGREGATE_INHERITED_FD_PROJECT_REBOUND")
+        else:
+            require(stat.S_ISFIFO(held.st_mode) or stat.S_ISCHR(held.st_mode),
+                    "G5A_AGGREGATE_INHERITED_SPECIAL_FD_FORBIDDEN")
+
+
+def install_stage_write_boundary(root, *, outside_control, project_id):
+    """Landlock all inherited subprocess writes to the one quota project.
+
+    The original native NONROOT/cap0/NNP/seccomp seal must already exist.
+    All extra FDs are closed. An inherited regular manager log is accepted
+    only when its live fd has the same project ID and is inside this root.
+    """
+    require(platform.machine() in ("x86_64", "aarch64") and os.getuid() == os.geteuid() > 0,
+            "G5A_AGGREGATE_NATIVE_NONROOT_ARCH_REQUIRED")
+    root, info = _plain_directory(root)
+    outside, other = _plain_directory(outside_control)
+    require(type(project_id) is int and project_id > 0
+            and root.parent == outside.parent and other.st_dev == info.st_dev
+            and other.st_uid == os.getuid()
+            and stat.S_IMODE(other.st_mode) & 0o300 == 0o300
+            and calibration.project_attributes(root)["inheritance"] is True
+            and calibration.project_attributes(root)["project_id"] == project_id
+            and calibration.project_attributes(outside)["project_id"] != project_id,
+            "G5A_AGGREGATE_BOUNDARY_OWN_PROJECT_REQUIRED")
+    status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines() if ":" in line)
+    require(status["NoNewPrivs"].strip() == "1" and status["Seccomp"].strip() == "2"
+            and all(int(status[key].strip(), 16) == 0 for key in
+                    ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")),
+            "G5A_AGGREGATE_ORIGINAL_NONROOT_SEAL_REQUIRED")
+    require_inherited_descriptors(root, project_id, (0, 1, 2))
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.syscall.restype = ctypes.c_long
+    abi = libc.syscall(444, ctypes.c_void_p(), 0, 1)
+    require(abi >= 3, "G5A_AGGREGATE_LANDLOCK_TRUNCATE_AND_REFER_REQUIRED")
+    rights = sum(1 << bit for bit in WRITE_BITS)
+    root_fd = os.open(root, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    ruleset_fd = -1
+    try:
+        held = os.fstat(root_fd)
+        require((held.st_dev, held.st_ino) == (info.st_dev, info.st_ino),
+                "G5A_AGGREGATE_BOUNDARY_DIRFD_REBOUND")
+        for value in os.listdir("/proc/self/fd"):
+            if value.isdecimal() and int(value) > 2 and int(value) != root_fd:
+                try:
+                    os.close(int(value))
+                except OSError as error:
+                    require(error.errno == errno.EBADF, "G5A_AGGREGATE_FD_CLOSE_FAILED")
+        mask = ctypes.c_uint64(rights)
+        ruleset_fd = libc.syscall(444, ctypes.byref(mask), ctypes.sizeof(mask), 0)
+        require(ruleset_fd >= 0, "G5A_AGGREGATE_LANDLOCK_RULESET_FAILED")
+        rule = _PathBeneath(rights, root_fd)
+        require(libc.syscall(445, ruleset_fd, 1, ctypes.byref(rule), 0) == 0
+                and libc.syscall(446, ruleset_fd, 0) == 0,
+                "G5A_AGGREGATE_LANDLOCK_SEAL_FAILED")
+    finally:
+        if ruleset_fd >= 0:
+            os.close(ruleset_fd)
+        os.close(root_fd)
+    target = outside / "outside-write-must-not-exist"
+    try:
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except OSError as error:
+        require(error.errno == errno.EACCES and not target.exists(),
+                "G5A_AGGREGATE_ACTUAL_OUTSIDE_WRITE_DENIAL_REQUIRED")
+    else:
+        os.close(fd)
+        raise ValueError("G5A_AGGREGATE_WRITE_BOUNDARY_ESCAPE")
+    return {"landlock_abi": abi, "handled_write_rights": rights,
+            "root_device": info.st_dev, "root_inode": info.st_ino,
+            "outside_errno": errno.EACCES, "all_extra_fds_closed": True,
+            "inherited_by_fork_exec": True, "launch_authorized": False}
+
+
+def guarded_stage_command(*, stage, root, outside_control, project_id, cwd, argv, python):
+    """Construct the child sealed under the unchanged original manager.
+
+    Caller must pass this argv to its existing execute_owned/OwnedRunner. The
+    wrapper itself cannot confer G5A admission or claim an original FIN.
+    """
+    require(type(argv) is list and argv and all(type(item) is str and item for item in argv)
+            and type(python) is str and Path(python).is_file(),
+            "G5A_AGGREGATE_EXACT_COMMAND_REQUIRED")
+    require_stage_topology(root, stage=stage, project_id=project_id,
+        write_roots={"cwd": cwd})
+    return [python, "-I", "-B", str(Path(__file__).absolute()), "--sealed-stage",
+            stage, str(root), str(outside_control), str(project_id), "--", *argv]
+
+
+def _sealed_stage_main(arguments):
+    require(len(arguments) >= 7 and arguments[0] == "--sealed-stage"
+            and arguments[1] in STAGES and arguments[5] == "--",
+            "G5A_AGGREGATE_SEALED_STAGE_ARGUMENTS_REQUIRED")
+    _, stage, root, outside, identifier, _, *command = arguments
+    require(identifier.isdecimal() and command and os.getuid() == os.geteuid() > 0,
+            "G5A_AGGREGATE_SEALED_STAGE_NONROOT_REQUIRED")
+    require_stage_topology(root, stage=stage, project_id=int(identifier),
+        write_roots={"cwd": Path.cwd()})
+    libc = ctypes.CDLL(None, use_errno=True)
+    require(libc.prctl(38, 1, 0, 0, 0) == 0,
+            "G5A_AGGREGATE_NO_NEW_PRIVILEGES_REQUIRED")
+    calibration.install_seccomp()
+    install_stage_write_boundary(root, outside_control=outside,
+        project_id=int(identifier))
+    os.execvpe(command[0], command, os.environ)
+
+
+def stage_environment(root, existing, *, project_id=None, stage=None):
+    """Place installer, compiler, temporary, Git and reader output in quota."""
+    root, _ = _plain_directory(root)
+    require(type(existing) is dict and all(type(k) is str and type(v) is str for k, v in existing.items())
+            and not any(k in existing for k in ("GH_TOKEN", "GITHUB_TOKEN", "RC6_READONLY_GIT_TOKEN")),
+            "G5A_AGGREGATE_NO_CHILD_BEARER_REQUIRED")
+    paths = {"HOME": root / "home", "TMPDIR": root / "tmp", "TMP": root / "tmp", "TEMP": root / "tmp",
+             "XDG_CACHE_HOME": root / "cache", "XDG_CONFIG_HOME": root / "config",
+             "XDG_DATA_HOME": root / "data", "XDG_RUNTIME_DIR": root / "tmp",
+             "PIP_CACHE_DIR": root / "cache", "PIP_BUILD_TRACKER": root / "tmp",
+             "PIP_SRC": root / "builds", "CARGO_HOME": root / "builds",
+             "RUSTUP_HOME": root / "builds", "CCACHE_DIR": root / "cache",
+             "PYTHONPYCACHEPREFIX": root / "cache"}
+    require(all(path.is_dir() and not path.is_symlink() and path.stat().st_dev == root.stat().st_dev
+                for path in paths.values()), "G5A_AGGREGATE_ALL_CHILD_WRITE_ROOTS_REQUIRED")
+    if project_id is not None:
+        require_stage_topology(root, stage=stage, project_id=project_id,
+            write_roots={name: path for name, path in paths.items() if name.isidentifier()})
+        require(all(calibration.project_attributes(path)["project_id"] == project_id
+                    for path in paths.values()),
+                "G5A_AGGREGATE_ALL_ENVIRONMENT_PROJECTS_REQUIRED")
+    result = {key: value for key, value in existing.items() if key not in paths}
+    result.update({key: str(path) for key, path in paths.items()})
+    result.update(PYTHONDONTWRITEBYTECODE="1", GIT_OPTIONAL_LOCKS="0",
+                  GIT_NO_LAZY_FETCH="1", GIT_CONFIG_NOSYSTEM="1",
+                  GIT_CONFIG_GLOBAL="/dev/null", PIP_NO_CACHE_DIR="1",
+                  PIP_DISABLE_PIP_VERSION_CHECK="1")
+    return result
+
+
+def incomplete_evidence(*, setup, unlinked_control, boundary, stages):
+    """Retain native facts without turning serialized evidence into a gate."""
+    require(type(stages) is list and all(stage in STAGES for stage in stages),
+            "G5A_AGGREGATE_ORIGINAL_STAGES_REQUIRED")
+    return {"schema": SCHEMA, "setup": setup, "unlinked_control": unlinked_control,
+            "boundary": boundary, "observed_stages": stages,
+            "all_stages_observed": set(stages) == STAGES,
+            "native_original_fin": False, "material_gate_authorized": False,
+            "launch_authorized": False, "G5_GREEN": False,
+            "qualification_claimed": False, "real_orders_sent": 0,
+            "reason": "G5A_HOST_STAGE_AGGREGATE_ENFORCEMENT_NOT_VERIFIED"}
+
+
+if __name__ == "__main__":
+    _sealed_stage_main(sys.argv[1:])

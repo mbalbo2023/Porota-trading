@@ -1,0 +1,98 @@
+DIAGNOSTIC ONLY: uncommitted representation focal; not Gov or candidate acceptance.
+Source: /workspace/scratch/rc6-path-guards-focal-311.xml
+Source SHA256: 59ca112df472df78d938a57c62dafe2555907a283c11a480c76f54ece256153f
+Capture: decoded original JUnit failure.text; first-run stdout was not captured to a file.
+Scope: two selected modules; 234 tests, 50 PASS, 3 FAIL, 181 setup errors; RED retained.
+Private cloned fixtures were removed only after the run to release disk space.
+
+CASE: tests.test_rc6_convergence_provenance::test_prior_audit_gate_accepts_actual_native_convergence_parser_with_controlled_junit
+FAILURE MESSAGE: scripts.rc6_issue465_audit_gate.AuditGateError: FROZEN_DISK_MODE_MISMATCH
+candidate = (PosixPath('/workspace/scratch/rc6-path-guards-focal-311/test_prior_audit_gate_accepts_0/repo'), PosixPath('/workspace...t-fixture.xml'), PosixPath('/workspace/scratch/rc6-path-guards-focal-311/test_prior_audit_gate_accepts_0/report.json'))
+
+    def test_prior_audit_gate_accepts_actual_native_convergence_parser_with_controlled_junit(candidate):
+        """Real original Git/authority and both validators; XML is a parser fixture."""
+        root, xml, _ = candidate
+        governed = prior_audit_parser_fixture(root, xml)
+>       result = audit465.verify(root, xml, governed)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_convergence_provenance.py:363: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_issue465_audit_gate.py:360: in verify
+    require(stat.S_IMODE(info.st_mode) == (0o755 if current["git_mode"] == "100755" else 0o644),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False, reason = 'FROZEN_DISK_MODE_MISMATCH'
+
+    def require(condition, reason):
+        if not condition:
+>           raise AuditGateError(reason)
+E           scripts.rc6_issue465_audit_gate.AuditGateError: FROZEN_DISK_MODE_MISMATCH
+
+scripts/rc6_issue465_audit_gate.py:51: AuditGateError
+
+CASE: tests.test_rc6_convergence_provenance::test_late_nonfront_tracked_mutation_is_rejected_after_actual_full_provenance
+FAILURE MESSAGE: AssertionError: Regex pattern did not match.
+  Expected regex: 'TRACKED_CHECKOUT_CHANGED'
+  Actual message: 'FROZEN_DISK_MODE_MISMATCH'
+candidate = (PosixPath('/workspace/scratch/rc6-path-guards-focal-311/test_late_nonfront_tracked_mut0/repo'), PosixPath('/workspace...t-fixture.xml'), PosixPath('/workspace/scratch/rc6-path-guards-focal-311/test_late_nonfront_tracked_mut0/report.json'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fc831921c10>
+
+    def test_late_nonfront_tracked_mutation_is_rejected_after_actual_full_provenance(candidate, monkeypatch):
+        """Real validators and Git; XML is an explicit controlled parser input."""
+        root, xml, _ = candidate
+        governed = prior_audit_parser_fixture(root, xml)
+        original = audit465._guarded_front_path
+        helper = root / 'scripts/rc6_prior_regression_successors.py'
+        assert not any(helper.relative_to(root).as_posix() in row['paths']
+                       for row in json.loads((root / audit465.MATRIX).read_bytes())['workstreams'])
+        changed = []
+        def mutate_after_full_proof(*args):
+            result = original(*args)
+            if not changed:
+                helper.write_bytes(helper.read_bytes() + b'\n# controlled late tracked mutation\n')
+                changed.append(True)
+            return result
+        monkeypatch.setattr(audit465, '_guarded_front_path', mutate_after_full_proof)
+>       with pytest.raises(audit465.AuditGateError, match='TRACKED_CHECKOUT_CHANGED'):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'TRACKED_CHECKOUT_CHANGED'
+E         Actual message: 'FROZEN_DISK_MODE_MISMATCH'
+
+tests/test_rc6_convergence_provenance.py:413: AssertionError
+
+CASE: tests.test_rc6_convergence_provenance::test_original_gate_receipt_binding_counterexample_and_current_native_rejection
+FAILURE MESSAGE: controlled_original_receipt_binding_gate.AuditGateError: CONVERGENCE_FRONT_EVOLUTION_UNGUARDED:bd_ppi_readonly_guard.py
+candidate = (PosixPath('/workspace/scratch/rc6-path-guards-focal-311/test_original_gate_receipt_bin0/repo'), PosixPath('/workspace...t-fixture.xml'), PosixPath('/workspace/scratch/rc6-path-guards-focal-311/test_original_gate_receipt_bin0/report.json'))
+
+    def test_original_gate_receipt_binding_counterexample_and_current_native_rejection(candidate):
+        """Real old/current validators; controlled XML is not execution authentication."""
+        root, xml, _ = candidate
+        governed = prior_audit_parser_fixture(root, xml)
+        proof = json.loads(governed.read_bytes())
+        proof.update(candidate_sha='0' * 40, candidate_tree='0' * 40, junit_sha256='0' * 64)
+        write_json(governed, proof)
+        old_sha = '003dccb5d07ebf7f443e58e0bb6499837a0a8a52'
+        old_source = provenance.git(REPO, 'show', old_sha + ':scripts/rc6_issue465_audit_gate.py', binary=True)
+        old = types.ModuleType('controlled_original_receipt_binding_gate')
+        exec(compile(old_source, old_sha + ':scripts/rc6_issue465_audit_gate.py', 'exec'), old.__dict__)
+        # Preserve the actual native validator counterexample at its immutable old
+        # source, without presenting synthetic case metadata as a real governed run.
+>       assert old.verify(root, xml, governed)['status'] == 'GREEN'
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_convergence_provenance.py:431: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+003dccb5d07ebf7f443e58e0bb6499837a0a8a52:scripts/rc6_issue465_audit_gate.py:318: in verify
+    ???
+003dccb5d07ebf7f443e58e0bb6499837a0a8a52:scripts/rc6_issue465_audit_gate.py:141: in _guarded_front_path
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+reason = 'CONVERGENCE_FRONT_EVOLUTION_UNGUARDED:bd_ppi_readonly_guard.py'
+
+>   ???
+E   controlled_original_receipt_binding_gate.AuditGateError: CONVERGENCE_FRONT_EVOLUTION_UNGUARDED:bd_ppi_readonly_guard.py
+
+003dccb5d07ebf7f443e58e0bb6499837a0a8a52:scripts/rc6_issue465_audit_gate.py:51: AuditGateError

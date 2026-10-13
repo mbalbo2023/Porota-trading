@@ -1,0 +1,9 @@
+{
+  "exception_class": "ValueError",
+  "execution_id": "58ec56cb5b3842da9ffd86e5d26f16d8",
+  "raw_logs_preserved": true,
+  "reason": "ACTUAL_GOVERNED_PHASE_OWNED_CHILD_CUSTODY_NOT_CLOSED:collection",
+  "source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "status": "RED"
+}
