@@ -8,6 +8,7 @@ past lease's validity against the reviewer's current time.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 import hashlib
 import http.client
@@ -37,6 +38,7 @@ OBJECT_PREFIX = 'owner-object-'
 SHA = re.compile('[0-9a-f]{64}')
 _WRITTEN_OBJECTS = {}
 _WRITTEN_CONTROL_BYTES = {}
+_HTTP_METRICS = ContextVar('rc6_owned_http_metrics', default=None)
 
 
 class LeaseControlFailure(ValueError):
@@ -109,6 +111,8 @@ def _http_budget(deadline, budget_seconds=HTTP_BUDGET_SECONDS):
 
 
 def api_get(path, deadline, *, retry_transient=False, metrics=None):
+    if metrics is None:
+        metrics = _HTTP_METRICS.get()
     token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
     require(bool(token), 'OWNED_LEASE_READONLY_TOKEN_REQUIRED')
     require(type(path) is str and (path == '' or path.startswith('/'))
@@ -436,8 +440,7 @@ class GateLeaseMonitor:
         v3_retry=(gate in ('G5P-acquire','G5P-certify')
             or release_profile=='PAPER_V3_ONLY')
         self.get=(get if get is not None else
-            lambda path, deadline: api_get(path,deadline,retry_transient=v3_retry,
-                metrics=self.current_http_metrics))
+            lambda path, deadline: api_get(path,deadline,retry_transient=v3_retry))
         self.clock, self.monotonic = clock or utc, monotonic or time.monotonic
         self.objects, self.object_bytes, self.events = {}, 0, []
         self.last_scope, self.last_calls, self.last_observation = None, None, None
@@ -580,7 +583,11 @@ class GateLeaseMonitor:
         def record_get(path):
             if path not in calls:
                 require(time.monotonic() < deadline, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
-                calls[path] = self.get(path, deadline)
+                token = _HTTP_METRICS.set(self.current_http_metrics)
+                try:
+                    calls[path] = self.get(path, deadline)
+                finally:
+                    _HTTP_METRICS.reset(token)
             return calls[path]
         with _http_budget(deadline, self.http_budget_seconds):
             if self.g5a_revision is not None:
