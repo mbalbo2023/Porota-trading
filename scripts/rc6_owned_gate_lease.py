@@ -108,7 +108,7 @@ def _http_budget(deadline, budget_seconds=HTTP_BUDGET_SECONDS):
         signal.signal(signal.SIGALRM, previous)
 
 
-def api_get(path, deadline, *, retry_transient=False):
+def api_get(path, deadline, *, retry_transient=False, metrics=None):
     token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
     require(bool(token), 'OWNED_LEASE_READONLY_TOKEN_REQUIRED')
     require(type(path) is str and (path == '' or path.startswith('/'))
@@ -129,9 +129,15 @@ def api_get(path, deadline, *, retry_transient=False):
     for attempt in range(transient_attempts):
         remaining = deadline - time.monotonic()
         require(0 < remaining <= G5P_HTTP_BUDGET_SECONDS, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
+        if metrics is not None:
+            # Count actual transport attempts, including 304, retry and failure.
+            # No URL, response body, ETag or credential enters this receipt.
+            metrics['attempts'] += 1
         try:
             with urllib.request.urlopen(request, timeout=remaining) as response:
                 status = getattr(response, 'status', 200)
+                if metrics is not None:
+                    metrics['statuses'][str(status)] = metrics['statuses'].get(str(status), 0) + 1
                 if status == 304:
                     require(cached is not None, 'OWNED_LEASE_304_WITHOUT_VERIFIED_CACHE')
                     return admission.document(cached[1])
@@ -140,6 +146,9 @@ def api_get(path, deadline, *, retry_transient=False):
                 etag = response.headers.get('ETag') if conditional else None
             break
         except urllib.error.HTTPError as error:
+            if metrics is not None:
+                code = str(error.code)
+                metrics['statuses'][code] = metrics['statuses'].get(code, 0) + 1
             if error.code == 304:
                 require(cached is not None, 'OWNED_LEASE_304_WITHOUT_VERIFIED_CACHE')
                 return admission.document(cached[1])
@@ -167,6 +176,8 @@ def api_get(path, deadline, *, retry_transient=False):
             time.sleep(min(.15 * (attempt + 1), .6,
                            max(0, deadline-time.monotonic() - 1)))
         except http.client.RemoteDisconnected:
+            if metrics is not None:
+                metrics['disconnects'] += 1
             # A closed gateway connection carries no current authority.
             # Repeat the same live GET within the original alarm and deadline.
             if (not retry_transient or attempt == transient_attempts - 1
@@ -425,13 +436,15 @@ class GateLeaseMonitor:
         v3_retry=(gate in ('G5P-acquire','G5P-certify')
             or release_profile=='PAPER_V3_ONLY')
         self.get=(get if get is not None else
-            lambda path, deadline: api_get(path,deadline,retry_transient=v3_retry))
+            lambda path, deadline: api_get(path,deadline,retry_transient=v3_retry,
+                metrics=self.current_http_metrics))
         self.clock, self.monotonic = clock or utc, monotonic or time.monotonic
         self.objects, self.object_bytes, self.events = {}, 0, []
         self.last_scope, self.last_calls, self.last_observation = None, None, None
         self.started, self.pid, self.command_label, self.stop_reason = None, None, None, None
         self.launch_intent, self.native_deadline, self.previous_clock = None, None, None
         self.last_local_poll, self.last_api_poll, self.final_path = None, None, None
+        self.current_http_metrics = None
         self.seen_owner_versions = {}
         self.g5a_namespace_receipt = g5a_namespace_receipt
         self.g5a_revision = g5a_revision
@@ -513,6 +526,7 @@ class GateLeaseMonitor:
                     'http_status': error.code if isinstance(error, urllib.error.HTTPError) else None,
                     'http_failure_class': http_failure_class,
                     'http_limit_counters': safe_http_headers,
+                    'http_diagnostic': getattr(self, 'current_http_metrics', None),
                     'transport_cause_class': (type(error.reason).__name__
                         if isinstance(error, urllib.error.URLError) else None),
                     'qualification_claimed': False, 'real_orders_sent': 0}
@@ -528,6 +542,7 @@ class GateLeaseMonitor:
                     'http_status': detail['http_status'],
                     'http_failure_class': detail['http_failure_class'],
                     'transport_cause_class': detail['transport_cause_class'],
+                    'http_diagnostic': detail['http_diagnostic'],
                     'real_orders_sent': 0}, sort_keys=True), flush=True)
         return LeaseControlFailure(self.stop_reason)
 
@@ -561,6 +576,7 @@ class GateLeaseMonitor:
         # unchanged native deadline by the time already spent in this method.
         deadline = budget_entered + allowance
         calls = {}
+        self.current_http_metrics = {'attempts': 0, 'statuses': {}, 'disconnects': 0}
         def record_get(path):
             if path not in calls:
                 require(time.monotonic() < deadline, 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
@@ -599,7 +615,9 @@ class GateLeaseMonitor:
                 'scope_sha256': digest(wire(scope)),
                 'latest_owners': {issue: {'comment_id': record['comment_id'],
                     'lease_expires_utc': record['lease_expires_utc']}
-                    for issue, record in scope['fresh_ownership'].items()}, 'lease_coverage': proof}
+                    for issue, record in scope['fresh_ownership'].items()}, 'lease_coverage': proof,
+                'http_diagnostic': {'distinct_paths': len(calls),
+                    'transport': self.current_http_metrics}}
             require(0 <= snapshot['elapsed_seconds'] <= self.http_budget_seconds,
                 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
             identifier = self._store({'kind': 'snapshot', 'value': snapshot})
