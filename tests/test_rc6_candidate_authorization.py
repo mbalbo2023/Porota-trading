@@ -214,6 +214,15 @@ def test_duplicate_owner_receipt_field_rejects_launch_before_capacity(candidate,
     assert reached == []
 
 
+def test_one_pinned_invalid_historical_launch_is_inert_but_other_duplicates_fail(monkeypatch):
+    body='OWNER_RECEIPT_473=transfer\nOWNER_RECEIPT_473=launch\n'
+    monkeypatch.setattr(admission, 'QUARANTINED_DUPLICATE_LAUNCH_SHA256',
+                        hashlib.sha256(body.encode()).hexdigest())
+    assert admission.fields(body) == {}
+    with pytest.raises(ValueError, match='ADMISSION_DUPLICATE_RECEIPT_FIELD'):
+        admission.fields(body + 'SCOPE=changed\n')
+
+
 def test_api_only_live_monitor_reads_dynamic_candidate_and_current_dual_leases(candidate):
     api, _event, _path = candidate
     result = admission.owned_gate_control_scope(source_sha=SHA, source_tree=TREE,

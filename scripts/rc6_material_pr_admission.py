@@ -113,7 +113,13 @@ def document(raw):
 def stamp(value):
     require(isinstance(value,str) and re.fullmatch(r'20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z',value),'EXACT_UTC_ADMISSION_STAMP_REQUIRED')
     return datetime.fromisoformat(value.replace('Z','+00:00'))
+# Immutable #471/6137719110 was rejected before native work because its
+# launch body repeated OWNER_RECEIPT_473. It remains in the complete timeline.
+# Its exact bytes have no fields and can never grant owner or launch authority.
+QUARANTINED_DUPLICATE_LAUNCH_SHA256 = 'a896b32aacd67c4553dd4ee18c0f24b26a5dd6d8e693fc90cefa05e7e10e788f'
 def fields(body):
+    if hashlib.sha256(body.encode()).hexdigest() == QUARANTINED_DUPLICATE_LAUNCH_SHA256:
+        return {}
     result={}
     for line in body.splitlines():
         item=re.fullmatch(r'([A-Z][A-Z0-9_]*|real_orders_sent)=([^\r\n]*)',line)
