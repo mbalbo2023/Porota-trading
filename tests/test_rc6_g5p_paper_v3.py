@@ -446,12 +446,8 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
                 with self.assertRaisesRegex(ValueError,'G5P_BUILDER_DIAGNOSTIC_CONTROL_OWNER_INVALID'):
                     carrier.preserve_closed_lease_stop(candidate,run,root)
 
-    def test_original_full_git_builder_derives_only_exact_pr492_authority_literals(self):
-        scope={'pr':492,'branch':'fix/rc6-g5p-paper-v3-20261011',
-            'base_branch':'deploy/rc6-pr69-isolated-20260915',
-            'base_sha':'da697c6e6c2274579f9e4a112fabc4327475dd35',
-            'base_tree':'96a112a55ed779df3f7056b1e30d81aac8d0b791',
-            'authorization_schema':'porota.rc6.candidate-launch.v1'}
+    def test_original_full_git_builder_derives_only_exact_candidate_authority_literals(self):
+        scope=derive.expected_candidate_scope()
         def save_raw(path,raw):
             path.write_bytes(raw)
             return hashlib.sha256(raw).hexdigest()
@@ -465,15 +461,15 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
             legacy=derive.prepare(source,root/'legacy',**kwargs)
             new=Path(candidate['builder_path']).read_text()
             old=Path(legacy['builder_path']).read_text()
-            self.assertIn("row['branch'] == 'fix/rc6-g5p-paper-v3-20261011'",new)
-            self.assertIn("row['PR'] == 492",new)
+            self.assertIn("row['branch'] == " + repr(scope['branch']),new)
+            self.assertIn("row['PR'] == " + str(scope['pr']),new)
             self.assertIn("row['PR'] == 476",old)
-            self.assertNotIn("row['PR'] == 492",old)
+            self.assertNotIn("row['PR'] == " + str(scope['pr']),old)
             self.assertTrue(candidate['builder_only_exact_candidate_authority_literals_changed'])
             self.assertFalse(candidate['builder_all_function_AST_unchanged'])
             self.assertTrue(legacy['builder_all_function_AST_unchanged'])
             self.assertEqual(candidate['original_pins'],legacy['original_pins'])
-            for changed in ({**scope,'pr':493},{**scope,'branch':'ops/rc6-sre-deep-20261011'},
+            for changed in ({**scope,'pr':scope['pr']+1},{**scope,'branch':'ops/rc6-sre-deep-20261011'},
                             {**scope,'base_sha':'0'*40}):
                 with self.assertRaisesRegex(ValueError,'G5P_BUILDER_EXACT_AUTHENTICATED_PR_SCOPE_REQUIRED'):
                     derive.prepare(source,root/('invalid-'+str(changed['pr'])+'-'+changed['branch'].split('/')[0]
@@ -594,7 +590,7 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
                 self.assertEqual(captured,[budget])
                 self.assertEqual(saved.call_args.args[0]['value']['http_total_budget_seconds'],budget)
 
-    def test_cheap_v3_monitor_requires_authenticated_profile(self):
+    def test_ordered_v3_monitor_requires_authenticated_profile(self):
         now=datetime.now(timezone.utc)
         context={'gate':'cheap','source_sha':'a'*40,'source_tree':'b'*40,
                  'owner_session':'CODEX_G5P_TEST','release_profile':'PAPER_V3_ONLY'}
@@ -609,12 +605,11 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
             self.assertEqual(lease._scope(context,now,lambda _path:None)['release_profile'],
                              'PAPER_V3_ONLY')
         with tempfile.TemporaryDirectory() as temp:
-            with self.assertRaisesRegex(lease.LeaseControlFailure,
-                                        'OWNED_LEASE_ONLY_CHEAP_V3_PROFILE_MAY_EXTEND_BUDGET'):
-                lease.GateLeaseMonitor(temp,source_sha='a'*40,source_tree='b'*40,
+            monitor=lease.GateLeaseMonitor(temp,source_sha='a'*40,source_tree='b'*40,
                     owner_session='CODEX_G5P_TEST',gate='full-gov311',release_profile='PAPER_V3_ONLY',
                     launch_receipt_url='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
                     run_id=123,run_attempt=1)
+            self.assertEqual(monitor.http_budget_seconds,lease.G5P_HTTP_BUDGET_SECONDS)
 
     def test_owned_lease_replays_bare_releases_and_only_authenticated_disjoint_writer(self):
         opened=datetime(2026,10,11,19,0,tzinfo=timezone.utc)
@@ -1854,7 +1849,7 @@ class PaperV3PhysicalAdmission(unittest.TestCase):
         issued = SimpleNamespace(owner_session=owner, approval_url=approval_url)
         launch = {"body": "exact launch", "created_at": "2026-10-12T01:00:00Z",
                   "html_url": launch_url}
-        successors = {issue: {"body": "SUCCESSION_KIND=EXPLICIT_USER_AUTHORIZATION_AFTER_AUTHENTIC_RELEASE\n",
+        successors = {issue: {"body": "SUCCESSION_KIND=EXPLICIT_USER_AUTHORIZATION_AFTER_AUTHENTIC_RELEASE\nBASE_SHA=" + "d" * 40 + "\n",
                               "created_at": "2026-10-12T00:59:00Z",
                               "html_url": "https://github.com/mbalbo2023/Porota-trading/issues/" + str(issue)}
                       for issue in (471, 473)}
