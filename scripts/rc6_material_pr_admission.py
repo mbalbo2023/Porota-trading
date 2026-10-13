@@ -565,6 +565,17 @@ def authenticated_dispatch_bridge(event,gate,*,get=None,sleep=None):
     require(sender=='github-actions[bot]' and gate in BRIDGE_STAGES
         and re.fullmatch(r'[1-9][0-9]{0,19}',number or '') is not None,
         'BOT_DISPATCH_EXACT_BRIDGE_RUN_REQUIRED')
+    launch=comment(inputs.get('launch_receipt_url'),471,get=reader)
+    owner=inputs.get('owner_session')
+    anchors=administrative_anchors(owner,get=reader)
+    claimed=fields(launch['body'])
+    tree=inputs.get('source_tree')
+    require(claimed.get('SOURCE_TREE')==tree,'BOT_DISPATCH_EXACT_LAUNCH_TREE_REQUIRED')
+    auth=launch_fields(launch,inputs.get('source_sha'),tree,owner,gate,
+        get=reader,anchors=anchors)
+    scope=candidate_scope(auth,owner=owner,anchors=anchors)
+    require(event.get('ref','').removeprefix('refs/heads/')==scope['branch'],
+        'BOT_DISPATCH_EXACT_CANDIDATE_BRANCH_REQUIRED')
     for attempt in range(16):
         bridge=reader('/actions/runs/'+number+'/attempts/1')
         require(bridge.get('id')==int(number) and bridge.get('run_attempt')==1
@@ -574,8 +585,10 @@ def authenticated_dispatch_bridge(event,gate,*,get=None,sleep=None):
             and bridge.get('actor',{}).get('login')=='mbalbo2023'
             and bridge.get('repository',{}).get('id')==REPO_ID
             and bridge.get('head_repository',{}).get('id')==REPO_ID
-            and any(pr.get('number')==492 and pr.get('head',{}).get('sha')==inputs.get('source_sha')
-                and pr.get('base',{}).get('ref')==BASE for pr in bridge.get('pull_requests',[])),
+            and any(pr.get('number')==scope['pr']
+                and pr.get('head',{}).get('sha')==inputs.get('source_sha')
+                and pr.get('base',{}).get('ref')==scope['base_branch']
+                for pr in bridge.get('pull_requests',[])),
             'BOT_DISPATCH_BRIDGE_OWNER_SOURCE_PR_OR_WORKFLOW_REBOUND')
         if bridge.get('status')=='completed':break
         require(bridge.get('status') in ('queued','in_progress') and attempt<15,

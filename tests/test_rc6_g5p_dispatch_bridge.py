@@ -82,32 +82,44 @@ class BridgeBodyTests(TestCase):
     def test_bot_dispatch_requires_successful_exact_owner_bridge(self):
         event={'sender':{'login':'github-actions[bot]'},
             'ref':'refs/heads/fix/rc6-g5p-paper-v3-20261011',
-            'inputs':{'bridge_run_id':'123','source_sha':'a'*40,'gate':'G5P-acquire'}}
+            'inputs':{'bridge_run_id':'123','source_sha':'a'*40,'source_tree':'b'*40,
+                'launch_receipt_url':'https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1',
+                'owner_session':'CODEX_OWNER','gate':'G5P-acquire'}}
         run={'id':123,'run_attempt':1,'event':'pull_request','head_sha':'a'*40,
             'head_branch':'fix/rc6-g5p-paper-v3-20261011',
             'path':'.github/workflows/rc6-unified-candidate-tests.yml',
             'actor':{'login':'mbalbo2023'},'repository':{'id':admission.REPO_ID},
             'head_repository':{'id':admission.REPO_ID},'status':'completed','conclusion':'success',
-            'pull_requests':[{'number':492,'head':{'sha':'a'*40},'base':{'ref':admission.BASE}}]}
+            'pull_requests':[{'number':498,'head':{'sha':'a'*40},'base':{'ref':admission.BASE}}]}
         jobs={'jobs':[{'name':'Dispatch exact owner-approved stage without gate credit',
                        'conclusion':'success'},
                       {'name':'RC6 G0-G1-cheap-dual @ '+ 'a'*40,'conclusion':'skipped'}]}
         def get(path):
             return run if path=='/actions/runs/123/attempts/1' else jobs
-        result=admission.authenticated_dispatch_bridge(event,'G5P-acquire',get=get,sleep=lambda _:None)
-        self.assertEqual(result['bridge_run_id'],123)
-        self.assertTrue(result['bridge_only_no_gate_credit'])
-        for changed in (dict(run,head_sha='b'*40),dict(run,actor={'login':'github-actions[bot]'}),
-                        dict(run,conclusion='failure')):
-            with self.subTest(changed=changed),self.assertRaises(ValueError):
+        scope={'pr':498,'branch':'fix/rc6-g5p-paper-v3-20261011','base_branch':admission.BASE}
+        with (patch.object(admission,'comment',return_value={'body':'SOURCE_TREE='+'b'*40}),
+              patch.object(admission,'administrative_anchors',return_value={}),
+              patch.object(admission,'launch_fields',return_value={'SOURCE_PR':'498'}),
+              patch.object(admission,'candidate_scope',return_value=scope)):
+            result=admission.authenticated_dispatch_bridge(event,'G5P-acquire',get=get,sleep=lambda _:None)
+            self.assertEqual(result['bridge_run_id'],123)
+            self.assertTrue(result['bridge_only_no_gate_credit'])
+            for changed in (dict(run,head_sha='b'*40),dict(run,actor={'login':'github-actions[bot]'}),
+                            dict(run,conclusion='failure'),
+                            dict(run,pull_requests=[{'number':492,'head':{'sha':'a'*40},
+                                'base':{'ref':admission.BASE}}])):
+                with self.subTest(changed=changed),self.assertRaises(ValueError):
+                    admission.authenticated_dispatch_bridge(event,'G5P-acquire',
+                        get=lambda path:changed if '/actions/runs/123/attempts/1'==path else jobs,
+                        sleep=lambda _:None)
+            with self.assertRaisesRegex(ValueError,'BRIDGE_JOB_OR_CHEAP_GATE_NOT_ISOLATED'):
                 admission.authenticated_dispatch_bridge(event,'G5P-acquire',
-                    get=lambda path:changed if '/actions/runs/123/attempts/1'==path else jobs,
+                    get=lambda path:run if '/actions/runs/123/attempts/1'==path else
+                        {'jobs':[jobs['jobs'][0],dict(jobs['jobs'][1],conclusion='success')]},
                     sleep=lambda _:None)
-        with self.assertRaisesRegex(ValueError,'BRIDGE_JOB_OR_CHEAP_GATE_NOT_ISOLATED'):
-            admission.authenticated_dispatch_bridge(event,'G5P-acquire',
-                get=lambda path:run if '/actions/runs/123/attempts/1'==path else
-                    {'jobs':[jobs['jobs'][0],dict(jobs['jobs'][1],conclusion='success')]},
-                sleep=lambda _:None)
+            bad=dict(event,inputs=dict(event['inputs'],source_tree='c'*40))
+            with self.assertRaisesRegex(ValueError,'BOT_DISPATCH_EXACT_LAUNCH_TREE_REQUIRED'):
+                admission.authenticated_dispatch_bridge(bad,'G5P-acquire',get=get)
         manual={'sender':{'login':'mbalbo2023'},'inputs':{}}
         self.assertIsNone(admission.authenticated_dispatch_bridge(manual,'G5P-acquire',get=get))
         manual['inputs']['bridge_run_id']='123'
