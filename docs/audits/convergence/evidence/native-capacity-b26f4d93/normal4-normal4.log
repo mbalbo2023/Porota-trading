@@ -1,0 +1,5 @@
+{"tick": 0, "sequence": 1, "phase": "PREOPEN", "pipeline_seconds": 11.761417540001275, "archive_seconds": 2.4922974740038626, "archive_allocated_bytes": 2383872}
+{"tick": 1, "sequence": 2, "phase": "OPEN", "pipeline_seconds": 16.26777050000237, "archive_seconds": 3.0856142260017805, "archive_allocated_bytes": 5111808}
+{"tick": 2, "sequence": 3, "phase": "OPEN", "pipeline_seconds": 15.489421977996244, "archive_seconds": 3.141051389000495, "archive_allocated_bytes": 6393856}
+{"tick": 3, "sequence": 4, "phase": "OPEN", "pipeline_seconds": 15.236541621998185, "archive_seconds": 3.563784404002945, "archive_allocated_bytes": 6807552}
+{"path": "/workspace/rc6-native-normal4-b26f4d93/result.json", "complete": true, "acceptance_complete": false, "wall_seconds": 77.75468144099432, "peak_rss_bytes": 306761728}

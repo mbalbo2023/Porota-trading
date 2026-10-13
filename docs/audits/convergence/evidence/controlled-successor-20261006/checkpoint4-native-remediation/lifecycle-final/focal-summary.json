@@ -1,0 +1,875 @@
+{
+  "actual_native_controls": {
+    "cli311": {
+      "test_real_finalizer_sigterm_is0": {
+        "actual_finalization_wall_seconds": 0.7589400310007477,
+        "cli_exit_code": 1,
+        "finalization_echild_actual": true,
+        "finalization_errors": [
+          {
+            "class": "RuntimeError",
+            "reason": "CHILD_FINALIZATION_SIGNAL_ATTEMPT_DENIED",
+            "stage": "nonnegative_stdlib_finalizers"
+          }
+        ],
+        "finalization_management_bound_seconds": 5,
+        "finalization_status": "RED",
+        "import_proof_complete": false,
+        "kernel": {
+          "actual_child_reaped": true,
+          "adopted_descendants_reaped": [],
+          "kernel_pre_popen_echild_verified": true,
+          "kernel_wait4_zero_observed_irreversible_red": false,
+          "late_observed_main_reap_irreversible_red": false,
+          "owned_children_exhaustion_verified": true,
+          "owned_group_signal_observations": [],
+          "process_group_absent_after_reap": true,
+          "process_group_absent_at_main_reap": true,
+          "remaining_owned_children": [],
+          "residual_descendants_observed": [],
+          "returncode": 1,
+          "subreaper_restore_attempted_on_all_activated_paths": true,
+          "supervisor_errors": [],
+          "timed_out": false
+        },
+        "native_business_complete": true,
+        "native_lifecycle_status": "RED",
+        "native_resource_exit_code": 0,
+        "protocol_steps": [
+          {
+            "completed": true,
+            "stage": "nonnegative_stdlib_finalizers",
+            "wall_seconds": 0.0016362120004487224
+          },
+          {
+            "completed": true,
+            "stage": "join_owned_children",
+            "wall_seconds": 0.7500960119996307
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_forkserver",
+            "wall_seconds": 6.16899887972977e-06
+          },
+          {
+            "completed": true,
+            "stage": "remaining_stdlib_finalizers",
+            "wall_seconds": 1.065600008587353e-05
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_resource_tracker",
+            "wall_seconds": 0.006589773000087007
+          },
+          {
+            "completed": true,
+            "stage": "verify_kernel_echild",
+            "wall_seconds": 3.604300036386121e-05
+          }
+        ],
+        "real_orders_sent": 0,
+        "signal_vetoed": true,
+        "source_database_unchanged": true,
+        "termination_signal_attempts": [
+          {
+            "event": "os.kill",
+            "pid_or_pgid": 9824,
+            "signal": 15,
+            "vetoed_before_syscall": true
+          }
+        ],
+        "veto_and_natural_join_observations": {
+          "child_alive_after_natural_drain": false,
+          "child_exitcode": 0,
+          "child_pid": 9824,
+          "infrastructure_after_failed_cli": {
+            "forkserver_alive_fd": null,
+            "forkserver_pid": null,
+            "resource_tracker_fd": null,
+            "resource_tracker_pid": null
+          },
+          "native_cli_code": 1,
+          "real_finalizer_no_longer_active": true,
+          "veto_witness": {
+            "child_alive_immediately_after_veto": true,
+            "reason": "CHILD_FINALIZATION_SIGNAL_DENIED_BEFORE_SYSCALL"
+          }
+        }
+      },
+      "test_standard_native_cli_reaps0": {
+        "actual_finalization_wall_seconds": 0.006559457999173901,
+        "cli_exit_code": 0,
+        "finalization_echild_actual": true,
+        "finalization_errors": [],
+        "finalization_management_bound_seconds": 5,
+        "finalization_status": "GREEN",
+        "import_proof_complete": false,
+        "kernel": {
+          "actual_child_reaped": true,
+          "adopted_descendants_reaped": [],
+          "kernel_pre_popen_echild_verified": true,
+          "kernel_wait4_zero_observed_irreversible_red": false,
+          "late_observed_main_reap_irreversible_red": false,
+          "owned_children_exhaustion_verified": true,
+          "owned_group_signal_observations": [],
+          "process_group_absent_after_reap": true,
+          "process_group_absent_at_main_reap": true,
+          "remaining_owned_children": [],
+          "residual_descendants_observed": [],
+          "returncode": 0,
+          "subreaper_restore_attempted_on_all_activated_paths": true,
+          "supervisor_errors": [],
+          "timed_out": false
+        },
+        "native_business_complete": true,
+        "native_lifecycle_status": "GREEN",
+        "native_resource_exit_code": 0,
+        "protocol_steps": [
+          {
+            "completed": true,
+            "stage": "nonnegative_stdlib_finalizers",
+            "wall_seconds": 9.524001143290661e-06
+          },
+          {
+            "completed": true,
+            "stage": "join_owned_children",
+            "wall_seconds": 3.805000233114697e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_forkserver",
+            "wall_seconds": 2.2240001271711662e-06
+          },
+          {
+            "completed": true,
+            "stage": "remaining_stdlib_finalizers",
+            "wall_seconds": 2.504000804037787e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_resource_tracker",
+            "wall_seconds": 0.006293753998761531
+          },
+          {
+            "completed": true,
+            "stage": "verify_kernel_echild",
+            "wall_seconds": 1.7235999621334486e-05
+          }
+        ],
+        "real_orders_sent": 0,
+        "signal_vetoed": false,
+        "source_database_unchanged": true,
+        "termination_signal_attempts": []
+      },
+      "test_standard_native_cli_reaps1": {
+        "actual_finalization_wall_seconds": 0.006676150998828234,
+        "cli_exit_code": 0,
+        "finalization_echild_actual": true,
+        "finalization_errors": [],
+        "finalization_management_bound_seconds": 5,
+        "finalization_status": "GREEN",
+        "import_proof_complete": false,
+        "kernel": {
+          "actual_child_reaped": true,
+          "adopted_descendants_reaped": [],
+          "kernel_pre_popen_echild_verified": true,
+          "kernel_wait4_zero_observed_irreversible_red": false,
+          "late_observed_main_reap_irreversible_red": false,
+          "owned_children_exhaustion_verified": true,
+          "owned_group_signal_observations": [],
+          "process_group_absent_after_reap": true,
+          "process_group_absent_at_main_reap": true,
+          "remaining_owned_children": [],
+          "residual_descendants_observed": [],
+          "returncode": 0,
+          "subreaper_restore_attempted_on_all_activated_paths": true,
+          "supervisor_errors": [],
+          "timed_out": false
+        },
+        "native_business_complete": true,
+        "native_lifecycle_status": "GREEN",
+        "native_resource_exit_code": 0,
+        "protocol_steps": [
+          {
+            "completed": true,
+            "stage": "nonnegative_stdlib_finalizers",
+            "wall_seconds": 1.1628000720520504e-05
+          },
+          {
+            "completed": true,
+            "stage": "join_owned_children",
+            "wall_seconds": 5.227000656304881e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_forkserver",
+            "wall_seconds": 3.164001100230962e-06
+          },
+          {
+            "completed": true,
+            "stage": "remaining_stdlib_finalizers",
+            "wall_seconds": 3.1350009521702304e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_resource_tracker",
+            "wall_seconds": 0.006335996999041527
+          },
+          {
+            "completed": true,
+            "stage": "verify_kernel_echild",
+            "wall_seconds": 2.4577000658609904e-05
+          }
+        ],
+        "real_orders_sent": 0,
+        "signal_vetoed": false,
+        "source_database_unchanged": true,
+        "termination_signal_attempts": []
+      }
+    },
+    "cli312": {
+      "test_real_finalizer_sigterm_is0": {
+        "actual_finalization_wall_seconds": 0.7584003709998797,
+        "cli_exit_code": 1,
+        "finalization_echild_actual": true,
+        "finalization_errors": [
+          {
+            "class": "RuntimeError",
+            "reason": "CHILD_FINALIZATION_SIGNAL_ATTEMPT_DENIED",
+            "stage": "nonnegative_stdlib_finalizers"
+          }
+        ],
+        "finalization_management_bound_seconds": 5,
+        "finalization_status": "RED",
+        "import_proof_complete": false,
+        "kernel": {
+          "actual_child_reaped": true,
+          "adopted_descendants_reaped": [],
+          "kernel_pre_popen_echild_verified": true,
+          "kernel_wait4_zero_observed_irreversible_red": false,
+          "late_observed_main_reap_irreversible_red": false,
+          "owned_children_exhaustion_verified": true,
+          "owned_group_signal_observations": [],
+          "process_group_absent_after_reap": true,
+          "process_group_absent_at_main_reap": true,
+          "remaining_owned_children": [],
+          "residual_descendants_observed": [],
+          "returncode": 1,
+          "subreaper_restore_attempted_on_all_activated_paths": true,
+          "supervisor_errors": [],
+          "timed_out": false
+        },
+        "native_business_complete": true,
+        "native_lifecycle_status": "RED",
+        "native_resource_exit_code": 0,
+        "protocol_steps": [
+          {
+            "completed": true,
+            "stage": "nonnegative_stdlib_finalizers",
+            "wall_seconds": 0.0012723229992843699
+          },
+          {
+            "completed": true,
+            "stage": "join_owned_children",
+            "wall_seconds": 0.7500741029998608
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_forkserver",
+            "wall_seconds": 5.378000423661433e-06
+          },
+          {
+            "completed": true,
+            "stage": "remaining_stdlib_finalizers",
+            "wall_seconds": 2.00100002984982e-05
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_resource_tracker",
+            "wall_seconds": 0.006539588999658008
+          },
+          {
+            "completed": true,
+            "stage": "verify_kernel_echild",
+            "wall_seconds": 2.915299955930095e-05
+          }
+        ],
+        "real_orders_sent": 0,
+        "signal_vetoed": true,
+        "source_database_unchanged": true,
+        "termination_signal_attempts": [
+          {
+            "event": "os.kill",
+            "pid_or_pgid": 9867,
+            "signal": 15,
+            "vetoed_before_syscall": true
+          }
+        ],
+        "veto_and_natural_join_observations": {
+          "child_alive_after_natural_drain": false,
+          "child_exitcode": 0,
+          "child_pid": 9867,
+          "infrastructure_after_failed_cli": {
+            "forkserver_alive_fd": null,
+            "forkserver_pid": null,
+            "resource_tracker_fd": null,
+            "resource_tracker_pid": null
+          },
+          "native_cli_code": 1,
+          "real_finalizer_no_longer_active": true,
+          "veto_witness": {
+            "child_alive_immediately_after_veto": true,
+            "reason": "CHILD_FINALIZATION_SIGNAL_DENIED_BEFORE_SYSCALL"
+          }
+        }
+      },
+      "test_standard_native_cli_reaps0": {
+        "actual_finalization_wall_seconds": 0.009601004001524416,
+        "cli_exit_code": 0,
+        "finalization_echild_actual": true,
+        "finalization_errors": [],
+        "finalization_management_bound_seconds": 5,
+        "finalization_status": "GREEN",
+        "import_proof_complete": false,
+        "kernel": {
+          "actual_child_reaped": true,
+          "adopted_descendants_reaped": [],
+          "kernel_pre_popen_echild_verified": true,
+          "kernel_wait4_zero_observed_irreversible_red": false,
+          "late_observed_main_reap_irreversible_red": false,
+          "owned_children_exhaustion_verified": true,
+          "owned_group_signal_observations": [],
+          "process_group_absent_after_reap": true,
+          "process_group_absent_at_main_reap": true,
+          "remaining_owned_children": [],
+          "residual_descendants_observed": [],
+          "returncode": 0,
+          "subreaper_restore_attempted_on_all_activated_paths": true,
+          "supervisor_errors": [],
+          "timed_out": false
+        },
+        "native_business_complete": true,
+        "native_lifecycle_status": "GREEN",
+        "native_resource_exit_code": 0,
+        "protocol_steps": [
+          {
+            "completed": true,
+            "stage": "nonnegative_stdlib_finalizers",
+            "wall_seconds": 9.665000106906518e-06
+          },
+          {
+            "completed": true,
+            "stage": "join_owned_children",
+            "wall_seconds": 5.448000592878088e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_forkserver",
+            "wall_seconds": 3.05499997921288e-06
+          },
+          {
+            "completed": true,
+            "stage": "remaining_stdlib_finalizers",
+            "wall_seconds": 3.134999133180827e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_resource_tracker",
+            "wall_seconds": 0.009235638000973267
+          },
+          {
+            "completed": true,
+            "stage": "verify_kernel_echild",
+            "wall_seconds": 2.9785000151605345e-05
+          }
+        ],
+        "real_orders_sent": 0,
+        "signal_vetoed": false,
+        "source_database_unchanged": true,
+        "termination_signal_attempts": []
+      },
+      "test_standard_native_cli_reaps1": {
+        "actual_finalization_wall_seconds": 0.00721252400035155,
+        "cli_exit_code": 0,
+        "finalization_echild_actual": true,
+        "finalization_errors": [],
+        "finalization_management_bound_seconds": 5,
+        "finalization_status": "GREEN",
+        "import_proof_complete": false,
+        "kernel": {
+          "actual_child_reaped": true,
+          "adopted_descendants_reaped": [],
+          "kernel_pre_popen_echild_verified": true,
+          "kernel_wait4_zero_observed_irreversible_red": false,
+          "late_observed_main_reap_irreversible_red": false,
+          "owned_children_exhaustion_verified": true,
+          "owned_group_signal_observations": [],
+          "process_group_absent_after_reap": true,
+          "process_group_absent_at_main_reap": true,
+          "remaining_owned_children": [],
+          "residual_descendants_observed": [],
+          "returncode": 0,
+          "subreaper_restore_attempted_on_all_activated_paths": true,
+          "supervisor_errors": [],
+          "timed_out": false
+        },
+        "native_business_complete": true,
+        "native_lifecycle_status": "GREEN",
+        "native_resource_exit_code": 0,
+        "protocol_steps": [
+          {
+            "completed": true,
+            "stage": "nonnegative_stdlib_finalizers",
+            "wall_seconds": 8.692999472259544e-06
+          },
+          {
+            "completed": true,
+            "stage": "join_owned_children",
+            "wall_seconds": 4.505998731474392e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_forkserver",
+            "wall_seconds": 3.8059988582972437e-06
+          },
+          {
+            "completed": true,
+            "stage": "remaining_stdlib_finalizers",
+            "wall_seconds": 2.974000381072983e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_resource_tracker",
+            "wall_seconds": 0.006854694998764899
+          },
+          {
+            "completed": true,
+            "stage": "verify_kernel_echild",
+            "wall_seconds": 2.1321000531315804e-05
+          }
+        ],
+        "real_orders_sent": 0,
+        "signal_vetoed": false,
+        "source_database_unchanged": true,
+        "termination_signal_attempts": []
+      }
+    },
+    "gov311": {
+      "actual_30s_child_control": {
+        "child_alive_after_veto": true,
+        "child_pid": 9994,
+        "finalizer_no_longer_active": true,
+        "result": {
+          "errors": [
+            {
+              "class": "RuntimeError",
+              "reason": "CHILD_FINALIZATION_SIGNAL_ATTEMPT_DENIED",
+              "stage": "nonnegative_stdlib_finalizers"
+            },
+            {
+              "class": "TimeoutError",
+              "reason": "CHILD_FINALIZATION_DID_NOT_RETURN_WITHIN_BOUND"
+            }
+          ],
+          "finalization_thread_finished": false,
+          "forced_termination": null,
+          "forced_termination_attempted": true,
+          "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+          "inherited_tracker_preserved": false,
+          "initial": {
+            "forkserver_alive_fd": null,
+            "forkserver_pid": null,
+            "resource_tracker_fd": null,
+            "resource_tracker_pid": null
+          },
+          "joined_children": [],
+          "kernel_echild_before_phase_return": false,
+          "management_bound_seconds": 5,
+          "protocol_steps": [
+            {
+              "completed": true,
+              "stage": "nonnegative_stdlib_finalizers",
+              "wall_seconds": 0.004342467000242323
+            }
+          ],
+          "signal_guard_installed_and_witnessed": true,
+          "signal_vetoed": true,
+          "status": "RED",
+          "stopped_owned_infrastructure": [],
+          "termination_signal_attempts": [
+            {
+              "event": "os.kill",
+              "pid_or_pgid": 9994,
+              "signal": 15,
+              "vetoed_before_syscall": true
+            }
+          ],
+          "unexpected_kernel_children": [],
+          "wall_seconds": 5.0001972670015675
+        }
+      },
+      "actual_kernel_custody": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 5.109766469999158,
+        "adopted_descendants_reaped": [
+          {
+            "cpu_system_seconds": 0.0020369999999999997,
+            "cpu_user_seconds": 0.0,
+            "exit_code": -15,
+            "kernel_lifetime_peak_rss_bytes": 18034688,
+            "pid": 9994
+          }
+        ],
+        "command": [
+          "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+          "-I",
+          "-B",
+          "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-lifecycle-drain-focals-v0nrb2mk/gov311/pytest-tmp/test_swallowed_stdlib_finalize0/phase-control.py"
+        ],
+        "cpu_system_seconds": 0.011959,
+        "cpu_user_seconds": 0.06287899999999999,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+            "phase": "after_main_pid_reap",
+            "pid": 0
+          },
+          {
+            "cpu_system_seconds": 0.0020369999999999997,
+            "cpu_user_seconds": 0.0,
+            "exit_code": -15,
+            "kernel_lifetime_peak_rss_bytes": 18034688,
+            "outcome": "PID_REAPED",
+            "phase": "after_main_pid_reap",
+            "pid": 9994
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": true,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [
+          {
+            "outcome": "SENT",
+            "pgid": 9993,
+            "signal": 15
+          }
+        ],
+        "peak_rss_bytes": 26234880,
+        "phase_acceptance_deadline_seconds": 20.0,
+        "pid": 9993,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": false,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [
+          "KERNEL_WAIT4_ZERO_OBSERVED"
+        ],
+        "returncode": 0,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "9992",
+          "Tgid": "9992",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 9992,
+        "supervisor_pid": 9992,
+        "termination_reap_restore_cleanup_seconds": 0.1003995440005383,
+        "timed_out": false,
+        "wait4_reaped_pid": 9993,
+        "wall_seconds": 5.211067297999762
+      },
+      "observer_management_seconds": 20,
+      "product_or_lifecycle_budget_changed": false
+    },
+    "gov312": {
+      "actual_30s_child_control": {
+        "child_alive_after_veto": true,
+        "child_pid": 10197,
+        "finalizer_no_longer_active": true,
+        "result": {
+          "errors": [
+            {
+              "class": "RuntimeError",
+              "reason": "CHILD_FINALIZATION_SIGNAL_ATTEMPT_DENIED",
+              "stage": "nonnegative_stdlib_finalizers"
+            },
+            {
+              "class": "TimeoutError",
+              "reason": "CHILD_FINALIZATION_DID_NOT_RETURN_WITHIN_BOUND"
+            }
+          ],
+          "finalization_thread_finished": false,
+          "forced_termination": null,
+          "forced_termination_attempted": true,
+          "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+          "inherited_tracker_preserved": false,
+          "initial": {
+            "forkserver_alive_fd": null,
+            "forkserver_pid": null,
+            "resource_tracker_fd": null,
+            "resource_tracker_pid": null
+          },
+          "joined_children": [],
+          "kernel_echild_before_phase_return": false,
+          "management_bound_seconds": 5,
+          "protocol_steps": [
+            {
+              "completed": true,
+              "stage": "nonnegative_stdlib_finalizers",
+              "wall_seconds": 0.0021751290005340707
+            }
+          ],
+          "signal_guard_installed_and_witnessed": true,
+          "signal_vetoed": true,
+          "status": "RED",
+          "stopped_owned_infrastructure": [],
+          "termination_signal_attempts": [
+            {
+              "event": "os.kill",
+              "pid_or_pgid": 10197,
+              "signal": 15,
+              "vetoed_before_syscall": true
+            }
+          ],
+          "unexpected_kernel_children": [],
+          "wall_seconds": 5.000256748999163
+        }
+      },
+      "actual_kernel_custody": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 5.109676398000374,
+        "adopted_descendants_reaped": [
+          {
+            "cpu_system_seconds": 0.0,
+            "cpu_user_seconds": 0.0018,
+            "exit_code": -15,
+            "kernel_lifetime_peak_rss_bytes": 19640320,
+            "pid": 10197
+          }
+        ],
+        "command": [
+          "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python",
+          "-I",
+          "-B",
+          "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-lifecycle-drain-focals-v0nrb2mk/gov312/pytest-tmp/test_swallowed_stdlib_finalize0/phase-control.py"
+        ],
+        "cpu_system_seconds": 0.019835,
+        "cpu_user_seconds": 0.072866,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "outcome": "ACTIVE_OWN_CHILD_WITHOUT_PID",
+            "phase": "after_main_pid_reap",
+            "pid": 0
+          },
+          {
+            "cpu_system_seconds": 0.0,
+            "cpu_user_seconds": 0.0018,
+            "exit_code": -15,
+            "kernel_lifetime_peak_rss_bytes": 19640320,
+            "outcome": "PID_REAPED",
+            "phase": "after_main_pid_reap",
+            "pid": 10197
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": true,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [
+          {
+            "outcome": "SENT",
+            "pgid": 10196,
+            "signal": 15
+          }
+        ],
+        "peak_rss_bytes": 24461312,
+        "phase_acceptance_deadline_seconds": 20.0,
+        "pid": 10196,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": false,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [
+          "KERNEL_WAIT4_ZERO_OBSERVED"
+        ],
+        "returncode": 0,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "10195",
+          "Tgid": "10195",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 10195,
+        "supervisor_pid": 10195,
+        "termination_reap_restore_cleanup_seconds": 0.10043220199986536,
+        "timed_out": false,
+        "wait4_reaped_pid": 10196,
+        "wall_seconds": 5.210395114001585
+      },
+      "observer_management_seconds": 20,
+      "product_or_lifecycle_budget_changed": false
+    }
+  },
+  "classification": "DEVELOPED_UNCOMMITTED_SCOPED_FOCAL_NOT_BIG_OR_FULL_GOV_ACCEPTANCE",
+  "distinct_scenarios": 21,
+  "epochs": {
+    "cli311": {
+      "cases": 6,
+      "duplicates": 0,
+      "error": 0,
+      "fail": 0,
+      "junit_sha256": "9c9610f6817fbdfa76d39698b61493fcc7e3a11db9d6fe7cb0197de6b630c82b",
+      "node_set_sha256": "62a5b93cbba671a6402950385e0f5bff4b14224997e2a9f3566b5fb635d0cfef",
+      "nodes": [
+        "tests.test_rc6_stress_native_cli_lifecycle::test_existing_native_receipt_is_never_overwritten_and_no_fixture_starts",
+        "tests.test_rc6_stress_native_cli_lifecycle::test_real_finalizer_sigterm_is_vetoed_and_cannot_turn_actual_business_into_cli_green",
+        "tests.test_rc6_stress_native_cli_lifecycle::test_real_inet_bind_is_denied_before_fixture_and_native_cli_stays_red",
+        "tests.test_rc6_stress_native_cli_lifecycle::test_silent_audit_registration_veto_fails_closed_before_native_fixture",
+        "tests.test_rc6_stress_native_cli_lifecycle::test_standard_native_cli_reaps_actual_tracker_and_preserves_paper_business[normal]",
+        "tests.test_rc6_stress_native_cli_lifecycle::test_standard_native_cli_reaps_actual_tracker_and_preserves_paper_business[slow-fsync]"
+      ],
+      "skip": 0
+    },
+    "cli312": {
+      "cases": 6,
+      "duplicates": 0,
+      "error": 0,
+      "fail": 0,
+      "junit_sha256": "a660f92ecddef857ec6e10d299101607d17ba19d9c5b6ed4e7da2a69f1ca9fb0",
+      "node_set_sha256": "62a5b93cbba671a6402950385e0f5bff4b14224997e2a9f3566b5fb635d0cfef",
+      "nodes": [
+        "tests.test_rc6_stress_native_cli_lifecycle::test_existing_native_receipt_is_never_overwritten_and_no_fixture_starts",
+        "tests.test_rc6_stress_native_cli_lifecycle::test_real_finalizer_sigterm_is_vetoed_and_cannot_turn_actual_business_into_cli_green",
+        "tests.test_rc6_stress_native_cli_lifecycle::test_real_inet_bind_is_denied_before_fixture_and_native_cli_stays_red",
+        "tests.test_rc6_stress_native_cli_lifecycle::test_silent_audit_registration_veto_fails_closed_before_native_fixture",
+        "tests.test_rc6_stress_native_cli_lifecycle::test_standard_native_cli_reaps_actual_tracker_and_preserves_paper_business[normal]",
+        "tests.test_rc6_stress_native_cli_lifecycle::test_standard_native_cli_reaps_actual_tracker_and_preserves_paper_business[slow-fsync]"
+      ],
+      "skip": 0
+    },
+    "gov311": {
+      "cases": 15,
+      "duplicates": 0,
+      "error": 0,
+      "fail": 0,
+      "junit_sha256": "ea51b20af19a18543167f9877a20ee0202249c9cc4670edfc76f935c678efe05",
+      "node_set_sha256": "e48e918409e20a9f87d026352bed09f49f21cc4874523429468fa05970ee2278",
+      "nodes": [
+        "tests.test_rc6_controlled_governed_runner::test_actual_hypothesis_and_eager_logging_outputs_use_fresh_external_namespace",
+        "tests.test_rc6_controlled_governed_runner::test_filter_installation_denied_by_kernel_cannot_report_capability_installed",
+        "tests.test_rc6_controlled_governed_runner::test_inherited_tracker_is_preserved_and_never_reaped_as_owned",
+        "tests.test_rc6_controlled_governed_runner::test_kernel_creation_denial_prevents_optional_ipv6_bind_without_overriding_modules",
+        "tests.test_rc6_controlled_governed_runner::test_kernel_live_orphan_stays_irreversibly_red_even_after_cleanup",
+        "tests.test_rc6_controlled_governed_runner::test_native_watchdog_does_not_accept_a_phase_that_reaps_after_its_deadline",
+        "tests.test_rc6_controlled_governed_runner::test_owned_forkserver_protocol_finishes_before_main_pid_return",
+        "tests.test_rc6_controlled_governed_runner::test_owned_tracker_and_child_are_really_finished_before_main_pid_return",
+        "tests.test_rc6_controlled_governed_runner::test_physical_alias_and_code_atime_claims_remain_distinct",
+        "tests.test_rc6_controlled_governed_runner::test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[.hypothesis/constants/generated]",
+        "tests.test_rc6_controlled_governed_runner::test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[.pytest_cache]",
+        "tests.test_rc6_controlled_governed_runner::test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[data/logs/trading_bot.log]",
+        "tests.test_rc6_controlled_governed_runner::test_raw_git_pin_rejects_same_names_with_changed_bytes",
+        "tests.test_rc6_controlled_governed_runner::test_reached_bind_connect_and_dns_stay_denied_and_red_even_with_kernel_filter",
+        "tests.test_rc6_controlled_governed_runner::test_swallowed_stdlib_finalizer_signal_cannot_terminate_child_to_obtain_green"
+      ],
+      "skip": 0
+    },
+    "gov312": {
+      "cases": 15,
+      "duplicates": 0,
+      "error": 0,
+      "fail": 0,
+      "junit_sha256": "0cad51797890a7ae9287bacbbdca9daf60d7bb9747787333d8f20ec529a8eee2",
+      "node_set_sha256": "e48e918409e20a9f87d026352bed09f49f21cc4874523429468fa05970ee2278",
+      "nodes": [
+        "tests.test_rc6_controlled_governed_runner::test_actual_hypothesis_and_eager_logging_outputs_use_fresh_external_namespace",
+        "tests.test_rc6_controlled_governed_runner::test_filter_installation_denied_by_kernel_cannot_report_capability_installed",
+        "tests.test_rc6_controlled_governed_runner::test_inherited_tracker_is_preserved_and_never_reaped_as_owned",
+        "tests.test_rc6_controlled_governed_runner::test_kernel_creation_denial_prevents_optional_ipv6_bind_without_overriding_modules",
+        "tests.test_rc6_controlled_governed_runner::test_kernel_live_orphan_stays_irreversibly_red_even_after_cleanup",
+        "tests.test_rc6_controlled_governed_runner::test_native_watchdog_does_not_accept_a_phase_that_reaps_after_its_deadline",
+        "tests.test_rc6_controlled_governed_runner::test_owned_forkserver_protocol_finishes_before_main_pid_return",
+        "tests.test_rc6_controlled_governed_runner::test_owned_tracker_and_child_are_really_finished_before_main_pid_return",
+        "tests.test_rc6_controlled_governed_runner::test_physical_alias_and_code_atime_claims_remain_distinct",
+        "tests.test_rc6_controlled_governed_runner::test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[.hypothesis/constants/generated]",
+        "tests.test_rc6_controlled_governed_runner::test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[.pytest_cache]",
+        "tests.test_rc6_controlled_governed_runner::test_physical_namespace_cannot_hide_runtime_output_as_ignored_or_empty_directory[data/logs/trading_bot.log]",
+        "tests.test_rc6_controlled_governed_runner::test_raw_git_pin_rejects_same_names_with_changed_bytes",
+        "tests.test_rc6_controlled_governed_runner::test_reached_bind_connect_and_dns_stay_denied_and_red_even_with_kernel_filter",
+        "tests.test_rc6_controlled_governed_runner::test_swallowed_stdlib_finalizer_signal_cannot_terminate_child_to_obtain_green"
+      ],
+      "skip": 0
+    }
+  },
+  "epochs_are_not_42_distinct_scenarios": true,
+  "exact_helper_diff_sha256": "9dffa9e1c81b11069b62f51ca8930dae587fdf4b50dc7aae93e43eb496220a92",
+  "exact_locked_interpreters": [
+    "CPython3.11.16",
+    "CPython3.12.14"
+  ],
+  "exact_tracked_scope_diff_sha256": "7b8228c336be5a72372a825dbb4e8983e70d649597c7313dea6f39cd08d9e328",
+  "frozen_git_base_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "frozen_git_base_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "full_BIG_or_Gov_or_horizon_or_browser_or_artifact_or_runtime_closed": false,
+  "lifecycle_bound_seconds": 5,
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "no_reclassification_of_previous_red": true,
+  "original_30s_negative_test_child_unchanged": true,
+  "original_families_seconds": 0.5,
+  "original_product_cycle_seconds": 90,
+  "ppi_watch": "UNTOUCHED",
+  "preserved_previous_failed_receipts": [
+    "../rc6-cli-lifecycle-focals-tr5i1xf1/311",
+    "../rc6-cli-lifecycle-corrected-fhxjyto1/311"
+  ],
+  "raw_receipt_index_sha256": "c796a2c6c920f16ea6fe011f4088b08e488124bf1b825352f108bc786ecbc618",
+  "raw_receipts": 86,
+  "real_orders_sent": 0,
+  "resource_maximum_evidence_bytes": 134217728,
+  "resource_maximum_rss_bytes": 2147483648,
+  "same_21_scenarios_each_interpreter": true,
+  "schema": "rc6.native-cli-and-owned-finalization.focals.v1",
+  "scoped_source_before_and_after_identical": true,
+  "scoped_source_sha256": {
+    "scripts/rc6_controlled_governed_runner.py": "b86a04368c92607eeb3eb6fc4b04393312de69a1d5a80ed7e2564025a41ec404",
+    "scripts/rc6_issue465_stress.py": "11212f6534759b2b7483b5aaf2fdf367b819ce428b04cd565791dbed8d732456",
+    "tests/test_rc6_controlled_governed_runner.py": "81e47a0760d9ec0b31c9061d85ddc4f0489df914adad0b60ab217cd0242d9afe",
+    "tests/test_rc6_stress_native_cli_lifecycle.py": "e1565c5274111b5ec9b3aebe57fa86fb354baf8b4fb00791ff8baa9e0b1e326b"
+  },
+  "source_after_receipt_sha256": "c21c175cf78f636b7387664038854b68e4bb031ea072374a958191f263f8ecd3",
+  "source_before_receipt_sha256": "c21c175cf78f636b7387664038854b68e4bb031ea072374a958191f263f8ecd3",
+  "stress_all_business_bytes_before_main_identical_to_frozen_base": true,
+  "stress_prefix_sha256": "c39f011fba09a20f69f4d012f067d42420658204cb399d41832b0d5039bf0327"
+}

@@ -1,0 +1,108 @@
+"""Actual controlled focal child PID/watchdog/wait4; product caps untouched."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+
+parser=argparse.ArgumentParser()
+parser.add_argument("--watchdog-seconds",required=True,type=float)
+args=parser.parse_args()
+if not 0 < args.watchdog_seconds < float("inf"):
+    raise ValueError("FINITE_POSITIVE_FOCAL_MANAGEMENT_WATCHDOG_REQUIRED")
+RAW=Path("/workspace/rc6-budget-big-import-4087-focal-157-raw")
+RUNNER=Path("/workspace/rc6-budget-big-import-4087-focal-runner.py")
+SCRIPT=RUNNER.read_bytes()
+command=["/workspace/venv_rc6_frozen311/bin/python","-I","-B","-c",
+    "exec(compile("+repr(SCRIPT)+", '<rc6-controlled-budget-import-focal>', 'exec'))"]
+if (os.getenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD")!="1" or os.getenv("PYTHONDONTWRITEBYTECODE")!="1"
+        or not RAW.is_dir() or (RAW/"focal.log").exists() or (RAW/"focal-supervisor.json").exists()):
+    raise ValueError("LITERAL_ENV_AND_NEW_LOG_SUPERVISOR_NAMESPACE_REQUIRED")
+started=time.monotonic()
+deadline=started+args.watchdog_seconds
+process=None
+reaped=False
+exhausted=False
+usage=None
+status=None
+failure=None
+observed=None
+cleanup_exhausted=False
+with (RAW/"focal.log").open("xb") as log:
+    try:
+        process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,
+            env={**os.environ,"PYTHONPATH":"","PYTHONDONTWRITEBYTECODE":"1","PYTEST_DISABLE_PLUGIN_AUTOLOAD":"1"})
+        while True:
+            if time.monotonic()>=deadline:
+                exhausted=True
+                break
+            pid,status,usage=os.wait4(process.pid,os.WNOHANG)
+            now=time.monotonic()
+            if pid:
+                reaped=True
+                observed=now
+                exhausted=now>=deadline
+                process.returncode=os.waitstatus_to_exitcode(status)
+                break
+            time.sleep(.05)
+    except BaseException as exception:
+        failure={"class":type(exception).__name__,"reason":str(exception)}
+    finally:
+        if process is not None and not reaped:
+            try:
+                os.killpg(process.pid,signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            cleanup_deadline=time.monotonic()+5
+            while time.monotonic()<cleanup_deadline:
+                try:
+                    pid,status,usage=os.wait4(process.pid,os.WNOHANG)
+                except ChildProcessError:
+                    failure={"class":"ChildProcessError","reason":"ACTUAL_WAIT4_REAP_EVIDENCE_UNAVAILABLE"}
+                    break
+                if pid:
+                    reaped=True
+                    observed=time.monotonic()
+                    process.returncode=os.waitstatus_to_exitcode(status)
+                    break
+                time.sleep(.05)
+            cleanup_exhausted=not reaped
+result_path=RAW/"native-import-provenance-focal-receipt.json"
+native=json.loads(result_path.read_bytes()) if reaped and result_path.is_file() else None
+result_digest=hashlib.sha256(result_path.read_bytes()).hexdigest() if native is not None else None
+peak=int(usage.ru_maxrss)*1024 if reaped and usage is not None else None
+green=(reaped and not (exhausted or cleanup_exhausted or failure) and process.returncode==0
+    and peak is not None and peak<2*1024**3 and isinstance(native,dict)
+    and native.get("classification")=="SCOPED_IMPORT_GUARDS_AND_ORIGINAL_CANONICAL_FACTORY_GREEN"
+    and native.get("source_sha")=="4087e58035d6b081b89091a1b292552d0e82d540"
+    and native.get("source_tree")=="af63efe5491f0b31496f5c26983dc1159f305db9"
+    and native.get("native_pid")==process.pid and native.get("native_parent_pid")==os.getpid()
+    and native.get("junit",{}).get("tests")==19
+    and native.get("actual_collection_execution_junit_join",{}).get("exact_collection_call_junit_bijection") is True)
+receipt={"schema":"rc6.native-import-focal-management-receipt.v1",
+    "classification":"SCOPED_FOCAL_MANAGEMENT_AND_NATIVE_GUARDS_GREEN" if green else "SCOPED_FOCAL_NOT_GREEN",
+    "phase":"INTERMEDIATE_OWN_SOURCE_CONTROLLED_FOCAL_NOT_FINAL_CANDIDATE",
+    "source_sha":"4087e58035d6b081b89091a1b292552d0e82d540",
+    "source_tree":"af63efe5491f0b31496f5c26983dc1159f305db9",
+    "launcher_pid":os.getpid(),"actual_child_pid":process.pid if process is not None else None,
+    "actual_wait4_reaped":reaped,"actual_wait_status":status,"returncode":process.returncode if reaped else None,
+    "wait4_usage":{"peak_rss_bytes":peak,"user_seconds":usage.ru_utime,"system_seconds":usage.ru_stime}
+        if reaped and usage is not None else None,
+    "management_watchdog_seconds":args.watchdog_seconds,"management_watchdog_exhausted":exhausted,
+    "cleanup_grace_seconds":5,"cleanup_exhausted":cleanup_exhausted,"exception":failure,
+    "completion_observation_elapsed_seconds":observed-started if observed is not None else None,
+    "scope":"FOCAL_CHILD_LIFETIME_TO_ACTUAL_WAIT4_NOT_PRODUCT90S_CAP_OR_POSTSUPERVISOR_EMISSION",
+    "runner_sha256":hashlib.sha256(SCRIPT).hexdigest(),
+    "supervisor_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    "raw_log_sha256":hashlib.sha256((RAW/"focal.log").read_bytes()).hexdigest() if reaped else None,
+    "native_receipt_sha256":result_digest,"native_receipt_path":str(result_path) if native is not None else None,
+    "native_big_executions":0,"native_horizon_executions":0,"artifact_validated":False,
+    "runtime_validated":False,"deployed":False,"final_input_provenance":None}
+(RAW/"focal-supervisor.json").write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+print(json.dumps({"classification":receipt["classification"],"reaped":reaped,"returncode":receipt["returncode"],
+    "watchdog_exhausted":exhausted,"native_receipt_sha256":result_digest,"peak_rss_bytes":peak}),flush=True)
+raise SystemExit(0 if green else 1)

@@ -1,0 +1,36 @@
+{
+  "command": [
+    "/workspace/porota-rc6-venv311/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_rc6_convergence_provenance.py",
+    "tests/test_issue465_stress_audit_gate.py",
+    "-k",
+    "test_issue465_stress_audit_gate or path_guard_derivation or native_git_cli_preserves_all_original_sources_and_truthful_overlap_counts or native_inventory_without_junit_cannot_claim_executed_guards or executed_mapped_guards_do_not_close_pending_material_programming_gates or prior_audit_gate_accepts_actual_native_convergence_parser_with_controlled_junit or late_nonfront_tracked_mutation_is_rejected_after_actual_full_provenance or original_gate_receipt_binding_counterexample_and_current_native_rejection or duplicate_evolution_requirement",
+    "--basetemp=/workspace/scratch/rc6-path-guards-focal-311-fixed",
+    "--junitxml=/workspace/scratch/rc6-path-guards-focal-311-fixed.xml",
+    "-o",
+    "cache_dir=/workspace/scratch/rc6-path-guards-focal-311-fixed-cache"
+  ],
+  "elapsed_seconds": 31.347689867019653,
+  "junit": "/workspace/scratch/rc6-path-guards-focal-311-fixed.xml",
+  "returncode": 0,
+  "scope": "RED retained; reduced representation focal only, not Gov or eligibility",
+  "scoped_sources_unchanged": true,
+  "source_hashes_after": {
+    "scripts/rc6_convergence_provenance.py": "bf436070d05a430ff22c2cef8626ce9467193d14cf9e9983f96149d626c6cd7a",
+    "scripts/rc6_issue465_audit_gate.py": "a6b25ddcfb2963b651cb225de1460ec79337cf9841d7f783e8ae45d8935e90af",
+    "tests/test_issue465_stress_audit_gate.py": "6e19184df148fbf62e4f62bf87636d97a748720d9b86b64546ac453371182021",
+    "tests/test_rc6_convergence_provenance.py": "65e15eb0ca9b33f9abb9fd83838b4d0a7f5de7d69fb066d6f662276e9d8e5754"
+  },
+  "source_hashes_before": {
+    "scripts/rc6_convergence_provenance.py": "bf436070d05a430ff22c2cef8626ce9467193d14cf9e9983f96149d626c6cd7a",
+    "scripts/rc6_issue465_audit_gate.py": "a6b25ddcfb2963b651cb225de1460ec79337cf9841d7f783e8ae45d8935e90af",
+    "tests/test_issue465_stress_audit_gate.py": "6e19184df148fbf62e4f62bf87636d97a748720d9b86b64546ac453371182021",
+    "tests/test_rc6_convergence_provenance.py": "65e15eb0ca9b33f9abb9fd83838b4d0a7f5de7d69fb066d6f662276e9d8e5754"
+  },
+  "stdout_stderr": "/workspace/scratch/rc6-path-guards-focal-311-fixed.stdout.log",
+  "umask": "022"
+}

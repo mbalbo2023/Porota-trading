@@ -1,0 +1,1756 @@
+{
+  "findings": [
+    {
+      "fix_paths": [
+        "rc6_shadow_runtime/preopen.py",
+        "rc6_audit_evidence/sqlite_snapshot.py"
+      ],
+      "green_contract": "SQLite never opens the historical source. Actual ShadowRuntime.tick preserves source inventory/hash/inode/mode/size/atime/mtime/ctime on a frozen main+WAL image without SHM.",
+      "id": "NEW_PREOPEN_U24",
+      "parent_finding": "U24",
+      "pytest_nodes": [
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats"
+      ],
+      "rca": "mode=ro directly opened historical main/WAL and created source SHM; filesystem-level source invariance was not guaranteed.",
+      "red_observed": {
+        "changed_existing_atime": [
+          "source.sqlite",
+          "source.sqlite-wal"
+        ],
+        "new_source_member": "source.sqlite-shm",
+        "source_unchanged": false
+      }
+    },
+    {
+      "fix_paths": [
+        "rc6_shadow_runtime/preopen.py"
+      ],
+      "green_contract": "Native SHADOW freeze keeps RAW PPI volume100, rejects incomparable adjusted history, and retains exact identity and known cut.",
+      "id": "NEW_PREOPEN_AUD06",
+      "parent_finding": "AUD-468-06",
+      "pytest_nodes": [
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_AUD06_preopen_tick_adjusted_Data912_cannot_replace_RAW_PPI_profile"
+      ],
+      "rca": "bool(adjusted)=True preceded source rank, so adjusted Data912 replaced RAW PPI activity/quantity inputs.",
+      "red_observed": {
+        "expected_raw_ppi_volume": 100,
+        "native_shadow_tick_median_volume": 9999
+      }
+    }
+  ],
+  "fixture_rca": [
+    {
+      "change": "Use a writer lock without a dirty write to exercise a coherent committed byte-copy image; retain the original 20-row/mode/unchanged-main assertions.",
+      "separate_dirty_write_guard": "test_exclusive_writer_contention_is_bounded_and_explicit",
+      "test": "test_reader_does_not_negotiate_wal_or_take_writer_lock"
+    },
+    {
+      "change": "Perform a real UPDATE under the lock to produce a nonempty rollback journal; require sanitized trading:SOURCE_SNAPSHOT_BUSY instead of a source SQLite locking exception. The bounded/read-empty assertions remain.",
+      "test": "test_exclusive_writer_contention_is_bounded_and_explicit"
+    }
+  ],
+  "limits": [
+    "No production DB, current full dataset or provider was accessed.",
+    "Source filesystem invariance applies to historical/export/preopen copies; active runtime SQLite read_only/query_only readers have their own locking contract.",
+    "This change does not promise filesystem metadata invariance for every active trading reader.",
+    "512 MiB source byte ceiling, shared two-second preopen deadline, 32 KiB native JSON rows and 16 MiB cumulative JSON reads are explicit; a larger runtime dataset is NO_VERIFICADO."
+  ],
+  "receipts": {
+    "GREEN_HISTORY_CALLERS": {
+      "errors": 0,
+      "failures": 0,
+      "nodes": [
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD06_adjusted_secondary_never_overwrites_raw_and_action_bases_are_separate",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_currency_identity_is_exact_and_missing_currency_is_rejected",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD08_retry_preserves_version_known_at_and_only_updates_check_clock",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD09_offsets_order_absolute_microsecond_instants_and_replay_stays_causal",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes0-DATE_IN_FUTURE]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes1-DATE_INVALID]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes2-SESSION_WEEKEND]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes3-SESSION_NOT_OPERATIONAL]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes4-CLOSE_NONFINITE]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes5-CLOSE_NONFINITE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes6-VOLUME_NONFINITE]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes7-VOLUME_NONPOSITIVE]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes8-OHLC_INCONSISTENT]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes9-OHLC_PARTIAL]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes10-CLOCK_AWARE_REQUIRED]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes11-KNOWN_AT_IN_FUTURE]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes12-PROVIDER_AFTER_KNOWN]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes13-ADJUSTMENT_CONFLICT]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes14-ADJUSTMENT_PROVENANCE_REQUIRED]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD11_shadow_rejects_future_known_revision_and_legacy_ambiguous_identity",
+          "seconds": 0.037,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD12_fifteen_revisions_count_one_and_conflict_revokes_without_resurrection",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD12_sources_bases_currencies_are_never_concatenated_to_ready",
+          "seconds": 0.016,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_H_LEGACY_ASSET_CLASS_COLLISION_atomic_guard_preserves_original",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_U_IOL_ARCHIVED_LIQUIDITY_keeps_money_and_quantity_separate",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD17_concurrent_identical_writers_have_one_version_and_atomic_idempotence",
+          "seconds": 0.089,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD17_ABA_has_three_causal_versions_and_identical_retry_does_not_add_fourth",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_batch_validation_and_mid_transaction_abort_leave_no_partial_commit",
+          "seconds": 0.011,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_history_DB_LOCK_RECOVERY_retries_after_lock_without_partial_versions",
+          "seconds": 0.015,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers",
+          "seconds": 0.027,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_S_HEARTBEAT_NO_PROGRESS_retains_zero_progress_as_distinct_from_ready",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_cross_store_failure_has_durable_stage_and_resumes_without_duplicate_attempt",
+          "seconds": 0.017,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_close_only_currency_isolation_ABA_and_atomic_batch",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_committed_saga_retry_after_intervening_revision_does_not_resurrect_old_data",
+          "seconds": 0.011,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_conflicting_daily_PPI_duplicates_are_all_quarantined_with_exact_indices",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_nonlist_PPI_payload_is_a_typed_failure_before_creating_a_store",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD11_shadow_reads_explicit_dedicated_path_without_calling_its_write_connection",
+          "seconds": 0.038,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_legacy_writer_shares_numeric_validation_and_rolls_back_entire_batch",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes0-DATE_IN_FUTURE]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes1-DATE_INVALID]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes2-C_NONFINITE]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes3-OHLC_INCONSISTENT]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes4-O_MISSING]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes5-V_NONFINITE]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_partial_batch_is_not_reported_complete_and_four_key_target_never_fetches",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_Data912_cohort_currency_collision_is_rejected_before_batch_limit_or_fetch",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[429-DATA912_RATE_LIMIT]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[timeout-DATA912_TIMEOUT]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD21_coverage_cut_cohort_currency_sessions_and_consumer_do_not_imply_ready",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_copy_migration_retains_source_and_quarantines_unknown_ambiguous_currency",
+          "seconds": 0.011,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_copy_migration_includes_close_only_legacy_without_guessing_currency",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_explicit_legacy_currency_survives_a_multi_currency_catalog_cohort",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_A3_quote_currency_is_not_underlying_currency_and_old_targets_fail_closed",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_main_wal_without_shm_reads_pending_rows_and_changes_no_source_metadata",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_directory_and_files_with_no_write_permissions",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_copy_honors_deadline_and_byte_budget",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_nonfinite_deadline_cannot_disable_the_time_budget[inf]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_nonfinite_deadline_cannot_disable_the_time_budget[nan]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_change_during_stream_capture_is_not_certified",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_growing_source_cannot_write_beyond_the_inventory_byte_budget",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_platform_without_atime_preservation_fails_closed",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_sidecar_alias_is_rejected_before_sqlite[symlink]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_sidecar_alias_is_rejected_before_sqlite[hardlink]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_history_store_real_versions_feed_frozen_rank_and_keep_full_catalogue",
+          "seconds": 0.014,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_eventless_history_store_versions_never_invent_event_or_volume_unit",
+          "seconds": 0.012,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_append_only_raw_history_survives_later_mutable_production_revision",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_history_versions_reconstruct_causal_source_authority_at_cutoff",
+          "seconds": 0.026,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_daily_raw_units_currency_and_timestamp_absence_stay_unknown",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_previous_intraday_prices_drive_real_profile_without_relabeling_interval_volume",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_mutable_intraday_revision_verified_after_cutoff_cannot_reconstruct_past_value",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_request_identity_ambiguity_never_assigns_history_to_currency_sibling",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_nonready_currency_sibling_still_makes_provider_request_ambiguous",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_explicit_later_publication_cannot_be_backdated_by_earlier_receipt",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_oversized_payload_is_never_loaded_or_silently_used",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_calendar_uses_audited_holidays_and_does_not_guess_unaudited_year",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_reader_does_not_negotiate_wal_or_take_writer_lock",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_authorizer_forbids_source_mutations_and_closes_read_transaction",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_exclusive_writer_contention_is_bounded_and_explicit",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_missing_sources_are_not_created_and_safety_failures_propagate",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_full_catalogue_truncation_and_invalid_cuts_fail_closed",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_daily_publication_before_close_and_malformed_intraday_clocks_are_rejected",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats",
+          "seconds": 0.248,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_AUD06_preopen_tick_adjusted_Data912_cannot_replace_RAW_PPI_profile",
+          "seconds": 0.099,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_latest_oversized_metadata_fails_closed_without_resurrecting_old_revision",
+          "seconds": 0.014,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_native_currency_provider_clock_and_unknown_quantity_kind_are_explicit",
+          "seconds": 0.011,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_microsecond_known_cut_and_currency_conflict_are_not_backdated",
+          "seconds": 0.014,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_exact_hand_calculation_partials_currencies_and_no_slippage_double_count",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_whitelist_does_not_export_ids_secrets_accounts_key_or_source_path",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_byte_determinism_same_snapshot_key_session_order_and_path_independence",
+          "seconds": 0.016,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_other_seed_changes_pseudonyms_but_preserves_cashflows",
+          "seconds": 0.011,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_actual_sqlite_readonly_query_only_authorizer_and_no_source_change",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_safety_state_must_be_exact_paper_zero_real_orders[REAL-0]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_safety_state_must_be_exact_paper_zero_real_orders[SIMULATION-0]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_safety_state_must_be_exact_paper_zero_real_orders[PRODUCTION_PAPER-1]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_safety_state_must_be_exact_paper_zero_real_orders[PRODUCTION_PAPER-0]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[missing_buy-OPENING_FILL_MISSING]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[missing_sell-CLOSING_QUANTITY_MISMATCH]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[over_sell-OVER_SALE]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[quantity-OPENING_QUANTITY_MISMATCH]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[net-LEDGER_MONEY_RECONCILIATION]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[cent-LEDGER_MONEY_RECONCILIATION]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[fee-LEDGER_COST_RECONCILIATION]",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[negative_cost-INVALID_DECIMAL]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[clock-SOURCE_CLOCK_REQUIRED]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[future_entry-FILL_CLOCK_ORDER]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[wrong_side-PAPER_FILL_REQUIRED]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[missing_currency-SOURCE_ROW_INCOMPLETE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[features_secret_blob-SOURCE_ROW_INCOMPLETE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[amount_nan-INVALID_DECIMAL]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[amount_huge-INVALID_DECIMAL]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[unsupported_family-SPECIALIZED_LEDGER_REQUIRED]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[no_multiplier-CONTRACT_MULTIPLIER_REQUIRED]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package[closing_time-POSITION_CLOCK_ORDER]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_duplicate_raw_fill_id_rejected_before_export",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_limits_fail_closed_without_silent_truncation[budget0-POSITION_ROW_BUDGET]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_limits_fail_closed_without_silent_truncation[budget1-FILL_ROW_BUDGET]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_limits_fail_closed_without_silent_truncation[budget2-BYTE_BUDGET]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_limits_fail_closed_without_silent_truncation[budget3-ROW_BYTE_BUDGET]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_limits_fail_closed_without_silent_truncation[budget4-TIME_BUDGET]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_unbounded_budget_rejected[kwargs0]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_unbounded_budget_rejected[kwargs1]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_unbounded_budget_rejected[kwargs2]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_unbounded_budget_rejected[kwargs3]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_unbounded_budget_rejected[kwargs4]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_unbounded_budget_rejected[kwargs5]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_unbounded_budget_rejected[kwargs6]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_partial_open_survivor_never_gets_invented_closed_pnl",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_future_close_is_open_as_of_cutoff_no_lookahead",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_opened_before_cohort_includes_original_fill_no_backfill_invention",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_same_timestamp_fills_preserve_source_order_without_raw_ids",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_full_native_source_missing_fields_stay_unverified",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_explicit_bond_multiplier_and_currency_stay_exact",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_no_inferred_or_missing_twenty_sessions[sessions0]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_no_inferred_or_missing_twenty_sessions[sessions1]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_no_inferred_or_missing_twenty_sessions[sessions2]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_no_inferred_or_missing_twenty_sessions[sessions3]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_empty_cohort_pending_not_fabricated_actual_68_151",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_dirty_source_transaction_does_not_publish",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_aliases_cannot_bypass_snapshot_guard[symlink]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_aliases_cannot_bypass_snapshot_guard[hardlink]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_destination_inside_git_rejected_and_existing_never_overwritten",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_private_publication_faults_leave_no_misleading_final_package[disk_full]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_private_publication_faults_leave_no_misleading_final_package[permission_denied]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_private_publication_faults_leave_no_misleading_final_package[fsync_failure]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest[file_byte-FILE_DIGEST]",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest[row_byte_rehashed-ROW_HASH]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest[money_rehashed-LEDGER_MONEY]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest[drop_fill_rehashed-ROW_COUNT]",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest[duplicate_fill_rehashed-DUPLICATE_OR_INVALID_FILL]",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest[extra_sensitive_key-SANITIZED_SCHEMA]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest[wrong_currency-CURRENCY_IDENTITY]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest[orphan-ORPHAN_FILL]",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest[row_order-DETERMINISTIC_ORDER]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_manifest_digest_independently_pinned_and_mixed_generations_rejected",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_extra_file_or_alias_in_package_fails_closed",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_cli_roundtrip_deterministic_private_output_and_missing_source_safe_error",
+          "seconds": 0.241,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_canonical_paper_store_schema_export_not_only_custom_fixture",
+          "seconds": 0.068,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_misleading_provenance_or_secret_schema_injection_never_recomputes_green[extra_manifest_secret-SANITIZED_MANIFEST]",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_misleading_provenance_or_secret_schema_injection_never_recomputes_green[hidden_gap-MISSING_EVIDENCE]",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_misleading_provenance_or_secret_schema_injection_never_recomputes_green[edge_claim-SAFETY_CONTRACT]",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_misleading_provenance_or_secret_schema_injection_never_recomputes_green[real_bool-SAFETY_CONTRACT]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_misleading_provenance_or_secret_schema_injection_never_recomputes_green[source_safety-SAFETY_CONTRACT]",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_misleading_provenance_or_secret_schema_injection_never_recomputes_green[session_count-SESSION_ROW_COUNT]",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_misleading_provenance_or_secret_schema_injection_never_recomputes_green[fake_lineage-LINEAGE_PROVENANCE]",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_misleading_provenance_or_secret_schema_injection_never_recomputes_green[fake_units-UNITS_PROVENANCE]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_misleading_provenance_or_secret_schema_injection_never_recomputes_green[unknown_exit-EXIT_REASON_PROVENANCE]",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_misleading_provenance_or_secret_schema_injection_never_recomputes_green[method_secret-CALCULATION_VERSION]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_unmapped_free_text_exit_reason_is_not_exposed_or_claimed_native",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_raced_destination_is_preserved_by_atomic_no_replace",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_after_publication_fsync_error_leaves_complete_recomputable_package",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_source_views_do_not_replace_trading_tables",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_sql_query_deadline_is_programmatic_not_only_python_preflight",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_many_synthetic_rows_are_complete_and_under_conservative_evidence_budget",
+          "seconds": 0.298,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_sql_boundary_candidate_counts_cannot_hide_later_real_position",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_entry_one_microsecond_before_cutoff_cannot_disappear_in_sqlite_rounding",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_decimal_reconciliation_keeps_exact_partial_cash_even_at_allowed_numeric_bounds",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_future_nonpaper_fill_is_not_a_safety_bypass_for_inspected_source_rows",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_peer_source_decision_and_commit_clocks_cannot_follow_position_exit",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_peer_open_survivor_rejects_rehashed_invented_closed_ledger_pnl",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_peer_declared_manifest_caps_cannot_be_smaller_than_delivered_evidence[forged_limits0]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_peer_declared_manifest_caps_cannot_be_smaller_than_delivered_evidence[forged_limits1]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_peer_declared_manifest_caps_cannot_be_smaller_than_delivered_evidence[forged_limits2]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_peer_one_lifecycle_cannot_reopen_after_full_liquidation_and_hide_extra_trade",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_extreme_numeric_bound_cannot_round_nonzero_gross_into_false_ledger_zero",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_native_intent_and_commit_may_follow_stored_fill_clock_before_exit",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_issue465_historical_package.py::test_duplicate_control_state_cannot_hide_real_mode_or_real_orders",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_historical_candle_shadow_rc6.py::test_valid_ohlc_rejects_inconsistent_bar",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_historical_candle_shadow_rc6.py::test_trend_requires_enough_observations",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_historical_candle_shadow_rc6.py::test_collect_is_shadow_only_when_store_is_unavailable",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_historical_candle_shadow_rc6.py::test_personal_tax_is_out_of_scope_without_configuration",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_historical_candle_shadow_rc6.py::test_personal_tax_environment_cannot_bind_shadow_costs",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_historical_candle_shadow_rc6.py::test_take_profit_diagnostic_does_not_change_execution",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_operational_scope.py::test_trading_navigation_exposes_all_families_without_expanding_operation",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_operational_scope.py::test_historical_shadow_accepts_operational_bond_family_but_stays_observe_only_without_data",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_history_close_only_hf2.py::test_open_zero_preserves_close_only_without_inventing_ohlc",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_history_close_only_hf2.py::test_full_ohlc_stays_in_full_store_and_is_not_duplicated_as_close_only",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_history_close_only_hf2.py::test_ohlc_inconsistent_preserves_only_valid_close",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_history_close_only_hf2.py::test_invalid_close_is_not_salvaged_even_if_full_rejection_mentions_open",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_history_close_only_hf2.py::test_close_only_never_enters_full_ohlc_canonical_table",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_history_close_only_hf2.py::test_identical_retry_dedupes_version_and_preserves_original_observed_at",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_a3_history_rc6.py::test_bootstrap_is_background_readonly_a3_and_writes_provenanced_history",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_a3_history_rc6.py::test_compact_a3_dlr_maps_deterministically_but_persists_porota_identity",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_a3_history_rc6.py::test_dlr_spread_or_variant_stays_fail_closed",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_a3_history_rc6.py::test_incremental_uses_day_after_last_complete",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_a3_history_rc6.py::test_no_exact_symbol_family_match_writes_no_history",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_a3_history_rc6.py::test_open_market_or_real_orders_fails_closed",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_a3_history_rc6.py::test_client_contract_has_no_order_methods",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_dashboard_ux_logs_cem_hf6.py::test_scalping_is_top_level_in_rc4",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_dashboard_ux_logs_cem_hf6.py::test_log_resolver_stays_under_root",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_dashboard_ux_logs_cem_hf6.py::test_log_resolver_does_not_follow_symlink",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_dashboard_ux_logs_cem_hf6.py::test_cem_symbol_classification",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_dashboard_ux_logs_cem_hf6.py::test_cem_settlement_price_is_metadata_not_identity",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_dashboard_ux_logs_cem_hf6.py::test_cem_tick_never_becomes_execution_source",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_dashboard_ux_logs_cem_hf6.py::test_bot_application_log_is_first_class_downloadable_source",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_dashboard_ux_logs_cem_hf6.py::test_host_log_exporter_publishes_sanitized_bot_snapshot",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_data912_history_fallback.py::test_archived_instruments_require_minimum_history",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_data912_history_fallback.py::test_liquidity_filter_prefers_ppi_when_available",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_data912_history_fallback.py::test_empty_data912_history_is_not_counted_as_success",
+          "seconds": 0.253,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_data912_history_fallback.py::test_scheduler_does_not_register_retired_historical_writers",
+          "seconds": 0.074,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_data912_execution_is_permanently_disabled",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_partial_payload_salvages_valid_rows_without_inventing",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_context_thresholds_match_audited_policy",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_history_collection_does_not_equal_ready_paper",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_data912_fallback_only_supported_families_and_under_90",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_reconciler_uses_porota_universe_with_full_identity",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_reconcile_priority_prefers_empty_then_low_context",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_history_v2_identity_prevents_cross_family_collision",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_data912_cannot_replace_ppi_but_version_is_preserved",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_adjusted_series_is_preserved_separately_without_replacing_raw",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_caucion_rate_is_dynamic_not_static_contract",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_futures_margin_is_dynamic_and_contract_multiplier_is_static",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_complete_static_contract_does_not_expire_only_by_age",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_duplicate_spot_dynamic_flags_do_not_block_contract_candidate",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_contract_missing_stays_fail_closed_before_dynamic_layer",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_unknown_source_class_is_ignored_fail_closed",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_worker_real_runtime_calls_framework_freezes_and_restarts_without_source_writes",
+          "seconds": 0.713,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens",
+          "seconds": 2.569,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_closed_worker_never_claims_open_capacity_or_calls_provider",
+          "seconds": 0.269,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_missing_inwheel_preopen_fail_closed_never_backdated",
+          "seconds": 0.096,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_readonly_worker_does_not_wait_for_trading_write_lock",
+          "seconds": 0.246,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_source_or_configuration_invalidates_checkpoint_and_future_rejected",
+          "seconds": 0.692,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_exclusive_evidence_lock_alias_and_quota_never_overwrite_input",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_canonical_child_entry_never_constructs_trading_store",
+          "seconds": 0.033,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_canonical_supervisor_installs_shadow_child_with_existing_restart_control",
+          "seconds": 0.021,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_audited_session_uses_next_operational_day_and_previous_close",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_opened_priority_and_scoped_native_ppi_failure_survive_runtime_capacity_loss",
+          "seconds": 0.147,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_existing_byma_scraper_cache_is_observe_only_and_cannot_backfill_on_config_restart",
+          "seconds": 0.259,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_atomic_replacement_quota_bounds_peak_and_preserves_prior_audit_file",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_configured_iol_cache_is_reused_and_protected_as_an_input",
+          "seconds": 0.116,
+          "status": "PASS"
+        }
+      ],
+      "receipt_sha256": "9245896c21f2d88cfa6d1da88fc32e5ed955cf3e92a8d12240a8bafeb0143e35",
+      "seconds": 8.63,
+      "skipped": 0,
+      "tests": 249
+    },
+    "GREEN_PREOPEN": {
+      "errors": 0,
+      "failures": 0,
+      "nodes": [
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_history_store_real_versions_feed_frozen_rank_and_keep_full_catalogue",
+          "seconds": 0.022,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_eventless_history_store_versions_never_invent_event_or_volume_unit",
+          "seconds": 0.021,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_append_only_raw_history_survives_later_mutable_production_revision",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_history_versions_reconstruct_causal_source_authority_at_cutoff",
+          "seconds": 0.032,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_daily_raw_units_currency_and_timestamp_absence_stay_unknown",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_previous_intraday_prices_drive_real_profile_without_relabeling_interval_volume",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_mutable_intraday_revision_verified_after_cutoff_cannot_reconstruct_past_value",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_request_identity_ambiguity_never_assigns_history_to_currency_sibling",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_nonready_currency_sibling_still_makes_provider_request_ambiguous",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_explicit_later_publication_cannot_be_backdated_by_earlier_receipt",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_oversized_payload_is_never_loaded_or_silently_used",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_calendar_uses_audited_holidays_and_does_not_guess_unaudited_year",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_reader_does_not_negotiate_wal_or_take_writer_lock",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_authorizer_forbids_source_mutations_and_closes_read_transaction",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_exclusive_writer_contention_is_bounded_and_explicit",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_missing_sources_are_not_created_and_safety_failures_propagate",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_full_catalogue_truncation_and_invalid_cuts_fail_closed",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_daily_publication_before_close_and_malformed_intraday_clocks_are_rejected",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats",
+          "seconds": 0.279,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_AUD06_preopen_tick_adjusted_Data912_cannot_replace_RAW_PPI_profile",
+          "seconds": 0.156,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_latest_oversized_metadata_fails_closed_without_resurrecting_old_revision",
+          "seconds": 0.023,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_native_currency_provider_clock_and_unknown_quantity_kind_are_explicit",
+          "seconds": 0.022,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_microsecond_known_cut_and_currency_conflict_are_not_backdated",
+          "seconds": 0.024,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_worker_real_runtime_calls_framework_freezes_and_restarts_without_source_writes",
+          "seconds": 1.192,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens",
+          "seconds": 4.052,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_closed_worker_never_claims_open_capacity_or_calls_provider",
+          "seconds": 0.423,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_missing_inwheel_preopen_fail_closed_never_backdated",
+          "seconds": 0.124,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_readonly_worker_does_not_wait_for_trading_write_lock",
+          "seconds": 0.346,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_source_or_configuration_invalidates_checkpoint_and_future_rejected",
+          "seconds": 1.05,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_exclusive_evidence_lock_alias_and_quota_never_overwrite_input",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_canonical_child_entry_never_constructs_trading_store",
+          "seconds": 0.026,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_canonical_supervisor_installs_shadow_child_with_existing_restart_control",
+          "seconds": 0.024,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_audited_session_uses_next_operational_day_and_previous_close",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_opened_priority_and_scoped_native_ppi_failure_survive_runtime_capacity_loss",
+          "seconds": 0.208,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_existing_byma_scraper_cache_is_observe_only_and_cannot_backfill_on_config_restart",
+          "seconds": 0.367,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_atomic_replacement_quota_bounds_peak_and_preserves_prior_audit_file",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_runtime_wiring.py::test_configured_iol_cache_is_reused_and_protected_as_an_input",
+          "seconds": 0.185,
+          "status": "PASS"
+        }
+      ],
+      "receipt_sha256": "2e6a5567b4f5893a93cedbdb177b1c8929d4fd29fe0b2d5d1291cc1e71355739",
+      "seconds": 9.273,
+      "skipped": 0,
+      "tests": 38
+    },
+    "READONLY_CORE_PHASE": {
+      "errors": 0,
+      "failures": 0,
+      "nodes": [
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_native_decision_precedes_intent_and_committed_fill",
+          "seconds": 0.103,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_event_time_simulation_never_fabricates_native_clock",
+          "seconds": 0.019,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_resolved_fingerprint_stable_across_stores_and_sensitive_to_constructor",
+          "seconds": 0.03,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_environment_inputs_are_hashed_and_not_disclosed",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_frozen_source_rejects_stale_manifest_and_undeclared_source",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_pre_signal_rejection_preserves_missing_signal_and_native_reason",
+          "seconds": 0.016,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_factual_cost_rounding_matches_existing_authority[ACCIONES]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_factual_cost_rounding_matches_existing_authority[CEDEARS]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_factual_cost_rounding_matches_existing_authority[ETFS]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_factual_cost_rounding_matches_existing_authority[BONOS]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_factual_cost_rounding_matches_existing_authority[LETRAS]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_factual_cost_rounding_matches_existing_authority[OBLIGACIONES]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_factual_cost_rounding_matches_existing_authority[OPCIONES]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_expected_smaller_leg_cost_matches_ledger_rate_sensitivity[99]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_expected_smaller_leg_cost_matches_ledger_rate_sensitivity[100]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_expected_smaller_leg_cost_matches_ledger_rate_sensitivity[105]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_historical_scanner_becomes_feasible_without_deleting_catalog",
+          "seconds": 0.011,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_active_basket_survives_json_checkpoint_restart_and_rotates_samples",
+          "seconds": 0.017,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_no_opening_authority_when_focus_sampling_budget_is_impossible",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_budget_and_configuration_change_invalidates_old_basket",
+          "seconds": 0.014,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_performance_runtime.py::test_sampling_gate_cannot_block_existing_exit",
+          "seconds": 0.053,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_final_programming_runtime.py::test_price_vector_captures_same_native_rows_without_mutable_reconstruction",
+          "seconds": 0.029,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_final_programming_runtime.py::test_specialized_future_native_clocks_and_vector_survive_decision_capture",
+          "seconds": 0.057,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_final_programming_runtime.py::test_canonical_worker_prospectively_runs_entries_labels_and_native_net_funnel",
+          "seconds": 0.685,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_final_programming_runtime.py::test_capacity_config_inputs_cannot_alias_owned_shadow_outputs",
+          "seconds": 0.015,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_final_programming_runtime.py::test_canonical_worker_consumes_reviewed_open_capacity_and_falls_back_without_provider_calls",
+          "seconds": 5.841,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_u03_recovery_completion_cannot_precede_durable_start_or_survive_restart",
+          "seconds": 0.021,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_u06_full_scalping_caller_recomputes_binding_economics_and_never_falsifies_passed",
+          "seconds": 0.031,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_u06_private_primitive_cannot_bypass_same_binding_gate",
+          "seconds": 0.014,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_u08_stop_book_survives_newer_wrong_identity_and_restart[USD_MEP-BYMA]",
+          "seconds": 0.062,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_u08_stop_book_survives_newer_wrong_identity_and_restart[ARS-OTHER]",
+          "seconds": 0.065,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_u08_invalid_latest_same_identity_is_tombstone_and_partial_key_is_closed",
+          "seconds": 0.022,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_aud02_fifteen_burst_events_do_not_become_a_fifteen_minute_signal",
+          "seconds": 0.026,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_aud03_reset_or_monotone_volume_does_not_supply_missing_unit_contract",
+          "seconds": 0.013,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_aud05_main_snapshot_declares_event_horizon_and_records_actual_span",
+          "seconds": 0.022,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_aud19_native_snapshots_survive_mutable_revisions_and_hold_without_book",
+          "seconds": 0.037,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_u13_child_crash_health_is_observable_without_blocking_exit_clock",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_u03_real_worker_rollback_retains_pending_attempt_and_requires_real_post_recovery_samples",
+          "seconds": 0.387,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_aud19_direct_future_fill_captures_evidence_atomically_and_failure_rolls_back",
+          "seconds": 0.095,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_ux470_i04_future_stop_intent_survives_zero_depth_restart_and_price_recovery",
+          "seconds": 0.073,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_convergence_core_admission.py::test_ux470_i04_future_missing_book_preserves_timed_exit_without_fabricating_mark",
+          "seconds": 0.057,
+          "status": "PASS"
+        }
+      ],
+      "receipt_sha256": "b19b1e4209debdb9a23b80fb9058881543f489ab72bbd69cd0a0e899f9278724",
+      "seconds": 8.723,
+      "skipped": 0,
+      "tests": 41
+    },
+    "RED": {
+      "errors": 0,
+      "failures": 2,
+      "nodes": [
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats",
+          "seconds": 0.472,
+          "status": "FAIL"
+        },
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_AUD06_preopen_tick_adjusted_Data912_cannot_replace_RAW_PPI_profile",
+          "seconds": 0.269,
+          "status": "FAIL"
+        }
+      ],
+      "receipt_sha256": "ad085f97acce8acd9a25e70c6a1e784ff9096fc924ef31115cfdc596ee1335e3",
+      "seconds": 1.036,
+      "skipped": 0,
+      "tests": 2
+    }
+  },
+  "runtime_verified": false,
+  "schema": "rc6.history-preopen-autocorrection.v1",
+  "scope": "SYNTHETIC_OFFLINE_ONLY",
+  "source_after_fix_sha256": "d437502d30963cb3eb7ce65cf0ba1a194a66364846cb581f3e49b90b42f48735",
+  "source_before_fix_commit": "a3204c18897940c7bffa9f26d38d7a1b2443f4f1",
+  "source_before_fix_sha256": "11b5fb0c45f6be860f6f5eb6a670ead4712f08f5fecc4f5a76e40649053977f0"
+}

@@ -1,0 +1,419 @@
+{
+  "acceptance_complete": false,
+  "chrome_executed": false,
+  "contains_database_or_runtime_dataset_bytes": false,
+  "execution_summary_sha256": "a2a17295803b6226bd97798975ba087e859875d56e10af7aba64b64675ae4825",
+  "fresh_big_browser_acceptance": "PENDING",
+  "generated_fixture_metadata_not_private_account_data": true,
+  "overlay_count": 0,
+  "raw_directory": "/tmp/rc6-ux-family-health-9e36e92a-raw",
+  "raw_git_commit_sha256": "948a481a89c870f1ce6beee447b5428c64d8ef60b579043f2e4dd0f9f04a5838",
+  "records_verified_lossless": true,
+  "schema": "rc6.ux-function-scope-native-dossier.v1",
+  "scope": "OWN9e36_NATIVE_SMALL_FUNCTIONAL_AND_PRIVATE_LIVE_HEALTH_ONLY",
+  "source_files": 1792,
+  "source_sha": "9e36e92ac30803f93b555ce65da7ab346729ec1c",
+  "source_tar_bytes": 68136960,
+  "source_tar_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/source.tar",
+  "source_tar_sha256": "16fd1afc47ae94701865709b06425c13818685aa0321c99bec4ed38143787c75",
+  "source_tree": "fa1b6a9dccad56eca707c692f271fed28ad99ac1",
+  "source_whole": "/workspace/rc6-ux-family-health-9e36e92a-whole",
+  "stored_original_records": [
+    {
+      "compression": "gzip-lossless",
+      "filename": "source.index.json.gz",
+      "original_bytes": 539540,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/source.index.json",
+      "original_sha256": "33cf66ac9ba580c5ef37d4cf59d4301eaa9fd57961788824dbb198bb9731e7b0",
+      "stored_bytes": 173790,
+      "stored_sha256": "37d9f902b299c0ef2964c375da430242118112b734537c14cde8daac24a38838"
+    },
+    {
+      "compression": "none",
+      "filename": "source.commit.raw",
+      "original_bytes": 271,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/source.commit.raw",
+      "original_sha256": "948a481a89c870f1ce6beee447b5428c64d8ef60b579043f2e4dd0f9f04a5838",
+      "stored_bytes": 271,
+      "stored_sha256": "948a481a89c870f1ce6beee447b5428c64d8ef60b579043f2e4dd0f9f04a5838"
+    },
+    {
+      "compression": "none",
+      "filename": "preparation.json",
+      "original_bytes": 1767,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/preparation.json",
+      "original_sha256": "49b291047a468b6de805e894e35f6e1fda9a91a599258a2fb64ec6b727c44438",
+      "stored_bytes": 1767,
+      "stored_sha256": "49b291047a468b6de805e894e35f6e1fda9a91a599258a2fb64ec6b727c44438"
+    },
+    {
+      "compression": "none",
+      "filename": "functional-run.py",
+      "original_bytes": 10598,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/functional-run.py",
+      "original_sha256": "b275861dfd90b1222adfe9d22fe034c3162545f1276d0dcba584b87399f2233d",
+      "stored_bytes": 10598,
+      "stored_sha256": "b275861dfd90b1222adfe9d22fe034c3162545f1276d0dcba584b87399f2233d"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "prepared-small-focal-311-started.json.gz",
+      "original_bytes": 416081,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-focal-311-started.json",
+      "original_sha256": "700401ffe55b5c8c0a7bfdbd952b92666d244a239dda75c5ae5d31a3de9649f2",
+      "stored_bytes": 143498,
+      "stored_sha256": "3e53b547de50fff67e7095a8a1a9b7ed590717f6d1385ad52bb8505a1a5d948c"
+    },
+    {
+      "compression": "none",
+      "filename": "prepared-small-focal-311.stdout",
+      "original_bytes": 774,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-focal-311.stdout",
+      "original_sha256": "b247878997c8980f2cfd1b842ef5e325d3c34ea2c829354671d641d3c49ead96",
+      "stored_bytes": 774,
+      "stored_sha256": "b247878997c8980f2cfd1b842ef5e325d3c34ea2c829354671d641d3c49ead96"
+    },
+    {
+      "compression": "none",
+      "filename": "prepared-small-focal-311.stderr",
+      "original_bytes": 0,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-focal-311.stderr",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 0,
+      "stored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "compression": "none",
+      "filename": "prepared-small-focal-311.xml",
+      "original_bytes": 603,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-focal-311.xml",
+      "original_sha256": "371e4a8ddce7968a8c96bd064447916312f47c949061775e933cfaa47104dfd8",
+      "stored_bytes": 603,
+      "stored_sha256": "371e4a8ddce7968a8c96bd064447916312f47c949061775e933cfaa47104dfd8"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "prepared-small-focal-311-receipt.json.gz",
+      "original_bytes": 826407,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-focal-311-receipt.json",
+      "original_sha256": "21e40c418ad2c7af4e51e387fd584d0b8675381dd0f154a62da865629390000f",
+      "stored_bytes": 284212,
+      "stored_sha256": "4552a86a38129457b50368684457b247c6ba94d8a847ea09753d433235c1bd6f"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "prepared-small-complete-311-started.json.gz",
+      "original_bytes": 416041,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-complete-311-started.json",
+      "original_sha256": "f555b40e231e92cbdced16f89573039c8846fc65f342911b94b2eece1be803c6",
+      "stored_bytes": 143426,
+      "stored_sha256": "4a92f6b7761d20c6c12840bc9e61533fc1dc55ad2da1418e655963b44c1a8863"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "prepared-small-complete-311.stdout.gz",
+      "original_bytes": 4208422,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-complete-311.stdout",
+      "original_sha256": "aa009f4f13316642350c638bbb6d4b75a97b8075593c77b7e2c91f6fd3187b32",
+      "stored_bytes": 7161,
+      "stored_sha256": "ac96393860163562559a7205a62daee836372cb3d7724d2fb63c31be9ebf721b"
+    },
+    {
+      "compression": "none",
+      "filename": "prepared-small-complete-311.stderr",
+      "original_bytes": 0,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-complete-311.stderr",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 0,
+      "stored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "prepared-small-complete-311.xml.gz",
+      "original_bytes": 4210857,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-complete-311.xml",
+      "original_sha256": "74900dfd55b6c72e4a08d9bd531d1b394b831b88b1090874cf52d92ecc32506c",
+      "stored_bytes": 7164,
+      "stored_sha256": "2f9243035ff93f36014e2e91500a3613f10a913955f13fbae1baff2f1f8e4a86"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "prepared-small-complete-311-receipt.json.gz",
+      "original_bytes": 826370,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-complete-311-receipt.json",
+      "original_sha256": "400564ca9da5b89099bacc019c30199da3e69d4fcd41e3b8bfed3012c4bff179",
+      "stored_bytes": 284145,
+      "stored_sha256": "542befa5f7443243655f7cb4604c5865ed4ba2eb4d16e266750badf1eebe7c6d"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "prepared-small-complete-312-started.json.gz",
+      "original_bytes": 416032,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-complete-312-started.json",
+      "original_sha256": "f9c0ed557a7a2b141e948b4ec7717de44197aeb99719190a056278deed046376",
+      "stored_bytes": 143421,
+      "stored_sha256": "9d2b33a06fffb5756f064f1d0ea19f733b359a4b8d0d471f24bfc13f7f0b2c0b"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "prepared-small-complete-312.stdout.gz",
+      "original_bytes": 4208418,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-complete-312.stdout",
+      "original_sha256": "4c400ac210016f0b2ddedd64ae9ee5160f3eb3d327a18d15772193c64455f82a",
+      "stored_bytes": 7159,
+      "stored_sha256": "d5aa73ee930d4154b89cb5d81cb2bec0fd678ac8118d07f9291253f3ff5dd6f0"
+    },
+    {
+      "compression": "none",
+      "filename": "prepared-small-complete-312.stderr",
+      "original_bytes": 0,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-complete-312.stderr",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 0,
+      "stored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "prepared-small-complete-312.xml.gz",
+      "original_bytes": 4210857,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-complete-312.xml",
+      "original_sha256": "2cfd55839371711f1affd73b0cab2409720288481887f0c5a3c4f85f5599747c",
+      "stored_bytes": 7156,
+      "stored_sha256": "e03e22ec09b96cd685f5f8bc90246a7ebfa8275ac74ae9efec4f1e068e98fc43"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "prepared-small-complete-312-receipt.json.gz",
+      "original_bytes": 826360,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/prepared-small-complete-312-receipt.json",
+      "original_sha256": "1d8d95ed8d580b44dd21470818b07b0907366199977ef2d34485ac75e33eb094",
+      "stored_bytes": 284138,
+      "stored_sha256": "4c479cb0765afbcba8c45d132dd5483faa2f10d49ef89db4b9551e916dd7f98a"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "focal311-MULTIFAMILY-producer-DATA_READY.json.gz",
+      "original_bytes": 69639,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-focal-311/multifamily-prepared-parent0/fixture/native-fixture.json",
+      "original_sha256": "6413e865745c40561e188a9a3ee9f336327f3e779cc827f968871466424b7dd4",
+      "stored_bytes": 16228,
+      "stored_sha256": "92b0dd10183e525f82a5afd7b1277c06f6d489a8edaf55161b479be78e9220be"
+    },
+    {
+      "compression": "none",
+      "filename": "focal311-MULTIFAMILY-producer-progress.jsonl",
+      "original_bytes": 3546,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-focal-311/multifamily-prepared-parent0/fixture/progress.jsonl",
+      "original_sha256": "22618659a53d2621641eec53dfefe267e87d6a43a20e187cd85f0920c6fce6ef",
+      "stored_bytes": 3546,
+      "stored_sha256": "22618659a53d2621641eec53dfefe267e87d6a43a20e187cd85f0920c6fce6ef"
+    },
+    {
+      "compression": "none",
+      "filename": "focal311-MULTIFAMILY-observed-launcher-COMPLETE.json",
+      "original_bytes": 1462,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-focal-311/multifamily-prepared-parent0/fixture-transport/launcher.json",
+      "original_sha256": "606ea6425422aae48f86dd2e4343467ffe82a4cb38845e4440c50db83db29cc5",
+      "stored_bytes": 1462,
+      "stored_sha256": "606ea6425422aae48f86dd2e4343467ffe82a4cb38845e4440c50db83db29cc5"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "focal311-MULTIFAMILY-producer-stdout.raw.gz",
+      "original_bytes": 69639,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-focal-311/multifamily-prepared-parent0/fixture-transport/stdout.raw",
+      "original_sha256": "6413e865745c40561e188a9a3ee9f336327f3e779cc827f968871466424b7dd4",
+      "stored_bytes": 16228,
+      "stored_sha256": "92b0dd10183e525f82a5afd7b1277c06f6d489a8edaf55161b479be78e9220be"
+    },
+    {
+      "compression": "none",
+      "filename": "focal311-MULTIFAMILY-producer-stderr.raw",
+      "original_bytes": 0,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-focal-311/multifamily-prepared-parent0/fixture-transport/stderr.raw",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 0,
+      "stored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "complete311-MULTIFAMILY-producer-DATA_READY.json.gz",
+      "original_bytes": 69809,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-311/multifamily-prepared-parent0/fixture/native-fixture.json",
+      "original_sha256": "15279f8fe85eda197a51025d006c0a02498cb976715534d2f03313a820de71d0",
+      "stored_bytes": 16241,
+      "stored_sha256": "e8f23a261742738a708cacbffff17404a6525eebeafd2e74eb531c74ae8b560c"
+    },
+    {
+      "compression": "none",
+      "filename": "complete311-MULTIFAMILY-producer-progress.jsonl",
+      "original_bytes": 3550,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-311/multifamily-prepared-parent0/fixture/progress.jsonl",
+      "original_sha256": "600328f5b0ee50cd93756e2a5f933080628c30fd2b22dca062c36ce6c8d50f34",
+      "stored_bytes": 3550,
+      "stored_sha256": "600328f5b0ee50cd93756e2a5f933080628c30fd2b22dca062c36ce6c8d50f34"
+    },
+    {
+      "compression": "none",
+      "filename": "complete311-MULTIFAMILY-observed-launcher-COMPLETE.json",
+      "original_bytes": 1472,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-311/multifamily-prepared-parent0/fixture-transport/launcher.json",
+      "original_sha256": "89c602db88fd21f3d14368b022c8f27678ba1f45bd7ffffa625de054cb2dadb6",
+      "stored_bytes": 1472,
+      "stored_sha256": "89c602db88fd21f3d14368b022c8f27678ba1f45bd7ffffa625de054cb2dadb6"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "complete311-MULTIFAMILY-producer-stdout.raw.gz",
+      "original_bytes": 69809,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-311/multifamily-prepared-parent0/fixture-transport/stdout.raw",
+      "original_sha256": "15279f8fe85eda197a51025d006c0a02498cb976715534d2f03313a820de71d0",
+      "stored_bytes": 16241,
+      "stored_sha256": "e8f23a261742738a708cacbffff17404a6525eebeafd2e74eb531c74ae8b560c"
+    },
+    {
+      "compression": "none",
+      "filename": "complete311-MULTIFAMILY-producer-stderr.raw",
+      "original_bytes": 0,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-311/multifamily-prepared-parent0/fixture-transport/stderr.raw",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 0,
+      "stored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "compression": "none",
+      "filename": "complete311-NORMAL-producer-DATA_READY.json",
+      "original_bytes": 55936,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-311/prepared-normal-parent0/fixture/native-fixture.json",
+      "original_sha256": "8a91be9f59745064e6251885d0e1cd969d8395cf63b13c27150c8fb8a7560b24",
+      "stored_bytes": 55936,
+      "stored_sha256": "8a91be9f59745064e6251885d0e1cd969d8395cf63b13c27150c8fb8a7560b24"
+    },
+    {
+      "compression": "none",
+      "filename": "complete311-NORMAL-producer-progress.jsonl",
+      "original_bytes": 3545,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-311/prepared-normal-parent0/fixture/progress.jsonl",
+      "original_sha256": "23776abd102e0aa9658e6fd89afde8afca47260ab87e8e374042571547fe7b57",
+      "stored_bytes": 3545,
+      "stored_sha256": "23776abd102e0aa9658e6fd89afde8afca47260ab87e8e374042571547fe7b57"
+    },
+    {
+      "compression": "none",
+      "filename": "complete311-NORMAL-observed-launcher-COMPLETE.json",
+      "original_bytes": 1454,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-311/prepared-normal-parent0/fixture-transport/launcher.json",
+      "original_sha256": "ddb006285d609a3296626c47d40f8bc70534cde65f4df6d8ad869c5b292ebb42",
+      "stored_bytes": 1454,
+      "stored_sha256": "ddb006285d609a3296626c47d40f8bc70534cde65f4df6d8ad869c5b292ebb42"
+    },
+    {
+      "compression": "none",
+      "filename": "complete311-NORMAL-producer-stdout.raw",
+      "original_bytes": 55936,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-311/prepared-normal-parent0/fixture-transport/stdout.raw",
+      "original_sha256": "8a91be9f59745064e6251885d0e1cd969d8395cf63b13c27150c8fb8a7560b24",
+      "stored_bytes": 55936,
+      "stored_sha256": "8a91be9f59745064e6251885d0e1cd969d8395cf63b13c27150c8fb8a7560b24"
+    },
+    {
+      "compression": "none",
+      "filename": "complete311-NORMAL-producer-stderr.raw",
+      "original_bytes": 0,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-311/prepared-normal-parent0/fixture-transport/stderr.raw",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 0,
+      "stored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "complete312-MULTIFAMILY-producer-DATA_READY.json.gz",
+      "original_bytes": 69806,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-312/multifamily-prepared-parent0/fixture/native-fixture.json",
+      "original_sha256": "53a0a2678dbfcbc74e1dcf2ae45ef4040ca016906898a91b4668c60aab6b1537",
+      "stored_bytes": 16227,
+      "stored_sha256": "879fd3262212f6d51e3c482e3b558c108d438053c5cc2a0422cdb322f53c8eef"
+    },
+    {
+      "compression": "none",
+      "filename": "complete312-MULTIFAMILY-producer-progress.jsonl",
+      "original_bytes": 3540,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-312/multifamily-prepared-parent0/fixture/progress.jsonl",
+      "original_sha256": "6c6a181c6013a32183dde4a1d8a9ec36217d4551f4fe313bdbdb6ffec97f8d37",
+      "stored_bytes": 3540,
+      "stored_sha256": "6c6a181c6013a32183dde4a1d8a9ec36217d4551f4fe313bdbdb6ffec97f8d37"
+    },
+    {
+      "compression": "none",
+      "filename": "complete312-MULTIFAMILY-observed-launcher-COMPLETE.json",
+      "original_bytes": 1464,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-312/multifamily-prepared-parent0/fixture-transport/launcher.json",
+      "original_sha256": "0426d0465fbc5f3323865fb34d1fab80bc196fd7e341f9ec7a6b4cd2a73f0150",
+      "stored_bytes": 1464,
+      "stored_sha256": "0426d0465fbc5f3323865fb34d1fab80bc196fd7e341f9ec7a6b4cd2a73f0150"
+    },
+    {
+      "compression": "gzip-lossless",
+      "filename": "complete312-MULTIFAMILY-producer-stdout.raw.gz",
+      "original_bytes": 69806,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-312/multifamily-prepared-parent0/fixture-transport/stdout.raw",
+      "original_sha256": "53a0a2678dbfcbc74e1dcf2ae45ef4040ca016906898a91b4668c60aab6b1537",
+      "stored_bytes": 16227,
+      "stored_sha256": "879fd3262212f6d51e3c482e3b558c108d438053c5cc2a0422cdb322f53c8eef"
+    },
+    {
+      "compression": "none",
+      "filename": "complete312-MULTIFAMILY-producer-stderr.raw",
+      "original_bytes": 0,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-312/multifamily-prepared-parent0/fixture-transport/stderr.raw",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 0,
+      "stored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "compression": "none",
+      "filename": "complete312-NORMAL-producer-DATA_READY.json",
+      "original_bytes": 55931,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-312/prepared-normal-parent0/fixture/native-fixture.json",
+      "original_sha256": "4989fe334aabf33039c215a52b19f2a5fa82de3a5a96940a918c1df10556a87f",
+      "stored_bytes": 55931,
+      "stored_sha256": "4989fe334aabf33039c215a52b19f2a5fa82de3a5a96940a918c1df10556a87f"
+    },
+    {
+      "compression": "none",
+      "filename": "complete312-NORMAL-producer-progress.jsonl",
+      "original_bytes": 3547,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-312/prepared-normal-parent0/fixture/progress.jsonl",
+      "original_sha256": "be0de648d14211360341193d48cbc22d10eb270ebfc5c58fb0fc153094d0fcdf",
+      "stored_bytes": 3547,
+      "stored_sha256": "be0de648d14211360341193d48cbc22d10eb270ebfc5c58fb0fc153094d0fcdf"
+    },
+    {
+      "compression": "none",
+      "filename": "complete312-NORMAL-observed-launcher-COMPLETE.json",
+      "original_bytes": 1448,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-312/prepared-normal-parent0/fixture-transport/launcher.json",
+      "original_sha256": "615b2a784b358534da5a9b1feb63f650ccabfed3aa989c78268cabdf7b9f12f3",
+      "stored_bytes": 1448,
+      "stored_sha256": "615b2a784b358534da5a9b1feb63f650ccabfed3aa989c78268cabdf7b9f12f3"
+    },
+    {
+      "compression": "none",
+      "filename": "complete312-NORMAL-producer-stdout.raw",
+      "original_bytes": 55931,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-312/prepared-normal-parent0/fixture-transport/stdout.raw",
+      "original_sha256": "4989fe334aabf33039c215a52b19f2a5fa82de3a5a96940a918c1df10556a87f",
+      "stored_bytes": 55931,
+      "stored_sha256": "4989fe334aabf33039c215a52b19f2a5fa82de3a5a96940a918c1df10556a87f"
+    },
+    {
+      "compression": "none",
+      "filename": "complete312-NORMAL-producer-stderr.raw",
+      "original_bytes": 0,
+      "original_path": "/tmp/rc6-ux-family-health-9e36e92a-raw/pytest-complete-312/prepared-normal-parent0/fixture-transport/stderr.raw",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 0,
+      "stored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

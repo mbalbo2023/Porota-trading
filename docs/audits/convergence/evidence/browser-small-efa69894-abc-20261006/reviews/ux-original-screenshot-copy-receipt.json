@@ -1,0 +1,170 @@
+{
+  "native_executions": 0,
+  "original_directory": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal",
+  "original_directory_all11_unchanged": true,
+  "rows": [
+    {
+      "bytes": 100901,
+      "height": 980,
+      "name": "instrumentos-1024.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-1024.png",
+      "original_all11_unchanged": true,
+      "original_stat": {
+        "st_atime_ns": 1791249700676834082,
+        "st_blocks": 200,
+        "st_ctime_ns": 1791249700678657128,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 943113,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249700678657128,
+        "st_nlink": 1,
+        "st_size": 100901,
+        "st_uid": 1000
+      },
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-1024.png",
+      "sha256": "ede9640b69f380c57334ec312c0b4fde26b20f63ed625eb367059a712c041bcd",
+      "width": 1024
+    },
+    {
+      "bytes": 138432,
+      "height": 980,
+      "name": "instrumentos-1280.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-1280.png",
+      "original_all11_unchanged": true,
+      "original_stat": {
+        "st_atime_ns": 1791249689048915577,
+        "st_blocks": 272,
+        "st_ctime_ns": 1791249689056454685,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 943112,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249689056454685,
+        "st_nlink": 1,
+        "st_size": 138432,
+        "st_uid": 1000
+      },
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-1280.png",
+      "sha256": "f2be69e0eed3c8e1990f9fbc9767b4261dfb811c5b9dd7cb8f63c187cb7f44e8",
+      "width": 1280
+    },
+    {
+      "bytes": 139777,
+      "height": 980,
+      "name": "instrumentos-1440.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-1440.png",
+      "original_all11_unchanged": true,
+      "original_stat": {
+        "st_atime_ns": 1791249676473003606,
+        "st_blocks": 280,
+        "st_ctime_ns": 1791249676480618210,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 943111,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249676480618210,
+        "st_nlink": 1,
+        "st_size": 139777,
+        "st_uid": 1000
+      },
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-1440.png",
+      "sha256": "c5c43c48da3f0dc79306584b554daadf29880de7c83ff44a1cbe2d86616cb5f3",
+      "width": 1440
+    },
+    {
+      "bytes": 61407,
+      "height": 980,
+      "name": "instrumentos-360.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-360.png",
+      "original_all11_unchanged": true,
+      "original_stat": {
+        "st_atime_ns": 1791249740704553566,
+        "st_blocks": 120,
+        "st_ctime_ns": 1791249740706630343,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 943073,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249740706630343,
+        "st_nlink": 1,
+        "st_size": 61407,
+        "st_uid": 1000
+      },
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-360.png",
+      "sha256": "0caf0ece8babb52071798bb413120731c60276f8a80129110b251a5022a71569",
+      "width": 360
+    },
+    {
+      "bytes": 75443,
+      "height": 980,
+      "name": "instrumentos-600.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-600.png",
+      "original_all11_unchanged": true,
+      "original_stat": {
+        "st_atime_ns": 1791249727764644237,
+        "st_blocks": 152,
+        "st_ctime_ns": 1791249727766112158,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 943059,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249727766112158,
+        "st_nlink": 1,
+        "st_size": 75443,
+        "st_uid": 1000
+      },
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-600.png",
+      "sha256": "1fdc2bf399a4b79fa1cfbce60997ed66d6434eaa3b41c0e8d26517e763bf9d30",
+      "width": 600
+    },
+    {
+      "bytes": 90890,
+      "height": 980,
+      "name": "instrumentos-800.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/instrumentos-800.png",
+      "original_all11_unchanged": true,
+      "original_stat": {
+        "st_atime_ns": 1791249712888748483,
+        "st_blocks": 184,
+        "st_ctime_ns": 1791249712891771226,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 943052,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249712891771226,
+        "st_nlink": 1,
+        "st_size": 90890,
+        "st_uid": 1000
+      },
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/instrumentos-800.png",
+      "sha256": "d68e9c218a42e11ac963df67df6f594ec29e8935c4b12600e94c8a1c5eeca81c",
+      "width": 800
+    },
+    {
+      "bytes": 93098,
+      "height": 980,
+      "name": "native-capacity-off.png",
+      "original": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/browser-normal/native-capacity-off.png",
+      "original_all11_unchanged": true,
+      "original_stat": {
+        "st_atime_ns": 1791249748356499896,
+        "st_blocks": 184,
+        "st_ctime_ns": 1791249748359471405,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 943094,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791249748359471405,
+        "st_nlink": 1,
+        "st_size": 93098,
+        "st_uid": 1000
+      },
+      "private_copy": "/tmp/rc6-ux-efa69894-browser-captures-ro-20261006/native-capacity-off.png",
+      "sha256": "1e41f3817fb712f6aca51958034a0b947696ffe281f3eec91ef40ad2040b7bfc",
+      "width": 800
+    }
+  ],
+  "schema": "rc6.browser-private-visual-copy-noatime.v1",
+  "scope": "Read-only visual review copies; original captures unmodified"
+}

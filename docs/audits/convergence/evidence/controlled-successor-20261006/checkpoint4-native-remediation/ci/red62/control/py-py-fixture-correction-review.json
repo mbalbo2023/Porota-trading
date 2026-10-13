@@ -1,0 +1,55 @@
+{
+  "ast_parse": "PASS",
+  "authorized_changed_path": "tests/test_rc6_predeploy_scoped_cleanup.py",
+  "classification": "PROPOSED_VARIANT_FIXTURE_ONLY_OFFICIAL_PYTEST_OWNED_MEMBER",
+  "complete_test_diff": {
+    "bytes": 34157,
+    "path": "/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/control/py-py-fixture-correction-complete-test.diff",
+    "sha256": "1dd43bd2f14f991b7741512f0eda0054c35bc02d72e1b62e451b9fafb4ec1eaf"
+  },
+  "epoch312_current_variant_launched": false,
+  "git_diff_check": "PASS",
+  "helper_workflow_and_product_environment_modified_for_this_correction": false,
+  "meaningful_assertions": [
+    "pytest-owned py.py selected solely from actual pytest9.1.1 RECORD",
+    "regular owned nlink1 NOFOLLOW source and destination",
+    "exact RECORD sha256 URL-safe digest and size match source bytes",
+    "copy digest and equality already asserted",
+    "real isolated native Python import py uses exact new standard site-packages private_destination",
+    "native imported py bytes match copied source digest",
+    "five original locked distribution versions prefix and origins unchanged"
+  ],
+  "original_cleanup_sha256": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f",
+  "original_production_management_seconds": 5400,
+  "original_real_timeout_budget_seconds": 60,
+  "original_red_and_metadata_unchanged": true,
+  "original_tests_node_count": 62,
+  "prior_scoped_test_sha256": "55aeaaebce161ac2ec34a6826f58c5deaede42f6394e331c1324b5c02d68ee50",
+  "rca_receipt_path": "/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/control/rca-pytest-fixture-omitted-py-receipt.json",
+  "rca_receipt_sha256": "61db0dce848cb6a57923bf69400c6e52ea7f0990d74e8bfc1d06182a42fde5c3",
+  "real_orders_sent": 0,
+  "source_hashes": {
+    ".github/workflows/porota-predeploy-v2.yml": {
+      "bytes": 42690,
+      "lines": 771,
+      "sha256": "45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125"
+    },
+    "scripts/porota_predeploy_test_workspace.py": {
+      "bytes": 50951,
+      "lines": 825,
+      "sha256": "86678b88af863b3e45e6eac686b73514dee4f107ed1d9d9c9d92eba8868edf56"
+    },
+    "tests/test_ci_productive_predeploy_contract.py": {
+      "bytes": 10274,
+      "lines": 199,
+      "sha256": "18e0840717256861c2f9a187aac88a96e36252339a6b854da2a29bb328c3c1f2"
+    },
+    "tests/test_rc6_predeploy_scoped_cleanup.py": {
+      "bytes": 52686,
+      "lines": 926,
+      "sha256": "b4cf138a76c247fef54bfd00d936a00973d169d10aeebcb91e9cc74ed1d497e2"
+    }
+  },
+  "source_head": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "tests_launched_after_correction": 0
+}

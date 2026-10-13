@@ -1,0 +1,13 @@
+HARNESS SOURCE PROVENANCE INVALID; NOT A PRODUCTIVE CORE REGRESSION
+
+/workspace/porota_rc6_convergence/be_paper_engine.py:1726: OperationalError
+=========================== short test summary info ============================
+FAILED ../workspace/porota_rc6_worktrees/finance/tests/test_rc6_convergence_finance_review.py::test_u08_future_supervisor_after_restart_uses_exact_book_amid_newer_wrong_identity[USD_MEP-A3]
+FAILED ../workspace/porota_rc6_worktrees/finance/tests/test_rc6_convergence_finance_review.py::test_u08_future_supervisor_after_restart_uses_exact_book_amid_newer_wrong_identity[ARS-OTHER]
+IMPORTED_MODULE be_paper_engine /workspace/porota_rc6_convergence/be_paper_engine.py b7edde695875c49a75da2d125b276ea19e53350b650ee5a4c3dbba3ff1791283
+IMPORTED_MODULE rc6_paper_family_lifecycle /workspace/porota_rc6_convergence/rc6_paper_family_lifecycle.py 4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44
+IMPORTED_MODULE bm_exit_supervisor /workspace/porota_rc6_worktrees/finance/bm_exit_supervisor.py e93f5b588919be711eb4059074ae5a3585a8dcf7f2ae782e99cdd391fa07ce2b
+IMPORTED_MODULE cf_sale_settlement /workspace/porota_rc6_convergence/cf_sale_settlement.py 45ecfa70351d86bab486947406bd896f96c1c5db5049aa0ee8e536f9a2e85655
+IMPORTED_MODULE tests.test_issue465_historical_package /workspace/porota_rc6_worktrees/finance/tests/test_issue465_historical_package.py 335b3287badc5a85851cb9095df531cc45994e3b59bec39d2f6511d96a6bdb13
+CHECKOUT_SEARCH_ORDER ['/workspace/porota_rc6_worktrees/finance', '/workspace/porota_rc6_convergence', '', '/workspace/porota_rc6_convergence', '/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python311.zip', '/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11']
+PYTEST_EXIT 1

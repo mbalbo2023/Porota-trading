@@ -1,0 +1,27 @@
+Timeout (0:00:10)!
+Thread 0x00007fb5a68ff6c0 (most recent call first):
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py", line 327 in wait
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py", line 231 in _feed
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py", line 982 in run
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007fb5af1c8740 (most recent call first):
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py", line 230 in _deepcopy_dict
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py", line 146 in deepcopy
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py", line 231 in _deepcopy_dict
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py", line 146 in deepcopy
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py", line 206 in _deepcopy_list
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py", line 146 in deepcopy
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py", line 231 in _deepcopy_dict
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py", line 146 in deepcopy
+  File "/tmp/rc6-v3-big-f8895434-157-source/rc6_dynamic_universe/orchestrator.py", line 55 in plan
+  File "/tmp/rc6-v3-big-f8895434-157-source/rc6_dynamic_universe/live.py", line 107 in run_shadow
+  File "/tmp/rc6-v3-big-f8895434-157-source/scripts/rc6_issue465_stress.py", line 228 in operation
+  File "/tmp/rc6-v3-big-f8895434-157-source/rc6_shadow_runtime/worker.py", line 351 in tick
+  File "/tmp/rc6-v3-big-f8895434-157-source/scripts/rc6_issue465_stress.py", line 300 in _shadow_child
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py", line 108 in run
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py", line 314 in _bootstrap
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py", line 135 in _main
+  File "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py", line 122 in spawn_main
+  File "<string>", line 1 in <module>

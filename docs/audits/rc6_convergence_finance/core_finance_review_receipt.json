@@ -1,0 +1,75 @@
+{
+  "account_terms": "NO_VERIFICADO",
+  "command": [
+    "/workspace/venv_rc6/bin/python",
+    "-m",
+    "pytest",
+    "-o",
+    "addopts=",
+    "-q",
+    "/workspace/porota_rc6_worktrees/finance/tests/test_rc6_convergence_finance_review.py",
+    "--junitxml=/workspace/porota_rc6_worktrees/finance/docs/audits/rc6_convergence_finance/core_finance_review_tests.xml"
+  ],
+  "configuration": {
+    "bytecode_writes": false,
+    "cut": "2026-10-05T12:00:00-03:00",
+    "fixture_kind": "OFFLINE_SYNTHETIC_NATIVE_CORE_REVIEW",
+    "pytest_plugin_autoload": false,
+    "schema_version": 1,
+    "seed": "SYNTHETIC_REVIEW_V1",
+    "test_file_sha256": "eadfd415ea3d3bd1728b54da7a8720cf8ee6d889df0eadbd6b18ea9848b4d38b"
+  },
+  "configuration_sha256": "6297ec893cbaead3568e187a1f8a424e3a82531fe32476f281b2bcaacf7f506f",
+  "economic_edge": "EDGE_NO_DEMOSTRADO",
+  "environment": {
+    "python": "3.11.16",
+    "sqlite": "3.53.1"
+  },
+  "exit_code": 0,
+  "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
+  "final_frozen_rerun": "REQUIRED_NOT_SATISFIED_BY_THIS_WIP_RECEIPT",
+  "finished_at": "2026-10-05T02:16:24.451585+00:00",
+  "real_orders_sent": 0,
+  "real_routes_used": [],
+  "schema_version": 1,
+  "scope": "OFFLINE_SYNTHETIC_PAPER_ONLY",
+  "source_changed_during_run": false,
+  "source_files_after_sha256": {
+    "be_paper_engine.py": "d00e29ca92419bfaace68e9f96e625704aa15082158ec810b48b8b8a4633ac8c",
+    "bs_instrument_contracts.py": "41db66209f810bb7a90363928774dc6b299d17d009e7c5775a42ba4cb141deff",
+    "bu_instrument_catalog.py": "e1a2961ad6f1ed2b39a24cc68c35f0389078d5599ba15cdd357a4095f79ffa3c",
+    "bv_paper_runtime.py": "3ac898e8ffb228865dbe4ed3527d570e19260450d5a4e064ed6afec56110551a",
+    "bw_daily_risk.py": "7f652f5c14ac16c849a19a9864826070437341be26f5d09a5c23ba1421fe16a2",
+    "cf_intraday_scalping.py": "f683c92a6415588451dcc7525c91bf834dfe570e2894f12a9fc9f4c841cafc32",
+    "finance_review_fixture": "eadfd415ea3d3bd1728b54da7a8720cf8ee6d889df0eadbd6b18ea9848b4d38b",
+    "rc6_paper_family_lifecycle.py": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44",
+    "rc6_performance/costs.py": "79430166f8ceb410b2771d91f67ac71f6965a4d31f9f3943a2981b5a7844dec7",
+    "rc6_signal_contracts.py": "b53481cd898ea14b2fab2a9c91388e4e86d158a1423f608174b0b8bb80a01230"
+  },
+  "source_files_sha256": {
+    "be_paper_engine.py": "d00e29ca92419bfaace68e9f96e625704aa15082158ec810b48b8b8a4633ac8c",
+    "bs_instrument_contracts.py": "41db66209f810bb7a90363928774dc6b299d17d009e7c5775a42ba4cb141deff",
+    "bu_instrument_catalog.py": "e1a2961ad6f1ed2b39a24cc68c35f0389078d5599ba15cdd357a4095f79ffa3c",
+    "bv_paper_runtime.py": "3ac898e8ffb228865dbe4ed3527d570e19260450d5a4e064ed6afec56110551a",
+    "bw_daily_risk.py": "7f652f5c14ac16c849a19a9864826070437341be26f5d09a5c23ba1421fe16a2",
+    "cf_intraday_scalping.py": "f683c92a6415588451dcc7525c91bf834dfe570e2894f12a9fc9f4c841cafc32",
+    "finance_review_fixture": "eadfd415ea3d3bd1728b54da7a8720cf8ee6d889df0eadbd6b18ea9848b4d38b",
+    "rc6_paper_family_lifecycle.py": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44",
+    "rc6_performance/costs.py": "79430166f8ceb410b2771d91f67ac71f6965a4d31f9f3943a2981b5a7844dec7",
+    "rc6_signal_contracts.py": "b53481cd898ea14b2fab2a9c91388e4e86d158a1423f608174b0b8bb80a01230"
+  },
+  "source_sha": "86269ae3be401613d0d276c731ce1bda5ce0b4f0",
+  "source_state": "WORKTREE_NOT_FROZEN",
+  "source_tree": "c5166252fd1b8a10a3dc7d9289e7e2b33cbb27cb",
+  "started_at": "2026-10-05T02:16:23.029656+00:00",
+  "tests": {
+    "errors": "0",
+    "failures": "0",
+    "hostname": "9905252a2cbf",
+    "name": "pytest",
+    "skipped": "0",
+    "tests": "10",
+    "time": "0.808",
+    "timestamp": "2026-10-05T02:16:23.563659+00:00"
+  }
+}

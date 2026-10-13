@@ -129,15 +129,20 @@ def _imports_de(nombre):
 
 
 def _instalaciones_pip_fuera_del_lock(dockerfile):
-    """Devuelve comandos pip que no instalan exclusivamente el lock vigente."""
+    """Only reviewed hash locks and bounded platform/build flags are permitted."""
     invalidas = []
-    for instalacion in (l.strip() for l in dockerfile.splitlines() if "pip install" in l):
+    commands = dockerfile.replace("\\\n", " ").splitlines()
+    for instalacion in (l.strip() for l in commands if "pip install" in l and not l.lstrip().startswith("#")):
         tokens = shlex.split(instalacion)
         if tokens[:3] != ["RUN", "pip", "install"]:
             invalidas.append(instalacion)
             continue
         args = [t for t in tokens[3:] if t != "--no-cache-dir"]
-        if args != ["-r", "requirements.lock.txt"]:
+        build = ["--require-hashes", "--only-binary=:all:", "-r", "requirements.build.lock.txt"]
+        runtime = ["--require-hashes", "--only-binary=:all:",
+                   "--no-binary=msgpack,ppi-client,signalrcoreppi,ta", "--no-build-isolation",
+                   "-r", "requirements.lock.txt"]
+        if args not in (build, runtime):
             invalidas.append(instalacion)
     return invalidas
 

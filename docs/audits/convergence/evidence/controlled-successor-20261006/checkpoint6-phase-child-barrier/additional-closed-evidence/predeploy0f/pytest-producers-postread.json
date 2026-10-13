@@ -1,0 +1,359 @@
+{
+  "classification": "UNKNOWN_OR_UNCLOSED",
+  "cleanup_performed": false,
+  "context": {
+    "candidate_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+    "candidate_tree": "36227e546cb311546f08b80880064dde86a6f630",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "1",
+    "run_id": "37522988940",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "control_observations": {},
+  "errors": [
+    "CONTROL_SIZE_LIMIT",
+    "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+  ],
+  "expected_management_seconds": 5400,
+  "new_or_global_kernel_fin_asserted": false,
+  "owner_uid": 1001,
+  "owner_uuid": "7adfa94d2b8e494d9eeba93859f47a31",
+  "phase": "all",
+  "phase_results": {
+    "collection": {
+      "classification": "FIN_REAL_CLOSED",
+      "cleanup_performed": false,
+      "context": {
+        "candidate_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+        "candidate_tree": "36227e546cb311546f08b80880064dde86a6f630",
+        "event": "pull_request",
+        "repository": "mbalbo2023/Porota-trading",
+        "run_attempt": "1",
+        "run_id": "37522988940",
+        "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+      },
+      "control_observations": {
+        "porota-pytest-collection-launch-intent.json": {
+          "payload_read": false,
+          "raw_utf8": "{\n  \"classification\": \"PYTEST_PRODUCER_LAUNCH_ATTEMPTED_NOT_ACCEPTED\",\n  \"command\": [\n    \"python\",\n    \"-m\",\n    \"pytest\",\n    \"--collect-only\",\n    \"-q\",\n    \".\",\n    \"--ignore=test_a3_primary_readonly_hf6.py\",\n    \"-p\",\n    \"no:cacheprovider\"\n  ],\n  \"context\": {\n    \"candidate_sha\": \"0f73e2cd681672b7a9a3065e99a72915ba93f4fd\",\n    \"candidate_tree\": \"36227e546cb311546f08b80880064dde86a6f630\",\n    \"event\": \"pull_request\",\n    \"repository\": \"mbalbo2023/Porota-trading\",\n    \"run_attempt\": \"1\",\n    \"run_id\": \"37522988940\",\n    \"workflow_path\": \".github/workflows/porota-predeploy-v2.yml\"\n  },\n  \"failed_cleanup_maximum_seconds\": 5,\n  \"initial_actual_own_kernel\": {\n    \"kernel_echild_verified\": true,\n    \"scope\": \"THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION\",\n    \"subreaper_state_after\": 0,\n    \"subreaper_state_before\": 0\n  },\n  \"management_seconds\": 5400,\n  \"original_management_maximum_seconds\": 5400,\n  \"original_manager_source\": {\n    \"git_blob\": \"b221f59f4edbb7b04097aec57e91ffbef648100e\",\n    \"member\": \"scripts/rc6_controlled_native_child_manager.py\",\n    \"sha256\": \"55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8\"\n  },\n  \"owner_uid\": 1001,\n  \"owner_uuid\": \"7adfa94d2b8e494d9eeba93859f47a31\",\n  \"phase\": \"collection\",\n  \"progress_poll_seconds\": 5,\n  \"real_orders_sent\": 0,\n  \"schema\": \"rc6.predeploy-pytest-launch-intent.v1\",\n  \"supervisor_effective_uid\": 1001,\n  \"supervisor_native_tid\": 3054,\n  \"supervisor_pid\": 3054,\n  \"supervisor_real_uid\": 1001,\n  \"terminate_grace_seconds\": 2\n}\n",
+          "sha256": "e0838bb17327ae90109fafde0e61e3b62c07cdcb1c5737c6825f8df0f3bfa95d",
+          "stat_fields": {
+            "st_atime_ns": 1791316845176846231,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791316845177846378,
+            "st_dev": 2049,
+            "st_gid": 1001,
+            "st_ino": 9189784,
+            "st_mode": 33152,
+            "st_mtime_ns": 1791316845177846378,
+            "st_nlink": 1,
+            "st_size": 1532,
+            "st_uid": 1001
+          }
+        },
+        "porota-pytest-collection-owned-fin.json": {
+          "payload_read": false,
+          "raw_utf8": "{\n  \"context\": {\n    \"candidate_sha\": \"0f73e2cd681672b7a9a3065e99a72915ba93f4fd\",\n    \"candidate_tree\": \"36227e546cb311546f08b80880064dde86a6f630\",\n    \"event\": \"pull_request\",\n    \"repository\": \"mbalbo2023/Porota-trading\",\n    \"run_attempt\": \"1\",\n    \"run_id\": \"37522988940\",\n    \"workflow_path\": \".github/workflows/porota-predeploy-v2.yml\"\n  },\n  \"final_actual_own_kernel\": {\n    \"kernel_echild_verified\": true,\n    \"scope\": \"THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION\",\n    \"subreaper_state_after\": 0,\n    \"subreaper_state_before\": 0\n  },\n  \"initial_actual_own_kernel\": {\n    \"kernel_echild_verified\": true,\n    \"scope\": \"THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION\",\n    \"subreaper_state_after\": 0,\n    \"subreaper_state_before\": 0\n  },\n  \"kernel\": {\n    \"actual_child_reaped\": true,\n    \"actual_launch_to_pid_reap_wall_seconds\": 15.230810174000013,\n    \"adopted_descendants_reaped\": [],\n    \"command\": [\n      \"python\",\n      \"-m\",\n      \"pytest\",\n      \"--collect-only\",\n      \"-q\",\n      \".\",\n      \"--ignore=test_a3_primary_readonly_hf6.py\",\n      \"-p\",\n      \"no:cacheprovider\"\n    ],\n    \"cpu_system_seconds\": 0.33699399999999996,\n    \"cpu_user_seconds\": 15.125746,\n    \"kernel_owned_child_observations\": [\n      {\n        \"errno\": 10,\n        \"outcome\": \"ECHILD\",\n        \"phase\": \"before_popen_after_subreaper_activation\"\n      },\n      {\n        \"errno\": 10,\n        \"outcome\": \"ECHILD\",\n        \"phase\": \"after_main_pid_reap\"\n      }\n    ],\n    \"kernel_pre_popen_echild_verified\": true,\n    \"kernel_wait4_zero_observed_irreversible_red\": false,\n    \"late_observed_main_reap_irreversible_red\": false,\n    \"launcher_management_deadline_seconds\": 5400,\n    \"owned_child_exhaustion_method\": \"EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD\",\n    \"owned_children_exhaustion_verified\": true,\n    \"owned_cleanup_management_bound_seconds\": 5,\n    \"owned_group_signal_observations\": [],\n    \"peak_rss_bytes\": 191070208,\n    \"pid\": 3058,\n    \"proc_task_children_examined\": false,\n    \"process_group_absent_after_reap\": true,\n    \"process_group_absent_at_main_reap\": true,\n    \"remaining_owned_children\": [],\n    \"residual_descendants_observed\": [],\n    \"returncode\": 0,\n    \"scope\": \"EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS\",\n    \"sigint_failure_grace_seconds\": 0,\n    \"subreaper_activation_readback_verified\": true,\n    \"subreaper_previous_state\": 0,\n    \"subreaper_restoration_readback_verified\": true,\n    \"subreaper_restore_attempted\": true,\n    \"supervisor_errors\": [],\n    \"supervisor_kernel_identity_before_spawn\": {\n      \"Pid\": \"3054\",\n      \"Tgid\": \"3054\",\n      \"Uid\": \"1001\\t1001\\t1001\\t1001\"\n    },\n    \"supervisor_native_tid\": 3054,\n    \"supervisor_pid\": 3054,\n    \"termination_reap_restore_cleanup_seconds\": 7.337799999618255e-05,\n    \"timed_out\": false,\n    \"wait4_reaped_pid\": 3058,\n    \"wall_seconds\": 15.23105803899999\n  },\n  \"launch_intent_sha256\": \"e0838bb17327ae90109fafde0e61e3b62c07cdcb1c5737c6825f8df0f3bfa95d\",\n  \"management_acceptance\": true,\n  \"management_seconds\": 5400,\n  \"original_manager_source\": {\n    \"git_blob\": \"b221f59f4edbb7b04097aec57e91ffbef648100e\",\n    \"member\": \"scripts/rc6_controlled_native_child_manager.py\",\n    \"sha256\": \"55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8\"\n  },\n  \"owned_fin_closed\": true,\n  \"owner_uuid\": \"7adfa94d2b8e494d9eeba93859f47a31\",\n  \"phase\": \"collection\",\n  \"phase_green\": true,\n  \"post_fin_errors\": [],\n  \"retained_capacity_status\": \"GREEN\",\n  \"retention_receipt\": \"/home/runner/work/_temp/porota-predeploy-37522988940-1-7adfa94d2b8e494d9eeba93859f47a31/porota-pytest-collection-retained.json\",\n  \"schema\": \"rc6.predeploy-pytest-owned-fin.v1\",\n  \"scope\": \"ACTUAL_PYTEST_MAIN_WAIT4_AND_ADOPTED_WAIT4; MAX_RSS_NOT_SUM; NO_TRANSITIVE_BINARY_NETWORK_ATTESTATION\",\n  \"supervisor_pid\": 3054\n}\n",
+          "sha256": "1e5f7bdb57c9ca62ec031a0230b195dc02aa5e10f42ac64ab648e69fc2e8b719",
+          "stat_fields": {
+            "st_atime_ns": 1791316860411114653,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791316860411982462,
+            "st_dev": 2049,
+            "st_gid": 1001,
+            "st_ino": 9189813,
+            "st_mode": 33152,
+            "st_mtime_ns": 1791316860411982462,
+            "st_nlink": 1,
+            "st_size": 3892,
+            "st_uid": 1001
+          }
+        }
+      },
+      "control_receipt": "/home/runner/work/_temp/porota-predeploy-37522988940-1.pytest-collection-postread.json",
+      "errors": [],
+      "expected_management_seconds": 5400,
+      "management_acceptance": true,
+      "new_or_global_kernel_fin_asserted": false,
+      "owner_uid": 1001,
+      "owner_uuid": "7adfa94d2b8e494d9eeba93859f47a31",
+      "phase": "collection",
+      "producer_post_fin_errors": [],
+      "pytest_phase_green": true,
+      "pytest_producer_witness": true,
+      "real_orders_sent": 0,
+      "safe_postread": true,
+      "schema": "rc6.predeploy-pytest-postread-safety.v1",
+      "source_junit_data_log_payloads_read": 0,
+      "trace_presence_lstat_only": {
+        "porota-pytest-collection-launch-intent.json": {
+          "st_atime_ns": 1791316845176846231,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791316845177846378,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 9189784,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791316845177846378,
+          "st_nlink": 1,
+          "st_size": 1532,
+          "st_uid": 1001
+        },
+        "porota-pytest-collection-owned-fin.json": {
+          "st_atime_ns": 1791316860411114653,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791316860411982462,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 9189813,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791316860411982462,
+          "st_nlink": 1,
+          "st_size": 3892,
+          "st_uid": 1001
+        },
+        "porota-pytest-collection-progress.json": {
+          "st_atime_ns": 1791316860205694470,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791316860207694449,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 9189812,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791316860207034506,
+          "st_nlink": 1,
+          "st_size": 288,
+          "st_uid": 1001
+        },
+        "porota-test-collection.txt": {
+          "st_atime_ns": 1791316845177846378,
+          "st_blocks": 32,
+          "st_ctime_ns": 1791316860030696348,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 9189798,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791316860030696348,
+          "st_nlink": 1,
+          "st_size": 14506,
+          "st_uid": 1001
+        }
+      },
+      "witness_scope": "REVALIDATED_ACTUAL_SAME_SUPERVISOR_RAW_FIN; NO_NEW_KERNEL_WITNESS"
+    },
+    "execution": {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "cleanup_performed": false,
+      "context": {
+        "candidate_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+        "candidate_tree": "36227e546cb311546f08b80880064dde86a6f630",
+        "event": "pull_request",
+        "repository": "mbalbo2023/Porota-trading",
+        "run_attempt": "1",
+        "run_id": "37522988940",
+        "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+      },
+      "control_observations": {
+        "porota-pytest-launch-intent.json": {
+          "payload_read": false,
+          "raw_utf8": "{\n  \"classification\": \"PYTEST_PRODUCER_LAUNCH_ATTEMPTED_NOT_ACCEPTED\",\n  \"command\": [\n    \"python\",\n    \"-m\",\n    \"pytest\",\n    \"-q\",\n    \".\",\n    \"--ignore=test_a3_primary_readonly_hf6.py\",\n    \"-p\",\n    \"no:cacheprovider\",\n    \"--basetemp=/home/runner/work/_temp/porota-pytest-37522988940-1-7adfa94d2b8e494d9eeba93859f47a31/pytest\",\n    \"--junitxml=/home/runner/work/_temp/porota-predeploy-37522988940-1-7adfa94d2b8e494d9eeba93859f47a31/porota-governed-tests.xml\"\n  ],\n  \"context\": {\n    \"candidate_sha\": \"0f73e2cd681672b7a9a3065e99a72915ba93f4fd\",\n    \"candidate_tree\": \"36227e546cb311546f08b80880064dde86a6f630\",\n    \"event\": \"pull_request\",\n    \"repository\": \"mbalbo2023/Porota-trading\",\n    \"run_attempt\": \"1\",\n    \"run_id\": \"37522988940\",\n    \"workflow_path\": \".github/workflows/porota-predeploy-v2.yml\"\n  },\n  \"failed_cleanup_maximum_seconds\": 5,\n  \"initial_actual_own_kernel\": {\n    \"kernel_echild_verified\": true,\n    \"scope\": \"THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION\",\n    \"subreaper_state_after\": 0,\n    \"subreaper_state_before\": 0\n  },\n  \"management_seconds\": 5400,\n  \"original_management_maximum_seconds\": 5400,\n  \"original_manager_source\": {\n    \"git_blob\": \"b221f59f4edbb7b04097aec57e91ffbef648100e\",\n    \"member\": \"scripts/rc6_controlled_native_child_manager.py\",\n    \"sha256\": \"55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8\"\n  },\n  \"owner_uid\": 1001,\n  \"owner_uuid\": \"7adfa94d2b8e494d9eeba93859f47a31\",\n  \"phase\": \"execution\",\n  \"progress_poll_seconds\": 5,\n  \"real_orders_sent\": 0,\n  \"schema\": \"rc6.predeploy-pytest-launch-intent.v1\",\n  \"supervisor_effective_uid\": 1001,\n  \"supervisor_native_tid\": 3070,\n  \"supervisor_pid\": 3070,\n  \"supervisor_real_uid\": 1001,\n  \"terminate_grace_seconds\": 2\n}\n",
+          "sha256": "407719d5c940701e0754accda6f0406efdd4d2183ebad8f1c355192199ae54f2",
+          "stat_fields": {
+            "st_atime_ns": 1791316860955686424,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791316860956686414,
+            "st_dev": 2049,
+            "st_gid": 1001,
+            "st_ino": 9189826,
+            "st_mode": 33152,
+            "st_mtime_ns": 1791316860956686414,
+            "st_nlink": 1,
+            "st_size": 1751,
+            "st_uid": 1001
+          }
+        }
+      },
+      "control_receipt": "/home/runner/work/_temp/porota-predeploy-37522988940-1.pytest-postread.json",
+      "errors": [
+        "CONTROL_SIZE_LIMIT"
+      ],
+      "expected_management_seconds": 5400,
+      "new_or_global_kernel_fin_asserted": false,
+      "owner_uid": 1001,
+      "owner_uuid": "7adfa94d2b8e494d9eeba93859f47a31",
+      "phase": "execution",
+      "pytest_producer_witness": false,
+      "real_orders_sent": 0,
+      "safe_postread": false,
+      "schema": "rc6.predeploy-pytest-postread-safety.v1",
+      "source_junit_data_log_payloads_read": 0,
+      "trace_presence_lstat_only": {
+        "porota-pytest-launch-intent.json": {
+          "st_atime_ns": 1791316860955686424,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791316860956686414,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 9189826,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791316860956686414,
+          "st_nlink": 1,
+          "st_size": 1751,
+          "st_uid": 1001
+        },
+        "porota-pytest-native.log": {
+          "st_atime_ns": 1791316860956686414,
+          "st_blocks": 104,
+          "st_ctime_ns": 1791319338304158288,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 9189827,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791319338304158288,
+          "st_nlink": 1,
+          "st_size": 51848,
+          "st_uid": 1001
+        },
+        "porota-pytest-owned-fin.json": {
+          "st_atime_ns": 1791319342953110612,
+          "st_blocks": 680,
+          "st_ctime_ns": 1791319342954110602,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 9189842,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791319342953898331,
+          "st_nlink": 1,
+          "st_size": 348070,
+          "st_uid": 1001
+        },
+        "porota-pytest-progress.json": {
+          "st_atime_ns": 1791319335554186488,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791319335554632672,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 9264687,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791319335554632672,
+          "st_nlink": 1,
+          "st_size": 282,
+          "st_uid": 1001
+        }
+      }
+    }
+  },
+  "pytest_producer_witness": true,
+  "real_orders_sent": 0,
+  "safe_postread": false,
+  "schema": "rc6.predeploy-pytest-postread-safety.v1",
+  "source_junit_data_log_payloads_read": 0,
+  "trace_presence_lstat_only": {
+    "porota-pytest-collection-launch-intent.json": {
+      "st_atime_ns": 1791316845176846231,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791316845177846378,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 9189784,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791316845177846378,
+      "st_nlink": 1,
+      "st_size": 1532,
+      "st_uid": 1001
+    },
+    "porota-pytest-collection-owned-fin.json": {
+      "st_atime_ns": 1791316860411114653,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791316860411982462,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 9189813,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791316860411982462,
+      "st_nlink": 1,
+      "st_size": 3892,
+      "st_uid": 1001
+    },
+    "porota-pytest-collection-progress.json": {
+      "st_atime_ns": 1791316860205694470,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791316860207694449,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 9189812,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791316860207034506,
+      "st_nlink": 1,
+      "st_size": 288,
+      "st_uid": 1001
+    },
+    "porota-pytest-launch-intent.json": {
+      "st_atime_ns": 1791316860955686424,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791316860956686414,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 9189826,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791316860956686414,
+      "st_nlink": 1,
+      "st_size": 1751,
+      "st_uid": 1001
+    },
+    "porota-pytest-native.log": {
+      "st_atime_ns": 1791316860956686414,
+      "st_blocks": 104,
+      "st_ctime_ns": 1791319338304158288,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 9189827,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791319338304158288,
+      "st_nlink": 1,
+      "st_size": 51848,
+      "st_uid": 1001
+    },
+    "porota-pytest-owned-fin.json": {
+      "st_atime_ns": 1791319342953110612,
+      "st_blocks": 680,
+      "st_ctime_ns": 1791319342954110602,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 9189842,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791319342953898331,
+      "st_nlink": 1,
+      "st_size": 348070,
+      "st_uid": 1001
+    },
+    "porota-pytest-progress.json": {
+      "st_atime_ns": 1791319335554186488,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791319335554632672,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 9264687,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791319335554632672,
+      "st_nlink": 1,
+      "st_size": 282,
+      "st_uid": 1001
+    },
+    "porota-test-collection.txt": {
+      "st_atime_ns": 1791316845177846378,
+      "st_blocks": 32,
+      "st_ctime_ns": 1791316860030696348,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 9189798,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791316860030696348,
+      "st_nlink": 1,
+      "st_size": 14506,
+      "st_uid": 1001
+    }
+  },
+  "witness_scope": "REVALIDATED_ALL_DECLARED_PYTEST_PHASES; NO_GLOBAL_KERNEL_WITNESS"
+}

@@ -1,0 +1,106 @@
+............................F..........F...                              [100%]
+=================================== FAILURES ===================================
+______ test_cloned_factory_with_same_code_but_foreign_globals_is_rejected ______
+
+tmp_path = PosixPath('/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/fixtures/pytest/test_cloned_factory_with_same_0')
+
+    def test_cloned_factory_with_same_code_but_foreign_globals_is_rejected(tmp_path):
+>       result = _physical_runtime_control(tmp_path, 'lookalike_factory')
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../../rc6-budget-runtime-provenance-ce932-focal-157-source/tests/test_rc6_native_big_import_provenance.py:680: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../rc6-budget-runtime-provenance-ce932-focal-157-source/tests/test_rc6_native_big_import_provenance.py:614: in _physical_runtime_control
+    completed = subprocess.run([sys.executable,'-I','-B',str(Path(__file__).resolve()),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = 20, check = True
+popenargs = (['/workspace/venv_rc6_frozen311/bin/python', '-I', '-B', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-so...ovenance.py', '--runtime-provenance-control', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-source', ...],)
+kwargs = {'cwd': PosixPath('/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/fixtures/pytest/test_cloned_factory_wi...XEC_SERVER_REMOTE_BASE_URL': 'https://codex-cloud-environments.chatgpt.com/api', ...}, 'text': True, 'stdout': -1, ...}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout is given, and the process takes too long, a TimeoutExpired
+        exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['/workspace/venv_rc6_frozen311/bin/python', '-I', '-B', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-source/tests/test_rc6_native_big_import_provenance.py', '--runtime-provenance-control', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-source', '/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/fixtures/pytest/test_cloned_factory_with_same_0', 'lookalike_factory']' returned non-zero exit status 1.
+
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:571: CalledProcessError
+_ test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage _
+
+tmp_path = PosixPath('/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0')
+
+    def test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage(tmp_path):
+        result = _physical_runtime_control(tmp_path, 'cython_extension')
+        for name in result['control']['actual_cython_modules']:
+>           row = result['boundary_after']['modules'][name][0]
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'cython_runtime'
+
+../../rc6-budget-runtime-provenance-ce932-focal-157-source/tests/test_rc6_native_big_import_provenance.py:747: KeyError
+=========================== short test summary info ============================
+FAILED ../../rc6-budget-runtime-provenance-ce932-focal-157-source/tests/test_rc6_native_big_import_provenance.py::test_cloned_factory_with_same_code_but_foreign_globals_is_rejected
+FAILED ../../rc6-budget-runtime-provenance-ce932-focal-157-source/tests/test_rc6_native_big_import_provenance.py::test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage
+{"classification": "SCOPED_IMPORT_GUARDS_NOT_GREEN", "source_sha": "ce9323625e89fd8a10979d9b1eaf353c55c176e5", "tests": 43, "failures": 2, "errors": 0, "skipped": 0, "source_unchanged": true, "wall_seconds": 13.017769694008166, "receipt": "/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/native-import-provenance-focal-receipt.json", "receipt_sha256": "c6f39ad5dbea8b9fcc4b29b96adb400c2acc6c638b70f808c88299bfdd88ffe8"}

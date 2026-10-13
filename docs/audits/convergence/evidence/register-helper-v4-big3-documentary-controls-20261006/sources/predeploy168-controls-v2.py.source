@@ -1,0 +1,403 @@
+#!/usr/bin/env python3
+"""Planned private documentary controls; never product/Gov/Native execution.
+
+This file has only been parsed/compiled until Root grants a documentary slot.
+It is separate from the original64 V3 controls and never adds market scenarios.
+"""
+import copy
+import gzip
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+
+HELPERS = (
+    ("REGISTER_V4_CANDIDATE", Path("/tmp/rc6_remediation_register_generate_v4_publication_big3_candidate.py")),
+    ("SUPPLEMENT_V3_CANDIDATE", Path("/tmp/rc6_root_supplemental_named_findings_generate_v3_publication_big3_candidate.py")),
+)
+SCHEMA = "rc6.predeploy-cleanup-controlled-custody.v1"
+FOLDER = "raw/predeploy-fixture/"
+CUSTODY = FOLDER + "CUSTODY.json"
+SCOPE = "PRIVATE_DOCUMENTARY_SCHEMA_CONTROL_NOT_NATIVE_OR_FINANCIAL_EXECUTION"
+
+
+def sha256(wire):
+    return hashlib.sha256(wire).hexdigest()
+
+
+def json_wire(value):
+    return (json.dumps(value, sort_keys=True, ensure_ascii=False) + "\n").encode()
+
+
+EXPECTED_HELPER_SHA256 = {
+    "REGISTER_V4_CANDIDATE": "549aaf8920f6da76f8080fabbc4ae9ba2021a9512951f80912e8364541f7dda4",
+    "SUPPLEMENT_V3_CANDIDATE": "fe26d269425e2cb461bb20ddee6da013b242b66fc77aa867d887f4362718a83b",
+}
+
+
+def verify_expected_helper_pins():
+    for label, path in HELPERS:
+        if sha256(path.read_bytes()) != EXPECTED_HELPER_SHA256[label]:
+            raise AssertionError("documentary helper bytes differ from exact reviewed pin: " + label)
+
+
+def load(path, name):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+
+def exercise_big_v3_controls(helper, label, adapter, declarations, malformed, results):
+    """Additional synthetic documentary clauses; no Native or local origins."""
+    rows = []
+    for index, original in enumerate(declarations):
+        root = "/UNREAD_CONTROLLED_ORIGIN/" + original["original_namespace"]
+        relative = original["original_root_relative_path"]
+        rows.append({
+            "path": FOLDER + original["stored_relative_path"],
+            "sha256": original["stored_sha256"], "bytes": original["stored_bytes"],
+            "original_sha256": original["original_sha256"], "original_bytes": original["original_bytes"],
+            "stored_git_mode": original["stored_mode"],
+            "encoding": "gzip-mtime0" if original["encoding"] == "GZIP_MTIME_ZERO_LOSSLESS" else "identity",
+            "origin_root": root, "origin_relative": relative, "capture_path": root + "/" + relative,
+            "all11stats_preserved_during_copy": True,
+            "original_stat_at_preservation": {
+                "st_dev": 23, "st_ino": index + 100, "st_mode": 33152,
+                "st_uid": 1000, "st_gid": 1000, "st_nlink": 1,
+                "st_size": original["original_bytes"], "st_blocks": 1,
+                "st_atime_ns": 17, "st_mtime_ns": 19, "st_ctime_ns": 23,
+            },
+        })
+    receipt = {"schema": "rc6.native-big-whole-source-witness-custody.v3",
+        "scope": SCOPE, "raw_records": rows, "source_sha": "a" * 40, "source_tree": "b" * 40,
+        "native_returncode": 1, "business_resource_complete": False, "import_proof_complete": False,
+        "native_phases": ["BOUNDED_READ"], "native_import_proof_status": "UNVERIFIED",
+        "source_tar_capture_path": "/NONEXISTENT_UNREAD_CONTROLLED_SOURCE.tar.gz",
+        "source_tar_sha256": "c" * 64,
+        "metadata_kind": "SYNTHETIC_SCALARS_STATS_AND_ORIGINS_NOT_AN_OBSERVED_NATIVE_SOURCE_CAPTURE"}
+
+    def preserve(name, candidate):
+        before = helper.canonical(candidate)
+        members = helper.declared_raw_dossier_members(adapter, CUSTODY, candidate)
+        assert len(members) == 18 and helper.canonical(candidate) == before
+        results.append({"helper": label, "control": name, "result": "PRESERVED"})
+        return members
+
+    members = preserve("BIGV3_IDENTITY_GZIP_EXPLICIT_ORIGINS_BYTES_MODES_PRESERVED", receipt)
+    assert sum("gzip_mtime" in member["raw_encoding_metadata"] for member in members) == 4
+    assert all(member["archival_path_mapping"]["origin_root"].startswith("/UNREAD_CONTROLLED_ORIGIN/") for member in members)
+    assert all(member["archival_path_mapping"]["captured_stat_scope"] ==
+        "LITERAL_ORIGINAL_PRESERVATION_DECLARATION_NOT_CURRENT_LOCAL_FILESYSTEM_CUSTODY" for member in members)
+    assert all(member["publication_binding"]["source_sha"] != receipt["source_sha"] for member in members)
+    preserve("BIGV3_RED_FLAGS_CAPTURE_SOURCE_AND_EXTERNAL_TAR_LITERALS_UNALTERED", receipt)
+    assert receipt["native_returncode"] == 1 and receipt["business_resource_complete"] is False
+    assert receipt["import_proof_complete"] is False and receipt["native_phases"] == ["BOUNDED_READ"]
+    copy_red = copy.deepcopy(receipt)
+    copy_red["raw_records"][0]["all11stats_preserved_during_copy"] = False
+    preserve("BIGV3_COPYTIME_FALSE_PRESERVED_WITHOUT_CURRENT_FS_CLAIM", copy_red)
+    legacy = copy.deepcopy(receipt)
+    legacy["schema"] = "rc6.native-big-whole-source-witness-custody.v2"
+    for row in legacy["raw_records"]:
+        for key in ("origin_root", "origin_relative", "capture_path", "stored_git_mode",
+                    "all11stats_preserved_during_copy", "original_stat_at_preservation"):
+            row.pop(key)
+    preserve("BIGV2_LEGACY_DISPATCH_STILL_BINDS_ORIGINALS_WITHOUT_NEW_FIELDS", legacy)
+
+    def reject(name, mutation, boundary=False):
+        candidate = copy.deepcopy(receipt)
+        mutation(candidate)
+        limit = helper.DOCUMENTARY_MEMBER_LIMIT_BYTES
+        if boundary:
+            helper.DOCUMENTARY_MEMBER_LIMIT_BYTES = 256
+        try:
+            try:
+                helper.declared_raw_dossier_members(adapter, CUSTODY, candidate)
+            except (helper.RefResolutionError, ValueError, subprocess.SubprocessError):
+                results.append({"helper": label, "control": name, "result": "REJECTED"})
+            else:
+                raise AssertionError("altered BIG v3 custody accepted: " + name)
+        finally:
+            helper.DOCUMENTARY_MEMBER_LIMIT_BYTES = limit
+
+    mutations = [
+        ("BIGV3_NONLIST_RAW_REJECTED", lambda d: d.update(raw_records={})),
+        ("BIGV3_NONOBJECT_RAW_REJECTED", lambda d: d["raw_records"].__setitem__(0, None)),
+        ("BIGV3_STORED_ESCAPE_REJECTED", lambda d: d["raw_records"][0].update(path="../outside.xml")),
+        ("BIGV3_OUTSIDE_CAPSULE_REJECTED", lambda d: d["raw_records"][0].update(path="elsewhere/focal.xml")),
+        ("BIGV3_DUPLICATE_STORED_REJECTED", lambda d: d["raw_records"][1].update(path=d["raw_records"][0]["path"])),
+        ("BIGV3_SELF_CONTROL_REJECTED", lambda d: d["raw_records"][0].update(path=CUSTODY)),
+        ("BIGV3_DERIVED_README_REJECTED", lambda d: d["raw_records"][0].update(path=FOLDER + "README.md")),
+        ("BIGV3_MISSING_RAW_REJECTED", lambda d: d["raw_records"][0].update(path=FOLDER + "missing.xml")),
+        ("BIGV3_ORIGIN_ROOT_MISSING_REJECTED", lambda d: d["raw_records"][0].pop("origin_root")),
+        ("BIGV3_ORIGIN_ROOT_ESCAPE_REJECTED", lambda d: d["raw_records"][0].update(origin_root="/raw/../other")),
+        ("BIGV3_ORIGIN_RELATIVE_ESCAPE_REJECTED", lambda d: d["raw_records"][0].update(origin_relative="../outside.xml")),
+        ("BIGV3_ORIGIN_RELATIVE_ABSOLUTE_REJECTED", lambda d: d["raw_records"][0].update(origin_relative="/outside.xml")),
+        ("BIGV3_CAPTURE_JOIN_CONTRADICTION_REJECTED", lambda d: d["raw_records"][0].update(capture_path="/other/focal.xml")),
+        ("BIGV3_STORED_MODE_MISSING_REJECTED", lambda d: d["raw_records"][0].pop("stored_git_mode")),
+        ("BIGV3_POSIX_MODE_ALIAS_REJECTED", lambda d: d["raw_records"][0].update(stored_git_mode="0644")),
+        ("BIGV3_COMMITTED_MODE_MISMATCH_REJECTED", lambda d: d["raw_records"][0].update(stored_git_mode="100755")),
+        ("BIGV3_CAPTURE_STATS_MISSING_REJECTED", lambda d: d["raw_records"][0]["original_stat_at_preservation"].pop("st_atime_ns")),
+        ("BIGV3_CAPTURE_STAT_BOOL_REJECTED", lambda d: d["raw_records"][0]["original_stat_at_preservation"].update(st_size=True)),
+        ("BIGV3_COPYTIME_FLAG_NONBOOL_REJECTED", lambda d: d["raw_records"][0].update(all11stats_preserved_during_copy=1)),
+        ("BIGV3_CAPTURE_SIZE_MISMATCH_REJECTED", lambda d: d["raw_records"][0]["original_stat_at_preservation"].update(st_size=0)),
+        ("BIGV3_STORED_SHA_REJECTED", lambda d: d["raw_records"][0].update(sha256="f" * 64)),
+        ("BIGV3_STORED_BYTES_BOOL_REJECTED", lambda d: d["raw_records"][0].update(bytes=True)),
+        ("BIGV3_ORIGINAL_SHA_REJECTED", lambda d: d["raw_records"][0].update(original_sha256="f" * 64)),
+        ("BIGV3_ORIGINAL_BYTES_BOOL_REJECTED", lambda d: d["raw_records"][0].update(original_bytes=True)),
+        ("BIGV3_UNKNOWN_ENCODING_REJECTED", lambda d: d["raw_records"][0].update(encoding="gzip")),
+        ("BIGV3_IDENTITY_ON_GZIP_REJECTED", lambda d: d["raw_records"][8].update(encoding="identity")),
+        ("BIGV3_GZIP_ON_PLAIN_REJECTED", lambda d: d["raw_records"][0].update(encoding="gzip-mtime0")),
+    ]
+    for name, mutation in mutations:
+        reject(name, mutation)
+    for stem in ("crc", "truncated", "concat", "mtime", "bound"):
+        def mutation(d, stem=stem):
+            wire = malformed[stem + ".json.gz"]
+            original = b"x" * 257 if stem == "bound" else None
+            original_sha = sha256(original) if original is not None else declarations[2]["original_sha256"]
+            original_length = len(original) if original is not None else declarations[2]["original_bytes"]
+            d["raw_records"][0].update(path=FOLDER + stem + ".json.gz", sha256=sha256(wire),
+                bytes=len(wire), encoding="gzip-mtime0", original_sha256=original_sha,
+                original_bytes=original_length)
+            d["raw_records"][0]["original_stat_at_preservation"]["st_size"] = original_length
+        reject("BIGV3_GZIP_" + stem.upper() + "_REJECTED", mutation, boundary=stem == "bound")
+
+
+def run():
+    helper_before = {label: sha256(path.read_bytes()) for label, path in HELPERS}
+    modules = {label: load(path, "controlled_" + label.lower()) for label, path in HELPERS}
+    results = []
+    with tempfile.TemporaryDirectory(prefix="rc6-v4-predeploy-documentary-") as temp:
+        repo = Path(temp) / "repo"
+        repo.mkdir()
+
+        def git(*arguments):
+            return subprocess.check_output(["git", "--no-replace-objects", "--no-optional-locks",
+                "-c", "protocol.allow=never", "-C", str(repo), *arguments], stderr=subprocess.PIPE)
+
+        git("init", "-q")
+        declarations = []
+        metadata = {"schema": "CONTROLLED_LITERAL_RAW", "scope": SCOPE,
+            "counts": {"historically_recorded": 7}, "known_at": None, "signed_zero": -0.0}
+        payload = json_wire(metadata)
+        program = b"raise RuntimeError('ARCHIVAL_SOURCE_MUST_NEVER_EXECUTE')\n"
+        names = [
+            ("focal.xml", "focal.xml", b"<testsuites><testsuite tests='1'><testcase name='controlled-doc'/></testsuite></testsuites>", False),
+            ("focal.log", "focal.log", b"CONTROLLED DOCUMENTARY LOG; NO NATIVE\n", False),
+            ("focal.receipt.json", "focal.receipt.json", payload, False),
+            ("kernel.resources.json", "kernel.resources.json", payload, False),
+            ("launch.json", "launch.json", payload, False),
+            ("collection-before-fixtures.json", "collection-before-fixtures.json", payload, False),
+            ("parent.prefixture157.json", "parent.prefixture157.json", payload, False),
+            ("child.prefixture157.json", "child.prefixture157.json", payload, False),
+            ("parent.source-before.index.json", "parent.source-before.index.json.gz", payload, True),
+            ("parent.source-after.index.json", "parent.source-after.index.json.gz", payload, True),
+            ("child.source-before.index.json", "child.source-before.index.json.gz", payload, True),
+            ("child.source-after.index.json", "child.source-after.index.json.gz", payload, True),
+            ("runner.py", "runner.py.source", program, False),
+            ("source_support.py", "source_support.py.source", program, False),
+            ("source/requirements.lock.txt", "source-requirements.lock.txt.source", b"CONTROLLED LOCK RAW\n", False),
+            ("source/requirements.build.lock.txt", "source-requirements.build.lock.txt.source", b"CONTROLLED BUILD LOCK RAW\n", False),
+            ("source/ops/policy/policy.json", "source-policy.json.source", payload, False),
+            ("source/ops/policy/test-policy.yaml", "source-test-policy.yaml.source", b"scope: documentary-control\n", False),
+        ]
+        for original, stored, decoded, compressed in names:
+            wire = gzip.compress(decoded, mtime=0) if compressed else decoded
+            path = repo / (FOLDER + stored)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(wire)
+            namespace = "WHOLE_SOURCE" if original.startswith("source/") else "RAW"
+            row = {"original_relative_path": original, "stored_relative_path": stored,
+                "original_bytes": len(decoded), "original_sha256": sha256(decoded),
+                "stored_bytes": len(wire), "stored_sha256": sha256(wire), "stored_mode": "100644",
+                "encoding": "GZIP_MTIME_ZERO_LOSSLESS" if compressed else "BYTE_EXACT",
+                "original_namespace": namespace,
+                "original_root_relative_path": original.removeprefix("source/") if namespace == "WHOLE_SOURCE" else original,
+                "original_absolute_path": "/UNREAD_CONTROLLED_ORIGIN/" + namespace + "/" +
+                    (original.removeprefix("source/") if namespace == "WHOLE_SOURCE" else original),
+                "original_copytime_stat_fields": {"st_size": len(decoded), "st_atime_ns": 17}}
+            if namespace == "WHOLE_SOURCE":
+                row["original_git_blob"] = hashlib.sha1(b"blob " + str(len(decoded)).encode() + b"\0" + decoded).hexdigest()
+                row["original_git_mode"] = "100644"
+            declarations.append(row)
+        custody = {"schema": SCHEMA, "scope": SCOPE, "raw_file_count": 18, "raw_files": declarations,
+            "source_sha": "a" * 40, "source_tree": "b" * 40, "executed_unique_cases": 7,
+            "original_roots": {"RAW": "/UNREAD_CONTROLLED_ORIGIN/RAW", "WHOLE_SOURCE": "/UNREAD_CONTROLLED_ORIGIN/WHOLE_SOURCE"},
+            "whole_source_archive": {"external_path": "/UNREAD_CONTROLLED_ORIGIN/RAW/NONEXISTENT_UNREAD_CONTROLLED_SOURCE.tar.gz",
+                "in_git_packet": False, "bytes": 80177138, "sha256": "c" * 64,
+                "original_namespace": "RAW", "original_root_relative_path": "NONEXISTENT_UNREAD_CONTROLLED_SOURCE.tar.gz",
+                "original_absolute_path": "/UNREAD_CONTROLLED_ORIGIN/RAW/NONEXISTENT_UNREAD_CONTROLLED_SOURCE.tar.gz",
+                "scope": "CONTROLLED_EXTERNAL_POST_CAPTURE_REFERENCE_NOT_EXECUTED_ARTIFACT"}}
+        (repo / CUSTODY).write_bytes(json_wire(custody))
+        valid_gzip = gzip.compress(payload, mtime=0)
+        corrupted_crc = bytearray(valid_gzip)
+        corrupted_crc[-8] ^= 1
+        malformed = {
+            "crc.json.gz": bytes(corrupted_crc),
+            "truncated.json.gz": gzip.compress(payload, mtime=0)[:-5],
+            "concat.json.gz": gzip.compress(payload, mtime=0) * 2,
+            "mtime.json.gz": gzip.compress(payload, mtime=1),
+            "bound.json.gz": gzip.compress(b"x" * 257, mtime=0),
+            "valid.json.gz": gzip.compress(payload, mtime=0),
+        }
+        for name, wire in malformed.items():
+            (repo / (FOLDER + name)).write_bytes(wire)
+        executable = repo / (FOLDER + "executable.py.source")
+        executable.write_bytes(program)
+        executable.chmod(0o755)
+        git("add", ".")
+        git("-c", "user.name=Controlled documentary fixture", "-c", "user.email=controlled@invalid",
+            "commit", "-q", "-m", "Private schema controls only; no Native authority")
+        pin = git("rev-parse", "HEAD").decode().strip()
+        source = modules["REGISTER_V4_CANDIDATE"].Source(repo, pin)
+        try:
+            for label, helper in modules.items():
+                seen_reads = []
+
+                class DocumentarySource:
+                    def read(self, path):
+                        if not path.startswith(FOLDER):
+                            raise AssertionError("attempt to open a declared external/original path: " + path)
+                        seen_reads.append(path)
+                        return source.read(path)
+
+                    def binding(self, path):
+                        return source.binding(path)
+
+                adapter = DocumentarySource()
+                original_wire = helper.canonical(custody)
+                members = helper.declared_raw_dossier_members(adapter, CUSTODY, custody)
+                assert len(members) == 18 and helper.canonical(custody) == original_wire
+                assert len(seen_reads) == 18 and all(path.startswith(FOLDER) for path in seen_reads)
+                assert sum("gzip_mtime" in member["raw_encoding_metadata"] for member in members) == 4
+                assert all(member["scope"] == "RAW_MEMBER_CUSTODY_ONLY_NO_NEW_EXECUTION_COUNT_OR_CAPTURE_SOURCE_INFERENCE" for member in members)
+                assert all(member["archival_path_mapping"]["original_relative_path_role"] ==
+                    "ARCHIVAL_DECLARATION_IDENTIFIER_NOT_LOCAL_FILESYSTEM_PATH" for member in members)
+                results.append({"helper": label, "control": "EXPLICIT18_PLAIN_GZIP_SOURCE_MAPPING_SCOPE_FIELDS_PRESERVED_EXTERNAL_NOT_OPENED", "result": "PRESERVED"})
+                revised = copy.deepcopy(custody)
+                revised["raw_files"][12].update(stored_relative_path="executable.py.source", stored_mode="100755")
+                assert helper.declared_raw_dossier_members(adapter, CUSTODY, revised)[12]["publication_binding"]["git_mode"] == "100755"
+                results.append({"helper": label, "control": "EXACT_EXECUTABLE_GIT_MODE_POSITIVE", "result": "PRESERVED"})
+
+                def reject(name, mutation, boundary=False):
+                    changed = copy.deepcopy(custody)
+                    mutation(changed)
+                    saved = helper.DOCUMENTARY_MEMBER_LIMIT_BYTES
+                    if boundary:
+                        helper.DOCUMENTARY_MEMBER_LIMIT_BYTES = 256
+                    try:
+                        helper.declared_raw_dossier_members(adapter, CUSTODY, changed)
+                    except (helper.RefResolutionError, ValueError, subprocess.SubprocessError):
+                        results.append({"helper": label, "control": name, "result": "REJECTED"})
+                    else:
+                        raise AssertionError("altered custody was accepted: " + name)
+                    finally:
+                        helper.DOCUMENTARY_MEMBER_LIMIT_BYTES = saved
+
+                mutations = [
+                    ("COUNT_BOOL_REJECTED", lambda d: d.update(raw_file_count=True)),
+                    ("COUNT_MISMATCH_REJECTED", lambda d: d.update(raw_file_count=17)),
+                    ("MISSING_ORIGIN_ROOTS_REJECTED", lambda d: d.pop("original_roots")),
+                    ("ROOT_NAMESPACE_OVERLAP_REJECTED", lambda d: d["original_roots"].update(WHOLE_SOURCE=d["original_roots"]["RAW"])),
+                    ("ROOT_ESCAPE_REJECTED", lambda d: d["original_roots"].update(RAW="/outside/../raw")),
+                    ("MISSING_ORIGIN_NAMESPACE_REJECTED", lambda d: d["raw_files"][0].pop("original_namespace")),
+                    ("ORIGIN_NAMESPACE_UNKNOWN_REJECTED", lambda d: d["raw_files"][0].update(original_namespace="OTHER")),
+                    ("ORIGIN_RELATIVE_ESCAPE_REJECTED", lambda d: d["raw_files"][0].update(original_root_relative_path="../outside.xml")),
+                    ("ORIGIN_ABSOLUTE_CONTRADICTION_REJECTED", lambda d: d["raw_files"][0].update(original_absolute_path="/OTHER/focal.xml")),
+                    ("TAR_ORIGIN_CONTRADICTION_REJECTED", lambda d: d["whole_source_archive"].update(external_path="/OTHER/source.tar.gz")),
+                    ("TAR_IN_GIT_INFERENCE_REJECTED", lambda d: d["whole_source_archive"].update(in_git_packet=True)),
+                    ("RAW_LIST_SHAPE_REJECTED", lambda d: d.update(raw_files={})),
+                    ("RAW_NONOBJECT_REJECTED", lambda d: d["raw_files"].__setitem__(0, None)),
+                    ("ORIGINAL_ESCAPE_REJECTED", lambda d: d["raw_files"][0].update(original_relative_path="../outside.xml")),
+                    ("STORED_ESCAPE_REJECTED", lambda d: d["raw_files"][0].update(stored_relative_path="../outside.xml")),
+                    ("DUPLICATE_ORIGINAL_REJECTED", lambda d: d["raw_files"][1].update(original_relative_path=d["raw_files"][0]["original_relative_path"])),
+                    ("DUPLICATE_STORED_REJECTED", lambda d: d["raw_files"][1].update(stored_relative_path=d["raw_files"][0]["stored_relative_path"])),
+                    ("SELF_CUSTODY_REJECTED", lambda d: d["raw_files"][0].update(stored_relative_path="CUSTODY.json")),
+                    ("MISSING_RAW_REJECTED", lambda d: d["raw_files"][0].update(stored_relative_path="missing.xml")),
+                    ("STORED_HASH_REJECTED", lambda d: d["raw_files"][0].update(stored_sha256="f" * 64)),
+                    ("STORED_LENGTH_BOOL_REJECTED", lambda d: d["raw_files"][0].update(stored_bytes=True)),
+                    ("ORIGINAL_HASH_REJECTED", lambda d: d["raw_files"][0].update(original_sha256="f" * 64)),
+                    ("ORIGINAL_LENGTH_BOOL_REJECTED", lambda d: d["raw_files"][0].update(original_bytes=True)),
+                    ("MISSING_STORED_MODE_REJECTED", lambda d: d["raw_files"][0].pop("stored_mode")),
+                    ("POSIX_MODE_ALIAS_REJECTED", lambda d: d["raw_files"][0].update(stored_mode="0644")),
+                    ("WRONG_COMMITTED_MODE_REJECTED", lambda d: d["raw_files"][0].update(stored_mode="100755")),
+                    ("UNKNOWN_ENCODING_REJECTED", lambda d: d["raw_files"][0].update(encoding="gzip")),
+                    ("BYTE_EXACT_GZIP_AMBIGUITY_REJECTED", lambda d: d["raw_files"][8].update(encoding="BYTE_EXACT")),
+                    ("GZIP_DECLARATION_ON_PLAIN_REJECTED", lambda d: d["raw_files"][0].update(encoding="GZIP_MTIME_ZERO_LOSSLESS")),
+                    ("ORIGINAL_GIT_BLOB_REJECTED", lambda d: d["raw_files"][14].update(original_git_blob="f" * 40)),
+                ]
+                for name, mutation in mutations:
+                    reject(name, mutation)
+                for stem in ("crc", "truncated", "concat", "mtime", "bound"):
+                    def mutation(d, stem=stem):
+                        wire = malformed[stem + ".json.gz"]
+                        d["raw_files"][0].update(stored_relative_path=stem + ".json.gz",
+                            stored_sha256=sha256(wire), stored_bytes=len(wire),
+                            encoding="GZIP_MTIME_ZERO_LOSSLESS")
+                    reject("GZIP_" + stem.upper() + "_REJECTED", mutation, boundary=stem == "bound")
+                budget_custody = {"schema": "rc6.native-big-import-provenance-focal.v1", "scope": SCOPE,
+                    "runs": [{"id": "4087", "counts": {"tests": 19, "failed": 1}},
+                        {"id": "fa1", "counts": {"tests": 19, "passed": 19}}],
+                    "raw_files": [{"id": "CONTROLLED:" + str(i), "path": FOLDER + row["stored_relative_path"],
+                        "original_path": row["original_absolute_path"], "sha256": row["stored_sha256"],
+                        "bytes": row["stored_bytes"], "stored_mode": row["stored_mode"],
+                        "encoding": "BYTE_EXACT", "custody": "BYTE_EXACT_ORIGINAL_RAW", "scope": SCOPE}
+                        for i, row in enumerate(declarations) if row["encoding"] == "BYTE_EXACT"],
+                    "external_whole_source": "/NONEXISTENT_UNREAD_BUDGET_TAR.tar"}
+                budget_wire = helper.canonical(budget_custody)
+                assert len(helper.declared_raw_dossier_members(adapter, FOLDER + "BUDGET.json", budget_custody)) == 14
+                assert helper.canonical(budget_custody) == budget_wire
+                results.append({"helper": label, "control": "BUDGET_EXPLICIT_GIT_PATH_BYTE_EXACT_TWO_RUN_SCOPES_UNCHANGED", "result": "PRESERVED"})
+                budget_mutations = [
+                    ("BUDGET_DUPLICATE_ID_REJECTED", lambda d: d["raw_files"][1].update(id=d["raw_files"][0]["id"])),
+                    ("BUDGET_DUPLICATE_PATH_REJECTED", lambda d: d["raw_files"][1].update(path=d["raw_files"][0]["path"])),
+                    ("BUDGET_STORED_ESCAPE_REJECTED", lambda d: d["raw_files"][0].update(path="../outside.xml")),
+                    ("BUDGET_ORIGINAL_HINT_MISSING_REJECTED", lambda d: d["raw_files"][0].pop("original_path")),
+                    ("BUDGET_ORIGINAL_HINT_ESCAPE_REJECTED", lambda d: d["raw_files"][0].update(original_path="/raw/../outside.xml")),
+                    ("BUDGET_RAW_MISSING_REJECTED", lambda d: d["raw_files"][0].update(path=FOLDER + "missing.xml")),
+                    ("BUDGET_ENCODING_ALIAS_REJECTED", lambda d: d["raw_files"][0].update(encoding="identity")),
+                    ("BUDGET_RAW_HASH_REJECTED", lambda d: d["raw_files"][0].update(sha256="f" * 64)),
+                    ("BUDGET_RAW_LENGTH_BOOL_REJECTED", lambda d: d["raw_files"][0].update(bytes=True)),
+                    ("BUDGET_RAW_MODE_REJECTED", lambda d: d["raw_files"][0].update(stored_mode="100755")),
+                ]
+                for name, mutation in budget_mutations:
+                    changed = copy.deepcopy(budget_custody)
+                    mutation(changed)
+                    try:
+                        helper.declared_raw_dossier_members(adapter, FOLDER + "BUDGET.json", changed)
+                    except (helper.RefResolutionError, ValueError, subprocess.SubprocessError):
+                        results.append({"helper": label, "control": name, "result": "REJECTED"})
+                    else:
+                        raise AssertionError("altered Budget custody accepted: " + name)
+                exercise_big_v3_controls(helper, label, adapter, declarations, malformed, results)
+            assert helper_before == {label: sha256(path.read_bytes()) for label, path in HELPERS}
+        finally:
+            source.close()
+    expected_pairs = {(label, control) for label, _ in HELPERS for control in {row["control"] for row in results}}
+    actual_pairs = [(row["helper"], row["control"]) for row in results]
+    assert len(results) == 168 and len({row["control"] for row in results}) == 84
+    assert len(set(actual_pairs)) == len(actual_pairs) and set(actual_pairs) == expected_pairs
+    receipt = {"schema": "rc6.register-helpers-v4-predeploy-documentary-controls.v1",
+        "classification": "BOUNDED_PRIVATE_DOCUMENTARY_CONTROLS_ONLY", "scope": SCOPE,
+        "sources_before_and_after_sha256": helper_before, "sources_unchanged": True,
+        "documentary_control_invocations": len(results), "distinct_semantic_controls": len({row["control"] for row in results}),
+        "controls": results, "product_native_executions": 0, "gov_executions": 0, "product_imports": 0,
+        "final_register_generated": False, "root_or_product_written": False,
+        "original_v3_64_controls": "SEPARATE_HISTORICAL_OVERLAPPING_SCOPE_NOT_REEXECUTED_OR_ADDED",
+        "limits": ["Imports only these external stdlib helpers; uses only a small private local Git fixture.",
+            "Boundary control substitutes256bytes for32MiB; it does not allocate a32MiB corpus.",
+            "Original paths/TAR are deliberately unread external hints. Archival SOURCE content is never executed.",
+            "This receipt conveys no market, business, BIG, horizon, deployment or final SourceS/D/C authority."]}
+    print(json.dumps(receipt, sort_keys=True, ensure_ascii=False), flush=True)
+
+
+if __name__ == "__main__":
+    verify_expected_helper_pins()
+    try:
+        run()
+    finally:
+        verify_expected_helper_pins()

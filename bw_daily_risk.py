@@ -85,7 +85,7 @@ class DailyRisk:
             previous = c.execute('SELECT * FROM paper_daily_risk WHERE day=? AND currency=?',
                                  (day,currency)).fetchone()
             latest_row = c.execute("""SELECT evaluated_at FROM paper_daily_risk
-                WHERE currency=? ORDER BY julianday(evaluated_at) DESC LIMIT 1""",
+                WHERE currency=? ORDER BY rc6_instant_us(evaluated_at) DESC LIMIT 1""",
                 (currency,)).fetchone()
             latest_at = latest_row['evaluated_at'] if latest_row else None
             input_at = at.isoformat()
@@ -130,14 +130,22 @@ class DailyRisk:
                         raise ValueError('Ledger con fechas futuras')
                 if c.execute("""SELECT 1 FROM paper_spot_sales s JOIN paper_fills f ON f.id=s.fill_id
                     JOIN paper_positions p ON p.paper_id=s.paper_id WHERE p.currency=?
-                    AND julianday(f.filled_at)>julianday(?) LIMIT 1""",
+                    AND rc6_instant_us(f.filled_at)>rc6_instant_us(?) LIMIT 1""",
                     (currency,at.isoformat())).fetchone():
                     raise ValueError('Ledger parcial con fechas futuras')
                 opened_rows,closed_rows = self.broker._positions_at(at,c)
                 rows = [p for p in opened_rows+closed_rows if p['currency']==currency]
                 cauciones = self.broker.cauciones.positions(currency=currency,connection=c)
+                from rc6_paper_family_lifecycle import future_risk_snapshot
+                future_before = future_risk_snapshot(
+                    self.store, currency, start, connection=c,
+                    max_mark_age_seconds=self.broker.quote_max_age_seconds, exclusive=True)
+                future_now = future_risk_snapshot(
+                    self.store, currency, at, connection=c,
+                    max_mark_age_seconds=self.broker.quote_max_age_seconds)
                 before = realized = today_realized = unrealized = ZERO
-                carry, stale = False, False
+                carry = bool(future_before["carry"] or future_before["stale"])
+                stale = bool(future_now["stale"] or future_now["carry"])
                 for p in rows:
                     opened = aware_datetime(p['opened_at'])
                     closed = aware_datetime(p['closed_at']) if p['closed_at'] else None
@@ -173,6 +181,10 @@ class DailyRisk:
                     exit_price = (q.bid*(1-self.broker.slippage)).quantize(Decimal('0.0001'))
                     unrealized += ((exit_price-Decimal(p['entry_price']))*qty*factor -
                         Decimal(p['entry_cost']) - self.broker._cost(exit_price*factor,qty,p['asset_class']))
+                before += future_before["realized"]
+                realized += future_now["realized"]
+                today_realized += future_now["realized"] - future_before["realized"]
+                unrealized += future_now["unrealized"]
                 candidate = capital + before + sum((caucion_pnl(p,start,exclusive=True) for p in cauciones),ZERO)
                 baseline = ((Decimal(previous['baseline_equity']) if previous['baseline_equity'] is not None else None)
                             if previous else candidate if not carry else None)
@@ -184,7 +196,7 @@ class DailyRisk:
                 if capital != saved_capital or (previous and Decimal(previous['limit_pct']) != self.limit_pct):
                     state, detail = 'CONFIG_CHANGED', 'Capital cambiado o límite cambiado durante el día; requiere conciliación'
                 elif baseline is None:
-                    state, detail = 'BASELINE_UNAVAILABLE', 'Carry spot sin marca conciliada del día anterior; no se inventa base'
+                    state, detail = 'BASELINE_UNAVAILABLE', 'Carry spot/futuro sin conciliación de inicio de día; no se inventa base'
                 elif baseline <= 0 or capital <= 0:
                     state, detail = 'NO_CAPITAL', 'Sin base positiva en esta moneda'
                 else:

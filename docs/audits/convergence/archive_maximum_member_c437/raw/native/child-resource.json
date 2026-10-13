@@ -1,0 +1,19 @@
+{
+  "cpu_system_seconds": 15.247467,
+  "cpu_total_seconds": 123.401999,
+  "cpu_user_seconds": 108.154532,
+  "elapsed_wall_seconds": 126.01621596099722,
+  "elapsed_wall_source": "PARENT_MONOTONIC_LAUNCH_THROUGH_EXACT_PID_KERNEL_REAP; INCLUDES_OUTPUT_EXIT_AND_POLL_LATENCY",
+  "execution_id": "5e78cf77c77c4b83a81a58d67b9bbb06",
+  "input_blocks": 0,
+  "major_page_faults": 0,
+  "minor_page_faults": 3672784,
+  "outer_timed_out": false,
+  "output_blocks": 326496,
+  "pid": 206773,
+  "real_peak_rss_bytes": 342335488,
+  "returncode": 0,
+  "ru_maxrss_unit": "LINUX_KIBIBYTES",
+  "schema": "rc6.maximum-member-governed-linux-wait4.v1",
+  "scope": "EXACT_CHILD_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; HIGH_WATER_RSS_NOT_SUM_OF_PROCESSES"
+}

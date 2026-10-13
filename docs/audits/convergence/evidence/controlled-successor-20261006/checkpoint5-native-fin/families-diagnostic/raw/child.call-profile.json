@@ -1,0 +1,449 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "actual_profile_disabled": true,
+  "actual_trace_not_installed": true,
+  "boundaries": [
+    {
+      "at_monotonic": 19806.83071026,
+      "at_process_cpu": 1.209580614,
+      "kind": "READ_CALL",
+      "native_function": "_read",
+      "native_line": 198
+    },
+    {
+      "at_monotonic": 19806.830792633,
+      "at_process_cpu": 1.209662916,
+      "generator_resume_or_yield_is_not_a_second_read": true,
+      "kind": "CONTEXT_GENERATOR_CALL",
+      "native_function": "source_connection",
+      "native_line": 23,
+      "original_deadline": 19807.330741557
+    },
+    {
+      "at_monotonic": 19806.832438977,
+      "at_process_cpu": 1.211310081,
+      "generator_resume_or_yield_is_not_a_second_read": true,
+      "kind": "CONTEXT_GENERATOR_CALL",
+      "native_function": "readonly_copy",
+      "native_line": 89,
+      "original_deadline": 19807.330741557
+    },
+    {
+      "at_monotonic": 19806.855155952,
+      "at_process_cpu": 1.234017515,
+      "consumed_bytes": null,
+      "kind": "COPY_BYTE_PASS_CALL",
+      "native_function": "_read",
+      "native_line": 50,
+      "writing_private_copy": true
+    },
+    {
+      "at_monotonic": 19806.886338034,
+      "at_process_cpu": 1.265199696,
+      "consumed_bytes": 23162880,
+      "kind": "COPY_BYTE_PASS_RETURN",
+      "native_function": "_read",
+      "native_line": 86,
+      "writing_private_copy": true
+    },
+    {
+      "at_monotonic": 19806.887094698,
+      "at_process_cpu": 1.265956289,
+      "consumed_bytes": null,
+      "kind": "COPY_BYTE_PASS_CALL",
+      "native_function": "_read",
+      "native_line": 50,
+      "writing_private_copy": false
+    },
+    {
+      "at_monotonic": 19806.902784681,
+      "at_process_cpu": 1.281646257,
+      "consumed_bytes": 23162880,
+      "kind": "COPY_BYTE_PASS_RETURN",
+      "native_function": "_read",
+      "native_line": 86,
+      "writing_private_copy": false
+    },
+    {
+      "at_monotonic": 19806.905122001,
+      "at_process_cpu": 1.283983706,
+      "deadline": 19807.330741557,
+      "kind": "ORIGINAL_DEADLINE_CHECK",
+      "native_function": "readonly_copy",
+      "native_line": 162,
+      "observed_before_check_monotonic": 19806.905119077,
+      "remaining_seconds": 0.42562248000103864
+    },
+    {
+      "at_monotonic": 19806.905136192,
+      "at_process_cpu": 1.283997747,
+      "generator_resume_or_yield_is_not_a_second_read": true,
+      "kind": "CONTEXT_GENERATOR_RETURN",
+      "native_function": "readonly_copy",
+      "native_line": 163,
+      "original_deadline": 19807.330741557
+    },
+    {
+      "at_monotonic": 19806.905169081,
+      "at_process_cpu": 1.284030676,
+      "generator_resume_or_yield_is_not_a_second_read": true,
+      "kind": "CONTEXT_GENERATOR_RETURN",
+      "native_function": "source_connection",
+      "native_line": 32,
+      "original_deadline": 19807.330741557
+    },
+    {
+      "at_monotonic": 19806.906272719,
+      "at_process_cpu": 1.285134274,
+      "completed_lengths": {
+        "cash": 0,
+        "errors": 0,
+        "metadata": 0,
+        "quotes": 0,
+        "truncated": 0
+      },
+      "kind": "TABLE_TRANSFORM_END_NEXT_NATIVE_PRAGMA",
+      "native_function": "_read",
+      "native_line": 219,
+      "table": "financial_instrument_catalog"
+    },
+    {
+      "at_monotonic": 19806.949081943,
+      "at_process_cpu": 1.327943603,
+      "kind": "ORIGINAL_LEN_ROWS_AFTER_NATIVE_LIST",
+      "native_function": "_read",
+      "native_line": 228,
+      "returned_rowcount": 12000,
+      "table": "financial_instrument_catalog"
+    },
+    {
+      "at_monotonic": 19807.26252176,
+      "at_process_cpu": 1.641297403,
+      "completed_lengths": {
+        "cash": 0,
+        "errors": 0,
+        "metadata": 12000,
+        "quotes": 0,
+        "truncated": 0
+      },
+      "kind": "TABLE_TRANSFORM_END_NEXT_NATIVE_PRAGMA",
+      "native_function": "_read",
+      "native_line": 219,
+      "table": "market_snapshots"
+    },
+    {
+      "at_monotonic": 19807.263638928,
+      "at_process_cpu": 1.642414611,
+      "kind": "ORIGINAL_LEN_ROWS_AFTER_NATIVE_LIST",
+      "native_function": "_read",
+      "native_line": 228,
+      "returned_rowcount": 0,
+      "table": "market_snapshots"
+    },
+    {
+      "at_monotonic": 19807.263668322,
+      "at_process_cpu": 1.642443824,
+      "completed_lengths": {
+        "cash": 0,
+        "errors": 0,
+        "metadata": 12000,
+        "quotes": 0,
+        "truncated": 0
+      },
+      "kind": "TABLE_TRANSFORM_END_NEXT_NATIVE_PRAGMA",
+      "native_function": "_read",
+      "native_line": 219,
+      "table": "ppi_intraday_points"
+    },
+    {
+      "at_monotonic": 19807.273820834,
+      "at_process_cpu": 1.652596303,
+      "kind": "ORIGINAL_LEN_ROWS_AFTER_NATIVE_LIST",
+      "native_function": "_read",
+      "native_line": 228,
+      "returned_rowcount": 0,
+      "table": "ppi_intraday_points"
+    },
+    {
+      "at_monotonic": 19807.273843728,
+      "at_process_cpu": 1.652619337,
+      "completed_lengths": {
+        "cash": 0,
+        "errors": 0,
+        "metadata": 12000,
+        "quotes": 0,
+        "truncated": 0
+      },
+      "kind": "TABLE_TRANSFORM_END_NEXT_NATIVE_PRAGMA",
+      "native_function": "_read",
+      "native_line": 219,
+      "table": "paper_equity_by_currency"
+    },
+    {
+      "at_monotonic": 19807.273998868,
+      "at_process_cpu": 1.652774357,
+      "kind": "ORIGINAL_LEN_ROWS_AFTER_NATIVE_LIST",
+      "native_function": "_read",
+      "native_line": 228,
+      "returned_rowcount": 0,
+      "table": "paper_equity_by_currency"
+    },
+    {
+      "at_monotonic": 19807.274022213,
+      "at_process_cpu": 1.652797752,
+      "generator_resume_or_yield_is_not_a_second_read": true,
+      "kind": "CONTEXT_GENERATOR_CALL",
+      "native_function": "source_connection",
+      "native_line": 32,
+      "original_deadline": 19807.330741557
+    },
+    {
+      "at_monotonic": 19807.274033109,
+      "at_process_cpu": 1.652808628,
+      "generator_resume_or_yield_is_not_a_second_read": true,
+      "kind": "CONTEXT_GENERATOR_CALL",
+      "native_function": "readonly_copy",
+      "native_line": 163,
+      "original_deadline": 19807.330741557
+    },
+    {
+      "at_monotonic": 19807.274041091,
+      "at_process_cpu": 1.6528166,
+      "deadline": 19807.330741557,
+      "kind": "ORIGINAL_DEADLINE_CHECK",
+      "native_function": "readonly_copy",
+      "native_line": 164,
+      "observed_before_check_monotonic": 19807.274039929,
+      "remaining_seconds": 0.056701628000155324
+    },
+    {
+      "at_monotonic": 19807.275795496,
+      "at_process_cpu": 1.654571424,
+      "deadline": 19807.330741557,
+      "kind": "ORIGINAL_DEADLINE_CHECK",
+      "native_function": "readonly_copy",
+      "native_line": 172,
+      "observed_before_check_monotonic": 19807.275793893,
+      "remaining_seconds": 0.05494766400079243
+    },
+    {
+      "at_monotonic": 19807.275810117,
+      "at_process_cpu": 1.654585646,
+      "generator_resume_or_yield_is_not_a_second_read": true,
+      "kind": "CONTEXT_GENERATOR_RETURN",
+      "native_function": "readonly_copy",
+      "native_line": 172,
+      "original_deadline": 19807.330741557
+    },
+    {
+      "at_monotonic": 19807.275826522,
+      "at_process_cpu": 1.65460205,
+      "generator_resume_or_yield_is_not_a_second_read": true,
+      "kind": "CONTEXT_GENERATOR_RETURN",
+      "native_function": "source_connection",
+      "native_line": 28,
+      "original_deadline": 19807.330741557
+    },
+    {
+      "at_monotonic": 19807.275844769,
+      "at_process_cpu": 1.654620327,
+      "kind": "READ_RETURN_OR_EXCEPTION_UNWIND",
+      "native_function": "_read",
+      "native_line": 202,
+      "native_return_is_dict": true,
+      "partial_native_lengths": {
+        "cash": 0,
+        "errors": 0,
+        "metadata": 12000,
+        "quotes": 0,
+        "truncated": 0
+      }
+    }
+  ],
+  "cProfile_installed": false,
+  "callback_body_cost_is_lower_bound_not_total_overhead": true,
+  "callback_body_observed_wall_seconds": 0.291485869,
+  "callback_calls": 164321,
+  "callback_event_clock_calls": 328642,
+  "errors": [],
+  "events_received": {
+    "c_call": 66062,
+    "c_exception": 15,
+    "c_return": 66046,
+    "call": 16099,
+    "return": 16099
+  },
+  "function_totals": {
+    "_mapping": {
+      "calls_completed": 12000,
+      "inclusive_instrumented_cpu_seconds": 0.05122950900000656,
+      "inclusive_instrumented_wall_seconds": 0.05056144678746932
+    },
+    "json.loads": {
+      "calls_completed": 27,
+      "inclusive_instrumented_cpu_seconds": 0.001892807000000829,
+      "inclusive_instrumented_wall_seconds": 0.0018467030131432693
+    },
+    "snapshot._read": {
+      "calls_completed": 2,
+      "inclusive_instrumented_cpu_seconds": 0.046866480999999904,
+      "inclusive_instrumented_wall_seconds": 0.04686472400135244
+    }
+  },
+  "gate_qualified": false,
+  "instrumented_whole_read_cpu_seconds": 0.445114153,
+  "instrumented_whole_read_wall_seconds": 0.44521073199939565,
+  "mapping_input_utf8_bytes_counted_in_callback": 24000,
+  "mapping_value_kinds": {
+    "EXACT_EMPTY_OBJECT_LITERAL": 12000
+  },
+  "native_calls": {
+    "_mapping": 12000,
+    "families._read": 1,
+    "json.loads": 27,
+    "snapshot._check": 54,
+    "snapshot._read": 2,
+    "sqlite3.Connection.execute": 12
+  },
+  "native_read_errors": [],
+  "native_result_retained_by_reference_not_cloned": true,
+  "native_return_is_dict": true,
+  "open_function_pairs": 0,
+  "open_sql_pairs": 0,
+  "original_deadline": 19807.330741557,
+  "original_functions_cursors_list_and_guards_replaced": false,
+  "original_read_budget_start_inferred_from_deadline_minus_literal": 19806.830741557,
+  "overlaps": [
+    "_mapping includes any json.loads; do not add them",
+    "SQL execute is initial execute-to-return; list interval includes remaining cursor iteration",
+    "row transformation gaps include dict/zip/update, observer overhead, and loop overhead",
+    "callback observed wall overlaps native call intervals; never add or subtract to qualify"
+  ],
+  "per_row_line_tracer": false,
+  "query_records": [
+    {
+      "initial_execute_enter_cpu": 1.284050736,
+      "initial_execute_enter_monotonic": 19806.905189111,
+      "initial_execute_exit_cpu": 1.284063465,
+      "initial_execute_exit_monotonic": 19806.90520187,
+      "native_line": 203,
+      "returned_or_raised": "c_return",
+      "table": null
+    },
+    {
+      "initial_execute_enter_cpu": 1.284070695,
+      "initial_execute_enter_monotonic": 19806.90520911,
+      "initial_execute_exit_cpu": 1.284078827,
+      "initial_execute_exit_monotonic": 19806.905217293,
+      "native_line": 204,
+      "returned_or_raised": "c_return",
+      "table": null
+    },
+    {
+      "initial_execute_enter_cpu": 1.284089804,
+      "initial_execute_enter_monotonic": 19806.905228038,
+      "initial_execute_exit_cpu": 1.285034436,
+      "initial_execute_exit_monotonic": 19806.90617222,
+      "native_line": 206,
+      "returned_or_raised": "c_return",
+      "table": null
+    },
+    {
+      "initial_execute_enter_cpu": 1.285057059,
+      "initial_execute_enter_monotonic": 19806.906195374,
+      "initial_execute_exit_cpu": 1.285074866,
+      "initial_execute_exit_monotonic": 19806.906213311,
+      "native_line": 209,
+      "returned_or_raised": "c_return",
+      "table": null
+    },
+    {
+      "initial_execute_enter_cpu": 1.285125351,
+      "initial_execute_enter_monotonic": 19806.906263736,
+      "initial_execute_exit_cpu": 1.285148465,
+      "initial_execute_exit_monotonic": 19806.90628687,
+      "native_line": 219,
+      "returned_or_raised": "c_return",
+      "table": "financial_instrument_catalog"
+    },
+    {
+      "initial_execute_enter_cpu": 1.285228213,
+      "initial_execute_enter_monotonic": 19806.906366619,
+      "initial_execute_exit_cpu": 1.294412745,
+      "initial_execute_exit_monotonic": 19806.915549902,
+      "list_materialization_end_cpu": 1.327936122,
+      "list_materialization_end_monotonic": 19806.949072419,
+      "native_line": 224,
+      "returned_or_raised": "c_return",
+      "returned_rowcount": 12000,
+      "table": "financial_instrument_catalog"
+    },
+    {
+      "initial_execute_enter_cpu": 1.641282481,
+      "initial_execute_enter_monotonic": 19807.262506797,
+      "initial_execute_exit_cpu": 1.641355409,
+      "initial_execute_exit_monotonic": 19807.262579846,
+      "native_line": 219,
+      "returned_or_raised": "c_return",
+      "table": "market_snapshots"
+    },
+    {
+      "initial_execute_enter_cpu": 1.641414466,
+      "initial_execute_enter_monotonic": 19807.262638914,
+      "initial_execute_exit_cpu": 1.641540824,
+      "initial_execute_exit_monotonic": 19807.262765251,
+      "list_materialization_end_cpu": 1.642409143,
+      "list_materialization_end_monotonic": 19807.263632228,
+      "native_line": 224,
+      "returned_or_raised": "c_return",
+      "returned_rowcount": 0,
+      "table": "market_snapshots"
+    },
+    {
+      "initial_execute_enter_cpu": 1.642438036,
+      "initial_execute_enter_monotonic": 19807.263662503,
+      "initial_execute_exit_cpu": 1.642472286,
+      "initial_execute_exit_monotonic": 19807.263696794,
+      "native_line": 219,
+      "returned_or_raised": "c_return",
+      "table": "ppi_intraday_points"
+    },
+    {
+      "initial_execute_enter_cpu": 1.642507329,
+      "initial_execute_enter_monotonic": 19807.263731816,
+      "initial_execute_exit_cpu": 1.652577325,
+      "initial_execute_exit_monotonic": 19807.273800744,
+      "list_materialization_end_cpu": 1.652592728,
+      "list_materialization_end_monotonic": 19807.273817129,
+      "native_line": 224,
+      "returned_or_raised": "c_return",
+      "returned_rowcount": 0,
+      "table": "ppi_intraday_points"
+    },
+    {
+      "initial_execute_enter_cpu": 1.652612327,
+      "initial_execute_enter_monotonic": 19807.273836818,
+      "initial_execute_exit_cpu": 1.652648981,
+      "initial_execute_exit_monotonic": 19807.273873482,
+      "native_line": 219,
+      "returned_or_raised": "c_return",
+      "table": "paper_equity_by_currency"
+    },
+    {
+      "initial_execute_enter_cpu": 1.652687909,
+      "initial_execute_enter_monotonic": 19807.27391225,
+      "initial_execute_exit_cpu": 1.652766736,
+      "initial_execute_exit_monotonic": 19807.273991157,
+      "list_materialization_end_cpu": 1.652772655,
+      "list_materialization_end_monotonic": 19807.273997126,
+      "native_line": 224,
+      "returned_or_raised": "c_return",
+      "returned_rowcount": 0,
+      "table": "paper_equity_by_currency"
+    }
+  ],
+  "retaining_partial_result_changes_diagnostic_lifetime_not_gc_policy": true,
+  "schema": "rc6.native-read-call-event-profile.v1",
+  "timing_scope": "INSTRUMENTED_NATIVE_CALLS_ONLY_NOT_CANONICAL_HANDLER_OR_GATE_TIMINGS",
+  "unchanged_native_function_and_code_bindings": false
+}

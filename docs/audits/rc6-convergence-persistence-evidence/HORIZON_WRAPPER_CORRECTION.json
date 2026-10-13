@@ -1,0 +1,227 @@
+{
+  "artifact_validated": false,
+  "base_sha": "14099f9341054dffe9e93a8f7ab20be4eccb9166",
+  "base_tree": "6b44f15bf7a92d500d616b8f97a1dedcccdb3e28",
+  "cli": {
+    "adjacent_source_tar": "source.tar with actual SHA256 equal to index tar_sha256",
+    "controlled_smaller_or_large_profiles": "catalog_count5/12000 are descriptive four-cut scope only",
+    "descriptive": [
+      "--catalog-count",
+      "1200",
+      "--ticks",
+      "4"
+    ],
+    "environment_example": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /workspace/venv_rc6_frozen311/bin/python -B <pinned-source-root>/docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
+    "full_normal_horizon": [
+      "--catalog-count",
+      "1200",
+      "--ticks",
+      "1201"
+    ],
+    "required": [
+      "--source-repo",
+      "--source-root",
+      "--source-sha",
+      "--source-tree",
+      "--source-index",
+      "--root"
+    ],
+    "source_index_schema": "rc6.complete-archive-source-pin.v1"
+  },
+  "contracts": {
+    "business_clocks": "Immutable synthetic SourceDB remains fixed. Every actual worker cut records its actual returned phase and native input freshness/volume verification. After fixture contract time+120s intraday confirmation cannot remain true; conservative UNKNOWN/NO_VERIFICADO is legitimate. No source rewrite, injected mark, manufactured edge/OPEN phase or PPI session authority.",
+    "descriptive_four_cuts": "execution_complete may be true after four actual successful cuts and source checks, while horizon_complete/complete/acceptance_complete stay false.",
+    "environment": "Before any fixture mkdir/writes: installed total and unique157 exact approved versions, no duplicates/missing/unexpected/version gaps, source-pinned runtime/build hash locks and supported Linux/glibc/x86_64 Python3.11/3.12 actual virtualenv. This does not authenticate wheel bytes or a container image.",
+    "full_cycle": "The existing30s postPRE cadence gate includes constructor/recovery, worker.tick, CURRENT, archive/public restore, custody/import checks, member cleanup and result publication. The PRE seed has its full cycle measured separately. No clock reset or limit increase; native phases remain unchanged.",
+    "imports": "Actual loaded project modules belong to the complete source index; other modules must come from stdlib or this actual virtualenv. Union/last graphs and whole code closure are checked. No outside checkout or overlay is imported.",
+    "maintenance": "Observe original native methods without requesting extra GC/rotation/pins. Complete entered/completed/failed counters, bounded first-four/last state samples, real ACK/external receipt bytes, native validated HEAD, ACK removal/live checkpoint, rotated-generation/control absence, actual GC target removal and native pin sets are corroborated. Zero expired-prefix deletion may be the correct cutoff/transitive-base/pin outcome; it is stated explicitly.",
+    "members": "Exactly five byte members, with current v2 manifest/four role names/SHA256, actual CURRENT manifest digest/generation/sequence/as_of and public restored receipt binding. Equal legacy4 dictionaries, changed payload/rebound manifest or wrong CURRENT/clock are rejected.",
+    "native_wheel": "Only catalog_count1200 with1201 actual postPRE calls plus one real PRE seed qualifies this normal-horizon wrapper.1202 distinct actual generations, all public restores, real factory reconstruction/checkpoint reuse at361/841,10h of30s as_of cuts and all unchanged-source/fixed-policy checks are required. This is accelerated as_of execution without wallclock sleeping; no ten-hour wallclock or continuous OPEN/PPI-session claim.",
+    "private_execution": "Before any product import, Python socket connect/connect_ex/send/sendall/sendto/sendmsg and DNS/create_connection methods are interposed; audited native connect/sendto/sendmsg/resolver references remain blocked. AF_UNIX local IPC is allowed and the original public methods are restored at cleanup. An audit hook rejects SQLite connections outside the private fixture, including direct PRIMARY SQL after initial native fixture creation/checkpoint. PRIMARY MAIN/WAL/SHM/journal bytes and ten native custody stats are checked after each actual cut and at finalization. This is a fresh-process Python harness barrier, not OS isolation or authentication of retained native send references outside the hook.",
+    "quotas": "Preserve native live128MiB/512 recursive entries, archive512MiB/native32768 namespace limit, scratch512MiB and shared-filesystem2GiB/free-inode10% reserve. Observe pre/post real fsync temporary/staging peaks, native scratch lease measurement and separate bounded lineage authority HEAD residence; do not enlarge caps or reinterpret lineage as external authentication.",
+    "source": "A required local --source-repo supplies raw commit/tree objects with SHA1 recomputation and no lazy fetch/replacement refs; all Git file blobs, SHA256, physical644/755 modes and complete path/directory closure are verified independently of source.index.json before fixtures and after execution. The executing wrapper is the pinned source-root member. The first regular single-link raw index bytes supply both parsed policy and SHA256 before qualification/fixture writes; that original digest and the adjacent tar are rechecked at finalization. RO|NOFOLLOW|NOATIME|NONBLOCK plus fstat/path identity reject FIFO/aliases/races. These are before/after checks, not continuous mutation monitoring. The Git repository may acquire later commits but the pinned raw objects may never be replaced."
+  },
+  "current_stable_source_comparison": {
+    "not_copied_or_rewritten": true,
+    "raw_external_path": "/tmp/rc6-canonical-eb17b878-normal4-157-raw/native-normal4-result.json",
+    "scope": "ROOT descriptive1200/6000 fourcuts on prior a4 source. Source unchanged/five members; no strengthened-source or1201 claim.",
+    "source_sha": "eb17b8787b6789f38fea22da4a0e8f8aa4963a2b",
+    "status": "READ_ONLY_PREVIOUS_RECEIPT_NOT_A_NEW_EXECUTION"
+  },
+  "deployed": false,
+  "error": [
+    "The former complete=True field described a successful four-cut execution while acceptance_complete=False. It could be mistaken for the separately required1201-tick wheel.",
+    "Native factory/checkpoint reconstruction at361/841 preceded cycle_start and was omitted from the existing30s full-cycle budget.",
+    "Equality of original/restored dictionaries did not explicitly require the current five-member shape and could accept a legacy four-member pair."
+  ],
+  "external_limits": [
+    "No Docker/image/runtime/deploy/FIP/final-candidate claim.",
+    "No provider/PPI contract/account source, real-order authority, or PPI Watch execution.",
+    "No financial entry authority: synthetic fixtures exercise native worker/persistence paths.",
+    "Same-process factory reconstruction is not a process SIGKILL/restart.",
+    "Python audit hooks and local Git/source records are local harness controls, not OS network isolation or external authentication.",
+    "Native scope pending; no extrapolation from four cuts or unit guards."
+  ],
+  "final_input_provenance": null,
+  "fix_paths": [
+    "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
+    "tests/test_rc6_native_archive_horizon_wrapper.py"
+  ],
+  "guard_catalogue": {
+    "base_nodes": 15,
+    "count_scope": "AST-declared miniature Git/metadata, controlled-clock, private FIFO and socket controls/negatives only; not original R/55 counts or native1201 scope.",
+    "declared_cases": 28,
+    "executed_cases": 28,
+    "execution_scope": "ONE_EXACT_ED97_EXECUTION_28_OF28_PASS_NO_FAIL_ERROR_SKIP; controlled wrapper guards, not full worker cycles"
+  },
+  "guard_nodes": [
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_even1202_placeholder_cuts_cannot_replace_a_measured_native_contract",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_a_fifo_index_is_rejected_without_opening_a_blocking_reader",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_internet_socket_send_methods_are_blocked_before_transport_without_connecting",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_local_unix_socket_ipc_remains_allowed_and_guards_are_restored",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_complete_source_qualification_uses_real_git_objects_and_exact_modes",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_rehashing_the_index_cannot_authorize_a_changed_uncommitted_blob",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_replace_refs_cannot_change_the_git_qualification_authority",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_five_original_member_bytes_are_bound_to_manifest_and_actual_pointer",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bindings"
+  ],
+  "guard_scope": "Controlled wrapper clocks/metadata, miniature native Git object controls/adversaries, miniature manifest bindings, private FIFO and local/unconnected socket barriers only. None is a full worker/native1201-wheel/storage-capacity/provider/image/FIP/runtime PASS.",
+  "native_execution": {
+    "actual_import_modules_after": 270,
+    "actual_import_modules_before": 240,
+    "classification": "SCOPED_WRAPPER_GUARDS_GREEN",
+    "command": [
+      "-q",
+      "--strict-markers",
+      "tests/test_rc6_native_archive_horizon_wrapper.py",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--junitxml=/tmp/rc6-budget-horizon-ed97-28-20261005/native-wrapper-guards.junit.xml",
+      "--basetemp=/tmp/rc6-budget-horizon-ed97-28-20261005/fixtures/pytest"
+    ],
+    "command_environment": "env -u PYTHONPATH PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /workspace/venv_rc6_frozen311/bin/python -B",
+    "declared_base_nodes": 15,
+    "errors": 0,
+    "evidence_catalogue": [
+      {
+        "bytes": 115714,
+        "path": "docs/audits/rc6-convergence-persistence-evidence/native-horizon-wrapper-ed97-evidence/native-wrapper-guards-receipt.json",
+        "scope": "ORIGINAL_BYTES_FROM_THE_ONE_ED97_SCOPED_EXECUTION",
+        "sha256": "03155c2cd1e64e4e509c71a29d37fc3841d31dac35f08166c9825ffe1d7d690e"
+      },
+      {
+        "bytes": 8705,
+        "path": "docs/audits/rc6-convergence-persistence-evidence/native-horizon-wrapper-ed97-evidence/native-wrapper-guards.junit.xml",
+        "scope": "ORIGINAL_BYTES_FROM_THE_ONE_ED97_SCOPED_EXECUTION",
+        "sha256": "8b3748298ca113cabed75a35243db2a31ba0fe533ceec5d2a6b9927288463b01"
+      },
+      {
+        "bytes": 515930,
+        "path": "docs/audits/rc6-convergence-persistence-evidence/native-horizon-wrapper-ed97-evidence/source.index.json",
+        "scope": "ORIGINAL_BYTES_FROM_THE_ONE_ED97_SCOPED_EXECUTION",
+        "sha256": "390f57928ead597ed95a9cfceb3a854f5e811c61d4e8bd87e968f285baa46d96"
+      },
+      {
+        "bytes": 6182,
+        "path": "docs/audits/rc6-convergence-persistence-evidence/native-horizon-wrapper-ed97-evidence/controlled-runner.py.source",
+        "scope": "ORIGINAL_BYTES_FROM_THE_ONE_ED97_SCOPED_EXECUTION",
+        "sha256": "4816236b89d0ffe2a44c6aa7d9aa2e4ec640e68f7ff84f3fd0defdc7e961c270"
+      }
+    ],
+    "failures": 0,
+    "import_scope": "EXACT_SOURCE_ROOT_STDLIB_ACTUAL_FROZEN_VENV_NO_ALIEN_MODULES",
+    "installed_expected_total": 157,
+    "installed_total": 157,
+    "installed_unique_total": 157,
+    "limits": [
+      "One scoped test execution; no addition to old suite counts or original55/R counts.",
+      "No actual1201-wheel, normal4, provider/PPI timing, OS isolation, image or finalFIP authority.",
+      "Two intentional unconnected-INET negative sends are rejected by test-local guards; outer transport counter remains zero.",
+      "The run emitted Xunit2 record_property compatibility warnings as framework diagnostics. The original XML preserves all28 testcase outcomes and their scope properties; this does not change the horizon boundary.",
+      "The documentary commit carrying this record is later than ed97 and is not the tested source. Self commit/FIP remain null."
+    ],
+    "literal_environment_and_hashlocks_verified_before_fixtures": true,
+    "native_full_worker_cycles_executed": 0,
+    "native_horizon_ticks_executed": 0,
+    "overlay_count": 0,
+    "phase": "INTERMEDIATE_EXACT_COMPLETE_OWN_GIT_SOURCE_NOT_FINAL_CANDIDATE",
+    "scope": "28_CONTROLLED_CLOCK_METADATA_MINIATURE_GIT_FIFO_SOCKET_GUARDS_NOT_NATIVE_HORIZON",
+    "skipped": 0,
+    "source_bytes_modes_and_git_blobs_unchanged": true,
+    "source_file_count": 1732,
+    "source_index_and_tar_unchanged": true,
+    "source_sha": "ed97efb2ede2ca4b4dc5cbc30f35b0c2b3cfa39b",
+    "source_tar": {
+      "original_external_path": "/tmp/rc6-budget-horizon-ed97-28-20261005/source.tar",
+      "packaged": false,
+      "scope": "Original complete exact Git archive from ed97 retained externally with this SHA. The packaged index and immutable Git objects bind source contents; rebuilding source contents is not a new attestation of identical tar wire bytes.",
+      "sha256": "71f0c314834bca5a6079a6de9b8c6ad2a0965e6510fc915a3891ad29415c86bd"
+    },
+    "source_tree": "5e42c97350684585c26cacee6d9bbb41ed1f4ef5",
+    "tests": 28,
+    "wall_seconds": 0.8769669060129672
+  },
+  "native_gate_boundary": {
+    "actual_factory_restarts_required": [
+      361,
+      841
+    ],
+    "clock_and_cleanup_30s_postpre": "Includes constructor/recovery and result publication; no reset. PRE measured separately.",
+    "fourcuts_complete_horizon_and_acceptance_always_false": true,
+    "fourcuts_execution_complete_may_be_true": true,
+    "full_postpre_calls_required": 1201,
+    "no_frozen_candidate_or_actual_horizon_test_yet": true,
+    "pre_seed_calls_required": 1,
+    "quotas_unchanged": true,
+    "source_fixed_no_business_rewrite": true
+  },
+  "native_horizon_complete": false,
+  "original_probe_sha256": "3faf770c2bc62454ec86cd8a3711517ef2c6cc4a13a22e4fa7db48b603a92785",
+  "original_receipts_preserved": "Earlier raw native profiles, failed timing/fixture scopes and complete=True fields are preserved byte-for-byte. ROOT descriptive eb17b878 proof does not attest this new source or the1201-wheel. No separate counts are added.",
+  "ownership": {
+    "base_sha": "14099f9341054dffe9e93a8f7ab20be4eccb9166",
+    "base_tree": "6b44f15bf7a92d500d616b8f97a1dedcccdb3e28",
+    "branch": "work/rc6-native-horizon-wrapper-20261005",
+    "scope": "Only profile_v2, permanent wrapper guards and this correction record; ROOT is sole integrator.",
+    "status": "WRITE_OWNER_DELEGATED_SOURCE_ONLY",
+    "workstream_id": "RC6_NATIVE_HORIZON_WRAPPER_SOURCE"
+  },
+  "rca": "Scope and timing were underspecified in the measurement wrapper; no product/runtime/policy failure or native horizon result is inferred from this source review.",
+  "runtime_validated": false,
+  "schema": "rc6.native-horizon-wrapper-correction.v1",
+  "self_commit_sha": null,
+  "source_only_final_review": {
+    "changes": [
+      "An observation-preinspection error is counted as a failed observed wrapper invocation; no incomplete counter is silently accepted.",
+      "Final PRIMARY custody evidence is stored independently before later index/code/import checks, preserving factual DB-unchanged evidence when another proof fails.",
+      "Source-only independent Finance review identified send/sendall absent from the audit event coverage. Public socket methods are now interposed before product imports with AF_UNIX control/restoration; no pre-fix native RED or network bypass is claimed.",
+      "Source-only independent Finance review identified a FIFO source.index could block before fixture qualification. Raw reads now require a regular single-link unchanged inode, NOFOLLOW/NOATIME/NONBLOCK and matching descriptor/path metadata; no pre-fix native RED is claimed.",
+      "Source-only independent Finance review identified source_index_sha256 was captured after fixture writes. One initial raw index read now supplies both parsed pin and original digest before qualification/fixture writes; the final raw digest compares against that same original authority. No pre-fix native RED is claimed."
+    ],
+    "independent_review_scope": "FINANCE_STATIC_SOURCE_ONLY_NOT_NATIVE_RED; Finance confirmed the three source corrections before ROOT allocated the subsequent scoped guard execution.",
+    "status": "SOURCE_REVIEW_CLOSED_BEFORE_SEPARATE_ED97_SCOPED_EXECUTION"
+  },
+  "source_only_validation": {
+    "AST_and_compile_without_import_or_execution": "PASS",
+    "native_pytest_cases_executed": 0,
+    "native_worker_calls_executed": 0,
+    "scope": "Historical AST/compile phase before the separate scoped guard execution; native execution is bound below to the exact ed97 commit.",
+    "source_paths_sha256": {
+      "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py": "4a0ec1ef33b6dbdd5c8edc0119441b0b576e39fe5bfd548f1b6e2bc91ceb6ec6",
+      "tests/test_rc6_native_archive_horizon_wrapper.py": "999e6e5ba1cf1edd483a9a9279430785bdcc2b9cc309ae3d9144a61666d6a6d7"
+    }
+  },
+  "source_strengthening_execution_pending": [
+    "ROOT normal1200/6000 four-cut native run on integrated strengthened source",
+    "All1201 postPRE native calls plus PRE with actual recovery/GC/rotation/pin/temp/deadline verification"
+  ],
+  "source_strengthening_pending": [],
+  "status": "SCOPED_WRAPPER_GUARDS_GREEN_NATIVE_HORIZON_PENDING"
+}

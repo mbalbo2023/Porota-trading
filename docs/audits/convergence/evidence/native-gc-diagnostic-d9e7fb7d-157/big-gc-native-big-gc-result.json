@@ -1,0 +1,429 @@
+{
+  "canonical_runtime_requested": true,
+  "catalog_baseline": 1200,
+  "catalog_count": 12000,
+  "catalog_multiplier": 10.0,
+  "completion_required": true,
+  "cpu_latency_claim": "DESCRIPTIVE_OFFLINE_ONLY",
+  "cycle_deadline_seconds": 90,
+  "database": "/workspace/rc6-canonical-d9e7fb7d-big-gc/data/paper_v17/observer_v17.db",
+  "diagnostic_only": true,
+  "diagnostic_stack_file": "/tmp/rc6-canonical-d9e7fb7d-big-gc-raw/child-stacks.log",
+  "evidence_root": "/workspace/rc6-canonical-d9e7fb7d-big-gc/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow",
+  "factual_exits": {
+    "closed": 5,
+    "cpu_seconds": 0.11094907300000023,
+    "elapsed_seconds": 0.15973490000033053,
+    "finished_at_monotonic": 56964.990627094,
+    "io": {
+      "cancelled_write_bytes": 0,
+      "input_blocks": 0,
+      "output_blocks": 984,
+      "rchar": 2638451,
+      "read_bytes": 0,
+      "syscr": 691,
+      "syscw": 218,
+      "wchar": 449080,
+      "write_bytes": 503808
+    },
+    "real_orders_sent": 0,
+    "sell_fills": 5,
+    "stale_current_fresh_book": true,
+    "started_at_monotonic": 56964.830488946
+  },
+  "observation_baseline_per_identity": 1,
+  "observation_multiplier": 5,
+  "observations_materialized": 60000,
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "resource_gates": {
+    "actual_evidence_bytes": 516289,
+    "actual_rss_bytes": 1289154560,
+    "actual_slow_fsync_exit_isolation": false,
+    "child_cleanup_completed": false,
+    "complete_committed_cycle": false,
+    "evidence_within_quota": true,
+    "maximum_evidence_bytes": 134217728,
+    "maximum_rss_bytes": 2147483648,
+    "rss_within_two_gib": true,
+    "source_database_unchanged": true
+  },
+  "runtime_touched": false,
+  "schema": "rc6.issue465.synthetic-stress.v2",
+  "shadow": {
+    "child_cleanup_completed": false,
+    "child_cleanup_reason": "SHADOW_CHILD_CLEANUP_DEADLINE",
+    "cpu_seconds": 27.483711865,
+    "cycle_completion": false,
+    "cycle_handled": false,
+    "cycle_started_at_monotonic": 56873.274816279,
+    "elapsed_seconds": 27.490005989006022,
+    "evidence_bytes": 516289,
+    "evidence_files": 2,
+    "fsync": {
+      "fsync_completed": false,
+      "fsync_entered": false,
+      "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"
+    },
+    "full_pipeline_exercised": true,
+    "handler_resources": {
+      "checkpoint_restore": {
+        "calls": 2,
+        "cpu_seconds": 0.0030456810000020207,
+        "elapsed_seconds": 0.0028323879960225895,
+        "peak_rss_bytes": 776417280
+      },
+      "entry_signals": {
+        "calls": 1,
+        "cpu_seconds": 0.05876625000000146,
+        "elapsed_seconds": 0.05872739999904297
+      },
+      "families": {
+        "calls": 1,
+        "cpu_seconds": 2.2566881520000006,
+        "elapsed_seconds": 2.2568338319979375
+      },
+      "funnel": {
+        "calls": 1,
+        "cpu_seconds": 13.079968885000001,
+        "elapsed_seconds": 13.079576201002055
+      },
+      "lab": {
+        "calls": 1,
+        "cpu_seconds": 0.07123532800000021,
+        "elapsed_seconds": 0.0710068910047994
+      },
+      "native_orchestrator": {
+        "calls": 2,
+        "cpu_seconds": 9.042371892,
+        "elapsed_seconds": 9.041715682993527,
+        "peak_rss_bytes": 497008640
+      },
+      "native_stage_enrichment": {
+        "calls": 1,
+        "cpu_seconds": 0.5456120910000006,
+        "elapsed_seconds": 0.5454627349972725,
+        "peak_rss_bytes": 497008640
+      },
+      "publication": {
+        "calls": 1,
+        "cpu_seconds": 0.0,
+        "elapsed_seconds": 0.0
+      },
+      "storage_encode": {
+        "calls": 1,
+        "cpu_seconds": 0.6908805579999999,
+        "elapsed_seconds": 0.6906874870037427,
+        "peak_rss_bytes": 776417280
+      },
+      "storage_prepare": {
+        "calls": 1,
+        "cpu_seconds": 7.225651264,
+        "elapsed_seconds": 7.225219978005043,
+        "peak_rss_bytes": 767381504
+      }
+    },
+    "peak_rss_bytes": 1289154560,
+    "phases": [
+      "BOUNDED_READ"
+    ],
+    "probe_event_receipts": [
+      {
+        "child_cpu_seconds": 0.559854594,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56874.060524621,
+        "event": "ENTER",
+        "handler_name": "checkpoint_restore",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56874.061415872
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 0.5643678480046219,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 56874.062108798
+      },
+      {
+        "child_cpu_seconds": 1.098316124,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56874.598954692,
+        "event": "ENTER",
+        "handler_name": "native_orchestrator",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56874.608842483
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 4.666109637000773,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "native_orchestrator"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 56878.164168783
+      },
+      {
+        "child_cpu_seconds": 5.991698163,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56879.496775259,
+        "event": "ENTER",
+        "handler_name": "native_orchestrator",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56879.602631066
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 11.476413264004805,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "native_orchestrator"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 56884.974983975
+      },
+      {
+        "child_cpu_seconds": 11.469386812,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56884.973993407,
+        "event": "ENTER",
+        "handler_name": "native_stage_enrichment",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56884.975247566
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 12.02198324300116,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "native_orchestrator",
+          "native_stage_enrichment"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 56885.522237264
+      },
+      {
+        "child_cpu_seconds": 12.015149417,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56885.519583675,
+        "event": "ENTER",
+        "handler_name": "families",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56885.522315762
+      },
+      {
+        "child_cpu_seconds": 14.271848718,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56887.776433502,
+        "event": "ENTER",
+        "handler_name": "lab",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56887.777482838
+      },
+      {
+        "child_cpu_seconds": 14.343092974,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56887.847453753,
+        "event": "ENTER",
+        "handler_name": "entry_signals",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56887.847846826
+      },
+      {
+        "child_cpu_seconds": 14.401867673,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56887.906192702,
+        "event": "ENTER",
+        "handler_name": "funnel",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56887.906852558
+      },
+      {
+        "child_cpu_seconds": 19.446209121,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56892.950835642,
+        "event": "ENTER",
+        "handler_name": "storage_prepare",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56892.957528774
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 26.67866416200559,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 56900.183096517
+      },
+      {
+        "child_cpu_seconds": 26.672313272,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56900.176513895,
+        "event": "ENTER",
+        "handler_name": "storage_encode",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56900.188695423
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 27.36974866899982,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "storage_encode",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 56900.881102618
+      },
+      {
+        "child_cpu_seconds": 27.481947797,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56900.985886523,
+        "event": "ENTER",
+        "handler_name": "publication",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56900.986475936
+      },
+      {
+        "child_cpu_seconds": 27.482022453,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56900.98596108,
+        "event": "ENTER",
+        "handler_name": "checkpoint_restore",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56900.986552668
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 27.490005989006022,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "entry_signals",
+          "families",
+          "funnel",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment",
+          "publication",
+          "storage_encode",
+          "storage_prepare"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 56900.98815821
+      },
+      {
+        "child_cpu_seconds": 27.484957015,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 56900.988688575,
+        "event": "ENTER",
+        "handler_name": "storage_prepare",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 56900.994070944
+      }
+    ],
+    "reason": "SHADOW_CONSERVATIVE_CYCLE_DEADLINE",
+    "status": "SHADOW_FAIL_CLOSED"
+  },
+  "slow_disk_injected": false,
+  "slow_disk_requested": true,
+  "slow_fsync_exit_isolation_proven": false,
+  "source_custody_after": {
+    "": {
+      "sha256": "ce3afd6f43d6b9c057048714d41e359297daeea540e21871689fdabf8312244e",
+      "st_atime_ns": 1791217473623546747,
+      "st_ctime_ns": 1791217473587547056,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 673420,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791217473587547056,
+      "st_nlink": 1,
+      "st_size": 23162880,
+      "st_uid": 1000
+    }
+  },
+  "source_custody_before": {
+    "": {
+      "sha256": "ce3afd6f43d6b9c057048714d41e359297daeea540e21871689fdabf8312244e",
+      "st_atime_ns": 1791217473623546747,
+      "st_ctime_ns": 1791217473587547056,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 673420,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791217473587547056,
+      "st_nlink": 1,
+      "st_size": 23162880,
+      "st_uid": 1000
+    }
+  },
+  "source_custody_scope": "MAIN_WAL_SHM_JOURNAL_BYTES_AND_ALL_CUSTODY_STATS_NOATIME",
+  "source_database_unchanged": true,
+  "source_sha256": "ce3afd6f43d6b9c057048714d41e359297daeea540e21871689fdabf8312244e",
+  "synthetic": true
+}

@@ -1,0 +1,171 @@
+{
+  "artifact_validated": false,
+  "deployed": false,
+  "error": "Future horizon requirements and derived descriptions requested eleven DB stat fields plus SHA256, but the public source custody helper bound only ten stat fields plus SHA256. Its allocated st_blocks value was absent.",
+  "external_limits": [
+    "No old mutation/wire bypass is inferred from an absent stat field.",
+    "Only the two bound scoped physical guards are verified here; no addition to prior guard/suite/originalR counts.",
+    "No native1201-wheel, NORMAL4, BIG, PPI/account/market authority, Docker/image or final artifact result."
+  ],
+  "final_input_provenance": null,
+  "fix": "Add st_blocks to the same existing before/after/path comparison and published tuple. Keep opening RO|NOATIME|NOFOLLOW|NONBLOCK, hashing the same complete bytes, single-link/regular validation and snapshot member-presence semantics.",
+  "fix_paths": [
+    "scripts/rc6_issue465_stress.py",
+    "tests/test_rc6_source_custody_allocated_blocks.py"
+  ],
+  "guard_catalogue": {
+    "declared_base_nodes": 2,
+    "declared_cases": 2,
+    "executed_cases": 2,
+    "scope": "Private physical SQLite-WAL and sparse-allocation oracles; no original R/55 count growth and no native worker/horizon execution."
+  },
+  "guard_nodes": [
+    "tests/test_rc6_source_custody_allocated_blocks.py::test_real_primary_wal_shm_snapshots_bind_eleven_stats_and_sha_without_source_effect",
+    "tests/test_rc6_source_custody_allocated_blocks.py::test_same_sparse_bytes_and_logical_size_keep_actual_allocated_blocks_distinct"
+  ],
+  "guard_oracles": {
+    "tests/test_rc6_source_custody_allocated_blocks.py::test_real_primary_wal_shm_snapshots_bind_eleven_stats_and_sha_without_source_effect": "Actual private SQLite connection keeps MAIN/WAL/SHM alive. Independent os.stat and NOATIME raw SHA observe those files before/after public snapshot, proving actual allocated blocks and unchanged complete physical/source bytes within this fixture.",
+    "tests/test_rc6_source_custody_allocated_blocks.py::test_same_sparse_bytes_and_logical_size_keep_actual_allocated_blocks_distinct": "Actual private sparse file is physically allocated with posix_fallocate while its bytes and apparent size remain unchanged. Native stat/sha oracles distinguish the physical allocated-block counts in consecutive snapshots; ctime can also change, so no old ten-field invisible mutation bypass is inferred."
+  },
+  "historical_boundary": {
+    "d933_claim_scope": "Actual DB snapshot has ten stats plus SHA and absent sidecars; it is not eleven stats plus SHA. Separate code/member inventories do have eleven.",
+    "d933_raw_external_path": "/tmp/rc6-canonical-d9333065-normal4-157-raw/native-normal4-result.json",
+    "d933_raw_sha256": "cd97b3b9aff7997c86c93626e65d1e3a547f5a3034f674c3236c33aa7a166473",
+    "historical_raws_preserved_unchanged": true,
+    "original11_claim_derivatives_correction_owner": "ROOT",
+    "original_root_source_review": "b4b274311a2e87cf4597d829254ea846e381698a/tree db490cfc0d679bc84e908352bca21755161902ce",
+    "source_review_is_not_a_specific_old_native_red": true
+  },
+  "native_execution": {
+    "actual_import_modules_after": 277,
+    "actual_import_modules_before": 240,
+    "classification": "SCOPED_SOURCE_CUSTODY_ALLOCATION_GUARDS_GREEN",
+    "command": [
+      "-q",
+      "--strict-markers",
+      "tests/test_rc6_source_custody_allocated_blocks.py",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--junitxml=/tmp/rc6-budget-source-blocks-3bad-2-20261005/native-source-blocks-guards.junit.xml",
+      "--basetemp=/tmp/rc6-budget-source-blocks-3bad-2-20261005/fixtures/pytest"
+    ],
+    "command_environment": "env -u PYTHONPATH PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /workspace/venv_rc6_frozen311/bin/python -B",
+    "errors": 0,
+    "evidence_catalogue": [
+      {
+        "bytes": 111299,
+        "path": "docs/audits/convergence/evidence/native-source-blocks-3bad4a1d-157/native-source-blocks-guards-receipt.json",
+        "scope": "LOSSLESS_ORIGINAL_BYTES_FROM_ONE_EXACT_3BAD_NATIVE_GUARD_EXECUTION",
+        "sha256": "f8fe833b577cbf11e491eeaacdc1cb412013233e9fe6eb58afe29fac971eb1d6"
+      },
+      {
+        "bytes": 885,
+        "path": "docs/audits/convergence/evidence/native-source-blocks-3bad4a1d-157/native-source-blocks-guards.junit.xml",
+        "scope": "LOSSLESS_ORIGINAL_BYTES_FROM_ONE_EXACT_3BAD_NATIVE_GUARD_EXECUTION",
+        "sha256": "5a1361649dffca4663de83fa334e587297aab7951d3d69138606771396a77a97"
+      },
+      {
+        "bytes": 589565,
+        "path": "docs/audits/convergence/evidence/native-source-blocks-3bad4a1d-157/source.index.json",
+        "scope": "LOSSLESS_ORIGINAL_BYTES_FROM_ONE_EXACT_3BAD_NATIVE_GUARD_EXECUTION",
+        "sha256": "7d04f9c4692ef042a3ee25b96fc077fdeb1e1d1f7f7a34d49a3c5eee7bf171a8"
+      },
+      {
+        "bytes": 6278,
+        "path": "docs/audits/convergence/evidence/native-source-blocks-3bad4a1d-157/controlled-runner.py.source",
+        "scope": "LOSSLESS_ORIGINAL_BYTES_FROM_ONE_EXACT_3BAD_NATIVE_GUARD_EXECUTION",
+        "sha256": "16e5080bdd987489d8530facfebebeec2abea4448f7c8a10bf56788334b14f7c"
+      }
+    ],
+    "failures": 0,
+    "import_scope": "EXACT_SOURCE_STDLIB_AND_ACTUAL_VENV_WITH_NO_OUTSIDE_MODULES",
+    "installed_expected_total": 157,
+    "installed_total": 157,
+    "installed_unique_total": 157,
+    "limits": [
+      "One scoped test execution; no addition to old suite counts or original55/R counts.",
+      "No actual1201-wheel, normal4, provider/PPI timing, OS isolation, image or finalFIP authority.",
+      "SQLite opens are confined to newly created private fixtures. Native stat/hash observations do not assert an old ten-field invisible mutation bypass.",
+      "Stat values are compared explicitly in eleven-field dictionaries, not via os.stat_result equality.",
+      "The one private SQLite connection creates only a synthetic fixture. No financial entry, provider or historical account/market state is demonstrated.",
+      "The sparse allocation can also change ctime: this is a physical evidence-field guard, not an old ten-field mutation bypass.",
+      "Two scope properties are preserved in raw Xunit2 XML; framework emitted compatibility warnings without fail/error/skip.",
+      "The documentary commit carrying these bytes is later than executed3bad; selfSHA/FIP/final candidate remain unverified."
+    ],
+    "literal_environment_and_hashlocks_verified_before_fixtures": true,
+    "native_horizon_ticks_executed": 0,
+    "native_worker_cycles_executed": 0,
+    "network_transport_attempts": 0,
+    "overlay_count": 0,
+    "phase": "INTERMEDIATE_EXACT_COMPLETE_OWN_GIT_SOURCE_NOT_FINAL_CANDIDATE",
+    "private_sqlite_allowed_opens": 1,
+    "private_sqlite_rejections": 0,
+    "scope": "2_NATIVE_PRIVATE_SQLITE_WAL_SPARSE_ALLOCATION_ORACLES_NOT_NATIVE_HORIZON",
+    "skipped": 0,
+    "source_bytes_modes_and_git_blobs_unchanged": true,
+    "source_file_count": 1906,
+    "source_index_and_tar_unchanged": true,
+    "source_sha": "3bad4a1d5448f12c846a219dbc8507d4bbf504ae",
+    "source_tar": {
+      "original_external_path": "/tmp/rc6-budget-source-blocks-3bad-2-20261005/source.tar",
+      "packaged": false,
+      "scope": "Original exact complete Git source archive retained externally; packaged index/Git pin binds contents, not a new attestation of reconstructed tar wire bytes.",
+      "sha256": "5baedf95d082c5806a113d19c5baf18bc06e856ec1db5c72bdb3619e1f131761"
+    },
+    "source_tree": "209e4081bc34e2c584aa5f5f1ceced555055b85b",
+    "tests": 2,
+    "wall_seconds": 0.13313945900881663
+  },
+  "native_execution_pending": [
+    "Final ROOT pin after integration",
+    "Full1201 postPRE+PRE native horizon under fixed quotas/deadline and all11 DB stat fields plus SHA"
+  ],
+  "ownership": {
+    "base_sha": "adeb66cf17ffac3403187c82e771f048fd2fdd5e",
+    "base_tree": "4e4dd7ad150143a20c1fbe57245779d3cb478e73",
+    "branch": "work/rc6-source-db-st-blocks-20261005",
+    "scope": "Only source_file_custody fields, new allocated-block custody guards and this correction record; ROOT is sole integrator.",
+    "status": "WRITE_OWNER_DELEGATED_SOURCE_ONLY",
+    "workstream_id": "RC6_SOURCE_CUSTODY_ALLOCATED_BLOCKS"
+  },
+  "quotas_deadlines_GC_clocks_policy_unchanged": true,
+  "rca": "The horizon profile delegates PRIMARY/WAL/SHM/journal snapshots to scripts.rc6_issue465_stress.source_custody_snapshot. That helper published and compared its old ten-field tuple, while the profile separate code/member FIELDS already included eleven. Those separate code/member checks do not prove DB st_blocks.",
+  "runtime_validated": false,
+  "schema": "rc6.source-custody-allocated-blocks-correction.v1",
+  "self_commit_sha": null,
+  "sha256_is_additional_not_counted_as_stat": true,
+  "source_only_review_correction": {
+    "cause": "Equality of os.stat_result compares its base tuple and omits extension attributes such as st_blocks and nanosecond clocks.",
+    "earlier_source_only_commit": "639a0a2b59b0f25035c7c36b57535820daec17f1",
+    "fix": "The independent physical oracle now captures every one of the eleven named attributes from a single stat observation into dictionaries, and compares those explicit dictionaries before/after reading and across snapshot observations.",
+    "helper_body_unchanged": true,
+    "native_runs_on_weaker_oracle": 0,
+    "status": "CORRECTED_BEFORE_ANY_NATIVE_FIXTURE_OR_EXECUTION"
+  },
+  "source_only_validation": {
+    "AST_and_compile_without_import_or_execution": "PASS",
+    "native_cases_executed": 0,
+    "path_sha256": {
+      "scripts/rc6_issue465_stress.py": "1643c3d58ab69b8ccdfed8b2818bb5ceb03adae77fa85f9cd702b36a3fdf4492",
+      "tests/test_rc6_source_custody_allocated_blocks.py": "c9037142d184ea8941a657be7058a0b71bb1b8acfd95359c4400c54b544e6df0"
+    },
+    "scope": "Initial AST/compile phase before the separately bound native2-case execution; native cases here remain0 for that phase."
+  },
+  "source_reads_write_no_SQL_and_provider_routes": "NOT_CALLED",
+  "stat_field_count": 11,
+  "status": "SCOPED_NATIVE_PHYSICAL_CUSTODY_GUARDS_GREEN_HORIZON_PENDING",
+  "verified_stat_fields": [
+    "st_dev",
+    "st_ino",
+    "st_uid",
+    "st_gid",
+    "st_mode",
+    "st_nlink",
+    "st_size",
+    "st_blocks",
+    "st_atime_ns",
+    "st_mtime_ns",
+    "st_ctime_ns"
+  ]
+}

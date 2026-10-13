@@ -1,0 +1,128 @@
+{
+  "controls_acceptance_cap_seconds": 20,
+  "controls_actual_execution_owner": "ROOT_ONLY_AFTER_LITERAL_SOURCE_REVIEW_AND_SEPARATE_SLOT; CAPTURE_STDOUT_STDERR_KERNEL_EXIT_AND_REAP_FROM_LAUNCH",
+  "controls_future_argv": [
+    "<approved_frozen311_sys.executable>",
+    "-I",
+    "-B",
+    "-S",
+    "/tmp/rc6_export_whole_git_source_v2_controls_candidate.py",
+    "--output",
+    "<fresh_external_private_source_controls_output>"
+  ],
+  "controls_scope": "OWN_PRIVATE_SMALL_FILES_AND_NEW_TWO_FILE_PRIVATE_GIT_ONLY_NEVER_OLD_TAR_OR_PRODUCT_SOURCE; UID_AND_POSTREAD_BLOCKS_ADAPTER_NEGATIVES_EXPLICIT",
+  "created_at_utc": "2026-10-06T01:42:24Z",
+  "exporter": {
+    "bytes": 12388,
+    "path": "/tmp/rc6_export_whole_git_source_v2_candidate.py",
+    "sha256": "6bb2b5b82ae63317afcf16124dd677eaea324482dc6009708a60e19da3d865fd"
+  },
+  "immutable_baseline": {
+    "bytes": 4874,
+    "path": "/tmp/rc6_export_whole_git_source.py",
+    "sha256": "4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa"
+  },
+  "observer_directory_enumeration_incident": {
+    "DATA_OR_HISTORICAL_TAR_BODY_BYTES_READ": false,
+    "bytes": 1777,
+    "directory_custody": "UNKNOWN_POSSIBLE_ATIME_CHANGE",
+    "path": "/tmp/rc6_browser_c_source_review_directory_enumeration_incident.json",
+    "sha256": "89ebcc1858f98be3429d95544b72ec0a030a287de58e8a50179bf22c0de0dcc7"
+  },
+  "packet_custody_scope": "CURRENT_COPYTIME_ALL11_AND_SHA_MODE_NOT_EXECUTION_END_RAW_ATIME; EXISTING_RECEIPT_READ_INCIDENT_PRESERVED; DIRECTORY_EXECUTION_CUSTODY_NOT_INFERRED",
+  "packet_fail_closed": "PREFIX_EXISTS_OR_ALIASED_OR_WRONG_OWNER_MOUNT_OR_SOURCE_SHA_MODE_CHANGED_REJECTED_NO_OVERWRITE_NO_PRUNE",
+  "packet_future_argv": [
+    "<approved_frozen311_sys.executable>",
+    "-I",
+    "-B",
+    "-S",
+    "/tmp/rc6_governed_owned_process_controls_preserve_candidate.py",
+    "--repo",
+    "<ROOT_CHOSEN_CLEAN_REPOSITORY>"
+  ],
+  "packet_layout": {
+    "git_paths_total": 47,
+    "new_CUSTODY_controls": 1,
+    "original_inputs": 45,
+    "original_payload_bytes": 403057,
+    "originals_from_inventory_e31": 42,
+    "preserved_original_inventory_controls": 1,
+    "python_archival_suffix": ".py.source",
+    "recipe_readme_publication_note": 3,
+    "stored_files_git_mode": "100644"
+  },
+  "packet_prefix": "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006",
+  "packet_preserver": {
+    "bytes": 14229,
+    "mode_octal": "0644",
+    "path": "/tmp/rc6_governed_owned_process_controls_preserve_candidate.py",
+    "sha256": "dd739aa373a12237db83383c038e3307f1fb1c52fe35dcf3d3407bfd4d789322"
+  },
+  "planned_control_ids": [
+    "REAL_OWN_FSYNC_HASH_ALL11",
+    "SYMLINK_REJECTED",
+    "HARDLINK_REJECTED",
+    "NONREG_FIFO_REJECTED",
+    "WRONG_REGULAR_MODE_REJECTED",
+    "OUTPUT_PARENT_UID_REJECTED",
+    "CURRENT_BLOCKS_MUTATION_REJECTED",
+    "SOURCE_ARCHIVE512_BOUND_REJECTED",
+    "FSYNC_FAILURE_REJECTED",
+    "EXISTING_COMMIT_AND_INDEX_NO_OVERWRITE",
+    "REAL_PRIVATE_GIT_SOURCE_EXPORT_COMMIT_INDEX_JOIN",
+    "REAL_PRIVATE_GIT_COMMIT_TAMPER_REJECTED",
+    "REAL_PRIVATE_GIT_INDEX_TAMPER_REJECTED"
+  ],
+  "planned_unique_stdlib_source_controls": 13,
+  "private_git_subprocess_timeout_seconds": 2,
+  "schema": "rc6.source-exporter-fsync-and-packet-preservation-source-plan.v1",
+  "source_control_driver": {
+    "bytes": 16759,
+    "mode_octal": "0644",
+    "path": "/tmp/rc6_export_whole_git_source_v2_controls_candidate.py",
+    "sha256": "f5226b655a0b2ea46bf58553030834ff6d567ae86d079f613f2920e4ed145552"
+  },
+  "source_only_counts": {
+    "ROOT_WRITES": 0,
+    "canonical_exports_or_git_commands": 0,
+    "new_driver_or_preserver_executions": 0,
+    "product_native_gov_browser_docker": 0
+  },
+  "status": "SOURCE_AST_COMPILE_REVIEW_ONLY_NOT_EXECUTED",
+  "strict_observed_source_c_delta": {
+    "after": {
+      "bytes": 1580201,
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/normal-source-after.json",
+      "sha256": "8eb30077ca14b367a7daa1cf4869568f9a15e7f297eb45da8cd781c2d3338fb1"
+    },
+    "archive_bytes": 179486720,
+    "archive_sha256": "36732d5b4b675d578bb0699c4ac3fb0138f96a80145677933c64ada84d12ba5c",
+    "before": {
+      "bytes": 1580201,
+      "path": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c/normal-source-before.json",
+      "sha256": "0592b4cf004646a651832bbebbf5aba0158161cc1eb9bed92e4e89cee34b3eea"
+    },
+    "blocks_after": 350568,
+    "blocks_before": 350560,
+    "code_atime_only_changes": 124,
+    "exact_kernel_cause_proven": false,
+    "only_archive_stat_field_changed": "blocks",
+    "other_namespace_or_index_stat_change": false,
+    "result_preserved": "BROWSER_C_RED"
+  },
+  "successor_contract": [
+    "WRITE_SOURCE_COMMIT_RAW_EXACT_RAW_GIT_BYTES_FSYNC_FILE_AND_PARENT_BEFORE_BASELINE",
+    "GIT_ARCHIVE_COMPLETES_THEN_FSYNC_OWN_TAR_FILE_AND_PARENT_BEFORE_TAR_OPEN_OR_NATIVE_BASELINE",
+    "TAR_EXTRACTION_STREAM_USES_OWN_NOATIME_FD_NOT_PATH_READ_BYTES",
+    "TAR_COMMIT_INDEX_HASH_NOATIME_ALL11_FIELDS_STRICT_INCLUDING_ST_BLOCKS",
+    "INDEX_SCHEMA_V1_PREVIOUS_FIELDS_RETAINED_ALL_COMMITTED_FILES_MODES_BLOB_IDS_NO_OVERLAY",
+    "INDEX_NEW_EXCLUSIVE_FILE_AND_PARENT_FSYNC_BEFORE_READY_SIDECAR",
+    "SIDECAR_DESCRIBES_EXPORT_PREPARATION_ONLY_NOT_BROWSER_OR_NATIVE_ACCEPTANCE",
+    "WRAPPER_AND_STRICT_BLOCKS_COMPARISON_UNCHANGED_NO_RECONSTRUCTION_OF_PAST_ACCEPTANCE"
+  ],
+  "unchanged_browser_wrapper": {
+    "bytes": 46704,
+    "path": "/workspace/rc6_root_normal_browser_supervisor_efa69894_v3.py",
+    "sha256": "05b1d1609d0b2b56f14d56b6b6e66d9d0d30ab2cd6eed352f4ef5e14e991f1e2"
+  }
+}

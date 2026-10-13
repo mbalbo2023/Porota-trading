@@ -1,0 +1,264 @@
+{
+  "authorized_scope": "EXPLICIT_ROOT_SLOT_AUTHORIZED_SINGLE_NATIVE_ATTEMPT_WITH_MAXIMUM_THREE_INTERNAL_CALIBRATIONS; SAME_SOURCE_AND_NATIVE_LIMITS",
+  "cost_prediction": {
+    "estimated_exclusive_CPU_seconds_range": [
+      60,
+      180
+    ],
+    "expanded_original_projection_bytes_accumulated_estimate_GiB_range": [
+      8,
+      12
+    ],
+    "explanation": "Archiver verification repeatedly reconstructs the original64MiB ancestor; bounded resident storage does not remove this genuine repeated decode cost.",
+    "measured": false,
+    "native_child_watchdog_seconds": 300,
+    "suggested_outer_watchdog_seconds": 330
+  },
+  "custody_and_proof": [
+    "Complete raw Git commit/tree/ls-tree and source index byte/mode/blob equality before and after; replacements disabled/rejected",
+    "Complete export, zero overlays and all actual loaded product imports bound to the frozen source",
+    "Approved installed157 closure checked without pip or new package installation",
+    "Native fixture source MAIN/WAL/SHM/journal presence, bytes and all11statfields double-captured without atime writes before and after; direct source SQLite prohibited after immutable baseline",
+    "Source generation5members and generation-directory custody unchanged across native archiving",
+    "Public large-ancestor and final depth32 restore preserve live, authority and archive roots/allfiles/hashes/statfields",
+    "Real fsync maintained; actual pre/post-fsync logical/allocated namespace/temporary peaks and per-cut residence reported",
+    "Real native child Linux wait4 RSS/CPU plus native RUSAGE_SELF, monotonic whole child wall, zero network/provider calls and no real routes"
+  ],
+  "execution_command_template": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "/tmp/rc6_archive_v3_maximum_member_probe.py",
+    "--source-root",
+    "/workspace/rc6-whole-source-20261005-capture-budget",
+    "--git-repo",
+    "/workspace/porota_rc6_convergence",
+    "--source-index",
+    "/tmp/rc6-whole-source-20261005-capture-budget-raw/source.index.json",
+    "--source-sha",
+    "d9e7fb7d567ff745193c125dc9cd8df4e91ec5d6",
+    "--source-tree",
+    "95a95d65fe18f1fbe8f108d582d984ee3e7355ac",
+    "--root",
+    "/workspace/rc6-native-maximum-member-d9e7fb7d-wait4",
+    "--receipt",
+    "/tmp/rc6-native-maximum-member-d9e7fb7d-wait4-raw/native-receipt.json"
+  ],
+  "external_preflight": {
+    "distribution_count": 157,
+    "git_command": "/usr/local/bin/git",
+    "outer_timeout_seconds": 330,
+    "python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+    "python_executable": "/workspace/venv_rc6_frozen311/bin/python",
+    "uid": 1000,
+    "wait4_available": true
+  },
+  "external_probe": {
+    "AST_and_compile_only": "GREEN",
+    "bytes": 35258,
+    "docker_execution": "NOT_EXECUTED",
+    "native_execution": "NOT_EXECUTED",
+    "path": "/tmp/rc6_archive_v3_maximum_member_probe.py",
+    "sha256": "8aa714b5569dc265a72bdf30bfd445c0df6f9236725e8c83d4afd7e616ba9c07"
+  },
+  "external_runner": {
+    "AST_and_compile_only": "GREEN",
+    "native_execution": "NOT_EXECUTED",
+    "path": "/tmp/rc6_archive_v3_maximum_member_runner_d9e7fb7d_wait4.py",
+    "resource_measurement": "Exact child Linux os.wait4 rusage plus native child resource.getrusage(RUSAGE_SELF); monotonic wall; outer330 unchanged",
+    "sha256": "ae45dcec2a5d917ded17c9652492de6ee2ad7331d4575f8d1d9497db6847824c"
+  },
+  "fixture_design": {
+    "archived_cuts": 33,
+    "archiver": "EvidenceRetention.archive_generation",
+    "calibration_attempts_maximum": 3,
+    "calibration_datasets": "Independent canonical native fresh datasets with128MiB/512entries each; aggregate physical calibration residence reported separately",
+    "encoder_calls_in_public_restores": 0,
+    "factory": "ShadowRuntime.from_environment(private_new_PaperStore_database,source_roots=[])",
+    "first_ancestor_bytes_band": [
+      66060288,
+      67108864
+    ],
+    "following_native_cuts": 33,
+    "following_projection_bytes_maximum": 1048576,
+    "live_large_control": "Native typed pretransfer-like retention admission forecast of3 actual maximum-size projection members must reject under128MiB; no attempt to physically publish3 forbidden large cuts",
+    "native_cuts": 34,
+    "publisher": "factory.files.commit_generation",
+    "reader": "EvidenceRetention.restore_generation",
+    "required_actual_final_dependency_depth": 32,
+    "required_every_decoded_projection_hash_matches_original_published_member": true,
+    "required_final_decode_previous_depths": [
+      null,
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "required_large_ancestor_and_final_cut_all_five_member_originals": true,
+    "rows": "Explicit typed synthetic planner DISCOVERY inputs, repeated identity/reference with no market/economic authority; native producer owns every UUID, member, manifest, hash and receipt",
+    "source_sequence32": "Remains an intact published live cut; not archived, as in the existing actual depth32 guard"
+  },
+  "frozen_whole_source": {
+    "files": 1634,
+    "index_sha256": "a4588cad578d14f07aa0b42eef317f8916d7c443e41390a1374220b8cbd83385",
+    "overlays": 0,
+    "python": "/workspace/venv_rc6_frozen311/bin/python",
+    "source_data": "NEW_UNSHARED_PRIVATE_FIXTURES_ONLY",
+    "source_index": "/tmp/rc6-whole-source-20261005-capture-budget-raw/source.index.json",
+    "source_root": "/workspace/rc6-whole-source-20261005-capture-budget",
+    "tar_sha256": "25e613ea2ac4675997e6b46aa0d93eb9ff621407ae77c6f33be37ef501757ace"
+  },
+  "native_policies_unchanged": {
+    "archive_bytes": 536870912,
+    "archive_entries": 32768,
+    "live_bytes": 134217728,
+    "live_entries": 512,
+    "maximum_projection_rows": 200000,
+    "maximum_source_projection_bytes": 67108864,
+    "minimum_free_inode_percent": 10,
+    "peak_real_child_RSS_bytes": 2147483648,
+    "scratch_bytes": 536870912,
+    "shared_residual_reserve_per_filesystem": 2147483648
+  },
+  "permanent_guard_proposal": {
+    "isolation": "Fresh subprocess to obtain uncontaminated real child ru_maxrss; automatically discovered native guards, no skip or handpicked passing tests",
+    "module": "tests/test_rc6_component_archive_memory.py",
+    "new_nodes_proposed": [
+      "test_native_maximum_projection_ancestor_depth32_public_restore_has_real_rss_under_2gib_and_five_original_members",
+      "test_three_observed_maximum_projection_images_are_denied_by_native128mib_live_forecast_without_mutation"
+    ],
+    "original_two_small_guards": "Preserve unchanged as mid-call corruption and iterative mechanism controls",
+    "owner": "Persistence (existing memory module); SRE will not modify owner files"
+  },
+  "preserved_prelaunch_failure": {
+    "calibrations_executed": 0,
+    "classification": "HARNESS_TOOL_NOT_AVAILABLE",
+    "is_product_red": false,
+    "native_child_started": false,
+    "receipt": "/tmp/rc6-native-maximum-member-d9e7fb7d-raw/prelaunch-error.json",
+    "sha256": "fbe21130899b46fa9f604fc0ca03a09d5ebc145bcf0f2a8aae17a4fda44bf8fc"
+  },
+  "reviewed_source_sha": "d9e7fb7d567ff745193c125dc9cd8df4e91ec5d6",
+  "reviewed_source_tree": "95a95d65fe18f1fbe8f108d582d984ee3e7355ac",
+  "schema": "rc6.maximum-archive-member-memory-source-plan.v1",
+  "scope_limits": {
+    "all33_ancestors_maximum_size": false,
+    "canonical_runtime_health": false,
+    "full_business_ticks": false,
+    "full_horizon1201_or2000archives": false,
+    "label": "Narrow public-producer/archive maximum-intermediate-member memory witness only",
+    "nine_hour_archive_capacity": false,
+    "normal_or_big_benchmark_approval": false,
+    "runtime_or_deploy_approval": false,
+    "same_image_execution": false
+  },
+  "source_bindings": {
+    "ops/policy/rc6-disk-housekeeping-v1.json": {
+      "bytes": 4060,
+      "git_blob": "48826a1f2edb60638b3b6c1a0e3cee1b9a6f7098",
+      "git_mode": "100644",
+      "sha256": "ebe67c6d0a84685e0c3368d48d778fd6ddf6af07727647569c8fb5a41509e077"
+    },
+    "ops/policy/rc6-supply-chain-v1.json": {
+      "bytes": 103636,
+      "git_blob": "a6d4abd5c46358b6b2707e4b209f14e0babb38fb",
+      "git_mode": "100644",
+      "sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462"
+    },
+    "rc6_shadow_runtime/archive_components.py": {
+      "bytes": 38140,
+      "git_blob": "88655e73546f784480c632294021c85fb88fa6e2",
+      "git_mode": "100644",
+      "sha256": "f25eadbb592b77c7ade5793b269ab513e4681819cf37f139cb695a1a7d8036eb"
+    },
+    "rc6_shadow_runtime/exact_page_storage.py": {
+      "bytes": 12818,
+      "git_blob": "4ce6bc21ccc28a2722019cf3afff5eaa55d71b98",
+      "git_mode": "100644",
+      "sha256": "89b48a6df6ce51e2942b6ff7c9bd3e8fb525d375660415934ec60b455132dbb6"
+    },
+    "rc6_shadow_runtime/packed_storage.py": {
+      "bytes": 27664,
+      "git_blob": "212b839c443b37bf5a8f9a860ff3736e81ed6f1b",
+      "git_mode": "100644",
+      "sha256": "0b6c009a988ffd1a3351e447b6f74a870df17bef783c7a4850d16243e7ad697e"
+    },
+    "rc6_shadow_runtime/persistence.py": {
+      "bytes": 60447,
+      "git_blob": "ab37360f245b361f9e4c407a2f19715aec170f6f",
+      "git_mode": "100644",
+      "sha256": "685f0f61cd6e32de124533f1998f31ab0f9e7793e0a68a819ac76d7e8fba0510"
+    },
+    "rc6_shadow_runtime/projection.py": {
+      "bytes": 24535,
+      "git_blob": "dd07d11679518d687a57d8a594f93d63b76e3238",
+      "git_mode": "100644",
+      "sha256": "a34fe0b34330a0243fce8aef97a58c3247ed339032f0d605a9cc8a562b2e1b07"
+    },
+    "rc6_shadow_runtime/retention.py": {
+      "bytes": 76408,
+      "git_blob": "270bb74acec4f205ebbbc4a45be03b0188262f0e",
+      "git_mode": "100644",
+      "sha256": "e2e152f63da55cbcc2873e2239b332afd85edc384f79b38bcdab963280fd15cc"
+    },
+    "rc6_shadow_runtime/serialization.py": {
+      "bytes": 18686,
+      "git_blob": "eb1fcfa31032c8d1b25bd36633f320e83dfd41fa",
+      "git_mode": "100644",
+      "sha256": "d5808446a1c4b964d10a4a5be6e52ab5ef8a69dc12171259df97b187b0e4fc99"
+    },
+    "rc6_shadow_runtime/worker.py": {
+      "bytes": 26058,
+      "git_blob": "375e27b82b27f57d82b1baf6f402daedd62dd6ce",
+      "git_mode": "100644",
+      "sha256": "1cb017bc1a5c4e80bc4445602170e5467c9f9c174a405c223fbc9f486be279e3"
+    },
+    "requirements.lock.txt": {
+      "bytes": 20883,
+      "git_blob": "c37fb993c92835266eefe5344020e3296a1c064f",
+      "git_mode": "100644",
+      "sha256": "c521c7503b2930290aa7acb7e549750d761ba36d74849d0981d91dc5e285d6ce"
+    },
+    "tests/test_rc6_component_archive_memory.py": {
+      "bytes": 4656,
+      "git_blob": "3b2b9cc181c5dfe577e7124eab5d24276f8a8bb9",
+      "git_mode": "100644",
+      "sha256": "9d48f47f32959113b29cbc266fd3c924d4546e39537b4aad4b60e5a8536dd756"
+    }
+  },
+  "status": "SOURCE_PREPARED_NOT_EXECUTED",
+  "temporary_contract": {
+    "Python_defaults": "Same existing canonical native scratch512MiB of the current factory; no auxiliary32/512 quota and no hostTMPDIR mutation",
+    "restore64MiB": "RAM bytes/bytearray and in-memory SQLite; realRSS, no disk temporary image",
+    "tempfile_requests": "Every tempfile request recorded with path/role and must be within canonical scratch; pre-destroy/rename physical observations and allfsync peaks",
+    "typed_admission": "Final scratch namespace inspected by native inspector; unknown generic temporary/residue yields preservedRED"
+  }
+}

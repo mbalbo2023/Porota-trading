@@ -1,0 +1,14 @@
+{
+  "cases": 201,
+  "deploy_authorized": false,
+  "errors": 0,
+  "failures": 1,
+  "final_source_acceptance": false,
+  "merge_authorized": false,
+  "schema": "rc6.intermediate-test-receipt.v1",
+  "scope": "INTERMEDIATE_CONTROLLED_ORIGIN_FIXTURE_FAILURE",
+  "skipped": 0,
+  "source_freeze": "NOT_FROZEN_WORKING_TREE",
+  "xml_file": "cold-original-fetch-fixture-red-9d51-wip.xml",
+  "xml_sha256": "d6fc36332088763222ae8c6f0e211969b5328b2147ee83582c7c4c8bed143ed7"
+}

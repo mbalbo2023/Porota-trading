@@ -1,0 +1,7 @@
+{
+  "all_original_kernel_resource_guards_closed": true,
+  "no_requirement_of_exit_zero_for_an_explicit_ALIEN_diagnostic": true,
+  "post_main_actual_ECHILD": true,
+  "postread_allowed": true,
+  "timeout_signals_zero_late_reap_residual_RED_never_reset": true
+}

@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="19" time="1.915" timestamp="2026-10-05T04:58:57.474945+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_convergence_finance_review" name="test_u09_direct_future_close_rejects_off_grid_or_crossed_book_with_valid_control[1480.123-1480.5]" time="0.107" /><testcase classname="tests.test_rc6_convergence_finance_review" name="test_u09_direct_future_close_rejects_off_grid_or_crossed_book_with_valid_control[1480-1479]" time="0.065" /><testcase classname="tests.test_rc6_convergence_finance_review" name="test_u10_quote_clock_distinguishes_zoneinfo_fold_instants[True]" time="0.001" /><testcase classname="tests.test_rc6_convergence_finance_review" name="test_u10_quote_clock_distinguishes_zoneinfo_fold_instants[False]" time="0.001" /><testcase classname="tests.test_rc6_convergence_finance_review" name="test_u06_fee_policy_change_before_commit_cannot_mix_fill_diagnostics_and_risk[SHADOW]" time="0.046" /><testcase classname="tests.test_rc6_convergence_finance_review" name="test_u06_fee_policy_change_before_commit_cannot_mix_fill_diagnostics_and_risk[BINDING]" time="0.058" /><testcase classname="tests.test_rc6_convergence_finance_review" name="test_u08_future_supervisor_after_restart_uses_exact_book_amid_newer_wrong_identity[USD_MEP-A3]" time="0.104"><failure message="sqlite3.OperationalError: no such table: paper_future_exit_intents">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-178/test_u08_future_supervisor_aft0')
+currency = 'USD_MEP', market = 'A3'
+
+    @pytest.mark.parametrize("currency,market", [("USD_MEP", "A3"), ("ARS", "OTHER")])
+    def test_u08_future_supervisor_after_restart_uses_exact_book_amid_newer_wrong_identity(tmp_path,
+                                                                                        currency, market):
+        clock = [OPEN]
+        path = tmp_path / "future.sqlite"
+        engine = broker(path, clock)
+        open_future(engine)
+        clock[0] = CLOSE
+        exact = quote(CLOSE, bid="1469", ask="1469.5")
+        engine.store.add_quote(exact)
+        newer = (datetime.fromisoformat(CLOSE) + timedelta(microseconds=1)).isoformat()
+        engine.store.add_quote(replace(quote(newer), currency=currency, market=market, contract=None))
+        restarted = broker(path, clock)
+&gt;       restarted.supervise_futures(CLOSE)
+
+/workspace/porota_rc6_worktrees/finance/tests/test_rc6_convergence_finance_review.py:147: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/workspace/porota_rc6_convergence/be_paper_engine.py:1845: in supervise_futures
+    self._on_future_quote(q, allow_new_openings=False)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;be_paper_engine.PaperBroker object at 0x7fd8ab574c50&gt;
+q = Quote(symbol='DLR/OCT26', asset_class='FUTUROS', settlement='INMEDIATA', last=Decimal('1469'), bid=Decimal('1469'), as... opening_block_reason='', book_at='2026-10-05T12:01:00-03:00', trade_at='2026-10-05T12:01:00-03:00', last_kind='TRADE')
+allow_new_openings = False, opening_block_reason = ''
+
+    def _on_future_quote(self, q: Quote, *, allow_new_openings=True,
+                         opening_block_reason=""):
+        at = self.execution_time(q)
+        position = self.family_paper.active_future(q.symbol)
+        if position:
+            try:
+                from rc6_paper_family_lifecycle import future_position_contract
+                restored = future_position_contract(position)
+                if (q.symbol, q.asset_class, q.market, q.currency, q.settlement) != (
+                        position["symbol"], "FUTUROS", position["market"], position["currency"], position["settlement"]):
+                    self._future_exit_state(position,at,"WATCH_IDENTITY_MISMATCH","Exact futures identity required")
+                    return
+                q = replace(q, contract=restored)
+            except (TypeError, ValueError, KeyError):
+                self._future_exit_state(position,at,"WATCH_INVALID_CONTRACT","Durable futures contract unavailable")
+                return
+        if q.contract is None or q.contract.family != "FUTUROS":
+            return
+        if position:
+            try:
+                time_cause=self._future_time_exit_cause(position,q.contract,at)
+            except (ValueError,TypeError,KeyError):
+                self._future_exit_state(position,at,"WATCH_INVALID_CLOCK","Futures supervision clock invalid")
+                return
+            error=q.time_error(at,max_age_seconds=self.quote_max_age_seconds)
+            if error:
+                self._future_exit_state(position,at,"WATCH_STALE_QUOTE",error,cause=time_cause or None)
+                return
+            try:
+                q.contract.price(q.bid,price_kind="QUOTE")
+                q.contract.price(q.ask,price_kind="QUOTE")
+                if D(q.bid)&lt;=0 or D(q.ask)&lt;D(q.bid):
+                    raise ValueError("FUTURES_BOOK_INVALID")
+            except ValueError as exc:
+                self._future_exit_state(position,at,"WATCH_INVALID_BOOK",str(exc),cause=time_cause or None)
+                return
+            mark_id = f"{position['lifecycle_id']}:MARK:{q.book_at or q.observed_at}"
+            try:
+                self.family_paper.mark_future(
+                    q.contract, lifecycle_id=position["lifecycle_id"],
+                    event_id=mark_id, mark_price=q.bid,
+                    book_at=q.book_at or q.observed_at, occurred_at=at,
+                    detail={"source": "PPI_BOOK"},
+                    max_mark_age_seconds=self.quote_max_age_seconds)
+                position = self.family_paper.active_future(q.symbol) or position
+            except ValueError:
+                self._future_exit_state(position,at,"WATCH_INVALID_MARK","Canonical mark rejected",cause=time_cause or None)
+                return
+            risk_row = None
+            if self.daily_risk:
+                risk_row = self.daily_risk.evaluate(
+                    at, quotes={q.symbol: q}).get(q.currency)
+            metadata = json.loads(position.get("metadata_json") or "{}")
+            stop = D(metadata.get("stop_loss_price"), "-1")
+            target = D(metadata.get("take_profit_price"), "-1")
+            with self.store.connect() as c:
+&gt;               previous=c.execute("SELECT cause FROM paper_future_exit_intents WHERE lifecycle_id=?",(position["lifecycle_id"],)).fetchone()
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               sqlite3.OperationalError: no such table: paper_future_exit_intents
+
+/workspace/porota_rc6_convergence/be_paper_engine.py:1726: OperationalError</failure></testcase><testcase classname="tests.test_rc6_convergence_finance_review" name="test_u08_future_supervisor_after_restart_uses_exact_book_amid_newer_wrong_identity[ARS-OTHER]" time="0.152"><failure message="sqlite3.OperationalError: no such table: paper_future_exit_intents">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-178/test_u08_future_supervisor_aft1')
+currency = 'ARS', market = 'OTHER'
+
+    @pytest.mark.parametrize("currency,market", [("USD_MEP", "A3"), ("ARS", "OTHER")])
+    def test_u08_future_supervisor_after_restart_uses_exact_book_amid_newer_wrong_identity(tmp_path,
+                                                                                        currency, market):
+        clock = [OPEN]
+        path = tmp_path / "future.sqlite"
+        engine = broker(path, clock)
+        open_future(engine)
+        clock[0] = CLOSE
+        exact = quote(CLOSE, bid="1469", ask="1469.5")
+        engine.store.add_quote(exact)
+        newer = (datetime.fromisoformat(CLOSE) + timedelta(microseconds=1)).isoformat()
+        engine.store.add_quote(replace(quote(newer), currency=currency, market=market, contract=None))
+        restarted = broker(path, clock)
+&gt;       restarted.supervise_futures(CLOSE)
+
+/workspace/porota_rc6_worktrees/finance/tests/test_rc6_convergence_finance_review.py:147: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/workspace/porota_rc6_convergence/be_paper_engine.py:1845: in supervise_futures
+    self._on_future_quote(q, allow_new_openings=False)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;be_paper_engine.PaperBroker object at 0x7fd8ab4aa3d0&gt;
+q = Quote(symbol='DLR/OCT26', asset_class='FUTUROS', settlement='INMEDIATA', last=Decimal('1469'), bid=Decimal('1469'), as... opening_block_reason='', book_at='2026-10-05T12:01:00-03:00', trade_at='2026-10-05T12:01:00-03:00', last_kind='TRADE')
+allow_new_openings = False, opening_block_reason = ''
+
+    def _on_future_quote(self, q: Quote, *, allow_new_openings=True,
+                         opening_block_reason=""):
+        at = self.execution_time(q)
+        position = self.family_paper.active_future(q.symbol)
+        if position:
+            try:
+                from rc6_paper_family_lifecycle import future_position_contract
+                restored = future_position_contract(position)
+                if (q.symbol, q.asset_class, q.market, q.currency, q.settlement) != (
+                        position["symbol"], "FUTUROS", position["market"], position["currency"], position["settlement"]):
+                    self._future_exit_state(position,at,"WATCH_IDENTITY_MISMATCH","Exact futures identity required")
+                    return
+                q = replace(q, contract=restored)
+            except (TypeError, ValueError, KeyError):
+                self._future_exit_state(position,at,"WATCH_INVALID_CONTRACT","Durable futures contract unavailable")
+                return
+        if q.contract is None or q.contract.family != "FUTUROS":
+            return
+        if position:
+            try:
+                time_cause=self._future_time_exit_cause(position,q.contract,at)
+            except (ValueError,TypeError,KeyError):
+                self._future_exit_state(position,at,"WATCH_INVALID_CLOCK","Futures supervision clock invalid")
+                return
+            error=q.time_error(at,max_age_seconds=self.quote_max_age_seconds)
+            if error:
+                self._future_exit_state(position,at,"WATCH_STALE_QUOTE",error,cause=time_cause or None)
+                return
+            try:
+                q.contract.price(q.bid,price_kind="QUOTE")
+                q.contract.price(q.ask,price_kind="QUOTE")
+                if D(q.bid)&lt;=0 or D(q.ask)&lt;D(q.bid):
+                    raise ValueError("FUTURES_BOOK_INVALID")
+            except ValueError as exc:
+                self._future_exit_state(position,at,"WATCH_INVALID_BOOK",str(exc),cause=time_cause or None)
+                return
+            mark_id = f"{position['lifecycle_id']}:MARK:{q.book_at or q.observed_at}"
+            try:
+                self.family_paper.mark_future(
+                    q.contract, lifecycle_id=position["lifecycle_id"],
+                    event_id=mark_id, mark_price=q.bid,
+                    book_at=q.book_at or q.observed_at, occurred_at=at,
+                    detail={"source": "PPI_BOOK"},
+                    max_mark_age_seconds=self.quote_max_age_seconds)
+                position = self.family_paper.active_future(q.symbol) or position
+            except ValueError:
+                self._future_exit_state(position,at,"WATCH_INVALID_MARK","Canonical mark rejected",cause=time_cause or None)
+                return
+            risk_row = None
+            if self.daily_risk:
+                risk_row = self.daily_risk.evaluate(
+                    at, quotes={q.symbol: q}).get(q.currency)
+            metadata = json.loads(position.get("metadata_json") or "{}")
+            stop = D(metadata.get("stop_loss_price"), "-1")
+            target = D(metadata.get("take_profit_price"), "-1")
+            with self.store.connect() as c:
+&gt;               previous=c.execute("SELECT cause FROM paper_future_exit_intents WHERE lifecycle_id=?",(position["lifecycle_id"],)).fetchone()
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               sqlite3.OperationalError: no such table: paper_future_exit_intents
+
+/workspace/porota_rc6_convergence/be_paper_engine.py:1726: OperationalError</failure></testcase><testcase classname="tests.test_rc6_convergence_finance_review" name="test_u08_future_partial_depth_does_not_create_terminal_fill_and_recovers_on_later_full_book" time="0.107" /><testcase classname="tests.test_rc6_convergence_finance_review" name="test_u06_positive_binding_fill_costs_each_leg_once_and_retains_atomic_decision_clock" time="0.139" /><testcase classname="tests.test_rc6_convergence_finance_review" name="test_aud19_native_decision_key_cannot_silently_cover_two_financial_commits[False]" time="0.111" /><testcase classname="tests.test_rc6_convergence_finance_review" name="test_aud19_native_decision_key_cannot_silently_cover_two_financial_commits[True]" time="0.093" /><testcase classname="tests.test_rc6_convergence_finance_review" name="test_r19_rehashed_wrong_multiplier_cannot_create_or_restore_future_cash_authority" time="0.043" /><testcase classname="tests.test_rc6_convergence_finance_historical_review" name="test_r75_duplicate_fill_cannot_pass_when_all_public_digests_and_the_pin_are_rebound" time="0.016" /><testcase classname="tests.test_rc6_convergence_finance_historical_review" name="test_r76_fill_one_microsecond_before_entry_is_rejected_despite_complete_semantic_rehash" time="0.007" /><testcase classname="tests.test_rc6_convergence_finance_historical_review" name="test_r74_inconsistent_cost_or_quantity_is_rejected_after_all_public_hashes_and_pin_are_rebound[entry_cost-LEDGER_COST_RECONCILIATION]" time="0.007" /><testcase classname="tests.test_rc6_convergence_finance_historical_review" name="test_r74_inconsistent_cost_or_quantity_is_rejected_after_all_public_hashes_and_pin_are_rebound[opening_quantity-OPENING_QUANTITY_MISMATCH]" time="0.014" /><testcase classname="tests.test_rc6_convergence_finance_historical_review" name="test_r74_inconsistent_cost_or_quantity_is_rejected_after_all_public_hashes_and_pin_are_rebound[fill_cost-LEDGER_COST_RECONCILIATION]" time="0.020" /><testcase classname="tests.test_rc6_convergence_finance_historical_review" name="test_r78_coordinated_currency_relabel_rejects_original_pin_and_retains_unknown_source_with_rebound_pin" time="0.034" /></testsuite></testsuites>

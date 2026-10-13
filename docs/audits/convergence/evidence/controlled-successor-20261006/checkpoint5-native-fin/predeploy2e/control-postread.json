@@ -1,0 +1,377 @@
+{
+  "classification": "UNKNOWN_OR_UNCLOSED",
+  "cleanup_performed": false,
+  "context": {
+    "candidate_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+    "candidate_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "1",
+    "run_id": "37501612071",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "control_observations": {},
+  "errors": [
+    "PYTEST_OWNED_FIN_NOT_CLOSED_OR_REBOUND",
+    "PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED"
+  ],
+  "expected_management_seconds": 5400,
+  "new_or_global_kernel_fin_asserted": false,
+  "owner_uid": 1001,
+  "owner_uuid": "c8ab73bdb4804a8b9b97d1b760d6c21f",
+  "phase": "all",
+  "phase_results": {
+    "collection": {
+      "classification": "FIN_REAL_CLOSED",
+      "cleanup_performed": false,
+      "context": {
+        "candidate_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+        "candidate_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+        "event": "pull_request",
+        "repository": "mbalbo2023/Porota-trading",
+        "run_attempt": "1",
+        "run_id": "37501612071",
+        "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+      },
+      "control_observations": {
+        "porota-pytest-collection-launch-intent.json": {
+          "payload_read": false,
+          "raw_utf8": "{\n  \"classification\": \"PYTEST_PRODUCER_LAUNCH_ATTEMPTED_NOT_ACCEPTED\",\n  \"command\": [\n    \"python\",\n    \"-m\",\n    \"pytest\",\n    \"--collect-only\",\n    \"-q\",\n    \".\",\n    \"--ignore=test_a3_primary_readonly_hf6.py\",\n    \"-p\",\n    \"no:cacheprovider\"\n  ],\n  \"context\": {\n    \"candidate_sha\": \"2e48f6f005f38f68b9dd9a75677fb67e52f23a18\",\n    \"candidate_tree\": \"e4cb00d2846ddf873a18530697d5fbaa029ced33\",\n    \"event\": \"pull_request\",\n    \"repository\": \"mbalbo2023/Porota-trading\",\n    \"run_attempt\": \"1\",\n    \"run_id\": \"37501612071\",\n    \"workflow_path\": \".github/workflows/porota-predeploy-v2.yml\"\n  },\n  \"failed_cleanup_maximum_seconds\": 5,\n  \"initial_actual_own_kernel\": {\n    \"kernel_echild_verified\": true,\n    \"scope\": \"THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION\",\n    \"subreaper_state_after\": 0,\n    \"subreaper_state_before\": 0\n  },\n  \"management_seconds\": 5400,\n  \"original_management_maximum_seconds\": 5400,\n  \"original_manager_source\": {\n    \"git_blob\": \"2c5709b25cc4548651e9e85aba50eba0eb5121cf\",\n    \"member\": \"docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source\",\n    \"sha256\": \"ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec\"\n  },\n  \"owner_uid\": 1001,\n  \"owner_uuid\": \"c8ab73bdb4804a8b9b97d1b760d6c21f\",\n  \"phase\": \"collection\",\n  \"progress_poll_seconds\": 5,\n  \"real_orders_sent\": 0,\n  \"schema\": \"rc6.predeploy-pytest-launch-intent.v1\",\n  \"supervisor_effective_uid\": 1001,\n  \"supervisor_native_tid\": 3000,\n  \"supervisor_pid\": 3000,\n  \"supervisor_real_uid\": 1001,\n  \"terminate_grace_seconds\": 2\n}\n",
+          "sha256": "74567db5efb0ee6e376d09943f59e43a171ab98eebd048615d87cd4404497fad",
+          "stat_fields": {
+            "st_atime_ns": 1791306780255930347,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791306780256930349,
+            "st_dev": 2049,
+            "st_gid": 1001,
+            "st_ino": 2429657,
+            "st_mode": 33152,
+            "st_mtime_ns": 1791306780256930349,
+            "st_nlink": 1,
+            "st_size": 1569,
+            "st_uid": 1001
+          }
+        },
+        "porota-pytest-collection-owned-fin.json": {
+          "payload_read": false,
+          "raw_utf8": "{\n  \"context\": {\n    \"candidate_sha\": \"2e48f6f005f38f68b9dd9a75677fb67e52f23a18\",\n    \"candidate_tree\": \"e4cb00d2846ddf873a18530697d5fbaa029ced33\",\n    \"event\": \"pull_request\",\n    \"repository\": \"mbalbo2023/Porota-trading\",\n    \"run_attempt\": \"1\",\n    \"run_id\": \"37501612071\",\n    \"workflow_path\": \".github/workflows/porota-predeploy-v2.yml\"\n  },\n  \"final_actual_own_kernel\": {\n    \"kernel_echild_verified\": true,\n    \"scope\": \"THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION\",\n    \"subreaper_state_after\": 0,\n    \"subreaper_state_before\": 0\n  },\n  \"initial_actual_own_kernel\": {\n    \"kernel_echild_verified\": true,\n    \"scope\": \"THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION\",\n    \"subreaper_state_after\": 0,\n    \"subreaper_state_before\": 0\n  },\n  \"kernel\": {\n    \"actual_child_reaped\": true,\n    \"actual_launch_to_pid_reap_wall_seconds\": 15.836701008000006,\n    \"adopted_descendants_reaped\": [],\n    \"command\": [\n      \"python\",\n      \"-m\",\n      \"pytest\",\n      \"--collect-only\",\n      \"-q\",\n      \".\",\n      \"--ignore=test_a3_primary_readonly_hf6.py\",\n      \"-p\",\n      \"no:cacheprovider\"\n    ],\n    \"cpu_system_seconds\": 0.27704,\n    \"cpu_user_seconds\": 14.822142,\n    \"kernel_owned_child_observations\": [\n      {\n        \"errno\": 10,\n        \"outcome\": \"ECHILD\",\n        \"phase\": \"before_popen_after_subreaper_activation\"\n      },\n      {\n        \"errno\": 10,\n        \"outcome\": \"ECHILD\",\n        \"phase\": \"after_main_pid_reap\"\n      }\n    ],\n    \"kernel_pre_popen_echild_verified\": true,\n    \"kernel_wait4_zero_observed_irreversible_red\": false,\n    \"late_observed_main_reap_irreversible_red\": false,\n    \"launcher_management_deadline_seconds\": 5400,\n    \"owned_child_exhaustion_method\": \"EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD\",\n    \"owned_children_exhaustion_verified\": true,\n    \"owned_cleanup_management_bound_seconds\": 5,\n    \"owned_group_signal_observations\": [],\n    \"peak_rss_bytes\": 188936192,\n    \"pid\": 3004,\n    \"proc_task_children_examined\": false,\n    \"process_group_absent_after_reap\": true,\n    \"process_group_absent_at_main_reap\": true,\n    \"remaining_owned_children\": [],\n    \"residual_descendants_observed\": [],\n    \"returncode\": 0,\n    \"scope\": \"EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS\",\n    \"sigint_failure_grace_seconds\": 0,\n    \"subreaper_activation_readback_verified\": true,\n    \"subreaper_previous_state\": 0,\n    \"subreaper_restoration_readback_verified\": true,\n    \"subreaper_restore_attempted\": true,\n    \"supervisor_errors\": [],\n    \"supervisor_kernel_identity_before_spawn\": {\n      \"Pid\": \"3000\",\n      \"Tgid\": \"3000\",\n      \"Uid\": \"1001\\t1001\\t1001\\t1001\"\n    },\n    \"supervisor_native_tid\": 3000,\n    \"supervisor_pid\": 3000,\n    \"termination_reap_restore_cleanup_seconds\": 7.38180000041666e-05,\n    \"timed_out\": false,\n    \"wait4_reaped_pid\": 3004,\n    \"wall_seconds\": 15.836972445999976\n  },\n  \"launch_intent_sha256\": \"74567db5efb0ee6e376d09943f59e43a171ab98eebd048615d87cd4404497fad\",\n  \"management_acceptance\": true,\n  \"management_seconds\": 5400,\n  \"original_manager_source\": {\n    \"git_blob\": \"2c5709b25cc4548651e9e85aba50eba0eb5121cf\",\n    \"member\": \"docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source\",\n    \"sha256\": \"ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec\"\n  },\n  \"owned_fin_closed\": true,\n  \"owner_uuid\": \"c8ab73bdb4804a8b9b97d1b760d6c21f\",\n  \"phase\": \"collection\",\n  \"phase_green\": true,\n  \"post_fin_errors\": [],\n  \"retained_capacity_status\": \"GREEN\",\n  \"retention_receipt\": \"/home/runner/work/_temp/porota-predeploy-37501612071-1-c8ab73bdb4804a8b9b97d1b760d6c21f/porota-pytest-collection-retained.json\",\n  \"schema\": \"rc6.predeploy-pytest-owned-fin.v1\",\n  \"scope\": \"ACTUAL_PYTEST_MAIN_WAIT4_AND_ADOPTED_WAIT4; MAX_RSS_NOT_SUM; NO_TRANSITIVE_BINARY_NETWORK_ATTESTATION\",\n  \"supervisor_pid\": 3000\n}\n",
+          "sha256": "84cbf92963384718bd69cfe8e0e69d4fde7adc926fa996a7e4d973e899f479d4",
+          "stat_fields": {
+            "st_atime_ns": 1791306796096951281,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791306796097714230,
+            "st_dev": 2049,
+            "st_gid": 1001,
+            "st_ino": 2429685,
+            "st_mode": 33152,
+            "st_mtime_ns": 1791306796097714230,
+            "st_nlink": 1,
+            "st_size": 3917,
+            "st_uid": 1001
+          }
+        }
+      },
+      "control_receipt": "/home/runner/work/_temp/porota-predeploy-37501612071-1.pytest-collection-postread.json",
+      "errors": [],
+      "expected_management_seconds": 5400,
+      "management_acceptance": true,
+      "new_or_global_kernel_fin_asserted": false,
+      "owner_uid": 1001,
+      "owner_uuid": "c8ab73bdb4804a8b9b97d1b760d6c21f",
+      "phase": "collection",
+      "producer_post_fin_errors": [],
+      "pytest_phase_green": true,
+      "pytest_producer_witness": true,
+      "real_orders_sent": 0,
+      "safe_postread": true,
+      "schema": "rc6.predeploy-pytest-postread-safety.v1",
+      "source_junit_data_log_payloads_read": 0,
+      "trace_presence_lstat_only": {
+        "porota-pytest-collection-launch-intent.json": {
+          "st_atime_ns": 1791306780255930347,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791306780256930349,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 2429657,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791306780256930349,
+          "st_nlink": 1,
+          "st_size": 1569,
+          "st_uid": 1001
+        },
+        "porota-pytest-collection-owned-fin.json": {
+          "st_atime_ns": 1791306796096951281,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791306796097714230,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 2429685,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791306796097714230,
+          "st_nlink": 1,
+          "st_size": 3917,
+          "st_uid": 1001
+        },
+        "porota-pytest-collection-progress.json": {
+          "st_atime_ns": 1791306795288950607,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791306795292950611,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 2429700,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791306795289670133,
+          "st_nlink": 1,
+          "st_size": 281,
+          "st_uid": 1001
+        },
+        "porota-test-collection.txt": {
+          "st_atime_ns": 1791306780257930351,
+          "st_blocks": 32,
+          "st_ctime_ns": 1791306795795951030,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 2429670,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791306795795951030,
+          "st_nlink": 1,
+          "st_size": 14453,
+          "st_uid": 1001
+        }
+      },
+      "witness_scope": "REVALIDATED_ACTUAL_SAME_SUPERVISOR_RAW_FIN; NO_NEW_KERNEL_WITNESS"
+    },
+    "execution": {
+      "classification": "UNKNOWN_OR_UNCLOSED",
+      "cleanup_performed": false,
+      "context": {
+        "candidate_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+        "candidate_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+        "event": "pull_request",
+        "repository": "mbalbo2023/Porota-trading",
+        "run_attempt": "1",
+        "run_id": "37501612071",
+        "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+      },
+      "control_observations": {
+        "porota-pytest-launch-intent.json": {
+          "payload_read": false,
+          "raw_utf8": "{\n  \"classification\": \"PYTEST_PRODUCER_LAUNCH_ATTEMPTED_NOT_ACCEPTED\",\n  \"command\": [\n    \"python\",\n    \"-m\",\n    \"pytest\",\n    \"-q\",\n    \".\",\n    \"--ignore=test_a3_primary_readonly_hf6.py\",\n    \"-p\",\n    \"no:cacheprovider\",\n    \"--basetemp=/home/runner/work/_temp/porota-pytest-37501612071-1-c8ab73bdb4804a8b9b97d1b760d6c21f/pytest\",\n    \"--junitxml=/home/runner/work/_temp/porota-predeploy-37501612071-1-c8ab73bdb4804a8b9b97d1b760d6c21f/porota-governed-tests.xml\"\n  ],\n  \"context\": {\n    \"candidate_sha\": \"2e48f6f005f38f68b9dd9a75677fb67e52f23a18\",\n    \"candidate_tree\": \"e4cb00d2846ddf873a18530697d5fbaa029ced33\",\n    \"event\": \"pull_request\",\n    \"repository\": \"mbalbo2023/Porota-trading\",\n    \"run_attempt\": \"1\",\n    \"run_id\": \"37501612071\",\n    \"workflow_path\": \".github/workflows/porota-predeploy-v2.yml\"\n  },\n  \"failed_cleanup_maximum_seconds\": 5,\n  \"initial_actual_own_kernel\": {\n    \"kernel_echild_verified\": true,\n    \"scope\": \"THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION\",\n    \"subreaper_state_after\": 0,\n    \"subreaper_state_before\": 0\n  },\n  \"management_seconds\": 5400,\n  \"original_management_maximum_seconds\": 5400,\n  \"original_manager_source\": {\n    \"git_blob\": \"2c5709b25cc4548651e9e85aba50eba0eb5121cf\",\n    \"member\": \"docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source\",\n    \"sha256\": \"ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec\"\n  },\n  \"owner_uid\": 1001,\n  \"owner_uuid\": \"c8ab73bdb4804a8b9b97d1b760d6c21f\",\n  \"phase\": \"execution\",\n  \"progress_poll_seconds\": 5,\n  \"real_orders_sent\": 0,\n  \"schema\": \"rc6.predeploy-pytest-launch-intent.v1\",\n  \"supervisor_effective_uid\": 1001,\n  \"supervisor_native_tid\": 3013,\n  \"supervisor_pid\": 3013,\n  \"supervisor_real_uid\": 1001,\n  \"terminate_grace_seconds\": 2\n}\n",
+          "sha256": "eb728a4bfb8ac82772cc744dc1707c5f992cd2185244f5cec7e14abb36f2daf3",
+          "stat_fields": {
+            "st_atime_ns": 1791306796284951438,
+            "st_blocks": 8,
+            "st_ctime_ns": 1791306796285391124,
+            "st_dev": 2049,
+            "st_gid": 1001,
+            "st_ino": 2429633,
+            "st_mode": 33152,
+            "st_mtime_ns": 1791306796285391124,
+            "st_nlink": 1,
+            "st_size": 1788,
+            "st_uid": 1001
+          }
+        },
+        "porota-pytest-owned-fin.json": {
+          "payload_read": false,
+          "raw_utf8": "{\n  \"context\": {\n    \"candidate_sha\": \"2e48f6f005f38f68b9dd9a75677fb67e52f23a18\",\n    \"candidate_tree\": \"e4cb00d2846ddf873a18530697d5fbaa029ced33\",\n    \"event\": \"pull_request\",\n    \"repository\": \"mbalbo2023/Porota-trading\",\n    \"run_attempt\": \"1\",\n    \"run_id\": \"37501612071\",\n    \"workflow_path\": \".github/workflows/porota-predeploy-v2.yml\"\n  },\n  \"initial_actual_own_kernel\": {\n    \"kernel_echild_verified\": true,\n    \"scope\": \"THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION\",\n    \"subreaper_state_after\": 0,\n    \"subreaper_state_before\": 0\n  },\n  \"kernel\": {\n    \"actual_child_reaped\": true,\n    \"actual_launch_to_pid_reap_wall_seconds\": 2404.8757673269997,\n    \"adopted_descendants_reaped\": [\n      {\n        \"cpu_system_seconds\": 0.000664,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"pid\": 3032\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000588,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4050944,\n        \"pid\": 3372\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005639999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4014080,\n        \"pid\": 3412\n      },\n      {\n        \"cpu_system_seconds\": 0.000589,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"pid\": 3429\n      },\n      {\n        \"cpu_system_seconds\": 0.000687,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4001792,\n        \"pid\": 3456\n      },\n      {\n        \"cpu_system_seconds\": 0.000598,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4206592,\n        \"pid\": 3478\n      },\n      {\n        \"cpu_system_seconds\": 0.0006659999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"pid\": 3500\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000557,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4251648,\n        \"pid\": 3523\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000562,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4071424,\n        \"pid\": 3545\n      },\n      {\n        \"cpu_system_seconds\": 0.000592,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4132864,\n        \"pid\": 3567\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000531,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3936256,\n        \"pid\": 3589\n      },\n      {\n        \"cpu_system_seconds\": 0.000594,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4005888,\n        \"pid\": 3611\n      },\n      {\n        \"cpu_system_seconds\": 0.000694,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4268032,\n        \"pid\": 3633\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006839999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"pid\": 3655\n      },\n      {\n        \"cpu_system_seconds\": 0.000578,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4202496,\n        \"pid\": 3677\n      },\n      {\n        \"cpu_system_seconds\": 0.000572,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"pid\": 3699\n      },\n      {\n        \"cpu_system_seconds\": 0.0005989999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3854336,\n        \"pid\": 3721\n      },\n      {\n        \"cpu_system_seconds\": 0.0005859999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"pid\": 3738\n      },\n      {\n        \"cpu_system_seconds\": 0.000588,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4014080,\n        \"pid\": 3757\n      },\n      {\n        \"cpu_system_seconds\": 0.0006709999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3932160,\n        \"pid\": 3776\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000554,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4268032,\n        \"pid\": 3793\n      },\n      {\n        \"cpu_system_seconds\": 0.000563,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3858432,\n        \"pid\": 3810\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000547,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4096000,\n        \"pid\": 3827\n      },\n      {\n        \"cpu_system_seconds\": 0.000716,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"pid\": 3844\n      },\n      {\n        \"cpu_system_seconds\": 0.000579,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4104192,\n        \"pid\": 3866\n      },\n      {\n        \"cpu_system_seconds\": 0.0006309999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"pid\": 3888\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000598,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"pid\": 3910\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000552,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4071424,\n        \"pid\": 3932\n      },\n      {\n        \"cpu_system_seconds\": 0.000658,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"pid\": 3954\n      },\n      {\n        \"cpu_system_seconds\": 0.0006839999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"pid\": 3976\n      },\n      {\n        \"cpu_system_seconds\": 0.000694,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4276224,\n        \"pid\": 3998\n      },\n      {\n        \"cpu_system_seconds\": 0.000574,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3969024,\n        \"pid\": 4020\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000652,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4128768,\n        \"pid\": 4042\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000645,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"pid\": 4064\n      },\n      {\n        \"cpu_system_seconds\": 0.000672,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"pid\": 4086\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000594,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"pid\": 4108\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"pid\": 4130\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005899999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"pid\": 4152\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000551,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4005888,\n        \"pid\": 4174\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.00054,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"pid\": 4191\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.00054,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3948544,\n        \"pid\": 4208\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006479999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3969024,\n        \"pid\": 4225\n      },\n      {\n        \"cpu_system_seconds\": 0.000556,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4001792,\n        \"pid\": 4242\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005409999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3948544,\n        \"pid\": 4259\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000646,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"pid\": 4276\n      },\n      {\n        \"cpu_system_seconds\": 0.0005409999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3948544,\n        \"pid\": 4298\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000645,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"pid\": 4320\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006169999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4034560,\n        \"pid\": 4342\n      },\n      {\n        \"cpu_system_seconds\": 0.0006839999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4034560,\n        \"pid\": 4364\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000544,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4038656,\n        \"pid\": 4386\n      },\n      {\n        \"cpu_system_seconds\": 0.00061,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"pid\": 4408\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000548,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4055040,\n        \"pid\": 4430\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000538,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3981312,\n        \"pid\": 4452\n      },\n      {\n        \"cpu_system_seconds\": 0.000636,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"pid\": 4474\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000652,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"pid\": 4496\n      },\n      {\n        \"cpu_system_seconds\": 0.0007149999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"pid\": 4518\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000647,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4034560,\n        \"pid\": 4540\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000557,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"pid\": 4562\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000632,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3944448,\n        \"pid\": 4584\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000628,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4071424,\n        \"pid\": 4606\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000562,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"pid\": 4628\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000535,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3973120,\n        \"pid\": 4650\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000548,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"pid\": 4672\n      },\n      {\n        \"cpu_system_seconds\": 0.000562,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"pid\": 4694\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000543,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4132864,\n        \"pid\": 4716\n      },\n      {\n        \"cpu_system_seconds\": 0.0006569999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4169728,\n        \"pid\": 4738\n      },\n      {\n        \"cpu_system_seconds\": 0.000651,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3932160,\n        \"pid\": 4760\n      },\n      {\n        \"cpu_system_seconds\": 0.0006879999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"pid\": 4782\n      },\n      {\n        \"cpu_system_seconds\": 0.0005639999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3944448,\n        \"pid\": 4804\n      },\n      {\n        \"cpu_system_seconds\": 0.000652,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4104192,\n        \"pid\": 4818\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000642,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4128768,\n        \"pid\": 4830\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000544,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4014080,\n        \"pid\": 4844\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.00061,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"pid\": 4856\n      },\n      {\n        \"cpu_system_seconds\": 0.000646,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4075520,\n        \"pid\": 4870\n      },\n      {\n        \"cpu_system_seconds\": 0.000672,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"pid\": 4882\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000585,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3936256,\n        \"pid\": 4899\n      },\n      {\n        \"cpu_system_seconds\": 0.000557,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4104192,\n        \"pid\": 4916\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000624,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3960832,\n        \"pid\": 4933\n      },\n      {\n        \"cpu_system_seconds\": 0.000574,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4018176,\n        \"pid\": 4950\n      },\n      {\n        \"cpu_system_seconds\": 0.000654,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4005888,\n        \"pid\": 4967\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005369999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3948544,\n        \"pid\": 4984\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000544,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"pid\": 5001\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000547,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4136960,\n        \"pid\": 5018\n      },\n      {\n        \"cpu_system_seconds\": 0.0005899999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4096000,\n        \"pid\": 5035\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000619,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4128768,\n        \"pid\": 5052\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006479999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4014080,\n        \"pid\": 5069\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005729999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4063232,\n        \"pid\": 5086\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006619999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4136960,\n        \"pid\": 5103\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005819999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"pid\": 5120\n      },\n      {\n        \"cpu_system_seconds\": 0.000588,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4132864,\n        \"pid\": 5137\n      },\n      {\n        \"cpu_system_seconds\": 0.000574,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"pid\": 5154\n      },\n      {\n        \"cpu_system_seconds\": 0.0005949999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3928064,\n        \"pid\": 5171\n      },\n      {\n        \"cpu_system_seconds\": 0.0006439999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3936256,\n        \"pid\": 5188\n      },\n      {\n        \"cpu_system_seconds\": 0.00056,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"pid\": 5205\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000535,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3858432,\n        \"pid\": 5222\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000552,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"pid\": 5239\n      },\n      {\n        \"cpu_system_seconds\": 0.000563,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4067328,\n        \"pid\": 5256\n      },\n      {\n        \"cpu_system_seconds\": 0.0005769999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"pid\": 5273\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000532,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"pid\": 5290\n      },\n      {\n        \"cpu_system_seconds\": 0.0005949999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4325376,\n        \"pid\": 5307\n      }\n    ],\n    \"command\": [\n      \"python\",\n      \"-m\",\n      \"pytest\",\n      \"-q\",\n      \".\",\n      \"--ignore=test_a3_primary_readonly_hf6.py\",\n      \"-p\",\n      \"no:cacheprovider\",\n      \"--basetemp=/home/runner/work/_temp/porota-pytest-37501612071-1-c8ab73bdb4804a8b9b97d1b760d6c21f/pytest\",\n      \"--junitxml=/home/runner/work/_temp/porota-predeploy-37501612071-1-c8ab73bdb4804a8b9b97d1b760d6c21f/porota-governed-tests.xml\"\n    ],\n    \"cpu_system_seconds\": 324.540133,\n    \"cpu_user_seconds\": 1889.452629,\n    \"kernel_owned_child_observations\": [\n      {\n        \"errno\": 10,\n        \"outcome\": \"ECHILD\",\n        \"phase\": \"before_popen_after_subreaper_activation\"\n      },\n      {\n        \"cpu_system_seconds\": 0.000664,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3032\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000588,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4050944,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3372\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005639999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4014080,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3412\n      },\n      {\n        \"cpu_system_seconds\": 0.000589,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3429\n      },\n      {\n        \"cpu_system_seconds\": 0.000687,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4001792,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3456\n      },\n      {\n        \"cpu_system_seconds\": 0.000598,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4206592,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3478\n      },\n      {\n        \"cpu_system_seconds\": 0.0006659999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3500\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000557,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4251648,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3523\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000562,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4071424,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3545\n      },\n      {\n        \"cpu_system_seconds\": 0.000592,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4132864,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3567\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000531,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3936256,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3589\n      },\n      {\n        \"cpu_system_seconds\": 0.000594,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4005888,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3611\n      },\n      {\n        \"cpu_system_seconds\": 0.000694,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4268032,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3633\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006839999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3655\n      },\n      {\n        \"cpu_system_seconds\": 0.000578,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4202496,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3677\n      },\n      {\n        \"cpu_system_seconds\": 0.000572,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3699\n      },\n      {\n        \"cpu_system_seconds\": 0.0005989999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3854336,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3721\n      },\n      {\n        \"cpu_system_seconds\": 0.0005859999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3738\n      },\n      {\n        \"cpu_system_seconds\": 0.000588,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4014080,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3757\n      },\n      {\n        \"cpu_system_seconds\": 0.0006709999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3932160,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3776\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000554,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4268032,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3793\n      },\n      {\n        \"cpu_system_seconds\": 0.000563,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3858432,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3810\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000547,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4096000,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3827\n      },\n      {\n        \"cpu_system_seconds\": 0.000716,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3844\n      },\n      {\n        \"cpu_system_seconds\": 0.000579,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4104192,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3866\n      },\n      {\n        \"cpu_system_seconds\": 0.0006309999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3888\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000598,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3910\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000552,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4071424,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3932\n      },\n      {\n        \"cpu_system_seconds\": 0.000658,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3954\n      },\n      {\n        \"cpu_system_seconds\": 0.0006839999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3976\n      },\n      {\n        \"cpu_system_seconds\": 0.000694,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4276224,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 3998\n      },\n      {\n        \"cpu_system_seconds\": 0.000574,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3969024,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4020\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000652,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4128768,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4042\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000645,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4064\n      },\n      {\n        \"cpu_system_seconds\": 0.000672,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4086\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000594,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4108\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4130\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005899999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4152\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000551,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4005888,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4174\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.00054,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4191\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.00054,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3948544,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4208\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006479999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3969024,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4225\n      },\n      {\n        \"cpu_system_seconds\": 0.000556,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4001792,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4242\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005409999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3948544,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4259\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000646,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4276\n      },\n      {\n        \"cpu_system_seconds\": 0.0005409999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3948544,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4298\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000645,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4320\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006169999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4034560,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4342\n      },\n      {\n        \"cpu_system_seconds\": 0.0006839999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4034560,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4364\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000544,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4038656,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4386\n      },\n      {\n        \"cpu_system_seconds\": 0.00061,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4408\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000548,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4055040,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4430\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000538,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3981312,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4452\n      },\n      {\n        \"cpu_system_seconds\": 0.000636,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4474\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000652,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4496\n      },\n      {\n        \"cpu_system_seconds\": 0.0007149999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4518\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000647,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4034560,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4540\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000557,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4562\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000632,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3944448,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4584\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000628,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4071424,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4606\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000562,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4628\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000535,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3973120,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4650\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000548,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4672\n      },\n      {\n        \"cpu_system_seconds\": 0.000562,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4694\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000543,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4132864,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4716\n      },\n      {\n        \"cpu_system_seconds\": 0.0006569999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4169728,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4738\n      },\n      {\n        \"cpu_system_seconds\": 0.000651,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3932160,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4760\n      },\n      {\n        \"cpu_system_seconds\": 0.0006879999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4009984,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4782\n      },\n      {\n        \"cpu_system_seconds\": 0.0005639999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3944448,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4804\n      },\n      {\n        \"cpu_system_seconds\": 0.000652,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4104192,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4818\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000642,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4128768,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4830\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000544,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4014080,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4844\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.00061,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4856\n      },\n      {\n        \"cpu_system_seconds\": 0.000646,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4075520,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4870\n      },\n      {\n        \"cpu_system_seconds\": 0.000672,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4882\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000585,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3936256,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4899\n      },\n      {\n        \"cpu_system_seconds\": 0.000557,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4104192,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4916\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000624,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3960832,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4933\n      },\n      {\n        \"cpu_system_seconds\": 0.000574,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4018176,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4950\n      },\n      {\n        \"cpu_system_seconds\": 0.000654,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4005888,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4967\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005369999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3948544,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 4984\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000544,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5001\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000547,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4136960,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5018\n      },\n      {\n        \"cpu_system_seconds\": 0.0005899999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4096000,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5035\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000619,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4128768,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5052\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006479999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4014080,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5069\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005729999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4063232,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5086\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0006619999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4136960,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5103\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.0005819999999999999,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4145152,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5120\n      },\n      {\n        \"cpu_system_seconds\": 0.000588,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4132864,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5137\n      },\n      {\n        \"cpu_system_seconds\": 0.000574,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5154\n      },\n      {\n        \"cpu_system_seconds\": 0.0005949999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3928064,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5171\n      },\n      {\n        \"cpu_system_seconds\": 0.0006439999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3936256,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5188\n      },\n      {\n        \"cpu_system_seconds\": 0.00056,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5205\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000535,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 3858432,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5222\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000552,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4210688,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5239\n      },\n      {\n        \"cpu_system_seconds\": 0.000563,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4067328,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5256\n      },\n      {\n        \"cpu_system_seconds\": 0.0005769999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4079616,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5273\n      },\n      {\n        \"cpu_system_seconds\": 0.0,\n        \"cpu_user_seconds\": 0.000532,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4141056,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5290\n      },\n      {\n        \"cpu_system_seconds\": 0.0005949999999999999,\n        \"cpu_user_seconds\": 0.0,\n        \"exit_code\": 0,\n        \"kernel_lifetime_peak_rss_bytes\": 4325376,\n        \"outcome\": \"PID_REAPED\",\n        \"phase\": \"after_main_pid_reap\",\n        \"pid\": 5307\n      }\n    ],\n    \"kernel_pre_popen_echild_verified\": true,\n    \"kernel_wait4_zero_observed_irreversible_red\": false,\n    \"late_observed_main_reap_irreversible_red\": false,\n    \"launcher_management_deadline_seconds\": 5400,\n    \"owned_child_exhaustion_method\": \"EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD\",\n    \"owned_children_exhaustion_verified\": false,\n    \"owned_cleanup_management_bound_seconds\": 5,\n    \"owned_group_signal_observations\": [],\n    \"peak_rss_bytes\": 1640984576,\n    \"pid\": 3017,\n    \"proc_task_children_examined\": false,\n    \"process_group_absent_after_reap\": false,\n    \"process_group_absent_at_main_reap\": false,\n    \"remaining_owned_children\": [],\n    \"residual_descendants_observed\": [],\n    \"returncode\": 1,\n    \"scope\": \"EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS\",\n    \"sigint_failure_grace_seconds\": 0,\n    \"subreaper_activation_readback_verified\": true,\n    \"subreaper_previous_state\": 0,\n    \"subreaper_restoration_readback_verified\": false,\n    \"subreaper_restore_attempted\": false,\n    \"supervisor_errors\": [\n      {\n        \"class\": \"RuntimeError\",\n        \"phase\": \"kernel_owned_child_cleanup\",\n        \"reason\": \"OWN_CHILD_EXHAUSTION_NOT_PROVED_WITHIN_BOUND\"\n      },\n      {\n        \"class\": \"ValueError\",\n        \"phase\": \"subreaper_restore\",\n        \"reason\": \"OWN_SUBREAPER_RESTORE_REQUIRES_KERNEL_EXHAUSTION_AND_ABSENT_OWNED_GROUP\"\n      }\n    ],\n    \"supervisor_kernel_identity_before_spawn\": {\n      \"Pid\": \"3013\",\n      \"Tgid\": \"3013\",\n      \"Uid\": \"1001\\t1001\\t1001\\t1001\"\n    },\n    \"supervisor_native_tid\": 3013,\n    \"supervisor_pid\": 3013,\n    \"termination_reap_restore_cleanup_seconds\": 5.011628090000158,\n    \"timed_out\": false,\n    \"wait4_reaped_pid\": 3017,\n    \"wall_seconds\": 2409.887559113\n  },\n  \"launch_intent_sha256\": \"eb728a4bfb8ac82772cc744dc1707c5f992cd2185244f5cec7e14abb36f2daf3\",\n  \"management_acceptance\": false,\n  \"management_seconds\": 5400,\n  \"measurement_refused\": \"ACTUAL_OWNED_FIN_NOT_CLOSED_NO_FIXTURE_PAYLOAD_OR_NAMESPACE_POSTREAD\",\n  \"original_manager_source\": {\n    \"git_blob\": \"2c5709b25cc4548651e9e85aba50eba0eb5121cf\",\n    \"member\": \"docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source\",\n    \"sha256\": \"ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec\"\n  },\n  \"owned_fin_closed\": false,\n  \"owner_uuid\": \"c8ab73bdb4804a8b9b97d1b760d6c21f\",\n  \"phase\": \"execution\",\n  \"phase_green\": false,\n  \"post_fin_errors\": [],\n  \"schema\": \"rc6.predeploy-pytest-owned-fin.v1\",\n  \"scope\": \"ACTUAL_PYTEST_MAIN_WAIT4_AND_ADOPTED_WAIT4; MAX_RSS_NOT_SUM; NO_TRANSITIVE_BINARY_NETWORK_ATTESTATION\",\n  \"supervisor_pid\": 3013\n}\n",
+          "sha256": "efeeec10ffc1f81d3f9caa0132d2b837d67fb3e4e81a459b08caf2fd8bcb733a",
+          "stat_fields": {
+            "st_atime_ns": 1791309206177129914,
+            "st_blocks": 96,
+            "st_ctime_ns": 1791309206178129913,
+            "st_dev": 2049,
+            "st_gid": 1001,
+            "st_ino": 2399593,
+            "st_mode": 33152,
+            "st_mtime_ns": 1791309206177555326,
+            "st_nlink": 1,
+            "st_size": 49094,
+            "st_uid": 1001
+          }
+        }
+      },
+      "control_receipt": "/home/runner/work/_temp/porota-predeploy-37501612071-1.pytest-postread.json",
+      "errors": [
+        "PYTEST_OWNED_FIN_NOT_CLOSED_OR_REBOUND"
+      ],
+      "expected_management_seconds": 5400,
+      "new_or_global_kernel_fin_asserted": false,
+      "owner_uid": 1001,
+      "owner_uuid": "c8ab73bdb4804a8b9b97d1b760d6c21f",
+      "phase": "execution",
+      "pytest_producer_witness": false,
+      "real_orders_sent": 0,
+      "safe_postread": false,
+      "schema": "rc6.predeploy-pytest-postread-safety.v1",
+      "source_junit_data_log_payloads_read": 0,
+      "trace_presence_lstat_only": {
+        "porota-pytest-launch-intent.json": {
+          "st_atime_ns": 1791306796284951438,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791306796285391124,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 2429633,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791306796285391124,
+          "st_nlink": 1,
+          "st_size": 1788,
+          "st_uid": 1001
+        },
+        "porota-pytest-native.log": {
+          "st_atime_ns": 1791306796286951440,
+          "st_blocks": 96,
+          "st_ctime_ns": 1791309200160136702,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 2429701,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791309200160136702,
+          "st_nlink": 1,
+          "st_size": 46696,
+          "st_uid": 1001
+        },
+        "porota-pytest-owned-fin.json": {
+          "st_atime_ns": 1791309206177129914,
+          "st_blocks": 96,
+          "st_ctime_ns": 1791309206178129913,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 2399593,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791309206177555326,
+          "st_nlink": 1,
+          "st_size": 49094,
+          "st_uid": 1001
+        },
+        "porota-pytest-progress.json": {
+          "st_atime_ns": 1791309200460136374,
+          "st_blocks": 8,
+          "st_ctime_ns": 1791309200462136372,
+          "st_dev": 2049,
+          "st_gid": 1001,
+          "st_ino": 2399630,
+          "st_mode": 33152,
+          "st_mtime_ns": 1791309200461604448,
+          "st_nlink": 1,
+          "st_size": 285,
+          "st_uid": 1001
+        }
+      }
+    }
+  },
+  "pytest_producer_witness": true,
+  "real_orders_sent": 0,
+  "safe_postread": false,
+  "schema": "rc6.predeploy-pytest-postread-safety.v1",
+  "source_junit_data_log_payloads_read": 0,
+  "trace_presence_lstat_only": {
+    "porota-pytest-collection-launch-intent.json": {
+      "st_atime_ns": 1791306780255930347,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791306780256930349,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 2429657,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791306780256930349,
+      "st_nlink": 1,
+      "st_size": 1569,
+      "st_uid": 1001
+    },
+    "porota-pytest-collection-owned-fin.json": {
+      "st_atime_ns": 1791306796096951281,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791306796097714230,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 2429685,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791306796097714230,
+      "st_nlink": 1,
+      "st_size": 3917,
+      "st_uid": 1001
+    },
+    "porota-pytest-collection-progress.json": {
+      "st_atime_ns": 1791306795288950607,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791306795292950611,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 2429700,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791306795289670133,
+      "st_nlink": 1,
+      "st_size": 281,
+      "st_uid": 1001
+    },
+    "porota-pytest-launch-intent.json": {
+      "st_atime_ns": 1791306796284951438,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791306796285391124,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 2429633,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791306796285391124,
+      "st_nlink": 1,
+      "st_size": 1788,
+      "st_uid": 1001
+    },
+    "porota-pytest-native.log": {
+      "st_atime_ns": 1791306796286951440,
+      "st_blocks": 96,
+      "st_ctime_ns": 1791309200160136702,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 2429701,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791309200160136702,
+      "st_nlink": 1,
+      "st_size": 46696,
+      "st_uid": 1001
+    },
+    "porota-pytest-owned-fin.json": {
+      "st_atime_ns": 1791309206177129914,
+      "st_blocks": 96,
+      "st_ctime_ns": 1791309206178129913,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 2399593,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791309206177555326,
+      "st_nlink": 1,
+      "st_size": 49094,
+      "st_uid": 1001
+    },
+    "porota-pytest-progress.json": {
+      "st_atime_ns": 1791309200460136374,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791309200462136372,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 2399630,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791309200461604448,
+      "st_nlink": 1,
+      "st_size": 285,
+      "st_uid": 1001
+    },
+    "porota-test-collection.txt": {
+      "st_atime_ns": 1791306780257930351,
+      "st_blocks": 32,
+      "st_ctime_ns": 1791306795795951030,
+      "st_dev": 2049,
+      "st_gid": 1001,
+      "st_ino": 2429670,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791306795795951030,
+      "st_nlink": 1,
+      "st_size": 14453,
+      "st_uid": 1001
+    }
+  },
+  "witness_scope": "REVALIDATED_ALL_DECLARED_PYTEST_PHASES; NO_GLOBAL_KERNEL_WITNESS"
+}

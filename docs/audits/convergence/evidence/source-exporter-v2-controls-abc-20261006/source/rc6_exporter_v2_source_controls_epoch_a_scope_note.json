@@ -1,0 +1,178 @@
+{
+  "created_at_utc": "2026-10-06T01:52:58Z",
+  "inner_receipt_actual_metadata": {
+    "canonical_source_exported_or_old_tar_read": false,
+    "case_ids": [
+      "REAL_OWN_FSYNC_HASH_ALL11",
+      "SYMLINK_REJECTED",
+      "HARDLINK_REJECTED",
+      "NONREG_FIFO_REJECTED",
+      "WRONG_REGULAR_MODE_REJECTED",
+      "OUTPUT_PARENT_UID_REJECTED",
+      "CURRENT_BLOCKS_MUTATION_REJECTED",
+      "SOURCE_ARCHIVE512_BOUND_REJECTED",
+      "FSYNC_FAILURE_REJECTED",
+      "EXISTING_COMMIT_AND_INDEX_NO_OVERWRITE",
+      "REAL_PRIVATE_GIT_SOURCE_EXPORT_COMMIT_INDEX_JOIN",
+      "REAL_PRIVATE_GIT_COMMIT_TAMPER_REJECTED",
+      "REAL_PRIVATE_GIT_INDEX_TAMPER_REJECTED"
+    ],
+    "elapsed_before_publication": 0.36782232200494036,
+    "exporter_sha256": "6bb2b5b82ae63317afcf16124dd677eaea324482dc6009708a60e19da3d865fd",
+    "product_imports": 0,
+    "scope": "STDLIB_PRIVATE_FILES_AND_PRIVATE_GIT_SOURCE_CONTROLS_NOT_PRODUCT_NATIVE_GOV_BROWSER_OR_HISTORICAL_TAR",
+    "source_exporter_before_after_all11_equal": true,
+    "status": "GREEN",
+    "unique_control_count": 13
+  },
+  "new_control_executions": 0,
+  "note_preparation_incident": {
+    "corrected_literal_launcher_sha256": "5370a9334027e4ed443a3b6e544f6a24e7b95127195a47c2bbfe05fb498c60f0",
+    "corrected_observed_launcher_bytes": 5259,
+    "first_attempt_failed_before_output_publication": true,
+    "originals_modified": false,
+    "reason": "MISINTERPRETED_LAUNCHER5370_SHA_PREFIX_AS_BYTE_LENGTH",
+    "underlying_source_controls_or_product_failure": false
+  },
+  "old_tar_or_data_body_read": false,
+  "outer_epoch_a": {
+    "driver_source_bytes_reported_unchanged": true,
+    "failure_preceded_kernel_receipt_publication": true,
+    "full_outer_tool_stderr_file_captured": false,
+    "independent_outer_actual_reap_rusage_group_exhaustion_verification_from_raw": false,
+    "kernel_raw_reconstructed_from_child_receipt_or_elapsed": false,
+    "kernel_receipt_absent_at_literal_lstat": true,
+    "kernel_receipt_path": "/workspace/rc6-exporter-v2-source-controls-20261006-dispatch/kernel.wait4.json",
+    "outer_kernel_qualification": false,
+    "root_reported_exit_code": 1,
+    "root_reported_failure": "DRIVER_SOURCE_ALL11_ASSERTION_AFTER_DIRECT_PATH_EXECUTION_ATIME_ADVANCED",
+    "tool_stderr_traceback_reported_by_root": true,
+    "zero_dispatch_stderr_does_not_fill_outer_tool_stderr_gap": true
+  },
+  "raw_atime_scope": "CURRENT_NOTE_CAPTURE_ALL11_ONLY_NOT_EXECUTION_END_DRIVER_RAW_ATIME",
+  "raw_files": [
+    {
+      "all_eleven_fields_stable_during_this_NOATIME_read": true,
+      "bytes": 6402,
+      "current_stat_fields_at_note_capture": {
+        "st_atime_ns": 1791251327144762785,
+        "st_blocks": 16,
+        "st_ctime_ns": 1791251327144762785,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 705174,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791251327144762785,
+        "st_nlink": 1,
+        "st_size": 6402,
+        "st_uid": 1000
+      },
+      "execution_end_to_note_all_eleven_unchanged_claimed": false,
+      "mode_octal": "0644",
+      "original_absolute_path": "/workspace/rc6-exporter-v2-source-controls-20261006-raw/controls.receipt.json",
+      "role": "INNER_RECEIPT",
+      "sha256": "ffa442302c2447bd6d49ccdc3450f73e3cc5d07aa267d49ad69ffd44c6ad6ead"
+    },
+    {
+      "all_eleven_fields_stable_during_this_NOATIME_read": true,
+      "bytes": 438,
+      "current_stat_fields_at_note_capture": {
+        "st_atime_ns": 1791251326708766077,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791251326710159543,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 705091,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791251326710159543,
+        "st_nlink": 1,
+        "st_size": 438,
+        "st_uid": 1000
+      },
+      "execution_end_to_note_all_eleven_unchanged_claimed": false,
+      "mode_octal": "0600",
+      "original_absolute_path": "/workspace/rc6-exporter-v2-source-controls-20261006-dispatch/dispatch.source-only.json",
+      "role": "DISPATCH",
+      "sha256": "9bea21c0abee2c794c65ef754e772bac1b8de205f7da08044a44056563f2b185"
+    },
+    {
+      "all_eleven_fields_stable_during_this_NOATIME_read": true,
+      "bytes": 988,
+      "current_stat_fields_at_note_capture": {
+        "st_atime_ns": 1791251326710159543,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791251327144762785,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 705092,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791251327144762785,
+        "st_nlink": 1,
+        "st_size": 988,
+        "st_uid": 1000
+      },
+      "execution_end_to_note_all_eleven_unchanged_claimed": false,
+      "mode_octal": "0600",
+      "original_absolute_path": "/workspace/rc6-exporter-v2-source-controls-20261006-dispatch/stdout.raw",
+      "role": "STDOUT",
+      "sha256": "4114f9b6e743ffff985ffd501a464f34f08a3b9c0b7a4ec1f52a94368e5140da"
+    },
+    {
+      "all_eleven_fields_stable_during_this_NOATIME_read": true,
+      "bytes": 0,
+      "current_stat_fields_at_note_capture": {
+        "st_atime_ns": 1791251326710159543,
+        "st_blocks": 0,
+        "st_ctime_ns": 1791251326710159543,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 705093,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791251326710159543,
+        "st_nlink": 1,
+        "st_size": 0,
+        "st_uid": 1000
+      },
+      "execution_end_to_note_all_eleven_unchanged_claimed": false,
+      "mode_octal": "0600",
+      "original_absolute_path": "/workspace/rc6-exporter-v2-source-controls-20261006-dispatch/stderr.raw",
+      "role": "STDERR",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "all_eleven_fields_stable_during_this_NOATIME_read": true,
+      "bytes": 5259,
+      "current_stat_fields_at_note_capture": {
+        "st_atime_ns": 1791251326680766289,
+        "st_blocks": 16,
+        "st_ctime_ns": 1791251246701369702,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 310191,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791251246701369702,
+        "st_nlink": 1,
+        "st_size": 5259,
+        "st_uid": 1000
+      },
+      "execution_end_to_note_all_eleven_unchanged_claimed": false,
+      "mode_octal": "0600",
+      "original_absolute_path": "/workspace/rc6-exporter-v2-source-controls-20261006-launcher-v2.py",
+      "role": "LAUNCHER",
+      "sha256": "5370a9334027e4ed443a3b6e544f6a24e7b95127195a47c2bbfe05fb498c60f0"
+    }
+  ],
+  "root_or_original_raw_writes": false,
+  "root_owned_source_forward": {
+    "intended_delta": "NOATIME_DRIVER_BYTE_CAPTURE_COMPILED_VIA_C_LITERAL_FILE_ARGV; EMIT_KERNEL_RAW_BEFORE_POSTCAPTURE_ASSERT_RECORD_FAILURE_METADATA",
+    "new_epoch_qualified_by_this_note": false,
+    "original_source_and_epoch_a_raw_unchanged": true,
+    "past_canonical_or_browser_acceptance_reconstructed": false,
+    "root_reported_launcher_v3_sha_prefix": "fdbe5736",
+    "same13_case_ids_next_epoch_are_not26_independent_controls": true,
+    "successor_needs_fresh_output_and_actual_outer_kernel_receipt": true
+  },
+  "schema": "rc6.source-export-controls-epoch-a-outer-gap-note.v1",
+  "scope": "SOURCE_ONLY_LITERAL_SMALL_JSON_SOURCE_STDOUT_STDERR_READ_NO_HELPER_NATIVE_GOV_BROWSER_EXECUTION",
+  "status": "INNER13_RECORDED_GREEN_OUTER_CLI1_KERNEL_RAW_ABSENT_NOT_QUALIFIED"
+}

@@ -1,0 +1,4 @@
+  File "/tmp/rc6-v3-normal-b26f4d93-raw/run-wrapper.py", line 29
+    'distributions':sorted({'name':d.metadata['Name'],'version':d.version} for d in importlib.metadata.distributions(), key=lambda d:d['name'].lower()),
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+SyntaxError: Generator expression must be parenthesized

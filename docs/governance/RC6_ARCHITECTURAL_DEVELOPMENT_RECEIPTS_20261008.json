@@ -1,0 +1,823 @@
+{
+  "DEPLOY_OWNER": "NOT_ACQUIRED",
+  "PPI_Watch": "UNTOUCHED",
+  "checkpoint_code_files": [
+    {
+      "bytes": 42662,
+      "path": ".github/workflows/porota-predeploy-v2.yml",
+      "sha256": "e93624cfa28ea315dcc3e8165f737f3eb4d56335ba066565e8ed26e6e92da8d0"
+    },
+    {
+      "bytes": 9729,
+      "path": ".github/workflows/rc6-unified-candidate-tests.yml",
+      "sha256": "6682fd45f9456aa386ff1f4f4b3825fa92ca47f86769b1400de3735cc2719516"
+    },
+    {
+      "bytes": 138189,
+      "path": "be_paper_engine.py",
+      "sha256": "5ecc3ff096ed9cdea4cac2d72b4f89f81fdcb900d1cfebf1a74d416f556cb4f4"
+    },
+    {
+      "bytes": 104072,
+      "path": "bf_production_paper_observer.py",
+      "sha256": "d8ba44ef6023b08b05be46a11b95405e8257781be00ed80a779f8f10da4b531a"
+    },
+    {
+      "bytes": 24883,
+      "path": "bv_paper_runtime.py",
+      "sha256": "8564968a5f95936af5bda754623490bd2b3ac79c232795cfefb95e9e0088cea2"
+    },
+    {
+      "bytes": 75502,
+      "path": "cf_intraday_scalping.py",
+      "sha256": "fc23b328726ccee7288fd37601406e58898bb2af12fc13b99621bde2885fbe24"
+    },
+    {
+      "bytes": 5712,
+      "path": "cg_paper_workspace.py",
+      "sha256": "be6e22e248d12ed2d8d5acf6ab6260bb4eab692a4b319abcf79f85ee5286b24d"
+    },
+    {
+      "bytes": 8079,
+      "path": "rc6_dynamic_universe/runtime.py",
+      "sha256": "d5bdf5fb64177c80febdb1e3bec6ddeb26d493bad659f483829d6d2e5d34186d"
+    },
+    {
+      "bytes": 98442,
+      "path": "scripts/rc6_architectural_gates.py",
+      "sha256": "d6463b2c5c311e49be3fef6681ece8d8df47019ec288a3511b82cb850c2d7314"
+    },
+    {
+      "bytes": 43610,
+      "path": "scripts/rc6_authenticated_fixture_lifecycle.py",
+      "sha256": "ca68d42f62499275e9daf1cdaed0de03c1d91fe34bbf75016597e29f8eefce11"
+    },
+    {
+      "bytes": 106037,
+      "path": "scripts/rc6_capacity_calibration.py",
+      "sha256": "df1603a02cc17e55ded27091a7ade705db7bd7d60f62aede24be4f144df877d1"
+    },
+    {
+      "bytes": 97769,
+      "path": "scripts/rc6_material_carrier.py",
+      "sha256": "ff8e467a26d23558c1739def7a9ad1367afeaf11ea70363da58a92ffaa9b5797"
+    },
+    {
+      "bytes": 13196,
+      "path": "scripts/rc6_material_focal.py",
+      "sha256": "3dd4c8c62f3678b389aab080cdcba31bb1412949c9db6641efefb584a860636b"
+    },
+    {
+      "bytes": 53757,
+      "path": "scripts/rc6_material_pr_admission.py",
+      "sha256": "032ced16fc0ce4a6a7763dc02cfe13e8844354b5f0f95c9c06d9507c128fe76c"
+    },
+    {
+      "bytes": 33056,
+      "path": "scripts/rc6_owned_gate_lease.py",
+      "sha256": "0d22690d6e32dbfaa9ef9a2034dc75bc8757c17a164f0e2abe2cde255545c64c"
+    },
+    {
+      "bytes": 7251,
+      "path": "scripts/rc6_owner_receipts.py",
+      "sha256": "06ab6c036b3f1f8dad6c138f91ad1590dfe0443e762821fea1d721f6a05592cd"
+    },
+    {
+      "bytes": 9317,
+      "path": "tests/test_deploy_v2_frozen_artifact_contract.py",
+      "sha256": "3497d8d1ddb184df67f08f51c5b2d70e530af5dae693d6ae71d8624f81d84743"
+    },
+    {
+      "bytes": 60968,
+      "path": "tests/test_rc6_architectural_gate_order.py",
+      "sha256": "4d1b67aa5de3af866363c4b98c0d1f229fe8341ed5fe083290c3f208830e1274"
+    },
+    {
+      "bytes": 24984,
+      "path": "tests/test_rc6_archive_segment_reuse.py",
+      "sha256": "88c8c3e120bb7ac0aedf642e85e18b886e830855ef18187c398d92df0c512f2d"
+    },
+    {
+      "bytes": 49116,
+      "path": "tests/test_rc6_capacity_calibration.py",
+      "sha256": "4dcde18d3bab42dadc35918549b0178f557f6080e749a8a53730700bd1782ecd"
+    },
+    {
+      "bytes": 3603,
+      "path": "tests/test_rc6_horizon_model_admission.py",
+      "sha256": "4ad77cc98aa8ff7b11ad31e777c17cdecb7b68955ada52d1d4a509874d4aec96"
+    },
+    {
+      "bytes": 56572,
+      "path": "tests/test_rc6_owned_gate_lease.py",
+      "sha256": "6b5e53522d4a5b915f43ecd51efc1f68171c8c7888fdd11212bdcd5a41a01633"
+    },
+    {
+      "bytes": 5826,
+      "path": "tests/test_rc6_owner_receipts.py",
+      "sha256": "80f023f41b8e862e4b218ad78029d19c2c28d71184b58c6f438460f970f82cfe"
+    },
+    {
+      "bytes": 21958,
+      "path": "tests/test_rc6_pytest_fixture_lifecycle.py",
+      "sha256": "9d23ef17f91803afba4d1962dd1fd03e4ddae429f1b2381559bc5eee2e35b693"
+    },
+    {
+      "bytes": 18526,
+      "path": "tests/test_rc6_runtime_row_decode.py",
+      "sha256": "e512ffe291e7cbb919444dc274cc7249a492bf2dd18f966f999b69429fb4f9e5"
+    },
+    {
+      "bytes": 11523,
+      "path": "tests/test_rc6_source_schema_startup.py",
+      "sha256": "318e3a52d8f3722061f9c437f3c6a3b52d6473fcadf72629a5c353c2cde544d2"
+    }
+  ],
+  "deploy_executed": false,
+  "development_proofs": [
+    {
+      "dual_tests": [
+        {
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 102
+          },
+          "junit_sha256": "fa2cdd8502f925171f443cc5408cb0074462e2d474a7dc99dee838244309334b",
+          "native_returncode": 0,
+          "original_fin_green": true,
+          "own_cleanup": true,
+          "peak_rss_bytes": 101994496,
+          "python": "311"
+        },
+        {
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 102
+          },
+          "junit_sha256": "349e2172ac47ded2ed21829cba3740fdf409754cd7e06967c1851dbc65d19b01",
+          "native_returncode": 0,
+          "original_fin_green": true,
+          "own_cleanup": true,
+          "peak_rss_bytes": 93601792,
+          "python": "312"
+        }
+      ],
+      "evidence_origin": "DEVELOPMENT_LOCAL_FILE_HASH_BOUND",
+      "manifest_name": "SOURCE_SCHEMA_STARTUP_2_MANIFEST.json",
+      "manifest_sha256": "f58be8c2852c4f577b1dbccff407c85c66c3c9394c406b65e526763063bdcd03",
+      "name": "parent_schema_integrated",
+      "qualification_claimed": false,
+      "raw_durability": "LOCAL_ONLY_NOT_ACTIONS_ARTIFACT"
+    },
+    {
+      "dual_tests": [
+        {
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 10
+          },
+          "junit_sha256": "71c58f25d389d1164d6f2ae8b32e387b847858b054d7cd3ff70a4849bb57057f",
+          "native_returncode": 0,
+          "original_fin_green": true,
+          "own_cleanup": true,
+          "peak_rss_bytes": 53387264,
+          "python": "311"
+        },
+        {
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 10
+          },
+          "junit_sha256": "22db06aa1c412bb55cc707d0ab6cb71f7a2d42e99ef559a0081384972d84cf61",
+          "native_returncode": 0,
+          "original_fin_green": true,
+          "own_cleanup": true,
+          "peak_rss_bytes": 45559808,
+          "python": "312"
+        }
+      ],
+      "evidence_origin": "DEVELOPMENT_LOCAL_FILE_HASH_BOUND",
+      "manifest_name": "SOURCE_SCHEMA_STARTUP_3_MANIFEST.json",
+      "manifest_sha256": "c8b6305d6792b61c3c59d834826c43c35cc2b3a4d7db96a684b3e0f4b88a6f59",
+      "name": "parent_schema_custody",
+      "qualification_claimed": false,
+      "raw_durability": "LOCAL_ONLY_NOT_ACTIONS_ARTIFACT"
+    },
+    {
+      "dual_tests": [
+        {
+          "actual_cases": 187,
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 187
+          },
+          "junit_sha256": "41bf2a3fb1918807631009e151a721a93f9b3c431f74364f67786006d2a333eb",
+          "python": "311"
+        },
+        {
+          "actual_cases": 187,
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 187
+          },
+          "junit_sha256": "607d16887e20e15a135da4d69583a47f39c560d08e4ffd707a2531cfcf6922fe",
+          "python": "312"
+        }
+      ],
+      "evidence_origin": "DEVELOPMENT_LOCAL_FILE_HASH_BOUND",
+      "manifest_name": "handoff.json",
+      "manifest_sha256": "b3f7895ffb030e159a3705a87993944676cc7cd23bda5ce1414dec373c9009e5",
+      "name": "gate_order_checkout_g6_reuse",
+      "qualification_claimed": false,
+      "raw_durability": "LOCAL_ONLY_NOT_ACTIONS_ARTIFACT"
+    },
+    {
+      "anchor_sha256": "69a0ee82d5bfe3efba80b96b6f5f6870cf0ccb0fc635839f772dca36e89a747e",
+      "conditional_forecast_sha256": "cbe690b2466930e1a8f5653bfdc22db813b13f086f1078d03567dbb3cd3212b5",
+      "dual_new_guard_junit": [
+        {
+          "cases": [
+            {
+              "classname": "tests.test_rc6_archive_segment_reuse",
+              "name": "test_exact_close_boundary_retains_all_three_prospective_partitions_and_original_members",
+              "time": "5.500"
+            }
+          ],
+          "name": "exact-close-py311.xml",
+          "sha256": "dda5b7a26ae0e323378dc787f60f62461a211c29268b4dea4166db553931cecc"
+        },
+        {
+          "cases": [
+            {
+              "classname": "tests.test_rc6_archive_segment_reuse",
+              "name": "test_exact_close_boundary_retains_all_three_prospective_partitions_and_original_members",
+              "time": "4.977"
+            }
+          ],
+          "name": "exact-close-py312.xml",
+          "sha256": "8925c924ca7cd4bff3645bbcb98c92a493d996df648591a19107eaa7e4fb1f25"
+        }
+      ],
+      "evidence_origin": "DEVELOPMENT_LOCAL_FILE_HASH_BOUND",
+      "final_candidate_eligible": false,
+      "full1202_capacity_verified": false,
+      "manifest_name": "ARCHITECTURE_EXACT_CLOSE_FOLLOWUP_HANDOFF.json",
+      "manifest_sha256": "efa8a12009ac242296f13842394c744ef35e3f36941ff3d7667897e725e71311",
+      "name": "exact_horizon_boundary",
+      "original_members_exact_all5": true,
+      "physical_new_allocated_bytes": 13410304,
+      "physical_old_allocated_bytes": 16732160,
+      "physical_saved_ratio": 0.19853121175030597,
+      "qualification_claimed": false,
+      "raw_durability": "LOCAL_ONLY_NOT_ACTIONS_ARTIFACT",
+      "replay_sha256": "cb2db08ca163c9c53b94fce2dbd0cbb6f459803ace80ab7efc52770152f7335e",
+      "source_unchanged_all_named_stat11_plus_sha": true
+    },
+    {
+      "actual_native_capability_proved": false,
+      "dual_tests": [
+        {
+          "collection_sha256": "bb2703e6b104a8585afccd180789c5d732817490df3f50f7805e90b20bf9cff5",
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 68
+          },
+          "exact_identity_equal": true,
+          "junit_sha256": "9412acd6ab5a9ffb895fd7b750a961d866a8c4d1db7be41b135e61a88401e7be",
+          "python": "311"
+        },
+        {
+          "collection_sha256": "6ec4fd8dfe824646c45c98ea3ea4d6714122a14846d201d24f6a740930f45162",
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 68
+          },
+          "exact_identity_equal": true,
+          "junit_sha256": "bbddac09137ddd47c4043109b981049840135eb720b893d2b98b5bda95bcc1cd",
+          "python": "312"
+        }
+      ],
+      "evidence_origin": "DEVELOPMENT_LOCAL_FILE_HASH_BOUND",
+      "manifest_name": "rc6-capacity-calibration-cheap-handoff-v3.json",
+      "manifest_sha256": "bd09a58159dda4aa5a3606b30179b20780c456c73199213b20dd1e9eb20a798a",
+      "name": "capacity_quota_negative_guards",
+      "qualification_claimed": false,
+      "raw_durability": "LOCAL_ONLY_NOT_ACTIONS_ARTIFACT"
+    },
+    {
+      "actual_native_capability_proved": false,
+      "dual_tests": [
+        {
+          "collected": 85,
+          "collection_sha256": "24b8ccce4e1cf79f6e8514c2343f1bdc7d01fd1dbe68a805b11bba2d89108f9b",
+          "errors": 0,
+          "failures": 0,
+          "identity_equal": true,
+          "junit_cases": 85,
+          "junit_sha256": "fab33e87358f818d02ec7b35eb8a70095e14036296f5ff48fcdbdf9e6ce554a9",
+          "python": "311",
+          "seconds": 0.616,
+          "skips": 0
+        },
+        {
+          "collected": 85,
+          "collection_sha256": "24b8ccce4e1cf79f6e8514c2343f1bdc7d01fd1dbe68a805b11bba2d89108f9b",
+          "errors": 0,
+          "failures": 0,
+          "identity_equal": true,
+          "junit_cases": 85,
+          "junit_sha256": "e363be67244a5eaad2e3b11993a139c895cb9e0e83ecf5f3a2ff00627eaf37cc",
+          "python": "312",
+          "seconds": 0.772,
+          "skips": 0
+        }
+      ],
+      "evidence_origin": "DEVELOPMENT_LOCAL_FILE_HASH_BOUND",
+      "historical_errno": "NOT_PRESERVED",
+      "manifest_name": "rc6-capacity-calibration-cheap-handoff-v4.json",
+      "manifest_sha256": "8f00ecbeb05e663699625853a98818ce478be92cf17e1a7af6ec05d5c81c2d52",
+      "name": "capacity_original_mount_backing_fix",
+      "qualification_claimed": false,
+      "raw_durability": "LOCAL_ONLY_NOT_ACTIONS_ARTIFACT"
+    },
+    {
+      "dual_tests": [
+        {
+          "actual_cases": 233,
+          "epoch": "311",
+          "errors": 0,
+          "failures": 0,
+          "header_tests": 233,
+          "junit": "/workspace/rc6-pipeline-final-unit/owned-lease-integrated-final-311.xml",
+          "sha256": "f5dfb910ae540f948978439e56d421189b2f941382154c18bc64bddd1f55d1f4",
+          "skipped": 0
+        },
+        {
+          "actual_cases": 233,
+          "epoch": "312",
+          "errors": 0,
+          "failures": 0,
+          "header_tests": 233,
+          "junit": "/workspace/rc6-pipeline-final-unit/owned-lease-integrated-final-312.xml",
+          "sha256": "c6cd63da23bef8665fd0f6bfe26ce3d018b82191b1571057de43b5e5272bde65",
+          "skipped": 0
+        }
+      ],
+      "evidence_origin": "DEVELOPMENT_LOCAL_FILE_HASH_BOUND",
+      "manifest_name": "handoff.json",
+      "manifest_sha256": "a857cab74a2a3e74c073bd518a56814f3d17849efa9fa3a55f90a550cf714194",
+      "name": "ordinary_long_gate_lease_monitor",
+      "qualification_claimed": false,
+      "raw_durability": "LOCAL_ONLY_NOT_ACTIONS_ARTIFACT",
+      "scope": "Ordinary native G0..G6 only; subsequent WIP issuer extension proof pending"
+    },
+    {
+      "evidence_origin": "DEVELOPMENT_LOCAL_FILE_HASH_BOUND",
+      "manifest_sha256": "079b2f03a95e818e718d091b9582a86ea2529f59e0f056fd8d8bc630ccfaf0dc",
+      "name": "capacity_calibration_v6",
+      "native_privileged_proof": false,
+      "qualification_claimed": false,
+      "raw_durability": "LOCAL_ONLY_NOT_ACTIONS_ARTIFACT",
+      "result": {
+        "DEPLOY_OWNER": "NOT_ACQUIRED",
+        "G0_G8_qualification_claimed": false,
+        "actions_dispatched": 0,
+        "actual_root_actor_signal_EPERM_observed": false,
+        "actual_source_git_pins_verified_before_and_after": true,
+        "all_kernel_prerequisites_present_cannot_launch_privileged_actor": true,
+        "financial_tick_called": false,
+        "historical_mount_ESRCH_numeric_errno": "NO_VERIFICADO_UTIL_LINUX_TEXT_ONLY",
+        "historical_mount_setattr_EBUSY_hypothesis": "NO_VERIFICADO_OLD_ERRNO_NOT_PRESERVED",
+        "native_privileged_probe": "NO_VERIFICADO_NOT_EXECUTED",
+        "original_native_manager_sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "ppi_watch": "UNTOUCHED",
+        "privileged_signal_custody": {
+          "privileged_launch_authorized": false,
+          "proved": false,
+          "status": "NO_VERIFICADO"
+        },
+        "python_epochs": {
+          "311": {
+            "case_identity_sha256": "6c29447e2586b46cd51f115851070d8e7afb5ccee6ee3ae7c883e3d89673d3a2",
+            "collection": {
+              "path": "/workspace/scratch/rc6-capacity-calibration-v6-collect-311.txt",
+              "sha256": "311a07a07fb52fe41e20f62f9527414626711ca9ec6f9d14a39aeb266fc0cce3"
+            },
+            "collection_equals_executed_case_identities": true,
+            "counts": {
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 129
+            },
+            "junit": {
+              "path": "/workspace/scratch/rc6-capacity-calibration-v6-final-311.xml",
+              "sha256": "eab91e3c612040ec9f598be91364b1d729b72f2bafeefc6c346a15d5838a2c01"
+            },
+            "status": "GREEN",
+            "wall_seconds": 0.904
+          },
+          "312": {
+            "case_identity_sha256": "6c29447e2586b46cd51f115851070d8e7afb5ccee6ee3ae7c883e3d89673d3a2",
+            "collection": {
+              "path": "/workspace/scratch/rc6-capacity-calibration-v6-collect-312.txt",
+              "sha256": "432e53e605afcfc0484a6bf4e482f7f3310ba76a0229fa08f0ef15d6ee7dfeca"
+            },
+            "collection_equals_executed_case_identities": true,
+            "counts": {
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 129
+            },
+            "junit": {
+              "path": "/workspace/scratch/rc6-capacity-calibration-v6-final-312.xml",
+              "sha256": "1e31da9dab247d2b7ed21162a46b6b8345243e893f4255a4d836772e0d7da4b7"
+            },
+            "status": "GREEN",
+            "wall_seconds": 1.112
+          }
+        },
+        "real_orders_sent": 0,
+        "real_routes": "NOT_CALLED",
+        "reason": "CALIBRATION_PRIVILEGED_SIGNAL_CUSTODY_UNVERIFIED",
+        "remaining": [
+          "genuine privileged signal custody proof; all physical privileged diagnosis is blocked even with ready kernel metadata",
+          "actual Actions readonly-kernel metadata and native quota capability",
+          "authenticated capability before bootstrap",
+          "known comparable bootstrap capacity receipt",
+          "same-SHA G0..G8"
+        ],
+        "schema": "porota.rc6.capacity-calibration-cheap-handoff.v6",
+        "scope": "TWO_AUTHORIZED_PATHS_ONLY; NO_COMMIT_PUSH_ACTIONS",
+        "source": {
+          "scripts/rc6_capacity_calibration.py": {
+            "bytes": 106037,
+            "compile": "GREEN",
+            "sha256": "df1603a02cc17e55ded27091a7ade705db7bd7d60f62aede24be4f144df877d1"
+          },
+          "tests/test_rc6_capacity_calibration.py": {
+            "bytes": 49116,
+            "compile": "GREEN",
+            "sha256": "4dcde18d3bab42dadc35918549b0178f557f6080e749a8a53730700bd1782ecd"
+          }
+        },
+        "tested_image_namespace_root_worker_allocation_and_execute_owned": "NOT_CALLED"
+      }
+    },
+    {
+      "evidence_origin": "DEVELOPMENT_LOCAL_FILE_HASH_BOUND",
+      "manifest_sha256": "30fee592136a59ff061cacf1e64ba0e9d7f43958b22d21df4d0fe6bcadb7864a",
+      "name": "wip_issuer_monitor_and_exact_custody_v6",
+      "qualification_claimed": false,
+      "raw_durability": "LOCAL_ONLY_NOT_ACTIONS_ARTIFACT",
+      "result": {
+        "DEPLOY_OWNER": "NOT_ACQUIRED",
+        "G0_G8": "BLOQUEADO",
+        "created_utc": "2026-10-08T20:58:33.574917Z",
+        "dual": {
+          "311": {
+            "Counter_identity_equal": true,
+            "JUnit_actual_cases": 293,
+            "JUnit_header": 293,
+            "JUnit_path": "/workspace/rc6-pipeline-final-unit/issuer-v6-final-311.xml",
+            "JUnit_sha256": "3b93978eae6f9cf9d56e1569ccb3cea3dcfb7a58bdcfa4f62ff0a5c28041ef57",
+            "collection_identity_sha256": "e617a375e05289a065e3aa367b093a94bdb8574a5016e882deedd18cd27674c9",
+            "collection_path": "/workspace/rc6-pipeline-final-unit/issuer-v6-handoff-ptba5ys4/collection-311.json",
+            "collection_sha256": "f5821ddc641d9cca5db067586c492bb4f99cb00f71b61bd8e920c1e93162b260",
+            "errors": 0,
+            "failures": 0,
+            "native_collection_count": 293,
+            "skips": 0,
+            "status": "GREEN_LOCAL_CHEAP_ONLY"
+          },
+          "312": {
+            "Counter_identity_equal": true,
+            "JUnit_actual_cases": 293,
+            "JUnit_header": 293,
+            "JUnit_path": "/workspace/rc6-pipeline-final-unit/issuer-v6-final-312.xml",
+            "JUnit_sha256": "ede1af3b0497b79522d3d313498cdaa9e4d586f1f170b2b18da735c1aa393c45",
+            "collection_identity_sha256": "e617a375e05289a065e3aa367b093a94bdb8574a5016e882deedd18cd27674c9",
+            "collection_path": "/workspace/rc6-pipeline-final-unit/issuer-v6-handoff-ptba5ys4/collection-312.json",
+            "collection_sha256": "f5821ddc641d9cca5db067586c492bb4f99cb00f71b61bd8e920c1e93162b260",
+            "errors": 0,
+            "failures": 0,
+            "native_collection_count": 293,
+            "skips": 0,
+            "status": "GREEN_LOCAL_CHEAP_ONLY"
+          }
+        },
+        "files": [
+          {
+            "AST": "GREEN",
+            "bytes": 33056,
+            "path": "scripts/rc6_owned_gate_lease.py",
+            "sha256": "0d22690d6e32dbfaa9ef9a2034dc75bc8757c17a164f0e2abe2cde255545c64c"
+          },
+          {
+            "AST": "GREEN",
+            "bytes": 53623,
+            "path": "scripts/rc6_material_pr_admission.py",
+            "sha256": "c02bf1815339f272ff1f53d8757ed9437ecdb6777fa24a26a3fc2aa67dab2f65"
+          },
+          {
+            "AST": "GREEN",
+            "bytes": 97634,
+            "path": "scripts/rc6_material_carrier.py",
+            "sha256": "e2df352fd189165aa89b3b54e672d55f5fab6236a8c849f813747cfc4a405f98"
+          },
+          {
+            "AST": "GREEN",
+            "bytes": 96893,
+            "path": "scripts/rc6_architectural_gates.py",
+            "sha256": "3c7495de86ab8c989c0d17062b05c3b9921846ea9c1eb1bb46f3f4f11d906175"
+          },
+          {
+            "AST": "GREEN",
+            "bytes": 43610,
+            "path": "scripts/rc6_authenticated_fixture_lifecycle.py",
+            "sha256": "ca68d42f62499275e9daf1cdaed0de03c1d91fe34bbf75016597e29f8eefce11"
+          },
+          {
+            "AST": "GREEN",
+            "bytes": 56572,
+            "path": "tests/test_rc6_owned_gate_lease.py",
+            "sha256": "6b5e53522d4a5b915f43ecd51efc1f68171c8c7888fdd11212bdcd5a41a01633"
+          },
+          {
+            "AST": "GREEN",
+            "bytes": 60968,
+            "path": "tests/test_rc6_architectural_gate_order.py",
+            "sha256": "4d1b67aa5de3af866363c4b98c0d1f229fe8341ed5fe083290c3f208830e1274"
+          }
+        ],
+        "guards": [
+          "API-only WIP/PR476/PR477/PUBLIC/owners/OPS/run scope; no Source/event/Git/RAW reads during Native",
+          "full Source admission before Native and after physical FIN even control RED",
+          "original manager unchanged; actual tiny callback STOP TERM/reap/GROUP/ECHILD/restoration",
+          "bounded deduplicated controls <=16MiB",
+          "NOT_STARTED requires exact signal-custody NO_VERIFICADO/false/false and operations NOT_CALLED; no inner FIN fabricated",
+          "public anonymous diagnostic Git; API credential stays NONROOT issuer only",
+          "sealed root-request/loop-birth/OriginalRootFIN/worker/issuer refs + native quota operations/physical reserve; no boolean-only capability admission",
+          "G1 mandatory owner_receipts module retained"
+        ],
+        "original_manager_changed": false,
+        "original_manager_sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "qualification_claimed": false,
+        "real_orders_sent": 0,
+        "remaining": [
+          "privileged signal custody NO_VERIFICADO => all image/ROOT helper launch blocked before allocation",
+          "actual Linux kernel capability remains NO_VERIFICADO; metadata presence is not EDQUOT/root FIN proof",
+          "G7 Docker daemon BUILD_CUSTODY_UNKNOWN and tooling custody UNKNOWN",
+          "capacity bootstrap/fullGit finite comparison remains unknown; all G0..G8 qualification blocked",
+          "no Actions, deploy, merge, commits or push by this agent"
+        ],
+        "resolved_cheap_error": {
+          "fix": "before capture explicit actualOuterFIN/payloadSafe/qualificationFalse bridge with original veto literal",
+          "old_assertions_changed": false,
+          "original_failure": "veto moved into terminal validator; inline bridge absent",
+          "pre_fix_dual_FAIL_preserved_at": [
+            "/workspace/rc6-pipeline-final-unit/issuer-final-311.xml",
+            "/workspace/rc6-pipeline-final-unit/issuer-final-312.xml"
+          ],
+          "test": "test_deploy_v2_frozen_artifact_contract.py:133"
+        },
+        "runtime_validated": false,
+        "same_native_node_identifiers_dual": true,
+        "schema": "porota.rc6.pipeline-issuer-monitor-cheap-handoff.v1",
+        "scope": "LOCAL_CHEAP_DIAGNOSTIC_NO_G0_G8_QUALIFICATION",
+        "source_manifest_for_uncommitted_tree_claimed": false,
+        "source_worktree_base_sha": "7c4abff319bdc9c3958141925967c0cb8def7149",
+        "source_worktree_base_tree": "00ecd79e7bd3533e69be8be26213ad63a6fdc686",
+        "status": "DESARROLLADO_UNCOMMITTED"
+      }
+    },
+    {
+      "G0_G8_claimed": false,
+      "external_handoff_sha256": "10cf8f81868a5b06473e847a8be84c490f91d0ab0ec4288bed22991a2b3b0117",
+      "first_red_retained": {
+        "actions_executed": false,
+        "junit": {
+          "311": "aa6c2e05f441fe488c07e4da353977a8fe26f6a2aaf54986902148452da64791",
+          "312": "0ddd41b16971bc55a8698f2ccb0ed4a5fb7f06b835b4e2d23d6c81e6af39e535"
+        },
+        "reason": "new-test-wrong-api-interception-get-vs-api"
+      },
+      "name": "horizon_model_hard_admission_hold",
+      "qualification": false,
+      "results": [
+        {
+          "collection_exit": 0,
+          "collection_sha256": "1fdd4a3a44a6d4b2b9010bb4d3d691c52ff8a1f9be669934d3d4ce676014b0e5",
+          "epoch": "311",
+          "junit_sha256": "eab367b841d4d4e5dc55090f509295ff16abd5e164b0fbfa3f0a9933dd167bdf",
+          "nodeids_sha256": "f9dc80abae6f6c681a42ec2a3d34b8157dbd1dd93a881f917c53b0f865563685",
+          "tail": "........................................................................ [ 14%]\n........................................................................ [ 28%]\n........................................................................ [ 42%]\n........................................................................ [ 56%]\n........................................................................ [ 71%]\n........................................................................ [ 85%]\n........................................................................ [ 99%]\n..                                                                       [100%]\n506 passed in 7.62s\n",
+          "test_exit": 0,
+          "unique_native_collected_and_junit_cases": 506
+        },
+        {
+          "collection_exit": 0,
+          "collection_sha256": "5ed4b754d5fca51becffb9386f98a1a1f20a61a4e9f7fd43b30e8be777f95463",
+          "epoch": "312",
+          "junit_sha256": "0a8a125a1fff772d378af973919b2d7a0b91e0b291396f92f2ffd69d51485c99",
+          "nodeids_sha256": "f9dc80abae6f6c681a42ec2a3d34b8157dbd1dd93a881f917c53b0f865563685",
+          "tail": "........................................................................ [ 14%]\n........................................................................ [ 28%]\n........................................................................ [ 42%]\n........................................................................ [ 56%]\n........................................................................ [ 71%]\n........................................................................ [ 85%]\n........................................................................ [ 99%]\n..                                                                       [100%]\n506 passed in 7.55s\n",
+          "test_exit": 0,
+          "unique_native_collected_and_junit_cases": 506
+        }
+      ],
+      "schema": "rc6.horizon-model-hold.development-proof.v1",
+      "scope": "Local development proof only; no G1 Actions, material, artifact or runtime validation",
+      "source_parent_sha": "7224ca0aff1f822032163435e7296456f2fe2334",
+      "source_parent_tree": "8420b9feba4577fadf79a2d125125810af787618",
+      "source_pins": {
+        "scripts/rc6_architectural_gates.py": "d6463b2c5c311e49be3fef6681ece8d8df47019ec288a3511b82cb850c2d7314",
+        "scripts/rc6_material_carrier.py": "ff8e467a26d23558c1739def7a9ad1367afeaf11ea70363da58a92ffaa9b5797",
+        "scripts/rc6_material_pr_admission.py": "032ced16fc0ce4a6a7763dc02cfe13e8844354b5f0f95c9c06d9507c128fe76c",
+        "tests/test_rc6_horizon_model_admission.py": "4ad77cc98aa8ff7b11ad31e777c17cdecb7b68955ada52d1d4a509874d4aec96"
+      },
+      "tests": [
+        "tests/test_rc6_owned_gate_lease.py",
+        "tests/test_rc6_architectural_gate_order.py",
+        "tests/test_deploy_v2_frozen_artifact_contract.py",
+        "tests/test_rc6_authenticated_fixture_lifecycle.py",
+        "tests/test_rc6_capacity_calibration.py",
+        "tests/test_rc6_owner_receipts.py",
+        "tests/test_rc6_horizon_model_admission.py"
+      ]
+    }
+  ],
+  "excluded_unpublished_development_scope": "No G0..G8 qualification, genuine privileged signal/quota capability, Horizon1202 capacity, or G7 daemon/tooling custody has been established. All development code in this checkpoint is hash bound; local research RAW is not claimed as a GitHub artifact.",
+  "final_candidate_eligible": false,
+  "gates": {
+    "G0": "BLOCKED_CAPACITY_PROOF",
+    "G1": "NO_VERIFICADO_ACTIONS_LINUX",
+    "G2": "NOT_STARTED_PREDECESSORS_BLOCKED",
+    "G3": "NOT_STARTED_PREDECESSORS_BLOCKED",
+    "G4": "NOT_STARTED_PREDECESSORS_BLOCKED",
+    "G5": "NOT_STARTED_PREDECESSORS_BLOCKED",
+    "G6": "NOT_STARTED_PREDECESSORS_BLOCKED",
+    "G7": "NOT_STARTED_PREDECESSORS_BLOCKED",
+    "G8": "NOT_STARTED_PREDECESSORS_BLOCKED"
+  },
+  "horizon_model_hold": {
+    "admission_before_event_source_api": true,
+    "carrier_before_bootstrap_and_export": true,
+    "owner_env_claims_cannot_override": true,
+    "physical_global_bound_1202_proved": false,
+    "same_SHA_native_Horizon_G6_G7_still_required": true,
+    "status": "NO_VERIFICADO"
+  },
+  "local_regression_summary": {
+    "Actions_qualification": false,
+    "capacity_cases_each_epoch": 129,
+    "collected_equals_native_junit": true,
+    "combined_latest_corpus": true,
+    "epochs": [
+      "311",
+      "312"
+    ],
+    "errors": 0,
+    "failures": 0,
+    "horizon_admission_cases_each_epoch": 12,
+    "latest_exact_corpus_nodeids_sha256": "f9dc80abae6f6c681a42ec2a3d34b8157dbd1dd93a881f917c53b0f865563685",
+    "owner_receipt_cases_each_epoch": 71,
+    "pipeline_cases_each_epoch": 294,
+    "skips": 0,
+    "unique_selected_cases_each_epoch": 506
+  },
+  "owner_receipt_metadata_incident": {
+    "guard_development_proof": {
+      "actions_executed": false,
+      "code_files": {
+        "scripts/rc6_owner_receipts.py": {
+          "bytes": 7251,
+          "sha256": "06ab6c036b3f1f8dad6c138f91ad1590dfe0443e762821fea1d721f6a05592cd"
+        },
+        "tests/test_rc6_owner_receipts.py": {
+          "bytes": 5826,
+          "sha256": "80f023f41b8e862e4b218ad78029d19c2c28d71184b58c6f438460f970f82cfe"
+        }
+      },
+      "epochs": {
+        "311": {
+          "collected_equals_native_junit_identities": true,
+          "collected_nodeids_sha256": "7345a1a66491aba02ff51be2b20b8f8949896a4fd125cde8975b13f4e4de9269",
+          "collection_sha256": "9b93aaa0a7aa1fc70aa927fd6015cdbd8bbcac06e57bc4997fc9d0fdd841a46c",
+          "errors": 0,
+          "failures": 0,
+          "junit_sha256": "9f9bd63ccd7be2555a44212ed3ccb12b4aa2fc5b1f2dcebd8d8ed0c12f7e1a18",
+          "native_cases": 71,
+          "native_identity_sha256": "ee378701582f30594757de22a93f676934265fd5ba7525bb978c4fdb7eba1389",
+          "seconds": 0.132,
+          "skips": 0
+        },
+        "312": {
+          "collected_equals_native_junit_identities": true,
+          "collected_nodeids_sha256": "7345a1a66491aba02ff51be2b20b8f8949896a4fd125cde8975b13f4e4de9269",
+          "collection_sha256": "98c362ea006dc953a8844a75a67ffa8909bcacb160982f138e921b93febd835e",
+          "errors": 0,
+          "failures": 0,
+          "junit_sha256": "d54b327a3b699f2e2b44b3ecc5b8864075ceebda43c0033cce613ca5d2ae0e76",
+          "native_cases": 71,
+          "native_identity_sha256": "ee378701582f30594757de22a93f676934265fd5ba7525bb978c4fdb7eba1389",
+          "seconds": 0.126,
+          "skips": 0
+        }
+      },
+      "first_development_attempt": {
+        "311": "collection SyntaxError at newly authored decorator; no tests executed",
+        "312": "same newly authored decorator defect; no tests executed",
+        "fix": "corrected decorator syntax; AST compilation before new test run",
+        "identical_rerun": false
+      },
+      "qualified": false,
+      "schema": "rc6.local-guard-regression.v1",
+      "scope": "ERR-RC6-035 owner receipt publication fails before either post",
+      "source_base_sha": "7c4abff319bdc9c3958141925967c0cb8def7149"
+    },
+    "index_path": "docs/governance/RC6_OWNER_RECEIPT_INCIDENT_20261008.json",
+    "index_sha256": "014d639db532dd99a325a122d6cbfeb6235534146dc6e2a0a327e0abc6922878",
+    "retroactive_coverage_claimed": false,
+    "valid_ownership_gap_disclosed": true
+  },
+  "parent_checkpoint_sha": "7224ca0aff1f822032163435e7296456f2fe2334",
+  "parent_checkpoint_tree": "8420b9feba4577fadf79a2d125125810af787618",
+  "persisted_capacity_failure": {
+    "actual_FIN_and_own_cleanup_verified": true,
+    "artifact_id": 11570003188,
+    "artifact_zip_sha256": "3baf5f468bde1f4abd0b2617a9fea3a93303fc953a8ca9164b8f47404f398b8c",
+    "compact_rca_path": "docs/governance/RC6_CAPACITY_PROBE_RCA_37823993377.json",
+    "errno": "NOT_PRESERVED",
+    "first_failed_operation": "namespace-local recursive readonly mount",
+    "qualification_claimed": false,
+    "run_id": 37823993377
+  },
+  "persisted_readonly_diagnostic": {
+    "compact_rca_path": "docs/governance/RC6_CAPACITY_PROBE_RCA_37845108215.json",
+    "compact_rca_sha256": "fb0177b69f7e99ea959924ff87fe5deb25f0d1f77223e7c62e1a16145eb76693",
+    "qualification": false,
+    "run_id": 37845108215,
+    "source_sha": "7224ca0aff1f822032163435e7296456f2fe2334",
+    "source_tree": "8420b9feba4577fadf79a2d125125810af787618"
+  },
+  "persisted_successor_capacity_failure": {
+    "complete_examination_sha256": "9385c00924f36d39078bec09a5650acda34dc126074c10615a0e0081737e3c10",
+    "conclusion": "FAILURE",
+    "controls_artifacts": [
+      11573535653,
+      11572813070
+    ],
+    "controls_zip_sha256": "c0f9351553b493c2c6859ff6851c0b6296134ea78272b2d75539818351b0ba52",
+    "diagnostic_artifact": {
+      "id": 11573037197,
+      "zip_sha256": "443a5208001c6512436ef55b8cd1eff27c1ff2b924a764b2e35f70509407dfe9"
+    },
+    "first_failed_operation": "mount_own_ext4",
+    "job_id": 113493745953,
+    "numeric_mount_errno": "NO_VERIFICADO",
+    "original_owned_FIN_and_source_and_scoped_cleanup": true,
+    "previous_readonly_errno": 0,
+    "previous_readonly_syscall_return": 0,
+    "qualification_claimed": false,
+    "run_id": 37830339583,
+    "source_sha": "7c4abff319bdc9c3958141925967c0cb8def7149",
+    "source_tree": "00ecd79e7bd3533e69be8be26213ad63a6fdc686"
+  },
+  "post_proof_nonsemantic_edits": [
+    "Removed one trailing blank line in startup test after staged Git whitespace guard.",
+    "Corrected workflow comment to identify draft PR events rather than push."
+  ],
+  "productive_contract_sha256": "5ee524e7370ecd908a590dc0aad007ff4858d3337adcf901231623a01ffc5358",
+  "real_orders_sent": 0,
+  "real_routes": "BLOCKED / NOT_CALLED",
+  "remaining_blocks": [
+    "Privileged ROOT signal custody unproved; no image/inner namespace/ROOT launch authorized even with ready metadata",
+    "Native kernel/quota-format prerequisites and actual quota/escape proof unresolved after mount RED",
+    "bootstrap/browser/aggregate comparison unknown; verified V2 graph unsupported",
+    "positive native Linux G1 Actions not yet demonstrated",
+    "Horizon future envelopes and1202/512MiB unproved; XOR not promoted",
+    "G7 tooling and Docker-daemon resource custody NO_VERIFICADO"
+  ],
+  "runtime_validated": false,
+  "schema": "porota.rc6.architectural-development-receipts.v1",
+  "source_status": "WIP_NOT_QUALIFIED",
+  "workstream": "WS-RC6-CONVERGENCE-468-469-470-20261005"
+}

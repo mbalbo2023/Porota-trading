@@ -1,0 +1,26 @@
+{
+  "actual_main_reaped": true,
+  "driver_sha256": "c262ebcc57184b839e15b2023f1b12b8eb8064d864902d2b01f9aa2a5852d623",
+  "exit_code": 0,
+  "failed": null,
+  "full_gov": false,
+  "kernel_post_echild": true,
+  "kernel_rusage": {
+    "cpu_system": 0.067562,
+    "cpu_user": 0.159634,
+    "rss_bytes": 25264128
+  },
+  "observations": [
+    {
+      "errno": 10,
+      "outcome": "ECHILD"
+    }
+  ],
+  "outer_wall_seconds": 1.2304758140089689,
+  "own_group_absent": true,
+  "pid": 243403,
+  "product_native": 0,
+  "residual_descendants_observed": [],
+  "schema": "rc6.synthetic-process-driver-outer-wait4.v1",
+  "source_all11_unchanged": true
+}

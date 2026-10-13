@@ -1,0 +1,196 @@
+{
+  "canonical_repo": "mbalbo2023/Porota-trading",
+  "immutable_original_inputs_only_not_new_HEAD_authority": true,
+  "no_new_objects_fetched": true,
+  "objects": [
+    {
+      "classification": "ORIGINAL_PRIOR_FRONT",
+      "github_tree": "cbd8815257897d874a6c24fdcdb2b654d6089647",
+      "id": "A",
+      "local_ref": "refs/porota/convergence-prior-front/A",
+      "pr": null,
+      "raw_commit_sha256": "8a28a1ca4f7b68c7a2c7d7a709c2e3ec2a13cfaeb8f693461152e681c692dc3e",
+      "sha": "c3a73a0e7eb328787f2fe218a02c1926f400f6ea"
+    },
+    {
+      "classification": "ORIGINAL_PRIOR_FRONT",
+      "github_tree": "54fcf4a0401f34f214edc30d3d20e84d415c8c06",
+      "id": "B",
+      "local_ref": "refs/porota/convergence-prior-front/B",
+      "pr": null,
+      "raw_commit_sha256": "c7586f94fb921cbff1005342f9ff82639728ff13bda947863eb15709d2ab3d02",
+      "sha": "87cb8442d7a07eaeeed2d8171d2e91f3a839387d"
+    },
+    {
+      "classification": "ORIGINAL_PRIOR_FRONT",
+      "github_tree": "9dc5c2c44dac5e9e7620a83d712431c4dafb1aed",
+      "id": "C",
+      "local_ref": "refs/porota/convergence-prior-front/C",
+      "pr": null,
+      "raw_commit_sha256": "adbe2cbc2c1d48bb769081fe7ea4a1ba2ddc9c4a31e6433ff7cc835730f82b92",
+      "sha": "84380e6be52634c73c08ad5f317756882200da1e"
+    },
+    {
+      "classification": "ORIGINAL_PRIOR_FRONT",
+      "github_tree": "464e6e966ab453e9c6d637719b4da8fef8b81ad7",
+      "id": "D",
+      "local_ref": "refs/porota/convergence-prior-front/D",
+      "pr": null,
+      "raw_commit_sha256": "57cee62255e8e9f389f76521f0d23c5e3c01c0b1c60b5a4b9635194159982d17",
+      "sha": "301cc9b0d1ec46fdb246c29a531aff0a43a115ba"
+    },
+    {
+      "classification": "ORIGINAL_PRIOR_FRONT",
+      "github_tree": "cfbf4ced302a0a47cafe82306f3b74aba1871bb1",
+      "id": "E",
+      "local_ref": "refs/porota/convergence-prior-front/E",
+      "pr": null,
+      "raw_commit_sha256": "9505ec278915ab2e40de2e0f09bd50b2ffe9964e748fcea6185ca47fc723fd8a",
+      "sha": "02da06be024e0e5132a6f00d199dfaaf0f9ce372"
+    },
+    {
+      "classification": "ORIGINAL_PRIOR_FRONT",
+      "github_tree": "6eae14f00f6b582a7bfb15577aa1c74be716ca41",
+      "id": "F",
+      "local_ref": "refs/porota/convergence-prior-front/F",
+      "pr": null,
+      "raw_commit_sha256": "5e272aeb61179527bf2e29c27f2487413fd5ca8f13a71877c0dfff14331578b6",
+      "sha": "d1169a4a5d88d0eaca2f022c4a6be19121d67e19"
+    },
+    {
+      "classification": "ORIGINAL_PRIOR_FRONT",
+      "github_tree": "06d7354f7ff402b21c5697e15e644d0fe71e9f0e",
+      "id": "G",
+      "local_ref": "refs/porota/convergence-prior-front/G",
+      "pr": null,
+      "raw_commit_sha256": "27957c542c376fe44abfeeaa0b7b0ee0caa56a917ce83e944b6f24141911053d",
+      "sha": "03dc4f7821f6c2ab2d32ea8bc9f5a64ba5a0342f"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_HEAD",
+      "github_tree": "af34b6e3e444e4109b19515b9cd93ccb86a66b67",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source/447",
+      "pr": 447,
+      "raw_commit_sha256": "b8eab0252074d6b370d7fde578c74ae954755d7c05af5fb1bdefcab594833fb8",
+      "sha": "251fac4cf73981a4fd3feb123c97a37bf10ad02d"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_HEAD",
+      "github_tree": "0d9c0296c0e649240827affa659b9e851e2b43e1",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source/448",
+      "pr": 448,
+      "raw_commit_sha256": "b4ca41d3094b6094c8a1c052f1bc7e8f47cacf2a36947774874149f8877b5da9",
+      "sha": "3e7819963f65de443421152f0f5614ef1356fb41"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_HEAD",
+      "github_tree": "d5d3b2e27efb7d45c263a61ff654f77c208a99d8",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source/450",
+      "pr": 450,
+      "raw_commit_sha256": "21af3627bafa4cd811e41ce3d1be0a34cd35b5d284fdf9dbace6c3d0a92b4982",
+      "sha": "0311dcc10139777f8be988f4fe8c3efabc86d1a9"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_HEAD",
+      "github_tree": "c20f676ff8e22a65f8f02d65c86fd23d3ab41fae",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source/451",
+      "pr": 451,
+      "raw_commit_sha256": "26eb4eb565d7474ea9293bea429f369e7581924a16fba0786b2561420a7d911a",
+      "sha": "c4e939eea7aab4d662a268c98e0fb8282520b92d"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_BASE",
+      "github_tree": "1df08300c3140f02794972620507e630d59ea137",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source-base/451",
+      "pr": 451,
+      "raw_commit_sha256": "326ce2a7c72410d47bddf21feca6d5395f67ea872d843889f6481ff7d3a4b0bc",
+      "sha": "1607b3e887d1dfe088de66ce22d815e701ca1150"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_HEAD",
+      "github_tree": "4b461b6c20ee72690965f0063c235778ccd1510f",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source/453",
+      "pr": 453,
+      "raw_commit_sha256": "a4708bf809102097875c77f1b9847ec96556a7eaf9ea3a9ba107f90311a49d8e",
+      "sha": "2b36429013ec5e3accf4176cf3beaabfd5e33232"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_HEAD",
+      "github_tree": "eba53b71d92a86daa4dd3360fdf72cb4605cf023",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source/454",
+      "pr": 454,
+      "raw_commit_sha256": "cfe53b9425a5948af393593d12e8ca937e38ab06ed4d23e0c287a3996488467a",
+      "sha": "ee1b22996907f282f77d3c31956104bd52cba858"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_HEAD",
+      "github_tree": "87c3c2ecb49325600fe47b6e6103d6b9e427275e",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source/455",
+      "pr": 455,
+      "raw_commit_sha256": "06b984f079ff3aca06e32620329e81dc8c66f214daf9094243191c93a98d9c31",
+      "sha": "84528216cd85060075b63be25e71876e1b742b0c"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_HEAD",
+      "github_tree": "f580e451d83eadc43575684378cb8f009d02366f",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source/456",
+      "pr": 456,
+      "raw_commit_sha256": "de30544c8f42e0bb0cd9ec8018df6684b136890a5fbe774cf006c162c882b523",
+      "sha": "b8c95c10459cb8ede2925da491730f5988b29561"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_HEAD",
+      "github_tree": "20aae8dd25af2c2f32883a1559076930761d983a",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source/457",
+      "pr": 457,
+      "raw_commit_sha256": "c195a51b7928cc109de2ac556f7129de8bfc5e595143214c1097267d82d9a8c8",
+      "sha": "77c4e13768b252a8e7a614a0653b0b0dabb1ed02"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_HEAD",
+      "github_tree": "531173c05d6f02628a2e9fe1cc19ca13664613a8",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source/459",
+      "pr": 459,
+      "raw_commit_sha256": "aaf4c85f5eb22e716a60ba1b2bb390aae15431860cf31c08ad31fb0c461dafd2",
+      "sha": "c48960e105640c385d94ac03461b0c936ebf95a7"
+    },
+    {
+      "classification": "ORIGINAL_SOURCE_HEAD",
+      "github_tree": "e72718316b1ec68ec4c0bc384c9e231907b382c3",
+      "id": null,
+      "local_ref": "refs/porota/convergence-source/461",
+      "pr": 461,
+      "raw_commit_sha256": "ef0f22a950e34a2a196f9b98cb523d5d2a884ac137cd0045a6746bbde752e3d2",
+      "sha": "fa3a8d64f74fa45181808bd46d8a75131d5450cf"
+    }
+  ],
+  "original_proof_path": "/workspace/scratch/rc6g2e-eabh7h8t/epoch311/preparation-after-original-object-fetch/original-object-fetch-proof.json",
+  "original_proof_sha256": "88c935d1b2d882b76270c1103445b5c3acab68f9b0af69bc875d58e0b812be1a",
+  "original_proof_stat": {
+    "st_atime_ns": 1791308997267267252,
+    "st_blocks": 32,
+    "st_ctime_ns": 1791308997270983493,
+    "st_dev": 27,
+    "st_gid": 1000,
+    "st_ino": 1577729,
+    "st_mode": 33152,
+    "st_mtime_ns": 1791308997270983493,
+    "st_nlink": 1,
+    "st_size": 15595,
+    "st_uid": 1000
+  },
+  "prior_source_context": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "repo_id": 1338680554,
+  "schema": "rc6.full-governed-original-required-objects.v1"
+}

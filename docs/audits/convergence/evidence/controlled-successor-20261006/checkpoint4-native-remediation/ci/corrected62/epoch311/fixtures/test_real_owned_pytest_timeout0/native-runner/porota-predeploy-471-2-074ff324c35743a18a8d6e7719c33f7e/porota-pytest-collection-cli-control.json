@@ -1,0 +1,6 @@
+{
+  "pid": 12301,
+  "returncode": 0,
+  "scope": "ACTUAL_FRESH_HELPER_SUPERVISOR_ONLY_NOT_GOV_FIN",
+  "stdout": "POROTA_OWNED_PYTEST=IN_PROGRESS|pid=12305|elapsed_seconds=0.001\n{\"owned_fin_closed\": true, \"phase\": \"collection\", \"pytest_phase_green\": true, \"receipt\": \"/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch311/pytest/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-074ff324c35743a18a8d6e7719c33f7e/porota-pytest-collection-owned-fin.json\", \"retained_fixtures_removed\": false}\n"
+}

@@ -1,0 +1,149 @@
+from pathlib import Path
+import hashlib
+import importlib.metadata
+import json
+import os
+import platform
+import re
+import sqlite3
+import stat
+import subprocess
+import sys
+import time
+
+SOURCE = Path('/workspace/rc6-whole-source-20261005-normal-eb17')
+RAW = Path('/tmp/rc6-canonical-eb17b878-normal4-157-raw')
+DATA = Path('/workspace/rc6-canonical-eb17b878-normal4-157')
+INTERPRETER = '/workspace/venv_rc6_frozen311/bin/python'
+PIN_PATH = Path('/tmp/rc6-whole-source-20261005-normal-eb17-raw/source.index.json')
+PIN = json.loads(PIN_PATH.read_bytes())
+
+def normalized(name):
+    return re.sub(r'[-_.]+', '-', name).lower()
+
+def preflight():
+    checks = {'schema': 'rc6.native-frozen311-entry-preflight.v1',
+              'interpreter': sys.executable, 'required_interpreter': INTERPRETER,
+              'source_sha': PIN['source_sha'], 'source_tree': PIN['source_tree'],
+              'python': platform.python_version(), 'sqlite': sqlite3.sqlite_version,
+              'passed': False, 'before_fixture': not DATA.exists(),
+              'scope': 'INSTALLED_NAMES_AND_VERSIONS_ONLY_NOT_DISTRIBUTION_BYTE_PROOF'}
+    installed = []
+    installed_map = {}
+    for distribution in importlib.metadata.distributions():
+        name = normalized(distribution.metadata['Name'])
+        if name in installed_map:
+            raise ValueError('PREFLIGHT_DUPLICATE_DISTRIBUTION')
+        installed_map[name] = distribution.version
+        installed.append({'name': name, 'version': distribution.version})
+    checks['distributions'] = sorted(installed, key=lambda row: row['name'])
+    checks['distribution_count'] = len(installed)
+    required = {}
+    checks['locks'] = {}
+    for lock_name in ('requirements.lock.txt', 'requirements.build.lock.txt'):
+        wire = (SOURCE / lock_name).read_bytes()
+        count = 0
+        for line in wire.decode().splitlines():
+            content = line.strip().removesuffix('\\').strip()
+            match = re.fullmatch(r'([A-Za-z0-9_.-]+)==([^\s;]+)', content)
+            if match is None:
+                if '==' in content and not content.startswith('#'):
+                    raise ValueError('PREFLIGHT_UNSUPPORTED_LOCK_RECORD')
+                continue
+            name, version = normalized(match[1]), match[2]
+            if name in required:
+                raise ValueError('PREFLIGHT_DUPLICATE_LOCK_PIN')
+            required[name] = version
+            count += 1
+        checks['locks'][lock_name] = {'sha256': hashlib.sha256(wire).hexdigest(), 'pins': count}
+    checks['missing'] = sorted(set(required) - set(installed_map))
+    checks['extra'] = sorted(set(installed_map) - set(required))
+    checks['mismatches'] = [dict(name=name, required=version, installed=installed_map.get(name))
+                            for name, version in required.items() if installed_map.get(name) != version]
+    checks['passed'] = (sys.executable == INTERPRETER and platform.python_version() == '3.11.16'
+                        and len(installed) == len(required) == 157 and installed_map == required
+                        and checks['locks']['requirements.lock.txt']['pins'] == 154
+                        and checks['locks']['requirements.build.lock.txt']['pins'] == 3
+                        and checks['before_fixture'])
+    (RAW / 'entry-preflight.json').write_text(json.dumps(checks, indent=2, sort_keys=True) + '\n')
+    if not checks['passed']:
+        raise ValueError('PREFLIGHT_FROZEN311_INTERPRETER_OR_EXACT_LOCK_SET_REJECTED')
+    return checks
+
+def inventory():
+    result = {}
+    for name in PIN['files']:
+        path = SOURCE / name
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError('SOURCE_REGULAR_UNALIASED_FILE_REQUIRED')
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+        try:
+            parts = []
+            while block := os.read(descriptor, 1024 * 1024):
+                parts.append(block)
+            wire = b''.join(parts)
+            if os.fstat(descriptor) != info or path.lstat() != info:
+                raise ValueError('SOURCE_CHANGED_DURING_WRAPPER_CAPTURE')
+        finally:
+            os.close(descriptor)
+        result[name] = {'sha256': hashlib.sha256(wire).hexdigest(),
+                        'git_mode': '100' + format(stat.S_IMODE(info.st_mode), '03o'),
+                        'git_blob': hashlib.sha1(b'blob ' + str(len(wire)).encode() + b'\0' + wire).hexdigest()}
+    if {str(path.relative_to(SOURCE)) for path in SOURCE.rglob('*') if path.is_file()} != set(result):
+        raise ValueError('SOURCE_NAMESPACE_MISMATCH')
+    if not all(row['sha256'] == PIN['files'][name] and row['git_mode'] == PIN['modes'][name]
+               and row['git_blob'] == PIN['blob_ids'][name] for name, row in result.items()):
+        raise ValueError('SOURCE_SHA_MODE_OR_GIT_BLOB_MISMATCH')
+    return result
+
+checks = preflight()
+before = inventory()
+if PIN['source_sha'] != 'eb17b8787b6789f38fea22da4a0e8f8aa4963a2b' or PIN['source_tree'] != 'e6c6e1026b7ed183ed3acfeb21f44d7f668ed187' or type(PIN['overlay_count']) is not int or PIN['overlay_count'] != 0:
+    raise ValueError('SOURCE_PIN_MISMATCH')
+if hashlib.sha256((PIN_PATH.parent/'source.tar').read_bytes()).hexdigest() != PIN['tar_sha256']:
+    raise ValueError('SOURCE_ARCHIVE_HASH_MISMATCH')
+os.umask(0o022)
+command = [INTERPRETER, '-I', '-B', '-u', str(SOURCE/'docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py'),
+    '--source-root',str(SOURCE),'--source-sha',PIN['source_sha'],'--source-tree',PIN['source_tree'],'--source-index',str(PIN_PATH),
+    '--root',str(DATA),'--catalog-count','1200','--ticks','4']
+environment = {**os.environ,'PYTHONDONTWRITEBYTECODE':'1','PYTEST_DISABLE_PLUGIN_AUTOLOAD':'1','PYTHONPATH':''}
+environment.pop('PYTHONHOME',None)
+metadata={'schema':'rc6.native-normal4-frozen157-whole-source-wrapper.v2','source_sha':PIN['source_sha'],'source_tree':PIN['source_tree'],
+ 'source_index_sha256':hashlib.sha256(PIN_PATH.read_bytes()).hexdigest(),'tar_sha256':PIN['tar_sha256'],'source_files':len(before),'overlay_count':0,
+ 'command':command,'cwd':str(SOURCE),'umask':'022','uid':os.geteuid(),'gid':os.getegid(),'interpreter':sys.executable,
+ 'python':platform.python_version(),'sqlite':sqlite3.sqlite_version,'distribution_count':checks['distribution_count'],
+ 'entry_preflight_passed':checks['passed'],'entry_preflight_sha256':hashlib.sha256((RAW/'entry-preflight.json').read_bytes()).hexdigest(),
+ 'scope':'INTERMEDIATE_NATIVE_DESCRIPTIVE_FOUR_CUTS_NOT1201_HORIZON_FINAL_GOV_BROWSER_IMAGE_OR_RUNTIME',
+ 'fixture_before_source_custody':not DATA.exists(),'native_import_closure_audited':False,
+ 'acceptance_complete':False,'horizon_validated':False,'artifact_validated':False,'runtime_validated':False}
+(RAW/'wrapper-before.json').write_text(json.dumps(metadata,sort_keys=True,indent=2)+'\n')
+start=time.monotonic()
+with (RAW/'normal4.log').open('xb') as log:
+ process=subprocess.Popen(command,cwd=SOURCE,env=environment,stdout=log,stderr=subprocess.STDOUT)
+ metadata['native_pid']=process.pid
+ (RAW/'wrapper-started.json').write_text(json.dumps(metadata,sort_keys=True,indent=2)+'\n')
+ try:
+  metadata['native_returncode']=process.wait(timeout=300)
+ except subprocess.TimeoutExpired:
+  process.kill(); process.wait()
+  metadata.update(native_returncode=process.returncode,infrastructure_watchdog_exhausted=True)
+metadata['wrapper_elapsed_wall_seconds']=time.monotonic()-start
+try:
+ metadata['whole_source_sha_modes_blobs_unchanged']=before==inventory()
+except BaseException as error:
+ metadata.update(whole_source_sha_modes_blobs_unchanged=False,source_error={'class':type(error).__name__,'reason':str(error)})
+metadata['rawlog_sha256']=hashlib.sha256((RAW/'normal4.log').read_bytes()).hexdigest()
+result=DATA/'result.json'
+if result.is_file():
+ descriptor=os.open(result,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_NONBLOCK)
+ with os.fdopen(descriptor,'rb') as stream: native_wire=stream.read()
+ (RAW/'native-normal4-result.json').write_bytes(native_wire)
+ native=json.loads(native_wire)
+ metadata.update(native_result_sha256=hashlib.sha256(native_wire).hexdigest(),
+  native_execution_complete=native.get('execution_complete'),native_horizon_complete=native.get('horizon_complete'),
+  native_acceptance_complete=native.get('acceptance_complete'),source_database_unchanged=native.get('source_database_unchanged'))
+(RAW/'wrapper-final.json').write_text(json.dumps(metadata,sort_keys=True,indent=2)+'\n')
+print(json.dumps({k:metadata.get(k) for k in ('source_sha','source_files','native_pid','native_returncode','whole_source_sha_modes_blobs_unchanged',
+ 'distribution_count','wrapper_elapsed_wall_seconds','native_execution_complete','native_horizon_complete','source_database_unchanged')}),flush=True)
+raise SystemExit(metadata['native_returncode'] or int(not metadata['whole_source_sha_modes_blobs_unchanged']) or int(not metadata.get('native_execution_complete')))

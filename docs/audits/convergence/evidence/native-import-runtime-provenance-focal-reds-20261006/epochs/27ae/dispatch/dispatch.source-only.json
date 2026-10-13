@@ -1,0 +1,18 @@
+{
+  "argv": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/rc6-budget-runtime-provenance-27ae-focal-supervisor-v3.py",
+    "--watchdog-seconds",
+    "180"
+  ],
+  "expected_cases": 43,
+  "prebaseline_synchronization_sha256": "1319dcc81eab29a4d4d1ff31fc7d8d57c62621f3d5ed455cf115b26dfc2dbbdc",
+  "runner_sha256": "e4838670e7442a32fad15777dd980d53ce861b69389d9f48a2ad6a13872b3a59",
+  "schema": "rc6.root-owned-controlled-focal-dispatch.v1",
+  "scope": "DIAGNOSTIC_CYTHON_CURRENT_LINEAGE_GUARDS_UNCHANGED_NOT_BIG_OR_FINAL_GOV",
+  "source_sha": "27aec1bf8c0e4be779252e98e42d25cbfc5dee5d",
+  "source_tree": "601e5427ad2d0791b93bae5f54fb9693e6055646",
+  "supervisor_sha256": "f07e1568ffe271eff0cd62326ed034fb3287f97864d51f79fc015da2ac281d5d"
+}

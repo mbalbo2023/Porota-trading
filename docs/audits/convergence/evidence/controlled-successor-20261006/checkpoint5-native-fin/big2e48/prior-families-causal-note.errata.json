@@ -1,0 +1,10 @@
+{
+  "correction": "Original note names later cleanup check176. Actual pinned sqlite_snapshot cleanup deadline check is172;176 begins except OSError. The proven failing immediate post-yield frame remains164, and the causal conclusion is unchanged.",
+  "no_new_execution_to_correct_reference": true,
+  "original_note_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/prior-families-causal-note.json",
+  "original_note_preserved_no_overwrite": true,
+  "original_note_sha256": "9b71fba994e257ccf6a2e56748ca020c12b0300c4f62084f46367260f8ae0653",
+  "schema": "rc6.immutable-rca-note.line-correction.v1",
+  "source_sha_2e48": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "source_sha_866": "86615bd8c669209e8d391d114016d923fe084dc0"
+}

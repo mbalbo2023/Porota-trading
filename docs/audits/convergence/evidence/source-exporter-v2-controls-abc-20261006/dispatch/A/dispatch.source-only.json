@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "-S",
+    "/tmp/rc6_export_whole_git_source_v2_controls_candidate.py",
+    "--output",
+    "/workspace/rc6-exporter-v2-source-controls-20261006-raw"
+  ],
+  "driver_sha256": "f5226b655a0b2ea46bf58553030834ff6d567ae86d079f613f2920e4ed145552",
+  "driver_cap20": true,
+  "outer_main_management_seconds": 30,
+  "product_native": 0,
+  "full_gov": false
+}

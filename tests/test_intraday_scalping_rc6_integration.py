@@ -4,12 +4,13 @@ import json
 from be_paper_engine import PaperStore
 import bu_instrument_catalog as catalog
 import cf_intraday_scalping as scalping
+from tests.rc6_convergence_fixtures import with_synthetic_volume_contract
 
 START=datetime.fromisoformat('2026-09-07T10:30:00-03:00')
 
 def record():
-    return dict(ticker='GGAL',instrument_type='ACCIONES',market='BYMA',currency='ARS',
-                settlement='A-24HS',capability='READY_PAPER_SPOT',status='AVAILABLE')
+    return with_synthetic_volume_contract(dict(ticker='GGAL',instrument_type='ACCIONES',market='BYMA',currency='ARS',
+                settlement='A-24HS',capability='READY_PAPER_SPOT',status='AVAILABLE'))
 
 def payload(count, *, changed_index=None, changed_price=False):
     rows=[]

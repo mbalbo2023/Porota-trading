@@ -1,0 +1,59 @@
+{
+  "schema": "rc6.persistence-checkpoint-native-evidence.v1",
+  "final_candidate_claim": false,
+  "checkpoint_source_sha": "732b1e513848090263a1e879e7b7b3fffe217153",
+  "checkpoint_tree": "76301f3b12caca931fb38c72f7b154cbd14c37a0",
+  "native_large_source_sha": "18e9716d940a6cf3a22c596884fcbb786def7c76",
+  "boundary": "OFFLINE_SYNTHETIC_PAPER_SHADOW; no production child, host, provider or WORM certification",
+  "large_reader_browser_state": "Intermediate reader PASS; browser 594/af71 RED preserved by UX; current UX overlap run pending",
+  "archive_u14_state": "OPEN_PROGRAMMING_BLOCKER; four native normal1200 archives measured; complete nine-hour sustainable configured512MiB proof pending",
+  "focal_runs": [
+    {
+      "description": "Wire concurrency and all native persistence source/codec safety guards",
+      "junit_path": "/tmp/rc6-persistence-native-parallel-wire-final-focal.xml",
+      "junit_sha256": "5faae50e8b6aa22c1c07c663e4ac7b331833ff3a925e36b8852edac863e8156f",
+      "tests": 278,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "elapsed_seconds": 61.68,
+      "execution_identity": "Precommit tracked worktree bytes subsequently frozen in40f/748/732; final integrated replay remains pending"
+    },
+    {
+      "description": "Read-only stdlib namespace admission",
+      "junit_path": "/tmp/rc6-archive-namespace-focal.xml",
+      "junit_sha256": "77cf7327d83e68355779370361a397a656e3ce3f48c4bbb1f7a0c9d0dc4be4f7",
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "elapsed_seconds": 0.526,
+      "execution_identity": "Precommit tracked worktree bytes subsequently frozen in40f/748/732; final integrated replay remains pending"
+    },
+    {
+      "description": "Canonical configured archive factory and native restart/custody/source guards",
+      "junit_path": "/tmp/rc6-canonical-archive-final-focal.xml",
+      "junit_sha256": "8156e62e059a28c6ec86ed13619f078bd03e2f9d982f2a766dd67a06a0d4c462",
+      "tests": 187,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "elapsed_seconds": 12.551,
+      "execution_identity": "Precommit tracked worktree bytes subsequently frozen in40f/748/732; final integrated replay remains pending"
+    }
+  ],
+  "copied_raw_files": [
+    {
+      "path": "native_normal1200_732b_four_ticks_archive_measurement.json",
+      "sha256": "a91ebe85a0c925773363b34ba096173922974cf7e54166fffeaf20d7f896273a"
+    },
+    {
+      "path": "rejected_eager_wire_start_diagnostic.json",
+      "sha256": "0a8bc71939cdde09fc3438f65f166949b5f3383b78972e1810efb539b74fd2e5"
+    },
+    {
+      "path": "native_large_18e_two_ticks_complete.json",
+      "sha256": "45ba7fc5236006f788f90e5d1a1b591e98722639d16da26ca954a9991e690ced"
+    }
+  ]
+}

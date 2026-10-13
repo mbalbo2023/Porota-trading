@@ -1,6 +1,7 @@
 """Observador productivo con paper trading completo y cero capacidad operativa."""
 
 from __future__ import annotations
+from contextlib import closing, nullcontext
 
 import faulthandler
 import fcntl
@@ -254,8 +255,19 @@ def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=
                  **financial_catalog.quote_terms(metadata))
 
 
+def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, priority="DISCOVERY", identity=None):
+    """Native scanner reads; exact opened identity enables bounded book reuse."""
+    scope = reader.read_scope(priority=priority, identity=identity) if hasattr(reader, "read_scope") else nullcontext()
+    with scope:
+        current = retry_read(lambda: reader.current(symbol, asset_class, settlement), retries=1)
+        book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
+    metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
+        market=identity[2], currency=identity[3]) if identity else financial_catalog.lookup(store, symbol, asset_class, settlement)
+    return normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+
+
 def _support_schema(store):
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.executescript("""
         CREATE TABLE IF NOT EXISTS observer_commands(
           id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL,
@@ -957,38 +969,73 @@ def _publish_focus_health(store, coverage):
             "Catálogo PPI normalizado", success=coverage["state"] == "VERDE")
 
 
-def _cycle_symbols(store, focus_candidates=None):
-    """Abiertas y foco primero; el resto del universo mantiene rotación."""
+def _cycle_plan(store, focus_candidates=None):
+    """Existing catalog/quote authority, with a durable feasible active basket."""
+    from rc6_performance.scanner import sampling_plan
     universe = list(_eligible_symbols(store))
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
                                 for p in store.open_positions()))
-    if not universe:
-        return tuple(opened), 0, 0, 0
     with store.connect() as c:
-        row = c.execute("SELECT cursor_after FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1").fetchone()
-    cursor = int(row[0] if row else 0) % len(universe)
-    selected = list(opened)
-    seen = set(opened)
-    available = set(universe)
-    focus_budget = min(len(FOCUS_SYMBOLS), max(1, ACTIVE_SYMBOL_LIMIT // 2))
-    focus_added = 0
-    for candidate in tuple(FOCUS_SYMBOLS if focus_candidates is None else focus_candidates):
-        if len(selected) >= max(ACTIVE_SYMBOL_LIMIT, len(opened)):
-            break
-        if focus_added >= focus_budget:
-            break
-        if candidate in available and candidate not in seen:
-            selected.append(candidate)
-            seen.add(candidate)
-            focus_added += 1
-    visited = 0
-    while len(selected) < ACTIVE_SYMBOL_LIMIT and visited < len(universe):
-        candidate = universe[(cursor + visited) % len(universe)]
-        visited += 1
-        if candidate not in seen:
-            selected.append(candidate)
-            seen.add(candidate)
-    return tuple(selected), len(universe), cursor, (cursor + visited) % len(universe)
+        row = c.execute("SELECT cursor_after,detail FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1").fetchone()
+    previous = None
+    if row:
+        try:
+            text = row[1] or ""
+            previous = json.loads(text[text.index("{"):]).get("active_plan")
+        except (ValueError, TypeError):
+            pass
+    cycle_seconds = INTERVAL + max(ACTIVE_SYMBOL_LIMIT, len(opened)) * 2 * PPI_CALL_BUDGET_SECONDS
+    at = now_iso()
+    symbols, before, after, plan = sampling_plan(
+        universe, opened, FOCUS_SYMBOLS if focus_candidates is None else focus_candidates,
+        limit=ACTIVE_SYMBOL_LIMIT, cycle_seconds=cycle_seconds,
+        required_samples=SIGNAL_MIN_SAMPLES, window_seconds=SIGNAL_WINDOW_MINUTES * 60,
+        now=at, cursor=row[0] if row else 0, previous=previous)
+    from rc6_dynamic_universe.promotion import capacity_controller_from_environment
+    controller = capacity_controller_from_environment(store.path)
+    if controller.state(at)["status"] == "APPROVED_DYNAMIC":
+        full_opened = [(p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
+            for p in store.open_positions() if p["asset_class"] in {"ACCIONES", "CEDEARS", "ETFS"}]
+        selected = controller.selection("EQUITY_SPOT", symbols, opened=full_opened, as_of=at)
+        if selected["dynamic"]:
+            symbols, plan = _approved_equity_selection(store, selected, plan)
+    return symbols, len(universe), before, after, plan
+
+
+def _approved_equity_selection(store, selected, baseline_plan):
+    """Reuse full-key readiness; financial ranking never becomes a BUY gate."""
+    with store.connect() as c:
+        rows = c.execute("""SELECT c.ticker,c.instrument_type,c.market,c.currency,c.settlement
+            FROM financial_instrument_catalog c JOIN candidate_identity_v2 r
+            USING(ticker,instrument_type,market,currency,settlement)
+            WHERE c.status='AVAILABLE' AND r.status='AVAILABLE' AND r.can_simulate=1
+              AND c.capability LIKE 'READY_PAPER%' AND c.instrument_type IN ('ACCIONES','CEDEARS','ETFS')""").fetchall()
+    aliases = {}
+    for row in rows:
+        key = tuple(row)
+        aliases.setdefault((key[0], key[1], key[4]), []).append(key)
+    ready = {values[0] for values in aliases.values() if len(values) == 1}
+    opened = set(selected["opened_priority"])
+    keys = [tuple(k) for k in selected["selected"] if tuple(k) in ready or tuple(k) in opened]
+    request = lambda k: (k[0], k[1], k[4])
+    entry = [request(k) for k in keys if k in selected["entry_identities"]]
+    scope = []
+    for k in keys:
+        row = selected["rows"][k]
+        priority = "OPENED_CRITICAL" if k in opened else {"HOT": "STRATEGY_HOT", "WARM": "WARM"}.get(row["state"], "DISCOVERY")
+        scope.append({"request": request(k), "identity": k, "priority": priority})
+    plan = dict(baseline_plan, schema="rc6.approved-dynamic-sampling.v1",
+        configuration_fingerprint=selected["policy_state"]["fingerprint"],
+        opening_identities=entry, feasible=True, focus_feasible=True,
+        active_budget={"status": "FEASIBLE", "authority": "VERIFIED_OPEN_CAPACITY"},
+        dynamic_selection=True, dynamic_scopes=scope, cadence_seconds=selected["cadence_seconds"],
+        approved_limit=selected["limit"], family_quota=False,
+        deep_priority_authority="STRATEGY_TRADEABILITY_CAPACITY", catalog_effect="NONE")
+    return tuple(map(request, keys)), plan
+
+
+def _cycle_symbols(store, focus_candidates=None):
+    return _cycle_plan(store, focus_candidates)[:4]
 
 
 def _sampling_feasibility(selected_count, *, eligible_total=None, focus_count=None,
@@ -1006,7 +1053,8 @@ def _sampling_feasibility(selected_count, *, eligible_total=None, focus_count=No
     rotation_capacity = (int(window_seconds / max(cycle_seconds * rotation_turns, 1))
                          if rotation_turns else 0)
     return {
-        "feasible": bool(focus_count) and capacity >= SIGNAL_MIN_SAMPLES,
+        "feasible": (bool(focus_count) and capacity >= SIGNAL_MIN_SAMPLES and
+                     (rotation_pool == 0 or rotation_capacity >= SIGNAL_MIN_SAMPLES)),
         "focus_feasible": bool(focus_count) and capacity >= SIGNAL_MIN_SAMPLES,
         "rotation_feasible": (rotation_pool == 0 or
                               (rotation_slots > 0 and rotation_capacity >= SIGNAL_MIN_SAMPLES)),
@@ -1083,24 +1131,38 @@ def _runtime_readiness(store, *, record_event=False):
     focus = _focus_coverage(store)
     _publish_focus_health(store, focus)
     open_count = len(store.open_positions())
-    symbols, eligible_total, cursor_before, cursor_after = _cycle_symbols(
+    symbols, eligible_total, cursor_before, cursor_after, active_plan = _cycle_plan(
         store, focus_candidates=focus["matched"]
     )
+    if active_plan.get("dynamic_selection"):
+        native_ready = list(active_plan["opening_identities"])
+        focus = dict(focus, source="POINT_IN_TIME_TRADEABILITY_APPROVED_CAPACITY",
+            matched=native_ready, matched_count=len(native_ready),
+            configured_count=len(symbols), minimum_for_openings=1,
+            allow_new_openings=bool(native_ready), state="VERDE" if native_ready else "AMARILLO",
+            missing=[{"identity": symbol, "reason": "NATIVE_SIGNAL_WINDOW_NOT_READY"}
+                for symbol in symbols if symbol not in native_ready])
+        _publish_focus_health(store, focus)
     matched_set = set(focus["matched"])
     selected_focus = sum(symbol in matched_set for symbol in symbols)
     feasibility = _sampling_feasibility(
         len(symbols), eligible_total=eligible_total,
         focus_count=selected_focus, open_count=open_count
     )
-    if not feasibility["focus_feasible"]:
+    feasibility["full_catalog_feasible"] = feasibility["rotation_feasible"]
+    feasibility["active_plan"] = active_plan
+    feasibility["feasible"] = active_plan["feasible"]
+    feasibility["focus_feasible"] = active_plan["focus_feasible"]
+    feasibility["rotation_feasible"] = active_plan["active_budget"]["status"] == "FEASIBLE"
+    if not feasibility["feasible"]:
         if record_event:
             store.event("SAMPLING_INFEASIBLE", json.dumps(feasibility, sort_keys=True))
         _health(store, "PAPER_SIGNAL_SAMPLING", "ROJO",
-                "El foco no puede reunir la ventana mínima: " +
+                "La canasta activa no puede reunir la ventana mínima: " +
                 json.dumps(feasibility, sort_keys=True), "Runtime PAPER")
     else:
         _health(store, "PAPER_SIGNAL_SAMPLING", "VERDE",
-                "Foco con capacidad teórica suficiente: " +
+                "Canasta activa con capacidad teórica suficiente; catálogo completo separado: " +
                 json.dumps(feasibility, sort_keys=True), "Runtime PAPER", success=True)
     rotation_state = "VERDE" if feasibility["rotation_feasible"] else "AMARILLO"
     _health(store, "PAPER_SIGNAL_ROTATION", rotation_state,
@@ -1173,6 +1235,8 @@ def _history_batch_semantics(statuses):
     normalized = []
     for raw in statuses:
         status = str(raw).strip().upper()
+        if status == "VALID_ROWS_WITH_REJECTIONS":
+            status = "PARTIAL"
         if status not in allowed:
             raise ValueError(f"PPI_HISTORY_BATCH_UNKNOWN_STATUS:{raw}")
         normalized.append(status)
@@ -1200,29 +1264,58 @@ def _history_batch_semantics(statuses):
 
 
 def _historical_targets(store):
-    """Todo el universo validado; índices se conservan como benchmark."""
-    try:
-        with store.connect() as c:
-            rows = c.execute("""SELECT u.ticker,u.instrument_type,u.settlement,
-              h.downloaded_at FROM candidate_universe u
-              LEFT JOIN production_history h ON h.symbol=u.ticker
-                AND h.instrument_type=u.instrument_type AND h.settlement=u.settlement
-              LEFT JOIN production_history_attempts a ON a.symbol=u.ticker
-                AND a.instrument_type=u.instrument_type AND a.settlement=u.settlement
-              WHERE u.status='AVAILABLE' AND (u.can_simulate=1 OR u.instrument_type='INDICES')
-              ORDER BY COALESCE(a.attempted_at,h.downloaded_at) IS NOT NULL,
-                COALESCE(a.attempted_at,h.downloaded_at),u.instrument_type,u.ticker""").fetchall()
-        if rows:
-            return [(r[0], r[1], r[2]) for r in rows]
-    except Exception:
-        pass
-    return list(CORE_SYMBOLS)
+    """The whole exact-key PPI catalog, ordered by its own durable attempt.
+
+    The old three-field caches remain diagnostic evidence. They cannot grant
+    coverage or redirect a request to a different market or currency.
+    """
+    import cq_history_attempt_ledger_hf6 as history_ledger
+    history_ledger.init_schema(store)
+    with store.connect() as c:
+        rows = c.execute("""SELECT f.ticker,f.instrument_type,f.market,f.currency,f.settlement,
+          (SELECT MAX(a.attempted_at) FROM history_attempt_ledger_v2 a
+           WHERE a.symbol=f.ticker AND a.instrument_type=f.instrument_type
+             AND a.settlement=f.settlement AND json_valid(a.metadata_json)
+             AND json_extract(a.metadata_json,'$.market')=f.market
+             AND json_extract(a.metadata_json,'$.currency')=f.currency) AS attempted_at
+          FROM financial_instrument_catalog f
+          WHERE f.status='AVAILABLE' AND f.market<>'UNKNOWN' AND f.currency<>'UNKNOWN'
+            AND (f.capability LIKE 'READY_PAPER_%' OR f.instrument_type='INDICES')
+            AND json_valid(f.metadata_json)
+            AND COALESCE(json_extract(f.metadata_json,'$._discovery_source'),
+                         json_extract(f.metadata_json,'$.raw._discovery_source'),'PPI_PRIMARY')='PPI_PRIMARY'
+          ORDER BY attempted_at IS NOT NULL,attempted_at,f.instrument_type,f.ticker,
+                   f.market,f.currency,f.settlement""").fetchall()
+    return [tuple(row[:5]) for row in rows]
+
+
+def _exact_history_target(store, target):
+    if len(target)==5:
+        symbol, family, market, currency, settlement=target
+        metadata=financial_catalog.lookup(store,symbol,family,settlement,market=market,currency=currency)
+    elif len(target)==3:
+        # Compatibility callers must still resolve a unique complete catalog
+        # identity; lookup refuses ambiguous monetary matches.
+        symbol,family,settlement=target
+        metadata=financial_catalog.lookup(store,symbol,family,settlement)
+        market=(metadata or {}).get('market')
+        currency=(metadata or {}).get('currency')
+    else:
+        return None
+    if not metadata or not market or market=='UNKNOWN' or currency not in {'ARS','USD','USD_MEP','USD_CCL'}:
+        return None
+    return (symbol,family,market,currency,settlement),metadata
 
 
 def _history_cutoff_repair_complete() -> bool:
     try:
         from cv_history_store_adapter_hf6 import default_history_store
-        with default_history_store().connect() as c:
+        from rc6_audit_evidence.sqlite_snapshot import readonly_copy
+        # This dated repair marker is a diagnostic, not a writer session or
+        # evidence of current complete historical coverage. A missing source
+        # must stay missing; a WAL source must not acquire a new SHM here.
+        with readonly_copy(default_history_store().path, validate=False,
+                deadline=time.monotonic() + 1.0) as c:
             exists = c.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rc6_history_cutoff_repair_runs'"
             ).fetchone()
@@ -1232,7 +1325,7 @@ def _history_cutoff_repair_complete() -> bool:
                 "SELECT state FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'"
             ).fetchone()
             return bool(row and str(row[0]).upper() == "COMPLETE")
-    except (sqlite3.Error, OSError):
+    except (sqlite3.Error, OSError, ValueError):
         return False
 
 
@@ -1321,108 +1414,102 @@ def _download_histories_locked(reader, store, history_store):
     end = _history_end_date()
     if end is None:
         return 0
-    total = 0
-    batch_statuses = []
-    all_symbols = _historical_targets(store)
-    targets = []
-    for symbol, instrument_type, settlement in all_symbols:
-        metadata = financial_catalog.lookup(store, symbol, instrument_type, settlement)
-        market = str((metadata or {}).get("market") or "").strip().upper()
-        if not market or market == "UNKNOWN":
-            batch_statuses.append("ERROR")
-            store.event("HISTORY_V2_ERROR", f"{symbol}: HISTORY_MARKET_IDENTITY_MISSING")
+    import cu_history_store_v2_hf6 as history_v2
+    import ct_ppi_history_salvage_hf6 as history_salvage
+    import cq_history_attempt_ledger_hf6 as history_ledger
+    history_v2.init_schema(history_store)
+    history_ledger.init_schema(store)
+    total, batch_statuses = 0, []
+    exact_targets, requests = [], []
+    for target in _historical_targets(store):
+        resolved=_exact_history_target(store,target)
+        if resolved is None:
+            batch_statuses.append('ERROR')
+            store.event('HISTORY_V2_ERROR',f'{target[0]}: HISTORY_FULL_IDENTITY_MISSING')
             continue
+        identity,metadata=resolved
+        if identity in exact_targets:
+            continue
+        exact_targets.append(identity)
+        symbol,family,market,currency,settlement=identity
         with history_store.connect() as c:
-            row = c.execute(
-                """SELECT MAX(date) FROM history_canonical_v2
-                   WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?""",
-                (symbol, instrument_type, market, settlement),
-            ).fetchone()
-        latest = str(row[0])[:10] if row and row[0] else None
-        start = (date.fromisoformat(latest) + timedelta(days=1)
-                 if latest else end - timedelta(days=365))
-        if start <= end:
-            targets.append((symbol, instrument_type, settlement, market, start, metadata))
-    symbols = targets[:HISTORY_BATCH_LIMIT]
-    if not symbols:
-        detail = f"Sin fechas históricas nuevas hasta {end.isoformat()}; no se repite descarga anual."
-        _sync_state(store, "PPI_PRODUCTION_HISTORY", "VERDE", 0, detail, success=True)
-        _health(store, "PPI_PRODUCTION_HISTORY", "VERDE", detail, "PPI Producción", success=True)
-        return 0
-
+            row=c.execute("""SELECT MAX(date) FROM history_canonical_v2
+              WHERE symbol=? AND instrument_type=? AND market=? AND currency=?
+                AND settlement=? AND price_basis='RAW' AND adjustment_basis='RAW_NO_ADJUSTMENT'""",
+              identity).fetchone()
+        latest=str(row[0])[:10] if row and row[0] else None
+        start=date.fromisoformat(latest)+timedelta(days=1) if latest else end-timedelta(days=365)
+        if start<=end:
+            requests.append((identity,start,metadata))
     from bl_candle_engine import canonical
-    from fb_raw_evidence_exact_v1 import enabled as exact_evidence_enabled, archive_wrapper as archive_exact_wrapper
-    for symbol, instrument_type, settlement, market, start, metadata in symbols:
-        attempted = now_iso()
+    from fb_raw_evidence_exact_v1 import enabled as exact_enabled, archive_wrapper as archive_exact
+    for identity,start,metadata in requests[:HISTORY_BATCH_LIMIT]:
+        symbol,family,market,currency,settlement=identity
+        attempted=now_iso()
         try:
-            provider_type = _history_provider_instrument_type(metadata, instrument_type)
-            payload = reader.history(symbol, provider_type, settlement, start, end)
-            attempted = now_iso()
-            bounded_payload = [
-                row for row in payload
-                if isinstance(row, dict) and start.isoformat() <= str(row.get("date", ""))[:10] <= end.isoformat()
-            ] if isinstance(payload, list) else payload
-            count = _history_count(bounded_payload, as_of=attempted,
-                                   date_from=start, date_to=end)
-            expected = len(bounded_payload) if isinstance(bounded_payload, list) else 0
-            status = 'VALID_PAYLOAD' if count and count == expected else 'PARTIAL' if count else 'EMPTY_OR_INVALID'
-            row_key = canonical([symbol, instrument_type, settlement, attempted])
-            history_wrapper = {'symbol':symbol,'asset_class':instrument_type,'settlement':settlement,
-                        'date_from':start.isoformat(),'date_to':end.isoformat(),'metadata':metadata,
-                        'valid_rows':count,'payload_json':json.dumps(payload,ensure_ascii=False,default=str)}
-            external_exact = exact_evidence_enabled()
-            if external_exact:
-                archive_exact_wrapper(row_key=row_key, wrapper=history_wrapper,
-                                      recorded_at=attempted, quality=status)
-            with store.connect() as c:
-                c.execute('BEGIN IMMEDIATE')
-                if not external_exact:
-                    from bl_candle_engine import archive_raw
-                    archive_raw(c,origin='PPI_HISTORY',row_key=row_key,payload=history_wrapper,
-                                recorded_at=attempted,quality=status)
-                c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
-                          (symbol,instrument_type,settlement,attempted,status,count,
-                           'PPI incremental desde el último cierre canónico; OHLC y fuente registrados'))
-                if status=='VALID_PAYLOAD':
-                    c.execute("INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)",
-                              (symbol, instrument_type, settlement, start.isoformat(), end.isoformat(),
-                               attempted, count, json.dumps(payload, ensure_ascii=False, default=str)))
-
-            try:
-                import ct_ppi_history_salvage_hf6 as history_salvage
-                v2_result = history_salvage.ingest_ppi_payload(
-                    store, symbol=symbol, instrument_type=instrument_type,
-                    market=market, settlement=settlement, payload=bounded_payload,
-                    requested_from=start, requested_to=end, attempted_at=attempted,
-                    history_store=history_store)
-                store.event("HISTORY_V2_INGEST",
-                            f"{symbol}: valid={v2_result.get('valid_rows',0)}; "
-                            f"versions={v2_result.get('versions_appended',0)}")
-            except Exception as exc:
-                store.event("HISTORY_V2_ERROR", f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
-            total += count
+            payload=reader.history(symbol,_history_provider_instrument_type(metadata,family),settlement,start,end)
+            attempted=now_iso()
+            row_key=canonical([list(identity),start.isoformat(),end.isoformat(),attempted])
+            wrapper={'symbol':symbol,'asset_class':family,'market':market,'currency':currency,
+                'settlement':settlement,'date_from':start.isoformat(),'date_to':end.isoformat(),
+                'metadata':metadata,'payload_json':json.dumps(payload,ensure_ascii=False,default=str),
+                'authority':'RAW_PROVIDER_EVIDENCE_ONLY'}
+            if exact_enabled():
+                archive_exact(row_key=row_key,wrapper=wrapper,recorded_at=attempted,quality='UNVALIDATED')
+            else:
+                from bl_candle_engine import archive_raw
+                with store.connect() as c:
+                    archive_raw(c,origin='PPI_HISTORY',row_key=row_key,payload=wrapper,
+                        recorded_at=attempted,quality='UNVALIDATED')
+            # Universal sink validation, atomic steps and its durable attempt
+            # own accepted rows. Filtering a bad provider row here would hide it.
+            result=history_salvage.ingest_ppi_payload(store,symbol=symbol,instrument_type=family,
+                market=market,currency=currency,settlement=settlement,payload=payload,
+                requested_from=start,requested_to=end,attempted_at=attempted,history_store=history_store)
+            count=int(result['full_ohlc_rows'])
+            status=result['storage_quality']
+            total+=count
             batch_statuses.append(status)
+            with store.connect() as c:
+                # Retain the old diagnostic cache only when the three-field
+                # identity is unique; production coverage never reads it.
+                unique=c.execute("""SELECT COUNT(*) FROM financial_instrument_catalog
+                  WHERE ticker=? AND instrument_type=? AND settlement=? AND status='AVAILABLE'""",
+                  (symbol,family,settlement)).fetchone()[0]==1
+                if unique:
+                    c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
+                        (symbol,family,settlement,attempted,status,count,'NON_BINDING_LEGACY_CACHE; canonical full identity in v2 ledger'))
+                    if status=='VALID_PAYLOAD':
+                        c.execute('INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)',
+                            (symbol,family,settlement,start.isoformat(),end.isoformat(),attempted,count,
+                             json.dumps(payload,ensure_ascii=False,default=str)))
+            store.event('HISTORY_V2_INGEST',f'{symbol}: accepted={count}; rejected={result["rejected_rows"]}; full_key={identity}; readiness=NONE')
         except Exception as exc:
             batch_statuses.append('ERROR')
-            with store.connect() as c:
-                c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
-                          (symbol,instrument_type,settlement,attempted,'ERROR',0,type(exc).__name__))
-            store.event("HISTORY_ERROR", f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
-    semantics = _history_batch_semantics(batch_statuses)
-    state = semantics["state"]
-    with store.connect() as c:
-        covered = _history_covered_target_count(c, all_symbols)
-    if covered > len(all_symbols):
-        raise RuntimeError("HISTORY_COVERAGE_SCOPE_BROKEN")
-    detail = (f"Lote histórico incremental={semantics['full_valid']}/{len(symbols)}; "
-              f"parciales usables={semantics['partial_with_valid_evidence']}; "
-              f"fallas duras={semantics['hard_failures']} "
-              f"(vacío/inválido={semantics['empty_invalid']}, errores={semantics['errors']}); "
-              f"cobertura acumulada {covered}/{len(all_symbols)} instrumentos; "
-              f"{total} filas válidas desde el último cierre hasta {end.isoformat()}.")
-    usable = bool(semantics["usable"])
-    _sync_state(store, "PPI_PRODUCTION_HISTORY", state, total, detail, success=usable)
-    _health(store, "PPI_PRODUCTION_HISTORY", state, detail, "PPI Producción", success=usable)
+            history_ledger.append_attempt(store,history_ledger.HistoryAttempt(
+                symbol=symbol,instrument_type=family,settlement=settlement,source='PPI_PRODUCTION_HISTORY',
+                attempted_at=attempted,state='ERROR',requested_from=start.isoformat(),requested_to=end.isoformat(),
+                error_class=type(exc).__name__,detail='History request/sink incomplete; retry follows durable full-key saga',
+                metadata={'market':market,'currency':currency,'identity':list(identity),'readiness_implication':'NONE'}))
+            store.event('HISTORY_V2_ERROR',f'{symbol}: {type(exc).__name__}')
+    with history_store.connect() as c:
+        coverage=history_v2.coverage_inventory(c,exact_targets,as_of=now_iso(),
+            consumer='PPI_HISTORY_INGEST_MONITOR',session=end.isoformat(),minimum_rows=30)
+    semantics=_history_batch_semantics(batch_statuses)
+    state=semantics['state']
+    if not batch_statuses:
+        state='VERDE' if coverage['denominator'] and coverage['covered']==coverage['denominator'] else 'AMARILLO'
+    detail=(f"Lote aceptado={semantics['full_valid']}/{min(len(requests),HISTORY_BATCH_LIMIT)}; "
+        f"parciales={semantics['partial_with_valid_evidence']}; errores={semantics['hard_failures']}; "
+        f"cobertura exacta {coverage['covered']}/{coverage['denominator']}; "
+        f"suficientes30={coverage['sufficient']}; faltantes={coverage['missing']}; "
+        f"cohort={coverage['cohort_sha256']}; consumer={coverage['consumer']}; "
+        f"cut={coverage['as_of']}; session={coverage['session']}; "
+        f"by_currency={json.dumps(coverage['by_currency'],sort_keys=True)}; readiness=NONE; "
+        f"{total} filas FULL_OHLC válidas hasta {end.isoformat()}.")
+    usable=bool(semantics['usable'])
+    _sync_state(store,'PPI_PRODUCTION_HISTORY',state,total,detail,success=usable)
+    _health(store,'PPI_PRODUCTION_HISTORY',state,detail,'PPI Producción',success=usable)
     return total
 
 
@@ -1549,7 +1636,7 @@ def _run_command(store, reader, command, gemini_gate=None):
     try:
         if reader is None:
             key, secret = _secret()
-            reader = ProductionMarketReader(key, secret, audit=store.audit_http)
+            reader = ProductionMarketReader(key, secret, audit=store.audit_http, consumer="SCANNER")
             reader.login_once()
             store.event("PPI_LOGIN", "owner=scanner_manual")
     except Exception as exc:
@@ -1703,7 +1790,7 @@ def run():
                 store.state(session_state="BOOT_PPI_CLIENT", ppi_auth="NOT_ATTEMPTED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="Arranque: creando cliente PPI de solo lectura.")
-                reader = ProductionMarketReader(key, secret, audit=store.audit_http)
+                reader = ProductionMarketReader(key, secret, audit=store.audit_http, consumer="SCANNER")
                 try:
                     store.state(session_state="BOOT_PPI_LOGIN", ppi_auth="NOT_ATTEMPTED",
                                 heartbeat_at=now_iso(), real_orders_sent=0,
@@ -1782,17 +1869,24 @@ def run():
             cycle_failures = 0
             cycle_session_invalid = False
             latencies = []
+            opened_identities = {}
+            if getattr(reader, "budget_enabled", False):
+                for p in store.open_positions():
+                    opened_identities.setdefault((p["symbol"], p["asset_class"], p["settlement"]), set()).add(
+                        (p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"]))
             for symbol, asset_class, settlement in symbols:
                 if STOP:
                     break
                 symbol_clock = time.perf_counter()
                 try:
-                    current = retry_read(
-                        lambda: reader.current(symbol, asset_class, settlement), retries=1)
-                    book = retry_read(
-                        lambda: reader.book(symbol, asset_class, settlement), retries=1)
-                    metadata = financial_catalog.lookup(store, symbol, asset_class, settlement)
-                    q = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+                    request_key = (symbol, asset_class, settlement)
+                    dynamic_scope = next((s for s in feasibility["active_plan"].get("dynamic_scopes", [])
+                        if tuple(s["request"]) == request_key), {})
+                    priority = "OPENED_CRITICAL" if request_key in opened_identities else dynamic_scope.get("priority", "DISCOVERY")
+                    exact_opened = opened_identities.get(request_key, set())
+                    scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else dynamic_scope.get("identity") if not exact_opened else None
+                    q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
+                        priority=priority, identity=scope_identity)
                     # Persistir la observación sirve para trazabilidad, pero un
                     # trade/libro stale nunca alcanza al motor ni a sus gates.
                     store.add_quote(q)
@@ -1803,12 +1897,19 @@ def run():
                         max_trade_age_seconds=broker.trade_max_age_seconds)
                     if data_error:
                         store.event("DATA_REJECTED", f"{symbol}: {data_error}")
+                        broker.record_observation_rejection(q, data_error)
                         continue
-                    allow_openings = bool(focus["allow_new_openings"])
+                    active_plan = feasibility["active_plan"]
+                    sampling_allowed = (feasibility["feasible"] and
+                        (symbol, asset_class, settlement) in map(tuple, active_plan["opening_identities"]))
+                    allow_openings = bool(focus["allow_new_openings"]) and sampling_allowed
                     opening_reason = (
                         f"Cobertura prioritaria insuficiente: "
                         f"{focus['matched_count']}/{focus['configured_count']}"
                     )
+                    if not sampling_allowed:
+                        opening_reason = ("SCANNER_INFEASIBLE" if not feasibility["feasible"]
+                                          else "COLD_DISCOVERY_NO_SIGNAL_BUDGET")
                     # Para CEDEARs se conserva la observación BYMA, pero la
                     # apertura requiere también rueda regular del subyacente US.
                     cedear_allowed, cedear_reason = cedear_opening_gate(asset_class, datetime.now(TZ))
@@ -1875,7 +1976,7 @@ def run():
                 reader.close()
                 reader = None
                 next_login_at = time.time() + 60
-            time.sleep(INTERVAL)
+            time.sleep(feasibility["active_plan"].get("cadence_seconds", INTERVAL))
     finally:
         if reader:
             reader.close()

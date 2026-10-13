@@ -1,0 +1,41 @@
+{
+  "DEPLOY_OWNER": "NOT_ACQUIRED",
+  "FINAL_CANDIDATE_ELIGIBLE": false,
+  "PAPER_SHADOW_ONLY": true,
+  "PPI_Watch": "UNTOUCHED_OUT_OF_SCOPE",
+  "diagnostic_source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "full_Gov_wrapper_and_builder": "PREPARED_ONLY_NATIVE_GOV_AND_CLONES_NOT_EXECUTED",
+  "material_gates_closed_by_this_evidence_commit": [],
+  "original_Gov_scope": [
+    ".",
+    "--ignore=test_a3_primary_readonly_hf6.py"
+  ],
+  "original_child_finalizer_seconds": 5,
+  "original_evidence_paths_overwritten_or_deleted": 0,
+  "original_native_Gov_phase_seconds": 5400,
+  "pair_actual_native_executions": 2,
+  "pair_actual_raw_bytes": 35778883,
+  "pair_actual_raw_members": 40,
+  "pair_canonical_BIG_failure_reproduced": false,
+  "pair_control_read_seconds": 0.11440449100337,
+  "pair_full_ordered_typed_result_sha256_each": "e40b6b68ba00d75f442ce9f33361bd3260be3a4f8d5c43c40fe0d4553c3b97e7",
+  "pair_native_import_or_resource_gate_qualified": false,
+  "pair_tuple_read_seconds": 0.10532725399753,
+  "parent_sha": "22be0a8d661c047ec98e4dd86460be9f74d381e8",
+  "product_performance_fix_justified": false,
+  "raw_manifest_sha256": "b8489a613af832ec06b814b361134aacb0686b376284ead7887c2157fa54bc03",
+  "real_orders_sent": 0,
+  "remaining": [
+    "exact final-source Predeploy and actual complete FIN under original262144 bound",
+    "full Gov311/312",
+    "BIG original budgets cycle and slow-fsync",
+    "HorizonV3 full1201cycles and recovery",
+    "BrowserLARGE qualified fullOPEN",
+    "program artifact/manifest/digest/image/source binding",
+    "runtime PAPER exclusively supervisor473"
+  ],
+  "requirements_preserved": 55,
+  "scenarios_preserved": 80,
+  "schema": "rc6.controlled-successor.checkpoint7.change-summary.v1",
+  "scope": "NEW_DURABLE_EVIDENCE_AND_EXPLICIT_PATH_MAPPING_ONLY_NO_RUNTIME_OR_TEST_CHANGES"
+}

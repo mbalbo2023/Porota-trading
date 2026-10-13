@@ -1,0 +1,245 @@
+{
+  "all_archive_files_invariant": true,
+  "archive_sha256": "182d2bdbd8720da50d80a6eca50391cd91138a7778c498dcca972ea4d483a79f",
+  "case_count": 6,
+  "cases": [
+    {
+      "canonical_nested_lexemes": "[[-0.0,false,0],[0.0,false,0]]",
+      "canonical_rows_lexemes": "[{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]}]",
+      "codec": "V1",
+      "decodes": [
+        {
+          "actual_sha256": "5d77a761ced1e8aa5dbc4b54528305d5c62741265acbd6a5bb8a45956d4d32c5",
+          "bytes_equal": true,
+          "canonical_nested_lexemes": "[[-0.0,false,0],[0.0,false,0]]",
+          "canonical_rows_lexemes": "[{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]}]",
+          "share_subtrees": false,
+          "status": "EXACT_ORIGINAL_CANONICAL_BYTES"
+        },
+        {
+          "exception_type": "ValueError",
+          "reason": "SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH",
+          "share_subtrees": true,
+          "status": "VALID_WIRE_FULL_READER_REJECTED",
+          "traceback": "Traceback (most recent call last):\n  File \"/tmp/rc6_finance_signed_zero_codec_probe.py\", line 101, in <module>\n    restored = serialization.decode_storage(wire, **limits, share_subtrees=share)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/rc6_finance_signed_zero_archive_dc59c2fb/rc6_shadow_runtime/serialization.py\", line 373, in decode_storage\n    raise ValueError(\"SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH\")\nValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH\n"
+        }
+      ],
+      "logical_bytes": 270390,
+      "logical_sha256": "5d77a761ced1e8aa5dbc4b54528305d5c62741265acbd6a5bb8a45956d4d32c5",
+      "storage_schema": "rc6.lossless-json-storage.v1",
+      "variant": "negative_then_positive",
+      "wire_proof": {
+        "logical_bytes": 270390,
+        "payload_digest": "5d77a761ced1e8aa5dbc4b54528305d5c62741265acbd6a5bb8a45956d4d32c5",
+        "storage_schema": "rc6.lossless-json-storage.v1"
+      },
+      "wire_sha256": "481b841465d96b0e6183ef3be2ad4f559ab3dd97c9b663965b026f533cc94ac7"
+    },
+    {
+      "canonical_nested_lexemes": "[[-0.0,false,0],[0.0,false,0]]",
+      "canonical_rows_lexemes": "[{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]}]",
+      "codec": "V2",
+      "decodes": [
+        {
+          "actual_sha256": "5d77a761ced1e8aa5dbc4b54528305d5c62741265acbd6a5bb8a45956d4d32c5",
+          "bytes_equal": true,
+          "canonical_nested_lexemes": "[[-0.0,false,0],[0.0,false,0]]",
+          "canonical_rows_lexemes": "[{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]}]",
+          "share_subtrees": false,
+          "status": "EXACT_ORIGINAL_CANONICAL_BYTES"
+        },
+        {
+          "exception_type": "ValueError",
+          "reason": "SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH",
+          "share_subtrees": true,
+          "status": "VALID_WIRE_FULL_READER_REJECTED",
+          "traceback": "Traceback (most recent call last):\n  File \"/tmp/rc6_finance_signed_zero_codec_probe.py\", line 101, in <module>\n    restored = serialization.decode_storage(wire, **limits, share_subtrees=share)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/rc6_finance_signed_zero_archive_dc59c2fb/rc6_shadow_runtime/serialization.py\", line 373, in decode_storage\n    raise ValueError(\"SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH\")\nValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH\n"
+        }
+      ],
+      "logical_bytes": 270390,
+      "logical_sha256": "5d77a761ced1e8aa5dbc4b54528305d5c62741265acbd6a5bb8a45956d4d32c5",
+      "storage_schema": "rc6.lossless-json-storage.v2",
+      "variant": "negative_then_positive",
+      "wire_proof": {
+        "logical_bytes": 270390,
+        "payload_digest": "5d77a761ced1e8aa5dbc4b54528305d5c62741265acbd6a5bb8a45956d4d32c5",
+        "storage_schema": "rc6.lossless-json-storage.v2"
+      },
+      "wire_sha256": "c8bfb398ab271dfa380fdb328aeaa1242146348337f86cc74a739b2ac1655ac4"
+    },
+    {
+      "canonical_nested_lexemes": "[[0.0,false,0],[-0.0,false,0]]",
+      "canonical_rows_lexemes": "[{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]}]",
+      "codec": "V1",
+      "decodes": [
+        {
+          "actual_sha256": "3c7f45e71736d5e602127a37bdc9ebfcb1f57ef3c4803d0dbac9420b03205742",
+          "bytes_equal": true,
+          "canonical_nested_lexemes": "[[0.0,false,0],[-0.0,false,0]]",
+          "canonical_rows_lexemes": "[{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]}]",
+          "share_subtrees": false,
+          "status": "EXACT_ORIGINAL_CANONICAL_BYTES"
+        },
+        {
+          "exception_type": "ValueError",
+          "reason": "SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH",
+          "share_subtrees": true,
+          "status": "VALID_WIRE_FULL_READER_REJECTED",
+          "traceback": "Traceback (most recent call last):\n  File \"/tmp/rc6_finance_signed_zero_codec_probe.py\", line 101, in <module>\n    restored = serialization.decode_storage(wire, **limits, share_subtrees=share)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/rc6_finance_signed_zero_archive_dc59c2fb/rc6_shadow_runtime/serialization.py\", line 373, in decode_storage\n    raise ValueError(\"SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH\")\nValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH\n"
+        }
+      ],
+      "logical_bytes": 270390,
+      "logical_sha256": "3c7f45e71736d5e602127a37bdc9ebfcb1f57ef3c4803d0dbac9420b03205742",
+      "storage_schema": "rc6.lossless-json-storage.v1",
+      "variant": "positive_then_negative",
+      "wire_proof": {
+        "logical_bytes": 270390,
+        "payload_digest": "3c7f45e71736d5e602127a37bdc9ebfcb1f57ef3c4803d0dbac9420b03205742",
+        "storage_schema": "rc6.lossless-json-storage.v1"
+      },
+      "wire_sha256": "315539c980bfb76f0c3f7461b6ddc2ea828df395340a42e46b8ae70ee9045aae"
+    },
+    {
+      "canonical_nested_lexemes": "[[0.0,false,0],[-0.0,false,0]]",
+      "canonical_rows_lexemes": "[{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]}]",
+      "codec": "V2",
+      "decodes": [
+        {
+          "actual_sha256": "3c7f45e71736d5e602127a37bdc9ebfcb1f57ef3c4803d0dbac9420b03205742",
+          "bytes_equal": true,
+          "canonical_nested_lexemes": "[[0.0,false,0],[-0.0,false,0]]",
+          "canonical_rows_lexemes": "[{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]},{\"delta\":0.0,\"typed\":[false,0]},{\"delta\":-0.0,\"typed\":[false,0]}]",
+          "share_subtrees": false,
+          "status": "EXACT_ORIGINAL_CANONICAL_BYTES"
+        },
+        {
+          "exception_type": "ValueError",
+          "reason": "SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH",
+          "share_subtrees": true,
+          "status": "VALID_WIRE_FULL_READER_REJECTED",
+          "traceback": "Traceback (most recent call last):\n  File \"/tmp/rc6_finance_signed_zero_codec_probe.py\", line 101, in <module>\n    restored = serialization.decode_storage(wire, **limits, share_subtrees=share)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/rc6_finance_signed_zero_archive_dc59c2fb/rc6_shadow_runtime/serialization.py\", line 373, in decode_storage\n    raise ValueError(\"SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH\")\nValueError: SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH\n"
+        }
+      ],
+      "logical_bytes": 270390,
+      "logical_sha256": "3c7f45e71736d5e602127a37bdc9ebfcb1f57ef3c4803d0dbac9420b03205742",
+      "storage_schema": "rc6.lossless-json-storage.v2",
+      "variant": "positive_then_negative",
+      "wire_proof": {
+        "logical_bytes": 270390,
+        "payload_digest": "3c7f45e71736d5e602127a37bdc9ebfcb1f57ef3c4803d0dbac9420b03205742",
+        "storage_schema": "rc6.lossless-json-storage.v2"
+      },
+      "wire_sha256": "b600178b64921ea018dbdcff4dfb6241e377963ec21aabdcc8c149a7e9c0ad87"
+    },
+    {
+      "canonical_nested_lexemes": "[[false,0],[0,false]]",
+      "canonical_rows_lexemes": "[{\"typed\":false},{\"typed\":0},{\"typed\":false},{\"typed\":0}]",
+      "codec": "V1",
+      "decodes": [
+        {
+          "actual_sha256": "e8512003d18d9451789a84b510e052230e9511d3f09a48d9ff389694f5bd580d",
+          "bytes_equal": true,
+          "canonical_nested_lexemes": "[[false,0],[0,false]]",
+          "canonical_rows_lexemes": "[{\"typed\":false},{\"typed\":0},{\"typed\":false},{\"typed\":0}]",
+          "share_subtrees": false,
+          "status": "EXACT_ORIGINAL_CANONICAL_BYTES"
+        },
+        {
+          "actual_sha256": "e8512003d18d9451789a84b510e052230e9511d3f09a48d9ff389694f5bd580d",
+          "bytes_equal": true,
+          "canonical_nested_lexemes": "[[false,0],[0,false]]",
+          "canonical_rows_lexemes": "[{\"typed\":false},{\"typed\":0},{\"typed\":false},{\"typed\":0}]",
+          "share_subtrees": true,
+          "status": "EXACT_ORIGINAL_CANONICAL_BYTES"
+        }
+      ],
+      "logical_bytes": 270307,
+      "logical_sha256": "e8512003d18d9451789a84b510e052230e9511d3f09a48d9ff389694f5bd580d",
+      "storage_schema": "rc6.lossless-json-storage.v1",
+      "variant": "bool_int_positive_control",
+      "wire_proof": {
+        "logical_bytes": 270307,
+        "payload_digest": "e8512003d18d9451789a84b510e052230e9511d3f09a48d9ff389694f5bd580d",
+        "storage_schema": "rc6.lossless-json-storage.v1"
+      },
+      "wire_sha256": "2b45e064d0d74fdb133bd8275138aa80cd1c73af495d058d1a314d09c28d5155"
+    },
+    {
+      "canonical_nested_lexemes": "[[false,0],[0,false]]",
+      "canonical_rows_lexemes": "[{\"typed\":false},{\"typed\":0},{\"typed\":false},{\"typed\":0}]",
+      "codec": "V2",
+      "decodes": [
+        {
+          "actual_sha256": "e8512003d18d9451789a84b510e052230e9511d3f09a48d9ff389694f5bd580d",
+          "bytes_equal": true,
+          "canonical_nested_lexemes": "[[false,0],[0,false]]",
+          "canonical_rows_lexemes": "[{\"typed\":false},{\"typed\":0},{\"typed\":false},{\"typed\":0}]",
+          "share_subtrees": false,
+          "status": "EXACT_ORIGINAL_CANONICAL_BYTES"
+        },
+        {
+          "actual_sha256": "e8512003d18d9451789a84b510e052230e9511d3f09a48d9ff389694f5bd580d",
+          "bytes_equal": true,
+          "canonical_nested_lexemes": "[[false,0],[0,false]]",
+          "canonical_rows_lexemes": "[{\"typed\":false},{\"typed\":0},{\"typed\":false},{\"typed\":0}]",
+          "share_subtrees": true,
+          "status": "EXACT_ORIGINAL_CANONICAL_BYTES"
+        }
+      ],
+      "logical_bytes": 270307,
+      "logical_sha256": "e8512003d18d9451789a84b510e052230e9511d3f09a48d9ff389694f5bd580d",
+      "storage_schema": "rc6.lossless-json-storage.v2",
+      "variant": "bool_int_positive_control",
+      "wire_proof": {
+        "logical_bytes": 270307,
+        "payload_digest": "e8512003d18d9451789a84b510e052230e9511d3f09a48d9ff389694f5bd580d",
+        "storage_schema": "rc6.lossless-json-storage.v2"
+      },
+      "wire_sha256": "db9307138fc03ccddc447304847f144132bbbeac36321100b3a8ee8d22744610"
+    }
+  ],
+  "classification": "NATIVE_PUBLIC_CODEC_RED_WITH_EXACT_NONSHARING_AND_BOOL_INT_CONTROLS",
+  "elapsed_seconds": 0.2671469769993564,
+  "extracted_root": "/tmp/rc6_finance_signed_zero_archive_dc59c2fb",
+  "imported_product_modules": [
+    {
+      "module": "rc6_shadow_runtime",
+      "path": "/tmp/rc6_finance_signed_zero_archive_dc59c2fb/rc6_shadow_runtime/__init__.py",
+      "sha256": "38de867a361db0f93625c3beb8d4a6f31e772e66db5af076a7fcc87a62cf3051"
+    },
+    {
+      "module": "rc6_shadow_runtime.packed_storage",
+      "path": "/tmp/rc6_finance_signed_zero_archive_dc59c2fb/rc6_shadow_runtime/packed_storage.py",
+      "sha256": "0b6c009a988ffd1a3351e447b6f74a870df17bef783c7a4850d16243e7ad697e"
+    },
+    {
+      "module": "rc6_shadow_runtime.serialization",
+      "path": "/tmp/rc6_finance_signed_zero_archive_dc59c2fb/rc6_shadow_runtime/serialization.py",
+      "sha256": "32114835b031e2e7137be4339975550c0f7dd795450158991ff32a6d7a999121"
+    }
+  ],
+  "initial_mutable_root_attempt": "ABORTED_BEFORE_PRODUCT_IMPORT_ROOT_HEAD_MOVED_NOT_PRODUCT_RED",
+  "network_attempts": [],
+  "schema": "rc6.finance-public-codec-signed-zero-replay.v1",
+  "scope": "PUBLIC_CODECS_ONLY_NO_TRADING_SOURCE_IO_NO_FINANCIAL_OR_HORIZON_CLAIM",
+  "script_sha256": "7f532a6f4368a8d883db69fab2382e70e3308f2558b18c387da3558de1456ce9",
+  "source_blobs": {
+    "rc6_shadow_runtime/__init__.py": "dcee6dc6f50c9ee3153e7fb18ec01951ea217e1b",
+    "rc6_shadow_runtime/packed_storage.py": "212b839c443b37bf5a8f9a860ff3736e81ed6f1b",
+    "rc6_shadow_runtime/serialization.py": "7363b49bf015105c0a3a22da403d0fe99d515677"
+  },
+  "source_file_count": 1501,
+  "source_file_sha256_after": {
+    "rc6_shadow_runtime/__init__.py": "38de867a361db0f93625c3beb8d4a6f31e772e66db5af076a7fcc87a62cf3051",
+    "rc6_shadow_runtime/packed_storage.py": "0b6c009a988ffd1a3351e447b6f74a870df17bef783c7a4850d16243e7ad697e",
+    "rc6_shadow_runtime/serialization.py": "32114835b031e2e7137be4339975550c0f7dd795450158991ff32a6d7a999121"
+  },
+  "source_file_sha256_before": {
+    "rc6_shadow_runtime/__init__.py": "38de867a361db0f93625c3beb8d4a6f31e772e66db5af076a7fcc87a62cf3051",
+    "rc6_shadow_runtime/packed_storage.py": "0b6c009a988ffd1a3351e447b6f74a870df17bef783c7a4850d16243e7ad697e",
+    "rc6_shadow_runtime/serialization.py": "32114835b031e2e7137be4339975550c0f7dd795450158991ff32a6d7a999121"
+  },
+  "source_invariance": true,
+  "source_sha": "dc59c2fb125f1ccefa167333370e350247249030",
+  "source_tree": "b8966f465b5e6c36af1e1dffb731c2f8edeb7d91"
+}

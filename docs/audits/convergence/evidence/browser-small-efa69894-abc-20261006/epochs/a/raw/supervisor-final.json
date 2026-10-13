@@ -1,0 +1,172 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "failures": [
+    {
+      "class": "ValueError",
+      "phase": "normal",
+      "reason": "SMALL_NATIVE_STAGE_NOT_GREEN"
+    }
+  ],
+  "helper_scope_literal_is_historical_origin_only": true,
+  "index": "/workspace/rc6-root-efa69894-browser-20261006-source-raw/source.index.json",
+  "normal_browser_pass": false,
+  "original_native_caps": {
+    "health_roundtrip": 2,
+    "preparation": 90,
+    "render_roundtrip": 1,
+    "rpc": 20
+  },
+  "origins": {
+    "require_function_sha256": "3fdec831bc6a8b34347d709354ae8fde3c062ad2c902f070ba93171e01685951",
+    "source_custody_origin_sha256": "c8f872b75544eb5102a0c769847a8ad51872aa3a920fe204b3c78ab41a8a7bfb",
+    "subprocess_phase_function_sha256": "ca89e2f41c41afeaca1c52ef7fa2c0e9817abd833b69b7973f68c2b32e8accb5",
+    "subprocess_phase_source_sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313"
+  },
+  "phase_caps_management_seconds": {
+    "health": 120,
+    "normal": 600
+  },
+  "phase_results": [
+    {
+      "actual_stage_pid": 244262,
+      "kernel_observation": {
+        "actual_child_reaped": true,
+        "actual_child_role": "OWN_STDLIB_STAGE_INCLUDING_ADMISSION_NATIVE_DRIVER_AND_FINAL_CAPTURE",
+        "actual_launch_to_pid_reap_wall_seconds": 0.40161839900247287,
+        "adopted_descendants_reaped": [],
+        "command": [
+          "/workspace/venv_rc6/bin/python",
+          "-I",
+          "-B",
+          "/workspace/rc6_root_normal_browser_supervisor_efa69894.py",
+          "--internal-stage",
+          "normal",
+          "--output-root",
+          "/workspace/rc6-root-efa69894-browser-20261006-raw",
+          "--ticket",
+          "3e65428b96244916b667b27b343a5556"
+        ],
+        "cpu_system_seconds": 0.048723999999999996,
+        "cpu_user_seconds": 0.273878,
+        "historical_helper_scope_is_origin_not_pytest_execution": true,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 26910720,
+        "phase_acceptance_deadline_seconds": 600,
+        "pid": 244262,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 1,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "244261",
+          "Tgid": "244261",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 244261,
+        "supervisor_pid": 244261,
+        "termination_reap_restore_cleanup_seconds": 6.66819978505373e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 244262,
+        "wall_seconds": 0.4019420190015808
+      },
+      "phase": "normal",
+      "stage_receipt": {
+        "acceptance_complete": false,
+        "artifact_validated": false,
+        "failures": [
+          {
+            "class": "ValueError",
+            "reason": "DRIVER158_LOCK_METADATA_MISMATCH"
+          }
+        ],
+        "owned_pgid": 244262,
+        "phase": "normal",
+        "postreap_custody": "POSTREAP_CUSTODY_NOT_OBSERVED",
+        "raw_identity": {
+          "device": 27,
+          "gid": 1000,
+          "inode": 938494,
+          "mount_id": 52,
+          "uid": 1000
+        },
+        "runtime_validated": false,
+        "schema": "rc6.root-small-browser-stage.v1",
+        "source_index_sha256": "9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517",
+        "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+        "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+        "stage_elapsed_seconds": 0.16293856300762855,
+        "stage_pid": 244262,
+        "status": "RED",
+        "supervisor_pid": 244261
+      },
+      "stage_receipt_sha256": "25e72d7187e5e1741e488f05b0e3d8a3d313374c52763a66a51baf61a7d077f7",
+      "status": "RED"
+    }
+  ],
+  "phases_requested": [
+    "normal",
+    "health"
+  ],
+  "raw_identity": {
+    "device": 27,
+    "gid": 1000,
+    "inode": 938494,
+    "mount_id": 52,
+    "uid": 1000
+  },
+  "runtime_validated": false,
+  "schema": "rc6.root-small-browser-external-supervisor.v1",
+  "scope": "ROOT_SMALL_FULL_ROUTES_AND_SEPARATE_PRIVATE_HEALTH; NO_BIG_OR_GOV_ARTIFACT_RUNTIME_CLAIM",
+  "separate_live_health_pass": false,
+  "source": "/workspace/rc6-root-efa69894-browser-20261006-source",
+  "source_index_sha256": "9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517",
+  "source_repo": "/workspace/porota_rc6_convergence",
+  "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+  "status": "RED",
+  "supervisor_pid": 244261,
+  "whole_git_files": 2398,
+  "wrapper": {
+    "path": "/workspace/rc6_root_normal_browser_supervisor_efa69894.py",
+    "sha256": "2df7eb90097e709eb06600bd6368894ec1f848faed67a530b0079a356eb90613",
+    "stat": {
+      "atime_ns": 1791249032861521074,
+      "blocks": 96,
+      "ctime_ns": 1791248969886019742,
+      "device": 27,
+      "gid": 1000,
+      "inode": 310044,
+      "links": 1,
+      "mode": 33152,
+      "mtime_ns": 1791248969886019742,
+      "size": 46008,
+      "uid": 1000
+    }
+  }
+}

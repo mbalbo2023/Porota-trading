@@ -1,0 +1,195 @@
+{
+  "candidate_tree_sha": "764229fb8807d15022834fc422f9d6baf56437ad",
+  "cases": [
+    {
+      "active_future_rows": 1,
+      "attribution": "Original combined seed c27+#470, not isolated #470 or a convergence head",
+      "classification": "PRODUCT_RED",
+      "id": "UX470-I04",
+      "native_future": {
+        "cash_multiplier": "1000",
+        "close_reason": null,
+        "closed_at": null,
+        "currency": "ARS",
+        "entry_cost": "100",
+        "entry_price": "1500",
+        "exit_cost": "0",
+        "expires_at": "2026-10-30T15:00:00-03:00",
+        "last_book_at": "2026-10-02T16:00:00+00:00",
+        "last_mark_at": "2026-10-02T16:00:00+00:00",
+        "last_mark_price": "1510",
+        "lifecycle_id": "ORIGINAL-FUT",
+        "margin_reserved": "1500000",
+        "market": "A3",
+        "metadata_json": "{\"cash_multiplier\": \"1000\", \"contract_snapshot_sha256\": \"32e7822e53c8ed1d9fa927908c6675093a91f50db4f233e55532396fd7c31ac2\", \"entry_cost\": \"100\", \"entry_price\": \"1500\", \"execution\": \"SIMULATION\", \"expires_at\": \"2026-10-30T15:00:00-03:00\", \"financial_contract\": {\"cash_multiplier\": \"1000\", \"currency\": \"ARS\", \"expires_at\": \"2026-10-30T15:00:00-03:00\", \"family\": \"FUTUROS\", \"initial_margin\": null, \"maintenance_margin\": null, \"market\": \"A3\", \"metadata_source\": \"PPI_PRIMARY+A3_OFFICIAL:OFFLINE_SYNTHETIC\", \"minimum_quantity\": \"1\", \"option_right\": null, \"paper_margin_policy\": \"CONSERVATIVE_NOTIONAL_RATE\", \"paper_margin_rate\": \"1\", \"quantity_step\": \"1\", \"settlement\": \"INMEDIATA\", \"strike\": null, \"symbol\": \"DLR/OCT26\", \"underlying\": \"DOLAR_A3500\"}, \"last_mark_settlement\": false, \"last_mark_source\": \"PPI_BOOK\", \"margin_reserved\": \"1500000\", \"mode\": \"PRODUCTION_PAPER\", \"opening_book_at\": \"2026-10-02T15:59:00+00:00\", \"paper_margin_policy\": \"CONSERVATIVE_NOTIONAL_RATE\", \"paper_margin_rate\": \"1\", \"quantity\": \"1\", \"real_routes_used\": [], \"side\": \"LONG\"}",
+        "opened_at": "2026-10-02T15:59:00+00:00",
+        "quantity": "1",
+        "settlement": "INMEDIATA",
+        "settlement_base_price": "1500",
+        "side": "LONG",
+        "status": "ACTIVE",
+        "symbol": "DLR/OCT26",
+        "unrealized_pnl": "10000",
+        "variation_realized": "0"
+      },
+      "native_writer": "FamilyPaperExecutor.open_future + mark_future",
+      "open_spot_rows": 0,
+      "projection_rows": 0,
+      "projection_state": "AVAILABLE",
+      "projection_total": 0,
+      "surfaces": {
+        "/": {
+          "future_visible": false,
+          "headers": {
+            "Server-Timing": "projection;dur=2.15",
+            "X-Porota-Projection": "rc6.trader-dashboard.v1",
+            "X-Porota-Read-Queries": "20"
+          },
+          "html_sha256": "2467aad92c329f06269149278571a310cb94aedf6ff9e6d2194e781b07065f4b"
+        },
+        "/en-vivo": {
+          "future_visible": false,
+          "headers": {
+            "Server-Timing": "projection;dur=2.09",
+            "X-Porota-Projection": "rc6.trader-dashboard.v1",
+            "X-Porota-Read-Queries": "23"
+          },
+          "html_sha256": "6ed473c8069ef9a376b48ccb9b9c1c7736ace1aa73e1ead39e63bd0cecac9b86"
+        },
+        "/en-vivo/posiciones": {
+          "future_visible": false,
+          "headers": {
+            "Server-Timing": "projection;dur=1.72",
+            "X-Porota-Projection": "rc6.trader-dashboard.v1",
+            "X-Porota-Read-Queries": "5"
+          },
+          "html_sha256": "1feb489a3c9f03de30bbf530eab4c7bda2e2a95d975c8bd5cdf15108c1b45ef8"
+        },
+        "/riesgo/exposicion": {
+          "future_visible": false,
+          "headers": {
+            "Server-Timing": "projection;dur=1.56",
+            "X-Porota-Projection": "rc6.trader-dashboard.v1",
+            "X-Porota-Read-Queries": "5"
+          },
+          "html_sha256": "645a948bbb2ebadeda1b6f2e29f7d0dc2b8003c7e82c503374b3ab6c15678a8b"
+        },
+        "/riesgo/liquidez": {
+          "future_visible": false,
+          "headers": {
+            "Server-Timing": "projection;dur=1.35",
+            "X-Porota-Projection": "rc6.trader-dashboard.v1",
+            "X-Porota-Read-Queries": "5"
+          },
+          "html_sha256": "8dc87dd0c8bd817dc91e8015cc5faac5cad91baa471e5ca2d7fdaed5681aa59f"
+        },
+        "/riesgo/posiciones": {
+          "future_visible": false,
+          "headers": {
+            "Server-Timing": "projection;dur=1.47",
+            "X-Porota-Projection": "rc6.trader-dashboard.v1",
+            "X-Porota-Read-Queries": "5"
+          },
+          "html_sha256": "c66d3ac100997b198a0de38fa5b6d11ae091c0fd2afdf8085fa8368d3ae3f21e"
+        }
+      },
+      "ui_open_positions": 0
+    },
+    {
+      "annual_calendar_date_cutoff": "2026-10-01",
+      "annual_identity": [
+        "ACCIONES",
+        "GGAL",
+        "BYMA",
+        "A-24HS"
+      ],
+      "annual_rows": [
+        {
+          "adjusted": 0,
+          "close": 80.0,
+          "date": "2026-09-30",
+          "high": 81.0,
+          "low": 79.0,
+          "open": 80.0,
+          "source": "PPI",
+          "volume": 1000.0
+        }
+      ],
+      "canonical": {
+        "close": 80.0,
+        "date": "2026-09-30",
+        "observed_at": "2026-10-02T15:00:00+00:00",
+        "source": "PPI",
+        "version_id": 2
+      },
+      "classification": "PRODUCT_RED",
+      "display_contract": {
+        "bar_date_visible": true,
+        "currency_visible": false,
+        "decision_input_contract_visible": false,
+        "provider_source_visible": true,
+        "version_observation_projected": false,
+        "version_observation_visible": false
+      },
+      "id": "AUD-468-16",
+      "limits": [
+        "Calendar date is not an observation/decision cut; no binding lookahead is claimed.",
+        "This reproduces the history presentation subclause, not all five concept surfaces or broker impact.",
+        "No identical reingest is used, so this is not AUD08 renamed as AUD16."
+      ],
+      "native_append_results": [
+        {
+          "canonical_updated": true,
+          "payload_hash": "55608f4227e253cdc46171557fc8f416d14a40b94df8865ebb0dd341f4504eac",
+          "source_rank": 100,
+          "version_appended": true,
+          "version_id": 1
+        },
+        {
+          "canonical_updated": true,
+          "payload_hash": "ed56c8f6859a97af60422905bd0a3744c7157e8f201a01f2f85484a850c5c950",
+          "source_rank": 100,
+          "version_appended": true,
+          "version_id": 2
+        }
+      ],
+      "native_versions": [
+        {
+          "close": 100.0,
+          "date": "2026-09-30",
+          "id": 1,
+          "metadata_json": "{\"currency\":\"ARS\",\"offline_synthetic\":true}",
+          "observed_at": "2026-10-01T15:00:00+00:00",
+          "source": "PPI"
+        },
+        {
+          "close": 80.0,
+          "date": "2026-09-30",
+          "id": 2,
+          "metadata_json": "{\"currency\":\"ARS\",\"offline_synthetic\":true}",
+          "observed_at": "2026-10-02T15:00:00+00:00",
+          "source": "PPI"
+        }
+      ],
+      "native_writer": "cu_history_store_v2_hf6.append_candle",
+      "observation": "The calendar date filter returns current canonical history but drops its version observation clock from projection and presentation.",
+      "scope": "HISTORY_PRESENTATION_SOURCE_CUT_IDENTITY_SUBCLAUSE"
+    }
+  ],
+  "command_argv": [
+    "/workspace/porota_rc6_worktrees/ux/tests/ci_rc6_original_ux_product_red.py",
+    "--source-index",
+    "/tmp/rc6-ux-original-seed-0f810c16.index.json",
+    "--output",
+    "/tmp/rc6-ux-original-product-red-0f810c16"
+  ],
+  "parents": [
+    "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "4a5fc6384260b31f9a07e791093add6ee83102a1"
+  ],
+  "recorded_at": "2026-10-05T07:40:00.953614+00:00",
+  "runtime_touched": false,
+  "schema": "rc6.original-ux-native-product-red.v1",
+  "source_sha": "0f810c168b0bfb5362148b804f3e15ffd1855610",
+  "status": "PRODUCT_RED_REPRODUCED"
+}

@@ -1,0 +1,17 @@
+{
+  "PR": 476,
+  "PR_draft": true,
+  "PR_state": "open",
+  "branch": "recovery/rc6-material-fix-forward-3091e93-20261006",
+  "canonical_origin": "https://github.com/mbalbo2023/Porota-trading.git",
+  "no_secrets_tokens_credentials_or_signed_urls": true,
+  "not_a_remote_read_receipt_yet": true,
+  "preparation_receipt_url": "<ROOT_DURABLE_FINAL_SOURCE_PREPARATION_RECEIPT_471>",
+  "read_utc": "<FRESH_UTC_CANONICAL_READ_TIMESTAMP>",
+  "repo": "mbalbo2023/Porota-trading",
+  "repo_id": 1338680554,
+  "schema": "rc6.fullGov.fresh-GitHub-final-source-preparation-authority-template.v1",
+  "sha": "<PUBLISHED_FINAL_PR_HEAD_SHA40>",
+  "source_truth": "FRESH_CANONICAL_GITHUB_COMMIT_TREE_REF_PR_READS",
+  "tree": "<PUBLISHED_FINAL_PR_HEAD_TREE40>"
+}

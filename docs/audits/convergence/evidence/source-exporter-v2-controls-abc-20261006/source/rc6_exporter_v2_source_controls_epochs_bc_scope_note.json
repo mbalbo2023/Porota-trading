@@ -1,0 +1,235 @@
+{
+  "b": {
+    "classification": "OUTER_ACCOUNTING_RED_NOT_A_MISSING_KERNEL_OR_OBSERVED_LIVE_CHILD_GAP",
+    "inner_receipt": {
+      "all11_stable_during_this_NOATIME_read": true,
+      "bytes": 6402,
+      "current_stat_fields_at_capture": {
+        "st_atime_ns": 1791251511995633964,
+        "st_blocks": 16,
+        "st_ctime_ns": 1791251511995633964,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 836161,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791251511995633964,
+        "st_nlink": 1,
+        "st_size": 6402,
+        "st_uid": 1000
+      },
+      "execution_end_to_capture_all11_unchanged_claimed": false,
+      "original_absolute_path": "/workspace/rc6-exporter-v2-source-controls-20261006-raw-retry-b/controls.receipt.json",
+      "original_mode_octal": "0644",
+      "sha256": "4d393087f25645be96d032e483fc3568efdb81828befa7dd468c3a8be719fa18"
+    },
+    "inner_status": "GREEN",
+    "kernel_group_absent": true,
+    "kernel_main_actual_reaped": true,
+    "kernel_main_exit_code": 0,
+    "kernel_main_pid": 247634,
+    "kernel_post_echild": true,
+    "kernel_pre_echild": true,
+    "kernel_receipt": {
+      "all11_stable_during_this_NOATIME_read": true,
+      "bytes": 1483,
+      "current_stat_fields_at_capture": {
+        "st_atime_ns": 1791251512031418346,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791251512036760210,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 836163,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791251512036760210,
+        "st_nlink": 1,
+        "st_size": 1483,
+        "st_uid": 1000
+      },
+      "execution_end_to_capture_all11_unchanged_claimed": false,
+      "original_absolute_path": "/workspace/rc6-exporter-v2-source-controls-20261006-dispatch-retry-b/kernel.wait4.json",
+      "original_mode_octal": "0600",
+      "sha256": "290707381f3e8e0615179b73f266f21f783b70b0cd57239a0de3bb9680bfd63b"
+    },
+    "kernel_source_all11_unchanged": true,
+    "outer_exit": {
+      "all11_stable_during_this_NOATIME_read": true,
+      "bytes": 24,
+      "current_stat_fields_at_capture": {
+        "st_atime_ns": 1791251512059418143,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791251512059418143,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 705179,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791251512059418143,
+        "st_nlink": 1,
+        "st_size": 24,
+        "st_uid": 1000
+      },
+      "execution_end_to_capture_all11_unchanged_claimed": false,
+      "original_absolute_path": "/workspace/rc6-exporter-v2-source-controls-20261006-outer-retry-b/exit.json",
+      "original_mode_octal": "0600",
+      "sha256": "a26c2d6adbc45fddc674de7a9e1d7e7daf8facb70be7d04275dc0918abb86f98"
+    },
+    "outer_exit_code": 1,
+    "recorded_misclassified_field_unchanged": [
+      {
+        "exit_code": 0,
+        "pid": 247641
+      }
+    ],
+    "root_raw_not_rewritten": true,
+    "root_reported_accounting_finding": "ACTUAL_POSITIVE_WAIT4_REAP_OF_ADOPTED_PID247641_EXIT0_APPENDED_TO_RESIDUAL_LIST_AND_VETOED_OUTER_GATE",
+    "unique_inner_cases": 13
+  },
+  "browser_c_reclassified_or_native_product_gov_artifact_runtime_qualified": false,
+  "c": {
+    "actual_adopted_reaps_separate": [
+      {
+        "exit_code": 0,
+        "kernel_rusage": {
+          "cpu_system": 0.0,
+          "cpu_user": 0.000553,
+          "rss_bytes": 667648
+        },
+        "pid": 247750
+      }
+    ],
+    "actual_main_exit_code": 0,
+    "actual_main_kernel_rusage": {
+      "cpu_system": 0.08155699999999999,
+      "cpu_user": 0.137991,
+      "rss_bytes": 20463616
+    },
+    "actual_main_pid": 247743,
+    "actual_main_reaped": true,
+    "actual_outer_wall_seconds": 0.30910126499657054,
+    "case_ids": [
+      "REAL_OWN_FSYNC_HASH_ALL11",
+      "SYMLINK_REJECTED",
+      "HARDLINK_REJECTED",
+      "NONREG_FIFO_REJECTED",
+      "WRONG_REGULAR_MODE_REJECTED",
+      "OUTPUT_PARENT_UID_REJECTED",
+      "CURRENT_BLOCKS_MUTATION_REJECTED",
+      "SOURCE_ARCHIVE512_BOUND_REJECTED",
+      "FSYNC_FAILURE_REJECTED",
+      "EXISTING_COMMIT_AND_INDEX_NO_OVERWRITE",
+      "REAL_PRIVATE_GIT_SOURCE_EXPORT_COMMIT_INDEX_JOIN",
+      "REAL_PRIVATE_GIT_COMMIT_TAMPER_REJECTED",
+      "REAL_PRIVATE_GIT_INDEX_TAMPER_REJECTED"
+    ],
+    "cleanup_signals": [],
+    "group_absent": true,
+    "inner_receipt": {
+      "all11_stable_during_this_NOATIME_read": true,
+      "bytes": 6402,
+      "current_stat_fields_at_capture": {
+        "st_atime_ns": 1791251636395391605,
+        "st_blocks": 16,
+        "st_ctime_ns": 1791251636395391605,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 836245,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791251636395391605,
+        "st_nlink": 1,
+        "st_size": 6402,
+        "st_uid": 1000
+      },
+      "execution_end_to_capture_all11_unchanged_claimed": false,
+      "original_absolute_path": "/workspace/rc6-exporter-v2-source-controls-20261006-raw-retry-c/controls.receipt.json",
+      "original_mode_octal": "0644",
+      "sha256": "862bc9474ad743e0cbcfd686a53fa717539aa9cc2883d38fb44c263886566a79"
+    },
+    "inner_status": "GREEN",
+    "kernel_post_echild": true,
+    "kernel_pre_echild": true,
+    "kernel_receipt": {
+      "all11_stable_during_this_NOATIME_read": true,
+      "bytes": 1743,
+      "current_stat_fields_at_capture": {
+        "st_atime_ns": 1791251636442524016,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791251636445262697,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 836247,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791251636445262697,
+        "st_nlink": 1,
+        "st_size": 1743,
+        "st_uid": 1000
+      },
+      "execution_end_to_capture_all11_unchanged_claimed": false,
+      "original_absolute_path": "/workspace/rc6-exporter-v2-source-controls-20261006-dispatch-retry-c/kernel.wait4.json",
+      "original_mode_octal": "0600",
+      "sha256": "f7d11ac4f163ad00e23194a6548a5bbc888e4071bc843ad53b8a03feed7f7865"
+    },
+    "kernel_wait4_zero_irreversible_red": false,
+    "outer_exit": {
+      "all11_stable_during_this_NOATIME_read": true,
+      "bytes": 24,
+      "current_stat_fields_at_capture": {
+        "st_atime_ns": 1791251636470523819,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791251636470523819,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 705182,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791251636470523819,
+        "st_nlink": 1,
+        "st_size": 24,
+        "st_uid": 1000
+      },
+      "execution_end_to_capture_all11_unchanged_claimed": false,
+      "original_absolute_path": "/workspace/rc6-exporter-v2-source-controls-20261006-outer-retry-c/exit.json",
+      "original_mode_octal": "0600",
+      "sha256": "a038f7d85b04725d3b15dcb2c71914ddf36ca45d737f141ffe4d23a679292d27"
+    },
+    "outer_exit_code": 0,
+    "qualification_scope": "STDLIB_PRIVATE_FILES_AND_PRIVATE_GIT_SOURCE_CONTROLS_NOT_PRODUCT_NATIVE_GOV_BROWSER_OR_HISTORICAL_TAR",
+    "qualified": "SAME13_STDLIB_SOURCE_HELPER_CONTROLS_ONLY",
+    "residual_descendants": [],
+    "rss_values_not_summed": true,
+    "source_all11_unchanged_within_dispatch": true,
+    "subreaper_restore_verified": true,
+    "unique_source_helper_controls": 13
+  },
+  "created_at_utc": "2026-10-06T01:59:23Z",
+  "old_tar_or_data_body_read": false,
+  "schema": "rc6.source-export-controls-epochs-bc-scope-note.v1",
+  "scope": "SOURCE_ONLY_LITERAL_METADATA_READ_NOT_NEW_CONTROL_EXECUTION_OR_CANONICAL_SOURCE_EXPORT",
+  "semantic_counting": {
+    "actual_dispatch_epochs_preserved": [
+      "A",
+      "B",
+      "C"
+    ],
+    "distinct_case_ids": 13,
+    "epochs_do_not_equal26_or39_independent_controls": true,
+    "first_two_outer_epochs_remain_RED": true,
+    "product_native_gov_browser_cases_counted": 0,
+    "qualification_epoch": "C"
+  },
+  "source_exporter_atime_scope": {
+    "actor_inferred": false,
+    "atime_restored": false,
+    "execution_end_to_current_all11_continuity_claimed": false,
+    "finance_reported_current_atime_later_than_c_witness": true,
+    "finance_reported_other10_and_sha_equal": true,
+    "within_c_receipt_before_equals_after_all11": true
+  },
+  "source_launchers": {
+    "v1": "SOURCE_ONLY_UNEXECUTED",
+    "v2": "EPOCH_A_OUTER_RED_KERNEL_PUBLICATION_GAP",
+    "v3": "EPOCH_B_OUTER_RED_ADOPTED_REAP_ACCOUNTING",
+    "v4": "SOURCE_ONLY_UNEXECUTED_SIGKILL_VETO_FORWARD",
+    "v5": "EPOCH_C_ACTUAL_SOURCE_CONTROLS_QUALIFIED"
+  },
+  "source_or_original_raw_mutated_by_note": false,
+  "status": "A_AND_B_OUTER_RED_PRESERVED_C_QUALIFIED_SAME13_SOURCE_HELPER_CONTROLS",
+  "whole2398_or_fresh_root_canonical_export_qualified_by_controls": false
+}

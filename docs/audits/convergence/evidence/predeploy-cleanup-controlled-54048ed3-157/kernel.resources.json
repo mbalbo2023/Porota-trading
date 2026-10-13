@@ -1,0 +1,39 @@
+{
+  "cpu_system_seconds": 2.311058,
+  "cpu_user_seconds": 10.194278,
+  "elapsed_wall_seconds": 12.718431104993215,
+  "execution_id": "44b98585ea3b48ed8b8fc033f1667a5f",
+  "exit_code": 0,
+  "peak_rss_bytes": 100851712,
+  "pid": 231260,
+  "raw_log_sha256": "7050a3650b68b4cd09e8b21fcb21ef6b2720078c8e077671ef4b50b9dbd78ce5",
+  "resource_scope": "ACTUAL_SINGLE_CHILD_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT_CONCURRENT_RSS_SUM",
+  "schema": "rc6.predeploy-scoped-cleanup-controlled-focal-kernel.v1",
+  "scope": "THREE_SELECTED_MODULES_CONTROLLED_DOCKER_ADAPTER_AND_METADATA; NO_ACTUAL_DOCKER_ACTIONS_BUILD_FULL_GOV_OR_IMAGE_ACCEPTANCE",
+  "source_atime_changes_observed_separately": [
+    {
+      "after": 1791239636321874228,
+      "before": 1791239635049882214,
+      "kind": "directory",
+      "path": "."
+    },
+    {
+      "after": 1791239636321874228,
+      "before": 1791239635391091957,
+      "kind": "directory",
+      "path": "scripts"
+    },
+    {
+      "after": 1791239638033863482,
+      "before": 1791239635404982006,
+      "kind": "directory",
+      "path": "tests"
+    }
+  ],
+  "source_bytes_modes_blobs_stable_custody_unchanged": true,
+  "source_files": 2162,
+  "source_overlay_count": 0,
+  "source_sha": "54048ed3c366999922d7668cec9b5b1082db8ec6",
+  "source_tree": "d5cd117ba75edf03eb33bb9c6fdafc5a29c6190f",
+  "timed_out": false
+}

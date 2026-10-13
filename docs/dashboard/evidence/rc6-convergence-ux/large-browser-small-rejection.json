@@ -1,0 +1,8 @@
+{
+  "details": {},
+  "error_class": "GateFailure",
+  "gate": "NATIVE_LARGE_REPORT_NOT_EXERCISED",
+  "recorded_at": "2026-10-05T06:37:24.344030+00:00",
+  "schema": "rc6.dashboard-native-large-browser-proof.v1",
+  "status": "RED"
+}

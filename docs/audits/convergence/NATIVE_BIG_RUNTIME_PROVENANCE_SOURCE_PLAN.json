@@ -1,0 +1,348 @@
+{
+  "schema": "rc6.native-big-runtime-provenance-source-plan.v1",
+  "status": "SOURCE_NATIVE_MODULE_DESCRIPTOR_FIX_FORWARD_WITH_FIVE_PRESERVED_PRIOR_FOCAL_REDS_CURRENT_SOURCE_NOT_EXECUTED",
+  "base": {
+    "sha": "793cc7039ecfb5d9c34999cf20691245776543e6",
+    "tree": "c73d2caea93a88a57564bedb7bfe72e7f5806fc8"
+  },
+  "ownership": {
+    "workstream": "NATIVE_BIG_RUNTIME_PROVENANCE",
+    "branch": "work/rc6-native-import-runtime-provenance-20261006",
+    "paths": [
+      "scripts/rc6_native_import_provenance.py",
+      "tests/test_rc6_native_big_import_provenance.py",
+      "docs/audits/convergence/NATIVE_BIG_RUNTIME_PROVENANCE_SOURCE_PLAN.json"
+    ]
+  },
+  "original_native_red_preserved": {
+    "source_sha": "1426b2844c06b164aa08b765e01676f19845a192",
+    "source_tree": "983f5a1d3f38edf671eab7d5420bbffdc93ffea2",
+    "raw_path": "/workspace/rc6-canonical-1426b284-big-20261005-raw/native-big-result.json",
+    "raw_sha256": "db1f92f24c407869887fca99dd44c5eb1a0b99ffaa939a17d94ed8063a78cb7c",
+    "raw_bytes": 432324,
+    "parent_status": "UNVERIFIED_LIMITS",
+    "capacity_exhaustion": false,
+    "counts": {"exec": 254, "import": 170, "opaque_exec": 112, "overflow": 0, "errors": 0},
+    "unique_event_records": 309,
+    "record_limit": 2048,
+    "text_limit": 4096,
+    "worker_final": null,
+    "worker_exitcode": -15,
+    "performance_complete": false,
+    "scope": "The original receipt remains RED and byte-exact. Missing worker FINAL and original performance failure remain independent of parent classification."
+  },
+  "fixes": [
+    {
+      "class": "PUBLIC_TYPING_ALIAS",
+      "rca": "Python 3.11 registers typing.io/typing.re as classes; requiring ModuleType made the initial boundary incomplete.",
+      "fix": "Classify only exact actual parent alias, actual metaclass, qualified stdlib typing source and compiled method code/globals identity. Emit NONMODULE_PUBLIC_TYPING_ALIAS, retaining the class relationship and explicitly excluding creation-time/binary authentication.",
+      "portable_boundary": "Python 3.12 may omit these aliases and _DeprecatedType; absence is not fabricated as a qualified alias. Lookalikes remain unresolved.",
+      "guards": [
+        "tests/test_rc6_native_big_import_provenance.py::test_exact_typing_public_aliases_are_classified_without_pretending_module_type",
+        "tests/test_rc6_native_big_import_provenance.py::test_false_typing_alias_with_real_metaclass_and_matching_name_stays_unverified"
+      ],
+      "negative_variants": ["false_typing_alias", "false_typing_metadata (actual registered alias with non-str module metadata, no comparison callbacks)"]
+    },
+    {
+      "class": "OPAQUE_RUNTIME_EXEC",
+      "rca": "The old receipt retained only <string>/<frozen runpy>, losing actual code/factory lineage. Its 112 raw executions cannot be retroactively attributed or split.",
+      "fix": "For rare opaque exec only, inspect the actual CodeType and one caller frame. collections.namedtuple/dataclasses._create_fn require their actual registered function code, real parent globals, compiler references from exact stdlib source, exact eval/exec callsite and compiled bounded generation input. Frozen execution requires exact actual interpreter frozen-code comparison. Unknown opaque execution remains UNVERIFIED.",
+      "bounds": "Strong code references and JSON metadata share the unchanged 2048 admission budget. Generated text is at most 4096 characters and UTF-8 bytes. Code/source fingerprints are computed only for a unique qualified rare code object; no file reads or per-function profiling in the callback.",
+      "guards": [
+        "tests/test_rc6_native_big_import_provenance.py::test_real_language_factory_exec_has_exact_code_and_callsite_evidence",
+        "tests/test_rc6_native_big_import_provenance.py::test_cloned_factory_with_same_code_but_foreign_globals_is_rejected",
+        "tests/test_rc6_native_big_import_provenance.py::test_valid_language_generation_over_text_bound_does_not_raise_provenance_cap",
+        "tests/test_rc6_native_big_import_provenance.py::test_frozen_filename_requires_actual_interpreter_code_reference",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_opaque_exec_is_unverified_without_generic_allowlist"
+      ],
+      "variants": {
+        "test_real_language_factory_exec_has_exact_code_and_callsite_evidence": ["namedtuple", "dataclass"],
+        "test_frozen_filename_requires_actual_interpreter_code_reference": ["real_frozen", "fake_frozen"]
+      },
+      "unsupported": "Other runtime factories are not generically allowed; missing source/code/callsite evidence remains fail-closed."
+    },
+    {
+      "class": "IMPORT_OUTCOME_AND_EXTENSION_REGISTRY_LINEAGE",
+      "rca": "filename=None plus final absence did not distinguish actual optional failure from executed-and-deleted modules. Cython registry objects lacked a recorded parent factory.",
+      "fix": "Opt-in observation delegates the exact original frozen import machinery results and BaseException unchanged. Bounded deduplicated actual attempt outcomes join selected real loaders to audit import/exec events. Only actual ModuleNotFoundError with matching name, before any selected loader, and a verified real core-importer traceback raiser qualifies failed lookup. This rare exceptional check is capped at eight traceback frames, without tracing or sampling; user-finder constructed errors cannot merge into a genuine result for the same name. Executed transient modules retain their actual file events and outcome. The two observed charset_normalizer extension factories require actual ExtensionFileLoader/method identities, parent module/spec/loader/file attributes and uncontended new registry objects. Registered type identity in the original extension parent is authoritative local evidence; an unavailable __module__ may remain None, while a declared string mismatch is rejected. A new empty cython_runtime must have the exact five standard fields and exactly one strongly bound type registry created in the same loader token. Names constrain scope and never waive missing creation/identity evidence.",
+      "creation_scope": "Observed registry object creation inside an uncontended original extension load is local factory provenance, not C-extension binary authentication or proof of every native instruction. Earlier, replaced, unknown or ambiguous synthetic objects remain unresolved.",
+      "restore": "Each observer detaches on every exit. Shared import machinery is restored only when no owner remains and the installed callable is still the owned dispatcher. Live protocol calls at the final boundary prevent closure; later callbacks cannot make the closed receipt GREEN.",
+      "guards": [
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_optional_missing_outcome_is_bounded_and_distinct_from_final_absence",
+        "tests/test_rc6_native_big_import_provenance.py::test_fabricated_missing_audit_event_has_no_actual_import_outcome",
+        "tests/test_rc6_native_big_import_provenance.py::test_user_finder_constructed_module_not_found_is_not_core_optional_absence",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_pinned_transient_module_is_joined_to_loader_and_execution_after_deletion",
+        "tests/test_rc6_native_big_import_provenance.py::test_private_alien_loader_and_base_exception_preserve_evidence_and_restore_protocol",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage",
+        "tests/test_rc6_native_big_import_provenance.py::test_replaced_or_unknown_native_runtime_module_has_no_name_based_exemption",
+        "tests/test_rc6_native_big_import_provenance.py::test_runtime_registry_proof_rejects_ambiguous_concurrent_stale_or_late_type_authority",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_exec_of_alien_module_deleted_after_import_remains_blocked",
+        "tests/test_rc6_native_big_import_provenance.py::test_stress_early_failure_deactivates_hook_before_next_observer",
+        "tests/test_rc6_native_big_import_provenance.py::test_child_startup_base_exception_deactivates_owned_hook",
+        "tests/test_rc6_native_big_import_provenance.py::test_nonzero_actual_child_preserves_initial_and_failure_proof_in_typed_evidence"
+      ],
+      "variants": {
+        "test_actual_optional_missing_outcome_is_bounded_and_distinct_from_final_absence": ["optional_missing", "missing_repeated (100 actual attempts, one deduplicated outcome)"],
+        "test_private_alien_loader_and_base_exception_preserve_evidence_and_restore_protocol": ["transient_alien", "loader_abort (SystemExit)"],
+        "test_replaced_or_unknown_native_runtime_module_has_no_name_based_exemption": ["false_cython_after (actual five-field empty shape)", "unknown_runtime_module (matching type names and module=None, no parent identity)"],
+        "test_runtime_registry_proof_rejects_ambiguous_concurrent_stale_or_late_type_authority": ["cython_ambiguous_companion", "cython_concurrent_loader", "cython_companion_replaced", "cython_parent_type_replaced", "cython_parent_type_added_after", "cython_preexisting", "cython_runtime_same_object_namespace_mutated"]
+      }
+    }
+  ],
+  "invariants": [
+    "All original test functions/classes preserve their AST and assertions; old 4087/fa1/dossier/RAW are unchanged.",
+    "Only the three owned files change. scripts/rc6_issue465_stress.py, runtime/horizon, GC, fixtures, quotas and business policy are untouched.",
+    "2048 shared evidence-record admission bound and 4096 text bound are unchanged; truncation/errors/unfinished calls prevent closure.",
+    "The record/text limits bound evidence counts, not all retained heap bytes; actual lifetime RSS remains subject to the unchanged 2GiB resource gate.",
+    "Raw opaque/import/exec counters remain actual counters; qualification adds explicit provenance rather than discarding observed events.",
+    "Source/PID/PPID/preflight/worker INITIAL/FINAL and actual worker completion remain mandatory in the unchanged caller.",
+    "No trace/profile/sampler/GC callbacks or settings/deadline changes. Rare denial-code inspection is separate from business/resource CPU evidence.",
+    "Original 90-second worker cap, .25 source-capture cap, 15-second slow-fsync isolation, 12k/60k, PAPER five EXIT, 2GiB RSS and live/archive/scratch quotas remain intact.",
+    "The closure is an observed local interpreter window. Bootstrap, post-boundary IPC/teardown and cryptographic authentication of executed bytes/installed binaries remain outside scope."
+  ],
+  "source_review_corrections": {
+    "audit_hook_installation": {
+      "finding": "Python may suppress a RuntimeError veto of sys.addaudithook, so a successful return alone does not prove installation.",
+      "fix": "Before business activation, emit one private audit sentinel with this observer's exact object nonce. Require exactly one reception during installation, preserve raised exceptions, and deactivate/restore import machinery on zero/duplicate/error. INITIAL and FINAL retain exact installation status. The sentinel is excluded from import/exec counters and evidence-record admission.",
+      "guard": "tests/test_rc6_native_big_import_provenance.py::test_audit_hook_installation_requires_unique_owned_sentinel_and_restores_after_failure",
+      "variants": ["audit_hook_veto", "audit_hook_duplicate", "audit_hook_error"],
+      "evidence_kind": "SOURCE_REVIEW_FINDING_WITH_UNEXECUTED_PHYSICAL_SUBPROCESS_GUARDS"
+    },
+    "opaque_reference_cache": "Classification cache includes the actual caller globals identity, retained strongly until deactivation; the same code/callsite cannot borrow qualification from another globals dictionary.",
+    "foreign_class_metadata": {
+      "finding": "type.__getattribute__ bypasses a metaclass method override but can still execute a descriptor supplied by that foreign metaclass.",
+      "fix": "Read physical class fields by directly invoking the original built-in type descriptors, and ImportError.name via its original member descriptor. Require bounded exact str before comparing class metadata, including alias module/name/qualname; non-string metadata never invokes foreign equality. Non-string/unbounded metadata is unverified. Do not call foreign metaclass descriptors merely to label the loader, exception or referenced native type.",
+      "guard": "tests/test_rc6_native_big_import_provenance.py::test_loader_metaclass_descriptors_are_not_invoked_by_observer_and_original_delegation_survives",
+      "variants": ["foreign_loader_result", "foreign_loader_abort"],
+      "evidence_kind": "SOURCE_REVIEW_FINDING_WITH_UNEXECUTED_PHYSICAL_BASELINE_VERSUS_OBSERVED_DELEGATION_CONTROLS",
+      "previous_unexecuted_source": "0bff040c0e2764a1a23c05c6956c531d5b24e66a"
+    }
+  },
+  "validation": {
+    "source_ast_and_compile_only": "PASS",
+    "original_test_function_class_ast_unchanged": true,
+    "new_native_runs": 0,
+    "new_pytest_cases_executed": 0,
+    "source_independent_review": "PENDING",
+    "governed_focal_execution": "PENDING_ROOT_EXCLUSIVE_SLOT",
+    "big_or_horizon_execution": "NOT_AUTHORIZED_BY_THIS_PLAN",
+    "final_frozen_artifact_or_runtime_acceptance": false
+  },
+  "prior_focal_native_result": {
+    "source_sha": "ce9323625e89fd8a10979d9b1eaf353c55c176e5",
+    "source_tree": "cedd0a34e444526b504d06329b3fe0c8ce9d9ec1",
+    "receipt_path": "/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "receipt_sha256": "c6f39ad5dbea8b9fcc4b29b96adb400c2acc6c638b70f808c88299bfdd88ffe8",
+    "junit_sha256": "320476f364e462e3ac3bf41924053e3606ffcf3ebbc245ea3834528c71e736ec",
+    "actual_cases": 43,
+    "passed": 41,
+    "failed": 2,
+    "errors": 0,
+    "skipped": 0,
+    "result": "RED_SCOPE_NOT_GREEN",
+    "source_unchanged": true,
+    "installed_metadata_total": 157,
+    "raw_selected_copy_reads_all11_unchanged": true,
+    "native_pytest_wall_seconds": 13.017769694008166,
+    "actual_wait4_observation_seconds": 15.318248436000431,
+    "actual_main_pid": 243502,
+    "actual_supervisor_pid": 243501,
+    "actual_main_reaped": true,
+    "kernel_pre_and_post_echild": true,
+    "final_process_group_absent": true,
+    "peak_main_and_adopted_rss_bytes": 109256704,
+    "failures": [
+      {
+        "node": "tests/test_rc6_native_big_import_provenance.py::test_cloned_factory_with_same_code_but_foreign_globals_is_rejected",
+        "actual_witness": "CalledProcessError: physical child returned1. The prior parent did not preserve its captured stdout/stderr.",
+        "source_rca": "FunctionType does not inherit namedtuple's positional/keyword defaults. The fixture omitted kwdefaults required by the real callable; a TypeError explains the source contract defect, but its actual child traceback is unavailable in the preserved prior RAW.",
+        "fix": "Copy the original positional/keyword defaults into the clone while preserving foreign globals and the unchanged UNVERIFIED assertion.",
+        "classification": "SOURCE_CONFIRMED_FIXTURE_CONTRACT_DEFECT_WITH_PRIOR_CHILD_TRACEBACK_GAP"
+      },
+      {
+        "node": "tests/test_rc6_native_big_import_provenance.py::test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage",
+        "actual_witness": "KeyError cython_runtime: the actual child returned JSON, but the final qualified-module map lacked that key.",
+        "source_rca": "The prior parent did not preserve the returned child JSON. Exact selected-loader outcomes, errors and unresolved-boundary reason cannot be recovered from the existing XML/log alone.",
+        "fix": "Preserve actual future child stdout/stderr before parent assertions; retain the existing fail-closed provenance rules and original positive expectation until actual evidence identifies the missing lineage.",
+        "classification": "ACTUAL_POSITIVE_LINEAGE_GUARD_RED_EXACT_CHILD_REASON_NOT_RECORDED_NO_NAME_ALLOWLIST_FIX"
+      }
+    ],
+    "current_fix_forward_native_executions": 0,
+    "limits": "This is a separate scoped focal execution, not BIG performance, full horizon, final Gov, image or runtime authority. The original RED remains byte-exact; no missing child output is retroactively reconstructed."
+  },
+  "second_prior_focal_native_result": {
+    "source_sha": "1d60ec2ced05ce7793028f5a04f707cb66fa5cda",
+    "source_tree": "a21e16b7d365b202996c835eda6baebbc8b0ffb4",
+    "receipt_path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "receipt_sha256": "26d8d0932f61bbae545f9a02369e31a8ecb4a513f8da404a483901e6b1f2c3ce",
+    "receipt_bytes": 256403,
+    "junit_sha256": "2d9346da98245b2047e9933e1d5aeba1efb12cf79e0d3182921b4802cfffa4af",
+    "actual_cases": 43,
+    "passed": 42,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 0,
+    "result": "RED_SCOPE_NOT_GREEN",
+    "helper_sha256": "e064392b4b0f2dc6ea816f08667d40a5d92599f0b0f90d932e8eacac69b474e6",
+    "source_unchanged": true,
+    "selected_receipt_read_all11_unchanged": true,
+    "actual_clone_negative": "PASS_WITH_ORIGINAL_FOREIGN_GLOBALS_AND_UNVERIFIED_ASSERTION",
+    "remaining_failure": {
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage",
+      "child_stdout_path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0/runtime-control-stdout.bin",
+      "child_stdout_sha256": "497990a18baa7ff9543d68e3514ce95155ab0231c60b186677aa2fc151ef108f",
+      "child_stdout_bytes": 95991,
+      "child_status": "UNVERIFIED_LIMITS",
+      "errors": 0,
+      "overflow": 0,
+      "cython_and_charset_absent_at_initial_boundary": true,
+      "actual_extension_loaders": "charset_normalizer.md and charset_normalizer.cd both LOADER_RETURNED, concurrent=false, synthetic created=[]",
+      "unresolved_modules": ["cython_runtime", "_cython_3_2_9"],
+      "unresolved_reason": "ORIGIN_NOT_OBSERVABLE_NO_EXACT_EXTENSION_CREATION_LINEAGE",
+      "demonstrated_scope": "The actual selected-loader return records narrow the missing lineage to namespace/type-shape predicates. The rejected field values were not recorded; no specific predicate failure is inferred.",
+      "classification": "ACTUAL_POSITIVE_LINEAGE_GUARD_RED_WITH_PRESERVED_CHILD_JSON_PREDICATE_METADATA_GAP"
+    },
+    "limits": "A separate 43-case focal, never added to the prior 43 or counted as new requirements. No BIG, horizon, Gov, image, deployment or runtime qualification."
+  },
+  "third_prior_focal_native_result": {
+    "source_sha": "27aec1bf8c0e4be779252e98e42d25cbfc5dee5d",
+    "source_tree": "601e5427ad2d0791b93bae5f54fb9693e6055646",
+    "receipt_path": "/workspace/rc6-budget-runtime-provenance-27ae-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "receipt_sha256": "7fd0049b4248eaf4eb44e805e6d465a6d5df7541ad3de51ef6157a689260c0d4",
+    "receipt_bytes": 256403,
+    "actual_cases": 43,
+    "passed": 42,
+    "failed": 1,
+    "result": "RED_SCOPE_NOT_GREEN",
+    "helper_sha256": "e064392b4b0f2dc6ea816f08667d40a5d92599f0b0f90d932e8eacac69b474e6",
+    "source_unchanged": true,
+    "remaining_failure_node": "tests/test_rc6_native_big_import_provenance.py::test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage",
+    "child_stdout_path": "/workspace/rc6-budget-runtime-provenance-27ae-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0/runtime-control-stdout.bin",
+    "child_stdout_sha256": "ba13b5c39b6d8759dfac70ddc52d8f2768af834d268f31ba266cc17a668de80b",
+    "child_stdout_bytes": 103703,
+    "selected_child_read_all11_unchanged": true,
+    "actual_graph": {
+      "records": 35,
+      "overflow": 0,
+      "runtime_layout": "Exactly __name__, __doc__, __package__, __loader__, __spec__; all values None except exact name. line_trace is absent.",
+      "registered_class": "cython_function_or_method; _static_type_text projects its raw module metadata to null. That projection cannot distinguish literal None from a non-str field and is not a string prefix.",
+      "observed_parent_type_identity_relations": {"charset_normalizer.md":14, "charset_normalizer.cd":9},
+      "scope": "Post-import layout and identities only, not retrospective creation proof."
+    },
+    "actual_rca": "The unchanged helper rejected the empty runtime because line_trace was not a bool. Its registered-type module metadata was projected to null; this proves no qualified matching string, but not literal raw None. Both original loader returns were uncontended; errors and overflow were zero. Exact raw class metadata at the loader return remains a gap until the current unit diagnostic runs.",
+    "limits": "Separate scoped 43-case RED; no addition of focal counts, no BIG performance, horizon, Gov, image or runtime acceptance."
+  },
+  "preserved_unit_diagnostic_source": {
+    "source_sha": "27aec1bf8c0e4be779252e98e42d25cbfc5dee5d",
+    "changed_scope": "Only the existing cython_extension physical unit child control and this plan. Helper e064392b and stress/runtime/quotas/GC/clocks remain byte-identical.",
+    "field": "control.actual_cython_namespace_graph",
+    "scope": "PHYSICAL_POST_IMPORT_UNIT_NAMESPACE_NOT_CREATION_OR_AUTHORITY_PROOF",
+    "evidence": "Actual module namespace keys, static type metadata, bounded selected primitives, and identity relations between registered classes and actual extension-parent attributes or their types. No repr, foreign class descriptors/equality, arbitrary namespace values or raw object addresses.",
+    "bounds": "At most 2048 graph records, exact str metadata at most 4096 characters; overflow remains explicit. These unit metadata bounds neither raise the observer shared admission/text limits nor claim bounded total interpreter heap.",
+    "acceptance": "All original positive and adverse assertions are unchanged. The graph does not classify modules or waive unknown lineage. It observes post-import layout and does not reconstruct the original creation instant.",
+    "actual_native_focal_executions": 1,
+    "actual_unique_cases": 43,
+    "source_review": "ROOT_AND_FINANCE_CLOSED_SOURCE_ONLY_BEFORE_EXECUTION"
+  },
+  "current_cython_predicate_fix_forward": {
+    "source_sha": "003ebe45d13eca794661cd7675d2eee50047be43",
+    "implementation_phase": "PREPARED_SOURCE_THEN_EXECUTED_SCOPED_FOCAL_RED",
+    "native_executions": 1,
+    "creation_contract": "Two passes operate on new before-to-after exact ModuleType objects inside the original verified uncontended extension-loader token. First capture actual registered class identities and type(parent attribute) is relationships; the raw declared module must be None or a bounded exact matching str. Second capture the exact empty runtime only with exactly one companion from that same token. Original bool line_trace compatibility keeps its original shape restrictions.",
+    "private_bindings": "Module, parent, spec and loader references remain in the existing private synthetic_modules store; registered classes/parent attribute names/companion references and expected runtime-shape basis remain in separate private synthetic_bindings. JSON contains names and basis only. No class/module objects travel through worker JSON/queues.",
+    "bounds": "Every class/parent-attribute binding, deferred runtime and registry object uses the unchanged shared 2048 admission budget. Admission failure stops retention and increments overflow, preventing full-window acceptance. Class and namespace metadata are bounded exact strings before comparison; non-str metadata never calls foreign equality, descriptors or truthiness. These are evidence bounds, not a heap limit.",
+    "current_snapshot_contract": "Revalidate the actual runtime identity and its exact captured shape, extension parent/spec/loader/file, companion sys.modules object identity, registered namespace class object identity and each original parent attribute type identity. Replaced, stale, ambiguous, preexisting, late-added or changed objects cannot borrow earlier evidence or be qualified by a later namespace scan. Deactivation clears both private stores.",
+    "guard_scope": "The existing actual extension positive and two original unknown/replaced negative cases remain. New direct protocol adversaries first import a real compiled extension, then explicitly control private observer tokens or post-capture mutations. They are unit protocol counterexamples, not native C reinitialization, factory-positive claims, provider calls or BIG performance probes.",
+    "new_adversarial_variants": ["cython_ambiguous_companion", "cython_concurrent_loader", "cython_companion_replaced", "cython_parent_type_replaced", "cython_parent_type_added_after", "cython_preexisting", "cython_runtime_same_object_namespace_mutated"],
+    "expected_unique_focal_cases": 50,
+    "count_basis": "Original 43 actual cases plus seven legitimate new adversarial variants, including the unchanged original canonical 20-catalogue control. Actual collection/execution/JUnit bijection must confirm this scope. These are not new requirement IDs and are not summed with any prior run.",
+    "source_independent_review": "ROOT_AND_FINANCE_CLOSED_BEFORE_SCOPED_NATIVE_RED"
+  },
+  "fourth_prior_focal_native_result": {
+    "source_sha": "003ebe45d13eca794661cd7675d2eee50047be43",
+    "source_tree": "9012a50f65d41404f14c31147bd3e26c898d07e0",
+    "receipt_path": "/workspace/rc6-budget-runtime-provenance-003e-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "receipt_sha256": "75e8e2c71e4a16750d4ddfe619dca7506f6a749d9e6b81715dc3db172f395393",
+    "receipt_bytes": 269628,
+    "junit_path": "/workspace/rc6-budget-runtime-provenance-003e-focal-157-raw/native-import-provenance-focal.junit.xml",
+    "junit_sha256": "9c0b61c8ffaf1e121323c5fd98d868bc42f413244c36e047b6a5ad316508433a",
+    "junit_bytes": 29318,
+    "actual_cases": 50,
+    "passed": 42,
+    "failed": 8,
+    "result": "RED_SCOPE_NOT_GREEN",
+    "helper_sha256": "88811374c036c6a95f9292a0e7e8f4fa45330e3bd71b6ed5e048c227015e00c7",
+    "source_unchanged": true,
+    "actual_scope": "The original Cython positive still fails and all seven new adversaries fail at their positive captured-registry precondition. Those seven are not accepted negative guards.",
+    "positive_child_stdout_path": "/workspace/rc6-budget-runtime-provenance-003e-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0/runtime-control-stdout.bin",
+    "positive_child_stdout_sha256": "3d7971e127e2f73db6d1f75ed026ad9ece528cc8773cd323d5ad0ff5b8ac0c75",
+    "positive_child_stdout_bytes": 103785,
+    "selected_child_read_all11_unchanged": true,
+    "actual_child_errors": 0,
+    "actual_child_overflow": 0,
+    "actual_shared_evidence_record_count": 58,
+    "actual_loaders": "md and cd returned uncontended with created=[]; cd reports UNVERIFIED_MISSING_OR_AMBIGUOUS_SAME_TOKEN_REGISTRY.",
+    "source_comparison": "The graph uses _static_type_text, which converts every non-str raw field to null. The new helper uses _static_type_field and requires raw None or a matching bounded str. The earlier interpretation of graph null as literal raw None was incorrect. Raw field type at the actual loader return was not recorded, so a descriptor is a hypothesis until captured.",
+    "limits": "Separate complete 50-case RED, never summed with the three prior 43-case epochs. No BIG, horizon, artifact, Gov, image, deployment or runtime acceptance."
+  },
+  "preserved_raw_class_metadata_unit_diagnostic": {
+    "source_sha": "2304d1acf217cc268a575cd496a7b9db4baf02e6",
+    "implementation_phase": "PREPARED_SOURCE_THEN_EXECUTED_SCOPED_FOCAL_RED",
+    "scope": "Only the existing Cython positive physical child adds metadata capture; helper 88811374 remains byte-identical and every existing 50-case assertion is unchanged.",
+    "unchanged_helper_sha256": "88811374c036c6a95f9292a0e7e8f4fa45330e3bd71b6ed5e048c227015e00c7",
+    "return_observation": "A unit-only subclass records before delegating _loader_end to the exact unchanged original method in finally. Rows identify the selected loader, actual registry slot/static class name, new-in-token state and parent type-identity count. It does not qualify modules or claim a C factory ran from post-import data.",
+    "raw_field_observation": "Distinguish literal None, bounded literal str and the exact raw object type. For exact GetSetDescriptorType only, read its built-in name/owner metadata and physical class namespace membership identities. The raw module descriptor getter is never invoked; unknown raw fields are not normalized to None or allowed.",
+    "bounds": "Loader-return rows and post-import graph rows together retain at most 2048 records with 4096-character metadata bounds. Errors and truncation remain explicit. Existing physical child stdout/stderr storage remains 4MiB per stream, not a capture_output heap bound. No observer, product/resource threshold, GC or deadline change.",
+    "expected_unique_cases": 50,
+    "scoped_native_executions": 1,
+    "source_review": "ROOT_AND_FINANCE_CLOSED_BEFORE_SCOPED_NATIVE_RED"
+  },
+  "fifth_prior_focal_native_result": {
+    "source_sha": "2304d1acf217cc268a575cd496a7b9db4baf02e6",
+    "source_tree": "cd7e39d3052c0a57b31fb6356eb37291b84aa892",
+    "receipt_path": "/workspace/rc6-budget-runtime-provenance-2304-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "receipt_sha256": "ab2614ba4dd8e7650c14514b204e4c5985fe14054959c8b141d6412f368577b1",
+    "receipt_bytes": 269628,
+    "junit_path": "/workspace/rc6-budget-runtime-provenance-2304-focal-157-raw/native-import-provenance-focal.junit.xml",
+    "junit_sha256": "b4fa9a2a2e30c1a531e081b77ded6a4b934d6538ebcb5a4a1008d1610807fedb",
+    "junit_bytes": 29326,
+    "actual_cases": 50,
+    "passed": 42,
+    "failed": 8,
+    "result": "RED_SCOPE_NOT_GREEN",
+    "helper_sha256": "88811374c036c6a95f9292a0e7e8f4fa45330e3bd71b6ed5e048c227015e00c7",
+    "source_unchanged": true,
+    "actual_scope": "Original Cython positive and seven adversaries remain failed. The seven fail their positive capture precondition and are not accepted negative guards.",
+    "positive_child_stdout_path": "/workspace/rc6-budget-runtime-provenance-2304-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0/runtime-control-stdout.bin",
+    "positive_child_stdout_sha256": "02dde31c2213d0b9cfd18e35b4dd9ed1dece1deeb73ed92732b34c34339f11e7",
+    "positive_child_stdout_bytes": 106539,
+    "selected_receipt_and_child_read_all11_unchanged": true,
+    "actual_unit_metadata_records": 39,
+    "actual_unit_metadata_errors": 0,
+    "actual_unit_metadata_overflow": 0,
+    "at_original_loader_return": "cython_function_or_method has literal_none=false and raw built-in member_descriptor metadata. The cd token reports a new registry with nine exact parent-type identities; md reports the registry preexisting with fourteen identities. The common metatype owns a GetSetDescriptorType named __module__, with exact owner and physical namespace identity observed without calling its getter.",
+    "actual_rca": "The same-token registry predicate rejects the actual member_descriptor because it accepts only raw None or a matching str. This prevents capture of the companion and causes the eight positive-precondition failures. Raw member name/owner/physical membership were not captured by this epoch; they remain qualifying conditions to verify on the next actual execution, not retrospective assertions.",
+    "limits": "Separate complete 50-case RED, not added to any earlier scope. No BIG performance, horizon, Gov, image, artifact, deployment or runtime acceptance. Existing RAW stays byte-exact."
+  },
+  "current_native_module_descriptor_fix_forward": {
+    "source_only": true,
+    "new_native_executions": 0,
+    "minimal_predicate": "Keep raw None and matching bounded exact str. Also accept only exact built-in MemberDescriptorType or GetSetDescriptorType whose built-in name is __module__, built-in __objclass__ is the exact registered class, and its bounded typed physical class namespace holds that exact descriptor as its own __module__ field. Never invoke the raw descriptor getter; unknown objects, foreign owners and name-only lookalikes remain unqualified.",
+    "creation_contract_unchanged": "A new exact registry object must still be observed inside the original verified uncontended extension-loader token, with registry[class_name] is class and type(original parent attribute) is class. Empty runtime still needs exactly one same-token companion. No prefix or unrelated class grants authority.",
+    "current_snapshot": "The admitted private type binding now includes a strong reference to its original raw module metadata. Snapshot requires current raw metadata is that captured object and reruns the exact typed predicate as well as registry/parent/runtime-shape identities. No object or descriptor travels through JSON or the worker queue; all refs clear on deactivate.",
+    "bounds": "The raw reference is part of the existing shared-admitted type-binding record, not a new unbounded store. Shared 2048 records and 4096 text remain unchanged; descriptor namespace inspection is bounded and typed before lookup, with no hashing, stack traversal, tracing, sampling or per-function profiling. These limits are not a heap or binary-authentication claim.",
+    "unit_guard_extension": "The existing Cython positive physical control captures MemberDescriptorType metadata with the same built-in mechanism. Within that same control it copies the actual Member/GetSet raw fields to a foreign class and requires the predicate to reject both owner mismatches without invoking getters. These are unit predicate counterexamples, not extension-creation or new requirement/scenario claims; their retained rows share the existing 2048 metadata bound.",
+    "original_assertions_and_scope": "All 32 top-level test definitions and their assertions remain AST-identical to 2304. The expected focal remains the exact original 43 plus seven adversarial variants and unchanged canonical20 case: 50 unique collection/call/JUnit cases, never summed across epochs.",
+    "source_review": "PENDING"
+  },
+  "future_focal": {
+    "python": "/workspace/venv_rc6_frozen311/bin/python",
+    "modules": ["tests/test_rc6_native_big_import_provenance.py"],
+    "existing_canonical_control": "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+    "command_scope": "The existing canonical control uses 20 catalogue identities. This source plan does not fabricate collection/JUnit results or call it a native 12k benchmark.",
+    "requirements": "Fresh complete own Git source/index/TAR, exact SHA/tree and literal frozen311157 locks/installed metadata before fixtures, cache off, actual unique collection/call/JUnit join, private control cwd outside Source, complete before/after custody/import/offline/SQLite/reap receipts."
+  },
+  "self_commit_sha": null,
+  "final_frozen_sha": null,
+  "fip_or_governed_artifact_acceptance": null
+}

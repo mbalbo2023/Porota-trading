@@ -1,0 +1,213 @@
+def subprocess_phase(command, root, output, env, limit):
+    """Require exclusive kernel child custody before accepting a pytest phase.
+
+    The PID-specific wait4 witness and its adopted-child drain are separate.
+    Missing proc children files are never used as exhaustion evidence. Only
+    ECHILD after the actual main PID reap proves this supervisor is exhausted.
+    Signals address only the PGID created by this phase's Popen; once absence
+    is observed, this invocation never sends another signal to that PGID.
+    """
+    phase_entered = time.monotonic()
+    started, interrupted, cleanup_started = None, None, None
+    process, waited, usage, reap_wall = None, 0, None, None
+    active, pre_spawn_echild, exhausted = False, False, False
+    timed_out, late_reap, wait4_zero = False, False, False
+    group_absent, group_absent_at_main_reap = False, False
+    pending, residual, descendants, errors, observations, signals = [], [], [], [], [], []
+    supervisor_pid, supervisor_tid = os.getpid(), threading.get_native_id()
+    task_root = '/proc/' + str(supervisor_pid) + '/task/' + str(supervisor_tid)
+    identity = {}
+    libc = ctypes.CDLL(None, use_errno=True)
+    previous = ctypes.c_int()
+
+    def error_record(label, error):
+        errors.append({'phase': label, 'class': type(error).__name__, 'reason': str(error)})
+
+    def observe_group_absence():
+        nonlocal group_absent
+        if process is None or group_absent:
+            return group_absent
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            group_absent = True
+        return group_absent
+
+    def signal_group(number):
+        nonlocal group_absent
+        if process is None or group_absent or observe_group_absence():
+            return
+        try:
+            os.killpg(process.pid, number)
+        except ProcessLookupError:
+            group_absent = True
+            signals.append({'pgid': process.pid, 'signal': number, 'outcome': 'ESRCH'})
+        else:
+            signals.append({'pgid': process.pid, 'signal': number, 'outcome': 'SENT'})
+
+    def reap_main():
+        nonlocal waited, usage, reap_wall, late_reap, timed_out
+        if waited:
+            return waited
+        found, child_status, child_usage = os.wait4(process.pid, os.WNOHANG)
+        if found:
+            require(found == process.pid, 'SPECIFIC_PHASE_PID_WAIT4_IDENTITY_MISMATCH')
+            waited, usage = found, child_usage
+            reap_wall = time.monotonic() - started
+            process.returncode = os.waitstatus_to_exitcode(child_status)
+            late_reap = reap_wall > limit
+            timed_out = timed_out or late_reap
+        return found
+
+    def child_row(found, child_status, child_usage):
+        return {'pid': found, 'exit_code': os.waitstatus_to_exitcode(child_status),
+                'cpu_user_seconds': child_usage.ru_utime,
+                'cpu_system_seconds': child_usage.ru_stime,
+                'kernel_lifetime_peak_rss_bytes': child_usage.ru_maxrss * 1024}
+
+    try:
+        # This is the supervisor's own kernel status only, never a global /proc
+        # scan or a dependency on the kernel's optional task children facility.
+        descriptor = os.open(task_root + '/status', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            status_data = os.read(descriptor, 65537)
+            require(len(status_data) <= 65536, 'SUPERVISOR_KERNEL_STATUS_BOUND_EXCEEDED')
+        finally:
+            os.close(descriptor)
+        identity = {line.partition(':')[0]: line.partition(':')[2].strip()
+                    for line in status_data.decode().splitlines()
+                    if line.startswith(('Pid:', 'Tgid:', 'Uid:'))}
+        require(identity.get('Pid') == str(supervisor_tid)
+                and identity.get('Tgid') == str(supervisor_pid)
+                and identity.get('Uid', '').split()[:2] == [str(os.getuid()), str(os.geteuid())],
+                'EXPLICIT_SUPERVISOR_KERNEL_PID_TID_UID_BINDING_REQUIRED')
+        require(libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0,
+                'LINUX_OWN_SUBREAPER_INITIAL_STATE_REQUIRED')
+        require(libc.prctl(36, 1, 0, 0, 0) == 0, 'LINUX_OWN_CHILD_SUBREAPER_REQUIRED')
+        active = True
+        try:
+            pre_pid, pre_status, pre_usage = os.wait4(-1, os.WNOHANG)
+        except ChildProcessError as error:
+            if error.errno != errno.ECHILD:
+                raise
+            pre_spawn_echild = True
+            observations.append({'phase': 'before_popen_after_subreaper_activation',
+                                 'outcome': 'ECHILD', 'errno': error.errno})
+        else:
+            observations.append({'phase': 'before_popen_after_subreaper_activation',
+                                 'outcome': 'PID_REAPED' if pre_pid else 'ACTIVE_OWN_CHILD_WITHOUT_PID',
+                                 **(child_row(pre_pid, pre_status, pre_usage) if pre_pid else {'pid': 0})})
+            raise RuntimeError('EXCLUSIVE_SUPERVISOR_REQUIRES_PRESPAWN_KERNEL_ECHILD')
+        with output.open('xb') as stream:
+            started = time.monotonic()
+            process = subprocess.Popen(command, cwd=root, env=env, stdout=stream,
+                                       stderr=subprocess.STDOUT, start_new_session=True)
+            while not reap_main():
+                now = time.monotonic()
+                if now - started >= limit and interrupted is None:
+                    timed_out, interrupted = True, now
+                    signal_group(signal.SIGINT)
+                if interrupted is not None and now - interrupted >= 20:
+                    signal_group(signal.SIGKILL)
+                    break  # The finally below uses bounded WNOHANG; never wait4(..., 0).
+                time.sleep(.1)
+    except BaseException as error:
+        error_record('spawn_tracking_or_log', error)
+    finally:
+        # This scope covers activation, Popen, logs, signal races and errors.
+        # Five seconds is cleanup management after an already failed phase,
+        # not an extension of the phase's acceptance deadline.
+        cleanup_started = time.monotonic()
+        cleanup_deadline = cleanup_started + 5
+        try:
+            if process is not None and not waited:
+                signal_group(signal.SIGTERM)
+                while time.monotonic() < cleanup_deadline and not reap_main():
+                    if time.monotonic() - cleanup_started >= 1:
+                        signal_group(signal.SIGKILL)
+                    time.sleep(.05)
+                if not waited:
+                    signal_group(signal.SIGKILL)
+                    reap_main()  # One final nonblocking observation, no invented reap.
+                if not waited:
+                    error_record('main_reap', RuntimeError('OWN_PHASE_PID_NOT_REAPED_WITHIN_CLEANUP_BOUND'))
+        except BaseException as error:
+            error_record('main_termination_or_reap', error)
+        try:
+            if process is not None and waited == process.pid:
+                group_absent_at_main_reap = observe_group_absence()
+        except BaseException as error:
+            error_record('owned_group_after_main_reap', error)
+        try:
+            if active:
+                require(process is not None and waited == process.pid and pre_spawn_echild,
+                        'KERNEL_DRAIN_REQUIRES_REAPED_MAIN_PID_AND_EXCLUSIVE_SUBREAPER')
+                while True:
+                    if len(observations) >= 1024 or time.monotonic() >= cleanup_deadline:
+                        error_record('kernel_owned_child_cleanup',
+                                     RuntimeError('OWN_CHILD_EXHAUSTION_NOT_PROVED_WITHIN_BOUND'))
+                        break
+                    try:
+                        found, child_status, child_usage = os.wait4(-1, os.WNOHANG)
+                    except ChildProcessError as error:
+                        if error.errno != errno.ECHILD:
+                            raise
+                        observations.append({'phase': 'after_main_pid_reap',
+                                             'outcome': 'ECHILD', 'errno': error.errno})
+                        exhausted, pending = True, []
+                        break
+                    if found:
+                        require(found != process.pid, 'MAIN_PID_CANNOT_BE_REAPED_AS_AN_ADOPTED_CHILD')
+                        row = child_row(found, child_status, child_usage)
+                        descendants.append(row)
+                        observations.append({'phase': 'after_main_pid_reap', 'outcome': 'PID_REAPED', **row})
+                    else:
+                        pending = ['KERNEL_ACTIVE_OWN_CHILD_WITHOUT_PID']
+                        if not wait4_zero:
+                            residual.append('KERNEL_WAIT4_ZERO_OBSERVED')
+                            observations.append({'phase': 'after_main_pid_reap',
+                                                 'outcome': 'ACTIVE_OWN_CHILD_WITHOUT_PID', 'pid': 0})
+                        wait4_zero = True  # Irreversible RED even if cleanup later reaches ECHILD.
+                        signal_group(signal.SIGKILL if time.monotonic() - cleanup_started >= 1 else signal.SIGTERM)
+                    time.sleep(.05)
+        except BaseException as error:
+            error_record('kernel_owned_child_cleanup', error)
+        finally:
+            try:
+                if process is not None:
+                    observe_group_absence()
+            except BaseException as error:
+                error_record('owned_group_final_observation', error)
+            if active:
+                try:
+                    require(libc.prctl(36, previous.value, 0, 0, 0) == 0,
+                            'OWN_SUBREAPER_STATE_NOT_RESTORED')
+                except BaseException as error:
+                    error_record('subreaper_restore', error)
+    return {'pid': process.pid if process is not None else None,
+            'returncode': process.returncode if process is not None else None,
+            'timed_out': timed_out, 'wall_seconds': time.monotonic() - phase_entered,
+            'cpu_user_seconds': usage.ru_utime if usage is not None else None,
+            'cpu_system_seconds': usage.ru_stime if usage is not None else None,
+            'peak_rss_bytes': usage.ru_maxrss * 1024 if usage is not None else None,
+            'scope': 'EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS',
+            'command': command, 'supervisor_pid': supervisor_pid, 'supervisor_native_tid': supervisor_tid,
+            'supervisor_kernel_identity_before_spawn': identity,
+            'proc_task_children_examined': False,
+            'owned_child_exhaustion_method': 'EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD',
+            'kernel_pre_popen_echild_verified': pre_spawn_echild,
+            'wait4_reaped_pid': waited, 'actual_child_reaped': process is not None and waited == process.pid,
+            'actual_launch_to_pid_reap_wall_seconds': reap_wall,
+            'late_observed_main_reap_irreversible_red': late_reap,
+            'phase_acceptance_deadline_seconds': limit, 'sigint_failure_grace_seconds': 20,
+            'owned_cleanup_management_bound_seconds': 5,
+            'process_group_absent_at_main_reap': group_absent_at_main_reap,
+            'process_group_absent_after_reap': group_absent,
+            'owned_children_exhaustion_verified': exhausted,
+            'kernel_wait4_zero_observed_irreversible_red': wait4_zero,
+            'kernel_owned_child_observations': observations, 'owned_group_signal_observations': signals,
+            'residual_descendants_observed': residual, 'adopted_descendants_reaped': descendants,
+            'remaining_owned_children': pending, 'supervisor_errors': errors,
+            'termination_reap_restore_cleanup_seconds': time.monotonic() - cleanup_started,
+            'subreaper_restore_attempted_on_all_activated_paths': active,
+            'subreaper_previous_state': previous.value if active else None}

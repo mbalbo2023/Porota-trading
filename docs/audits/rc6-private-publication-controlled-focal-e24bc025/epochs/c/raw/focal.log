@@ -1,0 +1,14 @@
+........................................................................ [ 15%]
+........................................................................ [ 30%]
+........................................................................ [ 46%]
+........................................................................ [ 61%]
+........................................................................ [ 76%]
+........................................................................ [ 92%]
+....................................                                     [100%]Traceback (most recent call last):
+  File "/workspace/rc6-publication-e24bc025-controlled-focal-20261005-c/raw/runner.py", line 531, in child
+    support.require(rc == 0 and len(observations["inet_attempts"]) <= 1
+  File "/workspace/rc6-publication-e24bc025-controlled-focal-20261005-c/raw/source_support.py", line 35, in require
+    raise ValueError(reason)
+ValueError: OFFLINE_PRIVATE_SQL_OR_NATIVE_EXIT_NOT_GREEN
+
+{"collected": 468, "event": "PYTEST_END", "junit": {"bytes": 117207, "call_phase_unique_nodes": 468, "cases": 468, "counts": {"errors": 0, "failures": 0, "skipped": 0, "tests": 468}, "exact_classname_name_join": true, "sha256": "5f9f8900137361748e208c83efc52e143a0c26a0ee4dd0d08b18d2f4a82a905b"}, "pid": 235672, "source_sha": "e24bc025edc8bf72b272cb3546ce722dd97c10c8", "status": "RED"}

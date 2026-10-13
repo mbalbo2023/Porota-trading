@@ -1,0 +1,32 @@
+{
+  "claim_boundary": {
+    "documentary_controls_executed": false,
+    "external_origin_or_TAR_or_DATA_reads": false,
+    "final_D_generated": false,
+    "final_capsule_review_pending": true,
+    "financial_or_current_DATA_acceptance": false,
+    "gov_executed": false,
+    "helpers_executed": false,
+    "native_executed": false,
+    "product_imports": false,
+    "register_generated": false
+  },
+  "classification": "SOURCE_ONLY_INDEPENDENT_AGENT_REVIEW_NOT_EXECUTION_RECEIPT",
+  "findings_reported": "NO_MATERIAL_BLOCKER_IN_READ_SCOPE",
+  "no_external_message_sent": "THIS_IS_AN_INTERNAL_COLLABORATION_REVIEW_NOTE_NOT_SLACK_EMAIL_OR_OTHER_EXTERNAL_DELIVERY",
+  "reported_review_message_literal": "RO SOURCE candidatos549aaf89/register yfe26d269/supplement concluido sin blocker material en alcance leído. SHA/bytes exactos; AST completa frenteORIGINALV3(28bbb)/supplementV2(5a28) idéntica salvo6adaptadoresañadidos+dispatch; legacytail desdespecifications intacto. FrentePUB20136/25e66 sóloBIGv3adaptador+branch;6adaptadores ASTidénticos entrehelpers. Orígenes joinsliteralesnuncaopen/resolve, RAW/WHOLE_SOURCEexplicitos; modosoriginal vsGitstored separados; stored/decodedSHA/bytes+CRC/mTime0 firmes; BIG11stats typed/size sólodeclarativo; source/time/count/scope rawverbatim. CAPSULE→CUSTODY→epochsoriginals unidireccional rechaza controles/self/duplicate/escape sin recursión porcontenidoRAW. No helperimport/controls/generate/Native ni origen/TAR/DATA reads. PERSfinalcapsulepending: cierreSRC no calificaD/financial/currentData. Decoder32MiB/listaexactagzip anterior sigueintacto; TARdeclaredexternal no seabre.",
+  "reviewed_files": [
+    {
+      "bytes": 124732,
+      "path": "/tmp/rc6_remediation_register_generate_v4_publication_big3_candidate.py",
+      "sha256": "549aaf8920f6da76f8080fabbc4ae9ba2021a9512951f80912e8364541f7dda4"
+    },
+    {
+      "bytes": 63314,
+      "path": "/tmp/rc6_root_supplemental_named_findings_generate_v3_publication_big3_candidate.py",
+      "sha256": "fe26d269425e2cb461bb20ddee6da013b242b66fc77aa867d887f4362718a83b"
+    }
+  ],
+  "reviewer": "/root/sre_review",
+  "schema": "rc6.register-helpers-v4-big3-independent-source-review-note.v1"
+}

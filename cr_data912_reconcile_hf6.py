@@ -7,6 +7,7 @@ saldo/sizing/decisión/ejecución ni habilita READY_PAPER.
 from __future__ import annotations
 
 import os
+import json
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Iterable
@@ -30,6 +31,7 @@ class HistoricalIdentity:
     settlement: str
     valid_rows: int
     latest_state: str
+    currency: str = ""
 
 
 def due_now(now: datetime | None = None) -> bool:
@@ -46,31 +48,51 @@ def load_targets(connection) -> list[HistoricalIdentity]:
     tables = {r[0] for r in connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
     )}
-    if "candidate_universe" not in tables:
+    if not {'candidate_universe','candidate_identity_v2','financial_instrument_catalog'} & tables:
         return []
 
     attempts = {}
     if "production_history_attempts" in tables:
-        for row in connection.execute(
-            """SELECT symbol,instrument_type,settlement,state,valid_rows
-               FROM production_history_attempts"""
-        ):
-            attempts[(str(row[0]).upper(),str(row[1]).upper(),str(row[2]).upper())] = (
-                str(row[3] or ""), int(row[4] or 0)
-            )
+        columns={r[1] for r in connection.execute('PRAGMA table_info(production_history_attempts)')}
+        if {'market','currency'} <= columns:
+            for row in connection.execute('''SELECT symbol,instrument_type,market,currency,
+                settlement,state,valid_rows FROM production_history_attempts'''):
+                attempts[tuple(str(x or '').upper() for x in row[:5])]=(str(row[5] or ''),int(row[6] or 0))
+    if 'history_attempt_ledger_v2' in tables:
+        for row in connection.execute('''SELECT symbol,instrument_type,settlement,state,
+                valid_rows,metadata_json FROM history_attempt_ledger_v2 ORDER BY attempted_at,id'''):
+            try:
+                meta=json.loads(row[5] or '{}')
+                if not meta.get('market') or not meta.get('currency'):continue
+                key=tuple(str(x).upper() for x in (row[0],row[1],meta['market'],meta['currency'],row[2]))
+                attempts[key]=(str(row[3] or ''),int(row[4] or 0))
+            except (TypeError,ValueError):continue
 
     result = []
-    for row in connection.execute(
-        """SELECT ticker,instrument_type,market,settlement,status
-           FROM candidate_universe
-           WHERE status='AVAILABLE'
-           ORDER BY instrument_type,ticker,market,settlement"""
-    ):
-        symbol, family, market, settlement, _status = row
+    # The legacy universe's three-field projection is not monetary authority.
+    # Resolve from the exact catalog; do not synthesize ARS for old fixtures.
+    if 'candidate_identity_v2' in tables:
+        candidates = connection.execute("""SELECT ticker,instrument_type,market,settlement,
+           status,currency FROM candidate_identity_v2 WHERE can_simulate=1
+           ORDER BY instrument_type,ticker,market,currency,settlement""").fetchall()
+    elif 'financial_instrument_catalog' in tables:
+        candidates = connection.execute("""SELECT ticker,instrument_type,market,settlement,
+           status,currency FROM financial_instrument_catalog WHERE status='AVAILABLE'
+           ORDER BY instrument_type,ticker,market,currency,settlement""").fetchall()
+    else:
+        cols={r[1] for r in connection.execute('PRAGMA table_info(candidate_universe)')}
+        if 'currency' not in cols: return []
+        candidates=connection.execute("""SELECT ticker,instrument_type,market,settlement,
+           status,currency FROM candidate_universe WHERE status='AVAILABLE'
+           ORDER BY instrument_type,ticker,market,currency,settlement""").fetchall()
+    for row in candidates:
+        symbol, family, market, settlement, _status,currency = row
         symbol = str(symbol or "").upper()
         family = str(family or "").upper()
         market = str(market or "").upper()
         settlement = str(settlement or "").upper()
+        currency = str(currency or "").upper()
+        if currency not in {'ARS','USD','USD_MEP','USD_CCL'}: continue
         if family not in policy.OPERATIONAL_HISTORY_FAMILIES:
             continue
         if not policy.data912_fallback_allowed(family):
@@ -78,11 +100,11 @@ def load_targets(connection) -> list[HistoricalIdentity]:
         if not market or market == "UNKNOWN" or not settlement or settlement == "UNKNOWN":
             continue
         state, valid_rows = attempts.get(
-            (symbol,family,settlement), ("NO_ATTEMPT",0)
+            (symbol,family,market,currency,settlement), ("NO_ATTEMPT",0)
         )
         if policy.needs_data912_reconciliation(family,valid_rows,state):
             result.append(HistoricalIdentity(
-                symbol,family,market,settlement,valid_rows,state
+                symbol,family,market,settlement,valid_rows,state,currency
             ))
     return result
 
@@ -116,7 +138,7 @@ def run(store, *, batch_limit: int | None = None) -> dict:
     limit = RECONCILE_BATCH_LIMIT if batch_limit is None else max(1,int(batch_limit))
     selected = targets[:limit]
     identities = [
-        (x.symbol,x.instrument_type,x.market,x.settlement) for x in selected
+        (x.symbol,x.instrument_type,x.market,x.currency,x.settlement) for x in selected
     ]
     result = data912_v2.refresh_identities(identities,batch_limit=limit)
     return {
@@ -136,6 +158,7 @@ def run(store, *, batch_limit: int | None = None) -> dict:
                 "symbol":x.symbol,
                 "instrument_type":x.instrument_type,
                 "market":x.market,
+                "currency":x.currency,
                 "settlement":x.settlement,
                 "valid_rows_before":x.valid_rows,
                 "state_before":x.latest_state,

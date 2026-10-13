@@ -1,0 +1,92 @@
+{
+  "all_outputs_new_external_namespaces": true,
+  "argv_by_epoch": {
+    "311": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+      "-I",
+      "-B",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/control/run_gov_focals_v2.py",
+      "311"
+    ],
+    "312": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python",
+      "-I",
+      "-B",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/control/run_gov_focals_v2.py",
+      "312"
+    ]
+  },
+  "caller": {
+    "bytes": 14045,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/control/run_gov_focals_v2.py",
+    "sha256": "f4a98f3fcc39b6ec5ee8c588fd9ee487cd719beced666d51e397d62cac7cd994"
+  },
+  "caller_v1_preserved_never_run": {
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-2abv34uu/control/run_gov_focals.py",
+    "sha256": "4445051d5692fff9ac642978f4a71cf8476c7c103609fc5e7d1cf75f370cd0b0"
+  },
+  "caller_v1_to_v2_diff": {
+    "bytes": 1108,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/control/caller-v1-to-v2.diff",
+    "sha256": "72e7bf06d5856b1a28e5600f846e7d309f8e7aef8199824b5fd713c8bd5af248"
+  },
+  "clone_or_source_patch_executed": false,
+  "component_cases_per_epoch": [
+    [
+      "old",
+      "ready100Red"
+    ],
+    [
+      "new",
+      "ready100Red"
+    ],
+    [
+      "new",
+      "simpleExit0"
+    ],
+    [
+      "new",
+      "liveDetached6"
+    ],
+    [
+      "old",
+      "mainUnknown"
+    ],
+    [
+      "new",
+      "mainUnknown"
+    ]
+  ],
+  "component_driver_v3_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/real_gov_component_control_v3.py",
+  "component_driver_v3_sha256": "9b9a89c768b0f92d549955e0993526e912704fad13d756f23874739332fe3f5f",
+  "control_after_RED_followup_management_seconds": 20,
+  "control_original_cleanup_seconds": 5,
+  "control_original_phase_budget_seconds": 5400,
+  "correction": "Only collection adds -v to offset double quiet and produce all15 full node IDs; all source10, original V2 FIN, predicates, 15focals+6components untouched",
+  "existing_Gov_suite_untouched": {
+    "path": "tests/test_rc6_controlled_governed_runner.py",
+    "scenarios": 15,
+    "sha256": "81e47a0760d9ec0b31c9061d85ddc4f0489df914adad0b60ab217cd0242d9afe"
+  },
+  "focals_and_control_tests_executed": false,
+  "followup_real_subreaper_restore_after_actual_echild_and_pgid": true,
+  "historical_manager_original_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source",
+  "historical_manager_original_sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+  "main_preflight_repo_root": "/workspace/scratch/rc6g2e-eabh7h8t/epoch311/source",
+  "main_preflight_source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "main_preflight_source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "namespace": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4",
+  "no_reclassify_or_signal_or_sourcewrite": true,
+  "originalV2_outer_cleanup_seconds": 5,
+  "originalV2_outer_watchdog_management_seconds": 300,
+  "original_v1_epoch_outputs_never_created": true,
+  "ppi_watch": "UNTOUCHED",
+  "producer_shared_sha256": "797447a2d44f48813639a0d22be91aebdbdb4fb630415144422c4d55775aba43",
+  "read_prerequisite": "ACTUAL_ORIGINAL_V2_managed_custody_closed + pre_capture_kernel_state before Source/JUnit/log/control payload reads; UNKNOWN emits controls only and stops",
+  "real_orders_sent": 0,
+  "same21scenario_set_in_each_python_not42distinct": true,
+  "schema": "rc6.gov.ready-drain.focals-and-components.launch-plan.v3-caller2",
+  "source_scope": "10selected Source files/bytes/modes/10stable stats, CODEatime disclosed; ROOT GitHEAD/tree beforeafter; actual157 metadata beforeafter. No wholeGov/artifact claim",
+  "status": "PREPARED_NOT_EXECUTED_AWAIT_ROOT_DURABLE_APPROVAL_AND_CPU_SLOT"
+}

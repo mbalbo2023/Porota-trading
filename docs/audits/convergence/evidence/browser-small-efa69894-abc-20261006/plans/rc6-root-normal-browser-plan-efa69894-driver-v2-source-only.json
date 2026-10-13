@@ -1,0 +1,82 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "big_acceptance_complete": false,
+  "caps_unchanged": {
+    "external_health": 120,
+    "external_normal": 600,
+    "health_roundtrip": 2,
+    "html_and_json_each_max_bytes": 4194304,
+    "prepare": 90,
+    "render_roundtrip": 1,
+    "rpc": 20
+  },
+  "driver_contract": {
+    "actual_installed_distribution_count": 158,
+    "additional_driver_distribution_pins": {
+      "greenlet": "3.5.6",
+      "playwright": "1.63.0",
+      "pyee": "13.0.1",
+      "setuptools": "84.0.0"
+    },
+    "interpreter": "/workspace/venv_rc6/bin/python",
+    "provenance": "Root actual installed distribution metadata; wrapper verifies before fixtures. No distribution binary authentication claim.",
+    "runtime154": "Exact names and versions from pinned Source requirements.lock.txt; no missing/additional names",
+    "source_build_lock": "Recorded as Source provenance; driver does not assert pip/wheel or product setuptools version installed."
+  },
+  "execution_owner": "Root after exact Source RO; actual new RAW path chosen by Root",
+  "gov_qualification_claim": false,
+  "native_result": null,
+  "product_contract_unchanged": {
+    "build_distribution_pins": {
+      "pip": "25.2",
+      "setuptools": "80.9.0",
+      "wheel": "0.45.1"
+    },
+    "build_lock_count": 3,
+    "installed_distribution_count": 157,
+    "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+    "python": "3.11.16",
+    "runtime_lock_count": 154,
+    "verification": "Full literal lock metadata before native fixtures/handlers."
+  },
+  "proposed_retry_command": [
+    "/workspace/venv_rc6/bin/python",
+    "-I",
+    "-B",
+    "/workspace/rc6_root_normal_browser_supervisor_efa69894_v2.py",
+    "--output-root",
+    "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b",
+    "--phase",
+    "both"
+  ],
+  "runtime_validated": false,
+  "schema": "rc6.root-small-browser-driver-contract-correction.v1",
+  "scope": "ROOT_SMALL_FULL_ROUTES_294_AND_ALIASES22_PLUS_SEPARATE_LIVE_HEALTH; NOT_LARGE_NOT_GOV",
+  "source_c430_custody_semantics": "All non-driver_admission AST nodes byte-identical; reviewed require/subprocess_phase, Source/Git/index/TAR/admission, kernel reap/ECHILD/PGID and native gates unchanged.",
+  "source_index_sha256": "9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517",
+  "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+  "status": "SOURCE_ONLY_NATIVE_RETRY_PENDING",
+  "supersedes_source_plan_driver_admission_only": "/tmp/rc6-root-normal-browser-plan-efa69894-source-only.json",
+  "v1": {
+    "actual_observed_child_pid_reported_by_root": 244262,
+    "echild_clean_reported_by_root": true,
+    "original_source_and_raw_preserved": true,
+    "path": "/workspace/rc6_root_normal_browser_supervisor_efa69894.py",
+    "reap_elapsed_seconds_reported_by_root": 0.4016,
+    "result_reported_by_root": "RED_DRIVER158_LOCK_METADATA_MISMATCH_BEFORE_SOURCE_ADMISSION_NATIVE_OR_CHROME",
+    "sha256": "2df7eb90097e709eb06600bd6368894ec1f848faed67a530b0079a356eb90613"
+  },
+  "v2": {
+    "ast_delta": [
+      "driver_admission"
+    ],
+    "bytes": 46688,
+    "mode": "0600",
+    "never_executed_by_ux": true,
+    "path": "/workspace/rc6_root_normal_browser_supervisor_efa69894_v2.py",
+    "sha256": "7111265b27213809180e71d33df930f402693593a11dd2732f0e89f8fa7b3b30"
+  },
+  "whole_git_files": 2398
+}

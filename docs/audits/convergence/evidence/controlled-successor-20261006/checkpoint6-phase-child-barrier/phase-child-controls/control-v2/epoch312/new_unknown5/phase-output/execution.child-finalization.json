@@ -1,0 +1,30 @@
+{
+  "errors": [
+    {
+      "class": "TimeoutError",
+      "reason": "CHILD_FINALIZATION_DID_NOT_RETURN_WITHIN_BOUND"
+    }
+  ],
+  "finalization_thread_finished": false,
+  "forced_termination": null,
+  "forced_termination_attempted": false,
+  "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+  "inherited_tracker_preserved": false,
+  "initial": {
+    "forkserver_alive_fd": null,
+    "forkserver_pid": null,
+    "resource_tracker_fd": null,
+    "resource_tracker_pid": null
+  },
+  "joined_children": [],
+  "kernel_echild_before_phase_return": false,
+  "management_bound_seconds": 5,
+  "protocol_steps": [],
+  "signal_guard_installed_and_witnessed": true,
+  "signal_vetoed": false,
+  "status": "RED",
+  "stopped_owned_infrastructure": [],
+  "termination_signal_attempts": [],
+  "unexpected_kernel_children": [],
+  "wall_seconds": 5.000182100000529
+}

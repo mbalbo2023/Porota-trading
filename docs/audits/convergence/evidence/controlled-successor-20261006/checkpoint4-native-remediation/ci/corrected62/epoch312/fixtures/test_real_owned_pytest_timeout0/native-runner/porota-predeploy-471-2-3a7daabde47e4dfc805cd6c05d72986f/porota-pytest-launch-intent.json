@@ -1,0 +1,48 @@
+{
+  "classification": "PYTEST_PRODUCER_LAUNCH_ATTEMPTED_NOT_ACCEPTED",
+  "command": [
+    "python",
+    "-m",
+    "pytest",
+    "-q",
+    "test_native_owned.py",
+    "-p",
+    "no:cacheprovider",
+    "--basetemp=/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_owned_pytest_timeout0/native-runner/porota-pytest-471-2-3a7daabde47e4dfc805cd6c05d72986f/pytest",
+    "--junitxml=/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/native-owned-junit.xml"
+  ],
+  "context": {
+    "candidate_sha": "4cab57aebdee37d9ff0f0a6c530d22870f40653a",
+    "candidate_tree": "e4bf0419ffdf09cbcc7afc61029d92a7a20ddd66",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "2",
+    "run_id": "471",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "failed_cleanup_maximum_seconds": 5,
+  "initial_actual_own_kernel": {
+    "kernel_echild_verified": true,
+    "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+    "subreaper_state_after": 0,
+    "subreaper_state_before": 0
+  },
+  "management_seconds": 60,
+  "original_management_maximum_seconds": 5400,
+  "original_manager_source": {
+    "git_blob": "2c5709b25cc4548651e9e85aba50eba0eb5121cf",
+    "member": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source",
+    "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec"
+  },
+  "owner_uid": 1000,
+  "owner_uuid": "3a7daabde47e4dfc805cd6c05d72986f",
+  "phase": "execution",
+  "progress_poll_seconds": 5,
+  "real_orders_sent": 0,
+  "schema": "rc6.predeploy-pytest-launch-intent.v1",
+  "supervisor_effective_uid": 1000,
+  "supervisor_native_tid": 12430,
+  "supervisor_pid": 12430,
+  "supervisor_real_uid": 1000,
+  "terminate_grace_seconds": 2
+}

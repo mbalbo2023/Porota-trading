@@ -1,0 +1,903 @@
+{
+  "current_full_history_coverage": "NO_VERIFICADO",
+  "findings": {
+    "AUD-468-20": {
+      "current_green_guards_separate": [
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes0-DATE_IN_FUTURE]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes1-DATE_INVALID]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes2-C_NONFINITE]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes3-OHLC_INCONSISTENT]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes4-O_MISSING]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes5-V_NONFINITE]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_partial_batch_is_not_reported_complete_and_four_key_target_never_fetches",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_Data912_cohort_currency_collision_is_rejected_before_batch_limit_or_fetch",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[429-DATA912_RATE_LIMIT]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[timeout-DATA912_TIMEOUT]",
+          "seconds": 0.001,
+          "status": "PASS"
+        }
+      ],
+      "current_guard_scope": "ALREADY_RECORDED_NATIVE_GREEN_SOFTWARE_CONTROLS; NOT_RERUN_BY_THIS_PRIOR_REPLAY",
+      "current_shared_universal_nonfinite_guards_separate": [
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes4-CLOSE_NONFINITE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes5-CLOSE_NONFINITE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes6-VOLUME_NONFINITE]",
+          "seconds": 0.006,
+          "status": "PASS"
+        }
+      ],
+      "limits": [
+        "Actual third-party availability, reported currency/unit contracts and actual rejection rate are NO_VERIFICADO.",
+        "No real provider payload or runtime financial execution is asserted."
+      ],
+      "literal_clause_bindings": [
+        {
+          "current_guard_nodes": [
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes0-DATE_IN_FUTURE]"
+          ],
+          "literal_clause": "futuro",
+          "prior_native_cases": [
+            "H_DATA912_VALIDATION",
+            "NATIVE_SINK:future"
+          ]
+        },
+        {
+          "current_guard_nodes": [
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes2-C_NONFINITE]"
+          ],
+          "interpretation": "Normalizer admission fails validation; native sink rejection is a successful control and reason is SQLite constraint detail.",
+          "literal_clause": "NaN",
+          "prior_native_cases": [
+            "H_DATA912_VALIDATION",
+            "NATIVE_SINK:nan_close"
+          ]
+        },
+        {
+          "current_guard_limit": "AUD10 shared-sink receipt includes actual infinity close-only, NaN close and infinite volume variants. These are existing cross-finding guards, not new AUD20 nodes or executions.",
+          "current_guard_nodes": [
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes2-C_NONFINITE]",
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes5-V_NONFINITE]"
+          ],
+          "current_shared_universal_sink_guard_nodes": [
+            "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes4-CLOSE_NONFINITE]",
+            "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes5-CLOSE_NONFINITE]",
+            "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes6-VOLUME_NONFINITE]"
+          ],
+          "literal_clause": "inf",
+          "prior_native_cases": [
+            "NATIVE_NORMALIZER:infinite_close_only",
+            "NATIVE_NORMALIZER:infinite_volume",
+            "NATIVE_SINK:infinite_close_only"
+          ]
+        },
+        {
+          "current_guard_nodes": [
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes3-OHLC_INCONSISTENT]"
+          ],
+          "interpretation": "Normalizer admits inconsistent OHLC; sink successfully rejects it. Both actual outcomes are retained.",
+          "literal_clause": "high<low",
+          "prior_native_cases": [
+            "H_DATA912_VALIDATION",
+            "NATIVE_SINK:inconsistent_ohlc"
+          ]
+        },
+        {
+          "current_guard_nodes": [
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes4-O_MISSING]"
+          ],
+          "literal_clause": "OHLC parcial",
+          "prior_native_cases": [
+            "NATIVE_NORMALIZER:partial_ohlc",
+            "NATIVE_SINK:partial_ohlc"
+          ]
+        },
+        {
+          "current_guard_nodes": [
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes0-DATE_IN_FUTURE]",
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes1-DATE_INVALID]",
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes2-C_NONFINITE]",
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes3-OHLC_INCONSISTENT]",
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes4-O_MISSING]",
+            "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes5-V_NONFINITE]",
+            "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[429-DATA912_RATE_LIMIT]",
+            "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[timeout-DATA912_TIMEOUT]"
+          ],
+          "interpretation": "Exact original adapter admissions have no rejection reason. Native sink NaN uses constraint detail and inconsistent OHLC uses HISTORY_OHLC_INCONSISTENT. Native provider failure reasons are retained literally; no claim that all prior failure controls are RED.",
+          "literal_clause": "razones precisas",
+          "prior_native_cases": [
+            "H_DATA912_VALIDATION",
+            "NATIVE_SINK:nan_close",
+            "NATIVE_SINK:inconsistent_ohlc",
+            "NATIVE_PROVIDER:429",
+            "NATIVE_PROVIDER:timeout"
+          ]
+        },
+        {
+          "current_guard_nodes": [
+            "tests/test_rc6_history_convergence.py::test_AUD20_partial_batch_is_not_reported_complete_and_four_key_target_never_fetches",
+            "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[429-DATA912_RATE_LIMIT]",
+            "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[timeout-DATA912_TIMEOUT]"
+          ],
+          "interpretation": "Both transport retry controls already fail safely; exact mixed-row sink returns ok=true after storing the future row. Do not fabricate a prior transport false-success defect.",
+          "literal_clause": "retry429/timeout sin falsa completitud",
+          "prior_native_cases": [
+            "NATIVE_PROVIDER:429",
+            "NATIVE_PROVIDER:timeout",
+            "NATIVE_SINK:valid_plus_future",
+            "NATIVE_SINK:empty_control"
+          ]
+        }
+      ],
+      "literal_requirement": {
+        "closure": "Endurecer adaptador y sink común; NaN/inf/futuro/high<low/OHLC parcial, razones precisas, retry429/timeout sin falsa completitud.",
+        "condition": "Persiste: Data912 normaliza sin validar de manera uniforme.",
+        "id": "AUD-468-20",
+        "registry": "468",
+        "severity": "P2"
+      },
+      "native_replay_findings": "Unchanged original adapter admits future/NaN/inconsistent OHLC; native original sink admits future, infinity close-only, partial OHLC and mixed valid+future rows with ok=true.",
+      "original_integral_receipts": {
+        "candidate": {
+          "literal_receipt": {
+            "bytes": 361441,
+            "path": "rc6_audit_evidence/history_convergence/original_issue468/adversarial_candidate.json.source",
+            "sha256": "d19e34b1f38af17f92e75f4f774d1cc4319c43acea7a60023ec6ab646b8a81f9"
+          },
+          "original_received_case_count": 90,
+          "original_received_case_count_scope": "RECEIVED_COMPLETE_ORIGINAL_RECEIPT; NOT_THIS_REPLAY_EXECUTION_COUNT",
+          "receipt_metadata": {
+            "network_disabled": true,
+            "real_orders_sent_by_audit": 0,
+            "runtime_mutations": 0,
+            "source_path": "/workspace/scratch/9b0506514f5c/source_candidate"
+          },
+          "selected_original_records": {
+            "H_DATA912_VALIDATION": {
+              "execution": "COMPLETED",
+              "id": "H_DATA912_VALIDATION",
+              "result": {
+                "future": [
+                  [
+                    "2099-01-01",
+                    100.0,
+                    102.0,
+                    98.0,
+                    100.0,
+                    1.0
+                  ]
+                ],
+                "invalid_ohlc": [
+                  [
+                    "2026-09-30",
+                    100.0,
+                    90.0,
+                    98.0,
+                    100.0,
+                    1.0
+                  ]
+                ],
+                "nan": [
+                  [
+                    "2026-09-30",
+                    100.0,
+                    102.0,
+                    98.0,
+                    {
+                      "observed_nonfinite_float": "nan"
+                    },
+                    1.0
+                  ]
+                ]
+              }
+            },
+            "H_VALID_future_date": {
+              "execution": "COMPLETED",
+              "id": "H_VALID_future_date",
+              "result": {
+                "accepted": true,
+                "canonical": [
+                  {
+                    "adjusted": 0,
+                    "close": 100.0,
+                    "date": "2099-12-31",
+                    "high": 102.0,
+                    "instrument_type": "ACCIONES",
+                    "low": 98.0,
+                    "market": "BYMA",
+                    "observed_at": "2026-10-01T16:00:00+00:00",
+                    "open": 100.0,
+                    "settlement": "A-24HS",
+                    "source": "PPI_API",
+                    "source_rank": 10,
+                    "symbol": "AUDIT",
+                    "version_id": 1,
+                    "volume": 1000.0
+                  }
+                ],
+                "value": {
+                  "canonical_updated": true,
+                  "payload_hash": "7a4425fb24157851b78e4a9f703bef227601ad7ade070127e7aa636254b08e5d",
+                  "source_rank": 10,
+                  "version_appended": true,
+                  "version_id": 1
+                }
+              }
+            },
+            "H_VALID_infinite_close_only": {
+              "execution": "COMPLETED",
+              "id": "H_VALID_infinite_close_only",
+              "result": {
+                "accepted": true,
+                "canonical": [
+                  {
+                    "adjusted": 0,
+                    "close": {
+                      "observed_nonfinite_float": "inf"
+                    },
+                    "date": "2026-09-30",
+                    "high": null,
+                    "instrument_type": "ACCIONES",
+                    "low": null,
+                    "market": "BYMA",
+                    "observed_at": "2026-10-01T16:00:00+00:00",
+                    "open": null,
+                    "settlement": "A-24HS",
+                    "source": "PPI_API",
+                    "source_rank": 10,
+                    "symbol": "AUDIT",
+                    "version_id": 1,
+                    "volume": 1000.0
+                  }
+                ],
+                "value": {
+                  "canonical_updated": true,
+                  "payload_hash": "2ad0f03c4b475b41ad0aeac0ddcc21c03e03bff69d6181e944ec3882a2d25695",
+                  "source_rank": 10,
+                  "version_appended": true,
+                  "version_id": 1
+                }
+              }
+            },
+            "S_PROVIDER_FAULTS": {
+              "execution": "COMPLETED",
+              "id": "S_PROVIDER_FAULTS",
+              "result": [
+                {
+                  "calls": 5,
+                  "kind": "timeout",
+                  "result": {
+                    "accepted": false,
+                    "exception": "RuntimeError",
+                    "reason": "injected provider timeout"
+                  },
+                  "simulated_sleep_seconds": [
+                    3,
+                    6,
+                    9,
+                    12
+                  ]
+                },
+                {
+                  "calls": 5,
+                  "kind": "429",
+                  "result": {
+                    "accepted": false,
+                    "exception": "RuntimeError",
+                    "reason": "Data912 no respondió para /synthetic"
+                  },
+                  "simulated_sleep_seconds": [
+                    5,
+                    10,
+                    15,
+                    20,
+                    25
+                  ]
+                },
+                {
+                  "calls": 1,
+                  "kind": "empty",
+                  "result": {
+                    "accepted": true,
+                    "value": []
+                  },
+                  "simulated_sleep_seconds": []
+                },
+                {
+                  "calls": 1,
+                  "kind": "partial",
+                  "result": {
+                    "accepted": true,
+                    "value": [
+                      {
+                        "c": 100,
+                        "date": "2026-09-30"
+                      },
+                      {
+                        "c": -1,
+                        "date": "2026-09-29"
+                      }
+                    ]
+                  },
+                  "simulated_sleep_seconds": []
+                }
+              ]
+            }
+          }
+        },
+        "product": {
+          "literal_receipt": {
+            "bytes": 121304,
+            "path": "rc6_audit_evidence/history_convergence/original_issue468/adversarial_prod.json.source",
+            "sha256": "93e2af165e09f757b2345bd7c1a17b69dc439d2ec7b56eb8ebc8c8177e6933c1"
+          },
+          "original_received_case_count": 96,
+          "original_received_case_count_scope": "RECEIVED_COMPLETE_ORIGINAL_RECEIPT; NOT_THIS_REPLAY_EXECUTION_COUNT",
+          "receipt_metadata": {
+            "network_disabled": true,
+            "real_orders_sent_by_audit": 0,
+            "runtime_mutations": 0,
+            "source_path": "/workspace/scratch/9b0506514f5c/source_prod"
+          },
+          "selected_original_records": {
+            "H_DATA912_VALIDATION": {
+              "execution": "COMPLETED",
+              "id": "H_DATA912_VALIDATION",
+              "result": {
+                "future": [
+                  [
+                    "2099-01-01",
+                    100.0,
+                    102.0,
+                    98.0,
+                    100.0,
+                    1.0
+                  ]
+                ],
+                "invalid_ohlc": [
+                  [
+                    "2026-09-30",
+                    100.0,
+                    90.0,
+                    98.0,
+                    100.0,
+                    1.0
+                  ]
+                ],
+                "nan": [
+                  [
+                    "2026-09-30",
+                    100.0,
+                    102.0,
+                    98.0,
+                    {
+                      "observed_nonfinite_float": "nan"
+                    },
+                    1.0
+                  ]
+                ]
+              }
+            },
+            "H_VALID_future_date": {
+              "execution": "COMPLETED",
+              "id": "H_VALID_future_date",
+              "result": {
+                "accepted": true,
+                "canonical": [
+                  {
+                    "adjusted": 0,
+                    "close": 100.0,
+                    "date": "2099-12-31",
+                    "high": 102.0,
+                    "instrument_type": "ACCIONES",
+                    "low": 98.0,
+                    "market": "BYMA",
+                    "observed_at": "2026-10-01T16:00:00+00:00",
+                    "open": 100.0,
+                    "settlement": "A-24HS",
+                    "source": "PPI_API",
+                    "source_rank": 10,
+                    "symbol": "AUDIT",
+                    "version_id": 1,
+                    "volume": 1000.0
+                  }
+                ],
+                "value": {
+                  "canonical_updated": true,
+                  "payload_hash": "7a4425fb24157851b78e4a9f703bef227601ad7ade070127e7aa636254b08e5d",
+                  "source_rank": 10,
+                  "version_appended": true,
+                  "version_id": 1
+                }
+              }
+            },
+            "H_VALID_infinite_close_only": {
+              "execution": "COMPLETED",
+              "id": "H_VALID_infinite_close_only",
+              "result": {
+                "accepted": true,
+                "canonical": [
+                  {
+                    "adjusted": 0,
+                    "close": {
+                      "observed_nonfinite_float": "inf"
+                    },
+                    "date": "2026-09-30",
+                    "high": null,
+                    "instrument_type": "ACCIONES",
+                    "low": null,
+                    "market": "BYMA",
+                    "observed_at": "2026-10-01T16:00:00+00:00",
+                    "open": null,
+                    "settlement": "A-24HS",
+                    "source": "PPI_API",
+                    "source_rank": 10,
+                    "symbol": "AUDIT",
+                    "version_id": 1,
+                    "volume": 1000.0
+                  }
+                ],
+                "value": {
+                  "canonical_updated": true,
+                  "payload_hash": "2ad0f03c4b475b41ad0aeac0ddcc21c03e03bff69d6181e944ec3882a2d25695",
+                  "source_rank": 10,
+                  "version_appended": true,
+                  "version_id": 1
+                }
+              }
+            },
+            "S_PROVIDER_FAULTS": {
+              "execution": "COMPLETED",
+              "id": "S_PROVIDER_FAULTS",
+              "result": [
+                {
+                  "calls": 5,
+                  "kind": "timeout",
+                  "result": {
+                    "accepted": false,
+                    "exception": "RuntimeError",
+                    "reason": "injected provider timeout"
+                  },
+                  "simulated_sleep_seconds": [
+                    3,
+                    6,
+                    9,
+                    12
+                  ]
+                },
+                {
+                  "calls": 5,
+                  "kind": "429",
+                  "result": {
+                    "accepted": false,
+                    "exception": "RuntimeError",
+                    "reason": "Data912 no respondió para /synthetic"
+                  },
+                  "simulated_sleep_seconds": [
+                    5,
+                    10,
+                    15,
+                    20,
+                    25
+                  ]
+                },
+                {
+                  "calls": 1,
+                  "kind": "empty",
+                  "result": {
+                    "accepted": true,
+                    "value": []
+                  },
+                  "simulated_sleep_seconds": []
+                },
+                {
+                  "calls": 1,
+                  "kind": "partial",
+                  "result": {
+                    "accepted": true,
+                    "value": [
+                      {
+                        "c": 100,
+                        "date": "2026-09-30"
+                      },
+                      {
+                        "c": -1,
+                        "date": "2026-09-29"
+                      }
+                    ]
+                  },
+                  "simulated_sleep_seconds": []
+                }
+              ]
+            }
+          }
+        }
+      },
+      "prior_evidence_status": "SPECIFIC_PRIOR_NATIVE_VALIDATION_RED_CONFIRMED_WITH_CLAUSE_SPECIFIC_SUCCESSFUL_CONTROLS",
+      "successful_controls_not_red": [
+        "NATIVE_NORMALIZER:valid_control",
+        "NATIVE_SINK:valid_control",
+        "NATIVE_SINK:nan_close",
+        "NATIVE_SINK:inconsistent_ohlc",
+        "NATIVE_SINK:empty_control",
+        "NATIVE_PROVIDER:429",
+        "NATIVE_PROVIDER:timeout"
+      ]
+    },
+    "AUD-468-21": {
+      "all_family_and_global_sums_consistent": true,
+      "current_green_guards_separate": [
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_S_HEARTBEAT_NO_PROGRESS_retains_zero_progress_as_distinct_from_ready",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD21_coverage_cut_cohort_currency_sessions_and_consumer_do_not_imply_ready",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "test_hf6_history_data912_v2.py::test_history_collection_does_not_equal_ready_paper",
+          "seconds": 0.0,
+          "status": "PASS"
+        }
+      ],
+      "current_guard_scope": "SYNTHETIC_SOFTWARE_FULL_KEY/CURRENCY/COHORT/SESSION/CONSUMER/AS_OF_AND_READY_IMPLICATION_NONE; NOT_CURRENT_MASTER_DATASET",
+      "dated_canonical_latest_bar_date": "2026-09-28",
+      "dated_canonical_rows": 439833,
+      "dated_coverage_by_family": {
+        "ACCIONES": {
+          "ready": 153,
+          "with_history": 111,
+          "without_history": 42
+        },
+        "BONOS": {
+          "ready": 2044,
+          "with_history": 36,
+          "without_history": 2008
+        },
+        "CEDEARS": {
+          "ready": 1145,
+          "with_history": 865,
+          "without_history": 280
+        },
+        "FCI": {
+          "ready": 1013,
+          "with_history": 962,
+          "without_history": 51
+        },
+        "LETRAS": {
+          "ready": 37,
+          "with_history": 14,
+          "without_history": 23
+        },
+        "OBLIGACIONES": {
+          "ready": 3330,
+          "with_history": 0,
+          "without_history": 3330
+        },
+        "OPCIONES": {
+          "ready": 6,
+          "with_history": 1,
+          "without_history": 5
+        }
+      },
+      "dated_ready_cohort": {
+        "ready": 7728,
+        "with_four_field_history_match": 1989,
+        "without_four_field_history_match": 5739
+      },
+      "dated_repair_cutoff": "2026-09-21",
+      "dated_repair_marker_scope": "Receipt run PARTIAL 899 complete/195 failed/1094 targets; not actual 20-session/current coverage authority.",
+      "family_sums_checked": {
+        "ready": 7728,
+        "with_history": 1989,
+        "without_history": 5739
+      },
+      "integral_dated_receipt": {
+        "bytes": 6619,
+        "path": "rc6_audit_evidence/history_convergence/original_issue468/history_audit.json",
+        "sha256": "5650f2918ecb4ce280d028dde48b8eb71fb51bd8782e0516757a491ed3bfb3a1"
+      },
+      "limits": [
+        "Actual current full-key/currency/session coverage, consumer cadence, provider availability and full dataset are NO_VERIFICADO.",
+        "Original integral history_audit is available; original complete DB needed for join rerun is unavailable."
+      ],
+      "literal_requirement": {
+        "closure": "Métrica full-key/currency/session por consumidor y corte; no trasladar5739/7728 del1/10 al presente ni exigir history global a estrategias que no lo consumen.",
+        "condition": "Gap de cobertura/observabilidad; no es por sí mismo un bug READY.",
+        "id": "AUD-468-21",
+        "registry": "468",
+        "severity": "P2"
+      },
+      "native_original_join_replay_status": "NO_VERIFICADO; COMPLETE_ORIGINAL_RUNTIME_DATABASE_NOT_SUPPLIED",
+      "original_join_identity": "symbol/instrument_type/market/settlement; FOUR_FIELDS_WITHOUT_QUOTE_CURRENCY",
+      "original_reported_artifact": "11190260473/HISTORY_AUDIT; ORIGINAL_AUDIT_ASSERTION_NOT_A_NEW_REMOTE_FETCH",
+      "original_reported_cut": "2026-10-01",
+      "prior_evidence_status": "DATED_OBSERVABILITY_EVIDENCE_AVAILABLE; NOT_A_READY_BUG",
+      "prohibited_inferences": [
+        "5739/7728 is not a present coverage denominator.",
+        "439833 rows do not imply covered instruments or 20 actual trading sessions.",
+        "Missing historical data does not disprove READY for consumers that do not require it.",
+        "Missing modern coverage API on c27 and synthetic currency collision are not native replays of this dated join."
+      ],
+      "receipt_observer_heartbeat": "2026-10-01T19:36:44.968788+00:00",
+      "specific_prior_red_execution_status": "NOT_FABRICATED; DATED_COVERAGE_FACT_IS_NOT_A_READY_BUG_OR_OLD_API_ABSENCE_TEST"
+    }
+  },
+  "inspected_current_source": {
+    "all_22_current_owned_source_hashes_match": true,
+    "integration_sha": "3d1f45aa296869eefe55ef79900889333395a9bd",
+    "integration_tree": "f0ce2ec4c1f5f1a56d24efed03953ffb080a1969",
+    "owned_source_file_sha256": {
+      "al_historical_ingest.py": "700f133c74a59a88d47cbb7a7d93e7a52ca0143e5bd3a03adc70f41dfee9c141",
+      "ba_data912_history.py": "648c65ff2ab95f5f30414a7062236840896ee182357ab647548b36617e53b1d6",
+      "cr_data912_reconcile_hf6.py": "1dcfa8dcda40408318b1d9216393e8242773a6887b6543e15be73995f58c61b1",
+      "ct_ppi_history_salvage_hf6.py": "300af22ad46cc8d19289cadce71aa4d6f808bd00cea3019ab88b7511f6d42e4b",
+      "cu_history_store_v2_hf6.py": "890de82a33a59dbee06bd776c5d7e41cd6554b703ab486a52b43f3a571d4b987",
+      "cv_history_store_adapter_hf6.py": "625a94f690144d61e9e00ea15400cbc3865e2f9eb6b67e0fa3ab3a823ad598d4",
+      "cw_data912_history_v2_sink.py": "978558134cd90b90be9581924a1e8ef190354618408025a63082b5db49e3aab5",
+      "db_a3_cem_normalizer_hf6.py": "d7cc78f457e2abb59bed14d7132c3ac5351b234ff3674075bf103314dc56f171",
+      "ea_history_close_series_hf2.py": "c50711fb49c275e3829b67ff1b7cf65706cb6fc18af58c1e767ebbe48a36fff8",
+      "ew_a3_history_rc6.py": "66e0ce7936cfe41cb7b119e0ba9c9db169d56aa9d59fde9585ca3e481104ba56",
+      "historical_candle_shadow_rc6.py": "5ee61594d568064379cf3d655a95ceb836e38985266d73e2dc7cbb3986d4c5f5",
+      "rc6_audit_evidence/history_probe.py": "69327379de78fa1eb7b954b57fb1bc50ddce28a762a1a846e2233012c7ade302",
+      "rc6_audit_evidence/package.py": "177262456183b489138e2552507d743b8199040096ed266357e297402d8b12b7",
+      "rc6_audit_evidence/sqlite_scratch.py": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8",
+      "rc6_audit_evidence/sqlite_snapshot.py": "34e6ea35351897bc79ccb8299d1d66dc99db360a77a2b92ad41e80003b282c46",
+      "rc6_shadow_runtime/preopen.py": "cc53d69a2caab28c1b12124da3787903ad58a4786ee453b18360a16d31ad4c96",
+      "tests/test_rc6_history_convergence.py": "18f58b675ccfc58f67875ffe3f5cc28ece3a1ecf253333645eff921fd5167b39",
+      "tests/test_rc6_history_initialization_copy.py": "151ca150e4ad91f394ac751bc8a31327eeb4849b0ec5ae207f42f5411a2963f2",
+      "tests/test_rc6_history_large_preopen.py": "b259b56597622566899c594e58203f1348271add0836483f7211bac256602c45",
+      "tests/test_rc6_history_probe.py": "39048dea1acabdb35a1d575d270fd459d56192c379bc07d370e8efb233cdb7c2",
+      "tests/test_rc6_shadow_preopen_runtime.py": "b62f9a1f0706e5de7b51d1c2f69f96f7edf7408147e201393e24e77ebf0492a6",
+      "tests/test_rc6_sqlite_disk_scratch.py": "ebeb7855be5ae3f72a193eb004e2c02794a8be1f5366394bc97061e8ed03679a"
+    },
+    "owner_code_base_sha": "6feeb5efa0dac96426d0bdb39c9a9395feded845",
+    "scope": "SOURCE_HASH_COMPARISON_ONLY; NOT_A_NEW_CI_OR_RUNTIME_EXECUTION"
+  },
+  "native_replay": {
+    "alien_repo_modules": {},
+    "all_imported_file_origins_bound_in_receipt": true,
+    "all_sqlite_attempts_authorized_ephemeral_fixture_or_memory": true,
+    "archive_sha256": "11681d9682ff41ff595e10550d0e3fb4d861161e2fda9237930e6fd32dcc61d9",
+    "classified_observed_cases": {
+      "H_DATA912_VALIDATION": {
+        "class": "SPECIFIC_PRIOR_VALIDATION_RED",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.H_DATA912_VALIDATION",
+        "scope": "UNCHANGED_ORIGINAL_FUNCTION; THREE_FAILED_VALIDATION_CLAUSES_IN_ONE_INVOCATION"
+      },
+      "NATIVE_NORMALIZER:infinite_close_only": {
+        "class": "INVALID_INPUT_ACCEPTANCE",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_NORMALIZER:infinite_close_only"
+      },
+      "NATIVE_NORMALIZER:infinite_volume": {
+        "class": "INVALID_INPUT_ACCEPTANCE",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_NORMALIZER:infinite_volume"
+      },
+      "NATIVE_NORMALIZER:invalid_date": {
+        "class": "INVALID_INPUT_ACCEPTANCE",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_NORMALIZER:invalid_date"
+      },
+      "NATIVE_NORMALIZER:partial_ohlc": {
+        "class": "INVALID_INPUT_ACCEPTANCE",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_NORMALIZER:partial_ohlc"
+      },
+      "NATIVE_NORMALIZER:valid_control": {
+        "class": "SUCCESSFUL_VALID_CONTROL",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_NORMALIZER:valid_control"
+      },
+      "NATIVE_PROVIDER:429": {
+        "class": "SUCCESSFUL_FAILURE_CONTROL",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_PROVIDER:429",
+        "scope": "FIVE_RETRIES_AND_EVENTUAL_FAILURE; NO_FALSE_SUCCESS; DO_NOT_RELABEL_RED"
+      },
+      "NATIVE_PROVIDER:timeout": {
+        "class": "SUCCESSFUL_FAILURE_CONTROL",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_PROVIDER:timeout",
+        "scope": "FIVE_RETRIES_AND_EVENTUAL_FAILURE_WITH_ACTUAL_REQUESTS_TIMEOUT; DO_NOT_RELABEL_RED"
+      },
+      "NATIVE_SINK:empty_control": {
+        "class": "SUCCESSFUL_EMPTY_INCOMPLETE_CONTROL",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_SINK:empty_control"
+      },
+      "NATIVE_SINK:future": {
+        "class": "INVALID_INPUT_PERSISTED_WITH_OK_TRUE",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_SINK:future"
+      },
+      "NATIVE_SINK:inconsistent_ohlc": {
+        "class": "SUCCESSFUL_REJECTION_CONTROL",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_SINK:inconsistent_ohlc",
+        "scope": "NATIVE_OHLC_VALUEERROR_IS_OBSERVED_SINK_REJECTION; NOT_FALSE_ADMISSION_OR_HARNESS_ERROR"
+      },
+      "NATIVE_SINK:infinite_close_only": {
+        "class": "INVALID_INPUT_PERSISTED_WITH_OK_TRUE",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_SINK:infinite_close_only"
+      },
+      "NATIVE_SINK:nan_close": {
+        "class": "SUCCESSFUL_REJECTION_CONTROL",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_SINK:nan_close",
+        "scope": "SQLITE_INTEGRITYERROR_IS_OBSERVED_NATIVE_SINK_REJECTION; NOT_FALSE_ADMISSION_OR_HARNESS_ERROR"
+      },
+      "NATIVE_SINK:partial_ohlc": {
+        "class": "INVALID_INPUT_PERSISTED_WITH_OK_TRUE",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_SINK:partial_ohlc"
+      },
+      "NATIVE_SINK:valid_control": {
+        "class": "SUCCESSFUL_VALID_CONTROL",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_SINK:valid_control"
+      },
+      "NATIVE_SINK:valid_plus_future": {
+        "class": "INVALID_BATCH_PERSISTED_WITH_OK_TRUE",
+        "execution": "COMPLETED",
+        "result_ref": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json#results.NATIVE_SINK:valid_plus_future",
+        "scope": "EXACT_REPORTED_FLAGS_OK_TRUE/HISTORICAL_V2_INGESTED; NO_EXPLICIT_COMPLETE_FIELD_OR_READY_PAPER_CLAIM"
+      }
+    },
+    "complete_archive_member_bytes_verified": true,
+    "completed_native_invocations": 16,
+    "harness_errors": 0,
+    "imported_repo_module_count": 6,
+    "invocation_count_scope": "ONE_UNCHANGED_ORIGINAL_FUNCTION_PLUS_15_NATIVE_RECONSTRUCTIONS_OR_CONTROLS; NOT_16_NEW_REQUIREMENTS_OR_INDEPENDENT_R_ATTACKS",
+    "network_attempts": 0,
+    "original_provider_driver_difference": "Supplied full driver replaces requests module with RequestException=TimeoutError; provider reconstructions explicitly use actual requests.Timeout, not that fake dependency.",
+    "previous_intermediate_replay": {
+      "local_path": "/tmp/rc6_original_history_data912_c27dfd9_replay.json",
+      "scope": "INTERMEDIATE_RUNNER_VERSION; NOT_THE_FINAL_RUNNER_BINDING; NOT_ADDED_TO_EXECUTION_COUNTS",
+      "sha256": "adb91255e9bc91abdb594fb23f76f2f7e28c9c91391d5175f9740fd680ad61ee"
+    },
+    "previous_published_replay": {
+      "commit": "6feeb5efa0dac96426d0bdb39c9a9395feded845",
+      "completed_native_invocations": 16,
+      "path": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json",
+      "scope": "SUPERSEDED_RUNNER_BEFORE_EXPLICIT_SQLITE_FIXTURE_ONLY_GUARD; RETAINED_IN_GIT_COMMIT; NOT_ADDED_TO_PYTEST_SCENARIO_COUNTS",
+      "sha256": "8503bf64c103d6d12c119432c1f38e0ebd72ddaea6e9f18613cbc1f1774933bf"
+    },
+    "provider_seam": "FakeClient replaces native _session only; transport/normalizer/sink and installed requests dependency are real",
+    "receipt": {
+      "bytes": 560184,
+      "path": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json",
+      "sha256": "4bd873ecd92be5fe599fc545a7d56817cd4117490a03966027d4304f2997c1b9"
+    },
+    "replay_execution_lineage_scope": "Three runner executions recorded: 16 invocations each, 48 execution invocations total, with this final receipt describing 16. Repeated invocations are not additional distinct scenarios, requirement IDs or pytest guard nodes.",
+    "runner": {
+      "bytes": 15265,
+      "path": "rc6_audit_evidence/history_convergence/probes/original_data912_archive_probe.py",
+      "sha256": "af04e89a6d34f9c39c4aeb265e5fc28fa91901000e4eec8641e1fd9e3c1b442a"
+    },
+    "source_files_verified": 1109,
+    "source_fixture_databases": "EPHEMERAL_OUTSIDE_SOURCE_ARCHIVE; NATIVE_INITIALIZERS_ONLY; NO_PROBE_DDL_OR_CODE_OVERLAY",
+    "source_index_sha256": "07528c88b956a541177464916450cf247d254101f455a723f4e73ce1f9901faa",
+    "source_invariance_scope": "ALL_ARCHIVED_FILE_BYTES_NAMES_SIZES_MODES_NLINK; NOT_A_BLANKET_ATIME_OR_HOST_SQLITE_CLAIM",
+    "source_schema_and_api": "ORIGINAL_FOUR_FIELD_TARGET/NATIVE_ORIGINAL_STORE_DDL; NO_CURRENCY_OR_PRICE_BASIS_KWARGS_BACKPORTED",
+    "source_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "source_tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2",
+    "source_unchanged": true,
+    "sqlite_connection_attempts": 30,
+    "sqlite_connection_scope": "ONLY_IN_MEMORY_OR_EXPLICIT_EPHEMERAL_FIXTURE_ROOT; SOURCE_AND_RUNTIME_PATHS_FORBIDDEN",
+    "unchanged_original_driver": {
+      "bytes": 26816,
+      "path": "rc6_audit_evidence/history_convergence/original_issue468/adversarial_harness.py.source",
+      "sha256": "a9d2ea84ae48bbff0ccf07bcee85a346e5fe874446edfdb4cf3ad95225845595"
+    },
+    "unchanged_original_function_definition_sha256": "3b32778253bd116536e17ca1fcbfe574aa4ab0c69b13711da4aa3295815286ab"
+  },
+  "original_R_scenarios_added": 0,
+  "original_archives": {
+    "authentication_limit": "Received byte identity and complete local archive verification do not independently authenticate original GitHub/source provenance.",
+    "evidence": {
+      "members": 26,
+      "name": "EVIDENCE_REPRODUCIBILITY_ISSUE468.zip",
+      "sha256": "6670ef87b1c697b1c1a9025b2dfbbf19082d215af821fbec37769f26d5c8ffc0"
+    },
+    "literal_member_inventory": {
+      "bytes": 2050,
+      "path": "rc6_audit_evidence/history_convergence/original_issue468/member_inventory.json",
+      "sha256": "0818bc30d97dd13a315da0af1373decb6bb20c04357d8c764d41e9b89126df17"
+    },
+    "original_extended_json": "NaN/Infinity source bytes retained in .json.source; binder values explicitly tagged",
+    "outer": {
+      "members": 16,
+      "name": "AUDITORIA_ISSUE_468_SALIDA_COMPLETA.zip",
+      "sha256": "aa78ad688c11c6e54f02ae9139554ab274e5210d704abd208ffcff37c5b6c7ce"
+    },
+    "selected_members_are_literal_and_integral": true
+  },
+  "original_clause_ids_added": 0,
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "release_provenance_limit": "Final frozen SHA/tree, governed JUnit/FIP, artifact and external provenance anchors remain separate pending requirements.",
+  "runtime_verified": false,
+  "schema": "rc6.original-history-prior-evidence-binding.v1",
+  "scope": "LITERAL_ORIGINAL_RECEIPTS_PLUS_OFFLINE_NATIVE_ARCHIVE_REPLAY; NO_CURRENT_DATASET_OR_RELEASE_AUTHORITY",
+  "source_registry": {
+    "literal_rows": 55,
+    "path": "docs/audits/convergence/REGISTRO_CONVERGENCIA_RC6.csv",
+    "selected_literal_rows": {
+      "AUD-468-20": {
+        "closure": "Endurecer adaptador y sink común; NaN/inf/futuro/high<low/OHLC parcial, razones precisas, retry429/timeout sin falsa completitud.",
+        "condition": "Persiste: Data912 normaliza sin validar de manera uniforme.",
+        "id": "AUD-468-20",
+        "registry": "468",
+        "severity": "P2"
+      },
+      "AUD-468-21": {
+        "closure": "Métrica full-key/currency/session por consumidor y corte; no trasladar5739/7728 del1/10 al presente ni exigir history global a estrategias que no lo consumen.",
+        "condition": "Gap de cobertura/observabilidad; no es por sí mismo un bug READY.",
+        "id": "AUD-468-21",
+        "registry": "468",
+        "severity": "P2"
+      }
+    },
+    "sha256": "9c1432c006516d23418bf059adf8c4f8d37e869186cb0ef15e3bb6768c86df21"
+  },
+  "unchanged_current_native_guard_counts": {
+    "distinct_native_receipt_union_tests": 390,
+    "exact_distinct_finding_guard_nodes": 123,
+    "finding_guard_references": 128,
+    "latest_scoped_native_receipt_tests": 217,
+    "owned_findings": 21,
+    "receipt_union_note": "123 distinct nodes appear in 128 finding references. 390 is the union of recorded invocations, not one 390-test run. This replay does not add to either native pytest total."
+  }
+}

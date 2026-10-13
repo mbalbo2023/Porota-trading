@@ -1,0 +1,261 @@
+{
+  "candidate": {
+    "archival_git_member": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source",
+    "bytes": 55671,
+    "path": "/tmp/rc6_run_full_horizon_1201_v2_candidate_v3.py.source",
+    "physical_mode_octal": "0600",
+    "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec"
+  },
+  "changed_original_functions": [
+    "main"
+  ],
+  "clock_scope": {
+    "child_reap_clock": "Actual wait4 observation only; no inferred earlier exit.",
+    "management_deadline": "From manager phase enter before Popen, at most21600; failed cleanup5 is not acceptance extension.",
+    "progress_poll_seconds": 5,
+    "supervisor_elapsed_before_final_custody_seconds": "Partial until finally enter; Source/postproof/finalJSON are not included or claimed inside this clock."
+  },
+  "explicit_adaptations": [
+    "Management cap600\u219221600 seconds; positive finite supplied limit cannot exceed original21600.",
+    "TERM before SIGKILL grace1\u21922 seconds; failed cleanup cap5 unchanged.",
+    "Optional progress callback at start and each5 seconds; active observation only fstat of supervisor log FD.",
+    "Scope labels refer to actual full1201 producer main PID plus kernel-accounted adopted descendants; no worker-only or sumRSS claim.",
+    "Pre-initial-Source ECHILD/read-only subreaper-state readback.",
+    "Physical FIN before all postcaptures requires actualPIDwait4, pre/postECHILD, absentPGID and subreaper activation/restoration readbacks.",
+    "Business GREEN separately rejects timeout/late observed reap/wait4-zero/residuals/signals/errors/nonzero main or adopted exit.",
+    "Strict max(main wait4 RSS, adopted-child wait4 RSS)<2GiB; incomplete RSS cannot qualify.",
+    "Exception traceback formatting deferred until final kernel FIN because linecache may read Source.",
+    "Same-epoch source index/TAR full capture dictionaries including blocks must match, not only content SHA; no Source physical field restores or exemptions."
+  ],
+  "legacy_reap_terminate": "Retained Source+AST literal, no main caller; only new managed path owns producer lifecycle.",
+  "manager_gate_before_captures": {
+    "blocked_state": "OWNED_FIN_UNVERIFIED_NO_SOURCE_INDEX_TAR_DATABASE_LOG_OR_NATIVE_RESULT_POSTCAPTURE",
+    "captures": [
+      "native result",
+      "inspect_native/database snapshots",
+      "whole source Git+namespace verification",
+      "source index",
+      "Source TAR",
+      "native log",
+      "traceback formatting"
+    ],
+    "diagnostic_JSON_writes_permitted_without_business_acceptance": true
+  },
+  "manager_source": {
+    "adapted_manager_source_sha256": "f393ff968f0e3d7da8c7e342bf23aa83bb277c2f37ebb310c99d84fd96cf9d4d",
+    "bytes": 54090,
+    "generator_source_path": "/tmp/rc6_prepare_native_big_wrapper_v3_candidate_v3.py",
+    "native_qualification_inferred": false,
+    "original_manager_ast_sha256": "f7799a94b795dab76d154f51df04b06ff3f5c038e2c60103d6dac96d5d063172",
+    "original_manager_source_sha256": "eb8c32d817bb4f3bb5e115e8b96e9621919977b420ea912c47bb2a7a62d743a4",
+    "selection": "AST literal WRAPPER then topdef managed_native_child and require; no import/eval/exec",
+    "sha256": "f84c88dac6756fbca168f2a67df4573adf94c8d1152a08ff7e37ccdc9a250964"
+  },
+  "next_steps": [
+    "Root/SRE independent Source review of this exact candidate and manager diff.",
+    "Root may archive the literal new driver and rebuild SourceS only after Source closure; no claim oldSource contains this driver.",
+    "Any future native full1201 physical run uses the unchanged producer and limits with a separately qualified outer supervisor; no shortcuts or Source-only acceptance."
+  ],
+  "original_v1": {
+    "bytes": 35226,
+    "path": "/workspace/porota_rc6_convergence/docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v1.py.source",
+    "sha256": "a74215491110d1a2e862cab496d3aaeeec24018db963825a394223f145957d74",
+    "unchanged": true
+  },
+  "performed_here": {
+    "AST_parse_compile_and_source_comparison": true,
+    "Git_or_source_export_or_fixture": false,
+    "Native_or_Gov_or_product_imports": 0,
+    "RAW_or_DATA_or_original_TAR_body_reads": false,
+    "Root_writes": false,
+    "candidate_source_write_only": true,
+    "generator_or_manager_or_driver_invocation": false,
+    "source_inputs_all11_unchanged": true,
+    "source_named_files_read_only": true
+  },
+  "preserved_functions_source_and_AST": [
+    {
+      "function": "unique",
+      "original_and_candidate_ast_sha256": "2fbada875343d8b37d7f8edf913cc82317005a5269fa6ef7c7f6f1c39423bf27",
+      "original_and_candidate_source_sha256": "b00ea16cd5dfdd62a2a719f5aec30e633ff233b3b36f5c88cd6689d41e522b70"
+    },
+    {
+      "function": "parse",
+      "original_and_candidate_ast_sha256": "ad9648c0fd92b714f8a7dd7117041b365acc28e7568ebb8064a37c0ab1d771a7",
+      "original_and_candidate_source_sha256": "f197d5c7fcaa7c4a7f82039c8f1d81229b067c130f2cd93e4c4773519b1bdd93"
+    },
+    {
+      "function": "attributes",
+      "original_and_candidate_ast_sha256": "35d7cc37d0bc0947818a215480d6513ec363f2779fbb9e0f4a01000e2aa7e4fd",
+      "original_and_candidate_source_sha256": "46585bc0a690416a646acfd9f3cc862ee727954f5bbac2128f24ff9494401007"
+    },
+    {
+      "function": "capture",
+      "original_and_candidate_ast_sha256": "00f818916396cf9081f7e217dd65e9412fceded8a3b6f413ba3d68b4dea01c36",
+      "original_and_candidate_source_sha256": "b0fd86daaee5c3dc15781ae83629da5084776509469ff57e2cedc9e6d55a2b50"
+    },
+    {
+      "function": "directory_names",
+      "original_and_candidate_ast_sha256": "f8c5709747e60362539302c929f22a053d63faa2679f99e3cb2caefecf13d7c3",
+      "original_and_candidate_source_sha256": "c4d0b532c812e504ff557d0bec5219ef0857f267097c8fe8f9921973b60d40b5"
+    },
+    {
+      "function": "canonical",
+      "original_and_candidate_ast_sha256": "1f84b870241283c8b1255777d9ef0e6cd229a32645be0ff32799278c7f88dd9c",
+      "original_and_candidate_source_sha256": "f44eb6a0257179bb6d19022fd9a53ef887282ccbbc849293ca0cb1d9b88626d7"
+    },
+    {
+      "function": "git",
+      "original_and_candidate_ast_sha256": "5f98c89e43a52f4490a3dec62604b0be7220293fed26df341bb4db99e6a944b7",
+      "original_and_candidate_source_sha256": "681a098b868612e950573c42f2cca3b758d6d38db8b9f2e0698a9362b4ce0df5"
+    },
+    {
+      "function": "raw_objects",
+      "original_and_candidate_ast_sha256": "de1b18aa06111dc6587e21a51eb74eea755f4a452f567e5b5a42a4902e1fd5c4",
+      "original_and_candidate_source_sha256": "80c78857a02107a0fe1210fb9531a7ae0c968d3d5dea773d3417f4e6bd111c4b"
+    },
+    {
+      "function": "inventory",
+      "original_and_candidate_ast_sha256": "4a06444b99b682e8fad65d4c3c545bba9d553ac35903c51df4980baa3dde38b2",
+      "original_and_candidate_source_sha256": "e077b7bb28ff4262bb49e77cff915a3540f070d5b800d66356d7ddda8c438003"
+    },
+    {
+      "function": "verify_source",
+      "original_and_candidate_ast_sha256": "ce09747060256e43ece2ef8ad0784e502d3b90fe3950dc8c9cb5789747b23b08",
+      "original_and_candidate_source_sha256": "f3812f708b4a859c807618f229240841232e800aad0318af3388fd30bf0ca219"
+    },
+    {
+      "function": "normalized",
+      "original_and_candidate_ast_sha256": "7b503f1db1fb0a21b5da5f420ba364c5402ecf5e90c2ba5af62b6e8bbe3acf84",
+      "original_and_candidate_source_sha256": "e1be9b20c6c3c1682b0a5911fc76cea41bd0df79166b4c5d95f5ed0d6761ec6e"
+    },
+    {
+      "function": "lock_rows",
+      "original_and_candidate_ast_sha256": "add264393511c5fd9f85ad8b192e510222d5661b0e9ad041d303858c21885b14",
+      "original_and_candidate_source_sha256": "608dc78226b699f10e9a6673343a758619c798be8239257b52edaf7340e8f458"
+    },
+    {
+      "function": "preflight",
+      "original_and_candidate_ast_sha256": "393a2c19322d08a1a5241a5e6121fdd6e2fe78763378c9fe8566dd9f6315974c",
+      "original_and_candidate_source_sha256": "fbc44889544a42edfaf1586df12d4061417a83ffde6c65bb75423002c68d955c"
+    },
+    {
+      "function": "database_snapshot",
+      "original_and_candidate_ast_sha256": "6319f78bc7825167ba39f9daaf6e9d0ad629c0643a10979a67ec6531d3326fe7",
+      "original_and_candidate_source_sha256": "9e806e7e3f7a9b27fc92a6d265df98f529dcb3ba0c8268db8d0155d778ffdd8d"
+    },
+    {
+      "function": "positive",
+      "original_and_candidate_ast_sha256": "601411482aa687b6b904924f5794ce54523008a2c6860a6b84b7fa074b66f436",
+      "original_and_candidate_source_sha256": "b747873f34a37479a3cbe4c156aa189f8fe9bfd69f3ee1801228b630e9e31838"
+    },
+    {
+      "function": "inspect_native",
+      "original_and_candidate_ast_sha256": "d27a2df8f91c6964e4a56306c1a91562a38e6b2f2f6aaf866a51075e9cfb3976",
+      "original_and_candidate_source_sha256": "5e5d04556f450b9e16387b7dcbae8e0061be5e8a97b5298ae47ab81bef6a24c2"
+    },
+    {
+      "function": "write_json",
+      "original_and_candidate_ast_sha256": "4e7086eabf89b6d745145ceb4223bef15d53b901a21f2485ee170d5161d8adca",
+      "original_and_candidate_source_sha256": "0369c97fae7cbda507667c126d019ac026ce4f1d8837a6e4df2b45a9e37b98a3"
+    },
+    {
+      "function": "reap",
+      "original_and_candidate_ast_sha256": "5d1c33f377bf4f4085bdbfde5710574ce02adb109a82af296bbbb3664329c59f",
+      "original_and_candidate_source_sha256": "4d1fb4996512de20da53020f823285eb15d6d1cd5033f1d8071efa14ebaa7047"
+    },
+    {
+      "function": "terminate",
+      "original_and_candidate_ast_sha256": "71154f0247c7289081d4a404b4f7f11cdf89387cf81fdec6cc308e1a5433be34",
+      "original_and_candidate_source_sha256": "97a24dc6e10814998edfcaa20d700849188cc49c890f7bdadadc090045279916"
+    }
+  ],
+  "preserved_original_function_count": 19,
+  "preserved_top_level_constants_except_DRIVER": [
+    "MEMBERS",
+    "PREFLIGHT",
+    "PROFILE",
+    "STATS"
+  ],
+  "previous_plan_preserved": {
+    "bytes": 11359,
+    "path": "/tmp/rc6_full1201_v2_source_plan_v1.json",
+    "review_scope": "Prior94da Source preparation only; original stat11 continuity gap now explicit.",
+    "sha256": "56246e40beb0c2cf995057e1c1343000c202970c6c0bd222acf006fb318b205f"
+  },
+  "schema": "rc6.full1201-external-driver-v2-source-plan.v1",
+  "source_only_forward_RCA": {
+    "classification": "SOURCE_READ_REVIEW_FINDING_NOT_NATIVE_RED",
+    "fix": "After owned FIN capture index_after and tar_after once and require exact capture dictionaries equal baseline: eleven stat fields plus SHA256 plus Git blob hash. Record both baseline and observed after dictionaries without cross-epoch continuity inference.",
+    "manager_and_all19_original_nonmain_functions_unchanged": true,
+    "physical_source_commit_raw_file_added": false,
+    "physical_source_commit_raw_file_scope": "V1 authenticates raw commit via Git objects; it does not consume source.commit.raw file. No new file contract added.",
+    "prior_candidate_sha256": "94da7c9f029058547450de762185d6af5c366c342b0eb933123604d9d62cabb2",
+    "sole_changed_function_from94da": "main",
+    "trigger": "main captured source index and TAR11 before Native, but finally previously compared only SHA; same bytes with changed stat.blocks could be accepted."
+  },
+  "stat_fields_at_source_review": {
+    "candidate": {
+      "st_atime_ns": 1791254397025147267,
+      "st_blocks": 112,
+      "st_ctime_ns": 1791254397025147267,
+      "st_dev": 33,
+      "st_gid": 1000,
+      "st_ino": 3118001,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791254397025147267,
+      "st_nlink": 1,
+      "st_size": 55671,
+      "st_uid": 1000
+    },
+    "manager_generator": {
+      "st_atime_ns": 1791253554956069736,
+      "st_blocks": 112,
+      "st_ctime_ns": 1791253554956069736,
+      "st_dev": 33,
+      "st_gid": 1000,
+      "st_ino": 3117980,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791253554956069736,
+      "st_nlink": 1,
+      "st_size": 54090,
+      "st_uid": 1000
+    },
+    "original": {
+      "st_atime_ns": 1791233777874968633,
+      "st_blocks": 72,
+      "st_ctime_ns": 1791233777859259730,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 306742,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791233777859259730,
+      "st_nlink": 1,
+      "st_size": 35226,
+      "st_uid": 1000
+    }
+  },
+  "status": "SOURCE_ONLY_UNEXECUTED_PENDING_INDEPENDENT_REVIEW",
+  "unchanged_native_contract": {
+    "actual_native_calls_including_PRE": 1202,
+    "catalog_count": 1200,
+    "filesystem_reserve_bytes": 2147483648,
+    "gc_retention_contract_seconds": 32400,
+    "minimum_free_inode_percent": 10,
+    "native_archive_bytes": 536870912,
+    "native_archive_files": 32768,
+    "native_gc_and_retention6000_requested_boundary": "Original producer and driver inspection defs unchanged; no extra fixture refresh/GC/retention calls. No physical run or independent6000 measurement performed in Source preparation.",
+    "native_live_bytes": 134217728,
+    "native_live_files": 512,
+    "native_scratch_bytes": 536870912,
+    "no_added_gc_calls_or_source_fixture_refresh": true,
+    "postPRE_cycle_limit_seconds": 30,
+    "recovery_margin_seconds": 3600,
+    "restarts": [
+      361,
+      841
+    ],
+    "source_asof_horizon_seconds": 36000,
+    "ticks_requested": 1201
+  }
+}

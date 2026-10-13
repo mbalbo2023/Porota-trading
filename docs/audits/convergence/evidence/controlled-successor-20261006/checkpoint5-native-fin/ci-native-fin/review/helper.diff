@@ -1,0 +1,22 @@
+--- a/scripts/porota_predeploy_test_workspace.py
++++ b/scripts/porota_predeploy_test_workspace.py
+@@ -41,8 +41,8 @@
+ PROGRESS = "porota-pytest-progress.json"
+ NATIVE_LOG = "porota-pytest-native.log"
+ POSTREAD = "porota-pytest-postread.json"
+-DRIVER = "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source"
+-ORIGINAL_DRIVER_SHA256 = "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec"
++DRIVER = "scripts/rc6_controlled_native_child_manager.py"
++ORIGINAL_DRIVER_SHA256 = "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
+ FIELDS = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
+           "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
+ 
+@@ -334,7 +334,7 @@
+ 
+ 
+ def native_manager(repo, context):
+-    """Load the exact reviewed tracked V2 helper, never a source overlay."""
++    """Load the reviewed Git-pinned manager, never a source overlay."""
+     path = Path(repo) / DRIVER
+     raw, _ = cleanup.read_file(path, maximum=128 * 1024)
+     env = dict(os.environ, GIT_NO_REPLACE_OBJECTS="1", GIT_NO_LAZY_FETCH="1",

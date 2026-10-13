@@ -1,0 +1,22 @@
+{
+  "authorization": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6023951007",
+  "cpu_exclusive": true,
+  "epochs": [
+    "311",
+    "312"
+  ],
+  "expected_hashes_revalidated": {
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/control/launch-plan-v3-caller2.json": "0a4169ee738b4f677d6ba1b0497151ac4cf00692663dd2eb41fea65a976866a2",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-focals-v2-tbl48vb4/control/run_gov_focals_v2.py": "f4a98f3fcc39b6ec5ee8c588fd9ee487cd719beced666d51e397d62cac7cd994",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/gov-runner-after.py.source": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/gov-runner-before.py.source": "b86a04368c92607eeb3eb6fc4b04393312de69a1d5a80ed7e2564025a41ec404",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/owned_process_control.py": "797447a2d44f48813639a0d22be91aebdbdb4fb630415144422c4d55775aba43",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/real_gov_component_control_v3.py": "9b9a89c768b0f92d549955e0993526e912704fad13d756f23874739332fe3f5f"
+  },
+  "full_gov_big_image_runtime_qualification": false,
+  "prelaunch_utc": "2026-10-06T19:33:45.070035+00:00",
+  "run_once_each_sequential_real_fin_required": true,
+  "same15focal_and6component_scenarios_each_epoch": true,
+  "schema": "rc6.gov.controls.authorized-prelaunch.v1",
+  "source_edits": false
+}

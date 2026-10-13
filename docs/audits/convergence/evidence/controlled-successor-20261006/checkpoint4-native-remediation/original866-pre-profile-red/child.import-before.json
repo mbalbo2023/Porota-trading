@@ -1,0 +1,1279 @@
+{
+  "audit_hook_installation": {
+    "event": "rc6.native_import_provenance.installation",
+    "receptions": 1,
+    "scope": "OWNED_NONCE_RECEIVED_EXACTLY_ONCE_DURING_INSTALLATION_ONLY",
+    "verified": true
+  },
+  "boundary_before": {
+    "actual_venv_sites": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/lib/python3.11/site-packages"
+    ],
+    "base_prefix": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu",
+    "executable": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "modules": {
+      "__future__": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/__future__.py"
+        }
+      ],
+      "__main__": [
+        {
+          "origin": "ALIEN",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/pre_profile_v2.py"
+        }
+      ],
+      "__mp_main__": [
+        {
+          "origin": "ALIEN",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/pre_profile_v2.py"
+        }
+      ],
+      "_abc": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_ast": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_bisect": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_blake2": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_bz2": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_codecs": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_collections": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_collections_abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_collections_abc.py"
+        }
+      ],
+      "_compat_pickle": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_compat_pickle.py"
+        }
+      ],
+      "_compression": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_compression.py"
+        }
+      ],
+      "_csv": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_ctypes": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_datetime": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_distutils_hack": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/lib/python3.11/site-packages/_distutils_hack/__init__.py"
+        }
+      ],
+      "_frozen_importlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap.py"
+        }
+      ],
+      "_frozen_importlib_external": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap_external.py"
+        }
+      ],
+      "_functools": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_hashlib": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_imp": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_io": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_json": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_locale": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_lsprof": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_lzma": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_multiprocessing": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_opcode": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_operator": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_pickle": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_posixshmem": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_posixsubprocess": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_random": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_sha512": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_signal": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_sitebuiltins": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_sitebuiltins.py"
+        }
+      ],
+      "_socket": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_sqlite3": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_sre": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_stat": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_string": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_struct": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_sysconfigdata__linux_x86_64-linux-gnu": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_sysconfigdata__linux_x86_64-linux-gnu.py"
+        }
+      ],
+      "_thread": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_typing": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_uuid": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_warnings": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_weakref": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "_weakrefset": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_weakrefset.py"
+        }
+      ],
+      "abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/abc.py"
+        }
+      ],
+      "argparse": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/argparse.py"
+        }
+      ],
+      "array": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "ast": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ast.py"
+        }
+      ],
+      "atexit": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "base64": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/base64.py"
+        }
+      ],
+      "binascii": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "bisect": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/bisect.py"
+        }
+      ],
+      "builtins": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "bz2": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/bz2.py"
+        }
+      ],
+      "cProfile": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/cProfile.py"
+        }
+      ],
+      "calendar": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/calendar.py"
+        }
+      ],
+      "codecs": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/codecs.py"
+        }
+      ],
+      "collections": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/collections/__init__.py"
+        }
+      ],
+      "collections.abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/collections/abc.py"
+        }
+      ],
+      "contextlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py"
+        }
+      ],
+      "copy": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py"
+        }
+      ],
+      "copyreg": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copyreg.py"
+        }
+      ],
+      "csv": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/csv.py"
+        }
+      ],
+      "ctypes": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py"
+        }
+      ],
+      "ctypes._endian": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ctypes/_endian.py"
+        }
+      ],
+      "dataclasses": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/dataclasses.py"
+        }
+      ],
+      "datetime": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/datetime.py"
+        }
+      ],
+      "dis": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/dis.py"
+        }
+      ],
+      "email": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/__init__.py"
+        }
+      ],
+      "email._encoded_words": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_encoded_words.py"
+        }
+      ],
+      "email._parseaddr": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_parseaddr.py"
+        }
+      ],
+      "email._policybase": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_policybase.py"
+        }
+      ],
+      "email.base64mime": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/base64mime.py"
+        }
+      ],
+      "email.charset": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/charset.py"
+        }
+      ],
+      "email.encoders": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/encoders.py"
+        }
+      ],
+      "email.errors": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/errors.py"
+        }
+      ],
+      "email.feedparser": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/feedparser.py"
+        }
+      ],
+      "email.header": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/header.py"
+        }
+      ],
+      "email.iterators": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/iterators.py"
+        }
+      ],
+      "email.message": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/message.py"
+        }
+      ],
+      "email.parser": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/parser.py"
+        }
+      ],
+      "email.quoprimime": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/quoprimime.py"
+        }
+      ],
+      "email.utils": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/utils.py"
+        }
+      ],
+      "encodings": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/__init__.py"
+        }
+      ],
+      "encodings.aliases": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/aliases.py"
+        }
+      ],
+      "encodings.utf_8": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/utf_8.py"
+        }
+      ],
+      "enum": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/enum.py"
+        }
+      ],
+      "errno": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "fcntl": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "fnmatch": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/fnmatch.py"
+        }
+      ],
+      "functools": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/functools.py"
+        }
+      ],
+      "genericpath": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/genericpath.py"
+        }
+      ],
+      "gettext": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/gettext.py"
+        }
+      ],
+      "hashlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/hashlib.py"
+        }
+      ],
+      "importlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/__init__.py"
+        }
+      ],
+      "importlib._abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_abc.py"
+        }
+      ],
+      "importlib._bootstrap": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap.py"
+        }
+      ],
+      "importlib._bootstrap_external": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap_external.py"
+        }
+      ],
+      "importlib.abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/abc.py"
+        }
+      ],
+      "importlib.machinery": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/machinery.py"
+        }
+      ],
+      "importlib.metadata": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/__init__.py"
+        }
+      ],
+      "importlib.metadata._adapters": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_adapters.py"
+        }
+      ],
+      "importlib.metadata._collections": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_collections.py"
+        }
+      ],
+      "importlib.metadata._functools": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_functools.py"
+        }
+      ],
+      "importlib.metadata._itertools": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_itertools.py"
+        }
+      ],
+      "importlib.metadata._meta": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_meta.py"
+        }
+      ],
+      "importlib.metadata._text": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_text.py"
+        }
+      ],
+      "importlib.resources": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/__init__.py"
+        }
+      ],
+      "importlib.resources._adapters": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_adapters.py"
+        }
+      ],
+      "importlib.resources._common": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_common.py"
+        }
+      ],
+      "importlib.resources._legacy": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_legacy.py"
+        }
+      ],
+      "importlib.resources.abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/abc.py"
+        }
+      ],
+      "importlib.util": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/util.py"
+        }
+      ],
+      "inspect": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/inspect.py"
+        }
+      ],
+      "io": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/io.py"
+        }
+      ],
+      "ipaddress": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ipaddress.py"
+        }
+      ],
+      "itertools": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "json": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py"
+        }
+      ],
+      "json.decoder": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/decoder.py"
+        }
+      ],
+      "json.encoder": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py"
+        }
+      ],
+      "json.scanner": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/scanner.py"
+        }
+      ],
+      "keyword": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/keyword.py"
+        }
+      ],
+      "linecache": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/linecache.py"
+        }
+      ],
+      "locale": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/locale.py"
+        }
+      ],
+      "lzma": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/lzma.py"
+        }
+      ],
+      "marshal": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "math": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "multiprocessing": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/__init__.py"
+        }
+      ],
+      "multiprocessing.connection": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/connection.py"
+        }
+      ],
+      "multiprocessing.context": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/context.py"
+        }
+      ],
+      "multiprocessing.forkserver": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/forkserver.py"
+        }
+      ],
+      "multiprocessing.process": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py"
+        }
+      ],
+      "multiprocessing.reduction": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/reduction.py"
+        }
+      ],
+      "multiprocessing.resource_tracker": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/resource_tracker.py"
+        }
+      ],
+      "multiprocessing.spawn": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py"
+        }
+      ],
+      "multiprocessing.util": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/util.py"
+        }
+      ],
+      "ntpath": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ntpath.py"
+        }
+      ],
+      "opcode": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/opcode.py"
+        }
+      ],
+      "operator": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/operator.py"
+        }
+      ],
+      "os": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/os.py"
+        }
+      ],
+      "os.path": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/posixpath.py"
+        }
+      ],
+      "pathlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py"
+        }
+      ],
+      "pickle": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pickle.py"
+        }
+      ],
+      "platform": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/platform.py"
+        }
+      ],
+      "posix": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "posixpath": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/posixpath.py"
+        }
+      ],
+      "profile": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/profile.py"
+        }
+      ],
+      "pstats": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pstats.py"
+        }
+      ],
+      "pwd": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "quopri": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/quopri.py"
+        }
+      ],
+      "random": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/random.py"
+        }
+      ],
+      "re": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/__init__.py"
+        }
+      ],
+      "re._casefix": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_casefix.py"
+        }
+      ],
+      "re._compiler": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_compiler.py"
+        }
+      ],
+      "re._constants": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_constants.py"
+        }
+      ],
+      "re._parser": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_parser.py"
+        }
+      ],
+      "reprlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/reprlib.py"
+        }
+      ],
+      "resource": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "runpy": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/runpy.py"
+        }
+      ],
+      "scripts": [
+        {
+          "origin": "PINNED_SOURCE_NAMESPACE",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts",
+          "relative_path": "scripts"
+        },
+        {
+          "origin": "PINNED_SOURCE_NAMESPACE",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts",
+          "relative_path": "scripts"
+        }
+      ],
+      "scripts.porota_dependency_repro_audit": [
+        {
+          "blob_id": "ab6ff825020c4e29dc1030029afbd3a27ae82ba1",
+          "mode": "100644",
+          "origin": "PINNED_SOURCE",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/porota_dependency_repro_audit.py",
+          "relative_path": "scripts/porota_dependency_repro_audit.py",
+          "sha256": "206c9659a7a788eeabeeead9642ce98ec3a391c17d5c70b89fe084cfb1d88488"
+        }
+      ],
+      "scripts.rc6_controlled_governed_runner": [
+        {
+          "blob_id": "ef98ca9247b6f5be88a6c95dab21652ff2bf42eb",
+          "mode": "100644",
+          "origin": "PINNED_SOURCE",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_controlled_governed_runner.py",
+          "relative_path": "scripts/rc6_controlled_governed_runner.py",
+          "sha256": "6ee4b4cf2140ec7fd9b89e9fce737f3e70ce76498f3790c20619067cbdf03b75"
+        }
+      ],
+      "scripts.rc6_native_import_provenance": [
+        {
+          "blob_id": "17c6b3bfdd815267281077097c0f2437f8fecb0a",
+          "mode": "100644",
+          "origin": "PINNED_SOURCE",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_native_import_provenance.py",
+          "relative_path": "scripts/rc6_native_import_provenance.py",
+          "sha256": "c276877e00415481ca6cdbb436913d608cd49fb7fb8a48c74530f94d819b01ac"
+        }
+      ],
+      "select": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "selectors": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/selectors.py"
+        }
+      ],
+      "shutil": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/shutil.py"
+        }
+      ],
+      "signal": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/signal.py"
+        }
+      ],
+      "site": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/site.py"
+        }
+      ],
+      "socket": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/socket.py"
+        }
+      ],
+      "sqlite3": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sqlite3/__init__.py"
+        }
+      ],
+      "sqlite3.dbapi2": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sqlite3/dbapi2.py"
+        }
+      ],
+      "stat": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/stat.py"
+        }
+      ],
+      "string": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/string.py"
+        }
+      ],
+      "struct": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/struct.py"
+        }
+      ],
+      "subprocess": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py"
+        }
+      ],
+      "sys": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "sysconfig": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sysconfig.py"
+        }
+      ],
+      "tempfile": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/tempfile.py"
+        }
+      ],
+      "textwrap": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/textwrap.py"
+        }
+      ],
+      "threading": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py"
+        }
+      ],
+      "time": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ],
+      "token": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/token.py"
+        }
+      ],
+      "tokenize": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/tokenize.py"
+        }
+      ],
+      "types": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/types.py"
+        }
+      ],
+      "typing": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/typing.py"
+        }
+      ],
+      "typing.io": [
+        {
+          "actual_metaclass_identity": "0x559d3f551a10",
+          "alias_identity": "0x559d3f551de0",
+          "origin": "NONMODULE_PUBLIC_TYPING_ALIAS",
+          "parent_module": "typing",
+          "parent_source_sha256": "eff3df4f1d65e13d690b8f427cada4dd3b88431dd1e7f319fda1bd0062113203",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/typing.py",
+          "scope": "EXACT_RETAINED_PARENT_ALIAS_TYPE_RELATIONSHIP_NOT_CREATION_TIME_OR_BINARY_AUTHENTICATION"
+        }
+      ],
+      "typing.re": [
+        {
+          "actual_metaclass_identity": "0x559d3f551a10",
+          "alias_identity": "0x559d3f5521b0",
+          "origin": "NONMODULE_PUBLIC_TYPING_ALIAS",
+          "parent_module": "typing",
+          "parent_source_sha256": "eff3df4f1d65e13d690b8f427cada4dd3b88431dd1e7f319fda1bd0062113203",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/typing.py",
+          "scope": "EXACT_RETAINED_PARENT_ALIAS_TYPE_RELATIONSHIP_NOT_CREATION_TIME_OR_BINARY_AUTHENTICATION"
+        }
+      ],
+      "urllib": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/urllib/__init__.py"
+        }
+      ],
+      "urllib.parse": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/urllib/parse.py"
+        }
+      ],
+      "uuid": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/uuid.py"
+        }
+      ],
+      "warnings": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/warnings.py"
+        }
+      ],
+      "weakref": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/weakref.py"
+        }
+      ],
+      "zipfile": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/zipfile.py"
+        }
+      ],
+      "zipimport": [
+        {
+          "origin": "STDLIB",
+          "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/zipimport.py"
+        }
+      ],
+      "zlib": [
+        {
+          "origin": "BUILTIN",
+          "path": null
+        }
+      ]
+    },
+    "native_pid": 10932,
+    "origin_record_count": 202,
+    "overflow_count": 0,
+    "parent_pid": 10923,
+    "prefix": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311",
+    "retained_module_count": 201,
+    "role": "DIAGNOSTIC_NATIVE_PRE_COMPONENT",
+    "schema": "rc6.native-retained-modules.v1",
+    "scope": "RETAINED_MODULE_LOCATIONS_AT_ONE_BOUNDARY_NOT_TRANSIENT_EXECUTION_CLOSURE",
+    "stdlib": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11",
+    "sys_path": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python311.zip",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/lib-dynload",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/lib/python3.11/site-packages"
+    ],
+    "unresolved": []
+  },
+  "installed_at_monotonic": 11742.149872996,
+  "native_pid": 10932,
+  "parent_pid": 10923,
+  "schema": "rc6.native-import-proof.v1",
+  "source_index_sha256": "614c7d6d18818008ca4db15f8741ba4336a40a1b1d6587c6b9552d734f6bf779",
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "status": "IN_PROGRESS_NOT_CLOSED",
+  "transient_closure_verified": false
+}

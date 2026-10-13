@@ -1,0 +1,395 @@
+{
+  "acceptance_complete": false,
+  "archive_admission": {
+    "allocated_bytes": 6803456,
+    "allocated_directory_bytes": 4096,
+    "files": 14,
+    "free_bytes": 27885080576,
+    "growth_remaining_bytes": 530101252,
+    "inodes": 15,
+    "max_bytes": 536870912,
+    "maximum_files": 32768,
+    "occupied_bytes": 6769660,
+    "owned_temporary_count": 0,
+    "owner_uid": 1000,
+    "schema": "rc6.shadow-archive-namespace-admission.v1",
+    "state": "WITHIN_QUOTA",
+    "verification_level": "BOUNDED_ARCHIVE_NAMESPACE_AND_CUSTODY_METADATA"
+  },
+  "archive_final": {
+    "allocated_bytes_including_directories": 6807552,
+    "entries_excluding_root": 14,
+    "files": 14,
+    "logical_bytes_including_directories": 6773756,
+    "pending_temporaries_or_intents": 0
+  },
+  "archive_format": "COMPONENT_V3",
+  "archive_maximum_bytes": 536870912,
+  "archive_restore_count": 4,
+  "archive_root": "/workspace/rc6-native-normal4-b26f4d93/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow-archive",
+  "catalog_count": 1200,
+  "code_source_unchanged": true,
+  "complete": true,
+  "cuts": [
+    {
+      "archive_cpu_seconds": 2.4691088490000013,
+      "archive_residence": {
+        "allocated_bytes_including_directories": 2383872,
+        "entries_excluding_root": 5,
+        "files": 5,
+        "logical_bytes_including_directories": 2371787,
+        "pending_temporaries_or_intents": 0
+      },
+      "archive_verification_level": "ALL_ORIGINAL_MEMBER_BYTES_MANIFEST_CRC_AND_ROLE_WIRE",
+      "archive_wall_seconds": 2.4922974740038626,
+      "as_of": "2026-10-05T13:20:00+00:00",
+      "catalog_ready_count": 1200,
+      "checkpoint_reused": false,
+      "configuration_fingerprint": "aa6b72a569831e1c86c990b0ccfa52beaa884bbade80a5a1ed0963868f1e553d",
+      "full_cycle_wall_seconds": 15.15254508900398,
+      "generation_id": "77c84963a1a543c180fbcdca3f0f7a5d",
+      "live_residence": {
+        "allocated_bytes_including_directories": 3977216,
+        "entries_excluding_root": 10,
+        "files": 9,
+        "logical_bytes_including_directories": 3960795,
+        "pending_temporaries_or_intents": 0
+      },
+      "member_bytes": {
+        "checkpoint.json.gz": 917230,
+        "manifest.json": 5902,
+        "projection.sqlite": 2207744,
+        "report.json.gz": 761988,
+        "status.json": 2729
+      },
+      "original_member_sha256": {
+        "checkpoint.json.gz": "218b323aee7aca18cc10131cf00c02672622fd3a287e06a56e834f2638edc06e",
+        "manifest.json": "daa226c636fd7d951b79fd64c4fffd715580559ac999e3f25f80bd447e99a890",
+        "projection.sqlite": "f43697c3792bf3461624ee10e9e74f38b4782e92babe7147fa62967e8f085d35",
+        "report.json.gz": "f9f97e21075875109587330f62b15725564f00325e5dfdaa376db90851270d40",
+        "status.json": "85ed02031675f92bfc29129a92db7581b61692182ae9357b144f2aa76576d98b"
+      },
+      "phase": "PREOPEN",
+      "pipeline_cpu_seconds": 11.726195015999998,
+      "pipeline_wall_seconds": 11.761417540001275,
+      "preopen_seed": true,
+      "provider_requests": 0,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "recipe_bytes": 13301,
+      "retention_status": "OK",
+      "sequence": 1,
+      "tick_index": 0
+    },
+    {
+      "archive_cpu_seconds": 3.0629205879999972,
+      "archive_residence": {
+        "allocated_bytes_including_directories": 5111808,
+        "entries_excluding_root": 8,
+        "files": 8,
+        "logical_bytes_including_directories": 5090708,
+        "pending_temporaries_or_intents": 0
+      },
+      "archive_verification_level": "ALL_ORIGINAL_MEMBER_BYTES_MANIFEST_CRC_AND_ROLE_WIRE",
+      "archive_wall_seconds": 3.0856142260017805,
+      "as_of": "2026-10-05T13:35:00+00:00",
+      "catalog_ready_count": 1200,
+      "checkpoint_reused": true,
+      "configuration_fingerprint": "aa6b72a569831e1c86c990b0ccfa52beaa884bbade80a5a1ed0963868f1e553d",
+      "full_cycle_wall_seconds": 20.42627499900118,
+      "generation_id": "d535c8c6e0074637a4bf1a40d20eee74",
+      "live_residence": {
+        "allocated_bytes_including_directories": 8273920,
+        "entries_excluding_root": 17,
+        "files": 15,
+        "logical_bytes_including_directories": 8244924,
+        "pending_temporaries_or_intents": 0
+      },
+      "member_bytes": {
+        "checkpoint.json.gz": 1038117,
+        "manifest.json": 6109,
+        "projection.sqlite": 2211840,
+        "report.json.gz": 1020544,
+        "status.json": 2772
+      },
+      "original_member_sha256": {
+        "checkpoint.json.gz": "e7725a9264a45bc51382c27d5307d6d4ec285fc3a4ab6984c7661cdc88cde109",
+        "manifest.json": "6704c192cb7df30e6c8f94d0d32c3f28ee7ee67af0ad1e685b87fc888358e68f",
+        "projection.sqlite": "2cf4baabd34b6d62860bc87df7e979a41b20b14d0ebab6b24bb6c2f8a4d51fca",
+        "report.json.gz": "32419d6b0d26930b519ee9174be86a71f5b8bd203580519dbc6c119edf67f2e3",
+        "status.json": "77249fa3a0e162d7caee83d8689d1524da13d284fc5b351ab15c2cd1854ccbf1"
+      },
+      "phase": "OPEN",
+      "pipeline_cpu_seconds": 16.230649651999997,
+      "pipeline_wall_seconds": 16.26777050000237,
+      "preopen_seed": false,
+      "provider_requests": 0,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "recipe_bytes": 16416,
+      "retention_status": "OK",
+      "sequence": 2,
+      "tick_index": 1
+    },
+    {
+      "archive_cpu_seconds": 3.121587677000001,
+      "archive_residence": {
+        "allocated_bytes_including_directories": 6393856,
+        "entries_excluding_root": 11,
+        "files": 11,
+        "logical_bytes_including_directories": 6366070,
+        "pending_temporaries_or_intents": 0
+      },
+      "archive_verification_level": "ALL_ORIGINAL_MEMBER_BYTES_MANIFEST_CRC_AND_ROLE_WIRE",
+      "archive_wall_seconds": 3.141051389000495,
+      "as_of": "2026-10-05T13:35:30+00:00",
+      "catalog_ready_count": 1200,
+      "checkpoint_reused": true,
+      "configuration_fingerprint": "aa6b72a569831e1c86c990b0ccfa52beaa884bbade80a5a1ed0963868f1e553d",
+      "full_cycle_wall_seconds": 19.74564535299578,
+      "generation_id": "3f38fefad3a946c59e40b6da751d7d3a",
+      "live_residence": {
+        "allocated_bytes_including_directories": 12546048,
+        "entries_excluding_root": 24,
+        "files": 21,
+        "logical_bytes_including_directories": 12506401,
+        "pending_temporaries_or_intents": 0
+      },
+      "member_bytes": {
+        "checkpoint.json.gz": 1038297,
+        "manifest.json": 6109,
+        "projection.sqlite": 2211840,
+        "report.json.gz": 997698,
+        "status.json": 2786
+      },
+      "original_member_sha256": {
+        "checkpoint.json.gz": "6a64671a31f64e2f0af3a12d3f39bbac702bbd7a2995b3e1f178b5edece53046",
+        "manifest.json": "22e391832152b995ded57b43b370dd3acdb48f41f295a5b4e57bb24be96fca57",
+        "projection.sqlite": "31a037129c4cd940f6506c8bff0cc189a3a716fb22004b33e62c3f03979d6120",
+        "report.json.gz": "d5805a30ac2fe238542ab06c8c5c50fc8c4e51b982a2ec1d924b0f411e8c70f3",
+        "status.json": "57e10dbdb04739bb9fca6486a659e02256c5b1c8676b75c6122b6e4508b4af59"
+      },
+      "phase": "OPEN",
+      "pipeline_cpu_seconds": 15.463960997000001,
+      "pipeline_wall_seconds": 15.489421977996244,
+      "preopen_seed": false,
+      "provider_requests": 0,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "recipe_bytes": 16047,
+      "retention_status": "OK",
+      "sequence": 3,
+      "tick_index": 2
+    },
+    {
+      "archive_cpu_seconds": 3.5328064600000033,
+      "archive_residence": {
+        "allocated_bytes_including_directories": 6807552,
+        "entries_excluding_root": 14,
+        "files": 14,
+        "logical_bytes_including_directories": 6773756,
+        "pending_temporaries_or_intents": 0
+      },
+      "archive_verification_level": "ALL_ORIGINAL_MEMBER_BYTES_MANIFEST_CRC_AND_ROLE_WIRE",
+      "archive_wall_seconds": 3.563784404002945,
+      "as_of": "2026-10-05T13:36:00+00:00",
+      "catalog_ready_count": 1200,
+      "checkpoint_reused": true,
+      "configuration_fingerprint": "aa6b72a569831e1c86c990b0ccfa52beaa884bbade80a5a1ed0963868f1e553d",
+      "full_cycle_wall_seconds": 20.187879614997655,
+      "generation_id": "b9fcf3f95e6e43de9faf8e80754b6b55",
+      "live_residence": {
+        "allocated_bytes_including_directories": 16818176,
+        "entries_excluding_root": 31,
+        "files": 27,
+        "logical_bytes_including_directories": 16768157,
+        "pending_temporaries_or_intents": 0
+      },
+      "member_bytes": {
+        "checkpoint.json.gz": 1038293,
+        "manifest.json": 6109,
+        "projection.sqlite": 2211840,
+        "report.json.gz": 997980,
+        "status.json": 2787
+      },
+      "original_member_sha256": {
+        "checkpoint.json.gz": "c8c362a3f24a06bdd43194cd91124d3fa52d3d2c33404022c35e2cd359ff3ad1",
+        "manifest.json": "9fdb5e115871dd8503b66d45428b1b19fa7eb927fb50d6d8a20a972aefdf0638",
+        "projection.sqlite": "243dc9a95f74ecfd14ec7a72e9de5350aed23397b640f74edd0fe62794789b60",
+        "report.json.gz": "595aa593fbe74e950763394b9ff20e09217a769640c048eeff46cae9494bfb9c",
+        "status.json": "e8fe9ab24ca61c952c5fef23330885f98ba6b874352de623e35fb1fb14f5ebc5"
+      },
+      "phase": "OPEN",
+      "pipeline_cpu_seconds": 15.182330189999995,
+      "pipeline_wall_seconds": 15.236541621998185,
+      "preopen_seed": false,
+      "provider_requests": 0,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "recipe_bytes": 16147,
+      "retention_status": "OK",
+      "sequence": 4,
+      "tick_index": 3
+    }
+  ],
+  "elapsed_cpu_seconds": 77.539240041,
+  "elapsed_wall_seconds": 77.75468144099432,
+  "evidence_root": "/workspace/rc6-native-normal4-b26f4d93/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow",
+  "final_as_of": "2026-10-05T13:36:00+00:00",
+  "final_configuration_fingerprint": "aa6b72a569831e1c86c990b0ccfa52beaa884bbade80a5a1ed0963868f1e553d",
+  "final_sequence": 4,
+  "first_restored_tick_index": 0,
+  "fixture_environment": {
+    "DATA_DIR": "/workspace/rc6-native-normal4-b26f4d93/data",
+    "PAPER_V17_DB_PATH": "/workspace/rc6-native-normal4-b26f4d93/data/paper_v17/observer_v17.db",
+    "POROTA_DYNAMIC_CAPACITY_MODE": "OFF",
+    "POROTA_SQLITE_SCRATCH_MAX_BYTES": "536870912",
+    "POROTA_SQLITE_SCRATCH_MIN_FREE_INODE_PERCENT": "10",
+    "POROTA_SQLITE_SCRATCH_RESERVE_BYTES": "2147483648",
+    "POROTA_SQLITE_SCRATCH_ROOT": "/workspace/rc6-native-normal4-b26f4d93/data/paper_v17/artifacts/observer_v17.db/sqlite-read-scratch"
+  },
+  "input_observation_rows": 6000,
+  "live_final": {
+    "allocated_bytes_including_directories": 16818176,
+    "entries_excluding_root": 31,
+    "files": 27,
+    "logical_bytes_including_directories": 16768157,
+    "pending_temporaries_or_intents": 0
+  },
+  "live_maximum_bytes": 134217728,
+  "live_maximum_files": 512,
+  "measured_horizon_seconds": 960.0,
+  "native_input_reads": [
+    {
+      "as_of": "2026-10-05T13:20:00+00:00",
+      "catalog_returned": 1200,
+      "observation_read_truncated": false,
+      "observations_returned": 0,
+      "query_budget_seconds": 0.5,
+      "row_limit": 20000
+    },
+    {
+      "as_of": "2026-10-05T13:35:00+00:00",
+      "catalog_returned": 1200,
+      "observation_read_truncated": false,
+      "observations_returned": 6000,
+      "query_budget_seconds": 0.5,
+      "row_limit": 20000
+    },
+    {
+      "as_of": "2026-10-05T13:35:30+00:00",
+      "catalog_returned": 1200,
+      "observation_read_truncated": false,
+      "observations_returned": 6000,
+      "query_budget_seconds": 0.5,
+      "row_limit": 20000
+    },
+    {
+      "as_of": "2026-10-05T13:36:00+00:00",
+      "catalog_returned": 1200,
+      "observation_read_truncated": false,
+      "observations_returned": 6000,
+      "query_budget_seconds": 0.5,
+      "row_limit": 20000
+    }
+  ],
+  "native_scratch_measure_calls": 232,
+  "native_ticks_executed": 4,
+  "native_ticks_planned_including_preopen": 4,
+  "overlay_count": 0,
+  "peak_archive": {
+    "allocated_bytes_including_directories": 6815744,
+    "entries_excluding_root": 16,
+    "files": 16,
+    "logical_bytes_including_directories": 6774833,
+    "pending_temporaries_or_intents": 2
+  },
+  "peak_live": {
+    "allocated_bytes_including_directories": 16818176,
+    "entries_excluding_root": 31,
+    "files": 27,
+    "logical_bytes_including_directories": 16768157,
+    "pending_temporaries_or_intents": 1
+  },
+  "peak_rss_bytes": 306761728,
+  "peak_scratch_native_policy_occupied_bytes": 2822144,
+  "preopen_seed_ticks": 1,
+  "provider_requests": 0,
+  "restarts": [],
+  "schema": "rc6.native-archive-v3-profile.v2",
+  "scope": "OFFLINE_SYNTHETIC_CANONICAL_FACTORY_NO_OPEN_AUTHORITY",
+  "scope_is_descriptive_four_cuts": true,
+  "scratch_admission": {
+    "allocation_unit": 4096,
+    "filesystem": "overlay",
+    "free_bytes": 27911507968,
+    "free_inodes": 1979278,
+    "max_bytes": 536870912,
+    "min_free_inode_percent": 10,
+    "mode": "0700",
+    "occupied_bytes": 4096,
+    "owner_uid": 1000,
+    "reserve_bytes": 2147483648,
+    "residual_sessions": 0,
+    "total_inodes": 2097152
+  },
+  "scratch_final": {
+    "allocation_unit": 4096,
+    "filesystem": "overlay",
+    "free_bytes": 27885080576,
+    "free_inodes": 1979227,
+    "max_bytes": 536870912,
+    "min_free_inode_percent": 10,
+    "mode": "0700",
+    "occupied_bytes": 4096,
+    "owner_uid": 1000,
+    "reserve_bytes": 2147483648,
+    "residual_sessions": 0,
+    "total_inodes": 2097152
+  },
+  "source_database": "/workspace/rc6-native-normal4-b26f4d93/data/paper_v17/observer_v17.db",
+  "source_database_after": {
+    "": {
+      "sha256": "b636f1c20a447af8be5a05f1a05fd7f7670a853d89b9097cb37cc568d6e7bbbd",
+      "st_atime_ns": 1791209160247516246,
+      "st_ctime_ns": 1791209160241202752,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 655985,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791209160241202752,
+      "st_nlink": 1,
+      "st_size": 2777088,
+      "st_uid": 1000
+    },
+    "-journal": null,
+    "-shm": null,
+    "-wal": null
+  },
+  "source_database_before": {
+    "": {
+      "sha256": "b636f1c20a447af8be5a05f1a05fd7f7670a853d89b9097cb37cc568d6e7bbbd",
+      "st_atime_ns": 1791209160247516246,
+      "st_ctime_ns": 1791209160241202752,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 655985,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791209160241202752,
+      "st_nlink": 1,
+      "st_size": 2777088,
+      "st_uid": 1000
+    },
+    "-journal": null,
+    "-shm": null,
+    "-wal": null
+  },
+  "source_database_changes": [],
+  "source_database_unchanged": true,
+  "source_file_count": 1553,
+  "source_index_sha256": "54e457b7886fe6ac086286379e46bf6c8e7112d22f74ff0f863f69c086944269",
+  "source_sha": "b26f4d9360e2f0a7d31abf08d9f29dc79409b64d",
+  "source_tree": "2e712cbfb2dbc8f27bf7692e29f251c5981ec080",
+  "tick_seconds": 30,
+  "ticks_requested": 4
+}

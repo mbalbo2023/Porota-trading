@@ -1,0 +1,320 @@
+"""Run one real phase_child with explicitly declared tiny-catalog preflights.
+
+No function implementing kernel custody, pytest, networking, finalization,
+threads, deadlines, or phase acceptance is replaced. This is a component
+control, never the whole-repository Gov gate or Git Source qualification.
+"""
+import argparse
+from collections import Counter
+import errno
+import hashlib
+from importlib import metadata
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import runpy
+import stat
+import sys
+import threading
+import time
+from types import SimpleNamespace
+import xml.etree.ElementTree as ET
+
+CONTROL = Path(__file__).absolute().parent
+EXPECTED = {
+    'old-governed-runner.py.source': '316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67',
+    'new-governed-runner.py.source': 'a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47',
+    'owned-native-child-manager.py.source': '55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8',
+    'frozen157-policy.json.source': 'b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462',
+}
+FIELDS = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink',
+          'st_size', 'st_blocks', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')
+SOURCE_SHA = '0f73e2cd681672b7a9a3065e99a72915ba93f4fd'
+SOURCE_TREE = '36227e546cb311546f08b80880064dde86a6f630'
+
+
+def check(condition, reason):
+    if not condition:
+        raise RuntimeError(reason)
+
+
+def attributes(value):
+    return {key: getattr(value, key) for key in FIELDS}
+
+
+def read_owned(path, maximum=1024**2):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
+    try:
+        before = os.fstat(descriptor)
+        check(stat.S_ISREG(before.st_mode) and before.st_uid == os.geteuid()
+              and before.st_nlink == 1 and before.st_size <= maximum, 'CONTROL_MEMBER_CUSTODY_REQUIRED')
+        raw = os.read(descriptor, maximum+1)
+        check(len(raw) == before.st_size and attributes(before) == attributes(os.fstat(descriptor))
+              == attributes(path.lstat()), 'CONTROL_MEMBER_ALL11_CHANGED')
+        return raw, attributes(before)
+    finally:
+        os.close(descriptor)
+
+
+def save(path, value):
+    raw = (json.dumps(value, indent=2, sort_keys=True, allow_nan=False)+'\n').encode()
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, 'wb') as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+    return hashlib.sha256(raw).hexdigest()
+
+
+def normal_metadata157(policy):
+    normal = lambda name: re.sub(r'[-_.]+', '-', name.lower())
+    approved = {normal(row['name']): row['version'] for row in policy['packages']+policy['build_tools']}
+    rows = sorted((normal(item.metadata['Name']), item.version) for item in metadata.distributions())
+    check(len(approved) == len(rows) == len(dict(rows)) == 157
+          and approved == dict(rows), 'REAL_INSTALLED157_NAMES_VERSIONS_NOT_APPROVED')
+    return [{'name': name, 'version': version} for name, version in rows]
+
+
+def proc_own_child(pid):
+    descriptor = os.open('/proc/'+str(pid)+'/status', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        raw = os.read(descriptor, 65537)
+        check(len(raw) <= 65536, 'OWN_KERNEL_IDENTITY_BOUND')
+    finally:
+        os.close(descriptor)
+    fields = {line.partition(':')[0]: line.partition(':')[2].strip()
+              for line in raw.decode().splitlines() if line.startswith(('Pid:', 'PPid:', 'Uid:', 'State:'))}
+    check(fields.get('Pid') == str(pid) and fields.get('PPid') == str(os.getpid())
+          and fields.get('Uid', '').split()[:2] == [str(os.getuid()), str(os.geteuid())],
+          'REAL_WORKER_NOT_OWN_KERNEL_CHILD')
+    return {'pid': pid, 'kernel_status': fields, 'pgid': os.getpgid(pid), 'sid': os.getsid(pid)}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--epoch', choices=('311', '312'), required=True)
+    parser.add_argument('--case', choices=('old_unknown5', 'new_unknown5', 'new_positive'), required=True)
+    parser.add_argument('--case-root', required=True)
+    options = parser.parse_args()
+    check(platform.python_version() == ('3.11.16' if options.epoch == '311' else '3.12.14'),
+          'EXACT_LOCKED_INTERPRETER_REQUIRED')
+    os.umask(0o022)
+    for name, expected in EXPECTED.items():
+        check(hashlib.sha256(read_owned(CONTROL/name)[0]).hexdigest() == expected,
+              'EXTERNAL_CONTROL_INPUT_REBOUND:'+name)
+    manager = runpy.run_path(str(CONTROL/'owned-native-child-manager.py.source'))
+    kernel_before = manager['pre_capture_kernel_state']()
+    case_root = Path(os.path.abspath(options.case_root))
+    root, output = case_root/'source', case_root/'phase-output'
+    check(root.is_dir() and output.is_dir() and not root.is_symlink() and not output.is_symlink(),
+          'FRESH_COMPONENT_NAMESPACE_REQUIRED')
+    os.chdir(root)
+    os.environ['RC6_COMPONENT_CONTROL_OUTPUT'] = str(output)
+    role = 'old' if options.case == 'old_unknown5' else 'new'
+    driver_path = CONTROL/(role+'-governed-runner.py.source')
+    loaded = runpy.run_path(str(driver_path))
+    original_globals = loaded['phase_child'].__globals__
+    policy = json.loads(read_owned(CONTROL/'frozen157-policy.json.source')[0])
+    closure_before = normal_metadata157(policy)
+    real_publish = original_globals['publish']
+    observation = {'published_finalization_raw': None, 'published_finalization': None,
+                   'finalization_returned_unknown': False, 'snapshot_entries': [],
+                   'documentary_scope_after_exact_parent_FIN': False,
+                   'source_os_events': [], 'source_payload_bytes_read_in_original_phase_after_UNKNOWN_before_diagnostic_FIN': 0,
+                   'audit_witness_seen': False}
+    witness = object()
+
+    def belongs_to_catalog(value):
+        if not isinstance(value, (str, bytes, os.PathLike)):
+            return False
+        return Path(os.path.abspath(os.fsdecode(value))).is_relative_to(root)
+
+    def source_observer(event, values):
+        if event == 'rc6.component.postread.observer_witness' and values == (witness,):
+            observation['audit_witness_seen'] = True
+        if event == 'rc6.component.source_pin.enter' and values[0] is witness:
+            observation['snapshot_entries'].append({'after_original_finalization':
+                observation['published_finalization_raw'] is not None,
+                'returned_unknown': observation['finalization_returned_unknown']})
+            if (observation['finalization_returned_unknown']
+                    and not observation['documentary_scope_after_exact_parent_FIN']):
+                raise RuntimeError('COMPONENT_SOURCE_POSTREAD_VETO_BEFORE_PHYSICAL_IO')
+        if (observation['finalization_returned_unknown']
+                and not observation['documentary_scope_after_exact_parent_FIN']
+                and event in ('open', 'os.listdir', 'os.scandir')
+                and values and belongs_to_catalog(values[0])):
+            observation['source_os_events'].append({'event': event,
+                'relative': str(Path(os.path.abspath(os.fsdecode(values[0]))).relative_to(root)),
+                'vetoed_before_syscall': True})
+            raise RuntimeError('COMPONENT_SOURCE_POSTREAD_VETO_BEFORE_PHYSICAL_IO')
+
+    sys.addaudithook(source_observer)
+    sys.audit('rc6.component.postread.observer_witness', witness)
+    check(observation['audit_witness_seen'], 'REAL_SOURCE_POSTREAD_AUDIT_OBSERVER_NOT_INSTALLED')
+
+    def component_source_pin(location, candidate_sha, candidate_tree):
+        check(location == root and candidate_sha == SOURCE_SHA and candidate_tree == SOURCE_TREE,
+              'COMPONENT_CATALOG_CONTEXT_REBOUND')
+        # An explicit observation marker BEFORE even Source metadata access.
+        # The adapter is declared; it does not qualify this catalog as Git Source.
+        sys.audit('rc6.component.source_pin.enter', witness, str(root))
+        physical_before = original_globals['physical_namespace'](root)
+        records = {}
+        for name, claimed in physical_before['files'].items():
+            raw, actual = original_globals['capture'](root/name)
+            check(actual == claimed, 'COMPONENT_SOURCE_CAPTURE_NAMESPACE_MISMATCH')
+            records[name] = {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
+                'git_blob': hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest(),
+                'git_mode': '100755' if actual['st_mode'] & 0o111 else '100644', 'stat_fields': actual}
+        physical_after = original_globals['physical_namespace'](root)
+        check(physical_before == physical_after, 'COMPONENT_SOURCE_NAMESPACE_CHANGED_IN_CAPTURE')
+        return {'source_sha': candidate_sha, 'source_tree': candidate_tree, 'files': records,
+            'physical_directories': physical_after['directories'], 'overlay_count': 0,
+            'git_metadata': {'scope': 'NO_GIT_CLAIM_REAL_COMPONENT_CATALOG_ONLY'},
+            'scope': 'EXPLICIT_TINY_CATALOG_COMPONENT_ADAPTER_NOT_FULL_GIT_SOURCE_QUALIFICATION',
+            'whole_Git_source_qualified': False}
+
+    def component_closure(location):
+        check(location == root, 'COMPONENT_CLOSURE_CONTEXT_REBOUND')
+        rows = normal_metadata157(policy)
+        return {'scope': 'ACTUAL157_INSTALLED_METADATA_ONLY_COMPONENT_CONTEXT', 'installed_total': 157,
+            'names_versions_exact_to_frozen_policy': True, 'rows': rows,
+            'installed_distribution_bytes_authenticated': False, 'whole_Git_source_audit_claimed': False}
+
+    def component_scope(location, candidate_sha):
+        check(location == root and candidate_sha == SOURCE_SHA, 'COMPONENT_SCOPE_CONTEXT_REBOUND')
+        return ['.'], [], {'scope': 'TINY_CATALOG_AUTOMATIC_DISCOVERY_NOT_PRODUCTIVE_GOV_SCOPE'}
+
+    def observe_original_publish(path, raw):
+        result = real_publish(path, raw)
+        if path == output/'execution.child-finalization.json':
+            check(observation['published_finalization_raw'] is None, 'ORIGINAL_FINALIZATION_PUBLISHED_TWICE')
+            observation['published_finalization_raw'] = bytes(raw)
+            observation['published_finalization'] = json.loads(raw)
+            # Observe immutable published bytes, never the mutable report object.
+            frozen = observation['published_finalization']
+            observation['finalization_returned_unknown'] = not (
+                frozen['status'] == 'GREEN' and frozen['finalization_thread_finished'] is True
+                and frozen['kernel_echild_before_phase_return'] is True
+                and frozen['signal_guard_installed_and_witnessed'] is True
+                and not frozen['termination_signal_attempts']
+                and frozen['forced_termination_attempted'] is False and frozen['signal_vetoed'] is False
+                and frozen['wall_seconds'] <= 5 and not frozen['errors'])
+        return result
+
+    # Only four declared component/preflight/observation bindings are adapted.
+    original_globals.update(source_pin=component_source_pin, installed_closure=component_closure,
+                            approved_scope=component_scope, publish=observe_original_publish)
+    before = component_source_pin(root, SOURCE_SHA, SOURCE_TREE)
+    save(case_root/'component-launch.json', {'schema': 'rc6.phase-child-natural-component-launch.v1',
+        'case': options.case, 'epoch': options.epoch, 'parent_pid': os.getpid(), 'uid': os.geteuid(),
+        'driver_sha256': EXPECTED[driver_path.name], 'source_sha_context_only': SOURCE_SHA,
+        'source_tree_context_only': SOURCE_TREE, 'component_source_before': before,
+        'original_finalizer_seconds': 5, 'real_worker_seconds': 6,
+        'phase_timeout_argument_original': 5400, 'whole_Gov_gate': False,
+        'whole_Git_source_qualified': False, 'kernel_before': kernel_before,
+        'installed_metadata157_before': closure_before, 'real_orders_sent': 0})
+    save(output/'launch.json', {'runner_sha256': EXPECTED[driver_path.name],
+        'execution_id': options.epoch+'-'+options.case, 'component_only_not_Gov': True})
+    options_for_phase = SimpleNamespace(repo_root=str(root), output_root=str(output), phase='execution',
+        source_sha=SOURCE_SHA, source_tree=SOURCE_TREE, timeout_seconds=5400)
+    phase_result, phase_exception = None, None
+    try:
+        phase_result = loaded['phase_child'](options_for_phase)
+    except BaseException as error:
+        phase_exception = {'class': type(error).__name__, 'reason': str(error)}
+    raw_finalization = observation['published_finalization_raw']
+    check(raw_finalization is not None, 'ACTUAL_ORIGINAL_FINALIZATION_NOT_PUBLISHED')
+    frozen_finalization = observation['published_finalization']
+    post_entries = [row for row in observation['snapshot_entries'] if row['after_original_finalization']]
+    source_attempts = len(post_entries)+len(observation['source_os_events'])
+    live_observation, diagnostic = None, {'scope': 'POST_ORIGINAL_PHASE_DIAGNOSTIC_ONLY_NO_RECLASSIFICATION'}
+    if options.case != 'new_positive':
+        check(frozen_finalization['status'] == 'RED'
+              and frozen_finalization['finalization_thread_finished'] is False
+              and frozen_finalization['management_bound_seconds'] == 5
+              and frozen_finalization['kernel_echild_before_phase_return'] is False
+              and not frozen_finalization['termination_signal_attempts'], 'REAL_UNKNOWN_FIVE_NOT_OBSERVED')
+        producer = json.loads(read_owned(output/'producer-control.json')[0])
+        pid = producer['actual_worker']['pid']
+        identity = proc_own_child(pid)
+        found, child_status, child_usage = os.wait4(pid, os.WNOHANG)
+        check(found == 0, 'REAL_OWNED_LIVE_WORKER_ZERO_NOT_OBSERVED')
+        actual_threads = [item for item in threading.enumerate()
+                          if item.name == 'rc6-owned-child-finalization']
+        check(len(actual_threads) == 1 and actual_threads[0].is_alive(), 'EXACT_REAL_FINALIZER_THREAD_NOT_ACTIVE')
+        owned_thread = actual_threads[0]
+        live_observation = {'scope': 'SAME_PHASE_PARENT_REAL_OWN_WORKER_AND_THREAD_CONTROL_ONLY',
+            'pid': pid, 'actual_wait4_own_pid_wnohang_found': found, 'kernel_identity': identity,
+            'thread_ident': owned_thread.ident, 'native_tid': owned_thread.native_id,
+            'thread_alive': True, 'thread_daemon': owned_thread.daemon,
+            'original_phase_remains_RED': True, 'source_payload_reads': 0}
+        save(case_root/'live-kernel-observation.json', live_observation)
+        # The exact original daemon thread finishes its actual Process.join.
+        # This separate wait never modifies the frozen original5 report.
+        diagnostic_entered = time.monotonic()
+        owned_thread.join(5)
+        check(not owned_thread.is_alive(), 'OWN_DIAGNOSTIC_THREAD_DID_NOT_FINISH_NATURALLY')
+        diagnostic.update({'actual_finalizer_thread_finished_naturally': True,
+            'observed_after_original_phase_seconds': time.monotonic()-diagnostic_entered,
+            'original_status_reclassified': False, 'signals_sent': 0})
+    kernel_after = manager['pre_capture_kernel_state']()
+    diagnostic['actual_same_parent_kernel_after'] = kernel_after
+    # Documentary Source/JUnit/log reads are permitted only now, after ECHILD.
+    finalization_file, _ = read_owned(output/'execution.child-finalization.json')
+    check(finalization_file == raw_finalization, 'ORIGINAL_UNKNOWN_CONTROL_BYTES_REBOUND')
+    # The observer's UNKNOWN veto remains irreversible. The explicit closed
+    # documentary snapshot is outside phase_child and not a resumed phase.
+    observation['documentary_scope_after_exact_parent_FIN'] = True
+    after = component_source_pin(root, SOURCE_SHA, SOURCE_TREE)
+    atime = original_globals['compare_source'](before, after)
+    closure_after = normal_metadata157(policy)
+    check(closure_after == closure_before, 'INSTALLED157_METADATA_CHANGED')
+    junit_raw, _ = read_owned(output/'porota-governed-tests.xml')
+    cases = list(ET.fromstring(junit_raw).iter('testcase'))
+    junit = {'sha256': hashlib.sha256(junit_raw).hexdigest(), 'cases': len(cases),
+        'failures': sum(case.find('failure') is not None for case in cases),
+        'errors': sum(case.find('error') is not None for case in cases),
+        'skips': sum(case.find('skipped') is not None for case in cases)}
+    check(junit['cases'] == 1 and junit['failures'] == junit['errors'] == junit['skips'] == 0,
+          'NATURAL_COMPONENT_PYTEST_RESULT_NOT_ONE_PASS')
+    if options.case == 'old_unknown5':
+        check(phase_exception and phase_exception['reason'] == 'COMPONENT_SOURCE_POSTREAD_VETO_BEFORE_PHYSICAL_IO'
+              and source_attempts >= 1, 'OLD_POSTREAD_HOLE_NOT_NATURALLY_OBSERVED')
+    elif options.case == 'new_unknown5':
+        check(phase_exception and phase_exception['reason'] == 'PHASE_CHILD_INFRASTRUCTURE_NOT_GENUINELY_FINALIZED'
+              and source_attempts == 0, 'NEW_UNKNOWN_SOURCE_BARRIER_NOT_OBSERVED')
+    else:
+        check(phase_exception is None and phase_result == 0 and frozen_finalization['status'] == 'GREEN'
+              and frozen_finalization['kernel_echild_before_phase_return'] is True
+              and frozen_finalization['finalization_thread_finished'] is True and not frozen_finalization['errors']
+              and source_attempts >= 1, 'NATURAL_POSITIVE_PHASE_CLOSURE_NOT_OBSERVED')
+    receipt = {'schema': 'rc6.phase-child-postread-natural-component-receipt.v1',
+        'case': options.case, 'epoch': options.epoch, 'pid': os.getpid(), 'phase_returncode': phase_result,
+        'phase_exception': phase_exception, 'original_phase_status': frozen_finalization['status'],
+        'original_phase_RED_reclassified': False,
+        'original_unknown_observation_still_sticky': observation['finalization_returned_unknown'],
+        'original_finalization_control': frozen_finalization,
+        'original_finalization_control_sha256': hashlib.sha256(raw_finalization).hexdigest(),
+        'original_finalization_control_bytes_unchanged': True,
+        'original_source_postread_attempts': source_attempts,
+        'original_source_pin_post_entries': post_entries, 'original_source_os_postread_events': observation['source_os_events'],
+        'source_payload_bytes_read_in_original_phase_after_UNKNOWN_before_diagnostic_FIN': 0,
+        'source_byte_observation_scope': 'ORIGINAL_PHASE_AFTER_UNKNOWN_BEFORE_DIAGNOSTIC_FIN; DECLARED_CAPTURE_PROVIDERS_AND_AUDITED_CATALOG_OPENS_ONLY; NO_INHERITED_FD_OR_NATIVE_BINARY_ATTESTATION',
+        'source_veto_registration_witnessed': observation['audit_witness_seen'],
+        'live_kernel': live_observation, 'diagnostic': diagnostic, 'source_before': before,
+        'source_after_diagnostic_FIN': after, 'source_original10_and_bytes_stable': True,
+        'source_atime_evolution': atime, 'installed_metadata157_equal_before_after': True,
+        'junit_component_only': junit, 'component_control_condition_observed': True,
+        'whole_Gov_gate': False, 'whole_Git_source_qualification': False, 'real_orders_sent': 0}
+    sha = save(case_root/'component-receipt.json', receipt)
+    print(json.dumps({'case': options.case, 'epoch': options.epoch, 'receipt_sha256': sha,
+        'phase_status': frozen_finalization['status'], 'actual_kernel_FIN': True,
+        'source_postattempts': source_attempts, 'component_only_not_Gov': True}), flush=True)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

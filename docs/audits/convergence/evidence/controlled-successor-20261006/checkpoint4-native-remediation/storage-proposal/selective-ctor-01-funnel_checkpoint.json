@@ -1,0 +1,491 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "actual_constructor": {
+    "cpu_seconds": 10.866179868,
+    "durable_limit": 33554432,
+    "engines_identity": null,
+    "expansion_limit": 67108864,
+    "native_graph_identity": 140020546759296,
+    "native_instance_identity": 140020486876816,
+    "ordinal": 1,
+    "original_constructor_code_identity_verified": true,
+    "original_constructor_code_sha256": "e921a52648a3ec1af3713a0057132c02b0bd3f2a92ad4cfb53b51fe07ea0fc84",
+    "peak_rss_bytes": 773992448,
+    "pstats_filename": "ctor-01-funnel_checkpoint.pstats",
+    "returned_normally": true,
+    "role": "funnel_checkpoint",
+    "wall_seconds": 10.875159051000082
+  },
+  "do_not_sum_nested_cumulative_seconds": true,
+  "functions": [
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 7.467103187,
+          "exclusive_profile_seconds": 1.5627039010000001,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_append",
+          "line": 365,
+          "primitive_calls": 194048,
+          "total_calls": 48512
+        },
+        {
+          "cumulative_profile_seconds": 8.346708022000001,
+          "exclusive_profile_seconds": 0.23072384,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_capture_original",
+          "line": 426,
+          "primitive_calls": 15,
+          "total_calls": 15
+        }
+      ],
+      "cumulative_profile_seconds": 8.346708022000001,
+      "exclusive_profile_seconds": 1.7934277410000001,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "_append",
+      "line": 365,
+      "primitive_calls": 15,
+      "total_calls": 194063
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 1.1670678780000001,
+          "exclusive_profile_seconds": 0.8284267430000001,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_append",
+          "line": 365,
+          "primitive_calls": 1407366,
+          "total_calls": 1407366
+        }
+      ],
+      "cumulative_profile_seconds": 1.1670678780000001,
+      "exclusive_profile_seconds": 0.8284267430000001,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "_scalar",
+      "line": 328,
+      "primitive_calls": 1407366,
+      "total_calls": 1407366
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 1.526469955,
+          "exclusive_profile_seconds": 0.7885375360000001,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_append",
+          "line": 365,
+          "primitive_calls": 1577938,
+          "total_calls": 1577938
+        }
+      ],
+      "cumulative_profile_seconds": 1.526469955,
+      "exclusive_profile_seconds": 0.7885375360000001,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "append",
+      "line": 283,
+      "primitive_calls": 1577938,
+      "total_calls": 1577938
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 1.575885347,
+          "exclusive_profile_seconds": 4.6647e-05,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py",
+          "function": "_shape",
+          "line": 68,
+          "primitive_calls": 1,
+          "total_calls": 1
+        },
+        {
+          "cumulative_profile_seconds": 1.575823766,
+          "exclusive_profile_seconds": 0.7761735830000001,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py",
+          "function": "visit",
+          "line": 71,
+          "primitive_calls": 194057,
+          "total_calls": 9
+        }
+      ],
+      "cumulative_profile_seconds": 1.575885347,
+      "exclusive_profile_seconds": 0.7762202300000001,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py",
+      "function": "visit",
+      "line": 71,
+      "primitive_calls": 1,
+      "total_calls": 194058
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 0.9180403840000001,
+          "exclusive_profile_seconds": 2.3369000000000003e-05,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "__init__",
+          "line": 299,
+          "primitive_calls": 1,
+          "total_calls": 1
+        },
+        {
+          "cumulative_profile_seconds": 0.9180122350000001,
+          "exclusive_profile_seconds": 0.573827846,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_count",
+          "line": 314,
+          "primitive_calls": 194057,
+          "total_calls": 9
+        }
+      ],
+      "cumulative_profile_seconds": 0.9180403840000001,
+      "exclusive_profile_seconds": 0.573851215,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "_count",
+      "line": 314,
+      "primitive_calls": 1,
+      "total_calls": 194058
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 0.156744137,
+          "exclusive_profile_seconds": 0.101934198,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_small_plain",
+          "line": 160,
+          "primitive_calls": 313540,
+          "total_calls": 313540
+        },
+        {
+          "cumulative_profile_seconds": 0.449530855,
+          "exclusive_profile_seconds": 0.294058081,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_append",
+          "line": 365,
+          "primitive_calls": 800704,
+          "total_calls": 800704
+        },
+        {
+          "cumulative_profile_seconds": 2.2805000000000003e-05,
+          "exclusive_profile_seconds": 1.4867e-05,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_capture_original",
+          "line": 426,
+          "primitive_calls": 17,
+          "total_calls": 17
+        }
+      ],
+      "cumulative_profile_seconds": 0.6062977970000001,
+      "exclusive_profile_seconds": 0.39600714600000003,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "_root_volatile",
+      "line": 154,
+      "primitive_calls": 1114261,
+      "total_calls": 1114261
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 0.47791945700000005,
+          "exclusive_profile_seconds": 0.38945901600000005,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "append",
+          "line": 283,
+          "primitive_calls": 1577938,
+          "total_calls": 1577938
+        },
+        {
+          "cumulative_profile_seconds": 0.000170847,
+          "exclusive_profile_seconds": 0.000119655,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "bind",
+          "line": 287,
+          "primitive_calls": 512,
+          "total_calls": 512
+        }
+      ],
+      "cumulative_profile_seconds": 0.478090304,
+      "exclusive_profile_seconds": 0.38957867100000004,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "_room",
+      "line": 279,
+      "primitive_calls": 1578450,
+      "total_calls": 1578450
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 0.037074749000000004,
+          "exclusive_profile_seconds": 0.037074749000000004,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py",
+          "function": "encode",
+          "line": 183,
+          "primitive_calls": 399650,
+          "total_calls": 399650
+        },
+        {
+          "cumulative_profile_seconds": 1.7020000000000002e-06,
+          "exclusive_profile_seconds": 1.7020000000000002e-06,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py",
+          "function": "_parse_args",
+          "line": 484,
+          "primitive_calls": 2,
+          "total_calls": 2
+        },
+        {
+          "cumulative_profile_seconds": 0.12196139,
+          "exclusive_profile_seconds": 0.12196139,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_count",
+          "line": 314,
+          "primitive_calls": 1869033,
+          "total_calls": 1869033
+        },
+        {
+          "cumulative_profile_seconds": 0.025505953,
+          "exclusive_profile_seconds": 0.025505953,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_append",
+          "line": 365,
+          "primitive_calls": 242592,
+          "total_calls": 242592
+        },
+        {
+          "cumulative_profile_seconds": 1.3e-07,
+          "exclusive_profile_seconds": 1.3e-07,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "__init__",
+          "line": 468,
+          "primitive_calls": 1,
+          "total_calls": 1
+        },
+        {
+          "cumulative_profile_seconds": 0.139979097,
+          "exclusive_profile_seconds": 0.139979097,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py",
+          "function": "visit",
+          "line": 71,
+          "primitive_calls": 1869033,
+          "total_calls": 1869033
+        },
+        {
+          "cumulative_profile_seconds": 0.050617992,
+          "exclusive_profile_seconds": 0.050617992,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py",
+          "function": "<genexpr>",
+          "line": 85,
+          "primitive_calls": 1066261,
+          "total_calls": 1066261
+        }
+      ],
+      "cumulative_profile_seconds": 0.375141013,
+      "exclusive_profile_seconds": 0.375141013,
+      "filename": "~",
+      "function": "<built-in method builtins.isinstance>",
+      "line": 0,
+      "primitive_calls": 5446572,
+      "total_calls": 5446572
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 0.550191106,
+          "exclusive_profile_seconds": 0.34004115900000004,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_append",
+          "line": 365,
+          "primitive_calls": 121545,
+          "total_calls": 121545
+        }
+      ],
+      "cumulative_profile_seconds": 0.550191106,
+      "exclusive_profile_seconds": 0.34004115900000004,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "_small_plain",
+      "line": 160,
+      "primitive_calls": 121545,
+      "total_calls": 121545
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 0.310997238,
+          "exclusive_profile_seconds": 0.260379246,
+          "filename": "~",
+          "function": "<built-in method builtins.any>",
+          "line": 0,
+          "primitive_calls": 1187294,
+          "total_calls": 1187294
+        }
+      ],
+      "cumulative_profile_seconds": 0.310997238,
+      "exclusive_profile_seconds": 0.260379246,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py",
+      "function": "<genexpr>",
+      "line": 85,
+      "primitive_calls": 1187294,
+      "total_calls": 1187294
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 0.005401379,
+          "exclusive_profile_seconds": 0.005401379,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_small_plain",
+          "line": 160,
+          "primitive_calls": 48517,
+          "total_calls": 48517
+        },
+        {
+          "cumulative_profile_seconds": 0.008968515,
+          "exclusive_profile_seconds": 0.008968515,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_count",
+          "line": 314,
+          "primitive_calls": 121033,
+          "total_calls": 121033
+        },
+        {
+          "cumulative_profile_seconds": 0.010781599000000001,
+          "exclusive_profile_seconds": 0.010781599000000001,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py",
+          "function": "visit",
+          "line": 71,
+          "primitive_calls": 121033,
+          "total_calls": 121033
+        }
+      ],
+      "cumulative_profile_seconds": 0.025151493,
+      "exclusive_profile_seconds": 0.025151493,
+      "filename": "~",
+      "function": "<method 'values' of 'dict' objects>",
+      "line": 0,
+      "primitive_calls": 290583,
+      "total_calls": 290583
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 8.348448809,
+          "exclusive_profile_seconds": 0.001616912,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "capture",
+          "line": 421,
+          "primitive_calls": 17,
+          "total_calls": 17
+        }
+      ],
+      "cumulative_profile_seconds": 8.348448809,
+      "exclusive_profile_seconds": 0.001616912,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "_capture_original",
+      "line": 426,
+      "primitive_calls": 17,
+      "total_calls": 17
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 8.349385874000001,
+          "exclusive_profile_seconds": 0.0009370650000000001,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "<dictcomp>",
+          "line": 476,
+          "primitive_calls": 17,
+          "total_calls": 17
+        }
+      ],
+      "cumulative_profile_seconds": 8.349385874000001,
+      "exclusive_profile_seconds": 0.0009370650000000001,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "capture",
+      "line": 421,
+      "primitive_calls": 17,
+      "total_calls": 17
+    },
+    {
+      "callers": [],
+      "cumulative_profile_seconds": 10.843504211,
+      "exclusive_profile_seconds": 5.4773000000000006e-05,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "__init__",
+      "line": 468,
+      "primitive_calls": 1,
+      "total_calls": 1
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 0.9180861220000001,
+          "exclusive_profile_seconds": 4.4696e-05,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "__init__",
+          "line": 468,
+          "primitive_calls": 1,
+          "total_calls": 1
+        }
+      ],
+      "cumulative_profile_seconds": 0.9180861220000001,
+      "exclusive_profile_seconds": 4.4696e-05,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "__init__",
+      "line": 299,
+      "primitive_calls": 1,
+      "total_calls": 1
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 1.575900239,
+          "exclusive_profile_seconds": 1.4892e-05,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "__init__",
+          "line": 468,
+          "primitive_calls": 1,
+          "total_calls": 1
+        }
+      ],
+      "cumulative_profile_seconds": 1.575900239,
+      "exclusive_profile_seconds": 1.4892e-05,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py",
+      "function": "_shape",
+      "line": 68,
+      "primitive_calls": 1,
+      "total_calls": 1
+    },
+    {
+      "callers": [
+        {
+          "cumulative_profile_seconds": 1.3481e-05,
+          "exclusive_profile_seconds": 1.3481e-05,
+          "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+          "function": "_capture_original",
+          "line": 426,
+          "primitive_calls": 15,
+          "total_calls": 15
+        }
+      ],
+      "cumulative_profile_seconds": 1.3481e-05,
+      "exclusive_profile_seconds": 1.3481e-05,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py",
+      "function": "__init__",
+      "line": 269,
+      "primitive_calls": 15,
+      "total_calls": 15
+    }
+  ],
+  "gate_qualified": false,
+  "identity_lower_bound": {
+    "distinct_dict_containers_at_least": 121033,
+    "eligible_role_observed": false,
+    "exceeds_original_cap": false,
+    "genexpr211_ambiguous_without_locals_not_used_as_proof": true,
+    "original_role_container_cap": 1048576,
+    "proof": "dict.values callers from _count occur only after a new identity is inserted into builder.objects; existing identities return before values. Not total arrival calls and not exact total cardinality."
+  },
+  "instrumental_overhead_included": true,
+  "instrumental_time_unit": "PROFILE_SECONDS (native C wall timer)",
+  "raw_pstats_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/ctor-01-funnel_checkpoint.pstats",
+  "raw_pstats_sha256": "86cb8c79b546290aee133f945f564a7a882c2ce138ecd11cfdc919f6e9c5614a"
+}

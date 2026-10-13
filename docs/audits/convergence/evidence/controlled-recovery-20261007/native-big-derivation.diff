@@ -1,0 +1,117 @@
+--- /workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint6-phase-child-barrier/native-big-0f73e2c/native_big_direct_supervisor.py.source
++++ scripts/rc6_material_big.py
+@@ -222,6 +222,60 @@
+             and native["real_routes"] == "NOT_CALLED" and native["runtime_touched"] is False}
+ 
+ 
++
++def native_fin_control(gov, raw, kernel, args, source, repository, index_path):
++    """Only native controls are read before the immutable original five-second FIN."""
++    path = raw/"native-big-result.json.owned-fin.json"
++    wire, attributes = gov.capture(path, limit=256*1024)
++    row = json.loads(wire)
++    lifecycle = row["native_cli_lifecycle"]
++    finalization = lifecycle["child_infrastructure_finalization"]
++    expected_binding = {"source_root": str(source), "source_repo": str(repository),
++        "source_sha": args.sha, "source_tree": args.tree, "source_index": str(index_path),
++        "source_index_sha256": args.index_sha256}
++    gov.require(row["schema"] == "rc6.issue465.native-cli-owned-fin.v1"
++        and row["payload_path"] == str(raw/"native-big-result.json")
++        and row["source_binding"] == expected_binding
++        and row["pid"] == lifecycle["pid"] == kernel["pid"]
++        and row["parent_pid"] == lifecycle["parent_pid"] == os.getpid()
++        and row["entry_module"] == lifecycle["entry_module"] == "__main__"
++        and row["physical_fin_closed"] is True
++        and row["finalized_before_payload_postreads"] is True
++        and lifecycle["child_infrastructure_finalized_before_payload_postreads"] is True
++        and lifecycle["owned_fin_control_path"] == str(path)
++        and row["original_child_finalization_seconds"] == 5
++        and row["cycle_deadline_seconds"] == 90
++        and row["real_orders_sent"] == 0,
++        "ACTUAL_BOUND_NATIVE_CLI_OWNED_FIN_CONTROL_REQUIRED")
++    gov.require(finalization["status"] == "GREEN"
++        and finalization["finalization_thread_finished"] is True
++        and finalization["management_bound_seconds"] == 5
++        and bounded_number(finalization["wall_seconds"], 5)
++        and finalization["kernel_echild_before_phase_return"] is True
++        and finalization["signal_guard_installed_and_witnessed"] is True
++        and finalization["forced_termination_attempted"] is False
++        and finalization["signal_vetoed"] is False
++        and finalization["forced_termination"] is False
++        and finalization["termination_signal_attempts"] == finalization["errors"] == [],
++        "NATIVE_FIVE_SECOND_FIN_UNKNOWN_PAYLOAD_VETO")
++    gov.require(lifecycle["fresh_infrastructure_verified"] is True
++        and set(lifecycle["infrastructure_before"]) == {"resource_tracker_pid", "resource_tracker_fd", "forkserver_alive_fd", "forkserver_pid"}
++        and all(value is None for value in lifecycle["infrastructure_before"].values())
++        and lifecycle["original_inet_operation_audit_registration_witness_verified"] is True
++        and lifecycle["inet_socket_attempts"] == []
++        and lifecycle["unexpected_error"] is None
++        and lifecycle["offline_ipv6_creation_capability"]["status"] == "INSTALLED_AND_KERNEL_WITNESSED"
++        and lifecycle["offline_ipv6_creation_capability"]["transitive_kernel_network_attestation"] is False,
++        "ORIGINAL_NATIVE_CLI_INFRASTRUCTURE_RED_PAYLOAD_VETO")
++    gov.require(row["cli_exit_code"] == lifecycle["cli_exit_code"] == kernel["returncode"]
++        and row["native_resource_exit_code"] == lifecycle["native_resource_exit_code"]
++        and type(row["cli_exit_code"]) is int and row["cli_exit_code"] in (0, 1)
++        and type(row["native_resource_exit_code"]) is int and row["native_resource_exit_code"] in (0, 1),
++        "NATIVE_CLI_LOGICAL_EXIT_CONTEXT_REBOUND")
++    return {"control": row, "sha256": hashlib.sha256(wire).hexdigest(), "stat_fields": attributes,
++        "original_native_five_second_FIN_closed": True,
++        "Source_DATA_result_log_payload_reads_before_this_control": 0}
++
+ def main(args):
+     source, repository, index_path, tar_path = (args.epoch/"source", args.epoch/"repository",
+                                               args.epoch/"pin/source.index.json", args.epoch/"pin/source.tar")
+@@ -245,6 +299,7 @@
+                 "FRESH_EXTERNAL_OWNED700_RAW_AND_DATA_REQUIRED")
+     raw.mkdir(mode=0o700); data.mkdir(mode=0o700)
+     errors, checks, before, after, kernel, native, atime = [], {}, None, None, None, None, None
++    fin_control, payload_safe = None, False
+     native_summary = None
+     publish = lambda name, value: gov.publish(raw/name, gov.canonical(value))
+     try:
+@@ -284,14 +339,26 @@
+         kernel = gov.subprocess_phase(command, source, raw/"native.log", env, limit=300)
+         publish("kernel-supervision.json", kernel)
+         checks.update(kernel_checks(kernel))
+-        reads_allowed = (kernel["actual_child_reaped"] is True and kernel["owned_children_exhaustion_verified"] is True
+-            and kernel["process_group_absent_after_reap"] is True and kernel["remaining_owned_children"] == [])
++        reads_allowed = all(value is True for name, value in kernel_checks(kernel).items()
++            if name not in ("main_exit_zero", "actual_kernel_peak_rss_strictly_below_2gib"))
+         gov.require(reads_allowed, "POST_FIN_READ_FORBIDDEN_WITHOUT_REAL_KERNEL_EXHAUSTION")
++        fin_control = native_fin_control(gov, raw, kernel, args, source, repository, index_path)
++        publish("native-owned-fin-capture.json", fin_control)
++        payload_safe = True
++        publish("native-fin-postread-decision.json", {"schema": "rc6.material-big-native-postread.v1",
++            "native_FIN_payload_safe": True, "source_sha": args.sha, "source_tree": args.tree,
++            "source_index_sha256": args.index_sha256, "source_tar_sha256": args.tar_sha256,
++            "actual_native_pid": kernel["pid"], "actual_supervisor_pid": os.getpid(),
++            "native_kernel_sha256": hashlib.sha256(gov.canonical(kernel)).hexdigest(),
++            "native_owned_fin_sha256": fin_control["sha256"], "native_original_finalizer_seconds": 5,
++            "source_after_or_result_reads_before_native_FIN": 0, "real_orders_sent": 0})
+         after = source_snapshot(gov, source, repository, index_path, tar_path, args)
+         publish("source-after.json", after)
+         atime = gov.compare_source(before, after)
+         native_wire, native_stat = gov.capture(raw/"native-big-result.json")
+         native = json.loads(native_wire)
++        gov.require(native["native_cli_lifecycle"] == fin_control["control"]["native_cli_lifecycle"],
++                    "NATIVE_PAYLOAD_LIFECYCLE_REBOUND_FROM_IMMUTABLE_FIN_CONTROL")
+         publish("native-result-capture.json", {"bytes": len(native_wire),
+             "sha256": hashlib.sha256(native_wire).hexdigest(), "stat_fields": native_stat,
+             "native_result_not_rewritten": True, "native_data_read_by_parent": False})
+@@ -314,10 +381,14 @@
+                            "reason": "NATIVE_CANONICAL_COMPLETION_FIELDS_MISSING"})
+     except BaseException as error:
+         errors.append(safe_failure(error, "canonical_direct_big_supervision"))
++    if not payload_safe:
++        publish("native-fin-postread-decision.json", {"schema": "rc6.material-big-native-postread.v1",
++            "native_FIN_payload_safe": False, "source_sha": args.sha, "source_tree": args.tree,
++            "errors": errors, "Source_DATA_result_log_payload_postreads": 0, "real_orders_sent": 0})
+     complete = bool(checks) and all(value is True for value in checks.values()) and not errors
+-    report = {"schema": "rc6.native-direct-big-supervision.v1", "status": "GREEN" if complete else "RED",
++    report = {"schema": "rc6.material-native-direct-big-supervision.v1", "native_FIN_payload_safe": payload_safe, "status": "GREEN" if complete else "RED",
+         "source_sha": args.sha, "source_tree": args.tree, "source_index_sha256": args.index_sha256,
+-        "source_tar_sha256": args.tar_sha256, "canonical_big_and_observed_import_gates_closed": complete,
++        "source_tar_sha256": args.tar_sha256, "native_owned_fin_control": fin_control, "canonical_big_and_observed_import_gates_closed": complete,
+         "checks": checks, "errors": errors, "actual_native_summary": native_summary,
+         "observed_code_atime_changes": atime,
+         "code_all11_stats_unchanged_claim": False,

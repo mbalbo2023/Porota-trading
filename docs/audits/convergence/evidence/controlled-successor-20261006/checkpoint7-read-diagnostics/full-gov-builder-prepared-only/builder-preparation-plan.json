@@ -1,0 +1,84 @@
+{
+  "Gov_or_pytest_executed": false,
+  "builder": {
+    "bytes": 21454,
+    "lines": 326,
+    "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/build_governed_sources.py",
+    "run_count": 0,
+    "sha256": "03d08c3f362b12da70defa8f1e2388373d41e20a4ffc08e46f48fb9691667738",
+    "syntax_compile_only": true
+  },
+  "builder_argv": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/build_governed_sources.py",
+    "--preparation-binding",
+    "<NEW_ROOT_REVIEWED_FINAL_SOURCE_PREPARATION_BINDING.json>"
+  ],
+  "builder_or_preflight_executed": false,
+  "clones_created": 0,
+  "construction": [
+    "Actual wrapper bootstrap ownPID Linux ECHILD/readback before PRODUCT manager loading; manager exact55325 Gitblob from owned actual Source; no runtime rewriting",
+    "Two distinct fresh mkdtemp rc6g311-/rc6g312- parents700 under owned non-group/world writable /workspace/scratch; absolute parent bytes<=50; source child755 via umask022 normal fullGit clone",
+    "git clone --no-local --no-hardlinks --no-checkout explicit verified normal localGit transport or canonical HTTPS; localGit fullGraph and FINAL raw commit/tree match fresh GitHub authority",
+    "Only NEW clone origin config canonicalHTTPS and detached exactFINAL_SHA; normal.git directory/no shallow/alternates/commondir/grafts/aliases/replace overrides; original source_pin revalidates full physical namespace later",
+    "Probe19 literal original objects/refs. Preserve actual closed missingobject RED and rawcontrol. Fetch only missing literalsha:originalref nonforced into NEW .git from canonicalHTTPS or explicit owned Rootmirror with exact rawcommit SHA256/GitSHA/tree; no other refs/historical audit",
+    "Existing original ref with unexpected value stops. Absent original ref uses update-ref exact all-zero expected-oldvalue, never existing productive/current/ops Source refs",
+    "Actual selected311/312 preflight child uses original real Source helpers source_pin, installed_closure157, approved_scope literalRoot. onlyA3, compare_source10+honestatime, dist-info RECORD157 normal byte captures; no pytest/Gov/native gate launched",
+    "Actual original manager waits ownedPID/wait4/ECHILD/PGID/procguard/restoration around every builder Git mutator/probe and selected-epoch preflight. UNKNOWN blocks stdout/payload reads; no stdout read before FIN. Original signals/latezero/residual remainRED",
+    "Each epoch SOURCE rawstats/modes/Gitblobs preserved beforeafter; semantic bytes/modes/blob set hash compared across clones, never equalinode/all11 crossclone claim. Scope inventory original bytes stored independently, no normalization",
+    "Bindings SOURCE_PREPARED_NATIVE_LAUNCH_NOT_AUTHORIZED with Govlaunchreceipt placeholders. Root must make NEW fresh-authority+filledlaunchbindings after review and separate durable GovCPUslot authorization; existing prepared bytes not overwritten"
+  ],
+  "original19_AUTHENTICATED_UNCHANGED_BODY": {
+    "literal_objects": 19,
+    "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/original-required-19-objects.json",
+    "sha256": "492a3c0de260501776ee235ea5472da373d6c5881a4dfafca05518297fc16579"
+  },
+  "prepared_utc": "2026-10-06T21:43:19.912780+00:00",
+  "resource_budgets": {
+    "builder_Git_or_preflight_management_seconds_each": 300,
+    "future_Gov_outer_seconds_UNCHANGED": 21600,
+    "future_native_child_finalizer_seconds_UNCHANGED": 5,
+    "future_native_collection_watchdog_seconds_UNCHANGED": 5400,
+    "future_native_execution_watchdog_seconds_UNCHANGED": 5400,
+    "original_failed_cleanup_seconds": 5,
+    "original_manager_TERM_seconds": 2,
+    "original_manager_progress_poll_seconds": 5,
+    "scope": "PREPARATION_ONLY_NOT_NATIVE_TEST_BUDGET"
+  },
+  "safety": {
+    "DEPLOY_OWNER": "NOT_ACQUIRED",
+    "PAPER_SHADOW_ONLY": true,
+    "PPI_Watch_intact": true,
+    "direct_Droplet_host_access": false,
+    "probe472_called_or_changed": false,
+    "real_orders_sent": 0
+  },
+  "schema": "rc6.fullGov.builder-source-preparation-plan.v1",
+  "source_freeze": "FINAL published PR476 ref/tree required;8b850b4a/22be0a8d immutable objects alone do NOT authorize construction",
+  "source_protection": {
+    "current_source_edits": 0,
+    "current_source_refs_modified": 0,
+    "force_push_update_ref_product_rollback": false,
+    "no_chmod_chown_utime_existing_resource_reset": true,
+    "ops_product_frozen_branches_modified": false
+  },
+  "stage": "PREPARED_NOT_AUTHORIZED_NO_EXECUTION",
+  "templates": [
+    {
+      "bytes": 1632,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/builder-binding.template.json",
+      "sha256": "129bbde282ea10ff313c2b36eed8ec2b4062f411ab696be6115569b4949b10f1"
+    },
+    {
+      "bytes": 743,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/GitHub-preparation-authority.template.json",
+      "sha256": "3b52ebbe17a72640829de2f158661acf7fd425d2d48f643af5846c536e63e19d"
+    }
+  ],
+  "wrapper_UNCHANGED": {
+    "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/governed_outer.py",
+    "sha256": "7fa1aae01b863695e43f1b4de0b862fb8757281ea5506d791107651c5d057bc4"
+  }
+}

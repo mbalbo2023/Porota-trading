@@ -1,0 +1,215 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "adapter_v2": {
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/pre_profile_v2.py",
+    "sha256": "c4248a405d3c8990dfcc9bd4e0f0d1d44c27b0f70aad6d9548e7820f299b2a40"
+  },
+  "kernel_barrier_closed_before_reads": true,
+  "raw_files": [
+    {
+      "bytes": 1213,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/child.constructor-profiles.json",
+      "relative_to_raw": "child.constructor-profiles.json",
+      "sha256": "6f52f6326c5e5c6b615ab357ccdc1faf26e4717415ecee9530b8c8805439510f"
+    },
+    {
+      "bytes": 388,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/child.data-after.json",
+      "relative_to_raw": "child.data-after.json",
+      "sha256": "3314b09bb14f46d847016844349853787a78767aab0f78490c6844f08248b3e3"
+    },
+    {
+      "bytes": 388,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/child.data-before.json",
+      "relative_to_raw": "child.data-before.json",
+      "sha256": "3314b09bb14f46d847016844349853787a78767aab0f78490c6844f08248b3e3"
+    },
+    {
+      "bytes": 732,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/child.final.json",
+      "relative_to_raw": "child.final.json",
+      "sha256": "24aef38152a5329e53394a38be4eac5647a512f36d52b092177bfe71da47ff25"
+    },
+    {
+      "bytes": 817,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/child.finalization.json",
+      "relative_to_raw": "child.finalization.json",
+      "sha256": "28b5a2bf57aad123c50a6ab641b6035ac57f7a40dff586f8faf63a2324d08973"
+    },
+    {
+      "bytes": 43291,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/child.import-before.json",
+      "relative_to_raw": "child.import-before.json",
+      "sha256": "6cdbdb59f6677ce0b58a1d41b384d682c858665541052bd7dcb50ec75700a264"
+    },
+    {
+      "bytes": 392466,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/child.import-final.json",
+      "relative_to_raw": "child.import-final.json",
+      "sha256": "80d8ce6ad0cb539ed14b10f67b9a7d962ec936d782ab52457c3b21c2521ab6f2"
+    },
+    {
+      "bytes": 123,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/child.infrastructure-before.json",
+      "relative_to_raw": "child.infrastructure-before.json",
+      "sha256": "aabfd18817b597ee475734b64d849f44be1b51c131a29380fb7e5b475206d36d"
+    },
+    {
+      "bytes": 586,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/child.original-codes-before.json",
+      "relative_to_raw": "child.original-codes-before.json",
+      "sha256": "8c0bbe1ed1d17c40524fb9ebb7acfd8ea512e1d75928d0f399ada3ed07730a36"
+    },
+    {
+      "bytes": 6697,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/child.original-probe-events.json",
+      "relative_to_raw": "child.original-probe-events.json",
+      "sha256": "f049fc48f2032314127d398d22d8973eb240ea5c59e2e7fde74c1634c0997aa5"
+    },
+    {
+      "bytes": 1806,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/collection.installed-closure.json",
+      "relative_to_raw": "collection.installed-closure.json",
+      "sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439"
+    },
+    {
+      "bytes": 614,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/collection.namespace.json",
+      "relative_to_raw": "collection.namespace.json",
+      "sha256": "5a31721204712412613623e3a7298ba8d4e0eb0c9448ef567bbfcaf0a0141490"
+    },
+    {
+      "bytes": 604,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/collection.offline-capability.json",
+      "relative_to_raw": "collection.offline-capability.json",
+      "sha256": "5d4fb73194874469a92a5a8cde6da5e78c7499bdb81b5ef6a3c880253e98ffb8"
+    },
+    {
+      "bytes": 10242,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/ctor-01-funnel_checkpoint.pstats",
+      "relative_to_raw": "ctor-01-funnel_checkpoint.pstats",
+      "sha256": "86cb8c79b546290aee133f945f564a7a882c2ce138ecd11cfdc919f6e9c5614a"
+    },
+    {
+      "bytes": 576,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/ctor-01.metadata.json",
+      "relative_to_raw": "ctor-01.metadata.json",
+      "sha256": "43023b02f9f572d4edc404b35aae863b1820e67002eeb7f0a684c7e17ea09582"
+    },
+    {
+      "bytes": 11568,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/ctor-02-report.pstats",
+      "relative_to_raw": "ctor-02-report.pstats",
+      "sha256": "8c09fc86da3c0b12590b4e2bd3181ea3f252e40bb9264c1b0a4f1ab2ea2361de"
+    },
+    {
+      "bytes": 568,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/ctor-02.metadata.json",
+      "relative_to_raw": "ctor-02.metadata.json",
+      "sha256": "e1e2c656ade208f0f039100445b20b00b53c7c333b0df25116e08a16d414c250"
+    },
+    {
+      "bytes": 1806,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/execution.installed-closure.json",
+      "relative_to_raw": "execution.installed-closure.json",
+      "sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439"
+    },
+    {
+      "bytes": 611,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/execution.namespace.json",
+      "relative_to_raw": "execution.namespace.json",
+      "sha256": "7b00dcaf6ce475ea69fd8fb445a1424fc2e96d22a5469f5a2919cb64b25dd82e"
+    },
+    {
+      "bytes": 604,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/execution.offline-capability.json",
+      "relative_to_raw": "execution.offline-capability.json",
+      "sha256": "5d4fb73194874469a92a5a8cde6da5e78c7499bdb81b5ef6a3c880253e98ffb8"
+    },
+    {
+      "bytes": 3170,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/final.json",
+      "relative_to_raw": "final.json",
+      "sha256": "75f3a30dd3fc2b430641aab76a50fcbf1d9471101173ef3f543ed4cfa745f780"
+    },
+    {
+      "bytes": 2167,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/kernel-supervision.json",
+      "relative_to_raw": "kernel-supervision.json",
+      "sha256": "ef3ddf9bd1524c6d7baf69bfd1aee0b91b25b49217035219bd4ec833848c617b"
+    },
+    {
+      "bytes": 1910,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/launch.json",
+      "relative_to_raw": "launch.json",
+      "sha256": "422fe9ef113fcda7c2443bd4aebcdf0f38d6446344c75f04ae7219247bec52f7"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/native.log",
+      "relative_to_raw": "native.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 388,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/parent.fixture-after.json",
+      "relative_to_raw": "parent.fixture-after.json",
+      "sha256": "3314b09bb14f46d847016844349853787a78767aab0f78490c6844f08248b3e3"
+    },
+    {
+      "bytes": 388,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/parent.fixture-before.json",
+      "relative_to_raw": "parent.fixture-before.json",
+      "sha256": "3314b09bb14f46d847016844349853787a78767aab0f78490c6844f08248b3e3"
+    },
+    {
+      "bytes": 71,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/parent.fixture-counts.json",
+      "relative_to_raw": "parent.fixture-counts.json",
+      "sha256": "db575d846560c2b90938c0101b096cf3b1f2485295903e8d4d21fb6e5647a695"
+    },
+    {
+      "bytes": 39632,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/parent.import-before.json",
+      "relative_to_raw": "parent.import-before.json",
+      "sha256": "063cbc8ba024d8f554064a93f09baf3c3f52c37ec02d3209a7af2f22537ee332"
+    },
+    {
+      "bytes": 465150,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/parent.import-final.json",
+      "relative_to_raw": "parent.import-final.json",
+      "sha256": "fdecd1a4c37822e13777c77b3358c013b791cd2fa8933ee52c144f388d9c43c7"
+    },
+    {
+      "bytes": 1858159,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/parent.source-after.json",
+      "relative_to_raw": "parent.source-after.json",
+      "sha256": "345f0b3ac63af50279172f8f2902d38372a30b56dbf930be9949565e7390a237"
+    },
+    {
+      "bytes": 1858159,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/parent.source-before.json",
+      "relative_to_raw": "parent.source-before.json",
+      "sha256": "345f0b3ac63af50279172f8f2902d38372a30b56dbf930be9949565e7390a237"
+    },
+    {
+      "bytes": 401,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/postread-kernel-barrier.json",
+      "relative_to_raw": "postread-kernel-barrier.json",
+      "sha256": "1bdcc1b2823762f2246e4c5f8c1e344a0138fba70ec4804f3f1b8eef084ccbba"
+    },
+    {
+      "bytes": 119201,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw/profile-summary.json",
+      "relative_to_raw": "profile-summary.json",
+      "sha256": "9cab908683ce568c0f05e15ddfc23853c745d702763ad7ab537ca0bad505f1bc"
+    }
+  ],
+  "raw_source_index": {
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/pin/source.index.json",
+    "sha256": "614c7d6d18818008ca4db15f8741ba4336a40a1b1d6587c6b9552d734f6bf779"
+  },
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "status": "RED"
+}

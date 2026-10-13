@@ -1,0 +1,25 @@
+...............F...                                                      [100%]
+=================================== FAILURES ===================================
+_____ test_late_proof_allocation_is_covered_by_actual_reaped_children_peak _____
+
+    def test_late_proof_allocation_is_covered_by_actual_reaped_children_peak():
+        from scripts import rc6_issue465_stress as stress
+        late = (
+            "import json,resource\n"
+            "before=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024\n"
+            "proof_payload=bytearray(96*1024**2)\n"
+            "after=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024\n"
+            "print(json.dumps({'reported_before_proof':before,'after_proof':after}))\n"
+        )
+        process=subprocess.Popen([sys.executable,'-I','-B','-c',late],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            stdout,stderr=process.communicate(timeout=15)
+            assert process.returncode==0,stderr
+            peaks=json.loads(stdout)
+>           assert peaks['after_proof']>peaks['reported_before_proof']+64*1024**2
+E           assert 114135040 > (61800448 + (64 * (1024 ** 2)))
+
+../source/tests/test_rc6_native_big_import_provenance.py:303: AssertionError
+=========================== short test summary info ============================
+FAILED ../source/tests/test_rc6_native_big_import_provenance.py::test_late_proof_allocation_is_covered_by_actual_reaped_children_peak
+{"classification": "SCOPED_IMPORT_GUARDS_NOT_GREEN", "source_sha": "4087e58035d6b081b89091a1b292552d0e82d540", "tests": 19, "failures": 1, "errors": 0, "skipped": 0, "source_unchanged": true, "wall_seconds": 4.463673931997619, "receipt": "/workspace/rc6-budget-big-import-4087-focal-157-raw/native-import-provenance-focal-receipt.json", "receipt_sha256": "4b173abf1646f33ae1cfc37ba53d7cae7665ff16f0b8b34c5c9613e838ad8984"}

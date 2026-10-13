@@ -12,10 +12,15 @@ import argparse
 import ast
 import hashlib
 import json
+import stat
 import subprocess
 import sys
 from pathlib import Path
 from typing import Iterable
+
+SOURCE_ROOT = Path(__file__).absolute().parents[1]
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 
 RUNTIME_SUFFIXES = {".py", ".sh", ".service", ".timer"}
 RUNTIME_EXACT = {
@@ -24,12 +29,20 @@ RUNTIME_EXACT = {
     "docker-compose.yml",
     "requirements.txt",
     "requirements.lock.txt",
+    "requirements.build.lock.txt",
+    "ops/policy/rc6-supply-chain-v1.json",
     "n_instrument_watchlist.json",
     "POROTA_SECTOR_MAP_V1.csv",
 }
 
 
 def is_runtime_relevant(path: str) -> bool:
+    try:
+        from scripts.porota_artifact_provenance import is_raw_evidence_path
+    except ModuleNotFoundError:
+        from porota_artifact_provenance import is_raw_evidence_path
+    if is_raw_evidence_path(path):
+        return False
     p = Path(path)
     if p.parts and p.parts[0] in {"tests", "docs", ".github", ".agents"}:
         return False
@@ -68,20 +81,31 @@ def root_local_modules(repo_root: Path, expected: Iterable[str]) -> dict[str, st
         if len(p.parts) == 1:
             modules[p.stem] = rel
         elif p.name == "__init__.py":
-            modules[p.parts[0]] = rel
+            modules[".".join(p.parts[:-1])] = rel
+        else:
+            modules[".".join((*p.parts[:-1], p.stem))] = rel
     return modules
 
 
-def imported_top_levels(path: Path) -> set[str]:
+def imported_modules(path: Path, relative_path: str) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                found.add(alias.name.split(".", 1)[0])
+                found.add(alias.name)
         elif isinstance(node, ast.ImportFrom):
             if node.level == 0 and node.module:
-                found.add(node.module.split(".", 1)[0])
+                module = node.module
+            elif node.level:
+                parents = Path(relative_path).parts[:-1]
+                base = parents[:len(parents) - node.level + 1] if node.level <= len(parents) else ()
+                module = ".".join((*base, *((node.module or "").split(".") if node.module else ())))
+            else:
+                module = ""
+            if module:
+                found.add(module)
+                found.update(module + "." + alias.name for alias in node.names if alias.name != "*")
         elif isinstance(node, ast.Call):
             # Detect common literal dynamic imports.
             fn = node.func
@@ -94,8 +118,12 @@ def imported_top_levels(path: Path) -> set[str]:
             if dynamic and node.args and isinstance(node.args[0], ast.Constant):
                 value = node.args[0].value
                 if isinstance(value, str) and value:
-                    found.add(value.split(".", 1)[0])
+                    found.add(value)
     return found
+
+
+def imported_top_levels(path: Path) -> set[str]:
+    return {module.split(".", 1)[0] for module in imported_modules(path, path.name)}
 
 
 def sha256(path: Path) -> str:
@@ -106,50 +134,138 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
+def validate(repo_root: Path, artifact_root: Path, expected: list[str], *,
+             g5_writer_binding=None, g7_verified_admission=None,
+             candidate_sha=None, tree_sha=None) -> dict:
     present = artifact_files(artifact_root)
     missing_runtime = sorted(p for p in expected if p not in present)
+    unsafe_paths = sorted(
+        p.relative_to(artifact_root).as_posix() for p in artifact_root.rglob("*")
+        if p.is_symlink() or (not p.is_dir() and not stat.S_ISREG(p.lstat().st_mode))
+    )
+    safe_present = present - set(unsafe_paths)
+    source_byte_mismatches = sorted(
+        p for p in expected if p in safe_present
+        and (sha256(repo_root / p) != sha256(artifact_root / p))
+    )
+    # The byte-provenance gate binds Git modes. Standalone fixtures also obey
+    # the same complete-mode policy; no writable/special-bit variants pass.
+    git_modes = {}
+    if (repo_root / ".git").exists():
+        raw = subprocess.check_output(["git", "-C", str(repo_root), "ls-files", "-s", "-z"])
+        for entry in raw.split(b"\0"):
+            if entry:
+                metadata, name = entry.split(b"\t", 1)
+                mode, _, stage = metadata.decode().split()
+                if stage != "0" or mode not in {"100644", "100755"}:
+                    raise ValueError("ARTIFACT_SOURCE_GIT_MODE_INVALID")
+                git_modes[name.decode()] = 0o755 if mode == "100755" else 0o644
+    source_mode_mismatches, artifact_mode_mismatches = [], []
+    for rel in expected:
+        source_mode = stat.S_IMODE((repo_root / rel).stat().st_mode)
+        wanted = git_modes.get(rel, 0o755 if source_mode & 0o111 else 0o644)
+        if source_mode != wanted:
+            source_mode_mismatches.append(rel)
+        if rel in safe_present and stat.S_IMODE((artifact_root / rel).stat().st_mode) != wanted:
+            artifact_mode_mismatches.append(rel)
+    unexpected_runtime_files = sorted(
+        p for p in present if p not in expected and is_runtime_relevant(p)
+    )
 
     local_modules = root_local_modules(repo_root, expected)
     missing_imports: list[dict[str, str]] = []
     parse_errors: list[dict[str, str]] = []
 
-    for rel in sorted(p for p in present if p.endswith(".py")):
+    for rel in sorted(p for p in safe_present if p.endswith(".py")):
         source = artifact_root / rel
         try:
-            imports = imported_top_levels(source)
+            imports = imported_modules(source, rel)
         except (SyntaxError, UnicodeDecodeError) as exc:
             parse_errors.append({"file": rel, "error": str(exc)})
             continue
         for module in sorted(imports):
-            target = local_modules.get(module)
+            target = local_modules.get(module) or local_modules.get(module.split(".", 1)[0])
+            # An explicit import into an excluded evidence role invalidates
+            # packaging even when the package's public __init__ exists.
+            try:
+                from scripts.porota_artifact_provenance import RAW_EVIDENCE_ROOTS
+            except ModuleNotFoundError:
+                from porota_artifact_provenance import RAW_EVIDENCE_ROOTS
+            if any(root.endswith("/") and (module == root.rstrip("/").replace("/", ".")
+                    or module.startswith(root.rstrip("/").replace("/", ".") + "."))
+                   for root in RAW_EVIDENCE_ROOTS):
+                target = module.replace(".", "/") + ".py"
             if target and target not in present:
                 missing_imports.append(
                     {"file": rel, "module": module, "expected_path": target}
                 )
 
     manifest_files = []
-    for rel in sorted(p for p in present if is_runtime_relevant(p)):
+    for rel in sorted(p for p in safe_present if is_runtime_relevant(p)):
         manifest_files.append(
             {
                 "path": rel,
                 "sha256": sha256(artifact_root / rel),
                 "bytes": (artifact_root / rel).stat().st_size,
+                "mode": format(stat.S_IMODE((artifact_root / rel).stat().st_mode), "04o"),
             }
         )
 
     result = {
         "schema_version": 1,
         "status": "GREEN"
-        if not (missing_runtime or missing_imports or parse_errors)
+        if not (missing_runtime or missing_imports or parse_errors
+                or source_byte_mismatches or source_mode_mismatches
+                or artifact_mode_mismatches or unexpected_runtime_files or unsafe_paths)
         else "FAILED",
         "expected_runtime_files": len(expected),
         "artifact_runtime_files": len(manifest_files),
         "missing_runtime_files": missing_runtime,
+        "source_byte_mismatches": source_byte_mismatches,
+        "source_mode_mismatches": sorted(source_mode_mismatches),
+        "artifact_mode_mismatches": sorted(artifact_mode_mismatches),
+        "unexpected_runtime_files": unexpected_runtime_files,
+        "unsafe_paths": unsafe_paths,
         "missing_local_imports": missing_imports,
         "parse_errors": parse_errors,
         "files": manifest_files,
     }
+    if g5_writer_binding is not None:
+        try:
+            from rc6_shadow_runtime.archive_format_contract import SOURCE_MEMBERS, verify_immutable_artifact_binding
+            qualified=g5_writer_binding
+            if type(g5_writer_binding) is dict and g5_writer_binding.get('schema')=='rc6.g5p-writer-binding.v1':
+                admission=g7_verified_admission
+                if not (type(admission) is dict and admission.get('status')=='GREEN'
+                        and admission.get('target_gate')=='G7'
+                        and admission.get('release_profile')=='PAPER_V3_ONLY'
+                        and admission.get('source_sha')==candidate_sha==g5_writer_binding.get('source_sha')
+                        and admission.get('source_tree')==tree_sha==g5_writer_binding.get('source_tree')
+                        and 'G5P' in admission.get('verified_prerequisites',[])
+                        and 'G5' not in admission['verified_prerequisites']
+                        and g5_writer_binding.get('release_profile')=='PAPER_V3_ONLY'):
+                    raise ValueError('G5P_G7_EXACT_PROFILE_SOURCE_ADMISSION_REQUIRED')
+                qualified=g5_writer_binding.get('writer_codec_restorer_binding')
+            elif g7_verified_admission is not None and g7_verified_admission.get('release_profile')=='PAPER_V3_ONLY':
+                raise ValueError('G5P_TYPED_WRITER_BINDING_REQUIRED')
+            if not set(SOURCE_MEMBERS) <= set(expected) or not set(SOURCE_MEMBERS) <= safe_present:
+                raise ValueError('G5_ARTIFACT_COMPLETE_WRITER_ABI_INVENTORY_REQUIRED')
+            if any((root/name).stat().st_size > 4*1024**2 for root in (repo_root, artifact_root) for name in SOURCE_MEMBERS):
+                raise ValueError('G5_ARTIFACT_WRITER_ABI_MEMBER_BOUND')
+            result['g5_writer_byte_binding'] = verify_immutable_artifact_binding(qualified,
+                source_files={name: (repo_root/name).read_bytes() for name in SOURCE_MEMBERS},
+                artifact_files={name: (artifact_root/name).read_bytes() for name in SOURCE_MEMBERS})
+            if type(g5_writer_binding) is dict and g5_writer_binding.get('schema')=='rc6.g5p-writer-binding.v1':
+                if (qualified.get('native_runtime_archive_format')!='COMPONENT_V3'
+                        or qualified.get('native_v4_write_enabled') is not False
+                        or result['g5_writer_byte_binding'].get('native_v4_write_enabled') is not False):
+                    raise ValueError('G5P_ARTIFACT_EFFECTIVE_V3_AND_V4_BLOCK_REQUIRED')
+                result['g5_writer_byte_binding']['release_profile']='PAPER_V3_ONLY'
+            result['g5_writer_byte_binding'].update(G5_certification_from_metadata_claimed=False,
+                G7_G8_native_execution_still_required=True)
+        except (ValueError, OSError, KeyError, TypeError) as error:
+            result['status'] = 'FAILED'
+            result['g5_writer_byte_binding'] = {'status': 'RED', 'failure_signature': str(error)}
     return result
 
 
@@ -158,12 +274,43 @@ def main() -> int:
     ap.add_argument("--repo-root", default=".")
     ap.add_argument("--artifact-root", required=True)
     ap.add_argument("--manifest-out")
+    ap.add_argument("--source-manifest")
+    ap.add_argument("--image-inspect")
+    ap.add_argument("--candidate-sha")
+    ap.add_argument("--tree-sha")
+    ap.add_argument("--g5-writer-binding", type=Path,
+                    help='Exact G5B Source writer ABI record; proves bytes only, never G5 or deploy approval')
+    ap.add_argument("--g7-verified-admission", type=Path,
+                    help='Exact authenticated G7 admission from this Predeploy job')
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
     artifact_root = Path(args.artifact_root).resolve()
     expected = git_tracked_runtime_files(repo_root)
-    result = validate(repo_root, artifact_root, expected)
+    binding = None
+    if args.g5_writer_binding:
+        if args.g5_writer_binding.stat().st_size > 1024 * 1024:
+            ap.error('--g5-writer-binding exceeds the bounded Source record')
+        binding = json.loads(args.g5_writer_binding.read_bytes())
+    admission=json.loads(args.g7_verified_admission.read_bytes()) if args.g7_verified_admission else None
+    result = validate(repo_root, artifact_root, expected, g5_writer_binding=binding,
+                      g7_verified_admission=admission,candidate_sha=args.candidate_sha,
+                      tree_sha=args.tree_sha)
+    if args.source_manifest:
+        if not args.image_inspect:
+            ap.error("--source-manifest requires --image-inspect")
+        try:
+            from scripts.porota_artifact_provenance import validate_image, ProvenanceError
+        except ModuleNotFoundError:
+            from porota_artifact_provenance import validate_image, ProvenanceError
+        try:
+            result["byte_provenance"] = validate_image(
+                repo_root, artifact_root, Path(args.source_manifest), Path(args.image_inspect),
+                args.candidate_sha, args.tree_sha,
+            )
+        except (ProvenanceError, OSError, KeyError) as exc:
+            result["status"] = "FAILED"
+            result["byte_provenance"] = {"status": "RED", "failure_signature": str(exc)}
 
     payload = json.dumps(result, indent=2, sort_keys=True)
     if args.manifest_out:
@@ -180,6 +327,12 @@ def main() -> int:
         print("POROTA_ARTIFACT_INTEGRITY=FAILED_IMPORT_CLOSURE", file=sys.stderr)
     if result["parse_errors"]:
         print("POROTA_ARTIFACT_INTEGRITY=FAILED_PARSE", file=sys.stderr)
+    if result["source_byte_mismatches"] or result["unexpected_runtime_files"] or result["unsafe_paths"]:
+        print("POROTA_ARTIFACT_INTEGRITY=FAILED_SOURCE_BYTES", file=sys.stderr)
+    if result.get("byte_provenance", {}).get("status") == "RED":
+        print("POROTA_ARTIFACT_INTEGRITY=FAILED_BYTE_PROVENANCE", file=sys.stderr)
+    if result.get('g5_writer_byte_binding', {}).get('status') == 'RED':
+        print('POROTA_ARTIFACT_INTEGRITY=FAILED_G5_WRITER_ABI', file=sys.stderr)
     return 1
 
 

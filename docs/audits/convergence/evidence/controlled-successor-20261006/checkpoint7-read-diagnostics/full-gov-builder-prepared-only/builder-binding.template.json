@@ -1,0 +1,29 @@
+{
+  "DEPLOY_OWNER": "NOT_ACQUIRED",
+  "GitHub_authority_file": "<NEW_FRESH_CANONICAL_GITHUB_PREPARATION_AUTHORITY_FILE>",
+  "GitHub_authority_sha256": "<ORIGINAL_AUTHORITY_BYTES_SHA256>",
+  "PAPER_SHADOW_ONLY": true,
+  "builder_sha256": "03d08c3f362b12da70defa8f1e2388373d41e20a4ffc08e46f48fb9691667738",
+  "clone_transport": "<OWNED_NORMAL_FULL_GIT_ROOT_SOURCE_OR_CANONICAL_HTTPS_ORIGIN>",
+  "instruction": "Root fills NEW O_EXCL bytes after final ref published; stage FINAL_GITHUB_SOURCE_PREPARATION_AUTHORIZED_ONLY permits construction/preflight only, not Gov or pytest.",
+  "manager": {
+    "git_blob": "b221f59f4edbb7b04097aec57e91ffbef648100e",
+    "path": "scripts/rc6_controlled_native_child_manager.py",
+    "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
+  },
+  "manager_source_root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source",
+  "native_runner": {
+    "git_blob": "<EXACT_FINAL_SOURCE_NATIVE_BLOB_FROM_GITHUB_TREE>",
+    "path": "scripts/rc6_controlled_governed_runner.py",
+    "sha256": "a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47"
+  },
+  "new_namespace_parent": "/workspace/scratch",
+  "original_object_transport": "<EXPLICIT_OWNED_CANONICALLY_VERIFIED_ROOT_GIT_MIRROR_OR_CANONICAL_HTTPS_ORIGIN>",
+  "preparation_receipt_url": "<ROOT_DURABLE_FINAL_SOURCE_PREPARATION_RECEIPT_471>",
+  "real_orders_sent": 0,
+  "repo_id": 1338680554,
+  "schema": "rc6.fullGov.builder-preparation-binding-template.v1",
+  "source_sha": "<PUBLISHED_FINAL_PR_HEAD_SHA40>",
+  "source_tree": "<PUBLISHED_FINAL_PR_HEAD_TREE40>",
+  "stage": "PREPARED_NOT_AUTHORIZED_NO_CLONES"
+}

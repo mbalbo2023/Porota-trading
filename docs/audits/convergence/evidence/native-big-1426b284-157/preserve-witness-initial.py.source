@@ -1,0 +1,158 @@
+import gzip
+import hashlib
+import json
+import os
+import stat
+from pathlib import Path
+
+REPO = Path('/workspace/porota_rc6_convergence')
+REL = Path('docs/audits/convergence/evidence/native-big-1426b284-157')
+DEST = REPO / REL
+BASE = '/workspace/rc6-canonical-1426b284-big-20261005'
+RAW = BASE + '-raw'
+PIN = BASE + '-source-raw'
+DISPATCH = BASE + '-dispatch'
+SHA = '1426b2844c06b164aa08b765e01676f19845a192'
+TREE = '983f5a1d3f38edf671eab7d5420bbffdc93ffea2'
+FIELDS = ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink',
+          'st_size', 'st_blocks', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')
+
+
+def metadata(value):
+    return {key: getattr(value, key) for key in FIELDS}
+
+
+def read(root, relative, limit=32 * 1024**2):
+    # Open every ancestor through a descriptor, and use NOATIME for the owned
+    # final directory/file. No enumeration, DATA open or symlink traversal.
+    parts = Path(root).parts
+    directory = os.open('/', os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        for index, part in enumerate(parts[1:]):
+            final = index == len(parts[1:]) - 1
+            flags = os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+            flags |= (os.O_RDONLY | os.O_NOATIME) if final else os.O_PATH
+            next_directory = os.open(part, flags, dir_fd=directory)
+            os.close(directory)
+            directory = next_directory
+        before = metadata(os.stat(relative, dir_fd=directory, follow_symlinks=False))
+        assert stat.S_ISREG(before['st_mode']) and before['st_nlink'] == 1
+        assert before['st_uid'] == os.geteuid() and before['st_size'] <= limit
+        descriptor = os.open(relative, os.O_RDONLY | os.O_NOATIME | os.O_NOFOLLOW
+                             | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=directory)
+        try:
+            assert before == metadata(os.fstat(descriptor))
+            chunks = []
+            while chunk := os.read(descriptor, 1024**2):
+                chunks.append(chunk)
+            body = b''.join(chunks)
+            assert len(body) == before['st_size']
+            assert before == metadata(os.fstat(descriptor))
+        finally:
+            os.close(descriptor)
+        assert before == metadata(os.stat(relative, dir_fd=directory, follow_symlinks=False))
+        return body, before
+    finally:
+        os.close(directory)
+
+
+assert not DEST.exists()
+index_body, _ = read(PIN, 'source.index.json')
+result_body, _ = read(RAW, 'native-big-result.json')
+final_body, _ = read(RAW, 'wrapper-final.json')
+pin, result, final = map(json.loads, (index_body, result_body, final_body))
+assert pin['source_sha'] == final['source_sha'] == SHA
+assert pin['source_tree'] == final['source_tree'] == TREE
+assert final['returncode'] == 1 and final['native_launcher_reaped']
+assert final['native_pid'] == 236743 and final['external_parent_pid'] == 236738
+assert final['whole_source_namespace_bytes_modes_stable_stats_mounts_unchanged']
+assert final['distribution_count'] == 157 and not final['diagnostic_only']
+assert final['native_result_sha256'] == hashlib.sha256(result_body).hexdigest()
+assert not result['business_resource_complete'] and not result['import_proof_complete']
+assert not result['resource_gates']['complete_committed_cycle']
+assert result['source_custody_before'] == result['source_custody_after']
+assert set(result['source_custody_before']['']) == set(FIELDS) | {'sha256'}
+assert result['import_provenance']['launcher_pid'] == final['native_pid']
+assert result['import_provenance']['launcher_parent_pid'] == final['external_parent_pid']
+assert result['import_provenance']['worker_pid'] == 236749
+assert result['import_provenance']['worker_final'] is None
+assert not result['import_provenance']['transient_closure_verified']
+DEST.mkdir(mode=0o755)
+inputs = [(RAW, name, name, False) for name in (
+    'entry-preflight.json', 'wrapper-before.json', 'wrapper-final.json', 'native-big-result.json')]
+inputs += [(RAW, name, name + '.gz', True) for name in (
+    'source-custody-before.json', 'source-custody-after.json', 'big.log')]
+inputs += [(PIN, 'source.index.json', 'source.index.json.gz', True),
+           ('/workspace', Path(BASE + '-wrapper.py').name, 'run-wrapper.py.source', False),
+           ('/workspace', 'rc6_prepare_native_big_wrapper_v2.py', 'prepare-wrapper.py.source', False),
+           ('/tmp', 'rc6_export_whole_git_source.py', 'export-whole-source.py.source', False),
+           ('/tmp', Path(__file__).name, 'preserve-witness.py.source', False)]
+inputs += [(DISPATCH, name, name, False) for name in (
+    'dispatch.sh', 'dispatch.source-only.json', 'export.stdout', 'export.stderr',
+    'generator.stdout', 'generator.stderr', 'wrapper.stdout', 'wrapper.stderr')]
+records = []
+for root, relative, name, compressed in inputs:
+    body, snapshot = read(root, relative)
+    wire = gzip.compress(body, compresslevel=9, mtime=0) if compressed else body
+    if compressed:
+        assert gzip.decompress(wire) == body
+    target = DEST / name
+    target.write_bytes(wire)
+    os.chmod(target, 0o644)
+    records.append(dict(path=str(REL / name), capture_path=str(Path(root) / relative),
+        origin_root=root, origin_relative=relative, bytes=len(wire),
+        sha256=hashlib.sha256(wire).hexdigest(), original_bytes=len(body),
+        original_sha256=hashlib.sha256(body).hexdigest(),
+        encoding='gzip-mtime0' if compressed else 'identity', stored_git_mode='100644',
+        original_stat_at_preservation=snapshot, all11stats_preserved_during_copy=True))
+by_name = {Path(row['path']).name: row for row in records}
+assert by_name['prepare-wrapper.py.source']['original_sha256'] == 'c8f872b75544eb5102a0c769847a8ad51872aa3a920fe204b3c78ab41a8a7bfb'
+assert by_name['export-whole-source.py.source']['original_sha256'] == '4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa'
+assert by_name['run-wrapper.py.source']['original_sha256'] == '75d03bbde61250524082d861679461ade26e531e6c656e6f00adb1b023f73a87'
+shadow = result['shadow']
+custody = dict(schema='rc6.native-big-whole-source-witness-custody.v3',
+    scope='INTERMEDIATE_INTEGRATED_ROOT_CANONICAL_BIG_NOT_FINAL_GOV_HORIZON_BROWSER_ARTIFACT_OR_RUNTIME',
+    source_sha=SHA, source_tree=TREE, source_files=len(pin['files']), source_overlay_count=0,
+    source_index_sha256=hashlib.sha256(index_body).hexdigest(),
+    source_tar_sha256=pin['tar_sha256'], source_tar_capture_path=str(Path(PIN) / 'source.tar'),
+    external_source_tar_not_copied_into_git=True, native_returncode=1,
+    actual_launcher_pid=236743, actual_wrapper_parent_pid=236738,
+    actual_worker_pid=236749, actual_worker_exitcode=-15,
+    native_launcher_wait4_reaped=True,
+    native_launcher_peak_rss_bytes=final['native_launcher_peak_rss_bytes'],
+    native_launcher_resource_scope=final['native_launcher_resource_scope'],
+    wrapper_native_lifetime_wall_seconds=final['wrapper_native_lifetime_wall_seconds'],
+    whole_source_bytes_modes_blobs_stable_ten_stats_namespace_mounts_unchanged=True,
+    whole_source_all11_between_phases_unchanged_claimed=False,
+    observed_code_atime_phase_changes=final['observed_code_atime_phase_changes'],
+    post_reap_source_custody_authority_record=str(REL / 'wrapper-final.json'),
+    post_reap_custody_record_has_no_standalone_pid_or_reap_claim=True,
+    native_import_proof_requested=True, native_import_proof_complete=False,
+    native_import_proof_status=result['import_provenance']['status'],
+    native_import_observation_scope=result['import_provenance']['scope'],
+    parent_final_import_proof_status=result['import_provenance']['parent_final']['status'],
+    worker_final_import_receipt_missing=True,
+    prior_big_native_import_receipts_retroactively_qualified=False,
+    distribution_count=157, installed_distribution_bytes_authenticated=False,
+    optional_diagnostic_gc_observer_enabled=False, original_gc_policy_unchanged=True,
+    original_cycle_deadline_seconds=90, native_resource_gates=result['resource_gates'],
+    source_database_all11stats_sha_unchanged=True,
+    actually_measured_source_database_stat_fields=list(FIELDS),
+    source_database_scope='Present PRIMARY MAIN only; absent WAL/SHM/journal are not physical sidecar positive cases.',
+    actual_slow_fsync_exit_isolation_proven=result['slow_fsync_exit_isolation_proven'],
+    actual_factual_exits=result['factual_exits'], actual_slow_fsync=shadow['fsync'],
+    native_last_progress_elapsed_seconds=shadow['elapsed_seconds'],
+    native_last_progress_cpu_seconds=shadow['cpu_seconds'],
+    native_phases=shadow['phases'], native_completed_handler_spans=shadow['handler_resources'],
+    business_resource_complete=False, import_proof_complete=False,
+    cycle_complete=False, child_cleanup_complete=False, acceptance_complete=False,
+    artifact_validated=False, runtime_validated=False, horizon_validated=False, browser_validated=False,
+    remaining_blocker='ORIGINAL_90S_PREOPEN_OPEN_CYCLE_INCOMPLETE_AND_IMPORT_PROOF_UNVERIFIED',
+    timer_scope='Only BOUNDED_READ completed as a phase. Handler spans are inclusive, partial and overlap; no completed PREOPEN or OPEN and no causal percentage saving.',
+    external_wrapper_provenance='Exact generator output pinned wrapper SHA in captured prelaunch generator.stdout; dispatch source-only pins exporter and generator before export.',
+    raw_records=records)
+body = (json.dumps(custody, sort_keys=True, indent=2) + '\n').encode()
+(DEST / 'CUSTODY.json').write_bytes(body)
+os.chmod(DEST / 'CUSTODY.json', 0o644)
+print(json.dumps(dict(paths=len(records)+1, custody_sha256=hashlib.sha256(body).hexdigest(),
+    native_complete=False, import_proof_complete=False, protected_primary_stat_count=11)))

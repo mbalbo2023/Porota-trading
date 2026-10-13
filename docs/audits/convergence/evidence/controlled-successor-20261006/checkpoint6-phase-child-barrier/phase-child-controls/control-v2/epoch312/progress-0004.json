@@ -1,0 +1,10 @@
+{
+  "case": "new_positive",
+  "epoch": "312",
+  "management_deadline": 28930.916349486,
+  "owned_log_bytes_fstat_only": 0,
+  "pid": 33312,
+  "scope": "ACTUAL_COMPONENT_MANAGER_ONLY",
+  "stage": "started",
+  "wall_seconds": 0.0005399590008892119
+}

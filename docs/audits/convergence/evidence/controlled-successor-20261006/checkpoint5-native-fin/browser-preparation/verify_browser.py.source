@@ -1,0 +1,83 @@
+import datetime,hashlib,json,os,pathlib,socket,stat,subprocess,sys
+OUT=pathlib.Path('/workspace/scratch/rc6driver-kba25cdt');CACHE=OUT/'browser-cache';DRIVER=OUT/'driver-env'
+def stream_hash(path):
+ fd=os.open(path,os.O_RDONLY|os.O_NOATIME|os.O_NOFOLLOW|os.O_NONBLOCK);h=hashlib.sha256()
+ with os.fdopen(fd,'rb') as f:
+  before=os.fstat(f.fileno());size=0
+  while True:
+   data=f.read(1024*1024)
+   if not data:break
+   size+=len(data);h.update(data)
+  after=os.fstat(f.fileno())
+  assert size==before.st_size and all(getattr(before,k)==getattr(after,k) for k in ('st_size','st_mtime_ns','st_ctime_ns','st_ino','st_dev','st_mode'))
+ return h.hexdigest(),size
+FIELDS=('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size','st_blocks','st_atime_ns','st_mtime_ns','st_ctime_ns')
+def publish(name,obj):
+ raw=(json.dumps(obj,sort_keys=True,indent=2)+'\n').encode();p=OUT/'receipts'/name
+ with p.open('xb') as f:f.write(raw)
+ p.chmod(0o600);return hashlib.sha256(raw).hexdigest()
+observations={'inet_operation_attempts':[],'inet_constructor_requests':[],'subprocess_names':[],'audit_witnessed':False}
+witness=object()
+def audit(event,args):
+ if event=='rc6.driver.preparation.network_audit' and args==(witness,):observations['audit_witnessed']=True
+ if event=='socket.__new__' and args[1] in (socket.AF_INET,socket.AF_INET6):observations['inet_constructor_requests'].append(int(args[1]))
+ if event in ('socket.getaddrinfo','socket.gethostbyname','socket.gethostbyaddr') or event in ('socket.connect','socket.bind','socket.sendto','socket.sendmsg') and getattr(args[0],'family',None) in (socket.AF_INET,socket.AF_INET6):
+  observations['inet_operation_attempts'].append(event);raise RuntimeError('PREPARATION_LOOKUP_INET_FORBIDDEN')
+ if event=='subprocess.Popen':
+  name=os.path.basename(os.fsdecode(args[0]));observations['subprocess_names'].append(name)
+  if name in ('curl','wget','ssh','scp','sftp','nc','ncat','socat','telnet','apt','apt-get','chromium','chrome','chrome-headless-shell','headless_shell'):
+   raise RuntimeError('BROWSER_RUN_HOST_OR_NETWORK_CLIENT_NOT_AUTHORIZED')
+sys.addaudithook(audit);sys.audit('rc6.driver.preparation.network_audit',witness);assert observations['audit_witnessed']
+try:
+ assert pathlib.Path(sys.prefix).resolve()==DRIVER.resolve()
+ # Normal API queries the packaged driver over its usual pipe and closes it.
+ # No browser launch method is called.
+ from playwright.sync_api import sync_playwright
+ with sync_playwright() as playwright:
+  normal_full_executable=pathlib.Path(playwright.chromium.executable_path).resolve()
+ assert normal_full_executable.is_relative_to(CACHE)
+ dirs={p.name for p in CACHE.iterdir() if p.is_dir()}
+ assert dirs=={'.links','chromium-1234','chromium_headless_shell-1234','ffmpeg-1011'}
+ expected={'chromium':CACHE/'chromium-1234/chrome-linux64/chrome','chromium-headless-shell':CACHE/'chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell','ffmpeg':CACHE/'ffmpeg-1011/ffmpeg-linux'}
+ assert normal_full_executable==expected['chromium']
+ files={};directories={};total=0
+ for path in sorted(CACHE.rglob('*')):
+  st=path.lstat();assert not path.is_symlink() and st.st_uid==os.geteuid() and st.st_dev==CACHE.lstat().st_dev
+  relative=str(path.relative_to(CACHE))
+  if stat.S_ISDIR(st.st_mode):directories[relative]={k:getattr(st,k) for k in FIELDS}
+  else:
+   assert stat.S_ISREG(st.st_mode) and st.st_nlink==1
+   digest,size=stream_hash(path);total+=size
+   files[relative]={'sha256':digest,'bytes':size,'stat':{k:getattr(st,k) for k in FIELDS}}
+ inventory_sha=publish('browser-cache-inventory.json',{'files':files,'directories':directories,'total_bytes':total,'namespace_aliases':0,'regular_file_hardlinks':0,'raw_download_archives_retained':False,'raw_download_archive_digests_not_claimed':True})
+ binaries=[];missing=[]
+ for role,path in expected.items():
+  st=path.lstat();assert stat.S_ISREG(st.st_mode) and st.st_mode&0o111 and st.st_nlink==1
+  fd=os.open(path,os.O_RDONLY|os.O_NOATIME|os.O_NOFOLLOW)
+  with os.fdopen(fd,'rb') as f:assert f.read(4)==b'\x7fELF'
+  result=subprocess.run(['/usr/bin/ldd',str(path)],cwd=OUT,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20,check=False)
+  text=result.stdout.decode('utf-8',errors='replace')
+  log=OUT/'logs'/('ldd-'+role+'.log')
+  with log.open('xb') as f:f.write(result.stdout)
+  log.chmod(0o600)
+  static='not a dynamic executable' in text or 'statically linked' in text
+  valid=(result.returncode==0 or static) and 'not found' not in text
+  if not valid:missing.append({'role':role,'returncode':result.returncode,'missing_library_lines':[line.strip() for line in text.splitlines() if 'not found' in line]})
+  relative=str(path.relative_to(CACHE))
+  binaries.append({'role':role,'path':str(path),'revision':'1011' if role=='ffmpeg' else '1234','browser_version':None if role=='ffmpeg' else '151.0.7922.34','sha256':files[relative]['sha256'],'bytes':files[relative]['bytes'],'mode':st.st_mode,'normal_default_full_chromium_api_lookup':role=='chromium','headless_binary_not_executed':role=='chromium-headless-shell','ldd_returncode':result.returncode,'ldd_static':static,'ldd_log_path':str(log),'ldd_log_sha256':hashlib.sha256(result.stdout).hexdigest(),'no_linked_library_missing':valid})
+ # Revalidate installed wheel files after Node/CLI preparation, not metadata alone.
+ record=json.loads((OUT/'receipts/driver-record-inventory.json').read_text())
+ record_changed=[]
+ for entry in record:
+  path=pathlib.Path(entry['path']);digest,size=stream_hash(path)
+  if digest!=entry['sha256'] or size!=entry['bytes'] or path.lstat().st_mode!=entry['mode'] or path.lstat().st_nlink!=entry['nlink']:record_changed.append(entry['path'])
+ assert not record_changed and not observations['inet_operation_attempts']
+ result={'status':'GREEN_BROWSER_ASSET_PREPARATION_ONLY' if not missing else 'RED_MISSING_HOST_LIBRARIES','gate_qualified':False,'browser_gate_run':False,'browser_launch_called':False,'actual_browser_runtime_pid_bound':False,'browser_binary_runtime_capability_not_claimed_from_ldd':True,'recorded_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'driver_executable':sys.executable,'normal_full_chromium_lookup':str(normal_full_executable),'default_headless_shell_physical_binding':str(expected['chromium-headless-shell']),'browser_cache':str(CACHE),'cache_inventory_sha256':inventory_sha,'cache_file_count':len(files),'cache_directory_count':len(directories),'cache_total_bytes':total,'binaries':binaries,'missing_libraries':missing,'driver_record_entries_unchanged':len(record),'driver_record_changed':record_changed,'product_source_modules_imported':False,'network_audit':observations,'network_audit_scope':'THIS_PREPARATION_PYTHON_PROCESS_DNS_INET_OPERATIONS_AND_KNOWN_SUBPROCESS_NAMES; NOT_BINARY_KERNEL_OR_TRANSITIVE_ISOLATION','system_chromium_node_or_module_override':False,'apt_or_host_mutation':False}
+ receipt=publish('browser-assets-validation.json',result)
+ print(json.dumps({'status':result['status'],'receipt_sha256':receipt,'cache_files':len(files),'cache_bytes':total,'binary_hashes':{x['role']:x['sha256'] for x in binaries},'missing_libraries':missing,'browser_launch_called':False}),flush=True)
+ sys.exit(0 if not missing else 1)
+except BaseException as error:
+ if isinstance(error,SystemExit):raise
+ receipt=publish('browser-assets-red.json',{'status':'RED','exception_class':type(error).__name__,'network_audit':observations,'browser_launch_called':False,'guard_relaxed':False})
+ print(json.dumps({'status':'RED','exception_class':type(error).__name__,'receipt_sha256':receipt}),flush=True)
+ raise

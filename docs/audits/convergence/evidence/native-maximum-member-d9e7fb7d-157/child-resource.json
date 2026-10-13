@@ -1,0 +1,21 @@
+{
+  "cpu_system_seconds": 15.412699,
+  "cpu_total_seconds": 124.118555,
+  "cpu_user_seconds": 108.705856,
+  "elapsed_wall_seconds": 126.48997383800452,
+  "input_blocks": 0,
+  "involuntary_context_switches": 1232,
+  "major_page_faults": 0,
+  "minor_page_faults": 3669860,
+  "outer_timed_out": false,
+  "output_blocks": 325672,
+  "pid": 201358,
+  "real_peak_rss_bytes": 340795392,
+  "returncode": 0,
+  "ru_maxrss_native_unit": "LINUX_KIBIBYTES",
+  "schema": "rc6.native-child-linux-wait4-rusage.v1",
+  "scope": "EXACT_DIRECT_NATIVE_PYTHON_CHILD_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; RSS_IS_KERNEL_HIGH_WATER_NOT_SUM_OF_SIMULTANEOUS_PROCESSES",
+  "source_sha": "d9e7fb7d567ff745193c125dc9cd8df4e91ec5d6",
+  "source_tree": "95a95d65fe18f1fbe8f108d582d984ee3e7355ac",
+  "voluntary_context_switches": 4841
+}

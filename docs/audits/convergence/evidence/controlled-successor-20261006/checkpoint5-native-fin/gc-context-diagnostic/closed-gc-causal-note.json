@@ -1,0 +1,751 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "PPI_Watch": "UNTOUCHED",
+  "canonical_BIG_qualified": false,
+  "closed_RAW_index": {
+    "bytes": 14148,
+    "excludes": "DB,Source_clone",
+    "member_count": 27,
+    "member_fields": "relative_filename,sha256,bytes,all11stat",
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-contextual-gc-plan-2e48-mi933bw3/closed-raw-index.json",
+    "raw_member_bytes": 26663810,
+    "sha256": "e410400cf811dbb45c6f7bd523ac97534c3701fdbb6f640558f71f3cf8b5440d"
+  },
+  "conclusions": [
+    "Clean original families0.5 RED was not reproduced. This instrumented run reached PREOPEN_COMMITTED and later failed OPEN dynamic_universe.read_runtime at source readonly_copy post-yield check164 with TIME_BUDGET_EXHAUSTED.",
+    "Inside families._read:68pairs,63generation0+5generation1,0generation2; observed start-stop total9.793242ms; no associated deadline crossing.",
+    "Two generation2 collections0.423264309s and0.416770453s occurred at family_reports522 after _read returned. Full handler1.606397570s is not its bounded SQL read duration.",
+    "No active sqlite_snapshot GC frame and no native universe/read_runtime ENTER/EXIT records were observed. No exact runtime read window/deadline or causal GC join is invented.",
+    "No Source performance fix, GC policy change, budget relaxation, retry, or qualification is justified."
+  ],
+  "custody": {
+    "Source_atime_change_count": {
+      "clone": 85,
+      "original_export": 0
+    },
+    "Source_bytes_modes_rawGit_code10_preserved": true,
+    "native_fixture_before_equals_after": true,
+    "native_fixture_fields": [
+      "sha256",
+      "st_atime_ns",
+      "st_blocks",
+      "st_ctime_ns",
+      "st_dev",
+      "st_gid",
+      "st_ino",
+      "st_mode",
+      "st_mtime_ns",
+      "st_nlink",
+      "st_size",
+      "st_uid"
+    ],
+    "native_fixture_main_bytes": 23162880,
+    "native_fixture_sha256": "4d9997f2753a78fa497b53072a5912fe36c76d73b6d87cb3c5437cf371391e77",
+    "original_and_native_fixture_Data_all11_preserved": true,
+    "original_frozen_DB_not_SQL_opened_by_this_diagnosis": true
+  },
+  "final_candidate_eligible": false,
+  "limits": [
+    "Instrumented allocation/IO may shift GC positions; original clean BIG is not reclassified",
+    "No exact intrinsic collector cost or unobserved read start/end is claimed",
+    "No family GC in this diagnosis does not prove absent GC in original canonical BIG",
+    "GC start-to-stop contains start-callback body; stop-body lies after stop. Cost records are lower bounds, not subtracted for qualification.",
+    "Callback allocations/frame-local observation/JSONL IO can shift GC positions. Positive or absent instrumental observations cannot reclassify the original clean BIG.",
+    "Callback-body lower bounds overlap start-stop spans and are not added/subtracted for a gate claim.",
+    "No SQL/profiler/tracer/function replacement/GC-policy change or source mutation occurred in this diagnostic."
+  ],
+  "native_import_qualified": false,
+  "network": {
+    "IPv6_constructor_requests_not_individual_kernel_results": true,
+    "binary_kernel_transitive_network_closure_not_claimed": true,
+    "external_main_worker_Python_windows": {
+      "process-25509/inet-audit-final.json": {
+        "inet_socket_attempts": [],
+        "inet_socket_constructor_requests": [
+          {
+            "capability_policy": "NATIVE_IPV6_CREATION_DENIED_EAFNOSUPPORT; SUPPLIED_DESCRIPTORS_NOT_ATTESTED",
+            "event": "socket.__new__",
+            "family": 10,
+            "observation_scope": "PYTHON_CONSTRUCTOR_FAMILY_REQUEST_NOT_INDIVIDUAL_KERNEL_RESULT"
+          },
+          {
+            "capability_policy": "NATIVE_IPV6_CREATION_DENIED_EAFNOSUPPORT; SUPPLIED_DESCRIPTORS_NOT_ATTESTED",
+            "event": "socket.__new__",
+            "family": 10,
+            "observation_scope": "PYTHON_CONSTRUCTOR_FAMILY_REQUEST_NOT_INDIVIDUAL_KERNEL_RESULT"
+          }
+        ],
+        "subprocess_executable_counts": {
+          "git": 4
+        }
+      },
+      "process-25515/inet-audit-final.json": {
+        "inet_socket_attempts": [],
+        "inet_socket_constructor_requests": [],
+        "subprocess_executable_counts": {}
+      }
+    },
+    "guarded_operation_attempts_observed": 0,
+    "native_ipv6_capabilities": {
+      "collection.offline-capability.json": {
+        "af_unix_ipc_functional": true,
+        "architecture": "x86_64",
+        "creation_denial_witnesses": [
+          {
+            "errno": 97,
+            "family": 10,
+            "operation": "socket_creation",
+            "socket_created": false
+          }
+        ],
+        "ipv4_creation_grants_operation_authority": false,
+        "kernel_errno": 97,
+        "native_socket_creation_denied_families": [
+          10
+        ],
+        "no_new_privileges": true,
+        "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+        "status": "INSTALLED_AND_KERNEL_WITNESSED",
+        "transitive_kernel_network_attestation": false
+      },
+      "process-25509/offline-capability.json": {
+        "af_unix_ipc_functional": true,
+        "architecture": "x86_64",
+        "creation_denial_witnesses": [
+          {
+            "errno": 97,
+            "family": 10,
+            "operation": "socket_creation",
+            "socket_created": false
+          }
+        ],
+        "ipv4_creation_grants_operation_authority": false,
+        "kernel_errno": 97,
+        "native_socket_creation_denied_families": [
+          10
+        ],
+        "no_new_privileges": true,
+        "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+        "status": "INSTALLED_AND_KERNEL_WITNESSED",
+        "transitive_kernel_network_attestation": false
+      },
+      "process-25515/offline-capability.json": {
+        "af_unix_ipc_functional": true,
+        "architecture": "x86_64",
+        "creation_denial_witnesses": [
+          {
+            "errno": 97,
+            "family": 10,
+            "operation": "socket_creation",
+            "socket_created": false
+          }
+        ],
+        "ipv4_creation_grants_operation_authority": false,
+        "kernel_errno": 97,
+        "native_socket_creation_denied_families": [
+          10
+        ],
+        "no_new_privileges": true,
+        "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+        "status": "INSTALLED_AND_KERNEL_WITNESSED",
+        "transitive_kernel_network_attestation": false
+      }
+    },
+    "supervisor_Python_window": {
+      "inet_socket_attempts": [],
+      "inet_socket_constructor_requests": [],
+      "subprocess_executable_counts": {
+        "git": 4,
+        "python": 1
+      }
+    },
+    "zero_total_network_attempts_not_claimed": true
+  },
+  "original_limits": {
+    "cleanup_seconds": 5,
+    "direct_parent_management_seconds": 300,
+    "evidence_bytes": 134217728,
+    "native_cycle_seconds": 90,
+    "read_seconds": 0.5,
+    "rss_bytes": 2147483648
+  },
+  "passive_GC": {
+    "active_snapshot_frame_GC_events_observed": 0,
+    "all_pairs": 13137,
+    "family_handler_GC": {
+      "0": {
+        "callback_body_lower_bound_wall_seconds": 0.07716656400000003,
+        "max_observed_start_stop_wall_seconds": 0.0007875960000092164,
+        "observed_start_stop_cpu_seconds": 0.06824274500008443,
+        "observed_start_stop_wall_seconds": 0.0682373059753445,
+        "pairs": 563
+      },
+      "1": {
+        "callback_body_lower_bound_wall_seconds": 0.007744111999999999,
+        "max_observed_start_stop_wall_seconds": 0.0012598059984156862,
+        "observed_start_stop_cpu_seconds": 0.032247039000006694,
+        "observed_start_stop_wall_seconds": 0.03229081099561881,
+        "pairs": 51
+      },
+      "2": {
+        "callback_body_lower_bound_wall_seconds": 0.000953541,
+        "max_observed_start_stop_wall_seconds": 0.42326430899993284,
+        "observed_start_stop_cpu_seconds": 0.8399867350000001,
+        "observed_start_stop_wall_seconds": 0.8400347620008688,
+        "pairs": 2
+      }
+    },
+    "family_read_GC": {
+      "0": {
+        "callback_body_lower_bound_wall_seconds": 0.007551738000000002,
+        "max_observed_start_stop_wall_seconds": 0.00026861700098379515,
+        "observed_start_stop_cpu_seconds": 0.007223717999995216,
+        "observed_start_stop_wall_seconds": 0.007224878994747996,
+        "pairs": 63
+      },
+      "1": {
+        "callback_body_lower_bound_wall_seconds": 0.000844902,
+        "max_observed_start_stop_wall_seconds": 0.0006746689978172071,
+        "observed_start_stop_cpu_seconds": 0.0025687230000013273,
+        "observed_start_stop_wall_seconds": 0.0025683630010462366,
+        "pairs": 5
+      }
+    },
+    "family_read_GC_span_cpu_seconds": 0.009792440999996543,
+    "family_read_GC_span_wall_seconds": 0.009793241995794233,
+    "family_read_pair_count": 68,
+    "generation2_family_reports_after_read": [
+      {
+        "callback_cost_start": {
+          "lower_bound_not_total_callback_overhead": true,
+          "observed_cpu_seconds": 0.000135471,
+          "observed_wall_seconds": 0.000135981,
+          "pid": 25515,
+          "record_kind": "GC_CALLBACK_BODY_COST",
+          "scope": "CALLBACK_BODY_THROUGH_PRIMARY_GC_EVENT_WRITE; EXCLUDES_DISPATCH_AND_THIS_COST_RECORD_WRITE",
+          "sequence": 6555
+        },
+        "callback_cost_stop": {
+          "lower_bound_not_total_callback_overhead": true,
+          "observed_cpu_seconds": 0.000301988,
+          "observed_wall_seconds": 0.000306053,
+          "pid": 25515,
+          "record_kind": "GC_CALLBACK_BODY_COST",
+          "scope": "CALLBACK_BODY_THROUGH_PRIMARY_GC_EVENT_WRITE; EXCLUDES_DISPATCH_AND_THIS_COST_RECORD_WRITE",
+          "sequence": 6556
+        },
+        "generation": 2,
+        "observed_interval_cpu_seconds": 0.41677206600000005,
+        "observed_interval_wall_seconds": 0.41677045300093596,
+        "overlap_exact_family_handler_windows_seconds": [
+          0.41677045300093596
+        ],
+        "pid": 25515,
+        "start": 25704.230440025,
+        "start_numeric_context": {
+          "frames_examined_bound32": 15,
+          "original_active_families_handler": {
+            "entered_at_monotonic": 25703.882040467,
+            "entered_at_process_cpu": 15.604707233,
+            "line": 332
+          },
+          "original_families_family_reports": {
+            "function": "family_reports",
+            "line": 522
+          }
+        },
+        "start_sequence": 6555,
+        "stop": 25704.647210478,
+        "stop_numeric_context": {
+          "frames_examined_bound32": 15,
+          "original_active_families_handler": {
+            "entered_at_monotonic": 25703.882040467,
+            "entered_at_process_cpu": 15.604707233,
+            "line": 332
+          },
+          "original_families_family_reports": {
+            "function": "family_reports",
+            "line": 522
+          }
+        },
+        "stop_sequence": 6556
+      },
+      {
+        "callback_cost_start": {
+          "lower_bound_not_total_callback_overhead": true,
+          "observed_cpu_seconds": 7.1036e-05,
+          "observed_wall_seconds": 7.1275e-05,
+          "pid": 25515,
+          "record_kind": "GC_CALLBACK_BODY_COST",
+          "scope": "CALLBACK_BODY_THROUGH_PRIMARY_GC_EVENT_WRITE; EXCLUDES_DISPATCH_AND_THIS_COST_RECORD_WRITE",
+          "sequence": 7037
+        },
+        "callback_cost_stop": {
+          "lower_bound_not_total_callback_overhead": true,
+          "observed_cpu_seconds": 0.000435526,
+          "observed_wall_seconds": 0.000440232,
+          "pid": 25515,
+          "record_kind": "GC_CALLBACK_BODY_COST",
+          "scope": "CALLBACK_BODY_THROUGH_PRIMARY_GC_EVENT_WRITE; EXCLUDES_DISPATCH_AND_THIS_COST_RECORD_WRITE",
+          "sequence": 7038
+        },
+        "generation": 2,
+        "observed_interval_cpu_seconds": 0.42321466900000004,
+        "observed_interval_wall_seconds": 0.42326430899993284,
+        "overlap_exact_family_handler_windows_seconds": [
+          0.42326430899993284
+        ],
+        "pid": 25515,
+        "start": 25704.863049462,
+        "start_numeric_context": {
+          "frames_examined_bound32": 15,
+          "original_active_families_handler": {
+            "entered_at_monotonic": 25703.882040467,
+            "entered_at_process_cpu": 15.604707233,
+            "line": 332
+          },
+          "original_families_family_reports": {
+            "function": "family_reports",
+            "line": 522
+          }
+        },
+        "start_sequence": 7037,
+        "stop": 25705.286313771,
+        "stop_numeric_context": {
+          "frames_examined_bound32": 15,
+          "original_active_families_handler": {
+            "entered_at_monotonic": 25703.882040467,
+            "entered_at_process_cpu": 15.604707233,
+            "line": 332
+          },
+          "original_families_family_reports": {
+            "function": "family_reports",
+            "line": 522
+          }
+        },
+        "stop_sequence": 7038
+      }
+    ],
+    "inclusive_family_handler": {
+      "calls": 1,
+      "cpu_seconds": 1.6063123580000003,
+      "elapsed_seconds": 1.6063975699980801
+    },
+    "original_ENTER_families": [
+      {
+        "child_cpu_seconds": 15.238599772999999,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 25703.882040467,
+        "event": "ENTER",
+        "handler_name": "families",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 25703.888901952
+      }
+    ],
+    "read_deadline_crossings": 0,
+    "read_deadlines": [
+      25704.389684706
+    ],
+    "streams": [
+      {
+        "errors": [],
+        "event_count": 220,
+        "footer": {
+          "DIAGNOSTIC_ONLY": true,
+          "callback_body_observed_cpu_seconds": 0.014025607,
+          "callback_body_observed_wall_seconds": 0.014171391,
+          "callbacks_seen": 220,
+          "cost_observations_lower_bound_not_subtracted_to_qualify": true,
+          "entry_module": "__main__",
+          "errors": [],
+          "gate_qualified": false,
+          "gc_enabled_after": true,
+          "gc_policy_observed_equal": true,
+          "gc_thresholds_after": [
+            700,
+            10,
+            10
+          ],
+          "generation_counts": {
+            "0": {
+              "start": 101,
+              "stop": 101
+            },
+            "1": {
+              "start": 8,
+              "stop": 8
+            },
+            "2": {
+              "start": 1,
+              "stop": 1
+            }
+          },
+          "instrumentation_allocations_and_IO_can_shift_GC_positions": true,
+          "native_families_read_context_events": 0,
+          "parent_pid": 25502,
+          "pid": 25509,
+          "record_kind": "GC_OBSERVER_FIN",
+          "sys_profile_after": false,
+          "sys_trace_after": false
+        },
+        "missing_cost_record_count": 0,
+        "pair_count": 110,
+        "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-contextual-gc-plan-2e48-mi933bw3/raw/process-25509/gc-events.jsonl",
+        "unmatched_start_count": 0
+      },
+      {
+        "errors": [],
+        "event_count": 26054,
+        "footer": {
+          "DIAGNOSTIC_ONLY": true,
+          "callback_body_observed_cpu_seconds": 1.538667358,
+          "callback_body_observed_wall_seconds": 1.544938695,
+          "callbacks_seen": 26054,
+          "cost_observations_lower_bound_not_subtracted_to_qualify": true,
+          "entry_module": "__mp_main__",
+          "errors": [],
+          "gate_qualified": false,
+          "gc_enabled_after": true,
+          "gc_policy_observed_equal": true,
+          "gc_thresholds_after": [
+            700,
+            10,
+            10
+          ],
+          "generation_counts": {
+            "0": {
+              "start": 11908,
+              "stop": 11908
+            },
+            "1": {
+              "start": 1081,
+              "stop": 1081
+            },
+            "2": {
+              "start": 38,
+              "stop": 38
+            }
+          },
+          "instrumentation_allocations_and_IO_can_shift_GC_positions": true,
+          "native_families_read_context_events": 136,
+          "parent_pid": 25509,
+          "pid": 25515,
+          "record_kind": "GC_OBSERVER_FIN",
+          "sys_profile_after": false,
+          "sys_trace_after": false
+        },
+        "missing_cost_record_count": 0,
+        "pair_count": 13027,
+        "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-contextual-gc-plan-2e48-mi933bw3/raw/process-25515/gc-events.jsonl",
+        "unmatched_start_count": 0
+      }
+    ],
+    "universe_read_runtime_ENTER_EXIT_receipts": []
+  },
+  "physical_postread_barrier": {
+    "PGID_absent": true,
+    "actual_reap": true,
+    "full_original_kernel_resource_guards_closed": true,
+    "historical_timeout_signal_late_reap_or_residual_RED_never_reset": true,
+    "owned_exhaustion": true,
+    "post_main_actual_ECHILD": true,
+    "postread_allowed": true,
+    "remaining_children": [],
+    "subreaper_restore_attempted": true
+  },
+  "post_FIN_note_assembly": {
+    "actual_parent_capability_member_verified_from_closed_index": "collection.offline-capability.json",
+    "first_lookup_error": "FileNotFoundError:supervisor.offline-capability.json",
+    "raw_index_preserved": "No overwrite or business rerun"
+  },
+  "real_FIN": {
+    "actual_child_reaped": true,
+    "actual_launch_to_pid_reap_wall_seconds": 85.6510898460001,
+    "adopted_descendants_reaped": [],
+    "command": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+      "-I",
+      "-B",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-contextual-gc-plan-2e48-mi933bw3/contextual_gc_passive_v3.py",
+      "--native-entry"
+    ],
+    "cpu_system_seconds": 2.9225399999999997,
+    "cpu_user_seconds": 82.837321,
+    "kernel_owned_child_observations": [
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "before_popen_after_subreaper_activation"
+      },
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "after_main_pid_reap"
+      }
+    ],
+    "kernel_pre_popen_echild_verified": true,
+    "kernel_wait4_zero_observed_irreversible_red": false,
+    "late_observed_main_reap_irreversible_red": false,
+    "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+    "owned_children_exhaustion_verified": true,
+    "owned_cleanup_management_bound_seconds": 5,
+    "owned_group_signal_observations": [],
+    "peak_rss_bytes": 1606635520,
+    "phase_acceptance_deadline_seconds": 300,
+    "pid": 25509,
+    "proc_task_children_examined": false,
+    "process_group_absent_after_reap": true,
+    "process_group_absent_at_main_reap": true,
+    "remaining_owned_children": [],
+    "residual_descendants_observed": [],
+    "returncode": 1,
+    "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+    "sigint_failure_grace_seconds": 20,
+    "subreaper_previous_state": 0,
+    "subreaper_restore_attempted_on_all_activated_paths": true,
+    "supervisor_errors": [],
+    "supervisor_kernel_identity_before_spawn": {
+      "Pid": "25502",
+      "Tgid": "25502",
+      "Uid": "1000\t1000\t1000\t1000"
+    },
+    "supervisor_native_tid": 25502,
+    "supervisor_pid": 25502,
+    "termination_reap_restore_cleanup_seconds": 9.95679984043818e-05,
+    "timed_out": false,
+    "wait4_reaped_pid": 25509,
+    "wall_seconds": 85.6514218379998
+  },
+  "real_orders_sent": 0,
+  "schema": "rc6.passive-contextual-gc.closed-causal-note.v1",
+  "source": {
+    "external_main_natural_spawn": "ALIEN_RETAINED",
+    "index_sha256": "44a45bf3c8c5ae570c858ef857dc735966be8bc316e14f0b181144cb0b5bd756",
+    "literal_path_count": 3192,
+    "overlay_count": 0,
+    "script": "contextual_gc_passive_v3.py",
+    "script_sha256": "2a3404b3c59d2916207dc341cfbcb5f94435765ce78b2c2a08ea3977ed74fa89",
+    "sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+    "tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33"
+  },
+  "status": "RED",
+  "unchanged_native_result": {
+    "catalog_count": 12000,
+    "cpu_seconds": 82.229674144,
+    "cycle_completion": false,
+    "elapsed_seconds": 82.55305842499729,
+    "import_status": "UNVERIFIED",
+    "observations_materialized": 60000,
+    "original_cli_lifecycle": {
+      "child_infrastructure_finalization": {
+        "errors": [],
+        "finalization_thread_finished": true,
+        "forced_termination": false,
+        "forced_termination_attempted": false,
+        "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+        "inherited_tracker_preserved": false,
+        "initial": {
+          "forkserver_alive_fd": null,
+          "forkserver_pid": null,
+          "resource_tracker_fd": null,
+          "resource_tracker_pid": null
+        },
+        "joined_children": [],
+        "kernel_echild_before_phase_return": true,
+        "management_bound_seconds": 5,
+        "protocol_steps": [
+          {
+            "completed": true,
+            "stage": "nonnegative_stdlib_finalizers",
+            "wall_seconds": 1.0054998710984364e-05
+          },
+          {
+            "completed": true,
+            "stage": "join_owned_children",
+            "wall_seconds": 4.917001206194982e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_forkserver",
+            "wall_seconds": 2.473003405611962e-06
+          },
+          {
+            "completed": true,
+            "stage": "remaining_stdlib_finalizers",
+            "wall_seconds": 2.5840017769951373e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_resource_tracker",
+            "wall_seconds": 0.00662867500068387
+          },
+          {
+            "completed": true,
+            "stage": "verify_kernel_echild",
+            "wall_seconds": 2.407600186415948e-05
+          }
+        ],
+        "signal_guard_installed_and_witnessed": true,
+        "signal_vetoed": false,
+        "status": "GREEN",
+        "stopped_owned_infrastructure": [
+          {
+            "kernel_identity": {
+              "PPid": "25509",
+              "Pid": "25514",
+              "Uid": "1000\t1000\t1000\t1000"
+            },
+            "kind": "resource_tracker",
+            "pid": 25514
+          }
+        ],
+        "termination_signal_attempts": [],
+        "unexpected_kernel_children": [],
+        "wall_seconds": 0.006946715002413839
+      },
+      "child_infrastructure_finalized_before_main_exit": true,
+      "cli_exit_code": 1,
+      "entry_module": "scripts.rc6_issue465_stress",
+      "fresh_infrastructure_verified": true,
+      "inet_socket_attempts": [],
+      "inet_socket_constructor_requests": [
+        {
+          "capability_policy": "NATIVE_IPV6_CREATION_DENIED_EAFNOSUPPORT; SUPPLIED_DESCRIPTORS_NOT_ATTESTED",
+          "event": "socket.__new__",
+          "family": 10,
+          "observation_scope": "PYTHON_CONSTRUCTOR_FAMILY_REQUEST_NOT_INDIVIDUAL_KERNEL_RESULT"
+        }
+      ],
+      "infrastructure_before": {
+        "forkserver_alive_fd": null,
+        "forkserver_pid": null,
+        "resource_tracker_fd": null,
+        "resource_tracker_pid": null
+      },
+      "native_resource_exit_code": 1,
+      "offline_ipv6_creation_capability": {
+        "af_unix_ipc_functional": true,
+        "architecture": "x86_64",
+        "creation_denial_witnesses": [
+          {
+            "errno": 97,
+            "family": 10,
+            "operation": "socket_creation",
+            "socket_created": false
+          }
+        ],
+        "ipv4_creation_grants_operation_authority": false,
+        "kernel_errno": 97,
+        "native_socket_creation_denied_families": [
+          10
+        ],
+        "no_new_privileges": true,
+        "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+        "status": "INSTALLED_AND_KERNEL_WITNESSED",
+        "transitive_kernel_network_attestation": false
+      },
+      "operation_audit_scope": "THIS_NATIVE_CLI_PYTHON_PROCESS_ONLY; NO_TRANSITIVE_CHILD_NETWORK_ATTESTATION",
+      "original_inet_operation_audit_registration_witness_verified": true,
+      "parent_pid": 25502,
+      "pid": 25509,
+      "schema": "rc6.issue465.native-cli-lifecycle.v1",
+      "scope": "NATIVE_CLI_LAUNCHER_GUARD_AND_STDLIB_FINALIZATION_ONLY; BUSINESS_IMPORT_AND_RUNTIME_GATES_SEPARATE",
+      "status": "GREEN",
+      "subprocess_executable_counts": {
+        "git": 4
+      },
+      "unexpected_error": null
+    },
+    "phases": [
+      "BOUNDED_READ",
+      "PREOPEN_COMMITTED"
+    ],
+    "raw_diagnostic_only": false,
+    "raw_field_preserved_outer_diagnostic_always_true": true,
+    "receipt": {
+      "bytes": 1644210,
+      "sha256": "80be1ad38b5743db3aebcd8f70a1c6dfc1f1e98ebdcd8f70fba9e5df93485fef",
+      "stat_fields": {
+        "st_atime_ns": 1791315602958924241,
+        "st_blocks": 3216,
+        "st_ctime_ns": 1791315602963517816,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1613672,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791315602963517816,
+        "st_nlink": 1,
+        "st_size": 1644210,
+        "st_uid": 1000
+      }
+    },
+    "resource_gates_diagnostic_only": {
+      "actual_evidence_bytes": 36884166,
+      "actual_rss_bytes": 1606635520,
+      "actual_slow_fsync_exit_isolation": true,
+      "child_cleanup_completed": true,
+      "complete_committed_cycle": false,
+      "evidence_within_quota": true,
+      "maximum_evidence_bytes": 134217728,
+      "maximum_rss_bytes": 2147483648,
+      "reported_worker_rss_bytes": 1606635520,
+      "rss_scope": "PARENT_RUSAGE_CHILDREN_MAXIMUM_OF_ALL_REAPED_CHILDREN_INCLUDING_GIT_PREFLIGHT",
+      "rss_within_two_gib": true,
+      "source_database_unchanged": true
+    },
+    "shadow_error_class": "SnapshotError",
+    "shadow_error_context": {
+      "frames": [
+        {
+          "function": "_shadow_child_work",
+          "line": 443,
+          "module": "scripts.rc6_issue465_stress"
+        },
+        {
+          "function": "tick",
+          "line": 264,
+          "module": "rc6_shadow_runtime.worker"
+        },
+        {
+          "function": "read_runtime",
+          "line": 19,
+          "module": "rc6_dynamic_universe.runtime"
+        },
+        {
+          "function": "__exit__",
+          "line": 144,
+          "module": "contextlib"
+        },
+        {
+          "function": "source_connection",
+          "line": 28,
+          "module": "rc6_shadow_runtime.source_reads"
+        },
+        {
+          "function": "__exit__",
+          "line": 144,
+          "module": "contextlib"
+        },
+        {
+          "function": "readonly_copy",
+          "line": 164,
+          "module": "rc6_audit_evidence.sqlite_snapshot"
+        },
+        {
+          "function": "_check",
+          "line": 24,
+          "module": "rc6_audit_evidence.sqlite_snapshot"
+        }
+      ],
+      "sqlite_errorcode": null,
+      "sqlite_errorname": null
+    },
+    "shadow_reason": "TIME_BUDGET_EXHAUSTED",
+    "shadow_status": "SHADOW_FAIL_CLOSED",
+    "slow_fsync_exit_isolation_diagnostic_only": true,
+    "transient_closure_verified": false,
+    "worker_exitcode": 0,
+    "worker_pid": 25515
+  }
+}

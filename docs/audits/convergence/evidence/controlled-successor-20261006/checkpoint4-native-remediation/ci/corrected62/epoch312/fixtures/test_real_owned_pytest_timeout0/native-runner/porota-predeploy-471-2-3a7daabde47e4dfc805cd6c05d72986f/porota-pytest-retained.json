@@ -1,0 +1,60 @@
+{
+  "actual_pytest_pid": 12434,
+  "allocated_bytes_unique_physical_inodes": 8192,
+  "capacity_status": "GREEN",
+  "classification": "RETAINED_PRIVATE_TEST_FIXTURES",
+  "context": {
+    "candidate_sha": "4cab57aebdee37d9ff0f0a6c530d22870f40653a",
+    "candidate_tree": "e4bf0419ffdf09cbcc7afc61029d92a7a20ddd66",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "2",
+    "run_id": "471",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "counts": {
+    "directory_entries": 1,
+    "hardlinked_regular_entries": 0,
+    "regular_entries": 1,
+    "special_entries": 0,
+    "symlinks": 0
+  },
+  "first_64_adversarial_members": [],
+  "fixture_root": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_owned_pytest_timeout0/native-runner/porota-pytest-471-2-3a7daabde47e4dfc805cd6c05d72986f",
+  "fixture_root_identity": [
+    27,
+    1091127,
+    1000,
+    1000,
+    448
+  ],
+  "fixture_root_mount_id": 52,
+  "fixture_root_removed": false,
+  "fresh_filesystem": {
+    "filesystem_device": 27,
+    "free_bytes": 24684142592,
+    "free_inodes": 1939194,
+    "total_inodes": 2097152
+  },
+  "hardlinks_deduplicated_by": "ST_DEV_ST_INO",
+  "link_targets_followed": false,
+  "logical_bytes_unique_physical_inodes": 7034,
+  "measured_by_same_owned_fin_supervisor_pid": 12430,
+  "namespace_entries_including_root": 2,
+  "original_capacity_policy": {
+    "min_free_bytes": 2147483648,
+    "min_free_inode_percent": 10
+  },
+  "owned_fin_closed": true,
+  "owner_uid": 1000,
+  "owner_uuid": "3a7daabde47e4dfc805cd6c05d72986f",
+  "payload_files_read": 0,
+  "phase": "execution",
+  "pytest_phase_green": false,
+  "real_orders_sent": 0,
+  "resources_removed": 0,
+  "retention_policy": "EXPLICIT_RETAINED_FOR_EPHEMERAL_RUNNER_TEARDOWN",
+  "schema": "rc6.predeploy-retained-pytest-fixtures.v1",
+  "scope": "MEASURED_RETAINED_TEST_FIXTURES_ONLY; NOT_CLEANUP_OR_GLOBAL_CUSTODY",
+  "unique_physical_inodes": 2
+}

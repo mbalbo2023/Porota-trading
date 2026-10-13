@@ -1,0 +1,315 @@
+{
+  "U09": {
+    "entry": "1579.3158",
+    "exit": "1579.6840",
+    "expected_entry": "1579.5",
+    "expected_exit": "1579.5",
+    "passed": false,
+    "round_trip_gross_error_ars_per_contract": "368.2000"
+  },
+  "U10": {
+    "passed": false,
+    "variants": [
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1500100",
+        "cash_before": "-1500100",
+        "delta_us": -500,
+        "event": "MARK",
+        "passed": true
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1500100",
+        "cash_before": "-1500100",
+        "delta_us": -499,
+        "event": "MARK",
+        "passed": true
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1500100",
+        "cash_before": "-1500100",
+        "delta_us": -100,
+        "event": "MARK",
+        "passed": true
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1500100",
+        "cash_before": "-1500100",
+        "delta_us": -1,
+        "event": "MARK",
+        "passed": true
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1500100",
+        "cash_before": "-1500100",
+        "delta_us": 0,
+        "event": "MARK",
+        "passed": true
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1500100",
+        "cash_before": "-1500100",
+        "delta_us": 1,
+        "event": "MARK",
+        "passed": false
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1500100",
+        "cash_before": "-1500100",
+        "delta_us": 100,
+        "event": "MARK",
+        "passed": false
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1500100",
+        "cash_before": "-1500100",
+        "delta_us": 499,
+        "event": "MARK",
+        "passed": false
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1500100",
+        "cash_before": "-1500100",
+        "delta_us": 500,
+        "event": "MARK",
+        "passed": true
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1490100",
+        "cash_before": "-1500100",
+        "delta_us": -500,
+        "event": "SETTLEMENT",
+        "passed": true
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1490100",
+        "cash_before": "-1500100",
+        "delta_us": -499,
+        "event": "SETTLEMENT",
+        "passed": true
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1490100",
+        "cash_before": "-1500100",
+        "delta_us": -100,
+        "event": "SETTLEMENT",
+        "passed": true
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1490100",
+        "cash_before": "-1500100",
+        "delta_us": -1,
+        "event": "SETTLEMENT",
+        "passed": true
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1490100",
+        "cash_before": "-1500100",
+        "delta_us": 0,
+        "event": "SETTLEMENT",
+        "passed": true
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1490100",
+        "cash_before": "-1500100",
+        "delta_us": 1,
+        "event": "SETTLEMENT",
+        "passed": false
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1490100",
+        "cash_before": "-1500100",
+        "delta_us": 100,
+        "event": "SETTLEMENT",
+        "passed": false
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1490100",
+        "cash_before": "-1500100",
+        "delta_us": 499,
+        "event": "SETTLEMENT",
+        "passed": false
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1500100",
+        "cash_before": "-1500100",
+        "delta_us": 500,
+        "event": "SETTLEMENT",
+        "passed": true
+      },
+      {
+        "active_after": 0,
+        "active_before": 1,
+        "cash_after": "19800",
+        "cash_before": "-1500100",
+        "delta_us": -500,
+        "event": "CLOSE",
+        "passed": true
+      },
+      {
+        "active_after": 0,
+        "active_before": 1,
+        "cash_after": "19800",
+        "cash_before": "-1500100",
+        "delta_us": -499,
+        "event": "CLOSE",
+        "passed": true
+      },
+      {
+        "active_after": 0,
+        "active_before": 1,
+        "cash_after": "19800",
+        "cash_before": "-1500100",
+        "delta_us": -100,
+        "event": "CLOSE",
+        "passed": true
+      },
+      {
+        "active_after": 0,
+        "active_before": 1,
+        "cash_after": "19800",
+        "cash_before": "-1500100",
+        "delta_us": -1,
+        "event": "CLOSE",
+        "passed": true
+      },
+      {
+        "active_after": 0,
+        "active_before": 1,
+        "cash_after": "19800",
+        "cash_before": "-1500100",
+        "delta_us": 0,
+        "event": "CLOSE",
+        "passed": true
+      },
+      {
+        "active_after": 0,
+        "active_before": 1,
+        "cash_after": "19800",
+        "cash_before": "-1500100",
+        "delta_us": 1,
+        "event": "CLOSE",
+        "passed": false
+      },
+      {
+        "active_after": 0,
+        "active_before": 1,
+        "cash_after": "19800",
+        "cash_before": "-1500100",
+        "delta_us": 100,
+        "event": "CLOSE",
+        "passed": false
+      },
+      {
+        "active_after": 0,
+        "active_before": 1,
+        "cash_after": "19800",
+        "cash_before": "-1500100",
+        "delta_us": 499,
+        "event": "CLOSE",
+        "passed": false
+      },
+      {
+        "active_after": 1,
+        "active_before": 1,
+        "cash_after": "-1500100",
+        "cash_before": "-1500100",
+        "delta_us": 500,
+        "event": "CLOSE",
+        "passed": true
+      }
+    ]
+  },
+  "U22": {
+    "open_stop_risk_after_later_close_same_cut": "0",
+    "open_stop_risk_before": "1500100",
+    "passed": false
+  },
+  "U23": {
+    "conflicting_retry_error": null,
+    "durable_amount": "-1000",
+    "durable_count": 1,
+    "equivalent_retry_idempotent": true,
+    "passed": false
+  },
+  "clock": "EXPLICIT_AWARE_ART_AND_UTC_MICROSECONDS",
+  "configuration": {
+    "PAPER_SECTOR_CONCENTRATION_POLICY": "OBSERVATION_ONLY",
+    "ai_mode": "OFF",
+    "daily_loss_pct": "5",
+    "economics_mode": "SHADOW",
+    "execution": "SIMULATED",
+    "initial_cash": "100000000",
+    "max_position_pct": "1",
+    "max_positions": 10,
+    "max_total_exposure_pct": "1",
+    "mode": "PRODUCTION_PAPER",
+    "participation": "0.1",
+    "risk_pct": "0.05",
+    "session_policy": null
+  },
+  "configuration_sha256": "c64d108eda63f708f9eed3737e1b1c67613622f9bf8484d4c1ca550eb029e4de",
+  "cutoff": "2026-10-05T13:00:00.000000-03:00",
+  "economic_edge": "EDGE_NO_DEMOSTRADO",
+  "environment": {
+    "python": "3.11.16",
+    "sqlite": "3.53.1"
+  },
+  "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
+  "external_account_terms": "NO_VERIFICADO",
+  "network_attempts": 0,
+  "passed": false,
+  "probe_sha256": "e014a6a7a2e6a7e3e4a4913575780b97a1c15237c4755546534e0b2083497e6e",
+  "real_orders_sent": 0,
+  "real_routes_used": [],
+  "schema_version": 1,
+  "scope": "OFFLINE_SYNTHETIC_PAPER_ONLY",
+  "seed": "SYNTHETIC_469_FINANCE_V1",
+  "source_files_sha256": {
+    "be_paper_engine.py": "d4a765b8a5c082683755f489fd62e3921b923a341b1fda561aac68b677aa407e",
+    "bs_instrument_contracts.py": "32cbfbb593517ccb34d8be9d594e8feb4085964acd76163a9470b3a5126f96ec",
+    "bw_daily_risk.py": "2409efce2d3eff41c8c7ca350dca6be275a69f6126b7b80edd6bd00088393532",
+    "dh_paper_dynamic_risk_gate_hf6.py": "b5126fbc372a8d5acd34c97f9058aa772bb69cba73ebe647132ac4876880d163",
+    "rc6_paper_family_lifecycle.py": "32d8e1b4000a2527b414e176d9ce0266c4ab878d778eef22cfcc2110b2e1e669",
+    "rc6_performance/costs.py": "74523eaf58036642372cc587c73c794717aae6a7e1d1a8b28ecfd7cd7e8aa4ce",
+    "rc6_ppi_future_contract_policy.py": "1fdfedd59767cb25a563fccf74f5ddd9084923b252a31bf3313e0bd35cb8df01"
+  },
+  "source_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+  "source_state": "COMMITTED_SNAPSHOT",
+  "source_tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2"
+}

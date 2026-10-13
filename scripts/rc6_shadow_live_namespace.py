@@ -1,0 +1,146 @@
+"""Bounded, read-only custody and occupancy of the canonical live namespace.
+
+This probe never decodes generation or authority contents. Producer retention
+and committed readers remain responsible for recovery, CRC and semantics.
+"""
+import fcntl
+import os
+from pathlib import Path
+import re
+import stat
+
+
+SCHEMA = "rc6.shadow-live-namespace-admission.v1"
+LEVEL = "BOUNDED_LIVE_NAMESPACE_AND_CUSTODY_METADATA"
+MAX_BYTES = 128 * 1024**2
+MAXIMUM_FILES = 512
+_GENERATION = re.compile(r"gen-[0-9a-f]{32}\Z")
+_RESIDUAL_DIRECTORY = re.compile(r"\.generation-[0-9a-f]{32}\.tmp\Z|\.deleting-[0-9a-f]{32}\Z")
+_REGULAR = re.compile(r"(?:CURRENT\.json|writer\.lock|latest\.json\.gz|checkpoint\.json\.gz|"
+    r"status\.json|archive-checkpoint\.json|preopen-\d{4}-\d{2}-\d{2}\.json\.gz|"
+    r"archive-ack-[0-9a-f]{32}\.json|delete-intent-[0-9a-f]{32}\.json)\Z")
+_TEMPORARY = re.compile(r"\.(?:CURRENT\.json|latest\.json\.gz|checkpoint\.json\.gz|status\.json|"
+    r"preopen-\d{4}-\d{2}-\d{2}\.json\.gz)\.[a-z0-9_]{8}\.tmp\Z|"
+    r"\.CURRENT\.[0-9a-f]{32}\.tmp\Z|\.(?:independent|control)-[0-9a-f]{32}\.tmp\Z")
+_MEMBERS = {"report.json.gz", "checkpoint.json.gz", "status.json", "manifest.json", "projection.sqlite"}
+
+
+def _custody(info, owner_uid, *, directory=False):
+    if (not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
+            or info.st_uid != owner_uid or stat.S_IMODE(info.st_mode) != (0o700 if directory else 0o600)
+            or (not directory and info.st_nlink != 1)):
+        raise ValueError("LIVE_NAMESPACE_CUSTODY_INVALID")
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_blocks)
+
+
+def _open_root(path):
+    descriptor = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for index, part in enumerate(path.parts[1:]):
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            if index == len(path.parts) - 2:
+                flags |= os.O_NOATIME
+            child = os.open(part, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def inspect_live(root, *, max_bytes=MAX_BYTES, owner_uid=1000, maximum_files=MAXIMUM_FILES):
+    """Observe bounded native residence without creating locks or deleting files."""
+    if (type(max_bytes) is not int or not 0 < max_bytes <= MAX_BYTES
+            or type(maximum_files) is not int or not 0 < maximum_files <= MAXIMUM_FILES
+            or type(owner_uid) is not int or owner_uid < 0):
+        raise ValueError("LIVE_ADMISSION_POLICY_INVALID")
+    path = Path(root)
+    if (not path.is_absolute() or ".." in path.parts
+            or any(parent.is_symlink() for parent in (path, *path.parents))):
+        raise ValueError("LIVE_NAMESPACE_ALIAS_FORBIDDEN")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME
+    descriptors, lock = [], None
+    try:
+        descriptor = _open_root(path)
+        descriptors.append(descriptor)
+        before = _custody(os.fstat(descriptor), owner_uid, directory=True)
+        if _custody(path.lstat(), owner_uid, directory=True) != before:
+            raise ValueError("LIVE_NAMESPACE_CHANGED")
+        try:
+            lock_info = os.stat("writer.lock", dir_fd=descriptor, follow_symlinks=False)
+        except FileNotFoundError:
+            lock_info = None
+        if lock_info is not None:
+            expected = _custody(lock_info, owner_uid)
+            lock = os.open("writer.lock", os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK,
+                           dir_fd=descriptor)
+            if _custody(os.fstat(lock), owner_uid) != expected:
+                raise ValueError("LIVE_NAMESPACE_CHANGED")
+            try:
+                fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise ValueError("LIVE_WRITER_ACTIVE") from None
+        entries, occupied, allocated, temporary = [], 0, 0, 0
+        roots = [(descriptor, False)]
+        for parent, inside_generation in roots:
+            with os.scandir(parent) as iterator:
+                for entry in iterator:
+                    if len(entries) >= maximum_files:
+                        raise ValueError("LIVE_FILES_CAPACITY_REACHED")
+                    info = entry.stat(follow_symlinks=False)
+                    directory = stat.S_ISDIR(info.st_mode)
+                    residual = False
+                    if inside_generation:
+                        known = not directory and entry.name in _MEMBERS
+                    elif directory:
+                        residual = _RESIDUAL_DIRECTORY.fullmatch(entry.name) is not None
+                        known = residual or _GENERATION.fullmatch(entry.name) is not None
+                    else:
+                        residual = (_TEMPORARY.fullmatch(entry.name) is not None
+                                    or entry.name.startswith("delete-intent-"))
+                        known = _REGULAR.fullmatch(entry.name) is not None or _TEMPORARY.fullmatch(entry.name) is not None
+                    if not known:
+                        raise ValueError("LIVE_NAMESPACE_UNKNOWN")
+                    proof = _custody(info, owner_uid, directory=directory)
+                    entries.append((parent, entry.name, directory, proof))
+                    occupied += info.st_size
+                    allocated += info.st_blocks * 512
+                    temporary += int(residual)
+                    if occupied >= max_bytes:
+                        raise ValueError("LIVE_BYTES_CAPACITY_REACHED")
+                    if directory:
+                        child = os.open(entry.name, flags, dir_fd=parent)
+                        descriptors.append(child)
+                        if _custody(os.fstat(child), owner_uid, directory=True) != proof:
+                            raise ValueError("LIVE_NAMESPACE_CHANGED")
+                        roots.append((child, True))
+        if entries and lock is None:
+            raise ValueError("LIVE_LOCK_REQUIRED")
+        if len(entries) >= maximum_files:
+            raise ValueError("LIVE_FILES_CAPACITY_REACHED")
+        for parent, name, directory, proof in entries:
+            if _custody(os.stat(name, dir_fd=parent, follow_symlinks=False), owner_uid,
+                        directory=directory) != proof:
+                raise ValueError("LIVE_NAMESPACE_CHANGED")
+        if (_custody(os.fstat(descriptor), owner_uid, directory=True) != before
+                or _custody(path.lstat(), owner_uid, directory=True) != before):
+            raise ValueError("LIVE_NAMESPACE_CHANGED")
+        available = os.fstatvfs(descriptor)
+        return {"schema": SCHEMA, "verification_level": LEVEL,
+                "state": "RECOVERY_REQUIRED" if temporary else "WITHIN_QUOTA",
+                "occupied_bytes": occupied, "growth_remaining_bytes": max_bytes - occupied,
+                "allocated_bytes": allocated,
+                "max_bytes": max_bytes, "files": len(entries), "maximum_files": maximum_files,
+                "owner_uid": owner_uid, "owned_temporary_count": temporary,
+                "free_bytes": available.f_bavail * available.f_frsize}
+    except ValueError:
+        raise
+    except OSError:
+        raise ValueError("LIVE_NAMESPACE_UNAVAILABLE") from None
+    finally:
+        if lock is not None:
+            os.close(lock)
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)

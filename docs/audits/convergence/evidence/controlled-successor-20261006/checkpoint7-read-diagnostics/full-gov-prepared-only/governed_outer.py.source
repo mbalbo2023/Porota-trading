@@ -1,0 +1,603 @@
+"""Prepared external custody wrapper for the unmodified, whole-Git Gov CLI.
+
+No cloning, fetching, installation, source mutation, pytest adapter or scope
+override is performed here. A filled, reviewed final-source binding and a
+separate durable launch authorization are required before execution.
+"""
+import argparse
+import ast
+from collections import Counter
+import ctypes
+import errno
+import hashlib
+from importlib import metadata
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import runpy
+import stat
+import sys
+import threading
+import time
+
+FIELDS = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink',
+          'st_size', 'st_blocks', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')
+STABLE10 = tuple(key for key in FIELDS if key != 'st_atime_ns')
+NATIVE_SOURCE_LIMIT = 128*1024**2
+NATIVE_JUNIT_LIMIT = 16*1024**2
+OUTER_LIMIT = 21600
+NATIVE_PHASE_LIMIT = 5400
+ORIGINAL_FINALIZER_LIMIT = 5
+EXPECTED_ARGUMENTS = ['.', '--ignore=test_a3_primary_readonly_hf6.py']
+EXPECTED_EXCLUSIONS = ['test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py']
+NATIVE_MEMBER = 'scripts/rc6_controlled_governed_runner.py'
+MANAGER_MEMBER = 'scripts/rc6_controlled_native_child_manager.py'
+ORIGINAL_MEMBER = 'docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source'
+ORIGINAL_SHA256 = 'ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec'
+ORIGINAL_OBJECTS_SHA256 = '492a3c0de260501776ee235ea5472da373d6c5881a4dfafca05518297fc16579'
+
+
+def require(value, reason):
+    if not value:
+        raise ValueError(reason)
+
+
+def attributes(value):
+    return {field: getattr(value, field) for field in FIELDS}
+
+
+def safe_path(value):
+    path = Path(os.path.abspath(value))
+    for member in (path, *path.parents):
+        require(not member.is_symlink(), 'WRAPPER_PATH_ALIAS_FORBIDDEN')
+    return path
+
+
+def capture_owned(path, maximum=NATIVE_SOURCE_LIMIT):
+    path = safe_path(path)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
+    try:
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_uid == os.geteuid()
+                and before.st_nlink == 1 and before.st_size <= maximum,
+                'WRAPPER_OWNED_REGULAR_MEMBER_OR_BOUND_INVALID')
+        chunks, size = [], 0
+        while part := os.read(descriptor, min(1024**2, maximum+1-size)):
+            chunks.append(part)
+            size += len(part)
+            require(size <= maximum, 'WRAPPER_ORIGINAL_READER_BOUND_EXCEEDED')
+        require(size == before.st_size and attributes(before) == attributes(os.fstat(descriptor))
+                == attributes(path.lstat()), 'WRAPPER_ALL11_CAPTURE_CUSTODY_CHANGED')
+        return b''.join(chunks), attributes(before)
+    finally:
+        os.close(descriptor)
+
+
+def document(raw):
+    def unique_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, 'CONTROL_JSON_DUPLICATE_KEYS')
+            result[key] = value
+        return result
+    return json.loads(raw, object_pairs_hook=unique_pairs,
+                      parse_constant=lambda value: require(False, 'CONTROL_JSON_NONFINITE_VALUE'))
+
+
+def digest(raw):
+    return hashlib.sha256(raw).hexdigest()
+
+
+def save_raw(path, raw):
+    descriptor = os.open(safe_path(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    with os.fdopen(descriptor, 'wb') as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+    return digest(raw)
+
+
+def save(path, value):
+    # Own wrapper controls only: lossless compact bytes, all values retained.
+    raw = (json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)+'\n').encode()
+    require(document(raw) == value, 'WRAPPER_CONTROL_ROUNDTRIP_CHANGED')
+    return save_raw(path, raw)
+
+
+def bootstrap_actual_kernel():
+    """Actual own-PID witness before reading product Source to load its manager."""
+    require(sys.platform == 'linux' and os.getuid() == os.geteuid() == 1000,
+            'DECLARED_NATIVE_LINUX_NONROOT1000_REQUIRED')
+    libc = ctypes.CDLL(None, use_errno=True)
+    before, after = ctypes.c_int(), ctypes.c_int()
+    require(libc.prctl(37, ctypes.byref(before), 0, 0, 0) == 0 and before.value in (0, 1),
+            'BOOTSTRAP_SUBREAPER_READBACK_REQUIRED')
+    try:
+        found, _status, _usage = os.wait4(-1, os.WNOHANG)
+    except ChildProcessError as error:
+        require(error.errno == errno.ECHILD, 'BOOTSTRAP_REAL_ECHILD_ERRNO_REQUIRED')
+    else:
+        raise ValueError('BOOTSTRAP_OWN_CHILD_PRESENT:'+str(found))
+    require(libc.prctl(37, ctypes.byref(after), 0, 0, 0) == 0 and after.value == before.value,
+            'BOOTSTRAP_SUBREAPER_STATE_CHANGED')
+    return {'pid': os.getpid(), 'tid': threading.get_native_id(), 'actual_echild': True,
+            'subreaper_before': before.value, 'subreaper_after': after.value,
+            'scope': 'THIS_WRAPPER_BOOTSTRAP_ONLY_NOT_GLOBAL_OR_FUTURE_NATIVE_FIN'}
+
+
+def source_module(root, member, claim):
+    require(claim['path'] == member and re.fullmatch(r'[0-9a-f]{64}', claim['sha256'])
+            and re.fullmatch(r'[0-9a-f]{40}', claim['git_blob']), 'FINAL_SOURCE_MODULE_BINDING_REQUIRED')
+    raw, before = capture_owned(root/member)
+    require(digest(raw) == claim['sha256'] and stat.S_IMODE(before['st_mode']) == 0o644
+            and hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest() == claim['git_blob'],
+            'FINAL_SOURCE_MODULE_HASH_MODE_OR_GIT_BLOB_MISMATCH')
+    return raw, before
+
+
+def remote_authority(binding):
+    # Prepared by the sole writer from fresh GitHub reads, not this wrapper's
+    # network or local history. Keep the original bytes and their own custody.
+    raw, identity = capture_owned(safe_path(binding['remote_authority_file']), maximum=NATIVE_JUNIT_LIMIT)
+    require(digest(raw) == binding['remote_authority_sha256'], 'REMOTE_FINAL_AUTHORITY_BYTES_REBOUND')
+    row = document(raw)
+    require(row['repo_id'] == 1338680554 and row['repo'] == 'mbalbo2023/Porota-trading'
+            and row['canonical_origin'] == 'https://github.com/mbalbo2023/Porota-trading.git'
+            and row['branch'] == 'recovery/rc6-material-fix-forward-3091e93-20261006'
+            and row['sha'] == binding['source_sha'] and row['tree'] == binding['source_tree']
+            and row['PR'] == 476 and row['PR_state'] == 'open' and row['PR_draft'] is True
+            and row['source_truth'] == 'FRESH_CANONICAL_GITHUB_COMMIT_TREE_REF_PR_READS'
+            and row['read_utc'] and row['durable_launch_receipt_url'] == binding['durable_launch_receipt_url'],
+            'REMOTE_FINAL_AUTHORITY_CONTEXT_INVALID')
+    return raw, identity
+
+
+def static_native_source_barrier(raw):
+    """Reject the known unsafe phase order without changing any source body."""
+    functions = {row.name: row for row in ast.parse(raw).body if isinstance(row, ast.FunctionDef)}
+    phase = functions['phase_child']
+    guard = next(index for index, row in enumerate(phase.body)
+                 if isinstance(row, ast.Expr) and any(isinstance(part, ast.Constant)
+                 and part.value == 'PHASE_CHILD_INFRASTRUCTURE_NOT_GENUINELY_FINALIZED' for part in ast.walk(row)))
+    product = next(index for index, row in enumerate(phase.body)
+                   if isinstance(row, ast.Assign) and any(isinstance(target, ast.Name)
+                   and target.id == 'product_names' for target in row.targets))
+    require(guard < product, 'FINAL_NATIVE_PHASE_SOURCE_BARRIER_STILL_UNSAFE')
+    return {'phase_finalization_guard_before_product_import_capture': True,
+            'no_runtime_source_or_function_adapter': True}
+
+
+def records157():
+    rows = []
+    for distribution in metadata.distributions():
+        name = re.sub(r'[-_.]+', '-', distribution.metadata['Name'].lower())
+        location = safe_path(distribution._path)
+        require(location.is_relative_to(safe_path(sys.prefix)) and location.is_dir(),
+                'REAL_PRIVATE_PREFIX_DISTRIBUTION_METADATA_REQUIRED')
+        raw, identity = capture_owned(location/'RECORD', maximum=NATIVE_JUNIT_LIMIT)
+        rows.append({'name': name, 'version': distribution.version, 'record_path': str(location/'RECORD'),
+                     'record_sha256': digest(raw), 'record_bytes': len(raw), 'record_stat': identity})
+    rows.sort(key=lambda row: row['name'])
+    require(len(rows) == 157 and len({row['name'] for row in rows}) == 157, 'REAL_INSTALLED157_RECORDS_REQUIRED')
+    return {'scope': 'ACTUAL_DIST_INFO_RECORD_BYTES_METADATA_AND_CUSTODY_ONLY', 'records': rows,
+            'all_package_bytes_verified': False, 'wheel_bytes_authenticated': False}
+
+
+def compare_records157(before, after):
+    require([row['name'] for row in before['records']] == [row['name'] for row in after['records']],
+            'ACTUAL157_DISTRIBUTION_SET_CHANGED')
+    atime = []
+    for first, second in zip(before['records'], after['records']):
+        require(all(first[key] == second[key] for key in ('name', 'version', 'record_path',
+                'record_sha256', 'record_bytes')) and all(first['record_stat'][key]
+                == second['record_stat'][key] for key in STABLE10),
+                'ACTUAL157_METADATA_RECORD_BYTES_OR_ORIGINAL10_CHANGED')
+        if first['record_stat']['st_atime_ns'] != second['record_stat']['st_atime_ns']:
+            atime.append({'name': first['name'], 'before': first['record_stat']['st_atime_ns'],
+                          'after': second['record_stat']['st_atime_ns']})
+    return atime
+
+
+def native_finalization_closed(row):
+    # The verbatim original phase acceptance predicate, never a relaxed FIN.
+    return (row['status'] == 'GREEN' and row['finalization_thread_finished'] is True
+            and row['kernel_echild_before_phase_return'] is True
+            and row['signal_guard_installed_and_witnessed'] is True
+            and not row['termination_signal_attempts']
+            and row['forced_termination_attempted'] is False and row['signal_vetoed'] is False
+            and row['wall_seconds'] <= 5 and not row['errors'])
+
+
+def native_kernel_closed(row):
+    # Same original main predicate; exit code/pytest outcomes remain separate.
+    return (row['actual_child_reaped'] is True and row['wait4_reaped_pid'] == row['pid']
+            and row['kernel_pre_popen_echild_verified'] is True
+            and row['owned_children_exhaustion_verified'] is True
+            and row['kernel_wait4_zero_observed_irreversible_red'] is False
+            and row['late_observed_main_reap_irreversible_red'] is False
+            and row['actual_launch_to_pid_reap_wall_seconds'] <= NATIVE_PHASE_LIMIT
+            and row['process_group_absent_at_main_reap'] is True
+            and row['process_group_absent_after_reap'] is True
+            and row['subreaper_restore_attempted_on_all_activated_paths'] is True
+            and row['remaining_owned_children'] == [] and row['residual_descendants_observed'] == []
+            and row['supervisor_errors'] == [])
+
+
+def outer_infrastructure_without_logical_exit_veto(row):
+    # Physical FIN alone never clears an original infrastructure RED.
+    return (row['timed_out'] is False
+            and row['late_observed_main_reap_irreversible_red'] is False
+            and row['kernel_wait4_zero_observed_irreversible_red'] is False
+            and row['residual_descendants_observed'] == []
+            and row['owned_group_signal_observations'] == [] and row['supervisor_errors'] == []
+            and 0 <= row['wall_seconds'] <= OUTER_LIMIT
+            and all(type(item.get('exit_code')) is int and item['exit_code'] == 0
+                    for item in row['adopted_descendants_reaped']))
+
+
+def closed_phase_controls(gov, root, source_sha, source_tree, native_sha256, outer):
+    """Controls only: no JUnit, native log or Source snapshot reads here."""
+    observations = {}
+    launch_raw, launch_stat = capture_owned(gov/'launch.json')
+    launch = document(launch_raw)
+    require(launch['candidate_sha'] == source_sha and launch['candidate_tree'] == source_tree
+            and launch['runner_sha256'] == native_sha256 and launch['uid'] == os.geteuid()
+            and launch['scope'] == 'repository-root automatic pytest discovery'
+            and launch['phase_timeout_seconds'] == NATIVE_PHASE_LIMIT,
+            'NATIVE_LAUNCH_CONTEXT_REBOUND')
+    observations['launch'] = {'sha256': digest(launch_raw), 'stat': launch_stat}
+    require(outer['returncode'] in (0, 1), 'OUTER_NONLOGICAL_RETURN_CODE_BLOCKS_PAYLOAD')
+    common = [sys.executable, '-I', '-B', str(root/NATIVE_MEMBER), '--repo-root', str(root),
+              '--source-sha', source_sha, '--source-tree', source_tree, '--output-root', str(gov),
+              '--timeout-seconds', '5400']
+    for phase in ('collection', 'execution'):
+        kernel_raw, kernel_stat = capture_owned(gov/(phase+'.kernel.json'))
+        final_raw, final_stat = capture_owned(gov/(phase+'.child-finalization.json'))
+        kernel, finalization = document(kernel_raw), document(final_raw)
+        require(native_kernel_closed(kernel) and native_finalization_closed(finalization),
+                'ORIGINAL_NATIVE_PHASE_FIN_UNKNOWN:'+phase)
+        require(kernel['command'] == common+['--phase', phase]
+                and kernel['supervisor_pid'] == outer['pid']
+                and kernel['phase_acceptance_deadline_seconds'] == NATIVE_PHASE_LIMIT
+                and kernel['owned_cleanup_management_bound_seconds'] == ORIGINAL_FINALIZER_LIMIT
+                and kernel['returncode'] in (0, 1) and kernel['timed_out'] is False
+                and not kernel['owned_group_signal_observations']
+                and all(row['exit_code'] == 0 for row in kernel['adopted_descendants_reaped']),
+                'ORIGINAL_NATIVE_PHASE_CONTEXT_OR_INFRASTRUCTURE_RED:'+phase)
+        observations[phase] = {'kernel': kernel, 'kernel_sha256': digest(kernel_raw),
+            'kernel_stat': kernel_stat, 'finalization': finalization,
+            'finalization_sha256': digest(final_raw), 'finalization_stat': final_stat}
+        if phase == 'collection' and kernel['returncode'] != 0:
+            # The original main aborts on this exact require BEFORE execution.
+            # An attempted phase with a missing record is never called absent.
+            error_raw, error_stat = capture_owned(gov/'governed-error.json')
+            error = document(error_raw)
+            markers = [gov/name for name in ('execution.parent-source-before.index.json',
+                'execution.kernel.json', 'execution.child-finalization.json', 'execution.namespace.json',
+                'execution.offline-capability.json', 'execution.log', 'execution.observations.json',
+                'execution.source-before.index.json', 'execution.source-after.index.json',
+                'execution.parent-source-after.index.json', 'execution-private', 'porota-governed-tests.xml')]
+            require(error['status'] == 'RED' and error['reason'] == 'ACTUAL_GOVERNED_PHASE_NOT_GREEN:collection'
+                    and error['source_sha'] == source_sha and error['source_tree'] == source_tree
+                    and error['execution_id'] == launch['execution_id'] and outer['returncode'] == 1
+                    and all(not os.path.lexists(path) for path in markers),
+                    'EXECUTION_NOT_LAUNCHED_NOT_PROVED_BY_ORIGINAL_ABORT')
+            observations['execution'] = {'classification': 'NOT_LAUNCHED_AFTER_CLOSED_COLLECTION_LOGICAL_FAILURE',
+                'original_main_abort_sha256': digest(error_raw), 'original_main_abort_stat': error_stat,
+                'original_error': error, 'execution_attempt_markers_all_absent': [str(path) for path in markers],
+                'kernel_FIN_not_invented_for_unlaunched_phase': True}
+            observations['attempted_phases'] = ['collection']
+            return observations
+    observations['attempted_phases'] = ['collection', 'execution']
+    return observations
+
+
+def metadata_only_retained(root):
+    """Measure only this fresh owned output, without following fixture aliases."""
+    root = safe_path(root)
+    root_stat = root.lstat()
+    require(stat.S_ISDIR(root_stat.st_mode) and root_stat.st_uid == os.geteuid()
+            and stat.S_IMODE(root_stat.st_mode) == 0o700, 'FRESH_RETAINED_NAMESPACE_OWN700_REQUIRED')
+    queue, seen, count = [root], set(), 0
+    seen.add((root_stat.st_dev, root_stat.st_ino))
+    allocated, logical = root_stat.st_blocks*512, root_stat.st_size
+    aliases = hardlinked = specials = foreign = foreign_owners = 0
+    while queue:
+        directory = queue.pop()
+        descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
+        try:
+            parent = os.fstat(descriptor)
+            require(parent.st_dev == root_stat.st_dev and parent.st_uid == os.geteuid(),
+                    'RETAINED_FOREIGN_OWNER_OR_MOUNT_NOT_TRAVERSED')
+            names = os.listdir(descriptor)
+            for name in names:
+                info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                count += 1
+                require(count <= 1000000, 'RETAINED_OWN_NAMESPACE_METADATA_BOUND')
+                if info.st_dev != root_stat.st_dev:
+                    foreign += 1
+                    continue
+                identity = (info.st_dev, info.st_ino)
+                if identity not in seen:
+                    seen.add(identity)
+                    allocated += info.st_blocks*512
+                    logical += info.st_size
+                if stat.S_ISDIR(info.st_mode):
+                    if info.st_uid == os.geteuid():
+                        queue.append(directory/name)
+                    else:
+                        foreign_owners += 1
+                elif stat.S_ISLNK(info.st_mode):
+                    aliases += 1
+                elif stat.S_ISREG(info.st_mode):
+                    hardlinked += info.st_nlink > 1
+                else:
+                    specials += 1
+        finally:
+            os.close(descriptor)
+    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
+    try:
+        capacity = os.fstatvfs(descriptor)
+    finally:
+        os.close(descriptor)
+    return {'root': str(root), 'entries': count, 'unique_inodes': len(seen),
+        'allocated_bytes_nofollow_no_doublecount_hardlinks': allocated,
+        'logical_bytes_nofollow_no_doublecount_hardlinks': logical, 'aliases_retained': aliases,
+        'hardlinked_regular_entries_retained': hardlinked, 'special_entries_retained': specials,
+        'foreign_mount_entries_not_traversed': foreign, 'removed': False,
+        'foreign_owner_directories_not_traversed': foreign_owners,
+        'retention_classification': 'RETAINED_ADVERSARIAL_FIXTURES_NOT_ACCEPTED_FOR_CLEANUP',
+        'free_bytes': capacity.f_bavail*capacity.f_frsize, 'free_inodes': capacity.f_favail,
+        'floor_original_2GiB_ok': capacity.f_bavail*capacity.f_frsize >= 2*1024**3,
+        'floor_original_10pct_inode_ok': capacity.f_files > 0 and capacity.f_favail/capacity.f_files >= 0.1,
+        'scope': 'OWN_NEW_NAMESPACE_METADATA_ONLY_NOT_GLOBAL_CLEANUP_GREEN'}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--binding', required=True)
+    options = parser.parse_args()
+    os.umask(0o022)
+    bootstrap = bootstrap_actual_kernel()
+    binding_raw, binding_stat = capture_owned(Path(options.binding), maximum=NATIVE_JUNIT_LIMIT)
+    binding = document(binding_raw)
+    wrapper_raw, wrapper_stat = capture_owned(safe_path(__file__), maximum=NATIVE_JUNIT_LIMIT)
+    require(digest(wrapper_raw) == binding['wrapper_sha256'], 'REVIEWED_EXTERNAL_WRAPPER_BYTES_REBOUND')
+    require(binding['stage'] == 'REMOTE_FINAL_SOURCE_FROZEN_AND_DURABLE_LAUNCH_AUTHORIZED'
+            and binding['repo_id'] == 1338680554 and binding['canonical_repo'] == 'mbalbo2023/Porota-trading'
+            and binding['PAPER_SHADOW_ONLY'] is True and binding['real_orders_sent'] == 0
+            and binding['DEPLOY_OWNER'] == 'NOT_ACQUIRED'
+            and binding['durable_launch_receipt_url'].startswith('https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-'),
+            'FILLED_REVIEWED_FINAL_GOV_BINDING_REQUIRED')
+    require(re.fullmatch(r'[0-9a-f]{40}', binding['source_sha'])
+            and re.fullmatch(r'[0-9a-f]{40}', binding['source_tree']), 'EXACT_FINAL_GIT_SHA_TREE_REQUIRED')
+    remote_raw, remote_stat = remote_authority(binding)
+    root, control, gov = (safe_path(binding[key]) for key in ('source_root', 'control_root', 'gov_output_root'))
+    require(not control.exists() and not gov.exists() and not control.is_relative_to(root)
+            and not gov.is_relative_to(root), 'FRESH_EXTERNAL_CONTROL_AND_NATIVE_OUTPUT_REQUIRED')
+    require(sys.executable == binding['interpreter'] and platform.python_version() == binding['python_version']
+            and sys.prefix != sys.base_prefix and binding['epoch'] in ('311', '312'),
+            'EXACT_LOCKED_INTERPRETER_BINDING_REQUIRED')
+    require(root.lstat().st_uid == os.geteuid() and stat.S_IMODE(root.lstat().st_mode) == 0o755,
+            'FRESH_NORMAL022_SOURCE755_REQUIRED')
+    manager_raw, manager_before = source_module(root, MANAGER_MEMBER, binding['manager'])
+    manager = runpy.run_path(str(root/MANAGER_MEMBER))
+    kernel_before = manager['pre_capture_kernel_state']()
+    native_raw, native_before = source_module(root, NATIVE_MEMBER, binding['native_runner'])
+    barrier = static_native_source_barrier(native_raw)
+    native = runpy.run_path(str(root/NATIVE_MEMBER))
+    require(native['MAX_SOURCE_FILE'] == NATIVE_SOURCE_LIMIT
+            and native['STABLE_CODE_FIELDS'] == STABLE10, 'ORIGINAL_SOURCE_CAPTURE_GOV_CONTRACT_CHANGED')
+    require(digest(capture_owned(root/ORIGINAL_MEMBER)[0]) == ORIGINAL_SHA256,
+            'IMMUTABLE_ORIGINAL_V2_SOURCE_CHANGED')
+    manager['pre_capture_kernel_state']()
+    first_pin = native['source_pin'](root, binding['source_sha'], binding['source_tree'])
+    require(first_pin['files'][NATIVE_MEMBER]['sha256'] == digest(native_raw)
+            and first_pin['files'][MANAGER_MEMBER]['sha256'] == digest(manager_raw), 'REAL_GIT_SOURCE_MODULES_NOT_BOUND')
+    require(native['git'](root, 'rev-parse', '--is-shallow-repository').decode().strip() == 'false'
+            and native['git'](root, 'config', '--get', 'remote.origin.url').decode().strip()
+                == 'https://github.com/mbalbo2023/Porota-trading.git'
+            and not (root/'.git/objects/info/alternates').exists()
+            and not (root/'.git/commondir').exists()
+            and not (root/'.git/info/grafts').exists(), 'FULL_CANONICAL_FRESH_NONALTERNATE_GIT_REQUIRED')
+    objects_raw, _ = capture_owned(safe_path(binding['original_objects_file']), maximum=NATIVE_JUNIT_LIMIT)
+    require(digest(objects_raw) == ORIGINAL_OBJECTS_SHA256, 'ORIGINAL19_REQUIRED_OBJECTS_INPUT_CHANGED')
+    original_objects = document(objects_raw)['objects']
+    object_proofs = []
+    for original in original_objects:
+        actual = native['git'](root, 'cat-file', 'commit', original['sha'])
+        require(digest(actual) == original['raw_commit_sha256']
+                and hashlib.sha1(b'commit '+str(len(actual)).encode()+b'\0'+actual).hexdigest() == original['sha']
+                and actual.splitlines()[0] == b'tree '+original['github_tree'].encode(), 'ORIGINAL19_GIT_AUTHORITY_MISMATCH')
+        object_proofs.append({'sha': original['sha'], 'tree': original['github_tree'], 'raw_sha256': digest(actual)})
+    closure_before = native['installed_closure'](root)
+    record_before = records157()
+    arguments, exclusions, inventory = native['approved_scope'](root, binding['source_sha'])
+    require(arguments == EXPECTED_ARGUMENTS and exclusions == EXPECTED_EXCLUSIONS, 'ORIGINAL_WHOLE_ROOT_A3_SCOPE_CHANGED')
+    manager['pre_capture_kernel_state']()
+    before = native['source_pin'](root, binding['source_sha'], binding['source_tree'])
+    preparation_atime = native['compare_source'](first_pin, before)
+    control.mkdir(mode=0o700)
+    require(control.lstat().st_dev == root.lstat().st_dev == gov.parent.lstat().st_dev,
+            'EXTERNAL_CONTROL_AND_GOV_SAME_DISK_REQUIRED')
+    save_raw(control/'source-before.index.json', native['canonical'](before))
+    save_raw(control/'remote-final-source-authority.json', remote_raw)
+    save_raw(control/'scope-inventory-before.json', native['canonical'](inventory))
+    save(control/'installed-closure-before.json', closure_before)
+    save(control/'records157-before.json', record_before)
+    save(control/'original19-git-proofs.json', object_proofs)
+    argv = [sys.executable, '-I', '-B', str(root/NATIVE_MEMBER), '--repo-root', str(root),
+            '--source-sha', binding['source_sha'], '--source-tree', binding['source_tree'],
+            '--output-root', str(gov), '--timeout-seconds', '5400']
+    env = {key: value for key, value in os.environ.items()
+           if key in ('PATH', 'HOME', 'LANG', 'TZ') or key.startswith('LC_')}
+    env.update(PYTHONDONTWRITEBYTECODE='1', PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
+    launch = {'schema': 'rc6.full-governed-outer-owned-launch.v1', 'execution_id': binding['execution_id'],
+        'binding_sha256': digest(binding_raw), 'binding_stat': binding_stat, 'bootstrap_kernel': bootstrap,
+        'external_wrapper_sha256': digest(wrapper_raw), 'external_wrapper_stat': wrapper_stat,
+        'fresh_GitHub_authority_sha256': digest(remote_raw), 'fresh_GitHub_authority_stat': remote_stat,
+        'manager_kernel_before_Source': kernel_before, 'source_sha': binding['source_sha'],
+        'source_tree': binding['source_tree'], 'epoch': binding['epoch'], 'argv': argv,
+        'manager_source_sha256': digest(manager_raw), 'native_source_sha256': digest(native_raw),
+        'source_bootstrap_before': {'manager': manager_before, 'native': native_before},
+        'source_barrier_static': barrier, 'scope_arguments_original': arguments, 'exclusions_original': exclusions,
+        'outer_whole_epoch_management_seconds': 21600, 'two_native_phase_watchdogs_each_seconds': 5400,
+        'original_phase_finalizer_and_cleanup_seconds': 5, 'wrapper_progress_at_most_seconds': 45,
+        'source_code_preparation_atime_only': preparation_atime, 'Source_overlay_count': 0,
+        'PAPER_SHADOW_ONLY': True, 'real_orders_sent': 0, 'DEPLOY_OWNER': 'NOT_ACQUIRED'}
+    save(control/'launch.json', launch)
+    save(control/'launch-intent.json', {'schema': 'rc6.fullGov.native-launch-intent.v1',
+        'owner_execution_id': binding['execution_id'], 'supervisor_pid': os.getpid(), 'uid': os.geteuid(),
+        'argv': argv, 'source_sha': binding['source_sha'], 'source_tree': binding['source_tree']})
+    sequence, last_progress = 0, 0.0
+
+    def progress(stage, pid, entered, deadline, descriptor):
+        nonlocal sequence, last_progress
+        now = time.monotonic()
+        if stage != 'started' and now-last_progress < 40:
+            return
+        last_progress = now
+        row = {'scope': 'ACTUAL_OWN_OUTER_SUPERVISOR_FSTAT_ONLY_NO_ACTIVE_PAYLOAD_READ',
+            'epoch': binding['epoch'], 'stage': stage, 'native_wholeGov_pid': pid,
+            'supervisor_pid': os.getpid(), 'wall_seconds': now-entered,
+            'outer_management_deadline': deadline, 'owned_stdout_bytes_fstat_only': os.fstat(descriptor).st_size}
+        save(control/('progress-'+str(sequence).zfill(5)+'.json'), row)
+        sequence += 1
+        print(json.dumps(row), flush=True)
+
+    outer = manager['managed_native_child'](argv, root, control/'native-wholeGov.log', env, OUTER_LIMIT,
+                terminate_grace=2, progress_poll=5, progress=progress)
+    save(control/'outer-kernel.json', outer)
+    if not manager['managed_custody_closed'](outer) or not outer_infrastructure_without_logical_exit_veto(outer):
+        save(control/'UNKNOWN-control-only.json', {'classification': 'OUTER_ACTUAL_FIN_UNKNOWN_OR_INFRASTRUCTURE_RED', 'kernel': outer,
+            'Source_JUnit_DATA_logs_payload_postreads': 0, 'cleanup_attempted': False,
+            'source_sha': binding['source_sha'], 'source_tree': binding['source_tree'], 'real_orders_sent': 0})
+        print(json.dumps({'status': 'UNKNOWN', 'epoch': binding['epoch'], 'payload_reads': 0}), flush=True)
+        return 1
+    own_after = manager['pre_capture_kernel_state']()
+    try:
+        phase_controls = closed_phase_controls(gov, root, binding['source_sha'], binding['source_tree'],
+                                               digest(native_raw), outer)
+    except BaseException as error:
+        literal = str(error).partition(':')[0]
+        reason = literal if re.fullmatch(r'[A-Z][A-Z0-9_]{0,191}', literal) else 'NATIVE_CONTROL_UNAVAILABLE_OR_INVALID'
+        save(control/'UNKNOWN-native-control-only.json', {'classification': 'NATIVE_ORIGINAL_PHASE_FIN_UNPROVED',
+            'reason': reason, 'outer_actual_FIN_closed': True, 'same_parent_after': own_after,
+            'native_original_UNKNOWN_not_reclassified_by_outer_drain': True,
+            'Source_JUnit_DATA_logs_payload_postreads': 0, 'cleanup_attempted': False, 'real_orders_sent': 0})
+        print(json.dumps({'status': 'UNKNOWN_NATIVE', 'epoch': binding['epoch'], 'payload_reads': 0, 'reason': reason}), flush=True)
+        return 1
+    save(control/'native-phase-controls-closed.json', phase_controls)
+    # Documentary reads begin only after SAME-PID outer and every actually
+    # launched original native phase FIN predicate succeeded. Unlaunched
+    # execution is declared only by the original closed-collection abort.
+    after = native['source_pin'](root, binding['source_sha'], binding['source_tree'])
+    atime = native['compare_source'](before, after)
+    save_raw(control/'source-after.index.json', native['canonical'](after))
+    record_after = records157()
+    record_atime = compare_records157(record_before, record_after)
+    save(control/'records157-after.json', record_after)
+    payloads = {}
+    for phase in phase_controls['attempted_phases']:
+        raw, info = capture_owned(gov/(phase+'.observations.json'))
+        payloads[phase] = document(raw)
+        require(payloads[phase]['source_sha'] == binding['source_sha']
+                and payloads[phase]['source_tree'] == binding['source_tree']
+                and payloads[phase]['execution_id'] == document(capture_owned(gov/'launch.json')[0])['execution_id']
+                and payloads[phase]['pid'] == phase_controls[phase]['kernel']['pid']
+                and payloads[phase]['pytest_exit_code'] == phase_controls[phase]['kernel']['returncode']
+                and payloads[phase]['child_infrastructure_finalization'] == phase_controls[phase]['finalization'],
+                'CLOSED_PHASE_OBSERVATION_CONTEXT_OR_LOGICAL_EXIT_REBOUND')
+        save(control/(phase+'.observation-custody.json'), {'sha256': digest(raw), 'stat': info})
+    retained = [metadata_only_retained(gov)]
+    for phase in phase_controls['attempted_phases']:
+        raw, info = capture_owned(gov/(phase+'.namespace.json'))
+        namespace = document(raw)
+        require(namespace == payloads[phase]['phase_namespace'], 'NATIVE_PHASE_NAMESPACE_CONTROL_REBOUND')
+        short_tmp = safe_path(namespace['tmpdir'])
+        require(not short_tmp.is_relative_to(root) and not short_tmp.is_relative_to(gov)
+                and short_tmp.lstat().st_dev == gov.lstat().st_dev,
+                'ORIGINAL_EXTERNAL_SHORT_TMP_NAMESPACE_REBOUND')
+        retained.append(metadata_only_retained(short_tmp))
+        save(control/(phase+'.namespace-custody.json'), {'sha256': digest(raw), 'stat': info})
+    save(control/'retained-native-namespaces-metadata.json', retained)
+    if phase_controls['attempted_phases'] == ['collection']:
+        report = {'schema': 'rc6.full-governed-outer-owned-negative-diagnostic.v1',
+            'epoch': binding['epoch'], 'source_sha': binding['source_sha'], 'source_tree': binding['source_tree'],
+            'classification': 'CLOSED_COLLECTION_LOGICAL_FAILURE_EXECUTION_NOT_LAUNCHED',
+            'outer_actual_same_parent_FIN': True, 'actual_after_kernel': own_after,
+            'native_actually_launched_original_FIN_closed': ['collection'],
+            'native_wholeGov_GREEN': False, 'original_RED_not_reclassified': True,
+            'actual_collection_items': payloads['collection']['items'],
+            'collection_pytest_exit_code': payloads['collection']['pytest_exit_code'],
+            'execution_NOT_LAUNCHED_control_proved': True, 'executed_cases_claimed': None,
+            'junit_absent_not_fabricated': True, 'native_parent_source_after_required_or_invented': False,
+            'source_bytes_modes_Git_blobs_original10_unchanged': True, 'observed_code_atime_changes': atime,
+            'Record157_bytes_versions_original10_equal_before_after': True,
+            'Record157_atime_changes_observed': record_atime, 'wheel_bytes_authenticated': False,
+            'retained_native_namespaces': retained, 'GLOBAL_CLEANUP_GREEN_claimed': False,
+            'real_orders_sent': 0, 'deploy_authorized': False}
+        sha = save(control/'receipt.json', report)
+        print(json.dumps({'epoch': binding['epoch'], 'native_Gov_GREEN': False,
+            'receipt_sha256': sha, 'logical_collection_failure_execution_not_launched': True,
+            'real_same_parent_FIN': True}), flush=True)
+        return 1
+    collect, execution = payloads['collection'], payloads['execution']
+    require(collect['source_sha'] == execution['source_sha'] == binding['source_sha']
+            and collect['source_tree'] == execution['source_tree'] == binding['source_tree']
+            and collect['items'] == execution['items'] and collect['items'], 'FULL_COLLECTION_EXECUTION_IDENTITY_OR_SOURCE_REBOUND')
+    require(all(row['inet_socket_attempts'] == [] and row['unexpected_product_imports'] == []
+                and row['offline_inet_creation_capability']['status'] == 'INSTALLED_AND_KERNEL_WITNESSED'
+                for row in (collect, execution)), 'ORIGINAL_NATIVE_INET_OR_PRODUCT_IMPORT_OBSERVATION_RED')
+    from scripts import rc6_convergence_provenance as verifier
+    junit_raw, junit_stat = capture_owned(gov/'porota-governed-tests.xml', maximum=NATIVE_JUNIT_LIMIT)
+    junit = verifier.JunitReceipt(junit_raw)
+    suite, cases = verifier.governed_junit_cases(junit)
+    expected = Counter((row['classname'], row['name']) for row in collect['items'])
+    actual = Counter((case.get('classname'), case.get('name')) for case in cases)
+    require(expected == actual, 'ORIGINAL_COLLECTION_JUNIT_CASE_IDENTITY_MISMATCH')
+    counts = {'cases': len(cases), 'failures': sum(case.find('failure') is not None for case in cases),
+              'errors': sum(case.find('error') is not None for case in cases),
+              'skips': sum(case.find('skipped') is not None for case in cases),
+              'duplicate_case_ids': len(cases)-len(actual)}
+    unique_nodes = [row['nodeid'] for row in collect['items']]
+    save(control/'actual-collection-and-JUnit-identities.json', {'nodeids': unique_nodes,
+        'ordered_nodeids_sha256': digest(('\n'.join(unique_nodes)+'\n').encode()),
+        'sorted_nodeids_sha256': digest(('\n'.join(sorted(unique_nodes))+'\n').encode()),
+        'junit_sha256': digest(junit_raw), 'junit_stat': junit_stat, 'counts': counts,
+        'scope': 'ACTUAL_WHOLE_ROOT_COLLECTION_AND_EXECUTION_ORIGINAL_A3_ONLY'})
+    native_green = (manager['managed_phase_green'](outer) and outer['wall_seconds'] <= OUTER_LIMIT
+        and all(phase_controls[phase]['kernel']['returncode'] == 0
+                and phase_controls[phase]['kernel']['timed_out'] is False for phase in ('collection', 'execution'))
+        and counts['failures'] == counts['errors'] == counts['skips'] == counts['duplicate_case_ids'] == 0)
+    fip = None
+    if native_green:
+        _executed_nodes, executed_count = verifier.executed_cases(junit)
+        require(executed_count == len(collect['items']), 'ORIGINAL_UNIQUE_EXECUTED_COUNT_MISMATCH')
+        fip = verifier.verify(root, binding['source_sha'], junit, fetch_source_refs=False)
+        save_raw(control/'native-guard-cohorts-FIP.json', native['canonical'](fip))
+    report = {'schema': 'rc6.full-governed-outer-owned-receipt.v1', 'epoch': binding['epoch'],
+        'source_sha': binding['source_sha'], 'source_tree': binding['source_tree'],
+        'outer_actual_same_parent_FIN': True, 'actual_after_kernel': own_after,
+        'native_both_original_FIN_closed': True, 'outer_kernel_sha256': digest(capture_owned(control/'outer-kernel.json')[0]),
+        'native_wholeGov_GREEN': native_green, 'junit': counts, 'junit_sha256': digest(junit_raw),
+        'source_bytes_modes_Git_blobs_original10_unchanged': True, 'observed_code_atime_changes': atime,
+        'all11_code_unchanged_claimed': False, 'all_DATA_custody_claimed_by_wrapper': False,
+        'Record157_bytes_versions_original10_equal_before_after': True,
+        'Record157_atime_changes_observed': record_atime, 'wheel_bytes_authenticated': False,
+        'outer_whole_epoch_management_seconds': 21600, 'native_phase_seconds_each': 5400,
+        'original_child_finalizer_seconds': 5, 'original_A3_exclusions': exclusions,
+        'guard_cohorts_verified_by_original_FIP': fip is not None,
+        'pending_material_programming_gates': fip['pending_material_programming_gates'] if fip else None,
+        'retained_native_namespaces': retained, 'GLOBAL_CLEANUP_GREEN_claimed': False,
+        'immutable_artifact_image_runtime_attested': False, 'deploy_authorized': False, 'real_orders_sent': 0}
+    sha = save(control/'receipt.json', report)
+    print(json.dumps({'epoch': binding['epoch'], 'native_Gov_GREEN': native_green,
+        'receipt_sha256': sha, 'cases': counts, 'real_same_parent_FIN': True}), flush=True)
+    return 0 if native_green else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -1,0 +1,41 @@
+{
+  "members": [
+    {
+      "archive_member": "audit/adversarial_harness.py",
+      "bytes": 26816,
+      "literal_member_bytes_preserved": true,
+      "published_path": "rc6_audit_evidence/history_convergence/original_issue468/adversarial_harness.py.source",
+      "sha256": "a9d2ea84ae48bbff0ccf07bcee85a346e5fe874446edfdb4cf3ad95225845595"
+    },
+    {
+      "archive_member": "audit/adversarial_prod.json",
+      "bytes": 121304,
+      "literal_member_bytes_preserved": true,
+      "original_format": "PYTHON_JSON_WITH_NAN_OR_INFINITY_LITERAL_BYTES_RETAINED; interpreted values use explicit tags in binder",
+      "published_path": "rc6_audit_evidence/history_convergence/original_issue468/adversarial_prod.json.source",
+      "sha256": "93e2af165e09f757b2345bd7c1a17b69dc439d2ec7b56eb8ebc8c8177e6933c1"
+    },
+    {
+      "archive_member": "audit/adversarial_candidate.json",
+      "bytes": 361441,
+      "literal_member_bytes_preserved": true,
+      "original_format": "PYTHON_JSON_WITH_NAN_OR_INFINITY_LITERAL_BYTES_RETAINED; interpreted values use explicit tags in binder",
+      "published_path": "rc6_audit_evidence/history_convergence/original_issue468/adversarial_candidate.json.source",
+      "sha256": "d19e34b1f38af17f92e75f4f774d1cc4319c43acea7a60023ec6ab646b8a81f9"
+    },
+    {
+      "archive_member": "evidence/history_audit.json",
+      "bytes": 6619,
+      "literal_member_bytes_preserved": true,
+      "published_path": "rc6_audit_evidence/history_convergence/original_issue468/history_audit.json",
+      "sha256": "5650f2918ecb4ce280d028dde48b8eb71fb51bd8782e0516757a491ed3bfb3a1"
+    }
+  ],
+  "original_R_scenarios_added": 0,
+  "original_clause_ids_added": 0,
+  "schema": "rc6.original-issue468-selected-members.v1",
+  "scope": "LITERAL_ORIGINAL_RECEIPTS_AND_DRIVER; NOT_A_NEW_NATIVE_EXECUTION_OR_RELEASE_ATTESTATION",
+  "source_archive_name": "EVIDENCE_REPRODUCIBILITY_ISSUE468.zip",
+  "source_archive_sha256": "6670ef87b1c697b1c1a9025b2dfbbf19082d215af821fbec37769f26d5c8ffc0",
+  "source_or_host_access_performed": false
+}

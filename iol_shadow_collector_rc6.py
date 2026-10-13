@@ -24,6 +24,7 @@ from iol_shadow_observation_rc6 import (
     DECISION_EFFECT, DEFAULT_MARKET, MODE, SOURCE, _number, _quote_summary, cache_path,
 )
 from rc6_ppi_iol_reconciliation_rc6 import reconcile
+from rc6_dynamic_universe.sources import sanitize_source_errors, source_reason_code
 
 # The collector may use only instrument/reference tools.  Account,
 # order, validation, subscription and redemption tools remain excluded.
@@ -130,6 +131,7 @@ class RateGovernor:
 
 
 def _atomic_json(path: Path, value: dict) -> None:
+    value = sanitize_source_errors(value)
     path.parent.mkdir(parents=True, exist_ok=True)
     with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=".iol-shadow-", suffix=".tmp", delete=False) as h:
         json.dump(value, h, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -140,7 +142,7 @@ def _atomic_json(path: Path, value: dict) -> None:
 def _load_json(path: Path) -> dict:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else {}
+        return sanitize_source_errors(value) if isinstance(value, dict) else {}
     except (FileNotFoundError, OSError, json.JSONDecodeError):
         return {}
 
@@ -300,11 +302,11 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
             failed_at = now()
             completed[symbol] = ({**prior_row, "state": _cache_state(prior_row, failed_at),
                 "source_state": failure_state, "last_refresh_failed_at": failed_at.isoformat(),
-                "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
+                "reason": source_reason_code(exc),
                 "decision_effect": DECISION_EFFECT} if prior_row else {
                 "symbol": symbol, "market": market, "term": term, "state": failure_state,
                 "capture_started_at": capture_started_at, "captured_at": now().isoformat(),
-                "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
+                "reason": source_reason_code(exc),
                 "decision_effect": DECISION_EFFECT})
         state["completed"], state["status"] = completed, "RUNNING"
         _atomic_json(checkpoint_file, state)

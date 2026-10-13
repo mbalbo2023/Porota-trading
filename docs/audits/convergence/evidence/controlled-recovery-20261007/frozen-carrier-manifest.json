@@ -1,0 +1,135 @@
+{
+  "Actions_dispatches": 0,
+  "BIG_frozen_diff_path": "/dev/shm/rc6-material-carrier-20261007-0015/native-big-frozen-v2.diff",
+  "BIG_frozen_diff_sha256": "0b2a63786e99e9988e81e7b4560143ada09f3002fb194d3da963f462ecc58e42",
+  "BIG_original_all_nonmain_functions_AST_identical": true,
+  "BIG_original_sha256": "b6f10b348134866c12f9b1d782766beb22e7f079fcbad13f5dff2c37f4e11aea",
+  "GitHub_writes": 0,
+  "critical_review_responses": {
+    "Horizon_identity": "Direct PRODUCT311 -I-B Source/scripts/rc6_material_horizon.py with nine literal bindings; whole epoch21600, inneroriginal21600/30/5 unchanged; boundedterminal+physicalFIN+native5 before exactfullresult capture.",
+    "RAW_durability": "Lossless original/stored byteSHA+stat11 O_EXCL after every actual nativeFIN; selected one-level raw/preparation/control namespaces; no Source tar/DB/archive/venv/fixture reads/copies.",
+    "authority": "Fresh GitHub RepoID/ref/commit/tree/PR author/headowner/base; issue471 launchcomment authormbalbo2023, exact SHA/tree/branch and literal SESSION_SUCCESSOR typedinput.",
+    "controls_payload_split": "Command logs only command-raw, controls-only JSON upload; UNKNOWN blocks all payloadstage. NativeBIG/Horizon controls preserved explicitly without logs.",
+    "exceptions": "All terminal exceptions set exit1 and never allow safe_payload_upload. Gate-specific mutex cancelfalse and run-name aid dispatchdedup.",
+    "manager_schema": "Actual55325 managed_custody_closed plus unchanged command/watchdog/cleanup/readback/PGID/ECHILD and stickyRED controls. No Gov schema synthesis."
+  },
+  "files": [
+    {
+      "bytes": 29802,
+      "compile": "PASS_SYNTAX_ONLY_NOT_EXECUTED",
+      "destination": "scripts/rc6_material_big.py",
+      "git_blob": "253c94273e1acfc913788a7c06d9febb9c816d2b",
+      "sha256": "3debec87b9b52ea92b008ede996691edeea10865663f8d7f089e56ce3a31cfef",
+      "source_path": "/dev/shm/rc6-material-carrier-20261007-0015/scripts/rc6_material_big.py"
+    },
+    {
+      "bytes": 38058,
+      "compile": "PASS_SYNTAX_ONLY_NOT_EXECUTED",
+      "destination": "scripts/rc6_material_carrier.py",
+      "git_blob": "bcafb7c19375878e0d90d9e514b6605b54d914a2",
+      "sha256": "d7ed7447662c1b2aa2cd0e75cc064768bb452301fc59c850792b1ca4be522a26",
+      "source_path": "/dev/shm/rc6-material-carrier-20261007-0015/scripts/rc6_material_carrier.py"
+    },
+    {
+      "bytes": 4588,
+      "compile": "PASS_SYNTAX_ONLY_NOT_EXECUTED",
+      "destination": "scripts/rc6_material_derive.py",
+      "git_blob": "a1b074765bc27f97432fc15a20ee1526a65063c0",
+      "sha256": "50c8a42476e33efca8e635294415855783957fb79a32d4f3991d35c4cc25289e",
+      "source_path": "/dev/shm/rc6-material-carrier-20261007-0015/scripts/rc6_material_derive.py"
+    },
+    {
+      "bytes": 4103,
+      "compile": "PASS_SYNTAX_ONLY_NOT_EXECUTED",
+      "destination": "scripts/rc6_material_environment.py",
+      "git_blob": "e6c58fc6b3c394b1636a3369c710cc5f958cd040",
+      "sha256": "6d12cb8617299816eba2eeceb279a120ad8981f88ce434dff4e42df8a8bab047",
+      "source_path": "/dev/shm/rc6-material-carrier-20261007-0015/scripts/rc6_material_environment.py"
+    },
+    {
+      "bytes": 5380,
+      "compile": "PASS_SYNTAX_ONLY_NOT_EXECUTED",
+      "destination": "scripts/rc6_material_focal.py",
+      "git_blob": "c926e86d76fb7d10d2296e973c25c4fac44e3022",
+      "sha256": "f6932732e299df47d75445f4d7de2eb9474a37449ce92d9551d9d6edc11073a6",
+      "source_path": "/dev/shm/rc6-material-carrier-20261007-0015/scripts/rc6_material_focal.py"
+    },
+    {
+      "bytes": 5875,
+      "compile": "PASS_SYNTAX_ONLY_NOT_EXECUTED",
+      "destination": "scripts/rc6_material_raw.py",
+      "git_blob": "6b54977aeab3bd839924893f6a49ba25d15e40e2",
+      "sha256": "a6c2f716e1029c5942e2cb5ecb73d7c7728b75e7d8013c04fd426acc5d4f76cd",
+      "source_path": "/dev/shm/rc6-material-carrier-20261007-0015/scripts/rc6_material_raw.py"
+    },
+    {
+      "bytes": 4763,
+      "destination": ".github/workflows/rc6-unified-candidate-tests.yml",
+      "git_blob": "c274b7f344f22cfe0cd7931f1cdcb828cf69d81c",
+      "sha256": "7e226279fe42e39eafdb3c592be6e76bc36a0921041b19096255b7412454b299",
+      "source_path": "/dev/shm/rc6-material-carrier-20261007-0015/.github/workflows/rc6-unified-candidate-tests.yml"
+    }
+  ],
+  "final_candidate_eligible": false,
+  "integration_dependencies": [
+    {
+      "destination": "scripts/rc6_material_browser_driver.py",
+      "proposal": "/dev/shm/rc6-gov-fix-20261007-0015-v2/scripts/rc6_material_browser_driver.py",
+      "sha256": "e271b26e17d1c7276348b12410ef2e58d920d4d4848968bfaab2c07d1564bf94"
+    },
+    {
+      "destination": "scripts/rc6_material_horizon.py",
+      "proposal": "/dev/shm/rc6-horizon-carrier-20261007-0015/scripts/rc6_material_horizon.v2.py",
+      "sha256": "0d7287ff1bde1cd66b0247dcc40b0a08a51c3ef99e590a099b80a32e3e8168eb"
+    },
+    {
+      "destination": "scripts/rc6_material_horizon_producer.py",
+      "proposal": "/dev/shm/rc6-horizon-carrier-20261007-0015/scripts/rc6_material_horizon_producer.v2.py",
+      "sha256": "0ee03b1a31341d73e3d8be14beb4b3c7205d09db27c5dd63cb1aae1eac29c2c8"
+    },
+    {
+      "destination": "scripts/rc6_issue465_stress.py",
+      "sha256": "1e4a980400a676ed5a2db46433ead12fc7a1a6fd2292603580678ef076c53800"
+    },
+    {
+      "destination": "scripts/rc6_controlled_governed_runner.py",
+      "sha256": "fdfba719d6dde27cf7c59cc3356f2ac492bb958f73646e1c8cde503575febedf"
+    }
+  ],
+  "launch_requirements": {
+    "canonical_artifact_pipeline": "PREDEPLOY_V2_ONLY",
+    "gates": [
+      "focal",
+      "full-gov311",
+      "full-gov312",
+      "BIG-browser",
+      "Horizon"
+    ],
+    "inputs": [
+      "source_sha",
+      "source_tree",
+      "gate",
+      "launch_receipt_url",
+      "owner_session"
+    ],
+    "minimum_free_inode_fraction": 0.1,
+    "no_native_execution_on_tmpfs": true,
+    "owner_session_receipt_field": "SESSION_SUCCESSOR=<exact owner_session>",
+    "physical_disk_floor_bytes": 2147483648,
+    "supplementary_artifact_promotable": false,
+    "workflow_id": 360900338,
+    "workflow_path": ".github/workflows/rc6-unified-candidate-tests.yml"
+  },
+  "native_gate_runs": 0,
+  "real_orders_sent": 0,
+  "schema": "rc6.material-carrier-ram-frozen-proposal.v1",
+  "source_base_sha": "d2d15200fe825e16ea7fc16fd09866fe694db171",
+  "source_base_tree": "68e40b18de964f7e4324072da07d7988f1fff9f8",
+  "source_writes": 0,
+  "state": "PREPARED_NOT_EXECUTED_NOT_PUBLISHED",
+  "untested_limits": [
+    "Syntax/AST only; no carrier install/Gitclone/native gates executed in this preparation.",
+    "Actions hosted6h maximum can preempt21600s management including overhead; preemption UNKNOWN, no budget relaxation.",
+    "Root must apply all pinned helper/source dependencies in one Source SHA and publish durable launch with typedSESSION_SUCCESSOR."
+  ]
+}

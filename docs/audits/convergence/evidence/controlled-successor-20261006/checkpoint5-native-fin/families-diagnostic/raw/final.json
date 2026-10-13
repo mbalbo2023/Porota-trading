@@ -1,0 +1,301 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "Gov_closed": false,
+  "PPI_Watch": "UNTOUCHED",
+  "aliases_ALIEN_or_DENIED_import_receipts_retained_RED_not_impersonated": true,
+  "all_code_atime_changes_disclosed": {
+    "diagnostic_clone": [
+      {
+        "after": 1791309637692658159,
+        "before": 1791309630033183390,
+        "kind": "file",
+        "path": "cg_paper_workspace.py"
+      },
+      {
+        "after": 1791309637692658159,
+        "before": 1791309629964257855,
+        "kind": "file",
+        "path": "_version.py"
+      },
+      {
+        "after": 1791309637660658162,
+        "before": 1791309630014549194,
+        "kind": "file",
+        "path": "bs_instrument_contracts.py"
+      },
+      {
+        "after": 1791309637660658162,
+        "before": 1791309629979947176,
+        "kind": "file",
+        "path": "am_us_equity_calendar_rc6.py"
+      },
+      {
+        "after": 1791309637668658162,
+        "before": 1791309633027718190,
+        "kind": "file",
+        "path": "fe_fixed_income_nominal_contract_rc6.py"
+      },
+      {
+        "after": 1791309637672658161,
+        "before": 1791309633134992883,
+        "kind": "file",
+        "path": "rc6_dynamic_universe/sources.py"
+      },
+      {
+        "after": 1791309637672658161,
+        "before": 1791309633129684995,
+        "kind": "file",
+        "path": "rc6_dynamic_universe/common.py"
+      },
+      {
+        "after": 1791309637672658161,
+        "before": 1791309633127071987,
+        "kind": "file",
+        "path": "rc6_dynamic_universe/__init__.py"
+      },
+      {
+        "after": 1791309637672658161,
+        "before": 1791309633133649034,
+        "kind": "file",
+        "path": "rc6_dynamic_universe/routing.py"
+      },
+      {
+        "after": 1791309637652658164,
+        "before": 1791309633178045516,
+        "kind": "file",
+        "path": "rc6_shadow_runtime/families.py"
+      },
+      {
+        "after": 1791309637680658161,
+        "before": 1791309633209736759,
+        "kind": "file",
+        "path": "rc6_shadow_runtime/source_reads.py"
+      },
+      {
+        "after": 1791309637652658164,
+        "before": 1791309633173326791,
+        "kind": "file",
+        "path": "rc6_shadow_runtime/__init__.py"
+      },
+      {
+        "after": 1791309637676658160,
+        "before": 1791309633208816697,
+        "kind": "file",
+        "path": "rc6_shadow_runtime/source_authority.py"
+      },
+      {
+        "after": 1791309637684658160,
+        "before": 1791309633113781002,
+        "kind": "file",
+        "path": "rc6_audit_evidence/sqlite_scratch.py"
+      },
+      {
+        "after": 1791309637684658160,
+        "before": 1791309633115605323,
+        "kind": "file",
+        "path": "rc6_audit_evidence/sqlite_snapshot.py"
+      },
+      {
+        "after": 1791309637688658159,
+        "before": 1791309633113002039,
+        "kind": "file",
+        "path": "rc6_audit_evidence/recompute.py"
+      },
+      {
+        "after": 1791309637680658161,
+        "before": 1791309633112205991,
+        "kind": "file",
+        "path": "rc6_audit_evidence/package.py"
+      },
+      {
+        "after": 1791309637680658161,
+        "before": 1791309633086143469,
+        "kind": "file",
+        "path": "rc6_audit_evidence/__init__.py"
+      },
+      {
+        "after": 1791309637692658159,
+        "before": 1791309633340758657,
+        "kind": "file",
+        "path": "scripts/rc6_sqlite_scratch_guard.py"
+      },
+      {
+        "after": 1791309637642708766,
+        "before": 1791309633327906075,
+        "kind": "file",
+        "path": "scripts/rc6_issue465_stress.py"
+      },
+      {
+        "after": 1791309637680658161,
+        "before": 1791309629648695930,
+        "kind": "directory",
+        "path": "rc6_audit_evidence"
+      },
+      {
+        "after": 1791309637672658161,
+        "before": 1791309629648695930,
+        "kind": "directory",
+        "path": "rc6_dynamic_universe"
+      },
+      {
+        "after": 1791309637652658164,
+        "before": 1791309629648695930,
+        "kind": "directory",
+        "path": "rc6_shadow_runtime"
+      }
+    ],
+    "original_frozen_export": []
+  },
+  "artifact_validated": false,
+  "audit_scope": "DECLARED_PYTHON_WINDOWS; NO_KERNEL_BINARY_TRANSITIVE_NETWORK_ATTESTATION",
+  "canonical_BIG_qualified": false,
+  "errors": [],
+  "evidence_bytes_observed_before_final_manifest": 16464803,
+  "evidence_within_128MiB": true,
+  "families_500ms_qualified": false,
+  "final_candidate_eligible": false,
+  "gate_qualified": false,
+  "kernel_protocol_and_resource_bounds_closed": true,
+  "kernel_returncode": 1,
+  "original_and_cloned_Source_bytes_modes_rawgit_code10_preserved": true,
+  "original_and_cloned_source_data_all11_preserved": true,
+  "parent_inet_audit": {
+    "inet_socket_attempts": [],
+    "inet_socket_constructor_requests": [],
+    "subprocess_executable_counts": {
+      "git": 4,
+      "python": 1
+    }
+  },
+  "postread_kernel_barrier_closed": true,
+  "profile_overhead_is_instrumental_never_subtracted_for_qualification": true,
+  "raw_index": {
+    "child.call-profile.json": {
+      "bytes": 14717,
+      "sha256": "39b05b185fba874db848982d3158f375bb0f4e6d89055e87053cefdc10c1d59d",
+      "stat_fields": {
+        "st_atime_ns": 1791309638147944530,
+        "st_blocks": 32,
+        "st_ctime_ns": 1791309638150867349,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1585061,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791309638150867349,
+        "st_nlink": 1,
+        "st_size": 14717,
+        "st_uid": 1000
+      }
+    },
+    "child.final.json": {
+      "bytes": 1234,
+      "sha256": "2e540b0682ab491b416a4716caaa9381176f2c3c8b9dd45314fd65df7529357f",
+      "stat_fields": {
+        "st_atime_ns": 1791309638385570673,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791309638386537725,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1585067,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791309638386537725,
+        "st_nlink": 1,
+        "st_size": 1234,
+        "st_uid": 1000
+      }
+    },
+    "child.finalization.json": {
+      "bytes": 1595,
+      "sha256": "77c7ef156de23d4cdb58067459faa4b648b14144ed105b5b028c04f8e963d252",
+      "stat_fields": {
+        "st_atime_ns": 1791309638380657585,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791309638385570673,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1585066,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791309638385570673,
+        "st_nlink": 1,
+        "st_size": 1595,
+        "st_uid": 1000
+      }
+    },
+    "child.import-final.json": {
+      "bytes": 218408,
+      "sha256": "fdb6c02953009ddec30f38fd300dfaaee778f718d21bd8dea409f3fafa35c594",
+      "stat_fields": {
+        "st_atime_ns": 1791309638372657619,
+        "st_blocks": 432,
+        "st_ctime_ns": 1791309638377688923,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1585064,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791309638377688923,
+        "st_nlink": 1,
+        "st_size": 218408,
+        "st_uid": 1000
+      }
+    },
+    "child.native-result-or-partial.json": {
+      "bytes": 7104231,
+      "sha256": "512e7fa86b8558391467e8d86902285b8f86edbd4a67d164e3e09c2f95f63547",
+      "stat_fields": {
+        "st_atime_ns": 1791309638292657952,
+        "st_blocks": 13880,
+        "st_ctime_ns": 1791309638299432501,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1585062,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791309638299432501,
+        "st_nlink": 1,
+        "st_size": 7104231,
+        "st_uid": 1000
+      }
+    },
+    "child.sqlite-connect-audit.json": {
+      "bytes": 246,
+      "sha256": "085c66cd0e86cc2922e7d2817aaf6506ea0b37c0933bcf5202abba1b0e9f531a",
+      "stat_fields": {
+        "st_atime_ns": 1791309638300657920,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791309638303835791,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1585063,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791309638303835791,
+        "st_nlink": 1,
+        "st_size": 246,
+        "st_uid": 1000
+      }
+    },
+    "native.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stat_fields": {
+        "st_atime_ns": 1791309636474609830,
+        "st_blocks": 0,
+        "st_ctime_ns": 1791309636474609830,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1585046,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791309636474609830,
+        "st_nlink": 1,
+        "st_size": 0,
+        "st_uid": 1000
+      }
+    }
+  },
+  "real_orders_sent": 0,
+  "runtime_validated": false,
+  "schema": "rc6.single-native-families-read.instrumental-diagnostic.final.v1",
+  "source_index_sha256": "44a45bf3c8c5ae570c858ef857dc735966be8bc316e14f0b181144cb0b5bd756",
+  "source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "source_sqlite_never_opened_claim_requires_child_actual_audit_receipt": true,
+  "source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "status": "RED"
+}

@@ -1,0 +1,125 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "PPI_Watch": "UNTOUCHED",
+  "SQL": {
+    "SQL_source_never_opened": {
+      "audit_must_register_with_witness": true,
+      "only_uri_mode_ro_derived_private_snapshot_under_canonical_scratch_allowed": true,
+      "scope": "PYTHON_SQLITE3_CONNECT_AUDIT_NOT_BINARY_KERNEL_TRANSITIVE_ATTESTATION",
+      "source_and_physical_clone_SQL_open_DENIED": true
+    },
+    "extra_SELECT_count_EXPLAIN_or_fixture_creation": false,
+    "native_as_of": "2026-10-05T13:20:00+00:00",
+    "original_PRE_const_checked": true
+  },
+  "argv": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/families_read_profile_v2.py"
+  ],
+  "cwd": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9",
+  "earlier_RED_raw_and_cleanup172_errata_preserved": true,
+  "forbidden_and_not_executed": [
+    "Source edits",
+    "remote ref/commit/GitHub write",
+    "BIG retry",
+    "Gov",
+    "Horizon",
+    "browser launch/GATE",
+    "runtime/deploy/host",
+    "network capability relaxation",
+    "budget increase",
+    "manual source aliases",
+    "JSON graph clone",
+    "GC tuning"
+  ],
+  "future_source_fix_validation_only_after_proven_cause_and_Predeploy_FIN": {
+    "all_SQL_columns_types_NULL_BLOB_and_native_clocks_cutoff_ORDER_LIMIT_plus1_truncation_PAPER_safety_private_metadata_identity_preserved": true,
+    "existing_oracles": [
+      "tests/test_rc6_shadow_family_runtime.py::test_native_family_rows_preserve_all_sqlite_columns_types_and_cutoff",
+      "tests/test_rc6_shadow_family_runtime.py::test_empty_native_metadata_remains_private_to_each_instrument",
+      "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads",
+      "tests/test_rc6_shadow_family_runtime.py::test_observation_read_is_bounded_and_reports_partial_coverage",
+      "tests/test_rc6_native_source_reads.py",
+      "tests/test_rc6_source_capture_deadlines.py",
+      "tests/test_rc6_history_snapshot_copy.py",
+      "tests/test_rc6_sqlite_disk_scratch.py"
+    ],
+    "if_copy_hotsite_proven_preserve_double_hash_main_WAL_SHM_inventory_and_close_cleanup_deadline_guards": true,
+    "new_frozen_SHA_requires_new_canonical_BIG_not_instrumental_qualification": true,
+    "new_regression_should_target_measured_cause_not_accept_prior_backpressure": true
+  },
+  "gate_qualified": false,
+  "limits": {
+    "cleanup_seconds": 5,
+    "guard_limits_unchanged": true,
+    "maximum_RAW_evidence_bytes": 134217728,
+    "maximum_child_rss_bytes": 2147483648,
+    "original_cash_rows": 500,
+    "original_metadata_rows": 20000,
+    "original_query_budget_seconds": 0.5,
+    "original_quotes_rows": 5000,
+    "outer_native_watchdog_seconds": 90
+  },
+  "native_families_read_call_line": 470,
+  "native_families_read_invocations_in_script": 1,
+  "physical_clone": {
+    "complete_Source_files": 3192,
+    "database_sha256": "ed2243464807d6c202f292b504a84b3ecdb035aef3a7ea6ca847b6dcf6878e36",
+    "db_source": "CLOSED_SYNTHETIC_NATIVE_BIG_DATA_AFTER_REAL_FIN",
+    "modes_from_original_git_blob_manifest": true,
+    "original_and_cloned_DB_all11_fields_hash_sidecar_inventory_before_after": true,
+    "physical_DB_copy_no_SQL_no_hardlinks_same_device": true,
+    "rawGit_commit_and_tree_validation_before_native_child": true,
+    "regular_owned_EXCL_NOATIME_byte_copies": true,
+    "source_atime_changes_separate": true,
+    "source_mode10_and_bytes_pin_before_after": true,
+    "source_overlays": 0
+  },
+  "process_custody": {
+    "DENIED_INET_audit_kept_no_exceptions": true,
+    "SIGTERM_KILL_veto_kept": true,
+    "actual_main_pid_specific_wait4": true,
+    "before_spawn_ECHILD": true,
+    "native_unmodified_child_finalization_in_finally": true,
+    "original_governed_subprocess_phase_not_reimplemented": true,
+    "postmain_ECHILD_owned_exhaustion_PGID_absent_no_remaining_children_before_postreads": true,
+    "timeout_signal_late_reap_residual_and_all_failure_RAW_remain_RED": true
+  },
+  "profile": {
+    "all_events_received_counted": true,
+    "callback_body_wall_cost_observed_is_lower_bound_excluding_dispatch_final_accumulators_clocks": true,
+    "capture_points": [
+      "original context generator call/return at copy and source_connection",
+      "original _check callers162,164,172,174 with real deadline/headroom",
+      "original byte-pass calls/returns including whether destination present",
+      "Connection.execute original _read line224 entry and initial native return",
+      "builtin len(rows) original line228 after list cursor iteration and materialization",
+      "next original table PRAGMA219 / final _read return closes row transform gaps",
+      "native _mapping and json.loads calls/returns and aggregate value-kind/byte counts",
+      "actual native returned or partial result retained by reference"
+    ],
+    "function_cursor_connection_list_alias_or_handler_replacement": false,
+    "instrumentation_uses_real_native_deadline_can_cause_RED": true,
+    "mechanism": "sys.setprofile ORIGINAL_CALL_RETURN_C_CALL_C_RETURN_C_EXCEPTION",
+    "nested_time_not_added_or_overhead_subtracted_for_qualification": true,
+    "per_row_line_tracer": false,
+    "result_reference_retention_affects_diagnostic_lifetime_no_GC_policy_change": true,
+    "timings_not_extrapolated_to_canonical_gate": true
+  },
+  "real_orders_sent": 0,
+  "schema": "rc6.single-read-diagnostic-review-plan.v1",
+  "script": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/families_read_profile_v2.py",
+  "script_bytes": 38253,
+  "script_sha256": "445064f67616d93463361d8dbc573261d9f6ac961db1178452930c480347f1c4",
+  "source_index_sha256": "44a45bf3c8c5ae570c858ef857dc735966be8bc316e14f0b181144cb0b5bd756",
+  "source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "status": "PREPARED_NOT_EXECUTED_AWAIT_ROOT_APPROVAL",
+  "syntax_validation_only": {
+    "ast_parse_pass": true,
+    "no_SQL_or_profile_executed": true,
+    "no_Source_modules_imported_by_preparation": true
+  }
+}

@@ -1,0 +1,189 @@
+{
+  "Horizon_plan_unchanged": true,
+  "PPI_Watch": "UNTOUCHED",
+  "SQL_executed": 0,
+  "Source_edits": false,
+  "actual_canonical_RED": {
+    "0f73_root_verified": {
+      "error": "SnapshotError:TIME_BUDGET_EXHAUSTED",
+      "failing_check": "sqlite_snapshot.readonly_copy164 postyield; families._read202",
+      "handler_families_CPU_seconds": 0.521551052,
+      "handler_families_wall_seconds": 0.522118497,
+      "subinterval_copy_SQL_GC_deadline_timing_not_measured": true,
+      "whole_handler_duration_not_read_intrinsic_cost": true,
+      "whole_run_to_real_FIN_seconds": 16.831
+    },
+    "2e48": {
+      "error": "SnapshotError:TIME_BUDGET_EXHAUSTED",
+      "failing_check": "sqlite_snapshot.readonly_copy164 postyield",
+      "handler_families_wall_seconds": 0.504610402,
+      "native_receipt_sha256": "37ba6f845457fa16aac07393acd9b9a80b102cfa3c16158e68fd8c9679193043"
+    }
+  },
+  "candidates": [
+    {
+      "evidence": "Row_factory sqlite3.Row is established in readonly_copy; row_names readonce; conversion onlyiterates values. Prior actual result contains12000metadata rows.",
+      "hypothesis": "Avoid per-result Row factory/wrapper work while retaining exact SQL,columnnames,ordered values and resulting dictionary semantics.",
+      "minimal_shape_not_a_diff": "If cursor is genuinely native with original Row factory, derive columnnames from cursor.description and use onlythat cursor row_factory=None before materialization. Other cursors/connection/default Row factory unchanged. Retain original path for legacy spies/custom factories.",
+      "name": "Native per-cursor tuples instead of redundant sqlite3.Row wrappers",
+      "recommendation": "A new bounded component control could test this redundancy; do not applySourcepatch yet.",
+      "risks_to_prove": [
+        "ExactallSQLite columns/names/types/order incl NULL/BLOB/float/-0.0",
+        "Custom rowfactory and legacy cursor spies remain on original fallback",
+        "limit+1/truncation/error timing and partial result semantics unchanged",
+        "Distinct row dictionaries and private metadata perinstrument",
+        "No SQLstatement/query/cutoff/progresshandler/deadline/custody change"
+      ],
+      "savings_and_canonical_causality_measured": false,
+      "wrapper_count12000_is_controlflow_inference_not_instrumented_constructor_count": true
+    },
+    {
+      "cost_measured": false,
+      "evidence": "Metadata branch executes one4-key update permaterialized row.",
+      "name": "Avoid row.update keyword argument packaging",
+      "recommendation": "Secondary hypothesis only; compiler/C-call packaging and exclusiveCPU cost not captured. No application proposal."
+    },
+    {
+      "cost_measured_exclusive": false,
+      "evidence": "12000helper invocations measured; fast path already avoids JSON.",
+      "name": "Inline exact{} helper fast path",
+      "recommendation": "Low-confidence and callback/spies contract risks; no sharedemptydict, no Sourceapply proposed."
+    }
+  ],
+  "clones_or_priming_or_resets": 0,
+  "existing_closed_evidence": {
+    "contextual_GC_causal_note": {
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-contextual-gc-plan-2e48-mi933bw3/closed-gc-causal-note.json",
+      "sha256": "f5eacf3cfcfae488ba793454792497a09f58d8fc218abb08f820687abf6f64b2"
+    },
+    "isolated_raw_profile": {
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/raw/child.call-profile.json",
+      "sha256": "39b05b185fba874db848982d3158f375bb0f4e6d89055e87053cefdc10c1d59d"
+    },
+    "isolated_read_causal_note": {
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/closed-read-causal-note.json",
+      "sha256": "449efef6492daeb147c9f59b1d98a8424f12b38b7b70720fd8f6dbe5c5a48f56"
+    }
+  },
+  "instrumental_cost_limits": {
+    "collector_placement_affected_by_callback_allocations_IO_f_locals": true,
+    "contextual_GC_no_gen2_in_read_and_no_read_deadline_crossing": true,
+    "contextual_generation2_0point84seconds_after_read_not_read_cost": true,
+    "copy_two_passes_inclusive_seconds": 0.04686472400135244,
+    "do_not_sum_or_subtract_nested_or_observer_costs_to_qualify": true,
+    "isolated_read_not_canonical_heap_or_RED_reproduction": true,
+    "mapping12000calls_inclusive_seconds": 0.05056144678746932,
+    "metadata_query_execute_plus_materialize_seconds": 0.04270579999865731,
+    "metadata_transform_inclusive_gap_seconds": 0.3134343780002382,
+    "no_native_exclusive_dict_zip_update_loop_costs_measured": true,
+    "profile_binding_marshal_hash_RED_exact_cause_not_proven": true,
+    "profile_observer_lower_bound_wall_seconds": 0.291485869,
+    "profile_whole_read_wall_seconds": 0.44521073199939565
+  },
+  "native_diagnostics_executed": 0,
+  "new_specific_diagnostic_plan": {
+    "classification": "External __main__ andcomponent implementation must be honestly ALIEN/DIAGNOSTIC_ONLY/RED; no source-module impersonation, binding forgery or import-proof GREEN.",
+    "cleanup_seconds": 5,
+    "comparison_after_REAL_FIN": "Afterseparateprocessclosure compare typed output digests/keyorder/types andcounts plus distinctmetadata/dict identity assertions. Keep native outputs byreference until post-timed validation; no JSON/default=str graph reconstruction.",
+    "input": "Actual closed12000metadata/60000futurequote synthetic nativeDB. Source connection must use the untouched original source_connection/private copy; SourceDB neverSQLite-opened. No DATAcache/priming/reset/index/schema writes.",
+    "kernel_and_custody": "Beforeanyparentpayloadread requirefull actualmain wait4,pre/postECHILD,owned exhaustion,PGIDbothabsent,restore,nozero/late/signals/residual/pending/errors andoriginal5cleanup/RSS; Sourcebytes/modes/rawGit/code10+separateatimes,originalDataall11+sha before/after.",
+    "limitations": [
+      "Fresh component lacks canonical pre-family503MBheap/context andcannot measureBIG headroom directly.",
+      "One sequential pair cannot eliminate machine/cache/allocator noise; do not claim strictcanonical savings fromsimplewall.",
+      "If negligiblecost or output mismatch, noSourcefix or canonical retry; retain allRED evidence.",
+      "Only if redundant work andsemantics are demonstrated mayRootreview a minimalSourcefix underfreshowner/ref/Predeploy checks, thenaffectedfocals andnewSHAcanonical gates."
+    ],
+    "measurement": "Fewwall/processCPU timestamps only at consumer-entry/nativeexecute/materialization/endconversion/endoriginalwithcleanup. No sys.setprofile/sys.settrace,cProfile,tracemalloc,GCcallbacks,GCpolicy/threshold changes or per-row timers. Diagnostic return/timing does not qualifyBIG.",
+    "no_parallel_modes_or_duplicate_graphs": true,
+    "not_a_full_BIG_or_material_gate": true,
+    "one_invocation_each_no_blind_retries": true,
+    "original_absolute_consumer_deadline_seconds_each": 0.5,
+    "originals_preserved": "Original SourceSQL/READ_ONLY/PAPERguards, progresscallbacks,byte/custody/quota/deadline checks. No discardemptyquote queries in futurefull _read experiment.",
+    "outer_watchdog_seconds": 90,
+    "process_modes": [
+      {
+        "name": "ROW_control",
+        "operation": "Native privatecursor with original sqlite3.Row factory, exactoriginal metadata SQL/cutoff/order/limit+1, original dict(zip(keys,values)) conversion and original metadata mappings."
+      },
+      {
+        "name": "TUPLE_component",
+        "operation": "SameprivateSQL/cutoff/order/limit+1 andcolumns; localnativecursor tuple factory only in externalcomponent. Untouched Sourcefunctions/globals; otherwise same conversion and mappings."
+      }
+    ],
+    "question": "What CPU/allocation cost is attributable to nativeRow representation for the original metadata SELECT, and are tuple representation outputs exact? This answers a narrower mechanism than another fullBIG retry.",
+    "raw_evidence_max_bytes": 134217728,
+    "rss_max_bytes": 2147483648,
+    "source": "Use finalapproved frozenSource and existing canonical BIG closed DB/input pin; no newSourceclone/dummyheap or Source/function alias. Record actualSourceSHA/tree beforelaunch.",
+    "status": "PLAN_ONLY_NEEDS_ROOT_REVIEW_AND_SEPARATE_EXECUTION_AUTHORIZATION"
+  },
+  "not_valid_optimizations": [
+    "sharedempty metadata object",
+    "direct SourceSQLite connection",
+    "skip secondbytehash/custody recheck",
+    "reuse/cached private snapshot acrossSource reads",
+    "lexical timestamp substitution forjulianday",
+    "discardalloriginalSQLcolumns",
+    "skip futurequote SELECT based on knownfixture",
+    "streampartial rows in a way thatchanges originalOperationalError/truncation/partial results",
+    "GCcollect/disable/threshold tuning beforeRead",
+    "inflate0.5budget or hide fail/skip"
+  ],
+  "proven_facts": [
+    "The three reader/transport source files are byte-identical2e48\u21920f73; the later canonical RED does not establish a regression in these files.",
+    "_mapping already handles None/exactstr{} by returning a fresh emptydict before json.loads. Existing single-read profile saw12000exact{} inputs and0metadata JSON parses. JSON parsing optimization is already present.",
+    "The isolated read returned12000metadata and0quotes/cash/errors/truncated; intraday60000records allafter PRE. Native query is still executed and cannot be skipped based on fixture assumptions.",
+    "Source_copy(validate=False) already skips quick_check; it must retain both byte capture/recheck passes, identity/digests, noSourceSQLite, deadline checks and scratch custody.",
+    "_read caches row_names from the first sqlite3.Row, then converts every raw row by dict(zip(row_names,raw)); remaining rows do not need name-index lookup for conversion. Source consumer exposes plain dictionaries, not Row objects."
+  ],
+  "real_orders_sent": 0,
+  "root_sole_writer": true,
+  "schema": "rc6.families-budget.readonly-rca.v1",
+  "source_Git_equality": {
+    "rc6_audit_evidence/sqlite_snapshot.py": {
+      "by_sha": {
+        "0f73e2cd681672b7a9a3065e99a72915ba93f4fd": {
+          "blob_id": "7278dd78d299fb3c8843908bf45a28df60b3fa9e",
+          "bytes": 8516,
+          "sha256": "c4cb17481d678c1d1b1e05cffb6ed6762e09d26032bc30d245d1b033df5319ea"
+        },
+        "2e48f6f005f38f68b9dd9a75677fb67e52f23a18": {
+          "blob_id": "7278dd78d299fb3c8843908bf45a28df60b3fa9e",
+          "bytes": 8516,
+          "sha256": "c4cb17481d678c1d1b1e05cffb6ed6762e09d26032bc30d245d1b033df5319ea"
+        }
+      },
+      "identical_bytes": true
+    },
+    "rc6_shadow_runtime/families.py": {
+      "by_sha": {
+        "0f73e2cd681672b7a9a3065e99a72915ba93f4fd": {
+          "blob_id": "6866e762bb0ffc4ad06868cf5c5453d485f66ddd",
+          "bytes": 44176,
+          "sha256": "75634ed7a6fec86e03b47420012d7144693393029de85389cfa631ccd5fc3398"
+        },
+        "2e48f6f005f38f68b9dd9a75677fb67e52f23a18": {
+          "blob_id": "6866e762bb0ffc4ad06868cf5c5453d485f66ddd",
+          "bytes": 44176,
+          "sha256": "75634ed7a6fec86e03b47420012d7144693393029de85389cfa631ccd5fc3398"
+        }
+      },
+      "identical_bytes": true
+    },
+    "rc6_shadow_runtime/source_reads.py": {
+      "by_sha": {
+        "0f73e2cd681672b7a9a3065e99a72915ba93f4fd": {
+          "blob_id": "9676a80e2a6a759b0f95625eec4dd2c37fb87853",
+          "bytes": 1334,
+          "sha256": "731c2ab234e3534a0f1bcddf5cd2a8156c9bafbcf458e236c3e781561b14e189"
+        },
+        "2e48f6f005f38f68b9dd9a75677fb67e52f23a18": {
+          "blob_id": "9676a80e2a6a759b0f95625eec4dd2c37fb87853",
+          "bytes": 1334,
+          "sha256": "731c2ab234e3534a0f1bcddf5cd2a8156c9bafbcf458e236c3e781561b14e189"
+        }
+      },
+      "identical_bytes": true
+    }
+  },
+  "status": "CAUSE_UNRESOLVED_NO_SOURCE_FIX_AUTHORIZED"
+}

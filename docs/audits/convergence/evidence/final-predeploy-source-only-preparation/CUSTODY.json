@@ -1,0 +1,147 @@
+{
+  "deploys": 0,
+  "final_candidate_sha": null,
+  "gov_executions": 0,
+  "historical_and_source_only_precursors": "Preserved inside the byte-exact original ZIP; not new executions.",
+  "image_builds": 0,
+  "original_zip_crc_verified": true,
+  "original_zip_members": 29,
+  "original_zip_payload_bytes_modes_sha256_verified": true,
+  "pending": "Final stable S/D/C, native whole-root governed311/312, exact FIP/JUnit schema acceptance, one canonical build/artifact, independent same-image replay and concrete future deploy order.",
+  "raw_records": [
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 246154,
+      "capture_path": "/workspace/rc6-final-predeploy-source-preparation-20261005.zip",
+      "encoding": "identity",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791227002072651955,
+        "st_blocks": 488,
+        "st_ctime_ns": 1791226843889902485,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 302122,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226843889902485,
+        "st_nlink": 1,
+        "st_size": 246154,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/original-source-preparation.zip",
+      "sha256": "e62658772193cd70ef7bc3a60bb0b4db5d3e73a676651947dd638f4696dd281e"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 5535,
+      "capture_path": "/workspace/rc6-final-predeploy-source-preparation-20261005/MANIFEST.json",
+      "encoding": "identity",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791227002064652017,
+        "st_blocks": 16,
+        "st_ctime_ns": 1791226843863598480,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 795762,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226843863598480,
+        "st_nlink": 1,
+        "st_size": 5535,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/MANIFEST.json",
+      "sha256": "d0e992563e8d4765982c9e713806d391820204768cb063607b9353b46414cfda"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 16566,
+      "capture_path": "/workspace/rc6-final-predeploy-source-preparation-20261005/SOURCE_PLAN.json",
+      "encoding": "identity",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791227002068651986,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791226843856219192,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 795760,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226843856219192,
+        "st_nlink": 1,
+        "st_size": 16566,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/SOURCE_PLAN.json",
+      "sha256": "bf98948bfe92a4f89829ddb6739b6665daf993f8b59599a06ebf5aea3ec1704b"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 1353,
+      "capture_path": "/workspace/rc6-final-predeploy-source-preparation-20261005/README.md",
+      "encoding": "identity",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791227002068651986,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791226843858028611,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 795761,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226843858028611,
+        "st_nlink": 1,
+        "st_size": 1353,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/README.md",
+      "sha256": "0528b09566695558a6579456d82aff4ae74bc1a9db8876b45bb1e47b8d7d3bb4"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 13667,
+      "capture_path": "/workspace/rc6-final-predeploy-source-preparation-20261005/REVIEW_RECIPE.md",
+      "encoding": "identity",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791227002068651986,
+        "st_blocks": 32,
+        "st_ctime_ns": 1791226843847011379,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 795759,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226843847011379,
+        "st_nlink": 1,
+        "st_size": 13667,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/REVIEW_RECIPE.md",
+      "sha256": "b1ef1f5aac4829ad4c94295db87513b437e4e52e651cf3c8c6d3244a967850d0"
+    },
+    {
+      "all11stats_preserved_during_copy": true,
+      "bytes": 31518,
+      "capture_path": "/workspace/rc6-final-predeploy-source-preparation-20261005/rc6_run_frozen_governed_v2.py",
+      "encoding": "identity",
+      "original_stat_at_preservation": {
+        "st_atime_ns": 1791227002068651986,
+        "st_blocks": 64,
+        "st_ctime_ns": 1791226843839430493,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 795754,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791226843839430493,
+        "st_nlink": 1,
+        "st_size": 31518,
+        "st_uid": 1000
+      },
+      "path": "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/rc6_run_frozen_governed_v2.py.source",
+      "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+    }
+  ],
+  "replay_executions": 0,
+  "reviewed_source_sha": "d9333065a306dc59bc5a58d7b5604d52daf9ff9f",
+  "reviewed_source_tree": "316ad539f2690842e2fb1df4637811826897d6a0",
+  "runner_sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21",
+  "schema": "rc6.final-predeploy-source-preparation-custody.v1",
+  "scope": "SOURCE_ONLY_PREPARED_HELPERS_NOT_EXECUTED_GOV_BUILD_ARTIFACT_REPLAY_OR_DEPLOY",
+  "source_snapshot_scope": "d933 immutable snapshots; future Source changes require fresh review and final C bindings.",
+  "status": "SOURCE_ONLY_NOT_EXECUTED"
+}

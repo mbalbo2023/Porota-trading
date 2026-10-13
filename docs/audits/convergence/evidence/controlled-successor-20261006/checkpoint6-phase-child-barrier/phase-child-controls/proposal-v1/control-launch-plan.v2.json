@@ -1,0 +1,251 @@
+{
+  "CPU_authorization": "NOT_ACQUIRED_NO_RUN_WAIT_ROOT_REVIEW_AND_DURABLE_LAUNCH_AFTER_BIG_FIN",
+  "DEPLOY_OWNER": "NOT_ACQUIRED",
+  "PAPER_SHADOW_ONLY": true,
+  "PPI_Watch": "UNTOUCHED",
+  "actual_stdlib_lifecycle": "multiprocessing fork Process sleeping6 and multiprocessing.util.Finalize(None, actual_worker.join, exitpriority=0); no replacement finalizer or thread",
+  "ast_invariants": {
+    "guard_statement_AST_identical": true,
+    "historical_V2_unchanged": true,
+    "no_kernel_finalizer_thread_network_deadline_status_adapter": true,
+    "only_declared_module_adapters": [
+      "source_pin",
+      "installed_closure",
+      "approved_scope",
+      "publish"
+    ],
+    "other_original_functions_identical": true,
+    "phase_child_identical_after_removing_same_moved_guard": true
+  },
+  "condition_new_negative": "Same natural lifecycle and5s; existing require error before all Source postattempts; zero pin-entry/open/listdir/scandir; original immutable RED preserved.",
+  "condition_new_positive": "Actual original5 finalizer finished, actual ECHILD, witnessed signal guard/no signals/no errors; original phase return0 and source postcapture allowed.",
+  "condition_old_negative": "Original finalizer5 RED/unfinished real thread/live own6 worker; source attempt>=1 (import capture or pin); audit VETO before Source bytes; original immutable RED preserved.",
+  "control_files": {
+    "frozen157-policy.json.source": {
+      "bytes": 103636,
+      "sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462",
+      "stat": {
+        "st_atime_ns": 1791317850118961304,
+        "st_blocks": 208,
+        "st_ctime_ns": 1791317850122497078,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093908,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850122497078,
+        "st_nlink": 1,
+        "st_size": 103636,
+        "st_uid": 1000
+      }
+    },
+    "input-bindings.json": {
+      "bytes": 4322,
+      "sha256": "bfe58c16f266f7025800b3c13bd988ec0ca0b86ddc3118f126c5ba838c1db870",
+      "stat": {
+        "st_atime_ns": 1791317850139560958,
+        "st_blocks": 16,
+        "st_ctime_ns": 1791317850140660506,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093910,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850140660506,
+        "st_nlink": 1,
+        "st_size": 4322,
+        "st_uid": 1000
+      }
+    },
+    "new-governed-runner.py.source": {
+      "bytes": 63436,
+      "sha256": "a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47",
+      "stat": {
+        "st_atime_ns": 1791317850133208977,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791317850139560958,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093909,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850139560958,
+        "st_nlink": 1,
+        "st_size": 63436,
+        "st_uid": 1000
+      }
+    },
+    "old-governed-runner.py.source": {
+      "bytes": 63436,
+      "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+      "stat": {
+        "st_atime_ns": 1791317850109209082,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791317850113329056,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093904,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850113329056,
+        "st_nlink": 1,
+        "st_size": 63436,
+        "st_uid": 1000
+      }
+    },
+    "owned-native-child-manager.py.source": {
+      "bytes": 18113,
+      "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+      "stat": {
+        "st_atime_ns": 1791317850113329056,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791317850118961304,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093907,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850118961304,
+        "st_nlink": 1,
+        "st_size": 18113,
+        "st_uid": 1000
+      }
+    },
+    "phase_component.py": {
+      "bytes": 19459,
+      "sha256": "0b0cb04e3a98e85a180919cce38f51118da66b38a3a2da03d5813af49facc582",
+      "stat": {
+        "st_atime_ns": 1791318164111788361,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791318164731785549,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093914,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791318164731785549,
+        "st_nlink": 1,
+        "st_size": 19459,
+        "st_uid": 1000
+      }
+    },
+    "run_controls.py": {
+      "bytes": 12203,
+      "sha256": "88d240fcf53fbea60f3fa335bd575fbdf9786014814a6bc66a74796c60899c42",
+      "stat": {
+        "st_atime_ns": 1791318119259991503,
+        "st_blocks": 24,
+        "st_ctime_ns": 1791318119259991503,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093915,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791318119259991503,
+        "st_nlink": 1,
+        "st_size": 12203,
+        "st_uid": 1000
+      }
+    },
+    "test_live_component.py.source": {
+      "bytes": 2071,
+      "sha256": "9ca5ff10f0fc9a6d0267b66af7544da825da85a7e441d6cadd30bfe850063112",
+      "stat": {
+        "st_atime_ns": 1791317980656627520,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791317980656627520,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093912,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317980656627520,
+        "st_nlink": 1,
+        "st_size": 2071,
+        "st_uid": 1000
+      }
+    },
+    "test_positive_component.py.source": {
+      "bytes": 157,
+      "sha256": "93467ba6ac0a177cf57373abd1f70e13b51e0df26bc6f8412744fcdb18a4c635",
+      "stat": {
+        "st_atime_ns": 1791317981136625378,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791317981136625378,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093913,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317981136625378,
+        "st_nlink": 1,
+        "st_size": 157,
+        "st_uid": 1000
+      }
+    }
+  },
+  "diagnostic_scope": "Only after original phase RED wait exact original owned daemon thread join naturally; separate5s observation, not acceptance extension; same-PID actual pre_capture ECHILD required before documentary Source/JUnit/log read. No signals or status reclassification.",
+  "diff_path": "/workspace/scratch/rc6-phase-fin-postread-proposal-m3kkg78v/phase-child-postread.diff",
+  "diff_sha256": "1062f532a519db719481de1fc50a88ca491bc89fdc6ebfc11687cfe5d3839f36",
+  "input_manifest": "/workspace/scratch/rc6-phase-fin-postread-proposal-m3kkg78v/control/launch-inputs.final.json",
+  "input_manifest_sha256": "e860139636bc155ccdd302f3755a1dccb00d545539b29a5bf7afa3a548d0745a",
+  "launch_commands": [
+    {
+      "argv": [
+        "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+        "-I",
+        "-B",
+        "/workspace/scratch/rc6-phase-fin-postread-proposal-m3kkg78v/control/run_controls.py",
+        "311"
+      ],
+      "epoch": "311"
+    },
+    {
+      "argv": [
+        "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python",
+        "-I",
+        "-B",
+        "/workspace/scratch/rc6-phase-fin-postread-proposal-m3kkg78v/control/run_controls.py",
+        "312"
+      ],
+      "epoch": "312"
+    }
+  ],
+  "order": [
+    "311 old_unknown5",
+    "311 new_unknown5",
+    "311 new_positive",
+    "312 old_unknown5",
+    "312 new_unknown5",
+    "312 new_positive"
+  ],
+  "original_finalizer_control": "Exact canonical bytes passed to original publish; original raw remains immutable even though actual daemon later mutates its own report object. UNKNOWN observation remains sticky.",
+  "outer_original_manager": {
+    "TERM_seconds": 2,
+    "component_management_seconds": 60,
+    "failed_cleanup_seconds": 5,
+    "phase_global_budget_argument_unchanged": 5400,
+    "progress_poll_seconds": 5,
+    "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
+  },
+  "outputs": [
+    "input-manifest",
+    "launch-intent",
+    "progress",
+    "producer-control",
+    "original5-finalization",
+    "live-kernel-ownPID-thread",
+    "diagnostic samePID ECHILD",
+    "outer wait4 ECHILD PGID restoration",
+    "component JUnit only after FIN",
+    "Source before/after10+atime",
+    "157 metadata before/after",
+    "component receipt preserving originalRED",
+    "epoch receipt"
+  ],
+  "physical_custody": "Own fresh0700 epoch/case/output and real tiny Source with normal022 creation, no alias/hardlink/overlay; actual physical_namespace/capture/compare_source10 and atime ledger; locked157 metadata unchanged, no wheel-byte attestation.",
+  "prepared_only_no_execution": true,
+  "progress": "Manager callbacks O_EXCL every5s; only own stdout FD fstat while active. No producer payload/Source/JUnit/log reads until exact real kernel FIN. Stop next case/312 on unresolved newRED; keep allRAW.",
+  "proposal_path": "/workspace/scratch/rc6-phase-fin-postread-proposal-m3kkg78v/proposed/rc6_controlled_governed_runner.py",
+  "proposal_sha256": "a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47",
+  "real_orders_sent": 0,
+  "schema": "rc6.phase-child-postread-natural-component-launch-plan.v2",
+  "source_ref_frozen_by_active_predeploy37522988940": true,
+  "source_sha_context": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree_context": "36227e546cb311546f08b80880064dde86a6f630",
+  "veto_scope": "Audithook entry marker in declared component source_pin provider prevents even metadata; OS open/listdir/scandir hook separately protects any imported Source capture. Count distinct classes; never assume source_pin is first.",
+  "whole_Git_source_qualification": false,
+  "whole_Gov_run_blocked": true,
+  "working_Source_edits": 0
+}

@@ -1,0 +1,36 @@
+"""Bounded import-only diagnosis; INET stays denied before its syscall."""
+import json
+import os
+from pathlib import Path
+import socket
+import sys
+import time
+import traceback
+
+source = Path(sys.argv[1]).resolve(strict=True)
+output = Path(sys.argv[2])
+assert not output.exists() and not output.is_relative_to(source)
+assert not any(name.startswith(("POROTA_", "PAPER_")) or name in ("DATA_DIR", "HIST_DB_PATH") for name in os.environ)
+sys.path.insert(0, str(source))
+from scripts.rc6_native_import_provenance import environment_qualification
+qualification = environment_qualification(source)
+assert qualification["installed_total"] == 157
+events = []
+def observe(event, arguments):
+    forbidden = event in ("socket.getaddrinfo", "socket.gethostbyname", "socket.gethostbyaddr")
+    if event in ("socket.connect", "socket.bind", "socket.sendto", "socket.sendmsg"):
+        forbidden = getattr(arguments[0], "family", None) in (socket.AF_INET, socket.AF_INET6)
+    if forbidden:
+        events.append({"event": event, "denied_before_syscall": True,
+            "frames": [{"filename": row.filename, "function": row.name, "line": row.lineno}
+                       for row in traceback.extract_stack(limit=16)[:-1]]})
+        raise RuntimeError("DIAGNOSTIC_INET_OPERATION_FORBIDDEN")
+sys.addaudithook(observe)
+started = time.monotonic()
+import ba_data912_history
+result = {"schema": "rc6.import-only-denied-inet-diagnosis.v1", "diagnostic_only": True,
+    "acceptance_complete": False, "fixtures_created": False, "real_orders_sent": 0,
+    "source_root": str(source), "environment": qualification, "imports_completed": True,
+    "events": events, "elapsed_seconds": time.monotonic() - started}
+output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+print(json.dumps({"imports_completed": True, "events": len(events), "diagnostic_only": True}))

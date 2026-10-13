@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Actual small committed capsule compatibility, not external TAR byte proof."""
+import argparse
+import collections
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+
+HELPERS = (
+    ("REGISTER", Path("/tmp/rc6_remediation_register_generate_v4_identity_reference_candidate_v2.py"),
+     "f5fc8a253f318eb86bbfd21b3e1dbd12e326b12b68d8ddda37ec4ac1e1903d8c"),
+    ("SUPPLEMENT", Path("/tmp/rc6_root_supplemental_named_findings_generate_v3_identity_reference_candidate_v2.py"),
+     "cc4207797345e195792cde09bafb42f318a7dfa4f057bee2c677f4cb3efcea65"),
+)
+ROOT = "docs/audits/rc6-private-publication-type-identity-controlled-1e2fddc1"
+CUSTODY = ROOT + "/CUSTODY.json"
+CAPSULE = ROOT + "/CAPSULE.json"
+EXPECTED = {CUSTODY: (46630, "6de9fc170ee3980e646639ec3cfdeff7216f923ff2185c1d927592cb84dce08c"),
+            CAPSULE: (7695, "651a4acd643edb1e210d19c197f406d1016dc83b222800c0552c31fb60444fa7")}
+SCOPE = "SMALL_COMMITTED_METADATA_COMPATIBILITY_ONLY_EXTERNAL_TAR_REFERENCE_NOT_BYTE_VERIFIED_NO_NATIVE_GOV_OR_D"
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def pins():
+    result = {}
+    for label, path, expected in HELPERS:
+        data = path.read_bytes()
+        if digest(data) != expected:
+            raise AssertionError("helper differs from exact reviewed Source: " + label)
+        result[label] = {"path": str(path), "sha256": expected, "bytes": len(data)}
+    return result
+
+
+def snapshot(repo):
+    def git(*args):
+        return subprocess.check_output(["git", "--no-replace-objects", "--no-optional-locks", "-C", str(repo), *args],
+                                       stderr=subprocess.PIPE)
+    return {"head": git("rev-parse", "HEAD").decode().strip(),
+            "tracked_status": git("status", "--porcelain=v1", "--untracked-files=no").decode().splitlines()}
+
+
+def run(repo, revision):
+    before = pins()  # Prior to every module-scope instruction.
+    git_before = snapshot(repo)
+    results = []
+    source_snapshot = None
+    try:
+        for label, path, _ in HELPERS:
+            spec = importlib.util.spec_from_file_location("actual_reference_" + label, path)
+            helper = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(helper)
+            source = helper.Source(repo, revision) if label == "REGISTER" else helper.GitSource(repo, revision)
+            reads = []
+            original_read = source.read
+            def read(member):
+                if member.startswith("/") or member.endswith((".tar", ".tar.gz")):
+                    raise AssertionError("actual metadata diagnostic attempted external/archive body read")
+                reads.append(member)
+                return original_read(member)
+            source.read = read
+            try:
+                for control, (length, expected) in EXPECTED.items():
+                    data = source.read(control)
+                    if len(data) != length or digest(data) != expected:
+                        raise AssertionError("preserved identity control differs from exact bytes")
+                custody, capsule = source.json(CUSTODY), source.json(CAPSULE)
+                external = helper.identity_external_source_archive_reference_metadata(source, CUSTODY, custody)
+                if label == "REGISTER":
+                    builder = object.__new__(helper.Builder)
+                    builder.s, builder.values, builder.issues = source, {}, []
+                    builder.executions = collections.defaultdict(list)
+                    data = source.read(CAPSULE)
+                    entry = {"path": CAPSULE, "sha256": digest(data), "bytes": len(data),
+                             "current_publication_binding": source.binding(CAPSULE)}
+                    builder.metadata("ACTUAL_IDENTITY_METADATA_DIAGNOSTIC", entry, data)
+                    assert entry["original_raw_json_metadata"] == capsule
+                    assert entry["external_source_archive_reference_metadata"] == external
+                    members = entry["declared_raw_dossier_members"]
+                    stage = "OWN_SOURCE_REAL_BUILDER_METADATA_WITHOUT_WHOLE_REGISTER_CONSTRUCTOR"
+                else:
+                    members = helper.declared_raw_dossier_members(source, CAPSULE, capsule)
+                    stage = "OWN_GITSOURCE_EXACT_SCHEMA_ADAPTER"
+                originals = [m for m in members if "archival_path_mapping" in m]
+                controls = [m for m in members if "archival_path_mapping" not in m]
+                assert len(originals) == custody["members_count"] == 29
+                assert len(controls) == 2 and len(members) == 31
+                expected_paths = {ROOT + "/" + row["capsule_relative_path"] for row in custody["members"]}
+                assert {m["publication_binding"]["path"] for m in originals} == expected_paths
+                assert {m["publication_binding"]["path"] for m in controls} == {CUSTODY, ROOT + "/README.md"}
+                assert not any(p.endswith((".tar", ".tar.gz")) for p in expected_paths)
+                assert external["state"] == "NOT_BYTE_VERIFIED_BY_DOCUMENTARY_HELPER"
+                assert external["external_body_read_or_hashed"] is False
+                assert external["external_declaration_verbatim"] == custody["external_source_archive"]
+                assert external["reference_only"] is True and external["copied_into_git"] is False
+                assert capsule["counts"]["unique_current_nodes"] == 478
+                source_snapshot = {"sha": source.sha, "tree": source.tree}
+                results.append({"helper": label, "source_adapter": type(source).__name__, "stage": stage,
+                    "publication_source": source_snapshot, "original_members_checked": 29,
+                    "named_derived_controls_separate": 2, "declared_small_members": members,
+                    "committed_paths_read": sorted(set(reads)), "external_reference_metadata": external,
+                    "original_epoch_counts_verbatim": capsule.get("counts"), "original_epochs_verbatim": capsule.get("epochs"),
+                    "incident_scope_verbatim": capsule.get("historical_broad_enumeration_incident"),
+                    "status": "SMALL_GIT_METADATA_COMPATIBLE_EXTERNAL_TAR_NOT_BYTE_VERIFIED"})
+            finally:
+                source.read = original_read
+                if hasattr(source, "close"):
+                    source.close()
+    finally:
+        after = pins()
+        git_after = snapshot(repo)
+        if before != after or git_before != git_after:
+            raise AssertionError("helper/Git snapshot changed during documentary metadata diagnostic")
+    return {"schema": "rc6.actual-identity-capsule-reference-compatibility.v1", "scope": SCOPE,
+            "requested_source_sha": revision, "source_snapshot": source_snapshot,
+            "helper_sources_before": before, "helper_sources_after": after,
+            "git_snapshot_before": git_before, "git_snapshot_after": git_after,
+            "results": results, "status": "SMALL_GIT_METADATA_COMPATIBLE_EXTERNAL_TAR_NOT_BYTE_VERIFIED",
+            "same_originals_not_summed_across_adapters": 29,
+            "external_tar_byte_verification_performed": False, "external_original_paths_opened": False,
+            "tar_entries_parsed_or_extracted": False, "product_imports_or_native_or_gov_executed": 0,
+            "final_register_generated": False,
+            "counting_boundary": "Two adapters check the same29 originals, not58; archived478 result and old468/70/91 remain their own scopes and are not newly executed by this diagnostic.",
+            "historical_data_custody": "NOT_VERIFIED_NO_DATA_READ"}
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo", type=Path, required=True)
+    parser.add_argument("--source", required=True)
+    args = parser.parse_args()
+    print(json.dumps(run(args.repo.resolve(strict=True), args.source), sort_keys=True))

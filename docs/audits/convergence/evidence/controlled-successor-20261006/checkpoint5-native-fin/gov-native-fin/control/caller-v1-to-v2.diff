@@ -1,0 +1,11 @@
+--- callerV1.PRESERVED_NEVER_RUN
++++ callerV2.PREPARED_NEVER_RUN
+@@ -61,7 +61,7 @@
+ env.update(PYTHONDONTWRITEBYTECODE='1',PYTEST_DISABLE_PLUGIN_AUTOLOAD='1',HYPOTHESIS_STORAGE_DIRECTORY=str(OUT/'hypothesis'),LOG_DIR=str(OUT/'logs'),RUNNER_TEMP=str(OUT),TMPDIR=str(OUT/'tmp'))
+ files=['tests/test_rc6_controlled_governed_runner.py']
+ common=[str(PY),'-B','-m','pytest','-q',*files,'-p','no:cacheprovider']
+-collection_argv=common+['--collect-only']
++collection_argv=common+['--collect-only','-v']
+ execution_argv=common+['--basetemp='+str(OUT/'pytest'),'--junitxml='+str(OUT/'junit.xml')]
+ save(OUT/'launch.json',{'epoch':EPOCH,'collection_argv':collection_argv,'execution_argv':execution_argv,'cwd':str(SOURCE),'source_before':source_before,'python':sys.version,'actual_kernel_before':before_kernel,'git_head_before':head_before,'installed_metadata_before':closure_before,'source_qualification':'UNCOMMITTED_DIAGNOSTIC_ONLY_SOURCE_SHA_QUALIFICATION_PENDING','expected_cases':15,'producer_scope':'PROGRAMMATIC_FOCALS_NOT_FULL_GOV_OR_PREDEPLOY','real_orders_sent':0,'PAPER_SHADOW_ONLY':True})
+ progress_seq=0

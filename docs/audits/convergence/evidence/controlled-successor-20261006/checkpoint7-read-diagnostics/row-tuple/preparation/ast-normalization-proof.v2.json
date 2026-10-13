@@ -1,0 +1,17 @@
+{
+  "Source_functions_executed": false,
+  "all_original_SQL_guards_limits_order_cutoffs_and_return_preserved": true,
+  "normalized_control_AST_identical_to_original": true,
+  "original_normalized_AST_sha256": "25f1321b2c39bf80ff02fb1f4de72381b96477d67ea915d22bf0c8636c5341dc",
+  "shared_only_adaptations": [
+    "external_function_name_and_metrics_argument",
+    "absolute_original_source_connection_import",
+    "original_families_qualified_constants_mapping_fresh",
+    "bounded_sparse_mark_statements_including_actual_first_row_type_and_cursor_factory",
+    "split_execute_and_list_no_extra_SQL"
+  ],
+  "tuple_only_differences": [
+    "cursor.row_factory=None",
+    "row_names_from_native_cursor.description_if_nonempty"
+  ]
+}
