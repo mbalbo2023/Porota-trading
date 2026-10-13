@@ -42,7 +42,7 @@ class FastSourcePreflight(unittest.TestCase):
         self.git("commit", "-qm", "source")
         return {"source_sha": self.git("rev-parse", "HEAD"),
                 "source_tree": self.git("rev-parse", "HEAD^{tree}"),
-                "development_base_sha": self.base, "cheap_files": [],
+                "development_base_sha": self.base, "cheap_files": [], "gate": "cheap",
                 "candidate_scope": expected_candidate_scope()}
 
     def test_builder_pr_scope_rejected_before_full_git(self):
@@ -55,6 +55,23 @@ class FastSourcePreflight(unittest.TestCase):
         admission = self.commit("ops/new_control.sh")
         with self.assertRaisesRegex(ValueError, "FAST_PREFLIGHT_UNEXPLAINED_SOURCE_EVOLUTION"):
             validate(self.root, admission)
+
+    def test_g5p_acquisition_checks_evolution_without_cheap_test_list(self):
+        admission = self.commit("docs/ops/new_dispatch_order.md")
+        admission["gate"] = "G5P-acquire"
+        admission["cheap_files"] = None
+        with self.assertRaisesRegex(ValueError, "FAST_PREFLIGHT_UNEXPLAINED_SOURCE_EVOLUTION"):
+            validate(self.root, admission)
+        matrix = json.loads(self.matrix.read_text())
+        matrix["path_evolution"]["docs/ops/new_dispatch_order.md"] = {
+            "reason": "documented governance", "requirement_ids": ["U28"]}
+        self.matrix.write_text(json.dumps(matrix))
+        self.git("add", ".")
+        self.git("commit", "-qm", "document provenance")
+        admission["source_sha"] = self.git("rev-parse", "HEAD")
+        admission["source_tree"] = self.git("rev-parse", "HEAD^{tree}")
+        observed = validate(self.root, admission)
+        self.assertEqual(observed["status"], "NEGATIVE_PREFLIGHT_GREEN_NO_GATE_CREDIT")
 
     def test_new_test_must_be_in_cheap_and_green_grants_no_credit(self):
         path = "tests/test_new_guard.py"
