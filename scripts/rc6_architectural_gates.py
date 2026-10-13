@@ -87,6 +87,7 @@ G1_REQUIRED_CHEAP_FILES = frozenset({
     'tests/test_rc6_archive_physical_model.py', 'tests/test_rc6_raw_packaging_custody.py',
     'tests/test_rc6_material_focal_evidence.py', 'tests/test_rc6_focal_raw_custody.py',
     'tests/test_rc6_governed_evidence_validation.py',
+    'tests/test_rc6_g5p_paper_v3.py',
 })
 G1_HEAVY_FILES = frozenset({
     'tests/test_issue465_stress.py',
