@@ -2054,5 +2054,21 @@ class OrderedGateReferenceTests(unittest.TestCase):
         self.assertIn("--artifact-digest \"$RC6_RAW_ARTIFACT_DIGEST\"",workflow[proposed:])
 
 
+def test_variant_context_checks_all_green_variants_and_preserves_failure():
+    seen=[]
+    for variant in ('first','second','third'):
+        with case_context(variant=variant):
+            seen.append(variant)
+    assert seen==['first','second','third']
+    try:
+        with case_context(variant='negative-control'):
+            raise AssertionError('variant rejected')
+    except AssertionError as error:
+        assert "'variant': 'negative-control'" in str(error)
+        assert 'variant rejected' in str(error)
+    else:
+        raise AssertionError('variant context swallowed a failing assertion')
+
+
 if __name__ == "__main__":
     unittest.main()
