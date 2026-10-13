@@ -10,10 +10,25 @@ from unittest.mock import patch
 
 from scripts import rc6_g5p_dispatch_bridge as bridge
 from scripts import rc6_material_pr_admission as admission
+from scripts import rc6_architectural_gates as gates
 from scripts.rc6_g5p_model import DOCUMENT_SHA256
 
 
 class BridgeBodyTests(TestCase):
+    def test_junit_summary_rejects_extra_subtest_reports_without_case_identity(self):
+        rows = [{'nodeid': 'tests/test_bridge.py::test_a', 'classname': 'tests.test_bridge', 'name': 'test_a'},
+                {'nodeid': 'tests/test_bridge.py::test_b', 'classname': 'tests.test_bridge', 'name': 'test_b'}]
+        collection = {'items': rows, 'pytest_exit_code': 0}
+        execution = {'items': rows, 'pytest_exit_code': 0}
+        xml = ('<testsuites><testsuite tests="3" failures="0" errors="0" skipped="0">'
+               '<testcase classname="tests.test_bridge" name="test_a" />'
+               '<testcase classname="tests.test_bridge" name="test_b" />'
+               '</testsuite></testsuites>')
+        with self.assertRaisesRegex(ValueError, 'GATE_JUNIT_SUMMARY_MISMATCH'):
+            gates.validate_junit(collection, execution, xml.encode())
+        self.assertEqual(gates.validate_junit(collection, execution,
+            xml.replace('tests="3"', 'tests="2"').encode())['cases'], 2)
+
     def test_g5p_bridge_requires_fresh_paired_decision_before_dispatch(self):
         now = datetime(2026, 10, 12, 9, 4, tzinfo=timezone.utc)
         source, tree, owner = "a" * 40, "b" * 40, "CODEX_OWNER"
@@ -47,7 +62,7 @@ class BridgeBodyTests(TestCase):
         for changed in (fixture("2026-10-12T09:03:00Z"),
                         fixture("2026-10-12T09:08:00Z"),
                         fixture(claimed_source="c" * 40)):
-            with self.subTest(body=changed["/issues/comments/15"]["body"]), self.assertRaisesRegex(
+            with self.assertRaisesRegex(
                     ValueError, "BRIDGE_G5P_FRESH_PAIRED_DECISION_WITH_QUEUE_MARGIN_REQUIRED"):
                 bridge.fresh_g5p_decision_for_dispatch(auth, source, tree, owner, now,
                                                         get=changed.__getitem__)
@@ -108,7 +123,7 @@ class BridgeBodyTests(TestCase):
                             dict(run,conclusion='failure'),
                             dict(run,pull_requests=[{'number':492,'head':{'sha':'a'*40},
                                 'base':{'ref':admission.BASE}}])):
-                with self.subTest(changed=changed),self.assertRaises(ValueError):
+                with self.assertRaises(ValueError):
                     admission.authenticated_dispatch_bridge(event,'G5P-acquire',
                         get=lambda path:changed if '/actions/runs/123/attempts/1'==path else jobs,
                         sleep=lambda _:None)
@@ -135,7 +150,7 @@ class BridgeBodyTests(TestCase):
         for changed in (body.replace("G5P-acquire", "Horizon"),
                         body + "RC6_DISPATCH_GATE=G5P-certify\n",
                         body.replace("RC6_DISPATCH_OWNER_SESSION=CODEX_OWNER\n", "")):
-            with self.subTest(changed=changed[-45:]), self.assertRaises(ValueError):
+            with self.assertRaises(ValueError):
                 bridge.body_fields(changed)
 
     def test_dispatch_http_204_is_request_only_and_payload_is_exact(self):
@@ -245,7 +260,7 @@ class HistoricalOwnerReleaseTests(TestCase):
                         sre['body'].replace('pull/494','pull/492'),
                         sre['body'].replace('ops/rc6-sre-deep-20261011',
                             'fix/rc6-g5p-paper-v3-20261011')):
-            with self.subTest(changed=changed),self.assertRaisesRegex(
+            with self.assertRaisesRegex(
                     ValueError,'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER'):
                 admission.latest_writer([owner,dict(sre,body=changed)],471,
                     "a"*40,"b"*40,"CODEX_OWNER",now)
@@ -325,7 +340,7 @@ class HistoricalOwnerReleaseTests(TestCase):
             self.assertEqual(result['authenticated_disjoint_active_writers'][0]['comment_id'],6112200132)
             for altered in (release_body.replace('APPLY_ATTEMPT=1','APPLY_ATTEMPT=2'),
                             release_body.replace('no further host mutation','host mutation')):
-                with self.subTest(altered=altered),self.assertRaisesRegex(
+                with self.assertRaisesRegex(
                         ValueError,'SRE_EXACT_PAIRED_APPLY_RELEASE_REBOUND'):
                     admission.latest_writer([scoped,active,dict(release,body=altered),owner],471,
                         "a"*40,"b"*40,"CODEX_OWNER",now)
