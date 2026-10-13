@@ -604,10 +604,18 @@ class GateLeaseMonitor:
                 'OWNED_LEASE_HTTP_TOTAL_BUDGET_EXPIRED')
             identifier = self._store({'kind': 'snapshot', 'value': snapshot})
         self.events.append(identifier)
+        # Evidence replay and the private object write can take seconds after
+        # `finished` was sampled. Pair two clocks at the same end boundary;
+        # comparing a stale UTC with a later monotonic sample falsely reports
+        # a runner clock jump on the next local poll.
+        observed_wall, observed_mono = self.clock(), self.monotonic()
+        require(observed_wall >= started and observed_mono >= entered
+            and abs((observed_wall - started).total_seconds() - (observed_mono - entered)) <= 2,
+            'OWNED_LEASE_CLOCK_DISCONTINUITY')
         self.last_scope, self.last_calls, self.last_observation = scope, calls, identifier
         self.seen_owner_versions.update(versions)
-        self.last_api_poll = self.monotonic()
-        self.previous_clock = finished, self.last_api_poll
+        self.last_api_poll = observed_mono
+        self.previous_clock = observed_wall, observed_mono
         if self.g5a_namespace_receipt is not None and stage in ('prelaunch', 'poll'):
             from scripts import rc6_owned_g5a_continuation as continuation
             sequence = len(self.events)

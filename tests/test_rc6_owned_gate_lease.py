@@ -403,6 +403,25 @@ def monitor(tmp_path, monkeypatch, *, gate='full-gov311', real_clock=False):
     return instance, api, clock
 
 
+def test_owner_clock_pair_survives_slow_evidence_replay_but_vetoes_real_jump(tmp_path, monkeypatch):
+    instance, _api, clock = monitor(tmp_path, monkeypatch)
+    original_store = instance._store
+    def delayed_store(value):
+        identifier = original_store(value)
+        if value['kind'] == 'snapshot':
+            # The real RED archived 2.49 seconds between the read UTC and
+            # the old monotonic sample, with no demonstrated clock jump.
+            clock.advance(3)
+        return identifier
+    monkeypatch.setattr(instance, '_store', delayed_store)
+    instance.prelaunch('slow-evidence')
+    assert instance.previous_clock[0] >= START + timedelta(seconds=3)
+    assert instance.last_api_poll == instance.previous_clock[1]
+    instance.clock = lambda: clock.wall() + timedelta(seconds=4)
+    with pytest.raises(ValueError, match='OWNED_LEASE_CLOCK_DISCONTINUITY'):
+        instance._local()
+
+
 def kernel(pid=123):
     return {'pid': pid, 'returncode': 0, 'actual_child_reaped': True, 'wait4_reaped_pid': pid,
         'kernel_pre_popen_echild_verified': True, 'owned_children_exhaustion_verified': True,
