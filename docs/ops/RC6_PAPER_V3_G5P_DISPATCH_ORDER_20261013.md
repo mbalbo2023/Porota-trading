@@ -27,3 +27,16 @@ re-run the same gate for the same Source or repurpose old artifacts.
 For a long producer, renew the paired owner lease before expiry throughout
 the actual interval. Never extend or reinterpret an expired acceptance.
 PAPER/SHADOW only, real orders sent zero, and PPI Watch untouched.
+
+## Paired contract acceptance wire format
+
+Run #575 on Source `0e8665da95c1768ba62b62df88daa5ee24d5631f` failed
+before payload with `CUSTODY_OWNER_PAIR_REQUIRED`. The #471 contract
+acceptance used a GitHub URL for `OWNER_RECEIPT_473`, while
+`rc6_actions_custody.verify_owner` requires the decimal comment ID alone
+(`^[1-9][0-9]{0,9}$`). Its `OWNER_RECEIPT_473_SHA256` is the SHA-256 of
+the exact immutable #473 acceptance body. The candidate launch uses URL
+pointers for its separate owner receipt fields; never copy that format into
+the contract acceptance. Check this wire distinction before dispatch. The
+failed first attempt consumes G5P-acquire for its Source; use a new evidenced
+Source and freshly paired acceptance, owner lease, and launch.
