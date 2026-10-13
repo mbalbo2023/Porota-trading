@@ -6294,6 +6294,10 @@
       "reason": "Post-handoff RC6 governance and RCA evidence source. Preserve exact Git bytes and mode and distinguish factual RED history from material gate receipts; this row gives no gate credit.",
       "requirement_ids": ["U28"]
     },
+    "docs/ops/RC6_PAPER_V3_G5P_DISPATCH_ORDER_20261013.md": {
+      "reason": "Document exact PAPER V3 G5P dispatch order and the earlier admission REDs. Preserve its Git bytes and mode as governance history; this row grants no material gate, merge or deploy credit.",
+      "requirement_ids": ["U28"]
+    },
     "ops/policy/rc6-actions-custody-20261009.json": {
       "reason": "Post-handoff typed RC6 policy source for owner, capacity or native gates. Exact Git bytes and mode remain verified; policy admission and material evidence are separate controls.",
       "requirement_ids": ["U11", "U28"]
