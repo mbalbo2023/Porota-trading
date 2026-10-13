@@ -203,6 +203,17 @@ def test_administrative_transfer_alone_cannot_authorize_a_candidate(candidate):
         admission.admit(source_sha=SHA, source_tree=TREE, gate='predeploy', now=NOW)
 
 
+def test_duplicate_owner_receipt_field_rejects_launch_before_capacity(candidate, monkeypatch):
+    api, _event, _path = candidate
+    api.launch['body'] += 'OWNER_RECEIPT_473=100473\n'
+    reached=[]
+    monkeypatch.setattr(admission, 'verify_capacity_comparison_manifest',
+                        lambda *args, **kwargs: reached.append('capacity'))
+    with pytest.raises(ValueError, match='ADMISSION_DUPLICATE_RECEIPT_FIELD'):
+        admit(candidate)
+    assert reached == []
+
+
 def test_api_only_live_monitor_reads_dynamic_candidate_and_current_dual_leases(candidate):
     api, _event, _path = candidate
     result = admission.owned_gate_control_scope(source_sha=SHA, source_tree=TREE,
