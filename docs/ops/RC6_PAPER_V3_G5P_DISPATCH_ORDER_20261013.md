@@ -40,3 +40,14 @@ pointers for its separate owner receipt fields; never copy that format into
 the contract acceptance. Check this wire distinction before dispatch. The
 failed first attempt consumes G5P-acquire for its Source; use a new evidenced
 Source and freshly paired acceptance, owner lease, and launch.
+
+## Launch transfer anchors versus live lease
+
+Run #576 on Source `98ad479dbdfa54568b21af450827f60d5ffb4ee1`
+failed before payload with `CANDIDATE_CURRENT_OWNER_TRANSFER_BINDING_REQUIRED`.
+The candidate launch's `OWNER_RECEIPT_471/473` and hashes must bind the
+immutable released-successor transfer returned by `administrative_anchors`
+(`#471/6133264940`, `#473/6133263471` for this session), not the fresh
+paired lease renewals. The latter remain necessary and are checked in both
+issue timelines as current ownership. Preserve both scopes without replacing
+one with the other. A failed attempt consumes its gate/Source identity.
