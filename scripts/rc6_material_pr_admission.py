@@ -532,19 +532,33 @@ def recent(issue,anchor,now,*,get=None):
     anchor=anchor.get('_rc6_history_anchor',anchor)
     cutoff=stamp(anchor['created_at'])
     since=(cutoff-timedelta(seconds=1)).isoformat().replace('+00:00','Z')
-    rows=[]
-    ids=set()
-    for page in range(1,COMMENT_PAGES+1):
-        batch=(get or api)('/issues/'+str(issue)+'/comments?'+urllib.parse.urlencode({'since':since,'per_page':100,'page':page}))
-        require(isinstance(batch,list) and len(batch)<=100,'ACTUAL_COMMENT_ARRAY_REQUIRED')
-        for row in batch:
-            require(row['id'] not in ids and row['issue_url'].endswith('/issues/'+str(issue)),
-                'COMMENT_PAGINATION_DUPLICATED_OR_REBOUND')
-            ids.add(row['id']);updated=effective_stamp(row)
-            require(updated<=now,'OWNERSHIP_COMMENT_FUTURE_TIMESTAMP')
-            if updated>=cutoff:rows.append(row)
-        if len(batch)<100:break
-    else:raise ValueError('OWNERSHIP_PAGINATION_INCOMPLETE_FAIL_CLOSED')
+    # One owned observation can ask for overlapping windows of the same issue.
+    # The earlier, completely paginated live response covers every later
+    # updated-at window. The monitor enables this only inside one observation;
+    # each subsequent poll performs new live GETs, and the archived replay
+    # reconstructs the same derived windows from its captured response bytes.
+    cache=get._rc6_recent_cache if get is not None and hasattr(get,'_rc6_recent_cache') else None
+    prior=cache.get(issue) if cache is not None else None
+    if prior is not None and prior['cutoff']<=cutoff:
+        source=prior['rows']
+    else:
+        source=[];ids=set()
+        for page in range(1,COMMENT_PAGES+1):
+            batch=(get or api)('/issues/'+str(issue)+'/comments?'+urllib.parse.urlencode(
+                {'since':since,'per_page':100,'page':page}))
+            require(isinstance(batch,list) and len(batch)<=100,'ACTUAL_COMMENT_ARRAY_REQUIRED')
+            for row in batch:
+                require(row['id'] not in ids and row['issue_url'].endswith('/issues/'+str(issue)),
+                    'COMMENT_PAGINATION_DUPLICATED_OR_REBOUND')
+                ids.add(row['id'])
+                require(effective_stamp(row)<=now,'OWNERSHIP_COMMENT_FUTURE_TIMESTAMP')
+                source.append(row)
+            if len(batch)<100:break
+        else:raise ValueError('OWNERSHIP_PAGINATION_INCOMPLETE_FAIL_CLOSED')
+        if cache is not None:cache[issue]={'cutoff':cutoff,'rows':source}
+    rows=[row for row in source if effective_stamp(row)>=cutoff]
+    ids={row['id'] for row in rows}
+    require(all(effective_stamp(row)<=now for row in rows),'OWNERSHIP_COMMENT_FUTURE_TIMESTAMP')
     require(anchor['id'] in ids,'ACTUAL_CONTROLLED_ANCHOR_MISSING_FROM_UPDATED_TIMELINE')
     require(transfer['id'] in ids,'ACTUAL_SUCCESSOR_TRANSFER_MISSING_FROM_UPDATED_TIMELINE')
     return sorted(rows,key=lambda row:(effective_stamp(row),row['id']))

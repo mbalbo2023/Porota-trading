@@ -143,6 +143,20 @@ def api_get(path, deadline, *, retry_transient=False):
             if error.code == 304:
                 require(cached is not None, 'OWNED_LEASE_304_WITHOUT_VERIFIED_CACHE')
                 return admission.document(cached[1])
+            if error.code in (403, 429) and deadline - time.monotonic() > 1:
+                # The caller's absolute HTTP alarm also bounds this read.
+                # Store only a fixed classification; never retain the
+                # response message, request URL, token or arbitrary headers.
+                try:
+                    message = error.read(2049).decode('utf-8', errors='replace').lower()
+                except OSError:
+                    message = ''
+                error.rc6_http_class = (
+                    'SECONDARY_RATE_LIMIT' if 'secondary rate limit' in message
+                        or 'abuse detection' in message else
+                    'PRIMARY_RATE_LIMIT' if 'api rate limit exceeded' in message else
+                    'INTEGRATION_PERMISSION_DENIED' if 'resource not accessible by integration' in message else
+                    'UNCLASSIFIED_HTTP')
             # Only a live PAPER V3 control walk may replay the same read after
             # a transient gateway failure. It must still finish inside the
             # original alarm/deadline; never fall back to stale cached state.
@@ -168,11 +182,16 @@ def api_get(path, deadline, *, retry_transient=False):
 
 
 def _scope(context, checked, get):
+    # Reuse only complete, overlapping comment windows in this observation.
+    # Never carry responses across the next live owner poll or across runs.
+    def observed_get(path):
+        return get(path)
+    observed_get._rc6_recent_cache={}
     reader = admission.owned_diagnostic_control_scope if context.get('gate') in admission.DIAGNOSTIC_GATES \
         else admission.owned_gate_control_scope
     profile = context.get('release_profile')
     scope = reader(**{key:value for key,value in context.items() if key != 'release_profile'},
-        now=checked, get=get)
+        now=checked, get=observed_get)
     if profile is not None:
         require(profile == 'PAPER_V3_ONLY' and context.get('gate') in admission.GATES
             and scope.get('release_profile') == profile,
@@ -479,6 +498,8 @@ class GateLeaseMonitor:
                 # Preserve only a sanitized classification after control RED;
                 # a URL, header, token or response body is never copied.
                 safe_http_headers = {}
+                http_failure_class = (getattr(error, 'rc6_http_class', 'UNCLASSIFIED_HTTP')
+                    if isinstance(error, urllib.error.HTTPError) else 'NOT_HTTP')
                 if isinstance(error, urllib.error.HTTPError):
                     for header, key in (('X-RateLimit-Remaining', 'rate_limit_remaining'),
                                         ('X-RateLimit-Reset', 'rate_limit_reset_epoch'),
@@ -490,6 +511,7 @@ class GateLeaseMonitor:
                     'command_label': self.command_label, 'reason': self.stop_reason,
                     'exception_class': type(error).__name__,
                     'http_status': error.code if isinstance(error, urllib.error.HTTPError) else None,
+                    'http_failure_class': http_failure_class,
                     'http_limit_counters': safe_http_headers,
                     'transport_cause_class': (type(error.reason).__name__
                         if isinstance(error, urllib.error.URLError) else None),
@@ -504,6 +526,7 @@ class GateLeaseMonitor:
                     'command_label': detail['command_label'], 'reason': detail['reason'],
                     'exception_class': detail['exception_class'],
                     'http_status': detail['http_status'],
+                    'http_failure_class': detail['http_failure_class'],
                     'transport_cause_class': detail['transport_cause_class'],
                     'real_orders_sent': 0}, sort_keys=True), flush=True)
         return LeaseControlFailure(self.stop_reason)

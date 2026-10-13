@@ -4,12 +4,15 @@ import copy
 from datetime import datetime, timedelta, timezone
 import hashlib
 import http.client
+import io
+import json
 import os
 from pathlib import Path
 import signal
 import sys
 import time
 import urllib.error
+from urllib.parse import parse_qs
 from types import SimpleNamespace
 
 import pytest
@@ -25,6 +28,68 @@ SHA = 'a' * 40
 TREE = 'b' * 40
 RUN = 71
 START = datetime(2026, 10, 8, 18, 45, tzinfo=timezone.utc)
+
+
+def test_owner_observation_reuses_complete_earlier_window_and_replays_exact_bytes(monkeypatch):
+    base = datetime(2026, 10, 13, 15, tzinfo=timezone.utc)
+    rows = []
+    for index in range(150):
+        stamp = lease.text_stamp(base + timedelta(minutes=index))
+        rows.append({'id': index + 1, 'issue_url': 'https://api.github.com/repos/'
+            + admission.REPO + '/issues/471', 'created_at': stamp, 'updated_at': stamp,
+            'body': 'WRITE_OWNER=CODEX_UNIT'})
+    # A comment created before the later anchor but edited afterward must
+    # remain in the derived window, just as GitHub's updated-at filter does.
+    edited = dict(rows[3], updated_at=lease.text_stamp(base + timedelta(minutes=120)))
+    rows[3] = edited
+    calls = {}
+    def get(path):
+        if path not in calls:
+            query = parse_qs(path.partition('?')[2])
+            since = admission.stamp(query['since'][0])
+            page = int(query['page'][0])
+            matching = [row for row in rows if admission.effective_stamp(row) > since]
+            calls[path] = matching[(page - 1) * 100:page * 100]
+        return calls[path]
+    def scoped(*, now, get, **_kwargs):
+        early = admission.recent(471, rows[0], now, get=get)
+        later = admission.recent(471, rows[99], now, get=get)
+        return {'early': len(early), 'later_ids': [row['id'] for row in later]}
+    monkeypatch.setattr(admission, 'owned_gate_control_scope', scoped)
+    now = base + timedelta(hours=3)
+    live = lease._scope({'gate': 'cheap'}, now, get)
+    archived = lease._scope({'gate': 'cheap'}, now, lambda path: calls[path])
+    assert live == archived
+    assert live['early'] == 150 and 4 in live['later_ids']
+    assert len(calls) == 2
+
+
+def test_owner_403_classification_preserves_no_response_body(monkeypatch, tmp_path):
+    monkeypatch.setenv('GH_TOKEN', 'unit-readonly-control-token')
+    monkeypatch.setenv('RC6_GATE', 'cheap')
+    private = 'do-not-persist-private-token-or-url'
+    error = urllib.error.HTTPError('https://api.github.com/private', 403, 'Forbidden',
+        {'X-RateLimit-Remaining': '4849'}, io.BytesIO(
+            ('{"message":"You have exceeded a secondary rate limit; '
+             + private + '"}').encode()))
+    def forbidden(_request, timeout):
+        raise error
+    monkeypatch.setattr(lease.urllib.request, 'urlopen', forbidden)
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        lease.api_get('/actions/workflows/rc6-unified-candidate-tests.yml/runs',
+            time.monotonic() + 5, retry_transient=True)
+    assert caught.value.rc6_http_class == 'SECONDARY_RATE_LIMIT'
+    root = tmp_path / 'controls'
+    root.mkdir(mode=0o700)
+    monitor = object.__new__(lease.GateLeaseMonitor)
+    monitor.root, monitor.command_label, monitor.stop_reason = root, 'G0-admission312', None
+    failure = monitor._failure(caught.value)
+    assert str(failure) == 'OWNED_LEASE_HTTP_STATUS_403'
+    raw = (root / 'owner-G0-admission312.first-error.json').read_text()
+    receipt = json.loads(raw)
+    assert receipt['http_failure_class'] == 'SECONDARY_RATE_LIMIT'
+    assert receipt['http_limit_counters']['rate_limit_remaining'] == 4849
+    assert private not in raw and 'api.github.com' not in raw
 
 
 def owner_comment(issue, identifier, begin, expiry, *, sha=SHA, tree=TREE, owner=None):
