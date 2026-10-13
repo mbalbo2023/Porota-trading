@@ -766,6 +766,17 @@ def bounded_v3_owner_readmit(admit, *, gate, release_profile=None, **scope):
     raise AssertionError('V3_OWNER_READ_RESTART_UNREACHABLE')
 
 
+def readmit_release_profile(a, controller):
+    """Identify V3 from the immutable launch before the first live owner read."""
+    profile=getattr(a,'release_profile',None)
+    if profile is None:
+        launch=controller['comment'](a.launch_receipt_url,471)
+        profile=controller['fields'](launch['body']).get('RELEASE_PROFILE')
+    need(profile in (None,'FULL_G5','PAPER_V3_ONLY'),
+         'OWNER_READMIT_EXACT_RELEASE_PROFILE_REQUIRED')
+    return profile
+
+
 def readmit_automatic_pr(a,run,stage):
     if not a.require_pr_admission:return
     module_pin(a.repo_root,'scripts/rc6_material_pr_admission.py',a.source_sha)
@@ -773,7 +784,8 @@ def readmit_automatic_pr(a,run,stage):
     scope={'source_sha':a.source_sha,'source_tree':a.source_tree,
         'launch_receipt_url':a.launch_receipt_url,'owner_session':a.owner_session,'gate':a.gate}
     row=bounded_v3_owner_readmit(controller['admit'],gate=a.gate,
-        release_profile=getattr(a,'release_profile',None),**{k:v for k,v in scope.items() if k!='gate'})
+        release_profile=readmit_release_profile(a,controller),
+        **{k:v for k,v in scope.items() if k!='gate'})
     a.capacity_peaks=row['capacity_peaks'];a.cheap_files=row['cheap_files'];a.prerequisites_manifest=row['prerequisites_manifest']
     a.private_cas_comparison_template=row.get('private_cas_comparison_template')
     a.release_profile=row.get('release_profile','FULL_G5')

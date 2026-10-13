@@ -548,6 +548,28 @@ tests/test_rc6_temporal_query_plan.py""".splitlines()
                     release_profile=profile,**scope)
             self.assertEqual(len(seen),expected)
 
+    def test_first_carrier_readmit_gets_v3_profile_before_concurrent_renewal(self):
+        launch='https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-1'
+        calls=[]
+        controller={'comment':lambda url,issue: calls.append((url,issue)) or
+                    {'body':'RELEASE_PROFILE=PAPER_V3_ONLY\n'},
+                    'fields':lambda body: {'RELEASE_PROFILE':'PAPER_V3_ONLY'}}
+        args=SimpleNamespace(launch_receipt_url=launch)
+        profile=carrier.readmit_release_profile(args,controller)
+        self.assertEqual(profile,'PAPER_V3_ONLY')
+        self.assertEqual(calls,[(launch,471)])
+        attempts=[]
+        def admission(**kwargs):
+            attempts.append(kwargs)
+            if len(attempts)==1:raise ValueError('OWNERSHIP_COMMENT_FUTURE_TIMESTAMP')
+            return {'status':'ADMITTED_NATIVE_NOT_STARTED'}
+        self.assertEqual(carrier.bounded_v3_owner_readmit(admission,gate='cheap',
+            release_profile=profile,source_sha='a'*40)['status'],'ADMITTED_NATIVE_NOT_STARTED')
+        self.assertEqual(len(attempts),2)
+        args.release_profile='FULL_G5'
+        self.assertEqual(carrier.readmit_release_profile(args,controller),'FULL_G5')
+        self.assertEqual(len(calls),1)
+
     def test_g5p_owned_lease_http_budget_is_finite_and_legacy_unchanged(self):
         self.assertEqual(lease.http_budget_for_gate('G5P-acquire'),45)
         self.assertEqual(lease.http_budget_for_gate('G5P-certify'),45)
