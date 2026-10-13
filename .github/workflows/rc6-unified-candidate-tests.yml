@@ -140,7 +140,7 @@ jobs:
           if [ -n "$RC6_OWNER_SESSION" ]; then args+=(--owner-session "$RC6_OWNER_SESSION"); fi
           python3 -I -B scripts/rc6_material_pr_admission.py "${args[@]}"
       - name: Reject missing source provenance and changed tests before full-Git work
-        if: env.RC6_GATE == 'cheap'
+        if: env.RC6_GATE == 'cheap' || env.RC6_GATE == 'G5P-acquire'
         shell: bash
         env:
           RC6_ADMISSION_JSON: ${{ steps.admit.outputs.admission_path }}
