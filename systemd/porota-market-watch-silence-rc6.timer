@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC6 PAPER GitHub market watch silence every ten minutes
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* *:0/10:00 America/Argentina/Buenos_Aires
+Persistent=false
+AccuracySec=30s
+Unit=porota-market-watch-silence-rc6.service
+
+[Install]
+WantedBy=timers.target
