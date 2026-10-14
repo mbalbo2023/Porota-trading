@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
 import tempfile
 import sys
 import types
@@ -231,6 +232,22 @@ class MonitorContracts(unittest.TestCase):
         self.assertTrue(monitor.active_hours(NOW))
         self.assertFalse(monitor.active_hours(datetime(2026, 10, 14, 12, tzinfo=timezone.utc)))
         self.assertFalse(monitor.active_hours(datetime(2026, 10, 18, 14, tzinfo=timezone.utc)))
+
+    def test_host_diagnostic_uses_bounded_container_read_and_redacts_stderr(self):
+        payload = {"schema": "rc6.shadow-readonly-diagnostic.v1", "read_only": True,
+                   "stages": [{"stage": "RUNTIME_INPUT", "status": "OK"}]}
+        with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 0, stdout=json.dumps(payload), stderr="secret")) as run:
+            self.assertEqual(monitor.shadow_diagnostic_host(), payload)
+        args, options = run.call_args
+        self.assertEqual(args[0][:4], ["docker", "exec", "porota_production_observer", "python"])
+        self.assertEqual(options["timeout"], 9)
+        self.assertTrue(options["capture_output"])
+        with patch.object(monitor.subprocess, "run", side_effect=subprocess.TimeoutExpired(
+                cmd="docker", timeout=9, stderr="secret")):
+            failure = monitor.shadow_diagnostic_host()
+        self.assertEqual(failure["status"], "CONTAINER_PROBE_TIMEOUT")
+        self.assertNotIn("secret", json.dumps(failure))
 
 
 if __name__ == "__main__":
