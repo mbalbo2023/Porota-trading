@@ -67,6 +67,15 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
 ## Alerts and evidence
 
 - Each executing run uploads snapshot.json and decision.json, retention 7 days.
+- A manual run also attempts a 12-second, read-only diagnostic in the
+  observer container. Its shadow_diagnostic.json contains only the outcomes
+  of RUNTIME_INPUT and METADATA, elapsed times, and SQLite class/code/name.
+  It does not call ShadowRuntime.tick, change DB contents, or copy SQL values,
+  credentials, paths, or market data. A failed remote diagnostic is labeled
+  REMOTE_DIAGNOSTIC_UNAVAILABLE; it cannot certify the SHADOW worker.
+- The diagnostic is intentionally absent from scheduled runs to avoid
+  additional intraday DB load. A passing stage in a manual probe does not
+  establish the causal failure stage of a separate worker tick.
 - Successive runs compare against the latest downloadable completed artifact,
   never invent a prior observation if an artifact is missing or expired.
 - The new confirmed P0/P1 code and recoveries are de-duplicated in decision.json.

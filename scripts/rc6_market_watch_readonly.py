@@ -323,6 +323,51 @@ def transport_error():
             "real_order_routes_called": 0}
 
 
+def shadow_diagnostic():
+    """Bounded, read-only probes in the existing observer image.
+
+    The result contains only stage names, durations, and SQLite error codes.
+    Exception messages, SQL parameters, paths, and market data never leave
+    the host. This does not invoke ShadowRuntime.tick or any writer.
+    """
+    at = now_utc()
+    database = Path(os.getenv(
+        "PAPER_V17_DB_PATH", "/app/data/paper_v17/observer_v17.db"))
+    result = {"schema": "rc6.shadow-readonly-diagnostic.v1",
+              "generated_at": at.isoformat(), "read_only": True,
+              "stages": []}
+    try:
+        from rc6_dynamic_universe.runtime import read_runtime
+        from rc6_shadow_runtime.worker import ShadowRuntime
+        stages = (
+            ("RUNTIME_INPUT", lambda: read_runtime(
+                database, as_of=at, row_limit=20000, query_budget_seconds=.35)),
+            ("METADATA", lambda: ShadowRuntime._metadata(
+                type("ReadOnlyShadow", (), {"database": database.resolve(strict=True)})(),
+                at, at.isoformat())),
+        )
+        for name, fn in stages:
+            started = time.monotonic()
+            try:
+                fn()
+                stage = {"stage": name, "status": "OK"}
+            except Exception as exc:
+                stage = {"stage": name, "status": "FAIL_CLOSED",
+                         "error_class": type(exc).__name__}
+                if isinstance(exc, sqlite3.Error):
+                    code = getattr(exc, "sqlite_errorcode", None)
+                    label = getattr(exc, "sqlite_errorname", None)
+                    if type(code) is int:
+                        stage["sqlite_errorcode"] = code
+                    if isinstance(label, str) and label.startswith("SQLITE_"):
+                        stage["sqlite_errorname"] = label[:48]
+            stage["elapsed_ms"] = round((time.monotonic() - started) * 1000, 3)
+            result["stages"].append(stage)
+    except Exception as exc:
+        result["setup_error_class"] = type(exc).__name__
+    return result
+
+
 def classify(current, previous=None, previous_decision=None):
     """Escalate P0 now, P1 after consecutive comparable observations."""
     if current.get("schema") != SCHEMA:
@@ -369,6 +414,7 @@ def main(argv=None):
     remote.add_argument("--expected-sha", required=True)
     remote.add_argument("--root", type=Path, default=ROOT)
     actions.add_parser("transport-error")
+    actions.add_parser("shadow-diagnostic")
     evaluation = actions.add_parser("classify")
     evaluation.add_argument("--current", required=True)
     evaluation.add_argument("--previous")
@@ -381,6 +427,8 @@ def main(argv=None):
         data = probe(root=args.root, expected_sha=args.expected_sha)
     elif args.action == "transport-error":
         data = transport_error()
+    elif args.action == "shadow-diagnostic":
+        data = shadow_diagnostic()
     else:
         current = _read_optional(args.current)
         if not current:

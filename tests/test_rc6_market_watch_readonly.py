@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import sqlite3
 import tempfile
+import sys
+import types
 import unittest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
@@ -87,6 +89,32 @@ class MonitorContracts(unittest.TestCase):
         self.assertFalse(observation["ppi_watch_accessed"])
         self.assertEqual(observation["broker_requests"], 0)
         self.assertEqual(observation["real_order_routes_called"], 0)
+
+    def test_manual_shadow_diagnostic_redacts_sqlite_failure_and_never_ticks(self):
+        runtime = types.ModuleType("rc6_dynamic_universe.runtime")
+        shadow = types.ModuleType("rc6_shadow_runtime.worker")
+        def failing_read(*args, **kwargs):
+            raise sqlite3.OperationalError("secret SQL text and account data")
+        class Reader:
+            @staticmethod
+            def _metadata(obj, at, since):
+                return "readonly", []
+            def tick(self, *args):
+                self.fail("diagnostic must never invoke a writer")
+        runtime.read_runtime = failing_read
+        shadow.ShadowRuntime = Reader
+        with patch.dict(sys.modules, {
+                "rc6_dynamic_universe.runtime": runtime,
+                "rc6_shadow_runtime.worker": shadow}), patch.dict(
+                "os.environ", {"PAPER_V17_DB_PATH": str(self.db)}):
+            record = monitor.shadow_diagnostic()
+        self.assertEqual([x["stage"] for x in record["stages"]],
+                         ["RUNTIME_INPUT", "METADATA"])
+        self.assertEqual([x["status"] for x in record["stages"]],
+                         ["FAIL_CLOSED", "OK"])
+        self.assertEqual(record["stages"][0]["error_class"], "OperationalError")
+        self.assertNotIn("secret", json.dumps(record))
+        self.assertTrue(record["read_only"])
 
     def test_provenance_divergence_is_critical(self):
         payload = json.loads(self.provenance_path.read_text())
