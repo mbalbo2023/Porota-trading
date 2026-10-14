@@ -1,22 +1,22 @@
 name: RC6 A1 isolated HTTP and native probes
 
-# Development evidence only. This workflow has no material admission, release,
+# Development evidence only. No material admission, grant, control-ref write,
 # deploy, broker, Horizon, or owner renewal path.
 on:
   push:
-    branches: [work/rc6-ci-a1-probes-20261013]
+    branches: [work/rc6-ci-a1-ledger-v2-20261014]
     paths: [.github/workflows/rc6-ci-a1-probes.yml]
 
 permissions:
   contents: read
 
 concurrency:
-  group: rc6-ci-a1-probes-${{ github.ref }}
+  group: rc6-ci-a1-ledger-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   isolated-probes:
-    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/work/rc6-ci-a1-probes-20261013'
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/work/rc6-ci-a1-ledger-v2-20261014'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -60,7 +60,13 @@ jobs:
         run: |
           set -Eeuo pipefail
           python -m scripts.rc6_a1_http_ab | tee a1-receipts/http-ab-offline.json
-          python -m pytest -q tests/test_rc6_a1_http_ab.py tests/test_rc6_delegated_renewal.py --junitxml=a1-receipts/http-ab-tests.xml
+          python -m pytest -q tests/test_rc6_a1_http_ab.py tests/test_rc6_delegated_renewal.py tests/test_rc6_a1_ledger.py tests/test_rc6_a1_bootstrap.py --junitxml=a1-receipts/http-ab-tests.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          suite=ET.parse('a1-receipts/http-ab-tests.xml').getroot()
+          suite=suite if suite.tag=='testsuite' else suite.find('testsuite')
+          assert all(int(suite.attrib.get(k,0))==0 for k in ('failures','errors','skipped'))
+          PY
       - name: Four native pytest cases in separate Python processes
         shell: bash
         run: |
@@ -107,5 +113,91 @@ jobs:
         with:
           name: rc6-a1-nonmaterial-${{ github.run_id }}-${{ github.run_attempt }}
           path: a1-receipts/
+          if-no-files-found: warn
+          retention-days: 1
+
+  bootstrap-provenance:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/work/rc6-ci-a1-ledger-v2-20261014'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Start memory-only key holder
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python -m pip install --disable-pip-version-check cryptography==50.0.1
+          mkdir -m 700 -p a1-bootstrap
+          python -m scripts.rc6_a1_bootstrap serve a1-bootstrap >/dev/null 2>&1 &
+          echo "$!" > a1-bootstrap/holder.pid
+          for i in {1..100}; do
+            test -S a1-bootstrap/challenge.sock && break
+            sleep 0.1
+          done
+          test -S a1-bootstrap/challenge.sock
+          test -f a1-bootstrap/public-key.json
+      - name: Attest public key to actual workflow run
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: a1-bootstrap/public-key.json
+      - name: Verify attestation, Actions run and live challenge
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'kill "$(cat a1-bootstrap/holder.pid)" 2>/dev/null || true' EXIT
+          gh attestation verify a1-bootstrap/public-key.json \
+            -R "$GITHUB_REPOSITORY" \
+            --signer-workflow "github.com/$GITHUB_REPOSITORY/.github/workflows/rc6-ci-a1-probes.yml" \
+            --signer-digest "$GITHUB_WORKFLOW_SHA" \
+            --source-digest "$GITHUB_SHA" \
+            --source-ref "$GITHUB_REF" \
+            --deny-self-hosted-runners --format json \
+            > a1-bootstrap/verified-attestation.json
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > a1-bootstrap/run.json
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > a1-bootstrap/jobs.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.rc6_a1_bootstrap import verify_run
+          p=Path('a1-bootstrap')
+          receipt=json.loads((p/'public-key.json').read_text())
+          verified=json.loads((p/'verified-attestation.json').read_text())
+          assert verified and isinstance(verified,list)
+          run=json.loads((p/'run.json').read_text())
+          jobs=json.loads((p/'jobs.json').read_text())['jobs']
+          job_id=verify_run(receipt,run,jobs,expected_job='bootstrap-provenance')
+          (p/'binding-summary.json').write_text(json.dumps({
+            'schema':'porota.rc6.a1-binding.v1',
+            'run_id':run['id'],'run_attempt':run['run_attempt'],
+            'job_id':job_id,'workflow_sha':receipt['context']['GITHUB_WORKFLOW_SHA'],
+            'attestation_cli_verified':True,'G0_G8_qualification':False,
+            'real_orders_sent':0},sort_keys=True))
+          PY
+          python -m scripts.rc6_a1_bootstrap challenge a1-bootstrap > a1-bootstrap/live-key-proof.json
+      - name: Preserve nonmaterial public bootstrap receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-a1-public-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            a1-bootstrap/public-key.json
+            a1-bootstrap/verified-attestation.json
+            a1-bootstrap/binding-summary.json
+            a1-bootstrap/live-key-proof.json
           if-no-files-found: warn
           retention-days: 1
