@@ -396,6 +396,22 @@ try:
     if isinstance(label,str) and label.startswith("SQLITE_"): stage["sqlite_errorname"]=label[:48]
   stage["elapsed_ms"]=round((time.monotonic()-start)*1000,3)
   result["stages"].append(stage)
+ plans={}
+ queries=(
+  ("CATALOG_READY", "SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER%' ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?", (20001,)),
+  ("CATALOG_FULL", "SELECT ticker FROM financial_instrument_catalog ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?", (20001,)),
+  ("INTRADAY", "SELECT event_at FROM ppi_intraday_points WHERE julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?) AND julianday(first_received_at)<=julianday(?) AND julianday(last_verified_at)<=julianday(?) ORDER BY julianday(event_at) DESC LIMIT ?", (at.isoformat(),)*4+(20001,)),
+  ("SNAPSHOTS", "SELECT observed_at FROM market_snapshots WHERE julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?) ORDER BY id DESC LIMIT ?", (at.isoformat(),at.isoformat(),20001)),
+  ("EVENTS", "SELECT event_at FROM paper_events WHERE event_type IN ('INTRADAY_SCALPING_UNSUPPORTED','INTRADAY_SCALPING_ERROR') AND julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?) ORDER BY id DESC LIMIT 200", (at.isoformat(),at.isoformat())))
+ with sqlite3.connect(db.as_uri()+"?mode=ro",uri=True,timeout=.005) as c:
+  c.execute("PRAGMA query_only=ON")
+  for name,query,params in queries:
+   try: plans[name]=[str(row[3])[:120] for row in c.execute("EXPLAIN QUERY PLAN "+query,params)]
+   except sqlite3.Error as exc: plans[name]=[getattr(exc,"sqlite_errorname","SQLITE_ERROR")]
+  try:
+   result["observer_cycles"]=[{"started_at":r[0],"finished_at":r[1],"selected_count":r[2],"duration_seconds":r[3]} for r in c.execute("SELECT started_at,finished_at,selected_count,duration_seconds FROM universe_cycle_metrics ORDER BY id DESC LIMIT 3")]
+  except sqlite3.Error: result["observer_cycles_status"]="UNAVAILABLE"
+ result["query_plans"]=plans
 except Exception as exc: result["setup_error_class"]=type(exc).__name__
 print(json.dumps(result,separators=(",",":")))'''
     try:
