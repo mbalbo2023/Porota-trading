@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import subprocess
 import sys
@@ -495,7 +496,7 @@ except Exception as exc: print(json.dumps({"status":"API_UNAVAILABLE","error_cla
 
 
 def observer_lifecycle_host():
-    """Manual-only Docker event metadata, without logs, env or event attributes."""
+    """Manual-only Docker metadata and proximate exception classes, no raw logs."""
     until = now_utc().isoformat()
     command = ["docker", "events", "--since", "90m", "--until", until,
                "--filter", "type=container",
@@ -525,9 +526,38 @@ def observer_lifecycle_host():
                 if str(signal_number).isdigit() and 0 < int(signal_number) <= 64:
                     item["signal"] = int(signal_number)
             events.append(item)
+        proximate = {"status": "NO_NONZERO_EXIT"}
+        exits = [e for e in events if e["action"] == "die"
+                 and e.get("exit_code", 0) != 0]
+        if exits:
+            exit_at = exits[-1]["epoch_seconds"]
+            since = datetime.fromtimestamp(exit_at - 90, timezone.utc).isoformat()
+            through = datetime.fromtimestamp(exit_at + 10, timezone.utc).isoformat()
+            try:
+                logs = subprocess.run(
+                    ["docker", "logs", "--since", since, "--until", through,
+                     "--tail", "300", "porota_production_observer"],
+                    capture_output=True, text=True, timeout=5, check=False)
+                if logs.returncode or len(logs.stdout) + len(logs.stderr) > 262144:
+                    raise ValueError("LOG_PROBE_UNAVAILABLE")
+                classes = []
+                content = logs.stdout + "\n" + logs.stderr
+                for line in content.splitlines():
+                    match = re.fullmatch(
+                        r"([A-Za-z_][A-Za-z0-9_.]{0,79}(?:Error|Exception)|"
+                        r"SystemExit|KeyboardInterrupt)(?::.*)?", line.strip())
+                    if match:
+                        classes.append(match.group(1))
+                proximate = {"status": "OK", "exit_epoch_seconds": exit_at,
+                             "exception_classes": classes[-12:],
+                             "traceback_count": content.count(
+                                 "Traceback (most recent call last):")}
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                proximate = {"status": "UNAVAILABLE",
+                             "exit_epoch_seconds": exit_at}
         return {"schema": "rc6.observer-lifecycle.v1", "read_only": True,
                 "status": "OK", "events": events[-32:],
-                "event_count": len(events)}
+                "event_count": len(events), "proximate_log": proximate}
     except (OSError, ValueError, TypeError, json.JSONDecodeError,
             subprocess.TimeoutExpired):
         return {"schema": "rc6.observer-lifecycle.v1", "read_only": True,
