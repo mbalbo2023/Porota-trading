@@ -145,8 +145,8 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/recent_critical.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.recent-critical-readonly.v1","read_only":true,"status":"UNAVAILABLE"}' > evidence/recent_critical.json
           fi
-      - name: Correlate recent writer events on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+      - name: Correlate recent writer events in read-only market watch
+        if: steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
