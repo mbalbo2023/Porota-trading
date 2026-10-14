@@ -134,6 +134,22 @@
       "remove_on_deploy": false,
       "reason": "Frequent read-only health timer after SRE fast/full split"
     },
+    "systemd/porota-market-watch-silence-rc6.service": {
+      "role": "ACTIVE_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "Independent bounded GitHub schedule silence check and PAPER Telegram transition alert"
+    },
+    "systemd/porota-market-watch-silence-rc6.timer": {
+      "role": "ACTIVE_TIMER",
+      "install": true,
+      "enabled": true,
+      "active": true,
+      "remove_on_deploy": false,
+      "reason": "Ten-minute host fallback when GitHub schedule events are delayed or dropped"
+    },
     "systemd/porota-full-db-integrity-rc6.service": {
       "role": "ACTIVE_SERVICE",
       "install": true,
