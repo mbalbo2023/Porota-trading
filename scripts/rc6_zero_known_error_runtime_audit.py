@@ -92,7 +92,15 @@ def _stamp(value):
 
 
 def _age_seconds(value):
-    return max(0.0, (datetime.now(timezone.utc) - _stamp(value)).total_seconds())
+    return (datetime.now(timezone.utc) - _stamp(value)).total_seconds()
+
+
+def _require_zero_orders(value, component):
+    """A known integer zero is required; coercion must not hide unknown data."""
+    if type(value) is not int or value != 0:
+        raise RuntimeError(
+            f"REAL_ORDER_COUNTER_INVALID|component={component}|type={type(value).__name__}"
+        )
 
 
 def _http(path):
@@ -307,7 +315,10 @@ def _database_snapshot():
             "state": str(row.get("state") or "UNKNOWN").upper(),
             "heartbeat_at": heartbeat_at,
             "heartbeat_age_seconds": round(_age_seconds(heartbeat_at), 3),
-            "real_orders_sent": int(row.get("real_orders_sent") or 0),
+            # The exit-supervisor schema has no persisted order counter. Keep
+            # its existing PAPER-only diagnostic zero, but preserve an explicit
+            # NULL/invalid persisted counter for the fail-closed assertion.
+            "real_orders_sent": row.get("real_orders_sent", 0),
             "routes": json.loads(row.get("routes_json") or "[]") if name == "caucion_cash_sweep" else [],
         }
     connection.close()
@@ -327,10 +338,10 @@ def _assert_snapshot(snapshot, baseline=None):
     db = snapshot["database"]
     observer = db["observer"]
     assert observer.get("mode") == "PRODUCTION_PAPER"
-    assert int(observer.get("real_orders_sent") or 0) == 0
+    _require_zero_orders(observer.get("real_orders_sent"), "observer")
     if snapshot["iol"]["cache_state"] == "SOURCE_UNAVAILABLE":
         assert str(observer.get("ppi_auth") or "").upper() in {"OK", "AUTHENTICATED"}
-    assert _age_seconds(observer.get("heartbeat_at")) <= 300
+    assert 0 <= _age_seconds(observer.get("heartbeat_at")) <= 300
     readiness = db["readiness"]
     assert readiness["source"] == "candidate_identity_v2"
     assert readiness["ready"] >= 5558
@@ -347,10 +358,13 @@ def _assert_snapshot(snapshot, baseline=None):
     _require_worker_health("scalping", scalping, SCALPING_HEALTHY_RUNTIME_STATES)
     _require_worker_health("caucion_cash_sweep", sweep, CASH_SWEEP_HEALTHY_RUNTIME_STATES)
     _require_worker_health("exit_supervisor", supervisor, EXIT_SUPERVISOR_HEALTHY_RUNTIME_STATES)
-    assert sweep["real_orders_sent"] == 0 and sweep["routes"] == []
+    for name, worker in (("scalping", scalping), ("caucion_cash_sweep", sweep),
+                         ("exit_supervisor", supervisor)):
+        _require_zero_orders(worker.get("real_orders_sent"), name)
+    assert sweep["routes"] == []
     truth = snapshot["dashboard_truth"]
     assert truth["mode"] == "PRODUCTION_PAPER" and truth["execution"] == "SIMULATED"
-    assert int(truth["real_orders_sent"]) == 0
+    _require_zero_orders(truth.get("real_orders_sent"), "dashboard_truth")
     assert truth["readiness"]["source"] == "candidate_identity_v2"
     dashboard_ready = int(truth["readiness"]["ready"])
     if dashboard_ready != readiness["ready"]:

@@ -132,7 +132,7 @@ class GeminiPaperGate:
             raise ValueError("decision Gemini fuera del contrato")
         import math
         raw_score = data.get("score", 0)
-        if isinstance(raw_score, bool):
+        if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
             raise ValueError("score Gemini no es numérico")
         score = float(raw_score)
         if not math.isfinite(score):
