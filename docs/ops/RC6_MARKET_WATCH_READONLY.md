@@ -47,6 +47,10 @@ Offline regression: tests/test_rc6_market_watch_readonly.py
 - Read frozen CURRENT_STATE_V2 provenance and compare GitHub production SHA
   against three Docker container OCI IDs, without restart.
 - Read root disk, inode free and MemAvailable. No dump of host secrets.
+- Read the two functional-health timer active states and sanitized observer
+  Docker state in the ordinary bounded snapshot, even if the optional manual
+  SHADOW container diagnostic times out. These are observations, not restart
+  causes or authorization to change systemd.
 - PPI Watch never read or modified.
 
 ## Severities
@@ -81,8 +85,7 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
   subprocess, returning only a sanitized status if that fails.
   A manual run also records read-only EXPLAIN QUERY PLAN details for five
   fixed SHADOW SQL shapes and the last sixteen observer cycle durations. It
-  also records the legacy/fast functional health timer active states and a
-  sanitized Docker observer state. Plans
+  plans
   are diagnostic; they do not execute those SELECT statements or assert a
   database migration occurred.
 - The diagnostic is intentionally absent from scheduled runs to avoid

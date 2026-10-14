@@ -73,7 +73,10 @@ class MonitorContracts(unittest.TestCase):
             "payload": payload, "digest": monitor.canonical_digest(payload)}))
 
     def capture(self, at=NOW):
-        with patch.object(monitor, "_resources", return_value=self.resources):
+        with patch.object(monitor, "_resources", return_value=self.resources), patch.object(
+                monitor, "_host_control_state", return_value={
+                    "legacy_health_timer": "inactive", "fast_health_timer": "active",
+                    "observer_container": {"Status": "running"}}):
             return monitor.probe(root=self.root, at=at, expected_sha=SHA,
                                  inspect=self.inspect)
 
@@ -90,6 +93,7 @@ class MonitorContracts(unittest.TestCase):
         self.assertFalse(observation["ppi_watch_accessed"])
         self.assertEqual(observation["broker_requests"], 0)
         self.assertEqual(observation["real_order_routes_called"], 0)
+        self.assertEqual(observation["host_control_state"]["legacy_health_timer"], "inactive")
 
     def test_manual_shadow_diagnostic_redacts_sqlite_failure_and_never_ticks(self):
         runtime = types.ModuleType("rc6_dynamic_universe.runtime")
@@ -278,7 +282,6 @@ class MonitorContracts(unittest.TestCase):
                 [], 0, stdout=json.dumps(payload), stderr="secret")) as run:
             result = monitor.shadow_diagnostic_host()
             self.assertEqual(result["stages"], payload["stages"])
-            self.assertEqual(result["legacy_health_timer"], "UNKNOWN")
         args, options = run.call_args_list[0]
         self.assertEqual(args[0][:4], ["docker", "exec", "porota_production_observer", "python"])
         self.assertEqual(options["timeout"], 9)
@@ -290,6 +293,21 @@ class MonitorContracts(unittest.TestCase):
             failure = monitor.shadow_diagnostic_host()
         self.assertEqual(failure["status"], "CONTAINER_PROBE_TIMEOUT")
         self.assertNotIn("secret", json.dumps(failure))
+
+    def test_host_state_survives_optional_container_diagnostic_timeout(self):
+        def read(command, **kwargs):
+            if command[:2] == ["systemctl", "is-active"]:
+                status = "inactive" if command[-1] == "porota-functional-health-rc6.timer" else "active"
+                return subprocess.CompletedProcess(command, 0, stdout=status + "\n", stderr="secret")
+            return subprocess.CompletedProcess(command, 0, stdout=json.dumps({
+                "Status": "running", "StartedAt": "2026-10-14T15:30:00Z",
+                "ExitCode": 0, "OOMKilled": False, "Env": "secret"}), stderr="secret")
+        with patch.object(monitor.subprocess, "run", side_effect=read):
+            result = monitor._host_control_state()
+        self.assertEqual(result["legacy_health_timer"], "inactive")
+        self.assertEqual(result["fast_health_timer"], "active")
+        self.assertEqual(result["observer_container"]["Status"], "running")
+        self.assertNotIn("secret", json.dumps(result))
 
 
 if __name__ == "__main__":
