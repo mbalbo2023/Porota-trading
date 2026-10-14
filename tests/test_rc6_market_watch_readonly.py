@@ -114,6 +114,18 @@ class MonitorContracts(unittest.TestCase):
                                ((NOW + timedelta(minutes=3)).isoformat(),))
         self.assertIn("OBSERVER_HEARTBEAT_INVALID", self.codes(self.capture(), "P0"))
 
+    def test_explicit_fail_closed_is_p1_even_in_preopen(self):
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE observer_state SET session_state='PREOPEN'")
+        envelope = json.loads(self.shadow_path.read_text())
+        envelope["payload"]["status"] = "FAIL_CLOSED"
+        envelope["payload"]["error_class"] = "ValueError"
+        envelope["digest"] = monitor.canonical_digest(envelope["payload"])
+        self.shadow_path.write_text(json.dumps(envelope))
+        observation = self.capture()
+        self.assertIn("DYNAMIC_SHADOW_FAIL_CLOSED", self.codes(observation, "P1"))
+        self.assertEqual(observation["shadow"]["error_class"], "ValueError")
+
     def test_shadow_hash_corruption_is_detected(self):
         envelope = json.loads(self.shadow_path.read_text())
         envelope["payload"]["status"] = "SHADOW_OBSERVING_MODIFIED"

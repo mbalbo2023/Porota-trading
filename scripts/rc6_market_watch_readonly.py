@@ -262,7 +262,7 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
     result["shadow"] = {k: shadow.get(k) for k in (
         "as_of", "status", "phase", "entry_signal_lab_status",
         "operational_funnel_status", "real_orders_sent", "real_routes",
-        "provider_requests")} if shadow else {}
+        "provider_requests", "error_class")} if shadow else {}
     if shadow is None:
         add("DYNAMIC_SHADOW_STATUS_MISSING_OR_INVALID",
             "P1" if market_open_observed else "P2")
@@ -273,7 +273,10 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
             add("DYNAMIC_SHADOW_SAFETY_INVALID", "P0")
         lag = age_seconds(shadow.get("as_of"), at)
         result["shadow_age_seconds"] = lag
-        if shadow.get("status") == "FAIL_CLOSED" or lag is None or lag < -30 or lag > 180:
+        if shadow.get("status") == "FAIL_CLOSED":
+            add("DYNAMIC_SHADOW_FAIL_CLOSED", "P1",
+                result["shadow"].get("error_class"))
+        elif lag is None or lag < -30 or lag > 180:
             add("DYNAMIC_SHADOW_NOT_PROGRESSING",
                 "P1" if market_open_observed else "P2")
 
