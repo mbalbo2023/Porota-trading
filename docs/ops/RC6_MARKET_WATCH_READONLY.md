@@ -97,6 +97,11 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
   a bounded response and only sanitized count/identity fields. This proves
   connectivity for a proposed independent silence timer; it does not install
   that timer or turn missing `event=schedule` executions into a success.
+- Manual runs also read at most 90 minutes of Docker lifecycle event metadata
+  for the observer alone. The artifact contains only action, epoch second and
+  validated numeric exit code or signal. It omits logs, attributes, arguments,
+  environment and other containers; an unavailable event stream stays
+  explicitly unverified.
 - Successive runs compare against the latest downloadable completed artifact,
   never invent a prior observation if an artifact is missing or expired.
 - The new confirmed P0/P1 code and recoveries are de-duplicated in decision.json.
