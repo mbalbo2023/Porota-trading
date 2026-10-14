@@ -16,7 +16,8 @@ from be_paper_engine import D, PaperBroker, PaperStore, STRATEGY_VERSION
 from bm_exit_supervisor import PositionExitSupervisor, admission_error
 from bq_exit_policy import PaperSessionPolicy
 from bv_paper_runtime import (ChildProcesses, collect_exit_books, run_clock, run_reader,
-                              _reader_status_write, _best_effort_runtime_event)
+                              _reader_status_write, _best_effort_runtime_event,
+                              _best_effort_supervisor_heartbeat)
 from test_production_paper_v1634 import quote
 import bf_production_paper_observer as observer
 
@@ -288,6 +289,58 @@ def test_exit_reader_health_write_does_not_die_on_sqlite_contention(tmp_path):
     with store.connect() as connection:
         row = connection.execute("select state,detail from paper_exit_reader_state where id=1").fetchone()
     assert tuple(row) == ("READY", "recovered")
+
+
+def test_exit_clock_survives_contended_tick_and_health_then_recovers(monkeypatch):
+    import bv_paper_runtime as runtime
+
+    calls = []
+    class Supervisor:
+        def __init__(self, *_args, **_kwargs):
+            pass
+        def tick(self):
+            calls.append("tick")
+            if calls.count("tick") == 1:
+                raise sqlite3.OperationalError("database is locked")
+            self.heartbeat("recovered", "RUNNING", "supervised")
+        def heartbeat(self, _at, state, _detail):
+            calls.append(state)
+            if state == "DEGRADED":
+                raise sqlite3.OperationalError("database is locked")
+    class Broker:
+        session_policy = None
+        def supervise_futures(self, _at):
+            calls.append("supervise")
+        def mark_equity(self, *_args, **_kwargs):
+            calls.append("mark")
+    class Children:
+        def poll(self):
+            calls.append("poll")
+        def close(self):
+            calls.append("close")
+    class Stop:
+        count = 0
+        def is_set(self):
+            return self.count >= 2
+        def wait(self, _seconds):
+            self.count += 1
+    monkeypatch.setattr(runtime, "PositionExitSupervisor", Supervisor)
+    monkeypatch.setattr(runtime, "broker_from_environment", lambda *_a, **_kw: Broker())
+    monkeypatch.setattr(runtime, "publish_child_health", lambda *_a, **_kw: None)
+    from types import SimpleNamespace
+    run_clock(SimpleNamespace(path=":memory:"), Children(), Stop(),
+              clock_fn=lambda: "2026-10-14T14:00:00Z", interval=0)
+    assert calls.count("tick") == 2
+    assert "DEGRADED" in calls and "RUNNING" in calls and "supervise" in calls
+    assert calls[-2:] == ["STOPPED", "close"]
+
+
+def test_exit_heartbeat_only_suppresses_sqlite_contention():
+    class Supervisor:
+        def heartbeat(self, *_args):
+            raise sqlite3.OperationalError("no such table: paper_supervisor_state")
+    with pytest.raises(sqlite3.OperationalError, match="no such table"):
+        _best_effort_supervisor_heartbeat(Supervisor(), "now", "DEGRADED", "fixture")
 
 
 def test_exit_book_error_records_stage_and_sqlite_code(position, monkeypatch):
