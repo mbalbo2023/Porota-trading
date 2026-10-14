@@ -284,12 +284,12 @@ class MonitorContracts(unittest.TestCase):
             self.assertEqual(result["stages"], payload["stages"])
         args, options = run.call_args_list[0]
         self.assertEqual(args[0][:4], ["docker", "exec", "porota_production_observer", "python"])
-        self.assertEqual(options["timeout"], 9)
+        self.assertEqual(options["timeout"], 18)
         self.assertTrue(options["capture_output"])
         compile(args[0][-1], "<container-diagnostic>", "exec")
         self.assertIn("EXPLAIN QUERY PLAN", args[0][-1])
         with patch.object(monitor.subprocess, "run", side_effect=subprocess.TimeoutExpired(
-                cmd="docker", timeout=9, stderr="secret")):
+                cmd="docker", timeout=18, stderr="secret")):
             failure = monitor.shadow_diagnostic_host()
         self.assertEqual(failure["status"], "CONTAINER_PROBE_TIMEOUT")
         self.assertNotIn("secret", json.dumps(failure))
