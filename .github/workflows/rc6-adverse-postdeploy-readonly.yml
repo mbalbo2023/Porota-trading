@@ -1,0 +1,83 @@
+name: RC6 functional independent postdeploy read-only verification
+
+on:
+  push:
+    branches: [diag/rc6-adverse-final-postdeploy-20261014]
+    paths: ['.github/workflows/rc6-adverse-postdeploy-readonly.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Verify provenance, containers, services, DB and PAPER independently
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          IMAGE=sha256:d99d66e02f4d2b851d79ce50c2f149d3396d296dae0c7110bbe324d0bcd71fec
+          for c in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            STATE="$(sudo -n docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{.Image}}' "$c")"
+            echo "$c|$STATE"
+            case "$STATE" in "running|"*"|0|false|$IMAGE") ;; *) exit 31;; esac
+          done
+          test "$(systemctl is-active porota-critical-approval-rc6.service)" = active
+          sudo -n python3 - "$REPO/data/paper_v17/observer_v17.db" "$REPO/data/deploy/CURRENT_STATE_V2.json" "$IMAGE" <<'PY'
+          import json,sqlite3,sys
+          from datetime import datetime,timezone
+          db,provenance,image=sys.argv[1:]
+          p=json.load(open(provenance))
+          assert p['candidate_sha']=='90b94fa04f320f95b829ec31c139fa88b9ccf6a0'
+          assert p['deploy_sha']=='03f82840572d302d915402f35b2591c302307845'
+          assert p['image_id']==image and p['validation_status']=='VALIDATED_RUNTIME'
+          assert p['mode']=='PRODUCTION_PAPER' and p['real_orders_sent']==0
+          assert p['real_order_routes']=='NOT_CALLED' and p['ppi_watch_untouched'] is True and p['build_once'] is True
+          print('PERSISTED_PROVENANCE=GREEN|candidate='+p['candidate_sha']+'|deploy='+p['deploy_sha']+'|image='+p['image_id']+'|status='+p['validation_status'])
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          state=c.execute('SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+          assert state[0]=='PRODUCTION_PAPER' and state[1]==0 and state[2]=='OK'
+          ts=datetime.fromisoformat(str(state[5]).replace('Z','+00:00'))
+          age=(datetime.now(timezone.utc)-ts.astimezone(timezone.utc)).total_seconds()
+          assert 0 <= age <= 180
+          print('PAPER_DB=GREEN|mode='+state[0]+'|real_orders_sent='+str(state[1])+'|ppi_auth='+str(state[2])+'|heartbeat_age_s='+str(round(age,1)))
+          quick=c.execute('PRAGMA quick_check(1)').fetchone()[0]
+          assert quick=='ok',quick
+          print('DB_QUICK_CHECK='+str(quick))
+          if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='api_health'").fetchone():
+              for component,state,checked_at in c.execute("SELECT component,state,checked_at FROM api_health WHERE component LIKE 'PPI%' OR component LIKE 'IOL%' OR component LIKE 'BYMA%' ORDER BY component LIMIT 30"):
+                  print('SOURCE_HEALTH='+str(component)+'|'+str(state)+'|'+str(checked_at))
+          if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_sync'").fetchone():
+              for source,status,attempt in c.execute("SELECT source,status,last_attempt_at FROM source_sync WHERE source LIKE 'PPI%' OR source LIKE 'IOL%' OR source LIKE 'BYMA%' ORDER BY source LIMIT 20"):
+                  print('SOURCE_SYNC='+str(source)+'|'+str(status)+'|'+str(attempt))
+          c.close()
+          PY
+          HTTP="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/health)"
+          test "$HTTP" = 200
+          echo "DASHBOARD_HEALTH_HTTP=$HTTP"
+          TRADING_HTTP="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/trading)"
+          test "$TRADING_HTTP" = 401
+          echo "TRADING_ROUTE_AUTH_HTTP=$TRADING_HTTP"
+          echo "ROOT_FREE_BYTES=$(df -PB1 / | awk 'NR==2 {print $4}')"
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+            printf 'PPI_WATCH_UNIT=%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          test -z "$(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}')"
+          echo "PPI_WATCH_UNITS=NONE"
+          echo "INDEPENDENT_ADVERSE_POSTDEPLOY=GREEN"
+          REMOTE
