@@ -321,6 +321,27 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(call.call_args.kwargs["timeout"], 7)
         self.assertIn("event=schedule", call.call_args.args[0][-1])
 
+    def test_manual_lifecycle_events_report_only_action_clock_and_exit(self):
+        rows = [
+            {"Action": "kill", "time": 1791990000,
+             "Actor": {"Attributes": {"signal": "15", "env": "secret"}}},
+            {"Action": "die", "time": 1791990001,
+             "Actor": {"Attributes": {"exitCode": "0", "token": "secret"}}},
+            {"Action": "start", "time": 1791990002},
+        ]
+        output = "\n".join(map(json.dumps, rows))
+        with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 0, stdout=output, stderr="secret")) as call:
+            result = monitor.observer_lifecycle_host()
+        self.assertEqual(result["status"], "OK")
+        self.assertEqual(result["events"], [
+            {"action": "kill", "epoch_seconds": 1791990000, "signal": 15},
+            {"action": "die", "epoch_seconds": 1791990001, "exit_code": 0},
+            {"action": "start", "epoch_seconds": 1791990002}])
+        self.assertNotIn("secret", json.dumps(result))
+        self.assertEqual(call.call_args.kwargs["timeout"], 6)
+        self.assertEqual(call.call_args.args[0][0:2], ["docker", "events"])
+
 
 if __name__ == "__main__":
     unittest.main()

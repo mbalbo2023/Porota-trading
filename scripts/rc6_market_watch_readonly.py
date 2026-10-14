@@ -494,6 +494,46 @@ except Exception as exc: print(json.dumps({"status":"API_UNAVAILABLE","error_cla
             "status": "CONTAINER_PROBE_UNAVAILABLE"}
 
 
+def observer_lifecycle_host():
+    """Manual-only Docker event metadata, without logs, env or event attributes."""
+    until = now_utc().isoformat()
+    command = ["docker", "events", "--since", "90m", "--until", until,
+               "--filter", "type=container",
+               "--filter", "container=porota_production_observer",
+               "--format", "{{json .}}"]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True,
+                                   timeout=6, check=False)
+        if completed.returncode or len(completed.stdout) > 65536:
+            raise ValueError("EVENTS_UNAVAILABLE")
+        events = []
+        allowed = {"start", "die", "kill", "stop", "restart", "oom"}
+        for line in completed.stdout.splitlines():
+            row = json.loads(line)
+            action = row.get("Action") or row.get("status")
+            moment = row.get("time")
+            if action not in allowed or type(moment) is not int:
+                continue
+            item = {"action": action, "epoch_seconds": moment}
+            attributes = (row.get("Actor") or {}).get("Attributes") or {}
+            if action == "die":
+                code = attributes.get("exitCode")
+                if str(code).isdigit() and 0 <= int(code) <= 255:
+                    item["exit_code"] = int(code)
+            if action == "kill":
+                signal_number = attributes.get("signal")
+                if str(signal_number).isdigit() and 0 < int(signal_number) <= 64:
+                    item["signal"] = int(signal_number)
+            events.append(item)
+        return {"schema": "rc6.observer-lifecycle.v1", "read_only": True,
+                "status": "OK", "events": events[-32:],
+                "event_count": len(events)}
+    except (OSError, ValueError, TypeError, json.JSONDecodeError,
+            subprocess.TimeoutExpired):
+        return {"schema": "rc6.observer-lifecycle.v1", "read_only": True,
+                "status": "UNAVAILABLE", "events": []}
+
+
 def alert_host(encoded):
     """Use the existing container Telegram transport without exporting secrets."""
     try:
@@ -613,6 +653,7 @@ def main(argv=None):
     actions.add_parser("shadow-diagnostic")
     actions.add_parser("shadow-diagnostic-host")
     actions.add_parser("schedule-api-host")
+    actions.add_parser("observer-lifecycle-host")
     alert = actions.add_parser("alert-host")
     alert.add_argument("encoded")
     prep = actions.add_parser("prepare-alert")
@@ -638,6 +679,8 @@ def main(argv=None):
         data = shadow_diagnostic_host()
     elif args.action == "schedule-api-host":
         data = schedule_api_host()
+    elif args.action == "observer-lifecycle-host":
+        data = observer_lifecycle_host()
     elif args.action == "alert-host":
         data = alert_host(args.encoded)
     elif args.action == "prepare-alert":
