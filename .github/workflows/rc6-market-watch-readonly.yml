@@ -145,42 +145,6 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/recent_critical.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.recent-critical-readonly.v1","read_only":true,"status":"UNAVAILABLE"}' > evidence/recent_critical.json
           fi
-      - name: Correlate recent writer events in read-only market watch
-        if: steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          ssh -i "$HOME/.ssh/rc6_market_watch" \
-            -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 7 python3 - writer-timeline-host" \
-            < scripts/rc6_market_watch_readonly.py > evidence/writer_timeline.json 2>/dev/null
-          rc=$?
-          set -e
-          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/writer_timeline.json >/dev/null 2>&1; then
-            printf '%s\n' '{"schema":"rc6.writer-timeline-readonly.v1","read_only":true,"status":"UNAVAILABLE","events":[]}' > evidence/writer_timeline.json
-          fi
-      - name: Inventory pinned Docker image sizes without mutation
-        if: steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          ssh -i "$HOME/.ssh/rc6_market_watch" \
-            -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 25 python3 - disk-inventory-host" \
-            < scripts/rc6_market_watch_readonly.py > evidence/disk_inventory.json 2>/dev/null
-          rc=$?
-          set -e
-          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/disk_inventory.json >/dev/null 2>&1; then
-            printf '%s\n' '{"schema":"rc6.disk-inventory-readonly.v1","read_only":true,"status":"UNAVAILABLE","images":{},"docker":[]}' > evidence/disk_inventory.json
-          fi
       - name: Diagnose SHADOW SQLite stages on manual runs only
         if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
         shell: bash
@@ -329,8 +293,6 @@ jobs:
             evidence/schedule_api.json
             evidence/observer_lifecycle.json
             evidence/recent_critical.json
-            evidence/writer_timeline.json
-            evidence/disk_inventory.json
             evidence/delivery.json
           if-no-files-found: error
           retention-days: 7
