@@ -709,10 +709,11 @@ print(json.dumps(result,separators=(",",":")))'''
 
 
 def disk_inventory_host():
-    """Read Docker disk accounting and the sizes of the three pinned images."""
+    """Read sizes and layer overlap for the three pinned Docker images."""
     result = {"schema": "rc6.disk-inventory-readonly.v1", "read_only": True,
               "status": "UNAVAILABLE", "images": {}, "docker": []}
     try:
+        layers = {}
         for name in CONTAINERS:
             container = subprocess.run(
                 ["docker", "inspect", "-f", "{{.Image}}", name],
@@ -727,22 +728,22 @@ def disk_inventory_host():
                 raise ValueError("SIZE_UNAVAILABLE")
             result["images"][name] = {"id": image_id,
                                       "size_bytes": int(size.stdout.strip())}
-        summary = subprocess.run(
-            ["docker", "system", "df", "--format", "{{json .}}"],
-            capture_output=True, text=True, timeout=6, check=False)
-        if summary.returncode or len(summary.stdout) > 4096:
-            raise ValueError("DOCKER_DF_UNAVAILABLE")
-        for line in summary.stdout.splitlines():
-            item = json.loads(line)
-            kind = item.get("Type")
-            if kind not in {"Images", "Containers", "Local Volumes", "Build Cache"}:
-                continue
-            data = {"type": kind}
-            for key in ("TotalCount", "Active", "Size", "Reclaimable"):
-                value = str(item.get(key, ""))
-                if re.fullmatch(r"[0-9.]+[kMGT]?B(?: \([0-9.]+%\))?|[0-9]+", value):
-                    data[key.lower()] = value
-            result["docker"].append(data)
+            manifest = subprocess.run(
+                ["docker", "image", "inspect", "-f", "{{json .RootFS.Layers}}", image_id],
+                capture_output=True, text=True, timeout=3, check=False)
+            if manifest.returncode or len(manifest.stdout) > 8192:
+                raise ValueError("LAYERS_UNAVAILABLE")
+            ids = json.loads(manifest.stdout)
+            if (not isinstance(ids, list) or len(ids) > 100 or not all(
+                    isinstance(v, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", v)
+                    for v in ids)):
+                raise ValueError("LAYERS_INVALID")
+            layers[name] = set(ids)
+        old = layers["porota_critical_approval_rc6"]
+        current = layers["porota_production_observer"]
+        result["layer_overlap"] = {"old_count": len(old), "current_count": len(current),
+                                   "shared_count": len(old & current),
+                                   "old_unique_count": len(old - current)}
         result["status"] = "OK"
     except (OSError, ValueError, TypeError, json.JSONDecodeError,
             subprocess.TimeoutExpired):

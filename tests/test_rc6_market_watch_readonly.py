@@ -455,22 +455,23 @@ class MonitorContracts(unittest.TestCase):
     def test_disk_inventory_only_reads_pinned_image_sizes_and_redacts_output(self):
         ids = ["sha256:" + c * 64 for c in "abc"]
         replies = []
-        for image_id in ids:
+        for index, image_id in enumerate(ids):
             replies.extend((subprocess.CompletedProcess([], 0, stdout=image_id + "\n", stderr="secret"),
-                            subprocess.CompletedProcess([], 0, stdout="900000000\n", stderr="secret")))
-        replies.append(subprocess.CompletedProcess([], 0, stdout=json.dumps({
-            "Type": "Images", "TotalCount": "3", "Active": "2", "Size": "2.7GB",
-            "Reclaimable": "0B (0%)", "secret": "do not export"}), stderr="secret"))
+                            subprocess.CompletedProcess([], 0, stdout="900000000\n", stderr="secret"),
+                            subprocess.CompletedProcess([], 0, stdout=json.dumps([
+                                ids[0], ids[1] if index == 2 else ids[2]]), stderr="secret")))
         with patch.object(monitor.subprocess, "run", side_effect=replies) as call:
             result = monitor.disk_inventory_host()
         self.assertEqual(result["status"], "OK")
         self.assertEqual(result["images"]["porota_critical_approval_rc6"]["id"], ids[2])
         self.assertEqual(result["images"]["porota_production_observer"]["size_bytes"], 900000000)
-        self.assertEqual(result["docker"][0]["reclaimable"], "0B (0%)")
+        self.assertEqual(result["layer_overlap"], {
+            "old_count": 2, "current_count": 2, "shared_count": 1,
+            "old_unique_count": 1})
         self.assertNotIn("secret", json.dumps(result))
-        self.assertEqual(call.call_count, 7)
+        self.assertEqual(call.call_count, 9)
         self.assertTrue(all(args.args[0][:2] in (["docker", "inspect"],
-                      ["docker", "image"], ["docker", "system"])
+                      ["docker", "image"])
                       for args in call.call_args_list))
 
 
