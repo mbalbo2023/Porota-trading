@@ -73,7 +73,16 @@ def _catalog_rows(store):
     with store.connect() as c:
         rows = c.execute("""SELECT ticker,instrument_type,market,currency,settlement,
           capability,metadata_json,last_seen_at FROM financial_instrument_catalog
-          WHERE status='AVAILABLE' ORDER BY instrument_type,ticker,market,currency,settlement""").fetchall()
+          WHERE status='AVAILABLE'""").fetchall()
+    # The production catalogue carries large metadata_json values. SQLite's
+    # ORDER BY spills a temporary B-tree beyond the contract runner's bounded
+    # /tmp tmpfs, even though the host disk has ample free space. Sorting the
+    # already fetched rows keeps the exact deterministic order without a disk
+    # sort or a schema migration on the live database.
+    rows.sort(key=lambda row: (
+        row["instrument_type"], row["ticker"], row["market"],
+        row["currency"], row["settlement"],
+    ))
     result = []
     for row in rows:
         item = dict(row)
