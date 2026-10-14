@@ -445,10 +445,7 @@ class TestFrenoDeSimulacion:
 
     def test_la_condicion_esta_invertida_a_favor_de_la_seguridad(self):
         fuente = (RAIZ / "ao_startup_gate.py").read_text(encoding="utf-8")
-        assert "if modo == MODO_REAL:\n        return None" in fuente, (
-            "La orden tiene que salir SOLO en modo REAL. Una lista de estados "
-            "prohibidos hay que acordarse de mantenerla; una lista de un solo "
-            "estado permitido no se puede olvidar de actualizar.")
+        assert 'modo == MODO_REAL and RELEASE_MODE != "PRODUCTION_PAPER" and REAL_ORDER_CAPABILITY == "ENABLED"' in fuente
 
     def test_el_modo_detenido_intercepta(self):
         import copy

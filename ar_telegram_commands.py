@@ -431,10 +431,15 @@ def comando_rearrancar(notifier, ppi_client=None) -> dict:
 def ejecutar_rearranque(notifier) -> dict:
     import p_risk_guardian as rg
     try:
-        rg.clear_halt()
         import ao_startup_gate as gate
-        gate.autorizar(gate.MODO_SIMULACION if gate.esta_en_simulacion() else gate.MODO_REAL,
-                       origen="rearranque por Telegram")
+        from _version import MODE, REAL_ORDER_CAPABILITY
+        modo = (gate.MODO_SIMULACION if MODE == "PRODUCTION_PAPER"
+                or REAL_ORDER_CAPABILITY != "ENABLED" or gate.esta_en_simulacion()
+                else gate.MODO_REAL)
+        authorization = gate.autorizar(modo, origen="rearranque por Telegram")
+        if not authorization.get("ok"):
+            raise RuntimeError(authorization.get("motivo") or "RESTART_AUTHORIZATION_BLOCKED")
+        rg.clear_halt()
         _enviar(notifier, "✅ *Bot rearrancado.* Vuelve a evaluar el mercado en el próximo ciclo.", None)
         _registrar({"modo": "REARRANQUE", "momento": datetime.now().isoformat(timespec="seconds")})
         return {"ok": True}

@@ -205,3 +205,35 @@ def collect(store, *, at=None, candidate=None) -> dict:
         "sector_mapping_source": "REVIEWED_VERSIONED_FILE_ONLY",
         "source": "RC6_POLICY_CONTEXT_READONLY",
     }
+
+
+def locked_sector_context(connection, candidate: dict) -> dict:
+    """Recount reviewed OPEN sectors on the admission transaction's snapshot."""
+    sector_map = _explicit_sector_map()
+    positions = []
+    for row in connection.execute(
+        """SELECT paper_id,symbol,asset_class,market,currency,settlement,features_json
+           FROM paper_positions WHERE status='OPEN'"""
+    ):
+        item = dict(row)
+        key = tuple(str(item.get(field) or "").upper() for field in
+                    ("symbol", "asset_class", "market", "currency", "settlement"))
+        mapped = _reviewed_sector_mapping(sector_map, key)
+        if not mapped and key[1] == "OPCIONES":
+            try:
+                import json
+                features = json.loads(item.get("features_json") or "{}")
+                underlying = (features.get("financial_contract") or {}).get("underlying")
+            except (TypeError, ValueError):
+                underlying = None
+            mapped = _reviewed_underlying_sector_mapping(sector_map, underlying, key[2])
+        item["sector"] = mapped.get("sector") if mapped else None
+        positions.append(item)
+    key = tuple(str(candidate.get(field) or "").upper() for field in
+                ("symbol", "family", "market", "currency", "settlement"))
+    mapped = _reviewed_sector_mapping(sector_map, key)
+    if not mapped and key[1] == "OPCIONES":
+        mapped = _reviewed_underlying_sector_mapping(
+            sector_map, candidate.get("underlying"), key[2])
+    return {"sectors": sector_observation(positions),
+            "candidate_sector": mapped.get("sector") if mapped else None}

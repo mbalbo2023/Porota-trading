@@ -18,6 +18,7 @@ trading decision. Background differences are diagnostics only.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
 
@@ -125,12 +126,18 @@ def compare_background_numeric(
     """
     if primary_value is None or evidence_value is None:
         return "BACKGROUND_COMPARISON_INCOMPLETE"
-    p = float(primary_value)
-    s = float(evidence_value)
+    try:
+        p = float(primary_value)
+        s = float(evidence_value)
+        tolerance = float(tolerance_pct)
+    except (TypeError, ValueError, OverflowError):
+        return "BACKGROUND_COMPARISON_INCOMPLETE"
+    if not all(map(math.isfinite, (p, s, tolerance))) or tolerance < 0:
+        return "BACKGROUND_COMPARISON_INCOMPLETE"
     if p == 0:
         return "BACKGROUND_DIVERGENCE" if s != 0 else "BACKGROUND_ALIGNED"
     diff_pct = abs(s - p) / abs(p) * 100.0
-    return "BACKGROUND_DIVERGENCE" if diff_pct > float(tolerance_pct) else "BACKGROUND_ALIGNED"
+    return "BACKGROUND_DIVERGENCE" if diff_pct > tolerance else "BACKGROUND_ALIGNED"
 
 
 def assert_source_invariants() -> None:

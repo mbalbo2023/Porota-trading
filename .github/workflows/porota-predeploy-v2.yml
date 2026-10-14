@@ -267,7 +267,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          docker run --rm --pull never --entrypoint python "$IMAGE" - <<'PY'
+          docker run --rm --pull never -i --entrypoint python "$IMAGE" - <<'PY' | tee /tmp/porota-image-import-smoke.txt
           import bg_paper_dashboard
           import bf_production_paper_observer
           import bv_paper_runtime
@@ -278,6 +278,7 @@ jobs:
           import o_dashboard
           print('POROTA_RUNTIME_IMPORT_SMOKE=GREEN')
           PY
+          grep -Fxq 'POROTA_RUNTIME_IMPORT_SMOKE=GREEN' /tmp/porota-image-import-smoke.txt
 
       - name: Exact image runtime smoke contract
         shell: bash

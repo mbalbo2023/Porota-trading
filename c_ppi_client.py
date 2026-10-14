@@ -753,6 +753,9 @@ class ResilientPPIClient:
         El flujo es el mismo que el de compra: budget primero (para obtener
         los disclaimers que PPI exige) y confirm después.
         """
+        from _version import MODE, REAL_ORDER_CAPABILITY
+        if MODE == "PRODUCTION_PAPER" or REAL_ORDER_CAPABILITY != "ENABLED":
+            raise RuntimeError("REAL_ORDER_CAPABILITY_BLOCKED")
         precio_referencia = 0.0
         cotizacion = self.get_market_data(ticker, instrument_type, settlement)
         if cotizacion:
@@ -1135,6 +1138,9 @@ class ResilientPPIClient:
 
     def cancel_order(self, order_id: str, external_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Cancela una orden por ID usando el método oficial de PPI."""
+        from _version import MODE, REAL_ORDER_CAPABILITY
+        if MODE == "PRODUCTION_PAPER" or REAL_ORDER_CAPABILITY != "ENABLED":
+            raise RuntimeError("REAL_ORDER_CAPABILITY_BLOCKED")
         if not self.account_number:
             logger.warning("PPI_ACCOUNT_NUMBER no configurado; no se puede cancelar la orden.")
             return None
@@ -1173,6 +1179,9 @@ class ResilientPPIClient:
         ninguna orden todavía. Requiere cuenta y términos correctos; un
         presupuesto no prueba permiso general ni equivale a gastos all-in.
         Familia especializada sin adaptador se rechaza antes del SDK."""
+        from _version import MODE, REAL_ORDER_CAPABILITY
+        if MODE == "PRODUCTION_PAPER" or REAL_ORDER_CAPABILITY != "ENABLED":
+            raise RuntimeError("REAL_ORDER_CAPABILITY_BLOCKED")
         from ppi_client.models.order_budget import OrderBudget
         _order_terms(instrument_type,quantity_type,order_type,term,operation,settlement,operation_max_date)
 
@@ -1237,6 +1246,9 @@ class ResilientPPIClient:
                 # Safety control missing at the only real-order choke point must fail closed.
                 raise RuntimeError("ORDER_GATE_MISSING: ao_startup_gate no disponible") from exc
 
+        from _version import MODE, REAL_ORDER_CAPABILITY
+        if MODE == "PRODUCTION_PAPER" or REAL_ORDER_CAPABILITY != "ENABLED":
+            raise RuntimeError("REAL_ORDER_CAPABILITY_BLOCKED")
         from ppi_client.models.order_confirm import OrderConfirm
         from ppi_client.models.disclaimer import Disclaimer
 

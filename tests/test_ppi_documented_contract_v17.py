@@ -14,6 +14,10 @@ from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyTransportGuard
 
 @pytest.fixture
 def wrapper(monkeypatch):
+    # Adapter contract only: fake SDK in a synthetic non-product release.
+    import _version
+    monkeypatch.setattr(_version, 'MODE', 'SANDBOX_ADAPTER_FIXTURE')
+    monkeypatch.setattr(_version, 'REAL_ORDER_CAPABILITY', 'ENABLED')
     calls=[]
     def capture(kind,request):
         calls.append((kind,asdict(request)))

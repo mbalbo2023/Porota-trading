@@ -358,11 +358,11 @@ def test_en_simulacion_ninguna_orden_sale(tmp_path, monkeypatch):
     assert orden["id"].startswith("SIM-")
 
 
-def test_en_modo_real_las_ordenes_no_se_interceptan(tmp_path, monkeypatch):
+def test_en_modo_real_release_paper_rechaza_y_contiene_orden(tmp_path, monkeypatch):
     monkeypatch.setenv("STARTUP_STATE_PATH", str(tmp_path / "st.json"))
     import importlib
     import ao_startup_gate as g
     importlib.reload(g)
 
-    g.autorizar(g.MODO_REAL, origen="test")
-    assert g.interceptar_orden("GGAL", 100, 7250.0, "BUY") is None
+    assert g.autorizar(g.MODO_REAL, origen="test")["ok"] is False
+    assert g.interceptar_orden("GGAL", 100, 7250.0, "BUY")["simulada"] is True

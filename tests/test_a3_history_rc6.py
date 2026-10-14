@@ -43,8 +43,8 @@ def make_store(tmp_path):
         c.executescript('''
         CREATE TABLE observer_state(id INTEGER PRIMARY KEY,session_state TEXT,real_orders_sent INTEGER);
         INSERT INTO observer_state VALUES(1,'MARKET_CLOSED',0);
-        CREATE TABLE candidate_universe(ticker TEXT,instrument_type TEXT,market TEXT,settlement TEXT,status TEXT);
-        INSERT INTO candidate_universe VALUES('DLR/OCT26','FUTUROS','ROFEX','T+1','AVAILABLE');
+        CREATE TABLE candidate_universe(ticker TEXT,instrument_type TEXT,market TEXT,settlement TEXT,status TEXT,currency TEXT);
+        INSERT INTO candidate_universe VALUES('DLR/OCT26','FUTUROS','ROFEX','T+1','AVAILABLE','ARS');
         ''')
     return s
 
@@ -58,7 +58,7 @@ def test_bootstrap_is_background_readonly_a3_and_writes_provenanced_history(tmp_
     with s.connect() as c:
         row=c.execute("SELECT symbol,instrument_type,market,settlement,source,date FROM history_canonical_v2").fetchone()
         assert tuple(row)==('DLR/OCT26','FUTUROS','ROFEX','T+1','A3_CEM_CLOSING','2026-09-04')
-        st=c.execute("SELECT status,last_complete_day FROM a3_history_ingest_state_rc6").fetchone()
+        st=c.execute("SELECT status,last_complete_day FROM a3_history_ingest_state_rc6_v2").fetchone()
         assert tuple(st)==('COMPLETE','2026-09-04')
 
 
@@ -86,7 +86,7 @@ def test_dlr_spread_or_variant_stays_fail_closed(tmp_path):
     assert client.calls==[]
     with s.connect() as c:
         assert c.execute("SELECT COUNT(*) FROM history_versions_v2").fetchone()[0]==0
-        state=c.execute("SELECT status,last_error FROM a3_history_ingest_state_rc6").fetchone()
+        state=c.execute("SELECT status,last_error FROM a3_history_ingest_state_rc6_v2").fetchone()
         assert tuple(state)==('ALIGNMENT_UNVERIFIED','CEM_SYMBOL_FAMILY_NOT_EXACT')
 
 

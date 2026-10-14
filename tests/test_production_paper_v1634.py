@@ -1048,7 +1048,7 @@ def test_v17_venta_t1_no_es_caja_hasta_liquidacion_modelada(tmp_path):
 def test_v17_calendario_caja_respeta_dia_sin_liquidacion_y_ano_desconocido():
     # La fecha hábil esperada es sólo diagnóstica; sin confirmación del broker
     # T+1 nunca inventa hora de acreditación ni libera caja.
-    assert modeled_sale_settlement_date("A-24HS", "2026-11-05T11:00:00-03:00") == "2026-11-10"
+    assert modeled_sale_settlement_date("A-24HS", "2026-11-05T11:00:00-03:00") == "2026-11-11"
     assert modeled_sale_settlement("A-24HS", "2026-11-05T11:00:00-03:00") is None
     assert modeled_sale_settlement_date("A-24HS", "2026-12-30T11:00:00-03:00") is None
     assert modeled_sale_settlement("PLAZO-DESCONOCIDO", "2026-08-28T11:00:00-03:00") is None
@@ -1591,6 +1591,10 @@ def test_historicos_usan_universo_completo_no_lote_activo(tmp_path, monkeypatch)
         for ticker in ("GGAL", "YPFD", "PAMP", "BMA"):
             connection.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
                                (ticker, "ACCIONES", "A-24HS", "BYMA", 1, "AVAILABLE", "ok", "2026-08-26"))
+            import bu_instrument_catalog as full_catalog
+            full_catalog.persist(connection,full_catalog.normalize_record({
+                "ticker":ticker,"type":"ACCIONES","market":"BYMA","currency":"ARS",
+                "settlement":"A-24HS"},"A-24HS","2026-08-26T12:00:00-03:00","OFFLINE_SCOPE_TEST"))
     monkeypatch.setattr(observer, "ACTIVE_SYMBOL_LIMIT", 2)
     # Historical targeting must use the complete eligible catalog, not the
     # scanner's small active rotation. The one-shot repair gate belongs to the
