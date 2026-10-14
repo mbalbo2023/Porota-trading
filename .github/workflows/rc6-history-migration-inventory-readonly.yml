@@ -1,0 +1,69 @@
+name: RC6 history migration inventory read-only
+on:
+  push:
+    branches: [diag/rc6-sqlite-temp-20261014]
+    paths: ['.github/workflows/rc6-history-migration-inventory-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Count legacy history rows and explicit monetary identities
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+          timeout 240 ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n timeout 180 python3 -' <<'PY'
+          from pathlib import Path
+          import json, os, sqlite3, time
+          root=Path('/opt/porota-trading')
+          history=root/'data/market_history.db'
+          observer=root/'data/paper_v17/observer_v17.db'
+          h=sqlite3.connect('file:'+str(history)+'?mode=ro&immutable=1',uri=True,timeout=5)
+          o=sqlite3.connect('file:'+str(observer)+'?mode=ro&immutable=1',uri=True,timeout=5)
+          h.execute('PRAGMA query_only=ON')
+          o.execute('PRAGMA query_only=ON')
+          count=h.execute('SELECT COUNT(*) FROM history_versions_v2').fetchone()[0]
+          close=h.execute('SELECT COUNT(*) FROM history_close_versions_v1').fetchone()[0]
+          catalog={}
+          for symbol,family,market,currency,settlement in o.execute("SELECT ticker,instrument_type,market,currency,settlement FROM financial_instrument_catalog WHERE status='AVAILABLE'"):
+              catalog.setdefault((symbol,family,market,settlement),set()).add(currency)
+          totals={'explicit_valid':0,'mapped_unique':0,'ambiguous':0,'unresolved':0,'conflict':0,'invalid_json':0}
+          keys=set()
+          started=time.monotonic()
+          for symbol,family,market,settlement,raw in h.execute('SELECT symbol,instrument_type,market,settlement,metadata_json FROM history_versions_v2'):
+              key=(symbol,family,market,settlement)
+              keys.add(key)
+              try:
+                  metadata=json.loads(raw or '{}')
+                  explicit=metadata.get('currency')
+              except (ValueError,TypeError,AttributeError):
+                  totals['invalid_json']+=1
+                  continue
+              mapped=catalog.get(key,set())
+              if explicit:
+                  if mapped and explicit not in mapped: totals['conflict']+=1
+                  else: totals['explicit_valid']+=1
+              elif len(mapped)==1: totals['mapped_unique']+=1
+              elif len(mapped)>1: totals['ambiguous']+=1
+              else: totals['unresolved']+=1
+              if time.monotonic()-started>120: raise RuntimeError('HISTORY_INVENTORY_DEADLINE_EXCEEDED')
+          free=os.statvfs(root).f_bavail*os.statvfs(root).f_frsize
+          print('HISTORY_VERSIONS='+str(count)+'|CLOSE_VERSIONS='+str(close)+'|EXACT_KEYS='+str(len(keys)))
+          print('HISTORY_MONETARY_DISTRIBUTION='+json.dumps(totals,sort_keys=True))
+          print('HISTORY_CATALOG_EXACT_KEYS='+str(len(catalog))+'|CATALOG_MAIN_ONLY=YES')
+          print('HISTORY_ROOT_FREE_BYTES='+str(free)+'|SOURCE_BYTES='+str(history.stat().st_size))
+          print('HISTORY_OBSERVER_WAL_BYTES='+str(Path(str(observer)+'-wal').stat().st_size if Path(str(observer)+'-wal').exists() else 0))
+          print('HISTORY_SOURCE_QUICK_CHECK='+str(h.execute('PRAGMA quick_check(1)').fetchone()[0]))
+          h.close();o.close()
+          PY
