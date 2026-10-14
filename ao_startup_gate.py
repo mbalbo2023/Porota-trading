@@ -55,6 +55,7 @@ import logging
 import os
 import threading
 import time
+from _version import MODE as RELEASE_MODE, REAL_ORDER_CAPABILITY
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from typing import List, Optional
@@ -138,7 +139,9 @@ def esta_en_simulacion() -> bool:
 
 def puede_operar() -> bool:
     with _lock:
-        return _estado.modo in (MODO_SIMULACION, MODO_REAL)
+        return _estado.modo == MODO_SIMULACION or (
+            _estado.modo == MODO_REAL and REAL_ORDER_CAPABILITY == "ENABLED"
+            and RELEASE_MODE != "PRODUCTION_PAPER")
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +258,8 @@ def autorizar(modo: str, codigo: str = "", origen: str = "telegram") -> dict:
     modo = modo.upper()
     if modo not in (MODO_SIMULACION, MODO_REAL, MODO_DETENIDO):
         return {"ok": False, "motivo": f"Modo desconocido: {modo}"}
+    if modo == MODO_REAL and (RELEASE_MODE == "PRODUCTION_PAPER" or REAL_ORDER_CAPABILITY != "ENABLED"):
+        return {"ok": False, "motivo": "REAL_ORDER_CAPABILITY_BLOCKED"}
 
     with _lock:
         if codigo and codigo != _estado.codigo:
@@ -405,7 +410,7 @@ def interceptar_orden(ticker: str, cantidad: int, precio: float, lado: str,
     # prohibidos —que hay que acordarse de mantener— y una lista de un solo
     # estado permitido, que no se puede olvidar de actualizar.
     modo = estado_actual().get("modo")
-    if modo == MODO_REAL:
+    if modo == MODO_REAL and RELEASE_MODE != "PRODUCTION_PAPER" and REAL_ORDER_CAPABILITY == "ENABLED":
         return None
 
     orden = {

@@ -51,9 +51,7 @@ def test_invocacion_antigua_no_inventa_valuacion(monkeypatch):
     assert result['settlement'] is None
 
 
-def test_modo_real_conserva_intercepcion_sin_efecto(monkeypatch):
+def test_modo_real_bloqueado_por_release_paper(monkeypatch):
     monkeypatch.setattr(gate,'estado_actual',lambda:{'modo':gate.MODO_REAL})
-    def unexpected(*args):
-        raise AssertionError('No escribir una simulación en modo REAL')
-    monkeypatch.setattr(gate,'registrar_paso',unexpected)
-    assert gate.interceptar_orden('TEST',10,25,'COMPRA','ACCIONES','DINERO','INMEDIATA') is None
+    monkeypatch.setattr(gate,'registrar_paso',lambda *args:None)
+    assert gate.interceptar_orden('TEST',10,25,'COMPRA','ACCIONES','DINERO','INMEDIATA')['simulada'] is True

@@ -130,7 +130,14 @@ class GeminiPaperGate:
             raise ValueError("veto Gemini no es booleano")
         if decision not in {"APPROVE", "VETO", "HOLD"}:
             raise ValueError("decision Gemini fuera del contrato")
-        score = max(0.0, min(1.0, float(data.get("score", 0))))
+        import math
+        raw_score = data.get("score", 0)
+        if isinstance(raw_score, bool):
+            raise ValueError("score Gemini no es numérico")
+        score = float(raw_score)
+        if not math.isfinite(score):
+            raise ValueError("score Gemini no finito")
+        score = max(0.0, min(1.0, score))
         reason = str(data.get("reason") or "Sin fundamento")[:800]
         risks = data.get("risks") if isinstance(data.get("risks"), list) else []
         return {"decision": decision, "score": score, "veto": veto,

@@ -31,6 +31,11 @@ def candidate_query(ticker, provider_type, *, settlement='A-24HS', market='BYMA'
 
 @pytest.fixture
 def wrapper(monkeypatch):
+    # Preserve the documented request-shape test with a fake SDK, never a
+    # production capability change.
+    import _version
+    monkeypatch.setattr(_version, 'MODE', 'SANDBOX_ADAPTER_FIXTURE')
+    monkeypatch.setattr(_version, 'REAL_ORDER_CAPABILITY', 'ENABLED')
     calls = []
     def capture(request):
         calls.append(asdict(request))

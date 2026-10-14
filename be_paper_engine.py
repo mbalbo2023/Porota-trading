@@ -2105,6 +2105,24 @@ class PaperBroker:
             except ValueError as exc:
                 return False, str(exc), None
             opened = spot_ledger.positions_at(c, at)[0]
+            # The preview ran before BEGIN IMMEDIATE. Another PAPER worker can
+            # insert a same-sector position in between; recheck on this exact
+            # transaction before the new row is committed.
+            if policy_gate.active_policies().get("sector_concentration") == "BINDING":
+                try:
+                    locked_context = policy_context_provider.locked_sector_context(c, {
+                        "symbol": q.symbol, "family": family, "market": market,
+                        "currency": currency, "settlement": q.settlement,
+                        "underlying": q.contract.underlying if q.contract else None,
+                    })
+                    locked_sector = policy_gate.sector_verdict(
+                        locked_context["sectors"], locked_context["candidate_sector"])
+                    if locked_sector["state"] != "PASS":
+                        return False, locked_sector["reason"] + "_BINDING", None
+                    features["sector_locked"] = locked_sector
+                except Exception as exc:
+                    features["sector_locked_error"] = type(exc).__name__
+                    return False, "SECTOR_CONTEXT_UNAVAILABLE_BINDING", None
             from rc6_paper_family_lifecycle import future_positions
             future_open = future_positions(self.store, connection=c, active_only=True, as_of=at)
             if emergency_position_guard(len(opened) + len(future_open), emergency_cap=emergency_cap):

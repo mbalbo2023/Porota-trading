@@ -28,6 +28,9 @@ def _num(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
 
+def _invalid_numeric(value: Any) -> bool:
+    return value not in (None, "") and _num(value) is None
+
 def _utc(value: Any) -> datetime | None:
     if not value:
         return None
@@ -58,7 +61,10 @@ def reconcile(primary: Any, secondary: Any, public: Any | None = None, *, now: d
     compared: dict[str, Any] = {}
     effective: dict[str, Any] = {}
     matches = divergences = missing = complemented = 0
+    invalid_fields = []
     for field in FIELDS:
+        if any(_invalid_numeric(raw.get(field)) for raw in (p, s, b)):
+            invalid_fields.append(field)
         values = [(primary_source, _num(p.get(field))), (secondary_source, _num(s.get(field))),
                   (public_source, _num(b.get(field)))]
         present = [(source, value) for source, value in values if value is not None]
@@ -68,7 +74,7 @@ def reconcile(primary: Any, secondary: Any, public: Any | None = None, *, now: d
         for index, (left_source, left_value) in enumerate(present):
             for right_source, right_value in present[index + 1:]:
                 diff = abs(left_value - right_value) / abs(left_value) * 100 if left_value else (0.0 if right_value == 0 else None)
-                if diff is not None and diff > tolerance_pct:
+                if (diff is None and right_value != 0) or (diff is not None and diff > tolerance_pct):
                     disagreements.append({"left": left_source, "right": right_source, "difference_pct": diff})
         if not present:
             state = "MISSING_ALL_SOURCES"
@@ -112,7 +118,9 @@ def reconcile(primary: Any, secondary: Any, public: Any | None = None, *, now: d
     freshness[public_source] = ("FRESH" if ages[public_source] is not None and 0 <= ages[public_source] <= MAX_AGE_SECONDS
                                 else "STALE" if ages[public_source] is not None else "UNKNOWN")
     active_sources = {item["source"] for item in effective.values() if item["source"]}
-    if any(freshness[source] == "STALE" for source in active_sources):
+    if invalid_fields:
+        contract_state = "BLOCKED_INVALID_NUMERIC"
+    elif any(freshness[source] == "STALE" for source in active_sources):
         contract_state = "BLOCKED_STALE"
     elif divergences:
         contract_state = "BLOCKED_CONFLICT"
@@ -176,7 +184,7 @@ def reconcile(primary: Any, secondary: Any, public: Any | None = None, *, now: d
                 field_provenance[field]["rejection_reason"] = "IDENTITY_REVIEW_REQUIRED"
                 field_provenance[field]["freshness"] = "NO_VERIFICADO"
                 compared[field].update(effective=None, effective_source=None)
-    selection_eligible = (primary_identity_authoritative and not identity_conflicts and not divergences
+    selection_eligible = (primary_identity_authoritative and not invalid_fields and not identity_conflicts and not divergences
                           and all(effective[field]["value"] is not None and field_provenance[field]["freshness"] == "FRESH"
                                   and effective[field]["value"] > 0 for field in CRITICAL_FIELDS)
                           and effective["ask"]["value"] >= effective["bid"]["value"])
@@ -189,6 +197,7 @@ def reconcile(primary: Any, secondary: Any, public: Any | None = None, *, now: d
             "identity_primary": dict(zip(identity_fields, primary_identity)) if primary_identity_authoritative else None,
             "identity_binding": "EXPLICIT_PRIMARY_IDENTITY" if primary_identity_authoritative else "REFERENCE_COMPARISON_ONLY",
             "identity_conflicts": identity_conflicts, "identity_overwritten": False,
+            "invalid_numeric_fields": invalid_fields,
             "source_authority_reviews": source_reviews,
             "review_status": "CONFLICT_REVIEW_REQUIRED" if divergences or identity_conflicts or source_reviews else "NO_CURRENT_CONFLICT",
             "provider_available": {primary_source: None, secondary_source: None, public_source: None},

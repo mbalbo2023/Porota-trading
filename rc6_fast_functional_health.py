@@ -19,7 +19,7 @@ def parse_time(value):
     if not value: return None
     try:
         dt=datetime.fromisoformat(str(value).replace('Z','+00:00'))
-        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo else None
     except Exception: return None
 
 
@@ -34,13 +34,13 @@ def probe(db_path=DB, *, now=None):
         row=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,last_market_data_at FROM observer_state WHERE id=1').fetchone()
         c.close(); state=dict(row) if row else {}
         hb=parse_time(state.get('heartbeat_at'))
-        age=None if hb is None else max(0.0,(now-hb.astimezone(timezone.utc)).total_seconds())
+        age=None if hb is None else (now-hb.astimezone(timezone.utc)).total_seconds()
         checks={
             'db_readable':row is not None,
             'mode':state.get('mode')=='PRODUCTION_PAPER',
-            'real_orders_sent':int(state.get('real_orders_sent') or 0)==0,
+            'real_orders_sent':state.get('real_orders_sent') is not None and int(state['real_orders_sent'])==0,
             'release_identity':MODE=='PRODUCTION_PAPER' and EXECUTION=='SIMULATED' and REAL_ORDER_CAPABILITY=='BLOCKED',
-            'heartbeat_fresh':age is not None and age<=MAX_HEARTBEAT_AGE_SECONDS,
+            'heartbeat_fresh':age is not None and 0<=age<=MAX_HEARTBEAT_AGE_SECONDS,
         }
         result.update(schema_version=schema_version,observer_state=state,heartbeat_age_seconds=age,checks=checks,status='GREEN' if all(checks.values()) else 'RED')
     except Exception as exc:

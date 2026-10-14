@@ -2,6 +2,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 import json, os
+import math
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Callable, Iterable
@@ -31,7 +32,9 @@ def _write_atomic(path: Path, payload: dict) -> None:
     os.replace(temp,path)
 
 def _number(value: Any) -> float | None:
-    try: return float(value) if value not in (None,"") else None
+    try:
+        number = float(value) if value not in (None,"") and not isinstance(value,bool) else None
+        return number if number is not None and math.isfinite(number) else None
     except (TypeError,ValueError): return None
 
 def _first_number(*values: Any) -> float | None:

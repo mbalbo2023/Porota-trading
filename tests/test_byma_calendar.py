@@ -37,5 +37,8 @@ def test_nueva_fecha_excepcional_byma_9_noviembre_2026_queda_bloqueada():
     assert calendario.es_dia_habil_operativo(date(2026, 11, 9)) is False
 
 
-def test_calendario_fue_reauditado_el_30_septiembre_2026():
+def test_calendario_reauditado_con_ambas_fechas_excepcionales_de_noviembre():
     assert calendario.CALENDARIO_AUDITADO_EL == date(2026, 9, 30)
+    assert calendario.CALENDARIO_ACTUALIZADO_EL == date(2026, 10, 14)
+    assert calendario.motivo_no_operativo(date(2026, 11, 10))
+    assert calendario.es_dia_habil_operativo(date(2026, 11, 10)) is False
