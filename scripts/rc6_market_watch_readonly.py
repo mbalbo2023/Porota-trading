@@ -401,7 +401,7 @@ def shadow_diagnostic_host():
     The host never emits Docker stderr, exception messages, paths or SQL. A
     subprocess timeout bounds the entire container probe independently of SSH.
     """
-    child = '''import json, os, sqlite3, time
+    child = '''import json, os, sqlite3, time, traceback
 from datetime import datetime, timezone
 from pathlib import Path
 at=datetime.now(timezone.utc)
@@ -410,7 +410,7 @@ result={"schema":"rc6.shadow-readonly-diagnostic.v1","generated_at":at.isoformat
 try:
  from rc6_dynamic_universe.runtime import read_runtime
  from rc6_shadow_runtime.worker import ShadowRuntime
- stages=(("RUNTIME_INPUT",lambda:read_runtime(db,as_of=at,row_limit=20000,query_budget_seconds=.35)),("METADATA",lambda:ShadowRuntime._metadata(type("ReadOnlyShadow",(),{"database":db.resolve(strict=True)})(),at,at.isoformat())))
+ stages=(("RUNTIME_INPUT",lambda:read_runtime(db,as_of=at,row_limit=20000,query_budget_seconds=1.5)),("METADATA",lambda:ShadowRuntime._metadata(type("ReadOnlyShadow",(),{"database":db.resolve(strict=True)})(),at,at.isoformat())))
  for name,fn in stages:
   start=time.monotonic()
   try:
@@ -421,6 +421,9 @@ try:
     code=getattr(exc,"sqlite_errorcode",None); label=getattr(exc,"sqlite_errorname",None)
     if type(code) is int: stage["sqlite_errorcode"]=code
     if isinstance(label,str) and label.startswith("SQLITE_"): stage["sqlite_errorname"]=label[:48]
+   locations=[frame.lineno for frame in traceback.extract_tb(exc.__traceback__)
+              if frame.filename.endswith("/rc6_dynamic_universe/runtime.py")]
+   if name=="RUNTIME_INPUT" and locations: stage["runtime_line"]=locations[-1]
   stage["elapsed_ms"]=round((time.monotonic()-start)*1000,3)
   result["stages"].append(stage)
  plans={}
