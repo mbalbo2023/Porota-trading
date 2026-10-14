@@ -76,6 +76,23 @@ def _best_effort_runtime_event(store, event_type, detail, paper_id=None):
         raise
 
 
+def _best_effort_supervisor_heartbeat(supervisor, at, state, detail):
+    """A contended health write must not terminate the independent exit clock.
+
+    Admission reads the durable heartbeat and fails closed while it is stale.
+    The next clock iteration retries supervision and its heartbeat.
+    """
+    try:
+        supervisor.heartbeat(at, state, detail)
+        return True
+    except sqlite3.OperationalError as exc:
+        if not _sqlite_contention(exc):
+            raise
+        LOG.warning("EXIT_SUPERVISOR_HEARTBEAT_SQLITE_CONTENTION:%s",
+                    getattr(exc, "sqlite_errorname", "SQLITE_LOCKED"))
+        return False
+
+
 
 def broker_from_environment(store, **overrides):
     values = dict(
@@ -239,11 +256,13 @@ def run_clock(store, children, stop, *, clock_fn=now_iso, interval=5):
                     broker.mark_equity({}, as_of=clock_fn())
                     last_valuation = time.monotonic()
             except Exception as exc:
-                supervisor.heartbeat(clock_fn(), "DEGRADED", type(exc).__name__)
+                _best_effort_supervisor_heartbeat(
+                    supervisor, clock_fn(), "DEGRADED", type(exc).__name__)
             stop.wait(interval)
     finally:
         try:
-            supervisor.heartbeat(clock_fn(), "STOPPED", "Runtime detenido; nuevas entradas bloqueadas")
+            _best_effort_supervisor_heartbeat(
+                supervisor, clock_fn(), "STOPPED", "Runtime detenido; nuevas entradas bloqueadas")
         finally:
             children.close()
 
