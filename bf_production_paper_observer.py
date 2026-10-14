@@ -1719,6 +1719,19 @@ def _announce_phase(store, previous, current):
         store.event("PHASE_NOTICE_ERROR", f"{current}: {type(exc).__name__}")
 
 
+def _pulse_observed_progress(store, last_pulse, *, monotonic_now=None):
+    """Beat only after a completed scanner stage, at most once per 25 seconds.
+
+    A blocked provider call cannot refresh this pulse. The existing cycle
+    metrics still distinguish a completed cycle from per-symbol progress.
+    """
+    instant = time.monotonic() if monotonic_now is None else monotonic_now
+    if instant - last_pulse < 25:
+        return last_pulse
+    store.state(heartbeat_at=now_iso(), real_orders_sent=0)
+    return instant
+
+
 def run():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
@@ -1880,6 +1893,10 @@ def run():
                 continue
             (focus, symbols, eligible_total, cursor_before, cursor_after,
              feasibility) = _runtime_readiness(store, record_event=True)
+            # Readiness completed; a long current/book round must not leave
+            # the heartbeat frozen at the previous cycle's completion.
+            store.state(heartbeat_at=now_iso(), real_orders_sent=0)
+            last_cycle_pulse = time.monotonic()
             cycle_started = now_iso()
             cycle_clock = time.perf_counter()
             cycle_ok = 0
@@ -1959,6 +1976,7 @@ def run():
                           (cycle_started, symbol, latency,
                            "VERDE" if latency < INTERVAL * 500 else "AMARILLO",
                            "current + book; PPI Producción solo lectura"))
+                    last_cycle_pulse = _pulse_observed_progress(store, last_cycle_pulse)
             broker.mark_equity(quotes)
             duration = round(time.perf_counter() - cycle_clock, 3)
             avg_seconds = (statistics.fmean(latencies) / 1000) if latencies else INTERVAL

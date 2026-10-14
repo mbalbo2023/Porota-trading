@@ -116,7 +116,7 @@ class ShadowRuntime:
         c.row_factory = sqlite3.Row
         try:
             c.execute("PRAGMA query_only=ON")
-            end = time.monotonic() + .15
+            end = time.monotonic() + .75
             c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             dataset = None
@@ -220,7 +220,7 @@ class ShadowRuntime:
             if previous and stamp(previous["as_of"]) > at:
                 raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
             inputs = read_runtime(self.database, as_of=at, row_limit=self.row_limit,
-                                  query_budget_seconds=.35)
+                                  query_budget_seconds=1.5)
             source_id, failures = self._metadata(at, previous.get("as_of", at.isoformat()))
             reuse = (previous.get("source_identity") == source_id and
                      previous.get("runtime_configuration") == configuration)
