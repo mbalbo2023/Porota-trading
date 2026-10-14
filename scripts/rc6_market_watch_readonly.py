@@ -591,6 +591,65 @@ def observer_lifecycle_host():
                 "status": "UNAVAILABLE", "events": []}
 
 
+def recent_critical_host():
+    """Classify bounded current-container signatures; never export raw logs."""
+    result = {"schema": "rc6.recent-critical-readonly.v1", "read_only": True,
+              "window": "30m", "containers": {}}
+    for name in CONTAINERS[:2]:
+        try:
+            logs = subprocess.run(
+                ["docker", "logs", "--since", "30m", "--tail", "1000", name],
+                capture_output=True, text=True, timeout=6, check=False)
+            if logs.returncode or len(logs.stdout) + len(logs.stderr) > 262144:
+                raise ValueError("LOG_PROBE_UNAVAILABLE")
+            content = logs.stdout + "\n" + logs.stderr
+            tracebacks = []
+            last_frame = None
+            traceback_count = 0
+            capability_count = 0
+            order_count = 0
+            for line in content.splitlines():
+                if "Traceback (most recent call last):" in line:
+                    traceback_count += 1
+                    last_frame = None
+                frame = re.search(
+                    r'File "/app/([A-Za-z0-9_./-]+\.py)", line ([0-9]{1,5}), '
+                    r'in ([A-Za-z_][A-Za-z0-9_<>]{0,79})', line)
+                if frame:
+                    last_frame = {"module": frame.group(1).rsplit("/", 1)[-1],
+                                  "line": int(frame.group(2)),
+                                  "function": frame.group(3)}
+                match = re.search(
+                    r'(?<![A-Za-z0-9_.])([A-Za-z_][A-Za-z0-9_.]{0,79}'
+                    r'(?:Error|Exception)|SystemExit|KeyboardInterrupt):', line)
+                if match:
+                    hint = None
+                    if match.group(1) == "sqlite3.OperationalError":
+                        detail = line.lower()
+                        hint = ("SQLITE_BUSY_LOCKED" if "locked" in detail or
+                                "busy" in detail else
+                                "SQLITE_INTERRUPT" if "interrupted" in detail else
+                                "SQLITE_FULL" if "database or disk is full" in detail else
+                                "SQLITE_IOERR" if "disk i/o error" in detail else
+                                "SQLITE_CANTOPEN" if "unable to open database" in detail else
+                                "SQLITE_UNKNOWN")
+                    tracebacks.append({"exception_class": match.group(1),
+                                       "last_app_frame": last_frame,
+                                       "sqlite_hint": hint})
+                if re.search(r'REAL_ORDER_CAPABILITY=(?:ENABLED|REAL)\b', line):
+                    capability_count += 1
+                if re.search(r'real_orders_sent=[1-9][0-9]*\b', line):
+                    order_count += 1
+            result["containers"][name] = {
+                "status": "OK", "traceback_count": traceback_count,
+                "tracebacks": tracebacks[-12:],
+                "capability_signature_count": capability_count,
+                "nonzero_order_signature_count": order_count}
+        except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+            result["containers"][name] = {"status": "UNAVAILABLE"}
+    return result
+
+
 def alert_host(encoded):
     """Use the existing container Telegram transport without exporting secrets."""
     try:
@@ -711,6 +770,7 @@ def main(argv=None):
     actions.add_parser("shadow-diagnostic-host")
     actions.add_parser("schedule-api-host")
     actions.add_parser("observer-lifecycle-host")
+    actions.add_parser("recent-critical-host")
     alert = actions.add_parser("alert-host")
     alert.add_argument("encoded")
     prep = actions.add_parser("prepare-alert")
@@ -738,6 +798,8 @@ def main(argv=None):
         data = schedule_api_host()
     elif args.action == "observer-lifecycle-host":
         data = observer_lifecycle_host()
+    elif args.action == "recent-critical-host":
+        data = recent_critical_host()
     elif args.action == "alert-host":
         data = alert_host(args.encoded)
     elif args.action == "prepare-alert":
@@ -761,3 +823,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
+
