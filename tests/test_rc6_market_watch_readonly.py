@@ -379,14 +379,31 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(observer["tracebacks"], [{
             "exception_class": "sqlite3.OperationalError",
             "last_app_frame": {"module": "worker.py", "line": 91, "function": "run"},
-            "sqlite_hint": "SQLITE_BUSY_LOCKED"}])
+            "sqlite_hint": "SQLITE_BUSY_LOCKED", "observed_utc": None}])
         self.assertEqual(observer["capability_signature_count"], 1)
         self.assertEqual(result["containers"]["porota_production_dashboard"]["traceback_count"], 0)
         self.assertNotIn("secret", json.dumps(result))
         self.assertEqual(call.call_count, 2)
         for entry in call.call_args_list:
             self.assertEqual(entry.kwargs["timeout"], 6)
-            self.assertEqual(entry.args[0][:4], ["docker", "logs", "--since", "30m"])
+            self.assertEqual(entry.args[0][:5],
+                             ["docker", "logs", "--timestamps", "--since", "30m"])
+
+    def test_recent_critical_timing_identifies_current_errors(self):
+        log = ('2026-10-14T18:20:02.123456789Z Traceback (most recent call last):\n'
+               '2026-10-14T18:20:02.123456789Z sqlite3.OperationalError: database is locked\n'
+               '2026-10-14T18:10:02.123456789Z ValueError: secret\n')
+        with patch.object(monitor, "now_utc", return_value=datetime(
+                2026, 10, 14, 18, 22, tzinfo=timezone.utc)), patch.object(
+                monitor.subprocess, "run", side_effect=[
+                    subprocess.CompletedProcess([], 0, stdout=log, stderr=""),
+                    subprocess.CompletedProcess([], 0, stdout="", stderr="")]):
+            result = monitor.recent_critical_host()
+        current = result["containers"]["porota_production_observer"]
+        self.assertEqual(current["exception_lines_last_5m"], 1)
+        self.assertEqual(current["tracebacks"][0]["observed_utc"],
+                         "2026-10-14T18:20:02Z")
+        self.assertNotIn("secret", json.dumps(result))
 
     def test_recent_critical_unavailable_does_not_export_stderr(self):
         with patch.object(monitor.subprocess, "run", side_effect=[

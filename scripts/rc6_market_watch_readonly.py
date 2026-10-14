@@ -595,10 +595,12 @@ def recent_critical_host():
     """Classify bounded current-container signatures; never export raw logs."""
     result = {"schema": "rc6.recent-critical-readonly.v1", "read_only": True,
               "window": "30m", "containers": {}}
+    collected_at = now_utc()
     for name in CONTAINERS[:2]:
         try:
             logs = subprocess.run(
-                ["docker", "logs", "--since", "30m", "--tail", "1000", name],
+                ["docker", "logs", "--timestamps", "--since", "30m",
+                 "--tail", "1000", name],
                 capture_output=True, text=True, timeout=6, check=False)
             if logs.returncode or len(logs.stdout) + len(logs.stderr) > 262144:
                 raise ValueError("LOG_PROBE_UNAVAILABLE")
@@ -608,7 +610,13 @@ def recent_critical_host():
             traceback_count = 0
             capability_count = 0
             order_count = 0
+            last_five_minutes = 0
             for line in content.splitlines():
+                stamp = re.match(
+                    r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})'
+                    r'(?:\.\d{1,9})?Z\s', line)
+                observed = (datetime.fromisoformat(stamp.group(1) + "+00:00")
+                            if stamp else None)
                 if "Traceback (most recent call last):" in line:
                     traceback_count += 1
                     last_frame = None
@@ -623,6 +631,8 @@ def recent_critical_host():
                     r'(?<![A-Za-z0-9_.])([A-Za-z_][A-Za-z0-9_.]{0,79}'
                     r'(?:Error|Exception)|SystemExit|KeyboardInterrupt):', line)
                 if match:
+                    if observed and timedelta(0) <= collected_at - observed <= timedelta(minutes=5):
+                        last_five_minutes += 1
                     hint = None
                     if match.group(1) == "sqlite3.OperationalError":
                         detail = line.lower()
@@ -635,7 +645,8 @@ def recent_critical_host():
                                 "SQLITE_UNKNOWN")
                     tracebacks.append({"exception_class": match.group(1),
                                        "last_app_frame": last_frame,
-                                       "sqlite_hint": hint})
+                                       "sqlite_hint": hint,
+                                       "observed_utc": stamp.group(1) + "Z" if stamp else None})
                 if re.search(r'REAL_ORDER_CAPABILITY=(?:ENABLED|REAL)\b', line):
                     capability_count += 1
                 if re.search(r'real_orders_sent=[1-9][0-9]*\b', line):
@@ -643,6 +654,7 @@ def recent_critical_host():
             result["containers"][name] = {
                 "status": "OK", "traceback_count": traceback_count,
                 "tracebacks": tracebacks[-12:],
+                "exception_lines_last_5m": last_five_minutes,
                 "capability_signature_count": capability_count,
                 "nonzero_order_signature_count": order_count}
         except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
