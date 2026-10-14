@@ -409,7 +409,7 @@ try:
    try: plans[name]=[str(row[3])[:120] for row in c.execute("EXPLAIN QUERY PLAN "+query,params)]
    except sqlite3.Error as exc: plans[name]=[getattr(exc,"sqlite_errorname","SQLITE_ERROR")]
   try:
-   result["observer_cycles"]=[{"started_at":r[0],"finished_at":r[1],"selected_count":r[2],"duration_seconds":r[3]} for r in c.execute("SELECT started_at,finished_at,selected_count,duration_seconds FROM universe_cycle_metrics ORDER BY id DESC LIMIT 3")]
+   result["observer_cycles"]=[{"started_at":r[0],"finished_at":r[1],"selected_count":r[2],"duration_seconds":r[3]} for r in c.execute("SELECT started_at,finished_at,selected_count,duration_seconds FROM universe_cycle_metrics ORDER BY id DESC LIMIT 16")]
   except sqlite3.Error: result["observer_cycles_status"]="UNAVAILABLE"
  result["query_plans"]=plans
 except Exception as exc: result["setup_error_class"]=type(exc).__name__
@@ -422,6 +422,24 @@ print(json.dumps(result,separators=(",",":")))'''
             data = json.loads(completed.stdout)
             if (data.get("schema") == "rc6.shadow-readonly-diagnostic.v1"
                     and data.get("read_only") is True):
+                for label, unit in (("legacy_health_timer", "porota-functional-health-rc6.timer"),
+                                    ("fast_health_timer", "porota-fast-functional-health-rc6.timer")):
+                    try:
+                        state = subprocess.run(["systemctl", "is-active", unit],
+                            capture_output=True, text=True, timeout=.8, check=False)
+                        data[label] = (state.stdout.strip() if state.stdout.strip() in
+                            {"active", "inactive", "failed", "activating"} else "UNKNOWN")
+                    except (OSError, subprocess.TimeoutExpired):
+                        data[label] = "UNKNOWN"
+                try:
+                    state = subprocess.run(["docker", "inspect", "--format", "{{json .State}}",
+                        "porota_production_observer"], capture_output=True, text=True,
+                        timeout=.8, check=False)
+                    info = json.loads(state.stdout) if state.returncode == 0 else {}
+                    data["observer_container"] = {name: info.get(name) for name in
+                        ("Status", "StartedAt", "FinishedAt", "ExitCode", "OOMKilled")}
+                except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+                    data["observer_container"] = {"status": "UNKNOWN"}
                 return data
         status = "CONTAINER_PROBE_FAILED"
     except subprocess.TimeoutExpired:
