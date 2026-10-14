@@ -134,10 +134,21 @@ class GithubIssueBroker:
         return row
 
     def _comments(self, number: int) -> list[dict[str, Any]]:
-        rows = self.api("GET", f"{self.base}/issues/{number}/comments?per_page=100", None)
-        if not isinstance(rows, list):
-            raise BrokerError("INVALID_COMMENTS_RESPONSE")
-        return [r for r in rows if isinstance(r, dict)]
+        return self._pages(f"{self.base}/issues/{number}/comments?per_page=100", 100,
+                           "INVALID_COMMENTS_RESPONSE")
+
+    def _pages(self, path: str, page_size: int, error: str) -> list[dict[str, Any]]:
+        """Read every page or fail closed; a partial authorization view is unsafe."""
+        result = []
+        for page in range(1, 21):
+            suffix = "" if page == 1 else f"&page={page}"
+            rows = self.api("GET", path + suffix, None)
+            if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+                raise BrokerError(error)
+            result.extend(rows)
+            if len(rows) < page_size:
+                return result
+        raise BrokerError("GITHUB_PAGINATION_BOUND_EXCEEDED")
 
     def dispatch(self, request: dict[str, Any]) -> Any:
         op = str(request.get("op") or "")
@@ -145,13 +156,9 @@ class GithubIssueBroker:
             return {"status": "ok", "repository": REPOSITORY, "capability": "issues_only"}
 
         if op == "list_open_critical":
-            rows = self.api(
-                "GET",
+            rows = self._pages(
                 f"{self.base}/issues?state=open&per_page=50&sort=created&direction=desc",
-                None,
-            )
-            if not isinstance(rows, list):
-                raise BrokerError("INVALID_ISSUES_RESPONSE")
+                50, "INVALID_ISSUES_RESPONSE")
             result = []
             for row in rows:
                 if not isinstance(row, dict) or row.get("pull_request"):

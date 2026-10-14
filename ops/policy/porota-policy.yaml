@@ -51,7 +51,8 @@ deployment:
   manual_partial_runtime_file_lists_allowed: false
   canonical_deploy_workflow: .github/workflows/porota-deploy-v2-promote.yml
   droplet_disk_pretransfer_gate_required: true
-  droplet_disk_pretransfer_min_free_bytes: 6442450944
+  droplet_disk_pretransfer_min_free_bytes: dynamic
+  droplet_disk_pretransfer_formula: image_tar_bytes + image_unpacked_bytes + 2 * bundle_bytes + fixed_headroom_bytes
   droplet_disk_guard_must_run_before_transfer: true
 
 predeploy_gates:

@@ -80,7 +80,8 @@ def observer_db():
         runtime = runtime_contracts(c, datetime.now(TZ))
         c.close()
         ok = (schema_version >= 0 and state.get('mode') == 'PRODUCTION_PAPER' and
-              int(state.get('real_orders_sent') or 0) == 0 and auth_ok)
+              state.get('real_orders_sent') is not None and
+              int(state['real_orders_sent']) == 0 and auth_ok)
         ok = ok and runtime['state'] == 'GREEN'
         return {'state':'GREEN' if ok else 'RED',
                 'bounded_readonly_probe':'GREEN','schema_version':schema_version,
@@ -126,16 +127,17 @@ def runtime_contracts(connection, now):
                 str(row.get('heartbeat_at') or '').replace('Z','+00:00'))
             if heartbeat.tzinfo is None:
                 raise ValueError('naive heartbeat')
-            age = max(0.0,(now-heartbeat.astimezone(TZ)).total_seconds())
+            age = (now-heartbeat.astimezone(TZ)).total_seconds()
         except (TypeError,ValueError):
             age = None
-        worker_ok = bool(row) and age is not None and age <= 300
+        worker_ok = bool(row) and age is not None and 0 <= age <= 300
         if name == 'caucion_cash_sweep':
             try:
                 routes = json.loads(row.get('routes_json') or 'null')
             except (TypeError,ValueError):
                 routes = None
-            worker_ok = (worker_ok and int(row.get('real_orders_sent',-1)) == 0
+            worker_ok = (worker_ok and row.get('real_orders_sent') is not None
+                         and int(row['real_orders_sent']) == 0
                          and routes == [])
         workers[name] = {'state':'GREEN' if worker_ok else 'RED',
                          'runtime_state':row.get('state'),
