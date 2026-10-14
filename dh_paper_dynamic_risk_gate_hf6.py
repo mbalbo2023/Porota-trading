@@ -7,6 +7,7 @@ fills cannot hide losing fills when calculating consumed daily risk.
 from __future__ import annotations
 
 from dataclasses import asdict
+import json
 from datetime import datetime, time
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -145,6 +146,33 @@ def portfolio_capacity(broker, currency, at, *, candidate_risk=ZERO,
         raise ConcurrentRiskGateError("CONCURRENT_RISK_BASELINE_UNAVAILABLE")
     realized_loss = realized_losing_fills_today(broker, currency, at, connection=c)
     open_risk = open_stop_risk(broker, currency, at, connection=c)
+    from rc6_paper_family_lifecycle import future_positions, future_position_contract
+    for position in future_positions(broker.store, currency, connection=c):
+        if aware_datetime(position['opened_at']) > at:
+            continue
+        contract = future_position_contract(position)
+        detail = json.loads(position['metadata_json'])
+        if position['status'] == 'CLOSED':
+            if _day_start(at) <= aware_datetime(position['closed_at']) <= at:
+                realized_loss += max(ZERO, -decimal_value(detail['realized_pnl'], 'PnL FUTUROS'))
+            continue
+        qty = decimal_value(position['quantity'], 'cantidad futura', positive=True)
+        entry = decimal_value(position['entry_price'], 'entrada futura', positive=True)
+        cost = decimal_value(position['entry_cost'], 'costo entrada', nonnegative=True)
+        stop = detail.get('stop_loss_price')
+        if stop is None:
+            open_risk += contract.notional(entry, qty) + cost
+            continue
+        stop_fill = (decimal_value(stop, 'stop futuro', positive=True)
+                     * (Decimal('1') - broker.slippage)).quantize(Decimal('0.0001'))
+        modeled_exit_cost = broker._future_cost(stop_fill, qty, contract)
+        reserved = full_trade_stop_risk(
+            entry_price=entry, modeled_stop_fill=stop_fill, quantity=qty,
+            cash_multiplier=contract.cash_multiplier, entry_cost=cost,
+            modeled_exit_cost=modeled_exit_cost)
+        current_loss = max(ZERO, -Decimal(position['variation_realized'])
+                           - Decimal(position['unrealized_pnl'])) + cost + modeled_exit_cost
+        open_risk += max(reserved, current_loss)
     return capacity(
         baseline_equity=baseline,
         soft_stop_pct=broker.daily_risk.soft_limit_pct,
