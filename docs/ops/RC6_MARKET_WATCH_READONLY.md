@@ -75,6 +75,10 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
   REMOTE_DIAGNOSTIC_UNAVAILABLE; it cannot certify the SHADOW worker. The
   host uses the established sudo Python entry and launches a bounded Docker
   subprocess, returning only a sanitized status if that fails.
+  A manual run also records read-only EXPLAIN QUERY PLAN details for five
+  fixed SHADOW SQL shapes and the last three observer cycle durations. Plans
+  are diagnostic; they do not execute those SELECT statements or assert a
+  database migration occurred.
 - The diagnostic is intentionally absent from scheduled runs to avoid
   additional intraday DB load. A passing stage in a manual probe does not
   establish the causal failure stage of a separate worker tick.
