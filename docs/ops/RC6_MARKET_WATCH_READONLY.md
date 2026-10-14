@@ -20,9 +20,13 @@ Offline regression: tests/test_rc6_market_watch_readonly.py
 - Existing dynamic SHADOW: worker attempts a tick every 30 seconds.
 - Existing performance capture: tick every 5 seconds; compact report every ~5min.
 - Existing fast functional health: every 5 minutes.
-- This independent GitHub schedule: minutes 03/13/23/33/43/53 of UTC 13–20,
+- This independent GitHub schedule: minutes 07/17/27/37/47/57 of UTC 13–20,
   on weekdays. Argentina-time gate permits 10:30–17:15 ART.
 - GitHub schedules can be delayed or dropped. This is not a real-time safety interlock.
+- The original 03/13/23/33/43/53 schedule had zero schedule events despite
+  active workflow and successful manual/push runs on 2026-10-14. The offset
+  moved further from the hour's highest load; this remains unverified until
+  two actual event=schedule artifacts exist. Manual runs do not substitute.
 - On pull request: unit tests ONLY, no SSH or secrets.
 - On merge/push to main: unit tests plus one READ_ONLY host observation.
 - On workflow_dispatch: optional one-shot.
