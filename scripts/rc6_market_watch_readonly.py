@@ -468,7 +468,7 @@ print(json.dumps(result,separators=(",",":")))'''
     try:
         completed = subprocess.run(
             ["docker", "exec", "porota_production_observer", "python", "-B", "-c", child],
-            capture_output=True, text=True, timeout=9, check=False)
+            capture_output=True, text=True, timeout=18, check=False)
         if completed.returncode == 0:
             data = json.loads(completed.stdout)
             if (data.get("schema") == "rc6.shadow-readonly-diagnostic.v1"
