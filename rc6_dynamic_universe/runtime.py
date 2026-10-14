@@ -74,7 +74,7 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5):
             truncated = False
         if "market_snapshots" in tables:
             rows = list(connection.execute("""SELECT symbol,asset_class,market,currency,settlement,
-                last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size,last_kind FROM market_snapshots
+                last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size,last_kind FROM market_snapshots NOT INDEXED
                 WHERE julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?)
                 ORDER BY id DESC LIMIT ?""", (at.isoformat(), at.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(), row_limit+1)))
             for r in rows[:row_limit]:

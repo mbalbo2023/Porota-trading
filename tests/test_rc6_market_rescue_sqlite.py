@@ -36,7 +36,7 @@ def test_shadow_live_query_shapes_are_indexed_and_read_only(tmp_path):
               AND julianday(last_verified_at)<=julianday(?)
             ORDER BY julianday(event_at) DESC LIMIT ?""", AT.isoformat(),
             AT.isoformat(), AT.isoformat(), AT.isoformat(), 20001)
-        snapshots = _plan(connection, """SELECT observed_at FROM market_snapshots
+        snapshots = _plan(connection, """SELECT observed_at FROM market_snapshots NOT INDEXED
             WHERE julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?)
             ORDER BY id DESC LIMIT ?""", AT.isoformat(), AT.isoformat(), 20001)
         events = _plan(connection, """SELECT event_at FROM paper_events
@@ -47,7 +47,8 @@ def test_shadow_live_query_shapes_are_indexed_and_read_only(tmp_path):
         assert "idx_shadow_catalog_order" in full
         assert "TEMP B-TREE" not in catalog + full
         assert "idx_shadow_intraday_event_jd" in intraday
-        assert "idx_shadow_snapshot_observed_jd" in snapshots
+        assert "SCAN market_snapshots" in snapshots
+        assert "TEMP B-TREE" not in snapshots
         assert "idx_shadow_event_type_at_jd" in events
     with sqlite3.connect(store.path) as observer:
         before = observer.execute("PRAGMA data_version").fetchone()[0]
@@ -59,3 +60,30 @@ def test_shadow_live_query_shapes_are_indexed_and_read_only(tmp_path):
     assert data["safety"] == {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
                               "real_routes": "NOT_CALLED"}
     assert after == before
+
+
+def test_snapshot_rowid_scan_preserves_filtered_newest_first_semantics():
+    connection = sqlite3.connect(":memory:")
+    connection.execute("CREATE TABLE market_snapshots(id INTEGER PRIMARY KEY, observed_at TEXT)")
+    connection.execute("CREATE INDEX idx_shadow_snapshot_observed_jd "
+                       "ON market_snapshots(julianday(observed_at),id)")
+    connection.executemany("INSERT INTO market_snapshots VALUES(?,?)", [
+        (1, "2026-10-14T15:30:00+00:00"),
+        (2, "2026-10-13T15:30:00+00:00"),
+        (3, "2026-10-14T15:10:00+00:00"),
+        (4, "2026-10-15T15:30:00+00:00"),
+        (5, "2026-10-14T15:20:00+00:00"),
+    ])
+    predicate = """WHERE julianday(observed_at)<=julianday(?)
+        AND julianday(observed_at)>=julianday(?) ORDER BY id DESC LIMIT ?"""
+    parameters = ("2026-10-14T15:40:00+00:00",
+                  "2026-10-14T00:00:00+00:00", 2)
+    before = connection.execute("SELECT id FROM market_snapshots " + predicate,
+                                parameters).fetchall()
+    after = connection.execute("SELECT id FROM market_snapshots NOT INDEXED " + predicate,
+                               parameters).fetchall()
+    assert after == before == [(5,), (3,)]
+    plan = _plan(connection, "SELECT id FROM market_snapshots NOT INDEXED " + predicate,
+                 *parameters)
+    assert "SCAN market_snapshots" in plan
+    assert "TEMP B-TREE" not in plan
