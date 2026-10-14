@@ -84,6 +84,40 @@ def test_bond_estimate_is_evidence_not_automatic_multiplier(tmp_path):
     assert "cash_multiplier" not in recorded
 
 
+def test_catalog_order_avoids_sqlite_temp_btree(tmp_path):
+    store = Store(tmp_path / "catalog.db")
+    schema(store)
+    records = [
+        ("ZZZ", "ACCIONES"),
+        ("AAA", "BONOS"),
+        ("AAA", "ACCIONES"),
+    ]
+    with store.connect() as c:
+        c.executemany(
+            "INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            [(ticker, family, "BYMA", "ARS", "A-24HS", "SOURCE", "",
+              "2026-10-14T00:00:00+00:00", "run", "AVAILABLE", "SHADOW", "{}")
+             for ticker, family in records],
+        )
+
+    traced = []
+
+    class TracedStore(Store):
+        def connect(self):
+            c = super().connect()
+            c.set_trace_callback(traced.append)
+            return c
+
+    rows = evidence._catalog_rows(TracedStore(store.path))
+    assert [(row["instrument_type"], row["ticker"]) for row in rows] == [
+        ("ACCIONES", "AAA"), ("ACCIONES", "ZZZ"), ("BONOS", "AAA")
+    ]
+    query = next(sql for sql in traced if "FROM financial_instrument_catalog" in sql)
+    with store.connect() as c:
+        plan = c.execute("EXPLAIN QUERY PLAN " + query).fetchall()
+    assert not any("USE TEMP B-TREE" in step[3] for step in plan)
+
+
 def test_caucion_empty_discovery_is_support_required_not_waiting(tmp_path):
     store = Store(tmp_path / "caucion.db")
     schema(store)
