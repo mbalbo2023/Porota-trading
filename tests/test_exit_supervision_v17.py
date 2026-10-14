@@ -302,6 +302,7 @@ def test_exit_clock_survives_contended_tick_and_health_then_recovers(monkeypatch
             calls.append("tick")
             if calls.count("tick") == 1:
                 raise sqlite3.OperationalError("database is locked")
+            self.heartbeat("recovered", "RUNNING", "supervised")
         def heartbeat(self, _at, state, _detail):
             calls.append(state)
             if state == "DEGRADED":
@@ -330,7 +331,7 @@ def test_exit_clock_survives_contended_tick_and_health_then_recovers(monkeypatch
     run_clock(SimpleNamespace(path=":memory:"), Children(), Stop(),
               clock_fn=lambda: "2026-10-14T14:00:00Z", interval=0)
     assert calls.count("tick") == 2
-    assert "DEGRADED" in calls and "supervise" in calls
+    assert "DEGRADED" in calls and "RUNNING" in calls and "supervise" in calls
     assert calls[-2:] == ["STOPPED", "close"]
 
 
