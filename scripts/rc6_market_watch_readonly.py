@@ -132,6 +132,30 @@ def _resources():
     return data
 
 
+def _host_control_state():
+    """Small host-only facts even when the optional container diagnostic times out."""
+    data = {}
+    for label, unit in (("legacy_health_timer", "porota-functional-health-rc6.timer"),
+                        ("fast_health_timer", "porota-fast-functional-health-rc6.timer")):
+        try:
+            state = subprocess.run(["systemctl", "is-active", unit],
+                                   capture_output=True, text=True, timeout=.8, check=False)
+            data[label] = (state.stdout.strip() if state.stdout.strip() in
+                           {"active", "inactive", "failed", "activating"} else "UNKNOWN")
+        except (OSError, subprocess.TimeoutExpired):
+            data[label] = "UNKNOWN"
+    try:
+        state = subprocess.run(["docker", "inspect", "--format", "{{json .State}}",
+                                "porota_production_observer"], capture_output=True, text=True,
+                               timeout=.8, check=False)
+        info = json.loads(state.stdout) if state.returncode == 0 else {}
+        data["observer_container"] = {name: info.get(name) for name in
+                                      ("Status", "StartedAt", "FinishedAt", "ExitCode", "OOMKilled")}
+    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+        data["observer_container"] = {"Status": "UNKNOWN"}
+    return data
+
+
 def _db_snapshot(path):
     """Finite SQLite reads only; no full scans, schema changes or writes."""
     uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
@@ -246,6 +270,7 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
 
     containers = _docker_inspect() if inspect is None else inspect
     result["containers"] = containers or {}
+    result["host_control_state"] = _host_control_state()
     if not containers or not provenance:
         add("CONTAINER_OR_IMAGE_UNVERIFIED", "P0")
     else:
@@ -423,24 +448,6 @@ print(json.dumps(result,separators=(",",":")))'''
             data = json.loads(completed.stdout)
             if (data.get("schema") == "rc6.shadow-readonly-diagnostic.v1"
                     and data.get("read_only") is True):
-                for label, unit in (("legacy_health_timer", "porota-functional-health-rc6.timer"),
-                                    ("fast_health_timer", "porota-fast-functional-health-rc6.timer")):
-                    try:
-                        state = subprocess.run(["systemctl", "is-active", unit],
-                            capture_output=True, text=True, timeout=.8, check=False)
-                        data[label] = (state.stdout.strip() if state.stdout.strip() in
-                            {"active", "inactive", "failed", "activating"} else "UNKNOWN")
-                    except (OSError, subprocess.TimeoutExpired):
-                        data[label] = "UNKNOWN"
-                try:
-                    state = subprocess.run(["docker", "inspect", "--format", "{{json .State}}",
-                        "porota_production_observer"], capture_output=True, text=True,
-                        timeout=.8, check=False)
-                    info = json.loads(state.stdout) if state.returncode == 0 else {}
-                    data["observer_container"] = {name: info.get(name) for name in
-                        ("Status", "StartedAt", "FinishedAt", "ExitCode", "OOMKilled")}
-                except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
-                    data["observer_container"] = {"status": "UNKNOWN"}
                 return data
         status = "CONTAINER_PROBE_FAILED"
     except subprocess.TimeoutExpired:
