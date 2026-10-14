@@ -410,7 +410,7 @@ result={"schema":"rc6.shadow-readonly-diagnostic.v1","generated_at":at.isoformat
 try:
  from rc6_dynamic_universe.runtime import read_runtime
  from rc6_shadow_runtime.worker import ShadowRuntime
- stages=(("RUNTIME_INPUT",lambda:read_runtime(db,as_of=at,row_limit=20000,query_budget_seconds=1.5)),("METADATA",lambda:ShadowRuntime._metadata(type("ReadOnlyShadow",(),{"database":db.resolve(strict=True)})(),at,at.isoformat())))
+ stages=(("RUNTIME_INPUT",lambda:read_runtime(db,as_of=at,row_limit=20000,query_budget_seconds=.35)),("METADATA",lambda:ShadowRuntime._metadata(type("ReadOnlyShadow",(),{"database":db.resolve(strict=True)})(),at,at.isoformat())))
  for name,fn in stages:
   start=time.monotonic()
   try:
@@ -435,25 +435,6 @@ try:
   for name,query,params in queries:
    try: plans[name]=[str(row[3])[:120] for row in c.execute("EXPLAIN QUERY PLAN "+query,params)]
    except sqlite3.Error as exc: plans[name]=[getattr(exc,"sqlite_errorname","SQLITE_ERROR")]
-  result["query_timings"]=[]
-  start_day=at.replace(hour=0,minute=0,second=0,microsecond=0).isoformat()
-  timed=(
-   ("CATALOG_READY", "SELECT ticker,instrument_type,market,currency,settlement,status,capability FROM financial_instrument_catalog WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER%' ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?", (20001,)),
-   ("CATALOG_FULL", "SELECT ticker,instrument_type,market,currency,settlement,status,capability FROM financial_instrument_catalog ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?", (20001,)),
-   ("INTRADAY", "SELECT symbol,asset_class,market,currency,settlement,event_at,first_received_at,last_verified_at,price,volume,source FROM ppi_intraday_points WHERE julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?) AND julianday(first_received_at)<=julianday(?) AND julianday(last_verified_at)<=julianday(?) ORDER BY julianday(event_at) DESC LIMIT ?", (start_day,at.isoformat(),at.isoformat(),at.isoformat(),20001)),
-   ("SNAPSHOTS", "SELECT symbol,asset_class,market,currency,settlement,last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size,last_kind FROM market_snapshots WHERE julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?) ORDER BY id DESC LIMIT ?", (at.isoformat(),start_day,20001)))
-  for name,query,params in timed:
-   began=time.monotonic()
-   deadline=began+1.5
-   c.set_progress_handler(lambda: int(time.monotonic()>deadline),1000)
-   try:
-    count=sum(1 for _ in c.execute(query,params))
-    item={"stage":name,"status":"OK","rows":count}
-   except sqlite3.Error as exc:
-    item={"stage":name,"status":"FAIL_CLOSED","error_class":type(exc).__name__,"sqlite_errorname":getattr(exc,"sqlite_errorname","SQLITE_ERROR")}
-   item["elapsed_ms"]=round((time.monotonic()-began)*1000,3)
-   result["query_timings"].append(item)
-   c.set_progress_handler(None,0)
   try:
    def cadence(detail):
     try:
@@ -468,7 +449,7 @@ print(json.dumps(result,separators=(",",":")))'''
     try:
         completed = subprocess.run(
             ["docker", "exec", "porota_production_observer", "python", "-B", "-c", child],
-            capture_output=True, text=True, timeout=18, check=False)
+            capture_output=True, text=True, timeout=9, check=False)
         if completed.returncode == 0:
             data = json.loads(completed.stdout)
             if (data.get("schema") == "rc6.shadow-readonly-diagnostic.v1"
