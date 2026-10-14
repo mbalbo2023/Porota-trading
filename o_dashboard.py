@@ -1598,6 +1598,10 @@ rc6_snapshot_dashboard.install(app, _check_auth)
 import rc6_postclose_review_dashboard
 rc6_postclose_review_dashboard.install(app, _check_auth)
 
+# WS-DASH-TRADER-TERMINAL-08: final read-only dispatcher for the eight destinations.
+from rc6_trader_dashboard.routes import install as install_trader_terminal
+install_trader_terminal(app, _check_auth, lambda: bg_paper_dashboard.DB_PATH)
+
 
 
 if __name__ == "__main__":

@@ -1,0 +1,374 @@
+{
+  "schema": "rc6.ws-dash-trader-terminal-08.acceptance.v1",
+  "workstream": "WS-DASH-TRADER-TERMINAL-08",
+  "issue": "https://github.com/mbalbo2023/Porota-trading/issues/467",
+  "branch": "work/ws-dash-trader-terminal-08-20261004",
+  "specification": "docs/dashboard/WS_DASH_TRADER_TERMINAL_08_ARCHITECTURE_2026-10-04.md",
+  "specification_sha256": "2878f61936c5ed312d8921b6b63d65e143045401a6b15d7a7324ed3fcb62ca67",
+  "sections": [
+    {
+      "section": 0,
+      "title": "Estado, ownership y límites",
+      "source_section_sha256": "ce59b710f5a7863e1ce115478ecf984377d3bdf9a1aba7d359f25901c634b1d0",
+      "implementation_paths": [
+        "docs/dashboard/WS_DASH_TRADER_TERMINAL_08_HANDOFF.md",
+        "tests/test_ws_dash_trader_terminal_08.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_package_contains_no_order_provider_network_or_mutation_code",
+        "tests/test_ws_dash_trader_terminal_08.py::test_no_auth_no_mutation_and_token_clean_redirect"
+      ],
+      "visual_verification": null
+    },
+    {
+      "section": 1,
+      "title": "Objetivo de producto",
+      "source_section_sha256": "851a379b403f25fa10b24b0d9b3e0fd06677085c06d22108c3ea7dae2d0c888c",
+      "implementation_paths": [
+        "rc6_trader_dashboard/navigation.py",
+        "rc6_trader_dashboard/shell.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_every_canonical_subview_is_authenticated_and_dark"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 2,
+      "title": "Principios UX / trader obligatorios",
+      "source_section_sha256": "3e08ec5b0799407429739890c1c711e6d42bb6c8fcecc9e583eb5b7c96e29160",
+      "implementation_paths": [
+        "rc6_trader_dashboard/components.py",
+        "rc6_trader_dashboard/projection.py",
+        "rc6_trader_dashboard/design_system.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_source_scope_score_and_trajectory_semantics",
+        "tests/test_ws_dash_trader_terminal_08.py::test_currencies_are_separate_and_money_is_decimal",
+        "tests/test_ws_dash_trader_terminal_08.py::test_exact_identity_ignores_same_ticker_currency_and_history"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 3,
+      "title": "Nueva arquitectura de navegación",
+      "source_section_sha256": "fd6da27683943e2696f0ef45e7a1268016f3fc5836c864cbb5256a4f6df1b0ac",
+      "implementation_paths": [
+        "rc6_trader_dashboard/navigation.py",
+        "scripts/rc6_dashboard_route_inventory.py",
+        "DASHBOARD_TRUTH_MATRIX_RC6.json"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_every_canonical_subview_is_authenticated_and_dark",
+        "tests/test_ws_dash_trader_terminal_08.py::test_legacy_urls_keep_shell_and_corresponding_subview"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 4,
+      "title": "Shell visual global",
+      "source_section_sha256": "d8218f7fe64f76bd08f5b144156d643820e39d1c9ea383568aa63cd0ed63430c",
+      "implementation_paths": [
+        "rc6_trader_dashboard/design_system.py",
+        "rc6_trader_dashboard/shell.py",
+        "rc6_trader_dashboard/components.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_every_canonical_subview_is_authenticated_and_dark",
+        "tests/test_ws_dash_trader_terminal_08.py::test_detail_names_unique_and_keys_survive_metric_change"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 5,
+      "title": "INICIO — “¿Cómo estoy y qué exige atención ahora?”",
+      "source_section_sha256": "c25028d7a4d2faab0d5d3045987dc815465d076feee59f47ff3426a6073b9b13",
+      "implementation_paths": [
+        "rc6_trader_dashboard/views_home.py",
+        "rc6_trader_dashboard/projection.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_currencies_are_separate_and_money_is_decimal",
+        "tests/test_ws_dash_trader_terminal_08.py::test_missing_candidate_contract_and_database_fail_closed"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 6,
+      "title": "EN VIVO — “¿Qué está haciendo POROTA en esta rueda y por qué?”",
+      "source_section_sha256": "48cdba29df9e855d10b71ace8dbb2ce06e0c37974cfea1a89a1f5d6ab5aa9a0e",
+      "implementation_paths": [
+        "rc6_trader_dashboard/views_live.py",
+        "rc6_trader_dashboard/view_common.py",
+        "rc6_trader_dashboard/datasets.py",
+        "rc6_trader_dashboard/projection.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_source_scope_score_and_trajectory_semantics",
+        "tests/test_ws_dash_trader_terminal_08.py::test_funnel_uses_one_committed_cohort_not_current_ready_or_other_currency",
+        "tests/test_ws_dash_trader_terminal_08.py::test_adapter_uses_only_canonical_reader_and_never_promotes_shadow"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 7,
+      "title": "TRADING — “¿Qué estrategias están activas y cómo opera cada familia?”",
+      "source_section_sha256": "263721d286126d54dafdf5f65ba5d77c0ca2e7cd309c521e4ab6aaaaa93ddbaf",
+      "implementation_paths": [
+        "rc6_trader_dashboard/views_trading.py",
+        "rc6_trader_dashboard/datasets.py",
+        "rc6_trader_dashboard/projection.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_derived_metrics_require_fresh_validated_provenance",
+        "tests/test_ws_dash_trader_terminal_08.py::test_adapter_uses_only_canonical_reader_and_never_promotes_shadow"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 8,
+      "title": "UNIVERSO — “¿Qué parte del mercado ve, prioriza o excluye POROTA?”",
+      "source_section_sha256": "e092eeeded5389e50d65a5c2ba2729ecea1ba48163399573fc855c436caae73d",
+      "implementation_paths": [
+        "rc6_trader_dashboard/views_universe.py",
+        "rc6_trader_dashboard/datasets.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_exact_identity_ignores_same_ticker_currency_and_history",
+        "tests/test_ws_dash_trader_terminal_08.py::test_funnel_uses_one_committed_cohort_not_current_ready_or_other_currency"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 9,
+      "title": "INSTRUMENTOS — “¿Qué sé exactamente de esta especie?”",
+      "source_section_sha256": "ebd6537be2f2ed5428744c1defdb217ed1e20145b0e834b3556b8e0b27c447e7",
+      "implementation_paths": [
+        "rc6_trader_dashboard/views_instruments.py",
+        "rc6_trader_dashboard/datasets.py",
+        "rc6_trader_dashboard/projection.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_exact_quote_and_contract_do_not_cross_currencies",
+        "tests/test_ws_dash_trader_terminal_08.py::test_digest_valid_contract_does_not_validate_derived_metrics",
+        "tests/test_ws_dash_trader_terminal_08.py::test_evidence_size_limit_xss_safe_logs_and_identity_deep_links"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 10,
+      "title": "RIESGO — “¿Cuánto puedo perder y qué puede quedar sin salida?”",
+      "source_section_sha256": "8f18b9d0f48fc0695ea9b511f23ac174f1a1fd4a54a5b5258e399c2c4a934a12",
+      "implementation_paths": [
+        "rc6_trader_dashboard/views_risk.py",
+        "rc6_trader_dashboard/projection.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_invalid_financial_numbers_never_become_zero",
+        "tests/test_ws_dash_trader_terminal_08.py::test_source_scope_score_and_trajectory_semantics"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 11,
+      "title": "ANALÍTICA — “¿El sistema tiene edge y qué está aprendiendo?”",
+      "source_section_sha256": "e3bf5cba221d847358c529ad8f03e91fc9b50cd4c7e89d5431d5aacdc7d6b320",
+      "implementation_paths": [
+        "rc6_trader_dashboard/views_analytics.py",
+        "rc6_trader_dashboard/projection.py",
+        "rc6_trader_dashboard/datasets.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_external_canonical_history_is_read_only_and_cannot_change_ready",
+        "tests/test_ws_dash_trader_terminal_08.py::test_currencies_are_separate_and_money_is_decimal",
+        "tests/test_ws_dash_trader_terminal_08.py::test_source_scope_score_and_trajectory_semantics"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 12,
+      "title": "SISTEMA — “¿La plataforma técnica está sana?”",
+      "source_section_sha256": "27d71b069b6b0a49892a30eaa3abe5671b71727c2fd86634991347aef5e9367e",
+      "implementation_paths": [
+        "rc6_trader_dashboard/views_system.py",
+        "rc6_trader_dashboard/datasets.py",
+        "rc6_trader_dashboard/projection.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_evidence_size_limit_xss_safe_logs_and_identity_deep_links",
+        "tests/test_ws_dash_trader_terminal_08.py::test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 13,
+      "title": "Autoridades de datos",
+      "source_section_sha256": "22cadc2a7daf63f5a9c7393a3198137fbf7a569cfbea0f5a273122e952bdbd83",
+      "implementation_paths": [
+        "rc6_trader_dashboard/projection.py",
+        "rc6_trader_dashboard/generation.py",
+        "rc6_trader_dashboard/datasets.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_mixed_or_corrupt_generation_fails_closed",
+        "tests/test_ws_dash_trader_terminal_08.py::test_canonical_reader_rejection_has_no_legacy_fallback",
+        "tests/test_ws_dash_trader_terminal_08.py::test_exact_identity_ignores_same_ticker_currency_and_history"
+      ],
+      "visual_verification": null
+    },
+    {
+      "section": 14,
+      "title": "Qué está de más hoy y debe desaparecer de la navegación principal",
+      "source_section_sha256": "9d9964aa1409d5128c002340a0917fa1dd0575270db3a191c1abfd9c229c8778",
+      "implementation_paths": [
+        "rc6_trader_dashboard/navigation.py",
+        "rc6_trader_dashboard/shell.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_every_canonical_subview_is_authenticated_and_dark",
+        "tests/test_ws_dash_trader_terminal_08.py::test_legacy_urls_keep_shell_and_corresponding_subview"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 15,
+      "title": "Qué falta hoy y debe incorporarse",
+      "source_section_sha256": "64ead2de2347d31917132af99e9f58218a542b6dc54a3e9318052ed739deaeb1",
+      "implementation_paths": [
+        "rc6_trader_dashboard/view_common.py",
+        "rc6_trader_dashboard/views_home.py",
+        "rc6_trader_dashboard/views_live.py",
+        "rc6_trader_dashboard/datasets.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_adapter_uses_only_canonical_reader_and_never_promotes_shadow",
+        "tests/test_ws_dash_trader_terminal_08.py::test_missing_candidate_contract_and_database_fail_closed"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 16,
+      "title": "Arquitectura de código preferida",
+      "source_section_sha256": "c1dc030683d30d1ff6149896498016a49d4ecc22eb842249ef83e5c3af76bbb4",
+      "implementation_paths": [
+        "rc6_trader_dashboard/routes.py",
+        "rc6_trader_dashboard/projection.py",
+        "o_dashboard.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_read_only_snapshot_parameterization_and_large_catalog",
+        "tests/test_ws_dash_trader_terminal_08.py::test_package_contains_no_order_provider_network_or_mutation_code"
+      ],
+      "visual_verification": null
+    },
+    {
+      "section": 17,
+      "title": "Accesibilidad y Voice Access",
+      "source_section_sha256": "6964402418ac6966c512b53c6c83889ad70d087acc012aaa7f34b07ccab7d78e",
+      "implementation_paths": [
+        "rc6_trader_dashboard/design_system.py",
+        "rc6_trader_dashboard/components.py",
+        "rc6_trader_dashboard/shell.py",
+        "tests/ci_trader_terminal_browser.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_detail_names_unique_and_keys_survive_metric_change",
+        "tests/test_ws_dash_trader_terminal_08.py::test_package_contains_no_order_provider_network_or_mutation_code"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 18,
+      "title": "Performance de UI",
+      "source_section_sha256": "bc58b2e94393896cd1abec73aec649e19bddda594fc1c1d5a29132f5780ff96f",
+      "implementation_paths": [
+        "rc6_trader_dashboard/projection.py",
+        "rc6_trader_dashboard/routes.py",
+        "rc6_trader_dashboard/generation.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_read_only_snapshot_parameterization_and_large_catalog",
+        "tests/test_ws_dash_trader_terminal_08.py::test_evidence_size_limit_xss_safe_logs_and_identity_deep_links"
+      ],
+      "visual_verification": null
+    },
+    {
+      "section": 19,
+      "title": "Tests obligatorios",
+      "source_section_sha256": "31e6c172af1653ca597c4901db2a5e81a9b6076925494587baf3214ae31bc298",
+      "implementation_paths": [
+        "tests/test_ws_dash_trader_terminal_08.py",
+        "tests/ci_trader_terminal_browser.py",
+        ".github/workflows/porota-predeploy-v2.yml"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_adapter_uses_only_canonical_reader_and_never_promotes_shadow",
+        "tests/test_ws_dash_trader_terminal_08.py::test_canonical_reader_rejection_has_no_legacy_fallback",
+        "tests/test_ws_dash_trader_terminal_08.py::test_currencies_are_separate_and_money_is_decimal",
+        "tests/test_ws_dash_trader_terminal_08.py::test_derived_metrics_require_fresh_validated_provenance",
+        "tests/test_ws_dash_trader_terminal_08.py::test_detail_names_unique_and_keys_survive_metric_change",
+        "tests/test_ws_dash_trader_terminal_08.py::test_digest_valid_contract_does_not_validate_derived_metrics",
+        "tests/test_ws_dash_trader_terminal_08.py::test_every_canonical_subview_is_authenticated_and_dark",
+        "tests/test_ws_dash_trader_terminal_08.py::test_evidence_size_limit_xss_safe_logs_and_identity_deep_links",
+        "tests/test_ws_dash_trader_terminal_08.py::test_exact_identity_ignores_same_ticker_currency_and_history",
+        "tests/test_ws_dash_trader_terminal_08.py::test_exact_quote_and_contract_do_not_cross_currencies",
+        "tests/test_ws_dash_trader_terminal_08.py::test_external_canonical_history_is_read_only_and_cannot_change_ready",
+        "tests/test_ws_dash_trader_terminal_08.py::test_funnel_uses_one_committed_cohort_not_current_ready_or_other_currency",
+        "tests/test_ws_dash_trader_terminal_08.py::test_invalid_financial_numbers_never_become_zero",
+        "tests/test_ws_dash_trader_terminal_08.py::test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default",
+        "tests/test_ws_dash_trader_terminal_08.py::test_legacy_urls_keep_shell_and_corresponding_subview",
+        "tests/test_ws_dash_trader_terminal_08.py::test_missing_candidate_contract_and_database_fail_closed",
+        "tests/test_ws_dash_trader_terminal_08.py::test_mixed_or_corrupt_generation_fails_closed",
+        "tests/test_ws_dash_trader_terminal_08.py::test_no_auth_no_mutation_and_token_clean_redirect",
+        "tests/test_ws_dash_trader_terminal_08.py::test_package_contains_no_order_provider_network_or_mutation_code",
+        "tests/test_ws_dash_trader_terminal_08.py::test_pagination_is_server_side_and_filters_survive",
+        "tests/test_ws_dash_trader_terminal_08.py::test_read_only_snapshot_parameterization_and_large_catalog",
+        "tests/test_ws_dash_trader_terminal_08.py::test_source_scope_score_and_trajectory_semantics"
+      ],
+      "visual_verification": null
+    },
+    {
+      "section": 20,
+      "title": "Criterios de aceptación visual",
+      "source_section_sha256": "ee1754e981726893f889a0b243c2c1c4e95040d5fed04f9acd53911853f8a6a1",
+      "implementation_paths": [
+        "rc6_trader_dashboard/design_system.py",
+        "rc6_trader_dashboard/components.py",
+        "tests/ci_trader_terminal_browser.py"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_every_canonical_subview_is_authenticated_and_dark"
+      ],
+      "visual_verification": "tests/ci_trader_terminal_browser.py (294 canonical viewport checks, 22 legacy routes)"
+    },
+    {
+      "section": 21,
+      "title": "Cierre exigido a Codex",
+      "source_section_sha256": "ba3765492f730c57aff816b120c6b16d8d54c1d7a70055b7ba7a01a6bb1ac6b0",
+      "implementation_paths": [
+        "docs/dashboard/WS_DASH_TRADER_TERMINAL_08_HANDOFF.md",
+        ".github/workflows/porota-predeploy-v2.yml"
+      ],
+      "automated_regressions": [
+        "tests/test_ws_dash_trader_terminal_08.py::test_package_contains_no_order_provider_network_or_mutation_code"
+      ],
+      "visual_verification": null
+    }
+  ],
+  "data_absence_policy": "NO_VERIFICADO/NO_MEDIDO; no fabricated runtime truth or entry permission",
+  "external_reconciliation": "#466 canonical committed reader only; missing contract = NO_VERIFICADO_AWAITING_RECONCILIATION",
+  "local_gate_evidence": "docs/dashboard/evidence/ws08-local-gates.json",
+  "browser_evidence": "docs/dashboard/evidence/ws08-browser-gate.json",
+  "exact_ci_and_release_evidence": "Draft PR and issue #467 final handoff: exact HEAD/tree/run/artifact; WRITE_OWNER released only after native Predeploy V2 GREEN",
+  "safety": {
+    "mode": "PAPER/SHADOW ONLY",
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "provider_requests_at_render": 0,
+    "deploy_owner": "NOT_ACQUIRED",
+    "merge": false,
+    "deploy": false,
+    "production_mutations": 0,
+    "ppi_watch_changes": 0
+  }
+}
