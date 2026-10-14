@@ -347,6 +347,8 @@ class PaperStore:
               settlement TEXT NOT NULL, last TEXT NOT NULL, bid TEXT NOT NULL,
               ask TEXT NOT NULL, bid_size TEXT NOT NULL, ask_size TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS idx_snap_symbol ON market_snapshots(symbol,id);
+            CREATE INDEX IF NOT EXISTS idx_shadow_snapshot_observed_jd
+              ON market_snapshots(julianday(observed_at),id);
             CREATE TABLE IF NOT EXISTS paper_decisions(
               id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL,
               strategy_version TEXT NOT NULL, decision_key TEXT NOT NULL UNIQUE,
@@ -369,6 +371,8 @@ class PaperStore:
               id INTEGER PRIMARY KEY AUTOINCREMENT, event_at TEXT NOT NULL,
               source TEXT NOT NULL, event_type TEXT NOT NULL, paper_id TEXT,
               detail TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS idx_shadow_event_type_at_jd
+              ON paper_events(event_type,julianday(event_at));
             CREATE TABLE IF NOT EXISTS paper_learning_samples(
               paper_id TEXT PRIMARY KEY, source TEXT NOT NULL, strategy_version TEXT NOT NULL,
               feature_timestamp TEXT NOT NULL, features_json TEXT NOT NULL,

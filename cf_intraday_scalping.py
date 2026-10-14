@@ -420,6 +420,8 @@ def init_schema(store):
           PRIMARY KEY(symbol,asset_class,market,currency,settlement,event_at));
         CREATE INDEX IF NOT EXISTS idx_intraday_identity_time ON ppi_intraday_points(
           symbol,asset_class,market,currency,settlement,event_at);
+        CREATE INDEX IF NOT EXISTS idx_shadow_intraday_event_jd
+          ON ppi_intraday_points(julianday(event_at) DESC);
         CREATE TABLE IF NOT EXISTS ppi_intraday_contract_state(
           symbol TEXT NOT NULL, asset_class TEXT NOT NULL, market TEXT NOT NULL,
           currency TEXT NOT NULL, settlement TEXT NOT NULL, state TEXT NOT NULL,
