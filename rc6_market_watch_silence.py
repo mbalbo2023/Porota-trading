@@ -73,7 +73,12 @@ def load_state(path=STATE):
         raise ValueError("STATE_UNVERIFIED")
     with path.open("rb") as stream:
         record = json.loads(stream.read(4097))
-    if not isinstance(record, dict) or record.get("status") not in {"OK", "SILENT", "UNKNOWN"}:
+    message_id = record.get("message_id") if isinstance(record, dict) else None
+    if (not isinstance(record, dict) or
+            record.get("schema") != "rc6.market-watch-silence.v1" or
+            record.get("status") not in {"OK", "SILENT", "UNKNOWN"} or
+            not isinstance(message_id, str) or not message_id.isdigit() or
+            int(message_id) <= 0):
         raise ValueError("STATE_UNVERIFIED")
     return record
 
@@ -120,7 +125,8 @@ def tick(*, now=None, path=STATE, fetch=latest_schedule, send=None):
     body = ("POROTA RC6 | SIMULACIÓN | MONITOR_SCHEDULE_" + status + "\n"
             "GitHub Actions schedule; PAPER/SHADOW ONLY; este watchdog no llama rutas de órdenes.\n"
             "Última ejecución programada: " + (last.isoformat() if last else "NO_VERIFICADO")
-            + "\nUTC: " + now.isoformat())
+            + "\nUTC: " + now.isoformat()
+            + "\nID: RC6-MARKET-WATCH-SILENCE-" + status)
     try:
         mid = send(body)
         if not isinstance(mid, str) or not mid.isdigit() or int(mid) <= 0:
