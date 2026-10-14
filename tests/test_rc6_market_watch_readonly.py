@@ -347,6 +347,18 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(call.call_args_list[1].kwargs["timeout"], 5)
         self.assertEqual(call.call_args_list[1].args[0][0:2], ["docker", "logs"])
 
+    def test_sqlite_exit_reason_is_categorical_and_redacted(self):
+        event = json.dumps({"Action": "die", "time": 1791998273,
+                            "Actor": {"Attributes": {"exitCode": "1"}}})
+        secret = "sqlite3.OperationalError: database is locked; credential=secret"
+        with patch.object(monitor.subprocess, "run", side_effect=[
+                subprocess.CompletedProcess([], 0, stdout=event, stderr=""),
+                subprocess.CompletedProcess([], 0, stdout=secret, stderr="")]):
+            result = monitor.observer_lifecycle_host()
+        self.assertEqual(result["proximate_log"]["sqlite_hints"],
+                         ["SQLITE_BUSY_LOCKED"])
+        self.assertNotIn("secret", json.dumps(result))
+
 
 if __name__ == "__main__":
     unittest.main()
