@@ -145,6 +145,24 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/shadow_diagnostic.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.shadow-readonly-diagnostic.v1","status":"REMOTE_DIAGNOSTIC_UNAVAILABLE","read_only":true}' > evidence/shadow_diagnostic.json
           fi
+      - name: Probe public GitHub schedule API from observer on manual runs only
+        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 10 python3 - schedule-api-host" \
+            < scripts/rc6_market_watch_readonly.py > evidence/schedule_api.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/schedule_api.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.market-schedule-api.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true}' > evidence/schedule_api.json
+          fi
       - name: Read previous committed monitor artifact (best effort)
         if: steps.window.outputs.active == '1'
         shell: bash
@@ -236,6 +254,7 @@ jobs:
             evidence/snapshot.json
             evidence/decision.json
             evidence/shadow_diagnostic.json
+            evidence/schedule_api.json
             evidence/delivery.json
           if-no-files-found: error
           retention-days: 7

@@ -309,6 +309,18 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(result["observer_container"]["Status"], "running")
         self.assertNotIn("secret", json.dumps(result))
 
+    def test_manual_public_schedule_api_probe_is_bounded_and_redacted(self):
+        payload = {"status": "API_OK", "total_count": 0,
+                   "latest_event": None, "latest_path": None}
+        with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 0, stdout=json.dumps(payload), stderr="secret")) as call:
+            result = monitor.schedule_api_host()
+        self.assertEqual(result["total_count"], 0)
+        self.assertTrue(result["read_only"])
+        self.assertNotIn("secret", json.dumps(result))
+        self.assertEqual(call.call_args.kwargs["timeout"], 7)
+        self.assertIn("event=schedule", call.call_args.args[0][-1])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -458,6 +458,37 @@ print(json.dumps(result,separators=(",",":")))'''
             "status": status, "read_only": True}
 
 
+def schedule_api_host():
+    """Manual-only connectivity proof from the PAPER container, no credentials."""
+    child = '''import json,urllib.request
+url="https://api.github.com/repos/mbalbo2023/Porota-trading/actions/workflows/rc6-market-watch-readonly.yml/runs?event=schedule&per_page=1"
+request=urllib.request.Request(url,headers={"Accept":"application/vnd.github+json","User-Agent":"porota-rc6-paper-silence/1"})
+try:
+ with urllib.request.urlopen(request,timeout=5) as response: raw=response.read(131073)
+ if len(raw)>131072: raise ValueError("OVERSIZE")
+ data=json.loads(raw); runs=data.get("workflow_runs")
+ if not isinstance(runs,list): raise ValueError("INVALID_RUNS")
+ latest=runs[0] if runs else {}
+ print(json.dumps({"status":"API_OK","total_count":data.get("total_count"),
+  "latest_event":latest.get("event"),"latest_path":latest.get("path"),
+  "latest_head_branch":latest.get("head_branch"),"latest_created_at":latest.get("created_at")},separators=(",",":")))
+except Exception as exc: print(json.dumps({"status":"API_UNAVAILABLE","error_class":type(exc).__name__}))'''
+    try:
+        completed = subprocess.run(["docker", "exec", "porota_production_observer",
+                                    "python", "-B", "-c", child], capture_output=True,
+                                   text=True, timeout=7, check=False)
+        data = json.loads(completed.stdout) if completed.returncode == 0 else {}
+        if data.get("status") in {"API_OK", "API_UNAVAILABLE"}:
+            return {"schema": "rc6.market-schedule-api.v1", "read_only": True,
+                    **{key: data.get(key) for key in (
+                        "status", "total_count", "latest_event", "latest_path",
+                        "latest_head_branch", "latest_created_at", "error_class") if key in data}}
+    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+        pass
+    return {"schema": "rc6.market-schedule-api.v1", "read_only": True,
+            "status": "CONTAINER_PROBE_UNAVAILABLE"}
+
+
 def alert_host(encoded):
     """Use the existing container Telegram transport without exporting secrets."""
     try:
@@ -576,6 +607,7 @@ def main(argv=None):
     actions.add_parser("transport-error")
     actions.add_parser("shadow-diagnostic")
     actions.add_parser("shadow-diagnostic-host")
+    actions.add_parser("schedule-api-host")
     alert = actions.add_parser("alert-host")
     alert.add_argument("encoded")
     prep = actions.add_parser("prepare-alert")
@@ -599,6 +631,8 @@ def main(argv=None):
         data = shadow_diagnostic()
     elif args.action == "shadow-diagnostic-host":
         data = shadow_diagnostic_host()
+    elif args.action == "schedule-api-host":
+        data = schedule_api_host()
     elif args.action == "alert-host":
         data = alert_host(args.encoded)
     elif args.action == "prepare-alert":

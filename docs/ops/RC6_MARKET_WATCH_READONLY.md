@@ -91,6 +91,11 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
 - The diagnostic is intentionally absent from scheduled runs to avoid
   additional intraday DB load. A passing stage in a manual probe does not
   establish the causal failure stage of a separate worker tick.
+- Manual runs separately test the public GitHub workflow schedule API from
+  inside the existing observer container, with a five-second network timeout,
+  a bounded response and only sanitized count/identity fields. This proves
+  connectivity for a proposed independent silence timer; it does not install
+  that timer or turn missing `event=schedule` executions into a success.
 - Successive runs compare against the latest downloadable completed artifact,
   never invent a prior observation if an artifact is missing or expired.
 - The new confirmed P0/P1 code and recoveries are de-duplicated in decision.json.
