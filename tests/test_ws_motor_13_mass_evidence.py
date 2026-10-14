@@ -68,6 +68,29 @@ def test_mass_collector_covers_every_available_ppi_identity_without_nominal_infe
     assert claims["GD30"]["contract_bridge"]["status"] == "NORMALIZED"
 
 
+def test_mass_catalog_order_avoids_sqlite_temp_btree(tmp_path):
+    store = _store(tmp_path)
+    _persist(store, ticker="ZZZ", family="ACCIONES", nominal=1)
+    _persist(store, ticker="AAA", family="BONOS", nominal=100)
+    _persist(store, ticker="AAA", family="ACCIONES", nominal=1)
+    traced = []
+
+    class TracedStore(Store):
+        def connect(self):
+            connection = super().connect()
+            connection.set_trace_callback(traced.append)
+            return connection
+
+    rows = mass._catalog_rows(TracedStore(store.path))
+    assert [(row["instrument_type"], row["ticker"]) for row in rows] == [
+        ("ACCIONES", "AAA"), ("ACCIONES", "ZZZ"), ("BONOS", "AAA")
+    ]
+    query = next(sql for sql in traced if "FROM financial_instrument_catalog" in sql)
+    with store.connect() as connection:
+        plan = connection.execute("EXPLAIN QUERY PLAN " + query).fetchall()
+    assert not any("USE TEMP B-TREE" in step[3] for step in plan)
+
+
 def test_mass_collector_is_idempotent_and_does_not_create_change_review(tmp_path):
     store = _store(tmp_path)
     _persist(store, ticker="GGAL", family="ACCIONES", nominal=1)
