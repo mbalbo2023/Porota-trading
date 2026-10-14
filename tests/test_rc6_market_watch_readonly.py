@@ -326,21 +326,26 @@ class MonitorContracts(unittest.TestCase):
             {"Action": "kill", "time": 1791990000,
              "Actor": {"Attributes": {"signal": "15", "env": "secret"}}},
             {"Action": "die", "time": 1791990001,
-             "Actor": {"Attributes": {"exitCode": "0", "token": "secret"}}},
+             "Actor": {"Attributes": {"exitCode": "1", "token": "secret"}}},
             {"Action": "start", "time": 1791990002},
         ]
         output = "\n".join(map(json.dumps, rows))
-        with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, stdout=output, stderr="secret")) as call:
+        with patch.object(monitor.subprocess, "run", side_effect=[
+                subprocess.CompletedProcess([], 0, stdout=output, stderr="secret"),
+                subprocess.CompletedProcess([], 0, stdout="Traceback (most recent call last):\nValueError: secret", stderr="")]) as call:
             result = monitor.observer_lifecycle_host()
         self.assertEqual(result["status"], "OK")
         self.assertEqual(result["events"], [
             {"action": "kill", "epoch_seconds": 1791990000, "signal": 15},
-            {"action": "die", "epoch_seconds": 1791990001, "exit_code": 0},
+            {"action": "die", "epoch_seconds": 1791990001, "exit_code": 1},
             {"action": "start", "epoch_seconds": 1791990002}])
         self.assertNotIn("secret", json.dumps(result))
-        self.assertEqual(call.call_args.kwargs["timeout"], 6)
-        self.assertEqual(call.call_args.args[0][0:2], ["docker", "events"])
+        self.assertEqual(result["proximate_log"]["exception_classes"], ["ValueError"])
+        self.assertEqual(result["proximate_log"]["traceback_count"], 1)
+        self.assertEqual(call.call_args_list[0].kwargs["timeout"], 6)
+        self.assertEqual(call.call_args_list[0].args[0][0:2], ["docker", "events"])
+        self.assertEqual(call.call_args_list[1].kwargs["timeout"], 5)
+        self.assertEqual(call.call_args_list[1].args[0][0:2], ["docker", "logs"])
 
 
 if __name__ == "__main__":
