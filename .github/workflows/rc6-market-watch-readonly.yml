@@ -17,7 +17,7 @@ on:
       - 'docs/ops/RC6_MARKET_WATCH_READONLY.md'
   schedule:
     # Argentina UTC-3; the job's local-time gate restricts monitoring to rueda.
-    - cron: '3,13,23,33,43,53 13-20 * * 1-5'
+    - cron: '7,17,27,37,47,57 13-20 * * 1-5'
   workflow_dispatch:
 
 permissions:
