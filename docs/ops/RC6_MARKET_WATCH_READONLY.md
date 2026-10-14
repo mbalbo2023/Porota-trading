@@ -76,7 +76,9 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
   host uses the established sudo Python entry and launches a bounded Docker
   subprocess, returning only a sanitized status if that fails.
   A manual run also records read-only EXPLAIN QUERY PLAN details for five
-  fixed SHADOW SQL shapes and the last three observer cycle durations. Plans
+  fixed SHADOW SQL shapes and the last sixteen observer cycle durations. It
+  also records the legacy/fast functional health timer active states and a
+  sanitized Docker observer state. Plans
   are diagnostic; they do not execute those SELECT statements or assert a
   database migration occurred.
 - The diagnostic is intentionally absent from scheduled runs to avoid
