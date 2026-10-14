@@ -1,0 +1,51 @@
+name: RC6 disk read-only RCA
+
+on:
+  push:
+    branches: [diag/rc6-sqlite-temp-20261014]
+    paths: ['.github/workflows/rc6-disk-readonly-rca.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Read-only disk and image inventory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "RC6_DISK_DIAG_START"
+          df -PB1 /
+          sudo -n du -x -B1 -d 1 /opt/porota-trading/data /var/lib/docker /var/log /tmp 2>/dev/null | sort -n | tail -45
+          sudo -n find /opt/porota-trading/data -xdev -type f -size +100M -printf '%s %p\n' | sort -nr | head -30
+          sudo -n docker system df -v
+          sudo -n docker ps -a --format '{{.Names}}|{{.Image}}|{{.Status}}'
+          for c in porota_production_observer porota_production_dashboard porota-critical-approval-rc6; do
+            sudo -n docker inspect -f "$c|{{.State.Status}}|{{.RestartCount}}|{{.Image}}" "$c" 2>/dev/null || true
+          done
+          sudo -n docker image ls --digests --format '{{.Repository}}:{{.Tag}}|{{.ID}}|{{.Size}}'
+          systemctl is-active porota-critical-approval-rc6.service || true
+          sudo -n python3 - /opt/porota-trading/data/paper_v17/observer_v17.db <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
+          c.execute("PRAGMA query_only=ON")
+          print("PAPER_STATE="+str(c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()))
+          c.close()
+          PY
+          echo "RC6_DISK_DIAG_COMPLETE"
+          REMOTE
