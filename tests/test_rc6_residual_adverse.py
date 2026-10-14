@@ -16,6 +16,18 @@ import rc6_functional_health as health
 import rc6_preopen as preopen
 
 
+def test_disk_policy_metadata_matches_executable_contract():
+    import yaml
+    policy = yaml.safe_load(Path("ops/policy/porota-policy.yaml").read_text())["deployment"]
+    gate = json.loads(Path("ops/policy/rc6-disk-housekeeping-v1.json").read_text())["deploy"]
+    factors = gate["pretransfer_formula"]
+    assert policy["droplet_disk_pretransfer_min_free_bytes"] == "dynamic"
+    assert policy["droplet_disk_pretransfer_formula"] == (
+        "image_tar_bytes + image_unpacked_bytes + 2 * bundle_bytes + fixed_headroom_bytes")
+    assert factors == {"image_tar_multiplier": 1, "image_unpacked_multiplier": 1,
+                       "bundle_multiplier": 2, "fixed_headroom_bytes": 2 * 1024**3}
+
+
 @pytest.mark.parametrize("count,heartbeat", [
     (None, "2026-10-14T12:00:00+00:00"),
     (0, "2026-10-14T12:00:01+00:00"),
