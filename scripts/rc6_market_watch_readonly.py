@@ -290,6 +290,17 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
         "as_of", "status", "phase", "entry_signal_lab_status",
         "operational_funnel_status", "real_orders_sent", "real_routes",
         "provider_requests", "error_class")} if shadow else {}
+    if shadow:
+        for key in ("sqlite_errorcode", "error_line"):
+            value = shadow.get(key)
+            if type(value) is int and 0 <= value <= 1000000:
+                result["shadow"][key] = value
+        label = shadow.get("sqlite_errorname")
+        if isinstance(label, str) and re.fullmatch(r"SQLITE_[A-Z0-9_]{1,40}", label):
+            result["shadow"]["sqlite_errorname"] = label
+        module = shadow.get("error_module")
+        if isinstance(module, str) and module in {"runtime", "worker", "preopen", "promotion"}:
+            result["shadow"]["error_module"] = module
     if shadow is None:
         add("DYNAMIC_SHADOW_STATUS_MISSING_OR_INVALID",
             "P1" if market_open_observed else "P2")
