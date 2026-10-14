@@ -708,6 +708,48 @@ print(json.dumps(result,separators=(",",":")))'''
             "status": "CONTAINER_PROBE_UNAVAILABLE", "events": []}
 
 
+def disk_inventory_host():
+    """Read Docker disk accounting and the sizes of the three pinned images."""
+    result = {"schema": "rc6.disk-inventory-readonly.v1", "read_only": True,
+              "status": "UNAVAILABLE", "images": {}, "docker": []}
+    try:
+        for name in CONTAINERS:
+            container = subprocess.run(
+                ["docker", "inspect", "-f", "{{.Image}}", name],
+                capture_output=True, text=True, timeout=3, check=False)
+            image_id = container.stdout.strip()
+            if container.returncode or not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+                raise ValueError("IMAGE_UNAVAILABLE")
+            size = subprocess.run(
+                ["docker", "image", "inspect", "-f", "{{.Size}}", image_id],
+                capture_output=True, text=True, timeout=3, check=False)
+            if size.returncode or not size.stdout.strip().isdigit():
+                raise ValueError("SIZE_UNAVAILABLE")
+            result["images"][name] = {"id": image_id,
+                                      "size_bytes": int(size.stdout.strip())}
+        summary = subprocess.run(
+            ["docker", "system", "df", "--format", "{{json .}}"],
+            capture_output=True, text=True, timeout=6, check=False)
+        if summary.returncode or len(summary.stdout) > 4096:
+            raise ValueError("DOCKER_DF_UNAVAILABLE")
+        for line in summary.stdout.splitlines():
+            item = json.loads(line)
+            kind = item.get("Type")
+            if kind not in {"Images", "Containers", "Local Volumes", "Build Cache"}:
+                continue
+            data = {"type": kind}
+            for key in ("TotalCount", "Active", "Size", "Reclaimable"):
+                value = str(item.get(key, ""))
+                if re.fullmatch(r"[0-9.]+[kMGT]?B(?: \([0-9.]+%\))?|[0-9]+", value):
+                    data[key.lower()] = value
+            result["docker"].append(data)
+        result["status"] = "OK"
+    except (OSError, ValueError, TypeError, json.JSONDecodeError,
+            subprocess.TimeoutExpired):
+        result["status"] = "UNAVAILABLE"
+    return result
+
+
 def alert_host(encoded):
     """Use the existing container Telegram transport without exporting secrets."""
     try:
@@ -830,6 +872,7 @@ def main(argv=None):
     actions.add_parser("observer-lifecycle-host")
     actions.add_parser("recent-critical-host")
     actions.add_parser("writer-timeline-host")
+    actions.add_parser("disk-inventory-host")
     alert = actions.add_parser("alert-host")
     alert.add_argument("encoded")
     prep = actions.add_parser("prepare-alert")
@@ -861,6 +904,8 @@ def main(argv=None):
         data = recent_critical_host()
     elif args.action == "writer-timeline-host":
         data = writer_timeline_host()
+    elif args.action == "disk-inventory-host":
+        data = disk_inventory_host()
     elif args.action == "alert-host":
         data = alert_host(args.encoded)
     elif args.action == "prepare-alert":
