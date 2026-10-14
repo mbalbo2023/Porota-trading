@@ -802,10 +802,11 @@ jobs:
               echo "RC6_PREOPEN_${phase}=RED|RC=$PREOPEN_RC"
               exit "$PREOPEN_RC"
             fi
-            grep -Fq '"status": "GREEN"' <<< "$PREOPEN_OUTPUT"
-            grep -Fq '"read_only": true' <<< "$PREOPEN_OUTPUT"
-            grep -Fq '"network_order_test_performed": false' <<< "$PREOPEN_OUTPUT"
-            echo "RC6_PREOPEN_${phase}=GREEN"
+            printf '%s\n' "$PREOPEN_OUTPUT" | \
+              PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO" python3 \
+                "$REPO/scripts/rc6_deploy_preopen_gate.py" \
+                --phase "$phase" --return-code "$PREOPEN_RC"
+            echo "RC6_PREOPEN_${phase}=RESULT_ACCEPTED"
           done
 
           # Observe several worker/dashboard refresh cycles before success.

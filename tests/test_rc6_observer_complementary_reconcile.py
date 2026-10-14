@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import bf_production_paper_observer as observer
 import bu_instrument_catalog as catalog
@@ -55,7 +55,9 @@ def test_reconcile_matches_legacy_on_alias_without_discovery_marker(tmp_path, mo
 
 def test_reconcile_accepts_static_v2_policy_inside_ppi_lkg_window(tmp_path, monkeypatch):
     store = _store(tmp_path)
-    observed = "2026-09-24T18:00:00+00:00"
+    # Keep the PPI identity older than the dynamic 24h evidence TTL but well
+    # inside its 14-day LKG window, regardless of when CI runs.
+    observed = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
     with store.connect() as c:
         c.execute("""INSERT INTO financial_instrument_catalog
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
