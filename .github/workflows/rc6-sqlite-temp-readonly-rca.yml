@@ -1,0 +1,72 @@
+name: RC6 SQLite temp read-only RCA
+
+on:
+  push:
+    branches: [diag/rc6-sqlite-temp-20261014]
+    paths: ['.github/workflows/rc6-sqlite-temp-readonly-rca.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Read-only host and isolated SQLite temp probe
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          echo "HOST_ROOT_FREE=$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "HOST_TMP_FREE=$(df -PB1 /tmp | awk 'NR==2 {print $4}')"
+          echo "DB_BYTES=$(sudo -n stat -c %s "$REPO/data/paper_v17/observer_v17.db")"
+          for c in porota_production_observer porota_production_dashboard; do
+            sudo -n docker inspect -f "$c|{{.State.Status}}|{{.RestartCount}}|{{.Image}}" "$c"
+          done
+          sudo -n python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
+          c.execute("PRAGMA query_only=ON")
+          print("HOST_PAPER_STATE="+str(c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()))
+          print("HOST_DB_QUICK_CHECK="+str(c.execute("PRAGMA quick_check(1)").fetchone()))
+          c.close()
+          PY
+          sudo -n timeout 90 docker run --rm --pull never --user botuser --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m -v "$REPO/data:/app/data:ro" --entrypoint python -i porota-trading-bot:17.0.0-rc6 <<'PY'
+          import os,sqlite3,time,traceback
+          path="/app/data/paper_v17/observer_v17.db"
+          def free():
+              v=os.statvfs("/tmp")
+              return v.f_bavail*v.f_frsize
+          print("CONTAINER_TMP_FREE_BEFORE="+str(free()),flush=True)
+          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=3)
+          c.execute("PRAGMA query_only=ON")
+          print("SQLITE_TEMP_STORE="+str(c.execute("PRAGMA temp_store").fetchone()),flush=True)
+          print("CATALOG_COUNT="+str(c.execute("SELECT count(*) FROM financial_instrument_catalog WHERE status='AVAILABLE'").fetchone()),flush=True)
+          sql="""SELECT ticker,instrument_type,market,currency,settlement,
+          capability,metadata_json,last_seen_at FROM financial_instrument_catalog
+          WHERE status='AVAILABLE' ORDER BY instrument_type,ticker,market,currency,settlement"""
+          print("QUERY_PLAN="+str(c.execute("EXPLAIN QUERY PLAN "+sql).fetchall()),flush=True)
+          started=time.monotonic()
+          try:
+              rows=c.execute(sql).fetchall()
+              print(f"SORT_RESULT=OK|rows={len(rows)}|seconds={time.monotonic()-started:.2f}",flush=True)
+          except sqlite3.Error as exc:
+              print(f"SORT_RESULT=RED|type={type(exc).__name__}|error={exc}|seconds={time.monotonic()-started:.2f}",flush=True)
+          print("CONTAINER_TMP_FREE_AFTER="+str(free()),flush=True)
+          c.close()
+          PY
+          echo "READ_ONLY_RCA=COMPLETE"
+          REMOTE
