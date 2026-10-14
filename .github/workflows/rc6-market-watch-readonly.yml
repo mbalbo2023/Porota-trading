@@ -146,7 +146,7 @@ jobs:
             printf '%s\n' '{"schema":"rc6.recent-critical-readonly.v1","read_only":true,"status":"UNAVAILABLE"}' > evidence/recent_critical.json
           fi
       - name: Diagnose SHADOW SQLite stages during incident
-        if: steps.window.outputs.active == '1'
+        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
