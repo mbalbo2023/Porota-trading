@@ -238,8 +238,10 @@ class MonitorContracts(unittest.TestCase):
                    "stages": [{"stage": "RUNTIME_INPUT", "status": "OK"}]}
         with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
                 [], 0, stdout=json.dumps(payload), stderr="secret")) as run:
-            self.assertEqual(monitor.shadow_diagnostic_host(), payload)
-        args, options = run.call_args
+            result = monitor.shadow_diagnostic_host()
+            self.assertEqual(result["stages"], payload["stages"])
+            self.assertEqual(result["legacy_health_timer"], "UNKNOWN")
+        args, options = run.call_args_list[0]
         self.assertEqual(args[0][:4], ["docker", "exec", "porota_production_observer", "python"])
         self.assertEqual(options["timeout"], 9)
         self.assertTrue(options["capture_output"])
