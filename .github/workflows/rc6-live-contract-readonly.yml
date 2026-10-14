@@ -1,0 +1,46 @@
+name: RC6 live contract read-only progress
+
+on:
+  push:
+    branches: [diag/rc6-sqlite-temp-20261014]
+    paths: ['.github/workflows/rc6-live-contract-readonly.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Read-only runtime process and disk progress
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          date -u
+          df -PB1 /
+          ps -eo pid,etime,pcpu,pmem,comm --sort=-pcpu | head -25
+          sudo -n docker ps --format '{{.Names}}|{{.Status}}'
+          sudo -n du -sb /opt/porota-trading/data/contract_evidence /opt/porota-trading/data/paper_v17 /opt/porota-trading/data/deploy 2>/dev/null
+          sudo -n find /opt/porota-trading/data/contract_evidence -type f -mmin -60 -printf '%TY-%Tm-%TdT%TH:%TM:%TS|%s|%p\n' 2>/dev/null | sort | tail -15
+          sudo -n python3 - /opt/porota-trading/data/paper_v17/observer_v17.db <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
+          c.execute("PRAGMA query_only=ON")
+          print("PAPER_STATE="+str(c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()))
+          c.close()
+          PY
+          echo "RC6_LIVE_PROGRESS_READONLY=COMPLETE"
+          REMOTE
