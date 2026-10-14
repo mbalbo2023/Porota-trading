@@ -77,6 +77,7 @@ pero son ciertas.
 """
 
 import logging
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -172,6 +173,20 @@ class DerivativeSpec:
     max_loss_per_unit: Optional[float] = None   # prima (opción) o riesgo al stop (futuro)
     warnings: list = field(default_factory=list)
     greeks: dict = field(default_factory=dict)
+
+
+def _positive_finite(value) -> bool:
+    try:
+        return not isinstance(value, bool) and math.isfinite(float(value)) and float(value) > 0
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _nonnegative_finite(value) -> bool:
+    try:
+        return not isinstance(value, bool) and math.isfinite(float(value)) and float(value) >= 0
+    except (TypeError, ValueError, OverflowError):
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -293,10 +308,14 @@ def describe_future(ticker: str, api_payload: Optional[dict] = None) -> Derivati
     spec = DerivativeSpec(ticker=ticker, family="FUTURO")
     payload = api_payload or {}
 
-    multiplier = payload.get("contractMultiplier") or payload.get("multiplicador")
-    margin = payload.get("initialMargin") or payload.get("garantia")
+    multiplier = payload.get("contractMultiplier")
+    if multiplier is None:
+        multiplier = payload.get("multiplicador")
+    margin = payload.get("initialMargin")
+    if margin is None:
+        margin = payload.get("garantia")
 
-    if not multiplier:
+    if not _positive_finite(multiplier):
         spec.blocking_code = "CAPACIDAD_SIN_MULTIPLICADOR"
         spec.blocking_reason = (
             f"El futuro {ticker} no informa multiplicador de contrato. Sin ese número, "
@@ -309,7 +328,11 @@ def describe_future(ticker: str, api_payload: Optional[dict] = None) -> Derivati
 
     paper_policy = str(payload.get("paperMarginPolicy") or "").upper()
     paper_rate = payload.get("paperMarginRate")
-    if not margin and paper_policy != "CONSERVATIVE_NOTIONAL_RATE":
+    if margin is not None and not _positive_finite(margin):
+        spec.blocking_code = "CAPACIDAD_POLICY_MARGEN_INVALIDA"
+        spec.blocking_reason = "La garantía inicial informada no es positiva y finita."
+        return spec
+    if margin is None and paper_policy != "CONSERVATIVE_NOTIONAL_RATE":
         spec.blocking_code = "CAPACIDAD_SIN_DATO_DE_GARANTIA"
         spec.blocking_reason = (
             f"El futuro {ticker} informa multiplicador pero no garantía inicial exigida. "
@@ -317,12 +340,12 @@ def describe_future(ticker: str, api_payload: Optional[dict] = None) -> Derivati
             f"de margen que el bot no puede anticipar ni cubrir solo."
         )
         return spec
-    if not margin:
+    if margin is None:
         try:
             rate = float(paper_rate)
         except (TypeError, ValueError):
             rate = 0
-        if not 0 < rate <= 1:
+        if isinstance(paper_rate, bool) or not math.isfinite(rate) or not 0 < rate <= 1:
             spec.blocking_code = "CAPACIDAD_POLICY_MARGEN_INVALIDA"
             spec.blocking_reason = "La policy PAPER de margen no tiene una tasa conservadora válida."
             return spec
@@ -342,6 +365,11 @@ def describe_future(ticker: str, api_payload: Optional[dict] = None) -> Derivati
     except ValueError:
         spec.blocking_code = "CAPACIDAD_VENCIMIENTO_INVALIDO"
         spec.blocking_reason = f"El futuro {ticker} informa un vencimiento ilegible."
+        return spec
+
+    if spec.days_to_expiry < 0:
+        spec.blocking_code = "CAPACIDAD_VENCIMIENTO_EXPIRADO"
+        spec.blocking_reason = f"El futuro {ticker} ya venció."
         return spec
 
     spec.capable = True
@@ -399,13 +427,14 @@ def assess_option(spec: DerivativeSpec, premium: float, underlying_price: Option
         )
         return spec
 
-    if premium is None or premium <= 0:
+    if not _positive_finite(premium):
         spec.capable = False
         spec.blocking_code = "CAPACIDAD_SIN_PRIMA"
         spec.blocking_reason = f"Sin prima válida para {spec.ticker}, no hay pérdida máxima que calcular."
         return spec
 
-    if spec.days_to_expiry is None:
+    if (spec.days_to_expiry is None or isinstance(spec.days_to_expiry, bool)
+            or not isinstance(spec.days_to_expiry, int)):
         spec.capable = False
         spec.blocking_code = "CAPACIDAD_SIN_VENCIMIENTO"
         spec.blocking_reason = f"No se pudo establecer el vencimiento de {spec.ticker}."
@@ -421,7 +450,15 @@ def assess_option(spec: DerivativeSpec, premium: float, underlying_price: Option
         )
         return spec
 
-    if underlying_price and underlying_price > 0 and spec.strike:
+    if (not _positive_finite(spec.strike) or not _positive_finite(spec.lot_size)
+            or (underlying_price is not None and not _positive_finite(underlying_price))
+            or not _nonnegative_finite(spread_pct)):
+        spec.capable = False
+        spec.blocking_code = "CAPACIDAD_TERMINOS_INVALIDOS"
+        spec.blocking_reason = "Strike, lote, subyacente o spread inválido."
+        return spec
+
+    if underlying_price is not None:
         moneyness_pct = abs(spec.strike - underlying_price) / underlying_price * 100
         if moneyness_pct > MAX_MONEYNESS_PCT:
             spec.capable = False
@@ -518,7 +555,8 @@ def size_long_option(capital_ars: float, spec: DerivativeSpec, premium: float,
     Se trunca hacia abajo siempre: es preferible arriesgar un poco menos del
     objetivo que un peso más.
     """
-    if capital_ars <= 0 or premium <= 0 or not spec.capable:
+    if (not spec.capable or not all(_positive_finite(x) for x in
+                                   (capital_ars, premium, risk_pct, spec.lot_size))):
         return 0
     risk_amount = capital_ars * (risk_pct / 100.0)
     cost_per_contract = premium * spec.lot_size
@@ -538,10 +576,11 @@ def size_future(capital_ars: float, spec: DerivativeSpec, entry_price: float,
     además hay que poder cubrir las garantías, que es una restricción
     independiente y frecuentemente más limitante que el riesgo.
     """
-    if not spec.capable or not spec.contract_multiplier:
+    if (not spec.capable or not all(_positive_finite(x) for x in
+        (capital_ars, entry_price, stop_price, risk_pct, spec.contract_multiplier))):
         return 0
     distance = abs(entry_price - stop_price)
-    if distance <= 0 or capital_ars <= 0:
+    if distance <= 0:
         return 0
 
     risk_amount = capital_ars * (risk_pct / 100.0)
@@ -554,6 +593,9 @@ def size_future(capital_ars: float, spec: DerivativeSpec, entry_price: float,
     if (effective_margin is None and spec.paper_margin_policy == "CONSERVATIVE_NOTIONAL_RATE"
             and spec.paper_margin_rate):
         effective_margin = entry_price * spec.contract_multiplier * spec.paper_margin_rate
+    if free_margin_ars is not None and (not _nonnegative_finite(free_margin_ars)
+                                        or not _positive_finite(effective_margin)):
+        return 0
     if free_margin_ars is not None and effective_margin:
         by_margin = int(free_margin_ars // effective_margin)
         if by_margin < by_risk:

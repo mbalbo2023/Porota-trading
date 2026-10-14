@@ -478,11 +478,12 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido:
         """Defensa en profundidad: el esquema ya garantiza la forma, pero no
         el RANGO. Un macro_score de 7.5 (en vez de 0.75) pasaría el esquema y
         rompería todos los umbrales del sistema, que asumen 0.0–1.0."""
+        raw_score = datos.get("macro_score")
         try:
-            score = float(datos.get("macro_score", 0.0))
-        except (TypeError, ValueError):
-            score = 0.0
-        if not 0.0 <= score <= 1.0:
+            score = float(raw_score) if not isinstance(raw_score, (bool, str)) else float("nan")
+        except (TypeError, ValueError, OverflowError):
+            score = float("nan")
+        if not 0.0 <= score <= 1.0 or not isinstance(datos.get("veto_risk"), bool):
             logger.error("El modelo devolvió macro_score fuera de rango (%s). Se vetea por prudencia.", score)
             return {
                 "macro_score": 0.0, "veto_risk": True, "impact_level": "CRITICAL",

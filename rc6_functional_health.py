@@ -23,12 +23,13 @@ def parse_time(value):
         return None
     try:
         dt = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
-        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo else None
     except Exception:
         return None
 
 
-def main() -> int:
+def probe(db_path=DB, *, now=None):
+    now = now or datetime.now(timezone.utc)
     result = {
         'schema': 'POROTA_RC6_FUNCTIONAL_HEALTH_V1',
         'version': VERSION,
@@ -39,7 +40,7 @@ def main() -> int:
         'network_order_test_performed': False,
     }
     try:
-        c = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=15)
+        c = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=15)
         c.row_factory = sqlite3.Row
         c.execute('PRAGMA query_only=ON')
         qc = c.execute('PRAGMA quick_check').fetchone()[0]
@@ -47,18 +48,23 @@ def main() -> int:
         c.close()
         state = dict(row) if row else {}
         hb = parse_time(state.get('heartbeat_at'))
-        age = None if hb is None else max(0.0, (datetime.now(timezone.utc) - hb.astimezone(timezone.utc)).total_seconds())
+        age = None if hb is None else (now - hb.astimezone(timezone.utc)).total_seconds()
         checks = {
             'quick_check': qc == 'ok',
             'mode': state.get('mode') == 'PRODUCTION_PAPER',
-            'real_orders_sent': int(state.get('real_orders_sent') or 0) == 0,
+            'real_orders_sent': state.get('real_orders_sent') is not None and int(state['real_orders_sent']) == 0,
             'release_identity': MODE == 'PRODUCTION_PAPER' and EXECUTION == 'SIMULATED' and REAL_ORDER_CAPABILITY == 'BLOCKED',
-            'heartbeat_fresh': age is not None and age <= MAX_HEARTBEAT_AGE_SECONDS,
+            'heartbeat_fresh': age is not None and 0 <= age <= MAX_HEARTBEAT_AGE_SECONDS,
         }
         result.update(quick_check=qc, observer_state=state, heartbeat_age_seconds=age, checks=checks)
         result['status'] = 'GREEN' if all(checks.values()) else 'RED'
     except Exception as exc:
         result.update(status='RED', error=f'{type(exc).__name__}:{exc}')
+    return result
+
+
+def main() -> int:
+    result = probe()
     print(json.dumps(result, ensure_ascii=False, sort_keys=True, default=str))
     return 0 if result['status'] == 'GREEN' else 2
 

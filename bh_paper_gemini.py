@@ -137,7 +137,8 @@ class GeminiPaperGate:
         score = float(raw_score)
         if not math.isfinite(score):
             raise ValueError("score Gemini no finito")
-        score = max(0.0, min(1.0, score))
+        if not 0.0 <= score <= 1.0:
+            raise ValueError("score Gemini fuera de rango")
         reason = str(data.get("reason") or "Sin fundamento")[:800]
         risks = data.get("risks") if isinstance(data.get("risks"), list) else []
         return {"decision": decision, "score": score, "veto": veto,
