@@ -199,15 +199,53 @@ class MonitorContracts(unittest.TestCase):
         second = dict(first, generated_at=(NOW + timedelta(minutes=10)).isoformat())
         two = monitor.classify(second, first, one)
         self.assertEqual(two["new_alerts"], ["ENGINE_STALE"])
+        two = monitor.finalize_delivery(two, {"status": "SENT", "message_id": "123"})
         third = dict(second, generated_at=(NOW + timedelta(minutes=20)).isoformat())
         three = monitor.classify(third, second, two)
         self.assertEqual(three["new_alerts"], [])
+        three = monitor.finalize_delivery(three, {"status": "NO_TRANSITION"})
         recovered = dict(third, findings=[], severity="GREEN",
                          generated_at=(NOW + timedelta(minutes=30)).isoformat())
         four = monitor.classify(recovered, third, three)
         self.assertEqual(four["recovered"], ["ENGINE_STALE"])
         p0 = dict(first, findings=[monitor.finding("PAPER_INVALID", "P0")], severity="P0")
         self.assertEqual(monitor.classify(p0)["new_alerts"], ["PAPER_INVALID"])
+
+    def test_unacknowledged_transition_retries_and_recovery_requires_ack(self):
+        first = self.capture()
+        first["findings"] = [monitor.finding("ENGINE_STALE", "P1")]
+        first["severity"] = "P1"
+        one = monitor.classify(first)
+        second = dict(first, generated_at=(NOW + timedelta(minutes=10)).isoformat())
+        two = monitor.finalize_delivery(monitor.classify(second, first, one),
+                                        {"status": "NOT_CONFIGURED"})
+        self.assertEqual(two["acknowledged_codes"], [])
+        third = dict(second, generated_at=(NOW + timedelta(minutes=20)).isoformat())
+        retry = monitor.classify(third, second, two)
+        self.assertEqual(retry["new_alerts"], ["ENGINE_STALE"])
+        acknowledged = monitor.finalize_delivery(retry, {"status": "SENT", "message_id": "7"})
+        self.assertEqual(acknowledged["acknowledged_codes"], ["ENGINE_STALE"])
+        recovered = dict(third, findings=[], severity="GREEN",
+                         generated_at=(NOW + timedelta(minutes=30)).isoformat())
+        recovery = monitor.classify(recovered, third, acknowledged)
+        self.assertEqual(recovery["recovered"], ["ENGINE_STALE"])
+        failed = monitor.finalize_delivery(recovery, {"status": "FAILED"})
+        self.assertEqual(failed["acknowledged_codes"], ["ENGINE_STALE"])
+        assert monitor.prepare_alert(recovery)
+
+    def test_telegram_host_transport_acks_only_message_id_and_never_exposes_token(self):
+        body = "POROTA RC6 | ALERT\nOBSERVER_HEARTBEAT_INVALID"
+        encoded = monitor.base64.urlsafe_b64encode(body.encode()).decode()
+        with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 0, stdout='{"status":"SENT","message_id":"34"}', stderr="token=secret")) as run:
+            self.assertEqual(monitor.alert_host(encoded), {"status": "SENT", "message_id": "34"})
+        args, options = run.call_args
+        self.assertEqual(args[0][:3], ["docker", "exec", "porota_production_observer"])
+        self.assertEqual(options["timeout"], 19)
+        compile(args[0][-2], "<telegram-child>", "exec")
+        with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 0, stdout='{"status":"SENT"}', stderr="token=secret")):
+            self.assertEqual(monitor.alert_host(encoded)["status"], "FAILED")
 
     def test_incompatible_old_sha_cannot_confirm_p1(self):
         current = self.capture()
