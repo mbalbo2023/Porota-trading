@@ -115,6 +115,7 @@ def verify_grant(rows, *, now, source_sha, source_tree, gate, session,
         and grant['deploy_owner'] == 'NOT_ACQUIRED'
         and grant['qualification_claimed'] is False
         and issued <= min(created) <= max(created) <= issued + timedelta(minutes=2)
+        and max(created) <= now
         and issued <= now < expires <= issued + timedelta(hours=8),
         'V2_EXACT_HUMAN_GRANT_INVALID')
     return grant, hashlib.sha256(body.encode()).hexdigest()
@@ -142,6 +143,7 @@ def verify_pulse(rows, *, grant, grant_sha256, candidate_run_id, now,
         and type(pulse['signature_hex']) is str
         and re.fullmatch(r'[0-9a-f]{128}', pulse['signature_hex'])
         and issued <= min(created) <= max(created) <= issued + timedelta(seconds=30)
+        and max(created) <= now
         and issued <= now < expires <= issued + timedelta(seconds=120)
         and expires <= instant(grant['expires_at']),
         'V2_FRESH_CHAINED_PULSE_REQUIRED')
