@@ -12,6 +12,7 @@ import faulthandler
 faulthandler.enable(all_threads=True)
 
 import fcntl
+from contextlib import closing
 import os
 import signal
 import sqlite3
@@ -42,12 +43,15 @@ def _sqlite_contention(exc):
 def _reader_status_write(store, state, detail=""):
     """Bounded health write; transient SQLite contention cannot kill exit-reader."""
     try:
-        with sqlite3.connect(store.path, timeout=0.35) as connection:
-            connection.execute("PRAGMA busy_timeout=350")
-            connection.execute(
-                "INSERT OR REPLACE INTO paper_exit_reader_state VALUES(1,?,?,?)",
-                (now_iso(), str(state), str(detail)[:500]),
-            )
+        # sqlite3's transaction context commits or rolls back, but does not close.
+        # Close after that context exits so WAITING_MARKET cannot accumulate FDs.
+        with closing(sqlite3.connect(store.path, timeout=0.35)) as connection:
+            with connection:
+                connection.execute("PRAGMA busy_timeout=350")
+                connection.execute(
+                    "INSERT OR REPLACE INTO paper_exit_reader_state VALUES(1,?,?,?)",
+                    (now_iso(), str(state), str(detail)[:500]),
+                )
         return True
     except sqlite3.OperationalError as exc:
         if _sqlite_contention(exc):
