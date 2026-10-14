@@ -22,7 +22,7 @@ def _snapshot():
         "exit_supervisor": {"state": "RUNNING", "heartbeat_at": now,
                             "heartbeat_age_seconds": 0, "real_orders_sent": 0, "routes": []},
     }
-    route_inventory = {"route_count": 55, "registered_paths": 53, "routes": []}
+    route_inventory = {"route_count": 102, "registered_paths": 100, "routes": []}
     return {
         "database": {
             "observer": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
@@ -53,6 +53,27 @@ def test_runtime_audit_accepts_only_complete_paper_truth(monkeypatch):
     monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
     monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
     audit._assert_snapshot(_snapshot())
+
+
+def test_runtime_route_contract_tracks_frozen_terminal_manifest(monkeypatch):
+    from scripts.rc6_dashboard_route_inventory import inventory
+
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    frozen = json.loads(Path("DASHBOARD_TRUTH_MATRIX_RC6.json").read_text(encoding="utf-8"))
+    actual = inventory()
+    assert actual == frozen
+    assert (actual["route_count"], actual["registered_paths"]) == (102, 100)
+    snapshot = _snapshot()
+    snapshot["route_inventory"] = actual
+    audit._assert_snapshot(snapshot)
+    snapshot["route_inventory"] = dict(actual, registered_paths=99)
+    with pytest.raises(AssertionError):
+        audit._assert_snapshot(snapshot)
+    snapshot["route_inventory"] = actual
+    snapshot["route_matrix_matches_artifact"] = False
+    with pytest.raises(AssertionError):
+        audit._assert_snapshot(snapshot)
 
 
 def test_premarket_scalping_waiting_market_is_a_healthy_live_state(monkeypatch):

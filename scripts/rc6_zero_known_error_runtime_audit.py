@@ -365,7 +365,9 @@ def _assert_snapshot(snapshot, baseline=None):
     allowed = set(truth["iol"]["allowed_states"])
     assert allowed == ALLOWED_IOL_STATES
     matrix = snapshot["route_inventory"]
-    assert matrix["route_count"] == 55 and matrix["registered_paths"] == 53
+    # The frozen RC6 terminal matrix contains the 49 new views plus existing
+    # routes. Keep the exact cardinality and full manifest comparison together.
+    assert matrix["route_count"] == 102 and matrix["registered_paths"] == 100
     assert snapshot["route_matrix_matches_artifact"] is True
     assert all(code == 200 for code in snapshot["http_status"].values())
     _assert_surface_metrics(snapshot.get("surface_metrics", {}))
