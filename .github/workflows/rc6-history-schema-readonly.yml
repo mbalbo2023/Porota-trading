@@ -1,0 +1,47 @@
+name: RC6 history schema read-only diagnostic
+on:
+  push:
+    branches: [diag/rc6-sqlite-temp-20261014]
+    paths: ['.github/workflows/rc6-history-schema-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Inspect history SQLite main schema without source writes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+          timeout 180 ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          from pathlib import Path
+          import sqlite3
+          p=Path('/opt/porota-trading/data/market_history.db')
+          if not p.is_file() or p.is_symlink():
+              print('HISTORY_SOURCE=NO_VERIFICADO|reason=PATH_MISSING_OR_ALIAS')
+              raise SystemExit(1)
+          for suffix in ('','-wal','-shm'):
+              member=Path(str(p)+suffix)
+              print('HISTORY_MEMBER='+str(suffix or 'main')+'|bytes='+str(member.stat().st_size if member.exists() else 0))
+          c=sqlite3.connect('file:'+str(p)+'?mode=ro&immutable=1',uri=True,timeout=5)
+          c.execute('PRAGMA query_only=ON')
+          tables=('history_versions_v2','history_canonical_v2','history_close_versions_v1')
+          for name in tables:
+              cols=[r[1] for r in c.execute('PRAGMA table_info('+name+')')]
+              print('HISTORY_TABLE='+name+'|columns='+','.join(cols))
+          cols=[r[1] for r in c.execute('PRAGMA table_info(history_versions_v2)')]
+          print('HISTORY_MAIN_SCHEMA='+('FIVE_KEY' if {'currency','previous_version_id'} <= set(cols) else 'LEGACY_OR_ABSENT'))
+          print('HISTORY_MAIN_QUICK_CHECK='+str(c.execute('PRAGMA quick_check(1)').fetchone()[0]))
+          c.close()
+          PY
