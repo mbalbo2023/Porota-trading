@@ -662,6 +662,52 @@ def recent_critical_host():
     return result
 
 
+def writer_timeline_host():
+    """Manual, bounded DB event clock for correlating SQLite lock bursts."""
+    child = '''import json,os,sqlite3,time
+from datetime import datetime,timezone,timedelta
+from pathlib import Path
+db=Path(os.getenv("PAPER_V17_DB_PATH","/app/data/paper_v17/observer_v17.db"))
+at=datetime.now(timezone.utc)
+result={"schema":"rc6.writer-timeline-readonly.v1","read_only":True,"generated_at":at.isoformat(),"status":"UNAVAILABLE","events":[]}
+start=time.monotonic()
+try:
+ with sqlite3.connect(db.as_uri()+"?mode=ro",uri=True,timeout=.005) as c:
+  c.execute("PRAGMA query_only=ON")
+  c.set_progress_handler(lambda: int(time.monotonic()-start>.75),1000)
+  high=c.execute("SELECT max(id) FROM paper_events").fetchone()[0] or 0
+  result["high_event_id"]=high
+  rows=c.execute("SELECT id,event_at,event_type FROM paper_events WHERE id>? AND event_type IN ('COMPLEMENTARY_CATALOG_RECONCILIATION','COMPLEMENTARY_RECONCILIATION_UNAVAILABLE','IOL_EVIDENCE_INGEST_UNAVAILABLE') ORDER BY id DESC LIMIT 12",(max(0,high-20000),)).fetchall()
+  for row_id,clock,kind in rows:
+   if not isinstance(clock,str): continue
+   try:
+    parsed=datetime.fromisoformat(clock.replace("Z","+00:00"))
+    if parsed.tzinfo is None or not timedelta(0)<=at-parsed.astimezone(timezone.utc)<=timedelta(days=2): continue
+   except (ValueError,OverflowError): continue
+   result["events"].append({"id":row_id,"at_utc":parsed.astimezone(timezone.utc).isoformat(),"type":kind})
+  result["status"]="OK"
+except sqlite3.Error as exc:
+ result["status"]="SQLITE_ERROR"
+ label=getattr(exc,"sqlite_errorname",None)
+ if isinstance(label,str) and label.startswith("SQLITE_"): result["sqlite_errorname"]=label[:48]
+except (OSError,ValueError,OverflowError) as exc: result["status"]=type(exc).__name__
+result["elapsed_ms"]=round((time.monotonic()-start)*1000,3)
+print(json.dumps(result,separators=(",",":")))'''
+    try:
+        completed = subprocess.run(
+            ["docker", "exec", "porota_production_observer", "python", "-B", "-c", child],
+            capture_output=True, text=True, timeout=4, check=False)
+        if completed.returncode == 0 and len(completed.stdout) < 8192:
+            data = json.loads(completed.stdout)
+            if (data.get("schema") == "rc6.writer-timeline-readonly.v1"
+                    and data.get("read_only") is True):
+                return data
+    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+        pass
+    return {"schema": "rc6.writer-timeline-readonly.v1", "read_only": True,
+            "status": "CONTAINER_PROBE_UNAVAILABLE", "events": []}
+
+
 def alert_host(encoded):
     """Use the existing container Telegram transport without exporting secrets."""
     try:
@@ -783,6 +829,7 @@ def main(argv=None):
     actions.add_parser("schedule-api-host")
     actions.add_parser("observer-lifecycle-host")
     actions.add_parser("recent-critical-host")
+    actions.add_parser("writer-timeline-host")
     alert = actions.add_parser("alert-host")
     alert.add_argument("encoded")
     prep = actions.add_parser("prepare-alert")
@@ -812,6 +859,8 @@ def main(argv=None):
         data = observer_lifecycle_host()
     elif args.action == "recent-critical-host":
         data = recent_critical_host()
+    elif args.action == "writer-timeline-host":
+        data = writer_timeline_host()
     elif args.action == "alert-host":
         data = alert_host(args.encoded)
     elif args.action == "prepare-alert":
