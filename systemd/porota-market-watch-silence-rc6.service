@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC6 PAPER independent GitHub market watch silence alert
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+ExecStart=/usr/bin/docker exec porota_production_observer python -B /app/rc6_market_watch_silence.py
+TimeoutStartSec=30s
+
