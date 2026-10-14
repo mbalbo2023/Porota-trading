@@ -1,0 +1,40 @@
+name: RC6 disk inventory read-only
+on:
+  push:
+    branches: [diag/rc6-disk-inventory-20261014]
+    paths: ['.github/workflows/rc6-disk-inventory-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Inventory filesystem and image references without mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          df -PB1 / /opt/porota-trading
+          df -Pi /
+          sudo -n docker ps -a --format 'CONTAINER={{.Names}}|IMAGE={{.Image}}|STATUS={{.Status}}'
+          sudo -n docker image ls --format 'IMAGE={{.Repository}}:{{.Tag}}|ID={{.ID}}|SIZE={{.Size}}'
+          sudo -n docker system df
+          for p in /opt/porota-trading/data /opt/porota-trading/data/deploy /opt/porota-trading/data/backups /opt/porota-trading/data/market /var/log/journal /tmp; do
+            if test -e "$p"; then sudo -n du -sm "$p"; fi
+          done
+          sudo -n find /opt/porota-trading/data -maxdepth 3 -type f -size +100M -printf 'LARGE_FILE=%s|%p\n' | sort -nr | head -35
+          sudo -n find /tmp -maxdepth 2 -type f -size +20M -printf 'LARGE_TMP=%s|%p\n' | sort -nr | head -30
+          sudo -n journalctl --disk-usage
+          REMOTE
