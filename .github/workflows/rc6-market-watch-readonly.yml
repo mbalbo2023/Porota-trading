@@ -1,0 +1,237 @@
+name: RC6 Market Watch READ_ONLY
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-market-watch-readonly.yml'
+      - 'scripts/rc6_market_watch_readonly.py'
+      - 'tests/test_rc6_market_watch_readonly.py'
+      - 'docs/ops/RC6_MARKET_WATCH_READONLY.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-market-watch-readonly.yml'
+      - 'scripts/rc6_market_watch_readonly.py'
+      - 'tests/test_rc6_market_watch_readonly.py'
+      - 'docs/ops/RC6_MARKET_WATCH_READONLY.md'
+  schedule:
+    # Argentina UTC-3; the job's local-time gate restricts monitoring to rueda.
+    - cron: '3,13,23,33,43,53 13-20 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-market-watch-readonly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test isolated monitor without network
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_market_watch_readonly.py tests/test_rc6_market_watch_readonly.py
+          python3 -m unittest discover -s tests -p test_rc6_market_watch_readonly.py -v
+          git diff --check
+
+  watch:
+    needs: contracts
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gate market-hours schedule
+        id: window
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+          local = datetime.now(timezone.utc).astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+          minutes = local.hour*60 + local.minute
+          active = (os.environ.get('GITHUB_EVENT_NAME') != 'schedule' or
+                    (local.weekday() < 5 and 10*60+30 <= minutes < 17*60+15))
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write('active=' + ('1' if active else '0') + '\n')
+          print('MARKET_WATCH_TIME_GATE=' + ('ACTIVE' if active else 'SKIP_OFF_HOURS'))
+          PY
+      - name: Resolve productive SHA directly from GitHub
+        id: productive
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.parse
+          repo = os.environ['GITHUB_REPOSITORY']
+          branch = urllib.parse.quote('deploy/rc6-pr69-isolated-20260915', safe='')
+          url = f'https://api.github.com/repos/{repo}/branches/{branch}'
+          request = urllib.request.Request(url, headers={
+              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+              'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(request, timeout=20) as response:
+              info = json.load(response)
+          sha = info['commit']['sha']
+          assert len(sha) == 40 and all(c in '0123456789abcdef' for c in sha)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write('sha=' + sha + '\n')
+          print('RC6_PRODUCTIVE_SHA=' + sha)
+          PY
+      - name: Prepare strict SSH
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_market_watch"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_market_watch" "$HOME/.ssh/known_hosts"
+      - name: Collect bounded read-only host truth
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.productive.outputs.sha }}
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 20 python3 - probe --expected-sha '$EXPECTED_SHA'" \
+            < scripts/rc6_market_watch_readonly.py > evidence/snapshot.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || [ ! -s evidence/snapshot.json ]; then
+            python3 scripts/rc6_market_watch_readonly.py transport-error > evidence/snapshot.json
+            echo "::warning::Remote READ_ONLY probe unavailable. Evidence is fail-closed."
+          fi
+          python3 -m json.tool evidence/snapshot.json >/dev/null
+      - name: Read previous committed monitor artifact (best effort)
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/previous
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/rc6-market-watch-readonly.yml/runs?branch=main&per_page=12" \
+            > evidence/previous/runs.json || true
+          python3 - <<'PY' > evidence/previous/run_ids.txt
+          import json, os
+          try:
+              data=json.load(open('evidence/previous/runs.json', encoding='utf-8'))
+          except (OSError, ValueError):
+              data={}
+          for run in data.get('workflow_runs', []):
+              if (str(run.get('id')) != os.environ['GITHUB_RUN_ID']
+                      and run.get('status') == 'completed'):
+                  print(run['id'])
+          PY
+          while IFS= read -r run_id; do
+            if gh run download "$run_id" -n "rc6-market-watch-$run_id" \
+               -D evidence/previous --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              break
+            fi
+          done < evidence/previous/run_ids.txt
+      - name: Compare snapshots and detect transitions
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/rc6_market_watch_readonly.py classify \
+            --current evidence/snapshot.json \
+            --previous evidence/previous/snapshot.json \
+            --previous-decision evidence/previous/decision.json > evidence/decision.json
+          python3 - <<'PY'
+          import json, os
+          snap=json.load(open('evidence/snapshot.json',encoding='utf-8'))
+          decision=json.load(open('evidence/decision.json',encoding='utf-8'))
+          text=['## POROTA RC6 | Market Watch READ_ONLY',
+                '- Product SHA: '+str(snap.get('expected_deploy_sha','NO_VERIFICADO')),
+                '- Severity: '+str(snap.get('severity','NO_VERIFICADO')),
+                '- Alerts: '+', '.join(decision['new_alerts'] or ['none']),
+                '- Recovery: '+', '.join(decision['recovered'] or ['none']),
+                '- Pending P1 confirmation: '+', '.join(decision['pending_confirmation'] or ['none']),
+                '- Orders actually sent: no claim unless exact DB counter verified.',
+                '- Mutations: NONE; provider calls: NONE; PPI Watch: NOT ACCESSED.']
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:
+              f.write('\n'.join(text)+'\n')
+          print('RC6_MONITOR_STATUS='+decision['status'])
+          print('RC6_MONITOR_NOTIFICATION='+decision['notification'])
+          PY
+      - name: Send transition alert (only when Telegram Secrets exist)
+        if: steps.window.outputs.active == '1'
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          from urllib.error import URLError
+          data=json.load(open('evidence/decision.json', encoding='utf-8'))
+          if data['notification']=='NONE':
+              print('MARKET_WATCH_ALERT=NO_TRANSITION')
+              raise SystemExit(0)
+          token, chat=os.getenv('TG_TOKEN',''), os.getenv('TG_CHAT','')
+          if not token or not chat:
+              print('MARKET_WATCH_TELEGRAM=NO_VERIFICADO_UNCONFIGURED')
+              raise SystemExit(0)
+          codes=data['new_alerts'] if data['new_alerts'] else data['recovered']
+          body=('POROTA RC6 | '+data['notification']+
+                '\n'+', '.join(codes[:12])+'\n'+data['generated_at']+
+                '\nPAPER/SHADOW ONLY. Ver evidencia en GitHub Actions.')
+          payload=urllib.parse.urlencode({'chat_id':chat,'text':body}).encode()
+          req=urllib.request.Request('https://api.telegram.org/bot'+token+'/sendMessage',
+                                     data=payload, method='POST')
+          try:
+              with urllib.request.urlopen(req,timeout=15) as response:
+                  result=json.load(response)
+              print('MARKET_WATCH_TELEGRAM='+('SENT' if result.get('ok') is True else 'FAILED'))
+          except (OSError, URLError, ValueError):
+              print('MARKET_WATCH_TELEGRAM=FAILED')
+          PY
+      - name: Save immutable per-run evidence
+        if: always() && steps.window.outputs.active == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-market-watch-${{ github.run_id }}
+          path: |
+            evidence/snapshot.json
+            evidence/decision.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Fail checks on verified critical or confirmed P1
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          data=json.load(open('evidence/decision.json', encoding='utf-8'))
+          if data['confirmed']:
+              print('::error::RC6 Market Watch incident: '+', '.join(data['confirmed']))
+              raise SystemExit(2)
+          print('RC6_MONITOR_CHECK=GREEN_OR_UNCONFIRMED')
+          PY
+      - name: Destroy SSH credential
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_market_watch"
