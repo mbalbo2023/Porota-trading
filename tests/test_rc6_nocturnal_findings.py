@@ -9,6 +9,7 @@ import pytest
 
 import _version
 import ao_startup_gate as startup
+import ar_telegram_commands as commands
 import bh_paper_gemini as gemini
 import c_ppi_client as ppi
 import ck_policy_gate_hf6 as policy
@@ -24,6 +25,11 @@ def test_product_release_refuses_real_start_and_sdk_choke_points(monkeypatch, tm
     assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
     monkeypatch.setattr(startup, 'STARTUP_STATE_PATH', str(tmp_path / 'start.json'))
     assert startup.autorizar(startup.MODO_REAL, origen='OFFLINE_FIXTURE')['ok'] is False
+    (tmp_path / 'start.json').write_text(json.dumps({'modo': startup.MODO_REAL}))
+    assert startup._recargar_desde_archivo() is False
+    monkeypatch.setattr(startup, 'STARTUP_REQUIRE_AUTH', False)
+    monkeypatch.setenv('ENVIRONMENT', 'PRODUCTION')
+    assert startup.esperar_autorizacion() == startup.MODO_DETENIDO
     monkeypatch.setattr(startup, 'estado_actual', lambda: {'modo': startup.MODO_REAL})
     monkeypatch.setattr(startup, 'registrar_paso', lambda *a: None)
     assert startup.interceptar_orden('GGAL', 1, 100, 'COMPRA')['simulada']
@@ -41,6 +47,24 @@ def test_product_release_refuses_real_start_and_sdk_choke_points(monkeypatch, tm
     ):
         with pytest.raises(RuntimeError, match='REAL_ORDER_CAPABILITY_BLOCKED'):
             operation()
+
+
+def test_paper_restart_authorizes_simulation_before_releasing_halt(monkeypatch):
+    import p_risk_guardian as guardian
+    events = []
+    monkeypatch.setattr(commands, '_enviar', lambda *a, **k: None)
+    monkeypatch.setattr(commands, '_registrar', lambda *a, **k: None)
+    monkeypatch.setattr(guardian, 'clear_halt', lambda: events.append('clear'))
+    monkeypatch.setattr(startup, 'esta_en_simulacion', lambda: False)
+    monkeypatch.setattr(startup, 'autorizar', lambda modo, **kwargs:
+                        (events.append(modo) or {'ok': True}))
+    assert commands.ejecutar_rearranque(None)['ok'] is True
+    assert events == [startup.MODO_SIMULACION, 'clear']
+    events.clear()
+    monkeypatch.setattr(startup, 'autorizar', lambda *a, **k:
+                        {'ok': False, 'motivo': 'BLOCKED'})
+    assert commands.ejecutar_rearranque(None)['ok'] is False
+    assert events == []
 
 
 def test_sector_binding_recounts_after_another_writer_commits(tmp_path, monkeypatch):

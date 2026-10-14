@@ -111,6 +111,8 @@ def _recargar_desde_archivo() -> bool:
     modo = guardado.get("modo")
     if modo not in (MODO_SIMULACION, MODO_REAL, MODO_DETENIDO):
         return False
+    if modo == MODO_REAL and (RELEASE_MODE == "PRODUCTION_PAPER" or REAL_ORDER_CAPABILITY != "ENABLED"):
+        return False
     with _lock:
         _estado.modo = modo
         _estado.estado = guardado.get("estado", "AUTORIZADO")
@@ -289,8 +291,10 @@ def esperar_autorizacion(notifier=None) -> str:
         logger.warning("STARTUP_REQUIRE_AUTH=false: el bot arranca sin pedir autorización. "
                        "Está bien para un servidor de producción ya estabilizado; en un "
                        "entorno de pruebas conviene dejarlo en true.")
-        autorizar(MODO_REAL if os.getenv("ENVIRONMENT", "").upper() == "PRODUCTION"
-                  else MODO_SIMULACION, origen="configuración")
+        requested = (MODO_REAL if os.getenv("ENVIRONMENT", "").upper() == "PRODUCTION"
+                     else MODO_SIMULACION)
+        if not autorizar(requested, origen="configuración")["ok"]:
+            autorizar(MODO_DETENIDO, origen="capacidad PAPER bloqueada")
         return _estado.modo
 
     solicitar_autorizacion(notifier)
