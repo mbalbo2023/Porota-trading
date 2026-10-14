@@ -129,6 +129,47 @@ class DelegatedAuthorityTests(unittest.TestCase):
             with self.assertRaisesRegex(v2.AuthorityV2Error, reason):
                 v2.verify_revocation_ref(**arguments)
 
+    def test_future_grant_comments_and_clock_skew_fail_closed(self):
+        # A server date later than the authenticated observation cannot grant
+        # authority, even when issued_at is in the past.
+        for issue in v2.ISSUES:
+            self.grant_rows[issue]['created_at'] = '2026-10-13T23:00:02Z'
+            self.grant_rows[issue]['updated_at'] = '2026-10-13T23:00:02Z'
+        with self.assertRaisesRegex(v2.AuthorityV2Error, 'HUMAN_GRANT_INVALID'):
+            v2.verify_grant(self.grant_rows, now=at('2026-10-13T23:00:01Z'),
+                source_sha='a'*40, source_tree='b'*40, gate='G5P-acquire',
+                session='CODEX_RC6_UNIT', controller_run_id=123,
+                launch_receipt_url=self.grant['launch_receipt_url'])
+        with self.assertRaisesRegex(v2.AuthorityV2Error, 'HUMAN_GRANT_INVALID'):
+            v2.verify_grant(self.grant_rows, now=at('2026-10-13T23:00:00Z'),
+                source_sha='a'*40, source_tree='b'*40, gate='G5P-acquire',
+                session='CODEX_RC6_UNIT', controller_run_id=123,
+                launch_receipt_url=self.grant['launch_receipt_url'])
+
+    def test_future_pulse_replay_and_both_comments_edited_fail_closed(self):
+        grant, digest = self.accepted_grant()
+        rows = self.pulse_rows(digest)
+        with self.assertRaisesRegex(v2.AuthorityV2Error, 'FRESH_CHAINED_PULSE'):
+            v2.verify_pulse(rows, grant=grant, grant_sha256=digest,
+                candidate_run_id=456, now=at('2026-10-13T23:10:00Z'))
+        v2.verify_pulse(rows, grant=grant, grant_sha256=digest,
+            candidate_run_id=456, now=at('2026-10-13T23:11:00Z'))
+        with self.assertRaisesRegex(v2.AuthorityV2Error, 'FRESH_CHAINED_PULSE'):
+            v2.verify_pulse(rows, grant=grant, grant_sha256=digest,
+                candidate_run_id=456, now=at('2026-10-13T23:11:01Z'),
+                previous_sequence=1, previous_sha256='f'*64)
+        for row in rows.values():
+            row['updated_at'] = '2026-10-13T23:11:01Z'
+            row['body'] = row['body'].replace('"sequence":1', '"sequence":2')
+        with self.assertRaisesRegex(v2.AuthorityV2Error, 'IMMUTABLE_PAIR'):
+            v2.verify_pulse(rows, grant=grant, grant_sha256=digest,
+                candidate_run_id=456, now=at('2026-10-13T23:11:02Z'))
+        for row in self.grant_rows.values():
+            row['updated_at'] = '2026-10-13T23:11:01Z'
+            row['body'] = row['body'].replace('"nonce":"', '"nonce":"f')
+        with self.assertRaisesRegex(v2.AuthorityV2Error, 'IMMUTABLE_PAIR'):
+            self.accepted_grant()
+
 
 if __name__ == '__main__':
     unittest.main()
