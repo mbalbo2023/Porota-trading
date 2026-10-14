@@ -1,0 +1,44 @@
+# RC6 — reconciliación funcional y continuidad de despliegue (2026-10-14)
+
+Owner: `WORK_RC6_SINGLE_20261014`. Modo obligatorio: `PRODUCTION_PAPER` / simulación; `real_orders_sent=0`; rutas de órdenes reales bloqueadas. PPI Watch intocado. FIX-FORWARD ONLY.
+
+## Fuente de verdad y base exacta
+
+La productiva `deploy/rc6-pr69-isolated-20260915` quedó en `cafdbb7572ccacebb5daebbadf0d7e3bc60e55a7` (tree `15896d470ada5983a1bbfd0105918bebf2d15486`). El primer rescate partió del candidato #501 `4f15dba9ff02e46e21253d853270e2ecb2759de6`; Predeploy V2 [38504364322](https://github.com/mbalbo2023/Porota-trading/actions/runs/38504364322) validó 2512 tests y congeló el artefacto `11867711866`, ZIP SHA-256 `feb9ac38fda60c04592257d644a5574abafd6e0de065b48b6ac8fd8d73b76988`. Deploy V2 [38504915188](https://github.com/mbalbo2023/Porota-trading/actions/runs/38504915188), intento 2, promovió esa imagen sin reconstruir. El primer intento se detuvo antes de transferir por falta de espacio; la remediación eliminó únicamente una imagen antigua sin referencias y el segundo intento del **mismo artefacto** terminó `VALIDATED_RUNTIME`.
+
+La comprobación independiente [38511361089](https://github.com/mbalbo2023/Porota-trading/actions/runs/38511361089) observó los tres contenedores sobre `sha256:874e8f59053973e198d93382f2d875d3c50cfab5d152270f51e3e1825f00784a`, reinicios y OOM cero, dashboard y gateway saludables, heartbeat de 18,4 segundos, DB `PRODUCTION_PAPER`, `real_orders_sent=0`, `PRAGMA quick_check(1)=ok`, procedencia persistida y PPI Watch sin cambios. Eso prueba el rescate del runtime base; no prueba que los módulos pendientes estén ejecutándose allí.
+
+## Matriz de funcionalidades
+
+`Producto` describe únicamente el árbol e imagen anteriores. `Candidato` indica el cambio en la rama aislada; hasta un segundo Deploy V2 y comprobación directa, todo candidato sigue **NO DESPLEGADO**. Que el archivo esté en una imagen no demuestra actividad de mercado ni fills.
+
+| Capacidad | Producto verificado / alcance | GitHub y candidato aislado | Validación pendiente o bloqueo |
+|---|---|---|---|
+| Motor PAPER y familias | Runtime PAPER saludable; motor anterior a #463 | Integración selectiva de #463: futuros, lifecycle, colateral, marks y exposición, más admisión y evidencia atómica de #498 | Suite completa Predeploy; luego evidencia de imagen, DB y eventos reales PAPER. No fabricar fills en mercado cerrado. |
+| Instrumentos y readiness | Catálogo/producto base desplegado | #463: universo dinámico y readiness; contratos tipados, reloj UTC exacto y gate de capacidad posterior | Predeploy y estado de fuentes/eligibilidad en Droplet; dato ausente sigue NO_VERIFICADO. |
+| Fuentes PPI/IOL/BYMA | Lectores base y PPI auth saludables en rescate; PPI Watch separado | #463 más presupuesto global PPI, coalescencia, diagnóstico de circuitos, supervisión de exits y lectura SQLite acotada; IOL/BYMA del árbol de #463 | Pruebas adversariales locales pasadas; validar reinicio y fuentes productivas sin órdenes reales. Ausencia de book no implica disponibilidad. |
+| Riesgos y costos | Guardas PAPER base activas | #463 y correcciones posteriores: límites, riesgo dinámico, fees, unidades volumen/cantidad, contratos de futuro | Predeploy, pruebas de rechazo y DB PAPER; no relajar límites para forzar actividad. |
+| Scalping Shadow | Contrato anterior desplegado | #463 y fixes de frescura, re-probe intraday negativo y persistencia de warmup/restart | Pruebas focales pasadas; actividad de ventana de mercado requiere observación posterior y book fresco. |
+| Histórico y scheduler | #426–#431 absorbidos en integración previa; runtime de observador base saludable | Se conservan esos cambios. El nuevo almacén de identidad completa, revisiones causales, ingesta reanudable y cobertura exacta pasa pruebas offline, pero la ingesta en el Droplet queda **BLOQUEADA / NO_VERIFICADO** por migración de datos. El observador publica el bloqueo y no hace una copia parcial ni consulta al proveedor. Archivo nativo experimental y generaciones/retención extensas en #498 quedan fuera | Fuente real de 633.856.000 B y esquema legado > límite de copia 512 MiB; 152.585 filas sin identidad monetaria única en inventario main-only. Requiere migración por copia completa, mapeo respaldado y espacio/tiempo de ejecución. G5P tampoco certificado. |
+| Observador, dashboard y UX | Observador/dashboard saludables en imagen de rescate; terminal #470 pendiente | #470: terminal 8 destinos y 49 subvistas, más label/readiness y métricas de performance | Suite completa y comprobación HTTP/estado del nuevo dashboard en Droplet; UI no debe inferir GREEN de una fuente faltante. |
+| SRE y despliegue | SQLite EXIT_READER, guard preopen #450, reparación de volumen e imagen de #499/#501 probados en primer despliegue | Preservados desde producto; cleanup acotado tras transferencia/promoción fallida con IDs de steps comprobados; resumen de Deploy V2 muestra SHA sin ejecutar backticks | Predeploy exacto; único nuevo Deploy V2 para candidato funcional; validar free bytes, contenedores, logs, DB y PPI Watch. |
+
+## Selección y exclusiones
+
+- #497 (`29d529bb3b828408924086f46438185ee9f581e3`) aportó SQLite FD/SRE críticos ya reconciliados en #499 y verificados en runtime. No se reaplica el PR entero.
+- #492 (`ec78422aab6ee3bb14abd4e6fdb8835a252bb19d`) incluye controles G5P/archivo nativo cuya certificación material no quedó GREEN; no es autorización para sustituir Predeploy V2.
+- #498 (`022a8877eea91cfc02850e7aa695e3b0b5aa86fe`) contiene a #463 (`caf9bc94b4a1f436ad01a84a9e9e9e7a4a9e9423`) y #470 (`4a5fc6384260b31f9a07e791093add6ee83102a1`) junto con auditorías masivas. Se extrajeron código funcional y pruebas causales. El resto del archivo nativo/andamiaje no se fusiona ciegamente ni se cuenta como funcionalidades desplegadas.
+- Los PRs #426–#431 ya se habían absorbido en el árbol productivo; preservar su implementación y pruebas. Reconciliar el árbol por SHA y paths, no por número de PR ni cantidad de archivos.
+
+## RCA y contratos de esta integración
+
+El primer fallo local de importación (`utc_microseconds`) se resolvió incorporando el contrato de instante exacto. La apertura directa de futuros carecía del callback `commit_evidence`; se integró el executor atómico y la serialización canónica de diagnósticos `Decimal`, con pruebas de rollback de evidencia y de proyección financiera acotada. El presupuesto de exits requirió la lectura de copia SQLite con límites y el guard HTTP de propiedad de body; sus pruebas adversariales verifican falta de capacidad, locks, reintentos y `stream` no autorizado. La primera suite de raíz reveló el almacén histórico de tres campos frente al observador de cinco; se integró el contrato causal y la migración, y pasó la suite focal de histórico. Un test de futuros usaba una búsqueda de tres campos contra la nueva clave exacta; la fixture conserva ahora el mercado y moneda. La limpieza segura de Deploy V2 necesitaba IDs de steps para activar su condición, además del bloque acotado. Ninguno de esos fallos fue etiquetado GREEN antes del nuevo código y su reejecución. Primera suite focal local: 477 casos pasados; su alcance sigue siendo inferior al Predeploy V2 automático de raíz.
+
+El inventario del host [38514506000](https://github.com/mbalbo2023/Porota-trading/actions/runs/38514506000) observó esquema sin `currency`, fuente 633.856.000 B, WAL 0 y `quick_check=ok`. El conteo [38514725104](https://github.com/mbalbo2023/Porota-trading/actions/runs/38514725104) encontró 596.196 versiones OHLC y 111.905 close-only: moneda explícita en cero filas, 443.611 con catálogo main-only unívoco, 31.731 ambiguas y 120.854 sin mapeo; WAL del observador 14.465.352 B significa que el catálogo leído no era una vista completa actual. No hay base para atribuir moneda a esas filas ni para convertir la fuente en el límite actual. La regresión de observador detiene la ingesta, conserva la DB y expone `AMARILLO/NO_VERIFICADO`; las pruebas de esquema nuevo no se acreditan como migración productiva.
+
+## Próximas evidencias obligatorias
+
+1. Publicar esta rama como PR contra la productiva real y registrar HEAD/tree exactos. Exigir Predeploy V2 automático, cobertura de raíz, dependencias, manifest, hash y artefacto inmutable. Ante RED, RCA y nuevo commit, sin reutilizar la evidencia del commit anterior.
+2. Tras merge controlado sin escribir directamente en productiva, ejecutar un solo Deploy V2 de este candidato funcional con mutex `rc6-unified-paper-deploy` y ownership exclusivo.
+3. Hacer comprobación independiente posterior de servicios, contenedores/imagen, logs, DB, dashboard, observador, fuentes, reinicios/OOM, espacio y seguridad PAPER/PPI Watch. Registrar cualquier funcionalidad sin actividad comprobable como `NO_VERIFICADO` con causa, no `VALIDADO_RUNTIME` por inferencia.
+4. Publicar el estado final y liberar WRITE_OWNER/DEPLOY_OWNER sólo después de conservar la evidencia.

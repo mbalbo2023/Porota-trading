@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import al_historical_ingest as hist
 import ba_data912_history as data912
@@ -6,12 +7,14 @@ import m_instrument_universe as universe
 
 
 def _candles(count=100, price=1000.0, volume=10000.0):
-    start = date.today() - timedelta(days=count)
-    return [
-        ((start + timedelta(days=index)).isoformat(),
-         price, price, price, price, volume)
-        for index in range(count)
-    ]
+    # A daily archive contains sessions; calendar days previously inserted
+    # weekend bars merely to reach this fixture's intended row count.
+    rows=[]
+    day=datetime.now(timezone.utc).astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date()-timedelta(days=1)
+    while len(rows)<count:
+        if day.weekday()<5:rows.append((day.isoformat(),price,price,price,price,volume))
+        day-=timedelta(days=1)
+    return list(reversed(rows))
 
 
 def test_archived_instruments_require_minimum_history(tmp_path, monkeypatch):
@@ -59,7 +62,8 @@ def test_empty_data912_history_is_not_counted_as_success(tmp_path, monkeypatch):
 
     def fake_get(_client, path):
         if path == "/live":
-            return [{"symbol": "VACIO", "c": 1000, "v": 10000}]
+            return [{"symbol": "VACIO", "c": 1000, "v": 10000,
+                     "currency":"ARS", "volume_kind":"QUANTITY"}]
         return []
 
     monkeypatch.setattr(data912, "_get_json", fake_get)

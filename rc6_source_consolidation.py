@@ -8,12 +8,16 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import math
 from html.parser import HTMLParser
 import os
 import re
 from datetime import datetime, timezone
 from typing import Any
 from urllib.request import Request, urlopen
+
+from rc6_dynamic_universe.common import digest, stamp
+from rc6_shadow_runtime.source_authority import (VERSION as AUTHORITY_VERSION, native_time, receipt_time, resolve_field, source_rank)
 
 SCHEMA = "rc6-consolidated-source-evidence-v1"
 MAX_BYTES = 2_000_000
@@ -54,17 +58,19 @@ def _canonical_term(value: Any) -> str:
     raw = str(value or "").strip().upper()
     return _TERM_ALIASES.get(raw, raw)
 
-def _key(row: dict[str, Any]) -> tuple[str, str, str, str]:
+def _key(row: dict[str, Any]) -> tuple[str, str, str, str, str]:
     return (
-        _canonical_family(row.get("family") or row.get("asset_type") or row.get("asset_class")),
+        _canonical_family(row.get("family") or row.get("instrument_type") or row.get("asset_type") or row.get("asset_class")),
         str(row.get("symbol") or row.get("ticker") or "").strip().upper(),
         _canonical_market(row.get("market")),
-        _canonical_term(row.get("term") or row.get("settlement")),
+        str(row.get("currency") or "").strip().upper(),
+        _canonical_term(row.get("term") or row.get("settlement") or row.get("settlement_code")),
     )
 
 def _num(value: Any) -> float | None:
     try:
-        return float(value) if value not in (None, "") else None
+        result = float(value) if value not in (None, "") and not isinstance(value, bool) else None
+        return result if result is not None and math.isfinite(result) else None
     except (TypeError, ValueError):
         return None
 
@@ -96,74 +102,151 @@ def _cascade_fields(primary: dict[str, Any], iol: dict[str, Any], official: dict
     return result
 
 
-def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
-                official_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """Union de identidades con prioridad de campos PPI -> IOL -> BYMA.
+def _identity_valid(row):
+    key = _key(row)
+    if not all(key) or key[0] not in set(_FAMILY_ALIASES.values()) or key[2] not in set(_MARKET_ALIASES.values()) or key[3] not in {"ARS", "USD", "USD_MEP", "USD_CCL"} or key[4] not in set(_TERM_ALIASES.values()):
+        return False
+    for names, normalize, expected in (
+        (("family", "instrument_type", "asset_type", "asset_class"), _canonical_family, key[0]),
+        (("symbol", "ticker"), lambda value: str(value).strip().upper(), key[1]),
+        (("term", "settlement", "settlement_code"), _canonical_term, key[4]),
+    ):
+        if any(normalize(row[name]) != expected for name in names if row.get(name) not in (None, "")):
+            return False
+    return True
 
-    Una fuente complementaria puede descubrir una identidad ausente de PPI,
-    pero nunca reemplaza un valor PPI presente. La procedencia queda explícita.
+
+def _safe_evidence(value):
+    """Retain invalid numeric evidence without emitting invalid JSON numbers."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return {"raw_value": repr(value), "status": "NO_VERIFICADO_NON_FINITE_NUMBER"}
+    if isinstance(value, dict):
+        return {key: _safe_evidence(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_safe_evidence(item) for item in value]
+    return value
+
+
+def _fold_source(records):
+    """No source row wins an ambiguous duplicate by list/dict insertion order."""
+    unique = {digest(row): dict(row) for row in records}
+    rows = [unique[key] for key in sorted(unique)]
+    merged, conflicts = {}, []
+    for field in set().union(*(set(row) for row in rows)) if rows else ():
+        values = {digest(row[field]): row[field] for row in rows if row.get(field) not in (None, "")}
+        if len(values) == 1:
+            merged[field] = next(iter(values.values()))
+        elif len(values) > 1:
+            conflicts.append({"field": field, "reason": "DUPLICATE_SOURCE_EVIDENCE_CONFLICT",
+                              "values": list(values.values())[:16]})
+    return merged, conflicts, rows[:16]
+
+
+def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
+                official_rows: list[dict[str, Any]] | None = None, *, as_of=None) -> dict[str, Any]:
+    """Five-part identity joins; unbound legacy comparisons stay references.
+
+    Diagnostic effective_fields preserve the previous comparison interface.
+    validated_effective_fields additionally require native clocks, availability,
+    exact identity and conflict-free evidence. Reference rows assign no canonical
+    identity and cannot become discovery/selection/entry authority.
     """
-    primary_map = {_key(row): row for row in ppi_rows if isinstance(row, dict) and _key(row)[1]}
-    secondary = {_key(row): row for row in iol_rows if isinstance(row, dict) and _key(row)[1]}
-    official = {_key(row): row for row in (official_rows or []) if isinstance(row, dict) and _key(row)[1]}
+    collected = stamp(as_of).isoformat() if as_of is not None else _now()
+    groups, references, identity_reviews = {}, {}, []
+    for source, records in (("PPI", ppi_rows), ("IOL", iol_rows), ("BYMA", official_rows or [])):
+        for raw in records:
+            if not isinstance(raw, dict) or not _key(raw)[1]:
+                continue
+            row = _safe_evidence(raw)
+            key = _key(row)
+            if _identity_valid(row):
+                groups.setdefault(key, {}).setdefault(source, []).append(row)
+            else:
+                base = (key[0], key[1], key[2], key[4])
+                references.setdefault(base, {}).setdefault(source, []).append(row)
+                if len(identity_reviews) < 1000:
+                    identity_reviews.append({"source": source, "source_path": row.get("source_path") or source,
+                        "identity": list(key), "reason": "EXACT_IDENTITY_REQUIRED_OR_CONFLICTING",
+                        "canonical_identity": None, "identity_assigned": False})
+    # Legacy missing-currency comparisons may show compatible reference values,
+    # without borrowing the complementary currency or inventing a PPI identity.
+    for base, sources in references.items():
+        for key, bound in groups.items():
+            if (key[0], key[1], key[2], key[4]) == base:
+                for source, records in bound.items():
+                    sources.setdefault(source, []).extend(records)
     rows = []
-    for key in sorted(set(primary_map) | set(secondary) | set(official)):
-        primary = dict(primary_map.get(key, {}))
-        iol = secondary.get(key, {})
-        ext = official.get(key, {})
-        complement = {
-            "last": _num(iol.get("last")),
-            "bid": _num(iol.get("bid")),
-            "ask": _num(iol.get("ask")),
-            "bid_size": _num(iol.get("bid_size")),
-            "ask_size": _num(iol.get("ask_size")),
-            "variation_pct": _num(iol.get("variation_pct")),
-            "cash_volume": _num(iol.get("cash_volume")),
-            "provider_observed_at": iol.get("provider_observed_at"),
-            "asset_type": iol.get("asset_type"),
-            "currency": iol.get("currency"),
-            "units_per_lot": iol.get("units_per_lot"),
-        }
+    work = [(key, values, True) for key, values in sorted(groups.items())]
+    work += [((base[0], base[1], base[2], "", base[3]), values, False) for base, values in sorted(references.items())]
+    # References first preserve callers which historically used one scalar
+    # comparison row. Their absent canonical_identity makes authority explicit.
+    work.sort(key=lambda value: (value[0][0:3], value[0][4], value[2], value[0][3]))
+    for key, grouped, exact in work:
+        folded, duplicates, candidates = {}, {}, {}
+        for source in ("PPI", "IOL", "BYMA"):
+            folded[source], duplicates[source], candidates[source] = _fold_source(grouped.get(source, []))
+        primary, secondary, public = folded["PPI"], folded["IOL"], folded["BYMA"]
+        primary_authoritative = bool(exact and grouped.get("PPI") and
+            all(source_rank(row.get("source") or "PPI") == 0 for row in grouped["PPI"]))
+        source_reviews = [{"source": row.get("source"), "comparison_source": "PPI",
+            "reason": "PRIMARY_SOURCE_AUTHORITY_NOT_PROVEN"} for row in grouped.get("PPI", [])
+            if source_rank(row.get("source") or "PPI") != 0][:16]
+        complement = {field: _num(secondary.get(field)) for field in CASCADE_FIELDS}
+        complement.update({field: secondary.get(field) for field in ("provider_observed_at", "asset_type", "currency", "units_per_lot")})
         compared = {}
         for field in CASCADE_FIELDS:
-            pv, sv = _num(primary.get(field)), complement.get(field)
-            compared[field] = {
-                "primary": pv, "secondary": sv,
-                "state": "MATCH" if pv is not None and sv is not None and (
-                    pv == sv or (pv and abs(pv - sv) / abs(pv) * 100 <= 2.0)
-                ) else "DIVERGENCE" if pv is not None and sv is not None else "NOT_COMPARABLE",
-            }
+            pv, sv = _num(primary.get(field)), _num(secondary.get(field))
+            compared[field] = {"primary": pv, "secondary": sv,
+                "state": "MATCH" if pv is not None and sv is not None and (pv == sv or (pv and abs(pv-sv)/abs(pv)*100 <= 2.0)) else "DIVERGENCE" if pv is not None and sv is not None else "NOT_COMPARABLE"}
+        validated, provenance = {}, {}
+        for field in CASCADE_FIELDS:
+            evidence = []
+            for source, records in grouped.items():
+                for candidate in records:
+                    if candidate.get(field) is None:
+                        continue
+                    quote_time = native_time(candidate)
+                    origin = candidate.get("source") or source
+                    if source == "PPI" and field in {"bid", "ask", "bid_size", "ask_size"}:
+                        quote_time = candidate.get("book_at") or candidate.get("provider_book_at")
+                    unit = candidate.get(field+"_unit")
+                    if field in {"last", "bid", "ask", "vwap"}:
+                        unit = unit or candidate.get("price_unit")
+                    evidence.append({"value": _num(candidate.get(field)), "source": origin,
+                        "source_path": candidate.get("source_path") or origin,
+                        "source_at": quote_time, "received_at": receipt_time(candidate),
+                        "unit": unit,
+                        "valid": str(candidate.get("state") or "READY").upper() in {"READY", "LIVE_FRESH", "FRESH", "OBSERVE_ONLY"},
+                        "native_reason": candidate.get("reason")})
+            resolved = resolve_field(evidence, as_of=collected, tolerance_fraction=.02)
+            provenance[field] = resolved
+            validated[field] = {"value": resolved["value"] if exact and not resolved["review_required"] else None,
+                                "source": resolved.get("source") if exact and not resolved["review_required"] else None}
+        review = (bool(source_reviews) or any(duplicates.values()) or any(value["review_required"] for value in provenance.values())
+                  or any(value["state"] == "DIVERGENCE" for value in compared.values()))
         rows.append({
-            "identity": {"family": key[0], "symbol": key[1], "market": key[2], "term": key[3]},
-            "ppi_primary": primary,
-            "iol_complement": complement,
-            "official_complement": ext,
-            "effective_fields": _cascade_fields(primary, complement, ext),
-            "comparison": compared,
-            "freshness": {
-                "PPI": _age_status(primary.get("provider_observed_at") or primary.get("observed_at")),
-                "IOL": _age_status(complement.get("provider_observed_at")),
-                "BYMA": _age_status(ext.get("provider_observed_at") or ext.get("observed_at")),
-            },
-            "decision_effect": "OBSERVE_ONLY",
-            "shadow_promotion": True,
-            "live_decision_authority": False,
-            "real_money_authorized": False,
+            "identity": {"family": key[0], "symbol": key[1], "market": key[2], "term": key[4]},
+            "canonical_identity": [key[1], key[0], key[2], key[3], key[4]] if exact else None,
+            "currency": key[3] or None, "identity_binding": "EXACT_FIVE_PART_IDENTITY" if exact else "REFERENCE_ONLY_EXACT_IDENTITY_REQUIRED",
+            "identity_primary_source": "PPI" if primary_authoritative else "COMPLEMENT_REFERENCE_ONLY",
+            "ppi_primary": primary, "iol_complement": complement, "official_complement": public,
+            "effective_fields": _cascade_fields(primary, complement, public),
+            "validated_effective_fields": validated, "field_provenance": provenance, "comparison": compared,
+            "duplicate_conflicts": duplicates, "source_candidates": candidates,
+            "source_authority_reviews": source_reviews,
+            "review_status": "CONFLICT_REVIEW_REQUIRED" if review else "NO_CURRENT_CONFLICT",
+            "freshness": {source: _age_status(native_time(value)) for source, value in folded.items()},
+            "decision_effect": "OBSERVE_ONLY", "shadow_promotion": not review,
+            "selection_eligible": bool(primary_authoritative and not review and validated["last"]["value"] is not None
+                                       and validated["last"]["value"] > 0),
+            "live_decision_authority": False, "entry_authority": False, "real_money_authorized": False,
         })
-    return {
-        "schema": SCHEMA,
-        "source_order": "PPI_PRIMARY_IOL_COMPLEMENTARY_BYMA_PUBLIC_COMPLEMENTARY",
-        "collected_at": _now(),
-        "rows": rows,
-        "counts": {
-            "ppi": len(ppi_rows),
-            "iol": len(iol_rows),
-            "consolidated": len(rows),
-            "official": len(official),
-        },
-        "decision_effect": "OBSERVE_ONLY",
-        "real_money_authorized": False,
-    }
+    return {"schema": SCHEMA, "source_authority_policy": AUTHORITY_VERSION,
+        "source_order": "PPI_PRIMARY_IOL_COMPLEMENTARY_BYMA_PUBLIC_COMPLEMENTARY", "collected_at": collected,
+        "rows": rows, "identity_reviews": identity_reviews,
+        "counts": {"ppi": len(ppi_rows), "iol": len(iol_rows), "consolidated": len(rows), "official": len(official_rows or [])},
+        "provider_available": {"PPI": None, "IOL": None, "BYMA": None},
+        "decision_effect": "OBSERVE_ONLY", "entry_authority": False, "real_money_authorized": False}
 
 
 class _TableParser(HTMLParser):

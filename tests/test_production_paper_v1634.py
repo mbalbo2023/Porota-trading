@@ -1591,6 +1591,10 @@ def test_historicos_usan_universo_completo_no_lote_activo(tmp_path, monkeypatch)
         for ticker in ("GGAL", "YPFD", "PAMP", "BMA"):
             connection.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
                                (ticker, "ACCIONES", "A-24HS", "BYMA", 1, "AVAILABLE", "ok", "2026-08-26"))
+            import bu_instrument_catalog as full_catalog
+            full_catalog.persist(connection,full_catalog.normalize_record({
+                "ticker":ticker,"type":"ACCIONES","market":"BYMA","currency":"ARS",
+                "settlement":"A-24HS"},"A-24HS","2026-08-26T12:00:00-03:00","OFFLINE_SCOPE_TEST"))
     monkeypatch.setattr(observer, "ACTIVE_SYMBOL_LIMIT", 2)
     # Historical targeting must use the complete eligible catalog, not the
     # scanner's small active rotation. The one-shot repair gate belongs to the

@@ -27,6 +27,7 @@ def _ingest(payload, *, attempted_at="2026-09-05T12:00:00+00:00", observer=None,
         symbol="ABC",
         instrument_type="CEDEARS",
         market="BYMA",
+        currency="ARS",
         settlement="A-24HS",
         payload=payload,
         requested_from="2026-09-01",
@@ -148,5 +149,5 @@ def test_identical_retry_dedupes_version_and_preserves_original_observed_at():
         canonical=c.execute("SELECT observed_at,version_id FROM history_close_canonical_v1").fetchone()
         version=c.execute("SELECT observed_at FROM history_close_versions_v1 WHERE id=?",(canonical["version_id"],)).fetchone()
     assert versions==1
-    assert canonical["observed_at"]=="2026-09-05T12:00:00+00:00"
+    assert canonical["observed_at"]=="2026-09-05T12:00:00.000000+00:00"
     assert canonical["observed_at"]==version["observed_at"]

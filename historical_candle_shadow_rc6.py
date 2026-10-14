@@ -6,15 +6,19 @@ data available at as_of and never opens, closes, or blocks a paper trade.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import sqlite3
+import time
+from contextlib import nullcontext
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from cp_history_ingest_policy_hf6 import OPERATIONAL_HISTORY_FAMILIES
+from cu_history_store_v2_hf6 import instant, read_as_of, source_rank, utc
+from rc6_audit_evidence.sqlite_snapshot import readonly_copy, SnapshotError
 
 
 def _dt(value):
-    raw = str(value or "").replace("Z", "+00:00")
-    return datetime.fromisoformat(raw)
+    return instant(value)
 
 
 def _d(value):
@@ -59,24 +63,31 @@ def _trend(closes, span):
 def _history_features(store, q, at):
     rows = []
     try:
-        with store.connect() as connection:
-            item = connection.execute(
-                """SELECT payload_json FROM production_history
-                   WHERE symbol=? AND instrument_type=? AND settlement=?
-                   ORDER BY downloaded_at DESC LIMIT 1""",
-                (q.symbol, q.asset_class, q.settlement),
-            ).fetchone()
-        if item:
-            payload = json.loads(item["payload_json"] or "[]")
-            for raw in payload if isinstance(payload, list) else []:
-                try:
-                    stamp = _dt(raw.get("date"))
-                    if stamp <= at:
-                        ohlc = _valid_ohlc(raw)
-                        if ohlc:
-                            rows.append((stamp, ohlc))
-                except (TypeError, ValueError):
-                    continue
+        # A dedicated HistoricalStore opens WAL in its write adapter. A reader
+        # uses only its path and opens SQLite on a bounded verified private copy.
+        # Callers may reuse an already query-only snapshot during one cycle.
+        if isinstance(store, sqlite3.Connection):
+            if store.execute('PRAGMA query_only').fetchone()[0] != 1:
+                return {'state':'HISTORY_READONLY_SNAPSHOT_REQUIRED','observations':0}
+            context = nullcontext(store)
+        else:
+            context = readonly_copy(store.path, deadline=time.monotonic()+1.0, validate=False)
+        with context as connection:
+            columns = {r[1] for r in connection.execute("PRAGMA table_info(history_versions_v2)")}
+            if not {"currency", "price_basis", "version_known_at"} <= columns:
+                # The former three-field payload store cannot establish the
+                # quote's market/currency or immutable as-of revision.
+                return {"state": "HISTORY_IDENTITY_UNVERIFIED", "observations": 0,
+                        "authority": "LEGACY_ADVISORY_ONLY", "price_basis": "RAW"}
+            selected = read_as_of(connection, symbol=q.symbol, instrument_type=q.asset_class,
+                market=q.market, currency=q.currency, settlement=q.settlement, as_of=at,
+                price_basis="RAW")
+        for raw in selected:
+            ohlc = _valid_ohlc(raw)
+            if ohlc:
+                rows.append((_dt(raw["date"] + "T00:00:00+00:00"), ohlc))
+    except SnapshotError as exc:
+        return {'state':'HISTORY_COPY_UNAVAILABLE','observations':0,'reason':str(exc)}
     except Exception:
         return {"state": "HISTORY_UNAVAILABLE", "observations": 0}
     rows.sort(key=lambda item: item[0])
@@ -96,6 +107,8 @@ def _history_features(store, q, at):
         "trend_50": str(trend50) if trend50 is not None else None,
         "avg_range": str(_mean(ranges)) if ranges else None,
         "avg_abs_return": str(_mean([abs(value) for value in returns])) if returns else None,
+        "source": "history_versions_v2.latest_as_of", "price_basis": "RAW",
+        "known_cut": utc(at), "identity": [q.symbol,q.asset_class,q.market,q.currency,q.settlement],
     }
 
 
@@ -103,7 +116,7 @@ def _candle_features(store, q, at):
     try:
         with store.connect() as connection:
             rows = connection.execute(
-                """SELECT v.body_json
+                """SELECT v.*,s.identity_json
                    FROM candle_versions v
                    JOIN candle_series s ON s.series_id=v.series_id
                    WHERE json_extract(s.identity_json,'$.symbol')=?
@@ -112,15 +125,44 @@ def _candle_features(store, q, at):
                      AND json_extract(s.identity_json,'$.currency')=?
                      AND json_extract(s.identity_json,'$.settlement')=?
                      AND json_extract(s.identity_json,'$.resolution')='5m'
-                     AND v.bar_end<=? AND v.known_at<=?
-                   ORDER BY v.bar_start DESC LIMIT 60""",
-                (q.symbol, q.asset_class, q.market, q.currency, q.settlement,
-                 at.isoformat(), at.isoformat()),
+                   ORDER BY v.series_id,v.bar_start,v.id LIMIT 100001""",
+                (q.symbol, q.asset_class, q.market, q.currency, q.settlement),
             ).fetchall()
+        if len(rows)>100000:
+            return {'state':'CANDLE_READER_ROW_BUDGET_EXHAUSTED','observations':0}
     except Exception:
         return {"state": "CANDLES_UNAVAILABLE", "observations": 0}
+    latest = {}
+    identities = {}
+    for row in rows:
+        try:
+            series = json.loads(row["identity_json"])
+            if series.get("adjustment") != "RAW" or series.get("adjustment_basis") in {None,"","UNKNOWN"}:
+                continue
+            if series.get("price_kind") not in {"PROVIDER_OHLC", "TRADE_SAMPLES"}:
+                continue
+            known, end = _dt(row["known_at"]), _dt(row["bar_end"])
+            if known > at or end > at:
+                continue
+            key = (row["series_id"], utc(row["bar_start"]))
+            prior = latest.get(key)
+            if prior is None or (known,row["id"]) > (_dt(prior["known_at"]),prior["id"]):
+                latest[key] = row
+                identities[row["series_id"]] = series
+        except (TypeError,ValueError,json.JSONDecodeError):
+            continue
+    # Choose one explicit series before filtering quality. A latest conflict
+    # revokes its bar; neither an older revision nor another series rescues it.
+    if not identities:
+        return {"state":"CANDLE_INSUFFICIENT","observations":0,"price_basis":"RAW"}
+    selected_series = min(identities, key=lambda key: (
+        source_rank(identities[key]["source"]),
+        0 if identities[key]["price_kind"] == "PROVIDER_OHLC" else 1,
+        identities[key]["source"],key))
     bars = []
-    for row in reversed(rows):
+    selected = sorted((row for (series,_),row in latest.items() if series==selected_series),
+                      key=lambda row:_dt(row["bar_start"]))[-60:]
+    for row in selected:
         try:
             body = json.loads(row["body_json"])
             if body.get("quality") not in {"COMPLETE", "SAMPLED"} or body.get("synthetic"):
@@ -141,10 +183,11 @@ def _candle_features(store, q, at):
         "momentum_3v15": str(momentum) if momentum is not None else None,
         "avg_range_5m": str(_mean(ranges)) if ranges else None,
         "last_bar_close": str(closes[-1]) if closes else None,
+        "series_id": selected_series,"series": identities[selected_series],"known_cut":utc(at),
     }
 
 
-def collect(store, q, at):
+def collect(store, q, at, *, history_store=None):
     """Collect point-in-time historical/candle features for SHADOW only."""
     asset_class = str(getattr(q, "asset_class", "") or "").upper()
     canonical = {
@@ -164,7 +207,9 @@ def collect(store, q, at):
         }
     if not isinstance(at, datetime):
         at = _dt(at)
-    history = _history_features(store, q, at)
+    else:
+        at = instant(at)
+    history = _history_features(history_store if history_store is not None else store, q, at)
     candles = _candle_features(store, q, at)
     ready = history["state"] == "READY" and candles["state"] == "READY"
     shadow_delta = Decimal("0")
@@ -182,6 +227,6 @@ def collect(store, q, at):
         "candles_5m": candles,
         "shadow_score_delta": str(shadow_delta),
         "decision_effect": "OBSERVE_ONLY",
-        "lookahead_protection": "bar_end_and_known_at<=as_of",
-        "feature_version": "rc6-historical-candle-shadow-v2",
+        "lookahead_protection": "full_identity_latest_revision_then_quality;version_known_at_and_bar_end<=as_of",
+        "feature_version": "rc6-historical-candle-shadow-v3",
     }

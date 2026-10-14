@@ -591,12 +591,16 @@ def persist(c, record):
                json.dumps(record["raw"], ensure_ascii=False, default=str)))
 
 
-def lookup(store, symbol, kind, settlement):
+def lookup(store, symbol, kind, settlement, *, market=None, currency=None):
     """Una identidad ambigua no se resuelve eligiendo la primera fila."""
     ready_full_keys = set()
     with store.connect() as c:
         rows = c.execute("""SELECT * FROM financial_instrument_catalog
           WHERE ticker=? AND instrument_type=? AND settlement=?""", (symbol, kind, settlement)).fetchall()
+        if (market is None) != (currency is None):
+            raise ValueError("CATALOG_PARTIAL_MONETARY_IDENTITY")
+        if market is not None:
+            rows = [r for r in rows if (r["market"], r["currency"]) == (market, currency)]
         if (len(rows) > 1 and c.execute("""SELECT 1 FROM sqlite_master
               WHERE type='table' AND name='candidate_identity_v2'""").fetchone()):
             ready_full_keys = {
@@ -622,6 +626,9 @@ def lookup(store, symbol, kind, settlement):
                     record["status"] = "STALE"
                     candidates.append(record)
             keys = {(r["market"], r["currency"]) for r in candidates}
+            if market is not None:
+                candidates = [r for r in candidates if (r["market"],r["currency"]) == (market,currency)]
+                return candidates[0] if len(candidates) == 1 else None
             return candidates[0] if len(keys) == 1 else None
     primaries = [r for r in rows if _candidate_has_ppi_primary(r["settlement_source"], r["metadata_json"])]
     rows = primaries or rows

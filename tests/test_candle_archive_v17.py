@@ -325,8 +325,26 @@ def test_identidad_de_mercado_ausente_sigue_fallando_cerrado(store,history_pipel
     assert observer._download_histories(Reader(),store)==0
     assert rows(store,'production_history')==[]
     assert any(r['event_type']=='HISTORY_V2_ERROR'
-               and r['detail']=='SINID: HISTORY_MARKET_IDENTITY_MISSING'
+               and r['detail']=='SINID: HISTORY_FULL_IDENTITY_MISSING'
                for r in rows(store,'paper_events'))
+
+
+def test_legacy_history_larger_than_copy_budget_is_observable_and_never_queried(
+        store,history_pipeline,monkeypatch):
+    import cv_history_store_adapter_hf6 as adapter
+    observer._support_schema(store)
+    source=adapter.default_history_store().path
+    with open(source,'r+b') as stream:
+        stream.truncate(512*1024*1024+1)
+    class Reader:
+        def history(self,*args):
+            pytest.fail('oversized legacy source must not reach PPI')
+    assert observer._download_histories(Reader(),store)==0
+    assert any(r['event_type']=='HISTORY_V2_BLOCKED'
+               and r['detail']=='HISTORY_SOURCE_COPY_BUDGET_EXHAUSTED'
+               for r in rows(store,'paper_events'))
+    health=next(r for r in rows(store,'api_health') if r['component']=='PPI_PRODUCTION_HISTORY')
+    assert health['state']=='AMARILLO' and 'NO_VERIFICADO' in health['detail']
 
 
 def test_panel_no_presenta_muestras_como_cobertura_validada(store,monkeypatch):
