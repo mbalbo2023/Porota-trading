@@ -7,13 +7,15 @@ Continuidad y solapamiento no demuestran la unidad ni la cadencia del proveedor.
 """
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import closing, nullcontext
 from collections import OrderedDict
 
 import hashlib
 import json
+import logging
 import math
 import os
+import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -1016,14 +1018,35 @@ def promote_paper_candidate(store, record, *, at):
 
 def _heartbeat(store, *, at, state, cursor, selected=0, successful=0, failed=0,
                inserted=0, confirmed=0, candidates=0, detail=""):
-    with store.connect() as connection:
-        register_exact_time(connection)
-        orders = connection.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()
-        real_orders = int(orders[0]) if orders else -1
-        connection.execute("""INSERT OR REPLACE INTO intraday_scalping_worker_state
-          VALUES(1,?,?,?,?,?,?,?,?,?,?,?)""",
-          (_stamp(at),state,cursor,selected,successful,failed,inserted,confirmed,
-           candidates,real_orders,detail))
+    # A health write must not kill the independent scanner during a transient
+    # SQLite writer lock. Its durable heartbeat will become stale and the
+    # runtime audit will still fail closed if contention persists.
+    for attempt in range(3):
+        try:
+            with closing(sqlite3.connect(store.path, timeout=0.4)) as connection:
+                with connection:
+                    connection.execute("PRAGMA busy_timeout=400")
+                    mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+                    if str(mode).lower() != "wal":
+                        raise RuntimeError("PAPER_SQLITE_WAL_REQUIRED")
+                    register_exact_time(connection)
+                    orders = connection.execute(
+                        "SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()
+                    real_orders = int(orders[0]) if orders else -1
+                    connection.execute("""INSERT OR REPLACE INTO intraday_scalping_worker_state
+                      VALUES(1,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (_stamp(at),state,cursor,selected,successful,failed,inserted,confirmed,
+                       candidates,real_orders,detail))
+            return True
+        except sqlite3.OperationalError as exc:
+            code = str(getattr(exc, "sqlite_errorname", "") or "").upper()
+            if code not in {"SQLITE_BUSY", "SQLITE_LOCKED"} and "locked" not in str(exc).lower():
+                raise
+            if attempt < 2:
+                time.sleep(0.1 * (attempt + 1))
+    logging.getLogger("intraday_scalping").warning("SCALPING_HEARTBEAT_SQLITE_CONTENTION")
+    return False
+
 
 
 def run_worker(store, stop, *, clock_fn):
