@@ -124,6 +124,45 @@ def verify_run(receipt, run, jobs, *, expected_job):
     return valid_jobs[0]['id']
 
 
+def verify_attestation_certificate(receipt, verified):
+    """Policy check on output of a *successful* gh attestation verify invocation.
+
+    This function does not validate Sigstore itself. The caller must first
+    cryptographically verify with --repo, --signer-workflow, --signer-digest,
+    --source-digest, --source-ref and --deny-self-hosted-runners.
+    """
+    c=receipt['context']
+    digest=hashlib.sha256(wire(receipt)).hexdigest()
+    expected_uri='https://github.com/'+c['GITHUB_WORKFLOW_REF']
+    invocation=('https://github.com/'+REPO+'/actions/runs/'
+        +c['GITHUB_RUN_ID']+'/attempts/'+c['GITHUB_RUN_ATTEMPT'])
+    require(type(verified) is list and len(verified)==1,
+        'A1_ATTESTATION_UNIQUE_REQUIRED')
+    item=verified[0]
+    result=item.get('verificationResult',{})
+    cert=result.get('signature',{}).get('certificate',{})
+    subjects=result.get('statement',{}).get('subject',[])
+    require(result.get('verifiedTimestamps')
+        and result.get('statement',{}).get('predicateType')
+            == 'https://slsa.dev/provenance/v1'
+        and subjects==[{'name':'public-key.json','digest':{'sha256':digest}}]
+        and cert.get('issuer')=='https://token.actions.githubusercontent.com'
+        and cert.get('subjectAlternativeName')==expected_uri
+        and cert.get('buildSignerDigest')==c['GITHUB_WORKFLOW_SHA']
+        and cert.get('githubWorkflowSHA')==c['GITHUB_WORKFLOW_SHA']
+        and cert.get('sourceRepositoryDigest')==c['GITHUB_SHA']
+        and cert.get('sourceRepositoryIdentifier')==c['GITHUB_REPOSITORY_ID']
+        and cert.get('sourceRepositoryOwnerIdentifier')
+            ==c['GITHUB_REPOSITORY_OWNER_ID']
+        and cert.get('githubWorkflowRepository')==REPO
+        and cert.get('sourceRepositoryRef')==c['GITHUB_REF']
+        and cert.get('githubWorkflowTrigger')==c['GITHUB_EVENT_NAME']
+        and cert.get('runInvocationURI')==invocation
+        and cert.get('runnerEnvironment')=='github-hosted',
+        'A1_ATTESTATION_BINDING_INVALID')
+    return digest
+
+
 if __name__ == '__main__':
     if len(sys.argv) != 3 or sys.argv[1] not in ('serve','challenge'):
         raise SystemExit('use: python -m scripts.rc6_a1_bootstrap serve|challenge DIR')
