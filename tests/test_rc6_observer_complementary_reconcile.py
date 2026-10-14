@@ -16,6 +16,35 @@ def _store(tmp_path):
     return store
 
 
+def test_periodic_reconcile_defers_open_market_writer_and_runs_after_close(
+        tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    with store.connect() as c:
+        c.execute("""INSERT INTO financial_instrument_catalog
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
+            "SPY", "CEDEARS", "BYMA", "ARS", "A-24HS", "PPI_FIELD", "SPY",
+            "2026-09-01T00:00:00+00:00", "legacy", "STALE",
+            "HISTORY_UNAVAILABLE_PPI", json.dumps({}),
+        ))
+    complementary = {
+        "ticker": "SPY", "instrument_type": "CEDEARS", "market": "BYMA",
+        "currency": "ARS", "settlement": "A-24HS", "source": "IOL_COMPLEMENTARY",
+        "observed_at": _fresh(),
+    }
+    monkeypatch.setattr(observer, "complementary_discovery", lambda _root: [complementary])
+    assert observer._periodic_complementary_reconcile(store, "OPEN", 0) == 0
+    with store.connect() as c:
+        assert c.execute("SELECT status FROM financial_instrument_catalog WHERE ticker='SPY'").fetchone()[0] == "STALE"
+        assert c.execute("""SELECT COUNT(*) FROM paper_events
+          WHERE event_type='COMPLEMENTARY_CATALOG_RECONCILIATION'""").fetchone()[0] == 0
+    completed = observer._periodic_complementary_reconcile(store, "CLOSED", 0)
+    assert completed > 0
+    with store.connect() as c:
+        assert c.execute("SELECT capability FROM financial_instrument_catalog WHERE ticker='SPY'").fetchone()[0] == "READY_PAPER_SPOT"
+        assert c.execute("""SELECT COUNT(*) FROM paper_events
+          WHERE event_type='COMPLEMENTARY_CATALOG_RECONCILIATION'""").fetchone()[0] == 1
+
+
 def test_reconcile_matches_legacy_on_alias_without_discovery_marker(tmp_path, monkeypatch):
     store = _store(tmp_path)
     with store.connect() as c:
