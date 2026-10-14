@@ -93,3 +93,22 @@ def test_deploy_v2_preflight_state_guard_is_bounded_and_never_scans_full_db():
     assert "PRE_STATE_HOST_READONLY=" in preflight
     assert "PRAGMA quick_check" not in preflight
     assert "docker exec -i porota_production_observer python" not in preflight
+
+
+def test_disk_preflight_recovers_only_verified_partial_critical_image():
+    preclean = PROMOTE.split('RC6_DISK_PRECLEAN=START', 1)[1].split(
+        'PRECLEAN_REMOTE\n', 1)[0]
+    assert 'test "$STATE" = "PRODUCTION_PAPER|0"' in preclean
+    assert 'test "$(sudo -n docker inspect -f \'{{.Image}}\' porota_production_dashboard)" = "$CURRENT_IMAGE"' in preclean
+    assert 'test "$(sudo -n docker image inspect -f \'{{.Id}}\' "$STABLE_IMAGE")" = "$CURRENT_IMAGE"' in preclean
+    assert 'state.get("validation_status")=="DEPLOYED_VALIDATION_PENDING"' in preclean
+    assert 'state.get("real_order_routes")=="NOT_CALLED"' in preclean
+    assert 'CRITICAL_PRECLEAN_COMPATIBILITY=GREEN' in preclean
+    assert 'systemctl restart porota-critical-approval-rc6.service' in preclean
+    assert 'CRITICAL_PRECLEAN_CAPABILITY=GREEN' in preclean
+    assert 'if [ "$OLD_IMAGE_USERS" -eq 0 ]; then' in preclean
+    assert 'test "$PPI_AFTER" = "$PPI_BEFORE"' in preclean
+    assert preclean.index('CRITICAL_PRECLEAN_COMPATIBILITY=GREEN') < preclean.index(
+        'systemctl restart porota-critical-approval-rc6.service')
+    assert preclean.index('test "$STATE" = "PRODUCTION_PAPER|0"') < preclean.index(
+        'systemctl restart porota-critical-approval-rc6.service')

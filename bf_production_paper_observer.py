@@ -821,6 +821,19 @@ def _reconcile_complementary_catalog(store):
     return promoted
 
 
+def _periodic_complementary_reconcile(store, phase, last_completed):
+    """Defer the full-catalog writer until live market work has finished.
+
+    This reconciliation holds BEGIN IMMEDIATE while it projects the catalog.
+    During OPEN it blocked PAPER health and SHADOW readers for minutes.
+    Existing identities retain their normal freshness and admission checks;
+    missing complements remain unavailable.
+    """
+    if phase == "OPEN" or time.time() - last_completed < COMPLEMENTARY_RECONCILE_SECONDS:
+        return last_completed
+    _reconcile_complementary_catalog(store)
+    return time.time()
+
 
 def _eligible_symbols(store):
     """Devuelve el universo completo de familias en rotación PAPER/SHADOW.
@@ -1866,9 +1879,8 @@ def run():
             if should_capture or closing_snapshot:
                 _public_probe(store, structured=True)
                 last_structured_capture = time.time()
-            if time.time() - last_complementary_reconcile >= COMPLEMENTARY_RECONCILE_SECONDS:
-                _reconcile_complementary_catalog(store)
-                last_complementary_reconcile = time.time()
+            last_complementary_reconcile = _periodic_complementary_reconcile(
+                store, phase, last_complementary_reconcile)
             if phase == "CLOSED":
                 # El catálogo se renueva una vez por fecha local. Los históricos
                 # avanzan en lotes con TTL aunque sea noche, fin de semana o feriado.
