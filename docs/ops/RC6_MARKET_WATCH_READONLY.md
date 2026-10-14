@@ -72,7 +72,9 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
   of RUNTIME_INPUT and METADATA, elapsed times, and SQLite class/code/name.
   It does not call ShadowRuntime.tick, change DB contents, or copy SQL values,
   credentials, paths, or market data. A failed remote diagnostic is labeled
-  REMOTE_DIAGNOSTIC_UNAVAILABLE; it cannot certify the SHADOW worker.
+  REMOTE_DIAGNOSTIC_UNAVAILABLE; it cannot certify the SHADOW worker. The
+  host uses the established sudo Python entry and launches a bounded Docker
+  subprocess, returning only a sanitized status if that fails.
 - The diagnostic is intentionally absent from scheduled runs to avoid
   additional intraday DB load. A passing stage in a manual probe does not
   establish the causal failure stage of a separate worker tick.
