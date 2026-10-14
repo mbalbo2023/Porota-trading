@@ -102,3 +102,10 @@ or corrupted SHADOW, stale reports/quotes, SSH loss, inconsistent SHA, OOM,
 alert confirmation and de-duplication.
 Evidence: actual per-run GitHub Actions artifact. Until such a run finishes,
 the monitor is EN_GITHUB/NO_VERIFICADO, not VALIDADO_RUNTIME.
+
+## Checkpoint lineage
+
+The main-branch PR is verified against its final exact commit SHA, not a
+previous CI attempt's frozen webhook payload. GitHub CHECKPOINT attestation
+must see the current PR body on a new synchronize event. This is a control
+plane-only commit; no runtime installation or deployment is authorized.
