@@ -368,6 +368,54 @@ def shadow_diagnostic():
     return result
 
 
+def shadow_diagnostic_host():
+    """Use the already authorized root Python entry to execute an isolated probe.
+
+    The host never emits Docker stderr, exception messages, paths or SQL. A
+    subprocess timeout bounds the entire container probe independently of SSH.
+    """
+    child = '''import json, os, sqlite3, time
+from datetime import datetime, timezone
+from pathlib import Path
+at=datetime.now(timezone.utc)
+db=Path(os.getenv("PAPER_V17_DB_PATH", "/app/data/paper_v17/observer_v17.db"))
+result={"schema":"rc6.shadow-readonly-diagnostic.v1","generated_at":at.isoformat(),"read_only":True,"stages":[]}
+try:
+ from rc6_dynamic_universe.runtime import read_runtime
+ from rc6_shadow_runtime.worker import ShadowRuntime
+ stages=(("RUNTIME_INPUT",lambda:read_runtime(db,as_of=at,row_limit=20000,query_budget_seconds=.35)),("METADATA",lambda:ShadowRuntime._metadata(type("ReadOnlyShadow",(),{"database":db.resolve(strict=True)})(),at,at.isoformat())))
+ for name,fn in stages:
+  start=time.monotonic()
+  try:
+   fn(); stage={"stage":name,"status":"OK"}
+  except Exception as exc:
+   stage={"stage":name,"status":"FAIL_CLOSED","error_class":type(exc).__name__}
+   if isinstance(exc,sqlite3.Error):
+    code=getattr(exc,"sqlite_errorcode",None); label=getattr(exc,"sqlite_errorname",None)
+    if type(code) is int: stage["sqlite_errorcode"]=code
+    if isinstance(label,str) and label.startswith("SQLITE_"): stage["sqlite_errorname"]=label[:48]
+  stage["elapsed_ms"]=round((time.monotonic()-start)*1000,3)
+  result["stages"].append(stage)
+except Exception as exc: result["setup_error_class"]=type(exc).__name__
+print(json.dumps(result,separators=(",",":")))'''
+    try:
+        completed = subprocess.run(
+            ["docker", "exec", "porota_production_observer", "python", "-B", "-c", child],
+            capture_output=True, text=True, timeout=9, check=False)
+        if completed.returncode == 0:
+            data = json.loads(completed.stdout)
+            if (data.get("schema") == "rc6.shadow-readonly-diagnostic.v1"
+                    and data.get("read_only") is True):
+                return data
+        status = "CONTAINER_PROBE_FAILED"
+    except subprocess.TimeoutExpired:
+        status = "CONTAINER_PROBE_TIMEOUT"
+    except (OSError, ValueError, TypeError):
+        status = "CONTAINER_PROBE_UNAVAILABLE"
+    return {"schema": "rc6.shadow-readonly-diagnostic.v1",
+            "status": status, "read_only": True}
+
+
 def classify(current, previous=None, previous_decision=None):
     """Escalate P0 now, P1 after consecutive comparable observations."""
     if current.get("schema") != SCHEMA:
@@ -415,6 +463,7 @@ def main(argv=None):
     remote.add_argument("--root", type=Path, default=ROOT)
     actions.add_parser("transport-error")
     actions.add_parser("shadow-diagnostic")
+    actions.add_parser("shadow-diagnostic-host")
     evaluation = actions.add_parser("classify")
     evaluation.add_argument("--current", required=True)
     evaluation.add_argument("--previous")
@@ -429,6 +478,8 @@ def main(argv=None):
         data = transport_error()
     elif args.action == "shadow-diagnostic":
         data = shadow_diagnostic()
+    elif args.action == "shadow-diagnostic-host":
+        data = shadow_diagnostic_host()
     else:
         current = _read_optional(args.current)
         if not current:
