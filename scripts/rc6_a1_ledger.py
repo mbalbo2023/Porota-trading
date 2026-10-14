@@ -42,14 +42,14 @@ def canonical(value):
 
 class GitHubRead:
     """Real HTTPS transport with physical-attempt metrics, no local authority cache."""
-    def __init__(self, token=None, timeout=8):
+    def __init__(self, token=None, timeout=8, base_url=None):
         self.token, self.timeout, self.events = token, timeout, []
+        self.base_url = base_url or 'https://api.github.com/repos/' + REPO
 
     def get(self, path):
-        need(path.startswith('/') and '?' not in path.split('#')[0] or
-             path == '/rulesets?includes_parents=true', 'A1_PATH_INVALID')
+        need(path.startswith('/') and '#' not in path, 'A1_PATH_INVALID')
         started = time.monotonic()
-        req = Request('https://api.github.com/repos/' + REPO + path,
+        req = Request(self.base_url + path,
             headers={'Accept':'application/vnd.github+json',
                      'X-GitHub-Api-Version':'2022-11-28',
                      **({'Authorization':'Bearer '+self.token} if self.token else {})})
@@ -142,16 +142,73 @@ def verify_pulse_commit(row, *, public_key_hex, grant_digest, candidate_run_id,
     return hashlib.sha256(canonical({**body,'signature_hex':sig.hex()})).hexdigest()
 
 
+def verify_handoff(document, *, old_public_key_hex, grant, prior_sequence,
+                   prior_pulse_sha256, now, old_job_started,
+                   old_job_live, successor_attestation_verified):
+    """No new grant: a successor inherits only the original finite ceiling."""
+    need(old_job_live is True and successor_attestation_verified is True,
+         'A1_HANDOFF_PROVENANCE_OR_LIVENESS')
+    try:
+        body = dict(document)
+        sig = bytes.fromhex(body.pop('signature_hex'))
+        key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(old_public_key_hex))
+        key.verify(sig,b'POROTA-RC6-HANDOFF-V2\0'+canonical(body))
+    except (ValueError,KeyError,TypeError,InvalidSignature) as error:
+        raise LedgerError('A1_HANDOFF_SIGNATURE_INVALID') from error
+    issued = a0.instant(body['issued_at'])
+    ceiling = a0.instant(grant['expires_at'])
+    need(body.get('schema') == 'porota.rc6.handoff.v2'
+        and body.get('grant_sha256') == grant['sha256']
+        and body.get('source_sha') == grant['source_sha']
+        and body.get('source_tree') == grant['source_tree']
+        and body.get('gate') == grant['gate']
+        and body.get('candidate_run_id') == grant['candidate_run_id']
+        and body.get('candidate_run_attempt') == grant['candidate_run_attempt']
+        and body.get('old_run_id') == grant['controller_run_id']
+        and type(body.get('new_run_id')) is int and body['new_run_id'] > 0
+        and HEX64.fullmatch(body.get('new_public_key_hex',''))
+        and body.get('prior_sequence') == prior_sequence
+        and body.get('prior_pulse_sha256') == prior_pulse_sha256
+        and body.get('grant_ceiling') == grant['expires_at']
+        and body.get('hop') == grant['hop']+1
+        and body['hop'] <= grant['max_hops']
+        and old_job_started <= issued <= now < ceiling
+        and issued < old_job_started + timedelta(hours=6)
+        and now - issued <= timedelta(seconds=30),
+        'A1_HANDOFF_GAP_OR_SCOPE_INVALID')
+    return {'new_run_id':body['new_run_id'],
+        'new_public_key_hex':body['new_public_key_hex'],
+        'grant_ceiling':grant['expires_at'],'hop':body['hop'],
+        'prior_sequence':prior_sequence,'prior_pulse_sha256':prior_pulse_sha256}
+
+
 def observe(get, *, previous_human_head, grant_id, human_ref, pulse_ref,
-            protection_probe, expected_rule_id):
+            protection_probe, expected_rule_id, controller_run_id=None,
+            controller_job_id=None, source_sha=None, run_attempt=1):
     """Double-read human HEAD; every intervening revocation is terminal.
 
     A changing HEAD is RED; the caller may begin a *new* observation under its
     original deadline. This function never treats a stale snapshot as GREEN.
     """
     rules = get('/rulesets?includes_parents=true')
+    need(human_ref == HUMAN and pulse_ref == PULSE, 'A1_REF_IDENTITY_MISMATCH')
     rule = effective_protection(rules, ref=HUMAN, bot_probe=protection_probe)
     need(rule == expected_rule_id, 'A1_PROTECTION_CHANGED')
+    if controller_run_id is not None:
+        need(type(controller_run_id) is int and type(controller_job_id) is int
+             and HEX40.fullmatch(source_sha or ''), 'A1_ACTIONS_BINDING_REQUIRED')
+        run = get('/actions/runs/'+str(controller_run_id))
+        job = get('/actions/jobs/'+str(controller_job_id))
+        need(run.get('id') == controller_run_id
+             and run.get('head_sha') == source_sha
+             and run.get('run_attempt') == run_attempt
+             and run.get('event') == 'push'
+             and run.get('status') == 'in_progress'
+             and run.get('path') == '.github/workflows/rc6-ci-a1-probes.yml'
+             and job.get('id') == controller_job_id
+             and job.get('run_id') == controller_run_id
+             and job.get('status') == 'in_progress',
+             'A1_CONTROLLER_NOT_LIVE_OR_PROVEN')
     h1 = get('/git/ref/heads/'+HUMAN)['object']['sha']
     new = follow_linear(get, new_head=h1, old_head=previous_human_head)
     for item in new:
