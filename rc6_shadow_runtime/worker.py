@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import sqlite3
 import time
+import traceback
 
 import ak_byma_calendar as calendar
 from co_market_sessions_hf6 import (TZ, BYMA_PAPER_SPOT_OPEN,
@@ -220,7 +221,7 @@ class ShadowRuntime:
             if previous and stamp(previous["as_of"]) > at:
                 raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
             inputs = read_runtime(self.database, as_of=at, row_limit=self.row_limit,
-                                  query_budget_seconds=1.5)
+                                  query_budget_seconds=2.0)
             source_id, failures = self._metadata(at, previous.get("as_of", at.isoformat()))
             reuse = (previous.get("source_identity") == source_id and
                      previous.get("runtime_configuration") == configuration)
@@ -364,10 +365,30 @@ def run_worker(database, stop, *, clock_fn=None):
             LOG.warning("DYNAMIC_SHADOW_RUNTIME_FAIL_CLOSED:%s", type(exc).__name__)
             if worker is not None:
                 try:
+                    failure = {"schema": VERSION, "as_of": clock_fn(),
+                        "status": "FAIL_CLOSED", "error_class": type(exc).__name__,
+                        "real_orders_sent": 0, "real_routes": "NOT_CALLED", "provider_requests": 0}
+                    if isinstance(exc, sqlite3.Error):
+                        code = getattr(exc, "sqlite_errorcode", None)
+                        label = getattr(exc, "sqlite_errorname", None)
+                        if type(code) is int:
+                            failure["sqlite_errorcode"] = code
+                        if isinstance(label, str) and label.startswith("SQLITE_"):
+                            failure["sqlite_errorname"] = label[:48]
+                        allowed = {
+                            "rc6_dynamic_universe/runtime.py": "runtime",
+                            "rc6_shadow_runtime/worker.py": "worker",
+                            "rc6_shadow_runtime/preopen.py": "preopen",
+                            "rc6_dynamic_universe/promotion.py": "promotion",
+                        }
+                        for frame, line in traceback.walk_tb(exc.__traceback__):
+                            filename = frame.f_code.co_filename.replace("\\", "/")
+                            for suffix, module in allowed.items():
+                                if filename.endswith("/" + suffix):
+                                    failure["error_module"] = module
+                                    failure["error_line"] = line
                     with worker.files as files:
-                        files.write("status.json", {"schema": VERSION, "as_of": clock_fn(),
-                            "status": "FAIL_CLOSED", "error_class": type(exc).__name__,
-                            "real_orders_sent": 0, "real_routes": "NOT_CALLED", "provider_requests": 0})
+                        files.write("status.json", failure)
                 except (OSError, ValueError):
                     LOG.warning("DYNAMIC_SHADOW_STATUS_UNAVAILABLE")
         stop.wait(30)
