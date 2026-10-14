@@ -1,0 +1,83 @@
+name: RC6 guarded unused-image disk recovery
+
+on:
+  push:
+    branches: [diag/rc6-sqlite-temp-20261014]
+    paths: ['.github/workflows/rc6-guarded-unused-image-recovery.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Verify unreferenced prior image, recover disk, recheck PAPER and runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          OLD_SHA=502c0c0ecc27d59a32946f7dcb1ee7499b1f4650
+          OLD_IMAGE=sha256:a0798031757c
+          OLD_TAG_A="porota-predeploy-v2:$OLD_SHA"
+          OLD_TAG_B="porota-trading-bot:17.0.0-rc6-candidate-$OLD_SHA"
+          EXPECTED_FULL="$(sudo -n docker image inspect -f '{{.Id}}' "$OLD_TAG_A")"
+          case "$EXPECTED_FULL" in "$OLD_IMAGE"*) ;; *) echo "UNUSED_IMAGE_ID_MISMATCH=RED"; exit 31;; esac
+          test "$(sudo -n docker image inspect -f '{{.Id}}' "$OLD_TAG_B")" = "$EXPECTED_FULL"
+          test "$(sudo -n docker image inspect -f '{{len .RepoTags}}' "$EXPECTED_FULL")" = 2
+          BEFORE="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          snapshot() {
+            for c in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+              sudo -n docker inspect -f "$c|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.Image}}" "$c"
+            done
+          }
+          ppi_snapshot() {
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          }
+          paper_snapshot() {
+            sudo -n python3 - /opt/porota-trading/data/paper_v17/observer_v17.db <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
+          c.execute("PRAGMA query_only=ON")
+          print(*c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone(),sep="|")
+          c.close()
+          PY
+          }
+          RUNTIME_BEFORE="$(snapshot)"
+          PPI_BEFORE="$(ppi_snapshot)"
+          PAPER_BEFORE="$(paper_snapshot)"
+          test "$PAPER_BEFORE" = 'PRODUCTION_PAPER|0'
+          printf '%s\n' "$RUNTIME_BEFORE"
+          printf '%s\n' "$RUNTIME_BEFORE" | grep -q 'porota_production_observer|running|'
+          printf '%s\n' "$RUNTIME_BEFORE" | grep -q 'porota_production_dashboard|running|healthy|'
+          printf '%s\n' "$RUNTIME_BEFORE" | grep -q 'porota_critical_approval_rc6|running|healthy|'
+          for cid in $(sudo -n docker ps -aq); do
+            test "$(sudo -n docker inspect -f '{{.Image}}' "$cid")" != "$EXPECTED_FULL"
+          done
+          echo "UNUSED_IMAGE_REFERENCE_CHECK=GREEN|id=$EXPECTED_FULL|free_before=$BEFORE|paper=$PAPER_BEFORE"
+          sudo -n docker image rm "$OLD_TAG_A" "$OLD_TAG_B"
+          if sudo -n docker image inspect "$EXPECTED_FULL" >/dev/null 2>&1; then echo "OLD_IMAGE_STILL_PRESENT=RED"; exit 32; fi
+          RUNTIME_AFTER="$(snapshot)"
+          PPI_AFTER="$(ppi_snapshot)"
+          PAPER_AFTER="$(paper_snapshot)"
+          test "$RUNTIME_AFTER" = "$RUNTIME_BEFORE"
+          test "$PPI_AFTER" = "$PPI_BEFORE"
+          test "$PAPER_AFTER" = "$PAPER_BEFORE"
+          AFTER="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          test "$AFTER" -gt 3719634092
+          echo "UNUSED_IMAGE_RECOVERY=GREEN|free_before=$BEFORE|free_after=$AFTER|recovered=$((AFTER-BEFORE))|paper=$PAPER_AFTER|ppi_unchanged=1|runtime_unchanged=1"
+          REMOTE
