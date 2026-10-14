@@ -127,6 +127,24 @@ jobs:
             echo "::warning::Remote READ_ONLY probe unavailable. Evidence is fail-closed."
           fi
           python3 -m json.tool evidence/snapshot.json >/dev/null
+      - name: Classify recent critical signatures without exporting logs
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 18 python3 - recent-critical-host" \
+            < scripts/rc6_market_watch_readonly.py > evidence/recent_critical.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/recent_critical.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.recent-critical-readonly.v1","read_only":true,"status":"UNAVAILABLE"}' > evidence/recent_critical.json
+          fi
       - name: Diagnose SHADOW SQLite stages on manual runs only
         if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
         shell: bash
@@ -274,6 +292,7 @@ jobs:
             evidence/shadow_diagnostic.json
             evidence/schedule_api.json
             evidence/observer_lifecycle.json
+            evidence/recent_critical.json
             evidence/delivery.json
           if-no-files-found: error
           retention-days: 7
@@ -292,3 +311,4 @@ jobs:
       - name: Destroy SSH credential
         if: always()
         run: rm -f "$HOME/.ssh/rc6_market_watch"
+
