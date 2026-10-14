@@ -37,8 +37,13 @@ def test_shadow_live_query_shapes_are_indexed_and_read_only(tmp_path):
             ORDER BY julianday(event_at) DESC LIMIT ?""", AT.isoformat(),
             AT.isoformat(), AT.isoformat(), AT.isoformat(), 20001)
         snapshots = _plan(connection, """SELECT observed_at FROM market_snapshots NOT INDEXED
-            WHERE julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?)
-            ORDER BY id DESC LIMIT ?""", AT.isoformat(), AT.isoformat(), 20001)
+            WHERE id >= (SELECT MIN(id) FROM market_snapshots
+                WHERE julianday(observed_at)<=julianday(?)
+                  AND julianday(observed_at)>=julianday(?))
+              AND julianday(observed_at)<=julianday(?)
+              AND julianday(observed_at)>=julianday(?)
+            ORDER BY id DESC LIMIT ?""", AT.isoformat(), AT.isoformat(),
+            AT.isoformat(), AT.isoformat(), 20001)
         events = _plan(connection, """SELECT event_at FROM paper_events
             WHERE event_type IN ('INTRADAY_SCALPING_UNSUPPORTED','INTRADAY_SCALPING_ERROR')
               AND julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?)
@@ -47,7 +52,8 @@ def test_shadow_live_query_shapes_are_indexed_and_read_only(tmp_path):
         assert "idx_shadow_catalog_order" in full
         assert "TEMP B-TREE" not in catalog + full
         assert "idx_shadow_intraday_event_jd" in intraday
-        assert "SCAN market_snapshots" in snapshots
+        assert "USING INTEGER PRIMARY KEY" in snapshots
+        assert "idx_shadow_snapshot_observed_jd" in snapshots
         assert "TEMP B-TREE" not in snapshots
         assert "idx_shadow_event_type_at_jd" in events
     with sqlite3.connect(store.path) as observer:
@@ -62,7 +68,7 @@ def test_shadow_live_query_shapes_are_indexed_and_read_only(tmp_path):
     assert after == before
 
 
-def test_snapshot_rowid_scan_preserves_filtered_newest_first_semantics():
+def test_bounded_snapshot_rowid_scan_preserves_filtered_newest_first_semantics():
     connection = sqlite3.connect(":memory:")
     connection.execute("CREATE TABLE market_snapshots(id INTEGER PRIMARY KEY, observed_at TEXT)")
     connection.execute("CREATE INDEX idx_shadow_snapshot_observed_jd "
@@ -80,10 +86,21 @@ def test_snapshot_rowid_scan_preserves_filtered_newest_first_semantics():
                   "2026-10-14T00:00:00+00:00", 2)
     before = connection.execute("SELECT id FROM market_snapshots " + predicate,
                                 parameters).fetchall()
-    after = connection.execute("SELECT id FROM market_snapshots NOT INDEXED " + predicate,
-                               parameters).fetchall()
+    bounded = """WHERE id >= (SELECT MIN(id) FROM market_snapshots
+        WHERE julianday(observed_at)<=julianday(?)
+          AND julianday(observed_at)>=julianday(?))
+        AND julianday(observed_at)<=julianday(?)
+        AND julianday(observed_at)>=julianday(?)
+        ORDER BY id DESC LIMIT ?"""
+    args = parameters[:2] + parameters
+    after = connection.execute("SELECT id FROM market_snapshots NOT INDEXED " + bounded,
+                               args).fetchall()
     assert after == before == [(5,), (3,)]
-    plan = _plan(connection, "SELECT id FROM market_snapshots NOT INDEXED " + predicate,
-                 *parameters)
-    assert "SCAN market_snapshots" in plan
+    plan = _plan(connection, "SELECT id FROM market_snapshots NOT INDEXED " + bounded,
+                 *args)
+    assert "USING INTEGER PRIMARY KEY" in plan
+    assert "idx_shadow_snapshot_observed_jd" in plan
     assert "TEMP B-TREE" not in plan
+    missing = ("2026-10-12T16:00:00+00:00", "2026-10-12T00:00:00+00:00", 2)
+    assert connection.execute("SELECT id FROM market_snapshots NOT INDEXED " + bounded,
+                              missing[:2] + missing).fetchall() == []
