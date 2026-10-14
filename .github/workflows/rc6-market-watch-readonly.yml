@@ -181,8 +181,8 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/disk_inventory.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.disk-inventory-readonly.v1","read_only":true,"status":"UNAVAILABLE","images":{},"docker":[]}' > evidence/disk_inventory.json
           fi
-      - name: Diagnose SHADOW SQLite stages on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+      - name: Diagnose SHADOW read stages in active market watch
+        if: steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
