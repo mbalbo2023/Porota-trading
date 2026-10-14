@@ -2,13 +2,31 @@
 
 Owner: `WORK_RC6_SINGLE_20261014`. Modo obligatorio: `PRODUCTION_PAPER` / simulación; `real_orders_sent=0`; rutas de órdenes reales bloqueadas. PPI Watch intocado. FIX-FORWARD ONLY.
 
+## Estado final tras el contraste adverso y fix-forward #505
+
+El producto de código vigente es el merge de dos padres `03f82840572d302d915402f35b2591c302307845` (tree `51f341b7f2b3633a2bbcd2eeb417eb25e040e119`) del candidato `90b94fa04f320f95b829ec31c139fa88b9ccf6a0`. Predeploy V2 [38532398962](https://github.com/mbalbo2023/Porota-trading/actions/runs/38532398962) ejecutó 3.516/3.516 pruebas con cero fallos/errores/skips/xfail y una exclusión histórica gobernada. El artifact inmutable `11878509834` tiene ZIP SHA-256 `07af36601fcc53db5bea0b40dc47d7183f5e1a281a4a9b343960ebef5b0c8193`, y la imagen congelada `sha256:46058b7ee383f7857a259985748a977e715a0611134a50fda3fdbc939607a080`.
+
+Deploy V2 [38533411609](https://github.com/mbalbo2023/Porota-trading/actions/runs/38533411609) SUCCESS promovió esos bytes sin rebuild: imagen runtime `sha256:d99d66e02f4d2b851d79ce50c2f149d3396d296dae0c7110bbe324d0bcd71fec`; conciliación contractual exit=0, evidencia PPI v2 OK de 18.720 filas, auditoría inmediata y tres ciclos de estabilidad GREEN, firmas críticas recientes 0, estado persistido `VALIDATED_RUNTIME`, órdenes reales 0 y rutas reales `NOT_CALLED`. El barrido PPI duró cerca de 46 minutos dentro del límite de 55. Espacio final 5.519.839.232 B. Auditoría independiente read-only [38540174245](https://github.com/mbalbo2023/Porota-trading/actions/runs/38540174245) SUCCESS confirmó tres contenedores en esa imagen, reinicios/OOM cero, procedencia exacta, heartbeat 3,6 s, DB `PRODUCTION_PAPER`, `real_orders_sent=0`, quick_check ok, dashboard `/health` 200, `/trading` sin autenticación 401, PPI Watch sin unidades y 5.512.687.616 B libres.
+
+| Capacidad | Estado en el Droplet tras #505 | Pendiente explícito |
+|---|---|---|
+| Motor PAPER, riesgo y derivados | Código #463/#498/#505 en imagen final, guardas numéricas y de vencimiento corregidas; tres contenedores y supervisor saludables, rutas reales `NOT_CALLED`. | Fills y decisiones PAPER con datos frescos en sesión abierta no observados. |
+| Instrumentos/readiness | Universo y gates #463/#470 desplegados; 9.878/14.538 del corte del Deploy anterior. | Recontar en sesión; familias sin READY no se promueven por cantidad. |
+| PPI e IOL | Conciliación PPI exit=0 y auth VERDE; IOL cauciones/FCI LIVE_FRESH en corte anterior; límite SQL de catálogo antes de materializar, probado offline. | PPI background/catalog/history AMARILLO; algunas familias IOL sin LKG y SEMI `EMPTY_UNEXPECTED`; marketdata PPI del 13/10. |
+| BYMA y fuentes oficiales | Calendario/open data/web VERDE; structured capture VERDE con fecha del 13/10. | BYMA instruments API GRIS; histórico oficial BYMA/CNV/MATBA_ROFEX `NOT_CONFIGURED`/0. |
+| Scalping Shadow, scheduler y observador | Workers/timers instalados, PAPER/0, auditoría runtime y heartbeat independientes GREEN. | Esperar ventana de mercado y eventos nuevos; `WAITING_MARKET` no acredita fills. |
+| Dashboard y SRE | HTTP 200/401, 102 rutas/100 paths y estabilidad GREEN; health/preopen, Gemini, gateway y lectura PPI acotada corregidos con negativos. | Seguimiento de fuentes parciales y vigencia; no se afirma 100% de semántica sólo por la suite. |
+| Histórico v2 | Guard fail-closed desplegado y DB legada preservada. | Migración bloqueada: 633.856.000 B y 31.731 ambiguas + 120.854 sin mapeo en inventario main-only; linaje/moneda y presupuesto de copia no demostrados. |
+
+La auditoría nocturna sobre el primer deploy había registrado 23 FAIL adversos offline y un caso de memoria: evidencia en comentarios de #502 y #503. #505 añadió regresiones causales para reloj/counter, Gemini, paginación, recursos del catálogo, términos de derivados y metadata de espacio. Su suite y runtime GREEN acreditan ese nuevo código; no se reescribe el resultado histórico ni se confunden los negativos offline con incidentes en vivo. PPI Watch sigue intocado, PAPER/SHADOW ONLY y fix-forward.
+
 ## Fuente de verdad y base exacta
 
 La productiva `deploy/rc6-pr69-isolated-20260915` quedó en `cafdbb7572ccacebb5daebbadf0d7e3bc60e55a7` (tree `15896d470ada5983a1bbfd0105918bebf2d15486`). El primer rescate partió del candidato #501 `4f15dba9ff02e46e21253d853270e2ecb2759de6`; Predeploy V2 [38504364322](https://github.com/mbalbo2023/Porota-trading/actions/runs/38504364322) validó 2512 tests y congeló el artefacto `11867711866`, ZIP SHA-256 `feb9ac38fda60c04592257d644a5574abafd6e0de065b48b6ac8fd8d73b76988`. Deploy V2 [38504915188](https://github.com/mbalbo2023/Porota-trading/actions/runs/38504915188), intento 2, promovió esa imagen sin reconstruir. El primer intento se detuvo antes de transferir por falta de espacio; la remediación eliminó únicamente una imagen antigua sin referencias y el segundo intento del **mismo artefacto** terminó `VALIDATED_RUNTIME`.
 
 La comprobación independiente [38511361089](https://github.com/mbalbo2023/Porota-trading/actions/runs/38511361089) observó los tres contenedores sobre `sha256:874e8f59053973e198d93382f2d875d3c50cfab5d152270f51e3e1825f00784a`, reinicios y OOM cero, dashboard y gateway saludables, heartbeat de 18,4 segundos, DB `PRODUCTION_PAPER`, `real_orders_sent=0`, `PRAGMA quick_check(1)=ok`, procedencia persistida y PPI Watch sin cambios. Eso prueba el rescate del runtime base; no prueba que los módulos pendientes estén ejecutándose allí.
 
-## Matriz funcional al cierre de runtime
+## Matriz funcional del primer despliegue
 
 El merge productivo de código es `fe73da10351d8906d8691b7f1997f692090d1b6a` (tree `3111ca6f8c16750c64dbe5488341f056ed17f182`). El candidato `9166a3577076bb69324adee8850e899c6c443b05` se ejecuta en la imagen `sha256:db92bb05cd8a3183d2383316b0b133676a07622c1a8eb9220afd51115bd53ff7`, con procedencia persistida `VALIDATED_RUNTIME` y auditoría independiente GREEN. "Desplegado" en la tabla acredita código e infraestructura; la actividad de mercado se acredita sólo si hay eventos observados.
 
