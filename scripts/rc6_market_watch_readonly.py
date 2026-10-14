@@ -410,7 +410,7 @@ result={"schema":"rc6.shadow-readonly-diagnostic.v1","generated_at":at.isoformat
 try:
  from rc6_dynamic_universe.runtime import read_runtime
  from rc6_shadow_runtime.worker import ShadowRuntime
- stages=(("RUNTIME_INPUT",lambda:read_runtime(db,as_of=at,row_limit=20000,query_budget_seconds=1.5)),("METADATA",lambda:ShadowRuntime._metadata(type("ReadOnlyShadow",(),{"database":db.resolve(strict=True)})(),at,at.isoformat())))
+ stages=(("RUNTIME_INPUT",lambda:read_runtime(db,as_of=at,row_limit=20000,query_budget_seconds=2.0)),("METADATA",lambda:ShadowRuntime._metadata(type("ReadOnlyShadow",(),{"database":db.resolve(strict=True)})(),at,at.isoformat())))
  for name,fn in stages:
   start=time.monotonic()
   try:
