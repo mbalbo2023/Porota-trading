@@ -452,6 +452,27 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(result["status"], "CONTAINER_PROBE_UNAVAILABLE")
         self.assertNotIn("secret", json.dumps(result))
 
+    def test_disk_inventory_only_reads_pinned_image_sizes_and_redacts_output(self):
+        ids = ["sha256:" + c * 64 for c in "abc"]
+        replies = []
+        for image_id in ids:
+            replies.extend((subprocess.CompletedProcess([], 0, stdout=image_id + "\n", stderr="secret"),
+                            subprocess.CompletedProcess([], 0, stdout="900000000\n", stderr="secret")))
+        replies.append(subprocess.CompletedProcess([], 0, stdout=json.dumps({
+            "Type": "Images", "TotalCount": "3", "Active": "2", "Size": "2.7GB",
+            "Reclaimable": "0B (0%)", "secret": "do not export"}), stderr="secret"))
+        with patch.object(monitor.subprocess, "run", side_effect=replies) as call:
+            result = monitor.disk_inventory_host()
+        self.assertEqual(result["status"], "OK")
+        self.assertEqual(result["images"]["porota_critical_approval_rc6"]["id"], ids[2])
+        self.assertEqual(result["images"]["porota_production_observer"]["size_bytes"], 900000000)
+        self.assertEqual(result["docker"][0]["reclaimable"], "0B (0%)")
+        self.assertNotIn("secret", json.dumps(result))
+        self.assertEqual(call.call_count, 7)
+        self.assertTrue(all(args.args[0][:2] in (["docker", "inspect"],
+                      ["docker", "image"], ["docker", "system"])
+                      for args in call.call_args_list))
+
 
 if __name__ == "__main__":
     unittest.main()
