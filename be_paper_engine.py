@@ -897,6 +897,20 @@ class PaperBroker:
         error = self.admission_error(q, at)
         if error:
             return "HOLD", ZERO, error, {"samples": 0}
+        # Contract readiness is not a validated directional strategy. Existing
+        # specialized lifecycle and native contract/admission gaps take priority;
+        # fixed income/options must never inherit equity momentum BUY authority.
+        from rc6_dynamic_universe.routing import strategy_route
+        route = strategy_route(family)
+        # Preserve #453's explicit signal allowlist + dedicated binding when
+        # reconciled, without adding that authority or modifying its lifecycle.
+        futures_owned_signal = (family == "FUTUROS" and
+            "FUTUROS" in globals().get("PAPER_SIGNAL_FAMILIES", ()) and
+            callable(getattr(self, "_on_future_quote", None)))
+        if not route["generic_equity"] and not futures_owned_signal:
+            return ("HOLD", ZERO, "STRATEGY_NOT_VALIDATED: " + route["engine"],
+                    {"samples": 0, "family": family, "strategy_route": route,
+                     "reason_codes": route["reason_codes"], "signal_ready": False})
         if self.initial_balances[currency] <= 0:
             return "HOLD", ZERO, f"Sin capital asignado en {currency}; no se usa otra moneda/plaza", {"samples": 0}
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
