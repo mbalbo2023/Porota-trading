@@ -101,7 +101,8 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
   for the observer alone. For its latest nonzero exit, they inspect at most
   300 log lines within 90 seconds before and 10 seconds after that exit.
   The artifact contains only action, epoch second, validated numeric exit
-  code or signal, bounded exception class names and traceback count. Raw
+  code or signal, bounded exception class names, categorical SQLite
+  OperationalError reason hints and traceback count. Raw
   logs, messages, attributes, arguments, environment and other containers
   never enter the artifact; unavailable probes stay explicitly unverified.
 - Successive runs compare against the latest downloadable completed artifact,
