@@ -350,13 +350,19 @@ class MonitorContracts(unittest.TestCase):
     def test_sqlite_exit_reason_is_categorical_and_redacted(self):
         event = json.dumps({"Action": "die", "time": 1791998273,
                             "Actor": {"Attributes": {"exitCode": "1"}}})
-        secret = "sqlite3.OperationalError: database is locked; credential=secret"
+        secret = ('Traceback (most recent call last):\n'
+                  '  File "/app/bf_production_paper_observer.py", line 1859, in run\n'
+                  'sqlite3.OperationalError: database is locked; credential=secret')
         with patch.object(monitor.subprocess, "run", side_effect=[
                 subprocess.CompletedProcess([], 0, stdout=event, stderr=""),
                 subprocess.CompletedProcess([], 0, stdout=secret, stderr="")]):
             result = monitor.observer_lifecycle_host()
         self.assertEqual(result["proximate_log"]["sqlite_hints"],
                          ["SQLITE_BUSY_LOCKED"])
+        self.assertEqual(result["proximate_log"]["tracebacks"], [{
+            "exception_class": "sqlite3.OperationalError",
+            "last_app_frame": {"module": "bf_production_paper_observer.py",
+                               "line": 1859, "function": "run"}}])
         self.assertNotIn("secret", json.dumps(result))
 
 

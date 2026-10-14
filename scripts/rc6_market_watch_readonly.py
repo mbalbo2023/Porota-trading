@@ -542,13 +542,27 @@ def observer_lifecycle_host():
                     raise ValueError("LOG_PROBE_UNAVAILABLE")
                 classes = []
                 sqlite_hints = []
+                tracebacks = []
+                last_app_frame = None
                 content = logs.stdout + "\n" + logs.stderr
                 for line in content.splitlines():
+                    if line.strip() == "Traceback (most recent call last):":
+                        last_app_frame = None
+                    frame = re.match(
+                        r'^\s*File "/app/([A-Za-z0-9_./-]+\.py)", line ([0-9]{1,5}), '
+                        r'in ([A-Za-z_][A-Za-z0-9_<>]{0,79})$', line)
+                    if frame:
+                        last_app_frame = {
+                            "module": frame.group(1).rsplit("/", 1)[-1],
+                            "line": int(frame.group(2)),
+                            "function": frame.group(3)}
                     match = re.fullmatch(
                         r"([A-Za-z_][A-Za-z0-9_.]{0,79}(?:Error|Exception)|"
                         r"SystemExit|KeyboardInterrupt)(?::.*)?", line.strip())
                     if match:
                         classes.append(match.group(1))
+                        tracebacks.append({"exception_class": match.group(1),
+                                           "last_app_frame": last_app_frame})
                         if match.group(1) == "sqlite3.OperationalError":
                             detail = line.lower()
                             hint = ("SQLITE_BUSY_LOCKED" if "locked" in detail or
@@ -562,6 +576,7 @@ def observer_lifecycle_host():
                 proximate = {"status": "OK", "exit_epoch_seconds": exit_at,
                              "exception_classes": classes[-12:],
                              "sqlite_hints": sqlite_hints[-12:],
+                             "tracebacks": tracebacks[-12:],
                              "traceback_count": content.count(
                                  "Traceback (most recent call last):")}
             except (OSError, ValueError, subprocess.TimeoutExpired):
