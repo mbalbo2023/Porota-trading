@@ -541,6 +541,7 @@ def observer_lifecycle_host():
                 if logs.returncode or len(logs.stdout) + len(logs.stderr) > 262144:
                     raise ValueError("LOG_PROBE_UNAVAILABLE")
                 classes = []
+                sqlite_hints = []
                 content = logs.stdout + "\n" + logs.stderr
                 for line in content.splitlines():
                     match = re.fullmatch(
@@ -548,8 +549,19 @@ def observer_lifecycle_host():
                         r"SystemExit|KeyboardInterrupt)(?::.*)?", line.strip())
                     if match:
                         classes.append(match.group(1))
+                        if match.group(1) == "sqlite3.OperationalError":
+                            detail = line.lower()
+                            hint = ("SQLITE_BUSY_LOCKED" if "locked" in detail or
+                                    "busy" in detail else
+                                    "SQLITE_INTERRUPT" if "interrupted" in detail else
+                                    "SQLITE_FULL" if "database or disk is full" in detail else
+                                    "SQLITE_IOERR" if "disk i/o error" in detail else
+                                    "SQLITE_CANTOPEN" if "unable to open database" in detail else
+                                    "SQLITE_UNKNOWN")
+                            sqlite_hints.append(hint)
                 proximate = {"status": "OK", "exit_epoch_seconds": exit_at,
                              "exception_classes": classes[-12:],
+                             "sqlite_hints": sqlite_hints[-12:],
                              "traceback_count": content.count(
                                  "Traceback (most recent call last):")}
             except (OSError, ValueError, subprocess.TimeoutExpired):
