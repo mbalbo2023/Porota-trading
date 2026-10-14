@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from datetime import datetime, timezone, timedelta
 import hashlib
 import json
@@ -450,6 +451,76 @@ print(json.dumps(result,separators=(",",":")))'''
             "status": status, "read_only": True}
 
 
+def alert_host(encoded):
+    """Use the existing container Telegram transport without exporting secrets."""
+    try:
+        if not 1 <= len(encoded) <= 6000 or any(c not in
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=" for c in encoded):
+            raise ValueError("INVALID_ALERT_REQUEST")
+        body = base64.urlsafe_b64decode(encoded).decode("utf-8")
+        if not body.startswith("POROTA RC6 | ") or len(body) > 3500:
+            raise ValueError("INVALID_ALERT_BODY")
+    except (ValueError, UnicodeError):
+        return {"status": "INVALID_REQUEST"}
+    child = '''import json,os,sys
+from bn_telegram_bus import TelegramTransport,DeliveryError
+token=os.getenv("TELEGRAM_BOT_TOKEN",""); chat=os.getenv("TELEGRAM_CHAT_ID","")
+if not token or not chat: print(json.dumps({"status":"NOT_CONFIGURED"})); sys.exit(0)
+try:
+ mid=TelegramTransport(token,chat)(sys.argv[1])
+ print(json.dumps({"status":"SENT","message_id":mid}))
+except DeliveryError as exc: print(json.dumps({"status":"FAILED","error_code":exc.code}))
+except Exception as exc: print(json.dumps({"status":"FAILED","error_class":type(exc).__name__}))'''
+    try:
+        result = subprocess.run(["docker", "exec", "porota_production_observer",
+            "python", "-B", "-c", child, body], capture_output=True, text=True,
+            timeout=19, check=False)
+        data = json.loads(result.stdout) if result.returncode == 0 else {}
+        if data.get("status") == "SENT" and str(data.get("message_id", "")).isdigit():
+            return {"status": "SENT", "message_id": str(data["message_id"])}
+        if data.get("status") == "NOT_CONFIGURED":
+            return {"status": "NOT_CONFIGURED"}
+        return {"status": "FAILED"}
+    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+        return {"status": "UNVERIFIED"}
+
+
+def prepare_alert(decision):
+    if decision["notification"] == "NONE":
+        return ""
+    codes = decision["new_alerts"] if decision["notification"] == "ALERT" else decision["recovered"]
+    if not codes or len(codes) > 20 or any(not isinstance(code, str) or
+            len(code) > 100 or any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_:-" for ch in code)
+            for code in codes):
+        raise ValueError("ALERT_CODES_INVALID")
+    event_id = hashlib.sha256(json.dumps([decision["notification"], codes],
+        sort_keys=True).encode()).hexdigest()[:16]
+    body = ("POROTA RC6 | " + decision["notification"] + "\n" +
+        ", ".join(codes) + "\n" + decision["generated_at"] +
+        "\nID: " + event_id + "\nPAPER/SHADOW ONLY. Ver evidencia en GitHub Actions.")
+    return base64.urlsafe_b64encode(body.encode()).decode()
+
+
+def finalize_delivery(decision, receipt):
+    """Only an actual Telegram message_id makes a transition acknowledged."""
+    status = receipt.get("status", "UNVERIFIED")
+    if status == "SENT" and not str(receipt.get("message_id", "")).isdigit():
+        status = "UNVERIFIED"
+    if decision["notification"] == "NONE":
+        status = "NO_TRANSITION"
+    active = set(decision["alerted"])
+    if status != "SENT":
+        if decision["notification"] == "ALERT":
+            active -= set(decision["new_alerts"])
+        elif decision["notification"] == "RECOVERY":
+            active |= set(decision["recovered"])
+    decision["acknowledged_codes"] = sorted(active)
+    decision["delivery_status"] = status
+    if status == "SENT":
+        decision["telegram_message_id"] = str(receipt["message_id"])
+    return decision
+
+
 def classify(current, previous=None, previous_decision=None):
     """Escalate P0 now, P1 after consecutive comparable observations."""
     if current.get("schema") != SCHEMA:
@@ -467,7 +538,7 @@ def classify(current, previous=None, previous_decision=None):
     p1_prev = ({x["code"] for x in previous.get("findings", [])
                 if x["severity"] == "P1"} if comparable else set())
     confirmed = p_now | (p1_now & p1_prev)
-    old_alerted = set(previous_decision.get("alerted", [])) if comparable and previous_decision else set()
+    old_alerted = set(previous_decision.get("acknowledged_codes", [])) if comparable and previous_decision else set()
     new_alerts = sorted(confirmed - old_alerted)
     recovered = sorted(old_alerted - confirmed - (p1_now - p1_prev))
     alerted = sorted(confirmed | (old_alerted & p1_now))
@@ -498,6 +569,13 @@ def main(argv=None):
     actions.add_parser("transport-error")
     actions.add_parser("shadow-diagnostic")
     actions.add_parser("shadow-diagnostic-host")
+    alert = actions.add_parser("alert-host")
+    alert.add_argument("encoded")
+    prep = actions.add_parser("prepare-alert")
+    prep.add_argument("--decision", required=True)
+    final = actions.add_parser("finalize-delivery")
+    final.add_argument("--decision", required=True)
+    final.add_argument("--receipt", required=True)
     evaluation = actions.add_parser("classify")
     evaluation.add_argument("--current", required=True)
     evaluation.add_argument("--previous")
@@ -514,6 +592,17 @@ def main(argv=None):
         data = shadow_diagnostic()
     elif args.action == "shadow-diagnostic-host":
         data = shadow_diagnostic_host()
+    elif args.action == "alert-host":
+        data = alert_host(args.encoded)
+    elif args.action == "prepare-alert":
+        print(prepare_alert(load_bounded(Path(args.decision), MAX_JSON_BYTES)))
+        return 0
+    elif args.action == "finalize-delivery":
+        decision = load_bounded(Path(args.decision), MAX_JSON_BYTES)
+        receipt = _read_optional(args.receipt) or {"status": "UNVERIFIED"}
+        data = finalize_delivery(decision, receipt)
+        Path(args.decision).write_text(json.dumps(data, sort_keys=True, separators=(",", ":")) + "\n")
+        return 0
     else:
         current = _read_optional(args.current)
         if not current:
