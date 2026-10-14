@@ -23,6 +23,7 @@ jobs:
       PYTHONDONTWRITEBYTECODE: '1'
       RC6_PROBE_MODE: PRODUCTION_PAPER / SIMULATION
       RC6_MATERIAL_GATE_CREDIT: 'false'
+      RC6_A1_METRICS_PATH: a1-receipts/physical-http.json
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
