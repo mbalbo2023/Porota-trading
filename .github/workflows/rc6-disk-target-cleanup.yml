@@ -1,0 +1,67 @@
+name: RC6 exact unused image cleanup
+on:
+  push:
+    branches: [diag/rc6-disk-target-cleanup-20261014]
+    paths: ['.github/workflows/rc6-disk-target-cleanup.yml']
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Remove only verified unreferenced old image and verify PAPER
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_cleanup"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_cleanup" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/porota_rc6_cleanup" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          TAG='porota-predeploy-v2:31193eefb273b528129d78acdcddd9219701ccef'
+          BEFORE=$(df -PB1 / | awk 'NR==2 {print $4}')
+          PPI_BEFORE=$(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort)
+          test -z "$PPI_BEFORE"
+          read_db() {
+            sudo -n python3 - /opt/porota-trading/data/paper_v17/observer_v17.db <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True,timeout=5)
+          c.execute('PRAGMA query_only=ON')
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          assert mode=='PRODUCTION_PAPER' and orders==0,(mode,orders)
+          print('PAPER_DB='+mode+'|real_orders_sent='+str(orders))
+          c.close()
+          PY
+          }
+          read_db
+          TARGET_ID=$(sudo -n docker image inspect -f '{{.Id}}' "$TAG")
+          case "$TARGET_ID" in sha256:ba7bbdfd0da6*) ;; *) echo 'TARGET_ID_MISMATCH'; exit 31;; esac
+          mapfile -t CONTAINERS < <(sudo -n docker ps -aq)
+          test "${#CONTAINERS[@]}" -eq 3
+          for c in "${CONTAINERS[@]}"; do
+            IMAGE_ID=$(sudo -n docker inspect -f '{{.Image}}' "$c")
+            echo "CONTAINER_IMAGE=$c|$IMAGE_ID"
+            test "$IMAGE_ID" != "$TARGET_ID"
+          done
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)" = running
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_critical_approval_rc6)" = running
+          echo "TARGET_UNUSED_IMAGE=$TAG|$TARGET_ID|free_before=$BEFORE"
+          sudo -n docker image rm "$TAG"
+          test -z "$(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort)"
+          read_db
+          for c in "${CONTAINERS[@]}"; do
+            test "$(sudo -n docker inspect -f '{{.State.Status}}' "$c")" = running
+          done
+          AFTER=$(df -PB1 / | awk 'NR==2 {print $4}')
+          test "$AFTER" -ge 3736793510
+          echo "RC6_EXACT_UNUSED_IMAGE_CLEANUP=GREEN|target=$TARGET_ID|free_before=$BEFORE|free_after=$AFTER|recovered=$((AFTER-BEFORE))|ppi_watch_units=none"
+          REMOTE
