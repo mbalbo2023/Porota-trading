@@ -1,6 +1,7 @@
 """Adversarial offline contracts for the remote READ_ONLY RC6 market monitor."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -412,6 +413,43 @@ class MonitorContracts(unittest.TestCase):
             result = monitor.recent_critical_host()
         self.assertEqual([item["status"] for item in result["containers"].values()],
                          ["UNAVAILABLE", "UNAVAILABLE"])
+        self.assertNotIn("secret", json.dumps(result))
+
+    def test_writer_timeline_reads_only_bounded_events_and_redacts_detail(self):
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("ALTER TABLE paper_events ADD COLUMN event_at TEXT")
+            connection.execute("ALTER TABLE paper_events ADD COLUMN event_type TEXT")
+            connection.execute("ALTER TABLE paper_events ADD COLUMN detail TEXT")
+            connection.execute("INSERT INTO paper_events VALUES(2,?,?,?)", (
+                datetime.now(timezone.utc).isoformat(),
+                "COMPLEMENTARY_CATALOG_RECONCILIATION", "secret account data"))
+            connection.execute("INSERT INTO paper_events VALUES(3,?,?,?)", (
+                datetime.now(timezone.utc).isoformat(), "OTHER", "secret account data"))
+        before = self.db.read_bytes()
+        original = subprocess.run
+        def run_child(command, **kwargs):
+            self.assertEqual(command[:5], ["docker", "exec", "porota_production_observer",
+                                            "python", "-B"])
+            self.assertIn("mode=ro", command[-1])
+            self.assertIn("query_only=ON", command[-1])
+            self.assertIn("high-20000", command[-1])
+            return original([sys.executable, "-B", "-c", command[-1]],
+                            env={**os.environ, "PAPER_V17_DB_PATH": str(self.db)},
+                            **kwargs)
+        with patch.object(monitor.subprocess, "run", side_effect=run_child):
+            result = monitor.writer_timeline_host()
+        self.assertEqual(result["status"], "OK")
+        self.assertEqual([x["type"] for x in result["events"]],
+                         ["COMPLEMENTARY_CATALOG_RECONCILIATION"])
+        self.assertTrue(result["read_only"])
+        self.assertNotIn("secret", json.dumps(result))
+        self.assertEqual(self.db.read_bytes(), before)
+
+    def test_writer_timeline_unavailable_discards_raw_stderr(self):
+        with patch.object(monitor.subprocess, "run", return_value=
+                subprocess.CompletedProcess([], 1, stdout="", stderr="secret")):
+            result = monitor.writer_timeline_host()
+        self.assertEqual(result["status"], "CONTAINER_PROBE_UNAVAILABLE")
         self.assertNotIn("secret", json.dumps(result))
 
 
