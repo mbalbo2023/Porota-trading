@@ -52,7 +52,8 @@ invalid observer clock, missing container/OOM, provenance/SHA/OCI divergence,
 free disk below 2 GiB or free inodes below 10%.
 
 P1: market-open PPI data age above 15min, missing/stalled SHADOW or performance
-output, worker heartbeat older than 5min, free disk below 3 GiB or
+output, explicit SHADOW FAIL_CLOSED even during PREOPEN (with typed error_class),
+worker heartbeat older than 5min, free disk below 3 GiB or
 MemAvailable below 64MiB. Escalate P1 only after TWO comparable samples with
 the same issue code in <=30min on the same SHA. P0 escalates immediately.
 
