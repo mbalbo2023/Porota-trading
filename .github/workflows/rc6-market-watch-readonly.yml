@@ -196,37 +196,36 @@ jobs:
           print('RC6_MONITOR_STATUS='+decision['status'])
           print('RC6_MONITOR_NOTIFICATION='+decision['notification'])
           PY
-      - name: Send transition alert (only when Telegram Secrets exist)
+      - name: Send transition through existing PAPER Telegram transport
         if: steps.window.outputs.active == '1'
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
         shell: bash
         run: |
+          set -Eeuo pipefail
+          request="$(python3 scripts/rc6_market_watch_readonly.py prepare-alert \
+            --decision evidence/decision.json)"
+          if [ -z "$request" ]; then
+            printf '%s\n' '{"status":"NO_TRANSITION"}' > evidence/delivery.json
+          else
+            set +e
+            ssh -i "$HOME/.ssh/rc6_market_watch" \
+              -o BatchMode=yes -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+              "$DO_USER@$DO_HOST" \
+              "sudo -n timeout 25 python3 - alert-host '$request'" \
+              < scripts/rc6_market_watch_readonly.py > evidence/delivery.json 2>/dev/null
+            rc=$?
+            set -e
+            if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/delivery.json >/dev/null 2>&1; then
+              printf '%s\n' '{"status":"UNVERIFIED"}' > evidence/delivery.json
+            fi
+          fi
+          python3 scripts/rc6_market_watch_readonly.py finalize-delivery \
+            --decision evidence/decision.json --receipt evidence/delivery.json
           python3 - <<'PY'
-          import json, os, urllib.parse, urllib.request
-          from urllib.error import URLError
-          data=json.load(open('evidence/decision.json', encoding='utf-8'))
-          if data['notification']=='NONE':
-              print('MARKET_WATCH_ALERT=NO_TRANSITION')
-              raise SystemExit(0)
-          token, chat=os.getenv('TG_TOKEN',''), os.getenv('TG_CHAT','')
-          if not token or not chat:
-              print('MARKET_WATCH_TELEGRAM=NO_VERIFICADO_UNCONFIGURED')
-              raise SystemExit(0)
-          codes=data['new_alerts'] if data['new_alerts'] else data['recovered']
-          body=('POROTA RC6 | '+data['notification']+
-                '\n'+', '.join(codes[:12])+'\n'+data['generated_at']+
-                '\nPAPER/SHADOW ONLY. Ver evidencia en GitHub Actions.')
-          payload=urllib.parse.urlencode({'chat_id':chat,'text':body}).encode()
-          req=urllib.request.Request('https://api.telegram.org/bot'+token+'/sendMessage',
-                                     data=payload, method='POST')
-          try:
-              with urllib.request.urlopen(req,timeout=15) as response:
-                  result=json.load(response)
-              print('MARKET_WATCH_TELEGRAM='+('SENT' if result.get('ok') is True else 'FAILED'))
-          except (OSError, URLError, ValueError):
-              print('MARKET_WATCH_TELEGRAM=FAILED')
+          import json
+          data=json.load(open('evidence/decision.json',encoding='utf-8'))
+          print('MARKET_WATCH_TELEGRAM='+data['delivery_status'])
           PY
       - name: Save immutable per-run evidence
         if: always() && steps.window.outputs.active == '1'
@@ -237,6 +236,7 @@ jobs:
             evidence/snapshot.json
             evidence/decision.json
             evidence/shadow_diagnostic.json
+            evidence/delivery.json
           if-no-files-found: error
           retention-days: 7
       - name: Fail checks on verified critical or confirmed P1

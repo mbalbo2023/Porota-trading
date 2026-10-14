@@ -88,10 +88,14 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
   never invent a prior observation if an artifact is missing or expired.
 - The new confirmed P0/P1 code and recoveries are de-duplicated in decision.json.
 - GitHub Actions fails on confirmed incidents and prints a short annotation.
-- If BOTH repository secrets TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID already
-  exist, the Actions runner sends one notification for each new incident and
-  one on recovery. Secrets/config and actual delivery are NO_VERIFICADO until
-  confirmed by GitHub Actions. Nothing is inserted in the runtime outbox.
+- A confirmed transition is delivered through the existing PAPER container's
+  TelegramTransport. Its token/chat remain inside that container; the runner
+  sends only a bounded incident body. The read-only monitor does not enqueue
+  in SQLite. The receipt records SENT only after Telegram returns a valid
+  message_id; failure/timeout stays UNVERIFIED and the next sample retries
+  the same incident ID. A missing schedule delays retries. No delivery is
+  claimed until a GitHub Actions artifact contains the ACK. The local outbox
+  status alone is not evidence of monitor delivery.
 - A remote SSH/probe failure produces P0 REMOTE_PROBE_UNAVAILABLE and does
   not pretend to observe real_orders_sent=0.
 - API/checkout failures leave workflow failure, not invented runtime evidence.
