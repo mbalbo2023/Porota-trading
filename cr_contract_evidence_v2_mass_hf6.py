@@ -32,10 +32,17 @@ def _catalog_rows(store):
         rows = connection.execute("""SELECT ticker,instrument_type,market,currency,
           settlement,settlement_source,status,capability,last_seen_at,description,metadata_json
           FROM financial_instrument_catalog
-          WHERE UPPER(COALESCE(status,''))='AVAILABLE'
-          ORDER BY instrument_type,ticker,market,currency,settlement""").fetchall()
+          WHERE UPPER(COALESCE(status,''))='AVAILABLE'""").fetchall()
     if len(rows) > MAX_CATALOG_ROWS:
         raise RuntimeError("PPI_CATALOG_BOUND_EXCEEDED")
+    # The runner has a 32 MiB /tmp. A SQL ORDER BY over large metadata_json
+    # values spills a temporary B-tree and fails with SQLITE_FULL on the live
+    # catalogue. Keep the exact deterministic order in the already bounded
+    # Python result set instead of creating a temporary disk sort.
+    rows.sort(key=lambda row: (
+        row["instrument_type"], row["ticker"], row["market"],
+        row["currency"], row["settlement"],
+    ))
     return [dict(row) for row in rows]
 
 
