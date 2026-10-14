@@ -1,5 +1,6 @@
 """Bootstrap identity and proof counterexamples; no GitHub write."""
 import json
+import hashlib
 import errno
 import os
 from pathlib import Path
@@ -22,6 +23,45 @@ def env():
 
 
 class BootstrapTests(unittest.TestCase):
+    def test_attestation_certificate_binding_and_edits(self):
+        _, receipt = b.generate(env())
+        c = receipt['context']
+        digest = hashlib.sha256(b.wire(receipt)).hexdigest()
+        cert = {
+            'issuer':'https://token.actions.githubusercontent.com',
+            'subjectAlternativeName':'https://github.com/'+c['GITHUB_WORKFLOW_REF'],
+            'buildSignerDigest':c['GITHUB_WORKFLOW_SHA'],
+            'githubWorkflowSHA':c['GITHUB_WORKFLOW_SHA'],
+            'sourceRepositoryDigest':c['GITHUB_SHA'],
+            'sourceRepositoryIdentifier':c['GITHUB_REPOSITORY_ID'],
+            'sourceRepositoryOwnerIdentifier':c['GITHUB_REPOSITORY_OWNER_ID'],
+            'githubWorkflowRepository':b.REPO,
+            'sourceRepositoryRef':c['GITHUB_REF'],
+            'githubWorkflowTrigger':c['GITHUB_EVENT_NAME'],
+            'runInvocationURI':'https://github.com/'+b.REPO+'/actions/runs/789/attempts/1',
+            'runnerEnvironment':'github-hosted',
+        }
+        verified=[{'verificationResult':{
+            'verifiedTimestamps':[{'timestamp':'2026-10-14T00:00:00Z'}],
+            'statement':{'predicateType':'https://slsa.dev/provenance/v1',
+                         'subject':[{'name':'public-key.json','digest':{'sha256':digest}}]},
+            'signature':{'certificate':cert}}}]
+        self.assertEqual(b.verify_attestation_certificate(receipt, verified),digest)
+        for field, wrong in [('sourceRepositoryIdentifier','999'),
+                             ('githubWorkflowSHA','b'*40),
+                             ('runInvocationURI',cert['runInvocationURI']+'2'),
+                             ('sourceRepositoryRef','refs/heads/main'),
+                             ('runnerEnvironment','self-hosted')]:
+            changed=json.loads(json.dumps(verified))
+            changed[0]['verificationResult']['signature']['certificate'][field]=wrong
+            with self.subTest(field=field), self.assertRaisesRegex(
+                    b.BootstrapError,'ATTESTATION_BINDING_INVALID'):
+                b.verify_attestation_certificate(receipt,changed)
+        changed=json.loads(json.dumps(verified))
+        changed[0]['verificationResult']['statement']['subject'][0]['digest']['sha256']='0'*64
+        with self.assertRaisesRegex(b.BootstrapError,'ATTESTATION_BINDING_INVALID'):
+            b.verify_attestation_certificate(receipt,changed)
+
     def test_memory_key_live_challenge_and_no_private_receipt(self):
         with tempfile.TemporaryDirectory() as root:
             errors = []
