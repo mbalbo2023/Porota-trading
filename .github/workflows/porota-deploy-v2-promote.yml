@@ -715,15 +715,16 @@ jobs:
           state=str(worker["state"] or "")
           successful=int(worker["successful"] or 0)
           failed=int(worker["failed"] or 0)
-          worker_orders=int(worker["real_orders_sent"] or 0)
+          worker_orders=worker["real_orders_sent"]
           observer_mode=str(observer["mode"] or "")
-          observer_orders=int(observer["real_orders_sent"] or 0)
+          observer_orders=observer["real_orders_sent"]
           healthy_state=state in ("RUNNING","WAITING_MARKET")
           post_gate_heartbeat=dt >= started if age < 10**9 else False
           healthy=(healthy_state and failed==0 and 0 <= age <= 300
                    and post_gate_heartbeat
-                   and worker_orders==0 and observer_mode=="PRODUCTION_PAPER"
-                   and observer_orders==0)
+                   and worker_orders is not None and int(worker_orders)==0
+                   and observer_mode=="PRODUCTION_PAPER"
+                   and observer_orders is not None and int(observer_orders)==0)
           prefix="GREEN" if healthy else "WAIT"
           print(
               f"{prefix}|state={state}|heartbeat_age_seconds={age:.3f}"

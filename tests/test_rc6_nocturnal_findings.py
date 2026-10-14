@@ -37,6 +37,7 @@ def test_product_release_refuses_real_start_and_sdk_choke_points(monkeypatch, tm
     for operation in (
         lambda: wrapper.cancel_order('1'),
         lambda: wrapper.budget_order('OFFLINE', 1, 100, 'GGAL'),
+        lambda: wrapper.sell_at_market('GGAL', 1),
     ):
         with pytest.raises(RuntimeError, match='REAL_ORDER_CAPABILITY_BLOCKED'):
             operation()

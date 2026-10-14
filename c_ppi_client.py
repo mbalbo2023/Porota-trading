@@ -753,6 +753,9 @@ class ResilientPPIClient:
         El flujo es el mismo que el de compra: budget primero (para obtener
         los disclaimers que PPI exige) y confirm después.
         """
+        from _version import MODE, REAL_ORDER_CAPABILITY
+        if MODE == "PRODUCTION_PAPER" or REAL_ORDER_CAPABILITY != "ENABLED":
+            raise RuntimeError("REAL_ORDER_CAPABILITY_BLOCKED")
         precio_referencia = 0.0
         cotizacion = self.get_market_data(ticker, instrument_type, settlement)
         if cotizacion:
