@@ -156,7 +156,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 12 python3 - shadow-diagnostic-host" \
+            "sudo -n timeout 24 python3 - shadow-diagnostic-host" \
             < scripts/rc6_market_watch_readonly.py > evidence/shadow_diagnostic.json 2>/dev/null
           rc=$?
           set -e
