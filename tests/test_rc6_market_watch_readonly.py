@@ -365,6 +365,39 @@ class MonitorContracts(unittest.TestCase):
                                "line": 1859, "function": "run"}}])
         self.assertNotIn("secret", json.dumps(result))
 
+    def test_recent_critical_signatures_are_bounded_and_redacted(self):
+        log = ('Traceback (most recent call last):\n'
+               '  File "/app/rc6_shadow_runtime/worker.py", line 91, in run\n'
+               'sqlite3.OperationalError: database is locked; token=secret\n'
+               'REAL_ORDER_CAPABILITY=ENABLED token=secret\n')
+        responses = [subprocess.CompletedProcess([], 0, stdout=log, stderr=""),
+                     subprocess.CompletedProcess([], 0, stdout="healthy", stderr="")]
+        with patch.object(monitor.subprocess, "run", side_effect=responses) as call:
+            result = monitor.recent_critical_host()
+        observer = result["containers"]["porota_production_observer"]
+        self.assertEqual(observer["traceback_count"], 1)
+        self.assertEqual(observer["tracebacks"], [{
+            "exception_class": "sqlite3.OperationalError",
+            "last_app_frame": {"module": "worker.py", "line": 91, "function": "run"},
+            "sqlite_hint": "SQLITE_BUSY_LOCKED"}])
+        self.assertEqual(observer["capability_signature_count"], 1)
+        self.assertEqual(result["containers"]["porota_production_dashboard"]["traceback_count"], 0)
+        self.assertNotIn("secret", json.dumps(result))
+        self.assertEqual(call.call_count, 2)
+        for entry in call.call_args_list:
+            self.assertEqual(entry.kwargs["timeout"], 6)
+            self.assertEqual(entry.args[0][:4], ["docker", "logs", "--since", "30m"])
+
+    def test_recent_critical_unavailable_does_not_export_stderr(self):
+        with patch.object(monitor.subprocess, "run", side_effect=[
+                subprocess.TimeoutExpired(["docker"], 6, stderr="secret"),
+                subprocess.CompletedProcess([], 1, stdout="", stderr="secret")]):
+            result = monitor.recent_critical_host()
+        self.assertEqual([item["status"] for item in result["containers"].values()],
+                         ["UNAVAILABLE", "UNAVAILABLE"])
+        self.assertNotIn("secret", json.dumps(result))
+
 
 if __name__ == "__main__":
     unittest.main()
+
