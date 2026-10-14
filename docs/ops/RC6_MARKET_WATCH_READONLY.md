@@ -84,7 +84,8 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
   host uses the established sudo Python entry and launches a bounded Docker
   subprocess, returning only a sanitized status if that fails.
   A manual run also records read-only EXPLAIN QUERY PLAN details for five
-  fixed SHADOW SQL shapes and the last sixteen observer cycle durations. It
+  fixed SHADOW SQL shapes and the last sixteen observer cycle durations,
+  including a bounded planned cadence parsed from each cycle's durable plan. It
   plans
   are diagnostic; they do not execute those SELECT statements or assert a
   database migration occurred.

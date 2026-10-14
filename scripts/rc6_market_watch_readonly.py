@@ -435,7 +435,12 @@ try:
    try: plans[name]=[str(row[3])[:120] for row in c.execute("EXPLAIN QUERY PLAN "+query,params)]
    except sqlite3.Error as exc: plans[name]=[getattr(exc,"sqlite_errorname","SQLITE_ERROR")]
   try:
-   result["observer_cycles"]=[{"started_at":r[0],"finished_at":r[1],"selected_count":r[2],"duration_seconds":r[3]} for r in c.execute("SELECT started_at,finished_at,selected_count,duration_seconds FROM universe_cycle_metrics ORDER BY id DESC LIMIT 16")]
+   def cadence(detail):
+    try:
+     value=json.loads(detail[detail.index("{"):]).get("active_plan",{}).get("cadence_seconds")
+     return value if type(value) in (int,float) and 0 <= value <= 900 else None
+    except (ValueError,TypeError,AttributeError): return None
+   result["observer_cycles"]=[{"started_at":r[0],"finished_at":r[1],"selected_count":r[2],"duration_seconds":r[3],"planned_cadence_seconds":cadence(r[4])} for r in c.execute("SELECT started_at,finished_at,selected_count,duration_seconds,detail FROM universe_cycle_metrics ORDER BY id DESC LIMIT 16")]
   except sqlite3.Error: result["observer_cycles_status"]="UNAVAILABLE"
  result["query_plans"]=plans
 except Exception as exc: result["setup_error_class"]=type(exc).__name__
