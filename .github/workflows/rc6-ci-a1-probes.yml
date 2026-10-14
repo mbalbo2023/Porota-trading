@@ -174,11 +174,11 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          from scripts.rc6_a1_bootstrap import verify_run
+          from scripts.rc6_a1_bootstrap import verify_run,verify_attestation_certificate
           p=Path('a1-bootstrap')
           receipt=json.loads((p/'public-key.json').read_text())
           verified=json.loads((p/'verified-attestation.json').read_text())
-          assert verified and isinstance(verified,list)
+          digest=verify_attestation_certificate(receipt,verified)
           run=json.loads((p/'run.json').read_text())
           jobs=json.loads((p/'jobs.json').read_text())['jobs']
           job_id=verify_run(receipt,run,jobs,expected_job='bootstrap-provenance')
@@ -186,6 +186,7 @@ jobs:
             'schema':'porota.rc6.a1-binding.v1',
             'run_id':run['id'],'run_attempt':run['run_attempt'],
             'job_id':job_id,'workflow_sha':receipt['context']['GITHUB_WORKFLOW_SHA'],
+            'public_receipt_sha256':digest,
             'attestation_cli_verified':True,'G0_G8_qualification':False,
             'real_orders_sent':0},sort_keys=True))
           PY
