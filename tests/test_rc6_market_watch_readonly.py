@@ -383,6 +383,22 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(len(calls), 4)
         self.assertFalse(any("/runs/86/" in url for url in calls))
 
+    def test_default_lookup_uses_runner_gh_without_token_on_argv(self):
+        current = self.capture()
+        calls = []
+        def invoke(command, **options):
+            calls.append(command)
+            options["stdout"].write(b'{"artifacts":[]}' if "/runs/88/" in command[-1]
+                                    else b'{"workflow_runs":[]}')
+            return subprocess.CompletedProcess(command, 0)
+        with patch.object(monitor.subprocess, "run", side_effect=invoke), patch.dict(
+                monitor.os.environ, {"GH_TOKEN": "private-test-token"}):
+            self.assertIsNone(monitor.read_previous_artifact(current,
+                "mbalbo2023/Porota-trading", 384354765, 88, self.root / "none"))
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(command[:2] == ["gh", "api"] for command in calls))
+        self.assertNotIn("private-test-token", str(calls))
+
     def test_telegram_host_transport_acks_only_message_id_and_never_exposes_token(self):
         body = "POROTA RC6 | ALERT\nOBSERVER_HEARTBEAT_INVALID"
         encoded = monitor.base64.urlsafe_b64encode(body.encode()).decode()

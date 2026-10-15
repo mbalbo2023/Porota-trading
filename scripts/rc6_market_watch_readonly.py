@@ -15,9 +15,9 @@ import re
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from urllib.parse import quote
-from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 SCHEMA = "rc6.market-watch-readonly.v1"
@@ -88,12 +88,21 @@ def read_previous_artifact(current, repo, workflow_id, run_id, destination, *, g
     if type(workflow_id) is not int or type(run_id) is not int:
         raise ValueError("INVALID_RUN_ID")
     if get is None:
-        token = os.environ["GH_TOKEN"]
         def get(url, limit):
-            request = Request(url, headers={"Authorization": "Bearer " + token,
-                "Accept": "application/vnd.github+json", "User-Agent": "rc6-market-watch"})
-            with urlopen(request, timeout=12) as response:
-                raw = response.read(limit + 1)
+            prefix = "https://api.github.com/"
+            if not url.startswith(prefix + "repos/" + repo + "/actions/"):
+                raise ValueError("INVALID_GITHUB_ENDPOINT")
+            # The runner's gh transport is already used by the canonical
+            # monitor. Python urlopen timed out on the same Actions API even
+            # when gh completed promptly. Never put GH_TOKEN on argv.
+            with tempfile.TemporaryFile() as output:
+                completed = subprocess.run(["gh", "api", url[len(prefix):]],
+                    stdout=output, stderr=subprocess.DEVNULL, timeout=25,
+                    check=False)
+                if completed.returncode:
+                    raise OSError("GITHUB_API_UNAVAILABLE")
+                output.seek(0)
+                raw = output.read(limit + 1)
             if len(raw) > limit:
                 raise ValueError("GITHUB_RESPONSE_TOO_LARGE")
             return raw
@@ -116,7 +125,8 @@ def read_previous_artifact(current, repo, workflow_id, run_id, destination, *, g
                     artifacts = json.loads(get(
                         f"{base}/actions/runs/{other_id}/artifacts?per_page=20",
                         64 * 1024)).get("artifacts", [])
-                except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                except (OSError, ValueError, TypeError, json.JSONDecodeError,
+                        subprocess.TimeoutExpired):
                     continue
                 yield from previous_artifact_candidates(
                     run_id, [], [candidate], {other_id: artifacts})
@@ -125,7 +135,7 @@ def read_previous_artifact(current, repo, workflow_id, run_id, destination, *, g
                 continue
             try:
                 raw = get(f"{base}/actions/artifacts/{artifact['id']}/zip", 128 * 1024)
-            except (OSError, ValueError):
+            except (OSError, ValueError, subprocess.TimeoutExpired):
                 continue
             previous = verified_previous_zip(raw, artifact, current)
             if previous is None:
@@ -139,7 +149,8 @@ def read_previous_artifact(current, repo, workflow_id, run_id, destination, *, g
                        "generated_at": previous[0]["generated_at"]}
             (destination / "source.json").write_text(json.dumps(receipt, sort_keys=True) + "\n")
             return receipt
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError,
+            subprocess.TimeoutExpired):
         pass
     return None
 
