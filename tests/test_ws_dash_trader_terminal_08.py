@@ -453,3 +453,24 @@ def test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default(d
     html = table(page, "Detail", fields("features|Evidencia"))
     assert "do-not-display" not in html and "private-account" not in html
     assert "[REDACTED]" in html and "spread" in html
+
+
+def test_stale_committed_shadow_cannot_populate_live_cards_or_tables(database):
+    from rc6_trader_dashboard.views_home import attention
+    cut = coherent_cut()
+    cut["report"]["operational_funnel"] = {"counts": {"HOT": 3, "SIGNAL": 1}}
+    seal_cut(cut)
+    with Store(database, now=NOW) as store:
+        fresh = Projection(store, generation_reader=lambda root, **kwargs: cut)
+        assert fresh.shadow_fresh
+        assert fresh.counts()["HOT"] == 3
+        assert len(shadow_rows(fresh, "opportunities").rows) == 1
+    with Store(database, now=NOW + timedelta(minutes=1)) as store:
+        stale = Projection(store, generation_reader=lambda root, **kwargs: cut)
+        assert stale.shadow["state"] == "COMMITTED_COHERENT_SHADOW"
+        assert not stale.shadow_fresh
+        assert "HOT" not in stale.counts() and "SIGNAL" not in stale.counts()
+        page = shadow_rows(stale, "opportunities")
+        assert page.rows == [] and page.reason == "SHADOW_CUT_NOT_FRESH"
+        alert_html, count = attention(stale, Page("paper_positions"))
+        assert count > 0 and "SHADOW sin corte comprometido fresco" in alert_html
