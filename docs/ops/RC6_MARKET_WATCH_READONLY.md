@@ -178,6 +178,32 @@ confirmed DYNAMIC_SHADOW_FAIL_CLOSED P1 and recorded Telegram SENT with
 message_id 928. The Action correctly failed its incident gate. This proves
 alert delivery, not SHADOW recovery.
 
+The manual READ_ONLY diagnostic run 38772952791 on main
+`194407f6e1bc9f299167e48f842b5b6d1ac07c7f` produced artifact
+11991149714 (ZIP SHA256
+`b6b050507c9cd47008b13c4b69504c0da5e832125daddce49becc6b059f3cbf7`).
+At 16:55 UTC during MARKET_OPEN, its isolated SQL pass measured catalogue
+14,592 rows/121 ms, positions 2/1 ms, contracts 2,404/138 ms, intraday
+11,896/311 ms, snapshots 2,244/189 ms, with 1,238 ms remaining from the
+2-second shared budget. The respective plans used the catalogue covering
+index, intraday expression index, and snapshot rowid lower bound plus
+expression-index subquery. WAL was 31,987,712 bytes; no OOM or restart.
+This single sample does not establish a worst-case margin. Observer cycles
+lasted 135–311 seconds, and the precise source of competing load remains
+NO_VERIFICADO. Neither SQLITE_BUSY nor physical corruption was observed.
+SHADOW remained FAIL_CLOSED/SQLITE_INTERRUPT. The same artifact confirmed
+that P1 plus a stale intraday worker heartbeat, with Telegram SENT message
+ID 929, PAPER/0 and routes NOT_CALLED.
+
+Product candidate PR #574, base `64583571846addb85038554dc56230bafbc7e6b4`,
+keeps the SQLite deadline at 2 seconds, extracts unchanged SQL shapes from
+one WAL snapshot and releases that snapshot before bounded Python conversion.
+It records safe stage and plan evidence on both success and failure. The
+concurrent-writer and production-scale fixtures passed locally; Predeploy V2
+and OPEN runtime equivalence remain separate gates. Until a final exact
+Deploy V2 and three independent OPEN cuts, the SHADOW repair is
+NO_VERIFICADO and fail-closed.
+
 ## Controls and continuity
 
 - All changes via isolated branch and PR into main; no direct writes.
