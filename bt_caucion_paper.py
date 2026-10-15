@@ -71,6 +71,8 @@ def init_schema(store):
           pending_proceeds TEXT NOT NULL, caucion_principal TEXT NOT NULL,
           caucion_accrued TEXT NOT NULL, unrealized_pnl TEXT NOT NULL,
           realized_pnl TEXT NOT NULL, equity TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_paper_equity_currency_latest
+          ON paper_equity_by_currency(currency,id DESC);
         """)
         # Migración aditiva. Cada recibo se crea una sola vez, sin reescribir
         # una fecha que luego haya sido conciliada contra una fuente mejor.
