@@ -46,7 +46,8 @@ def render(p, destination, tab):
             f"<a class='button' href='/trading/cauciones?caucion_view={key}' "
             f"{'aria-current=page' if selected == key else ''}>{label}</a>"
             for key, label in (("colocaciones", "Colocaciones PAPER"), ("decisiones", "Decisiones / HOLD")))
-        lead = (cards + notice("Cauciones simuladas: caja liquidada, tasa/plazo, reserva y riesgo se evalúan antes de colocar. "
+        lead = ("<p class='source-line'>Trading — Cauciones · Historial PAPER y readiness actual se muestran separados.</p>"
+                + cards + notice("Cauciones simuladas: caja liquidada, tasa/plazo, reserva y riesgo se evalúan antes de colocar. "
                        "Un registro PAPER no acredita una orden ni una tasa ejecutable actual.")
                 + f"<nav class='pager' aria-label='Vistas de cauciones'>{links}</nav>"
                 + "<p class='source-line'>Catálogo y contrato: <a href='/instrumentos/buscador?family=CAUCIONES'>CAUCIONES</a> "
