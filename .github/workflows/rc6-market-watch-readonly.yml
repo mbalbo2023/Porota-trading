@@ -7,6 +7,8 @@ on:
       - '.github/workflows/rc6-market-watch-readonly.yml'
       - 'scripts/rc6_market_watch_readonly.py'
       - 'tests/test_rc6_market_watch_readonly.py'
+      - 'scripts/rc6_operator_dashboard_readonly.py'
+      - 'tests/test_rc6_operator_dashboard_readonly.py'
       - 'docs/ops/RC6_MARKET_WATCH_READONLY.md'
   push:
     branches: [main]
@@ -14,6 +16,8 @@ on:
       - '.github/workflows/rc6-market-watch-readonly.yml'
       - 'scripts/rc6_market_watch_readonly.py'
       - 'tests/test_rc6_market_watch_readonly.py'
+      - 'scripts/rc6_operator_dashboard_readonly.py'
+      - 'tests/test_rc6_operator_dashboard_readonly.py'
       - 'docs/ops/RC6_MARKET_WATCH_READONLY.md'
   schedule:
     # Argentina UTC-3; the job's local-time gate restricts monitoring to rueda.
@@ -40,6 +44,8 @@ jobs:
           set -Eeuo pipefail
           python3 -m py_compile scripts/rc6_market_watch_readonly.py tests/test_rc6_market_watch_readonly.py
           python3 -m unittest discover -s tests -p test_rc6_market_watch_readonly.py -v
+          python3 -m py_compile scripts/rc6_operator_dashboard_readonly.py
+          python3 -m unittest discover -s tests -p test_rc6_operator_dashboard_readonly.py -v
           git diff --check
 
   watch:
@@ -199,6 +205,35 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/observer_lifecycle.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.observer-lifecycle.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true,"events":[]}' > evidence/observer_lifecycle.json
           fi
+      - name: Audit authenticated dashboard routes and connector states without exporting content
+        if: github.event_name == 'push' && steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 42 python3 - dashboard-host" \
+            < scripts/rc6_operator_dashboard_readonly.py > evidence/dashboard_audit.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/dashboard_audit.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.operator-dashboard-readonly.v1","read_only":true,"status":"NO_VERIFICADO","routes":[],"sources":[],"source_status":"NO_VERIFICADO"}' > evidence/dashboard_audit.json
+          fi
+          python3 - <<'PY'
+          import json
+          result=json.load(open('evidence/dashboard_audit.json',encoding='utf-8'))
+          print('RC6_DASHBOARD_AUDIT_STATUS='+str(result.get('status','NO_VERIFICADO')))
+          print('RC6_DASHBOARD_ROUTE_STATUS='+json.dumps([
+              {'path':r.get('path'),'http':r.get('http'),'nav':r.get('nav'),
+               'content':r.get('content'),'error':r.get('error')}
+              for r in result.get('routes',[])],sort_keys=True,separators=(',',':')))
+          print('RC6_CONNECTOR_STATES='+json.dumps(result.get('sources',[]),
+              sort_keys=True,separators=(',',':')))
+          PY
       - name: Read previous committed monitor artifact (best effort)
         if: steps.window.outputs.active == '1'
         shell: bash
@@ -277,6 +312,7 @@ jobs:
             evidence/schedule_api.json
             evidence/observer_lifecycle.json
             evidence/recent_critical.json
+            evidence/dashboard_audit.json
             evidence/delivery.json
             evidence/previous/source.json
           if-no-files-found: error
