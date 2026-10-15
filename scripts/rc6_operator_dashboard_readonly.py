@@ -32,6 +32,7 @@ POSTCLOSE_ROUTES = ROUTES + EXTRA_ROUTES
 CHILD = r'''
 import json, os, re, sqlite3, time, urllib.error, urllib.request
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -52,6 +53,15 @@ extra_routes = (
 local = datetime.now(timezone.utc).astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
 postclose = local.hour * 60 + local.minute >= 17 * 60 + 15
 if postclose: routes += extra_routes
+class VisibleGaps(HTMLParser):
+ def __init__(self):
+  super().__init__(); self.hidden=0; self.count=0
+ def handle_starttag(self, tag, attrs):
+  if tag in {"script","style"}: self.hidden+=1
+ def handle_endtag(self, tag):
+  if tag in {"script","style"}: self.hidden=max(0,self.hidden-1)
+ def handle_data(self, data):
+  if not self.hidden: self.count=min(1000,self.count+data.count("NO_VERIFICADO"))
 result = {"schema":"rc6.operator-dashboard-readonly.v1", "read_only":True,
           "audit_scope":"POSTCLOSE_ALL" if postclose else "MARKET_CRITICAL",
           "routes":[], "sources":[], "source_status":"NO_VERIFICADO"}
@@ -74,6 +84,7 @@ if token:
     html=raw.decode("utf-8","replace")
     entry["nav"]="id='porota-canonical-nav'" in html or 'id="porota-canonical-nav"' in html
     entry["content"]="id='terminal-content'" in html or 'id="terminal-content"' in html
+    gaps=VisibleGaps(); gaps.feed(html); entry["unverified_mentions"]=gaps.count
     if path=="/": entry["attention"]="Atención ahora" in html
   except urllib.error.HTTPError as exc: entry["http"]=exc.code
   except (OSError,ValueError): entry["error"]="HTTP_UNAVAILABLE"
@@ -175,6 +186,7 @@ def audit_host(*, runner=subprocess.run):
                            "slow_2s": item.get("slow_2s") is True,
                            "projection_ms": item.get("projection_ms") if type(item.get("projection_ms")) is int and 0 <= item["projection_ms"] <= 60000 else None,
                            "read_queries": item.get("read_queries") if type(item.get("read_queries")) is int and 0 <= item["read_queries"] <= 1000 else None,
+                           "unverified_mentions": item.get("unverified_mentions") if type(item.get("unverified_mentions")) is int and 0 <= item["unverified_mentions"] <= 1000 else None,
                            "attention": item.get("attention") is True if item["path"] == "/" else None,
                            "error": item.get("error") if item.get("error") in {"BODY_LIMIT", "HTTP_UNAVAILABLE"} else None})
         scope = data.get("audit_scope")
