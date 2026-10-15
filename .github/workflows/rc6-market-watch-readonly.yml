@@ -216,7 +216,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 42 python3 - dashboard-host" \
+            "sudo -n timeout 95 python3 - dashboard-host" \
             < scripts/rc6_operator_dashboard_readonly.py > evidence/dashboard_audit.json 2>/dev/null
           rc=$?
           set -e
@@ -229,7 +229,8 @@ jobs:
           print('RC6_DASHBOARD_AUDIT_STATUS='+str(result.get('status','NO_VERIFICADO')))
           print('RC6_DASHBOARD_ROUTE_STATUS='+json.dumps([
               {'path':r.get('path'),'http':r.get('http'),'nav':r.get('nav'),
-               'content':r.get('content'),'error':r.get('error')}
+               'content':r.get('content'),'error':r.get('error'),
+               'elapsed_ms':r.get('elapsed_ms'),'slow_2s':r.get('slow_2s')}
               for r in result.get('routes',[])],sort_keys=True,separators=(',',':')))
           print('RC6_CONNECTOR_STATES='+json.dumps(result.get('sources',[]),
               sort_keys=True,separators=(',',':')))
