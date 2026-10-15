@@ -301,6 +301,46 @@ def test_bounded_projection_yields_wal_writer_and_keeps_partial_candidates_close
     assert len(pauses) >= 4 and pauses == [0] * len(pauses)
 
 
+def test_bounded_refresh_keeps_unchanged_ready_and_closes_removed_before_batches(
+        tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    fresh = _fresh()
+    with store.connect() as c:
+        c.execute("""INSERT INTO financial_instrument_catalog
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
+            "KEEP", "CEDEARS", "BYMA", "ARS", "A-24HS", "PPI_FIELD",
+            "Test", fresh, "PPI-RUN", "AVAILABLE", "READY_PAPER_SPOT",
+            json.dumps({"_discovery_source": "PPI_PRIMARY"})))
+        c.execute("""INSERT INTO financial_instrument_catalog
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
+            "REMOVE", "CEDEARS", "BYMA", "ARS", "A-24HS", "PPI_FIELD",
+            "Test", fresh, "PPI-RUN", "AVAILABLE", "READY_PAPER_SPOT",
+            json.dumps({"_discovery_source": "PPI_PRIMARY"})))
+        catalog.sync_candidate_universe(c, fresh)
+        for number in range(65):
+            c.execute("""INSERT INTO financial_instrument_catalog
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                f"T{number:03d}", "CEDEARS", "BYMA", "ARS", "A-24HS",
+                "PPI_FIELD", "Test", fresh, "test", "STALE",
+                "NEEDS_CONTRACT", "{}"))
+        c.execute("DELETE FROM financial_instrument_catalog WHERE ticker='REMOVE'")
+
+    observed = []
+    def between_batches(_seconds):
+        with store.connect() as peer:
+            peer.execute("BEGIN IMMEDIATE")
+            observed.append(dict(peer.execute(
+                "SELECT ticker,can_simulate FROM candidate_identity_v2 "
+                "WHERE ticker IN ('KEEP','REMOVE')").fetchall()))
+            peer.rollback()
+
+    monkeypatch.setattr(catalog.time, "sleep", between_batches)
+    with store.connect() as c:
+        catalog.sync_candidate_universe(c, _fresh(), bounded_batch=16)
+    assert len(observed) >= 5
+    assert all(rows == {"KEEP": 1} for rows in observed)
+
+
 def test_complementary_reconcile_projects_after_releasing_writer(tmp_path, monkeypatch):
     store = _store(tmp_path)
     monkeypatch.setattr(observer, "complementary_discovery", lambda _root: [])
