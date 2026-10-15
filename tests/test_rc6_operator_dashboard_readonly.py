@@ -16,12 +16,16 @@ class OperatorAuditTests(TestCase):
                             "detail": "must never leave host"}]}
     def runner(argv, **kwargs):
         assert argv[:4] == ["docker", "exec", "porota_production_dashboard", "python"]
-        assert kwargs["timeout"] == 35
+        assert kwargs["timeout"] == 85
         return SimpleNamespace(returncode=0, stdout=json.dumps(payload))
     result = audit_host(runner=runner)
     self.assertEqual(result["status"], "ROUTES_VERIFIED")
     self.assertEqual(len(result["routes"]), len(ROUTES))
     self.assertNotIn("must never leave host", json.dumps(result))
+
+    payload["routes"][0]["elapsed_ms"] = 3100
+    payload["routes"][0]["slow_2s"] = True
+    self.assertEqual(audit_host(runner=runner)["status"], "ROUTES_DEGRADED")
 
 
  def test_partial_or_untrusted_receipt_fails_closed(self):
