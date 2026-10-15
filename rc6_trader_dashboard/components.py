@@ -114,8 +114,8 @@ def definition_list(row, columns):
     return "<dl class='facts'>" + "".join(f"<div><dt>{e(f.label)}</dt><dd>{value_html(row, f)}</dd></div>" for f in columns) + "</dl>"
 
 
-def detail(row, columns, row_id, index):
-    label = f"Detalle fila {index} · {row.get('symbol') or row.get('worker') or row.get('component') or row.get('currency') or 'registro'}"
+def detail(row, columns, row_id, index, *, label=None):
+    label = label or f"Detalle fila {index} · {row.get('symbol') or row.get('worker') or row.get('component') or row.get('currency') or 'registro'}"
     dialog_id = f"{row_id}-dialog"
     return (f"<button class='button detail-trigger' type='button' data-detail-dialog='{dialog_id}' "
             f"aria-haspopup='dialog' aria-controls='{dialog_id}'>{e(label)}</button>"
@@ -168,7 +168,8 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
         provenance += f" · {e(clock(page.as_of))}"
     provenance += "</div>"
     audit = detail({"reason": page.reason or "Consulta read-only; paginación en servidor."},
-                   fields("reason|Estado de lectura"), f"{table_id}-reading", 1)
+                   fields("reason|Estado de lectura"), f"{table_id}-reading", 1,
+                   label="Estado de lectura")
     return (f"<section class='panel data-panel' id='{table_id}-panel'><div class='panel-heading'><h2>{e(title)}</h2></div>"
             f"<table class='terminal-table' id='{table_id}'><caption class='sr-only'>{e(title)}</caption><thead><tr>{heads}<th scope='col'>Detalle</th></tr></thead><tbody>{''.join(body)}</tbody></table>"
             + (pager(page, path, filters or {}, table_id) if path else "") + provenance + audit + "</section>")

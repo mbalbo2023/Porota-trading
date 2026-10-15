@@ -464,6 +464,7 @@ def test_detail_names_unique_and_keys_survive_metric_change():
     assert first.select_one(".row-dialog")["id"] == second.select_one(".row-dialog")["id"]
     assert first.select("details") == []
     assert len(first.select("dialog.row-dialog")) == 3  # two rows and reading status
+    assert first.select(".detail-trigger")[-1].get_text() == "Estado de lectura"
     for trigger in first.select(".detail-trigger"):
         dialog = first.find(id=trigger["aria-controls"])
         assert dialog and dialog.name == "dialog" and dialog["aria-labelledby"]
