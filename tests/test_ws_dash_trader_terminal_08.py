@@ -474,3 +474,73 @@ def test_stale_committed_shadow_cannot_populate_live_cards_or_tables(database):
         assert page.rows == [] and page.reason == "SHADOW_CUT_NOT_FRESH"
         alert_html, count = attention(stale, Page("paper_positions"))
         assert count > 0 and "SHADOW sin corte comprometido fresco" in alert_html
+
+
+def test_equity_latest_index_migrates_existing_history_without_changing_currency_cut(tmp_path):
+    from bt_caucion_paper import init_schema
+    path = tmp_path / "existing-paper.db"
+    with sqlite3.connect(path) as conn:
+        conn.executescript("""
+            CREATE TABLE paper_positions(paper_id TEXT PRIMARY KEY,status TEXT);
+            CREATE TABLE paper_equity_by_currency(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,measured_at TEXT NOT NULL,
+              currency TEXT NOT NULL,cash TEXT NOT NULL,exposure TEXT NOT NULL,
+              pending_proceeds TEXT NOT NULL,caucion_principal TEXT NOT NULL,
+              caucion_accrued TEXT NOT NULL,unrealized_pnl TEXT NOT NULL,
+              realized_pnl TEXT NOT NULL,equity TEXT NOT NULL);
+        """)
+        conn.executemany(
+            "INSERT INTO paper_equity_by_currency VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",
+            ((STAMP, ("ARS", "USD", "USD_MEP", "USD_CCL")[i % 4],
+              *(str(i) for _ in range(8))) for i in range(4000)))
+    class ExistingStore:
+        def connect(self):
+            conn = sqlite3.connect(path)
+            conn.row_factory = sqlite3.Row
+            return conn
+    init_schema(ExistingStore())
+    query = """SELECT e.id,e.currency,e.equity FROM paper_equity_by_currency e
+        JOIN (SELECT currency,MAX(id) id FROM paper_equity_by_currency
+        GROUP BY currency) latest ON latest.id=e.id ORDER BY e.currency LIMIT 10"""
+    with sqlite3.connect(path) as conn:
+        rows = conn.execute(query).fetchall()
+        plan = [row[3] for row in conn.execute("EXPLAIN QUERY PLAN " + query)]
+        assert rows == [(3997, "ARS", "3996"), (3998, "USD", "3997"),
+                        (3999, "USD_MEP", "3998"), (4000, "USD_CCL", "3999")]
+        assert any("USING COVERING INDEX idx_paper_equity_currency_latest" in line for line in plan)
+        assert not any("USE TEMP B-TREE FOR GROUP BY" in line for line in plan)
+    init_schema(ExistingStore())  # Idempotent on an existing PAPER history.
+
+
+def test_connector_states_distinguish_observed_record_from_expected_cadence(database):
+    with sqlite3.connect(database) as conn:
+        checks = (
+            ("BYMA_WEB", "VERDE", NOW - timedelta(hours=4)),
+            ("BYMA_INSTRUMENTS_API", "GRIS", NOW - timedelta(hours=4)),
+            ("PPI_PRODUCTION_CATALOG", "AMARILLO", NOW - timedelta(hours=25)),
+            ("PPI_PRODUCTION_AUTH", "VERDE", NOW - timedelta(hours=6)),
+            ("GEMINI_DECISION", "VERDE", NOW - timedelta(days=47)),
+        )
+        conn.executemany("INSERT INTO api_health VALUES(?,?,'',?,?,?)",
+                         ((name, state, stamp.isoformat(), stamp.isoformat(), name)
+                          for name, state, stamp in checks))
+    with Store(database, now=NOW) as store:
+        rows = {row["component"]: row for row in Projection(store).sources().rows}
+    assert rows["BYMA_WEB"]["state"] == "VERDE"
+    assert rows["BYMA_WEB"]["freshness"] == "FRESH"
+    assert rows["BYMA_INSTRUMENTS_API"]["state"] == "GRIS"
+    assert rows["PPI_PRODUCTION_CATALOG"]["state"] == "AMARILLO"
+    assert rows["PPI_PRODUCTION_AUTH"]["state"] == "VERDE"
+    assert rows["PPI_PRODUCTION_AUTH"]["cadence"] == "OBSERVER_SESSION"
+    assert rows["GEMINI_DECISION"]["state"] == "NO_VERIFICADO"
+    assert rows["GEMINI_DECISION"]["observed_state"] == "VERDE"
+    with sqlite3.connect(database) as conn:
+        conn.execute("UPDATE api_health SET checked_at=? WHERE component='PPI_PRODUCTION_CATALOG'",
+                     ((NOW - timedelta(hours=40)).isoformat(),))
+        conn.execute("UPDATE observer_state SET heartbeat_at=? WHERE id=1",
+                     ((NOW - timedelta(minutes=4)).isoformat(),))
+    with Store(database, now=NOW) as store:
+        rows = {row["component"]: row for row in Projection(store).sources().rows}
+    assert rows["PPI_PRODUCTION_CATALOG"]["state"] == "NO_VERIFICADO"
+    assert rows["PPI_PRODUCTION_CATALOG"]["observed_state"] == "AMARILLO"
+    assert rows["PPI_PRODUCTION_AUTH"]["state"] == "NO_VERIFICADO"
