@@ -573,7 +573,8 @@ class Projection:
                 runtime = self.runtime
                 current = runtime["heartbeat_freshness"] == "FRESH"
                 row.update(cadence="OBSERVER_SESSION", freshness=runtime["heartbeat_freshness"],
-                           state=("VERDE" if runtime.get("ppi_auth") == "OK" else "ROJO") if current else UNKNOWN)
+                           state=("VERDE" if runtime.get("ppi_auth") == "OK" else
+                                  "ROJO" if runtime.get("ppi_auth") == "ERROR" else UNKNOWN) if current else UNKNOWN)
             elif component == "GEMINI_DECISION":
                 # The AI check is event-driven; an old GREEN is historical.
                 current = freshness(checked, self.now, 180) == "FRESH"
