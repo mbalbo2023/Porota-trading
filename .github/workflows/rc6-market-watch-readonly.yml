@@ -206,7 +206,7 @@ jobs:
             printf '%s\n' '{"schema":"rc6.observer-lifecycle.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true,"events":[]}' > evidence/observer_lifecycle.json
           fi
       - name: Audit authenticated dashboard routes and connector states without exporting content
-        if: github.event_name == 'push' && steps.window.outputs.active == '1'
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
