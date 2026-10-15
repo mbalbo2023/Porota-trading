@@ -29,7 +29,10 @@ class OperatorAuditTests(TestCase):
     payload["profile_status"] = "BOUNDED"
     payload["profile"] = [{"stage": "balances", "elapsed_ms": 2832,
                            "read_queries": 4, "state": "READ_OK", "sql": "must never leave host"}]
+    payload["balance_queries"] = [{"stage": "LATEST_EQUITY", "elapsed_ms": 2800,
+                                    "state": "READ_OK", "sql": "must never leave host"}]
     self.assertEqual(audit_host(runner=runner)["profile"][0]["elapsed_ms"], 2832)
+    self.assertEqual(audit_host(runner=runner)["balance_queries"][0]["stage"], "LATEST_EQUITY")
     self.assertNotIn("must never leave host", json.dumps(audit_host(runner=runner)))
 
     payload["routes"][0]["elapsed_ms"] = 3100
