@@ -304,12 +304,21 @@ def test_bounded_projection_yields_wal_writer_and_keeps_partial_candidates_close
 def test_complementary_reconcile_projects_after_releasing_writer(tmp_path, monkeypatch):
     store = _store(tmp_path)
     monkeypatch.setattr(observer, "complementary_discovery", lambda _root: [])
+    with store.connect() as c:
+        catalog.sync_candidate_universe(c, _fresh())
+        c.execute("""INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)""",
+                  ("KEEP", "CEDEARS", "A-24HS", "BYMA", 1, "AVAILABLE", "ready", _fresh()))
+        c.execute("""INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)""",
+                  ("KEEP", "CEDEARS", "BYMA", "ARS", "A-24HS", 1,
+                   "AVAILABLE", "ready", _fresh()))
     original = catalog.sync_candidate_universe
     calls = []
 
     def verified(connection, checked_at, **kwargs):
         assert kwargs["bounded_batch"] == 64
         assert not connection.in_transaction
+        assert connection.execute(
+            "SELECT can_simulate FROM candidate_identity_v2 WHERE ticker='KEEP'").fetchone()[0] == 1
         with store.connect() as peer:
             peer.execute("BEGIN IMMEDIATE")
             peer.rollback()
