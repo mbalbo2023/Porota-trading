@@ -329,6 +329,37 @@ jobs:
               context['sqlite_errorname']=label
           print('RC6_MONITOR_SAFE_FINDINGS='+','.join(codes))
           print('RC6_MONITOR_SAFE_SHADOW='+json.dumps(context,sort_keys=True,separators=(',',':')))
+          try:
+              recent=json.load(open('evidence/recent_critical.json', encoding='utf-8'))
+          except (OSError,ValueError):
+              recent={}
+          containers=recent.get('containers') if isinstance(recent,dict) else {}
+          containers=containers if isinstance(containers,dict) else {}
+          traces=[]
+          for name in ('porota_production_observer','porota_production_dashboard'):
+              item=containers.get(name)
+              rows=item.get('tracebacks') if isinstance(item,dict) else []
+              for row in (rows[-12:] if isinstance(rows,list) else []):
+                  if not isinstance(row,dict):
+                      continue
+                  frame=row.get('last_app_frame')
+                  frame=frame if isinstance(frame,dict) else {}
+                  cls=row.get('exception_class')
+                  module=frame.get('module')
+                  function=frame.get('function')
+                  line=frame.get('line')
+                  observed=row.get('observed_utc')
+                  hint=row.get('sqlite_hint')
+                  if (type(cls) is str and cls in {'sqlite3.OperationalError','ValueError','RuntimeError'}
+                          and type(module) is str and re.fullmatch(r'[a-z0-9_]{1,70}\.py',module)
+                          and type(function) is str and re.fullmatch(r'[A-Za-z0-9_]{1,80}',function)
+                          and type(line) is int and 0 < line <= 1000000
+                          and type(observed) is str and re.fullmatch(r'20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z',observed)):
+                      traces.append({'container':name,'class':cls,'module':module,
+                          'function':function,'line':line,'utc':observed,
+                          'sqlite_hint':hint if type(hint) is str and hint in {'SQLITE_BUSY_LOCKED','SQLITE_INTERRUPT',
+                              'SQLITE_FULL','SQLITE_IOERR','SQLITE_CANTOPEN','SQLITE_UNKNOWN'} else None})
+          print('RC6_MONITOR_SAFE_RECENT_CRITICAL='+json.dumps(traces[-12:],sort_keys=True,separators=(',',':')))
           if data['confirmed']:
               print('::error::RC6 Market Watch incident: '+', '.join(data['confirmed']))
               raise SystemExit(2)
