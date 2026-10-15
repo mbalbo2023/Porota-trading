@@ -1431,6 +1431,7 @@ def health_page():
         "SRE_SNAPSHOT": 300,
     }
     rows=[]
+    history_attention=set()
     for item in components:
         expected=cadence.get(str(item.get('key') or item.get('component') or item.get('name') or ''))
         info=rc4_health_explain.classify(item.get('state'),item.get('checked'),expected,item.get('detail',''))
@@ -1446,9 +1447,15 @@ def health_page():
                 "No requiere acción" if cause in {'OK','NO_APLICA'} else "Revisar degradación")
 
         if raw_state == 'AMARILLO' and key in {'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST'}:
-            semantic_state='GRIS'
-            semantic_cause='EN_PROGRESO_COBERTURA_PARCIAL'
-            action='Sin acción mientras la ingesta avance según scheduler'
+            if cause == 'RETRASADO':
+                # A partial old report is no evidence of ongoing ingestion.
+                history_attention.add(key)
+                semantic_cause='RETRASADO'
+                action='Investigar scheduler y reparación histórica antes de reanudar ingesta'
+            else:
+                semantic_state='GRIS'
+                semantic_cause='EN_PROGRESO_COBERTURA_PARCIAL'
+                action='Verificar avance según scheduler y último éxito'
         elif raw_state == 'AMARILLO' and key == 'PAPER_SIGNAL_ROTATION':
             semantic_state='GRIS'
             semantic_cause='FOCO_CUBIERTO_ROTACION_AMPLIADA_PARCIAL'
@@ -1473,12 +1480,14 @@ def health_page():
                           'BYMA_INSTRUMENTS_API','ROFEX_MARKETDATA'}
     pending = sum(
         item["state"] in {"PENDIENTE","AMARILLO"} and
-        str(item.get('key') or item.get('component') or item.get('name') or '').upper() not in neutral_partial_keys
+        (str(item.get('key') or item.get('component') or item.get('name') or '').upper() not in neutral_partial_keys
+         or str(item.get('key') or item.get('component') or item.get('name') or '').upper() in history_attention)
         for item in applicable
     )
     informational = sum(
         item["state"] in {"AMARILLO","GRIS"} and
         str(item.get('key') or item.get('component') or item.get('name') or '').upper() in neutral_partial_keys
+        and str(item.get('key') or item.get('component') or item.get('name') or '').upper() not in history_attention
         for item in applicable
     )
     summary = ("VERDE: verificación exitosa. RETRASADO: evidencia más vieja que su cadencia esperada. "
