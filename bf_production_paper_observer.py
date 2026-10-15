@@ -623,13 +623,27 @@ def _reconcile_complementary_catalog(store):
     applied_by_source = {}
 
     with store.connect() as connection:
-        # A partial reconciliation must never leave prior READY projections live.
-        connection.execute("BEGIN IMMEDIATE")
-        for name in ("candidate_universe", "candidate_identity_v2"):
-            if connection.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone():
-                connection.execute("DELETE FROM " + name)
-        connection.commit()
+        candidate_tables = {row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('candidate_universe','candidate_identity_v2')")}
+
+        def pause_projection(record):
+            # Close only an identity whose catalogue or retry status is changing.
+            # Other verified PAPER identities stay available through this long
+            # off-session rebuild. The final projection restores exact status.
+            ticker, family, market = (record[k] for k in (
+                "ticker", "instrument_type", "market"))
+            if "candidate_universe" in candidate_tables:
+                connection.execute("""UPDATE candidate_universe
+                  SET can_simulate=0,status='PAUSED_EXPLICIT',detail='RECONCILIATION_PENDING'
+                  WHERE ticker=? AND instrument_type=? AND market=?""",
+                  (ticker, family, market))
+            if "candidate_identity_v2" in candidate_tables:
+                connection.execute("""UPDATE candidate_identity_v2
+                  SET can_simulate=0,status='PAUSED_EXPLICIT',detail='RECONCILIATION_PENDING'
+                  WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?""",
+                  (ticker, family, market, record["currency"], record["settlement"]))
+
         for offset in range(0, len(complementary), 32):
             connection.execute("BEGIN IMMEDIATE")
             for raw in complementary[offset:offset + 32]:
@@ -673,6 +687,7 @@ def _reconcile_complementary_catalog(store):
                     # ledger.  No row is selected or mutated while the provider
                     # evidence cannot distinguish the canonical PPI identity.
                     for candidate in matches:
+                        pause_projection(candidate)
                         connection.execute("""INSERT INTO complementary_contract_retry
                           VALUES(?,?,?,?,?,?,?,?,?,?,?)
                           ON CONFLICT(ticker,instrument_type,market,currency,settlement,source)
@@ -697,6 +712,7 @@ def _reconcile_complementary_catalog(store):
                         continue
                     if (complement.get("status") == "AVAILABLE"
                             and str(complement.get("capability") or "").startswith("READY_PAPER_")):
+                        pause_projection(complement)
                         financial_catalog.persist(connection, complement)
                         connection.execute("""INSERT OR REPLACE INTO instrument_catalog
                           VALUES(?,?,?,?,?,?,?)""",
@@ -750,6 +766,7 @@ def _reconcile_complementary_catalog(store):
                     if merged.get(field) != primary.get(field):
                         raise RuntimeError(f"COMPLEMENT_OVERWRITE_BLOCKED:{field}:{ticker}")
 
+                pause_projection(primary)
                 financial_catalog.persist(connection, merged)
                 connection.execute("""INSERT OR REPLACE INTO instrument_catalog
                   VALUES(?,?,?,?,?,?,?)""",

@@ -863,6 +863,57 @@ jobs:
           fi
           echo "RC6_BYMA_MORNING_REFRESH=GREEN"
 
+          # The closed-session reconciler may still be publishing its bounded
+          # candidate batches after the contract runner restarts the observer.
+          # Wait for at least one exact equity/CEDEAR PAPER identity under the
+          # same safety invariants; the preopen contract remains unchanged.
+          RC6_PREOPEN_READY=0
+          for attempt in {1..40}; do
+            set +e
+            CANDIDATE_READY="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys,time
+          path=sys.argv[1]
+          try:
+              c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=.5)
+              c.execute('PRAGMA query_only=ON')
+              deadline=time.monotonic()+2
+              c.set_progress_handler(lambda: int(time.monotonic()>deadline),1000)
+              state=c.execute('SELECT mode,real_orders_sent,ppi_auth FROM observer_state WHERE id=1').fetchone()
+              if not state or state[0]!='PRODUCTION_PAPER' or state[1]!=0 or str(state[2]).upper() not in ('OK','AUTHENTICATED'):
+                  print('RED|PAPER_SAFETY_OR_AUTH')
+                  sys.exit(2)
+              row=c.execute("""SELECT 1 FROM candidate_identity_v2
+                  WHERE status='AVAILABLE' AND can_simulate=1
+                    AND instrument_type IN ('ACCIONES','CEDEARS','ETFS') LIMIT 1""").fetchone()
+              print('GREEN' if row else 'WAIT')
+          except sqlite3.Error:
+              print('RED|SQLITE_READ')
+              sys.exit(2)
+          finally:
+              try: c.close()
+              except NameError: pass
+          PY
+            )"
+            CANDIDATE_RC=$?
+            set -e
+            echo "RC6_PREOPEN_CANDIDATE_WAIT_$attempt=$CANDIDATE_READY"
+            if [ "$CANDIDATE_RC" -ne 0 ]; then
+              echo "RC6_PREOPEN_CANDIDATE_WAIT=RED|RC=$CANDIDATE_RC"
+              exit "$CANDIDATE_RC"
+            fi
+            if [ "$CANDIDATE_READY" = GREEN ]; then
+              RC6_PREOPEN_READY=1
+              break
+            fi
+            test "$CANDIDATE_READY" = WAIT
+            sleep 30
+          done
+          if [ "$RC6_PREOPEN_READY" -ne 1 ]; then
+            echo "RC6_PREOPEN_CANDIDATE_WAIT=RED|TIMEOUT_20M"
+            exit 42
+          fi
+          echo "RC6_PREOPEN_CANDIDATE_WAIT=GREEN"
+
           # Execute the same fail-closed preopen contract under both scheduled
           # phase labels. No order route, DB write, restart or Telegram send is
           # performed by rc6_preopen.py.
