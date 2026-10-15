@@ -3,10 +3,13 @@ import json
 from types import SimpleNamespace
 from unittest import TestCase
 
-from scripts.rc6_operator_dashboard_readonly import ROUTES, SCHEMA, audit_host
+from scripts.rc6_operator_dashboard_readonly import CHILD, ROUTES, SCHEMA, audit_host
 
 
 class OperatorAuditTests(TestCase):
+ def test_embedded_probe_compiles(self):
+    compile(CHILD, "<dashboard-probe>", "exec")
+
  def test_sanitized_audit_receipt_has_exact_routes_and_no_page_content(self):
     payload = {"schema": SCHEMA, "read_only": True, "source_status": "BOUNDED",
                "routes": [{"path": path, "http": 200, "nav": True, "content": True,
