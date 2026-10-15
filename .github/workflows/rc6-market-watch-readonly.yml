@@ -204,26 +204,10 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          mkdir -p evidence/previous
-          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/rc6-market-watch-readonly.yml/runs?branch=main&per_page=12" \
-            > evidence/previous/runs.json || true
-          python3 - <<'PY' > evidence/previous/run_ids.txt
-          import json, os
-          try:
-              data=json.load(open('evidence/previous/runs.json', encoding='utf-8'))
-          except (OSError, ValueError):
-              data={}
-          for run in data.get('workflow_runs', []):
-              if (str(run.get('id')) != os.environ['GITHUB_RUN_ID']
-                      and run.get('status') == 'completed'):
-                  print(run['id'])
-          PY
-          while IFS= read -r run_id; do
-            if gh run download "$run_id" -n "rc6-market-watch-$run_id" \
-               -D evidence/previous --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              break
-            fi
-          done < evidence/previous/run_ids.txt
+          python3 scripts/rc6_market_watch_readonly.py select-previous \
+            --current evidence/snapshot.json --repo "$GITHUB_REPOSITORY" \
+            --workflow-id 384354765 --run-id "$GITHUB_RUN_ID" \
+            --destination evidence/previous
       - name: Compare snapshots and detect transitions
         if: steps.window.outputs.active == '1'
         shell: bash
@@ -294,6 +278,7 @@ jobs:
             evidence/observer_lifecycle.json
             evidence/recent_critical.json
             evidence/delivery.json
+            evidence/previous/source.json
           if-no-files-found: error
           retention-days: 7
       - name: Fail checks on verified critical or confirmed P1

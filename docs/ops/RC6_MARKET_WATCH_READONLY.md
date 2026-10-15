@@ -106,8 +106,12 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
   line and function) and traceback count. Raw
   logs, messages, attributes, arguments, environment and other containers
   never enter the artifact; unavailable probes stay explicitly unverified.
-- Successive runs compare against the latest downloadable completed artifact,
-  never invent a prior observation if an artifact is missing or expired.
+- Successive observations first inspect prior attempts of the *same* run ID,
+  then completed runs. Each ZIP must match GitHub's SHA256 digest and contain
+  matching snapshot/decision timestamps, schema and productive SHA. Its
+  sample must precede the current sample by no more than 30 minutes. The
+  source receipt records run, artifact, digest, product SHA and timestamp;
+  missing, expired, damaged or incompatible evidence leaves P1 pending.
 - The new confirmed P0/P1 code and recoveries are de-duplicated in decision.json.
 - GitHub Actions fails on confirmed incidents and prints a short annotation.
 - A confirmed transition is delivered through the existing PAPER container's
@@ -121,6 +125,19 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
 - A remote SSH/probe failure produces P0 REMOTE_PROBE_UNAVAILABLE and does
   not pretend to observe real_orders_sent=0.
 - API/checkout failures leave workflow failure, not invented runtime evidence.
+
+## 15 October retry incident
+
+Run 38694565268 attempts 2/3/4 produced artifacts 11981619235,
+11983080832 and 11985131978. All three had DYNAMIC_SHADOW_FAIL_CLOSED P1
+on the exact productive SHA 64583571846addb85038554dc56230bafbc7e6b4.
+The previous-artifact step excluded its own GITHUB_RUN_ID, so all three
+decisions said previous_comparable=false, confirmed=[] and NO_TRANSITION.
+This is a control-plane confirmation bug; SUCCESS for the watch job did not
+mean the engine was healthy. The retry regression checks same-run selection,
+digest failure, SHA/time incompatibility and the Telegram ACK requirement.
+Delivery for this incident remains NO_VERIFICADO until a fresh artifact
+contains a verified message_id.
 
 ## Controls and continuity
 
