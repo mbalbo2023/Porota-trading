@@ -236,6 +236,8 @@ jobs:
           print('RC6_DASHBOARD_PROFILE_STATUS='+str(result.get('profile_status','NO_VERIFICADO')))
           print('RC6_DASHBOARD_PROFILE='+json.dumps(result.get('profile',[]),
               sort_keys=True,separators=(',',':')))
+          print('RC6_DASHBOARD_BALANCE_QUERIES='+json.dumps(result.get('balance_queries',[]),
+              sort_keys=True,separators=(',',':')))
           print('RC6_CONNECTOR_STATES='+json.dumps(result.get('sources',[]),
               sort_keys=True,separators=(',',':')))
           PY
