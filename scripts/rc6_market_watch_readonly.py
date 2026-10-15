@@ -299,7 +299,9 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
         if isinstance(label, str) and re.fullmatch(r"SQLITE_[A-Z0-9_]{1,40}", label):
             result["shadow"]["sqlite_errorname"] = label
         module = shadow.get("error_module")
-        if isinstance(module, str) and module in {"runtime", "worker", "preopen", "promotion"}:
+        if isinstance(module, str) and module in {"runtime", "worker", "preopen", "promotion",
+                "stages", "families", "lab", "entry_signals", "funnel", "source_reads",
+                "read_contract", "persistence", "snapshot", "common", "live"}:
             result["shadow"]["error_module"] = module
     if shadow is None:
         add("DYNAMIC_SHADOW_STATUS_MISSING_OR_INVALID",
