@@ -609,12 +609,15 @@ try:
  # One bounded live timing pass over the production query shapes. No values,
  # SQL parameters, result rows, account data or exception messages are exported.
  floor=at.replace(hour=0,minute=0,second=0,microsecond=0).isoformat()
+ # Mirror the deployed runtime's full catalogue and independently bounded
+ # observation sources; keep one timing pass within the 2s shared deadline.
+ observation_limit=3001
  detailed=(
   ("CATALOG_FULL", "SELECT ticker,instrument_type,market,currency,settlement,status,capability FROM financial_instrument_catalog ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?", (20001,)),
   ("OPEN_POSITIONS", "SELECT symbol,asset_class,market,currency,settlement FROM paper_positions WHERE status='OPEN' ORDER BY paper_id LIMIT ?", (20001,)),
   ("CONTRACTS", "SELECT * FROM ppi_intraday_contract_state LIMIT ?", (20001,)),
-  ("INTRADAY", "SELECT symbol,asset_class,market,currency,settlement,event_at,first_received_at,last_verified_at,price,volume,source FROM ppi_intraday_points WHERE julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?) AND julianday(first_received_at)<=julianday(?) AND julianday(last_verified_at)<=julianday(?) ORDER BY julianday(event_at) DESC LIMIT ?", (floor,at.isoformat(),at.isoformat(),at.isoformat(),20001)),
-  ("SNAPSHOTS", "SELECT symbol,asset_class,market,currency,settlement,last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size,last_kind FROM market_snapshots NOT INDEXED WHERE id >= (SELECT MIN(id) FROM market_snapshots WHERE julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?)) AND julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?) ORDER BY id DESC LIMIT ?", (at.isoformat(),floor,at.isoformat(),floor,20001)))
+  ("INTRADAY", "SELECT symbol,asset_class,market,currency,settlement,event_at,first_received_at,last_verified_at,price,volume,source FROM ppi_intraday_points WHERE julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?) AND julianday(first_received_at)<=julianday(?) AND julianday(last_verified_at)<=julianday(?) ORDER BY julianday(event_at) DESC LIMIT ?", (floor,at.isoformat(),at.isoformat(),at.isoformat(),observation_limit)),
+  ("SNAPSHOTS", "SELECT symbol,asset_class,market,currency,settlement,last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size,last_kind FROM market_snapshots NOT INDEXED WHERE id >= (SELECT MIN(id) FROM market_snapshots WHERE julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?)) AND julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?) ORDER BY id DESC LIMIT ?", (at.isoformat(),floor,at.isoformat(),floor,observation_limit)))
  budget_start=time.monotonic(); deadline=budget_start+2.0
  measurements=[]
  def expired(): return int(time.monotonic()>deadline)
@@ -637,6 +640,7 @@ try:
  c.set_progress_handler(None,0)
  result["query_stages"]=measurements
  result["query_budget_ms"]=2000
+ result["observation_source_limit_with_sentinel"]=observation_limit
  try: result["wal_bytes"]=db.with_name(db.name+"-wal").stat().st_size
  except OSError: result["wal_bytes"]=None
 except Exception as exc: result["setup_error_class"]=type(exc).__name__
