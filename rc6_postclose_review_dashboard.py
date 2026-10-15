@@ -41,8 +41,8 @@ def page() -> str:
                  "Sólo se consideran snapshots post-cierre verificables.", _tone(status)),
         bg._card("Operaciones cerradas", metrics.get("closed_operations", "—"),
                  "Operaciones PAPER cerradas durante la rueda.", "green" if status == "VERIFIED" else "yellow"),
-        bg._card("P&L neto", bg._money(metrics.get("net_pnl_ars")),
-                 "Resultado PAPER; no representa dinero real.", "green" if (metrics.get("net_pnl_ars") or 0) >= 0 else "red"),
+        bg._card("P&L neto", bg._money(metrics.get("net_pnl_ars")) if metrics.get("net_pnl_ars") is not None else "—",
+                 "Resultado PAPER; no representa dinero real.", bg._result_card_state(metrics.get("net_pnl_ars"))),
         bg._card("Win rate", "—" if metrics.get("win_rate_pct") is None else f"{metrics.get('win_rate_pct')}%",
                  "No se calcula si no hubo operaciones cerradas.", "green" if (metrics.get("win_rate_pct") or 0) >= 50 else "yellow"),
         bg._card("Decisiones observadas", metrics.get("decisions_observed", "—"),
@@ -53,7 +53,7 @@ def page() -> str:
         f"<td><b>{bg._e(row.get('symbol'))}</b></td>"
         f"<td>{bg._e(row.get('opened_at'))}</td>"
         f"<td>{bg._e(row.get('closed_at'))}</td>"
-        f"<td>{bg._money(row.get('net_pnl_ars'))}</td>"
+        f"<td>{bg._result_amount(row.get('net_pnl_ars'), 'ARS')}</td>"
         f"<td>{bg._e(row.get('decision_reason'))}</td>"
         "</tr>"
         for row in operations[:MAX_OPERATIONS]

@@ -13,6 +13,7 @@ CSS = """
 @media(max-width:360px){.filters,.facts{grid-template-columns:1fr}.metric-card p{font-size:.68rem}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation:none!important;transition:none!important}}
 .detail-trigger{width:100%;justify-content:flex-start;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.result-positive{color:var(--pass);font-weight:800}.result-negative{color:var(--blocked);font-weight:800}.result-neutral{color:var(--muted);font-weight:700}
 .row-dialog{position:fixed;inset:0;width:min(760px,calc(100vw - 24px));max-width:760px;max-height:min(85dvh,850px);margin:auto;padding:0;color:var(--ink);background:var(--panel);border:1px solid #6380a6;border-radius:12px;box-shadow:0 20px 70px #000b;overflow:hidden}
 .row-dialog::backdrop{background:#020817c9}.dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line);background:var(--panel2)}.dialog-heading h3{overflow-wrap:anywhere}.dialog-heading form{flex:none}.dialog-body{padding:10px 18px 20px;max-height:calc(min(85dvh,850px) - 76px);overflow:auto;overscroll-behavior:contain}.dialog-body .facts{grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr))}
 @media(max-width:600px){.row-dialog{width:calc(100vw - 12px);max-height:90dvh}.dialog-heading{padding:12px;align-items:flex-start}.dialog-heading .button{min-height:44px}.dialog-body{max-height:calc(90dvh - 78px);padding:10px 12px 16px}.dialog-body .facts{grid-template-columns:1fr}}

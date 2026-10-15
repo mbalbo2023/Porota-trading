@@ -592,3 +592,25 @@ def test_historial_usa_una_fotografia_aunque_acrediten_durante_lectura(allocatio
     assert report['records'][0]['placement']['status'] == 'OPEN'
     monkeypatch.setattr(audit, '_validated', original)
     assert audit.allocation_history(broker.store.path)['records'][0]['placement']['status'] == 'MATURED'
+
+
+def test_historico_parcial_atrasado_exige_atencion_y_no_finge_avance(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.db"))
+    import be_paper_engine
+    be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
+    import bg_paper_dashboard as dashboard
+    dashboard = importlib.reload(dashboard)
+    component = {"name": "PPI Producción — históricos", "key": "PPI_PRODUCTION_HISTORY",
+                 "state": "AMARILLO", "checked": (datetime.now(timezone.utc) - timedelta(days=20)).isoformat(),
+                 "last_success": None, "detail": "Cobertura parcial", "next_check": "ATRASADO",
+                 "mode": "SIMULACIÓN PRODUCTIVA", "use": "Históricos", "applicable": True}
+    monkeypatch.setattr(dashboard, "_health_components", lambda: [component])
+    stale = dashboard.health_page()
+    assert "RETRASADO" in stale and "1 pendientes/requieren atención" in stale
+    assert "Sin acción mientras la ingesta avance" not in stale
+    component["checked"] = datetime.now(timezone.utc).isoformat()
+    recent = dashboard.health_page()
+    assert "EN_PROGRESO_COBERTURA_PARCIAL" in recent
+    assert "0 pendientes/requieren atención" in recent

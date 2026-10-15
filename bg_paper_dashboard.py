@@ -92,6 +92,7 @@ box-shadow:0 3px 14px #14213d0c;margin:12px 0;overflow:hidden;min-width:0}.paper
 .card-green{background:var(--green-bg);border-color:#8bd0a2}.card-red{background:var(--red-bg);border-color:#ef9a9a}
 .card-yellow{background:var(--yellow-bg);border-color:#e4c46b}.card-gray{background:var(--gray-bg);border-color:#cfd5dd}
 .positive{color:var(--green)!important;font-weight:800}.negative{color:var(--red)!important;font-weight:800}.neutral{color:var(--gray)}
+.paper-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .paper-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;font-size:.86rem}.paper-table th{background:#e7edf4}
 .paper-table th,.paper-table td{padding:9px;border-bottom:1px solid #dce3ed;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-break:break-word}
 .paper-muted{color:var(--muted);font-size:.86rem}.paper-action{display:inline-block;background:var(--blue);color:#fff!important;
@@ -109,6 +110,13 @@ border:1px solid var(--line);border-radius:9px;padding:10px 12px;text-decoration
 .system-nav a.active{background:var(--nav);color:#fff}.system-content{min-width:0}
 details.paper-trade{background:#fff;border:1px solid var(--line);border-radius:11px;margin:10px 0;overflow:hidden}
 details.paper-trade>summary{cursor:pointer;padding:13px 15px;font-weight:750;background:#f8fafc;list-style-position:inside}
+.paper-detail-dialog{width:min(900px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:0;
+border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 60px #0004;color:var(--ink)}
+.paper-detail-dialog::backdrop{background:#101828a8}
+.paper-detail-header{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;
+gap:12px;padding:12px 16px;background:#f8fafc;border-bottom:1px solid var(--line)}
+.paper-detail-header h2{margin:0;overflow-wrap:anywhere}.paper-detail-content{padding:12px 16px;overflow-x:auto}
+.paper-detail-content .trade-body{padding:0}.paper-detail-content table{min-width:600px}
 .trade-body{padding:4px 15px 15px}.timeline{border-left:3px solid #bcc8d8;padding-left:15px;margin:10px 0}.timeline>div{margin:10px 0}
 .paper-footer{max-width:1280px;margin:10px auto 30px;padding:0 18px;text-align:right}.up-link{display:inline-block;background:var(--nav);
 color:#fff!important;padding:10px 14px;border-radius:9px;text-decoration:none;font-weight:800}
@@ -143,6 +151,30 @@ def _amount(value, currency):
     labels = {"ARS": "ARS $", "USD": "USD", "USD_MEP": "USD MEP", "USD_CCL": "USD CCL"}
     try: return f"{labels.get(currency, currency)} {_locale_number(value)}"
     except Exception: return "—"
+
+
+def _result_amount(value, currency, *, loss_magnitude=False):
+    """Signed PAPER PnL, with neutral zero and no invented value on bad data."""
+    try:
+        amount = Decimal(str(value))
+        if not amount.is_finite(): return "—"
+    except (InvalidOperation, ValueError, TypeError):
+        return "—"
+    tone = "negative" if loss_magnitude and amount > 0 else "positive" if amount > 0 else "negative" if amount < 0 else "neutral"
+    label = "Pérdida media" if loss_magnitude and amount > 0 else {
+        "positive": "Resultado positivo", "negative": "Resultado negativo",
+        "neutral": "Resultado neutro"}[tone]
+    return (f"<span class='{tone}'><span class='paper-sr-only'>{label}: </span>"
+            f"{_e(_amount(value, currency))}</span>")
+
+
+def _result_card_state(value):
+    try:
+        amount = Decimal(str(value))
+        if not amount.is_finite(): return "gray"
+    except (InvalidOperation, ValueError, TypeError):
+        return "gray"
+    return "green" if amount > 0 else "red" if amount < 0 else "gray"
 
 
 def _locale_number(value, decimals=2):
@@ -341,6 +373,7 @@ def _document(title, body, refresh=REFRESH_SECONDS):
             const current=document.querySelector('main.paper-page');
             const banner=parsed.querySelector('#porota-paper-mode');
             if(next&&current) current.replaceWith(next);
+            window.porotaDecorateDetails?.();
             if(banner&&document.querySelector('#porota-paper-mode'))
               document.querySelector('#porota-paper-mode').replaceWith(banner);
             opened.forEach(id=>{{
@@ -361,9 +394,49 @@ def _document(title, body, refresh=REFRESH_SECONDS):
     controls = ("<div class='paper-actions'><a class='paper-action' "
                 "href='javascript:window.refreshPorota?window.refreshPorota():location.reload()' id='actualizar-pagina'>"
                 "🔄 Actualizar página</a></div>")
+    detail_popup = """<script>(function(){
+      const dialog=document.createElement('dialog');
+      dialog.className='paper-detail-dialog';
+      dialog.setAttribute('aria-labelledby','paper-detail-title');
+      dialog.innerHTML='<div class="paper-detail-header"><h2 id="paper-detail-title"></h2>'+
+        '<button type="button" class="paper-action" aria-label="Cerrar detalle">Cerrar</button></div>'+
+        '<div class="paper-detail-content"></div>';
+      document.body.append(dialog);
+      const content=dialog.querySelector('.paper-detail-content');
+      const title=dialog.querySelector('#paper-detail-title');
+      const close=dialog.querySelector('button');
+      let origin=null, trigger=null, moved=[];
+      window.porotaDecorateDetails=()=>document.querySelectorAll(
+        '.paper-page details>summary'
+      ).forEach(summary=>summary.setAttribute('aria-haspopup','dialog'));
+      window.porotaDecorateDetails();
+      document.addEventListener('click',function(event){
+        const summary=event.target.closest('summary');
+        const details=summary?.parentElement;
+        if(!details || details.tagName!=='DETAILS' || !details.closest('.paper-page') ||
+           typeof dialog.showModal!=='function') return;
+        event.preventDefault();
+        if(dialog.open) return;
+        origin=details; trigger=summary;
+        moved=[...details.children].filter(node=>node!==summary);
+        title.textContent=summary.textContent.trim();
+        content.append(...moved);
+        details.open=false;
+        dialog.showModal();
+        close.focus();
+      });
+      close.addEventListener('click',()=>dialog.close());
+      dialog.addEventListener('click',event=>{if(event.target===dialog) dialog.close()});
+      dialog.addEventListener('close',()=>{
+        if(origin) origin.append(...moved);
+        content.replaceChildren();
+        trigger?.focus({preventScroll:true});
+        origin=null;trigger=null;moved=[];
+      });
+    })();</script>"""
     return ("<!doctype html><html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>{_e(title)}</title>{THEME}{RESPONSIVE_CSS}{COMPACT_CSS}{TABLE_A11Y_CSS}</head><body id='top'>{_nav()}{mode_banner()}"
-            f"<main class='paper-page'>{controls}{body}</main><footer class='paper-footer'><a class='up-link' href='#top'>↑ Ir al principio</a></footer>{script}{TABLE_A11Y_SCRIPT}</body></html>")
+            f"<main class='paper-page'>{controls}{body}</main><footer class='paper-footer'><a class='up-link' href='#top'>↑ Ir al principio</a></footer>{script}{detail_popup}{TABLE_A11Y_SCRIPT}</body></html>")
 
 
 def _canonicalize(content, path=""):
@@ -500,7 +573,7 @@ def _daily_risk_panel():
         except (InvalidOperation, TypeError, ValueError):
             soft_text = f"Sin base ({soft_pct}%)"
         items.append(f"<tr><td>{_e(r['currency'])}</td><td>{_e(state)}</td>"
-            f"<td>{_amount(r['baseline_equity'], r['currency']) if r['baseline_equity'] is not None else 'Sin base'}</td><td>{_amount(r['daily_pnl'], r['currency']) if r['daily_pnl'] is not None else 'Sin valuación'}</td>"
+            f"<td>{_amount(r['baseline_equity'], r['currency']) if r['baseline_equity'] is not None else 'Sin base'}</td><td>{_result_amount(r['daily_pnl'], r['currency']) if r['daily_pnl'] is not None else 'Sin valuación'}</td>"
             f"<td>{_e(soft_text)}</td><td>{_amount(r['loss_budget'], r['currency']) if r['loss_budget'] is not None else '—'} ({_e(_locale_number(r['limit_pct']) if r['limit_pct'] is not None else 's/d')}%)</td>"
             f"<td>{_e(r['detail'])}</td></tr>")
     return ("<div class='paper-card'><h2>Corte diario por moneda</h2>"
@@ -620,8 +693,7 @@ def _caucion_allocations_panel():
         selected_text = ('Sin inversión' if selected is None else
             f"Capital colocado: {_e(selected['principal'])} · Débito inicial: {_e(selected['cash_debit'])} · "
             f"Neto estimado al vencimiento: {_e(selected['net_profit'])}")
-        expanded = ' open' if record is data['records'][0] else ''
-        cards.append(f"<details class='paper-trade'{expanded}><summary>{label} · {_e(decision['currency'])} · "
+        cards.append(f"<details class='paper-trade'><summary>{label} · {_e(decision['currency'])} · "
             f"{'Colocación simulada registrada' if selected else 'Abstención'}</summary><div class='trade-body'>"
             f"<p>{_e(_allocation_reason(decision['code']))}. {selected_text}</p><p>{placement_text}</p>"
             f"<p>Criterio: {_e(metric)}. Desempate: menor plazo, menor débito, identificador de oferta.</p>"
@@ -693,8 +765,8 @@ def _balances_panel():
             continue
     rows = "".join(f"<tr><td>{_e(r['currency'])}</td><td>{_amount(r['cash'], r['currency'])}</td>"
                    f"<td>{_amount(r['pending_proceeds'], r['currency'])}</td><td>{_amount(r['caucion_principal'], r['currency'])}</td>"
-                   f"<td>{_amount(realized_today.get(r['currency'],0), r['currency'])}</td>"
-                   f"<td>{_amount(r['realized_pnl'], r['currency'])}</td><td>{_amount(r['equity'], r['currency'])}</td>"
+                   f"<td>{_result_amount(realized_today.get(r['currency'],0), r['currency'])}</td>"
+                   f"<td>{_result_amount(r['realized_pnl'], r['currency'])}</td><td>{_amount(r['equity'], r['currency'])}</td>"
                    f"<td>{_e(quality.get(r['currency'],{}).get('state','UNKNOWN'))} · "
                    f"{_local_time(quality.get(r['currency'],{}).get('measured_at'))}</td></tr>" for r in balances)
     rows = rows or "<tr><td colspan='8'>Pendiente de la primera valuación por moneda.</td></tr>"
@@ -1192,7 +1264,7 @@ def scalping_page():
             "green" if scalping_truth.get('exit_supervisor_state')=='RUNNING' else "yellow"),
       _card("Órdenes reales",canonical_truth['runtime'].get("real_orders_sent",0),"Autoridad: observer_state; debe ser siempre cero","green" if canonical_truth['runtime'].get("real_orders_sent",0)==0 else "red"),
     ))
-    scalp_rows="".join(f"<tr><td>{_local_time(p['opened_at'])}</td><td>{_e(p['symbol'])}</td><td>{_e(p['currency'])}</td><td>{_status(p['status'])}</td><td>{_e(p['quantity'])}</td><td>{_money(p.get('net_pnl'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in scalp_positions) or "<tr><td colspan='7'>Todavía no hubo fills scalping PAPER.</td></tr>"
+    scalp_rows="".join(f"<tr><td>{_local_time(p['opened_at'])}</td><td>{_e(p['symbol'])}</td><td>{_e(p['currency'])}</td><td>{_status(p['status'])}</td><td>{_e(p['quantity'])}</td><td>{_result_amount(p.get('net_pnl'), p.get('currency'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in scalp_positions) or "<tr><td colspan='7'>Todavía no hubo fills scalping PAPER.</td></tr>"
     execution_notice=("<div class='paper-warning'><b>DESACTIVADO:</b> scalping no está disponible con el universo READY actual. No se generan candidatos ni fills scalping.</div>"
                       if PAPER_SCALPING_MODE=="OFF" else
                       "<div class='paper-notice'><b>ACTIVE_PAPER:</b> fills exclusivamente simulados; los candidatos validados pueden abrir sólo posiciones PAPER. Riesgo, máximo de posiciones y Max Hold se leen de la política vigente. EOD y Max Hold quedan auditados por el supervisor. PPI Orders permanece bloqueado.</div>"
@@ -1431,6 +1503,7 @@ def health_page():
         "SRE_SNAPSHOT": 300,
     }
     rows=[]
+    history_attention=set()
     for item in components:
         expected=cadence.get(str(item.get('key') or item.get('component') or item.get('name') or ''))
         info=rc4_health_explain.classify(item.get('state'),item.get('checked'),expected,item.get('detail',''))
@@ -1446,9 +1519,15 @@ def health_page():
                 "No requiere acción" if cause in {'OK','NO_APLICA'} else "Revisar degradación")
 
         if raw_state == 'AMARILLO' and key in {'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST'}:
-            semantic_state='GRIS'
-            semantic_cause='EN_PROGRESO_COBERTURA_PARCIAL'
-            action='Sin acción mientras la ingesta avance según scheduler'
+            if cause == 'RETRASADO':
+                # A partial old report is no evidence of ongoing ingestion.
+                history_attention.add(key)
+                semantic_cause='RETRASADO'
+                action='Investigar scheduler y reparación histórica antes de reanudar ingesta'
+            else:
+                semantic_state='GRIS'
+                semantic_cause='EN_PROGRESO_COBERTURA_PARCIAL'
+                action='Verificar avance según scheduler y último éxito'
         elif raw_state == 'AMARILLO' and key == 'PAPER_SIGNAL_ROTATION':
             semantic_state='GRIS'
             semantic_cause='FOCO_CUBIERTO_ROTACION_AMPLIADA_PARCIAL'
@@ -1473,12 +1552,14 @@ def health_page():
                           'BYMA_INSTRUMENTS_API','ROFEX_MARKETDATA'}
     pending = sum(
         item["state"] in {"PENDIENTE","AMARILLO"} and
-        str(item.get('key') or item.get('component') or item.get('name') or '').upper() not in neutral_partial_keys
+        (str(item.get('key') or item.get('component') or item.get('name') or '').upper() not in neutral_partial_keys
+         or str(item.get('key') or item.get('component') or item.get('name') or '').upper() in history_attention)
         for item in applicable
     )
     informational = sum(
         item["state"] in {"AMARILLO","GRIS"} and
         str(item.get('key') or item.get('component') or item.get('name') or '').upper() in neutral_partial_keys
+        and str(item.get('key') or item.get('component') or item.get('name') or '').upper() not in history_attention
         for item in applicable
     )
     summary = ("VERDE: verificación exitosa. RETRASADO: evidencia más vieja que su cadencia esperada. "
@@ -1836,8 +1917,8 @@ def learning_page():
     expectancy = empirical_expectancy(sample, minimum_sample=30)
     expectancy_rows = "".join(
         f"<tr><td>{_e(item['currency'])}</td><td>{item['samples']}</td><td>{_e(item['win_rate_pct'])}%</td>"
-        f"<td>{_amount(item['average_win'], item['currency'])}</td><td>{_amount(item['average_loss'], item['currency'])}</td>"
-        f"<td>{_amount(item['empirical_expectancy'], item['currency'])}</td><td>{_e(item['profit_factor'] or 's/d')}</td>"
+        f"<td>{_result_amount(item['average_win'], item['currency'])}</td><td>{_result_amount(item['average_loss'], item['currency'], loss_magnitude=True)}</td>"
+        f"<td>{_result_amount(item['empirical_expectancy'], item['currency'])}</td><td>{_e(item['profit_factor'] or 's/d')}</td>"
         f"<td>{_status(item['sample_state'])}</td></tr>" for item in expectancy
     ) or "<tr><td colspan='8'>Sin operaciones cerradas para calcular resultados empíricos.</td></tr>"
     latest_label=(_rows("SELECT MAX(label_timestamp) latest FROM paper_learning_samples") or [{}])[0].get('latest') if _table('paper_learning_samples') else None
@@ -2453,7 +2534,7 @@ def _trading_motor_summary():
     position_rows = "".join(
         f"<tr><td>{_local_time(row.get('opened_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
         f"<td>{_e(row.get('asset_class'))}</td><td>{_status(row.get('status'))}</td>"
-        f"<td>{_e(row.get('close_reason') or '—')}</td><td>{_amount(row.get('net_pnl'), row.get('currency')) if row.get('net_pnl') is not None else '—'}</td></tr>"
+        f"<td>{_e(row.get('close_reason') or '—')}</td><td>{_result_amount(row.get('net_pnl'), row.get('currency'))}</td></tr>"
         for row in positions
     ) or "<tr><td colspan='6'>Sin operaciones PAPER registradas hoy.</td></tr>"
     if _table("trade_gate_evaluations") and _table("candidate_identity_v2"):
@@ -2478,7 +2559,7 @@ def _trading_motor_summary():
     position_row_list = [
         f"<tr><td>{_local_time(row.get('opened_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
         f"<td>{_e(row.get('asset_class'))}</td><td>{_status(row.get('status'))}</td>"
-        f"<td>{_e(row.get('close_reason') or '—')}</td><td>{_amount(row.get('net_pnl'), row.get('currency')) if row.get('net_pnl') is not None else '—'}</td></tr>"
+        f"<td>{_e(row.get('close_reason') or '—')}</td><td>{_result_amount(row.get('net_pnl'), row.get('currency'))}</td></tr>"
         for row in positions
     ]
     position_rows = "".join(position_row_list[:10]) or "<tr><td colspan='6'>Sin operaciones PAPER de hoy.</td></tr>"
@@ -2858,7 +2939,9 @@ def introspection_content():
               f"Pulso {_local_time(display_observer.get('heartbeat_at'))} · snapshot {snapshot_freshness}",
               "green" if display_observer.get('process_state')=='RUNNING' else "yellow"),
         _card("Posiciones", f"{trading.get('open',0)} abiertas / {trading.get('closed_today',0)} cerradas hoy",
-              f"PnL neto hoy {_amount(trading.get('net_pnl_today',0),'ARS')}", "red" if _num(trading.get('net_pnl_today'))<0 else "green"),
+              "Ledger PAPER · rueda ART", "gray"),
+        _card("PnL neto hoy · ARS", _amount(trading['net_pnl_today'],'ARS') if trading.get('net_pnl_today') is not None else "—",
+              "Resultado PAPER · moneda ARS", _result_card_state(trading.get('net_pnl_today'))),
         _card("Órdenes reales", observer.get("real_orders_sent",0), "Invariante permanente: cero",
               "green" if int(observer.get("real_orders_sent") or 0)==0 else "red"),
         _card("Históricos", f"{ingestion.get('instruments',0)} instrumentos / {ingestion.get('rows',0)} filas",

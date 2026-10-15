@@ -45,9 +45,12 @@ def _as_ar_day(value) -> str | None:
 
 def _decimal(value) -> Decimal:
     try:
-        return Decimal(str(value or "0"))
-    except (InvalidOperation, ValueError):
-        return Decimal("0")
+        amount = Decimal(str(value))
+        if amount.is_finite():
+            return amount
+    except (InvalidOperation, ValueError, TypeError):
+        pass
+    raise OperationalDailyEvidenceError("CLOSED_PNL_UNVERIFIED")
 
 
 def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int = 50000) -> dict:
@@ -62,7 +65,7 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
         "closed": 0,
         "decisions": 0,
         "fills": 0,
-        "realized_net_pnl": Decimal("0"),
+        "realized_by_currency": defaultdict(lambda: Decimal("0")),
     })
     with _connect_ro(db_path) as conn:
         state = conn.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone()
@@ -81,7 +84,7 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
             if row["paper_id"]:
                 slot["paper_ids"].add(str(row["paper_id"]))
 
-        for row in conn.execute("SELECT paper_id,opened_at,closed_at,status,net_pnl FROM paper_positions ORDER BY opened_at DESC LIMIT ?", (event_limit,)):
+        for row in conn.execute("SELECT paper_id,opened_at,closed_at,status,net_pnl,currency FROM paper_positions ORDER BY opened_at DESC LIMIT ?", (event_limit,)):
             opened = _as_ar_day(row["opened_at"])
             if opened:
                 by_day[opened]["opened"] += 1
@@ -90,7 +93,10 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
             if closed:
                 by_day[closed]["closed"] += 1
                 by_day[closed]["paper_ids"].add(str(row["paper_id"]))
-                by_day[closed]["realized_net_pnl"] += _decimal(row["net_pnl"])
+                currency = str(row["currency"] or "").upper()
+                if not currency:
+                    raise OperationalDailyEvidenceError("CLOSED_CURRENCY_UNVERIFIED")
+                by_day[closed]["realized_by_currency"][currency] += _decimal(row["net_pnl"])
 
         for row in conn.execute("SELECT decided_at FROM paper_decisions ORDER BY decided_at DESC LIMIT ?", (event_limit,)):
             day = _as_ar_day(row["decided_at"])
@@ -117,7 +123,8 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
             "closed": int(slot["closed"]),
             "decisions": int(slot["decisions"]),
             "fills": int(slot["fills"]),
-            "realized_net_pnl": str(slot["realized_net_pnl"]),
+            "realized_by_currency": {currency: str(pnl) for currency,pnl in
+                                     sorted(slot["realized_by_currency"].items())},
         })
     return {
         "mode": "PRODUCTION_PAPER",

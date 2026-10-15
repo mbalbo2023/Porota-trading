@@ -305,7 +305,7 @@ def _risk_html():
         FROM paper_daily_risk ORDER BY julianday(evaluated_at) DESC LIMIT 12""") if bg._table('paper_daily_risk') else []
     daily_rows=''.join(
         "<tr>"+f"<td>{_esc(r.get('day'))}</td><td><b>{_esc(r.get('currency'))}</b></td>"
-        +f"<td>{bg._status(r.get('state'))}</td><td>{_esc(r.get('daily_pnl'))}</td>"
+        +f"<td>{bg._status(r.get('state'))}</td><td>{bg._result_amount(r.get('daily_pnl'), r.get('currency'))}</td>"
         +f"<td>{_esc(r.get('loss_budget'))}</td><td>{_esc(r.get('evaluated_at'))}</td>"
         +f"<td data-wrap='true'>{_esc(r.get('detail'))}</td></tr>" for r in daily
     ) or "<tr><td colspan='7'>Sin evaluaciones persistidas.</td></tr>"

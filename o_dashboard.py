@@ -256,13 +256,18 @@ def _day_summary(day: str) -> dict:
 
 def _render_html(days: list, halts: list, recommendations: list, tuning_history: list,
                   observation_instruments: dict = None) -> str:
+    def signed_pnl(value):
+        tone = "#16833b" if value > 0 else "#c62828" if value < 0 else "#667085"
+        meaning = "Resultado positivo" if value > 0 else "Resultado negativo" if value < 0 else "Resultado neutro"
+        return f"<span style='color:{tone};font-weight:800' aria-label='{meaning}: {value:+.2f} ARS'>{value:+.2f} ARS</span>"
+
     rows = ""
     prev_pnl = None
     for d in days:
         delta_txt = ""
         if prev_pnl is not None:
             delta = d["net_pnl"] - prev_pnl
-            delta_txt = f"<span style='color:{'green' if delta >= 0 else 'crimson'}'>({delta:+.2f} vs. día anterior)</span>"
+            delta_txt = f"<span style='color:{'#16833b' if delta > 0 else '#c62828' if delta < 0 else '#667085'}'>({delta:+.2f} vs. día anterior)</span>"
         prev_pnl = d["net_pnl"]
 
         headlines_html = "".join(f"<li>{h}</li>" for h in d["headlines"][:8]) or "<li><em>sin noticias registradas</em></li>"
@@ -270,12 +275,12 @@ def _render_html(days: list, halts: list, recommendations: list, tuning_history:
             f"<li>{s['status']} — {s['reason'] or ''} ({s['n']})</li>" for s in d["signals"]
         ) or "<li><em>sin señales</em></li>"
         trades_html = "".join(
-            f"<li>{c['ticker']}: {c['exit_reason']} → {c['realized_pnl_ars']:+.2f} ARS</li>" for c in d["closed_trades"]
+            f"<li>{c['ticker']}: {c['exit_reason']} → {signed_pnl(c['realized_pnl_ars'])}</li>" for c in d["closed_trades"]
         ) or "<li><em>ninguna operación cerrada</em></li>"
 
         rows += f"""
         <details style="margin-bottom:12px;border:1px solid #ddd;border-radius:8px;padding:10px;">
-          <summary style="cursor:pointer;font-weight:bold;">{d['day']} — P&L cerrado: {d['net_pnl']:+.2f} ARS
+          <summary style="cursor:pointer;font-weight:bold;">{d['day']} — P&L cerrado: {signed_pnl(d['net_pnl'])}
           ({d['wins']} ganadas / {d['losses']} perdidas) {delta_txt}</summary>
           <div style="display:flex;gap:24px;margin-top:10px;flex-wrap:wrap;">
             <div><b>Noticias del día</b><ul>{headlines_html}</ul></div>
