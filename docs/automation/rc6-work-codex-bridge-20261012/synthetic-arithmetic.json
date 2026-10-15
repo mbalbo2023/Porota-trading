@@ -1,0 +1,11 @@
+{
+  "schema": "porota.rc6.work-codex-bridge.synthetic.v2",
+  "bridge_id": "RC6-BRIDGE-SYNTHETIC-20261012-0230Z",
+  "a": 31,
+  "b": 12,
+  "sum": 42,
+  "expected_sum": 43,
+  "scope": "DOCUMENTARY_ONLY",
+  "material": false,
+  "paper_only": true
+}
