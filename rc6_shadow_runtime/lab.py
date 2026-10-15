@@ -28,7 +28,10 @@ from rc6_performance.replay import ExitPolicy, ExitReplay
 from rc6_performance.shadow import fit_movement, forward_labels, usable_book
 
 SCHEMA = "rc6.runtime-shadow-lab.v1"
-QUERY_SECONDS = .25
+# The lab is a separate SQLite reader after the universe and family stages.
+# A 250 ms shared deadline could expire on its first WAL safety query under
+# observer IO contention; keep the progress-handler fail-closed bound.
+QUERY_SECONDS = 2.0
 MAX_ACTIVE = 16
 MAX_ARCHIVED = 64
 MAX_IDENTITIES = 100

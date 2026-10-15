@@ -362,11 +362,16 @@ def _persist_runtime(store, *, at, state, code, request_id=None, paper_id=None,
         observer = connection.execute(
             "SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()
         real_orders = int(observer[0]) if observer else -1
+        previous = connection.execute("""SELECT last_attempt_at,request_id,paper_id
+          FROM paper_caucion_cash_sweep_state WHERE id=1""").fetchone()
         connection.execute("""INSERT OR REPLACE INTO paper_caucion_cash_sweep_state
           VALUES(1,?,?,?,?,?,?,?,?,?)""", (
             aware_datetime(at).isoformat(), state,
-            aware_datetime(at).isoformat() if result is not None else None,
-            request_id, code, paper_id, real_orders, "[]", detail))
+            aware_datetime(at).isoformat() if result is not None else
+                (previous[0] if previous else None),
+            request_id if result is not None else (previous[1] if previous else None),
+            code, paper_id if result is not None else (previous[2] if previous else None),
+            real_orders, "[]", detail))
         if result is not None:
             rendered = json.dumps(result, ensure_ascii=False, sort_keys=True,
                                   default=str, allow_nan=False)
@@ -415,6 +420,13 @@ def run_worker(store, stop, *, clock_fn):
                     _persist_runtime(store, at=at, state="WAITING_WINDOW",
                                      code="SWEEP_WINDOW_NOT_OPEN",
                                      detail="PAPER internal EOD window")
+                elif at >= schedule["order_cutoff_at"]:
+                    # A prior daily allocation remains in the ledger. Do not
+                    # replay its idempotent outcome as a fresh placement after
+                    # the internal PAPER window has closed.
+                    _persist_runtime(store, at=at, state="WAITING_WINDOW",
+                                     code="SWEEP_WINDOW_CLOSED",
+                                     detail="PAPER internal EOD cutoff passed; no new attempt")
                 else:
                     day = at.astimezone(TZ).date().isoformat()
                     request_id = f"paper-caucion-cash-sweep:{day}:ARS:v1"

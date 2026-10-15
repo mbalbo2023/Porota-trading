@@ -109,6 +109,13 @@ border:1px solid var(--line);border-radius:9px;padding:10px 12px;text-decoration
 .system-nav a.active{background:var(--nav);color:#fff}.system-content{min-width:0}
 details.paper-trade{background:#fff;border:1px solid var(--line);border-radius:11px;margin:10px 0;overflow:hidden}
 details.paper-trade>summary{cursor:pointer;padding:13px 15px;font-weight:750;background:#f8fafc;list-style-position:inside}
+.paper-detail-dialog{width:min(900px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:0;
+border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 60px #0004;color:var(--ink)}
+.paper-detail-dialog::backdrop{background:#101828a8}
+.paper-detail-header{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;
+gap:12px;padding:12px 16px;background:#f8fafc;border-bottom:1px solid var(--line)}
+.paper-detail-header h2{margin:0;overflow-wrap:anywhere}.paper-detail-content{padding:12px 16px;overflow-x:auto}
+.paper-detail-content .trade-body{padding:0}.paper-detail-content table{min-width:600px}
 .trade-body{padding:4px 15px 15px}.timeline{border-left:3px solid #bcc8d8;padding-left:15px;margin:10px 0}.timeline>div{margin:10px 0}
 .paper-footer{max-width:1280px;margin:10px auto 30px;padding:0 18px;text-align:right}.up-link{display:inline-block;background:var(--nav);
 color:#fff!important;padding:10px 14px;border-radius:9px;text-decoration:none;font-weight:800}
@@ -341,6 +348,7 @@ def _document(title, body, refresh=REFRESH_SECONDS):
             const current=document.querySelector('main.paper-page');
             const banner=parsed.querySelector('#porota-paper-mode');
             if(next&&current) current.replaceWith(next);
+            window.porotaDecorateDetails?.();
             if(banner&&document.querySelector('#porota-paper-mode'))
               document.querySelector('#porota-paper-mode').replaceWith(banner);
             opened.forEach(id=>{{
@@ -361,9 +369,49 @@ def _document(title, body, refresh=REFRESH_SECONDS):
     controls = ("<div class='paper-actions'><a class='paper-action' "
                 "href='javascript:window.refreshPorota?window.refreshPorota():location.reload()' id='actualizar-pagina'>"
                 "🔄 Actualizar página</a></div>")
+    detail_popup = """<script>(function(){
+      const dialog=document.createElement('dialog');
+      dialog.className='paper-detail-dialog';
+      dialog.setAttribute('aria-labelledby','paper-detail-title');
+      dialog.innerHTML='<div class="paper-detail-header"><h2 id="paper-detail-title"></h2>'+
+        '<button type="button" class="paper-action" aria-label="Cerrar detalle">Cerrar</button></div>'+
+        '<div class="paper-detail-content"></div>';
+      document.body.append(dialog);
+      const content=dialog.querySelector('.paper-detail-content');
+      const title=dialog.querySelector('#paper-detail-title');
+      const close=dialog.querySelector('button');
+      let origin=null, trigger=null, moved=[];
+      window.porotaDecorateDetails=()=>document.querySelectorAll(
+        '.paper-page details>summary'
+      ).forEach(summary=>summary.setAttribute('aria-haspopup','dialog'));
+      window.porotaDecorateDetails();
+      document.addEventListener('click',function(event){
+        const summary=event.target.closest('summary');
+        const details=summary?.parentElement;
+        if(!details || details.tagName!=='DETAILS' || !details.closest('.paper-page') ||
+           typeof dialog.showModal!=='function') return;
+        event.preventDefault();
+        if(dialog.open) return;
+        origin=details; trigger=summary;
+        moved=[...details.children].filter(node=>node!==summary);
+        title.textContent=summary.textContent.trim();
+        content.append(...moved);
+        details.open=false;
+        dialog.showModal();
+        close.focus();
+      });
+      close.addEventListener('click',()=>dialog.close());
+      dialog.addEventListener('click',event=>{if(event.target===dialog) dialog.close()});
+      dialog.addEventListener('close',()=>{
+        if(origin) origin.append(...moved);
+        content.replaceChildren();
+        trigger?.focus({preventScroll:true});
+        origin=null;trigger=null;moved=[];
+      });
+    })();</script>"""
     return ("<!doctype html><html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>{_e(title)}</title>{THEME}{RESPONSIVE_CSS}{COMPACT_CSS}{TABLE_A11Y_CSS}</head><body id='top'>{_nav()}{mode_banner()}"
-            f"<main class='paper-page'>{controls}{body}</main><footer class='paper-footer'><a class='up-link' href='#top'>↑ Ir al principio</a></footer>{script}{TABLE_A11Y_SCRIPT}</body></html>")
+            f"<main class='paper-page'>{controls}{body}</main><footer class='paper-footer'><a class='up-link' href='#top'>↑ Ir al principio</a></footer>{script}{detail_popup}{TABLE_A11Y_SCRIPT}</body></html>")
 
 
 def _canonicalize(content, path=""):
@@ -620,8 +668,7 @@ def _caucion_allocations_panel():
         selected_text = ('Sin inversión' if selected is None else
             f"Capital colocado: {_e(selected['principal'])} · Débito inicial: {_e(selected['cash_debit'])} · "
             f"Neto estimado al vencimiento: {_e(selected['net_profit'])}")
-        expanded = ' open' if record is data['records'][0] else ''
-        cards.append(f"<details class='paper-trade'{expanded}><summary>{label} · {_e(decision['currency'])} · "
+        cards.append(f"<details class='paper-trade'><summary>{label} · {_e(decision['currency'])} · "
             f"{'Colocación simulada registrada' if selected else 'Abstención'}</summary><div class='trade-body'>"
             f"<p>{_e(_allocation_reason(decision['code']))}. {selected_text}</p><p>{placement_text}</p>"
             f"<p>Criterio: {_e(metric)}. Desempate: menor plazo, menor débito, identificador de oferta.</p>"

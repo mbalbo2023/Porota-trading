@@ -123,6 +123,7 @@ def test_starts_at_tail_and_never_reconstructs_existing_positions(tmp_path):
     before = dump(path)
     report, checkpoint = tick(path, clock(0))
     assert report["status"] == "START_AT_CURRENT_TAIL"
+    assert report["source_query_budget_seconds"] == 2.0
     assert report["existing_open_entries_unverified"] == 1
     assert report["entries"] == [] and not checkpoint["history"]
     assert tick(path, clock(5), checkpoint)[0]["entries"] == []
