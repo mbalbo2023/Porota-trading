@@ -32,6 +32,7 @@ POSTCLOSE_ROUTES = ROUTES + EXTRA_ROUTES
 CHILD = r'''
 import json, os, re, sqlite3, time, urllib.error, urllib.request
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -53,6 +54,17 @@ extra_routes = (
 local = datetime.now(timezone.utc).astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
 postclose = local.hour * 60 + local.minute >= 17 * 60 + 15
 if postclose: routes += extra_routes
+def in_art_day(value):
+ try:
+  stamp=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+  return bool(stamp.tzinfo and stamp.astimezone(local.tzinfo).date()==local.date())
+ except (TypeError,ValueError): return False
+def age(value):
+ try:
+  stamp=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+  seconds=(datetime.now(timezone.utc)-stamp).total_seconds()
+  return int(seconds) if stamp.tzinfo and 0<=seconds<=365*86400 else None
+ except (TypeError,ValueError): return None
 class VisibleGaps(HTMLParser):
  def __init__(self):
   super().__init__(); self.hidden=0; self.count=0
@@ -105,12 +117,6 @@ try:
       "OR component LIKE 'A3%' OR component LIKE 'ROFEX%' OR component LIKE 'GEMINI%' "
       "ORDER BY component LIMIT 81").fetchall()
   result["source_truncated"]=len(rows)>80
-  def age(value):
-   try:
-    stamp=datetime.fromisoformat(str(value).replace("Z","+00:00"))
-    seconds=(datetime.now(timezone.utc)-stamp).total_seconds()
-    return int(seconds) if stamp.tzinfo and 0<=seconds<=365*86400 else None
-   except (TypeError,ValueError): return None
   for component,state,checked,success in rows[:80]:
    if not isinstance(component,str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_:/.-]{0,63}",component): continue
    safe=state if isinstance(state,str) and re.fullmatch(r"[A-Za-z0-9_:-]{1,40}",state) else "NO_VERIFICADO"
@@ -155,6 +161,74 @@ try:
       "truncated":len(rows)>1000,"reasons":reasons}
 except sqlite3.Error:
  result["equity_exits"]["status"]="SQLITE_UNAVAILABLE"
+
+# Today's ART PAPER ledger is distinct from cumulative exit reasons. Export
+# bounded aggregates only, including the denominator and unclassified closes.
+result["paper_today"]={"status":"NO_VERIFICADO"}
+try:
+ with sqlite3.connect("file:"+quote(db,safe="/")+"?mode=ro",uri=True,timeout=.2) as ledger:
+  ledger.execute("PRAGMA query_only=ON")
+  started=time.monotonic()
+  ledger.set_progress_handler(lambda: int(time.monotonic()-started>2),1000)
+  day=local.replace(hour=0,minute=0,second=0,microsecond=0).isoformat()
+  rows=ledger.execute("SELECT status,asset_class,opened_at,closed_at,close_reason,net_pnl "
+      "FROM paper_positions WHERE julianday(opened_at)>=julianday(?) "
+      "OR julianday(closed_at)>=julianday(?) LIMIT 1001",(day,day)).fetchall()
+  ledger.set_progress_handler(None,0)
+  summary={"status":"TRUNCATED" if len(rows)>1000 else "BOUNDED",
+           "art_date":local.date().isoformat(),"sampled":min(len(rows),1000),
+           "truncated":len(rows)>1000,"opened_today":0,"closed_today":0,
+           "wins_today":0,"invalid_net_pnl":0,
+           "families_closed":{},"equity_close_reasons_today":{}}
+  allowed_families={"ACCIONES","BONOS","LETRAS","CEDEARS","ON","FCI","OPCIONES","FUTUROS","CAUCIONES"}
+  allowed_reasons={"EOD_PAPER","STOP_PAPER","TAKE_PROFIT_PAPER","MAX_HOLD_PAPER","SCALPING_MAX_HOLD_PAPER"}
+  for state,family,opened,closed,reason,pnl in rows[:1000]:
+   if in_art_day(opened): summary["opened_today"]+=1
+   if state!="CLOSED" or not in_art_day(closed): continue
+   summary["closed_today"]+=1
+   safe=family if family in allowed_families else "OTHER_OR_MISSING"
+   summary["families_closed"][safe]=summary["families_closed"].get(safe,0)+1
+   if family=="ACCIONES":
+    safe_reason=reason if reason in allowed_reasons else "OTHER_OR_MISSING"
+    counts=summary["equity_close_reasons_today"]
+    counts[safe_reason]=counts.get(safe_reason,0)+1
+   try:
+    amount=Decimal(str(pnl))
+    if not amount.is_finite(): raise InvalidOperation
+    summary["wins_today"]+=amount>0
+   except (InvalidOperation,TypeError,ValueError): summary["invalid_net_pnl"]+=1
+  result["paper_today"]=summary
+except sqlite3.Error: result["paper_today"]["status"]="SQLITE_UNAVAILABLE"
+
+# A worker heartbeat can refer to yesterday's idempotent allocation. Report
+# the latest persisted attempt separately from its current heartbeat.
+result["caucion_attempt"]={"status":"NO_VERIFICADO"}
+try:
+ with sqlite3.connect("file:"+quote(db,safe="/")+"?mode=ro",uri=True,timeout=.2) as cash:
+  cash.execute("PRAGMA query_only=ON")
+  rows=cash.execute("SELECT evaluated_at,decision_json,paper_id FROM paper_caucion_allocations "
+                    "ORDER BY evaluated_at DESC LIMIT 11").fetchall()
+  latest=rows[0] if rows else None
+  decision=json.loads(latest[1]) if latest else {}
+  observed=decision.get("status") if isinstance(decision,dict) else None
+  allowed={"PLACED_SIMULATED","HOLD","SKIPPED","BLOCKED"}
+  result["caucion_attempt"]={"status":"TRUNCATED" if len(rows)>10 else "BOUNDED" if rows else "EMPTY",
+      "sampled":min(len(rows),10),"latest_age_seconds":age(latest[0]) if latest else None,
+      "latest_today":bool(latest and in_art_day(latest[0])),
+      "latest_result":observed if observed in allowed else "OTHER_OR_MISSING",
+      "has_paper_id":bool(latest and latest[2]),
+      "today_attempts":sum(in_art_day(r[0]) for r in rows[:10])}
+  try:
+   worker=cash.execute("SELECT evaluated_at,status,code FROM paper_caucion_cash_sweep_attempts "
+                       "ORDER BY evaluated_at DESC LIMIT 11").fetchall()
+   actual=worker[0] if worker else None
+   result["caucion_attempt"].update(worker_status="TRUNCATED" if len(worker)>10 else "BOUNDED" if worker else "EMPTY",
+       worker_attempts_today=sum(in_art_day(r[0]) for r in worker[:10]),
+       worker_latest_today=bool(actual and in_art_day(actual[0])),
+       worker_latest_age_seconds=age(actual[0]) if actual else None,
+       worker_latest_result=actual[1] if actual and actual[1] in allowed else "OTHER_OR_MISSING")
+  except sqlite3.Error: result["caucion_attempt"]["worker_status"]="SQLITE_UNAVAILABLE"
+except (sqlite3.Error,ValueError,TypeError): result["caucion_attempt"]["status"]="SQLITE_UNAVAILABLE"
 
 # The history writer deliberately waits for the one-time cutoff repair. Read
 # that gate separately; an old api_health row alone cannot establish its RCA.
@@ -306,6 +380,43 @@ def audit_host(*, runner=subprocess.run):
         equity_exits = {"status": exit_status,
                         "sampled": sampled if type(sampled) is int and 0 <= sampled <= 1000 else None,
                         "truncated": exits.get("truncated") is True, "reasons": counts}
+        day = data.get("paper_today") if isinstance(data.get("paper_today"), dict) else {}
+        def bounded(value, limit=1000):
+            return value if type(value) is int and 0 <= value <= limit else None
+        def count_map(source, allow):
+            return {key: bounded(value) for key, value in source.items()
+                    if key in allow and bounded(value) is not None} if isinstance(source, dict) else {}
+        paper_today = {"status": day.get("status") if day.get("status") in
+                       {"BOUNDED", "TRUNCATED", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
+                       "art_date": day.get("art_date") if isinstance(day.get("art_date"), str) and
+                       re.fullmatch(r"20[0-9]{2}-[01][0-9]-[0-3][0-9]", day["art_date"]) else None,
+                       "sampled": bounded(day.get("sampled")), "truncated": day.get("truncated") is True,
+                       "opened_today": bounded(day.get("opened_today")),
+                       "closed_today": bounded(day.get("closed_today")),
+                       "wins_today": bounded(day.get("wins_today")),
+                       "invalid_net_pnl": bounded(day.get("invalid_net_pnl")),
+                       "families_closed": count_map(day.get("families_closed"),
+                           {"ACCIONES","BONOS","LETRAS","CEDEARS","ON","FCI","OPCIONES","FUTUROS","CAUCIONES","OTHER_OR_MISSING"}),
+                       "equity_close_reasons_today": count_map(day.get("equity_close_reasons_today"),
+                           {"EOD_PAPER","STOP_PAPER","TAKE_PROFIT_PAPER","MAX_HOLD_PAPER",
+                            "SCALPING_MAX_HOLD_PAPER","OTHER_OR_MISSING"})}
+        attempt = data.get("caucion_attempt") if isinstance(data.get("caucion_attempt"), dict) else {}
+        caucion_attempt = {"status": attempt.get("status") if attempt.get("status") in
+                           {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
+                           "sampled": bounded(attempt.get("sampled"),10),
+                           "latest_age_seconds": bounded(attempt.get("latest_age_seconds"),365*86400),
+                           "latest_today": attempt.get("latest_today") is True,
+                           "latest_result": attempt.get("latest_result") if attempt.get("latest_result") in
+                           {"PLACED_SIMULATED", "HOLD", "SKIPPED", "BLOCKED", "OTHER_OR_MISSING"} else "NO_VERIFICADO",
+                           "has_paper_id": attempt.get("has_paper_id") is True,
+                           "today_attempts": bounded(attempt.get("today_attempts"),10),
+                           "worker_status": attempt.get("worker_status") if attempt.get("worker_status") in
+                           {"BOUNDED","TRUNCATED","EMPTY","SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
+                           "worker_attempts_today": bounded(attempt.get("worker_attempts_today"),10),
+                           "worker_latest_today": attempt.get("worker_latest_today") is True,
+                           "worker_latest_age_seconds": bounded(attempt.get("worker_latest_age_seconds"),365*86400),
+                           "worker_latest_result": attempt.get("worker_latest_result") if attempt.get("worker_latest_result") in
+                           {"PLACED_SIMULATED","HOLD","SKIPPED","BLOCKED","OTHER_OR_MISSING"} else "NO_VERIFICADO"}
         return {"schema": SCHEMA, "read_only": True, "audit_scope": scope, "status": status,
                 "routes": routes, "sources": sources[:80], "source_sync": sync_rows[:10],
                 "source_sync_status": data.get("source_sync_status") if data.get("source_sync_status") in
@@ -313,6 +424,7 @@ def audit_host(*, runner=subprocess.run):
                 "history_cutoff_repair": data.get("history_cutoff_repair") if data.get("history_cutoff_repair") in
                 {"COMPLETE", "INCOMPLETE", "MISSING_TABLE", "MISSING_ROW", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
                 "profile": profile[:5], "balance_queries": balance_queries[:10], "equity_exits": equity_exits,
+                "paper_today": paper_today, "caucion_attempt": caucion_attempt,
                 "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
                 {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}

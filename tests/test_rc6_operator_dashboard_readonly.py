@@ -26,7 +26,18 @@ class OperatorAuditTests(TestCase):
                                 "detail": "must never leave host"}],
                "equity_exits": {"status": "BOUNDED", "sampled": 9, "truncated": False,
                                 "reasons": {"EOD_PAPER": 8, "STOP_PAPER": 1,
-                                            "private-reason": 99}, "secret": "must never leave host"}}
+                                            "private-reason": 99}, "secret": "must never leave host"},
+               "paper_today": {"status": "BOUNDED", "art_date": "2026-10-15", "sampled": 12,
+                               "opened_today": 5, "closed_today": 4, "wins_today": 2,
+                               "invalid_net_pnl": 0, "families_closed": {"ACCIONES": 4, "private": 1},
+                               "equity_close_reasons_today": {"EOD_PAPER": 3, "STOP_PAPER": 1},
+                               "secret": "must never leave host"},
+               "caucion_attempt": {"status": "BOUNDED", "sampled": 1, "latest_age_seconds": 42,
+                                   "latest_today": True, "latest_result": "PLACED_SIMULATED",
+                                   "has_paper_id": True, "today_attempts": 1,
+                                   "worker_status": "BOUNDED", "worker_attempts_today": 1,
+                                   "worker_latest_today": True, "worker_latest_result": "HOLD",
+                                   "secret": "must never leave host"}}
     def runner(argv, **kwargs):
         assert argv[:4] == ["docker", "exec", "porota_production_dashboard", "python"]
         assert kwargs["timeout"] == 150
@@ -38,6 +49,10 @@ class OperatorAuditTests(TestCase):
     self.assertEqual(result["history_cutoff_repair"], "INCOMPLETE")
     self.assertEqual(result["equity_exits"], {"status": "BOUNDED", "sampled": 9,
                       "truncated": False, "reasons": {"EOD_PAPER": 8, "STOP_PAPER": 1}})
+    self.assertEqual(result["paper_today"]["families_closed"], {"ACCIONES": 4})
+    self.assertEqual(result["paper_today"]["wins_today"], 2)
+    self.assertEqual(result["caucion_attempt"]["today_attempts"], 1)
+    self.assertEqual(result["caucion_attempt"]["worker_latest_result"], "HOLD")
     self.assertNotIn("must never leave host", json.dumps(result))
 
     payload["profile_status"] = "BOUNDED"
