@@ -452,6 +452,8 @@ class MonitorContracts(unittest.TestCase):
         self.assertIn("EXPLAIN QUERY PLAN", args[0][-1])
         self.assertIn("NOT INDEXED", args[0][-1])
         self.assertIn('result["query_stages"]', args[0][-1])
+        self.assertIn('observation_limit=3001', args[0][-1])
+        self.assertIn('result["observation_source_limit_with_sentinel"]', args[0][-1])
         self.assertIn('c.set_progress_handler(expired,1000)', args[0][-1])
         self.assertNotIn('read_runtime(db,as_of=at', args[0][-1])
         self.assertIn('NOT_RUN_STAGE_ONLY', args[0][-1])
