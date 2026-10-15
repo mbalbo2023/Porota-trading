@@ -232,7 +232,8 @@ jobs:
               {'path':r.get('path'),'http':r.get('http'),'nav':r.get('nav'),
                'content':r.get('content'),'error':r.get('error'),
                'elapsed_ms':r.get('elapsed_ms'),'slow_2s':r.get('slow_2s'),
-               'projection_ms':r.get('projection_ms'),'read_queries':r.get('read_queries')}
+               'projection_ms':r.get('projection_ms'),'read_queries':r.get('read_queries'),
+               'unverified_mentions':r.get('unverified_mentions')}
               for r in result.get('routes',[])],sort_keys=True,separators=(',',':')))
           print('RC6_DASHBOARD_PROFILE_STATUS='+str(result.get('profile_status','NO_VERIFICADO')))
           print('RC6_DASHBOARD_PROFILE='+json.dumps(result.get('profile',[]),
