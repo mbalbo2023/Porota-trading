@@ -12,6 +12,10 @@ CSS = """
 @media(max-width:600px){:root{--font:13px}.content{padding:12px}.global-header{padding:10px 12px}.status-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.subnav{padding:8px 12px;position:relative}.subnav a{flex:1 1 auto;text-align:center}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric-card{padding:11px}.metric-value{font-size:1rem}.panel{padding:12px}.filters{grid-template-columns:repeat(2,minmax(0,1fr))}.terminal-table,.terminal-table tbody,.terminal-table tr,.terminal-table td{display:block;width:100%}.terminal-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}.terminal-table tr{border:1px solid #34455e;border-radius:8px;padding:10px;margin:9px 0}.terminal-table td{border:0;padding:5px 0}.terminal-table td:before{content:attr(data-label);display:block;color:var(--muted);font-size:.68rem;margin-bottom:3px}.terminal-table td.secondary{display:none}.facts{grid-template-columns:repeat(2,minmax(0,1fr))}.funnel li{flex-basis:72px}.header-actions{width:100%}.footer{padding:12px}}
 @media(max-width:360px){.filters,.facts{grid-template-columns:1fr}.metric-card p{font-size:.68rem}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation:none!important;transition:none!important}}
+.detail-trigger{width:100%;justify-content:flex-start;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.row-dialog{position:fixed;inset:0;width:min(760px,calc(100vw - 24px));max-width:760px;max-height:min(85dvh,850px);margin:auto;padding:0;color:var(--ink);background:var(--panel);border:1px solid #6380a6;border-radius:12px;box-shadow:0 20px 70px #000b;overflow:hidden}
+.row-dialog::backdrop{background:#020817c9}.dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line);background:var(--panel2)}.dialog-heading h3{overflow-wrap:anywhere}.dialog-heading form{flex:none}.dialog-body{padding:10px 18px 20px;max-height:calc(min(85dvh,850px) - 76px);overflow:auto;overscroll-behavior:contain}.dialog-body .facts{grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr))}
+@media(max-width:600px){.row-dialog{width:calc(100vw - 12px);max-height:90dvh}.dialog-heading{padding:12px;align-items:flex-start}.dialog-heading .button{min-height:44px}.dialog-body{max-height:calc(90dvh - 78px);padding:10px 12px 16px}.dialog-body .facts{grid-template-columns:1fr}}
 """
 
 SCRIPT = r"""
@@ -30,17 +34,40 @@ SCRIPT = r"""
       sidebar.classList.remove('is-open'); menu.setAttribute('aria-expanded', 'false'); menu.focus();
     }
   });
+  // Dialogs use the browser top layer: details never increase table height.
+  // Delegation also covers rows installed by a manual refresh.
+  document.addEventListener('click', ev => {
+    const trigger = ev.target.closest?.('[data-detail-dialog]');
+    if(trigger) {
+      const dialog = document.getElementById(trigger.dataset.detailDialog);
+      if(dialog instanceof HTMLDialogElement && !dialog.open) {
+        dialog.returnFocus = trigger;
+        dialog.showModal();
+      }
+      return;
+    }
+    if(ev.target instanceof HTMLDialogElement && ev.target.classList.contains('row-dialog')) {
+      const box = ev.target.getBoundingClientRect();
+      if(ev.clientX < box.left || ev.clientX > box.right || ev.clientY < box.top || ev.clientY > box.bottom) ev.target.close();
+    }
+  });
+  document.addEventListener('close', ev => {
+    if(ev.target instanceof HTMLDialogElement && ev.target.classList.contains('row-dialog')) {
+      ev.target.returnFocus?.focus({preventScroll:true});
+    }
+  }, true);
   const refreshButton = document.getElementById('refresh-data');
   const autoButton = document.getElementById('auto-refresh');
   const status = document.getElementById('refresh-status');
   let auto = false, busy = false, interactionAt = Date.now(), interactionVersion = 0;
   ['pointerdown','keydown','focusin','input','toggle'].forEach(type => document.addEventListener(type, () => { interactionAt = Date.now(); interactionVersion++; }, true));
   const interacting = () => document.hidden || (document.activeElement && document.activeElement !== document.body)
-    || Date.now() - interactionAt < 15000 || document.querySelector('details[open]') !== null;
+    || Date.now() - interactionAt < 15000 || document.querySelector('details[open],dialog[open]') !== null;
   // A manual refresh captures and restores state. Automatic refresh only
   // updates when no focus, open detail, recent interaction or hidden tab exists.
   async function refresh(manual) {
     if(busy || (!manual && interacting())) return;
+    if(document.querySelector('dialog[open]')) { status.textContent = 'Cerrá el detalle antes de actualizar.'; return; }
     if(document.querySelector('.filters') && Array.from(document.querySelectorAll('.filters input,.filters select')).some(el => el.value !== (el.tagName === 'SELECT' ? el.querySelector('option[selected]')?.value || '' : el.defaultValue))) {
       status.textContent = 'Filtros pendientes: aplicar antes de actualizar.'; return;
     }

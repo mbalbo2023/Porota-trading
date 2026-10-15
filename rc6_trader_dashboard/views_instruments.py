@@ -1,5 +1,5 @@
 """An exact identity drill-down; source evidence stays independently attributed."""
-from .components import fields, definition_list, notice, e
+from .components import fields, definition_list, detail
 from .datasets import contracts, instrument_market
 from .view_common import render_table, CATALOG, CATALOG_DETAIL, SOURCE_DETAIL
 from .views_trading import FAMILY_DETAILS
@@ -15,7 +15,9 @@ def render(p, destination, tab):
         page = p.catalog()
         if tab == "ficha" and p.filters.get("identity") and len(page.rows) == 1:
             row = page.rows[0]
-            return "<section class='panel'><h2>Identidad canónica</h2>" + definition_list(row, (*CATALOG, *CATALOG_DETAIL, *family_fields(row["family"]))) + "</section>"
+            return ("<section class='panel'><h2>Identidad canónica</h2>" + definition_list(row, CATALOG)
+                    + detail(row, (*CATALOG_DETAIL, *family_fields(row["family"])), "instrumento-ficha", 1)
+                    + "</section>")
         return render_table(p, destination, tab, page, "Buscar identidad exacta", CATALOG, CATALOG_DETAIL,
                             filters=True, catalog=True, note="Identidad: ticker + familia + mercado + moneda + settlement. Complementos no reemplazan la identidad PPI.")
     if tab == "mercado":

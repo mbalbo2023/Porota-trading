@@ -113,10 +113,16 @@ def definition_list(row, columns):
 
 
 def detail(row, columns, row_id, index):
-    return (f"<details id='{row_id}-detail' class='row-detail'><summary aria-controls='{row_id}-facts'>"
-            f"Detalle fila {index} · {e(row.get('symbol') or row.get('worker') or row.get('component') or row.get('currency') or 'registro')}"
-            f"</summary><div id='{row_id}-facts'>{definition_list(row, columns)}"
-            + (f"<a class='text-link' href='/instrumentos/ficha?{e(urlencode({'identity': row['identity']}))}'>Abrir ficha de {e(row.get('symbol'))}</a>" if row.get("identity") else "") + "</div></details>")
+    label = f"Detalle fila {index} · {row.get('symbol') or row.get('worker') or row.get('component') or row.get('currency') or 'registro'}"
+    dialog_id = f"{row_id}-dialog"
+    return (f"<button class='button detail-trigger' type='button' data-detail-dialog='{dialog_id}' "
+            f"aria-haspopup='dialog' aria-controls='{dialog_id}'>{e(label)}</button>"
+            f"<dialog id='{dialog_id}' class='row-dialog' aria-labelledby='{dialog_id}-title'>"
+            f"<div class='dialog-heading'><h3 id='{dialog_id}-title'>{e(label)}</h3>"
+            "<form method='dialog'><button class='button' type='submit'>Cerrar detalle</button></form></div>"
+            f"<div class='dialog-body'>{definition_list(row, columns)}"
+            + (f"<a class='text-link' href='/instrumentos/ficha?{e(urlencode({'identity': row['identity']}))}'>Abrir ficha de {e(row.get('symbol'))}</a>" if row.get("identity") else "")
+            + "</div></dialog>")
 
 
 def pager(page, path, filters, table_id):
@@ -141,7 +147,7 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
     ]
     body = []
     for index, row in enumerate(page.rows[:10]):
-        key = row.get("paper_id") or row.get("decision_key") or row.get("identity") or json.dumps(
+        key = row.get("paper_id") or row.get("request_id") or row.get("decision_key") or row.get("identity") or json.dumps(
             {name: row[name] for name in ("symbol", "family", "market", "currency", "settlement", "strategy", "worker", "component", "setting", "id", "lifecycle_id", "unit", "store") if name in row},
             sort_keys=True, default=str)
         if key == "{}":
@@ -151,7 +157,8 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
         drawer_fields = tuple(dict.fromkeys((*IDENTITY, *columns, *extra, *EVIDENCE)))
         body.append(f"<tr id='{row_id}' data-row='true'>{cells}<td data-label='Detalle'>{detail(row, drawer_fields, row_id, index + 1)}</td></tr>")
     if not body:
-        message = "Sin registros en este scope." if page.state == "AVAILABLE" else "NO_VERIFICADO · evidencia aún no publicada o lectura no disponible."
+        message = ("Sin registros en este scope." if page.state == "AVAILABLE" else
+                   "NO_VERIFICADO · " + (page.reason or "evidencia aún no publicada o lectura no disponible."))
         body.append(f"<tr><td colspan='{len(columns) + 1}' class='empty'>{e(message)}</td></tr>")
     heads = "".join(f"<th scope='col' class='{column_classes[i]}'>{e(f.label)}</th>" for i, f in enumerate(columns))
     provenance = f"<div class='source-line'>Fuente: {e(page.source)} · {badge(page.state)}"

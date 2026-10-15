@@ -55,6 +55,13 @@ def database(tmp_path):
         CREATE TABLE paper_exit_intents(paper_id TEXT PRIMARY KEY,state TEXT,cause TEXT,due_at TEXT,
           blocked_reason TEXT,supervised_at TEXT,attempts INTEGER);
         CREATE TABLE api_health(component TEXT PRIMARY KEY,state TEXT,detail TEXT,checked_at TEXT,last_success_at TEXT,source TEXT);
+        CREATE TABLE source_sync(source TEXT,status TEXT,last_attempt_at TEXT,last_success_at TEXT,items INTEGER,detail TEXT);
+        CREATE TABLE paper_cauciones(paper_id TEXT PRIMARY KEY,request_id TEXT,source TEXT,instrument_id TEXT,
+          currency TEXT,principal TEXT,annual_rate_fraction TEXT,interest_days INTEGER,day_count_basis INTEGER,
+          opened_at TEXT,maturity_at TEXT,settled_at TEXT,status TEXT,total_fees TEXT,gross_interest TEXT,
+          fee_payment TEXT,terms_json TEXT);
+        CREATE TABLE paper_caucion_allocations(request_id TEXT PRIMARY KEY,evaluated_at TEXT,
+          decision_json TEXT,paper_id TEXT);
         CREATE TABLE contract_evidence_v2_current(family TEXT,ticker TEXT,market TEXT,currency TEXT,settlement TEXT,
           source_class TEXT,snapshot_id INTEGER,evidence_hash TEXT,observed_at TEXT);
         CREATE TABLE contract_evidence_v2_snapshots(snapshot_id INTEGER PRIMARY KEY,family TEXT,ticker TEXT,
@@ -77,6 +84,16 @@ def database(tmp_path):
         for i in range(22):
             c.execute("INSERT INTO paper_decisions VALUES(?,'PAPER','S1',?,?,'T000','HOLD','78',?,'{}')", (i, "key-" + str(i), STAMP, "LIQUIDITY_BLOCKED"))
         c.execute("INSERT INTO api_health VALUES('IOL:caucion:ARS','SOURCE_UNAVAILABLE','section missing',?,NULL,'IOL')", (STAMP,))
+        c.execute("INSERT INTO source_sync VALUES('IOL_SHADOW','LIVE_FRESH',?,?,1,'capture only')", (STAMP, STAMP))
+        c.execute("INSERT INTO paper_cauciones VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            "CAU-PAPER-1", "req-1", "PPI", "CAU:ARS:1D", "ARS", "100000", "0.125", 1, 365,
+            STAMP, (NOW + timedelta(days=1)).isoformat(), None, "OPEN", "1.25", "7.5", "AT_MATURITY",
+            '{"api_token":"sensitive-value","side":"COLOCADORA"}'))
+        c.execute("INSERT INTO paper_caucion_allocations VALUES(?,?,?,?)", (
+            "req-1", STAMP, json.dumps({"status": "PLACED_SIMULATED", "code": "CANDIDATE_SELECTED",
+                                     "selected": {"principal": "100000", "currency": "ARS"}}), "CAU-PAPER-1"))
+        c.execute("INSERT INTO paper_caucion_allocations VALUES(?,?,?,NULL)", (
+            "req-hold", STAMP, json.dumps({"status": "HOLD", "code": "NO_ELIGIBLE_OFFER", "candidates": []})))
     return path
 
 
@@ -436,9 +453,55 @@ def test_detail_names_unique_and_keys_survive_metric_change():
     first = BeautifulSoup(table(data, "Result", columns), "html.parser")
     data.rows[0]["net_pnl"] = "12"
     second = BeautifulSoup(table(data, "Result", columns), "html.parser")
-    names = [x.get_text() for x in first.select("summary")]
+    names = [x.get_text() for x in first.select(".detail-trigger")]
     assert len(names) == len(set(names))
-    assert first.select_one("details.row-detail")["id"] == second.select_one("details.row-detail")["id"]
+    assert first.select_one(".row-dialog")["id"] == second.select_one(".row-dialog")["id"]
+    assert len(first.select("details.row-detail")) == 0
+    for trigger in first.select(".detail-trigger"):
+        dialog = first.find(id=trigger["aria-controls"])
+        assert dialog and dialog.name == "dialog" and dialog["aria-labelledby"]
+
+
+def test_cauciones_have_visible_navigation_and_separate_paper_decisions(client):
+    placements = client.get("/trading/cauciones")
+    assert placements.status_code == 200
+    page = BeautifulSoup(placements.text, "html.parser")
+    assert page.select_one("#terminal-content")["data-view"] == "trading/cauciones"
+    assert page.select_one(".subnav a[aria-current=page]").get_text() == "Cauciones"
+    assert len(page.select(".terminal-table")) == 1
+    assert "CAU-PAPER-1" in placements.text
+    assert "12,50 %" in placements.text and "6,25" in placements.text
+    assert "sensitive-value" not in placements.text and "[REDACTED]" in placements.text
+    decisions = client.get("/trading/cauciones?caucion_view=decisiones")
+    assert decisions.status_code == 200
+    assert "NO_ELIGIBLE_OFFER" in decisions.text
+    assert "HOLD" in decisions.text and "PLACED_SIMULATED" in decisions.text
+    assert len(BeautifulSoup(decisions.text, "html.parser").select(".terminal-table")) == 1
+    assert "PPI es identidad primaria" in decisions.text
+
+
+def test_equity_read_interruption_is_not_reported_as_empty_ledger(database):
+    with Store(database, now=NOW) as store:
+        store.columns("paper_equity_by_currency")
+        store.columns("paper_valuation_quality")
+        store.connection.set_progress_handler(lambda: 1, 1)
+        page = Projection(store).balances()
+    assert page.state == "NO_VERIFICADO"
+    assert page.rows == [] and page.reason == "CURRENCY_LEDGER_READ_ERROR"
+
+
+def test_system_health_and_integrations_keep_distinct_authorities(client):
+    health = client.get("/sistema/salud")
+    sources = client.get("/sistema/integraciones")
+    assert "Salud de runtime y workers" in health.text
+    assert "Contador factual; desconocido no equivale a cero" in health.text
+    assert "Salud de integración" in sources.text
+    assert "Salud de integración" not in health.text
+    source_rows = BeautifulSoup(sources.text, "html.parser").select(".terminal-table tr[data-row]")
+    assert len(source_rows) <= 10
+    assert "IOL · captura complementaria" in source_rows[0].get_text()
+    assert "NO_VERIFICADO" in source_rows[0].get_text()
+    assert "LIVE_FRESH" in source_rows[0].get_text()
 
 
 def test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default(database):

@@ -152,8 +152,8 @@ TABLE_FIELDS = {
     "scalping_candidates": "id evaluated_at symbol asset_class market currency settlement action score price volume points reason economics_json",
     "paper_family_lifecycle": "lifecycle_id family instrument currency state updated_at ledger_total metadata_json",
     "paper_family_lifecycle_events": "event_id lifecycle_id family from_state to_state amount occurred_at detail_json",
-    "paper_cauciones": "paper_id currency principal annual_rate_fraction interest_days day_count_basis opened_at maturity_at settled_at status total_fees gross_interest net_interest features_json",
-    "paper_caucion_allocations": "id evaluated_at decision_json paper_id",
+    "paper_cauciones": "paper_id request_id source instrument_id currency principal annual_rate_fraction interest_days day_count_basis opened_at maturity_at settled_at status total_fees gross_interest fee_payment terms_json",
+    "paper_caucion_allocations": "request_id evaluated_at decision_json paper_id",
     "production_history": "symbol instrument_type settlement date_from date_to downloaded_at row_count",
     "history_canonical_v2": "ticker symbol family instrument_type market currency settlement trading_date quality_state source_class source_ref source status row_count rows first_at last_at downloaded_at observed_at known_at",
     "paper_learning_samples": "paper_id source strategy_version feature_timestamp label_timestamp net_return_pct outcome duration_minutes features_json",
@@ -491,14 +491,47 @@ class Projection:
         s = self.store
         if not {"id", "currency", "measured_at"} <= s.columns("paper_equity_by_currency"):
             return Page("paper_equity_by_currency", reason="CURRENCY_LEDGER_UNAVAILABLE")
+        errors = len(s.errors)
         rows = s.query(f"SELECT {s.select('paper_equity_by_currency', 'e')} FROM paper_equity_by_currency e JOIN (SELECT currency,MAX(id) id FROM paper_equity_by_currency GROUP BY currency) x ON e.id=x.id ORDER BY e.currency LIMIT 10")
         quality = {r["currency"]: r for r in s.page("paper_valuation_quality").rows}
+        if len(s.errors) != errors:
+            return Page("paper_equity_by_currency + paper_valuation_quality", reason="CURRENCY_LEDGER_READ_ERROR")
         for row in rows:
             row.update(freshness=freshness(row["measured_at"], self.now),
                        valuation_state=quality.get(row["currency"], {}).get("state", UNKNOWN),
                        stale_positions=quality.get(row["currency"], {}).get("stale_positions"),
                        reserved=row.get("caucion_principal"), source="paper_equity_by_currency")
         return Page("paper_equity_by_currency + paper_valuation_quality", rows, len(rows), "AVAILABLE")
+
+    def cauciones(self, decisions=False):
+        """Read recorded PAPER placements or decisions, never calculate a live quote."""
+        s = self.store
+        if decisions:
+            page = s.page("paper_caucion_allocations", order="evaluated_at DESC,request_id DESC", offset=self.offset)
+            for row in page.rows:
+                decision = json_object(row.pop("decision_json", None))
+                selected = decision.get("selected") if isinstance(decision.get("selected"), dict) else {}
+                row.update(status=decision.get("status") or UNKNOWN,
+                           currency=decision.get("currency") or selected.get("currency"),
+                           reason=decision.get("code") or UNKNOWN,
+                           principal=selected.get("principal"), selected=selected,
+                           candidates=decision.get("candidates"),
+                           source="paper_caucion_allocations", as_of=row.get("evaluated_at"),
+                           entry_authority="PAPER / SIMULATED" if row.get("paper_id") else "HOLD / NO ORDER")
+            return page
+        page = s.page("paper_cauciones", order="opened_at DESC,paper_id DESC", offset=self.offset)
+        for row in page.rows:
+            principal = decimal_amount(row.get("principal"))
+            interest = decimal_amount(row.get("gross_interest"))
+            fees = decimal_amount(row.get("total_fees"))
+            rate = decimal_amount(row.get("annual_rate_fraction"))
+            row.update(tna_percent=str(rate * 100) if rate is not None else None,
+                       net_interest=str(interest - fees) if interest is not None and fees is not None else None,
+                       terms=json_object(row.pop("terms_json", None)),
+                       source=row.get("source") or "paper_cauciones", as_of=row.get("opened_at"),
+                       freshness=UNKNOWN, entry_authority="PAPER / SIMULATED",
+                       principal_verified=principal is not None)
+        return page
 
     def risk(self):
         s = self.store
@@ -555,7 +588,14 @@ class Projection:
             "PPI_PRODUCTION_HISTORY": 48 * 3600,
             "PPI_BACKGROUND_INGEST": 48 * 3600,
         }
-        page = self.store.page("api_health", order="component" if "component" in self.store.columns("api_health") else "", offset=self.offset)
+        cols = self.store.columns("api_health")
+        order = ("CASE component WHEN 'PPI_PRODUCTION_MARKETDATA' THEN 0 "
+                 "WHEN 'PPI_PRODUCTION_AUTH' THEN 1 ELSE 2 END,component") if "component" in cols else ""
+        # Reserve the first row for IOL. api_health currently publishes PPI,
+        # BYMA and ROFEX, but no IOL component: omission is not healthy IOL.
+        page = self.store.page("api_health", order=order, offset=max(0, self.offset - 1),
+                               limit=9 if self.offset == 0 else 10)
+        page.offset = self.offset
         for row in page.rows:
             component = str(row.get("component") or "")
             observed = row.get("state") or UNKNOWN
@@ -587,12 +627,26 @@ class Projection:
                            freshness=quality,
                            state=(observed if component == "BYMA_INSTRUMENTS_API" and observed == "GRIS"
                                   else observed if quality == "FRESH" else UNKNOWN))
+        if self.offset == 0:
+            sync = self.store.page("source_sync", where="source LIKE ?", params=("IOL%",),
+                                   order="last_attempt_at DESC", limit=1)
+            observed = sync.rows[0] if sync.rows else {}
+            checked = observed.get("last_attempt_at")
+            page.rows.insert(0, {"component": "IOL · captura complementaria", "role": "COMPLEMENT / OBSERVE_ONLY",
+                                 "state": UNKNOWN, "observed_state": observed.get("status") or UNKNOWN,
+                                 "freshness": freshness(checked, self.now, 3600), "as_of": checked,
+                                 "checked_age_seconds": age(checked, self.now), "cadence": "SOURCE_SYNC_CAPTURE; no live ping",
+                                 "lkg": observed.get("last_success_at"), "scope": "IOL source_sync",
+                                 "source": "source_sync", "detail": "Captura observada; autoridad PPI primaria."})
         if page.total == 0 or page.total is None:
-            page.rows = [{"component": label, "role": role, "state": "SOURCE_UNAVAILABLE", "scope": label,
-                          "source": "api_health", "freshness": UNKNOWN} for label, role in (
-                ("PPI", "PRIMARY"), ("IOL", "COMPLEMENT"), ("BYMA public", "OBSERVE_ONLY"), ("A3 / ROFEX", "OBSERVE_ONLY"))]
+            page.rows += [{"component": label, "role": role, "state": UNKNOWN, "scope": label,
+                           "source": "api_health", "freshness": UNKNOWN} for label, role in (
+                ("PPI", "PRIMARY"), ("BYMA public", "OBSERVE_ONLY"), ("A3 / ROFEX", "OBSERVE_ONLY"))]
             page.total = None
             page.state = UNKNOWN
+        else:
+            page.total += 1
+            page.source += " + source_sync(IOL)"
         return page
 
     def history(self):

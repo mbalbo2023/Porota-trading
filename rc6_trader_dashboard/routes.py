@@ -19,7 +19,7 @@ from . import views_home, views_live, views_trading, views_universe, views_instr
 VIEWS = {"inicio": views_home, "en-vivo": views_live, "trading": views_trading,
          "universo": views_universe, "instrumentos": views_instruments,
          "riesgo": views_risk, "analitica": views_analytics, "sistema": views_system}
-FILTERS = {"q", "family", "market", "currency", "settlement", "strategy", "state", "identity", "offset", "channel"}
+FILTERS = {"q", "family", "market", "currency", "settlement", "strategy", "state", "identity", "offset", "channel", "caucion_view"}
 
 
 def build_page(path, params, database_path):
@@ -33,8 +33,6 @@ def build_page(path, params, database_path):
         content = VIEWS[destination.key].render(projection, destination, tab)
         if path in {"/observacion", "/testing"}:
             content = "<p class='source-line'>Panel de simulación productiva · compatibilidad read-only.</p>" + content
-        if path == "/trading/cauciones":
-            content = "<p class='source-line'>Trading — Cauciones · Historial PAPER y readiness actual se muestran separados.</p>" + content
         document = shell(destination, tab, projection, content)
         count = store.query_count
     return document, {"X-Porota-Projection": SCHEMA, "X-Porota-Read-Queries": str(count),

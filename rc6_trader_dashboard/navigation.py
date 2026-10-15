@@ -21,7 +21,8 @@ DESTINATIONS = (
         ("workers", "Riesgo & Workers"), ("fuentes", "Fuentes"))),
     Destination("trading", "Trading", "/trading", "⇄", "¿Qué estrategias están activas y cómo opera cada familia?", (
         ("resumen", "Resumen"), ("equity-spot", "Equity Spot"), ("scalping", "Scalping"),
-        ("renta-fija", "Renta Fija"), ("derivados", "Derivados"), ("tesoreria", "Tesorería / FCI"))),
+        ("renta-fija", "Renta Fija"), ("derivados", "Derivados"),
+        ("cauciones", "Cauciones"), ("tesoreria", "Tesorería / FCI"))),
     Destination("universo", "Universo", "/universo", "◇", "¿Qué parte del mercado ve, prioriza o excluye POROTA?", (
         ("resumen", "Resumen"), ("discovery", "Discovery"), ("tradeability", "Tradeability"),
         ("coverage", "Coverage"), ("excluidos", "Excluidos"), ("familias", "Familias"))),
@@ -60,7 +61,7 @@ LEGACY = {
 }
 TAB_ALIASES = {"acciones": "equity-spot", "equity": "equity-spot", "cedears": "equity-spot",
                "bonos": "renta-fija", "opciones": "derivados", "futuros": "derivados",
-               "cauciones": "tesoreria", "fci": "tesoreria", "introspeccion": "resumen",
+               "fci": "tesoreria", "introspeccion": "resumen",
                "scraping": "integraciones", "config": "configuracion"}
 
 

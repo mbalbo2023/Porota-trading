@@ -47,7 +47,7 @@ def render(p, destination, tab):
                       metric("Caja disponible · " + currency, row.get("cash"), "Reservada: " + (str(row["reserved"]) if row.get("reserved") is not None else UNKNOWN), kind="money", currency=currency),
                       metric("Exposición · " + currency, row.get("exposure"), "Límite: NO_VERIFICADO", kind="money", currency=currency)))
     if not cards:
-        cards.append(metric("Patrimonio / caja por moneda", None, "Ledger por moneda no publicado"))
+        cards.append(metric("Patrimonio / caja por moneda", None, balances.reason or "Ledger por moneda no publicado"))
     cards.extend((metric("Operaciones abiertas", counts.get("open_positions"), "paper_positions · OPEN", kind="number"),
                   metric("HOT observados", counts.get("HOT"), "Alta prioridad de análisis · HOT ≠ BUY", kind="number"),
                   metric("Señales candidatas", counts.get("SIGNAL"), "Signal no implica economics/risk PASS", kind="number"),

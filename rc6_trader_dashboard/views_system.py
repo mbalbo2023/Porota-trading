@@ -1,5 +1,5 @@
 """Technical detail belongs here; no host commands or mutations."""
-from .components import fields, definition_list, notice, e, badge, metric
+from .components import fields, definition_list, detail, notice, metric
 from .datasets import artifact, config, logs
 from .view_common import render_table, WORKERS, WORKER_DETAIL, SOURCES, SOURCE_DETAIL
 
@@ -12,7 +12,18 @@ def render(p, destination, tab):
                          metric("Dashboard", "REQUEST_RENDERED", "Esta solicitud, sin certificar host runtime"),
                          metric("Disco / última identidad Deploy", None, "Requiere snapshot operativo publicado")))
         return "<div class='metric-grid'>" + cards + "</div>" + render_table(p, destination, tab, p.workers(), "Salud crítica", WORKERS, WORKER_DETAIL)
-    if tab in {"salud", "integraciones"}:
+    if tab == "salud":
+        state = p.runtime
+        cards = "".join((metric("Heartbeat del observer", state.get("heartbeat_freshness"),
+                                "observer_state · reloj de proceso", kind="status"),
+                         metric("Seguridad de órdenes reales", state.get("real_orders_sent"),
+                                "Contador factual; desconocido no equivale a cero", kind="number"),
+                         metric("Generación SHADOW", p.shadow["state"],
+                                "Corte comprometido; revisar evidencia", kind="status")))
+        return "<div class='metric-grid'>" + cards + "</div>" + render_table(
+            p, destination, tab, p.workers(), "Salud de runtime y workers", WORKERS, WORKER_DETAIL,
+            note="Integraciones tiene su propia vista. Un heartbeat o un HTTP 200 no acreditan actividad PAPER ni fills.")
+    if tab == "integraciones":
         return render_table(p, destination, tab, p.sources(), "Salud de integración · sin autoridad BUY", SOURCES,
                             (*SOURCE_DETAIL, *fields("last_success_at|Último éxito|time;next_check|Próximo chequeo|time")))
     if tab == "workers":
@@ -33,7 +44,9 @@ def render(p, destination, tab):
                "preopen_digest": cut["report"].get("preopen_file"), "as_of": cut["report"].get("as_of")}
         return (notice("Sólo CURRENT.json y su generación comprometida/coherente. El adapter requiere el reader canónico de #466; latest/checkpoint/status independientes no son autoridad.") +
                 "<section class='panel'><h2>Integridad de generación SHADOW</h2>" + definition_list(row, fields(
-                    "state|Estado de verificación|status;as_of|Watermark as_of|time;reason|Motivo;generation_id|Generation ID;sequence|Sequence|number;manifest_digest|Manifest digest;source_watermark|Source watermark;configuration_fingerprint|Configuration fingerprint;members|Report / checkpoint / status cross hashes;retention|Retención / pins / ACK;preopen_digest|Preopen freeze")) + "</section>")
+                    "state|Estado de verificación|status;as_of|Watermark as_of|time;reason|Motivo"))
+                + detail(row, fields("generation_id|Generation ID;sequence|Sequence|number;manifest_digest|Manifest digest;source_watermark|Source watermark;configuration_fingerprint|Configuration fingerprint;members|Report / checkpoint / status cross hashes;retention|Retención / pins / ACK;preopen_digest|Preopen freeze"), "sistema-evidencia", 1)
+                + "</section>")
     if tab == "backups":
         return render_table(p, destination, tab, artifact(p, "backups"), "Backups & protected stores",
                             fields("store|Store;state|Estado|status;last_backup_at|Último backup|time;coverage|Coverage;protected|Protegido"),
