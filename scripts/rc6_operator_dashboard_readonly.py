@@ -32,7 +32,7 @@ token = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
 if token:
  for path in routes:
   entry={"path":path, "http":None, "nav":False, "content":False}
- started=time.monotonic()
+  started=time.monotonic()
   try:
    req=urllib.request.Request("http://127.0.0.1:8000"+path,
        headers={"Authorization":"Bearer "+token, "Cache-Control":"no-cache"})
