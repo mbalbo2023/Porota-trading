@@ -156,6 +156,14 @@ at the first verified comparable artifact, including a prior attempt of the
 same run. A regression fails if it fetches an older run after a valid match.
 No delivery is claimed from these two artifacts.
 
+The next main cut, run 38771696065 / artifact 11992266292, still returned
+UNAVAILABLE after 13.5 seconds in the Python urllib GitHub API path. The old
+`gh api` step completed in about 1.6 seconds on the same runner/workflow.
+The lookup now uses that existing `gh api` transport for bounded JSON and
+ZIP retrieval, keeps GH_TOKEN out of argv/output, and verifies the returned
+ZIP digest before trusting either JSON member. A fresh live artifact must
+confirm the result; this change alone does not claim Telegram delivery.
+
 ## Controls and continuity
 
 - All changes via isolated branch and PR into main; no direct writes.
