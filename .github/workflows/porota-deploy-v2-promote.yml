@@ -612,6 +612,7 @@ jobs:
           # The scanner's fail-closed login cooldown is at least 900 seconds.
           # A healthy PAPER heartbeat in COOLDOWN may recover without changing
           # order authority; keep a bounded wait rather than failing at 90s.
+          set +e
           RUNTIME_CHECK="$(sudo -n timeout 1260 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
           import sqlite3,sys,time
           from datetime import datetime,timezone
@@ -655,7 +656,10 @@ jobs:
               raise SystemExit(1)
           PY
           )"
+          RUNTIME_RC=$?
+          set -e
           echo "$RUNTIME_CHECK"
+          test "$RUNTIME_RC" -eq 0
           grep -q '^GO_CHECK=GREEN' <<< "$RUNTIME_CHECK"
 
           # The exhaustive contract reconciliation can create a transient host
