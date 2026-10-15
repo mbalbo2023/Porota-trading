@@ -15,7 +15,7 @@ import pytest
 
 from rc6_trader_dashboard import generation
 from rc6_trader_dashboard.components import badge, fields, table, metric
-from rc6_trader_dashboard.datasets import shadow_rows, logs, contracts, instrument_market
+from rc6_trader_dashboard.datasets import shadow_rows, logs, contracts, instrument_market, family_summary
 from rc6_trader_dashboard.navigation import CANONICAL_PATHS, DESTINATIONS, LEGACY, BY_KEY, resolve
 from rc6_trader_dashboard.projection import Page, Projection, Store, freshness
 from rc6_trader_dashboard.routes import build_page, install
@@ -226,10 +226,13 @@ def test_source_scope_score_and_trajectory_semantics(database):
         assert p.positions().rows[0]["freshness"] == "STALE"
         assert p.positions().rows[0]["executable_mark"] == "NO_VERIFICADO"
         source = p.sources().rows[0]
-        assert source["scope"] == "IOL:caucion:ARS" and source["state"] == "SOURCE_UNAVAILABLE"
+        assert source["scope"] == "IOL source_sync" and source["state"] == "NO_VERIFICADO"
+        assert source["observed_state"] == "LIVE_FRESH"
+        assert any(r["scope"] == "IOL:caucion:ARS" and r["state"] == "SOURCE_UNAVAILABLE" for r in p.sources().rows)
         decision = p.decisions().rows[0]
         assert decision["reason"] == "LIQUIDITY_BLOCKED"
-        assert decision["economics"] == "NO_EVAL" and decision["risk"] == "NOT_CALLED"
+        assert decision["economics"] == "NO_VERIFICADO" and decision["risk"] == "NO_VERIFICADO"
+        assert decision["final"] == "HOLD"  # The recorded PAPER action, not an invented gate result.
         assert decision["score_is_probability"] is False
     assert "badge-hot" in badge("HOT") and "badge-pass" not in badge("HOT")
     assert "badge-pass" not in badge("WARM") and "badge-pass" not in badge("DISCOVERY")
@@ -492,6 +495,17 @@ def test_equity_read_interruption_is_not_reported_as_empty_ledger(database):
         page = Projection(store).balances()
     assert page.state == "NO_VERIFICADO"
     assert page.rows == [] and page.reason == "CURRENCY_LEDGER_READ_ERROR"
+
+
+def test_other_aggregates_fail_closed_on_interrupted_reads(database):
+    with Store(database, now=NOW) as store:
+        for table in ("paper_positions", "candidate_identity_v2", "paper_decisions"):
+            store.columns(table)
+        store.connection.set_progress_handler(lambda: 1, 1)
+        projection = Projection(store)
+        assert projection.performance().reason == "PERFORMANCE_READ_ERROR"
+        assert family_summary(projection).reason == "FAMILY_SUMMARY_READ_ERROR"
+        assert projection.decisions().state == "NO_VERIFICADO"
 
 
 def test_system_health_and_integrations_keep_distinct_authorities(client):

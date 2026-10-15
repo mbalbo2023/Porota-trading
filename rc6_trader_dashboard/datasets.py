@@ -103,7 +103,10 @@ def contracts(p):
     keys = json.loads(row["identity"])
     columns = s.select("contract_evidence_v2_current", "c")
     evidence = s.select("contract_evidence_v2_snapshots", "v")
+    errors = len(s.errors)
     page_rows = s.query(f"SELECT {columns},CASE WHEN length(CAST(v.evidence_json AS BLOB))<=32768 THEN v.evidence_json END evidence_json FROM contract_evidence_v2_current c JOIN contract_evidence_v2_snapshots v ON v.snapshot_id=c.snapshot_id AND v.evidence_hash=c.evidence_hash AND v.ticker=c.ticker AND v.family=c.family AND v.market=c.market AND v.currency=c.currency AND v.settlement=c.settlement WHERE c.ticker=? AND c.family=? AND c.market=? AND c.currency=? AND c.settlement=? ORDER BY c.source_class LIMIT 10", keys)
+    if len(s.errors) != errors:
+        return Page("contract_evidence_v2_current", reason="CONTRACT_EVIDENCE_READ_ERROR")
     for evidence_row in page_rows:
         payload = json_object(evidence_row.pop("evidence_json", None))
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
@@ -196,11 +199,14 @@ def family_summary(p):
     s = p.store
     if not {"instrument_type", "status", "can_simulate", "checked_at"} <= s.columns("candidate_identity_v2"):
         return Page("candidate_identity_v2", reason="CANONICAL_READINESS_NOT_PUBLISHED")
+    errors = len(s.errors)
     count = s.query("SELECT COUNT(DISTINCT instrument_type) n FROM candidate_identity_v2")
     rows = s.query("""SELECT instrument_type family,COUNT(*) candidates,
         SUM(CASE WHEN can_simulate=1 AND upper(status)='AVAILABLE' THEN 1 ELSE 0 END) ready,
         MAX(checked_at) as_of FROM candidate_identity_v2 GROUP BY instrument_type
         ORDER BY instrument_type LIMIT 10 OFFSET ?""", (p.offset,))
+    if len(s.errors) != errors:
+        return Page("candidate_identity_v2", reason="FAMILY_SUMMARY_READ_ERROR")
     for row in rows:
         row.update(source="candidate_identity_v2", status=UNKNOWN, entry_authority=UNKNOWN,
                    strategy=UNKNOWN, lifecycle_owner=UNKNOWN, blocker="Routing de estrategia pendiente de reconciliación #466")

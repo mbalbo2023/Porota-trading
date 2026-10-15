@@ -465,9 +465,14 @@ class Projection:
     def decisions(self):
         s = self.store
         page = s.page("paper_decisions", order="id DESC" if "id" in s.columns("paper_decisions") else "", offset=self.offset)
+        if page.state != "AVAILABLE":
+            return page
+        errors = len(s.errors)
         keys = [r.get("decision_key") for r in page.rows if r.get("decision_key")]
         gates = {r["decision_key"]: r for r in s.by_keys("trade_gate_evaluations", "decision_key", keys)}
         evidence = {r["decision_key"]: r for r in s.by_keys("decision_evidence_snapshots", "decision_key", keys)}
+        if len(s.errors) != errors:
+            return Page("paper_decisions + trade_gate_evaluations", reason="DECISION_EVIDENCE_READ_ERROR")
         for row in page.rows:
             features = json_object(row.pop("features_json", None))
             gate = gates.get(row.get("decision_key"), {})
@@ -476,14 +481,14 @@ class Projection:
                        strategy=row.get("strategy_version"), as_of=row.get("decided_at"),
                        family=features.get("asset_class") or features.get("family"),
                        market=features.get("market"), currency=features.get("currency"), settlement=features.get("settlement"),
-                       signal=gate.get("technical_gate", "NO_EVAL"), economics="NO_EVAL",
-                       risk=gate.get("patrimonial_gate", "NOT_CALLED"),
-                       final=gate.get("final_result", "OBSERVE_ONLY"),
+                       signal=gate.get("technical_gate") or UNKNOWN, economics=UNKNOWN,
+                       risk=gate.get("patrimonial_gate") or UNKNOWN,
+                       final=gate.get("final_result") or row.get("action") or UNKNOWN,
                        reason=gate.get("reason") or row.get("reason"), score_is_probability=False)
             detail = json_object(gate.get("detail_json"))
             economics = detail.get("economics", {})
             if isinstance(economics, dict):
-                row["economics"] = economics.get("state", "NO_EVAL")
+                row["economics"] = economics.get("state") or UNKNOWN
                 row["expected_cost"] = economics.get("expected_cost")
             row["previous_state"] = features.get("previous_state")
         return page
@@ -661,8 +666,11 @@ class Projection:
             grouped = ",".join(identity)
             sources = "CASE WHEN COUNT(DISTINCT source_class)=1 THEN MIN(source_class) ELSE 'MULTIPLE_SOURCE_CLASSES' END" if "source_class" in cols else "'NO_VERIFICADO'"
             quality = "SUM(CASE WHEN quality_state='FULL_OHLC' THEN 1 ELSE 0 END) full_ohlc," if "quality_state" in cols else ""
+            errors = len(history_store.errors)
             count = history_store.query(f"SELECT COUNT(*) n FROM (SELECT 1 FROM history_canonical_v2 GROUP BY {grouped})")
             rows = history_store.query(f"SELECT {grouped},COUNT(*) row_count,MIN(trading_date) date_from,MAX(trading_date) date_to,MAX(observed_at) observed_at,{quality}{sources} source FROM history_canonical_v2 GROUP BY {grouped} ORDER BY {grouped} LIMIT 10 OFFSET ?", (self.offset,))
+            if len(history_store.errors) != errors:
+                return Page("history_canonical_v2", reason="HISTORY_READ_ERROR")
             return Page("history_canonical_v2 · historical identities / source clocks", rows,
                         count[0]["n"] if count else None, "AVAILABLE", self.offset)
         page = canonical(s)
@@ -690,6 +698,7 @@ class Projection:
         if today:
             day, params = self.daily_where("closed_at")
             condition += " AND " + day
+        errors = len(s.errors)
         rows = s.query(f"""SELECT currency,asset_class family,strategy_version strategy,COUNT(*) sample_size,
             decimal_sum(net_pnl) net_pnl,decimal_sum(gross_pnl) gross_pnl,
             decimal_sum(decimal_add(entry_cost,exit_cost)) costs,
@@ -702,6 +711,8 @@ class Projection:
             FROM paper_positions WHERE {condition}
             GROUP BY currency,asset_class,strategy_version ORDER BY currency,asset_class,strategy_version LIMIT 10 OFFSET ?""", (*params, self.offset))
         totals = s.query(f"SELECT COUNT(*) n FROM (SELECT 1 FROM paper_positions WHERE {condition} GROUP BY currency,asset_class,strategy_version)", params)
+        if len(s.errors) != errors:
+            return Page("paper_positions · CLOSED ledger aggregates", reason="PERFORMANCE_READ_ERROR")
         for row in rows:
             n = row["sample_size"]
             net = decimal_amount(row["net_pnl"])
