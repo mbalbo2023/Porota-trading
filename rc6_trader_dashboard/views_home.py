@@ -20,6 +20,8 @@ def attention(p, positions):
             alerts.append(("Revisar límite de riesgo diario", row.get("currency", UNKNOWN), "/riesgo/limites"))
     if p.runtime["heartbeat_freshness"] != "FRESH":
         alerts.append(("Heartbeat runtime sin verificación fresca", p.runtime["heartbeat_freshness"], "/sistema/workers"))
+    if not p.shadow_fresh:
+        alerts.append(("SHADOW sin corte comprometido fresco", UNKNOWN, "/sistema/evidencia"))
     items = "".join(f"<li><b>{e(title)}</b><span>{e(scope)}</span><a href='{path}'>Revisar {e(scope)}</a></li>" for title, scope, path in alerts[:5])
     return f"<section class='panel'><h2>Atención ahora</h2><ul class='preview-list'>{items or '<li>Sin alertas derivadas de la evidencia disponible; coverage global NO_VERIFICADO.</li>'}</ul></section>", len(alerts)
 
