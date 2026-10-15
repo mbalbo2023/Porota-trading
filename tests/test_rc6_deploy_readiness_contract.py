@@ -64,3 +64,17 @@ def test_promotion_consumes_frozen_image_without_droplet_rebuild():
     assert "docker load" in body
     assert "POROTA_BUILD_ONCE_PROMOTION=GREEN" in body
     assert "docker build " not in body
+
+def test_go_check_keeps_paper_heartbeat_guard_during_bounded_auth_cooldown():
+    import re
+    body = PROMOTE.read_text(encoding="utf-8")
+    observer = Path("bf_production_paper_observer.py").read_text(encoding="utf-8")
+    match = re.search(r"COOLDOWN_GO_SECONDS=(\d+)", body)
+    assert match is not None
+    wait_seconds = int(match.group(1))
+    assert wait_seconds >= 900  # scanner's minimum PPI login cooldown
+    assert 'LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))' in observer
+    assert "paper and heartbeat and last[2]=='COOLDOWN'" in body
+    assert "paper and last[2]=='OK' and heartbeat and market_fresh" in body
+    assert "GO_CHECK_FAILED_AFTER_COOLDOWN" in body
+    assert "timeout 1260 python3" in body
