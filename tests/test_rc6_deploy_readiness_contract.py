@@ -78,3 +78,4 @@ def test_go_check_keeps_paper_heartbeat_guard_during_bounded_auth_cooldown():
     assert "paper and last[2]=='OK' and heartbeat and market_fresh" in body
     assert "GO_CHECK_FAILED_AFTER_COOLDOWN" in body
     assert "timeout 1260 python3" in body
+    assert 'RUNTIME_RC=$?' in body and 'test "$RUNTIME_RC" -eq 0' in body
