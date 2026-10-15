@@ -167,7 +167,8 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
     if page.as_of:
         provenance += f" · {e(clock(page.as_of))}"
     provenance += "</div>"
-    audit = (f"<details class='evidence-detail'><summary>Estado de lectura</summary><p>{e(page.reason or 'Consulta read-only; paginación en servidor.')}</p></details>")
+    audit = detail({"reason": page.reason or "Consulta read-only; paginación en servidor."},
+                   fields("reason|Estado de lectura"), f"{table_id}-reading", 1)
     return (f"<section class='panel data-panel' id='{table_id}-panel'><div class='panel-heading'><h2>{e(title)}</h2></div>"
             f"<table class='terminal-table' id='{table_id}'><caption class='sr-only'>{e(title)}</caption><thead><tr>{heads}<th scope='col'>Detalle</th></tr></thead><tbody>{''.join(body)}</tbody></table>"
             + (pager(page, path, filters or {}, table_id) if path else "") + provenance + audit + "</section>")

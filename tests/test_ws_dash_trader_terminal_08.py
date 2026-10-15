@@ -462,7 +462,8 @@ def test_detail_names_unique_and_keys_survive_metric_change():
     names = [x.get_text() for x in first.select(".detail-trigger")]
     assert len(names) == len(set(names))
     assert first.select_one(".row-dialog")["id"] == second.select_one(".row-dialog")["id"]
-    assert len(first.select("details.row-detail")) == 0
+    assert first.select("details") == []
+    assert len(first.select("dialog.row-dialog")) == 3  # two rows and reading status
     for trigger in first.select(".detail-trigger"):
         dialog = first.find(id=trigger["aria-controls"])
         assert dialog and dialog.name == "dialog" and dialog["aria-labelledby"]
@@ -515,6 +516,17 @@ def test_other_aggregates_fail_closed_on_interrupted_reads(database):
         assert projection.performance().reason == "PERFORMANCE_READ_ERROR"
         assert family_summary(projection).reason == "FAMILY_SUMMARY_READ_ERROR"
         assert projection.decisions().state == "NO_VERIFICADO"
+
+
+def test_home_does_not_call_failed_performance_read_an_empty_day(client, monkeypatch):
+    from rc6_trader_dashboard.views_home import preview
+    failed = Page("paper_positions", reason="PERFORMANCE_READ_ERROR")
+    assert "PERFORMANCE_READ_ERROR" in preview(failed, "Posiciones", "/en-vivo/posiciones")
+    monkeypatch.setattr(Projection, "performance", lambda self, today=False: failed)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "PERFORMANCE_READ_ERROR" in response.text
+    assert "Sin cierres medidos en este scope" not in response.text
 
 
 def test_system_health_and_integrations_keep_distinct_authorities(client):
