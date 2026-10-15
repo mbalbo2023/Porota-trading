@@ -39,7 +39,9 @@ class OperatorAuditTests(TestCase):
 
     payload["routes"][0]["elapsed_ms"] = 3100
     payload["routes"][0]["slow_2s"] = True
+    payload["routes"][0]["unverified_mentions"] = 3
     self.assertEqual(audit_host(runner=runner)["status"], "ROUTES_DEGRADED")
+    self.assertEqual(audit_host(runner=runner)["routes"][0]["unverified_mentions"], 3)
     payload["audit_scope"] = "POSTCLOSE_ALL"
     payload["routes"] = [{"path": path, "http": 200, "nav": True, "content": True}
                          for path in POSTCLOSE_ROUTES]
