@@ -78,6 +78,32 @@ def _fits_hot_report(value, limit_bytes=1024**2):
     return True
 
 
+def _runtime_sql_status(diagnostics):
+    """Small allowlisted SQL counters for the durable PAPER status only."""
+    if not isinstance(diagnostics, dict):
+        return None
+    stages = diagnostics.get("stages", [])
+    allowed = {"CATALOG_FULL", "OPEN_POSITIONS", "SCHEMA_TABLES",
+               "INTRADAY_CONTRACTS", "INTRADAY_POINTS", "MARKET_SNAPSHOTS"}
+    if not isinstance(stages, list):
+        return None
+    rows = [{key: stage[key] for key in ("stage", "elapsed_ms", "rows",
+             "remaining_ms", "deadline_elapsed", "interrupted_by_deadline", "sqlite_errorname")
+             if key in stage}
+            for stage in stages[:6] if isinstance(stage, dict)
+            and stage.get("stage") in allowed]
+    plans = diagnostics.get("plans", {})
+    return {"budget_ms": diagnostics.get("budget_ms"),
+            "sql_elapsed_ms": diagnostics.get("sql_elapsed_ms"),
+            "sql_remaining_ms": diagnostics.get("sql_remaining_ms"),
+            "transform_elapsed_ms": diagnostics.get("transform_elapsed_ms"),
+            "transform_expired_stage": diagnostics.get("transform_expired_stage"),
+            "stages": rows,
+            "plans": {name: [item[:120] for item in values[:3] if isinstance(item, str)]
+                      for name, values in plans.items() if name in allowed
+                      and isinstance(values, list)}}
+
+
 def _durable_family_routing(report):
     if _fits_hot_report(report):
         return report
@@ -304,8 +330,10 @@ class ShadowRuntime:
             previous = files.read("checkpoint.json.gz") or {}
             if previous and stamp(previous["as_of"]) > at:
                 raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
+            self.last_sqlite_diagnostics = {}
             inputs = read_runtime(self.database, as_of=at, row_limit=self.row_limit,
-                                  query_budget_seconds=2.0)
+                                  query_budget_seconds=2.0,
+                                  diagnostics=self.last_sqlite_diagnostics)
             source_id, failures = self._metadata(at, previous.get("as_of", at.isoformat()))
             reuse = (previous.get("source_identity") == source_id and
                      previous.get("runtime_configuration") == configuration)
@@ -425,6 +453,7 @@ class ShadowRuntime:
                 capacity_policy_status=capacity_policy["status"],
                 entry_signal_lab_status=report["entry_signal_lab"]["status"],
                 operational_funnel_status=report["operational_funnel"]["status"])
+            status["runtime_sql_diagnostics"] = _runtime_sql_status(self.last_sqlite_diagnostics)
             files.write("status.json", status)
             files.prune_computed_reports(keep=audit["file"])
             return report
@@ -469,6 +498,13 @@ def run_worker(database, stop, *, clock_fn=None):
                             failure["sqlite_errorcode"] = code
                         if isinstance(label, str) and label.startswith("SQLITE_"):
                             failure["sqlite_errorname"] = label[:48]
+                    stage = getattr(exc, "rc6_stage", None)
+                    if stage in {"CATALOG_FULL", "OPEN_POSITIONS", "SCHEMA_TABLES",
+                                 "INTRADAY_CONTRACTS", "INTRADAY_POINTS",
+                                 "MARKET_SNAPSHOTS", "COMPLETE"}:
+                        failure["runtime_read_stage"] = stage
+                        failure["runtime_deadline_expired"] = (
+                            getattr(exc, "rc6_deadline_expired", None) is True)
                     if isinstance(exc, (sqlite3.Error, ValueError)):
                         # Only a reviewed source location is published. Never
                         # persist exception text, SQL, paths or a traceback.
@@ -495,6 +531,8 @@ def run_worker(database, stop, *, clock_fn=None):
                                 if filename.endswith("/" + suffix):
                                     failure["error_module"] = module
                                     failure["error_line"] = line
+                    failure["runtime_sql_diagnostics"] = _runtime_sql_status(
+                        getattr(worker, "last_sqlite_diagnostics", None))
                     with worker.files as files:
                         files.write("status.json", failure)
                 except (OSError, ValueError):

@@ -85,6 +85,11 @@ API_CONCEPTS: dict[str, tuple[list[str], list[str], str]] = {
 def classify(path: str) -> tuple[list[str], list[str], str, str]:
     if path in FRAMEWORK_ROUTES:
         return [], ["FastAPI schema/UI"], "framework", "FRAMEWORK"
+    if path == "/trading/cauciones":
+        return (["runtime", "safety", "caucion", "iol_current"],
+                ["paper_cauciones", "paper_caucion_allocations", "paper_caucion_cash_sweep_state",
+                 "source_sync", "financial_instrument_catalog"],
+                "Trading > Cauciones", "VISIBLE_SURFACE")
     destination, tab = resolve(path)
     if destination is not None and (path in CANONICAL_PATHS or path in LEGACY):
         concepts, datasets = TERMINAL_DATASETS[destination.key]

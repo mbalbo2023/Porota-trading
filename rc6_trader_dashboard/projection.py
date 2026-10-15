@@ -141,6 +141,7 @@ TABLE_FIELDS = {
     "paper_exit_reader_state": "id heartbeat_at state detail",
     "paper_runtime_state": "id heartbeat_at state detail",
     "intraday_scalping_worker_state": "id heartbeat_at state selected successful failed candidates real_orders_sent detail",
+    "paper_caucion_cash_sweep_state": "id heartbeat_at state last_attempt_at code paper_id real_orders_sent detail",
     "api_health": "component state detail checked_at last_success_at source",
     "source_sync": "source status last_attempt_at last_success_at items detail",
     "financial_instrument_catalog": "ticker instrument_type market currency settlement description last_seen_at status capability metadata_json",
@@ -152,8 +153,8 @@ TABLE_FIELDS = {
     "scalping_candidates": "id evaluated_at symbol asset_class market currency settlement action score price volume points reason economics_json",
     "paper_family_lifecycle": "lifecycle_id family instrument currency state updated_at ledger_total metadata_json",
     "paper_family_lifecycle_events": "event_id lifecycle_id family from_state to_state amount occurred_at detail_json",
-    "paper_cauciones": "paper_id currency principal annual_rate_fraction interest_days day_count_basis opened_at maturity_at settled_at status total_fees gross_interest net_interest features_json",
-    "paper_caucion_allocations": "id evaluated_at decision_json paper_id",
+    "paper_cauciones": "paper_id request_id source instrument_id currency principal annual_rate_fraction interest_days day_count_basis opened_at maturity_at settled_at status total_fees gross_interest fee_payment terms_json",
+    "paper_caucion_allocations": "request_id evaluated_at decision_json paper_id",
     "production_history": "symbol instrument_type settlement date_from date_to downloaded_at row_count",
     "history_canonical_v2": "ticker symbol family instrument_type market currency settlement trading_date quality_state source_class source_ref source status row_count rows first_at last_at downloaded_at observed_at known_at",
     "paper_learning_samples": "paper_id source strategy_version feature_timestamp label_timestamp net_return_pct outcome duration_minutes features_json",
@@ -279,6 +280,12 @@ class Projection:
         root = Path(os.getenv("POROTA_SHADOW_RUNTIME_ROOT", str(self.store.path) + ".shadow"))
         return read_shadow(root, self.generation_reader)
 
+    @cached_property
+    def shadow_fresh(self):
+        """Only a current coherent cut may populate live SHADOW numbers."""
+        return (self.shadow["state"] == "COMMITTED_COHERENT_SHADOW"
+                and freshness(self.shadow["report"].get("as_of"), self.now, 30) == "FRESH")
+
     def daily_where(self, column):
         start = datetime.combine(self.now.astimezone(TZ).date(), datetime.min.time(), TZ)
         return f"julianday({column})>=julianday(?) AND julianday({column})<julianday(?)", (
@@ -381,8 +388,8 @@ class Projection:
                 row = s.query("SELECT COUNT(*) n FROM paper_positions WHERE status='CLOSED' AND " + condition, params)
                 if row:
                     result["closed_today"] = row[0]["n"]
-        # All SHADOW stages belong to this same committed cut.
-        funnel = self.shadow["report"].get("operational_funnel", {})
+        # A coherent but stale generation is historical evidence, not live HOT/SIGNAL.
+        funnel = self.shadow["report"].get("operational_funnel", {}) if self.shadow_fresh else {}
         if isinstance(funnel, dict):
             stages = funnel.get("counts", funnel)
             stages = stages if isinstance(stages, dict) else {}
@@ -458,9 +465,14 @@ class Projection:
     def decisions(self):
         s = self.store
         page = s.page("paper_decisions", order="id DESC" if "id" in s.columns("paper_decisions") else "", offset=self.offset)
+        if page.state != "AVAILABLE":
+            return page
+        errors = len(s.errors)
         keys = [r.get("decision_key") for r in page.rows if r.get("decision_key")]
         gates = {r["decision_key"]: r for r in s.by_keys("trade_gate_evaluations", "decision_key", keys)}
         evidence = {r["decision_key"]: r for r in s.by_keys("decision_evidence_snapshots", "decision_key", keys)}
+        if len(s.errors) != errors:
+            return Page("paper_decisions + trade_gate_evaluations", reason="DECISION_EVIDENCE_READ_ERROR")
         for row in page.rows:
             features = json_object(row.pop("features_json", None))
             gate = gates.get(row.get("decision_key"), {})
@@ -469,14 +481,14 @@ class Projection:
                        strategy=row.get("strategy_version"), as_of=row.get("decided_at"),
                        family=features.get("asset_class") or features.get("family"),
                        market=features.get("market"), currency=features.get("currency"), settlement=features.get("settlement"),
-                       signal=gate.get("technical_gate", "NO_EVAL"), economics="NO_EVAL",
-                       risk=gate.get("patrimonial_gate", "NOT_CALLED"),
-                       final=gate.get("final_result", "OBSERVE_ONLY"),
+                       signal=gate.get("technical_gate") or UNKNOWN, economics=UNKNOWN,
+                       risk=gate.get("patrimonial_gate") or UNKNOWN,
+                       final=gate.get("final_result") or row.get("action") or UNKNOWN,
                        reason=gate.get("reason") or row.get("reason"), score_is_probability=False)
             detail = json_object(gate.get("detail_json"))
             economics = detail.get("economics", {})
             if isinstance(economics, dict):
-                row["economics"] = economics.get("state", "NO_EVAL")
+                row["economics"] = economics.get("state") or UNKNOWN
                 row["expected_cost"] = economics.get("expected_cost")
             row["previous_state"] = features.get("previous_state")
         return page
@@ -485,14 +497,47 @@ class Projection:
         s = self.store
         if not {"id", "currency", "measured_at"} <= s.columns("paper_equity_by_currency"):
             return Page("paper_equity_by_currency", reason="CURRENCY_LEDGER_UNAVAILABLE")
+        errors = len(s.errors)
         rows = s.query(f"SELECT {s.select('paper_equity_by_currency', 'e')} FROM paper_equity_by_currency e JOIN (SELECT currency,MAX(id) id FROM paper_equity_by_currency GROUP BY currency) x ON e.id=x.id ORDER BY e.currency LIMIT 10")
         quality = {r["currency"]: r for r in s.page("paper_valuation_quality").rows}
+        if len(s.errors) != errors:
+            return Page("paper_equity_by_currency + paper_valuation_quality", reason="CURRENCY_LEDGER_READ_ERROR")
         for row in rows:
             row.update(freshness=freshness(row["measured_at"], self.now),
                        valuation_state=quality.get(row["currency"], {}).get("state", UNKNOWN),
                        stale_positions=quality.get(row["currency"], {}).get("stale_positions"),
                        reserved=row.get("caucion_principal"), source="paper_equity_by_currency")
         return Page("paper_equity_by_currency + paper_valuation_quality", rows, len(rows), "AVAILABLE")
+
+    def cauciones(self, decisions=False):
+        """Read recorded PAPER placements or decisions, never calculate a live quote."""
+        s = self.store
+        if decisions:
+            page = s.page("paper_caucion_allocations", order="evaluated_at DESC,request_id DESC", offset=self.offset)
+            for row in page.rows:
+                decision = json_object(row.pop("decision_json", None))
+                selected = decision.get("selected") if isinstance(decision.get("selected"), dict) else {}
+                row.update(status=decision.get("status") or UNKNOWN,
+                           currency=decision.get("currency") or selected.get("currency"),
+                           reason=decision.get("code") or UNKNOWN,
+                           principal=selected.get("principal"), selected=selected,
+                           candidates=decision.get("candidates"),
+                           source="paper_caucion_allocations", as_of=row.get("evaluated_at"),
+                           entry_authority="PAPER / SIMULATED" if row.get("paper_id") else "HOLD / NO ORDER")
+            return page
+        page = s.page("paper_cauciones", order="opened_at DESC,paper_id DESC", offset=self.offset)
+        for row in page.rows:
+            principal = decimal_amount(row.get("principal"))
+            interest = decimal_amount(row.get("gross_interest"))
+            fees = decimal_amount(row.get("total_fees"))
+            rate = decimal_amount(row.get("annual_rate_fraction"))
+            row.update(tna_percent=str(rate * 100) if rate is not None else None,
+                       net_interest=str(interest - fees) if interest is not None and fees is not None else None,
+                       terms=json_object(row.pop("terms_json", None)),
+                       source=row.get("source") or "paper_cauciones", as_of=row.get("opened_at"),
+                       freshness=UNKNOWN, entry_authority="PAPER / SIMULATED",
+                       principal_verified=principal is not None)
+        return page
 
     def risk(self):
         s = self.store
@@ -507,7 +552,8 @@ class Projection:
         s = self.store
         rows = []
         datasets = (("paper_supervisor_state", "Supervisor de salidas"), ("paper_exit_reader_state", "Lector de salidas"),
-                    ("intraday_scalping_worker_state", "Scalping"))
+                    ("intraday_scalping_worker_state", "Scalping"),
+                    ("paper_caucion_cash_sweep_state", "Cauciones · cash sweep"))
         for table, label in datasets:
             row = s.one(table)
             stamp = row.get("heartbeat_at")
@@ -533,21 +579,82 @@ class Projection:
         return Page("canonical worker states", rows, len(rows), "AVAILABLE")
 
     def sources(self):
-        page = self.store.page("api_health", order="component" if "component" in self.store.columns("api_health") else "", offset=self.offset)
+        # api_health is an observed record, not a live ping on every render.
+        # Match freshness to the writer's cadence; never re-label an old
+        # successful check as a currently healthy connection.
+        public_seconds = max(900, min(86400, self.integer(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS"), 21600)))
+        structured_seconds = max(900, min(86400, self.integer(os.getenv("PUBLIC_STRUCTURED_CAPTURE_SECONDS"), 900)))
+        budgets = {
+            "BYMA_OPEN_DATA": public_seconds + 3600,
+            "BYMA_WEB": public_seconds + 3600,
+            "BYMA_CALENDAR": public_seconds + 3600,
+            "BYMA_INSTRUMENTS_API": public_seconds + 3600,
+            "BYMA_STRUCTURED_CAPTURE": structured_seconds + 600,
+            "PPI_PRODUCTION_CATALOG": 36 * 3600,
+            "ROFEX_MARKETDATA": 36 * 3600,
+            "PPI_PRODUCTION_HISTORY": 48 * 3600,
+            "PPI_BACKGROUND_INGEST": 48 * 3600,
+        }
+        cols = self.store.columns("api_health")
+        order = ("CASE component WHEN 'PPI_PRODUCTION_MARKETDATA' THEN 0 "
+                 "WHEN 'PPI_PRODUCTION_AUTH' THEN 1 ELSE 2 END,component") if "component" in cols else ""
+        # Reserve the first row for IOL. api_health currently publishes PPI,
+        # BYMA and ROFEX, but no IOL component: omission is not healthy IOL.
+        page = self.store.page("api_health", order=order, offset=max(0, self.offset - 1),
+                               limit=9 if self.offset == 0 else 10)
+        page.offset = self.offset
         for row in page.rows:
+            component = str(row.get("component") or "")
+            observed = row.get("state") or UNKNOWN
             primary = any(str(row.get(key, "")).upper().startswith("PPI") for key in ("source", "component"))
+            checked = row.get("checked_at")
+            budget = budgets.get(component, 180)
+            state_age = age(checked, self.now)
             row.update(role="PRIMARY" if primary else "COMPLEMENT / OBSERVE_ONLY",
-                       as_of=row.get("checked_at"), provider_clock=None, receipt_clock=row.get("checked_at"),
-                       freshness=freshness(row.get("checked_at"), self.now), scope=row.get("component"),
-                       lkg=row.get("last_success_at"))
-            if row["freshness"] != "FRESH":
-                row["state"] = row["freshness"]
+                       as_of=checked, provider_clock=None, receipt_clock=checked,
+                       scope=component, lkg=row.get("last_success_at"),
+                       observed_state=observed, checked_age_seconds=state_age)
+            if component == "PPI_PRODUCTION_AUTH":
+                # A successful login is event-driven. The current observer
+                # heartbeat and session state, not an old login row, attest it.
+                runtime = self.runtime
+                current = runtime["heartbeat_freshness"] == "FRESH"
+                row.update(cadence="OBSERVER_SESSION", freshness=runtime["heartbeat_freshness"],
+                           state=("VERDE" if runtime.get("ppi_auth") == "OK" else
+                                  "ROJO" if runtime.get("ppi_auth") == "ERROR" else UNKNOWN) if current else UNKNOWN)
+            elif component == "GEMINI_DECISION":
+                # The AI check is event-driven; an old GREEN is historical.
+                current = freshness(checked, self.now, 180) == "FRESH"
+                row.update(cadence="EVENT_DRIVEN", freshness="FRESH" if current else UNKNOWN,
+                           state=observed if current else UNKNOWN)
+            else:
+                quality = freshness(checked, self.now, budget)
+                row.update(cadence=("SUBSCRIPTION_REQUIRED" if component == "BYMA_INSTRUMENTS_API"
+                                    else f"CHECK_WITHIN_{budget}s"),
+                           freshness=quality,
+                           state=(observed if component == "BYMA_INSTRUMENTS_API" and observed == "GRIS"
+                                  else observed if quality == "FRESH" else UNKNOWN))
+        if self.offset == 0:
+            sync = self.store.page("source_sync", where="source LIKE ?", params=("IOL%",),
+                                   order="last_attempt_at DESC", limit=1)
+            observed = sync.rows[0] if sync.rows else {}
+            checked = observed.get("last_attempt_at")
+            page.rows.insert(0, {"component": "IOL · captura complementaria", "role": "COMPLEMENT / OBSERVE_ONLY",
+                                 "state": UNKNOWN, "observed_state": observed.get("status") or UNKNOWN,
+                                 "freshness": freshness(checked, self.now, 3600), "as_of": checked,
+                                 "checked_age_seconds": age(checked, self.now), "cadence": "SOURCE_SYNC_CAPTURE; no live ping",
+                                 "lkg": observed.get("last_success_at"), "scope": "IOL source_sync",
+                                 "source": "source_sync", "detail": "Captura observada; autoridad PPI primaria."})
         if page.total == 0 or page.total is None:
-            page.rows = [{"component": label, "role": role, "state": "SOURCE_UNAVAILABLE", "scope": label,
-                          "source": "api_health", "freshness": UNKNOWN} for label, role in (
-                ("PPI", "PRIMARY"), ("IOL", "COMPLEMENT"), ("BYMA public", "OBSERVE_ONLY"), ("A3 / ROFEX", "OBSERVE_ONLY"))]
+            if self.offset == 0:
+                page.rows += [{"component": label, "role": role, "state": UNKNOWN, "scope": label,
+                               "source": "api_health", "freshness": UNKNOWN} for label, role in (
+                    ("PPI", "PRIMARY"), ("BYMA public", "OBSERVE_ONLY"), ("A3 / ROFEX", "OBSERVE_ONLY"))]
             page.total = None
             page.state = UNKNOWN
+        else:
+            page.total += 1
+            page.source += " + source_sync(IOL)"
         return page
 
     def history(self):
@@ -560,8 +667,11 @@ class Projection:
             grouped = ",".join(identity)
             sources = "CASE WHEN COUNT(DISTINCT source_class)=1 THEN MIN(source_class) ELSE 'MULTIPLE_SOURCE_CLASSES' END" if "source_class" in cols else "'NO_VERIFICADO'"
             quality = "SUM(CASE WHEN quality_state='FULL_OHLC' THEN 1 ELSE 0 END) full_ohlc," if "quality_state" in cols else ""
+            errors = len(history_store.errors)
             count = history_store.query(f"SELECT COUNT(*) n FROM (SELECT 1 FROM history_canonical_v2 GROUP BY {grouped})")
             rows = history_store.query(f"SELECT {grouped},COUNT(*) row_count,MIN(trading_date) date_from,MAX(trading_date) date_to,MAX(observed_at) observed_at,{quality}{sources} source FROM history_canonical_v2 GROUP BY {grouped} ORDER BY {grouped} LIMIT 10 OFFSET ?", (self.offset,))
+            if len(history_store.errors) != errors:
+                return Page("history_canonical_v2", reason="HISTORY_READ_ERROR")
             return Page("history_canonical_v2 · historical identities / source clocks", rows,
                         count[0]["n"] if count else None, "AVAILABLE", self.offset)
         page = canonical(s)
@@ -589,6 +699,7 @@ class Projection:
         if today:
             day, params = self.daily_where("closed_at")
             condition += " AND " + day
+        errors = len(s.errors)
         rows = s.query(f"""SELECT currency,asset_class family,strategy_version strategy,COUNT(*) sample_size,
             decimal_sum(net_pnl) net_pnl,decimal_sum(gross_pnl) gross_pnl,
             decimal_sum(decimal_add(entry_cost,exit_cost)) costs,
@@ -601,6 +712,8 @@ class Projection:
             FROM paper_positions WHERE {condition}
             GROUP BY currency,asset_class,strategy_version ORDER BY currency,asset_class,strategy_version LIMIT 10 OFFSET ?""", (*params, self.offset))
         totals = s.query(f"SELECT COUNT(*) n FROM (SELECT 1 FROM paper_positions WHERE {condition} GROUP BY currency,asset_class,strategy_version)", params)
+        if len(s.errors) != errors:
+            return Page("paper_positions · CLOSED ledger aggregates", reason="PERFORMANCE_READ_ERROR")
         for row in rows:
             n = row["sample_size"]
             net = decimal_amount(row["net_pnl"])

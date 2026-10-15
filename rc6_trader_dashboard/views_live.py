@@ -12,13 +12,15 @@ def render(p, destination, tab):
         counts = p.counts()
         cards = "".join(metric(label, counts.get(key), source, kind="number") for key, label, source in (
             ("open_positions", "Operaciones abiertas", "paper_positions · OPEN"),
-            ("closed_today", "Cerradas hoy", "Cierres factuales en ART"), ("HOT", "HOT ahora", "Observación SHADOW; HOT ≠ BUY"),
+            ("closed_today", "Cerradas hoy", "Cierres factuales en ART"), ("HOT", "HOT en corte fresco", "Observación SHADOW; HOT ≠ BUY"),
             ("SIGNAL", "Señales candidatas", "Cut SHADOW comprometido")))
         summary = p.performance(today=True)
         cards += "".join(metric("PnL neto hoy · " + r["currency"], r.get("net_pnl"), r["strategy"], kind="money", currency=r["currency"]) for r in summary.rows)
         workers = p.workers()
-        verified = sum(r.get("freshness") == "FRESH" and r.get("state") in {"RUNNING", "OK"} for r in workers.rows)
-        cards += metric("Workers críticos frescos", verified, f"De {len(workers.rows)} · revisar cobertura", kind="number")
+        # DailyRisk is a risk state, not a heartbeat-bearing worker.
+        watched = [r for r in workers.rows if r.get("source") != "paper_daily_risk"]
+        verified = sum(r.get("freshness") == "FRESH" and r.get("state") in {"RUNNING", "OK"} for r in watched)
+        cards += metric("Workers críticos frescos", verified, f"De {len(watched)} · revisar cobertura", kind="number")
         content = "<div class='metric-grid'>" + cards + "</div>" + committed_funnel(p)
         content += "<div class='split-panels'>" + preview(shadow_rows(p, "opportunities"), "Oportunidades", "/en-vivo/oportunidades") + timeline(shadow_rows(p, "events").rows) + "</div>"
         content += "<div class='split-panels'>" + preview(p.positions(limit=5), "1. Operaciones abiertas ahora", "/en-vivo/posiciones") + preview(p.positions(closed=True, today=True, limit=5), "2. Operaciones cerradas hoy", "/en-vivo/cierres") + "</div>"

@@ -1,5 +1,5 @@
 """An exact identity drill-down; source evidence stays independently attributed."""
-from .components import fields, definition_list, notice, e
+from .components import fields, definition_list, detail
 from .datasets import contracts, instrument_market
 from .view_common import render_table, CATALOG, CATALOG_DETAIL, SOURCE_DETAIL
 from .views_trading import FAMILY_DETAILS
@@ -15,7 +15,9 @@ def render(p, destination, tab):
         page = p.catalog()
         if tab == "ficha" and p.filters.get("identity") and len(page.rows) == 1:
             row = page.rows[0]
-            return "<section class='panel'><h2>Identidad canónica</h2>" + definition_list(row, (*CATALOG, *CATALOG_DETAIL, *family_fields(row["family"]))) + "</section>"
+            return ("<section class='panel'><h2>Identidad canónica</h2>" + definition_list(row, CATALOG)
+                    + detail(row, (*CATALOG_DETAIL, *family_fields(row["family"])), "instrumento-ficha", 1)
+                    + "</section>")
         return render_table(p, destination, tab, page, "Buscar identidad exacta", CATALOG, CATALOG_DETAIL,
                             filters=True, catalog=True, note="Identidad: ticker + familia + mercado + moneda + settlement. Complementos no reemplazan la identidad PPI.")
     if tab == "mercado":
@@ -27,8 +29,8 @@ def render(p, destination, tab):
     columns = fields("symbol|Ticker;source_class|Fuente contractual;state|Evidencia|status;observed_at|Observado|time")
     if page.reason == "SELECT_EXACT_IDENTITY_FOR_CONTRACT":
         columns = CATALOG
-    detail = fields("contract|Campos family-specific con provenance;evidence_hash|Hash de evidencia;snapshot_id|Snapshot;conflicts|Conflictos;freshness|Freshness|status")
+    detail_fields = fields("contract|Campos family-specific con provenance;evidence_hash|Hash de evidencia;snapshot_id|Snapshot;conflicts|Conflictos;freshness|Freshness|status")
     if page.rows and page.reason != "SELECT_EXACT_IDENTITY_FOR_CONTRACT":
-        detail = (*family_fields(page.rows[0].get("family")), *detail)
-    return render_table(p, destination, tab, page, "Contrato" if tab == "contrato" else "Evidencia por fuente", columns, detail,
+        detail_fields = (*family_fields(page.rows[0].get("family")), *detail_fields)
+    return render_table(p, destination, tab, page, "Contrato" if tab == "contrato" else "Evidencia por fuente", columns, detail_fields,
                         note="PPI primary / IOL complement / fuentes públicas: cada evidencia conserva fuente y reloj. Seleccione identidad exacta para consultar contrato; LKG no se promueve a LIVE.")

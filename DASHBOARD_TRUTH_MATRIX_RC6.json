@@ -1,6 +1,6 @@
 {
-  "registered_paths": 100,
-  "route_count": 102,
+  "registered_paths": 101,
+  "route_count": 103,
   "routes": [
     {
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
@@ -2808,6 +2808,41 @@
       "ready_counter_authority": "candidate_identity_v2",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "Trading > Resumen",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety",
+        "caucion",
+        "iol_current"
+      ],
+      "canonical_view": "trading/cauciones",
+      "datasets": [
+        "paper_cauciones",
+        "paper_caucion_allocations",
+        "paper_caucion_cash_sweep_state",
+        "source_sync",
+        "financial_instrument_catalog"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/trading/cauciones",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Trading > Cauciones",
       "write_route": false
     },
     {

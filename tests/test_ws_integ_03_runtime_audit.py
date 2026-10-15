@@ -22,7 +22,7 @@ def _snapshot():
         "exit_supervisor": {"state": "RUNNING", "heartbeat_at": now,
                             "heartbeat_age_seconds": 0, "real_orders_sent": 0, "routes": []},
     }
-    route_inventory = {"route_count": 102, "registered_paths": 100, "routes": []}
+    route_inventory = {"route_count": 103, "registered_paths": 101, "routes": []}
     return {
         "database": {
             "observer": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
@@ -92,7 +92,7 @@ def test_runtime_route_contract_tracks_frozen_terminal_manifest(monkeypatch):
     frozen = json.loads(Path("DASHBOARD_TRUTH_MATRIX_RC6.json").read_text(encoding="utf-8"))
     actual = inventory()
     assert actual == frozen
-    assert (actual["route_count"], actual["registered_paths"]) == (102, 100)
+    assert (actual["route_count"], actual["registered_paths"]) == (103, 101)
     snapshot = _snapshot()
     snapshot["route_inventory"] = actual
     audit._assert_snapshot(snapshot)

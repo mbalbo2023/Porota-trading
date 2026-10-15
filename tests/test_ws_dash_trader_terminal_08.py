@@ -15,7 +15,7 @@ import pytest
 
 from rc6_trader_dashboard import generation
 from rc6_trader_dashboard.components import badge, fields, table, metric
-from rc6_trader_dashboard.datasets import shadow_rows, logs, contracts, instrument_market
+from rc6_trader_dashboard.datasets import shadow_rows, logs, contracts, instrument_market, family_summary
 from rc6_trader_dashboard.navigation import CANONICAL_PATHS, DESTINATIONS, LEGACY, BY_KEY, resolve
 from rc6_trader_dashboard.projection import Page, Projection, Store, freshness
 from rc6_trader_dashboard.routes import build_page, install
@@ -55,6 +55,15 @@ def database(tmp_path):
         CREATE TABLE paper_exit_intents(paper_id TEXT PRIMARY KEY,state TEXT,cause TEXT,due_at TEXT,
           blocked_reason TEXT,supervised_at TEXT,attempts INTEGER);
         CREATE TABLE api_health(component TEXT PRIMARY KEY,state TEXT,detail TEXT,checked_at TEXT,last_success_at TEXT,source TEXT);
+        CREATE TABLE source_sync(source TEXT,status TEXT,last_attempt_at TEXT,last_success_at TEXT,items INTEGER,detail TEXT);
+        CREATE TABLE paper_cauciones(paper_id TEXT PRIMARY KEY,request_id TEXT,source TEXT,instrument_id TEXT,
+          currency TEXT,principal TEXT,annual_rate_fraction TEXT,interest_days INTEGER,day_count_basis INTEGER,
+          opened_at TEXT,maturity_at TEXT,settled_at TEXT,status TEXT,total_fees TEXT,gross_interest TEXT,
+          fee_payment TEXT,terms_json TEXT);
+        CREATE TABLE paper_caucion_allocations(request_id TEXT PRIMARY KEY,evaluated_at TEXT,
+          decision_json TEXT,paper_id TEXT);
+        CREATE TABLE paper_caucion_cash_sweep_state(id INTEGER PRIMARY KEY,heartbeat_at TEXT,state TEXT,
+          last_attempt_at TEXT,code TEXT,paper_id TEXT,real_orders_sent INTEGER,detail TEXT);
         CREATE TABLE contract_evidence_v2_current(family TEXT,ticker TEXT,market TEXT,currency TEXT,settlement TEXT,
           source_class TEXT,snapshot_id INTEGER,evidence_hash TEXT,observed_at TEXT);
         CREATE TABLE contract_evidence_v2_snapshots(snapshot_id INTEGER PRIMARY KEY,family TEXT,ticker TEXT,
@@ -77,6 +86,17 @@ def database(tmp_path):
         for i in range(22):
             c.execute("INSERT INTO paper_decisions VALUES(?,'PAPER','S1',?,?,'T000','HOLD','78',?,'{}')", (i, "key-" + str(i), STAMP, "LIQUIDITY_BLOCKED"))
         c.execute("INSERT INTO api_health VALUES('IOL:caucion:ARS','SOURCE_UNAVAILABLE','section missing',?,NULL,'IOL')", (STAMP,))
+        c.execute("INSERT INTO source_sync VALUES('IOL_SHADOW','LIVE_FRESH',?,?,1,'capture only')", (STAMP, STAMP))
+        c.execute("INSERT INTO paper_cauciones VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            "CAU-PAPER-1", "req-1", "PPI", "CAU:ARS:1D", "ARS", "100000", "0.125", 1, 365,
+            STAMP, (NOW + timedelta(days=1)).isoformat(), None, "OPEN", "1.25", "7.5", "AT_MATURITY",
+            '{"api_token":"sensitive-value","side":"COLOCADORA"}'))
+        c.execute("INSERT INTO paper_caucion_allocations VALUES(?,?,?,?)", (
+            "req-1", STAMP, json.dumps({"status": "PLACED_SIMULATED", "code": "CANDIDATE_SELECTED",
+                                     "selected": {"principal": "100000", "currency": "ARS"}}), "CAU-PAPER-1"))
+        c.execute("INSERT INTO paper_caucion_allocations VALUES(?,?,?,NULL)", (
+            "req-hold", STAMP, json.dumps({"status": "HOLD", "code": "NO_ELIGIBLE_OFFER", "candidates": []})))
+        c.execute("INSERT INTO paper_caucion_cash_sweep_state VALUES(1,?,'WAITING_WINDOW',NULL,'WINDOW_NOT_OPEN',NULL,0,'fixture')", (STAMP,))
     return path
 
 
@@ -206,10 +226,13 @@ def test_source_scope_score_and_trajectory_semantics(database):
         assert p.positions().rows[0]["freshness"] == "STALE"
         assert p.positions().rows[0]["executable_mark"] == "NO_VERIFICADO"
         source = p.sources().rows[0]
-        assert source["scope"] == "IOL:caucion:ARS" and source["state"] == "SOURCE_UNAVAILABLE"
+        assert source["scope"] == "IOL source_sync" and source["state"] == "NO_VERIFICADO"
+        assert source["observed_state"] == "LIVE_FRESH"
+        assert any(r["scope"] == "IOL:caucion:ARS" and r["state"] == "SOURCE_UNAVAILABLE" for r in p.sources().rows)
         decision = p.decisions().rows[0]
         assert decision["reason"] == "LIQUIDITY_BLOCKED"
-        assert decision["economics"] == "NO_EVAL" and decision["risk"] == "NOT_CALLED"
+        assert decision["economics"] == "NO_VERIFICADO" and decision["risk"] == "NO_VERIFICADO"
+        assert decision["final"] == "HOLD"  # The recorded PAPER action, not an invented gate result.
         assert decision["score_is_probability"] is False
     assert "badge-hot" in badge("HOT") and "badge-pass" not in badge("HOT")
     assert "badge-pass" not in badge("WARM") and "badge-pass" not in badge("DISCOVERY")
@@ -436,9 +459,91 @@ def test_detail_names_unique_and_keys_survive_metric_change():
     first = BeautifulSoup(table(data, "Result", columns), "html.parser")
     data.rows[0]["net_pnl"] = "12"
     second = BeautifulSoup(table(data, "Result", columns), "html.parser")
-    names = [x.get_text() for x in first.select("summary")]
+    names = [x.get_text() for x in first.select(".detail-trigger")]
     assert len(names) == len(set(names))
-    assert first.select_one("details.row-detail")["id"] == second.select_one("details.row-detail")["id"]
+    assert first.select_one(".row-dialog")["id"] == second.select_one(".row-dialog")["id"]
+    assert first.select("details") == []
+    assert len(first.select("dialog.row-dialog")) == 3  # two rows and reading status
+    assert first.select(".detail-trigger")[-1].get_text() == "Estado de lectura"
+    for trigger in first.select(".detail-trigger"):
+        dialog = first.find(id=trigger["aria-controls"])
+        assert dialog and dialog.name == "dialog" and dialog["aria-labelledby"]
+
+
+def test_scalar_diagnostic_secrets_and_invalid_amounts_do_not_leak():
+    sample = Page("fixture", [{"component": "IOL", "detail": "authorization=example-private-value",
+                               "amount": "not-a-number"}], 1, "AVAILABLE")
+    html = table(sample, "Reader", fields("component|Fuente;amount|Monto|money"), fields("detail|Diagnóstico"))
+    assert "example-private-value" not in html
+    assert "[REDACTED] sensitive detail" in html
+    assert "not-a-number" not in html and "NO_VERIFICADO" in html
+
+
+def test_cauciones_have_visible_navigation_and_separate_paper_decisions(client):
+    placements = client.get("/trading/cauciones")
+    assert placements.status_code == 200
+    page = BeautifulSoup(placements.text, "html.parser")
+    assert page.select_one("#terminal-content")["data-view"] == "trading/cauciones"
+    assert page.select_one(".subnav a[aria-current=page]").get_text() == "Cauciones"
+    assert len(page.select(".terminal-table")) == 1
+    assert "CAU-PAPER-1" in placements.text
+    assert "Cash sweep cauciones" in placements.text and "WAITING_WINDOW" in placements.text
+    assert "12,50 %" in placements.text and "6,25" in placements.text
+    assert "sensitive-value" not in placements.text and "[REDACTED]" in placements.text
+    decisions = client.get("/trading/cauciones?caucion_view=decisiones")
+    assert decisions.status_code == 200
+    assert "NO_ELIGIBLE_OFFER" in decisions.text
+    assert "HOLD" in decisions.text and "PLACED_SIMULATED" in decisions.text
+    assert len(BeautifulSoup(decisions.text, "html.parser").select(".terminal-table")) == 1
+    assert "PPI es identidad primaria" in decisions.text
+
+
+def test_equity_read_interruption_is_not_reported_as_empty_ledger(database):
+    with Store(database, now=NOW) as store:
+        store.columns("paper_equity_by_currency")
+        store.columns("paper_valuation_quality")
+        store.connection.set_progress_handler(lambda: 1, 1)
+        page = Projection(store).balances()
+    assert page.state == "NO_VERIFICADO"
+    assert page.rows == [] and page.reason == "CURRENCY_LEDGER_READ_ERROR"
+
+
+def test_other_aggregates_fail_closed_on_interrupted_reads(database):
+    with Store(database, now=NOW) as store:
+        for table in ("paper_positions", "candidate_identity_v2", "paper_decisions"):
+            store.columns(table)
+        store.connection.set_progress_handler(lambda: 1, 1)
+        projection = Projection(store)
+        assert projection.performance().reason == "PERFORMANCE_READ_ERROR"
+        assert family_summary(projection).reason == "FAMILY_SUMMARY_READ_ERROR"
+        assert projection.decisions().state == "NO_VERIFICADO"
+
+
+def test_home_does_not_call_failed_performance_read_an_empty_day(client, monkeypatch):
+    from rc6_trader_dashboard.views_home import preview
+    failed = Page("paper_positions", reason="PERFORMANCE_READ_ERROR")
+    assert "PERFORMANCE_READ_ERROR" in preview(failed, "Posiciones", "/en-vivo/posiciones")
+    monkeypatch.setattr(Projection, "performance", lambda self, today=False: failed)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "PERFORMANCE_READ_ERROR" in response.text
+    assert "Sin cierres medidos en este scope" not in response.text
+
+
+def test_system_health_and_integrations_keep_distinct_authorities(client):
+    health = client.get("/sistema/salud")
+    sources = client.get("/sistema/integraciones")
+    assert "Salud de runtime y workers" in health.text
+    assert "Contador factual; desconocido no equivale a cero" in health.text
+    assert "Salud de integración" in sources.text
+    assert "Salud de integración" not in health.text
+    workers = client.get("/sistema/workers")
+    assert "Cauciones · cash sweep" in workers.text and "WINDOW_NOT_OPEN" in workers.text
+    source_rows = BeautifulSoup(sources.text, "html.parser").select(".terminal-table tr[data-row]")
+    assert len(source_rows) <= 10
+    assert "IOL · captura complementaria" in source_rows[0].get_text()
+    assert "NO_VERIFICADO" in source_rows[0].get_text()
+    assert "LIVE_FRESH" in source_rows[0].get_text()
 
 
 def test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default(database):
@@ -453,3 +558,113 @@ def test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default(d
     html = table(page, "Detail", fields("features|Evidencia"))
     assert "do-not-display" not in html and "private-account" not in html
     assert "[REDACTED]" in html and "spread" in html
+
+
+def test_stale_committed_shadow_cannot_populate_live_cards_or_tables(database):
+    from rc6_trader_dashboard.views_home import attention
+    cut = coherent_cut()
+    cut["report"]["operational_funnel"] = {"counts": {"HOT": 3, "SIGNAL": 1}}
+    seal_cut(cut)
+    with Store(database, now=NOW) as store:
+        fresh = Projection(store, generation_reader=lambda root, **kwargs: cut)
+        assert fresh.shadow_fresh
+        assert fresh.counts()["HOT"] == 3
+        assert len(shadow_rows(fresh, "opportunities").rows) == 1
+    with Store(database, now=NOW + timedelta(minutes=1)) as store:
+        stale = Projection(store, generation_reader=lambda root, **kwargs: cut)
+        assert stale.shadow["state"] == "COMMITTED_COHERENT_SHADOW"
+        assert not stale.shadow_fresh
+        assert "HOT" not in stale.counts() and "SIGNAL" not in stale.counts()
+        page = shadow_rows(stale, "opportunities")
+        assert page.rows == [] and page.reason == "SHADOW_CUT_NOT_FRESH"
+        alert_html, count = attention(stale, Page("paper_positions"))
+        assert count > 0 and "SHADOW sin corte comprometido fresco" in alert_html
+
+
+def test_equity_latest_index_migrates_existing_history_without_changing_currency_cut(tmp_path):
+    from bt_caucion_paper import init_schema
+    path = tmp_path / "existing-paper.db"
+    with sqlite3.connect(path) as conn:
+        conn.executescript("""
+            CREATE TABLE paper_positions(paper_id TEXT PRIMARY KEY,status TEXT);
+            CREATE TABLE paper_equity_by_currency(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,measured_at TEXT NOT NULL,
+              currency TEXT NOT NULL,cash TEXT NOT NULL,exposure TEXT NOT NULL,
+              pending_proceeds TEXT NOT NULL,caucion_principal TEXT NOT NULL,
+              caucion_accrued TEXT NOT NULL,unrealized_pnl TEXT NOT NULL,
+              realized_pnl TEXT NOT NULL,equity TEXT NOT NULL);
+        """)
+        conn.executemany(
+            "INSERT INTO paper_equity_by_currency VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",
+            ((STAMP, ("ARS", "USD", "USD_MEP", "USD_CCL")[i % 4],
+              *(str(i) for _ in range(8))) for i in range(4000)))
+    class ExistingStore:
+        def connect(self):
+            conn = sqlite3.connect(path)
+            conn.row_factory = sqlite3.Row
+            return conn
+    init_schema(ExistingStore())
+    query = """SELECT e.id,e.currency,e.equity FROM paper_equity_by_currency e
+        JOIN (SELECT currency,MAX(id) id FROM paper_equity_by_currency
+        GROUP BY currency) latest ON latest.id=e.id ORDER BY e.currency LIMIT 10"""
+    with sqlite3.connect(path) as conn:
+        rows = conn.execute(query).fetchall()
+        plan = [row[3] for row in conn.execute("EXPLAIN QUERY PLAN " + query)]
+        assert rows == [(3997, "ARS", "3996"), (3998, "USD", "3997"),
+                        (4000, "USD_CCL", "3999"), (3999, "USD_MEP", "3998")]
+        assert any("USING COVERING INDEX idx_paper_equity_currency_latest" in line for line in plan)
+        assert not any("USE TEMP B-TREE FOR GROUP BY" in line for line in plan)
+    init_schema(ExistingStore())  # Idempotent on an existing PAPER history.
+
+
+def test_connector_states_distinguish_observed_record_from_expected_cadence(database):
+    with sqlite3.connect(database) as conn:
+        checks = (
+            ("BYMA_WEB", "VERDE", NOW - timedelta(hours=4)),
+            ("BYMA_INSTRUMENTS_API", "GRIS", NOW - timedelta(hours=4)),
+            ("PPI_PRODUCTION_CATALOG", "AMARILLO", NOW - timedelta(hours=25)),
+            ("PPI_PRODUCTION_AUTH", "VERDE", NOW - timedelta(hours=6)),
+            ("GEMINI_DECISION", "VERDE", NOW - timedelta(days=47)),
+        )
+        conn.executemany("INSERT INTO api_health VALUES(?,?,'',?,?,?)",
+                         ((name, state, stamp.isoformat(), stamp.isoformat(), name)
+                          for name, state, stamp in checks))
+    with Store(database, now=NOW) as store:
+        rows = {row["component"]: row for row in Projection(store).sources().rows}
+    assert rows["BYMA_WEB"]["state"] == "VERDE"
+    assert rows["BYMA_WEB"]["freshness"] == "FRESH"
+    assert rows["BYMA_INSTRUMENTS_API"]["state"] == "GRIS"
+    assert rows["PPI_PRODUCTION_CATALOG"]["state"] == "AMARILLO"
+    assert rows["PPI_PRODUCTION_AUTH"]["state"] == "VERDE"
+    assert rows["PPI_PRODUCTION_AUTH"]["cadence"] == "OBSERVER_SESSION"
+    assert rows["GEMINI_DECISION"]["state"] == "NO_VERIFICADO"
+    assert rows["GEMINI_DECISION"]["observed_state"] == "VERDE"
+    with sqlite3.connect(database) as conn:
+        conn.execute("UPDATE api_health SET checked_at=? WHERE component='PPI_PRODUCTION_CATALOG'",
+                     ((NOW - timedelta(hours=40)).isoformat(),))
+        conn.execute("UPDATE observer_state SET heartbeat_at=? WHERE id=1",
+                     ((NOW - timedelta(minutes=4)).isoformat(),))
+    with Store(database, now=NOW) as store:
+        rows = {row["component"]: row for row in Projection(store).sources().rows}
+    assert rows["PPI_PRODUCTION_CATALOG"]["state"] == "NO_VERIFICADO"
+    assert rows["PPI_PRODUCTION_CATALOG"]["observed_state"] == "AMARILLO"
+    assert rows["PPI_PRODUCTION_AUTH"]["state"] == "NO_VERIFICADO"
+
+
+def test_home_attention_keeps_shadow_and_primary_source_in_five_item_preview():
+    from types import SimpleNamespace
+    from rc6_trader_dashboard.views_home import attention
+    projection = SimpleNamespace(
+        shadow_fresh=False, now=NOW,
+        store=SimpleNamespace(query=lambda *_args, **_kwargs: []),
+        runtime={"ppi_auth": "ERROR", "heartbeat_freshness": "STALE"},
+        risk=lambda: SimpleNamespace(rows=[]),
+    )
+    positions = SimpleNamespace(rows=[{"symbol": f"T{i}", "freshness": "STALE", "exit_state": "BLOCKED"}
+                                      for i in range(10)])
+    html, count = attention(projection, positions)
+    assert count >= 20
+    assert html.index("SHADOW sin corte") < html.index("PPI market data")
+    assert "Autenticación PPI sin estado OK" in html
+    assert "Heartbeat runtime sin verificación fresca" in html
+    assert "T9" not in html  # Detailed position alerts are below the first five.
