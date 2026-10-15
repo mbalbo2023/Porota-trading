@@ -231,6 +231,13 @@ def test_deploy_has_lightweight_exit139_soak_after_full_audits():
     assert "for cycle in 1 2 3; do" in source
     assert "for soak in 1 2 3 4 5; do" in source
     assert "RC6_EXIT139_SOAK=GREEN" in source
+    soak = source.index('SOAK_START_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"')
+    assert soak < source.index("for soak in 1 2 3 4 5; do")
+    final = source.index('RECENT_CRITICAL="$({', soak)
+    assert source.index('echo "RC6_EXIT139_SOAK=GREEN"', soak) < final
+    assert 'docker logs --since "$SOAK_START_UTC" porota_production_observer' in source[final:]
+    assert 'docker logs --since "$SOAK_START_UTC" porota_production_dashboard' in source[final:]
+    assert 'test -z "$RECENT_CRITICAL"' in source[final:]
     assert 'test "$OBSERVER_RESTART_SOAK" = "$OBSERVER_RESTART_BASE"' in source
     assert 'test "$DASHBOARD_RESTART_SOAK" = "$DASHBOARD_RESTART_BASE"' in source
 

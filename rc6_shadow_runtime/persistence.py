@@ -9,6 +9,17 @@ import tempfile
 from rc6_dynamic_universe.common import digest
 
 
+class EvidencePayloadLimit(ValueError):
+    """Bounded context for a rejected evidence payload; never contains its data."""
+    def __init__(self, name, measured_bytes, limit_bytes):
+        super().__init__("SHADOW_PAYLOAD_LIMIT")
+        self.evidence_file = (name if name in {"latest.json.gz", "checkpoint.json.gz", "status.json"}
+                              else "preopen" if name.startswith("preopen-") and name.endswith(".json.gz")
+                              else "other")
+        self.measured_bytes = int(measured_bytes)
+        self.limit_bytes = int(limit_bytes)
+
+
 class EvidenceFiles:
     def __init__(self, root, *, protected=(), maximum_bytes=128 * 1024**2,
                  payload_limit=64 * 1024**2):
@@ -59,12 +70,12 @@ class EvidenceFiles:
         if not path.exists():
             return None
         if path.stat().st_size > self.payload_limit:
-            raise ValueError("SHADOW_PAYLOAD_LIMIT")
+            raise EvidencePayloadLimit(name, path.stat().st_size, self.payload_limit)
         opener = gzip.open if name.endswith(".gz") else open
         with opener(path, "rb") as stream:
             raw = stream.read(self.payload_limit + 1)
         if len(raw) > self.payload_limit:
-            raise ValueError("SHADOW_PAYLOAD_LIMIT")
+            raise EvidencePayloadLimit(name, len(raw), self.payload_limit)
         envelope = json.loads(raw)
         if envelope.get("digest") != digest(envelope.get("payload")):
             raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
@@ -82,7 +93,7 @@ class EvidenceFiles:
         encoded = json.dumps({"digest": digest(payload), "payload": payload},
             sort_keys=True, separators=(",", ":"), default=str, allow_nan=False).encode()
         if len(encoded) > self.payload_limit:
-            raise ValueError("SHADOW_PAYLOAD_LIMIT")
+            raise EvidencePayloadLimit(name, len(encoded), self.payload_limit)
         data = gzip.compress(encoded, mtime=0) if name.endswith(".gz") else encoded
         files = list(self.root.iterdir())
         # The fsynced staging file temporarily coexists with the prior target.

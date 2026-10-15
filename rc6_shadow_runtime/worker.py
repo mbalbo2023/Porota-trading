@@ -19,7 +19,7 @@ from rc6_dynamic_universe.common import digest, stamp
 from rc6_dynamic_universe.live import run_shadow
 from rc6_dynamic_universe.runtime import read_runtime
 from rc6_dynamic_universe.sources import source_observations
-from .persistence import EvidenceFiles
+from .persistence import EvidenceFiles, EvidencePayloadLimit
 
 LOG = logging.getLogger("dynamic_shadow")
 VERSION = "WS-CLOSE-PROGRAMMING-05-RUNTIME-v2"
@@ -368,6 +368,10 @@ def run_worker(database, stop, *, clock_fn=None):
                     failure = {"schema": VERSION, "as_of": clock_fn(),
                         "status": "FAIL_CLOSED", "error_class": type(exc).__name__,
                         "real_orders_sent": 0, "real_routes": "NOT_CALLED", "provider_requests": 0}
+                    if isinstance(exc, EvidencePayloadLimit):
+                        failure["evidence_file"] = exc.evidence_file
+                        failure["evidence_measured_bytes"] = exc.measured_bytes
+                        failure["evidence_limit_bytes"] = exc.limit_bytes
                     if isinstance(exc, sqlite3.Error):
                         code = getattr(exc, "sqlite_errorcode", None)
                         label = getattr(exc, "sqlite_errorname", None)
