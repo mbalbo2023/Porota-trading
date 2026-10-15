@@ -18,7 +18,7 @@ ROUTES = (
 # Runs inside the existing dashboard container. Its token never leaves that
 # container; only allowlisted route and provider-state facts reach Actions.
 CHILD = r'''
-import json, os, re, sqlite3, urllib.error, urllib.request
+import json, os, re, sqlite3, time, urllib.error, urllib.request
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -32,10 +32,11 @@ token = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
 if token:
  for path in routes:
   entry={"path":path, "http":None, "nav":False, "content":False}
+ started=time.monotonic()
   try:
    req=urllib.request.Request("http://127.0.0.1:8000"+path,
        headers={"Authorization":"Bearer "+token, "Cache-Control":"no-cache"})
-   with urllib.request.urlopen(req,timeout=2) as response:
+   with urllib.request.urlopen(req,timeout=6) as response:
     raw=response.read(524289); entry["http"]=response.status
    if len(raw)>524288: entry["error"]="BODY_LIMIT"
    else:
@@ -45,6 +46,9 @@ if token:
     if path=="/": entry["attention"]="Atención ahora" in html
   except urllib.error.HTTPError as exc: entry["http"]=exc.code
   except (OSError,ValueError): entry["error"]="HTTP_UNAVAILABLE"
+  finally:
+   entry["elapsed_ms"]=min(60000,round((time.monotonic()-started)*1000))
+   entry["slow_2s"]=entry["elapsed_ms"]>2000
   result["routes"].append(entry)
 else: result["dashboard_status"]="AUTH_NOT_CONFIGURED"
 
@@ -78,7 +82,7 @@ print(json.dumps(result,sort_keys=True,separators=(",",":")))
 def audit_host(*, runner=subprocess.run):
     try:
         proc = runner(["docker", "exec", "porota_production_dashboard", "python", "-B", "-c", CHILD],
-                      capture_output=True, text=True, timeout=35, check=False)
+                      capture_output=True, text=True, timeout=85, check=False)
         data = json.loads(proc.stdout) if proc.returncode == 0 and len(proc.stdout) < 32768 else {}
         if data.get("schema") != SCHEMA or data.get("read_only") is not True:
             raise ValueError("INVALID_AUDIT_RECEIPT")
@@ -92,6 +96,8 @@ def audit_host(*, runner=subprocess.run):
             code = item.get("http")
             routes.append({"path": item["path"], "http": code if type(code) is int and 100 <= code <= 599 else None,
                            "nav": item.get("nav") is True, "content": item.get("content") is True,
+                           "elapsed_ms": item.get("elapsed_ms") if type(item.get("elapsed_ms")) is int and 0 <= item["elapsed_ms"] <= 60000 else None,
+                           "slow_2s": item.get("slow_2s") is True,
                            "attention": item.get("attention") is True if item["path"] == "/" else None,
                            "error": item.get("error") if item.get("error") in {"BODY_LIMIT", "HTTP_UNAVAILABLE"} else None})
         if tuple(row["path"] for row in routes) not in (ROUTES, ()):
@@ -109,9 +115,10 @@ def audit_host(*, runner=subprocess.run):
                 value = item.get(key)
                 safe[key] = value if type(value) is int and 0 <= value <= 365 * 86400 else None
             sources.append(safe)
-        status = "ROUTES_VERIFIED" if (len(routes) == len(ROUTES) and all(
+        complete = (len(routes) == len(ROUTES) and all(
             row["http"] == 200 and row["nav"] and row["content"] and row["error"] is None
-            for row in routes) and data.get("source_status") == "BOUNDED" and sources) else "NO_VERIFICADO"
+            for row in routes) and data.get("source_status") == "BOUNDED" and sources)
+        status = ("ROUTES_DEGRADED" if any(row["slow_2s"] for row in routes) else "ROUTES_VERIFIED") if complete else "NO_VERIFICADO"
         return {"schema": SCHEMA, "read_only": True, "status": status,
                 "routes": routes, "sources": sources[:80],
                 "source_status": data.get("source_status") if data.get("source_status") in
