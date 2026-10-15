@@ -15,7 +15,7 @@ def render(p, destination, tab):
             ("closed_today", "Cerradas hoy", "Cierres factuales en ART"), ("HOT", "HOT en corte fresco", "Observación SHADOW; HOT ≠ BUY"),
             ("SIGNAL", "Señales candidatas", "Cut SHADOW comprometido")))
         summary = p.performance(today=True)
-        cards += "".join(metric("PnL neto hoy · " + r["currency"], r.get("net_pnl"), r["strategy"], kind="money", currency=r["currency"]) for r in summary.rows)
+        cards += "".join(metric("PnL neto hoy · " + r["currency"], r.get("net_pnl"), r["strategy"], kind="money", currency=r["currency"], result=True) for r in summary.rows)
         workers = p.workers()
         # DailyRisk is a risk state, not a heartbeat-bearing worker.
         watched = [r for r in workers.rows if r.get("source") != "paper_daily_risk"]

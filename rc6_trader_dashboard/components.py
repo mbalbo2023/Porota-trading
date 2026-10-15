@@ -85,6 +85,25 @@ def fields(spec):
     return tuple(Field(*item.split("|")) for item in spec.split(";") if item)
 
 
+RESULT_KEYS = {"net_pnl", "gross_pnl", "unrealized_pnl", "realized_pnl", "daily_pnl",
+               "expectancy", "avg_win", "avg_loss"}
+
+
+def result_html(value, rendered):
+    """Color only a verified signed financial result, retaining its visible sign."""
+    try:
+        amount = Decimal(str(value))
+        if not amount.is_finite():
+            return rendered
+    except (InvalidOperation, ValueError, TypeError):
+        return rendered
+    tone = "positive" if amount > 0 else "negative" if amount < 0 else "neutral"
+    label = {"positive": "Resultado positivo", "negative": "Resultado negativo",
+             "neutral": "Resultado neutro"}[tone]
+    return (f"<span class='result-{tone}'><span class='sr-only'>{label}: </span>"
+            f"{rendered}</span>")
+
+
 def value_html(row, field):
     value = lookup(row, field.key)
     if field.kind == "status":
@@ -94,7 +113,8 @@ def value_html(row, field):
     if field.kind == "time":
         return e(clock(value))
     if field.kind == "money":
-        return e(number(value)) + " <span class='currency'>" + e(row.get("currency") or "MONEDA_NO_VERIFICADA") + "</span>"
+        rendered = e(number(value)) + " <span class='currency'>" + e(row.get("currency") or "MONEDA_NO_VERIFICADA") + "</span>"
+        return result_html(value, rendered) if field.key in RESULT_KEYS else rendered
     if field.kind in {"number", "percent"}:
         return e(number(value)) + (" %" if field.kind == "percent" else "")
     if field.kind == "score":
@@ -175,8 +195,10 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
             + (pager(page, path, filters or {}, table_id) if path else "") + provenance + audit + "</section>")
 
 
-def metric(label, value, subtitle="", *, kind="text", currency=None):
+def metric(label, value, subtitle="", *, kind="text", currency=None, result=False):
     shown = value_html({"v": value, "currency": currency}, Field("v", label, kind))
+    if result and kind == "money" and value is not None:
+        shown = result_html(value, shown)
     return f"<article class='metric-card'><h2>{e(label)}</h2><div class='metric-value'>{shown}</div><p>{e(subtitle)}</p></article>"
 
 

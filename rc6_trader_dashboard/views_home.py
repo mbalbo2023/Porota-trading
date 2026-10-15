@@ -57,7 +57,7 @@ def render(p, destination, tab):
                   metric("Tiempo a cierre / EOD", None, "Requiere reloj de cierre publicado")))
     performance = p.performance(today=True)
     result_cards = "".join(metric("PnL neto hoy · " + r["currency"] + " · " + r["strategy"], r.get("net_pnl"),
-                                f"Cerradas: {r.get('sample_size')} · Costos: {r.get('costs')}", kind="money", currency=r["currency"]) for r in performance.rows)
+                                f"Cerradas: {r.get('sample_size')} · Costos: {r.get('costs')}", kind="money", currency=r["currency"], result=True) for r in performance.rows)
     risk = "".join(definition_list(r, fields("currency|Moneda;state|Estado|status;daily_pnl|PnL diario|money;loss_budget|Presupuesto|money;evaluated_at|Evaluado|time")) for r in p.risk().rows)
     return ("<div class='metric-grid'>" + "".join(cards) + "</div>" + alerts +
             "<div class='split-panels'>" + preview(positions, "Posiciones abiertas", "/en-vivo/posiciones") +
