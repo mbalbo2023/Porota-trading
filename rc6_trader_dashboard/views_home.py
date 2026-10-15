@@ -1,6 +1,6 @@
 """Home is state and attention, with five-item previews instead of inventories."""
 from .components import badge, e, metric, notice, fields, definition_list
-from .projection import UNKNOWN
+from .projection import UNKNOWN, freshness
 
 
 def preview(page, title, path, *, key="symbol"):
@@ -10,18 +10,26 @@ def preview(page, title, path, *, key="symbol"):
 
 def attention(p, positions):
     alerts = []
+    # Put safety and primary-source uncertainty before per-position detail so
+    # the five-item preview cannot hide a current operational incident.
+    if not p.shadow_fresh:
+        alerts.append(("SHADOW sin corte comprometido fresco", UNKNOWN, "/sistema/evidencia"))
+    market = p.store.query("SELECT state,checked_at FROM api_health WHERE component=? LIMIT 1",
+                           ("PPI_PRODUCTION_MARKETDATA",))
+    if not market or market[0].get("state") != "VERDE" or freshness(market[0].get("checked_at"), p.now, 180) != "FRESH":
+        alerts.append(("PPI market data sin verificación fresca", "PPI", "/sistema/integraciones"))
+    if p.runtime.get("ppi_auth") != "OK":
+        alerts.append(("Autenticación PPI sin estado OK", "PPI", "/sistema/integraciones"))
+    if p.runtime["heartbeat_freshness"] != "FRESH":
+        alerts.append(("Heartbeat runtime sin verificación fresca", p.runtime["heartbeat_freshness"], "/sistema/workers"))
+    for row in p.risk().rows:
+        if row.get("state") in {"HARD_STOP", "SOFT_STOP", "STALE", "BLOCKED"}:
+            alerts.append(("Revisar límite de riesgo diario", row.get("currency", UNKNOWN), "/riesgo/limites"))
     for row in positions.rows:
         if row.get("freshness") != "FRESH":
             alerts.append(("Book de salida sin frescura verificada", row.get("symbol", UNKNOWN), "/riesgo/liquidez"))
         if row.get("exit_state") in {None, "BLOCKED", "STALE"}:
             alerts.append(("Revisar supervisión de salida", row.get("symbol", UNKNOWN), "/en-vivo/workers"))
-    for row in p.risk().rows:
-        if row.get("state") in {"HARD_STOP", "SOFT_STOP", "STALE", "BLOCKED"}:
-            alerts.append(("Revisar límite de riesgo diario", row.get("currency", UNKNOWN), "/riesgo/limites"))
-    if p.runtime["heartbeat_freshness"] != "FRESH":
-        alerts.append(("Heartbeat runtime sin verificación fresca", p.runtime["heartbeat_freshness"], "/sistema/workers"))
-    if not p.shadow_fresh:
-        alerts.append(("SHADOW sin corte comprometido fresco", UNKNOWN, "/sistema/evidencia"))
     items = "".join(f"<li><b>{e(title)}</b><span>{e(scope)}</span><a href='{path}'>Revisar {e(scope)}</a></li>" for title, scope, path in alerts[:5])
     return f"<section class='panel'><h2>Atención ahora</h2><ul class='preview-list'>{items or '<li>Sin alertas derivadas de la evidencia disponible; coverage global NO_VERIFICADO.</li>'}</ul></section>", len(alerts)
 
