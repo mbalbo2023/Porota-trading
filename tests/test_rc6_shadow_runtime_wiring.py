@@ -1,6 +1,7 @@
 """Run the canonical worker against actual SQLite inputs and private evidence."""
 from datetime import datetime, timedelta, timezone
 from dataclasses import replace
+import gzip
 import json
 from pathlib import Path
 import sqlite3
@@ -12,7 +13,8 @@ from bf_production_paper_observer import _support_schema
 from cf_intraday_scalping import init_schema
 from rc6_dynamic_universe.common import digest, identity
 from rc6_shadow_runtime.persistence import EvidenceFiles
-from rc6_shadow_runtime.worker import ShadowRuntime, session_context, run_worker
+from rc6_shadow_runtime.worker import (ShadowRuntime, session_context, run_worker,
+    durable_report_view, durable_checkpoint_view)
 
 OPEN = datetime(2026, 10, 5, 13, 30, tzinfo=timezone.utc)
 PRE = OPEN - timedelta(minutes=10)
@@ -348,3 +350,42 @@ def test_configured_iol_cache_is_reused_and_protected_as_an_input(tmp_path, monk
     assert result["source_reports"][0]["status"] == "SOURCE_UNAVAILABLE"
     assert cache.read_text() == '{"symbols":[],"status":"SOURCE_UNAVAILABLE"}'
     assert result["provider_requests"] == 0
+
+
+def test_durable_shadow_projection_bounds_large_derived_inventories(tmp_path):
+    selected = ["GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS"]
+    excluded = ["OTHER", "CEDEARS", "BYMA", "ARS", "A-24HS"]
+    chosen = {"identity": selected, "state": "HOT", "tradeability_score": 7,
+              "signal_result": "SAMPLES_READY", "pipeline": {"TRADEABLE": True}}
+    report = {"schema": "SHADOW", "mode": "SHADOW", "as_of": OPEN.isoformat(),
+              "phase": "OPEN", "real_orders_sent": 0, "real_routes": "NOT_CALLED",
+              "capacity_policy": {"configuration_fingerprint": "policy"},
+              "engines": {"SCALPING": {
+                  "capacity": {"evidence_digest": "capacity"},
+                  "preopen_digest": "freeze", "selected": [selected],
+                  "opened_priority": [], "telemetry": [chosen,
+                      {"identity": excluded, "state": "EXCLUDED", "pipeline": {}}],
+                  "instruments": {"large": "x" * 2_000_000}}},
+              "tradeability": {"large": "y" * 2_000_000},
+              "family_routing": {"large": "z" * 2_000_000}}
+    view = durable_report_view(report, catalog_ready_count=2)
+    assert view["engines"]["SCALPING"]["telemetry"] == [chosen]
+    assert view["engines"]["SCALPING"]["telemetry_total"] == 2
+    assert len(json.dumps(view)) < 10_000
+    checkpoint = {"as_of": OPEN.isoformat(), "catalog_ready": ["x" * 2_000_000],
+                  "engines": {"SCALPING": {"configuration_fingerprint": "config",
+                      "planned_at": OPEN.isoformat(), "instruments": {"key": {"state": "HOT"}},
+                      "telemetry": ["x" * 2_000_000]}}}
+    causal = durable_checkpoint_view(checkpoint)
+    assert "catalog_ready" not in causal
+    assert "telemetry" not in causal["engines"]["SCALPING"]
+    with EvidenceFiles(tmp_path / "bounded", payload_limit=10_000) as files:
+        audit = files.write_streamed_report(report, raw_limit=10_000_000)
+        assert audit["sha256"] == digest(report)
+        assert audit["raw_bytes"] > 6_000_000
+        assert json.loads(gzip.open(files.path(audit["file"]), "rt").read()) == report
+        view["computed_report"] = audit
+        files.write("latest.json.gz", view)
+        files.write("checkpoint.json.gz", causal)
+        assert files.read("latest.json.gz")["engines"]["SCALPING"]["telemetry"] == [chosen]
+        files.prune_computed_reports(keep=audit["file"])

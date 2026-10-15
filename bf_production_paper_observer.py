@@ -591,6 +591,7 @@ def _reconcile_complementary_catalog(store):
     are gap-fill sources: they may add missing contract/freshness evidence but
     never overwrite explicit higher-priority identity fields.
     """
+    from time import sleep
     from rc6_contract_reconciliation_guard import (
         reconciliation_allowed, select_verified_primary)
 
@@ -765,7 +766,7 @@ def _reconcile_complementary_catalog(store):
                     promoted += 1
 
             connection.commit()
-            time.sleep(.005)
+            sleep(.005)
 
         # Persist the exact unresolved contract condition even when IOL/BYMA
         # supplied no usable row in this cycle. This is retry state, not a
@@ -811,7 +812,7 @@ def _reconcile_complementary_catalog(store):
                 retry_pending += 1
 
             connection.commit()
-            time.sleep(.005)
+            sleep(.005)
 
         financial_catalog.sync_candidate_universe(connection, checked, bounded_batch=64)
         ready_total = connection.execute("""SELECT COUNT(*) FROM financial_instrument_catalog
