@@ -622,181 +622,198 @@ def _reconcile_complementary_catalog(store):
     applied_by_source = {}
 
     with store.connect() as connection:
+        # A partial reconciliation must never leave prior READY projections live.
         connection.execute("BEGIN IMMEDIATE")
-        for raw in complementary:
-            negative_bridge = (raw.get("source") == "CONTRACT_EVIDENCE_V2"
-                               and (raw.get("contract_bridge") or {}).get("status") == "BLOCKED")
-            static_v2_contract = (
-                raw.get("source") == "CONTRACT_EVIDENCE_V2"
-                and (raw.get("contract_bridge") or {}).get("status") == "NORMALIZED"
-                and raw.get("instrument_type") != "CAUCIONES"
-                and (raw.get("financial_contract_v17")
-                     or raw.get("paper_family_contract_v1"))
-            )
-            if not negative_bridge and not static_v2_contract and not financial_catalog.complementary_is_fresh(
-                    raw, max_age_seconds=COMPLEMENTARY_CONTRACT_TTL_SECONDS):
-                continue
-
-            ticker = str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
-            if not ticker:
-                continue
-            candidates = connection.execute(
-                "SELECT * FROM financial_instrument_catalog WHERE ticker=?",
-                (ticker,)).fetchall()
-            matches = [
-                dict(candidate) for candidate in candidates
-                if financial_catalog.complement_matches_primary(dict(candidate), raw)
-            ]
-            # A stale alias does not overrule a unique current PPI identity
-            # when ISIN, quote basis and all other dimensions prove equality.
-            matches = select_verified_primary(matches, raw, checked_at=checked)
-            if len(matches) > 1:
-                family = financial_catalog.canonical_family(
-                    raw.get("instrument_type") or raw.get("asset_type") or raw.get("family"))
-                source = financial_catalog.complement_source(raw)
-                # The reconciliation holds BEGIN IMMEDIATE, so use that
-                # connection for the event too; PaperStore.event() opens a
-                # second writer and would self-lock SQLite here.
-                connection.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
-                  (checked, "PAPER_ENGINE", "COMPLEMENTARY_IDENTITY_AMBIGUOUS", None,
-                   f"{ticker}|{family}|{source}|matches={len(matches)}"))
-                # Keep every colliding primary identity in the explicit retry
-                # ledger.  No row is selected or mutated while the provider
-                # evidence cannot distinguish the canonical PPI identity.
-                for candidate in matches:
-                    connection.execute("""INSERT INTO complementary_contract_retry
-                      VALUES(?,?,?,?,?,?,?,?,?,?,?)
-                      ON CONFLICT(ticker,instrument_type,market,currency,settlement,source)
-                      DO UPDATE SET observed_at=excluded.observed_at,state=excluded.state,
-                        reason=excluded.reason,last_attempt_at=excluded.last_attempt_at,
-                        attempts=complementary_contract_retry.attempts+1""",
-                      (candidate["ticker"], candidate["instrument_type"], candidate["market"],
-                       candidate["currency"], candidate["settlement"], source,
-                       raw.get("provider_observed_at") or raw.get("observed_at"),
-                       "PENDING_SPECIAL",
-                       f"COMPLEMENTARY_IDENTITY_AMBIGUOUS:matches={len(matches)}",
-                       checked, 1))
-                continue
-
-            if not matches:
-                # A complement-only identity may enter only if that provider
-                # supplied a complete, internally consistent PAPER contract.
-                try:
-                    complement = financial_catalog.normalize_complementary_record(
-                        raw, checked, "COMPLEMENTARY_RECONCILE")
-                except (ValueError, TypeError):
+        for name in ("candidate_universe", "candidate_identity_v2"):
+            if connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone():
+                connection.execute("DELETE FROM " + name)
+        connection.commit()
+        for offset in range(0, len(complementary), 32):
+            connection.execute("BEGIN IMMEDIATE")
+            for raw in complementary[offset:offset + 32]:
+                negative_bridge = (raw.get("source") == "CONTRACT_EVIDENCE_V2"
+                                   and (raw.get("contract_bridge") or {}).get("status") == "BLOCKED")
+                static_v2_contract = (
+                    raw.get("source") == "CONTRACT_EVIDENCE_V2"
+                    and (raw.get("contract_bridge") or {}).get("status") == "NORMALIZED"
+                    and raw.get("instrument_type") != "CAUCIONES"
+                    and (raw.get("financial_contract_v17")
+                         or raw.get("paper_family_contract_v1"))
+                )
+                if not negative_bridge and not static_v2_contract and not financial_catalog.complementary_is_fresh(
+                        raw, max_age_seconds=COMPLEMENTARY_CONTRACT_TTL_SECONDS):
                     continue
-                if (complement.get("status") == "AVAILABLE"
-                        and str(complement.get("capability") or "").startswith("READY_PAPER_")):
-                    financial_catalog.persist(connection, complement)
-                    connection.execute("""INSERT OR REPLACE INTO instrument_catalog
-                      VALUES(?,?,?,?,?,?,?)""",
-                      (complement["instrument_type"], complement["ticker"],
-                       complement["description"], complement["market"],
-                       complement["settlement"], checked,
-                       json.dumps(complement["raw"], ensure_ascii=False, default=str)))
-                    inserted += 1
-                    promoted += 1
+
+                ticker = str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
+                if not ticker:
+                    continue
+                candidates = connection.execute(
+                    "SELECT * FROM financial_instrument_catalog WHERE ticker=?",
+                    (ticker,)).fetchall()
+                matches = [
+                    dict(candidate) for candidate in candidates
+                    if financial_catalog.complement_matches_primary(dict(candidate), raw)
+                ]
+                # A stale alias does not overrule a unique current PPI identity
+                # when ISIN, quote basis and all other dimensions prove equality.
+                matches = select_verified_primary(matches, raw, checked_at=checked)
+                if len(matches) > 1:
+                    family = financial_catalog.canonical_family(
+                        raw.get("instrument_type") or raw.get("asset_type") or raw.get("family"))
                     source = financial_catalog.complement_source(raw)
-                    applied_by_source[source] = applied_by_source.get(source, 0) + 1
-                continue
+                    # The reconciliation holds BEGIN IMMEDIATE, so use that
+                    # connection for the event too; PaperStore.event() opens a
+                    # second writer and would self-lock SQLite here.
+                    connection.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
+                      (checked, "PAPER_ENGINE", "COMPLEMENTARY_IDENTITY_AMBIGUOUS", None,
+                       f"{ticker}|{family}|{source}|matches={len(matches)}"))
+                    # Keep every colliding primary identity in the explicit retry
+                    # ledger.  No row is selected or mutated while the provider
+                    # evidence cannot distinguish the canonical PPI identity.
+                    for candidate in matches:
+                        connection.execute("""INSERT INTO complementary_contract_retry
+                          VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                          ON CONFLICT(ticker,instrument_type,market,currency,settlement,source)
+                          DO UPDATE SET observed_at=excluded.observed_at,state=excluded.state,
+                            reason=excluded.reason,last_attempt_at=excluded.last_attempt_at,
+                            attempts=complementary_contract_retry.attempts+1""",
+                          (candidate["ticker"], candidate["instrument_type"], candidate["market"],
+                           candidate["currency"], candidate["settlement"], source,
+                           raw.get("provider_observed_at") or raw.get("observed_at"),
+                           "PENDING_SPECIAL",
+                           f"COMPLEMENTARY_IDENTITY_AMBIGUOUS:matches={len(matches)}",
+                           checked, 1))
+                    continue
 
-            primary = matches[0]
-            try:
-                primary["raw"] = json.loads(primary.pop("metadata_json"))
-            except (TypeError, ValueError, json.JSONDecodeError):
-                continue
+                if not matches:
+                    # A complement-only identity may enter only if that provider
+                    # supplied a complete, internally consistent PAPER contract.
+                    try:
+                        complement = financial_catalog.normalize_complementary_record(
+                            raw, checked, "COMPLEMENTARY_RECONCILE")
+                    except (ValueError, TypeError):
+                        continue
+                    if (complement.get("status") == "AVAILABLE"
+                            and str(complement.get("capability") or "").startswith("READY_PAPER_")):
+                        financial_catalog.persist(connection, complement)
+                        connection.execute("""INSERT OR REPLACE INTO instrument_catalog
+                          VALUES(?,?,?,?,?,?,?)""",
+                          (complement["instrument_type"], complement["ticker"],
+                           complement["description"], complement["market"],
+                           complement["settlement"], checked,
+                           json.dumps(complement["raw"], ensure_ascii=False, default=str)))
+                        inserted += 1
+                        promoted += 1
+                        source = financial_catalog.complement_source(raw)
+                        applied_by_source[source] = applied_by_source.get(source, 0) + 1
+                    continue
 
-            # A policy complement may satisfy a missing PAPER term, but it
-            # cannot overturn an explicit primary-provider rejection such as
-            # TYPE_NOT_ENUMERATED or UNSUPPORTED_FAMILY.
-            # A local review may be reconsidered only with complete, exact
-            # canonical V2 evidence. Genuine PPI vetoes and material conflicts
-            # cannot be cleared by this reconciliation path.
-            if not reconciliation_allowed(primary, raw, checked_at=checked):
-                continue
+                primary = matches[0]
+                try:
+                    primary["raw"] = json.loads(primary.pop("metadata_json"))
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
 
-            before_ready = (
-                primary.get("status") == "AVAILABLE"
-                and str(primary.get("capability") or "").startswith("READY_PAPER_"))
-            before = (
-                primary.get("status"), primary.get("capability"),
-                primary.get("last_seen_at"), primary.get("currency"),
-                primary.get("settlement"), primary.get("market"),
-                json.dumps(primary.get("raw") or {}, sort_keys=True, default=str),
-            )
-            merged = financial_catalog.complete_with_complement(primary, raw)
-            after = (
-                merged.get("status"), merged.get("capability"),
-                merged.get("last_seen_at"), merged.get("currency"),
-                merged.get("settlement"), merged.get("market"),
-                json.dumps(merged.get("raw") or {}, sort_keys=True, default=str),
-            )
-            if after == before:
-                continue
+                # A policy complement may satisfy a missing PAPER term, but it
+                # cannot overturn an explicit primary-provider rejection such as
+                # TYPE_NOT_ENUMERATED or UNSUPPORTED_FAMILY.
+                # A local review may be reconsidered only with complete, exact
+                # canonical V2 evidence. Genuine PPI vetoes and material conflicts
+                # cannot be cleared by this reconciliation path.
+                if not reconciliation_allowed(primary, raw, checked_at=checked):
+                    continue
 
-            # Hard invariant: a complement must not mutate the primary identity.
-            for field in ("ticker","instrument_type","market","currency","settlement",
-                          "settlement_source","description","last_seen_at","run_id"):
-                if merged.get(field) != primary.get(field):
-                    raise RuntimeError(f"COMPLEMENT_OVERWRITE_BLOCKED:{field}:{ticker}")
+                before_ready = (
+                    primary.get("status") == "AVAILABLE"
+                    and str(primary.get("capability") or "").startswith("READY_PAPER_"))
+                before = (
+                    primary.get("status"), primary.get("capability"),
+                    primary.get("last_seen_at"), primary.get("currency"),
+                    primary.get("settlement"), primary.get("market"),
+                    json.dumps(primary.get("raw") or {}, sort_keys=True, default=str),
+                )
+                merged = financial_catalog.complete_with_complement(primary, raw)
+                after = (
+                    merged.get("status"), merged.get("capability"),
+                    merged.get("last_seen_at"), merged.get("currency"),
+                    merged.get("settlement"), merged.get("market"),
+                    json.dumps(merged.get("raw") or {}, sort_keys=True, default=str),
+                )
+                if after == before:
+                    continue
 
-            financial_catalog.persist(connection, merged)
-            connection.execute("""INSERT OR REPLACE INTO instrument_catalog
-              VALUES(?,?,?,?,?,?,?)""",
-              (merged["instrument_type"], merged["ticker"], merged["description"],
-               merged["market"], merged["settlement"], checked,
-               json.dumps(merged["raw"], ensure_ascii=False, default=str)))
-            refreshed += 1
-            source = financial_catalog.complement_source(raw)
-            applied_by_source[source] = applied_by_source.get(source, 0) + 1
-            now_ready = (
-                merged.get("status") == "AVAILABLE"
-                and str(merged.get("capability") or "").startswith("READY_PAPER_"))
-            if now_ready and not before_ready:
-                promoted += 1
+                # Hard invariant: a complement must not mutate the primary identity.
+                for field in ("ticker","instrument_type","market","currency","settlement",
+                              "settlement_source","description","last_seen_at","run_id"):
+                    if merged.get(field) != primary.get(field):
+                        raise RuntimeError(f"COMPLEMENT_OVERWRITE_BLOCKED:{field}:{ticker}")
+
+                financial_catalog.persist(connection, merged)
+                connection.execute("""INSERT OR REPLACE INTO instrument_catalog
+                  VALUES(?,?,?,?,?,?,?)""",
+                  (merged["instrument_type"], merged["ticker"], merged["description"],
+                   merged["market"], merged["settlement"], checked,
+                   json.dumps(merged["raw"], ensure_ascii=False, default=str)))
+                refreshed += 1
+                source = financial_catalog.complement_source(raw)
+                applied_by_source[source] = applied_by_source.get(source, 0) + 1
+                now_ready = (
+                    merged.get("status") == "AVAILABLE"
+                    and str(merged.get("capability") or "").startswith("READY_PAPER_"))
+                if now_ready and not before_ready:
+                    promoted += 1
+
+            connection.commit()
+            time.sleep(.005)
 
         # Persist the exact unresolved contract condition even when IOL/BYMA
         # supplied no usable row in this cycle. This is retry state, not a
         # rejection: the scheduler and IOL timer will reconcile it again.
-        for row in connection.execute("""SELECT ticker,instrument_type,market,currency,
+        retry_rows = connection.execute("""SELECT ticker,instrument_type,market,currency,
           settlement,capability,status,last_seen_at,metadata_json
-          FROM financial_instrument_catalog""").fetchall():
-            (ticker, family, market, currency, settlement, capability, status,
-             last_seen, metadata_json) = row
-            ready = (status == "AVAILABLE"
-                     and str(capability or "").startswith("READY_PAPER_"))
-            if ready:
-                connection.execute("""DELETE FROM complementary_contract_retry
-                  WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?""",
-                  (ticker, family, market, currency, settlement))
-                continue
-            reason = str(capability or "").strip()
-            if not (reason.startswith("NEEDS_") or reason.startswith("READY_CONTRACT_")):
-                continue
-            try:
-                metadata = json.loads(metadata_json or "{}")
-            except (TypeError, ValueError, json.JSONDecodeError):
-                metadata = {}
-            bridge_gaps = ((metadata.get("_contract_bridge") or {}).get("gaps", [])
-                           if isinstance(metadata, dict) else [])
-            missing = sorted({str(gap).split(":", 1)[1]
-                              for gap in bridge_gaps
-                              if str(gap).startswith("MISSING:")})
-            if missing:
-                reason = "MISSING_FIELDS:" + ",".join(missing)
-            connection.execute("""INSERT INTO complementary_contract_retry
-              VALUES(?,?,?,?,?,?,?,?,?,?,?)
-              ON CONFLICT(ticker,instrument_type,market,currency,settlement,source)
-              DO UPDATE SET observed_at=excluded.observed_at,state=excluded.state,
-                reason=excluded.reason,last_attempt_at=excluded.last_attempt_at,
-                attempts=complementary_contract_retry.attempts+1""",
-              (ticker, family, market, currency, settlement,
-               "CONTRACT_EVIDENCE_RECONCILER", last_seen, "PENDING_RETRY",
-               reason, checked, 1))
-            retry_pending += 1
+          FROM financial_instrument_catalog""").fetchall()
+        for offset in range(0, len(retry_rows), 32):
+            connection.execute("BEGIN IMMEDIATE")
+            for row in retry_rows[offset:offset + 32]:
+                (ticker, family, market, currency, settlement, capability, status,
+                 last_seen, metadata_json) = row
+                ready = (status == "AVAILABLE"
+                         and str(capability or "").startswith("READY_PAPER_"))
+                if ready:
+                    connection.execute("""DELETE FROM complementary_contract_retry
+                      WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?""",
+                      (ticker, family, market, currency, settlement))
+                    continue
+                reason = str(capability or "").strip()
+                if not (reason.startswith("NEEDS_") or reason.startswith("READY_CONTRACT_")):
+                    continue
+                try:
+                    metadata = json.loads(metadata_json or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    metadata = {}
+                bridge_gaps = ((metadata.get("_contract_bridge") or {}).get("gaps", [])
+                               if isinstance(metadata, dict) else [])
+                missing = sorted({str(gap).split(":", 1)[1]
+                                  for gap in bridge_gaps
+                                  if str(gap).startswith("MISSING:")})
+                if missing:
+                    reason = "MISSING_FIELDS:" + ",".join(missing)
+                connection.execute("""INSERT INTO complementary_contract_retry
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                  ON CONFLICT(ticker,instrument_type,market,currency,settlement,source)
+                  DO UPDATE SET observed_at=excluded.observed_at,state=excluded.state,
+                    reason=excluded.reason,last_attempt_at=excluded.last_attempt_at,
+                    attempts=complementary_contract_retry.attempts+1""",
+                  (ticker, family, market, currency, settlement,
+                   "CONTRACT_EVIDENCE_RECONCILER", last_seen, "PENDING_RETRY",
+                   reason, checked, 1))
+                retry_pending += 1
 
-        financial_catalog.sync_candidate_universe(connection, checked)
+            connection.commit()
+            time.sleep(.005)
+
+        financial_catalog.sync_candidate_universe(connection, checked, bounded_batch=64)
         ready_total = connection.execute("""SELECT COUNT(*) FROM financial_instrument_catalog
           WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER_%'""").fetchone()[0]
         catalog_total = connection.execute(

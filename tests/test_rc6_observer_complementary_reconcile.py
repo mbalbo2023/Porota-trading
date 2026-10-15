@@ -272,3 +272,50 @@ def test_ambiguous_complement_is_kept_as_special_retry_without_mutation(tmp_path
         ("OBLIGACIONES", "OBSERVED_SHADOW", "NEEDS_NOMINAL_UNITS"),
         ("ON", "STALE", "NEEDS_NOMINAL_UNITS"),
     ]
+
+
+def test_bounded_projection_yields_wal_writer_and_keeps_partial_candidates_closed(
+        tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    with store.connect() as c:
+        for number in range(65):
+            c.execute("""INSERT INTO financial_instrument_catalog
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                f"T{number:03d}", "CEDEARS", "BYMA", "ARS", "A-24HS", "PPI_FIELD",
+                "Test", _fresh(), "test", "STALE", "NEEDS_CONTRACT", "{}"))
+    pauses = []
+
+    def between_batches(_seconds):
+        with store.connect() as peer:
+            peer.execute("BEGIN IMMEDIATE")
+            pauses.append(peer.execute(
+                "SELECT COUNT(*) FROM candidate_universe WHERE can_simulate=1").fetchone()[0])
+            peer.rollback()
+
+    monkeypatch.setattr(catalog.time, "sleep", between_batches)
+    with store.connect() as c:
+        catalog.sync_candidate_universe(c, _fresh(), bounded_batch=16)
+    with store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM candidate_universe").fetchone()[0] == 65
+        assert c.execute("SELECT COUNT(*) FROM candidate_identity_v2").fetchone()[0] == 65
+    assert len(pauses) >= 4 and pauses == [0] * len(pauses)
+
+
+def test_complementary_reconcile_projects_after_releasing_writer(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    monkeypatch.setattr(observer, "complementary_discovery", lambda _root: [])
+    original = catalog.sync_candidate_universe
+    calls = []
+
+    def verified(connection, checked_at, **kwargs):
+        assert kwargs["bounded_batch"] == 64
+        assert not connection.in_transaction
+        with store.connect() as peer:
+            peer.execute("BEGIN IMMEDIATE")
+            peer.rollback()
+        calls.append(True)
+        return original(connection, checked_at, **kwargs)
+
+    monkeypatch.setattr(catalog, "sync_candidate_universe", verified)
+    assert observer._reconcile_complementary_catalog(store) == 0
+    assert calls == [True]

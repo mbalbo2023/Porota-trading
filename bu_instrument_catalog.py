@@ -5,6 +5,7 @@ SearchInstrument no prueba multiplicador, margen ni vencimiento estructurado.
 """
 
 import json
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -472,7 +473,8 @@ def _candidate_retry_ambiguities(connection):
 
 
 def sync_candidate_universe(connection, checked_at, *,
-                            freshness_seconds=PAPER_PPI_IDENTITY_LKG_SECONDS):
+                            freshness_seconds=PAPER_PPI_IDENTITY_LKG_SECONDS,
+                            bounded_batch=None):
     """Atomically rebuild the legacy summary without projecting ambiguity to READY.
 
     ``candidate_universe`` intentionally remains keyed by ticker/family/market for
@@ -560,20 +562,7 @@ def sync_candidate_universe(connection, checked_at, *,
             int(ready), projected_status, detail, checked_at,
         ))
 
-    # DELETE + INSERT runs inside the caller's transaction.  Removed/reclassified
-    # catalog identities cannot survive as stale candidate ghosts.
-    connection.execute("DELETE FROM candidate_universe")
-    connection.executemany(
-        "INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", projected
-    )
-
-    # Persist the independent gate at the catalog's full key.  Short-ticker
-    # selection ambiguity belongs only to the legacy projection above.
-    connection.execute("""CREATE TABLE IF NOT EXISTS candidate_identity_v2(
-        ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,
-        currency TEXT NOT NULL,settlement TEXT NOT NULL,can_simulate INTEGER NOT NULL,
-        status TEXT NOT NULL,detail TEXT NOT NULL,checked_at TEXT NOT NULL,
-        PRIMARY KEY(ticker,instrument_type,market,currency,settlement))""")
+    # Compute both projections before taking a writer lock in bounded mode.
     full = []
     for row in rows:
         key = tuple(row[:5])
@@ -582,8 +571,41 @@ def sync_candidate_universe(connection, checked_at, *,
         projected_status, detail = explicit_projection(
             row[1], reasons, row[6], base_detail)
         full.append((*key,int(not reasons),projected_status,detail,checked_at))
+
+    connection.execute("""CREATE TABLE IF NOT EXISTS candidate_identity_v2(
+        ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,
+        currency TEXT NOT NULL,settlement TEXT NOT NULL,can_simulate INTEGER NOT NULL,
+        status TEXT NOT NULL,detail TEXT NOT NULL,checked_at TEXT NOT NULL,
+        PRIMARY KEY(ticker,instrument_type,market,currency,settlement))""")
+
+    if bounded_batch is None:
+        # Existing callers retain the original atomic full rebuild contract.
+        connection.execute("DELETE FROM candidate_universe")
+        connection.executemany(
+            "INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", projected)
+        connection.execute("DELETE FROM candidate_identity_v2")
+        connection.executemany(
+            "INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)", full)
+        return
+    if not 1 <= bounded_batch <= 128 or connection.in_transaction:
+        raise ValueError("BOUNDED_CANDIDATE_REBUILD_REQUIRES_IDLE_CONNECTION")
+    # Clear both gates together. A partial or interrupted rebuild stays closed
+    # for identities that have not been projected from the committed catalog.
+    connection.execute("BEGIN IMMEDIATE")
+    connection.execute("DELETE FROM candidate_universe")
     connection.execute("DELETE FROM candidate_identity_v2")
-    connection.executemany("INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)",full)
+    connection.commit()
+    for start in range(0, max(len(projected), len(full)), bounded_batch):
+        connection.execute("BEGIN IMMEDIATE")
+        connection.executemany(
+            "INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+            projected[start:start + bounded_batch])
+        connection.executemany(
+            "INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)",
+            full[start:start + bounded_batch])
+        connection.commit()
+        # Give other PAPER writers a chance to claim the WAL between batches.
+        time.sleep(.005)
 
 
 def persist(c, record):
