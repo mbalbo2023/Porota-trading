@@ -215,7 +215,7 @@ def test_live_closes_show_factual_win_rate_with_full_filtered_denominator(databa
         p = Projection(s)
         assert p.close_win_rate_today() == {"state": "AVAILABLE", "sample": 5,
                                             "wins": 5, "win_rate": 100.0}
-        html = render(p, "en-vivo", "cierres")
+        html = render(p, BY_KEY["en-vivo"], "cierres")
         assert "Win rate de cierres hoy" in html and "100,00 %" in html
         assert "5/5 cierres con PnL neto positivo" in html
         filtered = Projection(s, {"currency": "ARS"}).close_win_rate_today()
