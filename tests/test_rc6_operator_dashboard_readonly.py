@@ -19,7 +19,11 @@ class OperatorAuditTests(TestCase):
                            "secret": "must never leave host"} for path in ROUTES],
                "sources": [{"component": "PPI_MARKETDATA", "state": "VERDE",
                             "checked_age_seconds": 2, "last_success_age_seconds": 2,
-                            "detail": "must never leave host"}]}
+                            "detail": "must never leave host"}],
+               "source_sync_status": "BOUNDED", "history_cutoff_repair": "INCOMPLETE",
+               "source_sync": [{"source": "PPI_PRODUCTION_HISTORY", "state": "AMARILLO",
+                                "last_attempt_age_seconds": 100, "last_success_age_seconds": 200,
+                                "detail": "must never leave host"}]}
     def runner(argv, **kwargs):
         assert argv[:4] == ["docker", "exec", "porota_production_dashboard", "python"]
         assert kwargs["timeout"] == 150
@@ -27,6 +31,8 @@ class OperatorAuditTests(TestCase):
     result = audit_host(runner=runner)
     self.assertEqual(result["status"], "ROUTES_VERIFIED")
     self.assertEqual(len(result["routes"]), len(ROUTES))
+    self.assertEqual(result["source_sync"][0]["last_attempt_age_seconds"], 100)
+    self.assertEqual(result["history_cutoff_repair"], "INCOMPLETE")
     self.assertNotIn("must never leave host", json.dumps(result))
 
     payload["profile_status"] = "BOUNDED"
@@ -48,6 +54,11 @@ class OperatorAuditTests(TestCase):
                          for path in POSTCLOSE_ROUTES]
     self.assertEqual(audit_host(runner=runner)["audit_scope"], "POSTCLOSE_ALL")
     self.assertEqual(len(audit_host(runner=runner)["routes"]), 50)
+    payload["history_cutoff_repair"] = "COMPLETE; secret"
+    payload["source_sync"][0]["last_success_age_seconds"] = -1
+    redacted = audit_host(runner=runner)
+    self.assertEqual(redacted["history_cutoff_repair"], "NO_VERIFICADO")
+    self.assertIsNone(redacted["source_sync"][0]["last_success_age_seconds"])
 
 
  def test_partial_or_untrusted_receipt_fails_closed(self):
