@@ -27,7 +27,9 @@ SCHEMA = "rc6.runtime-entry-signals.v1"
 NATIVE_INPUT_SCHEMA = "rc6.native-entry-signal-input.v1"
 REGISTRY_SCHEMA = "rc6.entry-preregistration.v1"
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
-QUERY_SECONDS = .25
+# Bounded WAL reads share a busy PAPER host. Keep a hard deadline while
+# allowing the prospective lab the same 2s ceiling as its source snapshot.
+QUERY_SECONDS = 2.0
 MAX_ROW_BYTES = 128 * 1024
 MAX_CHECKPOINT_BYTES = 16 * 1024**2
 MAX_ACTIVE = 512
