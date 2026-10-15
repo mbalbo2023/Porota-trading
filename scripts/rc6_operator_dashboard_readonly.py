@@ -64,7 +64,9 @@ class VisibleGaps(HTMLParser):
   if not self.hidden: self.count=min(1000,self.count+data.count("NO_VERIFICADO"))
 result = {"schema":"rc6.operator-dashboard-readonly.v1", "read_only":True,
           "audit_scope":"POSTCLOSE_ALL" if postclose else "MARKET_CRITICAL",
-          "routes":[], "sources":[], "source_status":"NO_VERIFICADO"}
+          "routes":[], "sources":[], "source_status":"NO_VERIFICADO",
+          "source_sync":[], "source_sync_status":"NO_VERIFICADO",
+          "history_cutoff_repair":"NO_VERIFICADO"}
 token = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
 if token:
  for path in routes:
@@ -103,20 +105,47 @@ try:
       "OR component LIKE 'A3%' OR component LIKE 'ROFEX%' OR component LIKE 'GEMINI%' "
       "ORDER BY component LIMIT 81").fetchall()
   result["source_truncated"]=len(rows)>80
+  def age(value):
+   try:
+    stamp=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+    seconds=(datetime.now(timezone.utc)-stamp).total_seconds()
+    return int(seconds) if stamp.tzinfo and 0<=seconds<=365*86400 else None
+   except (TypeError,ValueError): return None
   for component,state,checked,success in rows[:80]:
    if not isinstance(component,str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_:/.-]{0,63}",component): continue
    safe=state if isinstance(state,str) and re.fullmatch(r"[A-Za-z0-9_:-]{1,40}",state) else "NO_VERIFICADO"
-   def age(value):
-    try:
-     stamp=datetime.fromisoformat(str(value).replace("Z","+00:00"))
-     seconds=(datetime.now(timezone.utc)-stamp).total_seconds()
-     return int(seconds) if stamp.tzinfo and 0<=seconds<=365*86400 else None
-    except (TypeError,ValueError): return None
    result["sources"].append({"component":component,"state":safe,
        "checked_age_seconds":age(checked),"last_success_age_seconds":age(success)})
   result["source_status"]=("TRUNCATED" if result["source_truncated"] else
       "BOUNDED" if result["sources"] else "EMPTY")
+  try:
+   sync=conn.execute("SELECT source,status,last_attempt_at,last_success_at FROM source_sync "
+       "WHERE source IN ('PPI_PRODUCTION_HISTORY','PPI_PRODUCTION_CATALOG') "
+       "OR source LIKE 'IOL%' ORDER BY source LIMIT 11").fetchall()
+   for name,state,attempt,success in sync[:10]:
+    if not isinstance(name,str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_:/.-]{0,63}",name): continue
+    safe=state if isinstance(state,str) and re.fullmatch(r"[A-Za-z0-9_:-]{1,40}",state) else "NO_VERIFICADO"
+    result["source_sync"].append({"source":name,"state":safe,
+        "last_attempt_age_seconds":age(attempt),"last_success_age_seconds":age(success)})
+   result["source_sync_status"]="TRUNCATED" if len(sync)>10 else "BOUNDED" if sync else "EMPTY"
+  except sqlite3.Error: result["source_sync_status"]="SQLITE_UNAVAILABLE"
 except sqlite3.Error: result["source_status"]="SQLITE_UNAVAILABLE"
+
+# The history writer deliberately waits for the one-time cutoff repair. Read
+# that gate separately; an old api_health row alone cannot establish its RCA.
+try:
+ hist=os.getenv("HIST_DB_PATH") or os.path.join(os.getenv("DATA_DIR","/app/data"),"market_history.db")
+ with sqlite3.connect("file:"+quote(os.path.abspath(hist),safe="/")+"?mode=ro",uri=True,timeout=.2) as h:
+  h.execute("PRAGMA query_only=ON")
+  exists=h.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+      "AND name='rc6_history_cutoff_repair_runs'").fetchone()
+  if not exists: result["history_cutoff_repair"]="MISSING_TABLE"
+  else:
+   row=h.execute("SELECT state FROM rc6_history_cutoff_repair_runs "
+       "WHERE cutoff='2026-09-21'").fetchone()
+   result["history_cutoff_repair"]=("MISSING_ROW" if not row else
+       "COMPLETE" if str(row[0]).upper()=="COMPLETE" else "INCOMPLETE")
+except (sqlite3.Error,OSError): result["history_cutoff_repair"]="SQLITE_UNAVAILABLE"
 
 # Exercise the same read-only projection methods as the slow pages. No rows,
 # SQL text, paths or exception details are exported; each SQLite stage has a
@@ -206,6 +235,19 @@ def audit_host(*, runner=subprocess.run):
                 value = item.get(key)
                 safe[key] = value if type(value) is int and 0 <= value <= 365 * 86400 else None
             sources.append(safe)
+        sync_rows = []
+        for item in data.get("source_sync", []):
+            if not isinstance(item, dict):
+                continue
+            name, state = item.get("source"), item.get("state")
+            if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_:/.-]{0,63}", name)
+                    or not isinstance(state, str) or not re.fullmatch(r"[A-Za-z0-9_:-]{1,40}", state)):
+                continue
+            safe = {"source": name, "state": state}
+            for key in ("last_attempt_age_seconds", "last_success_age_seconds"):
+                value = item.get(key)
+                safe[key] = value if type(value) is int and 0 <= value <= 365 * 86400 else None
+            sync_rows.append(safe)
         complete = (len(routes) == len(expected) and all(
             row["http"] == 200 and row["nav"] and row["content"] and row["error"] is None
             for row in routes) and data.get("source_status") == "BOUNDED" and sources)
@@ -226,13 +268,20 @@ def audit_host(*, runner=subprocess.run):
             balance_queries.append({"stage": item["stage"], "elapsed_ms": ms if type(ms) is int and 0 <= ms <= 60000 else None,
                                     "state": item.get("state") if item.get("state") in {"READ_OK", "READ_ERROR"} else "NO_VERIFICADO"})
         return {"schema": SCHEMA, "read_only": True, "audit_scope": scope, "status": status,
-                "routes": routes, "sources": sources[:80], "profile": profile[:5], "balance_queries": balance_queries[:10],
+                "routes": routes, "sources": sources[:80], "source_sync": sync_rows[:10],
+                "source_sync_status": data.get("source_sync_status") if data.get("source_sync_status") in
+                {"BOUNDED", "EMPTY", "TRUNCATED", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
+                "history_cutoff_repair": data.get("history_cutoff_repair") if data.get("history_cutoff_repair") in
+                {"COMPLETE", "INCOMPLETE", "MISSING_TABLE", "MISSING_ROW", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
+                "profile": profile[:5], "balance_queries": balance_queries[:10],
                 "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
                 {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}
     except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
         return {"schema": SCHEMA, "read_only": True, "status": "NO_VERIFICADO",
-                "routes": [], "sources": [], "source_status": "NO_VERIFICADO"}
+                "routes": [], "sources": [], "source_status": "NO_VERIFICADO",
+                "source_sync": [], "source_sync_status": "NO_VERIFICADO",
+                "history_cutoff_repair": "NO_VERIFICADO"}
 
 
 if __name__ == "__main__":
