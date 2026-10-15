@@ -401,6 +401,9 @@ class MonitorContracts(unittest.TestCase):
         self.assertTrue(options["capture_output"])
         compile(args[0][-1], "<container-diagnostic>", "exec")
         self.assertIn("EXPLAIN QUERY PLAN", args[0][-1])
+        self.assertIn("NOT INDEXED", args[0][-1])
+        self.assertIn('result["query_stages"]', args[0][-1])
+        self.assertIn('c.set_progress_handler(expired,1000)', args[0][-1])
         with patch.object(monitor.subprocess, "run", side_effect=subprocess.TimeoutExpired(
                 cmd="docker", timeout=9, stderr="secret")):
             failure = monitor.shadow_diagnostic_host()

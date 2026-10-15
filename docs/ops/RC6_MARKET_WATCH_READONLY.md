@@ -92,6 +92,13 @@ live quotes are expected; a BYMA holiday is not misclassified by weekday alone.
 - The diagnostic is intentionally absent from scheduled runs to avoid
   additional intraday DB load. A passing stage in a manual probe does not
   establish the causal failure stage of a separate worker tick.
+- During the 15 October systemic RCA, a main push also runs one bounded
+  read-only diagnostic. It measures row counts, exact query plans, elapsed
+  time and remaining shared 2-second budget for catalogue, open positions,
+  contracts, intraday and snapshots. The cursor-only timing omits Python
+  transformation costs, so it is a lower bound for the worker. WAL size is
+  observed via file stat; no checkpoint or schema change is performed. The
+  push diagnostic must be returned to manual-only after evidence capture.
 - Manual runs separately test the public GitHub workflow schedule API from
   inside the existing observer container, with a five-second network timeout,
   a bounded response and only sanitized count/identity fields. This proves
