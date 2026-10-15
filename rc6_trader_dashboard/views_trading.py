@@ -1,5 +1,6 @@
 """Family-specific fields never fall back to an equity signal."""
-from .components import fields, notice
+from .components import fields, metric, notice
+from .projection import UNKNOWN, freshness
 from .datasets import shadow_rows, family_summary
 from .view_common import render_table, CATALOG, CATALOG_DETAIL, OPPORTUNITIES, OPPORTUNITY_DETAIL
 
@@ -33,11 +34,19 @@ def render(p, destination, tab):
     if tab == "cauciones":
         decisions = p.filters.get("caucion_view") == "decisiones"
         selected = "decisiones" if decisions else "colocaciones"
+        sweep = p.store.one("paper_caucion_cash_sweep_state")
+        sweep_fresh = freshness(sweep.get("heartbeat_at"), p.now, 30)
+        sweep_state = sweep.get("state") if sweep_fresh == "FRESH" else UNKNOWN
+        cards = "<div class='metric-grid'>" + "".join((
+            metric("Cash sweep cauciones", sweep_state,
+                   f"Último estado: {sweep.get('state') or UNKNOWN} · {sweep_fresh}", kind="status"),
+            metric("Órdenes reales · sweep", sweep.get("real_orders_sent") if sweep_fresh == "FRESH" else None,
+                   "Contador factual con heartbeat fresco; desconocido no equivale a cero", kind="number"))) + "</div>"
         links = "".join(
             f"<a class='button' href='/trading/cauciones?caucion_view={key}' "
             f"{'aria-current=page' if selected == key else ''}>{label}</a>"
             for key, label in (("colocaciones", "Colocaciones PAPER"), ("decisiones", "Decisiones / HOLD")))
-        lead = (notice("Cauciones simuladas: caja liquidada, tasa/plazo, reserva y riesgo se evalúan antes de colocar. "
+        lead = (cards + notice("Cauciones simuladas: caja liquidada, tasa/plazo, reserva y riesgo se evalúan antes de colocar. "
                        "Un registro PAPER no acredita una orden ni una tasa ejecutable actual.")
                 + f"<nav class='pager' aria-label='Vistas de cauciones'>{links}</nav>"
                 + "<p class='source-line'>Catálogo y contrato: <a href='/instrumentos/buscador?family=CAUCIONES'>CAUCIONES</a> "

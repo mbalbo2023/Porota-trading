@@ -141,6 +141,7 @@ TABLE_FIELDS = {
     "paper_exit_reader_state": "id heartbeat_at state detail",
     "paper_runtime_state": "id heartbeat_at state detail",
     "intraday_scalping_worker_state": "id heartbeat_at state selected successful failed candidates real_orders_sent detail",
+    "paper_caucion_cash_sweep_state": "id heartbeat_at state last_attempt_at code paper_id real_orders_sent detail",
     "api_health": "component state detail checked_at last_success_at source",
     "source_sync": "source status last_attempt_at last_success_at items detail",
     "financial_instrument_catalog": "ticker instrument_type market currency settlement description last_seen_at status capability metadata_json",
@@ -546,7 +547,8 @@ class Projection:
         s = self.store
         rows = []
         datasets = (("paper_supervisor_state", "Supervisor de salidas"), ("paper_exit_reader_state", "Lector de salidas"),
-                    ("intraday_scalping_worker_state", "Scalping"))
+                    ("intraday_scalping_worker_state", "Scalping"),
+                    ("paper_caucion_cash_sweep_state", "Cauciones · cash sweep"))
         for table, label in datasets:
             row = s.one(table)
             stamp = row.get("heartbeat_at")

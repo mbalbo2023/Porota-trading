@@ -62,6 +62,8 @@ def database(tmp_path):
           fee_payment TEXT,terms_json TEXT);
         CREATE TABLE paper_caucion_allocations(request_id TEXT PRIMARY KEY,evaluated_at TEXT,
           decision_json TEXT,paper_id TEXT);
+        CREATE TABLE paper_caucion_cash_sweep_state(id INTEGER PRIMARY KEY,heartbeat_at TEXT,state TEXT,
+          last_attempt_at TEXT,code TEXT,paper_id TEXT,real_orders_sent INTEGER,detail TEXT);
         CREATE TABLE contract_evidence_v2_current(family TEXT,ticker TEXT,market TEXT,currency TEXT,settlement TEXT,
           source_class TEXT,snapshot_id INTEGER,evidence_hash TEXT,observed_at TEXT);
         CREATE TABLE contract_evidence_v2_snapshots(snapshot_id INTEGER PRIMARY KEY,family TEXT,ticker TEXT,
@@ -94,6 +96,7 @@ def database(tmp_path):
                                      "selected": {"principal": "100000", "currency": "ARS"}}), "CAU-PAPER-1"))
         c.execute("INSERT INTO paper_caucion_allocations VALUES(?,?,?,NULL)", (
             "req-hold", STAMP, json.dumps({"status": "HOLD", "code": "NO_ELIGIBLE_OFFER", "candidates": []})))
+        c.execute("INSERT INTO paper_caucion_cash_sweep_state VALUES(1,?,'WAITING_WINDOW',NULL,'WINDOW_NOT_OPEN',NULL,0,'fixture')", (STAMP,))
     return path
 
 
@@ -470,6 +473,7 @@ def test_cauciones_have_visible_navigation_and_separate_paper_decisions(client):
     assert page.select_one(".subnav a[aria-current=page]").get_text() == "Cauciones"
     assert len(page.select(".terminal-table")) == 1
     assert "CAU-PAPER-1" in placements.text
+    assert "Cash sweep cauciones" in placements.text and "WAITING_WINDOW" in placements.text
     assert "12,50 %" in placements.text and "6,25" in placements.text
     assert "sensitive-value" not in placements.text and "[REDACTED]" in placements.text
     decisions = client.get("/trading/cauciones?caucion_view=decisiones")
