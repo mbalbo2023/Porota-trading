@@ -380,10 +380,10 @@ def _assert_snapshot(snapshot, baseline=None):
     allowed = set(truth["iol"]["allowed_states"])
     assert allowed == ALLOWED_IOL_STATES
     matrix = snapshot["route_inventory"]
-    # The frozen RC6 terminal matrix includes the now-canonical Cauciones
-    # view on an existing legacy path. Keep cardinality and full manifest
+    # The frozen RC6 terminal matrix includes the canonical Cauciones
+    # view and its registered path. Keep cardinality and full manifest
     # comparison together; the route count alone cannot prove semantic parity.
-    assert matrix["route_count"] == 102 and matrix["registered_paths"] == 100
+    assert matrix["route_count"] == 103 and matrix["registered_paths"] == 101
     assert snapshot["route_matrix_matches_artifact"] is True
     assert all(code == 200 for code in snapshot["http_status"].values())
     _assert_surface_metrics(snapshot.get("surface_metrics", {}))
