@@ -86,6 +86,7 @@ except sqlite3.Error: result["source_status"]="SQLITE_UNAVAILABLE"
 try:
  from rc6_trader_dashboard.projection import Projection, Store
  result["profile"]=[]
+ result["balance_queries"]=[]
  with Store(db) as store:
   if store.connection is None: raise RuntimeError("STORE_UNAVAILABLE")
   projection=Projection(store)
@@ -96,10 +97,27 @@ try:
           ("performance_today",lambda:projection.performance(today=True)))
   for name,fn in stages:
    started=time.monotonic(); before=len(store.errors); query_before=store.query_count
+   original_query=store.query
+   if name=="balances":
+    def traced_query(sql,params=()):
+     label=("LATEST_EQUITY" if "FROM paper_equity_by_currency e JOIN" in sql else
+            "VALUATION_COUNT" if 'COUNT(*) n FROM "paper_valuation_quality"' in sql else
+            "VALUATION_ROWS" if 'FROM "paper_valuation_quality"' in sql else
+            "EQUITY_SCHEMA" if 'table_info("paper_equity_by_currency")' in sql else
+            "VALUATION_SCHEMA" if 'table_info("paper_valuation_quality")' in sql else "OTHER")
+     q_started=time.monotonic(); q_before=len(store.errors)
+     try: return original_query(sql,params)
+     finally:
+      result["balance_queries"].append({"stage":label,
+          "elapsed_ms":min(60000,round((time.monotonic()-q_started)*1000)),
+          "state":"READ_ERROR" if len(store.errors)>q_before else "READ_OK"})
+    store.query=traced_query
    store.connection.set_progress_handler(lambda: int(time.monotonic()-started>5),1000)
    try: fn()
    except Exception: store.errors.append("PROFILE_UNAVAILABLE")
-   finally: store.connection.set_progress_handler(None,0)
+   finally:
+    store.query=original_query
+    store.connection.set_progress_handler(None,0)
    result["profile"].append({"stage":name,"elapsed_ms":min(60000,round((time.monotonic()-started)*1000)),
        "read_queries":store.query_count-query_before,
        "state":"READ_ERROR" if len(store.errors)>before else "READ_OK"})
@@ -159,8 +177,15 @@ def audit_host(*, runner=subprocess.run):
             profile.append({"stage": item["stage"], "elapsed_ms": ms if type(ms) is int and 0 <= ms <= 60000 else None,
                             "read_queries": queries if type(queries) is int and 0 <= queries <= 1000 else None,
                             "state": item.get("state") if item.get("state") in {"READ_OK", "READ_ERROR"} else "NO_VERIFICADO"})
+        balance_queries = []
+        for item in data.get("balance_queries", []):
+            if not isinstance(item, dict) or item.get("stage") not in {"LATEST_EQUITY", "VALUATION_COUNT", "VALUATION_ROWS", "EQUITY_SCHEMA", "VALUATION_SCHEMA", "OTHER"}:
+                continue
+            ms = item.get("elapsed_ms")
+            balance_queries.append({"stage": item["stage"], "elapsed_ms": ms if type(ms) is int and 0 <= ms <= 60000 else None,
+                                    "state": item.get("state") if item.get("state") in {"READ_OK", "READ_ERROR"} else "NO_VERIFICADO"})
         return {"schema": SCHEMA, "read_only": True, "status": status,
-                "routes": routes, "sources": sources[:80], "profile": profile[:5],
+                "routes": routes, "sources": sources[:80], "profile": profile[:5], "balance_queries": balance_queries[:10],
                 "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
                 {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}
