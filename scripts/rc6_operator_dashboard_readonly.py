@@ -14,19 +14,56 @@ ROUTES = (
     "/analitica", "/sistema", "/sistema/integraciones",
     "/sistema/workers", "/sistema/scheduler",
 )
+EXTRA_ROUTES = (
+    "/en-vivo/decisiones", "/en-vivo/posiciones", "/en-vivo/cierres", "/en-vivo/capacidad",
+    "/en-vivo/workers", "/en-vivo/fuentes", "/trading/equity-spot", "/trading/renta-fija",
+    "/trading/derivados", "/trading/tesoreria", "/universo/discovery", "/universo/tradeability",
+    "/universo/coverage", "/universo/excluidos", "/universo/familias", "/instrumentos/ficha",
+    "/instrumentos/contrato", "/instrumentos/mercado", "/instrumentos/evidencia", "/riesgo/exposicion",
+    "/riesgo/limites", "/riesgo/posiciones", "/riesgo/liquidez", "/riesgo/pnl",
+    "/riesgo/event-risk", "/analitica/senales", "/analitica/salidas", "/analitica/historico",
+    "/analitica/experimentos", "/analitica/cierre-diario", "/analitica/reportes", "/sistema/salud",
+    "/sistema/evidencia", "/sistema/backups", "/sistema/logs", "/sistema/configuracion",
+)
+POSTCLOSE_ROUTES = ROUTES + EXTRA_ROUTES
 
 # Runs inside the existing dashboard container. Its token never leaves that
 # container; only allowlisted route and provider-state facts reach Actions.
 CHILD = r'''
 import json, os, re, sqlite3, time, urllib.error, urllib.request
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 routes = ("/", "/en-vivo", "/en-vivo/oportunidades", "/trading",
           "/trading/scalping", "/universo", "/instrumentos", "/riesgo",
           "/analitica", "/sistema", "/sistema/integraciones",
           "/sistema/workers", "/sistema/scheduler")
+extra_routes = (
+    "/en-vivo/decisiones", "/en-vivo/posiciones", "/en-vivo/cierres", "/en-vivo/capacidad",
+    "/en-vivo/workers", "/en-vivo/fuentes", "/trading/equity-spot", "/trading/renta-fija",
+    "/trading/derivados", "/trading/tesoreria", "/universo/discovery", "/universo/tradeability",
+    "/universo/coverage", "/universo/excluidos", "/universo/familias", "/instrumentos/ficha",
+    "/instrumentos/contrato", "/instrumentos/mercado", "/instrumentos/evidencia", "/riesgo/exposicion",
+    "/riesgo/limites", "/riesgo/posiciones", "/riesgo/liquidez", "/riesgo/pnl",
+    "/riesgo/event-risk", "/analitica/senales", "/analitica/salidas", "/analitica/historico",
+    "/analitica/experimentos", "/analitica/cierre-diario", "/analitica/reportes", "/sistema/salud",
+    "/sistema/evidencia", "/sistema/backups", "/sistema/logs", "/sistema/configuracion")
+local = datetime.now(timezone.utc).astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
+postclose = local.hour * 60 + local.minute >= 17 * 60 + 15
+if postclose: routes += extra_routes
+class VisibleGaps(HTMLParser):
+ def __init__(self):
+  super().__init__(); self.hidden=0; self.count=0
+ def handle_starttag(self, tag, attrs):
+  if tag in {"script","style"}: self.hidden+=1
+ def handle_endtag(self, tag):
+  if tag in {"script","style"}: self.hidden=max(0,self.hidden-1)
+ def handle_data(self, data):
+  if not self.hidden: self.count=min(1000,self.count+data.count("NO_VERIFICADO"))
 result = {"schema":"rc6.operator-dashboard-readonly.v1", "read_only":True,
+          "audit_scope":"POSTCLOSE_ALL" if postclose else "MARKET_CRITICAL",
           "routes":[], "sources":[], "source_status":"NO_VERIFICADO"}
 token = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
 if token:
@@ -36,7 +73,7 @@ if token:
   try:
    req=urllib.request.Request("http://127.0.0.1:8000"+path,
        headers={"Authorization":"Bearer "+token, "Cache-Control":"no-cache"})
-   with urllib.request.urlopen(req,timeout=6) as response:
+   with urllib.request.urlopen(req,timeout=2 if postclose else 6) as response:
     raw=response.read(524289); entry["http"]=response.status
     duration=re.search(r"projection;dur=([0-9]+(?:\.[0-9]+)?)",response.headers.get("Server-Timing",""))
     if duration: entry["projection_ms"]=min(60000,round(float(duration.group(1))))
@@ -47,6 +84,7 @@ if token:
     html=raw.decode("utf-8","replace")
     entry["nav"]="id='porota-canonical-nav'" in html or 'id="porota-canonical-nav"' in html
     entry["content"]="id='terminal-content'" in html or 'id="terminal-content"' in html
+    gaps=VisibleGaps(); gaps.feed(html); entry["unverified_mentions"]=gaps.count
     if path=="/": entry["attention"]="Atención ahora" in html
   except urllib.error.HTTPError as exc: entry["http"]=exc.code
   except (OSError,ValueError): entry["error"]="HTTP_UNAVAILABLE"
@@ -130,7 +168,7 @@ print(json.dumps(result,sort_keys=True,separators=(",",":")))
 def audit_host(*, runner=subprocess.run):
     try:
         proc = runner(["docker", "exec", "porota_production_dashboard", "python", "-B", "-c", CHILD],
-                      capture_output=True, text=True, timeout=115, check=False)
+                      capture_output=True, text=True, timeout=150, check=False)
         data = json.loads(proc.stdout) if proc.returncode == 0 and len(proc.stdout) < 32768 else {}
         if data.get("schema") != SCHEMA or data.get("read_only") is not True:
             raise ValueError("INVALID_AUDIT_RECEIPT")
@@ -139,7 +177,7 @@ def audit_host(*, runner=subprocess.run):
         if not isinstance(incoming, list):
             raise ValueError("INVALID_ROUTES")
         for item in incoming:
-            if not isinstance(item, dict) or item.get("path") not in ROUTES:
+            if not isinstance(item, dict) or item.get("path") not in POSTCLOSE_ROUTES:
                 raise ValueError("INVALID_ROUTE")
             code = item.get("http")
             routes.append({"path": item["path"], "http": code if type(code) is int and 100 <= code <= 599 else None,
@@ -148,9 +186,12 @@ def audit_host(*, runner=subprocess.run):
                            "slow_2s": item.get("slow_2s") is True,
                            "projection_ms": item.get("projection_ms") if type(item.get("projection_ms")) is int and 0 <= item["projection_ms"] <= 60000 else None,
                            "read_queries": item.get("read_queries") if type(item.get("read_queries")) is int and 0 <= item["read_queries"] <= 1000 else None,
+                           "unverified_mentions": item.get("unverified_mentions") if type(item.get("unverified_mentions")) is int and 0 <= item["unverified_mentions"] <= 1000 else None,
                            "attention": item.get("attention") is True if item["path"] == "/" else None,
                            "error": item.get("error") if item.get("error") in {"BODY_LIMIT", "HTTP_UNAVAILABLE"} else None})
-        if tuple(row["path"] for row in routes) not in (ROUTES, ()):
+        scope = data.get("audit_scope")
+        expected = POSTCLOSE_ROUTES if scope == "POSTCLOSE_ALL" else ROUTES if scope == "MARKET_CRITICAL" else ()
+        if not expected or tuple(row["path"] for row in routes) not in (expected, ()):
             raise ValueError("INCOMPLETE_ROUTES")
         sources = []
         for item in data.get("sources", []):
@@ -165,7 +206,7 @@ def audit_host(*, runner=subprocess.run):
                 value = item.get(key)
                 safe[key] = value if type(value) is int and 0 <= value <= 365 * 86400 else None
             sources.append(safe)
-        complete = (len(routes) == len(ROUTES) and all(
+        complete = (len(routes) == len(expected) and all(
             row["http"] == 200 and row["nav"] and row["content"] and row["error"] is None
             for row in routes) and data.get("source_status") == "BOUNDED" and sources)
         status = ("ROUTES_DEGRADED" if any(row["slow_2s"] for row in routes) else "ROUTES_VERIFIED") if complete else "NO_VERIFICADO"
@@ -184,7 +225,7 @@ def audit_host(*, runner=subprocess.run):
             ms = item.get("elapsed_ms")
             balance_queries.append({"stage": item["stage"], "elapsed_ms": ms if type(ms) is int and 0 <= ms <= 60000 else None,
                                     "state": item.get("state") if item.get("state") in {"READ_OK", "READ_ERROR"} else "NO_VERIFICADO"})
-        return {"schema": SCHEMA, "read_only": True, "status": status,
+        return {"schema": SCHEMA, "read_only": True, "audit_scope": scope, "status": status,
                 "routes": routes, "sources": sources[:80], "profile": profile[:5], "balance_queries": balance_queries[:10],
                 "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
