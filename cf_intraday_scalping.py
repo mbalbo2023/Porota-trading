@@ -439,6 +439,8 @@ def init_schema(store):
           reason TEXT NOT NULL, economics_json TEXT NOT NULL,
           UNIQUE(symbol,asset_class,market,currency,settlement,evaluated_at));
         CREATE INDEX IF NOT EXISTS idx_scalping_candidates_at ON scalping_candidates(evaluated_at,id);
+        CREATE INDEX IF NOT EXISTS idx_shadow_candidate_evaluated_jd
+          ON scalping_candidates(julianday(evaluated_at),id);
         CREATE TABLE IF NOT EXISTS intraday_scalping_worker_state(
           id INTEGER PRIMARY KEY CHECK(id=1), heartbeat_at TEXT NOT NULL,
           state TEXT NOT NULL, cursor INTEGER NOT NULL, selected INTEGER NOT NULL,

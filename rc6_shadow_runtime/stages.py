@@ -9,6 +9,7 @@ from bq_exit_policy import PaperSessionPolicy
 from rc6_dynamic_universe.common import stamp
 from rc6_dynamic_universe.economics import shadow_economics
 from rc6_performance.costs import paper_fee_model
+from .read_contract import query_budget_seconds
 
 
 def enrich_pipeline(database, report, *, as_of):
@@ -18,7 +19,7 @@ def enrich_pipeline(database, report, *, as_of):
     c.row_factory = sqlite3.Row
     try:
         c.execute("PRAGMA query_only=ON")
-        end = time.monotonic() + .25
+        end = time.monotonic() + query_budget_seconds("stages")
         c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
         tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         risks = {}
@@ -35,17 +36,24 @@ def enrich_pipeline(database, report, *, as_of):
                     (at.isoformat(), (at - timedelta(seconds=120)).isoformat())):
                 key = tuple(row[n] for n in ("symbol", "asset_class", "market", "currency", "settlement"))
                 candidates.setdefault(key, dict(row))
-        books = {}
-        for row in c.execute("""SELECT * FROM market_snapshots
-                WHERE julianday(observed_at)<=julianday(?)
-                AND julianday(observed_at)>=julianday(?) ORDER BY id DESC LIMIT 2000""",
-                (at.isoformat(), (at - timedelta(seconds=120)).isoformat())):
-            key = tuple(row[n] for n in ("symbol", "asset_class", "market", "currency", "settlement"))
-            books.setdefault(key, dict(row))
         session_policy = PaperSessionPolicy()
         deadline = at.astimezone(TZ).replace(hour=session_policy.close_time.hour,
             minute=session_policy.close_time.minute, second=0, microsecond=0)
         deadline -= timedelta(minutes=session_policy.exit_minutes)
+        # Native books are used only for economics of signal-ready rows before
+        # the exit cutoff. Reading them after that point can exhaust the
+        # bounded SHADOW query budget without changing a single result.
+        needs_books = deadline > at and any(
+            row["pipeline"]["SIGNAL_READY"]
+            for plan in report["engines"].values() for row in plan["telemetry"])
+        books = {}
+        if needs_books:
+            for row in c.execute("""SELECT * FROM market_snapshots
+                    WHERE julianday(observed_at)<=julianday(?)
+                    AND julianday(observed_at)>=julianday(?) ORDER BY id DESC LIMIT 2000""",
+                    (at.isoformat(), (at - timedelta(seconds=120)).isoformat())):
+                key = tuple(row[n] for n in ("symbol", "asset_class", "market", "currency", "settlement"))
+                books.setdefault(key, dict(row))
         for engine, plan in report["engines"].items():
             for row in plan["telemetry"]:
                 key = tuple(row["identity"])
