@@ -18,7 +18,7 @@ concurrency:
 jobs:
   promote:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 110
     env:
       GH_TOKEN: ${{ github.token }}
       DO_HOST: ${{ secrets.DO_HOST }}
@@ -609,11 +609,17 @@ jobs:
           print("OPERATIONAL_SCOPE=ALL_CONTRACT_FAMILIES")
           PY
 
-          RUNTIME_CHECK="$(sudo -n timeout 120 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          # The scanner's fail-closed login cooldown is at least 900 seconds.
+          # A healthy PAPER heartbeat in COOLDOWN may recover without changing
+          # order authority; keep a bounded wait rather than failing at 90s.
+          RUNTIME_CHECK="$(sudo -n timeout 1260 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
           import sqlite3,sys,time
           from datetime import datetime,timezone
           path=sys.argv[1]
-          deadline=time.monotonic()+90
+          started=time.monotonic()
+          startup_deadline=started+90
+          COOLDOWN_GO_SECONDS=1200
+          cooldown_deadline=started+COOLDOWN_GO_SECONDS
           last=None
           def fresh(value,seconds):
               try:
@@ -621,7 +627,7 @@ jobs:
                   return observed.tzinfo is not None and 0 <= (datetime.now(timezone.utc)-observed.astimezone(timezone.utc)).total_seconds() <= seconds
               except (TypeError,ValueError):
                   return False
-          while time.monotonic() < deadline:
+          while time.monotonic() < cooldown_deadline:
               try:
                   c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=3)
                   c.execute('PRAGMA query_only=ON')
@@ -632,16 +638,20 @@ jobs:
                   c.close()
               except sqlite3.Error:
                   last=None
-              paper=last and last[0]=='PRODUCTION_PAPER' and int(last[1] or 0)==0 and last[2]=='OK'
+              paper=bool(last and last[0]=='PRODUCTION_PAPER' and int(last[1] or 0)==0)
               heartbeat=paper and fresh(last[6],120)
               market_required=bool(last and last[4]=='MARKET_OPEN')
               market_fresh=(not market_required) or fresh(last[5],300)
-              if paper and heartbeat and market_fresh:
+              if paper and last[2]=='OK' and heartbeat and market_fresh:
                   print('GO_CHECK=GREEN|'+'|'.join(map(str,last))+f'|MARKET_DATA_REQUIRED={market_required}')
                   break
+              if time.monotonic() >= startup_deadline and not (
+                      paper and heartbeat and last[2]=='COOLDOWN'):
+                  print(f'GO_CHECK_FAILED_AFTER_STARTUP={last}')
+                  raise SystemExit(1)
               time.sleep(5)
           else:
-              print(f'GO_CHECK_FAILED_AFTER_STARTUP={last}')
+              print(f'GO_CHECK_FAILED_AFTER_COOLDOWN={last}')
               raise SystemExit(1)
           PY
           )"
