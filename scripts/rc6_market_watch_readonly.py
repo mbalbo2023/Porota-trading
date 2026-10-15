@@ -573,7 +573,7 @@ def shadow_diagnostic_host():
     The host never emits Docker stderr, exception messages, paths or SQL. A
     subprocess timeout bounds the entire container probe independently of SSH.
     """
-    child = '''import json, os, sqlite3, time
+    child = '''import json, os, re, sqlite3, time
 from datetime import datetime, timezone
 from pathlib import Path
 at=datetime.now(timezone.utc)
@@ -641,6 +641,21 @@ try:
  result["query_stages"]=measurements
  result["query_budget_ms"]=2000
  result["observation_source_limit_with_sentinel"]=observation_limit
+ # A committed failure can be stale even while the observer heartbeat moves.
+ # Inspect only the isolated child process state, never argv, env or stacks.
+ workers=[]
+ for process in Path("/proc").iterdir():
+  if not process.name.isdecimal(): continue
+  try:
+   argv=(process/"cmdline").read_bytes()[:4096].split(b"\\0")
+   if b"--dynamic-shadow-worker" not in argv: continue
+   state=(process/"stat").read_text().split(") ",1)[1].split()[0]
+   wchan=(process/"wchan").read_text().strip()
+   workers.append({"state":state if state in "RSDTZI" else "UNKNOWN",
+                   "wchan":wchan if re.fullmatch(r"[A-Za-z0-9_]{1,64}",wchan) else "UNKNOWN"})
+  except (OSError,IndexError): continue
+ result["shadow_worker_process_count"]=min(10,len(workers))
+ result["shadow_worker_processes"]=workers[:3]
  try: result["wal_bytes"]=db.with_name(db.name+"-wal").stat().st_size
  except OSError: result["wal_bytes"]=None
 except Exception as exc: result["setup_error_class"]=type(exc).__name__
