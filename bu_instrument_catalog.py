@@ -589,19 +589,43 @@ def sync_candidate_universe(connection, checked_at, *,
         return
     if not 1 <= bounded_batch <= 128 or connection.in_transaction:
         raise ValueError("BOUNDED_CANDIDATE_REBUILD_REQUIRES_IDLE_CONNECTION")
-    # Clear both gates together. A partial or interrupted rebuild stays closed
-    # for identities that have not been projected from the committed catalog.
-    connection.execute("BEGIN IMMEDIATE")
-    connection.execute("DELETE FROM candidate_universe")
-    connection.execute("DELETE FROM candidate_identity_v2")
-    connection.commit()
+    # Keep prior READY identities that remain verified. Only identities whose
+    # new projection is absent or blocked must close before publishing batches.
+    # This prevents a periodic refresh from showing a mostly empty universe to
+    # the dashboard while still failing closed for removed/stale identities.
+    desired_legacy = {(row[0], row[1], row[3]): row for row in projected}
+    desired_full = {tuple(row[:5]): row for row in full}
+    legacy_close = []
+    for ticker, family, market, ready in connection.execute(
+            "SELECT ticker,instrument_type,market,can_simulate FROM candidate_universe"):
+        key = (ticker, family, market)
+        if key not in desired_legacy or (ready and not desired_legacy[key][4]):
+            legacy_close.append(key)
+    full_close = []
+    for ticker, family, market, currency, settlement, ready in connection.execute(
+            "SELECT ticker,instrument_type,market,currency,settlement,can_simulate "
+            "FROM candidate_identity_v2"):
+        key = (ticker, family, market, currency, settlement)
+        if key not in desired_full or (ready and not desired_full[key][5]):
+            full_close.append(key)
+    for start in range(0, max(len(legacy_close), len(full_close)), bounded_batch):
+        connection.execute("BEGIN IMMEDIATE")
+        connection.executemany(
+            "DELETE FROM candidate_universe WHERE ticker=? AND instrument_type=? AND market=?",
+            legacy_close[start:start + bounded_batch])
+        connection.executemany(
+            "DELETE FROM candidate_identity_v2 WHERE ticker=? AND instrument_type=? "
+            "AND market=? AND currency=? AND settlement=?",
+            full_close[start:start + bounded_batch])
+        connection.commit()
+        time.sleep(.005)
     for start in range(0, max(len(projected), len(full)), bounded_batch):
         connection.execute("BEGIN IMMEDIATE")
         connection.executemany(
-            "INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
             projected[start:start + bounded_batch])
         connection.executemany(
-            "INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)",
             full[start:start + bounded_batch])
         connection.commit()
         # Give other PAPER writers a chance to claim the WAL between batches.

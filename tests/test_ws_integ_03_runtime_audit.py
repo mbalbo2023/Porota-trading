@@ -55,6 +55,35 @@ def test_runtime_audit_accepts_only_complete_paper_truth(monkeypatch):
     audit._assert_snapshot(_snapshot())
 
 
+def test_readiness_race_retries_exact_equality_and_persistent_mismatch_fails(
+        monkeypatch):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    stale = _snapshot()
+    stale["dashboard_truth"]["readiness"]["ready"] -= 1
+    good = _snapshot()
+    snapshots = iter([stale, good])
+    monkeypatch.setattr(audit, "collect", lambda _label: next(snapshots))
+    monkeypatch.setattr(audit.time, "sleep", lambda _seconds: None)
+    assert audit.consistent_snapshot("stability", attempts=2)["dashboard_truth"]["readiness"]["ready"] == good["database"]["readiness"]["ready"]
+    monkeypatch.setattr(audit, "collect", lambda _label: stale)
+    with pytest.raises(RuntimeError, match="DASHBOARD_READINESS_MISMATCH"):
+        audit.consistent_snapshot("stability", attempts=2, retry_seconds=0)
+
+
+def test_readiness_retry_never_delays_worker_safety_failure(monkeypatch):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    bad = _snapshot()
+    bad["database"]["workers"]["scalping"]["state"] = "ERROR"
+    called = []
+    monkeypatch.setattr(audit, "collect", lambda _label: called.append(1) or bad)
+    monkeypatch.setattr(audit.time, "sleep", lambda _seconds: pytest.fail("unsafe retry"))
+    with pytest.raises(RuntimeError, match="WORKER_STATE_UNHEALTHY"):
+        audit.consistent_snapshot("stability")
+    assert called == [1]
+
+
 def test_runtime_route_contract_tracks_frozen_terminal_manifest(monkeypatch):
     from scripts.rc6_dashboard_route_inventory import inventory
 

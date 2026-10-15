@@ -8,6 +8,7 @@ import os
 import re
 import sqlite3
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -435,6 +436,41 @@ def collect(label):
     }
 
 
+def consistent_snapshot(label, baseline=None, attempts=3, retry_seconds=5):
+    """Require exact dashboard/database equality after a bounded refresh.
+
+    The dashboard and the SQLite probe use separate read-only connections. A
+    batch commit between those reads can produce a transient mismatch. Retry
+    only that precise error; every safety/worker/route violation fails at once.
+    A persistent mismatch still fails closed.
+    """
+    for attempt in range(1, attempts + 1):
+        snapshot = collect(label)
+        print("POROTA_RUNTIME_AUDIT_WORKERS=" + json.dumps(
+            snapshot["database"]["workers"],
+            ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ), flush=True)
+        print("POROTA_RUNTIME_AUDIT_READINESS=" + json.dumps({
+            "database_ready": snapshot["database"]["readiness"]["ready"],
+            "database_by_family": snapshot["database"]["readiness"]["by_family"],
+            "dashboard_ready": snapshot["dashboard_truth"]["readiness"].get("ready"),
+            "dashboard_total": snapshot["dashboard_truth"]["readiness"].get("total"),
+            "dashboard_as_of": snapshot["dashboard_truth"]["readiness"].get("as_of"),
+        }, ensure_ascii=False, sort_keys=True, separators=(",", ":")), flush=True)
+        try:
+            _assert_snapshot(snapshot, baseline)
+        except RuntimeError as exc:
+            if (not str(exc).startswith("DASHBOARD_READINESS_MISMATCH|")
+                    or attempt == attempts):
+                raise
+            print(f"POROTA_RUNTIME_AUDIT_READINESS_RETRY={attempt}/{attempts}",
+                  flush=True)
+            time.sleep(retry_seconds)
+            continue
+        return snapshot
+    raise AssertionError("RUNTIME_AUDIT_UNREACHABLE")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--label", required=True)
@@ -442,19 +478,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     baseline = json.loads(args.baseline.read_text(encoding="utf-8")) if args.baseline else None
-    snapshot = collect(args.label)
-    print("POROTA_RUNTIME_AUDIT_WORKERS=" + json.dumps(
-        snapshot["database"]["workers"],
-        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-    ), flush=True)
-    print("POROTA_RUNTIME_AUDIT_READINESS=" + json.dumps({
-        "database_ready": snapshot["database"]["readiness"]["ready"],
-        "database_by_family": snapshot["database"]["readiness"]["by_family"],
-        "dashboard_ready": snapshot["dashboard_truth"]["readiness"].get("ready"),
-        "dashboard_total": snapshot["dashboard_truth"]["readiness"].get("total"),
-        "dashboard_as_of": snapshot["dashboard_truth"]["readiness"].get("as_of"),
-    }, ensure_ascii=False, sort_keys=True, separators=(",", ":")), flush=True)
-    _assert_snapshot(snapshot, baseline)
+    snapshot = consistent_snapshot(args.label, baseline)
     snapshot["status"] = "GREEN"
     args.output.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                            encoding="utf-8")
