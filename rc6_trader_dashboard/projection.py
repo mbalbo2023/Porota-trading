@@ -646,9 +646,10 @@ class Projection:
                                  "lkg": observed.get("last_success_at"), "scope": "IOL source_sync",
                                  "source": "source_sync", "detail": "Captura observada; autoridad PPI primaria."})
         if page.total == 0 or page.total is None:
-            page.rows += [{"component": label, "role": role, "state": UNKNOWN, "scope": label,
-                           "source": "api_health", "freshness": UNKNOWN} for label, role in (
-                ("PPI", "PRIMARY"), ("BYMA public", "OBSERVE_ONLY"), ("A3 / ROFEX", "OBSERVE_ONLY"))]
+            if self.offset == 0:
+                page.rows += [{"component": label, "role": role, "state": UNKNOWN, "scope": label,
+                               "source": "api_health", "freshness": UNKNOWN} for label, role in (
+                    ("PPI", "PRIMARY"), ("BYMA public", "OBSERVE_ONLY"), ("A3 / ROFEX", "OBSERVE_ONLY"))]
             page.total = None
             page.state = UNKNOWN
         else:

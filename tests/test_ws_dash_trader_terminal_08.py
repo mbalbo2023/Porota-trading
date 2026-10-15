@@ -468,6 +468,15 @@ def test_detail_names_unique_and_keys_survive_metric_change():
         assert dialog and dialog.name == "dialog" and dialog["aria-labelledby"]
 
 
+def test_scalar_diagnostic_secrets_and_invalid_amounts_do_not_leak():
+    sample = Page("fixture", [{"component": "IOL", "detail": "authorization=example-private-value",
+                               "amount": "not-a-number"}], 1, "AVAILABLE")
+    html = table(sample, "Reader", fields("component|Fuente;amount|Monto|money"), fields("detail|Diagnóstico"))
+    assert "example-private-value" not in html
+    assert "[REDACTED] sensitive detail" in html
+    assert "not-a-number" not in html and "NO_VERIFICADO" in html
+
+
 def test_cauciones_have_visible_navigation_and_separate_paper_decisions(client):
     placements = client.get("/trading/cauciones")
     assert placements.status_code == 200

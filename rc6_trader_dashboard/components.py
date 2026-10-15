@@ -29,6 +29,8 @@ def sanitized(value, depth=0):
         return {str(k): "[REDACTED]" if re.search(r"(?i)(token|secret|password|passwd|cookie|authorization|api.?key|account.?id|account.?number|cbu|cuit)", str(k)) else sanitized(v, depth + 1) for k, v in list(value.items())[:128]}
     if isinstance(value, (list, tuple)):
         return [sanitized(v, depth + 1) for v in value[:100]]
+    if isinstance(value, str) and re.search(r"(?i)\b(authorization|bearer|token|api[_-]?key|secret|password|passwd|cookie|account[_-]?(?:id|number)|cbu|cuit)\b", value):
+        return "[REDACTED] sensitive detail"
     return value
 
 
@@ -41,7 +43,7 @@ def number(value, decimals=2):
             return UNKNOWN
         return f"{result:,.{decimals}f}".replace(",", "_").replace(".", ",").replace("_", ".")
     except (InvalidOperation, ValueError):
-        return str(value)
+        return UNKNOWN
 
 
 def clock(value):
@@ -101,7 +103,7 @@ def value_html(row, field):
         return "Sí" if value else "No"
     if isinstance(value, (list, dict)):
         return e(json.dumps(sanitized(value), ensure_ascii=False, sort_keys=True, default=str)[:4096])
-    return e(str(value)[:4096])
+    return e(str(sanitized(value))[:4096])
 
 
 IDENTITY = fields("symbol|Ticker;family|Familia;market|Mercado;currency|Moneda;settlement|Settlement")
