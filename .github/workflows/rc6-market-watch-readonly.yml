@@ -301,8 +301,34 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import json
+          import json,re
           data=json.load(open('evidence/decision.json', encoding='utf-8'))
+          snap=json.load(open('evidence/snapshot.json', encoding='utf-8'))
+          findings=snap.get('findings')
+          codes=sorted({code for row in (findings if isinstance(findings,list) else [])
+              if isinstance(row,dict) for code in [row.get('code')]
+              if type(code) is str and re.fullmatch(r'[A-Za-z0-9_:]{1,100}',code)})
+          shadow=snap.get('shadow') if isinstance(snap.get('shadow'),dict) else {}
+          context={}
+          for key,allowed in {
+              'status': {'FAIL_CLOSED','SHADOW_OBSERVING','PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION'},
+              'error_class': {'OperationalError','ValueError','EvidencePayloadLimit'},
+              'error_module': {'runtime','worker','preopen','promotion','stages','families',
+                               'lab','entry_signals','funnel','source_reads','read_contract',
+                               'persistence','snapshot','common','live'},
+              'evidence_file': {'latest.json.gz','checkpoint.json.gz','status.json','preopen','other'},
+          }.items():
+              if type(shadow.get(key)) is str and shadow[key] in allowed:
+                  context[key]=shadow[key]
+          for key in ('error_line','evidence_measured_bytes','evidence_limit_bytes'):
+              value=shadow.get(key)
+              if type(value) is int and 0 <= value <= 2*1024**3:
+                  context[key]=value
+          label=shadow.get('sqlite_errorname')
+          if type(label) is str and re.fullmatch(r'SQLITE_[A-Z0-9_]{1,40}',label):
+              context['sqlite_errorname']=label
+          print('RC6_MONITOR_SAFE_FINDINGS='+','.join(codes))
+          print('RC6_MONITOR_SAFE_SHADOW='+json.dumps(context,sort_keys=True,separators=(',',':')))
           if data['confirmed']:
               print('::error::RC6 Market Watch incident: '+', '.join(data['confirmed']))
               raise SystemExit(2)
