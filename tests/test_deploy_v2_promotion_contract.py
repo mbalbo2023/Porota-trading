@@ -76,7 +76,7 @@ def test_deploy_v2_recovers_dashboard_after_contract_memory_peak():
 def test_deploy_v2_reads_runtime_state_host_readonly():
     assert 'POST_STATE_HOST_READONLY_ATTEMPT=' in PROMOTE
     assert 'python3 - "$REPO/data/paper_v17/observer_v17.db"' in PROMOTE
-    assert 'RUNTIME_CHECK="$(sudo -n timeout 120 python3 - "$REPO/data/paper_v17/observer_v17.db"' in PROMOTE
+    assert 'RUNTIME_CHECK="$(sudo -n timeout 1260 python3 - "$REPO/data/paper_v17/observer_v17.db"' in PROMOTE
     assert 'OPERATIONAL_SCOPE=ALL_CONTRACT_FAMILIES' in PROMOTE
 
 
