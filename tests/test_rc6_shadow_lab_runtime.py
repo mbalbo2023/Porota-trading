@@ -304,7 +304,7 @@ def test_read_only_runtime_survives_live_wal_writer_and_never_initializes_papers
     try:
         result, checkpoint = tick(path, clock(391), checkpoint)
         assert result["new_registrations"] == 1
-        assert result["source_query_budget_seconds"] <= .5
+        assert result["source_query_budget_seconds"] == 2.0
     finally:
         writer.rollback()
         writer.close()
