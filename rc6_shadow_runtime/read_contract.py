@@ -24,7 +24,7 @@ class SourceReadContract:
     verification_budget_seconds: float = 1.5
     runtime_query_seconds: float = .5
     metadata_query_seconds: float = .15
-    stages_query_seconds: float = .25
+    stages_query_seconds: float = 1.0
     families_query_seconds: float = .5
     lab_query_seconds: float = .25
     entry_signals_query_seconds: float = .25
