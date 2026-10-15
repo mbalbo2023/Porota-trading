@@ -573,31 +573,18 @@ def shadow_diagnostic_host():
     The host never emits Docker stderr, exception messages, paths or SQL. A
     subprocess timeout bounds the entire container probe independently of SSH.
     """
-    child = '''import json, os, sqlite3, time, traceback
+    child = '''import json, os, sqlite3, time
 from datetime import datetime, timezone
 from pathlib import Path
 at=datetime.now(timezone.utc)
 db=Path(os.getenv("PAPER_V17_DB_PATH", "/app/data/paper_v17/observer_v17.db"))
 result={"schema":"rc6.shadow-readonly-diagnostic.v1","generated_at":at.isoformat(),"read_only":True,"stages":[]}
 try:
- from rc6_dynamic_universe.runtime import read_runtime
- from rc6_shadow_runtime.worker import ShadowRuntime
- stages=(("RUNTIME_INPUT",lambda:read_runtime(db,as_of=at,row_limit=20000,query_budget_seconds=1.5)),("METADATA",lambda:ShadowRuntime._metadata(type("ReadOnlyShadow",(),{"database":db.resolve(strict=True)})(),at,at.isoformat())))
- for name,fn in stages:
-  start=time.monotonic()
-  try:
-   fn(); stage={"stage":name,"status":"OK"}
-  except Exception as exc:
-   stage={"stage":name,"status":"FAIL_CLOSED","error_class":type(exc).__name__}
-   if isinstance(exc,sqlite3.Error):
-    code=getattr(exc,"sqlite_errorcode",None); label=getattr(exc,"sqlite_errorname",None)
-    if type(code) is int: stage["sqlite_errorcode"]=code
-    if isinstance(label,str) and label.startswith("SQLITE_"): stage["sqlite_errorname"]=label[:48]
-   locations=[frame.lineno for frame in traceback.extract_tb(exc.__traceback__)
-              if frame.filename.endswith("/rc6_dynamic_universe/runtime.py")]
-   if name=="RUNTIME_INPUT" and locations: stage["runtime_line"]=locations[-1]
-  stage["elapsed_ms"]=round((time.monotonic()-start)*1000,3)
-  result["stages"].append(stage)
+ # The prior probe first executed the entire 1.5-second runtime read and
+ # then a second 2-second timing pass. Under live load it exceeded the
+ # independent 9-second container guard before producing stage evidence.
+ # This isolated mode measures the exact SQL stages only once.
+ result["stages"]=[{"stage":"RUNTIME_INPUT","status":"NOT_RUN_STAGE_ONLY"}]
  plans={}
  queries=(
   ("CATALOG_READY", "SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER%' ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?", (20001,)),

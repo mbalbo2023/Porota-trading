@@ -164,6 +164,20 @@ ZIP retrieval, keeps GH_TOKEN out of argv/output, and verifies the returned
 ZIP digest before trusting either JSON member. A fresh live artifact must
 confirm the result; this change alone does not claim Telegram delivery.
 
+The push diagnostic in run 38771011936 returned CONTAINER_PROBE_TIMEOUT.
+Its implementation performed a full `read_runtime` probe before a second
+per-query timing pass. The manual diagnostic now executes only the latter
+bounded read-only pass, explicitly marks the full runtime read as NOT_RUN,
+and remains absent from normal push/schedule runs. An actual manual artifact
+is required before treating any timing or plan as measured live evidence.
+
+Monitor confirmation is now VALIDADO: run 38772145395, artifact 11991412859
+SHA256 5b9cc43952922e52c924af1e6b790fe93ec77f04c4feaa7c000e75bccf1b482a
+compared prior artifact 11992266292 (same product SHA, 3m21s earlier),
+confirmed DYNAMIC_SHADOW_FAIL_CLOSED P1 and recorded Telegram SENT with
+message_id 928. The Action correctly failed its incident gate. This proves
+alert delivery, not SHADOW recovery.
+
 ## Controls and continuity
 
 - All changes via isolated branch and PR into main; no direct writes.
