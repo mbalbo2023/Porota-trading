@@ -329,6 +329,28 @@ jobs:
               context['sqlite_errorname']=label
           print('RC6_MONITOR_SAFE_FINDINGS='+','.join(codes))
           print('RC6_MONITOR_SAFE_SHADOW='+json.dumps(context,sort_keys=True,separators=(',',':')))
+          ops=snap.get('sqlite_ops') if isinstance(snap.get('sqlite_ops'),dict) else {}
+          safe_ops={}
+          for key in ('DAILY_BACKUP','HISTORY_BACKUP','SRE_SNAPSHOT','latest_backup','candle_worker'):
+              item=ops.get(key)
+              if not isinstance(item,dict):
+                  continue
+              safe={}
+              for field in ('last_run_at','created_at','heartbeat_at'):
+                  value=item.get(field)
+                  if type(value) is str and re.fullmatch(r'20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:[.+-][0-9:]+)?',value):
+                      safe[field]=value
+              state=item.get('state')
+              if type(state) is str and re.fullmatch(r'[A-Za-zÁÉÍÓÚáéíóú_]{1,32}',state):
+                  safe['state']=state
+              if key=='latest_backup' and item.get('kind') in ('DAILY','HISTORY'):
+                  safe['kind']=item['kind']
+              for field in ('size_bytes','cursor'):
+                  value=item.get(field)
+                  if type(value) is int and 0 <= value <= 2**53:
+                      safe[field]=value
+              safe_ops[key]=safe
+          print('RC6_MONITOR_SAFE_SQLITE_OPS='+json.dumps(safe_ops,sort_keys=True,separators=(',',':')))
           try:
               recent=json.load(open('evidence/recent_critical.json', encoding='utf-8'))
           except (OSError,ValueError):

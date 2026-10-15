@@ -198,6 +198,29 @@ def _db_snapshot(path):
                 cursors[name] = int(row[0]) if row else 0
             except sqlite3.Error:
                 cursors[name] = None
+        sqlite_ops = {}
+        if "operational_jobs" in tables:
+            try:
+                for row in db.execute("SELECT job_key,last_run_at,state FROM operational_jobs "
+                        "WHERE job_key IN ('DAILY_BACKUP','HISTORY_BACKUP','SRE_SNAPSHOT')"):
+                    sqlite_ops[row["job_key"]] = {"last_run_at": row["last_run_at"], "state": row["state"]}
+            except sqlite3.Error:
+                sqlite_ops["query"] = "UNAVAILABLE"
+        if "backup_runs" in tables:
+            try:
+                row = db.execute("SELECT created_at,kind,state,size_bytes FROM backup_runs "
+                                 "ORDER BY id DESC LIMIT 1").fetchone()
+                if row:
+                    sqlite_ops["latest_backup"] = dict(row)
+            except sqlite3.Error:
+                sqlite_ops["backup_query"] = "UNAVAILABLE"
+        if "candle_worker_state" in tables:
+            try:
+                row = db.execute("SELECT cursor,heartbeat_at,state FROM candle_worker_state WHERE id=1").fetchone()
+                if row:
+                    sqlite_ops["candle_worker"] = dict(row)
+            except sqlite3.Error:
+                sqlite_ops["candle_query"] = "UNAVAILABLE"
         readiness = None
         if "candidate_identity_v2" in tables:
             try:
@@ -209,7 +232,7 @@ def _db_snapshot(path):
             except sqlite3.Error:
                 pass
         return {"observer": observer, "workers": workers,
-                "cursors": cursors, "readiness": readiness}
+                "cursors": cursors, "readiness": readiness, "sqlite_ops": sqlite_ops}
 
 
 def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
