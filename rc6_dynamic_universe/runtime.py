@@ -5,6 +5,12 @@ from time import monotonic
 from .common import identity, stamp
 
 
+# The catalogue needs its full safety bound. Observation sources can carry
+# tens of thousands of same-day rows, while only the latest bounded slice is
+# used for SHADOW. A source cap reserves time for the following SQLite stages.
+OBSERVATION_SOURCE_CAP = 3000
+
+
 def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
                  diagnostics=None):
     """No schema/init/writer, history ingestion, provider calls or broker creation.
@@ -15,6 +21,7 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
     at = stamp(as_of)
     if not 1 <= row_limit <= 50000 or not 0 < query_budget_seconds <= 2:
         raise ValueError("INVALID_READ_BUDGET")
+    observation_limit = min(row_limit, OBSERVATION_SOURCE_CAP)
     path = Path(database).resolve(strict=True)
     connection = sqlite3.connect(path.as_uri()+"?mode=ro", uri=True, timeout=.005)
     connection.row_factory = sqlite3.Row
@@ -94,7 +101,7 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
                   AND julianday(first_received_at)<=julianday(?)
                   AND julianday(last_verified_at)<=julianday(?)
                 ORDER BY julianday(event_at) DESC LIMIT ?""", (at.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(),
-                                                    at.isoformat(), at.isoformat(), at.isoformat(), row_limit+1))
+                                                    at.isoformat(), at.isoformat(), at.isoformat(), observation_limit+1))
         if "market_snapshots" in tables:
             snapshot_rows = read_rows("MARKET_SNAPSHOTS", """SELECT symbol,asset_class,market,currency,settlement,
                 last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size,last_kind FROM market_snapshots NOT INDEXED
@@ -107,7 +114,7 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
                     at.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(),
                     at.isoformat(),
                     at.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(),
-                    row_limit+1))
+                    observation_limit+1))
         connection.rollback()
         if diagnostics is not None:
             diagnostics["sql_elapsed_ms"] = round((monotonic() - (deadline-query_budget_seconds))*1000, 3)
@@ -146,7 +153,7 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
                     confirmed = False
                 contracts[k] = confirmed
                 transform_guard("INTRADAY_CONTRACTS")
-            for r in intraday_rows[:row_limit]:
+            for r in intraday_rows[:observation_limit]:
                 key = tuple(r[k] for k in ("symbol", "asset_class", "market", "currency", "settlement"))
                 observations.append({"identity": key, "source_at": r["event_at"],
                     "received_at": r["last_verified_at"], "source": r["source"], "useful": True,
@@ -155,11 +162,11 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
                     "volume_semantics": "INTERVAL_VOLUME" if contracts.get(key, False) else "NO_VERIFICADO",
                     "volume_unit": "NO_VERIFICADO", "entry_authority": False})
                 transform_guard("INTRADAY_POINTS")
-            truncated = len(intraday_rows) > row_limit
+            truncated = len(intraday_rows) > observation_limit
         else:
             truncated = False
         if "market_snapshots" in tables:
-            for r in snapshot_rows[:row_limit]:
+            for r in snapshot_rows[:observation_limit]:
                 if not r["trade_at"] or not r["book_at"]:
                     continue
                 try:
@@ -179,7 +186,7 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
                         (float(r["ask"])/float(r["bid"])-1)*10000} if book_fresh else {})},
                     "entry_authority": False})
                 transform_guard("MARKET_SNAPSHOTS")
-            truncated |= len(snapshot_rows) > row_limit
+            truncated |= len(snapshot_rows) > observation_limit
         transform_guard("COMPLETE")
         if diagnostics is not None:
             diagnostics["transform_elapsed_ms"] = round((monotonic()-transform_started)*1000, 3)
