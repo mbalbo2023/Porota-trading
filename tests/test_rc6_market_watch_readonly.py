@@ -439,11 +439,14 @@ class MonitorContracts(unittest.TestCase):
 
     def test_host_diagnostic_uses_bounded_container_read_and_redacts_stderr(self):
         payload = {"schema": "rc6.shadow-readonly-diagnostic.v1", "read_only": True,
-                   "stages": [{"stage": "RUNTIME_INPUT", "status": "OK"}]}
+                   "stages": [{"stage": "RUNTIME_INPUT", "status": "OK"}],
+                   "shadow_worker_process_count": 1,
+                   "shadow_worker_processes": [{"state": "S", "wchan": "futex_wait_queue"}]}
         with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
                 [], 0, stdout=json.dumps(payload), stderr="secret")) as run:
             result = monitor.shadow_diagnostic_host()
             self.assertEqual(result["stages"], payload["stages"])
+            self.assertEqual(result["shadow_worker_processes"], payload["shadow_worker_processes"])
         args, options = run.call_args_list[0]
         self.assertEqual(args[0][:4], ["docker", "exec", "porota_production_observer", "python"])
         self.assertEqual(options["timeout"], 9)
@@ -454,6 +457,8 @@ class MonitorContracts(unittest.TestCase):
         self.assertIn('result["query_stages"]', args[0][-1])
         self.assertIn('observation_limit=3001', args[0][-1])
         self.assertIn('result["observation_source_limit_with_sentinel"]', args[0][-1])
+        self.assertIn('b"--dynamic-shadow-worker" not in argv', args[0][-1])
+        self.assertIn('result["shadow_worker_process_count"]', args[0][-1])
         self.assertIn('c.set_progress_handler(expired,1000)', args[0][-1])
         self.assertNotIn('read_runtime(db,as_of=at', args[0][-1])
         self.assertIn('NOT_RUN_STAGE_ONLY', args[0][-1])
