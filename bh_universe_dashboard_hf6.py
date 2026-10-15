@@ -640,7 +640,7 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         f"<td>{bg._status(r.get('status'))}</td>"
         f"<td>{bg._locale_number(r.get('quantity'))}</td>"
         f"<td>{bg._amount(r.get('entry_price'), r.get('currency'))}</td>"
-        f"<td>{bg._amount(r.get('net_pnl'), r.get('currency'))}</td>"
+        f"<td>{bg._result_amount(r.get('net_pnl'), r.get('currency'))}</td>"
         f"<td>{bg._e(r.get('close_reason'))}</td>"
         f"<td>{bg._e(r.get('strategy_version'))}</td>"
         "</tr>"
