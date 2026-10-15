@@ -371,6 +371,7 @@ def test_durable_shadow_projection_bounds_large_derived_inventories(tmp_path):
     view = durable_report_view(report, catalog_ready_count=2)
     assert view["engines"]["SCALPING"]["telemetry"] == [chosen]
     assert view["engines"]["SCALPING"]["telemetry_total"] == 2
+    assert view["family_routing"]["instruments_scope"] == "FULL_COMPUTED_AUDIT"
     assert len(json.dumps(view)) < 10_000
     checkpoint = {"as_of": OPEN.isoformat(), "catalog_ready": ["x" * 2_000_000],
                   "engines": {"SCALPING": {"configuration_fingerprint": "config",

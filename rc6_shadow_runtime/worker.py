@@ -67,6 +67,37 @@ def _json_input(path, *, limit=8 * 1024**2):
     return json.loads(raw)
 
 
+def _fits_hot_report(value, limit_bytes=1024**2):
+    size = 0
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
+                               default=str, allow_nan=False)
+    for fragment in encoder.iterencode(value):
+        size += len(fragment.encode())
+        if size > limit_bytes:
+            return False
+    return True
+
+
+def _durable_family_routing(report):
+    if _fits_hot_report(report):
+        return report
+    authority = report.get("source_authority") or {}
+    return {
+        "schema": report.get("schema"), "as_of": report.get("as_of"),
+        "status": report.get("status"), "catalog_count": report.get("catalog_count"),
+        "catalog_preserved": report.get("catalog_preserved"),
+        "instruments_scope": "FULL_COMPUTED_AUDIT",
+        "instruments_total": len(report.get("instruments", [])),
+        "families": [{"family": row.get("family"), "catalog_count": row.get("catalog_count"),
+                      "status": row.get("status"), "entry_authority": row.get("entry_authority")}
+                     for row in report.get("families", [])],
+        "source_authority": {key: authority.get(key) for key in (
+            "policy_version", "identity_primary", "identity_complement_policy",
+            "catalog_identity_mutated", "iol_runtime_contract",
+            "byma_runtime_contract", "byma_api")},
+    }
+
+
 def durable_report_view(report, *, catalog_ready_count):
     """Persist a bounded selection contract; preserve full in-memory evaluation.
 
@@ -79,7 +110,7 @@ def durable_report_view(report, *, catalog_ready_count):
             "production_limits_modified", "factual_execution", "real_orders_sent",
             "real_routes", "ppi_watch", "source_identity", "runtime_configuration",
             "capacity_policy", "checkpoint_reused", "preopen_immutable",
-            "preopen_file", "capacity_open_status", "observation_execution",
+            "preopen_file", "preopen_quality", "capacity_open_status", "observation_execution",
             "active_paper_scanner_authority", "catalog_ready_count")
     view = {key: report[key] for key in base if key in report}
     view["catalog_ready_count"] = catalog_ready_count
@@ -100,6 +131,8 @@ def durable_report_view(report, *, catalog_ready_count):
             "telemetry_total": len(plan["telemetry"]),
             "discovery": plan.get("discovery", {}),
         }
+    if "family_routing" in report:
+        view["family_routing"] = _durable_family_routing(report["family_routing"])
     view["section_status"] = {key: report[key].get("status")
         for key in ("economic_exit_lab", "entry_signal_lab", "operational_funnel")
         if isinstance(report.get(key), dict)}
