@@ -37,15 +37,19 @@ def render(p, destination, tab):
     if tab == "evidencia":
         cut = p.shadow
         pointer, manifest = cut.get("pointer", {}), cut.get("manifest", {})
+        quality = cut["report"].get("input_quality", {})
+        truncated = quality.get("observation_read_truncated") if isinstance(quality, dict) else None
         row = {"state": cut["state"], "reason": cut["reason"], "generation_id": pointer.get("generation_id"),
                "sequence": pointer.get("sequence"), "manifest_digest": pointer.get("manifest_sha256"),
                "source_watermark": manifest.get("source_watermark"), "configuration_fingerprint": manifest.get("configuration_fingerprint"),
                "members": manifest.get("files"), "retention": cut["report"].get("evidence_retention"),
-               "preopen_digest": cut["report"].get("preopen_file"), "as_of": cut["report"].get("as_of")}
+               "preopen_digest": cut["report"].get("preopen_file"), "as_of": cut["report"].get("as_of"),
+               "observation_coverage": ("COBERTURA_PARCIAL" if truncated is True else
+                                        "SCOPE_COMPLETO" if truncated is False else "NO_VERIFICADO")}
         return (notice("Sólo CURRENT.json y su generación comprometida/coherente. El adapter requiere el reader canónico de #466; latest/checkpoint/status independientes no son autoridad.") +
                 "<section class='panel'><h2>Integridad de generación SHADOW</h2>" + definition_list(row, fields(
                     "state|Estado de verificación|status;as_of|Watermark as_of|time;reason|Motivo"))
-                + detail(row, fields("generation_id|Generation ID;sequence|Sequence|number;manifest_digest|Manifest digest;source_watermark|Source watermark;configuration_fingerprint|Configuration fingerprint;members|Report / checkpoint / status cross hashes;retention|Retención / pins / ACK;preopen_digest|Preopen freeze"), "sistema-evidencia", 1)
+                + detail(row, fields("observation_coverage|Cobertura de observaciones SHADOW|status;generation_id|Generation ID;sequence|Sequence|number;manifest_digest|Manifest digest;source_watermark|Source watermark;configuration_fingerprint|Configuration fingerprint;members|Report / checkpoint / status cross hashes;retention|Retención / pins / ACK;preopen_digest|Preopen freeze"), "sistema-evidencia", 1)
                 + "</section>")
     if tab == "backups":
         return render_table(p, destination, tab, artifact(p, "backups"), "Backups & protected stores",

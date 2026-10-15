@@ -119,7 +119,9 @@ jobs:
           collection = Path('/tmp/porota-test-collection.txt').read_text(encoding='utf-8')
           discovered = sum(int(n) for n in re.findall(r': (\d+)$', collection, re.MULTILINE))
           suite = ET.parse('/tmp/porota-governed-tests.xml').find('.//testsuite')
-          tests = int(suite.get('tests', 0))
+          # pytest's summary attribute can include extra phase reports; count
+          # actual executed testcase elements to compare with collection.
+          tests = len(suite.findall('testcase'))
           failures = int(suite.get('failures', 0))
           errors = int(suite.get('errors', 0))
           skipped_nodes = [node for node in suite.iter('skipped')]

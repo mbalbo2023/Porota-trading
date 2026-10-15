@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from rc6_dynamic_universe.runtime import read_runtime
+from rc6_dynamic_universe.runtime import OBSERVATION_SOURCE_CAP, read_runtime
 
 
 def test_full_day_under_concurrent_wal_updates():
@@ -72,8 +72,11 @@ def test_full_day_under_concurrent_wal_updates():
             stop.set()
             thread.join(timeout=2)
         assert len(result["full_catalog"]) == 14592
-        assert sum(o["endpoint"] == "intraday" for o in result["observations"]) == 11896
+        assert sum(o["endpoint"] == "intraday" for o in result["observations"]) == OBSERVATION_SOURCE_CAP
         assert sum(o["endpoint"] == "current" for o in result["observations"]) == 2244
+        assert result["observation_read_truncated"] is True
+        assert len(result["full_catalog"]) == 14592
+        assert len(result["catalog"]) == 14592
         assert all(o["fields"]["price"] != 999 for o in result["observations"])
         assert result["source_database_effect"] == "READ_ONLY"
         assert result["safety"]["real_orders_sent"] == 0
