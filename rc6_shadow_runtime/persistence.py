@@ -1,8 +1,10 @@
 """Exclusive bounded private files. Trading inputs are never writable outputs."""
 import fcntl
 import gzip
+import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 
@@ -119,3 +121,50 @@ class EvidenceFiles:
                     os.close(directory)
             finally:
                 tmp.unlink(missing_ok=True)
+
+    def write_streamed_report(self, payload, *, raw_limit=512 * 1024**2):
+        """Store canonical full audit separately from the bounded hot-path view."""
+        if self.lock is None:
+            raise ValueError("SHADOW_WRITER_LOCK_REQUIRED")
+        encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
+                                   default=str, allow_nan=False)
+        hasher = hashlib.sha256()
+        raw_bytes = 0
+        with tempfile.NamedTemporaryFile(dir=self.root, prefix=".computed-report.",
+                suffix=".tmp", delete=False) as stream:
+            tmp = Path(stream.name)
+            try:
+                with gzip.GzipFile(fileobj=stream, mode="wb", compresslevel=1, mtime=0) as zipped:
+                    for fragment in encoder.iterencode(payload):
+                        chunk = fragment.encode()
+                        raw_bytes += len(chunk)
+                        if raw_bytes > raw_limit:
+                            raise EvidencePayloadLimit("computed-report", raw_bytes, raw_limit)
+                        hasher.update(chunk)
+                        zipped.write(chunk)
+                stream.flush()
+                os.fsync(stream.fileno())
+                name = "computed-" + hasher.hexdigest() + ".json.gz"
+                target = self.path(name)
+                files = list(self.root.iterdir())
+                if len(files) > 512 or sum(p.lstat().st_size for p in files) > self.maximum_bytes:
+                    raise ValueError("SHADOW_EVIDENCE_CAPACITY_REACHED")
+                if not target.exists():
+                    tmp.replace(target)
+                    directory = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+                    try:
+                        os.fsync(directory)
+                    finally:
+                        os.close(directory)
+                return {"file": name, "sha256": hasher.hexdigest(),
+                        "raw_bytes": raw_bytes, "compressed_bytes": target.stat().st_size}
+            finally:
+                tmp.unlink(missing_ok=True)
+
+    def prune_computed_reports(self, *, keep):
+        """After the new view and status commit, remove superseded private audits."""
+        if self.lock is None or not re.fullmatch(r"computed-[a-f0-9]{64}\.json\.gz", keep):
+            raise ValueError("SHADOW_AUDIT_PRUNE_INVALID")
+        for target in self.root.glob("computed-*.json.gz"):
+            if target.name != keep and re.fullmatch(r"computed-[a-f0-9]{64}\.json\.gz", target.name):
+                self.path(target.name).unlink()

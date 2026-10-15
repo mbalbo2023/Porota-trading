@@ -67,6 +67,90 @@ def _json_input(path, *, limit=8 * 1024**2):
     return json.loads(raw)
 
 
+def _fits_hot_report(value, limit_bytes=1024**2):
+    size = 0
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
+                               default=str, allow_nan=False)
+    for fragment in encoder.iterencode(value):
+        size += len(fragment.encode())
+        if size > limit_bytes:
+            return False
+    return True
+
+
+def _durable_family_routing(report):
+    if _fits_hot_report(report):
+        return report
+    authority = report.get("source_authority") or {}
+    return {
+        "schema": report.get("schema"), "as_of": report.get("as_of"),
+        "status": report.get("status"), "catalog_count": report.get("catalog_count"),
+        "catalog_preserved": report.get("catalog_preserved"),
+        "instruments_scope": "FULL_COMPUTED_AUDIT",
+        "instruments_total": len(report.get("instruments", [])),
+        "families": [{"family": row.get("family"), "catalog_count": row.get("catalog_count"),
+                      "status": row.get("status"), "entry_authority": row.get("entry_authority")}
+                     for row in report.get("families", [])],
+        "source_authority": {key: authority.get(key) for key in (
+            "policy_version", "identity_primary", "identity_complement_policy",
+            "catalog_identity_mutated", "iol_runtime_contract",
+            "byma_runtime_contract", "byma_api")},
+    }
+
+
+def durable_report_view(report, *, catalog_ready_count):
+    """Persist a bounded selection contract; preserve full in-memory evaluation.
+
+    Immutable preopen evidence and the causal checkpoint remain separate. The
+    full computed report is stored and fingerprinted separately; large derived
+    inventories are not repeated in the hot-path file.
+    """
+    base = ("schema", "mode", "as_of", "session", "phase", "status",
+            "source_database_effect", "provider_requests", "provider_additional_budget",
+            "production_limits_modified", "factual_execution", "real_orders_sent",
+            "real_routes", "ppi_watch", "source_identity", "runtime_configuration",
+            "capacity_policy", "checkpoint_reused", "preopen_immutable",
+            "preopen_file", "preopen_quality", "capacity_open_status", "observation_execution",
+            "active_paper_scanner_authority", "catalog_ready_count")
+    view = {key: report[key] for key in base if key in report}
+    view["catalog_ready_count"] = catalog_ready_count
+    view["engines"] = {}
+    for engine, plan in report["engines"].items():
+        needed = {tuple(key) for key in plan["selected"]}
+        needed.update(tuple(key) for key in plan.get("opened_priority", []))
+        rows = [row for row in plan["telemetry"]
+                if tuple(row["identity"]) in needed]
+        if {tuple(row["identity"]) for row in rows} != needed:
+            raise ValueError("SHADOW_SELECTED_TELEMETRY_INCOMPLETE")
+        view["engines"][engine] = {
+            "capacity": plan["capacity"],
+            "preopen_digest": plan["preopen_digest"],
+            "selected": plan["selected"],
+            "opened_priority": plan.get("opened_priority", []),
+            "telemetry": rows,
+            "telemetry_total": len(plan["telemetry"]),
+            "discovery": plan.get("discovery", {}),
+        }
+    if "family_routing" in report:
+        view["family_routing"] = _durable_family_routing(report["family_routing"])
+    view["section_status"] = {key: report[key].get("status")
+        for key in ("economic_exit_lab", "entry_signal_lab", "operational_funnel")
+        if isinstance(report.get(key), dict)}
+    return view
+
+
+def durable_checkpoint_view(checkpoint):
+    """Keep only causal state required by the next SHADOW tick."""
+    view = {key: value for key, value in checkpoint.items()
+            if key not in ("catalog_ready", "source_errors", "native_ppi_errors")}
+    if "engines" in view:
+        view["engines"] = {engine: {
+            key: plan[key] for key in ("configuration_fingerprint", "planned_at", "instruments")
+            if key in plan}
+            for engine, plan in checkpoint["engines"].items()}
+    return view
+
+
 class ShadowRuntime:
     def __init__(self, database, *, evidence_root=None, history_database=None,
                  source_roots=None, capacity_path=None, policies=None,
@@ -325,18 +409,24 @@ class ShadowRuntime:
                 exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"))
             # Never call a signal, economics or risk result as an execution
             # callback. These reports cannot reach the factual broker.
-            files.write("latest.json.gz", report)
-            files.write("checkpoint.json.gz", checkpoint)
+            durable = durable_report_view(report, catalog_ready_count=len(inputs["catalog"]))
+            causal = durable_checkpoint_view(checkpoint)
+            audit = files.write_streamed_report(report)
+            durable["computed_report"] = audit
+            files.write("latest.json.gz", durable)
+            files.write("checkpoint.json.gz", causal)
             status = {k: report[k] for k in ("schema", "as_of", "phase", "status", "mode",
                 "provider_requests", "real_orders_sent", "real_routes", "source_database_effect")}
             status.update(configuration_fingerprint=configuration,
                 preopen_digests={k: v["digest"] for k, v in (frozen or {}).get("frozen", {}).items()},
-                catalog_ready_count=len(inputs["catalog"]), report_digest=digest(report),
+                catalog_ready_count=len(inputs["catalog"]), report_digest=digest(durable),
+                computed_report_digest=audit["sha256"], report_projection="SELECTION_CONTRACT_V1",
                 provider_capacity_open="NO_VERIFICADO", ppi_watch="UNTOUCHED",
                 capacity_policy_status=capacity_policy["status"],
                 entry_signal_lab_status=report["entry_signal_lab"]["status"],
                 operational_funnel_status=report["operational_funnel"]["status"])
             files.write("status.json", status)
+            files.prune_computed_reports(keep=audit["file"])
             return report
 
 
