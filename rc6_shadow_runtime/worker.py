@@ -375,11 +375,25 @@ def run_worker(database, stop, *, clock_fn=None):
                             failure["sqlite_errorcode"] = code
                         if isinstance(label, str) and label.startswith("SQLITE_"):
                             failure["sqlite_errorname"] = label[:48]
+                    if isinstance(exc, (sqlite3.Error, ValueError)):
+                        # Only a reviewed source location is published. Never
+                        # persist exception text, SQL, paths or a traceback.
                         allowed = {
                             "rc6_dynamic_universe/runtime.py": "runtime",
                             "rc6_shadow_runtime/worker.py": "worker",
                             "rc6_shadow_runtime/preopen.py": "preopen",
                             "rc6_dynamic_universe/promotion.py": "promotion",
+                            "rc6_shadow_runtime/stages.py": "stages",
+                            "rc6_shadow_runtime/families.py": "families",
+                            "rc6_shadow_runtime/lab.py": "lab",
+                            "rc6_shadow_runtime/entry_signals.py": "entry_signals",
+                            "rc6_shadow_runtime/funnel.py": "funnel",
+                            "rc6_shadow_runtime/source_reads.py": "source_reads",
+                            "rc6_shadow_runtime/read_contract.py": "read_contract",
+                            "rc6_shadow_runtime/persistence.py": "persistence",
+                            "rc6_audit_evidence/sqlite_snapshot.py": "snapshot",
+                            "rc6_dynamic_universe/common.py": "common",
+                            "rc6_dynamic_universe/live.py": "live",
                         }
                         for frame, line in traceback.walk_tb(exc.__traceback__):
                             filename = frame.f_code.co_filename.replace("\\", "/")

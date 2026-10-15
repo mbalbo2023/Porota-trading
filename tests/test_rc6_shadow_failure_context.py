@@ -46,3 +46,22 @@ def test_shadow_sqlite_interrupt_stays_closed_with_bounded_location(tmp_path, mo
     assert status["error_module"] == "worker" and status["error_line"] > 0
     assert status["real_orders_sent"] == 0 and status["real_routes"] == "NOT_CALLED"
     assert "interrupted" not in str(status).lower()
+
+def test_shadow_value_error_records_only_allowlisted_site(tmp_path, monkeypatch):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    monkeypatch.setattr(shadow.os, "nice", lambda *_: None)
+
+    def fail(*_args, **_kwargs):
+        raise ValueError("private-token=DO_NOT_PUBLISH")
+
+    monkeypatch.setattr(shadow.ShadowRuntime, "tick", fail)
+    shadow.run_worker(store.path, OneTick(), clock_fn=lambda: "2026-10-15T01:00:00+00:00")
+    root = artifact_root(store.path) / "dynamic-shadow"
+    with EvidenceFiles(root) as files:
+        status = files.read("status.json")
+    assert status["status"] == "FAIL_CLOSED"
+    assert status["error_class"] == "ValueError"
+    assert status["error_module"] == "worker" and status["error_line"] > 0
+    assert status["real_orders_sent"] == 0 and status["real_routes"] == "NOT_CALLED"
+    assert "private-token" not in str(status).lower()
+    assert "DO_NOT_PUBLISH" not in str(status)
