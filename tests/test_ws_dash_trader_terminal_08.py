@@ -506,7 +506,7 @@ def test_equity_latest_index_migrates_existing_history_without_changing_currency
         rows = conn.execute(query).fetchall()
         plan = [row[3] for row in conn.execute("EXPLAIN QUERY PLAN " + query)]
         assert rows == [(3997, "ARS", "3996"), (3998, "USD", "3997"),
-                        (3999, "USD_MEP", "3998"), (4000, "USD_CCL", "3999")]
+                        (4000, "USD_CCL", "3999"), (3999, "USD_MEP", "3998")]
         assert any("USING COVERING INDEX idx_paper_equity_currency_latest" in line for line in plan)
         assert not any("USE TEMP B-TREE FOR GROUP BY" in line for line in plan)
     init_schema(ExistingStore())  # Idempotent on an existing PAPER history.
