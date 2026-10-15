@@ -42,7 +42,7 @@ def snapshot():
             "iol": {"allowed_states": sorted(audit.ALLOWED_IOL_STATES)},
         },
         "iol": {"cache_state": "CACHE_FRESH", "last_known_good_at": now},
-        "route_inventory": {"route_count": 102, "registered_paths": 100, "routes": []},
+        "route_inventory": {"route_count": 103, "registered_paths": 101, "routes": []},
         "route_matrix_matches_artifact": True,
         "http_status": {path: 200 for path in audit.CORE_GET_PATHS},
     }
