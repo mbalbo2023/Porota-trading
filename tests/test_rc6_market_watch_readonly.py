@@ -1,5 +1,7 @@
 """Adversarial offline contracts for the remote READ_ONLY RC6 market monitor."""
 import importlib.util
+import hashlib
+import io
 import json
 from pathlib import Path
 import sqlite3
@@ -8,6 +10,7 @@ import tempfile
 import sys
 import types
 import unittest
+import zipfile
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
 
@@ -301,6 +304,51 @@ class MonitorContracts(unittest.TestCase):
         failed = monitor.finalize_delivery(recovery, {"status": "FAILED"})
         self.assertEqual(failed["acknowledged_codes"], ["ENGINE_STALE"])
         assert monitor.prepare_alert(recovery)
+
+    def test_same_run_prior_attempt_confirms_p1_and_requires_telegram_ack(self):
+        prior = self.capture()
+        prior["generated_at"] = (NOW - timedelta(minutes=10)).isoformat()
+        prior["findings"] = [monitor.finding("DYNAMIC_SHADOW_FAIL_CLOSED", "P1")]
+        prior["severity"] = "P1"
+        earlier = monitor.classify(prior)
+        with io.BytesIO() as stream:
+            with zipfile.ZipFile(stream, "w") as archive:
+                archive.writestr("snapshot.json", json.dumps(prior))
+                archive.writestr("decision.json", json.dumps(earlier))
+            raw = stream.getvalue()
+        artifact = {"id": 123, "name": "rc6-market-watch-88", "expired": False,
+                    "size_in_bytes": len(raw), "digest": "sha256:" + hashlib.sha256(raw).hexdigest(),
+                    "created_at": prior["generated_at"], "workflow_run": {"id": 88}}
+        current = dict(prior, generated_at=NOW.isoformat())
+        calls = []
+        def get(url, _limit):
+            calls.append(url)
+            if url.endswith("/runs/88/artifacts?per_page=100"):
+                return json.dumps({"artifacts": [artifact]}).encode()
+            if "workflows/384354765/runs" in url:
+                return json.dumps({"workflow_runs": []}).encode()
+            if url.endswith("/artifacts/123/zip"):
+                return raw
+            self.fail("unexpected API request")
+        receipt = monitor.read_previous_artifact(current, "mbalbo2023/Porota-trading",
+            384354765, 88, self.root / "prior", get=get)
+        self.assertEqual(receipt["run_id"], 88)
+        self.assertEqual(receipt["artifact_sha256"], artifact["digest"])
+        self.assertTrue(any("runs/88/artifacts" in url for url in calls))
+        previous = json.loads((self.root / "prior/snapshot.json").read_text())
+        decision = monitor.classify(current, previous, earlier)
+        self.assertTrue(decision["previous_comparable"])
+        self.assertEqual(decision["new_alerts"], ["DYNAMIC_SHADOW_FAIL_CLOSED"])
+        self.assertEqual(monitor.finalize_delivery(decision, {"status": "UNVERIFIED"})[
+            "acknowledged_codes"], [])
+        self.assertEqual(monitor.finalize_delivery(decision, {"status": "SENT",
+            "message_id": "909"})["acknowledged_codes"], ["DYNAMIC_SHADOW_FAIL_CLOSED"])
+        corrupted = dict(artifact, digest="sha256:" + "0" * 64)
+        self.assertIsNone(monitor.verified_previous_zip(raw, corrupted, current))
+        wrong_sha = dict(current, expected_deploy_sha="d" * 40)
+        self.assertIsNone(monitor.verified_previous_zip(raw, artifact, wrong_sha))
+        stale = dict(current, generated_at=(NOW + timedelta(minutes=31)).isoformat())
+        self.assertIsNone(monitor.verified_previous_zip(raw, artifact, stale))
 
     def test_telegram_host_transport_acks_only_message_id_and_never_exposes_token(self):
         body = "POROTA RC6 | ALERT\nOBSERVER_HEARTBEAT_INVALID"

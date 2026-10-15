@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import io
+import zipfile
 from datetime import datetime, timezone, timedelta
 import hashlib
 import json
@@ -15,6 +17,7 @@ import subprocess
 import sys
 import time
 from urllib.parse import quote
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 SCHEMA = "rc6.market-watch-readonly.v1"
@@ -27,6 +30,111 @@ CONTAINERS = ("porota_production_observer", "porota_production_dashboard",
 TRACKED = ("paper_decisions", "trade_gate_evaluations", "paper_fills",
            "paper_events", "market_snapshots", "scalping_candidates")
 MAX_JSON_BYTES = 1024 * 1024
+
+
+def previous_artifact_candidates(current_run, own_artifacts, runs, artifacts_by_run):
+    """Retry artifacts precede other runs; never accept an in-flight artifact."""
+    result = []
+    for run_id, artifacts in [(current_run, own_artifacts)] + [
+            (run.get("id"), artifacts_by_run.get(run.get("id"), []))
+            for run in runs if run.get("id") != current_run
+            and run.get("status") == "completed"]:
+        if type(run_id) is not int:
+            continue
+        for artifact in sorted(artifacts, key=lambda a: (a.get("created_at", ""),
+                                                          a.get("id", 0)), reverse=True):
+            if (artifact.get("name") == f"rc6-market-watch-{run_id}"
+                    and artifact.get("expired") is False
+                    and type(artifact.get("id")) is int
+                    and artifact.get("workflow_run", {}).get("id") == run_id):
+                result.append((run_id, artifact))
+    return result
+
+
+def verified_previous_zip(raw, artifact, current):
+    """Accept only a digest-matched, complete, earlier comparable observation."""
+    digest = artifact.get("digest", "")
+    if (not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+            or len(raw) > 128 * 1024 or hashlib.sha256(raw).hexdigest() != digest[7:]):
+        return None
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            members = {part.filename: part for part in archive.infolist()}
+            if not {"snapshot.json", "decision.json"} <= members.keys():
+                return None
+            if any(m.file_size > MAX_JSON_BYTES or m.is_dir() or
+                   (m.external_attr >> 16) & 0o170000 == 0o120000
+                   for m in members.values()):
+                return None
+            previous = json.loads(archive.read("snapshot.json"))
+            decision = json.loads(archive.read("decision.json"))
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile, RuntimeError):
+        return None
+    if (not isinstance(previous, dict) or not isinstance(decision, dict)
+            or previous.get("schema") != SCHEMA or decision.get("schema") != SCHEMA
+            or previous.get("generated_at") != decision.get("generated_at")
+            or previous.get("expected_deploy_sha") != current.get("expected_deploy_sha")):
+        return None
+    at, before = timestamp(current.get("generated_at")), timestamp(previous.get("generated_at"))
+    if at is None or before is None or not 0 < (at - before).total_seconds() <= 1800:
+        return None
+    return previous, decision
+
+
+def read_previous_artifact(current, repo, workflow_id, run_id, destination, *, get=None):
+    """READ_ONLY GitHub API retrieval with bounded transfers and no secret output."""
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+        raise ValueError("INVALID_REPOSITORY")
+    if type(workflow_id) is not int or type(run_id) is not int:
+        raise ValueError("INVALID_RUN_ID")
+    if get is None:
+        token = os.environ["GH_TOKEN"]
+        def get(url, limit):
+            request = Request(url, headers={"Authorization": "Bearer " + token,
+                "Accept": "application/vnd.github+json", "User-Agent": "rc6-market-watch"})
+            with urlopen(request, timeout=12) as response:
+                raw = response.read(limit + 1)
+            if len(raw) > limit:
+                raise ValueError("GITHUB_RESPONSE_TOO_LARGE")
+            return raw
+    base = f"https://api.github.com/repos/{repo}"
+    try:
+        own = json.loads(get(f"{base}/actions/runs/{run_id}/artifacts?per_page=100", 256 * 1024))
+        listed = json.loads(get(
+            f"{base}/actions/workflows/{workflow_id}/runs?branch=main&per_page=20", 256 * 1024))
+        runs = listed.get("workflow_runs", [])
+        candidates = [(run_id, own.get("artifacts", []))]
+        candidates += [(r["id"], None) for r in runs if r.get("id") != run_id
+                       and r.get("status") == "completed"]
+        by_run = {}
+        for other_id, _ in candidates[1:]:
+            if len(by_run) >= 8:
+                break
+            by_run[other_id] = json.loads(get(
+                f"{base}/actions/runs/{other_id}/artifacts?per_page=100", 256 * 1024)).get("artifacts", [])
+        for source_run, artifact in previous_artifact_candidates(
+                run_id, own.get("artifacts", []), runs, by_run):
+            if artifact.get("size_in_bytes", 0) > 128 * 1024:
+                continue
+            try:
+                raw = get(f"{base}/actions/artifacts/{artifact['id']}/zip", 128 * 1024)
+            except (OSError, ValueError):
+                continue
+            previous = verified_previous_zip(raw, artifact, current)
+            if previous is None:
+                continue
+            destination.mkdir(parents=True, exist_ok=True)
+            for name, data in zip(("snapshot.json", "decision.json"), previous):
+                (destination / name).write_text(json.dumps(data, sort_keys=True) + "\n")
+            receipt = {"run_id": source_run, "artifact_id": artifact["id"],
+                       "artifact_sha256": artifact["digest"],
+                       "product_sha": previous[0]["expected_deploy_sha"],
+                       "generated_at": previous[0]["generated_at"]}
+            (destination / "source.json").write_text(json.dumps(receipt, sort_keys=True) + "\n")
+            return receipt
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        pass
+    return None
 
 
 def now_utc():
@@ -843,6 +951,12 @@ def main(argv=None):
     evaluation.add_argument("--current", required=True)
     evaluation.add_argument("--previous")
     evaluation.add_argument("--previous-decision")
+    prior = actions.add_parser("select-previous")
+    prior.add_argument("--current", required=True)
+    prior.add_argument("--repo", required=True)
+    prior.add_argument("--workflow-id", required=True, type=int)
+    prior.add_argument("--run-id", required=True, type=int)
+    prior.add_argument("--destination", required=True, type=Path)
     args = parser.parse_args(argv)
     if args.action == "probe":
         if not (len(args.expected_sha) == 40 and
@@ -871,6 +985,14 @@ def main(argv=None):
         receipt = _read_optional(args.receipt) or {"status": "UNVERIFIED"}
         data = finalize_delivery(decision, receipt)
         Path(args.decision).write_text(json.dumps(data, sort_keys=True, separators=(",", ":")) + "\n")
+        return 0
+    elif args.action == "select-previous":
+        current = load_bounded(Path(args.current))
+        if current is None:
+            raise SystemExit("CURRENT_SNAPSHOT_INVALID")
+        receipt = read_previous_artifact(current, args.repo, args.workflow_id,
+                                         args.run_id, args.destination)
+        print("PREVIOUS_COMPARABLE=" + ("VERIFIED" if receipt else "UNAVAILABLE"))
         return 0
     else:
         current = _read_optional(args.current)
