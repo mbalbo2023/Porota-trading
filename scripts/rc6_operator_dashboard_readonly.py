@@ -68,7 +68,8 @@ try:
     except (TypeError,ValueError): return None
    result["sources"].append({"component":component,"state":safe,
        "checked_age_seconds":age(checked),"last_success_age_seconds":age(success)})
-  result["source_status"]="BOUNDED" if not result["source_truncated"] else "TRUNCATED"
+  result["source_status"]=("TRUNCATED" if result["source_truncated"] else
+      "BOUNDED" if result["sources"] else "EMPTY")
 except sqlite3.Error: result["source_status"]="SQLITE_UNAVAILABLE"
 print(json.dumps(result,sort_keys=True,separators=(",",":")))
 '''
@@ -110,11 +111,11 @@ def audit_host(*, runner=subprocess.run):
             sources.append(safe)
         status = "GREEN" if (len(routes) == len(ROUTES) and all(
             row["http"] == 200 and row["nav"] and row["content"] and row["error"] is None
-            for row in routes) and data.get("source_status") == "BOUNDED") else "NO_VERIFICADO"
+            for row in routes) and data.get("source_status") == "BOUNDED" and sources) else "NO_VERIFICADO"
         return {"schema": SCHEMA, "read_only": True, "status": status,
                 "routes": routes, "sources": sources[:80],
                 "source_status": data.get("source_status") if data.get("source_status") in
-                {"BOUNDED", "TRUNCATED", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}
+                {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}
     except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
         return {"schema": SCHEMA, "read_only": True, "status": "NO_VERIFICADO",
                 "routes": [], "sources": [], "source_status": "NO_VERIFICADO"}
