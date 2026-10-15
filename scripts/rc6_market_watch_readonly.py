@@ -641,6 +641,30 @@ try:
  result["query_stages"]=measurements
  result["query_budget_ms"]=2000
  result["observation_source_limit_with_sentinel"]=observation_limit
+ # Probe the later prospective lab's bounded bootstrap read at its deployed
+ # deadline and a proposed 2s deadline; never export source rows or values.
+ prospective=[]
+ try:
+  import rc6_shadow_runtime.entry_signals as entry
+  for seconds in (.25,2.0):
+   entry.QUERY_SECONDS=seconds
+   started=time.monotonic()
+   sample={"budget_ms":int(seconds*1000),"status":"OK"}
+   try:
+    source=entry._read_rows(db,as_of=at,
+      tables=("decision_evidence_snapshots","market_snapshots"),
+      cursors=None,source_key=None)
+    sample["bootstrap"]=source["bootstrap"]
+   except Exception as exc:
+    sample["status"]="FAIL_CLOSED"
+    sample["error_class"]=type(exc).__name__
+    if isinstance(exc,sqlite3.Error):
+     sample["sqlite_errorname"]=getattr(exc,"sqlite_errorname","SQLITE_UNKNOWN")
+   sample["elapsed_ms"]=round((time.monotonic()-started)*1000,3)
+   prospective.append(sample)
+ except Exception as exc:
+  prospective.append({"status":"PROBE_UNAVAILABLE","error_class":type(exc).__name__})
+ result["prospective_bootstrap_probe"]=prospective
  # A committed failure can be stale even while the observer heartbeat moves.
  # Inspect only the isolated child process state, never argv, env or stacks.
  workers=[]
