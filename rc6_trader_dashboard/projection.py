@@ -539,15 +539,53 @@ class Projection:
         return Page("canonical worker states", rows, len(rows), "AVAILABLE")
 
     def sources(self):
+        # api_health is an observed record, not a live ping on every render.
+        # Match freshness to the writer's cadence; never re-label an old
+        # successful check as a currently healthy connection.
+        public_seconds = max(900, min(86400, self.integer(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS"), 21600)))
+        structured_seconds = max(900, min(86400, self.integer(os.getenv("PUBLIC_STRUCTURED_CAPTURE_SECONDS"), 900)))
+        budgets = {
+            "BYMA_OPEN_DATA": public_seconds + 3600,
+            "BYMA_WEB": public_seconds + 3600,
+            "BYMA_CALENDAR": public_seconds + 3600,
+            "BYMA_INSTRUMENTS_API": public_seconds + 3600,
+            "BYMA_STRUCTURED_CAPTURE": structured_seconds + 600,
+            "PPI_PRODUCTION_CATALOG": 36 * 3600,
+            "ROFEX_MARKETDATA": 36 * 3600,
+            "PPI_PRODUCTION_HISTORY": 48 * 3600,
+            "PPI_BACKGROUND_INGEST": 48 * 3600,
+        }
         page = self.store.page("api_health", order="component" if "component" in self.store.columns("api_health") else "", offset=self.offset)
         for row in page.rows:
+            component = str(row.get("component") or "")
+            observed = row.get("state") or UNKNOWN
             primary = any(str(row.get(key, "")).upper().startswith("PPI") for key in ("source", "component"))
+            checked = row.get("checked_at")
+            budget = budgets.get(component, 180)
+            state_age = age(checked, self.now)
             row.update(role="PRIMARY" if primary else "COMPLEMENT / OBSERVE_ONLY",
-                       as_of=row.get("checked_at"), provider_clock=None, receipt_clock=row.get("checked_at"),
-                       freshness=freshness(row.get("checked_at"), self.now), scope=row.get("component"),
-                       lkg=row.get("last_success_at"))
-            if row["freshness"] != "FRESH":
-                row["state"] = row["freshness"]
+                       as_of=checked, provider_clock=None, receipt_clock=checked,
+                       scope=component, lkg=row.get("last_success_at"),
+                       observed_state=observed, checked_age_seconds=state_age)
+            if component == "PPI_PRODUCTION_AUTH":
+                # A successful login is event-driven. The current observer
+                # heartbeat and session state, not an old login row, attest it.
+                runtime = self.runtime
+                current = runtime["heartbeat_freshness"] == "FRESH"
+                row.update(cadence="OBSERVER_SESSION", freshness=runtime["heartbeat_freshness"],
+                           state=("VERDE" if runtime.get("ppi_auth") == "OK" else "ROJO") if current else UNKNOWN)
+            elif component == "GEMINI_DECISION":
+                # The AI check is event-driven; an old GREEN is historical.
+                current = freshness(checked, self.now, 180) == "FRESH"
+                row.update(cadence="EVENT_DRIVEN", freshness="FRESH" if current else UNKNOWN,
+                           state=observed if current else UNKNOWN)
+            else:
+                quality = freshness(checked, self.now, budget)
+                row.update(cadence=("SUBSCRIPTION_REQUIRED" if component == "BYMA_INSTRUMENTS_API"
+                                    else f"CHECK_WITHIN_{budget}s"),
+                           freshness=quality,
+                           state=(observed if component == "BYMA_INSTRUMENTS_API" and observed == "GRIS"
+                                  else observed if quality == "FRESH" else UNKNOWN))
         if page.total == 0 or page.total is None:
             page.rows = [{"component": label, "role": role, "state": "SOURCE_UNAVAILABLE", "scope": label,
                           "source": "api_health", "freshness": UNKNOWN} for label, role in (
