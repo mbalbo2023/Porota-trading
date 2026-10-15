@@ -66,6 +66,20 @@ def test_reconcile_matches_legacy_on_alias_without_discovery_marker(tmp_path, mo
         },
     }
     monkeypatch.setattr(observer, "complementary_discovery", lambda _root: [comp])
+    with store.connect() as c:
+        catalog.sync_candidate_universe(c, _fresh())
+    original_sync = catalog.sync_candidate_universe
+
+    def before_final_projection(connection, checked_at, **kwargs):
+        for table in ("candidate_universe", "candidate_identity_v2"):
+            status, detail = connection.execute(
+                f"SELECT status,detail FROM {table} WHERE ticker='YMC1O'").fetchone()
+            assert status == "PAUSED_EXPLICIT"
+            assert detail == "PAUSED_EXPLICIT:CATALOG_RECONCILIATION"
+            assert "PENDING" not in detail
+        return original_sync(connection, checked_at, **kwargs)
+
+    monkeypatch.setattr(catalog, "sync_candidate_universe", before_final_projection)
     assert observer._reconcile_complementary_catalog(store) == 1
     with store.connect() as c:
         row=c.execute("""SELECT status,capability,metadata_json FROM financial_instrument_catalog

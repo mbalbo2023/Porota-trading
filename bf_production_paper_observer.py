@@ -635,12 +635,12 @@ def _reconcile_complementary_catalog(store):
                 "ticker", "instrument_type", "market"))
             if "candidate_universe" in candidate_tables:
                 connection.execute("""UPDATE candidate_universe
-                  SET can_simulate=0,status='PAUSED_EXPLICIT',detail='RECONCILIATION_PENDING'
+                  SET can_simulate=0,status='PAUSED_EXPLICIT',detail='PAUSED_EXPLICIT:CATALOG_RECONCILIATION'
                   WHERE ticker=? AND instrument_type=? AND market=?""",
                   (ticker, family, market))
             if "candidate_identity_v2" in candidate_tables:
                 connection.execute("""UPDATE candidate_identity_v2
-                  SET can_simulate=0,status='PAUSED_EXPLICIT',detail='RECONCILIATION_PENDING'
+                  SET can_simulate=0,status='PAUSED_EXPLICIT',detail='PAUSED_EXPLICIT:CATALOG_RECONCILIATION'
                   WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?""",
                   (ticker, family, market, record["currency"], record["settlement"]))
 
