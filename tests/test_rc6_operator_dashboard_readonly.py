@@ -19,7 +19,7 @@ class OperatorAuditTests(TestCase):
         assert kwargs["timeout"] == 35
         return SimpleNamespace(returncode=0, stdout=json.dumps(payload))
     result = audit_host(runner=runner)
-    self.assertEqual(result["status"], "GREEN")
+    self.assertEqual(result["status"], "ROUTES_VERIFIED")
     self.assertEqual(len(result["routes"]), len(ROUTES))
     self.assertNotIn("must never leave host", json.dumps(result))
 
