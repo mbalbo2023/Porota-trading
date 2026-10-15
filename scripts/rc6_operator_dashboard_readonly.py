@@ -38,6 +38,10 @@ if token:
        headers={"Authorization":"Bearer "+token, "Cache-Control":"no-cache"})
    with urllib.request.urlopen(req,timeout=6) as response:
     raw=response.read(524289); entry["http"]=response.status
+    duration=re.search(r"projection;dur=([0-9]+(?:\.[0-9]+)?)",response.headers.get("Server-Timing",""))
+    if duration: entry["projection_ms"]=min(60000,round(float(duration.group(1))))
+    queries=response.headers.get("X-Porota-Read-Queries","")
+    if queries.isdecimal(): entry["read_queries"]=min(1000,int(queries))
    if len(raw)>524288: entry["error"]="BODY_LIMIT"
    else:
     html=raw.decode("utf-8","replace")
@@ -75,6 +79,32 @@ try:
   result["source_status"]=("TRUNCATED" if result["source_truncated"] else
       "BOUNDED" if result["sources"] else "EMPTY")
 except sqlite3.Error: result["source_status"]="SQLITE_UNAVAILABLE"
+
+# Exercise the same read-only projection methods as the slow pages. No rows,
+# SQL text, paths or exception details are exported; each SQLite stage has a
+# five-second progress deadline to protect the observer on a small host.
+try:
+ from rc6_trader_dashboard.projection import Projection, Store
+ result["profile"]=[]
+ with Store(db) as store:
+  if store.connection is None: raise RuntimeError("STORE_UNAVAILABLE")
+  projection=Projection(store)
+  stages=(("counts",lambda:projection.counts()),
+          ("positions",lambda:projection.positions(limit=5)),
+          ("balances",lambda:projection.balances()),
+          ("risk",lambda:projection.risk()),
+          ("performance_today",lambda:projection.performance(today=True)))
+  for name,fn in stages:
+   started=time.monotonic(); before=len(store.errors); query_before=store.query_count
+   store.connection.set_progress_handler(lambda: int(time.monotonic()-started>5),1000)
+   try: fn()
+   except Exception: store.errors.append("PROFILE_UNAVAILABLE")
+   finally: store.connection.set_progress_handler(None,0)
+   result["profile"].append({"stage":name,"elapsed_ms":min(60000,round((time.monotonic()-started)*1000)),
+       "read_queries":store.query_count-query_before,
+       "state":"READ_ERROR" if len(store.errors)>before else "READ_OK"})
+ result["profile_status"]="BOUNDED"
+except Exception: result["profile_status"]="UNAVAILABLE"
 print(json.dumps(result,sort_keys=True,separators=(",",":")))
 '''
 
@@ -82,7 +112,7 @@ print(json.dumps(result,sort_keys=True,separators=(",",":")))
 def audit_host(*, runner=subprocess.run):
     try:
         proc = runner(["docker", "exec", "porota_production_dashboard", "python", "-B", "-c", CHILD],
-                      capture_output=True, text=True, timeout=85, check=False)
+                      capture_output=True, text=True, timeout=115, check=False)
         data = json.loads(proc.stdout) if proc.returncode == 0 and len(proc.stdout) < 32768 else {}
         if data.get("schema") != SCHEMA or data.get("read_only") is not True:
             raise ValueError("INVALID_AUDIT_RECEIPT")
@@ -98,6 +128,8 @@ def audit_host(*, runner=subprocess.run):
                            "nav": item.get("nav") is True, "content": item.get("content") is True,
                            "elapsed_ms": item.get("elapsed_ms") if type(item.get("elapsed_ms")) is int and 0 <= item["elapsed_ms"] <= 60000 else None,
                            "slow_2s": item.get("slow_2s") is True,
+                           "projection_ms": item.get("projection_ms") if type(item.get("projection_ms")) is int and 0 <= item["projection_ms"] <= 60000 else None,
+                           "read_queries": item.get("read_queries") if type(item.get("read_queries")) is int and 0 <= item["read_queries"] <= 1000 else None,
                            "attention": item.get("attention") is True if item["path"] == "/" else None,
                            "error": item.get("error") if item.get("error") in {"BODY_LIMIT", "HTTP_UNAVAILABLE"} else None})
         if tuple(row["path"] for row in routes) not in (ROUTES, ()):
@@ -119,8 +151,17 @@ def audit_host(*, runner=subprocess.run):
             row["http"] == 200 and row["nav"] and row["content"] and row["error"] is None
             for row in routes) and data.get("source_status") == "BOUNDED" and sources)
         status = ("ROUTES_DEGRADED" if any(row["slow_2s"] for row in routes) else "ROUTES_VERIFIED") if complete else "NO_VERIFICADO"
+        profile = []
+        for item in data.get("profile", []):
+            if not isinstance(item, dict) or item.get("stage") not in {"counts", "positions", "balances", "risk", "performance_today"}:
+                continue
+            ms, queries = item.get("elapsed_ms"), item.get("read_queries")
+            profile.append({"stage": item["stage"], "elapsed_ms": ms if type(ms) is int and 0 <= ms <= 60000 else None,
+                            "read_queries": queries if type(queries) is int and 0 <= queries <= 1000 else None,
+                            "state": item.get("state") if item.get("state") in {"READ_OK", "READ_ERROR"} else "NO_VERIFICADO"})
         return {"schema": SCHEMA, "read_only": True, "status": status,
-                "routes": routes, "sources": sources[:80],
+                "routes": routes, "sources": sources[:80], "profile": profile[:5],
+                "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
                 {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}
     except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
