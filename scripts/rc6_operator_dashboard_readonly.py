@@ -131,6 +131,31 @@ try:
   except sqlite3.Error: result["source_sync_status"]="SQLITE_UNAVAILABLE"
 except sqlite3.Error: result["source_status"]="SQLITE_UNAVAILABLE"
 
+# Recent factual PAPER equity exits, grouped without symbols, amounts or row
+# content. This diagnoses whether EOD dominates STOP/TARGET/MAX_HOLD; it does
+# not infer that a trigger fired from the presence of its policy in source.
+result["equity_exits"]={"status":"NO_VERIFICADO","sampled":0,"truncated":False,"reasons":{}}
+try:
+ with sqlite3.connect("file:"+quote(db,safe="/")+"?mode=ro",uri=True,timeout=.2) as exits:
+  exits.execute("PRAGMA query_only=ON")
+  started=time.monotonic()
+  exits.set_progress_handler(lambda: int(time.monotonic()-started>2),1000)
+  rows=exits.execute("SELECT close_reason FROM paper_positions "
+      "WHERE status='CLOSED' AND asset_class='ACCIONES' "
+      "ORDER BY closed_at DESC LIMIT 1001").fetchall()
+  exits.set_progress_handler(None,0)
+  allowed={"EOD_PAPER","MAX_HOLD_PAPER","SCALPING_MAX_HOLD_PAPER",
+           "STOP_PAPER","TAKE_PROFIT_PAPER"}
+  reasons={}
+  for (reason,) in rows[:1000]:
+   safe=reason if reason in allowed else "OTHER_OR_MISSING"
+   reasons[safe]=reasons.get(safe,0)+1
+  result["equity_exits"]={"status":"TRUNCATED" if len(rows)>1000 else
+      "BOUNDED" if rows else "EMPTY","sampled":min(len(rows),1000),
+      "truncated":len(rows)>1000,"reasons":reasons}
+except sqlite3.Error:
+ result["equity_exits"]["status"]="SQLITE_UNAVAILABLE"
+
 # The history writer deliberately waits for the one-time cutoff repair. Read
 # that gate separately; an old api_health row alone cannot establish its RCA.
 try:
@@ -267,13 +292,27 @@ def audit_host(*, runner=subprocess.run):
             ms = item.get("elapsed_ms")
             balance_queries.append({"stage": item["stage"], "elapsed_ms": ms if type(ms) is int and 0 <= ms <= 60000 else None,
                                     "state": item.get("state") if item.get("state") in {"READ_OK", "READ_ERROR"} else "NO_VERIFICADO"})
+        exits = data.get("equity_exits") if isinstance(data.get("equity_exits"), dict) else {}
+        exit_status = exits.get("status") if exits.get("status") in {
+            "BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO"
+        sampled = exits.get("sampled")
+        counts = {}
+        if isinstance(exits.get("reasons"), dict):
+            for reason in ("EOD_PAPER", "MAX_HOLD_PAPER", "SCALPING_MAX_HOLD_PAPER",
+                           "STOP_PAPER", "TAKE_PROFIT_PAPER", "OTHER_OR_MISSING"):
+                value = exits["reasons"].get(reason)
+                if type(value) is int and 0 <= value <= 1000:
+                    counts[reason] = value
+        equity_exits = {"status": exit_status,
+                        "sampled": sampled if type(sampled) is int and 0 <= sampled <= 1000 else None,
+                        "truncated": exits.get("truncated") is True, "reasons": counts}
         return {"schema": SCHEMA, "read_only": True, "audit_scope": scope, "status": status,
                 "routes": routes, "sources": sources[:80], "source_sync": sync_rows[:10],
                 "source_sync_status": data.get("source_sync_status") if data.get("source_sync_status") in
                 {"BOUNDED", "EMPTY", "TRUNCATED", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
                 "history_cutoff_repair": data.get("history_cutoff_repair") if data.get("history_cutoff_repair") in
                 {"COMPLETE", "INCOMPLETE", "MISSING_TABLE", "MISSING_ROW", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
-                "profile": profile[:5], "balance_queries": balance_queries[:10],
+                "profile": profile[:5], "balance_queries": balance_queries[:10], "equity_exits": equity_exits,
                 "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
                 {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}

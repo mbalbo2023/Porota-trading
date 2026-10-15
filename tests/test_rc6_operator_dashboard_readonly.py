@@ -23,7 +23,10 @@ class OperatorAuditTests(TestCase):
                "source_sync_status": "BOUNDED", "history_cutoff_repair": "INCOMPLETE",
                "source_sync": [{"source": "PPI_PRODUCTION_HISTORY", "state": "AMARILLO",
                                 "last_attempt_age_seconds": 100, "last_success_age_seconds": 200,
-                                "detail": "must never leave host"}]}
+                                "detail": "must never leave host"}],
+               "equity_exits": {"status": "BOUNDED", "sampled": 9, "truncated": False,
+                                "reasons": {"EOD_PAPER": 8, "STOP_PAPER": 1,
+                                            "private-reason": 99}, "secret": "must never leave host"}}
     def runner(argv, **kwargs):
         assert argv[:4] == ["docker", "exec", "porota_production_dashboard", "python"]
         assert kwargs["timeout"] == 150
@@ -33,6 +36,8 @@ class OperatorAuditTests(TestCase):
     self.assertEqual(len(result["routes"]), len(ROUTES))
     self.assertEqual(result["source_sync"][0]["last_attempt_age_seconds"], 100)
     self.assertEqual(result["history_cutoff_repair"], "INCOMPLETE")
+    self.assertEqual(result["equity_exits"], {"status": "BOUNDED", "sampled": 9,
+                      "truncated": False, "reasons": {"EOD_PAPER": 8, "STOP_PAPER": 1}})
     self.assertNotIn("must never leave host", json.dumps(result))
 
     payload["profile_status"] = "BOUNDED"
