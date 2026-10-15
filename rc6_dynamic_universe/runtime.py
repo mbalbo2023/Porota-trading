@@ -24,17 +24,16 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5):
         state = connection.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
         if not state or state["mode"] != "PRODUCTION_PAPER" or state["real_orders_sent"] != 0:
             raise ValueError("PAPER_SAFETY_REQUIRED")
-        catalog = [dict(r) for r in connection.execute("""SELECT ticker,instrument_type,market,
-            currency,settlement,status,capability FROM financial_instrument_catalog
-            WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER%'
-            ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?""", (row_limit+1,))]
-        if len(catalog) > row_limit:
-            raise ValueError("CATALOG_READ_TRUNCATED")
+        # Both views have the same ordered columns. Read the full bounded
+        # catalogue once and derive READY locally: a second SQLite scan can
+        # exceed the shared deadline when the observer is under IO contention.
         full_catalog = [dict(r) for r in connection.execute("""SELECT ticker,instrument_type,market,
             currency,settlement,status,capability FROM financial_instrument_catalog
             ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?""", (row_limit+1,))]
         if len(full_catalog) > row_limit:
             raise ValueError("FULL_CATALOG_READ_TRUNCATED")
+        catalog = [row for row in full_catalog if row["status"] == "AVAILABLE"
+                   and row["capability"].upper().startswith("READY_PAPER")]
         opened = [tuple(r) for r in connection.execute("""SELECT symbol,asset_class,market,currency,settlement
             FROM paper_positions WHERE status='OPEN' ORDER BY paper_id LIMIT ?""", (row_limit+1,))]
         if len(opened) > row_limit:

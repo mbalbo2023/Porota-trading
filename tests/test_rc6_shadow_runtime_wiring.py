@@ -126,6 +126,34 @@ def test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens(tmp
     assert result["real_orders_sent"] == 0 and result["real_routes"] == "NOT_CALLED"
 
 
+def test_catalog_read_uses_one_bounded_query_with_same_ready_view(tmp_path, monkeypatch):
+    import rc6_dynamic_universe.runtime as runtime
+    store, assets = make_store(tmp_path, count=2)
+    with store.connect() as c:
+        c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("LOWER", "ACCIONES", "BYMA", "ARS", "A-24HS",
+             "FIXTURE", "fixture", PRE.isoformat(), "test",
+             "AVAILABLE", "ready_paper_spot", "{}"))
+        c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("BLOCKED", "ACCIONES", "BYMA", "ARS", "A-24HS",
+             "FIXTURE", "fixture", PRE.isoformat(), "test",
+             "PAUSED", "READY_PAPER_SPOT", "{}"))
+    sql = []
+    original = sqlite3.connect
+    def traced(*args, **kwargs):
+        connection = original(*args, **kwargs)
+        connection.set_trace_callback(sql.append)
+        return connection
+    monkeypatch.setattr(runtime.sqlite3, "connect", traced)
+    inputs = runtime.read_runtime(store.path, as_of=PRE, row_limit=10,
+                                  query_budget_seconds=2)
+    assert sum("FROM financial_instrument_catalog" in statement for statement in sql) == 1
+    assert [row["ticker"] for row in inputs["catalog"]] == ["LOWER", "S0", "S1"]
+    assert [row["ticker"] for row in inputs["full_catalog"]] == ["BLOCKED", "LOWER", "S0", "S1"]
+    assert inputs["safety"] == {"mode": "PRODUCTION_PAPER",
+                                "real_orders_sent": 0, "real_routes": "NOT_CALLED"}
+
+
 def test_closed_worker_never_claims_open_capacity_or_calls_provider(tmp_path, monkeypatch):
     import bd_ppi_readonly_guard
     monkeypatch.setattr(bd_ppi_readonly_guard, "ProductionMarketReader",
