@@ -601,6 +601,39 @@ try:
    result["observer_cycles"]=[{"started_at":r[0],"finished_at":r[1],"selected_count":r[2],"duration_seconds":r[3],"planned_cadence_seconds":cadence(r[4])} for r in c.execute("SELECT started_at,finished_at,selected_count,duration_seconds,detail FROM universe_cycle_metrics ORDER BY id DESC LIMIT 16")]
   except sqlite3.Error: result["observer_cycles_status"]="UNAVAILABLE"
  result["query_plans"]=plans
+ # One bounded live timing pass over the production query shapes. No values,
+ # SQL parameters, result rows, account data or exception messages are exported.
+ floor=at.replace(hour=0,minute=0,second=0,microsecond=0).isoformat()
+ detailed=(
+  ("CATALOG_FULL", "SELECT ticker,instrument_type,market,currency,settlement,status,capability FROM financial_instrument_catalog ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?", (20001,)),
+  ("OPEN_POSITIONS", "SELECT symbol,asset_class,market,currency,settlement FROM paper_positions WHERE status='OPEN' ORDER BY paper_id LIMIT ?", (20001,)),
+  ("CONTRACTS", "SELECT * FROM ppi_intraday_contract_state LIMIT ?", (20001,)),
+  ("INTRADAY", "SELECT symbol,asset_class,market,currency,settlement,event_at,first_received_at,last_verified_at,price,volume,source FROM ppi_intraday_points WHERE julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?) AND julianday(first_received_at)<=julianday(?) AND julianday(last_verified_at)<=julianday(?) ORDER BY julianday(event_at) DESC LIMIT ?", (floor,at.isoformat(),at.isoformat(),at.isoformat(),20001)),
+  ("SNAPSHOTS", "SELECT symbol,asset_class,market,currency,settlement,last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size,last_kind FROM market_snapshots NOT INDEXED WHERE id >= (SELECT MIN(id) FROM market_snapshots WHERE julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?)) AND julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?) ORDER BY id DESC LIMIT ?", (at.isoformat(),floor,at.isoformat(),floor,20001)))
+ budget_start=time.monotonic(); deadline=budget_start+2.0
+ measurements=[]
+ def expired(): return int(time.monotonic()>deadline)
+ c.set_progress_handler(expired,1000)
+ for name,sql,params in detailed:
+  if time.monotonic()>deadline:
+   measurements.append({"stage":name,"status":"SKIP_BUDGET"}); continue
+  entry={"stage":name,"status":"OK","rows":0}
+  started=time.monotonic()
+  try:
+   entry["plan"]=[str(p[3])[:120] for p in c.execute("EXPLAIN QUERY PLAN "+sql,params)]
+   for _ in c.execute(sql,params): entry["rows"]+=1
+  except sqlite3.Error as exc:
+   entry["status"]="FAIL_CLOSED"; entry["sqlite_errorname"]=getattr(exc,"sqlite_errorname","SQLITE_UNKNOWN")
+  entry["elapsed_ms"]=round((time.monotonic()-started)*1000,3)
+  entry["deadline_expired"]=time.monotonic()>deadline
+  entry["remaining_ms"]=round(max(0,deadline-time.monotonic())*1000,3)
+  measurements.append(entry)
+  if entry["status"]!="OK": break
+ c.set_progress_handler(None,0)
+ result["query_stages"]=measurements
+ result["query_budget_ms"]=2000
+ try: result["wal_bytes"]=db.with_name(db.name+"-wal").stat().st_size
+ except OSError: result["wal_bytes"]=None
 except Exception as exc: result["setup_error_class"]=type(exc).__name__
 print(json.dumps(result,separators=(",",":")))'''
     try:
