@@ -209,13 +209,28 @@ def test_currencies_are_separate_and_money_is_decimal(database):
     assert all(r["edge"].startswith("NO_VERIFICADO") for r in rows)
 
 
+def test_live_closes_show_factual_win_rate_with_full_filtered_denominator(database):
+    from rc6_trader_dashboard.views_live import render
+    with Store(database, now=NOW) as s:
+        p = Projection(s)
+        assert p.close_win_rate_today() == {"state": "AVAILABLE", "sample": 5,
+                                            "wins": 5, "win_rate": 100.0}
+        html = render(p, "en-vivo", "cierres")
+        assert "Win rate de cierres hoy" in html and "100,00 %" in html
+        assert "5/5 cierres con PnL neto positivo" in html
+        filtered = Projection(s, {"currency": "ARS"}).close_win_rate_today()
+        assert filtered["sample"] == 2 and filtered["wins"] == 2
+
+
 def test_invalid_financial_numbers_never_become_zero(database):
     with sqlite3.connect(database) as c:
         c.execute("UPDATE paper_positions SET net_pnl='bad' WHERE paper_id='closed-0'")
     with Store(database, now=NOW) as s:
         row = next(r for r in Projection(s).performance().rows if r["currency"] == "ARS")
+        close_stats = Projection(s).close_win_rate_today()
     assert row["net_pnl"] is None and row["win_rate"] is None
     assert row["expectancy"] is None
+    assert close_stats["state"] == "INVALID_NET_PNL" and close_stats["win_rate"] is None
 
 
 def test_source_scope_score_and_trajectory_semantics(database):

@@ -728,6 +728,38 @@ class Projection:
                        source="paper_positions · agregados de ledger por moneda/estrategia/familia")
         return Page("paper_positions · CLOSED ledger aggregates", rows, totals[0]["n"] if totals else None, "AVAILABLE", self.offset)
 
+    def close_win_rate_today(self):
+        """Factual, filter-matched win rate over every PAPER close in today's ART session."""
+        s = self.store
+        cols = s.columns("paper_positions")
+        if not {"status", "closed_at", "net_pnl"} <= cols:
+            return {"state": "SCHEMA_UNAVAILABLE", "sample": None, "wins": None, "win_rate": None}
+        day, params = self.daily_where("closed_at")
+        where = ["status='CLOSED'", day]
+        values = list(params)
+        for key, column in (("family", "asset_class"), ("currency", "currency"),
+                            ("market", "market"), ("strategy", "strategy_version"),
+                            ("settlement", "settlement")):
+            if self.filters.get(key) and column in cols:
+                where.append(f"{column}=? COLLATE NOCASE")
+                values.append(self.filters[key])
+        if self.filters.get("q") and "symbol" in cols:
+            where.append("symbol LIKE ?")
+            values.append("%" + self.filters["q"] + "%")
+        errors = len(s.errors)
+        rows = s.query("SELECT COUNT(*) sample, "
+            "SUM(CASE WHEN decimal_sign(net_pnl)>0 THEN 1 ELSE 0 END) wins, "
+            "SUM(CASE WHEN decimal_sign(net_pnl) IS NULL THEN 1 ELSE 0 END) invalid "
+            "FROM paper_positions WHERE " + " AND ".join(where), values)
+        if len(s.errors) != errors or not rows:
+            return {"state": "READ_ERROR", "sample": None, "wins": None, "win_rate": None}
+        sample = int(rows[0]["sample"])
+        wins = int(rows[0]["wins"] or 0)
+        if rows[0]["invalid"]:
+            return {"state": "INVALID_NET_PNL", "sample": sample, "wins": wins, "win_rate": None}
+        return {"state": "AVAILABLE" if sample else "EMPTY", "sample": sample,
+                "wins": wins, "win_rate": 100 * wins / sample if sample else None}
+
     def bounded_file(self, name, *, root=None):
         path = (root or self.store.path.parent) / name
         try:

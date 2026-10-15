@@ -38,7 +38,17 @@ def render(p, destination, tab):
         return render_table(p, destination, tab, p.positions(), "Posiciones y seguridad de salida", POSITIONS, POSITION_DETAIL, filters=True,
                             note="Un mark contable no acredita un fill ejecutable. MFE/MAE sin trayectoria validada = NO_MEDIDO.")
     if tab == "cierres":
-        return render_table(p, destination, tab, p.positions(closed=True, today=True), "Cierres de la rueda · ART", CLOSES, CLOSE_DETAIL, filters=True)
+        stats = p.close_win_rate_today()
+        detail = (f"{stats['wins']}/{stats['sample']} cierres con PnL neto positivo · empates en la muestra"
+                  if stats["state"] == "AVAILABLE" else
+                  "Sin cierres medidos en el alcance y filtros actuales" if stats["state"] == "EMPTY" else
+                  "NO_VERIFICADO · revisar PnL neto o lectura del ledger")
+        summary = ("<div class='metric-grid'>" +
+                   metric("Win rate de cierres hoy", stats["win_rate"], detail, kind="percent") +
+                   metric("Muestra de cierres hoy", stats["sample"],
+                          "Posiciones cerradas PAPER · rueda ART · mismos filtros", kind="number") + "</div>")
+        return summary + render_table(p, destination, tab, p.positions(closed=True, today=True),
+                                      "Cierres de la rueda · ART", CLOSES, CLOSE_DETAIL, filters=True)
     if tab == "capacidad":
         return render_table(p, destination, tab, shadow_rows(p, "capacity"), "Capacidad & Coverage", CAPACITY, CAPACITY_DETAIL,
                             note="La capacidad real exige evidencia OPEN. Un benchmark fuera de rueda no certifica capacidad operativa.")
