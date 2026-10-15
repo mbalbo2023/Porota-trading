@@ -279,6 +279,12 @@ class Projection:
         root = Path(os.getenv("POROTA_SHADOW_RUNTIME_ROOT", str(self.store.path) + ".shadow"))
         return read_shadow(root, self.generation_reader)
 
+    @cached_property
+    def shadow_fresh(self):
+        """Only a current coherent cut may populate live SHADOW numbers."""
+        return (self.shadow["state"] == "COMMITTED_COHERENT_SHADOW"
+                and freshness(self.shadow["report"].get("as_of"), self.now, 30) == "FRESH")
+
     def daily_where(self, column):
         start = datetime.combine(self.now.astimezone(TZ).date(), datetime.min.time(), TZ)
         return f"julianday({column})>=julianday(?) AND julianday({column})<julianday(?)", (
@@ -381,8 +387,8 @@ class Projection:
                 row = s.query("SELECT COUNT(*) n FROM paper_positions WHERE status='CLOSED' AND " + condition, params)
                 if row:
                     result["closed_today"] = row[0]["n"]
-        # All SHADOW stages belong to this same committed cut.
-        funnel = self.shadow["report"].get("operational_funnel", {})
+        # A coherent but stale generation is historical evidence, not live HOT/SIGNAL.
+        funnel = self.shadow["report"].get("operational_funnel", {}) if self.shadow_fresh else {}
         if isinstance(funnel, dict):
             stages = funnel.get("counts", funnel)
             stages = stages if isinstance(stages, dict) else {}
