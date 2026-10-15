@@ -17,7 +17,7 @@ ROUTES = (
 EXTRA_ROUTES = (
     "/en-vivo/decisiones", "/en-vivo/posiciones", "/en-vivo/cierres", "/en-vivo/capacidad",
     "/en-vivo/workers", "/en-vivo/fuentes", "/trading/equity-spot", "/trading/renta-fija",
-    "/trading/derivados", "/trading/tesoreria", "/universo/discovery", "/universo/tradeability",
+    "/trading/derivados", "/trading/cauciones", "/trading/tesoreria", "/universo/discovery", "/universo/tradeability",
     "/universo/coverage", "/universo/excluidos", "/universo/familias", "/instrumentos/ficha",
     "/instrumentos/contrato", "/instrumentos/mercado", "/instrumentos/evidencia", "/riesgo/exposicion",
     "/riesgo/limites", "/riesgo/posiciones", "/riesgo/liquidez", "/riesgo/pnl",
@@ -43,7 +43,7 @@ routes = ("/", "/en-vivo", "/en-vivo/oportunidades", "/trading",
 extra_routes = (
     "/en-vivo/decisiones", "/en-vivo/posiciones", "/en-vivo/cierres", "/en-vivo/capacidad",
     "/en-vivo/workers", "/en-vivo/fuentes", "/trading/equity-spot", "/trading/renta-fija",
-    "/trading/derivados", "/trading/tesoreria", "/universo/discovery", "/universo/tradeability",
+    "/trading/derivados", "/trading/cauciones", "/trading/tesoreria", "/universo/discovery", "/universo/tradeability",
     "/universo/coverage", "/universo/excluidos", "/universo/familias", "/instrumentos/ficha",
     "/instrumentos/contrato", "/instrumentos/mercado", "/instrumentos/evidencia", "/riesgo/exposicion",
     "/riesgo/limites", "/riesgo/posiciones", "/riesgo/liquidez", "/riesgo/pnl",

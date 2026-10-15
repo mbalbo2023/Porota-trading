@@ -9,8 +9,9 @@ from scripts.rc6_operator_dashboard_readonly import CHILD, POSTCLOSE_ROUTES, ROU
 class OperatorAuditTests(TestCase):
  def test_embedded_probe_compiles(self):
     compile(CHILD, "<dashboard-probe>", "exec")
-    self.assertEqual(len(POSTCLOSE_ROUTES), 49)
-    self.assertEqual(len(set(POSTCLOSE_ROUTES)), 49)
+    self.assertEqual(len(POSTCLOSE_ROUTES), 50)
+    self.assertEqual(len(set(POSTCLOSE_ROUTES)), 50)
+    self.assertIn("/trading/cauciones", POSTCLOSE_ROUTES)
 
  def test_sanitized_audit_receipt_has_exact_routes_and_no_page_content(self):
     payload = {"schema": SCHEMA, "read_only": True, "audit_scope": "MARKET_CRITICAL", "source_status": "BOUNDED",
@@ -46,7 +47,7 @@ class OperatorAuditTests(TestCase):
     payload["routes"] = [{"path": path, "http": 200, "nav": True, "content": True}
                          for path in POSTCLOSE_ROUTES]
     self.assertEqual(audit_host(runner=runner)["audit_scope"], "POSTCLOSE_ALL")
-    self.assertEqual(len(audit_host(runner=runner)["routes"]), 49)
+    self.assertEqual(len(audit_host(runner=runner)["routes"]), 50)
 
 
  def test_partial_or_untrusted_receipt_fails_closed(self):
