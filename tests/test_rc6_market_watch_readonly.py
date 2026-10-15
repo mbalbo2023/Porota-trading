@@ -119,6 +119,23 @@ class MonitorContracts(unittest.TestCase):
         self.assertNotIn("error_module", rejected)
         self.assertNotIn("error_line", rejected)
 
+    def test_shadow_value_error_keeps_only_reviewed_site(self):
+        payload = {"as_of": NOW.isoformat(), "status": "FAIL_CLOSED",
+                   "real_orders_sent": 0, "real_routes": "NOT_CALLED",
+                   "error_class": "ValueError", "error_module": "stages",
+                   "error_line": 42}
+        self.shadow_path.write_text(json.dumps({
+            "payload": payload, "digest": monitor.canonical_digest(payload)}))
+        record = self.capture()
+        self.assertEqual(record["shadow"]["error_module"], "stages")
+        self.assertEqual(record["shadow"]["error_line"], 42)
+        self.assertIn("DYNAMIC_SHADOW_FAIL_CLOSED", self.codes(record, "P1"))
+
+        payload["error_module"] = "stages/private-token"
+        self.shadow_path.write_text(json.dumps({
+            "payload": payload, "digest": monitor.canonical_digest(payload)}))
+        self.assertNotIn("error_module", self.capture()["shadow"])
+
     def test_manual_shadow_diagnostic_redacts_sqlite_failure_and_never_ticks(self):
         runtime = types.ModuleType("rc6_dynamic_universe.runtime")
         shadow = types.ModuleType("rc6_shadow_runtime.worker")
