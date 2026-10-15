@@ -100,20 +100,27 @@ def read_previous_artifact(current, repo, workflow_id, run_id, destination, *, g
     base = f"https://api.github.com/repos/{repo}"
     try:
         own = json.loads(get(f"{base}/actions/runs/{run_id}/artifacts?per_page=100", 256 * 1024))
-        listed = json.loads(get(
-            f"{base}/actions/workflows/{workflow_id}/runs?branch=main&per_page=20", 256 * 1024))
-        runs = listed.get("workflow_runs", [])
-        candidates = [(run_id, own.get("artifacts", []))]
-        candidates += [(r["id"], None) for r in runs if r.get("id") != run_id
-                       and r.get("status") == "completed"]
-        by_run = {}
-        for other_id, _ in candidates[1:]:
-            if len(by_run) >= 8:
-                break
-            by_run[other_id] = json.loads(get(
-                f"{base}/actions/runs/{other_id}/artifacts?per_page=100", 256 * 1024)).get("artifacts", [])
-        for source_run, artifact in previous_artifact_candidates(
-                run_id, own.get("artifacts", []), runs, by_run):
+        def candidates():
+            # A re-run can confirm against its own previous attempt without
+            # listing any unrelated workflow runs.
+            yield from previous_artifact_candidates(
+                run_id, own.get("artifacts", []), [], {})
+            listed = json.loads(get(
+                f"{base}/actions/workflows/{workflow_id}/runs?branch=main&per_page=8",
+                160 * 1024))
+            for candidate in listed.get("workflow_runs", []):
+                other_id = candidate.get("id")
+                if candidate.get("status") != "completed" or other_id == run_id:
+                    continue
+                try:
+                    artifacts = json.loads(get(
+                        f"{base}/actions/runs/{other_id}/artifacts?per_page=20",
+                        64 * 1024)).get("artifacts", [])
+                except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                    continue
+                yield from previous_artifact_candidates(
+                    run_id, [], [candidate], {other_id: artifacts})
+        for source_run, artifact in candidates():
             if artifact.get("size_in_bytes", 0) > 128 * 1024:
                 continue
             try:
