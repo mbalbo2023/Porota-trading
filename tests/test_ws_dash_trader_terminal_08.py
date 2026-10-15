@@ -544,3 +544,22 @@ def test_connector_states_distinguish_observed_record_from_expected_cadence(data
     assert rows["PPI_PRODUCTION_CATALOG"]["state"] == "NO_VERIFICADO"
     assert rows["PPI_PRODUCTION_CATALOG"]["observed_state"] == "AMARILLO"
     assert rows["PPI_PRODUCTION_AUTH"]["state"] == "NO_VERIFICADO"
+
+
+def test_home_attention_keeps_shadow_and_primary_source_in_five_item_preview():
+    from types import SimpleNamespace
+    from rc6_trader_dashboard.views_home import attention
+    projection = SimpleNamespace(
+        shadow_fresh=False, now=NOW,
+        store=SimpleNamespace(query=lambda *_args, **_kwargs: []),
+        runtime={"ppi_auth": "ERROR", "heartbeat_freshness": "STALE"},
+        risk=lambda: SimpleNamespace(rows=[]),
+    )
+    positions = SimpleNamespace(rows=[{"symbol": f"T{i}", "freshness": "STALE", "exit_state": "BLOCKED"}
+                                      for i in range(10)])
+    html, count = attention(projection, positions)
+    assert count >= 20
+    assert html.index("SHADOW sin corte") < html.index("PPI market data")
+    assert "Autenticación PPI sin estado OK" in html
+    assert "Heartbeat runtime sin verificación fresca" in html
+    assert "T9" not in html  # Detailed position alerts are below the first five.
