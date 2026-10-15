@@ -30,6 +30,8 @@ def test_shadow_sqlite_interrupt_stays_closed_with_bounded_location(tmp_path, mo
         raise AssertionError("SQLite progress handler did not interrupt")
     finally:
         connection.close()
+    interrupted.rc6_stage = "CATALOG_FULL"
+    interrupted.rc6_deadline_expired = True
 
     monkeypatch.setattr(shadow.os, "nice", lambda *_: None)
 
@@ -43,6 +45,8 @@ def test_shadow_sqlite_interrupt_stays_closed_with_bounded_location(tmp_path, mo
         status = files.read("status.json")
     assert status["status"] == "FAIL_CLOSED"
     assert status["sqlite_errorname"] == "SQLITE_INTERRUPT"
+    assert status["runtime_read_stage"] == "CATALOG_FULL"
+    assert status["runtime_deadline_expired"] is True
     assert status["error_module"] == "worker" and status["error_line"] > 0
     assert status["real_orders_sent"] == 0 and status["real_routes"] == "NOT_CALLED"
     assert "interrupted" not in str(status).lower()
