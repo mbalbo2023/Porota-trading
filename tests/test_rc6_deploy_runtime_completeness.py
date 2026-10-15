@@ -102,7 +102,7 @@ def test_late_verification_uses_retained_stable_image_tag():
 def test_contract_runner_uses_host_timeout_and_python_entrypoint():
     source = _deploy()
     assert 'sudo -n timeout --signal=TERM --kill-after=60 3300 sudo -n docker run' in source
-    assert 'timeout-minutes: 90' in source
+    assert 'timeout-minutes: 110' in source
     assert '--entrypoint python "$STABLE_IMAGE" ck_contract_evidence_runner_hf6.py' in source
     assert '--entrypoint timeout' not in source
 
