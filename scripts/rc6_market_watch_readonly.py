@@ -303,6 +303,16 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
                 "stages", "families", "lab", "entry_signals", "funnel", "source_reads",
                 "read_contract", "persistence", "snapshot", "common", "live"}:
             result["shadow"]["error_module"] = module
+        if (shadow.get("status") == "FAIL_CLOSED" and
+                shadow.get("error_class") == "EvidencePayloadLimit"):
+            role = shadow.get("evidence_file")
+            measured = shadow.get("evidence_measured_bytes")
+            limit = shadow.get("evidence_limit_bytes")
+            if (type(role) is str and role in {"latest.json.gz", "checkpoint.json.gz", "status.json", "preopen", "other"}
+                    and type(measured) is int and type(limit) is int
+                    and limit == 64 * 1024**2 and limit < measured <= 2 * 1024**3):
+                result["shadow"].update(evidence_file=role,
+                    evidence_measured_bytes=measured, evidence_limit_bytes=limit)
     if shadow is None:
         add("DYNAMIC_SHADOW_STATUS_MISSING_OR_INVALID",
             "P1" if market_open_observed else "P2")

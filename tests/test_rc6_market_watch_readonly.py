@@ -136,6 +136,30 @@ class MonitorContracts(unittest.TestCase):
             "payload": payload, "digest": monitor.canonical_digest(payload)}))
         self.assertNotIn("error_module", self.capture()["shadow"])
 
+    def test_shadow_payload_context_is_strictly_allowlisted(self):
+        payload = {"as_of": NOW.isoformat(), "status": "FAIL_CLOSED",
+                   "real_orders_sent": 0, "real_routes": "NOT_CALLED",
+                   "error_class": "EvidencePayloadLimit",
+                   "evidence_file": "latest.json.gz",
+                   "evidence_measured_bytes": 70 * 1024**2,
+                   "evidence_limit_bytes": 64 * 1024**2}
+        self.shadow_path.write_text(json.dumps({
+            "payload": payload, "digest": monitor.canonical_digest(payload)}))
+        record = self.capture()
+        self.assertEqual(record["shadow"]["evidence_file"], "latest.json.gz")
+        self.assertEqual(record["shadow"]["evidence_measured_bytes"], 70 * 1024**2)
+        self.assertIn("DYNAMIC_SHADOW_FAIL_CLOSED", self.codes(record, "P1"))
+        payload.update(evidence_file="preopen-private-token",
+                       evidence_measured_bytes="private-token",
+                       evidence_limit_bytes=0)
+        self.shadow_path.write_text(json.dumps({
+            "payload": payload, "digest": monitor.canonical_digest(payload)}))
+        rejected = self.capture()["shadow"]
+        self.assertNotIn("evidence_file", rejected)
+        self.assertNotIn("evidence_measured_bytes", rejected)
+        self.assertNotIn("evidence_limit_bytes", rejected)
+        self.assertNotIn("private-token", str(rejected))
+
     def test_manual_shadow_diagnostic_redacts_sqlite_failure_and_never_ticks(self):
         runtime = types.ModuleType("rc6_dynamic_universe.runtime")
         shadow = types.ModuleType("rc6_shadow_runtime.worker")
