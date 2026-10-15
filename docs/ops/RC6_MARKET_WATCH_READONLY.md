@@ -146,6 +146,16 @@ digest failure, SHA/time incompatibility and the Telegram ACK requirement.
 Delivery for this incident remains NO_VERIFICADO until a fresh artifact
 contains a verified message_id.
 
+The first live main runs after #569 were 38770675417 and 38771011936.
+Their artifacts 11992150480 and 11991751440 were independently digest
+verified, 2m26s apart on the same product SHA and both P1; the second still
+said previous_comparable=false. The first implementation eagerly fetched up
+to eight older runs before testing the nearest artifact. The READ_ONLY step
+took about 17 seconds and returned UNAVAILABLE. The corrected lookup stops
+at the first verified comparable artifact, including a prior attempt of the
+same run. A regression fails if it fetches an older run after a valid match.
+No delivery is claimed from these two artifacts.
+
 ## Controls and continuity
 
 - All changes via isolated branch and PR into main; no direct writes.

@@ -350,6 +350,39 @@ class MonitorContracts(unittest.TestCase):
         stale = dict(current, generated_at=(NOW + timedelta(minutes=31)).isoformat())
         self.assertIsNone(monitor.verified_previous_zip(raw, artifact, stale))
 
+    def test_other_run_lookup_stops_at_first_verified_artifact(self):
+        current = self.capture()
+        earlier = dict(current, generated_at=(NOW - timedelta(minutes=3)).isoformat())
+        prior_decision = monitor.classify(earlier)
+        with io.BytesIO() as stream:
+            with zipfile.ZipFile(stream, "w") as archive:
+                archive.writestr("snapshot.json", json.dumps(earlier))
+                archive.writestr("decision.json", json.dumps(prior_decision))
+            raw = stream.getvalue()
+        artifact = {"id": 321, "name": "rc6-market-watch-87", "expired": False,
+            "size_in_bytes": len(raw), "digest": "sha256:" + hashlib.sha256(raw).hexdigest(),
+            "created_at": earlier["generated_at"], "workflow_run": {"id": 87}}
+        calls = []
+        def get(url, _limit):
+            calls.append(url)
+            if "/runs/88/artifacts" in url:
+                return b'{"artifacts":[]}'
+            if "/workflows/384354765/runs" in url:
+                return json.dumps({"workflow_runs": [
+                    {"id": 88, "status": "in_progress"},
+                    {"id": 87, "status": "completed"},
+                    {"id": 86, "status": "completed"}]}).encode()
+            if "/runs/87/artifacts" in url:
+                return json.dumps({"artifacts": [artifact]}).encode()
+            if "/artifacts/321/zip" in url:
+                return raw
+            self.fail("older or unexpected run fetched")
+        receipt = monitor.read_previous_artifact(current, "mbalbo2023/Porota-trading",
+            384354765, 88, self.root / "lazy", get=get)
+        self.assertEqual(receipt["run_id"], 87)
+        self.assertEqual(len(calls), 4)
+        self.assertFalse(any("/runs/86/" in url for url in calls))
+
     def test_telegram_host_transport_acks_only_message_id_and_never_exposes_token(self):
         body = "POROTA RC6 | ALERT\nOBSERVER_HEARTBEAT_INVALID"
         encoded = monitor.base64.urlsafe_b64encode(body.encode()).decode()
