@@ -524,6 +524,8 @@ def test_system_health_and_integrations_keep_distinct_authorities(client):
     assert "Contador factual; desconocido no equivale a cero" in health.text
     assert "Salud de integración" in sources.text
     assert "Salud de integración" not in health.text
+    workers = client.get("/sistema/workers")
+    assert "Cauciones · cash sweep" in workers.text and "WINDOW_NOT_OPEN" in workers.text
     source_rows = BeautifulSoup(sources.text, "html.parser").select(".terminal-table tr[data-row]")
     assert len(source_rows) <= 10
     assert "IOL · captura complementaria" in source_rows[0].get_text()
