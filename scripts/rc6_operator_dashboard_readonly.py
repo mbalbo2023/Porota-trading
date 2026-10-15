@@ -109,7 +109,7 @@ def audit_host(*, runner=subprocess.run):
                 value = item.get(key)
                 safe[key] = value if type(value) is int and 0 <= value <= 365 * 86400 else None
             sources.append(safe)
-        status = "GREEN" if (len(routes) == len(ROUTES) and all(
+        status = "ROUTES_VERIFIED" if (len(routes) == len(ROUTES) and all(
             row["http"] == 200 and row["nav"] and row["content"] and row["error"] is None
             for row in routes) and data.get("source_status") == "BOUNDED" and sources) else "NO_VERIFICADO"
         return {"schema": SCHEMA, "read_only": True, "status": status,
