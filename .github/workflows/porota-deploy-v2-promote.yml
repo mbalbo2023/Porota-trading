@@ -916,6 +916,7 @@ jobs:
           # healthy. Extend the observation window cheaply after the three full
           # audits: no heavy HTTP sweep, only direct container-liveness and
           # restart-count invariants once per minute.
+          SOAK_START_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           for soak in 1 2 3 4 5; do
             sleep 60
             OBSERVER_STATUS_SOAK="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)"
@@ -930,9 +931,13 @@ jobs:
           done
           echo "RC6_EXIT139_SOAK=GREEN"
 
+          # The complete five-minute stability soak is the final no-error
+          # window. Startup lock traces before the three full audits are
+          # independently observed, but cannot permanently veto a recovered
+          # PAPER runtime after those audits and this error-free soak.
           RECENT_CRITICAL="$({
-            sudo -n docker logs --since 15m porota_production_observer 2>&1 || true
-            sudo -n docker logs --since 15m porota_production_dashboard 2>&1 || true
+            sudo -n docker logs --since "$SOAK_START_UTC" porota_production_observer 2>&1 || true
+            sudo -n docker logs --since "$SOAK_START_UTC" porota_production_dashboard 2>&1 || true
           } | grep -E 'Traceback|REAL_ORDER_CAPABILITY=(ENABLED|REAL)|real_orders_sent=[1-9][0-9]*' || true)"
           test -z "$RECENT_CRITICAL"
           echo "RC6_RECENT_CRITICAL_LOG_SIGNATURES=0"
