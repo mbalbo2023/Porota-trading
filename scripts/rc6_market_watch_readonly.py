@@ -220,6 +220,77 @@ def active_hours(at):
     return local.weekday() < 5 and 10 * 60 + 30 <= minute < 17 * 60 + 15
 
 
+def independent_session(at, root=ROOT):
+    """Read the deployed audited calendar in a bounded, separate interpreter.
+
+    This never asks observer_state whether the market ought to be open. The
+    checked-in spot schedule is scoped to BYMA PAPER spot, not every family.
+    """
+    code = '''import json,sys
+from datetime import datetime
+sys.path.insert(0,sys.argv[1])
+import ak_byma_calendar as c
+from co_market_sessions_hf6 import TZ,BYMA_PAPER_SPOT_OPEN,BYMA_PAPER_SPOT_CLOSE
+at=datetime.fromisoformat(sys.argv[2]).astimezone(TZ)
+audited=c.CALENDARIO_ACTUALIZADO_EL
+known=at.year in c.ANIOS_AUDITADOS and 0<=(at.date()-audited).days<=60
+opened=known and c.es_dia_habil_operativo(at.date()) and BYMA_PAPER_SPOT_OPEN<=at.time().replace(tzinfo=None)<BYMA_PAPER_SPOT_CLOSE
+print(json.dumps({'state':'OPEN' if opened else 'CLOSED' if known else 'UNKNOWN','scope':'BYMA_PAPER_SPOT','source':c.FUENTE_OFICIAL,'audited_at':audited.isoformat()}))'''
+    try:
+        out = subprocess.run([sys.executable, '-B', '-c', code, str(root), at.isoformat()],
+                             capture_output=True, text=True, timeout=2, check=True)
+        result = json.loads(out.stdout)
+        if result.get('state') in {'OPEN','CLOSED','UNKNOWN'}:
+            return result
+    except (OSError,subprocess.SubprocessError,ValueError):
+        pass
+    return {'state':'UNKNOWN','scope':'BYMA_PAPER_SPOT','reason':'AUDITED_CALENDAR_UNAVAILABLE'}
+
+
+def schedule_health(runs, at, *, expected_open):
+    """Manual, retry and push runs never certify scheduler cadence."""
+    scheduled = sorted((timestamp(r.get('run_started_at')) for r in runs
+        if r.get('event')=='schedule' and r.get('run_attempt',1)==1 and r.get('status')=='completed' and
+        timestamp(r.get('run_started_at')) is not None and timestamp(r['run_started_at'])<=at), reverse=True)
+    lag = (at-scheduled[0]).total_seconds() if scheduled else None
+    recent = [r for r in scheduled if 0 <= (at-r).total_seconds() <= 1800]
+    gaps = [(a-b).total_seconds() for a,b in zip(recent,recent[1:])]
+    silence = expected_open and (lag is None or lag > 1200)
+    return {'state':'SCHEDULE_SILENT' if silence else 'TWO_INTERVALS_OBSERVED' if
+            len(gaps)>=2 and all(0<g<=1200 for g in gaps[:2]) else 'NO_VERIFICADO',
+            'last_schedule_age_seconds':lag,'genuine_recent_runs':len(recent),
+            'consecutive_gaps_seconds':gaps[:3],'silence':bool(silence),
+            'independent_watchdog_ack':'NO_VERIFICADO'}
+
+
+def add_schedule_health(current, repo, *, get=None):
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',repo):
+        raise ValueError('INVALID_REPOSITORY')
+    if get is None:
+        from urllib.request import Request, urlopen
+        def get(url):
+            token=os.getenv('GH_TOKEN','')
+            headers={'Accept':'application/vnd.github+json'}
+            if token: headers['Authorization']='Bearer '+token
+            with urlopen(Request(url,headers=headers),timeout=15) as response:
+                raw=response.read(2*1024**2+1)
+            if len(raw)>2*1024**2: raise ValueError('SCHEDULE_RESPONSE_LIMIT')
+            return json.loads(raw)
+    expected=(current.get('expected_session') or {}).get('state')=='OPEN'
+    try:
+        result=get(f'https://api.github.com/repos/{repo}/actions/workflows/384354765/runs?event=schedule&per_page=100')
+        health=schedule_health(result['workflow_runs'],timestamp(current['generated_at']),expected_open=expected)
+    except (OSError,ValueError,KeyError,TypeError):
+        health={'state':'NO_VERIFICADO','reason':'SCHEDULE_API_UNAVAILABLE','silence':None}
+    current['schedule_health']=health
+    if health.get('silence') is True:
+        current['findings'].append(finding('SCHEDULE_SILENCE_TWO_INTERVALS','P1'))
+    elif expected and health['state']=='NO_VERIFICADO':
+        current['findings'].append(finding('SCHEDULE_CADENCE_UNVERIFIED','P2'))
+    current['severity']=max((r['severity'] for r in current['findings']),key=lambda s:SEVERITY[s],default='GREEN')
+    return current
+
+
 def _docker_inspect():
     command = ["docker", "inspect", "--format",
                "{{.Name}}|{{.State.Status}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{.Image}}",
@@ -371,6 +442,11 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
               "ppi_watch_accessed": False, "findings": findings}
     def add(code, level, evidence=None):
         findings.append(finding(code, level, evidence=evidence))
+    expected = independent_session(at, root)
+    result['expected_session'] = expected
+    if expected['state']=='UNKNOWN':
+        add('MARKET_SESSION_UNKNOWN','P1' if active_hours(at) else 'P2')
+    market_should_be_open = expected['state']=='OPEN'
     path = root / DB_REL
     try:
         state = _db_snapshot(path)
@@ -390,9 +466,12 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
         market_open_observed = str(observer.get("session_state") or "").upper() in {
             "OPEN", "MARKET_OPEN", "TRADING"}
         result["market_open_observed"] = market_open_observed
+        if expected['state']!='UNKNOWN' and market_open_observed != market_should_be_open:
+            add('OBSERVER_SESSION_DISAGREEMENT','P1')
+        market_freshness_required = market_should_be_open or (expected['state']=='UNKNOWN' and market_open_observed)
         market_age = age_seconds(observer.get("last_market_data_at"), at)
         result["ppi_market_age_seconds"] = market_age
-        if market_open_observed and (market_age is None or market_age > 900 or market_age < -30):
+        if market_freshness_required and (market_age is None or market_age > 900 or market_age < -30):
             add("PPI_MARKETDATA_NOT_FRESH", "P1")
         for name, worker in state["workers"].items():
             lag = age_seconds(worker.get("heartbeat_at"), at)
@@ -405,6 +484,7 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
         add("SQLITE_READ_OR_SCHEMA_UNAVAILABLE", "P0")
         result.update(observer={}, workers={}, cursors={}, readiness=None)
         market_open_observed = False
+        market_freshness_required = market_should_be_open
 
     provenance = load_bounded(root / "data/deploy/CURRENT_STATE_V2.json", 32768)
     result["provenance"] = {k: provenance.get(k) for k in (
@@ -440,6 +520,25 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
         "operational_funnel_status", "real_orders_sent", "real_routes",
         "provider_requests", "error_class")} if shadow else {}
     if shadow:
+        if shadow.get('runtime_read_stage') in {'CATALOG_FULL','OPEN_POSITIONS','SCHEMA_TABLES','INTRADAY_CONTRACTS','INTRADAY_POINTS','MARKET_SNAPSHOTS'}:
+            result['shadow']['runtime_read_stage']=shadow['runtime_read_stage']
+        if type(shadow.get('runtime_deadline_expired')) is bool:
+            result['shadow']['runtime_deadline_expired']=shadow['runtime_deadline_expired']
+        diagnostics=shadow.get('runtime_sql_diagnostics')
+        if isinstance(diagnostics,dict):
+            allowed={'CATALOG_FULL','OPEN_POSITIONS','SCHEMA_TABLES','INTRADAY_CONTRACTS','INTRADAY_POINTS','MARKET_SNAPSHOTS'}
+            safe=[]
+            for stage in diagnostics.get('stages',[])[:6]:
+                if not isinstance(stage,dict) or stage.get('stage') not in allowed:
+                    continue
+                item={'stage':stage['stage']}
+                for key in ('elapsed_ms','remaining_ms','rows'):
+                    value=stage.get(key)
+                    if type(value) in (int,float) and 0<=value<=1000000: item[key]=value
+                for key in ('deadline_elapsed','interrupted_by_deadline'):
+                    if type(stage.get(key)) is bool: item[key]=stage[key]
+                safe.append(item)
+            result['shadow']['runtime_sql_stages']=safe
         for key in ("sqlite_errorcode", "error_line"):
             value = shadow.get(key)
             if type(value) is int and 0 <= value <= 1000000:
@@ -464,7 +563,7 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
                     evidence_measured_bytes=measured, evidence_limit_bytes=limit)
     if shadow is None:
         add("DYNAMIC_SHADOW_STATUS_MISSING_OR_INVALID",
-            "P1" if market_open_observed else "P2")
+            "P1" if market_freshness_required else "P2")
     else:
         if (type(shadow.get("real_orders_sent")) is not int or
                 shadow["real_orders_sent"] != 0 or
@@ -477,7 +576,7 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
                 result["shadow"].get("error_class"))
         elif lag is None or lag < -30 or lag > 180:
             add("DYNAMIC_SHADOW_NOT_PROGRESSING",
-                "P1" if market_open_observed else "P2")
+                "P1" if market_freshness_required else "P2")
 
     perf_path = root / ("data/paper_v17/observer_v17.db.performance.sqlite.latest.json")
     perf = load_bounded(perf_path, 524288)
@@ -487,13 +586,13 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
                              } if perf else {"present": False}
     if not perf:
         add("PERFORMANCE_REPORT_UNAVAILABLE",
-            "P1" if market_open_observed else "P2")
+            "P1" if market_freshness_required else "P2")
     else:
         lag = age_seconds(perf.get("generated_at"), at)
         result["performance_age_seconds"] = lag
         if lag is None or lag < -30 or lag > 900:
             add("PERFORMANCE_REPORT_STALE",
-                "P1" if market_open_observed else "P2")
+                "P1" if market_freshness_required else "P2")
 
     try:
         resources = _resources()
@@ -1021,6 +1120,9 @@ def main(argv=None):
     actions.add_parser("schedule-api-host")
     actions.add_parser("observer-lifecycle-host")
     actions.add_parser("recent-critical-host")
+    cadence = actions.add_parser('schedule-health')
+    cadence.add_argument('--current',required=True)
+    cadence.add_argument('--repo',required=True)
     alert = actions.add_parser("alert-host")
     alert.add_argument("encoded")
     prep = actions.add_parser("prepare-alert")
@@ -1044,6 +1146,11 @@ def main(argv=None):
                 all(x in "0123456789abcdef" for x in args.expected_sha)):
             raise SystemExit("INVALID_EXPECTED_SHA")
         data = probe(root=args.root, expected_sha=args.expected_sha)
+    elif args.action == 'schedule-health':
+        data=add_schedule_health(load_bounded(Path(args.current)),args.repo)
+        Path(args.current).write_text(json.dumps(data,sort_keys=True,separators=(',',':'))+'\n')
+        print(json.dumps(data['schedule_health'],sort_keys=True))
+        return 0
     elif args.action == "transport-error":
         data = transport_error()
     elif args.action == "shadow-diagnostic":

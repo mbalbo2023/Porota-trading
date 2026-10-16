@@ -76,7 +76,7 @@ class MonitorContracts(unittest.TestCase):
             "payload": payload, "digest": monitor.canonical_digest(payload)}))
 
     def capture(self, at=NOW):
-        with patch.object(monitor, "_resources", return_value=self.resources), patch.object(
+        with patch.object(monitor, "independent_session", return_value={"state":"OPEN" if monitor.active_hours(at) else "CLOSED"}), patch.object(monitor, "_resources", return_value=self.resources), patch.object(
                 monitor, "_host_control_state", return_value={
                     "legacy_health_timer": "inactive", "fast_health_timer": "active",
                     "observer_container": {"Status": "running"}}):
@@ -250,7 +250,26 @@ class MonitorContracts(unittest.TestCase):
         with sqlite3.connect(self.db) as connection:
             connection.execute("UPDATE observer_state SET session_state='MARKET_CLOSED',"
                                "last_market_data_at=?", ((NOW - timedelta(days=1)).isoformat(),))
-        self.assertEqual(self.capture()["severity"], "GREEN")
+        with patch.object(monitor, 'independent_session', return_value={'state':'CLOSED'}):
+            with patch.object(monitor, '_resources', return_value=self.resources), patch.object(monitor, '_host_control_state', return_value={}):
+                result=monitor.probe(root=self.root,at=NOW,expected_sha=SHA,inspect=self.inspect)
+        self.assertEqual(result['severity'], 'GREEN')
+
+    def test_observer_false_closed_does_not_blind_market_monitor(self):
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE observer_state SET session_state='MARKET_CLOSED',last_market_data_at=?", ((NOW-timedelta(days=1)).isoformat(),))
+        result=self.capture()
+        self.assertIn('OBSERVER_SESSION_DISAGREEMENT',self.codes(result,'P1'))
+        self.assertIn('PPI_MARKETDATA_NOT_FRESH',self.codes(result,'P1'))
+
+    def test_schedule_manual_push_and_retry_never_prove_cadence(self):
+        fake=[{'event':'push','created_at':NOW.isoformat()},
+              {'event':'workflow_dispatch','created_at':NOW.isoformat()},
+              {'event':'schedule','run_attempt':2,'created_at':NOW.isoformat()}]
+        self.assertEqual(monitor.schedule_health(fake,NOW,expected_open=True)['state'],'SCHEDULE_SILENT')
+        real=[{'event':'schedule','status':'completed','run_started_at':(NOW-timedelta(minutes=m)).isoformat()} for m in (1,11,21)]
+        self.assertEqual(monitor.schedule_health(real,NOW,expected_open=True)['state'],'TWO_INTERVALS_OBSERVED')
+        self.assertFalse(monitor.schedule_health([],NOW,expected_open=False)['silence'])
 
     def test_memory_shortage_is_not_hidden(self):
         self.resources["mem_available_bytes"] = 20 * 1024**2

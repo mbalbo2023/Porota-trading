@@ -243,6 +243,12 @@ jobs:
           print('RC6_CONNECTOR_STATES='+json.dumps(result.get('sources',[]),
               sort_keys=True,separators=(',',':')))
           PY
+      - name: Record genuine schedule cadence independently of observer
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/rc6_market_watch_readonly.py schedule-health --current evidence/snapshot.json --repo "$GITHUB_REPOSITORY"
       - name: Read previous committed monitor artifact (best effort)
         if: steps.window.outputs.active == '1'
         shell: bash

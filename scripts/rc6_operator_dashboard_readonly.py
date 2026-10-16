@@ -67,9 +67,12 @@ def age(value):
  except (TypeError,ValueError): return None
 class VisibleGaps(HTMLParser):
  def __init__(self):
-  super().__init__(); self.hidden=0; self.count=0
+  super().__init__(); self.hidden=0; self.count=0; self.statuses={}
  def handle_starttag(self, tag, attrs):
   if tag in {"script","style"}: self.hidden+=1
+  for name,value in attrs:
+   if name=='data-status' and value in {'NO_VERIFICADO','STALE','FRESH','BLOCKED','ERROR','RUNNING','DEGRADED','WAITING_MARKET','WAITING_WINDOW','NO_READY','RUNTIME_READY','COMMITTED_COHERENT_SHADOW'}:
+    self.statuses[value]=min(1000,self.statuses.get(value,0)+1)
  def handle_endtag(self, tag):
   if tag in {"script","style"}: self.hidden=max(0,self.hidden-1)
  def handle_data(self, data):
@@ -99,6 +102,7 @@ if token:
     entry["nav"]="id='porota-canonical-nav'" in html or 'id="porota-canonical-nav"' in html
     entry["content"]="id='terminal-content'" in html or 'id="terminal-content"' in html
     gaps=VisibleGaps(); gaps.feed(html); entry["unverified_mentions"]=gaps.count
+    entry['visible_status_counts']=gaps.statuses
     if path=="/": entry["attention"]="Atención ahora" in html
   except urllib.error.HTTPError as exc: entry["http"]=exc.code
   except (OSError,ValueError): entry["error"]="HTTP_UNAVAILABLE"
