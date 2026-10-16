@@ -43,6 +43,9 @@ jobs:
           echo 'OBSERVER_PROCESSES_BEGIN'
           sudo -n docker top porota_production_observer -eo pid,ppid,etime,%cpu,%mem,stat,args | grep -E '(^PID|python)' | head -30
           echo 'OBSERVER_PROCESSES_END'
+          for binary in py-spy perf gdb; do
+            echo "PROFILER_${binary}=$(command -v "$binary" || true)"
+          done
           echo 'SHADOW_LOG_BEGIN'
           sudo -n docker logs --since 30m porota_production_observer 2>&1 | grep -F 'DYNAMIC_SHADOW_RUNTIME' | tail -40 || true
           echo 'SHADOW_LOG_END'
