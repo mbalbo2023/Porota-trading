@@ -1,6 +1,15 @@
 {
-  "as_of": "2026-10-16T16:40:00Z",
+  "as_of": "2026-10-16T16:55:00Z",
   "deployment": "NOT_STARTED_MARKET_OPEN",
+  "eod_guard": {
+    "cold_write_budget_seconds": 15,
+    "host_reserve_bytes": 2214592512,
+    "hot_snapshot_released_before_publication": true,
+    "max_batch_payload_bytes": 4194304,
+    "max_source_row_bytes": 65536,
+    "runtime_validated": false,
+    "sql_budget_seconds": 2
+  },
   "full_dashboard_runtime_routes": "POSTCLOSE_PENDING",
   "full_suite_green": false,
   "genuine_schedule_cadence": "NO_VERIFICADO",
@@ -16,8 +25,25 @@
       "runtime_deadline_expired": true,
       "runtime_stage": "INTRADAY_POINTS",
       "shadow_status": "FAIL_CLOSED"
+    },
+    {
+      "artifact_id": 12059174052,
+      "digest": "4ba9df06e3981ef8adf982daa359289ee8b1d620df3c3c2df9ea58111426be0d",
+      "generated_at": "2026-10-16T16:39:32.986612+00:00",
+      "genuine_schedule_recent_runs": 0,
+      "real_orders_sent": 0,
+      "route_home_elapsed_ms": 2893,
+      "routes_http200": 13,
+      "run_id": 38933642103,
+      "runtime_deadline_expired": true,
+      "runtime_stage": "INTRADAY_POINTS",
+      "shadow_status": "FAIL_CLOSED",
+      "watchdog_ack_at": "2026-10-15T18:10:11.958061+00:00",
+      "watchdog_ack_message_id": "932",
+      "watchdog_service_result": "success"
     }
   ],
+  "main_monitor_head_at_development_cut": "d619d750d4d38fb9ba00ac80777c893f321adfe9",
   "mode": "PRODUCTION_PAPER",
   "native_predeploy": "NOT_STARTED_MARKET_OPEN",
   "nonroot_recheck": "BLOCKED_LOCAL_UID_NAMESPACE_ONLY_UID_0",
@@ -35,6 +61,17 @@
       "failures": [],
       "sha256": "20f4c5e0a4d6f3af1946c9a5a63eb9eebc5d671391d18fec6a5e706ae2a4e698",
       "skips": []
+    },
+    "eod_budget_guards": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 14
+      },
+      "failures": [],
+      "sha256": "74a3c2b432931b9f409112223f076f3c8cc2b19e1e8bd96f0802432027e13878",
+      "source_commit": "current_eod_guard_source"
     },
     "existing_watchdog_extension": {
       "counts": {
@@ -57,6 +94,16 @@
       "failures": [],
       "sha256": "d51cf651fd7421253150b8a9e6b520ddacb3c6562a51aeb650b976de2045c009",
       "skips": []
+    },
+    "final_scoped": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 265
+      },
+      "runtime_claim": false,
+      "sha256": "acf356c91070a2f4fa9e0a83c312bcd2a624e307603492f1251a854148934b70"
     },
     "focused": {
       "counts": {
@@ -87,6 +134,19 @@
         "tests.test_ledger_preflight_errors_v17::test_actual_nonprivileged_sqlite_on_readonly_fixture[DELETE]",
         "tests.test_ledger_preflight_errors_v17::test_actual_nonprivileged_sqlite_on_readonly_fixture[WAL]"
       ]
+    },
+    "full_root_second": {
+      "counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 4,
+        "tests": 3608
+      },
+      "failures": [
+        "tests.test_rc6_final_programming_runtime::test_canonical_worker_consumes_reviewed_open_capacity_and_falls_back_without_provider_calls"
+      ],
+      "sha256": "fca8281689c290bb66d615e29a6187029854b385c4dacba7d7776bdee48dcba1",
+      "source_commit": "b70615322f91e753a38d1fc2f0c073ab505c61bf"
     }
   },
   "runtime_modified": false,
@@ -118,6 +178,7 @@
   },
   "state": "DEVELOPMENT_ONLY_NOT_FROZEN",
   "visual_tablet_qa": "NO_VERIFICADO",
-  "watchdog_runtime_ack": "NO_VERIFICADO",
+  "watchdog_host_timer_active": true,
+  "watchdog_runtime_ack": "HISTORICAL_VERIFIED_NOT_CURRENT_CADENCE",
   "workstream": "WS-RC6-POSTCLOSE-CONSOLIDATED-20261016"
 }

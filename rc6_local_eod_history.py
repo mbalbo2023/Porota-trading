@@ -21,7 +21,8 @@ from bl_candle_engine import Bar, CandleArchive, Series, canonical, fingerprint,
 from co_market_sessions_hf6 import TZ, session_for
 from cv_history_store_adapter_hf6 import HistoricalStore
 
-RESERVE = 2 * 1024**3 + 32 * 1024**2
+HEADROOM = 64 * 1024**2
+RESERVE = 2 * 1024**3 + HEADROOM
 MAX_ROWS = 500
 DDL = """
 CREATE TABLE IF NOT EXISTS local_eod_cursor_v1(
@@ -67,6 +68,7 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                              "inode": source.stat().st_ino})
     with closing(sqlite3.connect(source.as_uri()+"?mode=ro", uri=True, timeout=.1)) as read:
         read.row_factory = sqlite3.Row
+        read.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 65536)
         read.execute("PRAGMA query_only=ON")
         deadline = time.monotonic()+2
         read.set_progress_handler(lambda: int(time.monotonic()>deadline), 1000)
@@ -85,7 +87,7 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
         if available < RESERVE:
             return base | {"state": "DEFERRED_DISK", "reason": "HOST_RESERVE_REQUIRED"}
         if sum(Path(str(target)+suffix).stat().st_size for suffix in ('','-wal','-shm')
-               if Path(str(target)+suffix).exists()) > 2*1024**3:
+               if Path(str(target)+suffix).exists()) > 2*1024**3-HEADROOM:
             return base | {"state": "BLOCKED", "reason": "COLD_ARCHIVE_PHYSICAL_BUDGET"}
         store = HistoricalStore(str(target))
         with target.with_suffix(target.suffix+'.local-eod.lock').open('a+') as lock:
@@ -102,14 +104,38 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                 write.execute('BEGIN IMMEDIATE')
                 prior = write.execute('SELECT cursor FROM local_eod_cursor_v1 WHERE source_id=?',(source_id,)).fetchone()
                 cursor = prior[0] if prior else 0
-                rows = read.execute('''SELECT v.*,s.identity_json FROM candle_versions v
+                selected = read.execute('''SELECT v.*,s.identity_json FROM candle_versions v
                     JOIN candle_series s USING(series_id) WHERE v.id>? ORDER BY v.id LIMIT ?''',
-                    (cursor,batch_size)).fetchall()
+                    (cursor,batch_size))
+                rows=[]; payload_bytes=0
+                for row in selected:
+                    payload_bytes+=len(row['body_json'].encode())+len(row['identity_json'].encode())
+                    if payload_bytes>4*1024**2:
+                        raise ValueError('LOCAL_EOD_BATCH_BYTE_BUDGET')
+                    rows.append(row)
+                clocks={}
+                for row in rows:
+                    clocks[row['id']]=tuple(read.execute('''SELECT MIN(event_at),MAX(event_at),MIN(received_at),MAX(received_at)
+                        FROM candle_samples WHERE series_id=? AND event_at>=? AND event_at<?
+                        AND received_at<=?''',(row['series_id'],row['bar_start'],row['bar_end'],stamp(at))).fetchone())
+                more=bool(read.execute('SELECT 1 FROM candle_versions WHERE id>? LIMIT 1',
+                                      (rows[-1]['id'] if rows else cursor,)).fetchone())
+                if time.monotonic()>deadline:
+                    raise ValueError('LOCAL_EOD_SOURCE_READ_BUDGET')
+                # End the HOT/WAL snapshot before parsing, hashing or publishing
+                # cold revisions. Cold work cannot spend the source SQL budget.
+                read.rollback()
+                write_deadline=time.monotonic()+15
+                write.set_progress_handler(lambda:int(time.monotonic()>write_deadline),1000)
+                def write_guard():
+                    if time.monotonic()>write_deadline:
+                        raise ValueError('LOCAL_EOD_COLD_WRITE_BUDGET')
                 final = {(r['series_id'],r['bar_start']):r['id'] for r in rows}
                 dirty = set()
                 archive = CandleArchive(store)
                 imported = rejected = 0
                 for row in rows:
+                    write_guard()
                     if datetime.fromisoformat(stamp(row['known_at'])) > at:
                         raise ValueError('LOCAL_EOD_FUTURE_VERSION')
                     identity = json.loads(row['identity_json'])
@@ -130,11 +156,8 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                         start.date()==end.date() and end<=at.astimezone(TZ) and
                         body.get('quality') in {'SAMPLED','CONFLICT'} and not body.get('synthetic'))
                     if valid and final[(row['series_id'],row['bar_start'])]==row['id']:
-                        clocks=read.execute('''SELECT MIN(event_at),MAX(event_at),MIN(received_at),MAX(received_at)
-                            FROM candle_samples WHERE series_id=? AND event_at>=? AND event_at<?
-                            AND received_at<=?''',(series.key,row['bar_start'],row['bar_end'],stamp(at))).fetchone()
                         write.execute('INSERT INTO local_eod_provenance_v1 VALUES(?,?,?,?,?,?,?,?)',
-                            (source_id,row['id'],*clocks,row['known_at'],stamp(at)))
+                            (source_id,row['id'],*clocks[row['id']],row['known_at'],stamp(at)))
                         bar = Bar(start=body['start'],open=Decimal(body['open']),high=Decimal(body['high']),
                             low=Decimal(body['low']),close=Decimal(body['close']),samples=body['samples'],
                             quality=body['quality'])
@@ -151,6 +174,7 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                 # At most 500 dirty groups, each at most the 390 sampled minutes
                 # in the audited quote session. Late revisions append at NOW.
                 for series_id,day in sorted(dirty):
+                    write_guard()
                     identity=json.loads(write.execute('SELECT identity_json FROM candle_series WHERE series_id=?',(series_id,)).fetchone()[0])
                     day_start=datetime.fromisoformat(day).replace(tzinfo=TZ)
                     versions=write.execute('''SELECT * FROM candle_versions WHERE series_id=? AND bar_start>=?
@@ -176,12 +200,12 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                     if previous is None or previous[0]!=hashed:
                         write.execute('INSERT INTO history_local_daily_v1 VALUES(?,?,?,?,?,?)',
                             (series_id,day,stamp(at),canonical(identity),canonical(body),hashed))
-                more=bool(read.execute('SELECT 1 FROM candle_versions WHERE id>? LIMIT 1',(cursor,)).fetchone())
                 state='BACKLOG' if more else 'LOCAL_EOD_READY'
                 write.execute('INSERT OR REPLACE INTO local_eod_cursor_v1 VALUES(?,?,?,?)',
                     (source_id,cursor,stamp(at),state))
                 if before_commit:
                     before_commit()
+                write_guard()
                 return base | {'state':state,'imported':imported,'rejected':rejected,'cursor':cursor,
                     'daily_groups':len(dirty),'real_orders_sent':0,'scope':'OBSERVED_BASKET_ONLY'}
 

@@ -70,6 +70,46 @@ def test_crash_does_not_publish_cursor_or_daily(source,tmp_path):
     assert consolidate(source.path,cold,as_of=NOW,free_bytes=RESERVE)['imported']==1
 
 
+def test_local_hot_snapshot_ends_before_cold_publication(source,tmp_path,monkeypatch):
+    import rc6_local_eod_history as local
+    sample(source); sample(source,'USD')
+    connections=[]; original_connect=sqlite3.connect; original_put=CandleArchive.put
+    def connect(database,*args,**kwargs):
+        connection=original_connect(database,*args,**kwargs)
+        if 'mode=ro' in str(database): connections.append(connection)
+        return connection
+    def put(*args,**kwargs):
+        assert len(connections)==1 and not connections[0].in_transaction
+        return original_put(*args,**kwargs)
+    monkeypatch.setattr(local.sqlite3,'connect',connect)
+    monkeypatch.setattr(CandleArchive,'put',put)
+    assert consolidate(source.path,tmp_path/'history.db',as_of=NOW,free_bytes=RESERVE)['imported']==2
+
+
+def test_local_oversize_source_payload_is_rejected_before_publication(source,tmp_path):
+    sample(source)
+    with source.connect() as c:
+        c.execute('UPDATE candle_versions SET body_json=?',('x'*65537,))
+    cold=tmp_path/'history.db'
+    with pytest.raises(sqlite3.DataError):
+        consolidate(source.path,cold,as_of=NOW,free_bytes=RESERVE)
+    with sqlite3.connect(cold) as c:
+        assert c.execute('SELECT COUNT(*) FROM local_eod_cursor_v1').fetchone()[0]==0
+
+
+def test_local_cold_deadline_rolls_back_complete_batch(source,tmp_path,monkeypatch):
+    import rc6_local_eod_history as local
+    sample(source); cold=tmp_path/'history.db'
+    original=local.time.monotonic
+    with monkeypatch.context() as patch:
+        def expired(): patch.setattr(local.time,'monotonic',lambda:original()+20)
+        with pytest.raises(ValueError,match='COLD_WRITE_BUDGET'):
+            consolidate(source.path,cold,as_of=NOW,free_bytes=RESERVE,before_commit=expired)
+    with sqlite3.connect(cold) as c:
+        assert c.execute('SELECT COUNT(*) FROM local_eod_cursor_v1').fetchone()[0]==0
+        assert c.execute('SELECT COUNT(*) FROM history_local_daily_v1').fetchone()[0]==0
+
+
 def test_late_revision_appends_at_real_publication_time(source,tmp_path):
     cold=tmp_path/'history.db'; sample(source)
     consolidate(source.path,cold,as_of=NOW,free_bytes=RESERVE)
