@@ -106,6 +106,47 @@ jobs:
           echo "DB_TEMP_END"
           echo "DISK_FREE=$(df -PB1 / | awk 'NR==2{print $4}')"
           HOST
+      - name: Reclaim verified unused predeploy image only
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          IMAGE=porota-predeploy-v2:5077e22b09b710a4bf0fd81fba52107aa4dfe3ac
+          EXPECTED=sha256:41ddee18f0270c4523f138b86be50adc9c16eef07ff6e8998893bfd35419e3ea
+          FREE_BEFORE="$(df -PB1 / | awk 'NR==2{print $4}')"
+          echo "FREE_BEFORE_IMAGE_CLEANUP=$FREE_BEFORE"
+          test "$(sudo -n docker image inspect -f '{{.Id}}' "$IMAGE")" = "$EXPECTED"
+          for name in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            test "$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}' "$name")" = "running|false|0"
+          done
+          STATE="$(sudo -n timeout 12 python3 - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=3)
+          c.execute('PRAGMA query_only=ON')
+          print('|'.join(map(str,c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone())))
+          c.close()
+          PY
+          )"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+          PPI_BEFORE="$(for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"; done)"
+          for cid in $(sudo -n docker ps -aq); do
+            test "$(sudo -n docker inspect -f '{{.Image}}' "$cid")" != "$EXPECTED"
+          done
+          echo "UNUSED_IMAGE_PROOF=GREEN|image=$EXPECTED|containers=0"
+          sudo -n docker image rm "$IMAGE"
+          sudo -n docker image prune -f
+          for name in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            test "$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}' "$name")" = "running|false|0"
+          done
+          PPI_AFTER="$(for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"; done)"
+          test "$PPI_AFTER" = "$PPI_BEFORE"
+          FREE_AFTER="$(df -PB1 / | awk 'NR==2{print $4}')"
+          echo "FREE_AFTER_IMAGE_CLEANUP=$FREE_AFTER"
+          test "$FREE_AFTER" -ge 2147483648
+          echo "RC6_CRITICAL_DISK_RECOVERY=GREEN"
+          HOST
       - name: Cleanup SSH
         if: always()
         run: rm -f "$HOME/.ssh/key"
