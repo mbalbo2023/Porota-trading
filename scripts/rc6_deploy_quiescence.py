@@ -32,6 +32,38 @@ def inspect(name):
     return json.loads(command(['docker', 'inspect', name]))[0]
 
 
+def lifecycle(value):
+    return {key: value.get('State', {}).get(key) for key in
+            ('Status', 'StartedAt', 'FinishedAt', 'ExitCode', 'OOMKilled')}
+
+
+def clean_stop(before, after):
+    """Distinguish a retained historical OOM flag from this clean stop.
+
+    A new/unknown OOM or any nonzero exit remains blocking. Docker may retain
+    OOMKilled across starts; a fresh clean ExitCode alone does not erase its
+    history. Accept that history only when the prior lifecycle was verified.
+    """
+    old, new = lifecycle(before), lifecycle(after)
+    if before['Id'] != after['Id'] or before['Image'] != after['Image']:
+        raise ValueError('QUIESCENCE_STOP_IDENTITY_CHANGED')
+    if new['Status'] != 'exited': raise ValueError('QUIESCENCE_STOP_NOT_EXITED')
+    if type(new['ExitCode']) is not int or new['ExitCode'] != 0:
+        raise ValueError('QUIESCENCE_STOP_NONZERO_OR_UNKNOWN_EXIT')
+    if new['OOMKilled'] is False: return 'CLEAN_EXIT'
+    try:
+        started = datetime.fromisoformat(old['StartedAt'].replace('Z', '+00:00'))
+        previous_finish = datetime.fromisoformat(old['FinishedAt'].replace('Z', '+00:00'))
+        finished = datetime.fromisoformat(new['FinishedAt'].replace('Z', '+00:00'))
+        if (old['Status'] == 'running' and old['OOMKilled'] is True and new['OOMKilled'] is True
+                and type(old['ExitCode']) is int and old['ExitCode'] == 0
+                and new['StartedAt'] == old['StartedAt'] and previous_finish.year >= 2020
+                and previous_finish < started <= finished <= datetime.now(timezone.utc)):
+            return 'INHERITED_OOM_FLAG_CLEAN_EXIT'
+    except (AttributeError, TypeError, ValueError): pass
+    raise ValueError('QUIESCENCE_STOP_OOM_NEW_OR_UNVERIFIED')
+
+
 def admit(*, stopped=False):
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
@@ -90,6 +122,7 @@ def run(candidate, action):
                 raise ValueError('QUIESCENCE_RUNTIME_NOT_RUNNING')
             receipt = {'candidate_sha': candidate, 'status': 'DRAINING',
                        'installation_started': False, 'stop_attempted': [],
+                       'stop_evidence': {},
                        'containers': {n: {'id': v['Id'], 'image': v['Image']} for n, v in originals.items()},
                        'real_orders_sent': 0, 'ppi_watch_accessed': False}
             persist(path, receipt)
@@ -99,9 +132,12 @@ def run(candidate, action):
                 receipt['stop_attempted'].append(name); persist(path, receipt)
                 command(['docker', 'stop', '--time', '45', name])
                 value = inspect(name)
-                if (value['Id'] != receipt['containers'][name]['id'] or value['State']['Status'] != 'exited'
-                        or value['State']['OOMKilled'] or value['State']['ExitCode'] != 0):
-                    raise ValueError('QUIESCENCE_STOP_UNVERIFIED')
+                receipt['stop_evidence'][name] = {'before': lifecycle(originals[name]), 'after': lifecycle(value)}
+                persist(path, receipt)
+                print(json.dumps({'container': name, 'stop_evidence': receipt['stop_evidence'][name]}), flush=True)
+                classification = clean_stop(originals[name], value)
+                receipt['stop_evidence'][name]['classification'] = classification
+                persist(path, receipt)
             admit(stopped=True)
             receipt.update(status='DRAINED', inflight='ABSENT_OWNED_RUNTIME_STOPPED')
         elif action == 'install':

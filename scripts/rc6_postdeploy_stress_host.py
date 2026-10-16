@@ -23,6 +23,9 @@ import time
 from urllib.request import urlopen
 
 ROOT=Path('/opt/porota-trading')
+sys.path.insert(0,str(ROOT))
+from scripts.rc6_deploy_quiescence import clean_stop,lifecycle
+
 OWNED=('porota_production_observer','porota_production_dashboard')
 RESERVE=2*1024**3
 MEMORY=512*1024**2
@@ -84,20 +87,22 @@ def run(candidate, run_id):
         fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
         database_state(ROOT/'data/paper_v17/observer_v17.db')
         if shutil.disk_usage(ROOT).free < RESERVE+768*1024**2:raise ValueError('STRESS_DISK_ADMISSION_BLOCKED')
-        before={}
+        before={};before_details={}
         for container in OWNED:
             value=json.loads(command(['docker','inspect',container]))[0]
             if value['Image']!=image or value['State']['Status']!='running':raise ValueError('STRESS_RUNTIME_IMAGE_MISMATCH')
             before[container]=value['Id']
+            before_details[container]=value
         report['original_container_ids']=before
+        report['stop_evidence']={}
         # Graceful stop drains the scanner/exit owner; only after all its
         # processes stop is absence of evaluation/fill in flight proven.
         for container in OWNED:
             stopped.append(container)
             command(['docker','stop','--time','45',container],timeout=55)
             value=json.loads(command(['docker','inspect',container]))[0]
-            if value['State']['Status']!='exited' or value['State']['OOMKilled'] or value['State']['ExitCode']!=0:
-                raise ValueError('STRESS_QUIESCENCE_UNVERIFIED')
+            report['stop_evidence'][container]={'before':lifecycle(before_details[container]),'after':lifecycle(value)}
+            report['stop_evidence'][container]['classification']=clean_stop(before_details[container],value)
         database_state(ROOT/'data/paper_v17/observer_v17.db',require_waiting=False)
         report['inflight_evaluation_or_fill']='ABSENT_OWNED_RUNTIME_STOPPED'
         report['memory_available_after_quiesce']=memory_available()
