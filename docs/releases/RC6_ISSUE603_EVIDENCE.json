@@ -6,8 +6,8 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "NO_GO_PENDING_EXACT_PREDEPLOY_AND_HOST_GATES",
-  "deploy_started": false,
+  "release_state": "DEPLOY_IN_PROGRESS_NOT_YET_VALIDATED_RUNTIME",
+  "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
     "mode": "WRITE_OWNER",
@@ -397,7 +397,7 @@
   "candidate_sha": "1b8bd8b684d3bd2e019aac195f8be6257822dc38",
   "candidate_tree": "232322fde35623dd6e5ce97ede6dc73bb69ebb33",
   "predeploy_run": 38980321428,
-  "predeploy_state": "IN_PROGRESS",
+  "predeploy_state": "SUCCESS",
   "monitor_merge_sha": "5a87538d3816601a4fddf4aaafc975b4ebc674d7",
   "latest_readonly": {
     "run": 38980476862,
@@ -422,5 +422,24 @@
     "error": 0,
     "skipped": 0,
     "junit_sha256": "1cca94530e343a508407a63552464c9dc304e87787978c6236a27cf85fdd4840"
+  },
+  "deploy_merge_sha": "06c22b5251b94d9bb31074dfc8294355d6341e73",
+  "deploy_run": 38981124467,
+  "predeploy_certificate": {
+    "run": 38980321428,
+    "artifact": 12081211347,
+    "zip_sha256": "d5ae721baee214cdc7add8413a86c08a372a3f00d62ca335a650793c7da47717",
+    "image_id": "sha256:95fcba7b741133fc6b7ed8ca6fdabd813dc17679dd70abac0414c722f96ac6c6",
+    "image_tar_sha256": "7caac1d0457ceb1cda3f10256c616991d8b17e77d29401082c44d5d3a2d2f54d",
+    "bundle_sha256": "964ce1378dd1989782e8d7eb90f35eb69fc1eae0cdac551fb672a605f666ac49",
+    "bundle_files": 504,
+    "all_hashes_verified": true,
+    "discovered": 3703,
+    "executed": 3703,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "xfail": 0,
+    "declared_legacy_exclusion": "test_a3_primary_readonly_hf6.py SUPERSEDED_DUPLICATE_MODULE; successor tests/test_a3_primary_readonly_hf6.py executed"
   }
 }
