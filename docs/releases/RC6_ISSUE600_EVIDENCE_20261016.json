@@ -1,0 +1,123 @@
+{
+  "as_of": "2026-10-16T16:40:00Z",
+  "deployment": "NOT_STARTED_MARKET_OPEN",
+  "full_dashboard_runtime_routes": "POSTCLOSE_PENDING",
+  "full_suite_green": false,
+  "genuine_schedule_cadence": "NO_VERIFICADO",
+  "initial_fix_commit": "195f9e5d697d3cc4b0969355bd5bb0c21dc58dba",
+  "live_evidence": [
+    {
+      "artifact_id": 12058816231,
+      "digest": "d8e6727e04f68b7efeda4101b856e9508ccd1d6df2ac0527a0dbcb950407c8fd",
+      "expected_session": "OPEN",
+      "generated_at": "2026-10-16T16:12:52.534690Z",
+      "real_orders_sent": 0,
+      "run_id": 38930121732,
+      "runtime_deadline_expired": true,
+      "runtime_stage": "INTRADAY_POINTS",
+      "shadow_status": "FAIL_CLOSED"
+    }
+  ],
+  "mode": "PRODUCTION_PAPER",
+  "native_predeploy": "NOT_STARTED_MARKET_OPEN",
+  "nonroot_recheck": "BLOCKED_LOCAL_UID_NAMESPACE_ONLY_UID_0",
+  "ppi_watch_accessed": false,
+  "productive_baseline": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
+  "real_routes": "NOT_CALLED",
+  "reports": {
+    "critical_sql": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 18
+      },
+      "failures": [],
+      "sha256": "20f4c5e0a4d6f3af1946c9a5a63eb9eebc5d671391d18fec6a5e706ae2a4e698",
+      "skips": []
+    },
+    "existing_watchdog_extension": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 34
+      },
+      "failures": [],
+      "sha256": "b2ebdda7aede4fb58b289984f73bf21e6577f36a85d15d28d1f5390c3f2af749",
+      "skips": []
+    },
+    "failure_recheck": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 2
+      },
+      "failures": [],
+      "sha256": "d51cf651fd7421253150b8a9e6b520ddacb3c6562a51aeb650b976de2045c009",
+      "skips": []
+    },
+    "focused": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 248
+      },
+      "failures": [],
+      "sha256": "e2d4af100aba61c032b13ccf8f0f11e61713ebbbe353f09e9a6c62746eb0425e",
+      "skips": []
+    },
+    "full_root": {
+      "counts": {
+        "errors": 0,
+        "failures": 2,
+        "skipped": 4,
+        "tests": 3607
+      },
+      "failures": [
+        "tests.test_rc6_final_programming_runtime::test_canonical_worker_consumes_reviewed_open_capacity_and_falls_back_without_provider_calls",
+        "tests.test_rc6_performance_capture::test_read_only_capture_survives_real_wal_writer_without_waiting_twenty_seconds"
+      ],
+      "sha256": "5c276ecb8f9d2f30ea5dbb8ae16e016bf236465bafe5c547d808a809dcaa5c94",
+      "skips": [
+        "tests.test_ledger_copy_preflight_v17::test_direct_wal_blocked_but_authorized_copy_succeeds_nonroot",
+        "tests.test_ledger_preflight_copy_v17::test_wal_copy_succeeds_where_readonly_original_cannot_open",
+        "tests.test_ledger_preflight_errors_v17::test_actual_nonprivileged_sqlite_on_readonly_fixture[DELETE]",
+        "tests.test_ledger_preflight_errors_v17::test_actual_nonprivileged_sqlite_on_readonly_fixture[WAL]"
+      ]
+    }
+  },
+  "runtime_modified": false,
+  "schema": "rc6.issue600.development-evidence.v1",
+  "sql_incident_status": "CRITICAL_FIX_DEVELOPED_RUNTIME_ACCEPTANCE_REQUIRED",
+  "sql_replay": {
+    "budget_seconds": 2,
+    "fixture": "14606 catalog / 2424 contracts / 10000 intraday; simulated per-row descheduling 50us",
+    "results": {
+      "before": {
+        "elapsed_ms": 2007.8,
+        "python_sql_row_allocations": 10000,
+        "sql_remaining_ms": null,
+        "sqlite_errorname": "SQLITE_INTERRUPT",
+        "stage": "CATALOG_FULL",
+        "status": "FAIL_CLOSED"
+      },
+      "candidate": {
+        "catalog": 14606,
+        "elapsed_ms": 290.0,
+        "observations": 3000,
+        "python_sql_row_allocations": 20,
+        "real_orders_sent": 0,
+        "sql_remaining_ms": 1942.486,
+        "status": "PASS"
+      }
+    },
+    "runtime_claim": false
+  },
+  "state": "DEVELOPMENT_ONLY_NOT_FROZEN",
+  "visual_tablet_qa": "NO_VERIFICADO",
+  "watchdog_runtime_ack": "NO_VERIFICADO",
+  "workstream": "WS-RC6-POSTCLOSE-CONSOLIDATED-20261016"
+}
