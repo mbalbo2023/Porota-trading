@@ -418,13 +418,16 @@ def main() -> int:
                         rows, last = _ingest(observer_store, history_store, identity, payload, start,
                                              source="PPI", observed_at=attempted_at)
                         latest = _latest(history_store, identity)
-                        if rows:
+                        coverage = _coverage(history_store, identity)
+                        if rows and coverage["complete"]:
                             _save(history_store, identity, state="COMPLETE", source="PPI",
-                                  requested_from=start.isoformat(), rows=rows, latest=latest)
+                                  requested_from=start.isoformat(), rows=coverage["present"], latest=latest)
                             completed.add(identity); ppi_count += 1
                         else:
-                            _save(history_store, identity, state="NO_NEW_VALID_ROWS", source="PPI",
-                                  requested_from=start.isoformat(), rows=0, latest=latest)
+                            _save(history_store, identity,
+                                  state="PPI_PARTIAL_COVERAGE" if rows else "NO_NEW_VALID_ROWS",
+                                  source="PPI", requested_from=start.isoformat(),
+                                  rows=coverage["present"], latest=latest, error=coverage["reason"])
                             failed += 1
                     except Exception as exc:
                         _save(history_store, identity, state="PPI_QUERY_FAILED", source="PPI",
