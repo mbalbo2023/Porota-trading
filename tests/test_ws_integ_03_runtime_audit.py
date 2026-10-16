@@ -84,6 +84,20 @@ def test_readiness_retry_never_delays_worker_safety_failure(monkeypatch):
     assert called == [1]
 
 
+def test_dashboard_race_does_not_hide_broken_route(monkeypatch):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    bad = _snapshot()
+    bad["dashboard_truth"]["readiness"]["ready"] -= 1
+    bad["http_status"]["/salud"] = 503
+    called = []
+    monkeypatch.setattr(audit, "collect", lambda _label: called.append(1) or bad)
+    monkeypatch.setattr(audit.time, "sleep", lambda _seconds: pytest.fail("unsafe retry"))
+    with pytest.raises(AssertionError):
+        audit.consistent_snapshot("stability")
+    assert called == [1]
+
+
 def test_marked_partial_candidate_refresh_retries_but_durable_loss_fails(monkeypatch):
     monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
     monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")

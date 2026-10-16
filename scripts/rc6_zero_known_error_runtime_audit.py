@@ -376,13 +376,6 @@ def _assert_snapshot(snapshot, baseline=None):
     _require_zero_orders(truth.get("real_orders_sent"), "dashboard_truth")
     assert truth["readiness"]["source"] == "candidate_identity_v2"
     dashboard_ready = int(truth["readiness"]["ready"])
-    if dashboard_ready != readiness["ready"]:
-        raise RuntimeError(
-            "DASHBOARD_READINESS_MISMATCH|"
-            f"database_ready={readiness['ready']}|dashboard_ready={dashboard_ready}|"
-            f"database_by_family={json.dumps(readiness['by_family'], sort_keys=True, separators=(',', ':'))}|"
-            f"dashboard_as_of={truth['readiness'].get('as_of')}"
-        )
     assert truth["history"]["governs_readiness"] is False
     assert truth["scalping"]["mode"] == "ACTIVE_PAPER"
     allowed = set(truth["iol"]["allowed_states"])
@@ -395,6 +388,13 @@ def _assert_snapshot(snapshot, baseline=None):
     assert snapshot["route_matrix_matches_artifact"] is True
     assert all(code == 200 for code in snapshot["http_status"].values())
     _assert_surface_metrics(snapshot.get("surface_metrics", {}))
+    if dashboard_ready != readiness["ready"]:
+        raise RuntimeError(
+            "DASHBOARD_READINESS_MISMATCH|"
+            f"database_ready={readiness['ready']}|dashboard_ready={dashboard_ready}|"
+            f"database_by_family={json.dumps(readiness['by_family'], sort_keys=True, separators=(',', ':'))}|"
+            f"dashboard_as_of={truth['readiness'].get('as_of')}"
+        )
     if baseline:
         prior = baseline["database"]
         previous_lkg = baseline["iol"].get("last_known_good_at")
