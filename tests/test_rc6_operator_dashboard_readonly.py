@@ -45,6 +45,10 @@ class OperatorAuditTests(TestCase):
     result = audit_host(runner=runner)
     self.assertEqual(result["status"], "ROUTES_VERIFIED")
     self.assertEqual(len(result["routes"]), len(ROUTES))
+    payload['routes'][0]['visible_status_counts']={'STALE':2,'NO_VERIFICADO':3,
+        'secret-value':42,'ERROR':-1,'FRESH':True,'RUNNING':1001}
+    self.assertEqual(audit_host(runner=runner)['routes'][0]['visible_status_counts'],
+                     {'STALE':2,'NO_VERIFICADO':3})
     self.assertEqual(result["source_sync"][0]["last_attempt_age_seconds"], 100)
     self.assertEqual(result["history_cutoff_repair"], "INCOMPLETE")
     self.assertEqual(result["equity_exits"], {"status": "BOUNDED", "sampled": 9,

@@ -71,7 +71,7 @@ class VisibleGaps(HTMLParser):
  def handle_starttag(self, tag, attrs):
   if tag in {"script","style"}: self.hidden+=1
   for name,value in attrs:
-   if name=='data-status' and value in {'NO_VERIFICADO','STALE','FRESH','BLOCKED','ERROR','RUNNING','DEGRADED','WAITING_MARKET','WAITING_WINDOW','NO_READY','RUNTIME_READY','COMMITTED_COHERENT_SHADOW'}:
+   if name=='data-status' and value in {'NO_VERIFICADO','STALE','FRESH','BLOCKED','ERROR','RUNNING','DEGRADED','WAITING_MARKET','WAITING_WINDOW','NO_READY','RUNTIME_READY','COMMITTED_COHERENT_SHADOW','NO_VERIFICADO_AWAITING_RECONCILIATION','SHADOW_OBSERVING','FAIL_CLOSED','NO_OPERATIVO','OPERATIVO','AVAILABLE','UNAVAILABLE','READY','HOLD','WAITING','SAMPLED','PARTIAL','CONFLICT','HISTORY_STALE','HISTORY_GAPS','HISTORY_FUTURE_SESSION','HISTORY_CALENDAR_UNVERIFIED'}:
     self.statuses[value]=min(1000,self.statuses.get(value,0)+1)
  def handle_endtag(self, tag):
   if tag in {"script","style"}: self.hidden=max(0,self.hidden-1)
@@ -320,7 +320,12 @@ def audit_host(*, runner=subprocess.run):
                            "read_queries": item.get("read_queries") if type(item.get("read_queries")) is int and 0 <= item["read_queries"] <= 1000 else None,
                            "unverified_mentions": item.get("unverified_mentions") if type(item.get("unverified_mentions")) is int and 0 <= item["unverified_mentions"] <= 1000 else None,
                            "attention": item.get("attention") is True if item["path"] == "/" else None,
-                           "error": item.get("error") if item.get("error") in {"BODY_LIMIT", "HTTP_UNAVAILABLE"} else None})
+                           "error": item.get("error") if item.get("error") in {"BODY_LIMIT", "HTTP_UNAVAILABLE"} else None,
+                           "visible_status_counts": {key:value for key,value in
+                               (item.get('visible_status_counts') if isinstance(item.get('visible_status_counts'),dict) else {}).items()
+                               if key in {'NO_VERIFICADO','STALE','FRESH','BLOCKED','ERROR','RUNNING','DEGRADED',
+                                          'WAITING_MARKET','WAITING_WINDOW','NO_READY','RUNTIME_READY','COMMITTED_COHERENT_SHADOW','NO_VERIFICADO_AWAITING_RECONCILIATION','SHADOW_OBSERVING','FAIL_CLOSED','NO_OPERATIVO','OPERATIVO','AVAILABLE','UNAVAILABLE','READY','HOLD','WAITING','SAMPLED','PARTIAL','CONFLICT','HISTORY_STALE','HISTORY_GAPS','HISTORY_FUTURE_SESSION','HISTORY_CALENDAR_UNVERIFIED'}
+                               and type(value) is int and 0<=value<=1000}})
         scope = data.get("audit_scope")
         expected = POSTCLOSE_ROUTES if scope == "POSTCLOSE_ALL" else ROUTES if scope == "MARKET_CRITICAL" else ()
         if not expected or tuple(row["path"] for row in routes) not in (expected, ()):
