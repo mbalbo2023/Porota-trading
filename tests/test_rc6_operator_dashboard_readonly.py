@@ -9,9 +9,10 @@ from scripts.rc6_operator_dashboard_readonly import CHILD, POSTCLOSE_ROUTES, ROU
 class OperatorAuditTests(TestCase):
  def test_embedded_probe_compiles(self):
     compile(CHILD, "<dashboard-probe>", "exec")
-    self.assertEqual(len(POSTCLOSE_ROUTES), 50)
-    self.assertEqual(len(set(POSTCLOSE_ROUTES)), 50)
+    self.assertEqual(len(POSTCLOSE_ROUTES), 52)
+    self.assertEqual(len(set(POSTCLOSE_ROUTES)), 52)
     self.assertIn("/trading/cauciones", POSTCLOSE_ROUTES)
+    self.assertIn("/analitica/contrafactuales", POSTCLOSE_ROUTES)
 
  def test_sanitized_audit_receipt_has_exact_routes_and_no_page_content(self):
     payload = {"schema": SCHEMA, "read_only": True, "audit_scope": "MARKET_CRITICAL", "source_status": "BOUNDED",
@@ -77,7 +78,17 @@ class OperatorAuditTests(TestCase):
     payload["routes"] = [{"path": path, "http": 200, "nav": True, "content": True}
                          for path in POSTCLOSE_ROUTES]
     self.assertEqual(audit_host(runner=runner)["audit_scope"], "POSTCLOSE_ALL")
-    self.assertEqual(len(audit_host(runner=runner)["routes"]), 50)
+    self.assertEqual(len(audit_host(runner=runner)["routes"]), 52)
+    payload['identity_clocks']={'status':'BOUNDED','rows':[{
+        'symbol':'GGAL','family':'ACCIONES','market':'BYMA','currency':'ARS','settlement':'A-24HS',
+        'book_freshness':'STALE','trade_freshness':'STALE','receipt_freshness':'FRESH',
+        'book_at':'2026-10-16T13:00:00+00:00','received_at':'api_token=private',
+        'paper_id':'private-ledger-key','pnl':'private-amount'}]*11}
+    clocks=audit_host(runner=runner)['identity_clocks']
+    self.assertEqual(len(clocks['rows']),10)
+    self.assertEqual(clocks['rows'][0]['book_freshness'],'STALE')
+    self.assertIsNone(clocks['rows'][0]['received_at'])
+    self.assertNotIn('private',json.dumps(clocks))
     payload["history_cutoff_repair"] = "COMPLETE; secret"
     payload["source_sync"][0]["last_success_age_seconds"] = -1
     redacted = audit_host(runner=runner)

@@ -371,6 +371,17 @@ def _host_control_state():
     return data
 
 
+def historical_observer_oom(state, current, at):
+    """Prior lifecycle only: unknown clocks/stale pulse never downgrade OOM."""
+    detail=(current.get('host_control_state') or {}).get('observer_container') or {}
+    started,finished=timestamp(detail.get('StartedAt')),timestamp(detail.get('FinishedAt'))
+    heartbeat=timestamp((current.get('observer') or {}).get('heartbeat_at'))
+    return bool(state.get('state')=='running' and detail.get('Status')=='running' and
+        type(detail.get('ExitCode')) is int and detail['ExitCode']==0 and
+        started and finished and finished.year>=2020 and finished<started<=at and
+        heartbeat and started<heartbeat<=at and (at-heartbeat).total_seconds()<=180)
+
+
 def _db_snapshot(path):
     """Finite SQLite reads only; no full scans, schema changes or writes."""
     uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
@@ -534,8 +545,13 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
     else:
         for name in CONTAINERS:
             state = containers.get(name, {})
-            if state.get("state") != "running" or state.get("oom") is True:
+            if state.get("state") != "running":
                 add("CONTAINER_NOT_HEALTHY:" + name, "P0")
+            elif state.get('oom') is True:
+                if name=='porota_production_observer' and historical_observer_oom(state,result,at):
+                    add('OOM_HISTORICAL:'+name,'P2')
+                else:
+                    add('CONTAINER_NOT_HEALTHY:'+name,'P0')
             if state.get("image") != provenance.get("image_id"):
                 add("CONTAINER_IMAGE_MISMATCH:" + name, "P0")
             if state.get("restarts", 0) > 0:

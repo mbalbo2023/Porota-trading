@@ -12,7 +12,7 @@ No merge to main during the market session. Product fixes are separate.
 | M1 | Freshness depended only on the component's own OPEN state | Independently load deployed audited BYMA calendar and spot hours in a bounded interpreter; UNKNOWN explicitly escalates; false CLOSED cannot suppress stale inputs | Real postmerge OPEN observation |
 | M2 | Genuine schedule cadence not proven; dispatch loss root cause unknown | Query genuine completed schedule events, excluding pushes/manual retries; flag silence beyond two intervals | Three actual consecutive schedules; independent watchdog ACK still NO_VERIFICADO |
 | M3 | SQLITE_INTERRUPT in runtime.py:54 during OPEN; global 2s expires in INTRADAY_POINTS | Expose allowlisted SQL stage/deadline from existing durable status, without query replay or heartbeat fabrication | Runtime validation of product fix |
-| D1 | HTTP200 does not establish correct statuses | Count explicit visible status badges per route, no HTML/account export; critical routes intraday and full menu postclose | Postclose 50-route sample and visual tablet QA |
+| D1 | HTTP200 does not establish correct statuses | Count explicit visible status badges per route, no HTML/account export; critical routes intraday and full menu postclose | Postclose52-route sample and visual tablet QA |
 
 ## Real evidence
 
@@ -33,3 +33,19 @@ Local contracts after this extension: 37 monitor + 3 dashboard tests PASS. Exact
 Calendar authority is scoped to BYMA PAPER spot, independently of observer_state. Unavailable/unreviewed calendar yields UNKNOWN. A source access check is not quote freshness or trading authority. A missing schedule is detectable on the next wake; this monitor alone cannot prove an independent watchdog was alive during its own absence.
 
 No REAL paths, broker calls, runtime writes, provider activation or PPI Watch access are added. All remote probes remain bounded/read-only. Existing Telegram transition transport is unchanged. NO_GO if required market/ownership/data/gates cannot be proven.
+
+## Adenda CF/FRESH/UI/MON y orden del operador
+
+#599/6220526827 y6220620479: OOM histórico con ciclo verificable se clasifica
+P2, sin rebajar OOM actual/desconocido o heartbeat stale. Auditor postcierre
+reconcilia52 rutas incluyendo contrafactuales y anual;13 críticas intradía.
+La nueva cohorte por identidad del producto se exporta solo si está instalada:
+hasta10 filas/500 registros, OPEN primero, book/trade/receipt separados; allowlist
+excluye paper_id, PnL, contenido HTML y credenciales. Runtime anterior devuelve
+UNAVAILABLE. No se fuerza carga adicional de proveedor.
+
+41 contratos locales monitor+dashboard PASS; el último head exige CI nativa.
+Nueva orden: tarea programada ChatGPT6ad257c1913c81918f635953054471be desactivada
+con éxito. Sin nuevas tareas. **Deploy requiere nueva orden explícita del
+usuario**, cierre auténtico/gates GREEN/DEPLOY_OWNER libre. Este PR601 permanece
+DRAFT y sin merge durante rueda; no habilita ni ejecuta Deploy V2.

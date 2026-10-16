@@ -75,9 +75,9 @@ class MonitorContracts(unittest.TestCase):
         self.shadow_path.write_text(json.dumps({
             "payload": payload, "digest": monitor.canonical_digest(payload)}))
 
-    def capture(self, at=NOW):
+    def capture(self, at=NOW, host_state=None):
         with patch.object(monitor, "independent_session", return_value={"state":"OPEN" if monitor.active_hours(at) else "CLOSED"}), patch.object(monitor, "_resources", return_value=self.resources), patch.object(
-                monitor, "_host_control_state", return_value={
+                monitor, "_host_control_state", return_value=host_state if host_state is not None else {
                     "legacy_health_timer": "inactive", "fast_health_timer": "active",
                     "observer_container": {"Status": "running"}}):
             return monitor.probe(root=self.root, at=at, expected_sha=SHA,
@@ -302,6 +302,21 @@ class MonitorContracts(unittest.TestCase):
         self.inspect["porota_production_observer"]["oom"] = True
         self.assertIn("CONTAINER_NOT_HEALTHY:porota_production_observer",
                       self.codes(self.capture(), "P0"))
+
+    def test_prior_oom_keeps_history_without_false_current_p0(self):
+        self.inspect['porota_production_observer']['oom']=True
+        detail={'observer_container':{'Status':'running','ExitCode':0,
+            'StartedAt':(NOW-timedelta(hours=2)).isoformat(),
+            'FinishedAt':(NOW-timedelta(hours=3)).isoformat()}}
+        value=self.capture(host_state=detail)
+        self.assertIn('OOM_HISTORICAL:porota_production_observer',self.codes(value,'P2'))
+        self.assertNotIn('CONTAINER_NOT_HEALTHY:porota_production_observer',self.codes(value,'P0'))
+        detail['observer_container']['FinishedAt']=NOW.isoformat()
+        self.assertIn('CONTAINER_NOT_HEALTHY:porota_production_observer',self.codes(self.capture(host_state=detail),'P0'))
+        detail['observer_container']['FinishedAt']=(NOW-timedelta(hours=3)).isoformat()
+        with sqlite3.connect(self.db) as connection:
+            connection.execute('UPDATE observer_state SET heartbeat_at=?',((NOW-timedelta(minutes=4)).isoformat(),))
+        self.assertIn('CONTAINER_NOT_HEALTHY:porota_production_observer',self.codes(self.capture(host_state=detail),'P0'))
 
     def test_p0_immediate_but_p1_needs_two_samples(self):
         first = self.capture()

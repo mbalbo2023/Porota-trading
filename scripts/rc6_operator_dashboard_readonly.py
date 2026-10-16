@@ -22,7 +22,7 @@ EXTRA_ROUTES = (
     "/instrumentos/contrato", "/instrumentos/mercado", "/instrumentos/evidencia", "/riesgo/exposicion",
     "/riesgo/limites", "/riesgo/posiciones", "/riesgo/liquidez", "/riesgo/pnl",
     "/riesgo/event-risk", "/analitica/senales", "/analitica/salidas", "/analitica/historico",
-    "/analitica/experimentos", "/analitica/cierre-diario", "/analitica/reportes", "/sistema/salud",
+    "/analitica/experimentos", "/analitica/contrafactuales", "/analitica/anual", "/analitica/cierre-diario", "/analitica/reportes", "/sistema/salud",
     "/sistema/evidencia", "/sistema/backups", "/sistema/logs", "/sistema/configuracion",
 )
 POSTCLOSE_ROUTES = ROUTES + EXTRA_ROUTES
@@ -49,7 +49,7 @@ extra_routes = (
     "/instrumentos/contrato", "/instrumentos/mercado", "/instrumentos/evidencia", "/riesgo/exposicion",
     "/riesgo/limites", "/riesgo/posiciones", "/riesgo/liquidez", "/riesgo/pnl",
     "/riesgo/event-risk", "/analitica/senales", "/analitica/salidas", "/analitica/historico",
-    "/analitica/experimentos", "/analitica/cierre-diario", "/analitica/reportes", "/sistema/salud",
+    "/analitica/experimentos", "/analitica/contrafactuales", "/analitica/anual", "/analitica/cierre-diario", "/analitica/reportes", "/sistema/salud",
     "/sistema/evidencia", "/sistema/backups", "/sistema/logs", "/sistema/configuracion")
 local = datetime.now(timezone.utc).astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
 postclose = local.hour * 60 + local.minute >= 17 * 60 + 15
@@ -260,6 +260,13 @@ try:
  with Store(db) as store:
   if store.connection is None: raise RuntimeError("STORE_UNAVAILABLE")
   projection=Projection(store)
+  result['identity_clocks']={'status':'UNAVAILABLE','rows':[]}
+  if hasattr(projection,'market_freshness_cohort'):
+   cohort=projection.market_freshness_cohort()
+   result['identity_clocks']={'status':'BOUNDED' if cohort.rows else 'NO_VERIFICADO',
+       'rows':[{k:r.get(k) for k in ('symbol','family','market','currency','settlement',
+         'book_freshness','trade_freshness','receipt_freshness','book_at','trade_at','received_at')}
+         for r in cohort.rows[:10]]}
   stages=(("counts",lambda:projection.counts()),
           ("positions",lambda:projection.positions(limit=5)),
           ("balances",lambda:projection.balances()),
@@ -426,6 +433,21 @@ def audit_host(*, runner=subprocess.run):
                            "worker_latest_age_seconds": bounded(attempt.get("worker_latest_age_seconds"),365*86400),
                            "worker_latest_result": attempt.get("worker_latest_result") if attempt.get("worker_latest_result") in
                            {"PLACED_SIMULATED","HOLD","SKIPPED","BLOCKED","OTHER_OR_MISSING"} else "NO_VERIFICADO"}
+        clocks=data.get('identity_clocks') if isinstance(data.get('identity_clocks'),dict) else {}
+        clock_rows=[]
+        for row in clocks.get('rows',[])[:10] if isinstance(clocks.get('rows'),list) else []:
+            if not isinstance(row,dict): continue
+            names=('symbol','family','market','currency','settlement')
+            if not all(isinstance(row.get(k),str) and re.fullmatch(r'[A-Za-z0-9_:/.-]{1,40}',row[k]) for k in names): continue
+            safe={k:row[k] for k in names}
+            for k in ('book_freshness','trade_freshness','receipt_freshness'):
+                safe[k]=row.get(k) if row.get(k) in {'FRESH','STALE','NO_VERIFICADO'} else 'NO_VERIFICADO'
+            for k in ('book_at','trade_at','received_at'):
+                value=row.get(k)
+                safe[k]=value if isinstance(value,str) and re.fullmatch(r'[0-9TtZz:+. -]{10,40}',value) else None
+            clock_rows.append(safe)
+        identity_clocks={'status':clocks.get('status') if clocks.get('status') in {'BOUNDED','NO_VERIFICADO','UNAVAILABLE'} else 'NO_VERIFICADO',
+                         'scope':'MAX_10_IDENTITIES_LAST_500_RECORDS_OPEN_PRIORITY_NOT_GLOBAL', 'rows':clock_rows}
         return {"schema": SCHEMA, "read_only": True, "audit_scope": scope, "status": status,
                 "routes": routes, "sources": sources[:80], "source_sync": sync_rows[:10],
                 "source_sync_status": data.get("source_sync_status") if data.get("source_sync_status") in
@@ -433,7 +455,7 @@ def audit_host(*, runner=subprocess.run):
                 "history_cutoff_repair": data.get("history_cutoff_repair") if data.get("history_cutoff_repair") in
                 {"COMPLETE", "INCOMPLETE", "MISSING_TABLE", "MISSING_ROW", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
                 "profile": profile[:5], "balance_queries": balance_queries[:10], "equity_exits": equity_exits,
-                "paper_today": paper_today, "caucion_attempt": caucion_attempt,
+                "paper_today": paper_today, "caucion_attempt": caucion_attempt,"identity_clocks":identity_clocks,
                 "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
                 {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}
