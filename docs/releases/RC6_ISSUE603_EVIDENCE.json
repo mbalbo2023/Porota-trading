@@ -84,7 +84,7 @@
       "path": "scripts/v17_host_general_backup.py",
       "symbol": "create_backup",
       "classification": "EXTERNAL_BLOCKED",
-      "detail": "DO API droplet594077619:backup_ids/snapshot_ids/userimages vacíos y policy sinbackup configurado. Copia local no acreditaDR. No se cambióplancloud ni se bootearon clones con secretos. Restore/RPO/RTOoffhost BLOQUEADOS; impacto pérdida totalhost; propietariooperador/infra.",
+      "detail": "DO connector does not expose backup_ids/snapshot_ids: missing fields are not observed empty arrays. Confirmed current evidence: features lacks backups; backup_policy returns only droplet_id with no configured plan; image_list(Type=user,PerPage=100) returns images=[]. No offhost recovery image is reported. Restore/RPO/RTO remain unproven. Basic weekly pricing is20% of current droplet6USD/month (=1.20USD/month); API enable capability lacks explicit plan/window fields. Provider documents crash-consistent background snapshots in same datacenter and possible DB write-I/O degradation. No infrastructure backup action performed during contract reconciliation.",
       "test": "tests/test_host_general_backup_v17.py",
       "status": "BLOQUEADO",
       "code_state": "NO_VERIFICADO",
@@ -553,5 +553,30 @@
     "observer_stop_oom": false,
     "dashboard_stop_oom": false,
     "inflight": "ABSENT_OWNED_RUNTIME_STOPPED_AT_INSTALL_BOUNDARY"
+  },
+  "external_backup_review": {
+    "droplet_id": 594077619,
+    "size": "s-1vcpu-1gb",
+    "memory_mib": 1024,
+    "vcpus": 1,
+    "disk_gib": 25,
+    "price_monthly_usd": 6,
+    "features": [
+      "droplet_agent",
+      "ipv6",
+      "private_networking"
+    ],
+    "backup_policy_response": {
+      "droplet_id": 594077619
+    },
+    "user_images": [],
+    "backup_ids": "NOT_EXPOSED_BY_CONNECTOR",
+    "snapshot_ids": "NOT_EXPOSED_BY_CONNECTOR",
+    "mutation_performed": false,
+    "sources": [
+      "https://docs.digitalocean.com/products/backups/details/pricing/",
+      "https://docs.digitalocean.com/products/backups/details/features/",
+      "https://docs.digitalocean.com/products/backups/how-to/enable/"
+    ]
   }
 }
