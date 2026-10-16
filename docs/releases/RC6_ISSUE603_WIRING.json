@@ -1,0 +1,4276 @@
+{
+  "schema": "rc6.wiring-preservation.v1",
+  "root_python_count": 261,
+  "method": "AST import graph; no arbitrary deletions or activation. Runtime proof separate.",
+  "modules": [
+    {
+      "path": "_version.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ao_startup_gate.py:58",
+        "ar_telegram_commands.py:435",
+        "bc_dashboard_v163.py:21",
+        "be_paper_engine.py:20",
+        "bf_production_paper_observer.py:29",
+        "bg_paper_dashboard.py:33",
+        "c_ppi_client.py:1141",
+        "c_ppi_client.py:1182",
+        "c_ppi_client.py:1249",
+        "c_ppi_client.py:756",
+        "cg_paper_workspace.py:11",
+        "o_dashboard.py:53",
+        "ops_introspection_hf4.py:22",
+        "ops_introspection_rc6.py:22",
+        "rc4_release_preflight.py:10",
+        "rc5_release_preflight.py:10",
+        "rc6_fast_functional_health.py:12",
+        "rc6_functional_health.py:15",
+        "rc6_market_watch_silence.py:18",
+        "rc6_preopen.py:299",
+        "scripts/v17_ppi_public_probe.py:21"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_v17_rc3.py:96",
+        "tests/test_hotfix_rc3_hf5.py:55",
+        "tests/test_ppi_documented_contract_v17.py:18",
+        "tests/test_ppi_observed_configuration_v17.py:36",
+        "tests/test_rc4_hf2_consolidation.py:5",
+        "tests/test_rc6_nocturnal_findings.py:10",
+        "tests/test_rc6_runtime_safety.py:41"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "aa_env_guard.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bc_dashboard_v163.py:18",
+        "entrypoint.py:47",
+        "j_main.py:49",
+        "k_position_manager.py:39",
+        "l_order_confirmation.py:65",
+        "o_dashboard.py:843"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ab_log_watch.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "j_main.py:50"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ac_db.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "aa_env_guard.py:68",
+        "ab_log_watch.py:62",
+        "ad_macro_history.py:80",
+        "ae_ppi_api_watch.py:61",
+        "af_model_registry.py:75",
+        "ag_kill_switch_supervisor.py:93",
+        "am_api_health.py:267",
+        "aq_macro_backtest.py:115",
+        "ar_telegram_commands.py:665",
+        "ax_equity.py:46",
+        "b_notifiers.py:18",
+        "bb_runtime_status.py:15",
+        "c_ppi_client.py:61",
+        "h_daily_report.py:37",
+        "i_auto_tuner.py:53",
+        "j_main.py:118",
+        "k_position_manager.py:40",
+        "l_order_confirmation.py:67",
+        "m_instrument_universe.py:172",
+        "o_dashboard.py:469",
+        "o_dashboard.py:489",
+        "o_dashboard.py:51",
+        "p_risk_guardian.py:26",
+        "r_news_engine_247.py:30",
+        "s_learning_engine.py:47",
+        "t_model_guardian.py:154",
+        "y_infra_monitor.py:35",
+        "z_reports_engine.py:28"
+      ],
+      "test_import_callers": [
+        "tests/test_derivatives_and_gate.py:273",
+        "tests/test_ppi_documented_contract_v17.py:176",
+        "tests/test_ppi_retry_policy_v1633.py:9"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ad_macro_history.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ah_market_tools.py:226",
+        "am_api_health.py:208",
+        "ap_api_verifier.py:534",
+        "az_maintenance_job.py:48",
+        "f_gemini_decision_engine.py:92",
+        "j_main.py:67"
+      ],
+      "test_import_callers": [
+        "tests/test_macro_bcra_v4.py:13"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ae_ppi_api_watch.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "am_api_health.py:287",
+        "c_ppi_client.py:891",
+        "j_main.py:68"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "af_model_registry.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ag_kill_switch_supervisor.py:382",
+        "f_gemini_decision_engine.py:90",
+        "j_main.py:69"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ag_kill_switch_supervisor.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "j_main.py:70",
+        "l_order_confirmation.py:405"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ah_market_tools.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "f_gemini_decision_engine.py:91",
+        "j_main.py:71"
+      ],
+      "test_import_callers": [
+        "tests/test_operational_safety_v163.py:276"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ai_derivatives_engine.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "j_main.py:76",
+        "m_instrument_universe.py:265"
+      ],
+      "test_import_callers": [
+        "tests/test_derivatives_and_gate.py:18",
+        "tests/test_rc6_residual_adverse.py:11",
+        "tests/test_v161.py:18",
+        "tests/test_ws_motor_14_paper_policy.py:8"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "aj_trade_gate.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "j_main.py:75"
+      ],
+      "test_import_callers": [
+        "tests/test_derivatives_and_gate.py:19"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ak_byma_calendar.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "al_historical_ingest.py:278",
+        "al_market_startup.py:7",
+        "ba_data912_history.py:153",
+        "bf_production_paper_observer.py:162",
+        "bg_paper_dashboard.py:30",
+        "bh_universe_dashboard_hf6.py:10",
+        "bi_operational_services.py:711",
+        "bq_exit_policy.py:12",
+        "ca_caucion_allocator.py:10",
+        "ce_caucion_treasury.py:12",
+        "cf_sale_settlement.py:38",
+        "co_market_sessions_hf6.py:129",
+        "cs_postclose_history_scheduler_hf6.py:14",
+        "cu_history_store_v2_hf6.py:111",
+        "df_daily_operation_summary_hf6.py:24",
+        "dg_dashboard_daily_result_ux_hf6.py:11",
+        "di_caucion_cash_sweep_runtime_hf6.py:203",
+        "ek_history_freshness_metrics_rc5.py:15",
+        "eu_telegram_policy_rc6.py:35",
+        "historical_candle_shadow_rc6.py:65",
+        "iol_shadow_collector_rc6.py:13",
+        "j_main.py:72",
+        "rc6_local_eod_history.py:19",
+        "rc6_market_watch_silence.py:20",
+        "rc6_postclose_history_job.py:15",
+        "rc6_preopen.py:21",
+        "rc6_preopen_freshness_audit.py:17",
+        "rc6_shadow_runtime/preopen.py:23",
+        "rc6_shadow_runtime/worker.py:15",
+        "rc6_snapshot.py:14",
+        "rc6_trader_dashboard/projection.py:782",
+        "scripts/rc6_deploy_preopen_gate.py:105",
+        "scripts/rc6_history_cutoff_repair_once.py:26",
+        "scripts/rc6_iol_oauth_health.py:25"
+      ],
+      "test_import_callers": [
+        "tests/test_byma_calendar.py:3",
+        "tests/test_partial_receipts_v17.py:118",
+        "tests/test_rc6_issue600_regressions.py:235"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ak_iol_client.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ah_market_tools.py:293",
+        "ap_api_verifier.py:142"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "al_historical_ingest.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ah_market_tools.py:390",
+        "ai_derivatives_engine.py:540",
+        "am_api_health.py:231",
+        "az_maintenance_job.py:54",
+        "ba_data912_history.py:27",
+        "bc_dashboard_v163.py:212",
+        "cv_history_store_adapter_hf6.py:9",
+        "cw_data912_history_v2_sink.py:13",
+        "o_dashboard.py:1357"
+      ],
+      "test_import_callers": [
+        "tests/test_data912_history_fallback.py:4",
+        "tests/test_historical_freshness_v1633.py:4",
+        "tests/test_rc6_history_convergence.py:18",
+        "tests/test_rc6_legacy_history_scope.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "al_market_startup.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "entrypoint.py:111",
+        "j_main.py:73"
+      ],
+      "test_import_callers": [
+        "tests/test_market_auto_start.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "am_api_health.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "o_dashboard.py:1315"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_truth_v1633.py:3",
+        "tests/test_operational_safety_v163.py:70"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "am_us_equity_calendar_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:30",
+        "ek_history_freshness_metrics_rc5.py:16",
+        "rc6_shadow_runtime/families.py:18"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_cedear_underlying_calendar.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "an_sre_deploy.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "o_dashboard.py:1460",
+        "o_dashboard.py:1471"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ao_startup_gate.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ar_telegram_commands.py:334",
+        "ar_telegram_commands.py:434",
+        "c_ppi_client.py:1233",
+        "entrypoint.py:75",
+        "j_main.py:1203",
+        "l_order_confirmation.py:338",
+        "l_order_confirmation.py:365",
+        "o_dashboard.py:1492",
+        "o_dashboard.py:1558",
+        "o_dashboard.py:1566"
+      ],
+      "test_import_callers": [
+        "tests/test_derivatives_and_gate.py:315",
+        "tests/test_derivatives_and_gate.py:326",
+        "tests/test_derivatives_and_gate.py:338",
+        "tests/test_derivatives_and_gate.py:351",
+        "tests/test_derivatives_and_gate.py:364",
+        "tests/test_integracion_v162.py:452",
+        "tests/test_order_trace_units_v17.py:9",
+        "tests/test_rc6_nocturnal_findings.py:11",
+        "tests/test_telegram_startup_routing.py:11"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ap_api_verifier.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_api_verifier_publicas.py:18"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "aq_macro_backtest.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ar_telegram_commands.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "l_order_confirmation.py:353",
+        "l_order_confirmation.py:383"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_nocturnal_findings.py:12",
+        "tests/test_v161.py:188",
+        "tests/test_v161.py:204",
+        "tests/test_v161.py:217",
+        "tests/test_v161.py:225"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "as_greeks_engine.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ai_derivatives_engine.py:235",
+        "ai_derivatives_engine.py:508"
+      ],
+      "test_import_callers": [
+        "tests/test_macro_bcra_v4.py:14",
+        "tests/test_rc6_bcra_active_retirement_20261002.py:3",
+        "tests/test_v161.py:17"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "at_model_discovery.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "af_model_registry.py:107"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "au_fee_schedule.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:1023",
+        "be_paper_engine.py:1379",
+        "be_paper_engine.py:1833",
+        "be_paper_engine.py:2336",
+        "bt_caucion_paper.py:182",
+        "bt_caucion_paper.py:213",
+        "ca_caucion_allocator.py:21",
+        "cf_intraday_scalping.py:819",
+        "cr_contract_evidence_v2_mass_hf6.py:171",
+        "d_economics.py:408",
+        "di_caucion_cash_sweep_runtime_hf6.py:285",
+        "di_caucion_cash_sweep_runtime_hf6.py:96",
+        "j_main.py:78",
+        "rc6_broker_parity_evidence.py:16",
+        "rc6_performance/costs.py:21",
+        "rc6_performance/costs.py:224",
+        "rc6_performance/costs.py:254",
+        "rc6_performance/lineage.py:92"
+      ],
+      "test_import_callers": [
+        "tests/test_caucion_ledger_v17.py:94",
+        "tests/test_economics_costs.py:32",
+        "tests/test_hotfix_rc3_hf1.py:10",
+        "tests/test_integracion_v162.py:431",
+        "tests/test_production_paper_v1634.py:1210",
+        "tests/test_propiedades_costos.py:43",
+        "tests/test_rc6_performance_runtime.py:146",
+        "tests/test_ws_motor_15_operative_closure.py:8"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "av_rofex_client.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "m_instrument_universe.py:336"
+      ],
+      "test_import_callers": [
+        "tests/test_rofex_margin_v1633.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ax_equity.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "j_main.py:77",
+        "p_risk_guardian.py:27"
+      ],
+      "test_import_callers": [
+        "tests/test_integracion_v162.py:363",
+        "tests/test_integracion_v162.py:386",
+        "tests/test_integracion_v162.py:405"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ay_dashboard_auth.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:3437",
+        "entrypoint.py:54",
+        "o_dashboard.py:106",
+        "o_dashboard.py:1618",
+        "o_dashboard.py:193",
+        "rc6_trader_dashboard/routes.py:46"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_paper_v1634.py:110",
+        "tests/test_dashboard_session.py:7",
+        "tests/test_integracion_v162.py:270",
+        "tests/test_ws_dash_04_full_dashboard_truth.py:6",
+        "tests/test_ws_dash_trader_terminal_08.py:105",
+        "tests/test_ws_dash_trader_terminal_08.py:147"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "az_maintenance_job.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_historical_freshness_v1633.py:5",
+        "tests/test_maintenance_scheduler.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "az_maintenance_scheduler.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "entrypoint.py:120"
+      ],
+      "test_import_callers": [
+        "tests/test_data912_history_fallback.py:84",
+        "tests/test_historical_freshness_v1633.py:6",
+        "tests/test_maintenance_scheduler.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "b_notifiers.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ap_api_verifier.py:450",
+        "ap_api_verifier.py:458",
+        "az_maintenance_job.py:39",
+        "entrypoint.py:97",
+        "j_main.py:51",
+        "o_dashboard.py:1121"
+      ],
+      "test_import_callers": [
+        "tests/test_notifier_contract.py:11"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ba_data912_history.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "az_maintenance_job.py:51",
+        "az_maintenance_job.py:59",
+        "cr_data912_reconcile_hf6.py:16",
+        "cw_data912_history_v2_sink.py:14",
+        "m_instrument_universe.py:387",
+        "m_instrument_universe.py:421"
+      ],
+      "test_import_callers": [
+        "test_hf6_history_data912_v2.py:5",
+        "tests/test_data912_history_fallback.py:5",
+        "tests/test_historical_freshness_v1633.py:7",
+        "tests/test_rc6_data912_operational_scope.py:1",
+        "tests/test_rc6_history_convergence.py:19"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bb_runtime_status.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "am_api_health.py:41",
+        "an_sre_deploy.py:61",
+        "b_notifiers.py:19",
+        "bc_dashboard_v163.py:19",
+        "c_ppi_client.py:62",
+        "entrypoint.py:17",
+        "j_main.py:21",
+        "j_main.py:455",
+        "l_order_confirmation.py:317",
+        "m_introspection_engine.py:26",
+        "o_dashboard.py:52",
+        "y_infra_monitor.py:29"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_truth_v1633.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bc_dashboard_v163.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "o_dashboard.py:1571"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_truth_v1633.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bd_ppi_readonly_guard.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:24",
+        "bv_paper_runtime.py:274",
+        "bv_paper_runtime.py:346",
+        "cf_intraday_scalping.py:1056",
+        "ci_ppi_bond_estimate_patch_hf6.py:11",
+        "ck_contract_evidence_runner_hf6.py:25",
+        "dj_caucion_live_ppi_rc6.py:14",
+        "rc6_dynamic_universe/benchmark.py:18",
+        "rc6_postclose_history_job.py:16",
+        "scripts/rc6_history_cutoff_repair_once.py:310",
+        "scripts/v17_ppi_public_probe.py:185"
+      ],
+      "test_import_callers": [
+        "tests/test_contract_evidence_hf6.py:5",
+        "tests/test_hotfix_rc3_hf5.py:48",
+        "tests/test_intraday_scalping_hf3.py:13",
+        "tests/test_issue465_budget_adversarial.py:21",
+        "tests/test_issue465_capability_cache.py:12",
+        "tests/test_ppi_documented_contract_v17.py:12",
+        "tests/test_ppi_public_probe_v17.py:202",
+        "tests/test_ppi_public_probe_v17.py:217",
+        "tests/test_production_paper_v1634.py:14",
+        "tests/test_rc6_approved_factual_callers.py:15",
+        "tests/test_rc6_cauciones_official_contract.py:2",
+        "tests/test_rc6_final_programming_runtime.py:184",
+        "tests/test_rc6_final_programming_runtime.py:99",
+        "tests/test_rc6_history_cutoff_repair_coverage.py:17",
+        "tests/test_rc6_ppi_capacity_benchmark.py:11",
+        "tests/test_rc6_ppi_global_budget.py:11",
+        "tests/test_rc6_shadow_runtime_wiring.py:160"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "be_paper_engine.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:26",
+        "bj_sandbox_health_probe.py:18",
+        "bv_paper_runtime.py:29",
+        "cf_intraday_scalping.py:965",
+        "cg_paper_workspace.py:115",
+        "scripts/rc6_targeted_probe.py:5"
+      ],
+      "test_import_callers": [
+        "tests/test_backtest_data_v17.py:10",
+        "tests/test_candle_archive_v17.py:14",
+        "tests/test_caucion_ledger_v17.py:9",
+        "tests/test_caucion_treasury_v17.py:11",
+        "tests/test_daily_risk_outbox_v17.py:14",
+        "tests/test_dashboard_paper_v1634.py:113",
+        "tests/test_dashboard_paper_v1634.py:15",
+        "tests/test_dashboard_paper_v1634.py:229",
+        "tests/test_dashboard_paper_v1634.py:286",
+        "tests/test_dashboard_paper_v1634.py:303",
+        "tests/test_dashboard_paper_v1634.py:354",
+        "tests/test_dashboard_paper_v1634.py:372",
+        "tests/test_dashboard_paper_v1634.py:386",
+        "tests/test_dashboard_paper_v1634.py:41",
+        "tests/test_dashboard_paper_v1634.py:544",
+        "tests/test_dashboard_paper_v1634.py:601",
+        "tests/test_dashboard_paper_v1634.py:61",
+        "tests/test_dashboard_paper_v1634.py:86",
+        "tests/test_decision_evidence_snapshots_rc6.py:4",
+        "tests/test_execution_replay_v17.py:12",
+        "tests/test_exit_ledger_isolation_v17.py:9",
+        "tests/test_exit_supervision_v17.py:15",
+        "tests/test_hotfix_rc3_hf1.py:7",
+        "tests/test_hotfix_rc3_hf2.py:8",
+        "tests/test_hotfix_rc3_hf4.py:10",
+        "tests/test_hotfix_rc3_hf5.py:12",
+        "tests/test_intraday_scalping_hf3.py:9",
+        "tests/test_intraday_scalping_rc6_integration.py:4",
+        "tests/test_issue465_budget_adversarial.py:22",
+        "tests/test_issue465_capability_cache.py:14",
+        "tests/test_issue465_capability_cache.py:91",
+        "tests/test_ledger_preflight_v17.py:20",
+        "tests/test_legacy_observed_shape_v17.py:14",
+        "tests/test_open_entry_terms_v17.py:8",
+        "tests/test_operational_services_v1635.py:13",
+        "tests/test_operational_services_v1635.py:53",
+        "tests/test_paper_workspace_v17.py:16",
+        "tests/test_partial_allocation_integrity_v17.py:9",
+        "tests/test_partial_receipts_v17.py:9",
+        "tests/test_ppi_observed_configuration_v17.py:17",
+        "tests/test_production_paper_v1634.py:16",
+        "tests/test_rc4_acceptance.py:343",
+        "tests/test_rc6_approved_factual_callers.py:16",
+        "tests/test_rc6_convergence_core_admission.py:9",
+        "tests/test_rc6_convergence_finance.py:13",
+        "tests/test_rc6_convergence_finance_review.py:15",
+        "tests/test_rc6_dynamic_orchestrator.py:210",
+        "tests/test_rc6_dynamic_orchestrator.py:236",
+        "tests/test_rc6_dynamic_orchestrator.py:253",
+        "tests/test_rc6_dynamic_orchestrator.py:369",
+        "tests/test_rc6_final_programming_runtime.py:11",
+        "tests/test_rc6_final_shared_risk.py:22",
+        "tests/test_rc6_future_paper_engine.py:4",
+        "tests/test_rc6_future_programming_complete.py:20",
+        "tests/test_rc6_future_programming_complete.py:23",
+        "tests/test_rc6_market_rescue_sqlite.py:5",
+        "tests/test_rc6_observer_complementary_reconcile.py:6",
+        "tests/test_rc6_option_paper_execution.py:5",
+        "tests/test_rc6_performance_capture.py:11",
+        "tests/test_rc6_performance_report.py:8",
+        "tests/test_rc6_performance_runtime.py:8",
+        "tests/test_rc6_ppi_global_budget.py:430",
+        "tests/test_rc6_ppi_global_budget.py:462",
+        "tests/test_rc6_runtime_safety.py:3",
+        "tests/test_rc6_scalping_heartbeat_contention.py:6",
+        "tests/test_rc6_shadow_entry_signals.py:12",
+        "tests/test_rc6_shadow_failure_context.py:5",
+        "tests/test_rc6_shadow_lab_runtime.py:299",
+        "tests/test_rc6_shadow_operational_funnel.py:11",
+        "tests/test_rc6_shadow_runtime_wiring.py:11",
+        "tests/test_rc6_t1_settlement_hotfix.py:13",
+        "tests/test_rc6_take_profit_regression.py:15",
+        "tests/test_rc6_unified_20261002.py:18",
+        "tests/test_single_close_ledger_v17.py:9",
+        "tests/test_strategy_backtest_v17.py:13",
+        "tests/test_ws_caucion_10_auto_recovery.py:4",
+        "tests/test_ws_caucion_12_live_ppi_wiring.py:12",
+        "tests/test_ws_dash_04_full_dashboard_truth.py:9",
+        "tests/test_ws_motor_09_contract_bridge.py:13",
+        "tests/test_ws_motor_15_operative_closure.py:12"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bf_production_paper_observer.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bj_sandbox_health_probe.py:19",
+        "bv_paper_runtime.py:273",
+        "bv_paper_runtime.py:347",
+        "bv_paper_runtime.py:451",
+        "cf_intraday_scalping.py:1059",
+        "ck_contract_evidence_runner_hf6.py:114",
+        "rc6_dynamic_universe/benchmark.py:167",
+        "rc6_postclose_history_job.py:17",
+        "scripts/rc6_history_cutoff_repair_once.py:246",
+        "scripts/rc6_history_cutoff_repair_once.py:311"
+      ],
+      "test_import_callers": [
+        "tests/test_candle_archive_v17.py:17",
+        "tests/test_dashboard_paper_v1634.py:304",
+        "tests/test_dashboard_paper_v1634.py:356",
+        "tests/test_exit_ledger_isolation_v17.py:79",
+        "tests/test_exit_supervision_v17.py:22",
+        "tests/test_hotfix_rc3_hf1.py:8",
+        "tests/test_hotfix_rc3_hf2.py:9",
+        "tests/test_hotfix_rc3_hf6.py:31",
+        "tests/test_intraday_scalping_hf3.py:133",
+        "tests/test_intraday_scalping_hf3.py:159",
+        "tests/test_issue465_budget_adversarial.py:24",
+        "tests/test_issue465_capability_cache.py:13",
+        "tests/test_ppi_observed_configuration_v17.py:15",
+        "tests/test_production_paper_v1634.py:17",
+        "tests/test_rc6_approved_factual_callers.py:17",
+        "tests/test_rc6_dynamic_orchestrator.py:237",
+        "tests/test_rc6_dynamic_orchestrator.py:254",
+        "tests/test_rc6_dynamic_orchestrator.py:372",
+        "tests/test_rc6_future_programming_complete.py:565",
+        "tests/test_rc6_history_coverage_scope.py:3",
+        "tests/test_rc6_history_cutoff_repair_coverage.py:18",
+        "tests/test_rc6_history_partial_semantics.py:5",
+        "tests/test_rc6_market_rescue_sqlite.py:6",
+        "tests/test_rc6_observer_complementary_reconcile.py:4",
+        "tests/test_rc6_observer_heartbeat.py:5",
+        "tests/test_rc6_observer_metric_contention.py:8",
+        "tests/test_rc6_shadow_runtime_wiring.py:12",
+        "tests/test_rc6_t1_settlement_hotfix.py:174",
+        "tests/test_rc6_unified_20261002.py:10",
+        "tests/test_ws_caucion_12_live_ppi_wiring.py:7",
+        "tests/test_ws_motor_09_contract_bridge.py:7",
+        "tests/test_ws_ops_history_all_families.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bg_paper_dashboard.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bh_universe_dashboard_hf6.py:15",
+        "cl_contract_evidence_dashboard_hf6.py:7",
+        "en_validation_project_dashboard_rc6.py:10",
+        "ep_dashboard_truth_layer_rc6.py:13",
+        "eq_dashboard_table_layout_rc6.py:9",
+        "ev_shadow_validation_view_rc6.py:4",
+        "ez_iol_shadow_validation_view_rc6.py:13",
+        "o_dashboard.py:1575",
+        "rc6_dashboard_responsive_ux.py:9",
+        "rc6_postclose_review_dashboard.py:10",
+        "rc6_snapshot_dashboard.py:20",
+        "zz_wave8_dashboard_live_rc6.py:17"
+      ],
+      "test_import_callers": [
+        "tests/test_candle_archive_v17.py:351",
+        "tests/test_caucion_ledger_v17.py:135",
+        "tests/test_caucion_ledger_v17.py:150",
+        "tests/test_dashboard_decision_evidence_rc6.py:1",
+        "tests/test_dashboard_paper_v1634.py:112",
+        "tests/test_dashboard_paper_v1634.py:17",
+        "tests/test_dashboard_paper_v1634.py:196",
+        "tests/test_dashboard_paper_v1634.py:216",
+        "tests/test_dashboard_paper_v1634.py:244",
+        "tests/test_dashboard_paper_v1634.py:259",
+        "tests/test_dashboard_paper_v1634.py:270",
+        "tests/test_dashboard_paper_v1634.py:288",
+        "tests/test_dashboard_paper_v1634.py:309",
+        "tests/test_dashboard_paper_v1634.py:324",
+        "tests/test_dashboard_paper_v1634.py:332",
+        "tests/test_dashboard_paper_v1634.py:341",
+        "tests/test_dashboard_paper_v1634.py:358",
+        "tests/test_dashboard_paper_v1634.py:373",
+        "tests/test_dashboard_paper_v1634.py:388",
+        "tests/test_dashboard_paper_v1634.py:40",
+        "tests/test_dashboard_paper_v1634.py:414",
+        "tests/test_dashboard_paper_v1634.py:429",
+        "tests/test_dashboard_paper_v1634.py:441",
+        "tests/test_dashboard_paper_v1634.py:457",
+        "tests/test_dashboard_paper_v1634.py:472",
+        "tests/test_dashboard_paper_v1634.py:545",
+        "tests/test_dashboard_paper_v1634.py:564",
+        "tests/test_dashboard_paper_v1634.py:60",
+        "tests/test_dashboard_paper_v1634.py:603",
+        "tests/test_dashboard_paper_v1634.py:88",
+        "tests/test_dashboard_v17_rc3.py:8",
+        "tests/test_hotfix_rc3_hf1.py:9",
+        "tests/test_hotfix_rc3_hf2.py:10",
+        "tests/test_hotfix_rc3_hf5.py:15",
+        "tests/test_hotfix_rc3_hf5.py:25",
+        "tests/test_hotfix_rc3_hf6.py:102",
+        "tests/test_hotfix_rc3_hf6.py:126",
+        "tests/test_intraday_scalping_hf3.py:10",
+        "tests/test_open_entry_terms_v17.py:80",
+        "tests/test_paper_workspace_v17.py:134",
+        "tests/test_partial_allocation_integrity_v17.py:132",
+        "tests/test_partial_receipts_v17.py:132",
+        "tests/test_ppi_observed_configuration_v17.py:16",
+        "tests/test_production_paper_v1634.py:207",
+        "tests/test_production_paper_v1634.py:283",
+        "tests/test_rc4_acceptance.py:120",
+        "tests/test_rc4_acceptance.py:322",
+        "tests/test_rc4_acceptance.py:342",
+        "tests/test_rc6_dashboard_result_semantics.py:3",
+        "tests/test_single_close_ledger_v17.py:116",
+        "tests/test_single_close_ledger_v17.py:178",
+        "tests/test_ws_dash_02_ux_accessibility.py:8",
+        "tests/test_ws_dash_04_full_dashboard_truth.py:7",
+        "tests/test_ws_dash_05_dashboard_performance.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bh_paper_gemini.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_production_paper_v1634.py:18",
+        "tests/test_rc6_night_input_contracts.py:13",
+        "tests/test_rc6_nocturnal_findings.py:13",
+        "tests/test_rc6_residual_adverse.py:12"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bh_universe_dashboard_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "cl_contract_evidence_dashboard_hf6.py:8",
+        "o_dashboard.py:1583"
+      ],
+      "test_import_callers": [
+        "tests/test_ws_dash_04_full_dashboard_truth.py:8"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bi_operational_services.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:27"
+      ],
+      "test_import_callers": [
+        "tests/test_caucion_ledger_v17.py:121",
+        "tests/test_daily_risk_outbox_v17.py:259",
+        "tests/test_dashboard_paper_v1634.py:62",
+        "tests/test_operational_services_v1635.py:15",
+        "tests/test_production_paper_v1634.py:206",
+        "tests/test_rc6_bcra_active_retirement_20261002.py:4",
+        "tests/test_single_close_ledger_v17.py:117"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bj_sandbox_health_probe.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bl_candle_engine.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:446",
+        "bf_production_paper_observer.py:1509",
+        "bf_production_paper_observer.py:1525",
+        "bg_paper_dashboard.py:22",
+        "bo_signal_core.py:11",
+        "br_backtest_gate.py:10",
+        "bt_caucion_paper.py:17",
+        "bv_paper_runtime.py:464",
+        "bx_execution_replay.py:13",
+        "bx_execution_replay.py:455",
+        "by_strategy_backtest.py:10",
+        "bz_replay_risk.py:9",
+        "ca_caucion_allocator.py:11",
+        "cb_caucion_audit.py:12",
+        "cc_spot_liquidity.py:9",
+        "ce_caucion_treasury.py:13",
+        "rc6_local_eod_history.py:20",
+        "scripts/rc6_history_cutoff_repair_once.py:245"
+      ],
+      "test_import_callers": [
+        "tests/test_backtest_data_v17.py:11",
+        "tests/test_candle_archive_v17.py:15",
+        "tests/test_dashboard_paper_v1634.py:439",
+        "tests/test_dashboard_paper_v1634.py:514",
+        "tests/test_execution_replay_v17.py:13",
+        "tests/test_rc6_history_convergence.py:20",
+        "tests/test_rc6_issue600_regressions.py:10",
+        "tests/test_strategy_backtest_v17.py:14"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bm_exit_supervisor.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:2249",
+        "be_paper_engine.py:440",
+        "be_paper_engine.py:818",
+        "bv_paper_runtime.py:30",
+        "scripts/rc6_zero_known_error_runtime_audit.py:19"
+      ],
+      "test_import_callers": [
+        "tests/test_caucion_ledger_v17.py:166",
+        "tests/test_daily_risk_outbox_v17.py:15",
+        "tests/test_exit_ledger_isolation_v17.py:10",
+        "tests/test_exit_supervision_v17.py:16",
+        "tests/test_issue465_capability_cache.py:92",
+        "tests/test_open_entry_terms_v17.py:9",
+        "tests/test_partial_allocation_integrity_v17.py:10",
+        "tests/test_partial_receipts_v17.py:163",
+        "tests/test_production_paper_v1634.py:160",
+        "tests/test_rc6_convergence_core_admission.py:12",
+        "tests/test_rc6_performance_capture.py:12",
+        "tests/test_rc6_take_profit_regression.py:16",
+        "tests/test_single_close_ledger_v17.py:157"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bn_telegram_bus.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:442",
+        "bf_production_paper_observer.py:1757",
+        "bi_operational_services.py:656",
+        "bv_paper_runtime.py:460",
+        "rc6_market_watch_silence.py:19",
+        "rc6_operational_alerts.py:3"
+      ],
+      "test_import_callers": [
+        "tests/test_daily_risk_outbox_v17.py:16",
+        "tests/test_telegram_outbox_policy_rc6.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bo_signal_core.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bx_execution_replay.py:467",
+        "by_strategy_backtest.py:11"
+      ],
+      "test_import_callers": [
+        "tests/test_strategy_backtest_v17.py:15"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bq_exit_policy.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bv_paper_runtime.py:31",
+        "cf_intraday_scalping.py:889",
+        "rc4_validation.py:5",
+        "rc6_shadow_runtime/lab.py:64",
+        "rc6_shadow_runtime/stages.py:8"
+      ],
+      "test_import_callers": [
+        "tests/test_byma_schedule_rc5.py:7",
+        "tests/test_exit_ledger_isolation_v17.py:11",
+        "tests/test_exit_supervision_v17.py:17",
+        "tests/test_hotfix_rc3_hf4.py:11",
+        "tests/test_issue465_budget_adversarial.py:23",
+        "tests/test_production_paper_v1634.py:20",
+        "tests/test_rc4_acceptance.py:238",
+        "tests/test_rc4_acceptance.py:251",
+        "tests/test_rc6_approved_factual_callers.py:206",
+        "tests/test_rc6_convergence_core_admission.py:13",
+        "tests/test_rc6_final_programming_runtime.py:12",
+        "tests/test_rc6_option_paper_execution.py:7",
+        "tests/test_rc6_take_profit_regression.py:17",
+        "tests/test_ws_motor_09_contract_bridge.py:15"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "br_backtest_gate.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bx_execution_replay.py:14"
+      ],
+      "test_import_callers": [
+        "tests/test_backtest_data_v17.py:12"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bs_instrument_contracts.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ah_market_tools.py:82",
+        "ba_data912_history.py:453",
+        "be_paper_engine.py:21",
+        "be_paper_engine.py:945",
+        "bf_production_paper_observer.py:1252",
+        "bg_paper_dashboard.py:29",
+        "bi_operational_services.py:30",
+        "bl_candle_engine.py:16",
+        "bm_exit_supervisor.py:7",
+        "bn_telegram_bus.py:14",
+        "bo_signal_core.py:12",
+        "bq_exit_policy.py:13",
+        "br_backtest_gate.py:11",
+        "bt_caucion_paper.py:16",
+        "bu_instrument_catalog.py:14",
+        "bw_daily_risk.py:11",
+        "bx_execution_replay.py:15",
+        "bx_execution_replay.py:456",
+        "by_strategy_backtest.py:12",
+        "bz_replay_risk.py:10",
+        "c_ppi_client.py:326",
+        "c_ppi_client.py:91",
+        "ca_caucion_allocator.py:12",
+        "cb_caucion_audit.py:13",
+        "cc_spot_liquidity.py:10",
+        "cd_spot_ledger.py:10",
+        "ce_caucion_treasury.py:14",
+        "cf_intraday_scalping.py:24",
+        "cf_sale_settlement.py:16",
+        "cr_pending_settlement_diagnostics_hf6.py:13",
+        "ct_ppi_history_salvage_hf6.py:12",
+        "cu_history_store_v2_hf6.py:21",
+        "df_caucion_end_of_day_sweep_hf6.py:22",
+        "df_daily_operation_summary_hf6.py:23",
+        "dh_paper_dynamic_risk_gate_hf6.py:16",
+        "di_caucion_cash_sweep_runtime_hf6.py:22",
+        "dj_caucion_live_ppi_rc6.py:15",
+        "ea_history_close_series_hf2.py:18",
+        "eb_dashboard_live_policy_hf2.py:11",
+        "rc6_contract_bridge.py:14",
+        "rc6_contract_bridge.py:274",
+        "rc6_contract_reconciliation_guard.py:16",
+        "rc6_dynamic_universe/routing.py:2",
+        "rc6_dynamic_universe/tradeability.py:15",
+        "rc6_multisource_discovery.py:14",
+        "rc6_paper_family_lifecycle.py:16",
+        "rc6_paper_family_lifecycle.py:836",
+        "rc6_performance/costs.py:11",
+        "rc6_shadow_runtime/entry_signals.py:314",
+        "rc6_shadow_runtime/families.py:19",
+        "rc6_signal_contracts.py:11",
+        "scripts/rc6_history_cutoff_repair_once.py:204",
+        "scripts/rc6_history_cutoff_repair_once.py:80",
+        "scripts/rc6_history_cutoff_repair_once.py:89",
+        "scripts/rc6_targeted_probe.py:29",
+        "scripts/v17_ledger_preflight.py:133",
+        "x_ppi_websocket.py:242"
+      ],
+      "test_import_callers": [
+        "tests/test_caucion_treasury_v17.py:12",
+        "tests/test_derivatives_and_gate.py:20",
+        "tests/test_execution_replay_v17.py:14",
+        "tests/test_exit_supervision_v17.py:185",
+        "tests/test_partial_receipts_v17.py:97",
+        "tests/test_production_paper_v1634.py:22",
+        "tests/test_production_paper_v1634.py:23",
+        "tests/test_rc6_convergence_finance.py:14",
+        "tests/test_rc6_convergence_finance_review.py:16",
+        "tests/test_rc6_final_family_source_policy.py:11",
+        "tests/test_rc6_final_shared_risk.py:23",
+        "tests/test_rc6_future_contract_policy.py:5",
+        "tests/test_rc6_future_paper_engine.py:5",
+        "tests/test_rc6_future_paper_lifecycle.py:4",
+        "tests/test_rc6_future_programming_complete.py:24",
+        "tests/test_rc6_iol_family_reference.py:153",
+        "tests/test_rc6_option_paper_execution.py:6",
+        "tests/test_rc6_ppi_option_contract_policy.py:5",
+        "tests/test_rc6_shadow_entry_signals.py:13",
+        "tests/test_rc6_shadow_operational_funnel.py:12",
+        "tests/test_single_close_ledger_v17.py:143",
+        "tests/test_strategy_backtest_v17.py:16",
+        "tests/test_ws_motor_09_contract_bridge.py:14",
+        "tests/test_ws_motor_11_paper_lifecycle.py:6",
+        "tests/test_ws_motor_14_paper_policy.py:7"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bt_caucion_paper.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:2323",
+        "be_paper_engine.py:24",
+        "bg_paper_dashboard.py:31",
+        "bi_operational_services.py:31",
+        "bw_daily_risk.py:12",
+        "ca_caucion_allocator.py:13",
+        "cb_caucion_audit.py:14",
+        "ce_caucion_treasury.py:15",
+        "df_caucion_end_of_day_sweep_hf6.py:23",
+        "di_caucion_cash_sweep_runtime_hf6.py:23",
+        "rc6_contract_bridge.py:273"
+      ],
+      "test_import_callers": [
+        "tests/test_cash_sweep_runtime_hf6.py:5",
+        "tests/test_caucion_ledger_v17.py:10",
+        "tests/test_daily_risk_outbox_v17.py:20",
+        "tests/test_dashboard_paper_v1634.py:16",
+        "tests/test_dashboard_paper_v1634.py:76",
+        "tests/test_dynamic_risk_and_caucion_sweep_hf6.py:5",
+        "tests/test_operational_services_v1635.py:14",
+        "tests/test_operational_services_v1635.py:54",
+        "tests/test_partial_allocation_integrity_v17.py:12",
+        "tests/test_partial_receipts_v17.py:10",
+        "tests/test_production_paper_v1634.py:19",
+        "tests/test_rc6_future_programming_complete.py:25",
+        "tests/test_rc6_t1_settlement_hotfix.py:14",
+        "tests/test_single_close_ledger_v17.py:10",
+        "tests/test_ws_caucion_10_auto_recovery.py:5",
+        "tests/test_ws_caucion_12_live_ppi_wiring.py:13",
+        "tests/test_ws_dash_trader_terminal_08.py:601",
+        "tests/test_ws_motor_15_operative_closure.py:13"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bu_instrument_catalog.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:28",
+        "bv_paper_runtime.py:275",
+        "cr_contract_evidence_v2_mass_hf6.py:16",
+        "rc6_contract_bridge.py:275",
+        "rc6_preopen.py:22",
+        "scripts/ws_motor_11_replay.py:29"
+      ],
+      "test_import_callers": [
+        "tests/test_intraday_scalping_hf3.py:12",
+        "tests/test_intraday_scalping_rc6_integration.py:5",
+        "tests/test_issue465_capability_cache.py:15",
+        "tests/test_ppi_observed_configuration_v17.py:14",
+        "tests/test_production_paper_v1634.py:1594",
+        "tests/test_production_paper_v1634.py:25",
+        "tests/test_rc6_approved_factual_callers.py:18",
+        "tests/test_rc6_complementary_catalog_merge.py:5",
+        "tests/test_rc6_contract_reconciliation_guard.py:23",
+        "tests/test_rc6_future_programming_complete.py:566",
+        "tests/test_rc6_observer_complementary_reconcile.py:5",
+        "tests/test_rc6_ppi_option_contract_policy.py:6",
+        "tests/test_rc6_sunday_host_policy.py:5",
+        "tests/test_rc6_t1_settlement_hotfix.py:175",
+        "tests/test_rc6_unified_20261002.py:11",
+        "tests/test_rc6_us_underlying_holiday.py:4",
+        "tests/test_ws_caucion_12_live_ppi_wiring.py:8",
+        "tests/test_ws_motor_09_contract_bridge.py:8",
+        "tests/test_ws_motor_11_broker_parity_evidence.py:8",
+        "tests/test_ws_motor_13_mass_evidence.py:5",
+        "tests/test_ws_motor_14_paper_policy.py:9",
+        "tests/test_ws_motor_15_operative_closure.py:9"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bv_paper_runtime.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:1845",
+        "cf_intraday_scalping.py:966",
+        "di_caucion_cash_sweep_runtime_hf6.py:400"
+      ],
+      "test_import_callers": [
+        "tests/test_daily_risk_outbox_v17.py:17",
+        "tests/test_exit_ledger_isolation_v17.py:12",
+        "tests/test_exit_supervision_v17.py:18",
+        "tests/test_exit_supervision_v17.py:295",
+        "tests/test_exit_supervision_v17.py:377",
+        "tests/test_hotfix_rc3_hf1.py:11",
+        "tests/test_hotfix_rc3_hf4.py:111",
+        "tests/test_intraday_scalping_hf3.py:117",
+        "tests/test_issue465_budget_adversarial.py:25",
+        "tests/test_issue465_capability_cache.py:90",
+        "tests/test_paper_workspace_v17.py:184",
+        "tests/test_rc6_approved_factual_callers.py:157",
+        "tests/test_rc6_convergence_core_admission.py:10",
+        "tests/test_rc6_future_programming_complete.py:21",
+        "tests/test_rc6_runtime_safety.py:17",
+        "tests/test_rc6_shadow_runtime_wiring.py:227",
+        "tests/test_rc6_shadow_runtime_wiring.py:239",
+        "tests/test_ws_caucion_10_auto_recovery.py:102"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bw_daily_risk.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:443",
+        "be_paper_engine.py:782",
+        "bz_replay_risk.py:11",
+        "ca_caucion_allocator.py:15"
+      ],
+      "test_import_callers": [
+        "tests/test_daily_risk_outbox_v17.py:18",
+        "tests/test_exit_ledger_isolation_v17.py:13",
+        "tests/test_hotfix_rc3_hf6.py:22",
+        "tests/test_hotfix_rc3_hf6.py:9",
+        "tests/test_open_entry_terms_v17.py:10",
+        "tests/test_partial_allocation_integrity_v17.py:11",
+        "tests/test_single_close_ledger_v17.py:118",
+        "tests/test_single_close_ledger_v17.py:158"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bx_execution_replay.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bo_signal_core.py:129",
+        "bx_execution_replay.py:491",
+        "by_strategy_backtest.py:13"
+      ],
+      "test_import_callers": [
+        "tests/test_execution_replay_v17.py:15",
+        "tests/test_strategy_backtest_v17.py:17"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "by_strategy_backtest.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bx_execution_replay.py:468"
+      ],
+      "test_import_callers": [
+        "tests/test_strategy_backtest_v17.py:18"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "bz_replay_risk.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bx_execution_replay.py:16",
+        "by_strategy_backtest.py:14"
+      ],
+      "test_import_callers": [
+        "tests/test_daily_risk_outbox_v17.py:19",
+        "tests/test_execution_replay_v17.py:16",
+        "tests/test_strategy_backtest_v17.py:19"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "c_ppi_client.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ap_api_verifier.py:231",
+        "b_notifiers.py:383",
+        "b_notifiers.py:411",
+        "bb_runtime_status.py:231",
+        "bc_dashboard_v163.py:58",
+        "bj_sandbox_health_probe.py:20",
+        "j_main.py:1357",
+        "j_main.py:52",
+        "m_instrument_universe.py:174",
+        "m_introspection_engine.py:120",
+        "x_ppi_websocket.py:155"
+      ],
+      "test_import_callers": [
+        "tests/test_operational_safety_v163.py:112",
+        "tests/test_operational_safety_v163.py:243",
+        "tests/test_operational_safety_v163.py:249",
+        "tests/test_operational_safety_v163.py:266",
+        "tests/test_operational_safety_v163.py:36",
+        "tests/test_operational_safety_v163.py:56",
+        "tests/test_order_trace_units_v17.py:10",
+        "tests/test_ppi_documented_contract_v17.py:11",
+        "tests/test_ppi_observed_configuration_v17.py:13",
+        "tests/test_ppi_retry_policy_v1633.py:4",
+        "tests/test_ppi_sandbox_adapter_v1632.py:3",
+        "tests/test_rc6_nocturnal_findings.py:14"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ca_caucion_allocator.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:973",
+        "cb_caucion_audit.py:15",
+        "ce_caucion_treasury.py:16",
+        "di_caucion_cash_sweep_runtime_hf6.py:24"
+      ],
+      "test_import_callers": [
+        "tests/test_production_paper_v1634.py:24"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cb_caucion_audit.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:23"
+      ],
+      "test_import_callers": [
+        "tests/test_caucion_treasury_v17.py:13",
+        "tests/test_dashboard_paper_v1634.py:387",
+        "tests/test_dashboard_paper_v1634.py:413",
+        "tests/test_dashboard_paper_v1634.py:440",
+        "tests/test_dashboard_paper_v1634.py:456",
+        "tests/test_dashboard_paper_v1634.py:471",
+        "tests/test_dashboard_paper_v1634.py:498",
+        "tests/test_dashboard_paper_v1634.py:515",
+        "tests/test_dashboard_paper_v1634.py:526",
+        "tests/test_dashboard_paper_v1634.py:543",
+        "tests/test_dashboard_paper_v1634.py:563",
+        "tests/test_dashboard_paper_v1634.py:582",
+        "tests/test_paper_workspace_v17.py:250"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cc_spot_liquidity.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:26"
+      ],
+      "test_import_callers": [
+        "tests/test_production_paper_v1634.py:338",
+        "tests/test_production_paper_v1634.py:375"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cd_spot_ledger.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:27",
+        "bg_paper_dashboard.py:28",
+        "bi_operational_services.py:29",
+        "bm_exit_supervisor.py:228",
+        "bt_caucion_paper.py:18",
+        "dh_paper_dynamic_risk_gate_hf6.py:15",
+        "scripts/v17_ledger_preflight.py:132"
+      ],
+      "test_import_callers": [
+        "tests/test_exit_ledger_isolation_v17.py:134",
+        "tests/test_partial_allocation_integrity_v17.py:13",
+        "tests/test_production_paper_v1634.py:257",
+        "tests/test_production_paper_v1634.py:66"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ce_caucion_treasury.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:978"
+      ],
+      "test_import_callers": [
+        "tests/test_caucion_treasury_v17.py:124",
+        "tests/test_caucion_treasury_v17.py:14"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cf_intraday_scalping.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bv_paper_runtime.py:468",
+        "rc6_dynamic_universe/benchmark.py:158",
+        "rc6_dynamic_universe/live.py:9",
+        "scripts/rc6_zero_known_error_runtime_audit.py:20"
+      ],
+      "test_import_callers": [
+        "tests/test_intraday_scalping_hf3.py:11",
+        "tests/test_intraday_scalping_rc6_integration.py:6",
+        "tests/test_issue465_capability_cache.py:16",
+        "tests/test_rc6_approved_factual_callers.py:19",
+        "tests/test_rc6_convergence_core_admission.py:11",
+        "tests/test_rc6_dynamic_orchestrator.py:16",
+        "tests/test_rc6_dynamic_orchestrator.py:238",
+        "tests/test_rc6_intraday_freshness.py:13",
+        "tests/test_rc6_market_rescue_sqlite.py:7",
+        "tests/test_rc6_scalping_heartbeat_contention.py:7",
+        "tests/test_rc6_shadow_runtime_wiring.py:13",
+        "tests/test_ws_motor_15_operative_closure.py:10"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cf_sale_settlement.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bt_caucion_paper.py:19",
+        "cd_spot_ledger.py:11",
+        "cr_pending_settlement_diagnostics_hf6.py:14",
+        "scripts/v17_ledger_preflight.py:134"
+      ],
+      "test_import_callers": [
+        "tests/test_partial_receipts_v17.py:119",
+        "tests/test_production_paper_v1634.py:21",
+        "tests/test_rc4_hf1_last_mile.py:5",
+        "tests/test_rc6_convergence_finance_review.py:210",
+        "tests/test_rc6_runtime_safety.py:4",
+        "tests/test_rc6_t1_settlement_hotfix.py:15"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cg_paper_workspace.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:306",
+        "bf_production_paper_observer.py:36",
+        "bg_paper_dashboard.py:32",
+        "bi_operational_services.py:32",
+        "bj_sandbox_health_probe.py:21",
+        "bv_paper_runtime.py:32",
+        "cb_caucion_audit.py:131",
+        "cb_caucion_audit.py:137",
+        "en_validation_project_dashboard_rc6.py:15",
+        "et_shadow_learning_rc6.py:15",
+        "porota_mode_manager.py:28",
+        "rc6_action4_audit.py:17",
+        "rc6_annual_instrument_analysis.py:16",
+        "rc6_audit_evidence/sqlite_scratch.py:78",
+        "rc6_dynamic_universe/promotion.py:208",
+        "rc6_dynamic_universe/promotion.py:261",
+        "rc6_local_eod_history.py:270",
+        "rc6_postclose_history_job.py:18",
+        "rc6_ppi_global_budget.py:1982",
+        "rc6_ppi_global_budget.py:2284",
+        "rc6_ppi_global_budget.py:2293",
+        "rc6_ppi_global_budget.py:2306",
+        "rc6_ppi_global_budget.py:517",
+        "rc6_shadow_runtime/worker.py:509",
+        "rc6_trader_dashboard/projection.py:283",
+        "scripts/rc6_history_cutoff_repair_once.py:309",
+        "scripts/rc6_zero_known_error_runtime_audit.py:21"
+      ],
+      "test_import_callers": [
+        "tests/test_caucion_ledger_v17.py:160",
+        "tests/test_dashboard_v17_rc3.py:9",
+        "tests/test_paper_workspace_v17.py:15",
+        "tests/test_rc6_history_cutoff_repair_coverage.py:19",
+        "tests/test_rc6_shadow_failure_context.py:6",
+        "tests/test_ws_dash_trader_terminal_08.py:571"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ch_contract_evidence_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ck_contract_evidence_runner_hf6.py:21",
+        "cm_special_family_discovery_hf6.py:10"
+      ],
+      "test_import_callers": [
+        "tests/test_contract_evidence_hf6.py:7"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ch_empirical_learning.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:24",
+        "es_policy_context_rc6.py:16",
+        "ops_introspection_hf4.py:20",
+        "ops_introspection_rc6.py:20",
+        "rc4_policy_context.py:15"
+      ],
+      "test_import_callers": [
+        "tests/test_hotfix_rc3_hf6.py:41"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ci_operational_context.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:25",
+        "es_policy_context_rc6.py:17",
+        "ops_introspection_hf4.py:21",
+        "ops_introspection_rc6.py:21",
+        "rc4_policy_context.py:16"
+      ],
+      "test_import_callers": [
+        "tests/test_hotfix_rc3_hf6.py:56"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ci_ppi_bond_estimate_patch_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ck_contract_evidence_runner_hf6.py:20"
+      ],
+      "test_import_callers": [
+        "tests/test_contract_evidence_hf6.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ck_contract_evidence_runner_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ck_policy_gate_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:1428",
+        "be_paper_engine.py:1486",
+        "be_paper_engine.py:1957",
+        "be_paper_engine.py:1981",
+        "bg_paper_dashboard.py:3185",
+        "rc4_validation.py:3",
+        "scripts/rc6_w10_sector_map_preflight.py:13"
+      ],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:6",
+        "tests/test_rc6_final_shared_risk.py:21",
+        "tests/test_rc6_nocturnal_findings.py:15",
+        "tests/test_rc6_wave10_sector_binding_default.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cl_contract_evidence_dashboard_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cm_special_family_discovery_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ck_contract_evidence_runner_hf6.py:22"
+      ],
+      "test_import_callers": [
+        "tests/test_contract_evidence_hf6.py:8"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cn_ppi_authenticated_family_scraper_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "co_contract_ingestion_policy_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "de_scheduler_catalog_hf6.py:17",
+        "rc4_contract_schedule.py:16"
+      ],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:17"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "co_market_sessions_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bq_exit_policy.py:14",
+        "cf_intraday_scalping.py:26",
+        "di_caucion_cash_sweep_runtime_hf6.py:204",
+        "historical_candle_shadow_rc6.py:66",
+        "rc4_contract_schedule.py:17",
+        "rc4_validation.py:4",
+        "rc5_release_preflight.py:11",
+        "rc6_dynamic_universe/benchmark.py:20",
+        "rc6_dynamic_universe/capacity.py:14",
+        "rc6_dynamic_universe/live.py:18",
+        "rc6_local_eod_history.py:21",
+        "rc6_shadow_runtime/preopen.py:24",
+        "rc6_shadow_runtime/stages.py:7",
+        "rc6_shadow_runtime/worker.py:16",
+        "rc6_trader_dashboard/projection.py:783",
+        "scripts/rc6_ppi_capacity_benchmark.py:15"
+      ],
+      "test_import_callers": [
+        "tests/test_byma_schedule_rc5.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cp_contract_evidence_v2_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:955",
+        "cq_family_contract_rules_hf6.py:20",
+        "cr_contract_evidence_v2_mass_hf6.py:15",
+        "cy_a3_contract_bridge_hf6.py:12",
+        "di_caucion_cash_sweep_runtime_hf6.py:287",
+        "rc4_contract_import_job.py:6",
+        "rc4_contract_legacy_bridge.py:9",
+        "rc6_broker_parity_evidence.py:14",
+        "rc6_contract_bridge.py:15",
+        "rc6_contract_bridge.py:238",
+        "rc6_contract_dom_importer.py:15",
+        "scripts/ws_motor_11_replay.py:25"
+      ],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:7",
+        "tests/test_rc6_future_contract_policy.py:6",
+        "tests/test_rc6_ppi_option_contract_policy.py:7",
+        "tests/test_rc6_source_consolidation.py:94",
+        "tests/test_rc6_unified_20261002.py:12",
+        "tests/test_ws_motor_09_contract_bridge.py:9",
+        "tests/test_ws_motor_10_effective_families.py:7",
+        "tests/test_ws_motor_11_broker_parity_evidence.py:4",
+        "tests/test_ws_motor_13_mass_evidence.py:6",
+        "tests/test_ws_motor_14_paper_policy.py:10"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cp_history_ingest_policy_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "cr_data912_reconcile_hf6.py:17",
+        "ct_ppi_history_salvage_hf6.py:14",
+        "cu_history_store_v2_hf6.py:189",
+        "historical_candle_shadow_rc6.py:15",
+        "scripts/rc6_history_cutoff_repair_once.py:248"
+      ],
+      "test_import_callers": [
+        "test_cp_history_ingest_policy_hf6.py:4",
+        "test_hf6_history_data912_v2.py:6",
+        "tests/test_ws_ops_history_all_families.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cq_contract_readiness_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "cp_contract_evidence_v2_hf6.py:566"
+      ],
+      "test_import_callers": [
+        "tests/test_ws_motor_10_effective_families.py:8"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cq_family_contract_rules_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "cq_contract_readiness_hf6.py:70",
+        "rc6_broker_parity_evidence.py:15",
+        "scripts/ws_motor_11_replay.py:26"
+      ],
+      "test_import_callers": [
+        "test_hf6_history_data912_v2.py:7",
+        "tests/test_ws_motor_09_contract_bridge.py:10",
+        "tests/test_ws_motor_10_effective_families.py:9",
+        "tests/test_ws_motor_11_broker_parity_evidence.py:5",
+        "tests/test_ws_motor_11_ppi_fixed_income_mapping.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cq_history_attempt_ledger_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:1320",
+        "bf_production_paper_observer.py:1484",
+        "ct_ppi_history_salvage_hf6.py:15"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cr_contract_evidence_v2_mass_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:555",
+        "ck_contract_evidence_runner_hf6.py:23"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_future_contract_policy.py:7",
+        "tests/test_rc6_ppi_option_contract_policy.py:8",
+        "tests/test_rc6_residual_adverse.py:13",
+        "tests/test_rc6_unified_20261002.py:13",
+        "tests/test_ws_caucion_12_live_ppi_wiring.py:9",
+        "tests/test_ws_motor_13_mass_evidence.py:7",
+        "tests/test_ws_motor_14_paper_policy.py:11"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cr_data912_reconcile_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "cs_postclose_history_scheduler_hf6.py:15"
+      ],
+      "test_import_callers": [
+        "test_hf6_history_data912_v2.py:8",
+        "tests/test_rc6_history_convergence.py:21"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cr_pending_settlement_diagnostics_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:2358"
+      ],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:21",
+        "tests/test_rc4_hf1_last_mile.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cs_postclose_history_scheduler_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc4_postclose_history_job.py:4"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ct_ppi_history_salvage_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:1483",
+        "scripts/rc6_history_cutoff_repair_once.py:271"
+      ],
+      "test_import_callers": [
+        "tests/test_history_close_only_hf2.py:4",
+        "tests/test_rc6_history_convergence.py:22"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cu_history_store_v2_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "al_historical_ingest.py:187",
+        "ba_data912_history.py:129",
+        "bf_production_paper_observer.py:1482",
+        "ct_ppi_history_salvage_hf6.py:16",
+        "cw_data912_history_v2_sink.py:15",
+        "db_a3_cem_normalizer_hf6.py:13",
+        "ea_history_close_series_hf2.py:17",
+        "ew_a3_history_rc6.py:16",
+        "historical_candle_shadow_rc6.py:16",
+        "rc4_a3_cem_history_runner.py:13",
+        "rc6_shadow_runtime/preopen.py:25"
+      ],
+      "test_import_callers": [
+        "test_hf6_history_data912_v2.py:9",
+        "tests/test_candle_archive_v17.py:70",
+        "tests/test_rc4_acceptance.py:8",
+        "tests/test_rc6_history_convergence.py:23",
+        "tests/test_rc6_shadow_preopen_runtime.py:11"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cv_history_store_adapter_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:1183",
+        "bf_production_paper_observer.py:1360",
+        "bf_production_paper_observer.py:1405",
+        "ct_ppi_history_salvage_hf6.py:18",
+        "cw_data912_history_v2_sink.py:16",
+        "ew_a3_history_rc6.py:15",
+        "rc4_a3_cem_history_runner.py:12",
+        "rc6_local_eod_history.py:22",
+        "scripts/rc6_history_cutoff_repair_once.py:42"
+      ],
+      "test_import_callers": [
+        "tests/test_candle_archive_v17.py:334",
+        "tests/test_candle_archive_v17.py:71",
+        "tests/test_rc6_issue600_regressions.py:11"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cw_data912_history_v2_sink.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "cr_data912_reconcile_hf6.py:18"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_history_convergence.py:24"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cx_a3_primary_readonly_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "test_a3_primary_readonly_hf6.py:3",
+        "tests/test_a3_primary_readonly_hf6.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cy_a3_contract_bridge_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cy_market_source_arbitration_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ew_a3_history_rc6.py:19",
+        "iol_shadow_observation_rc6.py:9",
+        "rc4_a3_cem_history_runner.py:16"
+      ],
+      "test_import_callers": [
+        "tests/test_iol_shadow_observation_rc6.py:23",
+        "tests/test_rc6_nocturnal_findings.py:16"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "cz_a3_cem_public_history_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ew_a3_history_rc6.py:17",
+        "rc4_a3_cem_history_runner.py:14"
+      ],
+      "test_import_callers": [
+        "tests/test_a3_cem_public_history_hf6.py:1",
+        "tests/test_a3_history_rc6.py:120"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "d_economics.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "aq_macro_backtest.py:152",
+        "ar_telegram_commands.py:358",
+        "e_technical_engine.py:459",
+        "h_daily_report.py:172",
+        "h_daily_report.py:213",
+        "j_main.py:58",
+        "q_backtest.py:57"
+      ],
+      "test_import_callers": [
+        "tests/test_economics_costs.py:31",
+        "tests/test_propiedades_costos.py:42"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "da_dashboard_ux_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:45"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_ux_logs_cem_hf6.py:5",
+        "tests/test_rc4_acceptance.py:15",
+        "tests/test_rc6_operational_scope.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "db_a3_cem_normalizer_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ew_a3_history_rc6.py:18",
+        "rc4_a3_cem_history_runner.py:15"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_ux_logs_cem_hf6.py:7",
+        "tests/test_rc6_history_convergence.py:26"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "db_dashboard_logs_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:46"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_ux_logs_cem_hf6.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "dd_history_metrics_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:34",
+        "ek_history_freshness_metrics_rc5.py:17"
+      ],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:9",
+        "tests/test_rc6_history_operational_scope.py:3",
+        "tests/test_ws_dash_07_history_truth.py:25"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "de_concurrent_risk_capacity_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:1502",
+        "be_paper_engine.py:2006",
+        "dh_paper_dynamic_risk_gate_hf6.py:17"
+      ],
+      "test_import_callers": [
+        "tests/test_dynamic_risk_and_caucion_sweep_hf6.py:6",
+        "tests/test_rc4_acceptance.py:227"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "de_scheduler_catalog_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:47"
+      ],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:10",
+        "tests/test_scheduler_dashboard_hf6.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "df_caucion_end_of_day_sweep_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "di_caucion_cash_sweep_runtime_hf6.py:25"
+      ],
+      "test_import_callers": [
+        "tests/test_dynamic_risk_and_caucion_sweep_hf6.py:7",
+        "tests/test_ws_motor_15_operative_closure.py:14"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "df_daily_operation_summary_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:40"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "dg_dashboard_daily_result_ux_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:41"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_daily_responsive_hf6.py:4",
+        "tests/test_ws_dash_06_oct01_ux.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "dh_dashboard_compact_lists_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:42",
+        "eb_dashboard_live_policy_hf2.py:12"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_daily_responsive_hf6.py:7"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "dh_paper_dynamic_risk_gate_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:1412",
+        "be_paper_engine.py:1527",
+        "be_paper_engine.py:2007"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_convergence_finance.py:15",
+        "tests/test_rc6_final_shared_risk.py:24",
+        "tests/test_rc6_option_paper_execution.py:8"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "di_caucion_cash_sweep_runtime_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bv_paper_runtime.py:472",
+        "dj_caucion_live_ppi_rc6.py:41",
+        "scripts/rc6_zero_known_error_runtime_audit.py:22"
+      ],
+      "test_import_callers": [
+        "tests/test_cash_sweep_runtime_hf6.py:6",
+        "tests/test_rc6_unified_20261002.py:16",
+        "tests/test_ws_caucion_10_auto_recovery.py:103",
+        "tests/test_ws_caucion_10_auto_recovery.py:6",
+        "tests/test_ws_caucion_12_live_ppi_wiring.py:14",
+        "tests/test_ws_motor_15_operative_closure.py:15"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "dj_caucion_live_ppi_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:1940",
+        "di_caucion_cash_sweep_runtime_hf6.py:288"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_unified_20261002.py:14",
+        "tests/test_ws_caucion_12_live_ppi_wiring.py:10"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "e_technical_engine.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "j_main.py:57",
+        "q_backtest.py:55"
+      ],
+      "test_import_callers": [
+        "tests/test_operational_safety_v163.py:85"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ea_history_close_series_hf2.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ct_ppi_history_salvage_hf6.py:17",
+        "cu_history_store_v2_hf6.py:576"
+      ],
+      "test_import_callers": [
+        "tests/test_history_close_only_hf2.py:5",
+        "tests/test_rc6_history_convergence.py:431"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "eb_dashboard_live_policy_hf2.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:44"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_live_policy_hf2.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ec_forward_lab_metrics_hf2.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_forward_lab_metrics_hf2.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ei_dashboard_table_accessibility_rc5.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:43"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_global_a11y_rc5.py:3",
+        "tests/test_ws_dash_06_oct01_ux.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ek_history_freshness_metrics_rc5.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:38",
+        "rc6_preopen_freshness_audit.py:18",
+        "rc6_validation_projection.py:14"
+      ],
+      "test_import_callers": [
+        "tests/test_history_freshness_metrics_rc5.py:4",
+        "tests/test_rc6_history_cedear_calendar.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "em_validation_campaign_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "en_validation_project_dashboard_rc6.py:16",
+        "rc6_validation_dynamic.py:9",
+        "rc6_validation_projection.py:13"
+      ],
+      "test_import_callers": [
+        "tests/test_validation_campaign_rc6.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "en_validation_project_dashboard_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "o_dashboard.py:1595"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_iol_shadow_validation_wiring.py:1",
+        "tests/test_rc6_validation_dashboard_operational_wiring.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "entrypoint.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "eo_dashboard_truth_semantics_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ep_dashboard_truth_layer_rc6.py:15"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_truth_layer_rc6.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ep_dashboard_truth_layer_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "o_dashboard.py:1587"
+      ],
+      "test_import_callers": [
+        "tests/test_ws_dash_04_full_dashboard_truth.py:11"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "eq_dashboard_table_layout_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "o_dashboard.py:1591"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_table_headers_visible_sticky.py:1",
+        "tests/test_ws_dash_02_ux_accessibility.py:9",
+        "tests/test_ws_dash_06_oct01_ux.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "er_dashboard_table_semantics_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "eq_dashboard_table_layout_rc6.py:11"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_table_layout_rc6.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "er_dashboard_truth_projection_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:37",
+        "ep_dashboard_truth_layer_rc6.py:14",
+        "rc6_annual_instrument_analysis.py:17"
+      ],
+      "test_import_callers": [
+        "tests/test_ws_dash_04_full_dashboard_truth.py:10",
+        "tests/test_ws_dash_05_dashboard_performance.py:4",
+        "tests/test_ws_dash_06_oct01_ux.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "es_policy_context_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:1958",
+        "scripts/rc6_w10_sector_map_preflight.py:15"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_nocturnal_findings.py:17",
+        "tests/test_rc6_sector_settlement_fallback.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "es_shadow_binding_contract_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "et_shadow_learning_rc6.py:16",
+        "scripts/rc6_shadow_selftest.py:4"
+      ],
+      "test_import_callers": [
+        "tests/test_shadow_binding_contract_rc6.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "et_shadow_learning_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ev_shadow_validation_view_rc6.py:5",
+        "scripts/rc6_data_learning_readonly_audit.py:203",
+        "zz_wave8_dashboard_live_rc6.py:18"
+      ],
+      "test_import_callers": [
+        "tests/test_shadow_learning_rc6.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "eu_telegram_policy_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bn_telegram_bus.py:15"
+      ],
+      "test_import_callers": [
+        "tests/test_telegram_policy_rc6.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ev_shadow_validation_view_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ew_a3_history_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ex_a3_history_job_rc6.py:9"
+      ],
+      "test_import_callers": [
+        "tests/test_a3_history_rc6.py:7"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ex_a3_history_job_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ez_iol_shadow_validation_view_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "en_validation_project_dashboard_rc6.py:11"
+      ],
+      "test_import_callers": [
+        "tests/test_iol_shadow_validation_view_rc6.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "f_gemini_decision_engine.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ap_api_verifier.py:374",
+        "ap_api_verifier.py:389",
+        "j_main.py:53"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fa_raw_evidence_store_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fb_history_reconciler_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_history_reconciler_rc6.py:4",
+        "tests/test_history_reconciler_rc6.py:74"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fb_raw_evidence_exact_v1.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:1510",
+        "scripts/rc6_history_cutoff_repair_once.py:174",
+        "scripts/rc6_history_cutoff_repair_once.py:247"
+      ],
+      "test_import_callers": [
+        "tests/test_fb_raw_evidence_exact_v1.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fc_mfe_mae_provenance_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_mfe_mae_provenance_rc6.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fd_a3_identity_mapper_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ew_a3_history_rc6.py:20"
+      ],
+      "test_import_callers": [
+        "tests/test_a3_identity_mapper_rc6.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fe_fixed_income_nominal_contract_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc6_shadow_runtime/families.py:20"
+      ],
+      "test_import_callers": [
+        "tests/test_fixed_income_nominal_contract_rc6.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fg_critical_approval_gateway_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "fm_critical_approval_unix_runtime_rc6.py:22"
+      ],
+      "test_import_callers": [
+        "tests/test_critical_approval_gateway_rc6.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fg_intraday_contract_policy_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "cf_intraday_scalping.py:27"
+      ],
+      "test_import_callers": [
+        "tests/test_intraday_contract_policy_rc6.py:2"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fh_forward_lab_v2_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_forward_lab_v2_rc6.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fi_event_risk_shadow_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "zz_wave8_dashboard_live_rc6.py:19"
+      ],
+      "test_import_callers": [
+        "tests/test_event_risk_shadow_rc6.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fj_history_backfill_planner_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_history_backfill_planner_rc6.py:2"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fk_gdelt_shadow_feed_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_fk_gdelt_shadow_feed_rc6.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fm_critical_approval_unix_runtime_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "fn_critical_github_proxy_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_critical_github_proxy_rc6.py:3",
+        "tests/test_rc6_residual_adverse.py:14"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "g_news_feed.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ap_api_verifier.py:558",
+        "j_main.py:54",
+        "r_news_engine_247.py:29"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "h_daily_report.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "j_main.py:56"
+      ],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:263"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "historical_candle_shadow_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:1182"
+      ],
+      "test_import_callers": [
+        "tests/test_historical_candle_shadow_rc6.py:5",
+        "tests/test_rc6_history_convergence.py:25",
+        "tests/test_rc6_issue600_regressions.py:17",
+        "tests/test_rc6_operational_scope.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "i_auto_tuner.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "az_maintenance_job.py:64",
+        "az_maintenance_job.py:67",
+        "j_main.py:55"
+      ],
+      "test_import_callers": [
+        "tests/test_backtest_data_v17.py:162",
+        "tests/test_backtest_data_v17.py:218"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "iol_mcp_readonly_adapter_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "scripts/rc6_iol_mcp_inventory.py:17",
+        "scripts/rc6_iol_oauth_health.py:26",
+        "scripts/rc6_iol_shadow_collect.py:17"
+      ],
+      "test_import_callers": [
+        "tests/test_iol_mcp_oauth_refresh_rc6.py:9",
+        "tests/test_iol_mcp_readonly_adapter_rc6.py:4",
+        "tests/test_rc6_iol_shadow_runtime.py:2"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "iol_shadow_collector_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "scripts/rc6_iol_shadow_collect.py:18"
+      ],
+      "test_import_callers": [
+        "tests/test_iol_shadow_collector_rc6.py:2",
+        "tests/test_rc6_iol_shadow_runtime.py:3",
+        "tests/test_ws_motor_14_paper_policy.py:12"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "iol_shadow_decision_input_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:181"
+      ],
+      "test_import_callers": [
+        "tests/test_decision_evidence_snapshots_rc6.py:5",
+        "tests/test_iol_shadow_decision_input_rc6.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "iol_shadow_observation_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ez_iol_shadow_validation_view_rc6.py:14",
+        "iol_shadow_collector_rc6.py:23",
+        "iol_shadow_decision_input_rc6.py:9",
+        "rc6_annual_instrument_analysis.py:15"
+      ],
+      "test_import_callers": [
+        "tests/test_iol_shadow_collector_rc6.py:3",
+        "tests/test_iol_shadow_observation_rc6.py:1",
+        "tests/test_rc6_nocturnal_findings.py:18"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "j_main.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ar_telegram_commands.py:127",
+        "az_maintenance_job.py:72"
+      ],
+      "test_import_callers": [
+        "tests/test_operational_safety_v163.py:128"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "k_position_manager.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ah_market_tools.py:242",
+        "an_sre_deploy.py:205",
+        "ar_telegram_commands.py:357",
+        "ar_telegram_commands.py:93",
+        "i_auto_tuner.py:52",
+        "j_main.py:59",
+        "x_ppi_websocket.py:469",
+        "z_reports_engine.py:27"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "l_order_confirmation.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "an_sre_deploy.py:214",
+        "ar_telegram_commands.py:99",
+        "j_main.py:60"
+      ],
+      "test_import_callers": [
+        "tests/test_derivatives_and_gate.py:274",
+        "tests/test_telegram_startup_routing.py:12"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "m_instrument_universe.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "j_main.py:61"
+      ],
+      "test_import_callers": [
+        "tests/test_data912_history_fallback.py:6",
+        "tests/test_ppi_documented_contract_v17.py:177",
+        "tests/test_rc6_no_budget_permission_probe.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "m_introspection_engine.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "j_main.py:1193"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "o_dashboard.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "scripts/rc6_dashboard_route_inventory.py:23"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_paper_v1634.py:111",
+        "tests/test_dashboard_session.py:8",
+        "tests/test_dashboard_v17_rc3.py:10",
+        "tests/test_ws_dash_04_full_dashboard_truth.py:12"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ops_disk_inventory_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ops_introspection_hf4.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_hotfix_rc3_hf6.py:193"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ops_introspection_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_ws_dash_02_ux_accessibility.py:10"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ops_publish_introspection_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_hotfix_rc3_hf6.py:156",
+        "tests/test_hotfix_rc3_hf6.py:83"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ops_publish_introspection_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "ops_runtime_evidence_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "scripts/porota_consume_runtime_evidence_rc6.py:52"
+      ],
+      "test_import_callers": [
+        "tests/test_ws_infra_12_runtime_evidence.py:13"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "p_risk_guardian.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ag_kill_switch_supervisor.py:94",
+        "an_sre_deploy.py:222",
+        "ar_telegram_commands.py:302",
+        "ar_telegram_commands.py:397",
+        "ar_telegram_commands.py:432",
+        "ar_telegram_commands.py:453",
+        "j_main.py:62",
+        "l_order_confirmation.py:66",
+        "m_introspection_engine.py:235",
+        "o_dashboard.py:1236",
+        "r_clear_kill_switch.py:31",
+        "x_ppi_websocket.py:470"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_nocturnal_findings.py:53"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "porota_mode_manager.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "scripts/rc6_w10_sector_map_preflight.py:14"
+      ],
+      "test_import_callers": [
+        "tests/test_dashboard_v17_rc3.py:11",
+        "tests/test_hotfix_rc3_hf4.py:12",
+        "tests/test_hotfix_rc3_hf5.py:34",
+        "tests/test_hotfix_rc3_hf6.py:10",
+        "tests/test_hotfix_rc3_hf6.py:32",
+        "tests/test_hotfix_rc3_hf6.py:73",
+        "tests/test_intraday_scalping_hf3.py:125",
+        "tests/test_paper_workspace_v17.py:165",
+        "tests/test_rc6_t1_settlement_hotfix.py:157",
+        "tests/test_rc6_wave10_sector_binding_default.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "q_backtest.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_backtest_data_v17.py:146",
+        "tests/test_backtest_data_v17.py:196"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "r_clear_kill_switch.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "r_news_engine_247.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "az_maintenance_job.py:75",
+        "g_news_feed.py:144",
+        "j_main.py:63"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_a3_cem_history_job.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_a3_cem_history_runner.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc4_a3_cem_history_job.py:4"
+      ],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:13"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_backup_coverage.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:3165"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_contract_due_job.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_contract_import_job.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:18"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_contract_legacy_bridge.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:19"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_contract_schedule.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc4_contract_due_job.py:6"
+      ],
+      "test_import_callers": [
+        "tests/test_byma_schedule_rc5.py:6",
+        "tests/test_contract_evidence_rc5_runtime.py:8",
+        "tests/test_rc4_acceptance.py:16",
+        "tests/test_rc4_hf2_consolidation.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_functional_health.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:14"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_health_explain.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:1492"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_host_general_backup_job.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_module_inventory.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:20"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_policy_context.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:274",
+        "tests/test_rc4_acceptance.py:286"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_postclose_history_job.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_ppi_contract_normalizer.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc4_trusted_browser_contract_collector.py:17"
+      ],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:11"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_release_preflight.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_replay.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc4_replay_analysis.py:9"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_replay_analysis.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:299"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_storage_lifecycle_audit.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:12"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_trusted_browser_contract_collector.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "scripts/porota_contract_evidence_session_runner_rc4.py:17"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc4_validation.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc4_acceptance.py:237",
+        "tests/test_rc4_acceptance.py:250"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc5_release_preflight.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_action4_audit.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "az_maintenance_job.py:91",
+        "en_validation_project_dashboard_rc6.py:14"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_action4_audit.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_annual_instrument_analysis.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:36",
+        "rc6_trader_dashboard/annual.py:60"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_issue600_dashboard_adenda.py:187",
+        "tests/test_ws_dash_04_full_dashboard_truth.py:13"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_argentine_locale.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_argentine_locale.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_broker_parity_evidence.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:606",
+        "scripts/ws_motor_11_replay.py:27"
+      ],
+      "test_import_callers": [
+        "tests/test_ws_motor_11_broker_parity_evidence.py:6",
+        "tests/test_ws_motor_14_paper_policy.py:16"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_candle_integrity.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_cauciones_contract.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "cr_contract_evidence_v2_mass_hf6.py:163",
+        "di_caucion_cash_sweep_runtime_hf6.py:286",
+        "dj_caucion_live_ppi_rc6.py:16"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_cauciones_contract.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_cauciones_shadow_evidence.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_cauciones_shadow_evidence.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_contract_bridge.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:944",
+        "bf_production_paper_observer.py:612",
+        "bu_instrument_catalog.py:198",
+        "scripts/ws_motor_11_replay.py:28"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_future_contract_policy.py:8",
+        "tests/test_rc6_ppi_option_contract_policy.py:9",
+        "tests/test_rc6_unified_20261002.py:15",
+        "tests/test_ws_caucion_12_live_ppi_wiring.py:11",
+        "tests/test_ws_motor_09_contract_bridge.py:11",
+        "tests/test_ws_motor_11_broker_parity_evidence.py:7",
+        "tests/test_ws_motor_13_mass_evidence.py:8",
+        "tests/test_ws_motor_14_paper_policy.py:13"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_contract_dom_collector.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_contract_dom_importer.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_contract_reconciliation_guard.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:595"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_contract_reconciliation_guard.py:24"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_cost_settlement_takeprofit_shadow.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:1275",
+        "bm_exit_supervisor.py:195"
+      ],
+      "test_import_callers": [
+        "tests/test_historical_candle_shadow_rc6.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_counterfactual_learning.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:26",
+        "rc6_trader_dashboard/counterfactuals.py:10"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_counterfactual_learning.py:4",
+        "tests/test_rc6_issue600_dashboard_adenda.py:9"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_dashboard_responsive_ux.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "eq_dashboard_table_layout_rc6.py:10"
+      ],
+      "test_import_callers": [
+        "tests/test_ws_dash_02_ux_accessibility.py:11"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_data_sla_policy.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc6_scraping_semaphore.py:11"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_wave1b_sla_scraping.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_decision_evidence_report.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_decision_evidence_report.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_decision_evidence_view.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bg_paper_dashboard.py:27"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_decision_evidence_view.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_dom_coverage_reconciler.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc6_scraping_semaphore.py:10"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_wave1b_sla_scraping.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_family_readiness.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "scripts/rc6_full_universe_evidence.py:18"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_family_readiness.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_fast_functional_health.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_nocturnal_findings.py:19",
+        "tests/test_sre_health_split_rc6.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_full_db_integrity.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_sre_health_split_rc6.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_functional_health.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_residual_adverse.py:15"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_gdelt_event_risk_job.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_gdelt_event_risk_job.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_gdelt_shadow.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_gdelt_shadow.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_host_general_backup_job.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_iol_family_reference.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "scripts/rc6_iol_shadow_collect.py:20"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_iol_family_reference.py:4",
+        "tests/test_ws_motor_09_contract_bridge.py:12",
+        "tests/test_ws_motor_14_paper_policy.py:14",
+        "tests/test_ws_motor_15_operative_closure.py:11"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_local_eod_history.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_issue600_regressions.py:111",
+        "tests/test_rc6_issue600_regressions.py:12",
+        "tests/test_rc6_issue600_regressions.py:133",
+        "tests/test_rc6_issue600_regressions.py:158",
+        "tests/test_rc6_issue600_regressions.py:74",
+        "tests/test_rc6_issue600_regressions.py:90"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_macro_risk_shadow.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_bcra_active_retirement_20261002.py:5",
+        "tests/test_rc6_macro_risk_shadow.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_market_watch_silence.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_market_watch_silence.py:8"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_multisource_discovery.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:32",
+        "bu_instrument_catalog.py:15",
+        "cr_contract_evidence_v2_mass_hf6.py:17",
+        "rc6_broker_parity_evidence.py:17",
+        "rc6_contract_bridge.py:16",
+        "rc6_iol_family_reference.py:15",
+        "rc6_ppi_future_contract_policy.py:16"
+      ],
+      "test_import_callers": [
+        "tests/test_ppi_observed_configuration_v17.py:18",
+        "tests/test_rc6_multisource_discovery.py:4",
+        "tests/test_ws_motor_09_contract_bridge.py:16"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_official_source_adapters.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ck_contract_evidence_runner_hf6.py:24"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_official_source_adapters.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_on_validation.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_operational_alerts.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:326"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_operational_alerts.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_paper_family_lifecycle.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:1386",
+        "be_paper_engine.py:1420",
+        "be_paper_engine.py:1430",
+        "be_paper_engine.py:1466",
+        "be_paper_engine.py:1635",
+        "be_paper_engine.py:1733",
+        "be_paper_engine.py:1853",
+        "be_paper_engine.py:1901",
+        "be_paper_engine.py:1908",
+        "be_paper_engine.py:2186",
+        "be_paper_engine.py:2445",
+        "be_paper_engine.py:438",
+        "be_paper_engine.py:586",
+        "be_paper_engine.py:745",
+        "be_paper_engine.py:922",
+        "bu_instrument_catalog.py:204",
+        "bv_paper_runtime.py:277",
+        "bw_daily_risk.py:139",
+        "dh_paper_dynamic_risk_gate_hf6.py:149",
+        "rc6_contract_bridge.py:175",
+        "rc6_shadow_runtime/entry_signals.py:315",
+        "rc6_shadow_runtime/funnel.py:386"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_convergence_finance.py:16",
+        "tests/test_rc6_convergence_finance.py:231",
+        "tests/test_rc6_convergence_finance_review.py:19",
+        "tests/test_rc6_final_shared_risk.py:25",
+        "tests/test_rc6_future_paper_engine.py:6",
+        "tests/test_rc6_future_paper_lifecycle.py:5",
+        "tests/test_rc6_future_programming_complete.py:22",
+        "tests/test_rc6_shadow_operational_funnel.py:14",
+        "tests/test_ws_motor_11_paper_lifecycle.py:5",
+        "tests/test_ws_motor_14_paper_policy.py:15"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_postclose_history_job.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_postclose_review.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_postclose_review.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_postclose_review_dashboard.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "o_dashboard.py:1603"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_postclose_review_dashboard.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_ppi_contract_normalizer.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc6_trusted_browser_contract_collector.py:20"
+      ],
+      "test_import_callers": [
+        "tests/test_ws_motor_11_ppi_fixed_income_mapping.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_ppi_future_contract_policy.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:1018",
+        "be_paper_engine.py:1403",
+        "be_paper_engine.py:1722",
+        "be_paper_engine.py:809",
+        "bs_instrument_contracts.py:188",
+        "cr_contract_evidence_v2_mass_hf6.py:19",
+        "rc6_paper_family_lifecycle.py:795"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_convergence_finance.py:20",
+        "tests/test_rc6_convergence_finance_review.py:18",
+        "tests/test_rc6_final_shared_risk.py:26",
+        "tests/test_rc6_future_contract_policy.py:9",
+        "tests/test_rc6_future_programming_complete.py:26"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_ppi_global_budget.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bd_ppi_readonly_guard.py:283",
+        "bd_ppi_readonly_guard.py:347",
+        "bv_paper_runtime.py:198",
+        "rc6_dynamic_universe/promotion.py:238"
+      ],
+      "test_import_callers": [
+        "tests/test_issue465_budget_adversarial.py:26",
+        "tests/test_issue465_capability_cache.py:388",
+        "tests/test_rc6_approved_factual_callers.py:23",
+        "tests/test_rc6_ppi_global_budget.py:12"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_ppi_iol_reconciliation_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "iol_shadow_collector_rc6.py:26"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_cauciones_shadow_evidence.py:2",
+        "tests/test_rc6_final_family_source_policy.py:16",
+        "tests/test_rc6_nocturnal_findings.py:20",
+        "tests/test_rc6_ppi_iol_reconciliation_rc6.py:2"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_ppi_option_contract_policy.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "cr_contract_evidence_v2_mass_hf6.py:18"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_ppi_option_contract_policy.py:10"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_preopen.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc6_preopen_host_hardened.py:11"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_byma_preopen_watch.py:5",
+        "tests/test_rc6_residual_adverse.py:16",
+        "tests/test_rc6_us_underlying_holiday.py:5"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_preopen_freshness_audit.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "az_maintenance_job.py:87"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_preopen_host_hardened.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_report_retention.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_report_retention.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_risk_gdelt_dashboard.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "eq_dashboard_table_layout_rc6.py:183"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_risk_gdelt_dashboard.py:2"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_scraping_semaphore.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_wave1b_sla_scraping.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_shadow_profiles.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc6_decision_evidence_report.py:18"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_shadow_profiles.py:3"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_signal_contracts.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "be_paper_engine.py:313",
+        "be_paper_engine.py:501",
+        "cf_intraday_scalping.py:25",
+        "cf_intraday_scalping.py:636",
+        "cf_intraday_scalping.py:772"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_convergence_core_admission.py:148"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_snapshot.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_snapshot.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_snapshot_dashboard.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "o_dashboard.py:1599"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_source_consolidation.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bf_production_paper_observer.py:31",
+        "scripts/rc6_full_universe_evidence.py:21",
+        "scripts/rc6_iol_shadow_collect.py:21",
+        "scripts/rc6_public_source_capture.py:15"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_final_family_source_policy.py:15",
+        "tests/test_rc6_source_consolidation.py:1",
+        "tests/test_ws_motor_09_contract_bridge.py:17",
+        "tests/test_ws_motor_09_contract_bridge.py:324"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_storage_policy.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [
+        "tests/test_rc6_storage_policy.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_trusted_browser_contract_collector.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_validation_dynamic.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc6_validation_projection.py:12"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_validation_dynamic.py:1",
+        "tests/test_rc6_validation_dynamic_evidence.py:3",
+        "tests/test_rc6_validation_truth.py:6"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_validation_operational_daily.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "en_validation_project_dashboard_rc6.py:13",
+        "rc6_validation_projection.py:15"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_validation_operational_daily.py:4"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_validation_projection.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "az_maintenance_job.py:95",
+        "en_validation_project_dashboard_rc6.py:12"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_validation_projection.py:5",
+        "tests/test_rc6_validation_truth.py:7"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "rc6_validation_truth.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "rc6_validation_dynamic.py:10"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "s_learning_engine.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "az_maintenance_job.py:78",
+        "j_main.py:64"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "t_model_guardian.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "az_maintenance_job.py:81",
+        "j_main.py:65"
+      ],
+      "test_import_callers": [
+        "tests/test_v161.py:144",
+        "tests/test_v161.py:153",
+        "tests/test_v161.py:163"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "test_a3_primary_readonly_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "test_cp_history_ingest_policy_hf6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "test_hf6_history_data912_v2.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "u_aiops_watcher.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "j_main.py:1319",
+        "j_main.py:554",
+        "j_main.py:83"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "v_config_metadata.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "bb_runtime_status.py:148",
+        "bc_dashboard_v163.py:20",
+        "o_dashboard.py:846"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "w_agent_graph.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "j_main.py:92"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "x_ppi_websocket.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ab_log_watch.py:299",
+        "ah_market_tools.py:91",
+        "c_ppi_client.py:714",
+        "c_ppi_client.py:998",
+        "j_main.py:1368",
+        "j_main.py:542"
+      ],
+      "test_import_callers": [
+        "tests/test_operational_safety_v163.py:160",
+        "tests/test_operational_safety_v163.py:96"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "y_infra_monitor.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "ab_log_watch.py:224",
+        "az_maintenance_job.py:45",
+        "j_main.py:609",
+        "o_dashboard.py:683"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "z_reports_engine.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "az_maintenance_job.py:84",
+        "j_main.py:510",
+        "o_dashboard.py:1145",
+        "o_dashboard.py:796"
+      ],
+      "test_import_callers": [],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    },
+    {
+      "path": "zz_wave8_dashboard_live_rc6.py",
+      "classification": "UNKNOWN",
+      "static_import_callers": [
+        "o_dashboard.py:1579"
+      ],
+      "test_import_callers": [
+        "tests/test_rc6_dashboard_truthful_explanations.py:1",
+        "tests/test_rc6_unified_20261002.py:17",
+        "tests/test_ws_dash_02_ux_accessibility.py:12",
+        "tests/test_ws_dash_04_full_dashboard_truth.py:14",
+        "tests/test_ws_ops_risk_layout.py:1"
+      ],
+      "runtime_execution_proof": "NO_VERIFICADO",
+      "dynamic_cli_systemd_workflow_references": "Installed/runtime reconciliation pending; static absence is not dead-code evidence",
+      "action": "PRESERVE"
+    }
+  ]
+}
