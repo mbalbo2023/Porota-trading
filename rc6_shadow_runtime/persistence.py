@@ -92,26 +92,50 @@ class EvidenceFiles:
             if digest(existing) != digest(payload):
                 raise ValueError("SHADOW_IMMUTABLE_FREEZE_CONFLICT")
             return
-        encoded = json.dumps({"digest": digest(payload), "payload": payload},
-            sort_keys=True, separators=(",", ":"), default=str, allow_nan=False).encode()
-        if len(encoded) > self.payload_limit:
-            raise EvidencePayloadLimit(name, len(encoded), self.payload_limit)
-        data = gzip.compress(encoded, mtime=0) if name.endswith(".gz") else encoded
+        # The checkpoint can approach the 64 MiB raw limit. Constructing a
+        # canonical payload string, its encoded copy, the envelope and the
+        # compressed copy at once can exhaust the host before fail-closed
+        # evidence is published. Stream both canonical passes instead.
+        encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
+                                   default=str, allow_nan=False)
+        hasher = hashlib.sha256()
+        payload_bytes = 0
+        for fragment in encoder.iterencode(payload):
+            chunk = fragment.encode()
+            payload_bytes += len(chunk)
+            if payload_bytes > self.payload_limit:
+                raise EvidencePayloadLimit(name, payload_bytes, self.payload_limit)
+            hasher.update(chunk)
+        prefix = b'{"digest":"' + hasher.hexdigest().encode() + b'","payload":'
+        raw_bytes = len(prefix) + payload_bytes + 1
+        if raw_bytes > self.payload_limit:
+            raise EvidencePayloadLimit(name, raw_bytes, self.payload_limit)
         files = list(self.root.iterdir())
         # The fsynced staging file temporarily coexists with the prior target.
         # Both file and byte quotas bound that peak, not just the final rename.
         if len(files) + 1 > 512:
             raise ValueError("SHADOW_EVIDENCE_CAPACITY_REACHED")
         size = sum(p.lstat().st_size for p in files)
-        if size + len(data) > self.maximum_bytes:
-            raise ValueError("SHADOW_EVIDENCE_CAPACITY_REACHED")
         with tempfile.NamedTemporaryFile(dir=self.root, prefix="." + name + ".",
                 suffix=".tmp", delete=False) as stream:
             tmp = Path(stream.name)
             try:
-                stream.write(data)
+                if name.endswith(".gz"):
+                    with gzip.GzipFile(fileobj=stream, filename="", mode="wb", compresslevel=1,
+                                       mtime=0) as zipped:
+                        zipped.write(prefix)
+                        for fragment in encoder.iterencode(payload):
+                            zipped.write(fragment.encode())
+                        zipped.write(b'}')
+                else:
+                    stream.write(prefix)
+                    for fragment in encoder.iterencode(payload):
+                        stream.write(fragment.encode())
+                    stream.write(b'}')
                 stream.flush()
                 os.fsync(stream.fileno())
+                if size + stream.tell() > self.maximum_bytes:
+                    raise ValueError("SHADOW_EVIDENCE_CAPACITY_REACHED")
                 # No overwrite of existing sources via a deterministic .tmp alias.
                 tmp.replace(target)
                 directory = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)

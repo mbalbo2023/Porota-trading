@@ -1,5 +1,6 @@
 """The SHADOW fail-closed status retains bounded, non-sensitive SQLite evidence."""
 import sqlite3
+import tracemalloc
 
 from be_paper_engine import PaperStore
 from cg_paper_workspace import artifact_root
@@ -96,3 +97,16 @@ def test_shadow_payload_limit_reports_only_bounded_file_and_sizes(tmp_path, monk
     assert status["evidence_limit_bytes"] == 64 * 1024**2
     assert status["real_orders_sent"] == 0 and status["real_routes"] == "NOT_CALLED"
     assert "DO_NOT_PUBLISH" not in str(status)
+
+
+def test_large_shadow_checkpoint_streams_envelope_without_raw_copies(tmp_path):
+    payload = {"rows": ["x" * 4096] * 2048, "mode": "SHADOW"}
+    with EvidenceFiles(tmp_path / "streamed", payload_limit=12 * 1024**2) as files:
+        tracemalloc.start()
+        try:
+            files.write("checkpoint.json.gz", payload)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert peak < 4 * 1024**2
+        assert files.read("checkpoint.json.gz") == payload
