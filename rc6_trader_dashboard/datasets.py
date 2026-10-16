@@ -14,7 +14,7 @@ def shadow_rows(p, kind):
     cut = p.shadow
     if not p.shadow_fresh:
         return Page("CURRENT.json → committed SHADOW generation", state=UNKNOWN,
-                    reason="SHADOW_CUT_NOT_FRESH")
+                    reason=cut.get("reason") or "SHADOW_CUT_NOT_FRESH")
     report = cut["report"]
     if not report:
         return Page("CURRENT.json → read_committed_generation (#466)", state=cut["state"], reason=cut["reason"])

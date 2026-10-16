@@ -159,6 +159,11 @@ def durable_report_view(report, *, catalog_ready_count):
         }
     if "family_routing" in report:
         view["family_routing"] = _durable_family_routing(report["family_routing"])
+    # The dashboard consumes this bounded aggregate, never the full audit.
+    # Previously only its status survived, so every funnel count was absent.
+    funnel = report.get("operational_funnel", {})
+    view["operational_funnel"] = {key: funnel[key] for key in (
+        "status", "as_of", "by_currency_channel", "counts") if key in funnel}
     view["section_status"] = {key: report[key].get("status")
         for key in ("economic_exit_lab", "entry_signal_lab", "operational_funnel")
         if isinstance(report.get(key), dict)}
@@ -455,6 +460,7 @@ class ShadowRuntime:
                 operational_funnel_status=report["operational_funnel"]["status"])
             status["runtime_sql_diagnostics"] = _runtime_sql_status(self.last_sqlite_diagnostics)
             files.write("status.json", status)
+            files.publish_generation(durable, status)
             files.prune_computed_reports(keep=audit["file"])
             return report
 

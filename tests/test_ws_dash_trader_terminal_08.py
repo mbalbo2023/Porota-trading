@@ -457,8 +457,8 @@ def test_digest_valid_contract_does_not_validate_derived_metrics(database, prove
 def test_external_canonical_history_is_read_only_and_cannot_change_ready(database, tmp_path, monkeypatch):
     history = tmp_path / "market_history.db"
     with sqlite3.connect(history) as c:
-        c.execute("CREATE TABLE history_canonical_v2(symbol TEXT,instrument_type TEXT,market TEXT,settlement TEXT,trading_date TEXT,observed_at TEXT,source_class TEXT,quality_state TEXT)")
-        c.executemany("INSERT INTO history_canonical_v2 VALUES('T000','ACCIONES','BYMA','INMEDIATA',?,?, 'PPI','FULL_OHLC')", ((f"2026-09-{i:02d}", STAMP) for i in range(1, 10)))
+        c.execute("CREATE TABLE history_canonical_v2(symbol TEXT,instrument_type TEXT,market TEXT,settlement TEXT,currency TEXT,price_basis TEXT,adjustment_basis TEXT,date TEXT,observed_at TEXT,source TEXT,quality_state TEXT)")
+        c.executemany("INSERT INTO history_canonical_v2 VALUES('T000','ACCIONES','BYMA','INMEDIATA','ARS','RAW','RAW_NO_ADJUSTMENT',?,?, 'PPI','FULL_OHLC')", ((f"2026-09-{i:02d}", STAMP) for i in range(1, 10)))
     monkeypatch.setenv("HIST_DB_PATH", str(history))
     before = hashlib.sha256(history.read_bytes()).hexdigest()
     with Store(database, now=NOW) as s:
@@ -568,7 +568,8 @@ def test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default(d
         return coherent_cut()
     with Store(database, now=NOW) as s:
         Projection(s, generation_reader=reader).shadow
-    assert calls == [str(database) + ".shadow"]
+    from cg_paper_workspace import artifact_root
+    assert calls == [str(artifact_root(database) / "dynamic-shadow")]
     page = Page("fixture", [{"features": {"api_key": "do-not-display", "account_id": "private-account", "spread": "0.1"}}], 1, "AVAILABLE")
     html = table(page, "Detail", fields("features|Evidencia"))
     assert "do-not-display" not in html and "private-account" not in html

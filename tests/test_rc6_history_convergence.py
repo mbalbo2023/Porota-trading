@@ -240,7 +240,7 @@ def test_AUD11_shadow_rejects_future_known_revision_and_legacy_ambiguous_identit
         if day.weekday()>=5:continue
         history.append_candle(s,candle(date=day.date().isoformat(),observed_at='2026-10-04T16:00:00Z'))
     assert shadow._history_features(s,Q,NOW)['observations']==0
-    assert shadow._history_features(s,Q,datetime(2026,10,4,16,tzinfo=timezone.utc))['state']=='READY'
+    assert shadow._history_features(s,Q,datetime(2026,10,4,16,tzinfo=timezone.utc))['state']=='HISTORY_STALE'
     old=Store(tmp_path/'legacy.sqlite')
     with old.connect() as c:
         c.execute('CREATE TABLE production_history(symbol,instrument_type,settlement,downloaded_at,payload_json)')
@@ -487,7 +487,7 @@ def test_AUD11_shadow_reads_explicit_dedicated_path_without_calling_its_write_co
         path=archive.path
         def connect(self):raise AssertionError('SHADOW_MUST_NOT_OPEN_SOURCE_SQLITE')
     result=shadow.collect(object(),Q,NOW,history_store=ReadTarget())
-    assert result['history']['state']=='READY' and result['history']['observations']>=20
+    assert result['history']['state']=='HISTORY_STALE' and result['history']['observations']>=20
     assert result['mode']=='SHADOW' and result['decision_effect']=='OBSERVE_ONLY'
 
 

@@ -1,0 +1,10 @@
+[Unit]
+Description=RC6 local sampled history after close (no external bootstrap)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+ExecStart=/usr/bin/docker exec porota_production_observer nice -n 15 python /app/rc6_local_eod_history.py
+TimeoutStartSec=30

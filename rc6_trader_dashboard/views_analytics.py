@@ -1,5 +1,5 @@
 """Economics, samples, factual exits and explicitly limited experiments."""
-from .components import fields, funnel, metric, notice
+from .components import fields, funnel, metric, notice, e, clock
 from .datasets import shadow_rows, artifact
 from .view_common import render_table, PERFORMANCE, PERFORMANCE_DETAIL, CLOSES, CLOSE_DETAIL, committed_funnel
 
@@ -18,7 +18,13 @@ def render(p, destination, tab):
                             (*CLOSE_DETAIL, *fields("shadow_alternative|Alternativa SHADOW;counterfactual|Same-entry counterfactual;trailing|Experimento trailing;break_even|Experimento break-even")),
                             note="TP / SL / EOD / MaxHold factuales se conservan. Alternativas SHADOW no modifican la política de salida.")
     if tab == "historico":
-        return render_table(p, destination, tab, p.history(), "Calidad & coverage histórica",
+        local=p.local_history_summary()
+        local_panel=notice("Histórico local: " + local["state"] + " · " + local.get("reason", local.get("scope", "")) + "; no habilita READY ni se presenta como OHLCV completo.")
+        for row in local.get("rows", []):
+            from .projection import json_object
+            identity=json_object(row["identity_json"]); body=json_object(row["body_json"])
+            local_panel += "<p class='muted'>" + e(str(identity.get("symbol"))+" / "+str(identity.get("currency"))+" / "+str(identity.get("settlement"))+" · "+str(row["session"])+" · "+str(body.get("quality"))+" · minutos "+str(body.get("captured_minutes"))+"/"+str(body.get("expected_minutes"))+" · faltantes "+str(body.get("missing_minutes"))+" · publicación "+clock(row["known_at"])) + "</p>"
+        return local_panel + render_table(p, destination, tab, p.history(), "Calidad & coverage histórica",
                             fields("symbol|Ticker;family|Familia;row_count|Filas históricas|number;downloaded_at|Captura|time;freshness|Freshness histórica|status"),
                             fields("date_from|Desde;date_to|Hasta;coverage|Coverage;gaps|Gaps;depth|Profundidad;candles|Velas;readiness_authority|Autoridad sobre readiness;source|Fuente"),
                             note="Histórico es calidad de datos; nunca gobierna RUNTIME_READY ni autoriza estrategias.")

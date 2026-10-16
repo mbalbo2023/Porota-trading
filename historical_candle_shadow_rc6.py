@@ -9,7 +9,7 @@ import json
 import sqlite3
 import time
 from contextlib import nullcontext
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 from cp_history_ingest_policy_hf6 import OPERATIONAL_HISTORY_FAMILIES
@@ -60,6 +60,37 @@ def _trend(closes, span):
     return last / first - Decimal("1") if first > 0 else None
 
 
+def history_session_quality(days, q, at):
+    """Only audited quote-market sessions; CEDEAR quotes use BYMA, not US."""
+    import ak_byma_calendar as calendar
+    from co_market_sessions_hf6 import session_for, TZ
+    session = session_for(q.market, q.asset_class)
+    local = at.astimezone(TZ)
+    if q.market != "BYMA" or session is None or local.year not in calendar.ANIOS_AUDITADOS:
+        return {"state": "HISTORY_CALENDAR_UNVERIFIED"}
+    expected = local.date()
+    if local.time().replace(tzinfo=None) < session.regular_close:
+        expected -= timedelta(days=1)
+    required = []
+    for _ in range(90):
+        if expected.year not in calendar.ANIOS_AUDITADOS:
+            return {"state": "HISTORY_CALENDAR_UNVERIFIED"}
+        if calendar.es_dia_habil_operativo(expected):
+            required.append(expected.isoformat())
+            if len(required) == 20:
+                break
+        expected -= timedelta(days=1)
+    latest = max(days) if days else None
+    missing = sorted(set(required) - set(days))
+    state = ("HISTORY_FUTURE_SESSION" if latest and latest > required[0] else
+             "HISTORY_STALE" if latest and latest < required[0] else
+             "HISTORY_GAPS" if missing else "READY")
+    return {"state": state, "expected_last_session": required[0],
+            "last_date": latest, "missing_sessions": missing,
+            "calendar_source": calendar.FUENTE_OFICIAL,
+            "calendar_audited_at": calendar.CALENDARIO_ACTUALIZADO_EL.isoformat()}
+
+
 def _history_features(store, q, at):
     rows = []
     try:
@@ -82,7 +113,17 @@ def _history_features(store, q, at):
             selected = read_as_of(connection, symbol=q.symbol, instrument_type=q.asset_class,
                 market=q.market, currency=q.currency, settlement=q.settlement, as_of=at,
                 price_basis="RAW")
+        bases = {raw.get("adjustment_basis") for raw in selected}
+        if len(bases) > 1 or None in bases or "UNKNOWN" in bases:
+            return {"state": "HISTORY_ADJUSTMENT_AMBIGUOUS", "observations": 0}
         for raw in selected:
+            metadata = raw.get("metadata") or {}
+            if isinstance(metadata, str):
+                metadata = json.loads(metadata)
+            if (raw.get("quality") in {"SAMPLED", "PARTIAL", "CONFLICT"} or
+                    metadata.get("quality") in {"SAMPLED", "PARTIAL", "CONFLICT"} or
+                    metadata.get("price_kind") == "TRADE_SAMPLES"):
+                continue
             ohlc = _valid_ohlc(raw)
             if ohlc:
                 rows.append((_dt(raw["date"] + "T00:00:00+00:00"), ohlc))
@@ -91,6 +132,10 @@ def _history_features(store, q, at):
     except Exception:
         return {"state": "HISTORY_UNAVAILABLE", "observations": 0}
     rows.sort(key=lambda item: item[0])
+    session_quality = history_session_quality([item[0].date().isoformat() for item in rows], q, at)
+    if session_quality["state"] != "READY":
+        return {**session_quality, "observations": len(rows), "known_cut": utc(at),
+                "trend_20": None, "trend_50": None, "avg_range": None, "avg_abs_return": None}
     closes = [item[1]["close"] for item in rows]
     ranges = [item[1]["high"] / item[1]["low"] - Decimal("1") for item in rows]
     returns = [

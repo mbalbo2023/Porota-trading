@@ -156,11 +156,13 @@ TABLE_FIELDS = {
     "paper_cauciones": "paper_id request_id source instrument_id currency principal annual_rate_fraction interest_days day_count_basis opened_at maturity_at settled_at status total_fees gross_interest fee_payment terms_json",
     "paper_caucion_allocations": "request_id evaluated_at decision_json paper_id",
     "production_history": "symbol instrument_type settlement date_from date_to downloaded_at row_count",
-    "history_canonical_v2": "ticker symbol family instrument_type market currency settlement trading_date quality_state source_class source_ref source status row_count rows first_at last_at downloaded_at observed_at known_at",
+    "history_canonical_v2": "ticker symbol family instrument_type market currency settlement date price_basis adjustment_basis trading_date quality_state source_class source_ref source status row_count rows first_at last_at downloaded_at observed_at known_at",
     "paper_learning_samples": "paper_id source strategy_version feature_timestamp label_timestamp net_return_pct outcome duration_minutes features_json",
     "report_registry": "id created_at generated_at report_type period_type period_key period_start period_end state pdf_path ai_path",
     "operational_jobs": "job_key job_name state started_at finished_at last_run_at next_run_at last_success_at detail",
     "paper_notification_worker": "id heartbeat_at state detail last_success_at last_error",
+    "history_local_daily_v1": "series_id session known_at identity_json body_json body_hash",
+    "local_eod_cursor_v1": "source_id cursor as_of state",
 }
 
 
@@ -277,7 +279,8 @@ class Projection:
 
     @cached_property
     def shadow(self):
-        root = Path(os.getenv("POROTA_SHADOW_RUNTIME_ROOT", str(self.store.path) + ".shadow"))
+        from cg_paper_workspace import artifact_root
+        root = Path(os.getenv("POROTA_SHADOW_RUNTIME_ROOT", str(artifact_root(self.store.path) / "dynamic-shadow")))
         return read_shadow(root, self.generation_reader)
 
     @cached_property
@@ -557,9 +560,15 @@ class Projection:
         for table, label in datasets:
             row = s.one(table)
             stamp = row.get("heartbeat_at")
+            # Scalping publishes once per bounded batch, then waits at least
+            # 180s by default. A 30s heartbeat TTL made a healthy batch stale.
+            budget = (max(60, min(3600, self.integer(os.getenv("PAPER_INTRADAY_SCAN_SECONDS"), 180))) + 120
+                      if table == "intraday_scalping_worker_state" else 30)
             rows.append({**row, "worker": label, "source": table, "as_of": stamp,
-                         "age_seconds": age(stamp, self.now), "freshness": freshness(stamp, self.now, 30),
-                         "state": row.get("state", UNKNOWN) if freshness(stamp, self.now, 30) == "FRESH" else freshness(stamp, self.now, 30)})
+                         "age_seconds": age(stamp, self.now), "heartbeat_budget_seconds": budget,
+                         "observed_state": row.get("state", UNKNOWN),
+                         "freshness": freshness(stamp, self.now, budget),
+                         "state": row.get("state", UNKNOWN) if freshness(stamp, self.now, budget) == "FRESH" else freshness(stamp, self.now, budget)})
         runtime = self.runtime
         rows.append({"worker": "Runtime PAPER factual", "source": "observer_state", "as_of": runtime.get("heartbeat_at"),
                      "age_seconds": runtime.get("heartbeat_age"), "freshness": runtime["heartbeat_freshness"],
@@ -614,6 +623,15 @@ class Projection:
                        as_of=checked, provider_clock=None, receipt_clock=checked,
                        scope=component, lkg=row.get("last_success_at"),
                        observed_state=observed, checked_age_seconds=state_age)
+            row.update(check_freshness=freshness(checked, self.now, budget),
+                       data_freshness=UNKNOWN, data_quality="NO_VERIFICADO",
+                       decision_effect="IDENTITY_OR_MARKET_INPUT" if primary else "OBSERVE_ONLY")
+            if component == "PPI_PRODUCTION_MARKETDATA":
+                row.update(provider_clock=self.runtime.get("last_market_data_at"),
+                           data_freshness=self.runtime["market_freshness"],
+                           data_quality="CURRENT_SAMPLES_ONLY")
+            if component == "GEMINI_DECISION":
+                row.update(decision_effect="OBSERVE_ONLY_CONFIGURATION_UNVERIFIED",data_quality="HISTORICAL_CHECK_ONLY")
             if component == "PPI_PRODUCTION_AUTH":
                 # A successful login is event-driven. The current observer
                 # heartbeat and session state, not an old login row, attest it.
@@ -661,15 +679,15 @@ class Projection:
         s = self.store
         def canonical(history_store):
             cols = history_store.columns("history_canonical_v2")
-            identity = ("symbol", "instrument_type", "market", "settlement")
-            if not set(identity) | {"trading_date", "observed_at"} <= cols:
+            identity = ("symbol", "instrument_type", "market", "currency", "settlement", "price_basis", "adjustment_basis")
+            if not set(identity) | {"date", "observed_at", "source"} <= cols:
                 return None
             grouped = ",".join(identity)
-            sources = "CASE WHEN COUNT(DISTINCT source_class)=1 THEN MIN(source_class) ELSE 'MULTIPLE_SOURCE_CLASSES' END" if "source_class" in cols else "'NO_VERIFICADO'"
+            sources = "CASE WHEN COUNT(DISTINCT source)=1 THEN MIN(source) ELSE 'MULTIPLE_SOURCES' END"
             quality = "SUM(CASE WHEN quality_state='FULL_OHLC' THEN 1 ELSE 0 END) full_ohlc," if "quality_state" in cols else ""
             errors = len(history_store.errors)
             count = history_store.query(f"SELECT COUNT(*) n FROM (SELECT 1 FROM history_canonical_v2 GROUP BY {grouped})")
-            rows = history_store.query(f"SELECT {grouped},COUNT(*) row_count,MIN(trading_date) date_from,MAX(trading_date) date_to,MAX(observed_at) observed_at,{quality}{sources} source FROM history_canonical_v2 GROUP BY {grouped} ORDER BY {grouped} LIMIT 10 OFFSET ?", (self.offset,))
+            rows = history_store.query(f"SELECT {grouped},COUNT(*) row_count,MIN(date) date_from,MAX(date) date_to,MAX(observed_at) observed_at,{quality}{sources} source FROM history_canonical_v2 GROUP BY {grouped} ORDER BY {grouped} LIMIT 10 OFFSET ?", (self.offset,))
             if len(history_store.errors) != errors:
                 return Page("history_canonical_v2", reason="HISTORY_READ_ERROR")
             return Page("history_canonical_v2 · historical identities / source clocks", rows,
@@ -689,6 +707,19 @@ class Projection:
                        freshness=freshness(row.get("downloaded_at") or row.get("observed_at"), self.now, 86400),
                        readiness_authority="NONE · histórico no gobierna readiness")
         return page
+
+    def local_history_summary(self):
+        history_path = Path(os.getenv("HIST_DB_PATH", "data/market_history.db"))
+        if not history_path.is_file() or history_path.resolve() == self.store.path.resolve():
+            return {"state": UNKNOWN, "reason": "LOCAL_EOD_NOT_PUBLISHED"}
+        with Store(history_path, now=self.now) as h:
+            if not h.columns("history_local_daily_v1"):
+                return {"state": UNKNOWN, "reason": "LOCAL_EOD_NOT_PUBLISHED"}
+            rows=h.query("SELECT session,known_at,identity_json,body_json FROM history_local_daily_v1 ORDER BY session DESC,known_at DESC LIMIT 10")
+            cursors=h.query("SELECT state,as_of,cursor FROM local_eod_cursor_v1 LIMIT 2")
+        self.store.query_count+=h.query_count
+        return {"state": "SAMPLED" if rows else UNKNOWN,"rows":rows,"cursors":cursors,
+                "scope":"Últimas 10 versiones locales; canasta observada, sin cobertura global"}
 
     def performance(self, today=False):
         s = self.store
