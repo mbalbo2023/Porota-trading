@@ -22,7 +22,7 @@ EXTRA_ROUTES = (
     "/instrumentos/contrato", "/instrumentos/mercado", "/instrumentos/evidencia", "/riesgo/exposicion",
     "/riesgo/limites", "/riesgo/posiciones", "/riesgo/liquidez", "/riesgo/pnl",
     "/riesgo/event-risk", "/analitica/senales", "/analitica/salidas", "/analitica/historico",
-    "/analitica/experimentos", "/analitica/cierre-diario", "/analitica/reportes", "/sistema/salud",
+    "/analitica/experimentos", "/analitica/contrafactuales", "/analitica/anual", "/analitica/cierre-diario", "/analitica/reportes", "/sistema/salud",
     "/sistema/evidencia", "/sistema/backups", "/sistema/logs", "/sistema/configuracion",
 )
 POSTCLOSE_ROUTES = ROUTES + EXTRA_ROUTES
@@ -49,7 +49,7 @@ extra_routes = (
     "/instrumentos/contrato", "/instrumentos/mercado", "/instrumentos/evidencia", "/riesgo/exposicion",
     "/riesgo/limites", "/riesgo/posiciones", "/riesgo/liquidez", "/riesgo/pnl",
     "/riesgo/event-risk", "/analitica/senales", "/analitica/salidas", "/analitica/historico",
-    "/analitica/experimentos", "/analitica/cierre-diario", "/analitica/reportes", "/sistema/salud",
+    "/analitica/experimentos", "/analitica/contrafactuales", "/analitica/anual", "/analitica/cierre-diario", "/analitica/reportes", "/sistema/salud",
     "/sistema/evidencia", "/sistema/backups", "/sistema/logs", "/sistema/configuracion")
 local = datetime.now(timezone.utc).astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
 postclose = local.hour * 60 + local.minute >= 17 * 60 + 15
@@ -67,9 +67,12 @@ def age(value):
  except (TypeError,ValueError): return None
 class VisibleGaps(HTMLParser):
  def __init__(self):
-  super().__init__(); self.hidden=0; self.count=0
+  super().__init__(); self.hidden=0; self.count=0; self.statuses={}
  def handle_starttag(self, tag, attrs):
   if tag in {"script","style"}: self.hidden+=1
+  for name,value in attrs:
+   if name=='data-status' and value in {'NO_VERIFICADO','STALE','FRESH','BLOCKED','ERROR','RUNNING','DEGRADED','WAITING_MARKET','WAITING_WINDOW','NO_READY','RUNTIME_READY','COMMITTED_COHERENT_SHADOW','NO_VERIFICADO_AWAITING_RECONCILIATION','SHADOW_OBSERVING','FAIL_CLOSED','NO_OPERATIVO','OPERATIVO','AVAILABLE','UNAVAILABLE','READY','HOLD','WAITING','SAMPLED','PARTIAL','CONFLICT','HISTORY_STALE','HISTORY_GAPS','HISTORY_FUTURE_SESSION','HISTORY_CALENDAR_UNVERIFIED'}:
+    self.statuses[value]=min(1000,self.statuses.get(value,0)+1)
  def handle_endtag(self, tag):
   if tag in {"script","style"}: self.hidden=max(0,self.hidden-1)
  def handle_data(self, data):
@@ -99,6 +102,7 @@ if token:
     entry["nav"]="id='porota-canonical-nav'" in html or 'id="porota-canonical-nav"' in html
     entry["content"]="id='terminal-content'" in html or 'id="terminal-content"' in html
     gaps=VisibleGaps(); gaps.feed(html); entry["unverified_mentions"]=gaps.count
+    entry['visible_status_counts']=gaps.statuses
     if path=="/": entry["attention"]="Atención ahora" in html
   except urllib.error.HTTPError as exc: entry["http"]=exc.code
   except (OSError,ValueError): entry["error"]="HTTP_UNAVAILABLE"
@@ -256,6 +260,13 @@ try:
  with Store(db) as store:
   if store.connection is None: raise RuntimeError("STORE_UNAVAILABLE")
   projection=Projection(store)
+  result['identity_clocks']={'status':'UNAVAILABLE','rows':[]}
+  if hasattr(projection,'market_freshness_cohort'):
+   cohort=projection.market_freshness_cohort()
+   result['identity_clocks']={'status':'BOUNDED' if cohort.rows else 'NO_VERIFICADO',
+       'rows':[{k:r.get(k) for k in ('symbol','family','market','currency','settlement',
+         'book_freshness','trade_freshness','receipt_freshness','book_at','trade_at','received_at')}
+         for r in cohort.rows[:10]]}
   stages=(("counts",lambda:projection.counts()),
           ("positions",lambda:projection.positions(limit=5)),
           ("balances",lambda:projection.balances()),
@@ -316,7 +327,12 @@ def audit_host(*, runner=subprocess.run):
                            "read_queries": item.get("read_queries") if type(item.get("read_queries")) is int and 0 <= item["read_queries"] <= 1000 else None,
                            "unverified_mentions": item.get("unverified_mentions") if type(item.get("unverified_mentions")) is int and 0 <= item["unverified_mentions"] <= 1000 else None,
                            "attention": item.get("attention") is True if item["path"] == "/" else None,
-                           "error": item.get("error") if item.get("error") in {"BODY_LIMIT", "HTTP_UNAVAILABLE"} else None})
+                           "error": item.get("error") if item.get("error") in {"BODY_LIMIT", "HTTP_UNAVAILABLE"} else None,
+                           "visible_status_counts": {key:value for key,value in
+                               (item.get('visible_status_counts') if isinstance(item.get('visible_status_counts'),dict) else {}).items()
+                               if key in {'NO_VERIFICADO','STALE','FRESH','BLOCKED','ERROR','RUNNING','DEGRADED',
+                                          'WAITING_MARKET','WAITING_WINDOW','NO_READY','RUNTIME_READY','COMMITTED_COHERENT_SHADOW','NO_VERIFICADO_AWAITING_RECONCILIATION','SHADOW_OBSERVING','FAIL_CLOSED','NO_OPERATIVO','OPERATIVO','AVAILABLE','UNAVAILABLE','READY','HOLD','WAITING','SAMPLED','PARTIAL','CONFLICT','HISTORY_STALE','HISTORY_GAPS','HISTORY_FUTURE_SESSION','HISTORY_CALENDAR_UNVERIFIED'}
+                               and type(value) is int and 0<=value<=1000}})
         scope = data.get("audit_scope")
         expected = POSTCLOSE_ROUTES if scope == "POSTCLOSE_ALL" else ROUTES if scope == "MARKET_CRITICAL" else ()
         if not expected or tuple(row["path"] for row in routes) not in (expected, ()):
@@ -417,6 +433,21 @@ def audit_host(*, runner=subprocess.run):
                            "worker_latest_age_seconds": bounded(attempt.get("worker_latest_age_seconds"),365*86400),
                            "worker_latest_result": attempt.get("worker_latest_result") if attempt.get("worker_latest_result") in
                            {"PLACED_SIMULATED","HOLD","SKIPPED","BLOCKED","OTHER_OR_MISSING"} else "NO_VERIFICADO"}
+        clocks=data.get('identity_clocks') if isinstance(data.get('identity_clocks'),dict) else {}
+        clock_rows=[]
+        for row in clocks.get('rows',[])[:10] if isinstance(clocks.get('rows'),list) else []:
+            if not isinstance(row,dict): continue
+            names=('symbol','family','market','currency','settlement')
+            if not all(isinstance(row.get(k),str) and re.fullmatch(r'[A-Za-z0-9_:/.-]{1,40}',row[k]) for k in names): continue
+            safe={k:row[k] for k in names}
+            for k in ('book_freshness','trade_freshness','receipt_freshness'):
+                safe[k]=row.get(k) if row.get(k) in {'FRESH','STALE','NO_VERIFICADO'} else 'NO_VERIFICADO'
+            for k in ('book_at','trade_at','received_at'):
+                value=row.get(k)
+                safe[k]=value if isinstance(value,str) and re.fullmatch(r'[0-9TtZz:+. -]{10,40}',value) else None
+            clock_rows.append(safe)
+        identity_clocks={'status':clocks.get('status') if clocks.get('status') in {'BOUNDED','NO_VERIFICADO','UNAVAILABLE'} else 'NO_VERIFICADO',
+                         'scope':'MAX_10_IDENTITIES_LAST_500_RECORDS_OPEN_PRIORITY_NOT_GLOBAL', 'rows':clock_rows}
         return {"schema": SCHEMA, "read_only": True, "audit_scope": scope, "status": status,
                 "routes": routes, "sources": sources[:80], "source_sync": sync_rows[:10],
                 "source_sync_status": data.get("source_sync_status") if data.get("source_sync_status") in
@@ -424,7 +455,7 @@ def audit_host(*, runner=subprocess.run):
                 "history_cutoff_repair": data.get("history_cutoff_repair") if data.get("history_cutoff_repair") in
                 {"COMPLETE", "INCOMPLETE", "MISSING_TABLE", "MISSING_ROW", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
                 "profile": profile[:5], "balance_queries": balance_queries[:10], "equity_exits": equity_exits,
-                "paper_today": paper_today, "caucion_attempt": caucion_attempt,
+                "paper_today": paper_today, "caucion_attempt": caucion_attempt,"identity_clocks":identity_clocks,
                 "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
                 {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}

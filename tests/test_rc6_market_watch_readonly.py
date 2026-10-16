@@ -24,6 +24,14 @@ NOW = datetime(2026, 10, 14, 14, 0, tzinfo=timezone.utc)
 
 
 class MonitorContracts(unittest.TestCase):
+    def test_transport_diagnostics_classify_without_exporting_hosts_or_keys(self):
+        for text,code in [('ssh: connect to host private.example port 22: Connection timed out','CONNECT_TIMEOUT'),
+                          ('user@private: Permission denied (publickey)','AUTH_DENIED'),
+                          ('Host key verification failed. private fingerprint','HOST_KEY_REJECTED')]:
+            result=monitor.transport_diagnostic(text,255)
+            self.assertEqual(result['class'],code)
+            self.assertNotIn('private',json.dumps(result))
+        self.assertEqual(monitor.transport_diagnostic('',0)['class'],'OK')
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -75,9 +83,9 @@ class MonitorContracts(unittest.TestCase):
         self.shadow_path.write_text(json.dumps({
             "payload": payload, "digest": monitor.canonical_digest(payload)}))
 
-    def capture(self, at=NOW):
-        with patch.object(monitor, "_resources", return_value=self.resources), patch.object(
-                monitor, "_host_control_state", return_value={
+    def capture(self, at=NOW, host_state=None):
+        with patch.object(monitor, "independent_session", return_value={"state":"OPEN" if monitor.active_hours(at) else "CLOSED"}), patch.object(monitor, "_resources", return_value=self.resources), patch.object(
+                monitor, "_host_control_state", return_value=host_state if host_state is not None else {
                     "legacy_health_timer": "inactive", "fast_health_timer": "active",
                     "observer_container": {"Status": "running"}}):
             return monitor.probe(root=self.root, at=at, expected_sha=SHA,
@@ -97,6 +105,55 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(observation["broker_requests"], 0)
         self.assertEqual(observation["real_order_routes_called"], 0)
         self.assertEqual(observation["host_control_state"]["legacy_health_timer"], "inactive")
+
+    def test_live_probe_uses_completed_db_read_clock_without_future_or_stale_bypass(self):
+        future=(NOW+timedelta(milliseconds=200)).isoformat()
+        with sqlite3.connect(self.root/monitor.DB_REL) as db:
+            db.execute('CREATE TABLE paper_notification_worker(id INTEGER PRIMARY KEY,state TEXT,heartbeat_at TEXT)')
+            db.execute("INSERT INTO paper_notification_worker VALUES(1,'RUNNING',?)",(future,))
+        def capture_live():
+            with patch.object(monitor,'now_utc',side_effect=[NOW,NOW+timedelta(seconds=1)]), patch.object(
+                    monitor,'independent_session',return_value={'state':'OPEN'}), patch.object(
+                    monitor,'_resources',return_value=self.resources), patch.object(
+                    monitor,'_host_control_state',return_value={}):
+                return monitor.probe(root=self.root,expected_sha=SHA,inspect=self.inspect)
+        value=capture_live()
+        self.assertNotIn('WORKER_HEARTBEAT_INVALID:paper_notification_worker',self.codes(value))
+        self.assertEqual(value['collection_started_at'],NOW.isoformat())
+        self.assertEqual(value['generated_at'],(NOW+timedelta(seconds=1)).isoformat())
+        for bad in (NOW+timedelta(seconds=2),NOW-timedelta(seconds=301)):
+            with sqlite3.connect(self.root/monitor.DB_REL) as db:
+                db.execute('UPDATE paper_notification_worker SET heartbeat_at=?',(bad.isoformat(),))
+            self.assertIn('WORKER_HEARTBEAT_INVALID:paper_notification_worker',self.codes(capture_live()))
+
+    def test_open_contract_counts_do_not_invent_missing_ledgers_or_inflight_authority(self):
+        value=self.capture()['paper_open_contracts']
+        self.assertIsNone(value['paper_positions'])
+        self.assertEqual(value['inflight_evaluation_or_fill'],'NO_VERIFICADO')
+        with sqlite3.connect(self.db) as db:
+            db.execute('CREATE TABLE paper_positions(id INTEGER PRIMARY KEY,status TEXT)')
+            db.execute("INSERT INTO paper_positions VALUES(1,'OPEN')")
+        self.assertEqual(self.capture()['paper_open_contracts']['paper_positions'],1)
+        with sqlite3.connect(self.db) as db:
+            db.execute("UPDATE paper_positions SET status='CLOSED'")
+        self.assertEqual(self.capture()['paper_open_contracts']['paper_positions'],0)
+        self.assertIsNone(self.capture()['paper_open_contracts']['paper_future_positions'])
+
+    def test_independent_watchdog_ack_is_read_only_and_not_schedule_cadence(self):
+        path=self.root/'data/paper_v17/market_watch_silence.json'
+        path.write_text(json.dumps({'schema':'rc6.market-watch-silence.v1','status':'SILENT',
+            'acknowledged_at':NOW.isoformat(),'message_id':'967','secret':'hidden'}))
+        value=self.capture()['schedule_watchdog_receipt']
+        self.assertEqual(value['message_id'],'967')
+        self.assertEqual(value['status'],'SILENT')
+        self.assertEqual(value['ack_age_seconds'],0)
+        self.assertNotIn('hidden',json.dumps(value))
+        path.write_text(json.dumps({'schema':'rc6.market-watch-silence.v1','status':'OK',
+            'acknowledged_at':NOW.isoformat(),'message_id':'0'}))
+        self.assertEqual(self.capture()['schedule_watchdog_receipt']['status'],'NO_VERIFICADO')
+        path.write_text(json.dumps({'schema':'rc6.market-watch-silence.v1','status':'OK',
+            'acknowledged_at':(NOW+timedelta(seconds=1)).isoformat(),'message_id':'2'}))
+        self.assertEqual(self.capture()['schedule_watchdog_receipt']['status'],'NO_VERIFICADO')
 
     def test_shadow_sqlite_context_is_allowlisted(self):
         payload = {"as_of": NOW.isoformat(), "status": "FAIL_CLOSED",
@@ -250,7 +307,33 @@ class MonitorContracts(unittest.TestCase):
         with sqlite3.connect(self.db) as connection:
             connection.execute("UPDATE observer_state SET session_state='MARKET_CLOSED',"
                                "last_market_data_at=?", ((NOW - timedelta(days=1)).isoformat(),))
-        self.assertEqual(self.capture()["severity"], "GREEN")
+        with patch.object(monitor, 'independent_session', return_value={'state':'CLOSED'}):
+            with patch.object(monitor, '_resources', return_value=self.resources), patch.object(monitor, '_host_control_state', return_value={}):
+                result=monitor.probe(root=self.root,at=NOW,expected_sha=SHA,inspect=self.inspect)
+        self.assertEqual(result['severity'], 'GREEN')
+
+    def test_observer_false_closed_does_not_blind_market_monitor(self):
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE observer_state SET session_state='MARKET_CLOSED',last_market_data_at=?", ((NOW-timedelta(days=1)).isoformat(),))
+        result=self.capture()
+        self.assertIn('OBSERVER_SESSION_DISAGREEMENT',self.codes(result,'P1'))
+        self.assertIn('PPI_MARKETDATA_NOT_FRESH',self.codes(result,'P1'))
+
+    def test_schedule_manual_push_and_retry_never_prove_cadence(self):
+        fake=[{'event':'push','created_at':NOW.isoformat()},
+              {'event':'workflow_dispatch','created_at':NOW.isoformat()},
+              {'event':'schedule','run_attempt':2,'created_at':NOW.isoformat()}]
+        self.assertEqual(monitor.schedule_health(fake,NOW,expected_open=True)['state'],'SCHEDULE_SILENT')
+        real=[{'event':'schedule','status':'completed','run_attempt':1,'run_started_at':(NOW-timedelta(minutes=m)).isoformat()} for m in (1,11,21)]
+        self.assertEqual(monitor.schedule_health(real,NOW,expected_open=True)['state'],'TWO_INTERVALS_OBSERVED')
+        self.assertEqual(monitor.schedule_health([real[0]]*3,NOW,expected_open=True)['state'],'NO_VERIFICADO')
+        self.assertEqual(monitor.schedule_health([{k:v for k,v in r.items() if k!='run_attempt'} for r in real],NOW,expected_open=True)['state'],'SCHEDULE_SILENT')
+        self.assertFalse(monitor.schedule_health([],NOW,expected_open=False)['silence'])
+        snapshot=self.capture()
+        snapshot['schedule_watchdog_receipt']={'status':'SILENT','message_id':'932','ack_age_seconds':80000}
+        monitor.add_schedule_health(snapshot,'mbalbo2023/Porota-trading',get=lambda _: {'workflow_runs':[]})
+        self.assertEqual(snapshot['schedule_health']['independent_watchdog_ack'],'HISTORICAL_VERIFIED')
+        self.assertEqual(snapshot['schedule_health']['state'],'SCHEDULE_SILENT')
 
     def test_memory_shortage_is_not_hidden(self):
         self.resources["mem_available_bytes"] = 20 * 1024**2
@@ -260,6 +343,21 @@ class MonitorContracts(unittest.TestCase):
         self.inspect["porota_production_observer"]["oom"] = True
         self.assertIn("CONTAINER_NOT_HEALTHY:porota_production_observer",
                       self.codes(self.capture(), "P0"))
+
+    def test_prior_oom_keeps_history_without_false_current_p0(self):
+        self.inspect['porota_production_observer']['oom']=True
+        detail={'observer_container':{'Status':'running','ExitCode':0,
+            'StartedAt':(NOW-timedelta(hours=2)).isoformat(),
+            'FinishedAt':(NOW-timedelta(hours=3)).isoformat()}}
+        value=self.capture(host_state=detail)
+        self.assertIn('OOM_HISTORICAL:porota_production_observer',self.codes(value,'P2'))
+        self.assertNotIn('CONTAINER_NOT_HEALTHY:porota_production_observer',self.codes(value,'P0'))
+        detail['observer_container']['FinishedAt']=NOW.isoformat()
+        self.assertIn('CONTAINER_NOT_HEALTHY:porota_production_observer',self.codes(self.capture(host_state=detail),'P0'))
+        detail['observer_container']['FinishedAt']=(NOW-timedelta(hours=3)).isoformat()
+        with sqlite3.connect(self.db) as connection:
+            connection.execute('UPDATE observer_state SET heartbeat_at=?',((NOW-timedelta(minutes=4)).isoformat(),))
+        self.assertIn('CONTAINER_NOT_HEALTHY:porota_production_observer',self.codes(self.capture(host_state=detail),'P0'))
 
     def test_p0_immediate_but_p1_needs_two_samples(self):
         first = self.capture()
@@ -401,17 +499,75 @@ class MonitorContracts(unittest.TestCase):
 
     def test_telegram_host_transport_acks_only_message_id_and_never_exposes_token(self):
         body = "POROTA RC6 | ALERT\nOBSERVER_HEARTBEAT_INVALID"
-        encoded = monitor.base64.urlsafe_b64encode(body.encode()).decode()
+        request={'body':body,'transition_id':'c'*64}
+        encoded = monitor.base64.urlsafe_b64encode(json.dumps(request).encode()).decode()
         with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, stdout='{"status":"SENT","message_id":"34"}', stderr="token=secret")) as run:
-            self.assertEqual(monitor.alert_host(encoded), {"status": "SENT", "message_id": "34"})
+                [], 0, stdout='{"status":"SENT","message_id":"34"}', stderr="token=secret")) as run, patch.object(monitor,'ROOT',self.root):
+            receipt=monitor.alert_host(encoded)
+            self.assertEqual(receipt['status'],'SENT')
+            self.assertEqual(receipt['message_id'],'34')
+            self.assertFalse(receipt['deduplicated'])
+            self.assertTrue(monitor.alert_host(encoded)['deduplicated'])
+            self.assertEqual(run.call_count,1)
         args, options = run.call_args
         self.assertEqual(args[0][:3], ["docker", "exec", "porota_production_observer"])
         self.assertEqual(options["timeout"], 19)
         compile(args[0][-2], "<telegram-child>", "exec")
         with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, stdout='{"status":"SENT"}', stderr="token=secret")):
-            self.assertEqual(monitor.alert_host(encoded)["status"], "FAILED")
+                [], 0, stdout='{"status":"SENT"}', stderr="token=secret")),patch.object(monitor,'ROOT',self.root):
+            request['transition_id']='d'*64
+            encoded=monitor.base64.urlsafe_b64encode(json.dumps(request).encode()).decode()
+            self.assertEqual(monitor.alert_host(encoded)["status"], "UNVERIFIED")
+
+    def test_same_recovery_from_two_branch_probes_delivers_once_and_new_incident_delivers(self):
+        previous=self.capture(at=NOW-timedelta(minutes=10))
+        previous['findings']=[monitor.finding('NO_QUOTES','P0')]
+        old=monitor.classify(previous)
+        monitor.finalize_delivery(old,{'status':'SENT','message_id':'980'})
+        one=monitor.classify(self.capture(),previous,old)
+        two=monitor.classify(self.capture(at=NOW+timedelta(minutes=1)),previous,old)
+        self.assertEqual(one['notification'],'RECOVERY')
+        self.assertEqual(one['transition_id'],two['transition_id'])
+        sends=[]
+        def send(body):
+            sends.append(body)
+            return {'status':'SENT','message_id':str(980+len(sends))}
+        path=self.root/'receipts.sqlite'
+        for decision in (one,two):
+            request=json.loads(monitor.base64.urlsafe_b64decode(monitor.prepare_alert(decision)))
+            receipt=monitor.deliver_transition_once(path,request['transition_id'],request['body'],send)
+            monitor.finalize_delivery(decision,receipt)
+            self.assertEqual(decision['acknowledged_codes'],[])
+        self.assertEqual(len(sends),1)
+        newer=self.capture(at=NOW+timedelta(minutes=5));newer['findings']=previous['findings']
+        alarm=monitor.classify(newer)
+        monitor.finalize_delivery(alarm,{'status':'SENT','message_id':'982'})
+        recovery=monitor.classify(self.capture(at=NOW+timedelta(minutes=6)),newer,alarm)
+        self.assertNotEqual(recovery['transition_id'],one['transition_id'])
+        self.assertEqual(monitor.deliver_transition_once(path,recovery['transition_id'],'POROTA RC6 | RECOVERY',send)['status'],'SENT')
+        self.assertEqual(len(sends),2)
+
+    def test_uncertain_ack_restart_never_manufactures_ack_or_resends(self):
+        path=self.root/'receipts.sqlite';calls=[]
+        def crash(body):
+            calls.append(body)
+            raise TimeoutError('unknown remote outcome')
+        first=monitor.deliver_transition_once(path,'f'*64,'POROTA RC6 | ALERT',crash)
+        second=monitor.deliver_transition_once(path,'f'*64,'POROTA RC6 | ALERT',crash)
+        self.assertEqual(first['status'],second['status'],'UNVERIFIED')
+        self.assertEqual(len(calls),1)
+
+    def test_delivery_concurrent_reservation_and_invalid_receipts_fail_closed(self):
+        path=self.root/'receipts.sqlite';nested=[]
+        def send(body):
+            nested.append(monitor.deliver_transition_once(path,'e'*64,body,lambda b:self.fail('double send')))
+            return {'status':'SENT','message_id':'12'}
+        self.assertEqual(monitor.deliver_transition_once(path,'e'*64,'POROTA RC6 | ALERT',send)['status'],'SENT')
+        self.assertEqual(nested[0]['status'],'UNVERIFIED')
+        for value in (None,0,True,'0','bad'):
+            result=monitor.deliver_transition_once(path,hashlib.sha256(str(value).encode()).hexdigest(),
+                'POROTA RC6 | ALERT',lambda b:{'status':'SENT','message_id':value})
+            self.assertEqual(result['status'],'UNVERIFIED')
 
     def test_incompatible_old_sha_cannot_confirm_p1(self):
         current = self.capture()
@@ -473,6 +629,8 @@ class MonitorContracts(unittest.TestCase):
             if command[:2] == ["systemctl", "is-active"]:
                 status = "inactive" if command[-1] == "porota-functional-health-rc6.timer" else "active"
                 return subprocess.CompletedProcess(command, 0, stdout=status + "\n", stderr="secret")
+            if command[:2] == ['systemctl','show']:
+                return subprocess.CompletedProcess(command,0,stdout='Result=success\nExecMainStatus=0\nEnv=secret\n',stderr='secret')
             return subprocess.CompletedProcess(command, 0, stdout=json.dumps({
                 "Status": "running", "StartedAt": "2026-10-14T15:30:00Z",
                 "ExitCode": 0, "OOMKilled": False, "Env": "secret"}), stderr="secret")
@@ -480,6 +638,8 @@ class MonitorContracts(unittest.TestCase):
             result = monitor._host_control_state()
         self.assertEqual(result["legacy_health_timer"], "inactive")
         self.assertEqual(result["fast_health_timer"], "active")
+        self.assertEqual(result['schedule_silence_timer'],'active')
+        self.assertEqual(result['schedule_silence_service'],{'Result':'success','ExecMainStatus':'0'})
         self.assertEqual(result["observer_container"]["Status"], "running")
         self.assertNotIn("secret", json.dumps(result))
 

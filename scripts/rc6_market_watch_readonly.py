@@ -6,6 +6,7 @@ import argparse
 import base64
 import io
 import zipfile
+from contextlib import closing
 from datetime import datetime, timezone, timedelta
 import hashlib
 import json
@@ -159,6 +160,22 @@ def now_utc():
     return datetime.now(timezone.utc)
 
 
+def transport_diagnostic(stderr, exit_code):
+    """Never publish SSH text/host/user/key; return only reviewed classes."""
+    classes=[('CONNECT_TIMEOUT',r'connection timed out|connect.*timed out'),
+             ('CONNECT_REFUSED',r'connection refused'),
+             ('NETWORK_UNREACHABLE',r'network is unreachable|no route to host'),
+             ('AUTH_DENIED',r'permission denied|authentication failed'),
+             ('HOST_KEY_REJECTED',r'host key verification failed|remote host identification has changed'),
+             ('DNS_FAILED',r'could not resolve hostname|name or service not known'),
+             ('REMOTE_PERMISSION',r'sudo:.*password|not allowed to execute'),
+             ('CONNECTION_CLOSED',r'connection (?:closed|reset)|kex_exchange_identification')]
+    kind=next((name for name,pattern in classes if re.search(pattern,stderr,re.I)),
+              'OK' if exit_code==0 else 'REMOTE_COMMAND_OR_TRANSPORT_UNVERIFIED')
+    return {'schema':'rc6.transport-diagnostic.v1','exit_code':exit_code,
+            'class':kind,'raw_output_exported':False,'read_only':True}
+
+
 def timestamp(value):
     if not isinstance(value, str) or not value:
         return None
@@ -220,6 +237,84 @@ def active_hours(at):
     return local.weekday() < 5 and 10 * 60 + 30 <= minute < 17 * 60 + 15
 
 
+def independent_session(at, root=ROOT):
+    """Read the deployed audited calendar in a bounded, separate interpreter.
+
+    This never asks observer_state whether the market ought to be open. The
+    checked-in spot schedule is scoped to BYMA PAPER spot, not every family.
+    """
+    code = '''import json,sys
+from datetime import datetime
+sys.path.insert(0,sys.argv[1])
+import ak_byma_calendar as c
+from co_market_sessions_hf6 import TZ,BYMA_PAPER_SPOT_OPEN,BYMA_PAPER_SPOT_CLOSE
+at=datetime.fromisoformat(sys.argv[2]).astimezone(TZ)
+audited=c.CALENDARIO_ACTUALIZADO_EL
+known=at.year in c.ANIOS_AUDITADOS and 0<=(at.date()-audited).days<=60
+opened=known and c.es_dia_habil_operativo(at.date()) and BYMA_PAPER_SPOT_OPEN<=at.time().replace(tzinfo=None)<BYMA_PAPER_SPOT_CLOSE
+print(json.dumps({'state':'OPEN' if opened else 'CLOSED' if known else 'UNKNOWN','scope':'BYMA_PAPER_SPOT','source':c.FUENTE_OFICIAL,'audited_at':audited.isoformat()}))'''
+    try:
+        out = subprocess.run([sys.executable, '-B', '-c', code, str(root), at.isoformat()],
+                             capture_output=True, text=True, timeout=2, check=True)
+        result = json.loads(out.stdout)
+        if result.get('state') in {'OPEN','CLOSED','UNKNOWN'}:
+            return result
+    except (OSError,subprocess.SubprocessError,ValueError):
+        pass
+    return {'state':'UNKNOWN','scope':'BYMA_PAPER_SPOT','reason':'AUDITED_CALENDAR_UNAVAILABLE'}
+
+
+def schedule_health(runs, at, *, expected_open):
+    """Manual, retry and push runs never certify scheduler cadence."""
+    scheduled = sorted({timestamp(r.get('run_started_at')) for r in runs
+        if isinstance(r,dict) and r.get('event')=='schedule' and r.get('run_attempt')==1 and r.get('status')=='completed' and
+        timestamp(r.get('run_started_at')) is not None and timestamp(r['run_started_at'])<=at}, reverse=True)
+    lag = (at-scheduled[0]).total_seconds() if scheduled else None
+    recent = [r for r in scheduled if 0 <= (at-r).total_seconds() <= 1800]
+    gaps = [(a-b).total_seconds() for a,b in zip(recent,recent[1:])]
+    silence = expected_open and (lag is None or lag > 1200)
+    return {'state':'SCHEDULE_SILENT' if silence else 'TWO_INTERVALS_OBSERVED' if
+            len(gaps)>=2 and all(0<g<=1200 for g in gaps[:2]) else 'NO_VERIFICADO',
+            'last_schedule_age_seconds':lag,'genuine_recent_runs':len(recent),
+            'consecutive_gaps_seconds':gaps[:3],'silence':bool(silence),
+            'independent_watchdog_ack':'NO_VERIFICADO'}
+
+
+def add_schedule_health(current, repo, *, get=None):
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',repo):
+        raise ValueError('INVALID_REPOSITORY')
+    if get is None:
+        from urllib.request import Request, urlopen
+        def get(url):
+            token=os.getenv('GH_TOKEN','')
+            headers={'Accept':'application/vnd.github+json'}
+            if token: headers['Authorization']='Bearer '+token
+            with urlopen(Request(url,headers=headers),timeout=15) as response:
+                raw=response.read(2*1024**2+1)
+            if len(raw)>2*1024**2: raise ValueError('SCHEDULE_RESPONSE_LIMIT')
+            return json.loads(raw)
+    expected=(current.get('expected_session') or {}).get('state')=='OPEN'
+    try:
+        result=get(f'https://api.github.com/repos/{repo}/actions/workflows/384354765/runs?event=schedule&per_page=100')
+        health=schedule_health(result['workflow_runs'],timestamp(current['generated_at']),expected_open=expected)
+    except (OSError,ValueError,KeyError,TypeError):
+        health={'state':'NO_VERIFICADO','reason':'SCHEDULE_API_UNAVAILABLE','silence':None}
+    receipt=current.get('schedule_watchdog_receipt') or {}
+    ack=str(receipt.get('message_id',''))
+    ack_age=receipt.get('ack_age_seconds')
+    if (receipt.get('status') in {'OK','SILENT','UNKNOWN'} and ack.isdecimal() and int(ack)>0 and
+            type(ack_age) in (int,float) and 0<=ack_age):
+        health['independent_watchdog_ack']='HISTORICAL_VERIFIED'
+        health['independent_watchdog_ack_age_seconds']=ack_age
+    current['schedule_health']=health
+    if health.get('silence') is True:
+        current['findings'].append(finding('SCHEDULE_SILENCE_TWO_INTERVALS','P1'))
+    elif expected and health['state']=='NO_VERIFICADO':
+        current['findings'].append(finding('SCHEDULE_CADENCE_UNVERIFIED','P2'))
+    current['severity']=max((r['severity'] for r in current['findings']),key=lambda s:SEVERITY[s],default='GREEN')
+    return current
+
+
 def _docker_inspect():
     command = ["docker", "inspect", "--format",
                "{{.Name}}|{{.State.Status}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{.Image}}",
@@ -263,7 +358,8 @@ def _host_control_state():
     """Small host-only facts even when the optional container diagnostic times out."""
     data = {}
     for label, unit in (("legacy_health_timer", "porota-functional-health-rc6.timer"),
-                        ("fast_health_timer", "porota-fast-functional-health-rc6.timer")):
+                        ("fast_health_timer", "porota-fast-functional-health-rc6.timer"),
+                        ("schedule_silence_timer", "porota-market-watch-silence-rc6.timer")):
         try:
             state = subprocess.run(["systemctl", "is-active", unit],
                                    capture_output=True, text=True, timeout=.8, check=False)
@@ -271,6 +367,15 @@ def _host_control_state():
                            {"active", "inactive", "failed", "activating"} else "UNKNOWN")
         except (OSError, subprocess.TimeoutExpired):
             data[label] = "UNKNOWN"
+    try:
+        state = subprocess.run(["systemctl", "show", "porota-market-watch-silence-rc6.service",
+            "--property=Result,ExecMainCode,ExecMainStatus,ExecMainStartTimestamp,ExecMainExitTimestamp",
+            "--no-pager"], capture_output=True, text=True, timeout=.8, check=False)
+        allowed = {"Result", "ExecMainCode", "ExecMainStatus", "ExecMainStartTimestamp", "ExecMainExitTimestamp"}
+        data['schedule_silence_service'] = {k:v[:100] for line in state.stdout[:2048].splitlines()
+            for k,sep,v in [line.partition('=')] if sep and k in allowed}
+    except (OSError, subprocess.TimeoutExpired):
+        data['schedule_silence_service'] = {'Result':'UNKNOWN'}
     try:
         state = subprocess.run(["docker", "inspect", "--format", "{{json .State}}",
                                 "porota_production_observer"], capture_output=True, text=True,
@@ -281,6 +386,17 @@ def _host_control_state():
     except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
         data["observer_container"] = {"Status": "UNKNOWN"}
     return data
+
+
+def historical_observer_oom(state, current, at):
+    """Prior lifecycle only: unknown clocks/stale pulse never downgrade OOM."""
+    detail=(current.get('host_control_state') or {}).get('observer_container') or {}
+    started,finished=timestamp(detail.get('StartedAt')),timestamp(detail.get('FinishedAt'))
+    heartbeat=timestamp((current.get('observer') or {}).get('heartbeat_at'))
+    return bool(state.get('state')=='running' and detail.get('Status')=='running' and
+        type(detail.get('ExitCode')) is int and detail['ExitCode']==0 and
+        started and finished and finished.year>=2020 and finished<started<=at and
+        heartbeat and started<heartbeat<=at and (at-heartbeat).total_seconds()<=180)
 
 
 def _db_snapshot(path):
@@ -357,23 +473,51 @@ def _db_snapshot(path):
                              "ready": int(row["ready"] or 0)}
             except sqlite3.Error:
                 pass
+        # Open ledger contracts are separate from today's trade counts and
+        # from an in-flight evaluation/fill, which this reader cannot attest.
+        activity = {'inflight_evaluation_or_fill':'NO_VERIFICADO'}
+        for table,status in (('paper_positions','OPEN'),('paper_future_positions','ACTIVE'),
+                             ('paper_cauciones','OPEN')):
+            activity[table] = None
+            if table in tables:
+                try:
+                    activity[table] = db.execute('SELECT COUNT(*) FROM '+table+' WHERE status=?',(status,)).fetchone()[0]
+                except sqlite3.Error:
+                    pass
         return {"observer": observer, "workers": workers,
-                "cursors": cursors, "readiness": readiness, "sqlite_ops": sqlite_ops}
+                "cursors": cursors, "readiness": readiness, "sqlite_ops": sqlite_ops,
+                'paper_open_contracts':activity}
 
 
 def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
-    at = at or now_utc()
     root = Path(root)
+    live_clock = at is None
+    started_at = at or now_utc()
+    try:
+        state = _db_snapshot(root / DB_REL)
+    except (sqlite3.Error, OSError, ValueError, TypeError):
+        state = None
+    # A writer can advance its heartbeat while these bounded SELECTs run.
+    # The completed read is the clock reference, not the earlier probe start.
+    # Explicit fixture/as-of calls remain strict; no future/stale tolerance is
+    # added and no source timestamp is rewritten.
+    at = now_utc() if live_clock else started_at
     findings = []
     result = {"schema": SCHEMA, "generated_at": at.isoformat(), "scope": "READ_ONLY",
+              "collection_started_at": started_at.isoformat(),
               "expected_deploy_sha": expected_sha, "market_clock_window": active_hours(at),
               "broker_requests": 0, "real_order_routes_called": 0,
               "ppi_watch_accessed": False, "findings": findings}
     def add(code, level, evidence=None):
         findings.append(finding(code, level, evidence=evidence))
-    path = root / DB_REL
+    expected = independent_session(at, root)
+    result['expected_session'] = expected
+    if expected['state']=='UNKNOWN':
+        add('MARKET_SESSION_UNKNOWN','P1' if active_hours(at) else 'P2')
+    market_should_be_open = expected['state']=='OPEN'
     try:
-        state = _db_snapshot(path)
+        if state is None:
+            raise ValueError('DATABASE_READ_UNVERIFIED')
         result.update(state)
         observer = state["observer"]
         if observer.get("mode") != "PRODUCTION_PAPER":
@@ -390,9 +534,12 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
         market_open_observed = str(observer.get("session_state") or "").upper() in {
             "OPEN", "MARKET_OPEN", "TRADING"}
         result["market_open_observed"] = market_open_observed
+        if expected['state']!='UNKNOWN' and market_open_observed != market_should_be_open:
+            add('OBSERVER_SESSION_DISAGREEMENT','P1')
+        market_freshness_required = market_should_be_open or (expected['state']=='UNKNOWN' and market_open_observed)
         market_age = age_seconds(observer.get("last_market_data_at"), at)
         result["ppi_market_age_seconds"] = market_age
-        if market_open_observed and (market_age is None or market_age > 900 or market_age < -30):
+        if market_freshness_required and (market_age is None or market_age > 900 or market_age < -30):
             add("PPI_MARKETDATA_NOT_FRESH", "P1")
         for name, worker in state["workers"].items():
             lag = age_seconds(worker.get("heartbeat_at"), at)
@@ -405,6 +552,7 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
         add("SQLITE_READ_OR_SCHEMA_UNAVAILABLE", "P0")
         result.update(observer={}, workers={}, cursors={}, readiness=None)
         market_open_observed = False
+        market_freshness_required = market_should_be_open
 
     provenance = load_bounded(root / "data/deploy/CURRENT_STATE_V2.json", 32768)
     result["provenance"] = {k: provenance.get(k) for k in (
@@ -421,13 +569,29 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
     containers = _docker_inspect() if inspect is None else inspect
     result["containers"] = containers or {}
     result["host_control_state"] = _host_control_state()
+    receipt = load_bounded(root / 'data/paper_v17/market_watch_silence.json',4096)
+    ack = str((receipt or {}).get('message_id',''))
+    if (receipt and receipt.get('schema')=='rc6.market-watch-silence.v1' and
+            receipt.get('status') in {'OK','SILENT','UNKNOWN'} and ack.isdecimal() and int(ack)>0 and
+            timestamp(receipt.get('acknowledged_at')) is not None and
+            age_seconds(receipt['acknowledged_at'],at)>=0):
+        result['schedule_watchdog_receipt'] = {k:receipt[k] for k in
+            ('status','acknowledged_at','message_id')}
+        result['schedule_watchdog_receipt']['ack_age_seconds'] = age_seconds(receipt['acknowledged_at'],at)
+    else:
+        result['schedule_watchdog_receipt'] = {'status':'NO_VERIFICADO'}
     if not containers or not provenance:
         add("CONTAINER_OR_IMAGE_UNVERIFIED", "P0")
     else:
         for name in CONTAINERS:
             state = containers.get(name, {})
-            if state.get("state") != "running" or state.get("oom") is True:
+            if state.get("state") != "running":
                 add("CONTAINER_NOT_HEALTHY:" + name, "P0")
+            elif state.get('oom') is True:
+                if name=='porota_production_observer' and historical_observer_oom(state,result,at):
+                    add('OOM_HISTORICAL:'+name,'P2')
+                else:
+                    add('CONTAINER_NOT_HEALTHY:'+name,'P0')
             if state.get("image") != provenance.get("image_id"):
                 add("CONTAINER_IMAGE_MISMATCH:" + name, "P0")
             if state.get("restarts", 0) > 0:
@@ -440,6 +604,25 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
         "operational_funnel_status", "real_orders_sent", "real_routes",
         "provider_requests", "error_class")} if shadow else {}
     if shadow:
+        if shadow.get('runtime_read_stage') in {'CATALOG_FULL','OPEN_POSITIONS','SCHEMA_TABLES','INTRADAY_CONTRACTS','INTRADAY_POINTS','MARKET_SNAPSHOTS'}:
+            result['shadow']['runtime_read_stage']=shadow['runtime_read_stage']
+        if type(shadow.get('runtime_deadline_expired')) is bool:
+            result['shadow']['runtime_deadline_expired']=shadow['runtime_deadline_expired']
+        diagnostics=shadow.get('runtime_sql_diagnostics')
+        if isinstance(diagnostics,dict):
+            allowed={'CATALOG_FULL','OPEN_POSITIONS','SCHEMA_TABLES','INTRADAY_CONTRACTS','INTRADAY_POINTS','MARKET_SNAPSHOTS'}
+            safe=[]
+            for stage in diagnostics.get('stages',[])[:6]:
+                if not isinstance(stage,dict) or stage.get('stage') not in allowed:
+                    continue
+                item={'stage':stage['stage']}
+                for key in ('elapsed_ms','remaining_ms','rows'):
+                    value=stage.get(key)
+                    if type(value) in (int,float) and 0<=value<=1000000: item[key]=value
+                for key in ('deadline_elapsed','interrupted_by_deadline'):
+                    if type(stage.get(key)) is bool: item[key]=stage[key]
+                safe.append(item)
+            result['shadow']['runtime_sql_stages']=safe
         for key in ("sqlite_errorcode", "error_line"):
             value = shadow.get(key)
             if type(value) is int and 0 <= value <= 1000000:
@@ -464,7 +647,7 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
                     evidence_measured_bytes=measured, evidence_limit_bytes=limit)
     if shadow is None:
         add("DYNAMIC_SHADOW_STATUS_MISSING_OR_INVALID",
-            "P1" if market_open_observed else "P2")
+            "P1" if market_freshness_required else "P2")
     else:
         if (type(shadow.get("real_orders_sent")) is not int or
                 shadow["real_orders_sent"] != 0 or
@@ -477,7 +660,7 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
                 result["shadow"].get("error_class"))
         elif lag is None or lag < -30 or lag > 180:
             add("DYNAMIC_SHADOW_NOT_PROGRESSING",
-                "P1" if market_open_observed else "P2")
+                "P1" if market_freshness_required else "P2")
 
     perf_path = root / ("data/paper_v17/observer_v17.db.performance.sqlite.latest.json")
     perf = load_bounded(perf_path, 524288)
@@ -487,13 +670,13 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
                              } if perf else {"present": False}
     if not perf:
         add("PERFORMANCE_REPORT_UNAVAILABLE",
-            "P1" if market_open_observed else "P2")
+            "P1" if market_freshness_required else "P2")
     else:
         lag = age_seconds(perf.get("generated_at"), at)
         result["performance_age_seconds"] = lag
         if lag is None or lag < -30 or lag > 900:
             add("PERFORMANCE_REPORT_STALE",
-                "P1" if market_open_observed else "P2")
+                "P1" if market_freshness_required else "P2")
 
     try:
         resources = _resources()
@@ -900,16 +1083,73 @@ def recent_critical_host():
     return result
 
 
+def deliver_transition_once(path, event_id, body, send):
+    """Durable bounded reservation; uncertain remote ACKs are never resent.
+
+    This is a separate monitor receipt, never the PAPER ledger. A committed
+    SENT receipt may acknowledge the same transition again without sending.
+    Crash after send and before receipt remains UNVERIFIED for reconciliation.
+    """
+    if (type(event_id) is not str or type(body) is not str or
+            not re.fullmatch('[0-9a-f]{64}', event_id) or len(body)>3500):
+        return {'status':'INVALID_REQUEST'}
+    path=Path(path)
+    if any(p.is_symlink() for p in (path,*path.parents)):
+        return {'status':'UNVERIFIED'}
+    try:
+        if path.exists() and (path.stat().st_nlink!=1 or path.stat().st_size>4*1024**2):
+            return {'status':'UNVERIFIED'}
+        with closing(sqlite3.connect(path, timeout=.2)) as c, c:
+            c.execute('PRAGMA busy_timeout=200')
+            c.execute('PRAGMA synchronous=FULL')
+            c.execute('PRAGMA max_page_count=1024')
+            c.execute('CREATE TABLE IF NOT EXISTS monitor_delivery_v1(event_id TEXT PRIMARY KEY,body_hash TEXT NOT NULL,state TEXT NOT NULL,message_id TEXT,created_at TEXT NOT NULL)')
+            c.execute('BEGIN IMMEDIATE')
+            row=c.execute('SELECT state,message_id FROM monitor_delivery_v1 WHERE event_id=?',(event_id,)).fetchone()
+            if row:
+                if row[0]=='SENT' and str(row[1]).isdigit() and int(row[1])>0:
+                    return {'status':'SENT','message_id':str(row[1]),'deduplicated':True,'transition_id':event_id}
+                return {'status':'UNVERIFIED','transition_id':event_id,'reason':'PRIOR_DELIVERY_UNCERTAIN'}
+            c.execute("DELETE FROM monitor_delivery_v1 WHERE state='SENT' AND created_at<?",
+                      ((now_utc()-timedelta(days=2)).isoformat(),))
+            if c.execute('SELECT COUNT(*) FROM monitor_delivery_v1').fetchone()[0]>=256:
+                return {'status':'UNVERIFIED','reason':'DELIVERY_RECEIPT_CAPACITY'}
+            c.execute('INSERT INTO monitor_delivery_v1 VALUES(?,?,?,?,?)',
+                      (event_id,hashlib.sha256(body.encode()).hexdigest(),'IN_FLIGHT',None,now_utc().isoformat()))
+        try:
+            receipt=send(body)
+        except Exception:
+            receipt={'status':'UNVERIFIED'}
+        acknowledged=(receipt.get('status')=='SENT' and
+                      str(receipt.get('message_id','')).isdigit() and int(receipt['message_id'])>0)
+        if acknowledged:
+            with closing(sqlite3.connect(path,timeout=.2)) as c, c:
+                c.execute('PRAGMA synchronous=FULL')
+                c.execute("UPDATE monitor_delivery_v1 SET state='SENT',message_id=? WHERE event_id=? AND state='IN_FLIGHT'",
+                          (str(receipt['message_id']),event_id))
+            return {'status':'SENT','message_id':str(receipt['message_id']),
+                    'deduplicated':False,'transition_id':event_id}
+        return {'status':'UNVERIFIED','transition_id':event_id,'reason':'DELIVERY_ACK_UNCERTAIN'}
+    except (OSError,sqlite3.Error,ValueError,TypeError):
+        return {'status':'UNVERIFIED'}
+
+
 def alert_host(encoded):
     """Use the existing container Telegram transport without exporting secrets."""
     try:
         if not 1 <= len(encoded) <= 6000 or any(c not in
                 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=" for c in encoded):
             raise ValueError("INVALID_ALERT_REQUEST")
-        body = base64.urlsafe_b64decode(encoded).decode("utf-8")
-        if not body.startswith("POROTA RC6 | ") or len(body) > 3500:
+        decoded = base64.urlsafe_b64decode(encoded).decode("utf-8")
+        if decoded.startswith('{'):
+            request=json.loads(decoded)
+            event_id=request['transition_id']; body=request['body']
+        else:
+            # Legacy unkeyed requests cannot guarantee dedupe; fail closed.
+            return {'status':'INVALID_REQUEST'}
+        if type(body) is not str or not body.startswith("POROTA RC6 | ") or len(body) > 3500:
             raise ValueError("INVALID_ALERT_BODY")
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, KeyError, TypeError):
         return {"status": "INVALID_REQUEST"}
     child = '''import json,os,sys
 from bn_telegram_bus import TelegramTransport,DeliveryError
@@ -920,7 +1160,7 @@ try:
  print(json.dumps({"status":"SENT","message_id":mid}))
 except DeliveryError as exc: print(json.dumps({"status":"FAILED","error_code":exc.code}))
 except Exception as exc: print(json.dumps({"status":"FAILED","error_class":type(exc).__name__}))'''
-    try:
+    def send(body):
         result = subprocess.run(["docker", "exec", "porota_production_observer",
             "python", "-B", "-c", child, body], capture_output=True, text=True,
             timeout=19, check=False)
@@ -930,30 +1170,33 @@ except Exception as exc: print(json.dumps({"status":"FAILED","error_class":type(
         if data.get("status") == "NOT_CONFIGURED":
             return {"status": "NOT_CONFIGURED"}
         return {"status": "FAILED"}
-    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
-        return {"status": "UNVERIFIED"}
+    return deliver_transition_once(ROOT/'data/paper_v17/market_watch_delivery.sqlite',event_id,body,send)
 
 
 def prepare_alert(decision):
     if decision["notification"] == "NONE":
         return ""
     codes = decision["new_alerts"] if decision["notification"] == "ALERT" else decision["recovered"]
-    if not codes or len(codes) > 20 or any(not isinstance(code, str) or
+    validation_codes=list(codes)+list(decision.get('recovered',[]))
+    if not codes or len(validation_codes) > 40 or any(not isinstance(code, str) or
             len(code) > 100 or any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_:-" for ch in code)
-            for code in codes):
+            for code in validation_codes):
         raise ValueError("ALERT_CODES_INVALID")
-    event_id = hashlib.sha256(json.dumps([decision["notification"], codes],
-        sort_keys=True).encode()).hexdigest()[:16]
+    event_id=decision.get('transition_id')
+    if not isinstance(event_id,str) or not re.fullmatch('[0-9a-f]{64}',event_id):
+        raise ValueError('TRANSITION_ID_REQUIRED')
     body = ("POROTA RC6 | " + decision["notification"] + "\n" +
         ", ".join(codes) + "\n" + decision["generated_at"] +
         "\nID: " + event_id + "\nPAPER/SHADOW ONLY. Ver evidencia en GitHub Actions.")
-    return base64.urlsafe_b64encode(body.encode()).decode()
+    if decision['notification']=='ALERT' and decision.get('recovered'):
+        body+='\nRECOVERY: '+', '.join(decision['recovered'])
+    return base64.urlsafe_b64encode(json.dumps({'transition_id':event_id,'body':body},sort_keys=True).encode()).decode()
 
 
 def finalize_delivery(decision, receipt):
     """Only an actual Telegram message_id makes a transition acknowledged."""
     status = receipt.get("status", "UNVERIFIED")
-    if status == "SENT" and not str(receipt.get("message_id", "")).isdigit():
+    if status == "SENT" and (not str(receipt.get("message_id", "")).isdigit() or int(receipt['message_id'])<=0):
         status = "UNVERIFIED"
     if decision["notification"] == "NONE":
         status = "NO_TRANSITION"
@@ -967,6 +1210,7 @@ def finalize_delivery(decision, receipt):
     decision["delivery_status"] = status
     if status == "SENT":
         decision["telegram_message_id"] = str(receipt["message_id"])
+        decision['delivery_deduplicated']=receipt.get('deduplicated') is True
     return decision
 
 
@@ -992,11 +1236,21 @@ def classify(current, previous=None, previous_decision=None):
     recovered = sorted(old_alerted - confirmed - (p1_now - p1_prev))
     alerted = sorted(confirmed | (old_alerted & p1_now))
     status = "P0" if p_now else "P1" if p1_now else current.get("severity", "GREEN")
+    notification='ALERT' if new_alerts else 'RECOVERY' if recovered else 'NONE'
+    origins=dict((previous_decision or {}).get('incident_origins',{})) if comparable else {}
+    for code in new_alerts:
+        origins[code]=current['generated_at']
+    transition_codes=new_alerts if new_alerts else recovered
+    identity=[current.get('expected_deploy_sha'),notification,
+              [(kind,code,origins.get(code,(previous or {}).get('generated_at')))
+               for kind,codes in [('ALERT',new_alerts),('RECOVERY',recovered)] for code in codes]]
+    transition_id=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest() if transition_codes else None
     return {"schema": SCHEMA, "generated_at": current["generated_at"],
             "status": status, "confirmed": sorted(confirmed),
             "alerted": alerted, "new_alerts": new_alerts,
             "recovered": recovered, "pending_confirmation": sorted(p1_now - p1_prev),
-            "notification": "ALERT" if new_alerts else "RECOVERY" if recovered else "NONE",
+            "notification": notification, 'transition_id':transition_id,
+            'incident_origins':{code:origins.get(code,(previous or {}).get('generated_at')) for code in sorted(set(alerted)|set(recovered))},
             "previous_comparable": comparable,
             "read_only": True, "real_orders_sent_verified": bool(
                 current.get("observer", {}).get("real_orders_sent") == 0
@@ -1016,11 +1270,16 @@ def main(argv=None):
     remote.add_argument("--expected-sha", required=True)
     remote.add_argument("--root", type=Path, default=ROOT)
     actions.add_parser("transport-error")
+    transport=actions.add_parser('transport-diagnostic')
+    transport.add_argument('--stderr',required=True,type=Path)
     actions.add_parser("shadow-diagnostic")
     actions.add_parser("shadow-diagnostic-host")
     actions.add_parser("schedule-api-host")
     actions.add_parser("observer-lifecycle-host")
     actions.add_parser("recent-critical-host")
+    cadence = actions.add_parser('schedule-health')
+    cadence.add_argument('--current',required=True)
+    cadence.add_argument('--repo',required=True)
     alert = actions.add_parser("alert-host")
     alert.add_argument("encoded")
     prep = actions.add_parser("prepare-alert")
@@ -1044,8 +1303,17 @@ def main(argv=None):
                 all(x in "0123456789abcdef" for x in args.expected_sha)):
             raise SystemExit("INVALID_EXPECTED_SHA")
         data = probe(root=args.root, expected_sha=args.expected_sha)
+    elif args.action == 'schedule-health':
+        data=add_schedule_health(load_bounded(Path(args.current)),args.repo)
+        Path(args.current).write_text(json.dumps(data,sort_keys=True,separators=(',',':'))+'\n')
+        print(json.dumps(data['schedule_health'],sort_keys=True))
+        return 0
     elif args.action == "transport-error":
         data = transport_error()
+    elif args.action == 'transport-diagnostic':
+        with args.stderr.open('rb') as source:
+            raw=source.read(8192).decode('utf-8',errors='replace')
+        data=transport_diagnostic(raw,int(os.environ.get('PROBE_EXIT_CODE','255')))
     elif args.action == "shadow-diagnostic":
         data = shadow_diagnostic()
     elif args.action == "shadow-diagnostic-host":
