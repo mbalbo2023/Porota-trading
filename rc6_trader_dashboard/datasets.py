@@ -29,7 +29,7 @@ def shadow_rows(p, kind):
             if kind == "capacity":
                 discovery = json_object(plan.get("discovery", {}))
                 capacity = json_object(plan.get("capacity", {}))
-                open_verified = report.get("capacity_open_status") == "OPEN_EVIDENCE_VERIFIED" and freshness(report.get("as_of"), p.now, 30) == "FRESH"
+                open_verified = report.get("capacity_open_status") == "OPEN_EVIDENCE_VERIFIED" and p.shadow_fresh
                 rows.append({**discovery, "engine": engine, "source": "committed SHADOW · engines.capacity",
                              "state": "OPEN_EVIDENCE_VERIFIED" if open_verified else UNKNOWN, "as_of": report.get("as_of"),
                              "safe_capacity": capacity.get("safe_limit") if open_verified else None,
@@ -134,7 +134,10 @@ def instrument_market(p):
     for row in page.rows:
         row.update(family=row.get("asset_class"), as_of=row.get("book_at") or row.get("observed_at"),
                    provider_clock=row.get("book_at"), receipt_clock=row.get("received_at") or row.get("observed_at"),
-                   freshness=freshness(row.get("book_at"), p.now), entry_authority=UNKNOWN)
+                   freshness=freshness(row.get("book_at"), p.now, 120),
+                   book_freshness=freshness(row.get('book_at'),p.now,120),
+                   trade_freshness=freshness(row.get('trade_at'),p.now,120),
+                   receipt_freshness=freshness(row.get('received_at'),p.now,120),entry_authority=UNKNOWN)
     return page
 
 

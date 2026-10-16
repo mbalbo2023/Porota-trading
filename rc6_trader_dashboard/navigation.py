@@ -35,7 +35,7 @@ DESTINATIONS = (
         ("pnl", "P&L / Drawdown"), ("event-risk", "Event Risk"))),
     Destination("analitica", "Analítica", "/analitica", "▥", "¿El sistema tiene edge y qué está aprendiendo?", (
         ("performance", "Performance"), ("senales", "Señales"), ("salidas", "Salidas"),
-        ("historico", "Histórico"), ("experimentos", "Experimentos"),
+        ("historico", "Histórico"), ("anual", "Análisis anual"), ("experimentos", "Experimentos"), ("contrafactuales", "Contrafácticos"),
         ("cierre-diario", "Cierre diario"), ("reportes", "Reportes"))),
     Destination("sistema", "Sistema", "/sistema", "⚙", "¿La plataforma técnica está sana?", (
         ("resumen", "Resumen"), ("salud", "Salud"), ("workers", "Workers"),
@@ -48,9 +48,9 @@ BY_KEY = {item.key: item for item in DESTINATIONS}
 LEGACY = {
     "/inicio": ("inicio", "resumen"), "/vivo": ("en-vivo", "resumen"),
     "/universo-operativo": ("universo", "resumen"), "/scalping": ("trading", "scalping"),
-    "/motor-trading": ("trading", "resumen"), "/validacion": ("analitica", "experimentos"),
-    "/historicos": ("analitica", "historico"), "/analisis": ("analitica", "performance"),
-    "/aprendizaje": ("analitica", "experimentos"), "/reportes": ("analitica", "reportes"),
+    "/motor-trading": ("trading", "resumen"), "/validacion": ("analitica", "contrafactuales"),
+    "/historicos": ("analitica", "historico"), "/analisis": ("analitica", "anual"),
+    "/aprendizaje": ("analitica", "contrafactuales"), "/reportes": ("analitica", "reportes"),
     "/postcierre": ("analitica", "cierre-diario"), "/salud": ("sistema", "salud"),
     "/sre": ("sistema", "salud"), "/infra": ("sistema", "resumen"),
     "/scheduler": ("sistema", "scheduler"), "/dashboard/logs": ("sistema", "logs"),

@@ -236,8 +236,14 @@ class EvidenceFiles:
                 self.path(old.name).unlink()
 
 
-def read_committed_generation(root, *, payload_limit=4 * 1024**2):
-    """Read immutable committed bytes without creating directories or locks."""
+def read_committed_generation(root, *, payload_limit=4 * 1024**2, require_current_status=True):
+    """Read immutable bytes. Historical consumers may explicitly waive live health.
+
+    The default always checks current status; the historical option never
+    attests runtime health and retains manifest, identity and safety checks.
+    """
+    if type(require_current_status) is not bool:
+        raise ValueError("GENERATION_READER_MODE_INVALID")
     files = EvidenceFiles(root, payload_limit=payload_limit)
     pointer = files.read("CURRENT.json")
     if not isinstance(pointer, dict):
@@ -263,14 +269,15 @@ def read_committed_generation(root, *, payload_limit=4 * 1024**2):
             raise ValueError("GENERATION_MEMBER_MISMATCH")
     # A new failure revokes a previously good cut, even if CURRENT was not
     # advanced. An incomplete publication also cannot resurrect old health.
-    live = files.read("status.json")
     status = cut["status"]
-    if (not isinstance(live, dict) or live.get("as_of") != status.get("as_of") or
-            live.get("status") != status.get("status") or
-            live.get("report_digest") != status.get("report_digest")):
-        raise ValueError("GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS")
+    if require_current_status:
+        live = files.read("status.json")
+        if (not isinstance(live, dict) or live.get("as_of") != status.get("as_of") or
+                live.get("status") != status.get("status") or
+                live.get("report_digest") != status.get("report_digest")):
+            raise ValueError("GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS")
     for member in (cut["report"], status):
         if (type(member.get("real_orders_sent")) is not int or member["real_orders_sent"] != 0 or
                 member.get("real_routes") != "NOT_CALLED"):
             raise ValueError("GENERATION_SAFETY_UNVERIFIED")
-    return {"pointer": pointer, **cut}
+    return {"pointer": pointer, "live_status_required":require_current_status, **cut}

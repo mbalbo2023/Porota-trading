@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+import time
 from zoneinfo import ZoneInfo
 
 from .generation import read_shadow
@@ -278,16 +279,31 @@ class Projection:
                 "market_freshness": freshness(state.get("last_market_data_at"), self.now)}
 
     @cached_property
-    def shadow(self):
+    def shadow_root(self):
         from cg_paper_workspace import artifact_root
-        root = Path(os.getenv("POROTA_SHADOW_RUNTIME_ROOT", str(artifact_root(self.store.path) / "dynamic-shadow")))
-        return read_shadow(root, self.generation_reader)
+        return Path(os.getenv("POROTA_SHADOW_RUNTIME_ROOT", str(artifact_root(self.store.path) / "dynamic-shadow")))
+
+    @cached_property
+    def shadow(self):
+        return read_shadow(self.shadow_root, self.generation_reader)
+
+    @cached_property
+    def shadow_history(self):
+        """Explicit retrospective evidence; never consumed by live cards."""
+        return read_shadow(self.shadow_root,self.generation_reader,historical=True)
 
     @cached_property
     def shadow_fresh(self):
         """Only a current coherent cut may populate live SHADOW numbers."""
         return (self.shadow["state"] == "COMMITTED_COHERENT_SHADOW"
-                and freshness(self.shadow["report"].get("as_of"), self.now, 30) == "FRESH")
+                and freshness(self.shadow["report"].get("as_of"), self.now, self.shadow_liveness['budget_seconds']) == "FRESH")
+
+    @cached_property
+    def shadow_liveness(self):
+        from rc6_shadow_runtime.timing import generation_budget
+        budget, basis = generation_budget(self.shadow.get('status'))
+        return {'budget_seconds':budget,'basis':basis,
+                'age_seconds':age(self.shadow.get('report',{}).get('as_of'),self.now)}
 
     def daily_where(self, column):
         start = datetime.combine(self.now.astimezone(TZ).date(), datetime.min.time(), TZ)
@@ -587,6 +603,56 @@ class Projection:
             rows.append({**row, "worker": "Notificaciones", "source": "paper_notification_worker"})
         return Page("canonical worker states", rows, len(rows), "AVAILABLE")
 
+    def market_freshness_cohort(self):
+        """Observe at most ten identities from a bounded local sample.
+
+        Open positions have priority. Absence from the last500 records means
+        unknown, never a fresh quote or an instruction to call a provider.
+        """
+        s = self.store
+        identity = ('symbol', 'asset_class', 'market', 'currency', 'settlement')
+        if not set(identity) | {'id'} <= s.columns('market_snapshots'):
+            return Page('market_snapshots', reason='COHORT_IDENTITY_SCHEMA_UNVERIFIED')
+        errors, deadline = len(s.errors), time.monotonic() + .25
+        try:
+            if s.connection is not None:
+                s.connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 200)
+            samples = s.query('SELECT '+s.select('market_snapshots')+''' FROM market_snapshots
+                WHERE id>COALESCE((SELECT MAX(id) FROM market_snapshots),0)-500
+                ORDER BY id DESC LIMIT 500''')
+            positions = (s.query('SELECT '+s.select('paper_positions')+
+                         " FROM paper_positions WHERE status='OPEN' ORDER BY opened_at DESC LIMIT 10")
+                         if set(identity) | {'status','opened_at'} <= s.columns('paper_positions') else [])
+        finally:
+            if s.connection is not None:
+                s.connection.set_progress_handler(None, 0)
+        if len(s.errors) != errors or time.monotonic() > deadline:
+            return Page('market_snapshots', reason='COHORT_READ_BUDGET_OR_SCHEMA')
+        latest = {}
+        for row in samples:
+            latest.setdefault(tuple(row.get(k) for k in identity), row)
+        keys = list(dict.fromkeys(tuple(row.get(k) for k in identity) for row in positions))
+        focus = self.filters.get('q')
+        if focus:
+            keys += [key for key in latest if key[0] == focus and key not in keys]
+        keys += [key for key in latest if key not in keys]
+        rows = []
+        for key in keys[:10]:
+            quote = latest.get(key, {})
+            row = dict(zip(identity, key))
+            row.update(family=row.pop('asset_class'), source=quote.get('source'),
+                       as_of=quote.get('observed_at'),
+                       book_at=quote.get('book_at'), trade_at=quote.get('trade_at'),
+                       received_at=quote.get('received_at'),
+                       book_freshness=freshness(quote.get('book_at'), self.now, 120),
+                       trade_freshness=freshness(quote.get('trade_at'), self.now, 120),
+                       receipt_freshness=freshness(quote.get('received_at'), self.now, 120),
+                       entry_authority='NONE · diagnostics only')
+            rows.append(row)
+        return Page('Latest500 local records /10 identities; OPEN priority', rows,
+                    len(rows) if rows else None, 'OBSERVED_SAMPLE' if rows else UNKNOWN,
+                    reason='BOUNDED_COHORT_NOT_GLOBAL_COVERAGE;120s diagnostic clocks')
+
     def sources(self):
         # api_health is an observed record, not a live ping on every render.
         # Match freshness to the writer's cadence; never re-label an old
@@ -686,9 +752,16 @@ class Projection:
             sources = "CASE WHEN COUNT(DISTINCT source)=1 THEN MIN(source) ELSE 'MULTIPLE_SOURCES' END"
             quality = "SUM(CASE WHEN quality_state='FULL_OHLC' THEN 1 ELSE 0 END) full_ohlc," if "quality_state" in cols else ""
             errors = len(history_store.errors)
-            count = history_store.query(f"SELECT COUNT(*) n FROM (SELECT 1 FROM history_canonical_v2 GROUP BY {grouped})")
-            rows = history_store.query(f"SELECT {grouped},COUNT(*) row_count,MIN(date) date_from,MAX(date) date_to,MAX(observed_at) observed_at,{quality}{sources} source FROM history_canonical_v2 GROUP BY {grouped} ORDER BY {grouped} LIMIT 10 OFFSET ?", (self.offset,))
-            if len(history_store.errors) != errors:
+            deadline=time.monotonic()+.25
+            try:
+                if history_store.connection is not None:
+                    history_store.connection.set_progress_handler(lambda:int(time.monotonic()>deadline),200)
+                count = history_store.query(f"SELECT COUNT(*) n FROM (SELECT 1 FROM history_canonical_v2 GROUP BY {grouped})")
+                rows = history_store.query(f"SELECT {grouped},COUNT(*) row_count,MIN(date) date_from,MAX(date) date_to,MAX(observed_at) observed_at,{quality}{sources} source FROM history_canonical_v2 GROUP BY {grouped} ORDER BY {grouped} LIMIT 10 OFFSET ?", (self.offset,))
+            finally:
+                if history_store.connection is not None:
+                    history_store.connection.set_progress_handler(None,0)
+            if len(history_store.errors) != errors or time.monotonic()>deadline:
                 return Page("history_canonical_v2", reason="HISTORY_READ_ERROR")
             return Page("history_canonical_v2 · historical identities / source clocks", rows,
                         count[0]["n"] if count else None, "AVAILABLE", self.offset)
@@ -702,9 +775,31 @@ class Projection:
         if page is None:
             page = s.page("production_history", offset=self.offset)
         for row in page.rows:
+            last_ingest=row.get("downloaded_at") or row.get("observed_at")
+            series_day=row.get('date_to')
+            state=UNKNOWN; expected=None
+            try:
+                import ak_byma_calendar as cal
+                from co_market_sessions_hf6 import session_for
+                session=session_for(row.get('market'),row.get('instrument_type') or row.get('family'))
+                local=self.now.astimezone(TZ)
+                if row.get('market')=='BYMA' and session and local.year in cal.ANIOS_AUDITADOS:
+                    day=local.date()
+                    if local.time().replace(tzinfo=None)<session.regular_close: day-=timedelta(days=1)
+                    for _ in range(14):
+                        if day.year not in cal.ANIOS_AUDITADOS: break
+                        if cal.es_dia_habil_operativo(day): expected=day.isoformat();break
+                        day-=timedelta(days=1)
+                    if expected and series_day:
+                        datetime.strptime(str(series_day),'%Y-%m-%d')
+                        state='LAST_SESSION_PRESENT' if series_day==expected else 'STALE' if series_day<expected else 'FUTURE_SESSION'
+            except (ValueError,TypeError):
+                state=UNKNOWN
             row.update(family=row.get("family") or row.get("instrument_type"),
-                       as_of=row.get("downloaded_at") or row.get("observed_at"),
-                       freshness=freshness(row.get("downloaded_at") or row.get("observed_at"), self.now, 86400),
+                       as_of=last_ingest, last_ingest_at=last_ingest,
+                       ingest_freshness=freshness(last_ingest,self.now,86400),
+                       series_last_session=series_day, expected_last_session=expected,
+                       freshness=state,
                        readiness_authority="NONE · histórico no gobierna readiness")
         return page
 

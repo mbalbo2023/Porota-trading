@@ -12,7 +12,7 @@ AWAITING = "NO_VERIFICADO_AWAITING_RECONCILIATION"
 PAYLOAD_LIMIT = 4 * 1024 * 1024
 
 
-def read_shadow(root: Path, reader=None):
+def read_shadow(root: Path, reader=None, *, historical=False):
     missing = {"state": AWAITING, "reason": "CANONICAL_GENERATION_READER_NOT_AVAILABLE", "report": {}}
     if reader is None:
         try:
@@ -20,7 +20,7 @@ def read_shadow(root: Path, reader=None):
         except (ImportError, AttributeError):
             return missing
     try:
-        cut = reader(root, payload_limit=PAYLOAD_LIMIT)
+        cut = reader(root, payload_limit=PAYLOAD_LIMIT,**({'require_current_status':False} if historical else {}))
         pointer, manifest = cut["pointer"], cut["manifest"]
         ident = pointer["generation_id"]
         encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":"), default=str,
@@ -43,7 +43,8 @@ def read_shadow(root: Path, reader=None):
         report = cut["report"]
         if type(report.get("real_orders_sent")) is not int or report["real_orders_sent"] != 0 or report.get("real_routes") != "NOT_CALLED":
             raise ValueError("GENERATION_SAFETY_UNVERIFIED")
-        return {"state": "COMMITTED_COHERENT_SHADOW", "reason": "", "report": report,
+        return {"state": "HISTORICAL_COHERENT_SHADOW" if historical else "COMMITTED_COHERENT_SHADOW",
+                "reason": "HISTORICAL_EVIDENCE_NOT_LIVE" if historical else "", "report": report,
                 "pointer": pointer, "manifest": manifest, "status": cut["status"]}
     except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
         if isinstance(exc, ValueError) and str(exc) == "COMMITTED_GENERATION_MISSING":

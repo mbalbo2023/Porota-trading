@@ -1,6 +1,8 @@
 {
-  "as_of": "2026-10-16T16:55:00Z",
+  "as_of": "2026-10-16T17:26:50.905180+00:00",
+  "canonical_dashboard_routes": 52,
   "deployment": "NOT_STARTED_MARKET_OPEN",
+  "deployment_readiness": "NO_GO",
   "eod_guard": {
     "cold_write_budget_seconds": 15,
     "host_reserve_bytes": 2214592512,
@@ -14,6 +16,10 @@
   "full_suite_green": false,
   "genuine_schedule_cadence": "NO_VERIFICADO",
   "initial_fix_commit": "195f9e5d697d3cc4b0969355bd5bb0c21dc58dba",
+  "latest_findings_included": [
+    6220526827,
+    6220620479
+  ],
   "live_evidence": [
     {
       "artifact_id": 12058816231,
@@ -43,14 +49,60 @@
       "watchdog_service_result": "success"
     }
   ],
-  "main_monitor_head_at_development_cut": "d619d750d4d38fb9ba00ac80777c893f321adfe9",
+  "main_monitor_head_at_development_cut": "26bc268211efd612c85dbcf2e17b458a94757933",
   "mode": "PRODUCTION_PAPER",
   "native_predeploy": "NOT_STARTED_MARKET_OPEN",
+  "no_go_reasons": [
+    "NATIVE_COMPLETE_GATES_PENDING",
+    "MARKET_CLOSE_NOT_ATTESTED",
+    "NEW_USER_DEPLOY_ORDER_REQUIRED"
+  ],
   "nonroot_recheck": "BLOCKED_LOCAL_UID_NAMESPACE_ONLY_UID_0",
+  "operator_deploy_authorization": "WAITING_NEW_EXPLICIT_USER_ORDER",
   "ppi_watch_accessed": false,
   "productive_baseline": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
+  "programmed_chatgpt_task": {
+    "cancellation_confirmed": true,
+    "id": "6ad257c1913c81918f635953054471be",
+    "is_enabled": false
+  },
   "real_routes": "NOT_CALLED",
   "reports": {
+    "adenda_with_capacity_red": {
+      "counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 153
+      },
+      "elapsed_seconds": 35.252,
+      "failures": [
+        "tests.test_rc6_final_programming_runtime::test_canonical_worker_consumes_reviewed_open_capacity_and_falls_back_without_provider_calls"
+      ],
+      "sha256": "3a1496e12c78510902b302cd56b9f46f8d8167b246dc481be88fa8f794673d2b"
+    },
+    "capacity_instrumented_isolated": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "elapsed_seconds": 7.962,
+      "failures": [],
+      "sha256": "e5febc6fddd7888eb0215c54a95e15938d569616d3d6488d1f1cdeab042a83cb"
+    },
+    "consolidated_scoped": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 288
+      },
+      "elapsed_seconds": 25.155,
+      "failures": [],
+      "sha256": "71140a1863f89d7a5315f1dd1437215fbfc2ede8bf2cf26e0b0a19e5aacad138"
+    },
     "critical_sql": {
       "counts": {
         "errors": 0,
@@ -61,6 +113,28 @@
       "failures": [],
       "sha256": "20f4c5e0a4d6f3af1946c9a5a63eb9eebc5d671391d18fec6a5e706ae2a4e698",
       "skips": []
+    },
+    "dashboard_adenda": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 137
+      },
+      "elapsed_seconds": 7.374,
+      "failures": [],
+      "sha256": "77c693a70bb753f0c1f9ba6927a3a513f3f253c0dd3a5ab5b8fe49297f2e9d98"
+    },
+    "dependencies_adenda": {
+      "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+      "base_image_digest_pinned": true,
+      "docker_uses_lock": true,
+      "lock_exact_requirements": 153,
+      "lock_non_exact_requirements": [],
+      "lock_requirements_total": 153,
+      "schema_version": 2,
+      "source_requirements_total": 24,
+      "status": "GREEN"
     },
     "eod_budget_guards": {
       "counts": {
@@ -147,6 +221,17 @@
       ],
       "sha256": "fca8281689c290bb66d615e29a6187029854b385c4dacba7d7776bdee48dcba1",
       "source_commit": "b70615322f91e753a38d1fc2f0c073ab505c61bf"
+    },
+    "main_monitor_local": {
+      "failures": 0,
+      "runner": "Python unittest",
+      "source_branch": "work/rc6-20261016-watch-guards",
+      "tests": 41
+    },
+    "secret_scan_adenda": {
+      "scanned_text_files": 1133,
+      "sha256": "0ec88e61522c713e96bd5e616b52b9c81fb5583c6fe5ade94fe3deea9d9ec584",
+      "status": "GREEN"
     }
   },
   "runtime_modified": false,
@@ -177,6 +262,25 @@
     "runtime_claim": false
   },
   "state": "DEVELOPMENT_ONLY_NOT_FROZEN",
+  "tested_source_files_sha256": {
+    "rc6_counterfactual_learning.py": "6aec88350d0df536363a8c0b29d8c63dcd6f893bca767866875b3d8d07ff7975",
+    "rc6_shadow_runtime/persistence.py": "3a7d06258c82a77ea9c5e347c2d25535c2f2e5363f36b10791f50f031a0721e9",
+    "rc6_shadow_runtime/timing.py": "4830e4f5afbcde9a87ff6c348d86c29a43149b6dec9cbbdee73537d8242833b1",
+    "rc6_shadow_runtime/worker.py": "1182ff80819e23d21769deb8937b6e4545da9eaf78122b034f56d08e2eaaa58e",
+    "rc6_trader_dashboard/annual.py": "756d3f397357214c9f5339835fc4c450460ec0cfc1d72c2e9aedcb9b5b2c2698",
+    "rc6_trader_dashboard/counterfactuals.py": "7d010da5410dca97c7d722dcb20720c914cde08e574288510c0d4d1c11af6986",
+    "rc6_trader_dashboard/datasets.py": "73e60ae2a63f7550161e34066492d97e8eb130072d8e65091b6ba29b6dd72235",
+    "rc6_trader_dashboard/generation.py": "ecbf98e0b1e43974c78e98d3735d4226b432ac427d7ee7e7dbfd6d516b4adae5",
+    "rc6_trader_dashboard/navigation.py": "da613f3910ee15615ced162011ce1ab55251d0296d1298a36fccefe7135631ef",
+    "rc6_trader_dashboard/projection.py": "3f1ab118c2b9beb3361e155e5eb436a566ddea09f45edf64e153866828f33974",
+    "rc6_trader_dashboard/routes.py": "ef956476f37b33d1353d79e483a3cb98ac425ec825330af712847b1c646625f2",
+    "rc6_trader_dashboard/view_common.py": "9dd1b1b36f46ea55f09e9e313a7df1e0b97eed0080cec9e06c9a2140cdf5206e",
+    "rc6_trader_dashboard/views_analytics.py": "66abd6d81a0231a5320c599878294b41691745a77fb5eb64cbdfba9ef2bc2de1",
+    "rc6_trader_dashboard/views_instruments.py": "22fbde35b707e90903329e6472667ca544fb839dff685378bbe92ed032838282",
+    "rc6_trader_dashboard/views_live.py": "3471c2c0b9c2008b5616c5d90d143da0b08fe2299803f2f1255ccccf58f264cc",
+    "tests/test_rc6_issue600_dashboard_adenda.py": "f8a6fb3bf29f92405966435033491b2ed2e5cadaffb052a7fbb4b84823b45006"
+  },
+  "tested_source_parent_commit": "b0ab6a0d439898602de4696f4fe11d1fd269f0fa",
   "visual_tablet_qa": "NO_VERIFICADO",
   "watchdog_host_timer_active": true,
   "watchdog_runtime_ack": "HISTORICAL_VERIFIED_NOT_CURRENT_CADENCE",

@@ -1,5 +1,5 @@
 """The live wheel: observation, factual decisions, exits and coverage."""
-from .components import metric, funnel, timeline, notice
+from .components import metric, funnel, timeline, notice, fields, definition_list, e
 from .datasets import shadow_rows
 from .views_home import preview
 from .view_common import (render_table, OPPORTUNITIES, OPPORTUNITY_DETAIL, POSITIONS, POSITION_DETAIL,
@@ -54,5 +54,11 @@ def render(p, destination, tab):
                             note="La capacidad real exige evidencia OPEN. Un benchmark fuera de rueda no certifica capacidad operativa.")
     if tab == "workers":
         return render_table(p, destination, tab, p.workers(), "Workers críticos de la rueda", WORKERS, WORKER_DETAIL)
-    return render_table(p, destination, tab, p.sources(), "Fuentes relevantes a la rueda", SOURCES, SOURCE_DETAIL,
+    cohort=p.market_freshness_cohort()
+    panel="<section class='panel'><h2>Relojes por identidad · muestra local</h2>"+notice(
+        'Hasta 10 identidades de los últimos 500 registros locales; posiciones abiertas primero. Un heartbeat global fresco no acredita book/trade fresco. Ausencia = NO_VERIFICADO; diagnóstico de 120s sin autoridad de entrada. '+cohort.reason)
+    for row in cohort.rows:
+        panel+="<details><summary>"+e(' / '.join(str(row.get(k) or 'NO_VERIFICADO') for k in ('symbol','family','market','currency','settlement')))+"</summary>"+definition_list(row,fields('book_freshness|Book|status;trade_freshness|Trade|status;receipt_freshness|Recepción|status;book_at|Book|time;trade_at|Trade|time;received_at|Recepción|time;source|Fuente'))+"</details>"
+    panel+="</section>"
+    return panel+render_table(p, destination, tab, p.sources(), "Fuentes relevantes a la rueda", SOURCES, SOURCE_DETAIL,
                         note="PPI es autoridad primaria. IOL complementa; BYMA público observa. SOURCE_UNAVAILABLE siempre se limita a su scope.")
