@@ -6,5 +6,8 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/porota-trading
-ExecStart=/usr/bin/docker exec porota_production_observer nice -n 15 python /app/rc6_local_eod_history.py
-TimeoutStartSec=30
+ExecStart=/usr/bin/docker exec porota_production_observer timeout --signal=TERM --kill-after=5s 45s nice -n 15 python /app/rc6_local_eod_history.py
+# Admission2s + cold preparation15s + HOT2s + cold publication15s =34s.
+# Container deadline45s (+5s kill) expires before the systemd60s boundary,
+# so stopping docker exec cannot leave an orphan writer inside the container.
+TimeoutStartSec=60

@@ -271,7 +271,9 @@ def main():
     result=consolidate(database_path(),os.getenv('HIST_DB_PATH','/app/data/market_history.db'),
                        as_of=datetime.now(timezone.utc))
     print(json.dumps(result,sort_keys=True))
-    return 0 if result['state'] in {'NOT_DUE','LOCAL_EOD_READY'} else 2
+    # BACKLOG means a committed bounded batch with durable cursor. The existing
+    # timer drains the next batch; blocked/deferred/corrupt remain failures.
+    return 0 if result['state'] in {'NOT_DUE','LOCAL_EOD_READY','BACKLOG'} else 2
 
 
 if __name__=='__main__':

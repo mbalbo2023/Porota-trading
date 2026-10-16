@@ -103,11 +103,11 @@ def test_canonical_worker_prospectively_runs_entries_labels_and_native_net_funne
     worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
     initial = worker.tick(PRE)
     assert initial["entry_signal_lab"]["registered"] == 0
-    tick = [OPEN + timedelta(minutes=2)]
+    tick = [OPEN + timedelta(minutes=6)]
     b = PaperBroker(store, clock_fn=lambda: tick[0].isoformat(), session_policy=PaperSessionPolicy(),
                     score_threshold=".50", signal_min_samples=6, ai_mode="OFF", initial_cash="1000000")
     for index, price in enumerate(("95", "96", "97", "98", "99", "100")):
-        q = quote(assets[0], tick[0] - timedelta(seconds=150 - index * 30), bid=price, ask=str(D(price) + D(".01")))
+        q = quote(assets[0], tick[0] - timedelta(seconds=300 - index * 60), bid=price, ask=str(D(price) + D(".01")))
         store.add_quote(q)
     b.on_quote(q)
     assert len(store.open_positions()) == 1

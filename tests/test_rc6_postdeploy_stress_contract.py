@@ -1,0 +1,117 @@
+"""Hardware-stress governor adversaries; never touch Docker or live data."""
+from datetime import datetime,timezone
+import fcntl
+import json
+from pathlib import Path
+import sqlite3
+from types import SimpleNamespace
+
+import pytest
+
+from scripts import rc6_postdeploy_stress as harness
+from scripts import rc6_postdeploy_stress_host as host
+
+SHA='1'*40
+IMAGE='sha256:'+'2'*64
+
+
+@pytest.fixture
+def installation(tmp_path,monkeypatch):
+    monkeypatch.setattr(host,'ROOT',tmp_path)
+    monkeypatch.setattr(host.os,'chown',lambda *args:None)
+    monkeypatch.setattr(host.signal,'signal',lambda *args:None)
+    (tmp_path/'data/deploy').mkdir(parents=True)
+    (tmp_path/'data/paper_v17').mkdir()
+    (tmp_path/'data/deploy/CURRENT_STATE_V2.json').write_text(json.dumps({
+        'candidate_sha':SHA,'validation_status':'VALIDATED_RUNTIME','image_id':IMAGE}))
+    db=tmp_path/'data/paper_v17/observer_v17.db'
+    with sqlite3.connect(db) as c:
+        c.execute('CREATE TABLE observer_state(id INTEGER,mode TEXT,real_orders_sent INTEGER,process_state TEXT,session_state TEXT,heartbeat_at TEXT)')
+        c.execute('INSERT INTO observer_state VALUES(1,?,?,?,?,?)',('PRODUCTION_PAPER',0,'WAITING_MARKET','MARKET_CLOSED',datetime.now(timezone.utc).isoformat()))
+        for table in ('paper_positions','paper_cauciones','paper_future_positions'):
+            c.execute('CREATE TABLE '+table+'(status TEXT)')
+    calls=[];states={n:'running' for n in host.OWNED}
+    def command(args,**kwargs):
+        calls.append(args)
+        if args[:2]==['docker','inspect']:
+            n=args[2]
+            return json.dumps([{'Id':n+'_id','Image':IMAGE,
+                'State':{'Status':states.get(n,'exited'),'OOMKilled':False,'ExitCode':0}}])
+        if args[:2]==['docker','stop']:states[args[-1]]='exited'
+        if args[:2]==['docker','start']:
+            # The stress mutex must remain exclusive until runtime recovery.
+            with (tmp_path/'data/deploy/.postdeploy-stress.lock').open('a+') as stream:
+                with pytest.raises(BlockingIOError):fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            states[args[-1]]='running'
+        return ''
+    monkeypatch.setattr(host,'command',command)
+    monkeypatch.setattr(host,'memory_available',lambda:1024**3)
+    monkeypatch.setattr(host.shutil,'disk_usage',lambda path:SimpleNamespace(free=10*1024**3))
+    monkeypatch.setattr(host,'urlopen',lambda *a,**k:SimpleContext())
+    monkeypatch.setattr(host.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0))
+    return tmp_path,db,calls,states
+
+
+class SimpleContext:
+    status=200
+    def __enter__(self):return self
+    def __exit__(self,*args):pass
+
+
+@pytest.mark.parametrize('exit_code',[0,2])
+def test_stress_red_keeps_red_and_restores_same_containers(installation,monkeypatch,exit_code):
+    root,db,calls,states=installation
+    def spawn(args,**kwargs):
+        calls.append(args)
+        work=next((root/'data/deploy/stress'/SHA).iterdir())
+        (work/'stress.json').write_text(json.dumps({'status':'GREEN','smoke':False}))
+        return SimpleNamespace(returncode=exit_code,poll=lambda:exit_code)
+    monkeypatch.setattr(host.subprocess,'Popen',spawn)
+    assert host.run(SHA,'123')==(0 if exit_code==0 else 2)
+    report=json.loads((root/'data/deploy/stress'/SHA/'123/host-stress.json').read_text())
+    assert report['status']==('GREEN' if exit_code==0 else 'RED')
+    assert report['runtime_restore']=='GREEN' and all(s=='running' for s in states.values())
+    docker=next(c for c in calls if c[:2]==['docker','run'])
+    for pair in [('--network','none'),('--memory','512m'),('--memory-swap','512m'),('--cpus','.75')]:
+        assert docker[docker.index(pair[0])+1]==pair[1]
+    assert '--env-file' not in docker and '--read-only' in docker
+    assert sum(c[:2]==['docker','stop'] for c in calls)==2
+    assert sum(c[:2]==['docker','start'] for c in calls)==2
+    assert not any('watch' in str(c).lower() for c in calls)
+
+
+def test_memory_barrier_never_starts_stress_and_restores_runtime(installation,monkeypatch):
+    root,db,calls,states=installation
+    monkeypatch.setattr(host,'memory_available',lambda:100*1024**2)
+    monkeypatch.setattr(host.subprocess,'Popen',lambda *a,**k:pytest.fail('stress ignored memory gate'))
+    assert host.run(SHA,'124')==2
+    report=json.loads((root/'data/deploy/stress'/SHA/'124/host-stress.json').read_text())
+    assert report['error_code']=='STRESS_MEMORY_ADMISSION_BLOCKED'
+    assert report['runtime_restore']=='GREEN' and all(s=='running' for s in states.values())
+
+
+@pytest.mark.parametrize('change',['active_future','missing_ledger','unknown_orders','open_market'])
+def test_financial_unknown_or_active_never_quiesces(installation,change):
+    root,db,calls,states=installation
+    with sqlite3.connect(db) as c:
+        if change=='active_future':c.execute("INSERT INTO paper_future_positions VALUES('ACTIVE')")
+        elif change=='missing_ledger':c.execute('DROP TABLE paper_cauciones')
+        elif change=='unknown_orders':c.execute('UPDATE observer_state SET real_orders_sent=NULL')
+        else:c.execute("UPDATE observer_state SET session_state='MARKET_OPEN'")
+    with pytest.raises((ValueError,sqlite3.Error)):host.database_state(db)
+    assert calls==[] and all(s=='running' for s in states.values())
+
+
+def test_every_stress_scenario_path_is_present():
+    assert len(harness.GROUPS)==8
+    assert all((harness.ROOT/p).is_file() for paths in harness.GROUPS.values() for p in paths)
+
+
+def test_short_harness_requires_real_isolated_fills_and_eod(tmp_path,monkeypatch):
+    monkeypatch.setenv('PAPER_HISTORICAL_CANDLE_SHADOW','OFF')
+    monkeypatch.setenv('PAPER_SECTOR_CONCENTRATION_POLICY','OBSERVATION_ONLY')
+    value=harness.session_replay(tmp_path,minutes=8)
+    assert value['counts']['paper_fills']>=2
+    assert value['exit_reasons'].get('EOD_PAPER',0)>=1
+    assert len(value['dashboard_routes'])==52 and value['local_eod_repeated_imported']==0
+    assert value['actual_market_acceptance'] is False and value['provider_requests']==0

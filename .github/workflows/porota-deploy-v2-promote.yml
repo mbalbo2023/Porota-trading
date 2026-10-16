@@ -1200,6 +1200,51 @@ jobs:
             "$DO_USER@$DO_HOST" "sudo -n timeout 150 python3 - --candidate-sha '$CANDIDATE_SHA'" \
             < scripts/rc6_deploy_failure_cleanup.py
 
+      - name: Postdeploy full-session stress in the exact installed image
+        id: stress
+        if: success()
+        timeout-minutes: 40
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/postdeploy-stress
+          set +e
+          timeout --signal=TERM --kill-after=180s 2100s ssh \
+            -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --run-id '$GITHUB_RUN_ID'" \
+            < scripts/rc6_postdeploy_stress_host.py > evidence/postdeploy-stress/host-summary.json
+          result=$?
+          set -e
+          cat evidence/postdeploy-stress/host-summary.json
+          echo "RC6_POSTDEPLOY_STRESS_EXIT=$result"
+          test "$result" -eq 0
+
+      - name: Collect postdeploy stress evidence even on RED
+        if: always() && steps.stress.outcome != 'skipped' && steps.stress.outcome != ''
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/postdeploy-stress
+          timeout 90 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n tar -C '/opt/porota-trading/data/deploy/stress/$CANDIDATE_SHA/$GITHUB_RUN_ID' -czf - ." \
+            > evidence/postdeploy-stress/isolated-stress.tgz
+
+      - name: Preserve postdeploy stress and capacity receipts
+        if: always() && steps.stress.outcome != 'skipped' && steps.stress.outcome != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-postdeploy-stress-${{ github.run_id }}
+          path: evidence/postdeploy-stress
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Deployment summary
         if: success()
         shell: bash
