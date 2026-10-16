@@ -249,9 +249,9 @@ print(json.dumps({'state':'OPEN' if opened else 'CLOSED' if known else 'UNKNOWN'
 
 def schedule_health(runs, at, *, expected_open):
     """Manual, retry and push runs never certify scheduler cadence."""
-    scheduled = sorted((timestamp(r.get('run_started_at')) for r in runs
-        if r.get('event')=='schedule' and r.get('run_attempt',1)==1 and r.get('status')=='completed' and
-        timestamp(r.get('run_started_at')) is not None and timestamp(r['run_started_at'])<=at), reverse=True)
+    scheduled = sorted({timestamp(r.get('run_started_at')) for r in runs
+        if isinstance(r,dict) and r.get('event')=='schedule' and r.get('run_attempt')==1 and r.get('status')=='completed' and
+        timestamp(r.get('run_started_at')) is not None and timestamp(r['run_started_at'])<=at}, reverse=True)
     lag = (at-scheduled[0]).total_seconds() if scheduled else None
     recent = [r for r in scheduled if 0 <= (at-r).total_seconds() <= 1800]
     gaps = [(a-b).total_seconds() for a,b in zip(recent,recent[1:])]
@@ -515,7 +515,8 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
     ack = str((receipt or {}).get('message_id',''))
     if (receipt and receipt.get('schema')=='rc6.market-watch-silence.v1' and
             receipt.get('status') in {'OK','SILENT','UNKNOWN'} and ack.isdecimal() and int(ack)>0 and
-            timestamp(receipt.get('acknowledged_at')) is not None):
+            timestamp(receipt.get('acknowledged_at')) is not None and
+            age_seconds(receipt['acknowledged_at'],at)>=0):
         result['schedule_watchdog_receipt'] = {k:receipt[k] for k in
             ('status','acknowledged_at','message_id')}
         result['schedule_watchdog_receipt']['ack_age_seconds'] = age_seconds(receipt['acknowledged_at'],at)

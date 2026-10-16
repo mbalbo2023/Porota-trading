@@ -110,6 +110,9 @@ class MonitorContracts(unittest.TestCase):
         path.write_text(json.dumps({'schema':'rc6.market-watch-silence.v1','status':'OK',
             'acknowledged_at':NOW.isoformat(),'message_id':'0'}))
         self.assertEqual(self.capture()['schedule_watchdog_receipt']['status'],'NO_VERIFICADO')
+        path.write_text(json.dumps({'schema':'rc6.market-watch-silence.v1','status':'OK',
+            'acknowledged_at':(NOW+timedelta(seconds=1)).isoformat(),'message_id':'2'}))
+        self.assertEqual(self.capture()['schedule_watchdog_receipt']['status'],'NO_VERIFICADO')
 
     def test_shadow_sqlite_context_is_allowlisted(self):
         payload = {"as_of": NOW.isoformat(), "status": "FAIL_CLOSED",
@@ -280,8 +283,10 @@ class MonitorContracts(unittest.TestCase):
               {'event':'workflow_dispatch','created_at':NOW.isoformat()},
               {'event':'schedule','run_attempt':2,'created_at':NOW.isoformat()}]
         self.assertEqual(monitor.schedule_health(fake,NOW,expected_open=True)['state'],'SCHEDULE_SILENT')
-        real=[{'event':'schedule','status':'completed','run_started_at':(NOW-timedelta(minutes=m)).isoformat()} for m in (1,11,21)]
+        real=[{'event':'schedule','status':'completed','run_attempt':1,'run_started_at':(NOW-timedelta(minutes=m)).isoformat()} for m in (1,11,21)]
         self.assertEqual(monitor.schedule_health(real,NOW,expected_open=True)['state'],'TWO_INTERVALS_OBSERVED')
+        self.assertEqual(monitor.schedule_health([real[0]]*3,NOW,expected_open=True)['state'],'NO_VERIFICADO')
+        self.assertEqual(monitor.schedule_health([{k:v for k,v in r.items() if k!='run_attempt'} for r in real],NOW,expected_open=True)['state'],'SCHEDULE_SILENT')
         self.assertFalse(monitor.schedule_health([],NOW,expected_open=False)['silence'])
 
     def test_memory_shortage_is_not_hidden(self):
