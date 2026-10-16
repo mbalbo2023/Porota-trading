@@ -281,6 +281,7 @@ def _database_snapshot():
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA query_only=ON")
     connection.execute("SELECT 1").fetchone()
+    connection.execute("BEGIN")
     observer = dict(connection.execute(
         "SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at "
         "FROM observer_state WHERE id=1"
@@ -295,6 +296,12 @@ def _database_snapshot():
     """)]
     by_family = {row["family"]: int(row["ready"] or 0) for row in rows}
     ready = sum(by_family.values())
+    refresh = None
+    if connection.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
+                           AND name='candidate_refresh_state'""").fetchone():
+        row = connection.execute(
+            "SELECT state,checked_at FROM candidate_refresh_state WHERE id=1").fetchone()
+        refresh = dict(row) if row else None
     invalid, residual_violations = _candidate_state_violations(connection)
     generic_pending = int(connection.execute("""
         SELECT COUNT(*) FROM candidate_identity_v2
@@ -330,7 +337,7 @@ def _database_snapshot():
     return {
         "observer": observer,
         "readiness": {"source": "candidate_identity_v2", "ready": ready,
-                      "by_family": by_family, "rows": rows},
+                      "by_family": by_family, "rows": rows, "refresh": refresh},
         "invalid_candidate_states": invalid,
         "residual_candidate_state_violations": residual_violations,
         "generic_pending_residuals": generic_pending,
@@ -349,9 +356,6 @@ def _assert_snapshot(snapshot, baseline=None):
     assert 0 <= _age_seconds(observer.get("heartbeat_at")) <= 300
     readiness = db["readiness"]
     assert readiness["source"] == "candidate_identity_v2"
-    assert readiness["ready"] >= 5558
-    for family, expected in BASELINE_READY.items():
-        assert readiness["by_family"].get(family, 0) >= expected, (family, readiness)
     assert db["invalid_candidate_states"] == 0
     assert db["residual_candidate_state_violations"] == 0
     assert db["generic_pending_residuals"] == 0
@@ -393,13 +397,27 @@ def _assert_snapshot(snapshot, baseline=None):
     _assert_surface_metrics(snapshot.get("surface_metrics", {}))
     if baseline:
         prior = baseline["database"]
-        assert readiness["ready"] >= prior["readiness"]["ready"]
         previous_lkg = baseline["iol"].get("last_known_good_at")
         if previous_lkg:
             assert snapshot["iol"].get("last_known_good_at")
         for worker in ("scalping", "caucion_cash_sweep", "exit_supervisor"):
             assert _stamp(db["workers"][worker]["heartbeat_at"]) >= _stamp(
                 prior["workers"][worker]["heartbeat_at"])
+    low_families = {family: expected for family, expected in BASELINE_READY.items()
+                    if readiness["by_family"].get(family, 0) < expected}
+    below_baseline = (baseline is not None and
+                      readiness["ready"] < baseline["database"]["readiness"]["ready"])
+    if (readiness["ready"] < 5558 or low_families or below_baseline):
+        refresh = readiness.get("refresh") or {}
+        if refresh.get("state") == "RUNNING" and 0 <= _age_seconds(
+                refresh.get("checked_at")) <= 300:
+            raise RuntimeError(
+                "CANDIDATE_REFRESH_IN_PROGRESS|"
+                f"ready={readiness['ready']}|low_families={low_families}|"
+                f"checked_at={refresh['checked_at']}")
+        assert readiness["ready"] >= 5558
+        assert not low_families, (low_families, readiness)
+        assert not below_baseline, (readiness, baseline["database"]["readiness"])
 
 
 def collect(label):
@@ -441,12 +459,13 @@ def collect(label):
     }
 
 
-def consistent_snapshot(label, baseline=None, attempts=3, retry_seconds=5):
+def consistent_snapshot(label, baseline=None, attempts=8, retry_seconds=5):
     """Require exact dashboard/database equality after a bounded refresh.
 
     The dashboard and the SQLite probe use separate read-only connections. A
     batch commit between those reads can produce a transient mismatch. Retry
-    only that precise error; every safety/worker/route violation fails at once.
+    only that error or a fresh, explicitly marked bounded candidate refresh;
+    every safety/worker/route violation fails at once.
     A persistent mismatch still fails closed.
     """
     for attempt in range(1, attempts + 1):
@@ -461,11 +480,13 @@ def consistent_snapshot(label, baseline=None, attempts=3, retry_seconds=5):
             "dashboard_ready": snapshot["dashboard_truth"]["readiness"].get("ready"),
             "dashboard_total": snapshot["dashboard_truth"]["readiness"].get("total"),
             "dashboard_as_of": snapshot["dashboard_truth"]["readiness"].get("as_of"),
+            "candidate_refresh": snapshot["database"]["readiness"].get("refresh"),
         }, ensure_ascii=False, sort_keys=True, separators=(",", ":")), flush=True)
         try:
             _assert_snapshot(snapshot, baseline)
         except RuntimeError as exc:
-            if (not str(exc).startswith("DASHBOARD_READINESS_MISMATCH|")
+            if (not str(exc).startswith(("DASHBOARD_READINESS_MISMATCH|",
+                                        "CANDIDATE_REFRESH_IN_PROGRESS|"))
                     or attempt == attempts):
                 raise
             print(f"POROTA_RUNTIME_AUDIT_READINESS_RETRY={attempt}/{attempts}",

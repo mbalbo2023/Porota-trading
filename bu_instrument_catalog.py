@@ -589,6 +589,16 @@ def sync_candidate_universe(connection, checked_at, *,
         return
     if not 1 <= bounded_batch <= 128 or connection.in_transaction:
         raise ValueError("BOUNDED_CANDIDATE_REBUILD_REQUIRES_IDLE_CONNECTION")
+    # The bounded publication deliberately spans commits. Expose that interval
+    # so a stability audit can distinguish a partial generation from a durable
+    # loss of ready identities without ignoring worker or order-route failures.
+    connection.execute("""CREATE TABLE IF NOT EXISTS candidate_refresh_state(
+        id INTEGER PRIMARY KEY CHECK(id=1),state TEXT NOT NULL,
+        checked_at TEXT NOT NULL)""")
+    connection.execute("""INSERT INTO candidate_refresh_state(id,state,checked_at)
+        VALUES(1,'RUNNING',?) ON CONFLICT(id) DO UPDATE SET
+        state=excluded.state,checked_at=excluded.checked_at""", (checked_at,))
+    connection.commit()
     # Keep prior READY identities that remain verified. Only identities whose
     # new projection is absent or blocked must close before publishing batches.
     # This prevents a periodic refresh from showing a mostly empty universe to
@@ -630,6 +640,8 @@ def sync_candidate_universe(connection, checked_at, *,
         connection.commit()
         # Give other PAPER writers a chance to claim the WAL between batches.
         time.sleep(.005)
+    connection.execute("UPDATE candidate_refresh_state SET state='COMPLETE' WHERE id=1")
+    connection.commit()
 
 
 def persist(c, record):

@@ -343,6 +343,7 @@ def test_bounded_refresh_keeps_unchanged_ready_and_closes_removed_before_batches
     def between_batches(_seconds):
         with store.connect() as peer:
             peer.execute("BEGIN IMMEDIATE")
+            assert peer.execute("SELECT state FROM candidate_refresh_state WHERE id=1").fetchone()[0] == "RUNNING"
             observed.append(dict(peer.execute(
                 "SELECT ticker,can_simulate FROM candidate_identity_v2 "
                 "WHERE ticker IN ('KEEP','REMOVE')").fetchall()))
@@ -353,6 +354,8 @@ def test_bounded_refresh_keeps_unchanged_ready_and_closes_removed_before_batches
         catalog.sync_candidate_universe(c, _fresh(), bounded_batch=16)
     assert len(observed) >= 5
     assert all(rows == {"KEEP": 1} for rows in observed)
+    with store.connect() as connection:
+        assert connection.execute("SELECT state FROM candidate_refresh_state WHERE id=1").fetchone()[0] == "COMPLETE"
 
 
 def test_complementary_reconcile_projects_after_releasing_writer(tmp_path, monkeypatch):
