@@ -48,6 +48,31 @@ def _strategy(engine, row=None):
     return (row or {}).get("strategy") or engine
 
 
+def _retain_sessions(checkpoint, retained):
+    """Drop complete older sessions before a bounded write needs their space."""
+    for name in ("event_keys", "distinct_inputs"):
+        checkpoint[name] = {k: v for k, v in checkpoint[name].items() if v in retained}
+    for name in ("reaches", "cohorts"):
+        checkpoint[name] = {k: v for k, v in checkpoint[name].items() if v["session"] in retained}
+    for name in ("spot_positions", "future_positions"):
+        checkpoint[name] = {k: v for k, v in checkpoint[name].items() if not v.get("completed_at") or
+            stamp(v["completed_at"]).astimezone(ART).date().isoformat() in retained}
+    checkpoint["details"] = [r for r in checkpoint["details"] if r["session"] in retained]
+
+
+def _reclaim_oldest_session(checkpoint, current_session):
+    sessions = sorted(set(checkpoint["event_keys"].values()) |
+                      {v["session"] for v in checkpoint["reaches"].values()})
+    older = [s for s in sessions if s != current_session and s < current_session]
+    if not older:
+        return False
+    oldest = older[0]
+    _retain_sessions(checkpoint, set(sessions) - {oldest})
+    checkpoint["gaps"]["OLDER_SESSION_EVICTED_FOR_CAPACITY"] = (
+        checkpoint["gaps"].get("OLDER_SESSION_EVICTED_FOR_CAPACITY", 0) + 1)
+    return True
+
+
 def _event(checkpoint, *, ident, strategy, stage, event_at, as_of, event_id, channel,
            clock_basis, reasons=(), detail=None, session=None, strategy_version=None,
            configuration_fingerprint=None, registry_sha256=None):
@@ -66,10 +91,12 @@ def _event(checkpoint, *, ident, strategy, stage, event_at, as_of, event_id, cha
     if key in checkpoint["event_keys"]:
         return False
     if len(checkpoint["event_keys"]) >= MAX_EVENTS:
-        raise ValueError("FUNNEL_EVENT_CAPACITY_EXCEEDED")
+        if not _reclaim_oldest_session(checkpoint, session) or len(checkpoint["event_keys"]) >= MAX_EVENTS:
+            raise ValueError("FUNNEL_EVENT_CAPACITY_EXCEEDED")
     entity = digest([session, tuple(ident), strategy, version, config, registry, channel])
     if entity not in checkpoint["reaches"] and len(checkpoint["reaches"]) >= MAX_IDENTITIES:
-        raise ValueError("FUNNEL_IDENTITY_CAPACITY_EXCEEDED")
+        if not _reclaim_oldest_session(checkpoint, session) or len(checkpoint["reaches"]) >= MAX_IDENTITIES:
+            raise ValueError("FUNNEL_IDENTITY_CAPACITY_EXCEEDED")
     checkpoint["event_keys"][key] = session
     reach = checkpoint["reaches"].setdefault(entity, {"session": session, "identity": list(ident),
         "family": ident[1], "currency": ident[3], "strategy_id": strategy, "channel": channel,
@@ -176,15 +203,16 @@ def _planner_stages(checkpoint, report, at):
         try:
             raw = instrument["identity"]
             ident = planner_identity(raw)
-            if tuple(raw) in known:
-                continue
-            if instrument.get("catalog_ready") is True or instrument.get("readiness") == "READY_PAPER":
-                _event(checkpoint, ident=ident, strategy=instrument.get("strategy") or instrument.get("engine") or "SPECIALIZED_LIFECYCLE",
-                    stage="CATALOG_READY", event_at=at, as_of=at, event_id="first-prospective-reach", channel="FAMILY_OBSERVE_ONLY",
-                    session=session, clock_basis="ACTUAL_RUNTIME_CATALOG_OBSERVATION", reasons=instrument.get("reason_codes", []))
-            reasons.update(instrument.get("reason_codes", []))
         except (ValueError, KeyError, TypeError):
             reasons["EXACT_IDENTITY_REQUIRED"] += 1
+            continue
+        if tuple(raw) in known:
+            continue
+        if instrument.get("catalog_ready") is True or instrument.get("readiness") == "READY_PAPER":
+            _event(checkpoint, ident=ident, strategy=instrument.get("strategy") or instrument.get("engine") or "SPECIALIZED_LIFECYCLE",
+                stage="CATALOG_READY", event_at=at, as_of=at, event_id="first-prospective-reach", channel="FAMILY_OBSERVE_ONLY",
+                session=session, clock_basis="ACTUAL_RUNTIME_CATALOG_OBSERVATION", reasons=instrument.get("reason_codes", []))
+        reasons.update(instrument.get("reason_codes", []))
     return observation_stats, dict(reasons), family.get("families", [])
 
 
@@ -506,21 +534,18 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
         _shadow_entries(checkpoint, entry_signal_report, at)
     observations, exclusions, families = _planner_stages(checkpoint, planner_report, at)
     checkpoint["last_as_of"] = at.isoformat()
-    # Retain two complete session aggregates; raw detailed evidence has its
-    # independent cap. Never claim full lifetime coverage after retention.
-    sessions = sorted(set(checkpoint["event_keys"].values()))
+    # Retain at most two complete sessions. The oldest may already have been
+    # evicted to make room for the current session; report that loss as a gap.
+    sessions = sorted(set(checkpoint["event_keys"].values()) |
+                      {v["session"] for v in checkpoint["reaches"].values()})
     retained = set(sessions[-2:])
-    for name in ("event_keys", "distinct_inputs"):
-        checkpoint[name] = {k: v for k, v in checkpoint[name].items() if v in retained}
-    for name in ("reaches", "cohorts"):
-        checkpoint[name] = {k: v for k, v in checkpoint[name].items() if v["session"] in retained}
-    for name in ("spot_positions", "future_positions"):
-        checkpoint[name] = {k: v for k, v in checkpoint[name].items() if not v.get("completed_at") or
-            stamp(v["completed_at"]).astimezone(ART).date().isoformat() in retained}
-    checkpoint["details"] = [r for r in checkpoint["details"] if r["session"] in retained]
+    _retain_sessions(checkpoint, retained)
     checkpoint["checkpoint_sha256"] = _fingerprint(checkpoint)
-    if len(canonical(checkpoint).encode()) > MAX_CHECKPOINT_BYTES:
-        raise ValueError("FUNNEL_CHECKPOINT_CAPACITY_EXCEEDED")
+    while len(canonical(checkpoint).encode()) > MAX_CHECKPOINT_BYTES:
+        if not _reclaim_oldest_session(checkpoint, at.astimezone(ART).date().isoformat()):
+            raise ValueError("FUNNEL_CHECKPOINT_CAPACITY_EXCEEDED")
+        retained = {v["session"] for v in checkpoint["reaches"].values()} | set(checkpoint["event_keys"].values())
+        checkpoint["checkpoint_sha256"] = _fingerprint(checkpoint)
     cohorts = list(checkpoint["cohorts"].values())
     totals = defaultdict(lambda: {"stages": Counter(), "net_pnl": Decimal(0), "gross_pnl": Decimal(0), "costs": Decimal(0)})
     for group in cohorts:
@@ -551,7 +576,8 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
         "discovery_age": [{"family": k[0], "strategy_id": k[1], "currency": k[2], **distribution(v)} for k, v in sorted(discovery.items())],
         "detail_scope": {"retained_details": len(checkpoint["details"]), "maximum_details": MAX_DETAILS,
             "details_truncated": checkpoint["events_recorded"] > len(checkpoint["details"]),
-            "session_aggregates_preserved": True, "retention_sessions": 2},
+            "session_aggregates_preserved": True, "retention_sessions": len(retained),
+            "retention_limit_sessions": 2},
         "unreconciled_spot_positions": [{"paper_id": key, "reason": row.get("net_reason", "NATIVE_TERMINAL_FILL_PENDING")}
             for key, row in checkpoint["spot_positions"].items() if not row.get("reconciled")],
         "unreconciled_futures_positions": [{"lifecycle_id": key, "reason": row.get("net_status", "NATIVE_TERMINAL_EVENT_PENDING")}
