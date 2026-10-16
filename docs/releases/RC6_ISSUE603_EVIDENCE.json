@@ -6,8 +6,8 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "NO_GO_PENDING_FIX_FORWARD_GATE",
-  "deploy_started": false,
+  "release_state": "DEPLOY_IN_PROGRESS_NOT_YET_VALIDATED_RUNTIME",
+  "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
     "mode": "WRITE_OWNER",
@@ -427,7 +427,7 @@
   "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
   "candidate_tree": "7600f6ebb1430490f9fa41c8118ddd5188f3080a",
   "predeploy_run": 38981525324,
-  "predeploy_state": "IN_PROGRESS",
+  "predeploy_state": "SUCCESS",
   "monitor_merge_sha": "5a87538d3816601a4fddf4aaafc975b4ebc674d7",
   "latest_readonly": {
     "run": 38980476862,
@@ -453,8 +453,8 @@
     "skipped": 0,
     "junit_sha256": "1cca94530e343a508407a63552464c9dc304e87787978c6236a27cf85fdd4840"
   },
-  "deploy_merge_sha": "06c22b5251b94d9bb31074dfc8294355d6341e73",
-  "deploy_run": 38981124467,
+  "deploy_merge_sha": "a9e7504895e17f9b7f1e84b0af36f3492128a494",
+  "deploy_run": 38982377181,
   "current_productive_base": "06c22b5251b94d9bb31074dfc8294355d6341e73",
   "deploy_attempts": [
     {
@@ -505,5 +505,53 @@
       "skipped": 0,
       "sha256": "2745a98453471b98c82711d7eaf95ba2f39e35226b330a58867feebc57a67fc3"
     }
+  },
+  "source_bundle_installed": true,
+  "predeploy_certificate": {
+    "run": 38981525324,
+    "artifact": 12080759001,
+    "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
+    "zip_sha256": "adab5afa120d3f98722e4042c16d3e75d9c56cb14b16406f25cdf5de8aa4a1b1",
+    "image_id": "sha256:e908e37ebe3d9fb8a2425e72bcd75afe07eef6dd309b32e16cebf8002ee4b707",
+    "image_tar_sha256": "9083f435a3815785a6f6d55892f93226a4f35cbdc0d43333c96d28ea0c36a3cc",
+    "bundle_sha256": "623610e5f95bfba01e26a5dc53bd94f9d4ffca6411db8a82c58496e85c7d4843",
+    "bundle_files": 504,
+    "all_hashes_verified": true,
+    "discovered": 3708,
+    "executed": 3708,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "xfail": 0,
+    "declared_exclusion": "Root duplicate test_a3_primary_readonly_hf6.py; current tests/ successor executed"
+  },
+  "latest_lifecycle_probe": {
+    "run": 38981573685,
+    "artifact": 12081376284,
+    "zip_sha256": "a275d76791ed0772df3fe84a1b23bc388caa7c1005954c868fa6e93b6851f1e7",
+    "stop_exit_code": 0,
+    "stop_signal": 15,
+    "restart_confirmed": true,
+    "runtime_restored_provenance": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
+    "as_of": "2026-10-16T23:28:12.335304+00:00",
+    "real_orders_sent": 0,
+    "session": "MARKET_CLOSED",
+    "oom_flag_after_recovery": false,
+    "whole_workflow_conclusion": "FAILURE_EXPECTED_DEPLOY_SHA_MISMATCH_AFTER_REJECTED_PROMOTION"
+  },
+  "current_deploy_stage": {
+    "drain": "SUCCESS",
+    "transfer": "SUCCESS",
+    "source_bundle_install": "GREEN_504_FILES",
+    "runtime_validation": "IN_PROGRESS",
+    "stress": "NOT_STARTED",
+    "pretransfer_disk_available": 3963834368,
+    "pretransfer_disk_required": 3739823081,
+    "inodes_free_percent": 89.56,
+    "observer_stop_exit_code": 0,
+    "dashboard_stop_exit_code": 0,
+    "observer_stop_oom": false,
+    "dashboard_stop_oom": false,
+    "inflight": "ABSENT_OWNED_RUNTIME_STOPPED_AT_INSTALL_BOUNDARY"
   }
 }
