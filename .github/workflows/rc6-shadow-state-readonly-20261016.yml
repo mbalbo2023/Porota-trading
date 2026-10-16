@@ -40,11 +40,19 @@ jobs:
           PID="$(sudo -n docker inspect -f '{{.State.Pid}}' porota_production_observer)"
           echo "OBSERVER_PID=$PID"
           ps -T -p "$PID" -o pid,tid,etime,%cpu,%mem,stat,comm --no-headers | head -80
+          echo 'OBSERVER_PROCESSES_BEGIN'
+          sudo -n docker top porota_production_observer -eo pid,ppid,etime,%cpu,%mem,stat,args | grep -E '(^PID|python)' | head -30
+          echo 'OBSERVER_PROCESSES_END'
           echo 'SHADOW_LOG_BEGIN'
           sudo -n docker logs --since 30m porota_production_observer 2>&1 | grep -F 'DYNAMIC_SHADOW_RUNTIME' | tail -40 || true
           echo 'SHADOW_LOG_END'
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import json, os, pathlib, time
+          health=pathlib.Path('/app/data/paper_v17/artifacts/observer_v17.db/runtime-health.json')
+          if health.is_file() and health.stat().st_size < 131072:
+              payload=json.loads(health.read_text())
+              print('RUNTIME_HEALTH_RECORDED_AT='+str(payload.get('recorded_at')))
+              print('DYNAMIC_SHADOW_CHILD='+json.dumps((payload.get('children') or {}).get('dynamic_shadow'),sort_keys=True))
           root=pathlib.Path('/app/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
           for name in ('status.json','checkpoint.json.gz','latest.json.gz'):
               path=root/name
