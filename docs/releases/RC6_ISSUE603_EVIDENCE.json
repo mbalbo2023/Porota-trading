@@ -6,16 +6,16 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "DEPLOY_IN_PROGRESS_NOT_YET_VALIDATED_RUNTIME",
-  "deploy_started": true,
+  "release_state": "NO_GO_PENDING_FIX_FORWARD_GATE",
+  "deploy_started": false,
   "stress_droplet_executed": false,
   "ownership": {
     "mode": "WRITE_OWNER",
     "issue471": 6225616632,
     "issue473": 6225616839,
     "deploy_owner": "ACQUIRED",
-    "deploy_owner_issue471": 6226473869,
-    "deploy_owner_issue473": 6226474056
+    "deploy_owner_issue471": 6226585799,
+    "deploy_owner_issue473": 6226586016
   },
   "findings": [
     {
@@ -392,12 +392,42 @@
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "DRAIN-DIAGNOSTICS",
+      "capability": "FAILURE_PREDICATE_RECEIPT",
+      "path": "scripts/rc6_deploy_quiescence.py",
+      "symbol": "clean_stop",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Actual Deploy38981124467 rejected the drain but collapsed identity/state/exit/OOM into one code and omitted the observation. No runtime source installation occurred. Fix persists and emits only allowlisted lifecycle fields before/after and causal-specific rejection codes. Exact first remote predicate remains unverified pending existing read-only Docker event evidence.",
+      "test": "tests/test_rc6_deploy_quiescence.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "NOT_DEMONSTRATED",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "DRAIN-HISTORICAL-OOM",
+      "capability": "INHERITED_OOM_FLAG",
+      "path": "scripts/rc6_deploy_quiescence.py",
+      "symbol": "clean_stop",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Adversarial reproduction using verified prior lifecycle: running container with historical OOMKilled=true, old finish before current start, fresh PAPER heartbeat, new stop exit0. Old guard falsely rejected it. New guard requires unchanged ID/image/start and prior unambiguous cycle plus a fresh clean exit. New or unknown OOM and exit137 remain blocking. Before1FAIL, after65PASS; this is a code reproduction, not yet the proven remote RCA.",
+      "test": "tests/test_rc6_deploy_quiescence.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "NOT_DEMONSTRATED",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
     }
   ],
-  "candidate_sha": "1b8bd8b684d3bd2e019aac195f8be6257822dc38",
-  "candidate_tree": "232322fde35623dd6e5ce97ede6dc73bb69ebb33",
-  "predeploy_run": 38980321428,
-  "predeploy_state": "SUCCESS",
+  "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
+  "candidate_tree": "7600f6ebb1430490f9fa41c8118ddd5188f3080a",
+  "predeploy_run": 38981525324,
+  "predeploy_state": "IN_PROGRESS",
   "monitor_merge_sha": "5a87538d3816601a4fddf4aaafc975b4ebc674d7",
   "latest_readonly": {
     "run": 38980476862,
@@ -425,21 +455,55 @@
   },
   "deploy_merge_sha": "06c22b5251b94d9bb31074dfc8294355d6341e73",
   "deploy_run": 38981124467,
-  "predeploy_certificate": {
-    "run": 38980321428,
-    "artifact": 12081211347,
-    "zip_sha256": "d5ae721baee214cdc7add8413a86c08a372a3f00d62ca335a650793c7da47717",
-    "image_id": "sha256:95fcba7b741133fc6b7ed8ca6fdabd813dc17679dd70abac0414c722f96ac6c6",
-    "image_tar_sha256": "7caac1d0457ceb1cda3f10256c616991d8b17e77d29401082c44d5d3a2d2f54d",
-    "bundle_sha256": "964ce1378dd1989782e8d7eb90f35eb69fc1eae0cdac551fb672a605f666ac49",
-    "bundle_files": 504,
-    "all_hashes_verified": true,
-    "discovered": 3703,
-    "executed": 3703,
-    "failures": 0,
-    "errors": 0,
-    "skipped": 0,
-    "xfail": 0,
-    "declared_legacy_exclusion": "test_a3_primary_readonly_hf6.py SUPERSEDED_DUPLICATE_MODULE; successor tests/test_a3_primary_readonly_hf6.py executed"
+  "current_productive_base": "06c22b5251b94d9bb31074dfc8294355d6341e73",
+  "deploy_attempts": [
+    {
+      "run": 38981124467,
+      "merge_sha": "06c22b5251b94d9bb31074dfc8294355d6341e73",
+      "candidate_sha": "1b8bd8b684d3bd2e019aac195f8be6257822dc38",
+      "result": "FAILURE",
+      "stage": "PRE_INSTALL_DRAIN",
+      "error": "QUIESCENCE_STOP_UNVERIFIED",
+      "installation_started": false,
+      "transfer": "SKIPPED",
+      "promotion": "SKIPPED",
+      "recovery": "ORIGINAL_RUNTIME_RESUMED",
+      "cleanup": "GREEN",
+      "space_recovered": 32768,
+      "remote_predicate_cause": "NO_VERIFICADO_PENDING_LIFECYCLE_EVENTS"
+    }
+  ],
+  "predeploy_certificates": [
+    {
+      "run": 38980321428,
+      "artifact": 12081211347,
+      "zip_sha256": "d5ae721baee214cdc7add8413a86c08a372a3f00d62ca335a650793c7da47717",
+      "image_id": "sha256:95fcba7b741133fc6b7ed8ca6fdabd813dc17679dd70abac0414c722f96ac6c6",
+      "image_tar_sha256": "7caac1d0457ceb1cda3f10256c616991d8b17e77d29401082c44d5d3a2d2f54d",
+      "bundle_sha256": "964ce1378dd1989782e8d7eb90f35eb69fc1eae0cdac551fb672a605f666ac49",
+      "bundle_files": 504,
+      "all_hashes_verified": true,
+      "discovered": 3703,
+      "executed": 3703,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfail": 0,
+      "declared_legacy_exclusion": "test_a3_primary_readonly_hf6.py SUPERSEDED_DUPLICATE_MODULE; successor tests/test_a3_primary_readonly_hf6.py executed"
+    }
+  ],
+  "drain_causal_tests": {
+    "before": {
+      "cases": 1,
+      "failures": 1,
+      "sha256": "57e75f498f44f3e4f587e3c68da3030a71df598a4a4443bfdcdb60ab78655d72"
+    },
+    "after": {
+      "cases": 65,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "2745a98453471b98c82711d7eaf95ba2f39e35226b330a58867feebc57a67fc3"
+    }
   }
 }
