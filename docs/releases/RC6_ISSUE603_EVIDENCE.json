@@ -13,7 +13,9 @@
     "mode": "WRITE_OWNER",
     "issue471": 6225616632,
     "issue473": 6225616839,
-    "deploy_owner": "NOT_ACQUIRED"
+    "deploy_owner": "ACQUIRED",
+    "deploy_owner_issue471": 6226473869,
+    "deploy_owner_issue473": 6226474056
   },
   "findings": [
     {
@@ -367,7 +369,7 @@
       "path": "scripts/rc6_postdeploy_stress_host.py",
       "symbol": "runtime_restore",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "Autoauditoríaantesdeuso:cierretempranodelmutex yexcepcióncleanup podíanomitirrestore; mutexretenidohastahealthfinally ycleanupguarded. FuturoACTIVE yledgerausente bloqueanadmisión. TestREDpreservadoyrestoreGREEN.",
+      "detail": "Autoauditoríaantesdeuso:cierretempranodelmutex yexcepcióncleanup podíanomitirrestore; mutexretenidohastahealthfinally ycleanupguarded. FuturoACTIVE yledgerausente bloqueanadmisión. TestREDpreservadoyrestoreGREEN. Additional guards: stop intent recorded before Docker command, so timeout after effect restores owned runtime; financial ledgers rechecked after stop as well.",
       "test": "tests/test_rc6_postdeploy_stress_contract.py",
       "status": "NO_VERIFICADO_RUNTIME",
       "code_state": "DESARROLLADO",
@@ -375,6 +377,50 @@
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "PREDEPLOY-DRAIN",
+      "capability": "PRE_INSTALL_QUIESCENCE",
+      "path": "scripts/rc6_deploy_quiescence.py",
+      "symbol": "run",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "RCA: PAPER/0 alone did not establish no evaluation/fill before installing host files. Durable stop intent, CLOSED/fresh heartbeat/known ledgers admission, exact original IDs, graceful exit and ledger recheck now precede installation. Recovery resumes identical original containers only before installation_started. Later failures explicitly require fix-forward. Real STOPPED transition accepted after drain. Client timeout after stop and concurrent restart adversaries covered.",
+      "test": "tests/test_rc6_deploy_quiescence.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "NOT_DEMONSTRATED",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
     }
-  ]
+  ],
+  "candidate_sha": "1b8bd8b684d3bd2e019aac195f8be6257822dc38",
+  "candidate_tree": "232322fde35623dd6e5ce97ede6dc73bb69ebb33",
+  "predeploy_run": 38980321428,
+  "predeploy_state": "IN_PROGRESS",
+  "monitor_merge_sha": "5a87538d3816601a4fddf4aaafc975b4ebc674d7",
+  "latest_readonly": {
+    "run": 38980476862,
+    "artifact": 12080034694,
+    "zip_sha256": "0d8da83fb03bfa9b74d388606eaa8de21cba3a5ea1e784a0b862c1bf0f2bcd87",
+    "as_of": "2026-10-16T23:16:04.164160+00:00",
+    "mode": "PRODUCTION_PAPER",
+    "real_orders_sent": 0,
+    "session": "MARKET_CLOSED",
+    "heartbeat_age_seconds": 5.396,
+    "open_spot": 0,
+    "open_future": 0,
+    "open_caucion": 0,
+    "inflight": "NO_VERIFICADO_PRE_DRAIN",
+    "disk_free_bytes": 3898707968,
+    "mem_available_bytes": 122081280,
+    "shadow": "FAIL_CLOSED_OLD_RUNTIME"
+  },
+  "local_quiescence_tests": {
+    "cases": 60,
+    "failure": 0,
+    "error": 0,
+    "skipped": 0,
+    "junit_sha256": "1cca94530e343a508407a63552464c9dc304e87787978c6236a27cf85fdd4840"
+  }
 }
