@@ -1,0 +1,96 @@
+"""Admission, drain races and recovery boundary without a live Docker host."""
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import sqlite3
+
+import pytest
+
+from scripts import rc6_deploy_quiescence as q
+
+SHA = 'a' * 40
+
+
+@pytest.fixture
+def installation(tmp_path, monkeypatch):
+    monkeypatch.setattr(q, 'ROOT', tmp_path)
+    (tmp_path / 'data/paper_v17').mkdir(parents=True)
+    db = tmp_path / 'data/paper_v17/observer_v17.db'
+    with sqlite3.connect(db) as c:
+        c.execute('CREATE TABLE observer_state(id,mode,real_orders_sent,process_state,session_state,heartbeat_at)')
+        c.execute('INSERT INTO observer_state VALUES(1,?,?,?,?,?)',
+                  ('PRODUCTION_PAPER', 0, 'WAITING_MARKET', 'MARKET_CLOSED', datetime.now(timezone.utc).isoformat()))
+        for table in ('paper_positions', 'paper_cauciones', 'paper_future_positions'):
+            c.execute('CREATE TABLE ' + table + '(status)')
+    states = {name: {'Id': name + '_id', 'Image': 'old_image',
+                    'State': {'Status': 'running', 'OOMKilled': False, 'ExitCode': 0}} for name in q.OWNED}
+    calls = []
+    def command(args):
+        calls.append(args)
+        if args[1] == 'inspect': return json.dumps([states[args[2]]])
+        if args[1] == 'stop':
+            states[args[-1]]['State']['Status'] = 'exited'
+            if args[-1] == q.OWNED[0]:
+                with sqlite3.connect(db) as c: c.execute("UPDATE observer_state SET process_state='STOPPED'")
+        if args[1] == 'start': states[args[-1]]['State']['Status'] = 'running'
+        return ''
+    monkeypatch.setattr(q, 'command', command)
+    return tmp_path, db, states, calls, command
+
+
+@pytest.mark.parametrize('change', ['open_spot', 'active_future', 'missing_ledger', 'real', 'open_session', 'old_heartbeat'])
+def test_unsafe_or_unknown_cannot_stop_runtime(installation, change):
+    root, db, states, calls, _ = installation
+    with sqlite3.connect(db) as c:
+        if change == 'open_spot': c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+        elif change == 'active_future': c.execute("INSERT INTO paper_future_positions VALUES('ACTIVE')")
+        elif change == 'missing_ledger': c.execute('DROP TABLE paper_cauciones')
+        elif change == 'real': c.execute('UPDATE observer_state SET real_orders_sent=1')
+        elif change == 'open_session': c.execute("UPDATE observer_state SET session_state='MARKET_OPEN'")
+        else: c.execute("UPDATE observer_state SET heartbeat_at='2020-01-01T00:00:00+00:00'")
+    with pytest.raises((ValueError, sqlite3.Error)): q.run(SHA, 'drain')
+    assert calls == []
+
+
+def test_drain_proves_exited_then_rechecks_ledgers_before_install(installation):
+    root, db, states, calls, _ = installation
+    receipt = q.run(SHA, 'drain')
+    assert receipt['status'] == 'DRAINED' and receipt['inflight'] == 'ABSENT_OWNED_RUNTIME_STOPPED'
+    with sqlite3.connect(db) as c: c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+    with pytest.raises(ValueError, match='OPEN_POSITION'): q.run(SHA, 'install')
+    assert q.run(SHA, 'recover')['status'] == 'ORIGINAL_RUNTIME_RESUMED'
+    assert all(v['State']['Status'] == 'running' for v in states.values())
+
+
+def test_docker_stop_timeout_after_effect_is_recoverable(installation, monkeypatch):
+    root, db, states, calls, command = installation
+    def timeout_after_stop(args):
+        result = command(args)
+        if args[1] == 'stop': raise TimeoutError('client timeout after daemon stop')
+        return result
+    monkeypatch.setattr(q, 'command', timeout_after_stop)
+    with pytest.raises(TimeoutError): q.run(SHA, 'drain')
+    assert q.run(SHA, 'recover')['status'] == 'ORIGINAL_RUNTIME_RESUMED'
+    assert all(v['State']['Status'] == 'running' for v in states.values())
+
+
+def test_recovery_never_restarts_old_runtime_after_install_boundary(installation):
+    root, db, states, calls, _ = installation
+    q.run(SHA, 'drain'); q.run(SHA, 'install')
+    calls.clear()
+    assert q.run(SHA, 'recover')['status'] == 'FIX_FORWARD_VALIDATION_REQUIRED'
+    assert calls == []
+
+
+def test_restart_between_drain_and_install_blocks_candidate_write(installation):
+    root, db, states, calls, _ = installation
+    q.run(SHA, 'drain')
+    states[q.OWNED[0]]['State']['Status'] = 'running'
+    with pytest.raises(ValueError, match='CHANGED_BEFORE_INSTALL'): q.run(SHA, 'install')
+
+
+def test_workflow_drains_before_transfer_and_marks_before_bundle_install():
+    source = Path('.github/workflows/porota-deploy-v2-promote.yml').read_text()
+    assert source.index('id: drain') < source.index('id: transfer')
+    assert source.index('--action install') < source.index('shutil.copy2(src,dst)')
+    assert '--action recover' in source

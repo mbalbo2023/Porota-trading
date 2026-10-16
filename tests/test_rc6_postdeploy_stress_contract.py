@@ -107,6 +107,29 @@ def test_every_stress_scenario_path_is_present():
     assert all((harness.ROOT/p).is_file() for paths in harness.GROUPS.values() for p in paths)
 
 
+def test_post_stop_state_rechecks_financial_ledgers(installation):
+    root,db,calls,states=installation
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='STOPPED'")
+        c.execute("INSERT INTO paper_future_positions VALUES('ACTIVE')")
+    with pytest.raises(ValueError,match='OPEN_FINANCIAL_POSITION'):
+        host.database_state(db,require_waiting=False)
+
+
+def test_stop_effect_before_client_timeout_still_restores_runtime(installation,monkeypatch):
+    root,db,calls,states=installation
+    original=host.command
+    def timeout_after_stop(args,**kwargs):
+        result=original(args,**kwargs)
+        if args[:2]==['docker','stop']:raise TimeoutError('daemon stopped before client timeout')
+        return result
+    monkeypatch.setattr(host,'command',timeout_after_stop)
+    assert host.run(SHA,'125')==2
+    assert all(s=='running' for s in states.values())
+    report=json.loads((root/'data/deploy/stress'/SHA/'125/host-stress.json').read_text())
+    assert report['status']=='RED' and report['runtime_restore']=='GREEN'
+
+
 def test_short_harness_requires_real_isolated_fills_and_eod(tmp_path,monkeypatch):
     monkeypatch.setenv('PAPER_HISTORICAL_CANDLE_SHADOW','OFF')
     monkeypatch.setenv('PAPER_SECTOR_CONCENTRATION_POLICY','OBSERVATION_ONLY')

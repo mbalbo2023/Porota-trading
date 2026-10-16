@@ -325,6 +325,19 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "RC6_DISK_PRETRANSFER_GATE=GREEN|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE|image_tar=$IMAGE_TAR_BYTES|image_unpacked=$IMAGE_UNPACKED_BYTES|bundle=$BUNDLE_BYTES|preclean=$RC6_DISK_PRECLEAN_TRIGGERED"
 
+      - name: Admit closed PAPER and drain RC6 before host installation
+        id: drain
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action drain" \
+            < scripts/rc6_deploy_quiescence.py
+
       - name: Transfer frozen artifact
         id: transfer
         shell: bash
@@ -412,6 +425,11 @@ jobs:
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
           tar -xzf "$REMOTE_DIR/porota-deploy-bundle-v2.tgz" -C "$STAGE"
+
+          # No candidate host file can change until owned runtime processes
+          # have exited and the financial ledgers were checked again.
+          sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+            --candidate-sha "$CANDIDATE_SHA" --action install
 
           sudo -n python3 - "$STAGE" "$REPO" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
           import hashlib,json,os,shutil,sys
@@ -1185,7 +1203,7 @@ jobs:
           REMOTE
 
       - name: Failure-safe host cleanup
-        if: ${{ always() && (steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled') }}
+        if: ${{ always() && (steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled') }}
         timeout-minutes: 4
         shell: bash
         run: |
@@ -1193,12 +1211,21 @@ jobs:
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
           echo 'POROTA_DEPLOY_FAILURE_CLEANUP=START|original_failure_preserved=true'
           trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "POROTA_DEPLOY_FAILURE_CLEANUP=RED|candidate=$CANDIDATE_SHA|rc=$rc"; fi' EXIT
+          set +e
+          timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action recover" \
+            < scripts/rc6_deploy_quiescence.py
+          RECOVERY_RC=$?
+          set -e
           timeout 180 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 \
             -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" "sudo -n timeout 150 python3 - --candidate-sha '$CANDIDATE_SHA'" \
             < scripts/rc6_deploy_failure_cleanup.py
+          test "$RECOVERY_RC" -eq 0
 
       - name: Postdeploy full-session stress in the exact installed image
         id: stress

@@ -51,11 +51,11 @@ def database_state(path, *, require_waiting=True):
             if (row['session_state'] not in {'CLOSED','MARKET_CLOSED'} or row['process_state']!='WAITING_MARKET'
                     or stamp.tzinfo is None or not 0<=(datetime.now(timezone.utc)-stamp).total_seconds()<=180):
                 raise ValueError('STRESS_CLOSED_QUIESCENT_HEARTBEAT_REQUIRED')
-            for table,status in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),('paper_future_positions','ACTIVE')):
-                if not c.execute('SELECT 1 FROM sqlite_master WHERE type=\'table\' AND name=?',(table,)).fetchone():
-                    raise ValueError('STRESS_LEDGER_UNVERIFIED')
-                if c.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1',(status,)).fetchone():
-                    raise ValueError('STRESS_OPEN_FINANCIAL_POSITION')
+        for table,status in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),('paper_future_positions','ACTIVE')):
+            if not c.execute('SELECT 1 FROM sqlite_master WHERE type=\'table\' AND name=?',(table,)).fetchone():
+                raise ValueError('STRESS_LEDGER_UNVERIFIED')
+            if c.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1',(status,)).fetchone():
+                raise ValueError('STRESS_OPEN_FINANCIAL_POSITION')
         return row
 
 
@@ -93,7 +93,8 @@ def run(candidate, run_id):
         # Graceful stop drains the scanner/exit owner; only after all its
         # processes stop is absence of evaluation/fill in flight proven.
         for container in OWNED:
-            command(['docker','stop','--time','45',container],timeout=55);stopped.append(container)
+            stopped.append(container)
+            command(['docker','stop','--time','45',container],timeout=55)
             value=json.loads(command(['docker','inspect',container]))[0]
             if value['State']['Status']!='exited' or value['State']['OOMKilled'] or value['State']['ExitCode']!=0:
                 raise ValueError('STRESS_QUIESCENCE_UNVERIFIED')
