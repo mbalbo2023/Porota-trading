@@ -132,9 +132,12 @@ jobs:
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
             "sudo -n timeout 20 python3 - probe --expected-sha '$EXPECTED_SHA'" \
-            < scripts/rc6_market_watch_readonly.py > evidence/snapshot.json 2>/dev/null
+            < scripts/rc6_market_watch_readonly.py > evidence/snapshot.json 2> evidence/.transport.stderr
           rc=$?
           set -e
+          PROBE_EXIT_CODE="$rc" python3 scripts/rc6_market_watch_readonly.py transport-diagnostic \
+            --stderr evidence/.transport.stderr > evidence/transport.json
+          rm -f evidence/.transport.stderr
           if [ "$rc" -ne 0 ] || [ ! -s evidence/snapshot.json ]; then
             python3 scripts/rc6_market_watch_readonly.py transport-error > evidence/snapshot.json
             echo "::warning::Remote READ_ONLY probe unavailable. Evidence is fail-closed."
@@ -334,6 +337,7 @@ jobs:
           name: rc6-market-watch-${{ github.run_id }}
           path: |
             evidence/snapshot.json
+            evidence/transport.json
             evidence/decision.json
             evidence/shadow_diagnostic.json
             evidence/schedule_api.json

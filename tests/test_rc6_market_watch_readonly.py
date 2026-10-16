@@ -24,6 +24,14 @@ NOW = datetime(2026, 10, 14, 14, 0, tzinfo=timezone.utc)
 
 
 class MonitorContracts(unittest.TestCase):
+    def test_transport_diagnostics_classify_without_exporting_hosts_or_keys(self):
+        for text,code in [('ssh: connect to host private.example port 22: Connection timed out','CONNECT_TIMEOUT'),
+                          ('user@private: Permission denied (publickey)','AUTH_DENIED'),
+                          ('Host key verification failed. private fingerprint','HOST_KEY_REJECTED')]:
+            result=monitor.transport_diagnostic(text,255)
+            self.assertEqual(result['class'],code)
+            self.assertNotIn('private',json.dumps(result))
+        self.assertEqual(monitor.transport_diagnostic('',0)['class'],'OK')
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

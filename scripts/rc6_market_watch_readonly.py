@@ -160,6 +160,22 @@ def now_utc():
     return datetime.now(timezone.utc)
 
 
+def transport_diagnostic(stderr, exit_code):
+    """Never publish SSH text/host/user/key; return only reviewed classes."""
+    classes=[('CONNECT_TIMEOUT',r'connection timed out|connect.*timed out'),
+             ('CONNECT_REFUSED',r'connection refused'),
+             ('NETWORK_UNREACHABLE',r'network is unreachable|no route to host'),
+             ('AUTH_DENIED',r'permission denied|authentication failed'),
+             ('HOST_KEY_REJECTED',r'host key verification failed|remote host identification has changed'),
+             ('DNS_FAILED',r'could not resolve hostname|name or service not known'),
+             ('REMOTE_PERMISSION',r'sudo:.*password|not allowed to execute'),
+             ('CONNECTION_CLOSED',r'connection (?:closed|reset)|kex_exchange_identification')]
+    kind=next((name for name,pattern in classes if re.search(pattern,stderr,re.I)),
+              'OK' if exit_code==0 else 'REMOTE_COMMAND_OR_TRANSPORT_UNVERIFIED')
+    return {'schema':'rc6.transport-diagnostic.v1','exit_code':exit_code,
+            'class':kind,'raw_output_exported':False,'read_only':True}
+
+
 def timestamp(value):
     if not isinstance(value, str) or not value:
         return None
@@ -1254,6 +1270,8 @@ def main(argv=None):
     remote.add_argument("--expected-sha", required=True)
     remote.add_argument("--root", type=Path, default=ROOT)
     actions.add_parser("transport-error")
+    transport=actions.add_parser('transport-diagnostic')
+    transport.add_argument('--stderr',required=True,type=Path)
     actions.add_parser("shadow-diagnostic")
     actions.add_parser("shadow-diagnostic-host")
     actions.add_parser("schedule-api-host")
@@ -1292,6 +1310,10 @@ def main(argv=None):
         return 0
     elif args.action == "transport-error":
         data = transport_error()
+    elif args.action == 'transport-diagnostic':
+        with args.stderr.open('rb') as source:
+            raw=source.read(8192).decode('utf-8',errors='replace')
+        data=transport_diagnostic(raw,int(os.environ.get('PROBE_EXIT_CODE','255')))
     elif args.action == "shadow-diagnostic":
         data = shadow_diagnostic()
     elif args.action == "shadow-diagnostic-host":
