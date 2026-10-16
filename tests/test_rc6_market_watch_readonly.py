@@ -98,6 +98,26 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(observation["real_order_routes_called"], 0)
         self.assertEqual(observation["host_control_state"]["legacy_health_timer"], "inactive")
 
+    def test_live_probe_uses_completed_db_read_clock_without_future_or_stale_bypass(self):
+        future=(NOW+timedelta(milliseconds=200)).isoformat()
+        with sqlite3.connect(self.root/monitor.DB_REL) as db:
+            db.execute('CREATE TABLE paper_notification_worker(id INTEGER PRIMARY KEY,state TEXT,heartbeat_at TEXT)')
+            db.execute("INSERT INTO paper_notification_worker VALUES(1,'RUNNING',?)",(future,))
+        def capture_live():
+            with patch.object(monitor,'now_utc',side_effect=[NOW,NOW+timedelta(seconds=1)]), patch.object(
+                    monitor,'independent_session',return_value={'state':'OPEN'}), patch.object(
+                    monitor,'_resources',return_value=self.resources), patch.object(
+                    monitor,'_host_control_state',return_value={}):
+                return monitor.probe(root=self.root,expected_sha=SHA,inspect=self.inspect)
+        value=capture_live()
+        self.assertNotIn('WORKER_HEARTBEAT_INVALID:paper_notification_worker',self.codes(value))
+        self.assertEqual(value['collection_started_at'],NOW.isoformat())
+        self.assertEqual(value['generated_at'],(NOW+timedelta(seconds=1)).isoformat())
+        for bad in (NOW+timedelta(seconds=2),NOW-timedelta(seconds=301)):
+            with sqlite3.connect(self.root/monitor.DB_REL) as db:
+                db.execute('UPDATE paper_notification_worker SET heartbeat_at=?',(bad.isoformat(),))
+            self.assertIn('WORKER_HEARTBEAT_INVALID:paper_notification_worker',self.codes(capture_live()))
+
     def test_independent_watchdog_ack_is_read_only_and_not_schedule_cadence(self):
         path=self.root/'data/paper_v17/market_watch_silence.json'
         path.write_text(json.dumps({'schema':'rc6.market-watch-silence.v1','status':'SILENT',

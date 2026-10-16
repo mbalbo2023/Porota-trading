@@ -49,3 +49,30 @@ Nueva orden: tarea programada ChatGPT6ad257c1913c81918f635953054471be desactivad
 con éxito. Sin nuevas tareas. **Deploy requiere nueva orden explícita del
 usuario**, cierre auténtico/gates GREEN/DEPLOY_OWNER libre. Este PR601 permanece
 DRAFT y sin merge durante rueda; no habilita ni ejecuta Deploy V2.
+
+## Retoma16/10 y referencia temporal de colección
+
+Run schedule38938427320 a17:16:33Z sí fue genuino; artifact12061673616,
+digest85a35529d5ea93f4c3483a9abe18120597475bbaeef7f621f87c135ae96c7db6.
+Terminó REMOTE_PROBE_UNAVAILABLE/data_verified=false/deliveryUNVERIFIED:
+prueba una ejecución, no cadencia ni caída del runtime ni causa de transporte.
+
+Run manual38956408074 desde26bc268, artifact12070967398,
+digestce3e0230fe498e615da6e26fd5ea2fc29c37eef0f869c106175dd8ac5f6abb1c,
+snapshot19:38:50Z (16:38ART), independienteOPEN/PAPER0. Observer heartbeat
+19:38:48/data19:38:42 y cursor candles241512 avanzan. SHADOW sigueFAIL_CLOSED,
+último error17:39:22Z: SQLITE_INTERRUPT/CATALOG_FULL con2498filas y deadline
+agotado;263238.523ms de elapsed durable. Esa duración no es una nueva medición
+exitosa ni prueba de bloqueo SQLite; no cerrar el incidente antes de aceptar
+el fix en host. Probe diagnóstico de contenedorTIMEOUT.13rutasHTTP200 pero
+home2489ms =>ROUTES_DEGRADED. Hoy2aperturas/0cierres al snapshot, caución worker
+3intentos/últimoHOLD, sin forzar ejecución. ACKwatchdog histórico6519s.
+
+MON05 RCA confirmado: notification heartbeat19:38:50.292Z avanzó DURANTE la
+colección iniciada19:38:50.079Z. La sonda comparaba contra el reloj anterior a
+su propia lectura y produjo falso FUTURE/WORKER_HEARTBEAT_INVALID. Referencia
+ahora después de la lectura DB; collection_started_at queda visible. No se
+reescribe ningún heartbeat, no se aumenta TTL ni tolerancia al futuro real.
+Regresión: avance+0.2s durante lecturaPASS; futuro+2s con referencia+1s y stale
+301s conservan alarma.42contratos monitor/auditorPASS. Scalping314s en la muestra
+sigue siendo stale real contra300s; el fix no lo oculta. Sin deploy/runtime write.

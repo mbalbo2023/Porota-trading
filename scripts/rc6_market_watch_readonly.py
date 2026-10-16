@@ -461,10 +461,21 @@ def _db_snapshot(path):
 
 
 def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
-    at = at or now_utc()
     root = Path(root)
+    live_clock = at is None
+    started_at = at or now_utc()
+    try:
+        state = _db_snapshot(root / DB_REL)
+    except (sqlite3.Error, OSError, ValueError, TypeError):
+        state = None
+    # A writer can advance its heartbeat while these bounded SELECTs run.
+    # The completed read is the clock reference, not the earlier probe start.
+    # Explicit fixture/as-of calls remain strict; no future/stale tolerance is
+    # added and no source timestamp is rewritten.
+    at = now_utc() if live_clock else started_at
     findings = []
     result = {"schema": SCHEMA, "generated_at": at.isoformat(), "scope": "READ_ONLY",
+              "collection_started_at": started_at.isoformat(),
               "expected_deploy_sha": expected_sha, "market_clock_window": active_hours(at),
               "broker_requests": 0, "real_order_routes_called": 0,
               "ppi_watch_accessed": False, "findings": findings}
@@ -475,9 +486,9 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
     if expected['state']=='UNKNOWN':
         add('MARKET_SESSION_UNKNOWN','P1' if active_hours(at) else 'P2')
     market_should_be_open = expected['state']=='OPEN'
-    path = root / DB_REL
     try:
-        state = _db_snapshot(path)
+        if state is None:
+            raise ValueError('DATABASE_READ_UNVERIFIED')
         result.update(state)
         observer = state["observer"]
         if observer.get("mode") != "PRODUCTION_PAPER":
