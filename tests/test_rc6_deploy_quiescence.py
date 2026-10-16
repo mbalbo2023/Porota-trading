@@ -94,3 +94,38 @@ def test_workflow_drains_before_transfer_and_marks_before_bundle_install():
     assert source.index('id: drain') < source.index('id: transfer')
     assert source.index('--action install') < source.index('shutil.copy2(src,dst)')
     assert '--action recover' in source
+
+
+def test_preexisting_historical_oom_flag_with_new_clean_exit_is_not_a_new_oom(installation, monkeypatch):
+    root, db, states, calls, command = installation
+    state = states[q.OWNED[0]]['State']
+    state.update(OOMKilled=True, StartedAt='2026-10-16T04:58:27+00:00',
+                 FinishedAt='2026-10-16T04:15:23+00:00')
+    def retained_flag(args):
+        value = command(args)
+        if args[1] == 'stop': states[args[-1]]['State']['FinishedAt'] = datetime.now(timezone.utc).isoformat()
+        return value
+    monkeypatch.setattr(q, 'command', retained_flag)
+    value = q.run(SHA, 'drain')
+    assert value['status'] == 'DRAINED'
+    assert value['stop_evidence'][q.OWNED[0]]['classification'] == 'INHERITED_OOM_FLAG_CLEAN_EXIT'
+
+
+@pytest.mark.parametrize('change', ['new_oom', 'nonzero', 'unknown_prior', 'restarted'])
+def test_new_or_unknown_stop_failure_remains_blocked_with_receipt(installation, monkeypatch, change):
+    root, db, states, calls, command = installation
+    def unsafe(args):
+        value = command(args)
+        if args[1] == 'stop':
+            state = states[args[-1]]['State']
+            state.update(StartedAt='2026-10-16T04:58:27+00:00', FinishedAt=datetime.now(timezone.utc).isoformat())
+            if change in {'new_oom', 'unknown_prior'}: state['OOMKilled'] = True
+            elif change == 'nonzero': state['ExitCode'] = 137
+            else: states[args[-1]]['Id'] = 'changed'
+        return value
+    if change == 'unknown_prior': states[q.OWNED[0]]['State']['OOMKilled'] = True
+    monkeypatch.setattr(q, 'command', unsafe)
+    with pytest.raises(ValueError, match='QUIESCENCE_STOP_'): q.run(SHA, 'drain')
+    receipt = json.loads((root / 'data/deploy' / ('quiescence-' + SHA + '.json')).read_text())
+    assert receipt['stop_evidence'][q.OWNED[0]]['after']['ExitCode'] == (137 if change == 'nonzero' else 0)
+    assert not receipt['installation_started']
