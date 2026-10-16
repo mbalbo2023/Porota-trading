@@ -86,6 +86,63 @@ def test_local_hot_snapshot_ends_before_cold_publication(source,tmp_path,monkeyp
     assert consolidate(source.path,tmp_path/'history.db',as_of=NOW,free_bytes=RESERVE)['imported']==2
 
 
+def test_cold_preparation_neither_holds_hot_snapshot_nor_spends_its_sql_budget(source,tmp_path,monkeypatch):
+    import rc6_local_eod_history as local
+    sample(source)
+    connections=[];shift=[0];original_connect=sqlite3.connect
+    original_init=local.init_schema;original_clock=local.time.monotonic
+    def connect(database,*args,**kwargs):
+        connection=original_connect(database,*args,**kwargs)
+        if 'mode=ro' in str(database): connections.append(connection)
+        return connection
+    def prepare(*args,**kwargs):
+        assert len(connections)==1 and not connections[0].in_transaction
+        original_init(*args,**kwargs)
+        shift[0]=3  # Cold work exceeds HOT2s, but remains within its own15s.
+    monkeypatch.setattr(local.sqlite3,'connect',connect)
+    monkeypatch.setattr(local,'init_schema',prepare)
+    monkeypatch.setattr(local.time,'monotonic',lambda:original_clock()+shift[0])
+    result=consolidate(source.path,tmp_path/'history.db',as_of=NOW,free_bytes=RESERVE)
+    assert result['state']=='LOCAL_EOD_READY' and result['imported']==1
+
+
+@pytest.mark.parametrize('change',['open','position','unsafe'])
+def test_runtime_admission_is_rechecked_after_cold_preparation(source,tmp_path,monkeypatch,change):
+    import rc6_local_eod_history as local
+    sample(source);original=local.init_schema
+    def changed(*args,**kwargs):
+        original(*args,**kwargs)
+        with source.connect() as c:
+            if change=='open': c.execute("UPDATE observer_state SET session_state='MARKET_OPEN'")
+            elif change=='position': c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+            else: c.execute('UPDATE observer_state SET real_orders_sent=1')
+    monkeypatch.setattr(local,'init_schema',changed)
+    cold=tmp_path/'history.db'
+    if change=='unsafe':
+        with pytest.raises(ValueError,match='PAPER_SAFETY_REQUIRED'):
+            consolidate(source.path,cold,as_of=NOW,free_bytes=RESERVE)
+    else:
+        result=consolidate(source.path,cold,as_of=NOW,free_bytes=RESERVE)
+        assert result['state']=='BLOCKED'
+    with sqlite3.connect(cold) as c:
+        assert c.execute('SELECT COUNT(*) FROM local_eod_cursor_v1').fetchone()[0]==0
+        assert c.execute('SELECT COUNT(*) FROM history_local_daily_v1').fetchone()[0]==0
+
+
+def test_cold_preparation_has_its_own_finite_budget(source,tmp_path,monkeypatch):
+    import rc6_local_eod_history as local
+    sample(source);original_init=local.init_schema;original_clock=local.time.monotonic
+    def expired(*args,**kwargs):
+        original_init(*args,**kwargs)
+        monkeypatch.setattr(local.time,'monotonic',lambda:original_clock()+16)
+    monkeypatch.setattr(local,'init_schema',expired)
+    cold=tmp_path/'history.db'
+    with pytest.raises(ValueError,match='COLD_PREPARE_BUDGET'):
+        consolidate(source.path,cold,as_of=NOW,free_bytes=RESERVE)
+    with sqlite3.connect(cold) as c:
+        assert not c.execute("SELECT 1 FROM sqlite_master WHERE name='local_eod_cursor_v1'").fetchone()
+
+
 def test_local_oversize_source_payload_is_rejected_before_publication(source,tmp_path):
     sample(source)
     with source.connect() as c:

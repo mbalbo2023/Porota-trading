@@ -1,6 +1,6 @@
 {
-  "registered_paths": 101,
-  "route_count": 103,
+  "registered_paths": 103,
+  "route_count": 105,
   "routes": [
     {
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
@@ -75,16 +75,12 @@
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
-        "history",
-        "learning_history"
+        "history"
       ],
-      "canonical_view": "analitica/performance",
+      "canonical_view": "analitica/anual",
       "datasets": [
-        "paper_positions",
         "history_canonical_v2",
-        "production_history",
-        "report_registry",
-        "committed SHADOW generation adapter"
+        "production_history (selector only)"
       ],
       "endpoint": "bg_paper_dashboard.annual_analysis",
       "family_dimension": "NOT_APPLICABLE",
@@ -101,7 +97,7 @@
       "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "Analítica > Performance",
+      "title_or_surface": "Analítica > Análisis anual",
       "write_route": false
     },
     {
@@ -141,6 +137,35 @@
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
+        "history"
+      ],
+      "canonical_view": "analitica/anual",
+      "datasets": [
+        "history_canonical_v2",
+        "production_history (selector only)"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/analitica/anual",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Analítica > Análisis anual",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
         "history",
         "learning_history"
       ],
@@ -168,6 +193,38 @@
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "Analítica > Cierre diario",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "learning_history"
+      ],
+      "canonical_view": "analitica/contrafactuales",
+      "datasets": [
+        "counterfactual_learning_rc6.json",
+        "decision_evidence_latest.json",
+        "trade_gate_evaluations",
+        "paper_positions",
+        "committed historical economic_exit_lab"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/analitica/contrafactuales",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Analítica > Contrafácticos",
       "write_route": false
     },
     {
@@ -971,16 +1028,15 @@
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
-        "history",
         "learning_history"
       ],
-      "canonical_view": "analitica/experimentos",
+      "canonical_view": "analitica/contrafactuales",
       "datasets": [
+        "counterfactual_learning_rc6.json",
+        "decision_evidence_latest.json",
+        "trade_gate_evaluations",
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
-        "report_registry",
-        "committed SHADOW generation adapter"
+        "committed historical economic_exit_lab"
       ],
       "endpoint": "o_dashboard.blog_de_aprendizaje",
       "family_dimension": "NOT_APPLICABLE",
@@ -997,7 +1053,7 @@
       "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "Analítica > Experimentos",
+      "title_or_surface": "Analítica > Contrafácticos",
       "write_route": false
     },
     {
@@ -3272,16 +3328,15 @@
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
-        "history",
         "learning_history"
       ],
-      "canonical_view": "analitica/experimentos",
+      "canonical_view": "analitica/contrafactuales",
       "datasets": [
+        "counterfactual_learning_rc6.json",
+        "decision_evidence_latest.json",
+        "trade_gate_evaluations",
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
-        "report_registry",
-        "committed SHADOW generation adapter"
+        "committed historical economic_exit_lab"
       ],
       "endpoint": "bg_paper_dashboard.validacion",
       "family_dimension": "NOT_APPLICABLE",
@@ -3298,7 +3353,7 @@
       "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "Analítica > Experimentos",
+      "title_or_surface": "Analítica > Contrafácticos",
       "write_route": false
     },
     {

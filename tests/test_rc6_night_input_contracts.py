@@ -5,6 +5,7 @@ No provider, broker, Telegram or runtime service is contacted.
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +16,7 @@ from scripts import rc6_zero_known_error_runtime_audit as audit
 
 def snapshot():
     now = datetime.now(timezone.utc).isoformat()
+    frozen = json.loads(Path('DASHBOARD_TRUTH_MATRIX_RC6.json').read_text(encoding='utf-8'))
     families = dict(audit.BASELINE_READY)
     ready = sum(families.values())
     workers = {
@@ -42,7 +44,7 @@ def snapshot():
             "iol": {"allowed_states": sorted(audit.ALLOWED_IOL_STATES)},
         },
         "iol": {"cache_state": "CACHE_FRESH", "last_known_good_at": now},
-        "route_inventory": {"route_count": 103, "registered_paths": 101, "routes": []},
+        "route_inventory": {"route_count": frozen['route_count'], "registered_paths": frozen['registered_paths'], "routes": []},
         "route_matrix_matches_artifact": True,
         "http_status": {path: 200 for path in audit.CORE_GET_PATHS},
     }

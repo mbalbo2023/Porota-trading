@@ -1,9 +1,13 @@
 {
-  "as_of": "2026-10-16T17:26:50.905180+00:00",
+  "as_of": "2026-10-16T20:00:17.992498+00:00",
   "canonical_dashboard_routes": 52,
   "deployment": "NOT_STARTED_MARKET_OPEN",
   "deployment_readiness": "NO_GO",
   "eod_guard": {
+    "admission_rechecked_after_cold_preparation": true,
+    "cold_connection_busy_ms": 200,
+    "cold_preparation_holds_hot_snapshot": false,
+    "cold_prepare_budget_seconds": 15,
     "cold_write_budget_seconds": 15,
     "host_reserve_bytes": 2214592512,
     "hot_snapshot_released_before_publication": true,
@@ -47,9 +51,21 @@
       "watchdog_ack_at": "2026-10-15T18:10:11.958061+00:00",
       "watchdog_ack_message_id": "932",
       "watchdog_service_result": "success"
+    },
+    {
+      "artifact_id": 12070967398,
+      "candle_cursor": 241512,
+      "digest": "ce3e0230fe498e615da6e26fd5ea2fc29c37eef0f869c106175dd8ac5f6abb1c",
+      "expected_session": "OPEN",
+      "generated_at": "2026-10-16T19:38:50.079293+00:00",
+      "real_orders_sent": 0,
+      "run_id": 38956408074,
+      "runtime_deadline_expired": true,
+      "runtime_stage": "CATALOG_FULL",
+      "shadow_status": "FAIL_CLOSED"
     }
   ],
-  "main_monitor_head_at_development_cut": "26bc268211efd612c85dbcf2e17b458a94757933",
+  "main_monitor_head_at_development_cut": "6458bab0c3742d34408a9469f0457dd105d79c1c",
   "mode": "PRODUCTION_PAPER",
   "native_predeploy": "NOT_STARTED_MARKET_OPEN",
   "no_go_reasons": [
@@ -126,6 +142,17 @@
       "sha256": "77c693a70bb753f0c1f9ba6927a3a513f3f253c0dd3a5ab5b8fe49297f2e9d98"
     },
     "dependencies_adenda": {
+      "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+      "base_image_digest_pinned": true,
+      "docker_uses_lock": true,
+      "lock_exact_requirements": 153,
+      "lock_non_exact_requirements": [],
+      "lock_requirements_total": 153,
+      "schema_version": 2,
+      "source_requirements_total": 24,
+      "status": "GREEN"
+    },
+    "dependencies_resume": {
       "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
       "base_image_digest_pinned": true,
       "docker_uses_lock": true,
@@ -226,7 +253,60 @@
       "failures": 0,
       "runner": "Python unittest",
       "source_branch": "work/rc6-20261016-watch-guards",
-      "tests": 41
+      "tests": 43
+    },
+    "resume_candidate_full": {
+      "counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 4,
+        "tests": 3662
+      },
+      "failures": [
+        "tests.test_rc6_night_input_contracts::test_complete_known_zero_paper_state_remains_accepted"
+      ],
+      "seconds": 552.702,
+      "sha256": "bea94308e4039ca28cf60796b472dede2787f6f8c88c907925bb473cfaa88850"
+    },
+    "resume_final_scoped": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 223
+      },
+      "failures": [],
+      "seconds": 37.029,
+      "sha256": "a3f0a3b2b35a002c065d8ad648300d422283cea7bc0fe67b39a4e5353790ff8b"
+    },
+    "resume_fix": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 47
+      },
+      "failures": [],
+      "seconds": 2.932,
+      "sha256": "42ab48496ba16e3b4b6951c8f04d80e21cdb84426316357550634313d5cd9d29"
+    },
+    "resume_full": {
+      "counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 4,
+        "tests": 3657
+      },
+      "failures": [
+        "tests.test_ws_integ_03_runtime_audit::test_runtime_route_contract_tracks_frozen_terminal_manifest"
+      ],
+      "seconds": 436.324,
+      "sha256": "aaaa0cdb6c980919cf4c12e61306749e255b1d060e717b3db9007e17a23142ed"
+    },
+    "secret_resume": {
+      "scanned_text_files": 1134,
+      "sha256": "2924e0545ffa5fa335f8d268fda22bfefa745a2089535fd9d69e7c1ad53a062d",
+      "status": "GREEN"
     },
     "secret_scan_adenda": {
       "scanned_text_files": 1133,
@@ -234,7 +314,21 @@
       "status": "GREEN"
     }
   },
+  "route_inventory": {
+    "canonical": 52,
+    "frozen_manifest": "DASHBOARD_TRUTH_MATRIX_RC6.json",
+    "registered_paths": 103,
+    "routes": 105
+  },
   "runtime_modified": false,
+  "schedule_genuine_evidence": {
+    "artifact_id": 12061673616,
+    "cadence_proven": false,
+    "data_verified": false,
+    "run_id": 38938427320,
+    "sha256": "85a35529d5ea93f4c3483a9abe18120597475bbaeef7f621f87c135ae96c7db6",
+    "state": "REMOTE_PROBE_UNAVAILABLE"
+  },
   "schema": "rc6.issue600.development-evidence.v1",
   "sql_incident_status": "CRITICAL_FIX_DEVELOPED_RUNTIME_ACCEPTANCE_REQUIRED",
   "sql_replay": {
@@ -263,7 +357,9 @@
   },
   "state": "DEVELOPMENT_ONLY_NOT_FROZEN",
   "tested_source_files_sha256": {
+    "DASHBOARD_TRUTH_MATRIX_RC6.json": "e03e8b96e7b4ef384c0b82ff4086e17a98479c55b783d0b368ad136096e11b1a",
     "rc6_counterfactual_learning.py": "6aec88350d0df536363a8c0b29d8c63dcd6f893bca767866875b3d8d07ff7975",
+    "rc6_local_eod_history.py": "e662481fd6b4d1bc1de2f9936180a153c0be9df8e41becf7b9c1a33d03375ad2",
     "rc6_shadow_runtime/persistence.py": "3a7d06258c82a77ea9c5e347c2d25535c2f2e5363f36b10791f50f031a0721e9",
     "rc6_shadow_runtime/timing.py": "4830e4f5afbcde9a87ff6c348d86c29a43149b6dec9cbbdee73537d8242833b1",
     "rc6_shadow_runtime/worker.py": "1182ff80819e23d21769deb8937b6e4545da9eaf78122b034f56d08e2eaaa58e",
@@ -278,9 +374,14 @@
     "rc6_trader_dashboard/views_analytics.py": "66abd6d81a0231a5320c599878294b41691745a77fb5eb64cbdfba9ef2bc2de1",
     "rc6_trader_dashboard/views_instruments.py": "22fbde35b707e90903329e6472667ca544fb839dff685378bbe92ed032838282",
     "rc6_trader_dashboard/views_live.py": "3471c2c0b9c2008b5616c5d90d143da0b08fe2299803f2f1255ccccf58f264cc",
-    "tests/test_rc6_issue600_dashboard_adenda.py": "f8a6fb3bf29f92405966435033491b2ed2e5cadaffb052a7fbb4b84823b45006"
+    "scripts/rc6_dashboard_route_inventory.py": "a77116c10dd28e3e72d7fec8074a0f3591839a4935f0b8ad48a1f6c7f390c921",
+    "scripts/rc6_zero_known_error_runtime_audit.py": "e797dc99df4910f4940bb9a68487388e3a14a9ae96b70c8cb696ae949db007c8",
+    "tests/test_rc6_issue600_dashboard_adenda.py": "f8a6fb3bf29f92405966435033491b2ed2e5cadaffb052a7fbb4b84823b45006",
+    "tests/test_rc6_issue600_regressions.py": "2d1a9f57c6ef207634155b83ed84353376b6941b2d300c737971783e2fccded4",
+    "tests/test_rc6_night_input_contracts.py": "dbd05bff24024840f60792252e4688a0da6b5dfa1c844f7a97f2d58d8d5e40ba",
+    "tests/test_ws_integ_03_runtime_audit.py": "0777a76519ad91cd7c19ffa824cd6fba23d711f32e0d2fe4e6423d54fa7a2382"
   },
-  "tested_source_parent_commit": "b0ab6a0d439898602de4696f4fe11d1fd269f0fa",
+  "tested_source_parent_commit": "49ef5d9cd816e77652e93082a72d1df662aaad55",
   "visual_tablet_qa": "NO_VERIFICADO",
   "watchdog_host_timer_active": true,
   "watchdog_runtime_ack": "HISTORICAL_VERIFIED_NOT_CURRENT_CADENCE",

@@ -22,7 +22,8 @@ def _snapshot():
         "exit_supervisor": {"state": "RUNNING", "heartbeat_at": now,
                             "heartbeat_age_seconds": 0, "real_orders_sent": 0, "routes": []},
     }
-    route_inventory = {"route_count": 103, "registered_paths": 101, "routes": []}
+    frozen = json.loads(Path('DASHBOARD_TRUTH_MATRIX_RC6.json').read_text(encoding='utf-8'))
+    route_inventory = {"route_count": frozen['route_count'], "registered_paths": frozen['registered_paths'], "routes": []}
     return {
         "database": {
             "observer": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
@@ -132,11 +133,17 @@ def test_runtime_route_contract_tracks_frozen_terminal_manifest(monkeypatch):
     frozen = json.loads(Path("DASHBOARD_TRUTH_MATRIX_RC6.json").read_text(encoding="utf-8"))
     actual = inventory()
     assert actual == frozen
-    assert (actual["route_count"], actual["registered_paths"]) == (103, 101)
+    assert actual['route_count'] == len(actual['routes'])
+    assert actual['registered_paths'] == len({row['path'] for row in actual['routes']})
+    by_path={row['path']:row for row in actual['routes']}
+    assert by_path['/analisis']['canonical_view']=='analitica/anual'
+    assert by_path['/aprendizaje']['canonical_view']=='analitica/contrafactuales'
+    assert 'counterfactual_learning_rc6.json' in by_path['/analitica/contrafactuales']['datasets']
+    assert by_path['/analitica/anual']['canonical_concepts']==['history']
     snapshot = _snapshot()
     snapshot["route_inventory"] = actual
     audit._assert_snapshot(snapshot)
-    snapshot["route_inventory"] = dict(actual, registered_paths=99)
+    snapshot["route_inventory"] = dict(actual, registered_paths=actual['registered_paths']-1)
     with pytest.raises(AssertionError):
         audit._assert_snapshot(snapshot)
     snapshot["route_inventory"] = actual

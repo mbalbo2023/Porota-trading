@@ -44,6 +44,50 @@ CREATE INDEX IF NOT EXISTS idx_local_daily_recent ON history_local_daily_v1(sess
 """
 
 
+class _ColdConnection(sqlite3.Connection):
+    def __exit__(self, *error):
+        try:
+            return super().__exit__(*error)
+        finally:
+            self.close()
+
+
+class _ColdStore(HistoricalStore):
+    """Keep cold initialization bounded without changing other history users."""
+    def __init__(self, path, *, deadline):
+        super().__init__(path)
+        self.deadline = deadline
+
+    def connect(self):
+        self._path_identity()
+        if time.monotonic()>self.deadline:
+            raise ValueError('LOCAL_EOD_COLD_CONNECTION_BUDGET')
+        connection = sqlite3.connect(self.path, timeout=.2, factory=_ColdConnection)
+        try:
+            connection.row_factory = sqlite3.Row
+            connection.set_progress_handler(lambda: int(time.monotonic() > self.deadline), 1000)
+            connection.execute('PRAGMA busy_timeout=200')
+            connection.execute('PRAGMA synchronous=NORMAL')
+            connection.execute('PRAGMA cache_size=-2048')
+            return connection
+        except BaseException:
+            connection.close()
+            raise
+
+
+def _runtime_block(read, at):
+    safety = read.execute('SELECT mode,real_orders_sent,session_state,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+    if (not safety or safety['mode'] != 'PRODUCTION_PAPER' or
+            type(safety['real_orders_sent']) is not int or safety['real_orders_sent'] != 0):
+        raise ValueError('LOCAL_EOD_PAPER_SAFETY_REQUIRED')
+    heartbeat = datetime.fromisoformat(stamp(safety['heartbeat_at']))
+    if safety['session_state'] not in {'CLOSED','MARKET_CLOSED'} or not 0 <= (at-heartbeat).total_seconds() <= 180:
+        return 'RUNTIME_CLOSED_UNVERIFIED'
+    if read.execute("SELECT 1 FROM paper_positions WHERE status='OPEN' LIMIT 1").fetchone():
+        return 'OPEN_POSITIONS'
+    return None
+
+
 def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_bytes=None, before_commit=None):
     at = datetime.fromisoformat(stamp(as_of))
     local = at.astimezone(TZ)
@@ -73,15 +117,14 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
         deadline = time.monotonic()+2
         read.set_progress_handler(lambda: int(time.monotonic()>deadline), 1000)
         read.execute("BEGIN")
-        safety = read.execute("SELECT mode,real_orders_sent,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone()
-        if (not safety or safety["mode"] != "PRODUCTION_PAPER" or
-                type(safety["real_orders_sent"]) is not int or safety["real_orders_sent"] != 0):
-            raise ValueError("LOCAL_EOD_PAPER_SAFETY_REQUIRED")
-        heartbeat = datetime.fromisoformat(stamp(safety["heartbeat_at"]))
-        if safety["session_state"] not in {"CLOSED", "MARKET_CLOSED"} or not 0 <= (at-heartbeat).total_seconds() <= 180:
-            return base | {"state": "BLOCKED", "reason": "RUNTIME_CLOSED_UNVERIFIED"}
-        if read.execute("SELECT 1 FROM paper_positions WHERE status='OPEN' LIMIT 1").fetchone():
-            return base | {"state": "BLOCKED", "reason": "OPEN_POSITIONS"}
+        blocked = _runtime_block(read, at)
+        if blocked:
+            return base | {'state':'BLOCKED','reason':blocked}
+        if time.monotonic()>deadline:
+            raise ValueError('LOCAL_EOD_SOURCE_READ_BUDGET')
+        # Admission is a separate short transaction. Cold schema/lock work
+        # must hold neither the HOT snapshot nor its two-second SQL budget.
+        read.rollback()
         target.parent.mkdir(parents=True, exist_ok=True)
         available = shutil.disk_usage(target.parent).free if free_bytes is None else free_bytes
         if available < RESERVE:
@@ -89,12 +132,15 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
         if sum(Path(str(target)+suffix).stat().st_size for suffix in ('','-wal','-shm')
                if Path(str(target)+suffix).exists()) > 2*1024**3-HEADROOM:
             return base | {"state": "BLOCKED", "reason": "COLD_ARCHIVE_PHYSICAL_BUDGET"}
-        store = HistoricalStore(str(target))
         with target.with_suffix(target.suffix+'.local-eod.lock').open('a+') as lock:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            prepare_deadline=time.monotonic()+15
+            store = _ColdStore(str(target),deadline=prepare_deadline)
             # Established candle schema only. Never initialize/migrate legacy
             # History v2, assign currency or modify its canonical records.
             init_schema(store)
+            if time.monotonic()>prepare_deadline:
+                raise ValueError('LOCAL_EOD_COLD_PREPARE_BUDGET')
             with store.connect() as write:
                 write.executescript(DDL)
                 write.execute('PRAGMA busy_timeout=200')
@@ -104,6 +150,15 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                 write.execute('BEGIN IMMEDIATE')
                 prior = write.execute('SELECT cursor FROM local_eod_cursor_v1 WHERE source_id=?',(source_id,)).fetchone()
                 cursor = prior[0] if prior else 0
+                if time.monotonic()>prepare_deadline:
+                    raise ValueError('LOCAL_EOD_COLD_PREPARE_BUDGET')
+                deadline=time.monotonic()+2
+                read.execute('BEGIN')
+                # Recheck after preparation: the earlier CLOSED/PAPER snapshot
+                # is admission evidence, never authority for a changed runtime.
+                blocked = _runtime_block(read,at)
+                if blocked:
+                    return base | {'state':'BLOCKED','reason':blocked}
                 selected = read.execute('''SELECT v.*,s.identity_json FROM candle_versions v
                     JOIN candle_series s USING(series_id) WHERE v.id>? ORDER BY v.id LIMIT ?''',
                     (cursor,batch_size))
@@ -126,6 +181,7 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                 # cold revisions. Cold work cannot spend the source SQL budget.
                 read.rollback()
                 write_deadline=time.monotonic()+15
+                store.deadline=write_deadline
                 write.set_progress_handler(lambda:int(time.monotonic()>write_deadline),1000)
                 def write_guard():
                     if time.monotonic()>write_deadline:
