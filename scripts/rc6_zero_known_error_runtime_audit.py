@@ -73,8 +73,11 @@ PATH_HTTP_TIMEOUT_SECONDS = {
     # Runtime evidence after the full contract sweep shows that these pages
     # perform materially heavier read-only aggregation.  The cold cycle was
     # bounded at 14.8s (/), 6.9s (/vivo), 13.5s (/trading), 10.4s
-    # (/historicos) and 29.5s (/universo-operativo).  Preserve fail-closed HTTP
-    # checks while budgeting post-reconciliation CPU contention explicitly.
+    # (/historicos) and 29.5s (/universo-operativo).  The canonical truth API
+    # groups catalog, readiness and contract evidence; the 2026-10-15 deploy
+    # passed stability-1 but timed out there at the generic 20s budget during
+    # stability-2 under post-reconciliation contention. Preserve fail-closed
+    # HTTP checks while budgeting the same heavy read-only workload explicitly.
     "/": 45,
     "/vivo": 45,
     "/trading": 45,
@@ -82,6 +85,7 @@ PATH_HTTP_TIMEOUT_SECONDS = {
     "/sistema": 45,
     "/salud": 45,
     "/universo-operativo": 60,
+    "/api/dashboard/truth": 60,
 }
 
 
