@@ -1,0 +1,65 @@
+name: RC6 SHADOW state read-only 2026-10-16
+
+on:
+  push:
+    branches: [ops/rc6-shadow-state-readonly-20261016]
+    paths: [.github/workflows/rc6-shadow-state-readonly-20261016.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Inspect only SHADOW state and process
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "DISK_FREE=$(df -PB1 / | awk 'NR==2{print $4}')"
+          echo "MEM_AVAILABLE=$(awk '/MemAvailable:/{print $2*1024}' /proc/meminfo)"
+          PID="$(sudo -n docker inspect -f '{{.State.Pid}}' porota_production_observer)"
+          echo "OBSERVER_PID=$PID"
+          ps -T -p "$PID" -o pid,tid,etime,%cpu,%mem,stat,comm --no-headers | head -80
+          echo 'SHADOW_LOG_BEGIN'
+          sudo -n docker logs --since 30m porota_production_observer 2>&1 | grep -F 'DYNAMIC_SHADOW_RUNTIME' | tail -40 || true
+          echo 'SHADOW_LOG_END'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, os, pathlib, time
+          root=pathlib.Path('/app/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
+          for name in ('status.json','checkpoint.json.gz','latest.json.gz'):
+              path=root/name
+              if not path.is_file():
+                  print(f'SHADOW_FILE={name}|MISSING')
+                  continue
+              st=path.stat()
+              print(f'SHADOW_FILE={name}|bytes={st.st_size}|age_seconds={int(time.time()-st.st_mtime)}')
+              if name=='status.json' and st.st_size < 65536:
+                  data=json.loads(path.read_text()).get('payload') or {}
+                  for key in ('as_of','status','error_class','error_module','error_line','phase','operational_funnel_status'):
+                      print(f'SHADOW_STATUS_{key}={data.get(key)}')
+          PY
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED_BY_THIS_WORKFLOW'
+          HOST
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
