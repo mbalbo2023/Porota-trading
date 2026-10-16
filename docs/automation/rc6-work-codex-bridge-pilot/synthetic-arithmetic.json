@@ -1,0 +1,12 @@
+{
+  "schema": "porota.rc6.work-codex-bridge.synthetic.v1",
+  "test_id": "RC6-BRIDGE-INDEPENDENT-TEST-20261011",
+  "description": "Fixture intentionally incorrect for ONE authorized Codex Cloud correction. Not used by runtime.",
+  "a": 29,
+  "b": 14,
+  "sum": 42,
+  "expected_sum": 43,
+  "scope": "DOCUMENTARY_ONLY",
+  "material": false,
+  "paper_only": true
+}
