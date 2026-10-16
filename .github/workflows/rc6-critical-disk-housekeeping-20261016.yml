@@ -88,6 +88,24 @@ jobs:
           sudo -n docker top porota_production_observer -eo pid,ppid,etime,%cpu,%mem,stat,comm | head -15
           echo "DISK_FREE=$(df -PB1 / | awk 'NR==2{print $4}')"
           HOST
+      - name: Inspect Docker image ownership read only
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          echo "UTC=$(date -u +%FT%TZ)"
+          sudo -n docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}|{{.ID}}|{{.Size}}'
+          sudo -n docker ps -a --format '{{.Names}}|{{.Image}}|{{.Status}}'
+          for name in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            sudo -n docker inspect -f "$name|{{.Image}}|{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}" "$name"
+          done
+          echo "DB_TEMP_BEGIN"
+          sudo -n find /opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups -type f -name '*.db' -printf '%s %TY-%Tm-%TdT%TH:%TM:%TS %p\n' | head -20
+          echo "DB_TEMP_END"
+          echo "DISK_FREE=$(df -PB1 / | awk 'NR==2{print $4}')"
+          HOST
       - name: Cleanup SSH
         if: always()
         run: rm -f "$HOME/.ssh/key"
