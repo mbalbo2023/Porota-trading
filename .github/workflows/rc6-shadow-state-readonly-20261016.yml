@@ -71,6 +71,29 @@ jobs:
           PY
           echo 'REAL_ORDER_ROUTES=NOT_CALLED_BY_THIS_WORKFLOW'
           HOST
+      - name: Sample only SHADOW Python stack
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --disable-pip-version-check --user py-spy==0.4.1
+          TOOL="$HOME/.local/bin/py-spy"
+          test -x "$TOOL"
+          REMOTE_TOOL="/tmp/rc6-shadow-pyspy-$(date +%s)-$$"
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$TOOL" "$DO_USER@$DO_HOST:$REMOTE_TOOL"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' -- "$REMOTE_TOOL" <<'HOST'
+          set -Eeuo pipefail
+          TOOL="$1"
+          trap 'rm -f "$TOOL"' EXIT
+          chmod 700 "$TOOL"
+          PID="$(sudo -n docker top porota_production_observer -eo pid,args | awk '/--dynamic-shadow-worker/ {print $1; exit}')"
+          case "$PID" in ''|*[!0-9]*) exit 23;; esac
+          echo "SHADOW_PID=$PID"
+          sudo -n timeout 12 "$TOOL" dump --pid "$PID" --nonblocking
+          HOST
       - name: Remove SSH key
         if: always()
         run: rm -f "$HOME/.ssh/key"
