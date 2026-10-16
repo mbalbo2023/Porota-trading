@@ -1,0 +1,115 @@
+{
+  "schema": "rc6.causal-receipts.v1",
+  "workstream": "WS-RC6-AUDIT-REMEDIATION-20261016",
+  "note": "Raw causal RED/GREEN receipts are retained; local checks are never claims of full Droplet stress or actual market acceptance. Native Predeploy certificate applies only to its exact candidate.",
+  "receipts": [
+    {
+      "path": "docs/releases/evidence603/issue603-before.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 4494,
+      "sha256": "75bd5b2111dc089b946bd43af9dfb9d7ef49ad3b8d632bfe830a16cb82cff124",
+      "cases": 10,
+      "failure": 4,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-first-after.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 21793,
+      "sha256": "ac086376f89f61c520727f492e93e40c9d51b1212a0a0a20292c448d4483aa72",
+      "cases": 114,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-after.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 18287,
+      "sha256": "fbb95cb6ac08fc6f61f6c9b97fd2f390e7f2f43f29b23762bf95e87b20bd7dfb",
+      "cases": 114,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-adversarial-before.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 2902,
+      "sha256": "82e01586debff23b2c843bb8dab61eae23f06053d4f60ed14c4bcf66274ea4c8",
+      "cases": 13,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-adversarial-after.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 5794,
+      "sha256": "dbd75ad1f1b4642edbd66d3f825b800663ac251b28687e265deebd110aa539c5",
+      "cases": 39,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-prepublish.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 3451,
+      "sha256": "93a581b43438510fe122eb286866e7b1ec1ddd4f039915f5461b3d8df632334b",
+      "cases": 23,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-quiescence-final.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 9207,
+      "sha256": "1cca94530e343a508407a63552464c9dc304e87787978c6236a27cf85fdd4840",
+      "cases": 60,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/drain-oom-before.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 3851,
+      "sha256": "57e75f498f44f3e4f587e3c68da3030a71df598a4a4443bfdcdb60ab78655d72",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/drain-oom-after.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 9958,
+      "sha256": "2745a98453471b98c82711d7eaf95ba2f39e35226b330a58867feebc57a67fc3",
+      "cases": 65,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/local-harness-smoke4.json",
+      "source": "LOCAL_HARNESS_CHECK_NOT_DROPLET_STRESS",
+      "bytes": 8754,
+      "sha256": "d394acf359ca2d04e1508d48923d130d5d6370ecf42c2066e051eaeb5d183ba0"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-bdac26d-frozen.json",
+      "source": "NATIVE_PREDEPLOY_38981525324",
+      "bytes": 611,
+      "sha256": "8fe74b80b302c929ba2f2477b8954b23dfefbc20f87e7647adbf135be2cc069e"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-bdac26d-tests.json",
+      "source": "NATIVE_PREDEPLOY_38981525324",
+      "bytes": 360,
+      "sha256": "0bcb984e00ae090701a1ca78f459c9f6bf12823e13dda52a74b2c5e257212462"
+    }
+  ]
+}

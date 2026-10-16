@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="13" time="2.395" timestamp="2026-10-16T18:36:36.729536-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_issue603_regressions" name="test_burst_in_last_actual_sma_vector_cannot_buy[False]" time="0.091" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_burst_in_last_actual_sma_vector_cannot_buy[True]" time="0.118" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_regular_minute_events_keep_baseline_buy" time="0.041" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_single_old_event_cannot_pad_seven_burst_events" time="0.048"><failure message="AssertionError: assert 'BUY' == 'HOLD'&#10;  &#10;  - HOLD&#10;  + BUY">tmp_path = PosixPath('/tmp/pytest-of-root/pytest-41/test_single_old_event_cannot_p0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f11527c8ef0&gt;
+
+    def test_single_old_event_cannot_pad_seven_burst_events(tmp_path,monkeypatch):
+        monkeypatch.setenv('PAPER_HISTORICAL_CANDLE_SHADOW','OFF')
+        broker,q=signal(tmp_path,step=1)
+        with broker.store.connect() as c:
+            oldest=(AT-timedelta(minutes=7)).isoformat()
+            c.execute('UPDATE market_snapshots SET trade_at=?,observed_at=? WHERE id=1',(oldest,oldest))
+        action,score,reason,features=broker.decide(q)
+&gt;       assert action=='HOLD'
+E       AssertionError: assert 'BUY' == 'HOLD'
+E         
+E         - HOLD
+E         + BUY
+
+tests/test_rc6_issue603_regressions.py:55: AssertionError</failure></testcase><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_spot_carry_blocks_but_caucion_carry_is_separate" time="0.024" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_process_termination_before_eod_commit_keeps_cursor_unpublished" time="0.312" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_backlog_is_success_only_after_committed_batch" time="0.002" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_unsafe_states_remain_nonzero[BLOCKED]" time="0.001" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_unsafe_states_remain_nonzero[DEFERRED_DISK]" time="0.001" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_unsafe_states_remain_nonzero[CORRUPT]" time="0.002" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_unsafe_states_remain_nonzero[UNKNOWN]" time="0.001" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_service_budget_covers_all_stage_deadlines_and_kills_in_container" time="0.001" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_501_revisions_repeat_without_loss_or_duplicates" time="1.379" /></testsuite></testsuites>

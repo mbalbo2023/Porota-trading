@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.443" timestamp="2026-10-16T19:26:10.136814-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_deploy_quiescence" name="test_preexisting_historical_oom_flag_with_new_clean_exit_is_not_a_new_oom" time="0.014"><failure message="ValueError: QUIESCENCE_STOP_UNVERIFIED">installation = (PosixPath('/tmp/pytest-of-root/pytest-48/test_preexisting_historical_oo0'), PosixPath('/tmp/pytest-of-root/pytest-48/...er'], ['docker', 'inspect', 'porota_production_observer']], &lt;function installation.&lt;locals&gt;.command at 0x7fd6a213c7c0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fd6a230ff50&gt;
+
+    def test_preexisting_historical_oom_flag_with_new_clean_exit_is_not_a_new_oom(installation, monkeypatch):
+        root, db, states, calls, command = installation
+        state = states[q.OWNED[0]]['State']
+        state.update(OOMKilled=True, StartedAt='2026-10-16T04:58:27+00:00',
+                     FinishedAt='2026-10-16T04:15:23+00:00')
+        def retained_flag(args):
+            value = command(args)
+            if args[1] == 'stop': states[args[-1]]['State']['FinishedAt'] = datetime.now(timezone.utc).isoformat()
+            return value
+        monkeypatch.setattr(q, 'command', retained_flag)
+&gt;       value = q.run(SHA, 'drain')
+                ^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_deploy_quiescence.py:109: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+candidate = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', action = 'drain'
+
+    def run(candidate, action):
+        if not re.fullmatch('[0-9a-f]{40}', candidate):
+            raise ValueError('QUIESCENCE_CANDIDATE_INVALID')
+        folder = ROOT / 'data/deploy'
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / ('quiescence-' + candidate + '.json')
+        if folder.is_symlink() or path.is_symlink(): raise ValueError('QUIESCENCE_PATH_ALIAS')
+        with (folder / '.deploy-quiescence.lock').open('a+') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            receipt = json.loads(path.read_text()) if path.exists() else None
+            if action == 'drain':
+                if receipt is not None: raise ValueError('QUIESCENCE_EXISTING_RECEIPT')
+                admit()
+                originals = {name: inspect(name) for name in OWNED}
+                if any(v['State']['Status'] != 'running' for v in originals.values()):
+                    raise ValueError('QUIESCENCE_RUNTIME_NOT_RUNNING')
+                receipt = {'candidate_sha': candidate, 'status': 'DRAINING',
+                           'installation_started': False, 'stop_attempted': [],
+                           'containers': {n: {'id': v['Id'], 'image': v['Image']} for n, v in originals.items()},
+                           'real_orders_sent': 0, 'ppi_watch_accessed': False}
+                persist(path, receipt)
+                for name in OWNED:
+                    # Durable intent precedes the command: a client timeout may
+                    # occur after Docker actually stopped the container.
+                    receipt['stop_attempted'].append(name); persist(path, receipt)
+                    command(['docker', 'stop', '--time', '45', name])
+                    value = inspect(name)
+                    if (value['Id'] != receipt['containers'][name]['id'] or value['State']['Status'] != 'exited'
+                            or value['State']['OOMKilled'] or value['State']['ExitCode'] != 0):
+&gt;                       raise ValueError('QUIESCENCE_STOP_UNVERIFIED')
+E                       ValueError: QUIESCENCE_STOP_UNVERIFIED
+
+scripts/rc6_deploy_quiescence.py:104: ValueError</failure></testcase></testsuite></testsuites>

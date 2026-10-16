@@ -1,0 +1,368 @@
+{
+  "child_peak_rss_kib": 0,
+  "elapsed_seconds": 5.364,
+  "evidence_kind": "LOCAL_HARNESS_CHECK",
+  "finished_at": "2026-10-16T22:53:40.692869+00:00",
+  "limitations": [
+    "Real provider/network capacity and Android voice interaction are not simulated facts."
+  ],
+  "network": "NO_LIVE_TRANSPORT_CONFIGURED",
+  "ppi_watch_accessed": false,
+  "production_data_mounted": false,
+  "scenarios": [],
+  "schema": "rc6.postdeploy-stress.v1",
+  "self_peak_rss_kib": 72992,
+  "session": {
+    "actual_market_acceptance": false,
+    "captured_notification_count": 2,
+    "counts": {
+      "candle_versions": 52,
+      "market_snapshots": 40,
+      "paper_decisions": 35,
+      "paper_fills": 4,
+      "paper_positions": 2
+    },
+    "dashboard_routes": [
+      {
+        "bytes": 23258,
+        "elapsed_ms": 5.06,
+        "path": "/",
+        "read_queries": "21"
+      },
+      {
+        "bytes": 26181,
+        "elapsed_ms": 3.045,
+        "path": "/analitica",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23006,
+        "elapsed_ms": 6.282,
+        "path": "/analitica/anual",
+        "read_queries": "7"
+      },
+      {
+        "bytes": 22978,
+        "elapsed_ms": 2.938,
+        "path": "/analitica/cierre-diario",
+        "read_queries": "8"
+      },
+      {
+        "bytes": 24307,
+        "elapsed_ms": 5.611,
+        "path": "/analitica/contrafactuales",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22900,
+        "elapsed_ms": 2.235,
+        "path": "/analitica/experimentos",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22914,
+        "elapsed_ms": 3.222,
+        "path": "/analitica/historico",
+        "read_queries": "7"
+      },
+      {
+        "bytes": 22623,
+        "elapsed_ms": 3.735,
+        "path": "/analitica/reportes",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 29642,
+        "elapsed_ms": 8.166,
+        "path": "/analitica/salidas",
+        "read_queries": "11"
+      },
+      {
+        "bytes": 22896,
+        "elapsed_ms": 2.124,
+        "path": "/analitica/senales",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24346,
+        "elapsed_ms": 6.475,
+        "path": "/en-vivo",
+        "read_queries": "29"
+      },
+      {
+        "bytes": 22831,
+        "elapsed_ms": 5.666,
+        "path": "/en-vivo/capacidad",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23967,
+        "elapsed_ms": 3.152,
+        "path": "/en-vivo/cierres",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 162357,
+        "elapsed_ms": 21.414,
+        "path": "/en-vivo/decisiones",
+        "read_queries": "9"
+      },
+      {
+        "bytes": 40933,
+        "elapsed_ms": 3.872,
+        "path": "/en-vivo/fuentes",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 24318,
+        "elapsed_ms": 2.081,
+        "path": "/en-vivo/oportunidades",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23750,
+        "elapsed_ms": 2.165,
+        "path": "/en-vivo/posiciones",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 43920,
+        "elapsed_ms": 2.83,
+        "path": "/en-vivo/workers",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 56004,
+        "elapsed_ms": 4.417,
+        "path": "/instrumentos",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 46953,
+        "elapsed_ms": 3.28,
+        "path": "/instrumentos/contrato",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 46981,
+        "elapsed_ms": 3.39,
+        "path": "/instrumentos/evidencia",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 56013,
+        "elapsed_ms": 3.989,
+        "path": "/instrumentos/ficha",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22623,
+        "elapsed_ms": 2.651,
+        "path": "/instrumentos/mercado",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22730,
+        "elapsed_ms": 2.237,
+        "path": "/riesgo",
+        "read_queries": "7"
+      },
+      {
+        "bytes": 22703,
+        "elapsed_ms": 2.104,
+        "path": "/riesgo/event-risk",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23657,
+        "elapsed_ms": 2.787,
+        "path": "/riesgo/exposicion",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 22672,
+        "elapsed_ms": 1.608,
+        "path": "/riesgo/limites",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23695,
+        "elapsed_ms": 2.002,
+        "path": "/riesgo/liquidez",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 25989,
+        "elapsed_ms": 2.437,
+        "path": "/riesgo/pnl",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23653,
+        "elapsed_ms": 2.2,
+        "path": "/riesgo/posiciones",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 44607,
+        "elapsed_ms": 3.619,
+        "path": "/sistema",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 22550,
+        "elapsed_ms": 2.854,
+        "path": "/sistema/backups",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 37787,
+        "elapsed_ms": 3.128,
+        "path": "/sistema/configuracion",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23127,
+        "elapsed_ms": 2.176,
+        "path": "/sistema/evidencia",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 38087,
+        "elapsed_ms": 3.112,
+        "path": "/sistema/integraciones",
+        "read_queries": "8"
+      },
+      {
+        "bytes": 22527,
+        "elapsed_ms": 2.721,
+        "path": "/sistema/logs",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 44767,
+        "elapsed_ms": 4.396,
+        "path": "/sistema/salud",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 22724,
+        "elapsed_ms": 3.156,
+        "path": "/sistema/scheduler",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 48137,
+        "elapsed_ms": 7.48,
+        "path": "/sistema/workers",
+        "read_queries": "14"
+      },
+      {
+        "bytes": 22712,
+        "elapsed_ms": 2.64,
+        "path": "/trading",
+        "read_queries": "3"
+      },
+      {
+        "bytes": 24085,
+        "elapsed_ms": 5.169,
+        "path": "/trading/cauciones",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23797,
+        "elapsed_ms": 4.249,
+        "path": "/trading/derivados",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 68574,
+        "elapsed_ms": 5.511,
+        "path": "/trading/equity-spot",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23780,
+        "elapsed_ms": 2.428,
+        "path": "/trading/renta-fija",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 64711,
+        "elapsed_ms": 4.688,
+        "path": "/trading/scalping",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23816,
+        "elapsed_ms": 2.339,
+        "path": "/trading/tesoreria",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23148,
+        "elapsed_ms": 2.374,
+        "path": "/universo",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22719,
+        "elapsed_ms": 2.404,
+        "path": "/universo/coverage",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24003,
+        "elapsed_ms": 2.781,
+        "path": "/universo/discovery",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24003,
+        "elapsed_ms": 2.337,
+        "path": "/universo/excluidos",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22504,
+        "elapsed_ms": 1.451,
+        "path": "/universo/familias",
+        "read_queries": "3"
+      },
+      {
+        "bytes": 24024,
+        "elapsed_ms": 2.445,
+        "path": "/universo/tradeability",
+        "read_queries": "2"
+      }
+    ],
+    "decision_reasons": {
+      "Aprendiendo serie: 1/8 muestras": 4,
+      "Aprendiendo serie: 2/8 muestras": 4,
+      "Aprendiendo serie: 3/8 muestras": 4,
+      "Aprendiendo serie: 4/8 muestras": 4,
+      "Aprendiendo serie: 5/8 muestras": 4,
+      "Aprendiendo serie: 6/8 muestras": 4,
+      "Aprendiendo serie: 7/8 muestras": 4,
+      "Momentum positivo y friccion admisible": 2,
+      "OPEN_POSITION_NEEDS_SUPERVISION_OR_EXIT": 5
+    },
+    "exit_reasons": {
+      "EOD_PAPER": 2
+    },
+    "local_eod_batches": 1,
+    "local_eod_repeated_imported": 0,
+    "provider_contracts": "SYNTHETIC_NOT_VALIDATED",
+    "provider_requests": 0,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "schema": "rc6.synthetic-full-session.v1",
+    "shadow_cuts": 3,
+    "simulated_minutes": 8,
+    "tick_max_seconds": 0.5883736230025534,
+    "tick_p95_seconds": 0.19542082499538083
+  },
+  "smoke": true,
+  "started_at": "2026-10-16T22:53:35.328301+00:00",
+  "status": "GREEN"
+}

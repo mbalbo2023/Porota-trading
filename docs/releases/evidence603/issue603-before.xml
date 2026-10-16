@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="10" time="1.470" timestamp="2026-10-16T18:08:20.402981-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_issue603_regressions" name="test_burst_in_last_actual_sma_vector_cannot_buy[False]" time="0.080"><failure message="AssertionError: assert 'BUY' == 'HOLD'&#10;  &#10;  - HOLD&#10;  + BUY">tmp_path = PosixPath('/tmp/pytest-of-root/pytest-37/test_burst_in_last_actual_sma_0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f3804a02c90&gt;
+older_regular = False
+
+    @pytest.mark.parametrize('older_regular',[False,True])
+    def test_burst_in_last_actual_sma_vector_cannot_buy(tmp_path,monkeypatch,older_regular):
+        monkeypatch.setenv('PAPER_HISTORICAL_CANDLE_SHADOW','OFF')
+        broker,q=signal(tmp_path,step=1,older_regular=older_regular)
+        action,score,reason,features=broker.decide(q)
+&gt;       assert action=='HOLD'
+E       AssertionError: assert 'BUY' == 'HOLD'
+E         
+E         - HOLD
+E         + BUY
+
+tests/test_rc6_issue603_regressions.py:32: AssertionError</failure></testcase><testcase classname="tests.test_rc6_issue603_regressions" name="test_burst_in_last_actual_sma_vector_cannot_buy[True]" time="0.061"><failure message="AssertionError: assert 'BUY' == 'HOLD'&#10;  &#10;  - HOLD&#10;  + BUY">tmp_path = PosixPath('/tmp/pytest-of-root/pytest-37/test_burst_in_last_actual_sma_1')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f3804b0a8d0&gt;
+older_regular = True
+
+    @pytest.mark.parametrize('older_regular',[False,True])
+    def test_burst_in_last_actual_sma_vector_cannot_buy(tmp_path,monkeypatch,older_regular):
+        monkeypatch.setenv('PAPER_HISTORICAL_CANDLE_SHADOW','OFF')
+        broker,q=signal(tmp_path,step=1,older_regular=older_regular)
+        action,score,reason,features=broker.decide(q)
+&gt;       assert action=='HOLD'
+E       AssertionError: assert 'BUY' == 'HOLD'
+E         
+E         - HOLD
+E         + BUY
+
+tests/test_rc6_issue603_regressions.py:32: AssertionError</failure></testcase><testcase classname="tests.test_rc6_issue603_regressions" name="test_regular_minute_events_keep_baseline_buy" time="0.040" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_backlog_is_success_only_after_committed_batch" time="0.006"><failure message="assert 2 == 0&#10; +  where 2 = &lt;function main at 0x7f38048cede0&gt;()&#10; +    where &lt;function main at 0x7f38048cede0&gt; = local.main">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f3804b09310&gt;
+capsys = &lt;_pytest.capture.CaptureFixture object at 0x7f3804880230&gt;
+
+    def test_eod_backlog_is_success_only_after_committed_batch(monkeypatch,capsys):
+        monkeypatch.setattr(local,'consolidate',lambda *a,**k:{'state':'BACKLOG','cursor':500})
+&gt;       assert local.main()==0
+E       assert 2 == 0
+E        +  where 2 = &lt;function main at 0x7f38048cede0&gt;()
+E        +    where &lt;function main at 0x7f38048cede0&gt; = local.main
+
+tests/test_rc6_issue603_regressions.py:48: AssertionError</failure></testcase><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_unsafe_states_remain_nonzero[BLOCKED]" time="0.002" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_unsafe_states_remain_nonzero[DEFERRED_DISK]" time="0.001" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_unsafe_states_remain_nonzero[CORRUPT]" time="0.001" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_unsafe_states_remain_nonzero[UNKNOWN]" time="0.001" /><testcase classname="tests.test_rc6_issue603_regressions" name="test_service_budget_covers_all_stage_deadlines_and_kills_in_container" time="0.001"><failure message="assert 30 &gt;= ((((2 + 15) + 2) + 15) + 10)">def test_service_budget_covers_all_stage_deadlines_and_kills_in_container():
+        unit=Path('systemd/porota-local-eod-history-rc6.service').read_text()
+        timeout=int(next(line.split('=',1)[1] for line in unit.splitlines() if line.startswith('TimeoutStartSec=')))
+&gt;       assert timeout&gt;=2+15+2+15+10
+E       assert 30 &gt;= ((((2 + 15) + 2) + 15) + 10)
+
+tests/test_rc6_issue603_regressions.py:61: AssertionError</failure></testcase><testcase classname="tests.test_rc6_issue603_regressions" name="test_eod_501_revisions_repeat_without_loss_or_duplicates" time="0.690" /></testsuite></testsuites>
