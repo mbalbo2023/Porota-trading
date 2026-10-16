@@ -346,6 +346,45 @@ def test_bounds_clock_reversal_and_fingerprint_reset(tmp_path, monkeypatch):
         funnel.evaluate_runtime_funnel(store.path, as_of=START, planner_report=plan(START))
 
 
+def test_funnel_reclaims_complete_old_session_before_identity_capacity(tmp_path, monkeypatch):
+    monkeypatch.setattr(funnel, "MAX_IDENTITIES", 3)
+    store, cp = bootstrap(tmp_path)
+
+    def symbol_plan(at, symbol):
+        result = plan(at)
+        result["session"] = at.astimezone(funnel.ART).date().isoformat()
+        result["engines"]["EQUITY_SPOT"]["telemetry"][0]["identity"][0] = symbol
+        return result
+
+    at = START + timedelta(days=1)
+    for symbol in ("B", "C", "D"):
+        report, cp = funnel.evaluate_runtime_funnel(store.path, as_of=at,
+            previous=cp, planner_report=symbol_plan(at, symbol))
+        at += timedelta(seconds=1)
+    assert report["sessions_retained"] == ["2026-10-06"]
+    assert report["source_gaps"]["OLDER_SESSION_EVICTED_FOR_CAPACITY"] == 1
+    assert report["denominators"]["stage_identity_reaches"] == 3
+    assert {r["identity"][0] for r in report["state_reaches"]} == {"B", "C", "D"}
+    assert report["detail_scope"]["retention_sessions"] == 1
+    assert report["detail_scope"]["session_aggregates_preserved"] is True
+    with pytest.raises(ValueError, match="FUNNEL_IDENTITY_CAPACITY_EXCEEDED"):
+        funnel.evaluate_runtime_funnel(store.path, as_of=at, previous=cp,
+            planner_report=symbol_plan(at, "E"))
+
+
+def test_funnel_preserves_two_sessions_when_capacity_allows(tmp_path, monkeypatch):
+    monkeypatch.setattr(funnel, "MAX_IDENTITIES", 3)
+    store, cp = bootstrap(tmp_path)
+    at = START + timedelta(days=1)
+    current = plan(at)
+    current["session"] = "2026-10-06"
+    current["engines"]["EQUITY_SPOT"]["telemetry"][0]["identity"][0] = "B"
+    report, _ = funnel.evaluate_runtime_funnel(store.path, as_of=at,
+        previous=cp, planner_report=current)
+    assert report["sessions_retained"] == ["2026-10-05", "2026-10-06"]
+    assert "OLDER_SESSION_EVICTED_FOR_CAPACITY" not in report["source_gaps"]
+
+
 def test_causal_discovery_only_reports_late_missed_when_contract_proves_it():
     event = START+timedelta(minutes=2)
     identity = dict(symbol="A", asset_class="ACCIONES", settlement="A-24HS", currency="ARS", market="BYMA")
