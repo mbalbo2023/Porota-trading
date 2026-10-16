@@ -1,7 +1,7 @@
 """Observador productivo con paper trading completo y cero capacidad operativa."""
 
 from __future__ import annotations
-from contextlib import nullcontext
+from contextlib import closing, nullcontext
 
 import faulthandler
 import fcntl
@@ -1780,6 +1780,44 @@ def _pulse_observed_progress(store, last_pulse, *, monotonic_now=None):
     return instant
 
 
+def _write_scanner_metrics(store, stage, values):
+    """Persist optional telemetry without making contention fatal to scanning.
+
+    Trading writes never use this path. A deferred metric remains missing and
+    produces an explicit, redacted diagnostic; it never becomes a success.
+    """
+    statements = {
+        "SYMBOL": """INSERT INTO symbol_cycle_metrics
+          (cycle_started_at,symbol,latency_ms,state,detail) VALUES(?,?,?,?,?)""",
+        "UNIVERSE": """INSERT INTO universe_cycle_metrics
+          (started_at,finished_at,eligible_total,selected_count,successful_count,
+           failed_count,duration_seconds,cursor_before,cursor_after,recommended_limit,detail)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+    }
+    statement = statements[stage]
+    try:
+        with closing(store.connect()) as c:
+            # Local budget for optional metrics, never the broker connection.
+            c.execute("PRAGMA busy_timeout=200")
+            with c:
+                c.execute(statement, values)
+                if stage == "UNIVERSE":
+                    c.execute("DELETE FROM symbol_cycle_metrics WHERE id NOT IN (SELECT id FROM symbol_cycle_metrics ORDER BY id DESC LIMIT 10000)")
+                    c.execute("DELETE FROM universe_cycle_metrics WHERE id NOT IN (SELECT id FROM universe_cycle_metrics ORDER BY id DESC LIMIT 5000)")
+    except sqlite3.OperationalError as exc:
+        code = getattr(exc, "sqlite_errorcode", None)
+        # Extended BUSY/LOCKED codes retain the primary code in the low byte.
+        if not isinstance(code, int) or code & 0xff not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+            raise
+        print(json.dumps({"event": "SCANNER_METRICS_DEFERRED", "stage": stage,
+                          "sqlite_errorcode": code,
+                          "sqlite_errorname": getattr(exc, "sqlite_errorname", None),
+                          "observed_at": now_iso(), "persisted": False}),
+              file=sys.stderr, flush=True)
+        return False
+    return True
+
+
 def run():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
@@ -2017,9 +2055,7 @@ def run():
                 finally:
                     latency = round((time.perf_counter() - symbol_clock) * 1000, 2)
                     latencies.append(latency)
-                    with store.connect() as c:
-                        c.execute("""INSERT INTO symbol_cycle_metrics
-                          (cycle_started_at,symbol,latency_ms,state,detail) VALUES(?,?,?,?,?)""",
+                    _write_scanner_metrics(store, "SYMBOL",
                           (cycle_started, symbol, latency,
                            "VERDE" if latency < INTERVAL * 500 else "AMARILLO",
                            "current + book; PPI Producción solo lectura"))
@@ -2031,16 +2067,10 @@ def run():
             recommended = max(5, min(60, int(budget / max(avg_seconds, .05))))
             if cycle_failures / max(1, len(symbols)) > .10:
                 recommended = min(recommended, max(5, ACTIVE_SYMBOL_LIMIT - 5))
-            with store.connect() as c:
-                c.execute("""INSERT INTO universe_cycle_metrics
-                  (started_at,finished_at,eligible_total,selected_count,successful_count,
-                   failed_count,duration_seconds,cursor_before,cursor_after,recommended_limit,detail)
-                  VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            _write_scanner_metrics(store, "UNIVERSE",
                   (cycle_started, now_iso(), eligible_total, len(symbols), cycle_ok,
                    cycle_failures, duration, cursor_before, cursor_after, recommended,
                    f"Límite={ACTIVE_SYMBOL_LIMIT}; foco+rotación; factibilidad={json.dumps(feasibility,sort_keys=True)}"))
-                c.execute("DELETE FROM symbol_cycle_metrics WHERE id NOT IN (SELECT id FROM symbol_cycle_metrics ORDER BY id DESC LIMIT 10000)")
-                c.execute("DELETE FROM universe_cycle_metrics WHERE id NOT IN (SELECT id FROM universe_cycle_metrics ORDER BY id DESC LIMIT 5000)")
             metrics = reader.metrics
             store.state(process_state="DEGRADED" if cycle_session_invalid or not cycle_ok else "RUNNING",
                         session_state="MARKET_OPEN", heartbeat_at=now_iso(),

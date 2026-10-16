@@ -1,7 +1,7 @@
 {
-  "as_of": "2026-10-16T20:00:17.992498+00:00",
+  "as_of": "2026-10-16T20:12:50.305969+00:00",
   "canonical_dashboard_routes": 52,
-  "deployment": "NOT_STARTED_MARKET_OPEN",
+  "deployment": "NOT_STARTED_NEW_USER_ORDER_REQUIRED",
   "deployment_readiness": "NO_GO",
   "eod_guard": {
     "admission_rechecked_after_cold_preparation": true,
@@ -63,18 +63,58 @@
       "runtime_deadline_expired": true,
       "runtime_stage": "CATALOG_FULL",
       "shadow_status": "FAIL_CLOSED"
+    },
+    {
+      "all_route_latency_below_2s": true,
+      "artifact_id": 12072197786,
+      "candle_cursor": 241677,
+      "digest": "90411815c813efeefaea09b93f84b58f5d5b6218d7190c8ffe81c63f7cca6247",
+      "expected_session": "CLOSED",
+      "generated_at": "2026-10-16T20:07:46.793362+00:00",
+      "observer_session": "MARKET_CLOSED",
+      "paper_today": {
+        "closed": 2,
+        "opened": 2,
+        "wins": 0
+      },
+      "real_orders_sent": 0,
+      "recovery_message_id": "980",
+      "routes_http200": 13,
+      "run_id": 38959937247,
+      "shadow_age_seconds": 8873.855,
+      "shadow_progress_verified": false,
+      "shadow_status": "SHADOW_OBSERVING",
+      "watchdog_ack_at": "2026-10-16T20:00:11.527762+00:00",
+      "watchdog_ack_message_id": "977"
     }
   ],
   "main_monitor_head_at_development_cut": "6458bab0c3742d34408a9469f0457dd105d79c1c",
+  "market_closed_observed": true,
   "mode": "PRODUCTION_PAPER",
-  "native_predeploy": "NOT_STARTED_MARKET_OPEN",
+  "native_predeploy": "PENDING_FINAL_FREEZE",
   "no_go_reasons": [
     "NATIVE_COMPLETE_GATES_PENDING",
-    "MARKET_CLOSE_NOT_ATTESTED",
-    "NEW_USER_DEPLOY_ORDER_REQUIRED"
+    "NEW_USER_DEPLOY_ORDER_REQUIRED",
+    "INFLIGHT_RUNTIME_SETTLEMENT_NOT_ATTESTED"
   ],
   "nonroot_recheck": "BLOCKED_LOCAL_UID_NAMESPACE_ONLY_UID_0",
+  "observer_metrics_contention": {
+    "busy_timeout_ms": 200,
+    "causal_guard": "OPTIONAL_METRIC_CANNOT_TERMINATE_SCANNER_ON_BUSY_OR_LOCKED",
+    "evidence_at": "2026-10-16T19:39:35Z",
+    "failure_class": "SQLITE_BUSY_LOCKED",
+    "lock_holder": "NO_VERIFICADO",
+    "runtime_validated": false,
+    "source_stage": "run:2021/symbol_cycle_metrics",
+    "unknown_errors_propagate": true
+  },
   "operator_deploy_authorization": "WAITING_NEW_EXPLICIT_USER_ORDER",
+  "paper_open_contracts": {
+    "inflight_evaluation_or_fill": "NO_VERIFICADO",
+    "paper_cauciones": 0,
+    "paper_future_positions": 0,
+    "paper_positions": 0
+  },
   "ppi_watch_accessed": false,
   "productive_baseline": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "programmed_chatgpt_task": {
@@ -255,6 +295,17 @@
       "source_branch": "work/rc6-20261016-watch-guards",
       "tests": 43
     },
+    "observer_metrics_guard": {
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 33
+      },
+      "runtime_claim": false,
+      "seconds": 2.955,
+      "sha256": "f910d987da0fc049b151f0f7ae2f5a7436128e6d520b8c04c5a82cf6b0e70427"
+    },
     "resume_candidate_full": {
       "counts": {
         "errors": 0,
@@ -355,9 +406,10 @@
     },
     "runtime_claim": false
   },
-  "state": "DEVELOPMENT_ONLY_NOT_FROZEN",
+  "state": "POSTCLOSE_CANDIDATE_PREPARATION_NOT_YET_FROZEN",
   "tested_source_files_sha256": {
     "DASHBOARD_TRUTH_MATRIX_RC6.json": "e03e8b96e7b4ef384c0b82ff4086e17a98479c55b783d0b368ad136096e11b1a",
+    "bf_production_paper_observer.py": "34849a111af7ca300796a96a49d580c1450e67ce5ffd678ca4fde0b772cea1ba",
     "rc6_counterfactual_learning.py": "6aec88350d0df536363a8c0b29d8c63dcd6f893bca767866875b3d8d07ff7975",
     "rc6_local_eod_history.py": "e662481fd6b4d1bc1de2f9936180a153c0be9df8e41becf7b9c1a33d03375ad2",
     "rc6_shadow_runtime/persistence.py": "3a7d06258c82a77ea9c5e347c2d25535c2f2e5363f36b10791f50f031a0721e9",
@@ -379,11 +431,12 @@
     "tests/test_rc6_issue600_dashboard_adenda.py": "f8a6fb3bf29f92405966435033491b2ed2e5cadaffb052a7fbb4b84823b45006",
     "tests/test_rc6_issue600_regressions.py": "2d1a9f57c6ef207634155b83ed84353376b6941b2d300c737971783e2fccded4",
     "tests/test_rc6_night_input_contracts.py": "dbd05bff24024840f60792252e4688a0da6b5dfa1c844f7a97f2d58d8d5e40ba",
+    "tests/test_rc6_observer_metric_contention.py": "cc325796b3ae1dd7ee2088b0b7b8063e660b5ac97135e01e354a9a50e76c69e1",
     "tests/test_ws_integ_03_runtime_audit.py": "0777a76519ad91cd7c19ffa824cd6fba23d711f32e0d2fe4e6423d54fa7a2382"
   },
-  "tested_source_parent_commit": "49ef5d9cd816e77652e93082a72d1df662aaad55",
+  "tested_source_parent_commit": "73f2650cb36027a8ac3a98c861b129967fcea500",
   "visual_tablet_qa": "NO_VERIFICADO",
   "watchdog_host_timer_active": true,
-  "watchdog_runtime_ack": "HISTORICAL_VERIFIED_NOT_CURRENT_CADENCE",
+  "watchdog_runtime_ack": "VERIFIED_RECEIPT_977_NOT_CADENCE",
   "workstream": "WS-RC6-POSTCLOSE-CONSOLIDATED-20261016"
 }
