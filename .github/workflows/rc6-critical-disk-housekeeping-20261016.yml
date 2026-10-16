@@ -53,6 +53,41 @@ jobs:
           done
           test "$RC" -eq 0
           HOST
+      - name: Inspect restore test ownership read only
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          FILE=/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/.restore_test_7.db
+          echo "UTC=$(date -u +%FT%TZ)"
+          sudo -n stat -c 'RESTORE_TEST=%n|size=%s|mtime=%y|inode=%i' "$FILE" || true
+          echo "OPEN_FDS_BEGIN"
+          sudo -n python3 - <<'PY'
+          import os
+          target='/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/.restore_test_7.db'
+          try: inode=os.stat(target).st_ino
+          except FileNotFoundError: inode=None
+          for pid in filter(str.isdigit,os.listdir('/proc')):
+              path='/proc/'+pid+'/fd'
+              try: fds=os.listdir(path)
+              except (PermissionError,FileNotFoundError): continue
+              for fd in fds:
+                  try:
+                      st=os.stat(path+'/'+fd)
+                      if st.st_ino!=inode or inode is None: continue
+                      comm=open('/proc/'+pid+'/comm').read().strip()
+                      print('OPEN_FD='+pid+'/'+fd+'|comm='+comm)
+                  except (PermissionError,FileNotFoundError,ProcessLookupError): continue
+          PY
+          echo "OPEN_FDS_END"
+          echo "BACKUP_PROCESSES_BEGIN"
+          ps -eo pid,ppid,etime,%cpu,%mem,stat,args --no-headers | awk '/[p]orota|[q]uick_check|[b]ackup/ {print $1,$2,$3,$4,$5,$6,substr($0,index($0,$7))}' | head -20
+          echo "BACKUP_PROCESSES_END"
+          sudo -n docker top porota_production_observer -eo pid,ppid,etime,%cpu,%mem,stat,comm | head -15
+          echo "DISK_FREE=$(df -PB1 / | awk 'NR==2{print $4}')"
+          HOST
       - name: Cleanup SSH
         if: always()
         run: rm -f "$HOME/.ssh/key"
