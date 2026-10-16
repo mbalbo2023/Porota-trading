@@ -332,3 +332,18 @@ def test_heavy_dashboard_routes_have_evidence_based_cold_render_budgets():
     assert audit.PATH_HTTP_TIMEOUT_SECONDS["/sistema"] == 45
     assert audit.PATH_HTTP_TIMEOUT_SECONDS["/salud"] == 45
     assert audit.PATH_HTTP_TIMEOUT_SECONDS["/universo-operativo"] == 60
+    assert audit.PATH_HTTP_TIMEOUT_SECONDS["/api/dashboard/truth"] == 60
+
+
+def test_truth_api_timeout_remains_fail_closed_with_heavy_read_budget(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_ACCESS_TOKEN", "token")
+    monkeypatch.setattr(
+        audit,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError("slow")),
+    )
+    with pytest.raises(
+        RuntimeError,
+        match=r"DASHBOARD_HTTP_TIMEOUT\|path=/api/dashboard/truth\|seconds=60",
+    ):
+        audit._http("/api/dashboard/truth")
