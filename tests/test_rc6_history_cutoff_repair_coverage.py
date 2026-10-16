@@ -1,4 +1,5 @@
 """A valid PPI payload cannot certify missing historical sessions by itself."""
+import json
 import sqlite3
 
 from scripts import rc6_history_cutoff_repair_once as repair
@@ -35,6 +36,8 @@ def test_live_ppi_rows_with_interior_gap_remain_partial(tmp_path, monkeypatch):
     monkeypatch.setattr(observer, "now_iso", lambda: "2026-09-21T20:00:00+00:00")
 
     class Reader:
+        attempts = 0
+
         def __init__(self, *_):
             pass
 
@@ -42,6 +45,9 @@ def test_live_ppi_rows_with_interior_gap_remain_partial(tmp_path, monkeypatch):
             pass
 
         def history(self, *_):
+            self.attempts += 1
+            if self.attempts == 1:
+                raise json.JSONDecodeError("gateway response", "<", 0)
             return [{"date": "2026-09-21"}]
 
         def close(self):
@@ -57,4 +63,4 @@ def test_live_ppi_rows_with_interior_gap_remain_partial(tmp_path, monkeypatch):
         state = c.execute("SELECT state,source,valid_rows,error_class FROM rc6_history_cutoff_repair").fetchone()
         run = c.execute("SELECT state,complete,failed,ppi_queries FROM rc6_history_cutoff_repair_runs").fetchone()
     assert state == ("PPI_PARTIAL_COVERAGE", "PPI", 2, "MISSING_BYMA_SESSIONS")
-    assert run == ("PARTIAL", 0, 1, 0)
+    assert run == ("PARTIAL", 0, 1, 2)

@@ -408,6 +408,7 @@ def main() -> int:
                         # evidence until a valid response is obtained.
                         for json_attempt in range(3):
                             try:
+                                ppi_count += 1
                                 payload = reader.history(identity[0], identity[1], identity[3], start, CUTOFF)
                                 break
                             except json.JSONDecodeError:
@@ -422,7 +423,7 @@ def main() -> int:
                         if rows and coverage["complete"]:
                             _save(history_store, identity, state="COMPLETE", source="PPI",
                                   requested_from=start.isoformat(), rows=coverage["present"], latest=latest)
-                            completed.add(identity); ppi_count += 1
+                            completed.add(identity)
                         else:
                             _save(history_store, identity,
                                   state="PPI_PARTIAL_COVERAGE" if rows else "NO_NEW_VALID_ROWS",
