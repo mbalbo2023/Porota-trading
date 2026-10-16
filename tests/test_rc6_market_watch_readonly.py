@@ -98,6 +98,19 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(observation["real_order_routes_called"], 0)
         self.assertEqual(observation["host_control_state"]["legacy_health_timer"], "inactive")
 
+    def test_independent_watchdog_ack_is_read_only_and_not_schedule_cadence(self):
+        path=self.root/'data/paper_v17/market_watch_silence.json'
+        path.write_text(json.dumps({'schema':'rc6.market-watch-silence.v1','status':'SILENT',
+            'acknowledged_at':NOW.isoformat(),'message_id':'967','secret':'hidden'}))
+        value=self.capture()['schedule_watchdog_receipt']
+        self.assertEqual(value['message_id'],'967')
+        self.assertEqual(value['status'],'SILENT')
+        self.assertEqual(value['ack_age_seconds'],0)
+        self.assertNotIn('hidden',json.dumps(value))
+        path.write_text(json.dumps({'schema':'rc6.market-watch-silence.v1','status':'OK',
+            'acknowledged_at':NOW.isoformat(),'message_id':'0'}))
+        self.assertEqual(self.capture()['schedule_watchdog_receipt']['status'],'NO_VERIFICADO')
+
     def test_shadow_sqlite_context_is_allowlisted(self):
         payload = {"as_of": NOW.isoformat(), "status": "FAIL_CLOSED",
                    "real_orders_sent": 0, "real_routes": "NOT_CALLED",
@@ -492,6 +505,8 @@ class MonitorContracts(unittest.TestCase):
             if command[:2] == ["systemctl", "is-active"]:
                 status = "inactive" if command[-1] == "porota-functional-health-rc6.timer" else "active"
                 return subprocess.CompletedProcess(command, 0, stdout=status + "\n", stderr="secret")
+            if command[:2] == ['systemctl','show']:
+                return subprocess.CompletedProcess(command,0,stdout='Result=success\nExecMainStatus=0\nEnv=secret\n',stderr='secret')
             return subprocess.CompletedProcess(command, 0, stdout=json.dumps({
                 "Status": "running", "StartedAt": "2026-10-14T15:30:00Z",
                 "ExitCode": 0, "OOMKilled": False, "Env": "secret"}), stderr="secret")
@@ -499,6 +514,8 @@ class MonitorContracts(unittest.TestCase):
             result = monitor._host_control_state()
         self.assertEqual(result["legacy_health_timer"], "inactive")
         self.assertEqual(result["fast_health_timer"], "active")
+        self.assertEqual(result['schedule_silence_timer'],'active')
+        self.assertEqual(result['schedule_silence_service'],{'Result':'success','ExecMainStatus':'0'})
         self.assertEqual(result["observer_container"]["Status"], "running")
         self.assertNotIn("secret", json.dumps(result))
 

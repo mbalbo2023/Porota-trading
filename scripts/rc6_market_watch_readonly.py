@@ -334,7 +334,8 @@ def _host_control_state():
     """Small host-only facts even when the optional container diagnostic times out."""
     data = {}
     for label, unit in (("legacy_health_timer", "porota-functional-health-rc6.timer"),
-                        ("fast_health_timer", "porota-fast-functional-health-rc6.timer")):
+                        ("fast_health_timer", "porota-fast-functional-health-rc6.timer"),
+                        ("schedule_silence_timer", "porota-market-watch-silence-rc6.timer")):
         try:
             state = subprocess.run(["systemctl", "is-active", unit],
                                    capture_output=True, text=True, timeout=.8, check=False)
@@ -342,6 +343,15 @@ def _host_control_state():
                            {"active", "inactive", "failed", "activating"} else "UNKNOWN")
         except (OSError, subprocess.TimeoutExpired):
             data[label] = "UNKNOWN"
+    try:
+        state = subprocess.run(["systemctl", "show", "porota-market-watch-silence-rc6.service",
+            "--property=Result,ExecMainCode,ExecMainStatus,ExecMainStartTimestamp,ExecMainExitTimestamp",
+            "--no-pager"], capture_output=True, text=True, timeout=.8, check=False)
+        allowed = {"Result", "ExecMainCode", "ExecMainStatus", "ExecMainStartTimestamp", "ExecMainExitTimestamp"}
+        data['schedule_silence_service'] = {k:v[:100] for line in state.stdout[:2048].splitlines()
+            for k,sep,v in [line.partition('=')] if sep and k in allowed}
+    except (OSError, subprocess.TimeoutExpired):
+        data['schedule_silence_service'] = {'Result':'UNKNOWN'}
     try:
         state = subprocess.run(["docker", "inspect", "--format", "{{json .State}}",
                                 "porota_production_observer"], capture_output=True, text=True,
@@ -501,6 +511,16 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
     containers = _docker_inspect() if inspect is None else inspect
     result["containers"] = containers or {}
     result["host_control_state"] = _host_control_state()
+    receipt = load_bounded(root / 'data/paper_v17/market_watch_silence.json',4096)
+    ack = str((receipt or {}).get('message_id',''))
+    if (receipt and receipt.get('schema')=='rc6.market-watch-silence.v1' and
+            receipt.get('status') in {'OK','SILENT','UNKNOWN'} and ack.isdecimal() and int(ack)>0 and
+            timestamp(receipt.get('acknowledged_at')) is not None):
+        result['schedule_watchdog_receipt'] = {k:receipt[k] for k in
+            ('status','acknowledged_at','message_id')}
+        result['schedule_watchdog_receipt']['ack_age_seconds'] = age_seconds(receipt['acknowledged_at'],at)
+    else:
+        result['schedule_watchdog_receipt'] = {'status':'NO_VERIFICADO'}
     if not containers or not provenance:
         add("CONTAINER_OR_IMAGE_UNVERIFIED", "P0")
     else:
