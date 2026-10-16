@@ -491,17 +491,75 @@ class MonitorContracts(unittest.TestCase):
 
     def test_telegram_host_transport_acks_only_message_id_and_never_exposes_token(self):
         body = "POROTA RC6 | ALERT\nOBSERVER_HEARTBEAT_INVALID"
-        encoded = monitor.base64.urlsafe_b64encode(body.encode()).decode()
+        request={'body':body,'transition_id':'c'*64}
+        encoded = monitor.base64.urlsafe_b64encode(json.dumps(request).encode()).decode()
         with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, stdout='{"status":"SENT","message_id":"34"}', stderr="token=secret")) as run:
-            self.assertEqual(monitor.alert_host(encoded), {"status": "SENT", "message_id": "34"})
+                [], 0, stdout='{"status":"SENT","message_id":"34"}', stderr="token=secret")) as run, patch.object(monitor,'ROOT',self.root):
+            receipt=monitor.alert_host(encoded)
+            self.assertEqual(receipt['status'],'SENT')
+            self.assertEqual(receipt['message_id'],'34')
+            self.assertFalse(receipt['deduplicated'])
+            self.assertTrue(monitor.alert_host(encoded)['deduplicated'])
+            self.assertEqual(run.call_count,1)
         args, options = run.call_args
         self.assertEqual(args[0][:3], ["docker", "exec", "porota_production_observer"])
         self.assertEqual(options["timeout"], 19)
         compile(args[0][-2], "<telegram-child>", "exec")
         with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, stdout='{"status":"SENT"}', stderr="token=secret")):
-            self.assertEqual(monitor.alert_host(encoded)["status"], "FAILED")
+                [], 0, stdout='{"status":"SENT"}', stderr="token=secret")),patch.object(monitor,'ROOT',self.root):
+            request['transition_id']='d'*64
+            encoded=monitor.base64.urlsafe_b64encode(json.dumps(request).encode()).decode()
+            self.assertEqual(monitor.alert_host(encoded)["status"], "UNVERIFIED")
+
+    def test_same_recovery_from_two_branch_probes_delivers_once_and_new_incident_delivers(self):
+        previous=self.capture(at=NOW-timedelta(minutes=10))
+        previous['findings']=[monitor.finding('NO_QUOTES','P0')]
+        old=monitor.classify(previous)
+        monitor.finalize_delivery(old,{'status':'SENT','message_id':'980'})
+        one=monitor.classify(self.capture(),previous,old)
+        two=monitor.classify(self.capture(at=NOW+timedelta(minutes=1)),previous,old)
+        self.assertEqual(one['notification'],'RECOVERY')
+        self.assertEqual(one['transition_id'],two['transition_id'])
+        sends=[]
+        def send(body):
+            sends.append(body)
+            return {'status':'SENT','message_id':str(980+len(sends))}
+        path=self.root/'receipts.sqlite'
+        for decision in (one,two):
+            request=json.loads(monitor.base64.urlsafe_b64decode(monitor.prepare_alert(decision)))
+            receipt=monitor.deliver_transition_once(path,request['transition_id'],request['body'],send)
+            monitor.finalize_delivery(decision,receipt)
+            self.assertEqual(decision['acknowledged_codes'],[])
+        self.assertEqual(len(sends),1)
+        newer=self.capture(at=NOW+timedelta(minutes=5));newer['findings']=previous['findings']
+        alarm=monitor.classify(newer)
+        monitor.finalize_delivery(alarm,{'status':'SENT','message_id':'982'})
+        recovery=monitor.classify(self.capture(at=NOW+timedelta(minutes=6)),newer,alarm)
+        self.assertNotEqual(recovery['transition_id'],one['transition_id'])
+        self.assertEqual(monitor.deliver_transition_once(path,recovery['transition_id'],'POROTA RC6 | RECOVERY',send)['status'],'SENT')
+        self.assertEqual(len(sends),2)
+
+    def test_uncertain_ack_restart_never_manufactures_ack_or_resends(self):
+        path=self.root/'receipts.sqlite';calls=[]
+        def crash(body):
+            calls.append(body)
+            raise TimeoutError('unknown remote outcome')
+        first=monitor.deliver_transition_once(path,'f'*64,'POROTA RC6 | ALERT',crash)
+        second=monitor.deliver_transition_once(path,'f'*64,'POROTA RC6 | ALERT',crash)
+        self.assertEqual(first['status'],second['status'],'UNVERIFIED')
+        self.assertEqual(len(calls),1)
+
+    def test_delivery_concurrent_reservation_and_invalid_receipts_fail_closed(self):
+        path=self.root/'receipts.sqlite';nested=[]
+        def send(body):
+            nested.append(monitor.deliver_transition_once(path,'e'*64,body,lambda b:self.fail('double send')))
+            return {'status':'SENT','message_id':'12'}
+        self.assertEqual(monitor.deliver_transition_once(path,'e'*64,'POROTA RC6 | ALERT',send)['status'],'SENT')
+        self.assertEqual(nested[0]['status'],'UNVERIFIED')
+        for value in (None,0,True,'0','bad'):
+            result=monitor.deliver_transition_once(path,hashlib.sha256(str(value).encode()).hexdigest(),
+                'POROTA RC6 | ALERT',lambda b:{'status':'SENT','message_id':value})
+            self.assertEqual(result['status'],'UNVERIFIED')
 
     def test_incompatible_old_sha_cannot_confirm_p1(self):
         current = self.capture()

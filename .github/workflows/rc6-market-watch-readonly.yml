@@ -23,6 +23,13 @@ on:
     # Argentina UTC-3; the job's local-time gate restricts monitoring to rueda.
     - cron: '7,17,27,37,47,57 13-20 * * 1-5'
   workflow_dispatch:
+    inputs:
+      notification_mode:
+        description: 'normal delivers transitions; read_only records evidence without sending or creating delivery state'
+        type: choice
+        options: [normal, read_only]
+        default: normal
+        required: true
 
 permissions:
   contents: read
@@ -278,7 +285,8 @@ jobs:
                 '- Recovery: '+', '.join(decision['recovered'] or ['none']),
                 '- Pending P1 confirmation: '+', '.join(decision['pending_confirmation'] or ['none']),
                 '- Orders actually sent: no claim unless exact DB counter verified.',
-                '- Mutations: NONE; provider calls: NONE; PPI Watch: NOT ACCESSED.']
+                '- Trading mutations: NONE; provider calls: NONE; PPI Watch: NOT ACCESSED.',
+                '- Alert delivery uses a separate bounded receipt only when requested.']
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:
               f.write('\n'.join(text)+'\n')
           print('RC6_MONITOR_STATUS='+decision['status'])
@@ -287,11 +295,15 @@ jobs:
       - name: Send transition through existing PAPER Telegram transport
         if: steps.window.outputs.active == '1'
         shell: bash
+        env:
+          NOTIFICATION_MODE: ${{ inputs.notification_mode || 'normal' }}
         run: |
           set -Eeuo pipefail
           request="$(python3 scripts/rc6_market_watch_readonly.py prepare-alert \
             --decision evidence/decision.json)"
-          if [ -z "$request" ]; then
+          if [ "$NOTIFICATION_MODE" = 'read_only' ]; then
+            printf '%s\n' '{"status":"NOT_REQUESTED","read_only":true}' > evidence/delivery.json
+          elif [ -z "$request" ]; then
             printf '%s\n' '{"status":"NO_TRANSITION"}' > evidence/delivery.json
           else
             set +e

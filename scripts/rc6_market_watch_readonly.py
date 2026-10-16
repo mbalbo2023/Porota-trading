@@ -6,6 +6,7 @@ import argparse
 import base64
 import io
 import zipfile
+from contextlib import closing
 from datetime import datetime, timezone, timedelta
 import hashlib
 import json
@@ -1066,16 +1067,73 @@ def recent_critical_host():
     return result
 
 
+def deliver_transition_once(path, event_id, body, send):
+    """Durable bounded reservation; uncertain remote ACKs are never resent.
+
+    This is a separate monitor receipt, never the PAPER ledger. A committed
+    SENT receipt may acknowledge the same transition again without sending.
+    Crash after send and before receipt remains UNVERIFIED for reconciliation.
+    """
+    if (type(event_id) is not str or type(body) is not str or
+            not re.fullmatch('[0-9a-f]{64}', event_id) or len(body)>3500):
+        return {'status':'INVALID_REQUEST'}
+    path=Path(path)
+    if any(p.is_symlink() for p in (path,*path.parents)):
+        return {'status':'UNVERIFIED'}
+    try:
+        if path.exists() and (path.stat().st_nlink!=1 or path.stat().st_size>4*1024**2):
+            return {'status':'UNVERIFIED'}
+        with closing(sqlite3.connect(path, timeout=.2)) as c, c:
+            c.execute('PRAGMA busy_timeout=200')
+            c.execute('PRAGMA synchronous=FULL')
+            c.execute('PRAGMA max_page_count=1024')
+            c.execute('CREATE TABLE IF NOT EXISTS monitor_delivery_v1(event_id TEXT PRIMARY KEY,body_hash TEXT NOT NULL,state TEXT NOT NULL,message_id TEXT,created_at TEXT NOT NULL)')
+            c.execute('BEGIN IMMEDIATE')
+            row=c.execute('SELECT state,message_id FROM monitor_delivery_v1 WHERE event_id=?',(event_id,)).fetchone()
+            if row:
+                if row[0]=='SENT' and str(row[1]).isdigit() and int(row[1])>0:
+                    return {'status':'SENT','message_id':str(row[1]),'deduplicated':True,'transition_id':event_id}
+                return {'status':'UNVERIFIED','transition_id':event_id,'reason':'PRIOR_DELIVERY_UNCERTAIN'}
+            c.execute("DELETE FROM monitor_delivery_v1 WHERE state='SENT' AND created_at<?",
+                      ((now_utc()-timedelta(days=2)).isoformat(),))
+            if c.execute('SELECT COUNT(*) FROM monitor_delivery_v1').fetchone()[0]>=256:
+                return {'status':'UNVERIFIED','reason':'DELIVERY_RECEIPT_CAPACITY'}
+            c.execute('INSERT INTO monitor_delivery_v1 VALUES(?,?,?,?,?)',
+                      (event_id,hashlib.sha256(body.encode()).hexdigest(),'IN_FLIGHT',None,now_utc().isoformat()))
+        try:
+            receipt=send(body)
+        except Exception:
+            receipt={'status':'UNVERIFIED'}
+        acknowledged=(receipt.get('status')=='SENT' and
+                      str(receipt.get('message_id','')).isdigit() and int(receipt['message_id'])>0)
+        if acknowledged:
+            with closing(sqlite3.connect(path,timeout=.2)) as c, c:
+                c.execute('PRAGMA synchronous=FULL')
+                c.execute("UPDATE monitor_delivery_v1 SET state='SENT',message_id=? WHERE event_id=? AND state='IN_FLIGHT'",
+                          (str(receipt['message_id']),event_id))
+            return {'status':'SENT','message_id':str(receipt['message_id']),
+                    'deduplicated':False,'transition_id':event_id}
+        return {'status':'UNVERIFIED','transition_id':event_id,'reason':'DELIVERY_ACK_UNCERTAIN'}
+    except (OSError,sqlite3.Error,ValueError,TypeError):
+        return {'status':'UNVERIFIED'}
+
+
 def alert_host(encoded):
     """Use the existing container Telegram transport without exporting secrets."""
     try:
         if not 1 <= len(encoded) <= 6000 or any(c not in
                 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=" for c in encoded):
             raise ValueError("INVALID_ALERT_REQUEST")
-        body = base64.urlsafe_b64decode(encoded).decode("utf-8")
-        if not body.startswith("POROTA RC6 | ") or len(body) > 3500:
+        decoded = base64.urlsafe_b64decode(encoded).decode("utf-8")
+        if decoded.startswith('{'):
+            request=json.loads(decoded)
+            event_id=request['transition_id']; body=request['body']
+        else:
+            # Legacy unkeyed requests cannot guarantee dedupe; fail closed.
+            return {'status':'INVALID_REQUEST'}
+        if type(body) is not str or not body.startswith("POROTA RC6 | ") or len(body) > 3500:
             raise ValueError("INVALID_ALERT_BODY")
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, KeyError, TypeError):
         return {"status": "INVALID_REQUEST"}
     child = '''import json,os,sys
 from bn_telegram_bus import TelegramTransport,DeliveryError
@@ -1086,7 +1144,7 @@ try:
  print(json.dumps({"status":"SENT","message_id":mid}))
 except DeliveryError as exc: print(json.dumps({"status":"FAILED","error_code":exc.code}))
 except Exception as exc: print(json.dumps({"status":"FAILED","error_class":type(exc).__name__}))'''
-    try:
+    def send(body):
         result = subprocess.run(["docker", "exec", "porota_production_observer",
             "python", "-B", "-c", child, body], capture_output=True, text=True,
             timeout=19, check=False)
@@ -1096,30 +1154,33 @@ except Exception as exc: print(json.dumps({"status":"FAILED","error_class":type(
         if data.get("status") == "NOT_CONFIGURED":
             return {"status": "NOT_CONFIGURED"}
         return {"status": "FAILED"}
-    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
-        return {"status": "UNVERIFIED"}
+    return deliver_transition_once(ROOT/'data/paper_v17/market_watch_delivery.sqlite',event_id,body,send)
 
 
 def prepare_alert(decision):
     if decision["notification"] == "NONE":
         return ""
     codes = decision["new_alerts"] if decision["notification"] == "ALERT" else decision["recovered"]
-    if not codes or len(codes) > 20 or any(not isinstance(code, str) or
+    validation_codes=list(codes)+list(decision.get('recovered',[]))
+    if not codes or len(validation_codes) > 40 or any(not isinstance(code, str) or
             len(code) > 100 or any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_:-" for ch in code)
-            for code in codes):
+            for code in validation_codes):
         raise ValueError("ALERT_CODES_INVALID")
-    event_id = hashlib.sha256(json.dumps([decision["notification"], codes],
-        sort_keys=True).encode()).hexdigest()[:16]
+    event_id=decision.get('transition_id')
+    if not isinstance(event_id,str) or not re.fullmatch('[0-9a-f]{64}',event_id):
+        raise ValueError('TRANSITION_ID_REQUIRED')
     body = ("POROTA RC6 | " + decision["notification"] + "\n" +
         ", ".join(codes) + "\n" + decision["generated_at"] +
         "\nID: " + event_id + "\nPAPER/SHADOW ONLY. Ver evidencia en GitHub Actions.")
-    return base64.urlsafe_b64encode(body.encode()).decode()
+    if decision['notification']=='ALERT' and decision.get('recovered'):
+        body+='\nRECOVERY: '+', '.join(decision['recovered'])
+    return base64.urlsafe_b64encode(json.dumps({'transition_id':event_id,'body':body},sort_keys=True).encode()).decode()
 
 
 def finalize_delivery(decision, receipt):
     """Only an actual Telegram message_id makes a transition acknowledged."""
     status = receipt.get("status", "UNVERIFIED")
-    if status == "SENT" and not str(receipt.get("message_id", "")).isdigit():
+    if status == "SENT" and (not str(receipt.get("message_id", "")).isdigit() or int(receipt['message_id'])<=0):
         status = "UNVERIFIED"
     if decision["notification"] == "NONE":
         status = "NO_TRANSITION"
@@ -1133,6 +1194,7 @@ def finalize_delivery(decision, receipt):
     decision["delivery_status"] = status
     if status == "SENT":
         decision["telegram_message_id"] = str(receipt["message_id"])
+        decision['delivery_deduplicated']=receipt.get('deduplicated') is True
     return decision
 
 
@@ -1158,11 +1220,21 @@ def classify(current, previous=None, previous_decision=None):
     recovered = sorted(old_alerted - confirmed - (p1_now - p1_prev))
     alerted = sorted(confirmed | (old_alerted & p1_now))
     status = "P0" if p_now else "P1" if p1_now else current.get("severity", "GREEN")
+    notification='ALERT' if new_alerts else 'RECOVERY' if recovered else 'NONE'
+    origins=dict((previous_decision or {}).get('incident_origins',{})) if comparable else {}
+    for code in new_alerts:
+        origins[code]=current['generated_at']
+    transition_codes=new_alerts if new_alerts else recovered
+    identity=[current.get('expected_deploy_sha'),notification,
+              [(kind,code,origins.get(code,(previous or {}).get('generated_at')))
+               for kind,codes in [('ALERT',new_alerts),('RECOVERY',recovered)] for code in codes]]
+    transition_id=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest() if transition_codes else None
     return {"schema": SCHEMA, "generated_at": current["generated_at"],
             "status": status, "confirmed": sorted(confirmed),
             "alerted": alerted, "new_alerts": new_alerts,
             "recovered": recovered, "pending_confirmation": sorted(p1_now - p1_prev),
-            "notification": "ALERT" if new_alerts else "RECOVERY" if recovered else "NONE",
+            "notification": notification, 'transition_id':transition_id,
+            'incident_origins':{code:origins.get(code,(previous or {}).get('generated_at')) for code in sorted(set(alerted)|set(recovered))},
             "previous_comparable": comparable,
             "read_only": True, "real_orders_sent_verified": bool(
                 current.get("observer", {}).get("real_orders_sent") == 0
