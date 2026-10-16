@@ -71,6 +71,14 @@ def _remove_sqlite_bundle(path):
         item.unlink(missing_ok=True)
 
 
+def _backup_disk_admission(source_path, destination_dir):
+    """Reserve worst-case raw, gzip and restore copies plus 2 GiB of headroom."""
+    source_bytes = Path(source_path).stat().st_size
+    required = 2 * source_bytes + 2 * 1024 ** 3
+    available = shutil.disk_usage(destination_dir).free
+    return available >= required, available, required
+
+
 def init_schema(store):
     with store.connect() as c:
         c.executescript("""
@@ -191,6 +199,11 @@ def create_backup(store, force=False):
     if not force and not _job_due(store, "DAILY_BACKUP", 20 * 3600):
         return None
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    admitted, available, required = _backup_disk_admission(store.path, BACKUP_DIR)
+    if not admitted:
+        _job(store, "DAILY_BACKUP", "DEFERRED_DISK",
+             f"DISK_RESERVE_BLOCKED|available={available}|required={required}")
+        return None
     raw = BACKUP_DIR / f"observer_{key}.db"
     final = Path(str(raw) + ".gz")
     test = BACKUP_DIR / f".restore_test_{os.getpid()}.db"
@@ -244,6 +257,11 @@ def create_history_backup(store, force=False):
     key = datetime.now(TZ).strftime("%Y-%m-%d")
     target_dir = ROOT_DATA / "backups" / "history"
     target_dir.mkdir(parents=True, exist_ok=True)
+    admitted, available, required = _backup_disk_admission(source_path, target_dir)
+    if not admitted:
+        _job(store, "HISTORY_BACKUP", "DEFERRED_DISK",
+             f"DISK_RESERVE_BLOCKED|available={available}|required={required}")
+        return None
     raw = target_dir / f"market_history_{key}.db"
     final = Path(str(raw) + ".gz")
     test = target_dir / f".restore_test_{os.getpid()}.db"

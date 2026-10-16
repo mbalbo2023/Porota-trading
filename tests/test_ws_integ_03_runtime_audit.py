@@ -84,6 +84,46 @@ def test_readiness_retry_never_delays_worker_safety_failure(monkeypatch):
     assert called == [1]
 
 
+def test_dashboard_race_does_not_hide_broken_route(monkeypatch):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    bad = _snapshot()
+    bad["dashboard_truth"]["readiness"]["ready"] -= 1
+    bad["http_status"]["/salud"] = 503
+    called = []
+    monkeypatch.setattr(audit, "collect", lambda _label: called.append(1) or bad)
+    monkeypatch.setattr(audit.time, "sleep", lambda _seconds: pytest.fail("unsafe retry"))
+    with pytest.raises(AssertionError):
+        audit.consistent_snapshot("stability")
+    assert called == [1]
+
+
+def test_marked_partial_candidate_refresh_retries_but_durable_loss_fails(monkeypatch):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    partial = _snapshot()
+    partial["database"]["readiness"]["ready"] -= 25
+    partial["database"]["readiness"]["by_family"]["LETRAS"] -= 25
+    partial["dashboard_truth"]["readiness"]["ready"] -= 25
+    partial["database"]["readiness"]["refresh"] = {
+        "state": "RUNNING", "checked_at": datetime.now(timezone.utc).isoformat()}
+    good = _snapshot()
+    snapshots = iter([partial, good])
+    monkeypatch.setattr(audit, "collect", lambda _label: next(snapshots))
+    monkeypatch.setattr(audit.time, "sleep", lambda _seconds: None)
+    assert audit.consistent_snapshot("stability", attempts=2) == good
+
+    partial["database"]["readiness"]["refresh"]["state"] = "COMPLETE"
+    monkeypatch.setattr(audit, "collect", lambda _label: partial)
+    with pytest.raises(AssertionError):
+        audit.consistent_snapshot("stability", attempts=2)
+
+    partial["database"]["readiness"]["refresh"]["state"] = "RUNNING"
+    partial["database"]["workers"]["scalping"]["state"] = "ERROR"
+    with pytest.raises(RuntimeError, match="WORKER_STATE_UNHEALTHY"):
+        audit.consistent_snapshot("stability", attempts=2)
+
+
 def test_runtime_route_contract_tracks_frozen_terminal_manifest(monkeypatch):
     from scripts.rc6_dashboard_route_inventory import inventory
 

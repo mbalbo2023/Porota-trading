@@ -101,6 +101,32 @@ def test_sre_y_backup_incluyen_restore_real(tmp_path, monkeypatch):
     assert not list((tmp_path / "backups").glob("observer_*.db-shm"))
 
 
+def test_backup_defers_before_materializing_when_disk_reserve_is_insufficient(
+        tmp_path, monkeypatch):
+    db = tmp_path / "observer.db"
+    store = PaperStore(str(db))
+    monkeypatch.setattr(services, "BACKUP_DIR", tmp_path / "backups")
+    services.init_schema(store)
+    monkeypatch.setattr(services, "_backup_disk_admission",
+                        lambda *_args: (False, 100, 200))
+    assert services.create_backup(store, force=True) is None
+    assert not list((tmp_path / "backups").iterdir())
+    with store.connect() as connection:
+        state, detail = connection.execute(
+            "SELECT state,detail FROM operational_jobs WHERE job_key='DAILY_BACKUP'").fetchone()
+    assert state == "DEFERRED_DISK" and "available=100|required=200" in detail
+
+
+def test_backup_admission_accounts_for_two_copies_and_reserve(tmp_path, monkeypatch):
+    source = tmp_path / "source.db"
+    source.write_bytes(b"x" * 1024)
+    reserve = 2 * 1024 ** 3
+    monkeypatch.setattr(services.shutil, "disk_usage",
+                        lambda _path: type("Usage", (), {"free": reserve + 2047})())
+    assert services._backup_disk_admission(source, tmp_path) == (
+        False, reserve + 2047, reserve + 2048)
+
+
 def test_remove_sqlite_bundle_elimina_principal_wal_y_shm(tmp_path):
     test = tmp_path / ".restore_test_42.db"
     paths = [test, Path(str(test) + "-wal"), Path(str(test) + "-shm")]
