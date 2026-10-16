@@ -999,7 +999,7 @@ class PaperBroker:
                   "available_at": aware_datetime(at).isoformat(),
                   "source": "PPI_NATIVE_DISTINCT_TRADES; exact factual signal_prices query",
                   "temporal_contract": {
-                      "schema": "rc6.event-signal-contract.v1", "version": "main-events-v1",
+                      "schema": "rc6.event-signal-contract.v1", "version": "main-events-safety-v2",
                       "sample_kind": "DISTINCT_SOURCE_EVENTS", "short_event_count": 3,
                       "long_event_count": min(8, len(values)), "minimum_samples": self.signal_min_samples,
                       "lookback_limit_minutes": self.signal_window_minutes,
@@ -1012,6 +1012,7 @@ class PaperBroker:
             result["momentum"] = str(momentum)
         if spread is not None:
             result["spread"] = str(spread)
+        result['temporal_contract'].update(self._signal_temporal_check(values, q, at))
         local = aware_datetime(at).astimezone(TZ)
         if q.asset_class == "FUTUROS" and q.contract is not None:
             from rc6_ppi_future_contract_policy import PAPER_CLOSE, PAPER_EXIT_MINUTES
@@ -1030,6 +1031,53 @@ class PaperBroker:
             result.update(eod_at=(end - timedelta(minutes=self.session_policy.exit_minutes)).isoformat(),
                           eod_reason="NATIVE_PAPER_SESSION_POLICY")
         return result
+
+    def _signal_temporal_check(self, values, q, at):
+        """Safety floor on the actual SMA vector, not a claim of minute bars.
+
+        One minute per interval is a conservative PAPER observation floor.
+        The90m window remains only a maximum lookback. No score, quote/exit
+        freshness, provider contract or economic-edge claim changes here.
+        """
+        observations = getattr(values, 'observations', [])
+        used = min(8, len(values))
+        result = {'safety_policy': 'PAPER_EVENT_COVERAGE_60S_V1',
+                  'safety_floor_seconds_per_interval': 60,
+                  'minimum_span_seconds': max(0, used-1)*60,
+                  'maximum_gap_seconds': self.trade_max_age_seconds,
+                  'scored_event_count': used, 'temporal_ready': False}
+        if (used < 3 or len(observations) != len(values) or
+                [r.get('price') for r in observations] != [str(v) for v in values]):
+            return result | {'reason_code': 'SIGNAL_TEMPORAL_EVIDENCE_UNVERIFIED'}
+        try:
+            cutoff = aware_datetime(at)
+            key = (q.symbol, q.asset_class, q.settlement, *q.monetary_identity())
+            times = []
+            for row in observations[-used:]:
+                identity = tuple(row[k] for k in ('symbol','asset_class','settlement','currency','market'))
+                source = aware_datetime(row['source_at'])
+                known = aware_datetime(row['known_at'])
+                received = aware_datetime(row['received_at'])
+                if identity != key or not source <= received <= known <= cutoff:
+                    raise ValueError('identity/clock')
+                times.append(source)
+            gaps = [(b-a).total_seconds() for a,b in zip(times,times[1:])]
+            if any(g<=0 for g in gaps):
+                raise ValueError('unordered events')
+        except (KeyError, ValueError, TypeError):
+            return result | {'reason_code':'SIGNAL_TEMPORAL_EVIDENCE_UNVERIFIED'}
+        result.update(scored_span_seconds=(times[-1]-times[0]).total_seconds(),
+                      observed_maximum_gap_seconds=max(gaps))
+        if result['scored_span_seconds'] < result['minimum_span_seconds']:
+            return result | {'reason_code':'SIGNAL_EVENT_SPAN_INSUFFICIENT'}
+        # A single old observation cannot pad an otherwise concentrated burst.
+        if any(gap < 60 for gap in gaps):
+            return result | {'reason_code':'SIGNAL_EVENT_INTERVAL_TOO_SHORT'}
+        if max(gaps)>self.trade_max_age_seconds:
+            return result | {'reason_code':'SIGNAL_EVENT_GAP_EXCESSIVE'}
+        if not 0 <= (cutoff-times[-1]).total_seconds() <= self.trade_max_age_seconds:
+            return result | {'reason_code':'SIGNAL_EVENT_SOURCE_STALE'}
+        return result | {'temporal_ready':True,'reason_code':'SIGNAL_TEMPORAL_READY'}
 
     @trace_spot_signal
     def decide(self, q: Quote):
@@ -1092,6 +1140,11 @@ class PaperBroker:
                                       f"{self.signal_min_samples} muestras"), {
                 "samples": len(values), "reason_code": "SIGNAL_WARMUP",
                 "entry_signal_inputs": self._entry_signal_inputs(values, q, at)}
+        temporal = self._signal_temporal_check(values, q, at)
+        if not temporal['temporal_ready']:
+            return 'HOLD', ZERO, temporal['reason_code'], {
+                'samples':len(values),'reason_code':temporal['reason_code'],
+                'entry_signal_inputs':self._entry_signal_inputs(values,q,at)}
         short = sum(values[-3:], ZERO) / D(3)
         long_span = min(8, len(values))
         long = sum(values[-long_span:], ZERO) / D(long_span)
@@ -1822,6 +1875,9 @@ class PaperBroker:
         features["entry_signal_inputs"] = self._entry_signal_inputs(values, q, at)
         if len(values) < self.signal_min_samples:
             return "HOLD", ZERO, "FUTURES_NATIVE_WARMUP_INCOMPLETE", features
+        temporal = self._signal_temporal_check(values,q,at)
+        if not temporal['temporal_ready']:
+            return 'HOLD', ZERO, temporal['reason_code'], features
         short = sum(values[-3:], ZERO) / D(3)
         long = sum(values[-min(8, len(values)):], ZERO) / D(min(8, len(values)))
         momentum = short / long - 1 if long else ZERO

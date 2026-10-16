@@ -20,6 +20,7 @@ from rc6_dynamic_universe.live import run_shadow
 from rc6_dynamic_universe.runtime import read_runtime
 from rc6_dynamic_universe.sources import source_observations
 from .persistence import EvidenceFiles, EvidencePayloadLimit
+from .timing import POLL_SECONDS
 
 LOG = logging.getLogger("dynamic_shadow")
 VERSION = "WS-CLOSE-PROGRAMMING-05-RUNTIME-v2"
@@ -124,6 +125,31 @@ def _durable_family_routing(report):
     }
 
 
+def durable_exit_observations(lab):
+    rows=[]
+    for observation in reversed(lab.get('entries',[])[-100:]):
+        entry=observation.get('entry') or {}
+        label=observation.get('forward_label') or {}
+        for variant in observation.get('variants',[])[:20]:
+            result=variant.get('result') or {}
+            measured=label.get('status')=='MEDIDO' and result.get('state')=='CLOSED'
+            rows.append({**{k:entry.get(k) for k in ('paper_id','symbol','currency','market','settlement')},
+                'family':entry.get('asset_class'),'opened_at':entry.get('opened_at'),
+                'policy':variant.get('policy'),'state':'EVALUABLE' if measured else 'INSUFFICIENT_EVIDENCE',
+                'modeled_net':result.get('net') if measured else None,
+                'registered_at':observation.get('registered_at'),
+                'entry_evidence_sha256':observation.get('entry_evidence_sha256'),
+                'path_sha256':observation.get('path_sha256'),
+                'coverage':label.get('status'),'path_observations':observation.get('path_observations'),
+                'comparison_basis':'SAME_FACTUAL_ENTRY_PAPER_SENSITIVITY',
+                'entry_authority':False,'economic_edge_validated':False})
+            if len(rows)>=100: break
+        if len(rows)>=100: break
+    return {'status':lab.get('status'),'as_of':lab.get('as_of'),'rows':rows,
+            'scope':'LATEST_100_POLICY_OBSERVATIONS; no portfolio feedback or continuous market path claim',
+            'economic_edge_validated':False,'decision_effect':'NONE'}
+
+
 def durable_report_view(report, *, catalog_ready_count):
     """Persist a bounded selection contract; preserve full in-memory evaluation.
 
@@ -159,6 +185,12 @@ def durable_report_view(report, *, catalog_ready_count):
         }
     if "family_routing" in report:
         view["family_routing"] = _durable_family_routing(report["family_routing"])
+    # The dashboard consumes this bounded aggregate, never the full audit.
+    # Previously only its status survived, so every funnel count was absent.
+    funnel = report.get("operational_funnel", {})
+    view["operational_funnel"] = {key: funnel[key] for key in (
+        "status", "as_of", "by_currency_channel", "counts") if key in funnel}
+    view['economic_exit_lab']=durable_exit_observations(report.get('economic_exit_lab',{}))
     view["section_status"] = {key: report[key].get("status")
         for key in ("economic_exit_lab", "entry_signal_lab", "operational_funnel")
         if isinstance(report.get(key), dict)}
@@ -320,6 +352,7 @@ class ShadowRuntime:
         return {"points": list(points.values()), "counters": counters, "last_trade": last}
 
     def tick(self, as_of):
+        tick_started = time.monotonic()
         at = stamp(as_of)
         with self.files as files:
             capacity_policy = self.capacity_controller.state(at)
@@ -454,7 +487,10 @@ class ShadowRuntime:
                 entry_signal_lab_status=report["entry_signal_lab"]["status"],
                 operational_funnel_status=report["operational_funnel"]["status"])
             status["runtime_sql_diagnostics"] = _runtime_sql_status(self.last_sqlite_diagnostics)
+            status['generation_timing'] = {'poll_seconds':POLL_SECONDS,
+                'tick_seconds':round(time.monotonic()-tick_started,3)}
             files.write("status.json", status)
+            files.publish_generation(durable, status)
             files.prune_computed_reports(keep=audit["file"])
             return report
 
@@ -537,4 +573,4 @@ def run_worker(database, stop, *, clock_fn=None):
                         files.write("status.json", failure)
                 except (OSError, ValueError):
                     LOG.warning("DYNAMIC_SHADOW_STATUS_UNAVAILABLE")
-        stop.wait(30)
+        stop.wait(POLL_SECONDS)

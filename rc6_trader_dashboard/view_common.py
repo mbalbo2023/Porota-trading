@@ -16,7 +16,7 @@ CAPACITY_DETAIL = fields("discovery|DISCOVERY|number;p50_age_seconds|Discovery a
 WORKERS = fields("worker|Worker;state|Estado|status;as_of|Heartbeat|time;age_seconds|Age (s)|number;freshness|Freshness|status")
 WORKER_DETAIL = fields("last_success_at|Último éxito|time;last_error|Último error;code|Motivo operativo;last_attempt_at|Último intento|time;real_orders_sent|Órdenes reales|number;supervised_positions|Posiciones supervisadas;coverage_exception|Excepción de coverage;detail|Detalle técnico")
 SOURCES = fields("component|Fuente / scope;state|Estado|status;role|Autoridad;freshness|Freshness|status;as_of|Chequeo|time")
-SOURCE_DETAIL = fields("observed_state|Último estado registrado|status;checked_age_seconds|Edad del chequeo (s)|number;cadence|Cadencia / autoridad;provider_clock|Provider / event clock|time;receipt_clock|Receipt / capture clock|time;lkg|Last Known Good|time;scope|Campos/familias afectados;conflicts|Conflictos;detail|Diagnóstico scoped")
+SOURCE_DETAIL = fields("observed_state|Último estado registrado|status;check_freshness|Frescura del chequeo|status;data_freshness|Frescura del dato|status;data_quality|Calidad de datos;decision_effect|Efecto en decisiones;checked_age_seconds|Edad del chequeo (s)|number;cadence|Cadencia / autoridad;provider_clock|Provider / event clock|time;receipt_clock|Receipt / capture clock|time;lkg|Last Known Good|time;scope|Campos/familias afectados;conflicts|Conflictos;detail|Diagnóstico scoped")
 BALANCES = fields("currency|Moneda;equity|Patrimonio PAPER|money;valuation_state|Calidad de valuación|status;cash|Caja disponible|money;exposure|Exposición|money;unrealized_pnl|PnL no realizado|money")
 BALANCE_DETAIL = fields("reserved|Caja reservada|money;pending_proceeds|Cobros pendientes|money;caucion_principal|Principal caución|money;caucion_accrued|Caución devengada|money;realized_pnl|Realizado acumulado|money;measured_at|Valuación as_of|time;freshness|Freshness|status;stale_positions|Marks stale|number;exposure_limit|Límite de exposición|money;concentration|Concentración;drawdown|Drawdown|money")
 DAILY_RISK = fields("currency|Moneda;state|Riesgo diario|status;daily_pnl|PnL diario de DailyRisk|money;loss_budget|Presupuesto de pérdida|money;limit_pct|Límite hard (%)|percent")
@@ -36,6 +36,9 @@ def render_table(p, destination, tab, page, title, columns, detail=(), *, filter
 def committed_funnel(p):
     from .components import funnel, e, clock
     from urllib.parse import urlencode
+    if not p.shadow_fresh:
+        return notice("Embudo no disponible: " + (p.shadow.get("reason") or
+                      "corte SHADOW vencido; revisar worker y hora de publicación"))
     report = p.shadow["report"].get("operational_funnel", {})
     groups = report.get("by_currency_channel", []) if isinstance(report, dict) else []
     groups = [r for r in groups if isinstance(r, dict) and isinstance(r.get("stages"), dict)]
@@ -47,6 +50,8 @@ def committed_funnel(p):
              "DISCOVERY": "DISCOVERY_TOUCHED", "WARM": "WARM", "HOT": "HOT", "SIGNAL": "SIGNAL_CANDIDATE",
              "ECONOMICS": "ECONOMICS_PASS", "RISK": "RISK_PASS", "PAPER": "PAPER_OPENED"}
     counts = {stage: selected["stages"].get(native) for stage, native in names.items()}
-    scope = f"{selected.get('currency')} / {selected.get('channel')} · {clock(report.get('as_of'))} · CURRENT.json"
+    timing=p.shadow_liveness
+    scope = (f"{selected.get('currency')} / {selected.get('channel')} · {clock(report.get('as_of'))} · CURRENT.json"
+             f" · edad {timing['age_seconds']}s / presupuesto {timing['budget_seconds']}s · {timing['basis']}")
     links = "".join(f"<a class='button' href='?{e(urlencode({'currency': r.get('currency'), 'channel': r.get('channel')}))}'>{e(r.get('currency'))} / {e(r.get('channel'))}</a>" for r in groups[:10])
     return f"<nav class='pager' aria-label='Scope del embudo'>{links}</nav>" + funnel(counts, scope)

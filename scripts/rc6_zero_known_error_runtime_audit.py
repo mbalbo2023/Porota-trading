@@ -381,10 +381,13 @@ def _assert_snapshot(snapshot, baseline=None):
     allowed = set(truth["iol"]["allowed_states"])
     assert allowed == ALLOWED_IOL_STATES
     matrix = snapshot["route_inventory"]
-    # The frozen RC6 terminal matrix includes the canonical Cauciones
-    # view and its registered path. Keep cardinality and full manifest
-    # comparison together; the route count alone cannot prove semantic parity.
-    assert matrix["route_count"] == 103 and matrix["registered_paths"] == 101
+    # Counts belong to the tested artifact, rather than a historical terminal
+    # version. Full inventory equality remains independently required below.
+    artifact = json.loads(Path('DASHBOARD_TRUTH_MATRIX_RC6.json').read_text(encoding='utf-8'))
+    assert artifact['route_count'] == len(artifact['routes'])
+    assert artifact['registered_paths'] == len({row['path'] for row in artifact['routes']})
+    assert matrix['route_count'] == artifact['route_count']
+    assert matrix['registered_paths'] == artifact['registered_paths']
     assert snapshot["route_matrix_matches_artifact"] is True
     assert all(code == 200 for code in snapshot["http_status"].values())
     _assert_surface_metrics(snapshot.get("surface_metrics", {}))

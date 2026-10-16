@@ -47,7 +47,7 @@ def test_native_decision_precedes_intent_and_committed_fill(tmp_path, monkeypatc
         return tick[0].isoformat()
     broker = PaperBroker(store, clock_fn=clock, signal_min_samples=3,
                          score_threshold=".50", ai_mode="OFF", daily_loss_pct="100")
-    for seconds, price in ((-150, "95"), (-120, "96"), (-90, "97"), (-60, "98"), (-30, "99"), (0, "100")):
+    for seconds, price in ((-300, "95"), (-240, "96"), (-180, "97"), (-120, "98"), (-60, "99"), (0, "100")):
         q = quote(price, AT+timedelta(seconds=seconds))
         store.add_quote(q)
     broker.on_quote(q)

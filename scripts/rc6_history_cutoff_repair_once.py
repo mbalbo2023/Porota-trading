@@ -30,7 +30,7 @@ CUTOFF = date(2026, 9, 21)
 BOOTSTRAP_START = CUTOFF - timedelta(days=365)
 FAMILIES = {"ACCIONES", "CEDEARS"}
 LOCK_PATH = Path(os.getenv("HIST_DB_PATH", "/app/data/market_history.db")).parent / ".rc6-history-cutoff-repair.lock"
-STATE_TABLE = "rc6_history_cutoff_repair"
+STATE_TABLE = "rc6_history_cutoff_repair_exact_v2"
 RUN_TABLE = "rc6_history_cutoff_repair_runs"
 
 
@@ -48,10 +48,11 @@ def _init_state(db) -> None:
         c.executescript(f"""
         CREATE TABLE IF NOT EXISTS {STATE_TABLE}(
           cutoff TEXT NOT NULL, symbol TEXT NOT NULL, instrument_type TEXT NOT NULL,
-          market TEXT NOT NULL, settlement TEXT NOT NULL, state TEXT NOT NULL,
+          market TEXT NOT NULL, settlement TEXT NOT NULL, currency TEXT NOT NULL,
+          price_basis TEXT NOT NULL, adjustment_basis TEXT NOT NULL, state TEXT NOT NULL,
           source TEXT, requested_from TEXT, requested_to TEXT, valid_rows INTEGER NOT NULL DEFAULT 0,
           latest_date TEXT, error_class TEXT, updated_at TEXT NOT NULL,
-          PRIMARY KEY(cutoff,symbol,instrument_type,market,settlement)
+          PRIMARY KEY(cutoff,symbol,instrument_type,market,settlement,currency,price_basis,adjustment_basis)
         );
         CREATE TABLE IF NOT EXISTS {RUN_TABLE}(
           cutoff TEXT PRIMARY KEY, state TEXT NOT NULL, targets INTEGER NOT NULL,
@@ -61,32 +62,55 @@ def _init_state(db) -> None:
         """)
 
 
-def _targets(observer_store) -> list[tuple[str, str, str, str]]:
+def _targets(observer_store) -> list[tuple[str, ...]]:
     with observer_store.connect() as c:
         rows = c.execute(
-            """SELECT DISTINCT ticker,instrument_type,market,settlement
+            """SELECT DISTINCT ticker,instrument_type,market,settlement,currency
                FROM financial_instrument_catalog
                WHERE status='AVAILABLE'
                  AND upper(instrument_type) IN ('ACCIONES','CEDEARS')
                  AND trim(coalesce(ticker,''))<>''"""
         ).fetchall()
     result = set()
-    for symbol, family, market, settlement in rows:
+    for symbol, family, market, settlement, currency in rows:
         item = (str(symbol or "").strip().upper(), str(family or "").strip().upper(),
                 str(market or "").strip().upper(), str(settlement or "").strip().upper())
         if not all(item) or item[1] not in FAMILIES or item[2] == "UNKNOWN" or item[3] == "UNKNOWN":
             continue
-        result.add(item)
+        from bs_instrument_contracts import cash_currency
+        try:
+            result.add((*item, cash_currency(currency), "RAW", "RAW_NO_ADJUSTMENT"))
+        except ValueError:
+            continue
     return sorted(result)
 
 
+def _exact_key(identity):
+    from bs_instrument_contracts import cash_currency
+    if len(identity) != 7 or any(not isinstance(x, str) or not x.strip() or x == "UNKNOWN" for x in identity):
+        raise ValueError("HISTORY_REPAIR_FULL_SERIES_IDENTITY_REQUIRED")
+    key = tuple(identity)
+    if cash_currency(key[4]) != key[4] or key[5:] != ("RAW", "RAW_NO_ADJUSTMENT"):
+        raise ValueError("HISTORY_REPAIR_UNSUPPORTED_BASIS")
+    return key
+
+
+def _live_identity_unambiguous(targets, identity):
+    # PPI history accepts symbol/family/settlement, not a currency selector.
+    # Two monetary identities behind that endpoint must not receive the same
+    # unqualified response with two arbitrarily assigned currencies.
+    key=_exact_key(identity)
+    return {tuple(t[2:5]) for t in targets if t[:2]==key[:2] and t[3]==key[3]} == {key[2:5]}
+
+
 def _latest(db, identity) -> str | None:
-    symbol, family, market, settlement = identity
+    symbol, family, market, settlement, currency, price_basis, adjustment_basis = _exact_key(identity)
     with db.connect() as c:
         row = c.execute(
             """SELECT MAX(date) FROM history_canonical_v2
-               WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?""",
-            identity,
+               WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
+                 AND currency=? AND price_basis=? AND adjustment_basis=?""",
+            _exact_key(identity),
         ).fetchone()
     return str(row[0])[:10] if row and row[0] else None
 
@@ -97,8 +121,9 @@ def _coverage(db, identity) -> dict[str, Any]:
         rows = c.execute(
             """SELECT DISTINCT substr(date,1,10) FROM history_canonical_v2
                WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
+                 AND currency=? AND price_basis=? AND adjustment_basis=?
                  AND date<=? ORDER BY date""",
-            (*identity, CUTOFF.isoformat()),
+            (*_exact_key(identity), CUTOFF.isoformat()),
         ).fetchall()
     days = set()
     for row in rows:
@@ -128,19 +153,19 @@ def _coverage(db, identity) -> dict[str, Any]:
 
 def _save(db, identity, *, state: str, source: str = "", requested_from: str = "",
           rows: int = 0, latest: str | None = None, error: str | None = None) -> None:
-    symbol, family, market, settlement = identity
+    symbol, family, market, settlement, currency, price_basis, adjustment_basis = _exact_key(identity)
     with db.connect() as c:
         c.execute(
             f"""INSERT INTO {STATE_TABLE}
-                (cutoff,symbol,instrument_type,market,settlement,state,source,
+                (cutoff,symbol,instrument_type,market,settlement,currency,price_basis,adjustment_basis,state,source,
                  requested_from,requested_to,valid_rows,latest_date,error_class,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(cutoff,symbol,instrument_type,market,settlement) DO UPDATE SET
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(cutoff,symbol,instrument_type,market,settlement,currency,price_basis,adjustment_basis) DO UPDATE SET
                  state=excluded.state,source=excluded.source,
                  requested_from=excluded.requested_from,requested_to=excluded.requested_to,
                  valid_rows=excluded.valid_rows,latest_date=excluded.latest_date,
                  error_class=excluded.error_class,updated_at=excluded.updated_at""",
-            (CUTOFF.isoformat(), symbol, family, market, settlement, state, source or None,
+            (CUTOFF.isoformat(), symbol, family, market, settlement, currency, price_basis, adjustment_basis, state, source or None,
              requested_from or None, CUTOFF.isoformat(), int(rows), latest, error, _stamp()),
         )
 
@@ -173,6 +198,11 @@ def _archive_payloads(targets: set[tuple[str, str, str, str]]) -> dict[tuple[str
                     str(wrapper.get("market") or metadata.get("market") or metadata.get("exchange") or "").strip().upper(),
                     str(wrapper.get("settlement") or metadata.get("settlement") or "").strip().upper(),
                 )
+                currency = wrapper.get("currency") or metadata.get("currency")
+                if not currency:
+                    continue
+                from bs_instrument_contracts import cash_currency
+                identity = (*identity, cash_currency(currency), "RAW", "RAW_NO_ADJUSTMENT")
                 if identity not in targets or identity in selected:
                     continue
                 rebuilt = json.loads(exact.reconstruct(wrapper["wrapper_json"] if "wrapper_json" in wrapper
@@ -217,7 +247,7 @@ def _record_exact(observer_store, identity, payload, start: date, attempted_at: 
     import fb_raw_evidence_exact_v1 as exact
     import cp_history_ingest_policy_hf6 as policy
 
-    symbol, family, _market, settlement = identity
+    symbol, family, _market, settlement, currency, _, _ = _exact_key(identity)
     metadata = observer.financial_catalog.lookup(observer_store, symbol, family, settlement)
     valid = policy.validate_provider_history(
         _filtered(payload, start), as_of=datetime.fromisoformat(attempted_at.replace("Z", "+00:00")),
@@ -226,11 +256,13 @@ def _record_exact(observer_store, identity, payload, start: date, attempted_at: 
     quality = "VALID_PAYLOAD" if valid else "EMPTY_OR_INVALID"
     wrapper = {
         "symbol": symbol, "asset_class": family, "settlement": settlement,
+        "market": _market, "currency": currency, "price_basis": "RAW",
+        "adjustment_basis": "RAW_NO_ADJUSTMENT",
         "date_from": start.isoformat(), "date_to": CUTOFF.isoformat(),
         "metadata": metadata, "valid_rows": valid,
         "payload_json": json.dumps(payload, ensure_ascii=False, default=str),
     }
-    row_key = canonical_json.canonical([symbol, family, settlement, attempted_at])
+    row_key = canonical_json.canonical([*_exact_key(identity), attempted_at])
     exact.archive_wrapper(row_key=row_key, wrapper=wrapper, recorded_at=attempted_at, quality=quality)
 
 
@@ -241,7 +273,7 @@ def _ingest(observer_store, history_store, identity, payload, start: date, *, so
     bounded = _filtered(payload, start)
     result = salvage.ingest_ppi_payload(
         observer_store, symbol=identity[0], instrument_type=identity[1],
-        market=identity[2], settlement=identity[3], payload=bounded,
+        market=identity[2], settlement=identity[3], currency=_exact_key(identity)[4], payload=bounded,
         requested_from=start, requested_to=CUTOFF, attempted_at=observed_at,
         history_store=history_store,
     )
@@ -250,13 +282,13 @@ def _ingest(observer_store, history_store, identity, payload, start: date, *, so
 
 def _quarantine_unavailable(observer_store, identity) -> None:
     """Exclude only a repeatedly unbacked PPI history identity from operation."""
-    symbol, family, market, settlement = identity
+    symbol, family, market, settlement, currency, price_basis, adjustment_basis = _exact_key(identity)
     with observer_store.connect() as c:
         c.execute(
             """UPDATE financial_instrument_catalog
                SET status='STALE', capability='HISTORY_UNAVAILABLE_PPI'
-               WHERE ticker=? AND instrument_type=? AND market=? AND settlement=?""",
-            (symbol, family, market, settlement),
+               WHERE ticker=? AND instrument_type=? AND market=? AND settlement=? AND currency=?""",
+            (symbol, family, market, settlement, currency),
         )
 
 
@@ -363,7 +395,8 @@ def main() -> int:
                           requested_from=start.isoformat(), error=type(exc).__name__)
         reader = None
         live_gap_repair = os.getenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", "").strip() == "APPROVED"
-        if len(completed) < len(targets_list) and live_gap_repair:
+        if len(completed) < len(targets_list) and live_gap_repair and any(
+                _live_identity_unambiguous(targets_list,key) for key in targets_list if key not in completed):
             try:
                 key, secret = observer._secret()
                 reader = ProductionMarketReader(key, secret)
@@ -378,6 +411,11 @@ def main() -> int:
             try:
                 for index, identity in enumerate(targets_list, 1):
                     if identity in completed:
+                        continue
+                    if not _live_identity_unambiguous(targets_list,identity):
+                        _save(history_store,identity,state="BLOCKED_AMBIGUOUS_PROVIDER_IDENTITY",
+                              source="PPI",error="PPI_HISTORY_ENDPOINT_IDENTITY_AMBIGUOUS")
+                        failed+=1
                         continue
                     latest = _latest(history_store, identity)
                     if not latest:

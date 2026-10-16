@@ -390,6 +390,22 @@
       "active": true,
       "remove_on_deploy": false,
       "reason": "Maintains off-hours OAuth continuity and explicit pre-market checks without replacing the productive complementary IOL collector during BYMA hours"
+    },
+    "systemd/porota-local-eod-history-rc6.service": {
+      "role": "ACTIVE_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "Bounded local sampled EOD in existing cold history DB, independent of external quarantine; no provider, orders, HOT writer or PPI Watch"
+    },
+    "systemd/porota-local-eod-history-rc6.timer": {
+      "role": "ACTIVE_TIMER",
+      "install": true,
+      "enabled": true,
+      "active": true,
+      "remove_on_deploy": false,
+      "reason": "Bounded local sampled EOD in existing cold history DB, independent of external quarantine; no provider, orders, HOT writer or PPI Watch"
     }
   },
   "external_host_units": {

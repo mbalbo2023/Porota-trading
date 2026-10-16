@@ -18,7 +18,7 @@ def test_live_ppi_rows_with_interior_gap_remain_partial(tmp_path, monkeypatch):
     import bf_production_paper_observer as observer
     import cg_paper_workspace as workspace
 
-    identity = ("TEST", "ACCIONES", "BYMA", "CI")
+    identity = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
     store = _Store(tmp_path / "history.db")
     monkeypatch.setattr(repair, "LOCK_PATH", tmp_path / "repair.lock")
     monkeypatch.setattr(repair, "_history_store", lambda: store)
@@ -60,7 +60,7 @@ def test_live_ppi_rows_with_interior_gap_remain_partial(tmp_path, monkeypatch):
 
     assert repair.main() == 1
     with store.connect() as c:
-        state = c.execute("SELECT state,source,valid_rows,error_class FROM rc6_history_cutoff_repair").fetchone()
+        state = c.execute("SELECT state,source,valid_rows,error_class FROM rc6_history_cutoff_repair_exact_v2").fetchone()
         run = c.execute("SELECT state,complete,failed,ppi_queries FROM rc6_history_cutoff_repair_runs").fetchone()
     assert state == ("PPI_PARTIAL_COVERAGE", "PPI", 2, "MISSING_BYMA_SESSIONS")
     assert run == ("PARTIAL", 0, 1, 2)

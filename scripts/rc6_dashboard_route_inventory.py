@@ -92,7 +92,7 @@ def classify(path: str) -> tuple[list[str], list[str], str, str]:
                 "Trading > Cauciones", "VISIBLE_SURFACE")
     destination, tab = resolve(path)
     if destination is not None and (path in CANONICAL_PATHS or path in LEGACY):
-        concepts, datasets = TERMINAL_DATASETS[destination.key]
+        concepts, datasets = TERMINAL_VIEW_DATASETS.get((destination.key,tab),TERMINAL_DATASETS[destination.key])
         return concepts, datasets, f"{destination.label} > {dict(destination.tabs)[tab]}", "VISIBLE_SURFACE"
     if path == "/api/trader/logs/download":
         return ["runtime"], ["bounded sanitized log snapshot"], "sanitized log tail", "API"
@@ -112,6 +112,13 @@ TERMINAL_DATASETS = {
     "riesgo": (["runtime", "safety"], ["paper_daily_risk", "paper_equity_by_currency", "paper_positions", "paper_exit_intents", "committed SHADOW generation adapter"]),
     "analitica": (["history", "learning_history"], ["paper_positions", "history_canonical_v2", "production_history", "report_registry", "committed SHADOW generation adapter"]),
     "sistema": (["runtime", "timers"], ["observer_state", "api_health", "canonical worker states", "systemd snapshot", "bounded sanitized log snapshot", "non-secret configuration allowlist", "committed SHADOW generation adapter"]),
+}
+
+TERMINAL_VIEW_DATASETS = {
+    ('analitica','anual'): (['history'],['history_canonical_v2','production_history (selector only)']),
+    ('analitica','contrafactuales'): (['learning_history'],['counterfactual_learning_rc6.json',
+        'decision_evidence_latest.json','trade_gate_evaluations','paper_positions',
+        'committed historical economic_exit_lab']),
 }
 
 

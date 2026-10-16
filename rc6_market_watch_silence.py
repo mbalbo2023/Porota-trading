@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 
 from _version import MODE, EXECUTION, REAL_ORDER_CAPABILITY
 from bn_telegram_bus import DeliveryError, TelegramTransport
+import ak_byma_calendar as calendar
 
 
 RUNS_URL = ("https://api.github.com/repos/mbalbo2023/Porota-trading/actions/"
@@ -31,7 +32,10 @@ def active_window(now: datetime) -> bool:
     local = now.astimezone(ART)
     minutes = local.hour * 60 + local.minute
     # First expected scheduled run is 10:37 ART. Give two full intervals.
-    return local.weekday() < 5 and 11 * 60 + 2 <= minutes < 17 * 60 + 15
+    return (local.year in calendar.ANIOS_AUDITADOS and
+            0 <= (local.date()-calendar.CALENDARIO_ACTUALIZADO_EL).days <= 60 and
+            calendar.es_dia_habil_operativo(local.date()) and
+            11 * 60 + 2 <= minutes < 17 * 60 + 15)
 
 
 def latest_schedule(*, opener=urlopen):
@@ -51,7 +55,11 @@ def latest_schedule(*, opener=urlopen):
     if not isinstance(run, dict) or run.get("event") != "schedule" or (
             run.get("path") != WORKFLOW or run.get("head_branch") != "main"):
         raise ValueError("GITHUB_RUN_IDENTITY_INVALID")
-    stamp = datetime.fromisoformat(str(run["created_at"]).replace("Z", "+00:00"))
+    # A queued, in-progress or manually retried run never proves that the
+    # scheduler completed a probe. Creation time is not execution time.
+    if run.get('status') != 'completed' or run.get('run_attempt') != 1:
+        return None
+    stamp = datetime.fromisoformat(str(run["run_started_at"]).replace("Z", "+00:00"))
     if stamp.tzinfo is None:
         raise ValueError("GITHUB_RUN_CLOCK_INVALID")
     return stamp.astimezone(timezone.utc)

@@ -12,7 +12,7 @@ AWAITING = "NO_VERIFICADO_AWAITING_RECONCILIATION"
 PAYLOAD_LIMIT = 4 * 1024 * 1024
 
 
-def read_shadow(root: Path, reader=None):
+def read_shadow(root: Path, reader=None, *, historical=False):
     missing = {"state": AWAITING, "reason": "CANONICAL_GENERATION_READER_NOT_AVAILABLE", "report": {}}
     if reader is None:
         try:
@@ -20,7 +20,7 @@ def read_shadow(root: Path, reader=None):
         except (ImportError, AttributeError):
             return missing
     try:
-        cut = reader(root, payload_limit=PAYLOAD_LIMIT)
+        cut = reader(root, payload_limit=PAYLOAD_LIMIT,**({'require_current_status':False} if historical else {}))
         pointer, manifest = cut["pointer"], cut["manifest"]
         ident = pointer["generation_id"]
         encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":"), default=str,
@@ -30,7 +30,7 @@ def read_shadow(root: Path, reader=None):
                 or hashlib.sha256(encoded).hexdigest() != pointer["manifest_sha256"]):
             raise ValueError("GENERATION_ENVELOPE_MISMATCH")
         watermark, fingerprint = manifest["source_watermark"], manifest["configuration_fingerprint"]
-        for role in ("report", "checkpoint", "status"):
+        for role in ("report", "status", *(("checkpoint",) if "checkpoint" in cut else ())):
             member = cut[role]
             if (member["generation_id"] != ident or member["source_watermark"] != watermark
                     or member["configuration_fingerprint"] != fingerprint
@@ -41,11 +41,14 @@ def read_shadow(root: Path, reader=None):
             if hashlib.sha256(payload_bytes).hexdigest() != manifest["files"][role]["payload_digest"]:
                 raise ValueError("GENERATION_MEMBER_DIGEST_MISMATCH")
         report = cut["report"]
-        if report.get("real_orders_sent") != 0 or report.get("real_routes") != "NOT_CALLED":
+        if type(report.get("real_orders_sent")) is not int or report["real_orders_sent"] != 0 or report.get("real_routes") != "NOT_CALLED":
             raise ValueError("GENERATION_SAFETY_UNVERIFIED")
-        return {"state": "COMMITTED_COHERENT_SHADOW", "reason": "", "report": report,
+        return {"state": "HISTORICAL_COHERENT_SHADOW" if historical else "COMMITTED_COHERENT_SHADOW",
+                "reason": "HISTORICAL_EVIDENCE_NOT_LIVE" if historical else "", "report": report,
                 "pointer": pointer, "manifest": manifest, "status": cut["status"]}
     except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
+        if isinstance(exc, ValueError) and str(exc) == "COMMITTED_GENERATION_MISSING":
+            return {"state": AWAITING, "reason": "COMMITTED_GENERATION_NOT_PUBLISHED", "report": {}}
         # Never surface an arbitrary provider/path/exception message.
         return {"state": "NO_VERIFICADO", "reason": "COMMITTED_GENERATION_REJECTED",
                 "error_class": type(exc).__name__, "report": {}}

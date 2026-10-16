@@ -1,5 +1,6 @@
 """Read-only bridge from existing runtime snapshots to SHADOW observation plans."""
 import sqlite3
+import json
 from pathlib import Path
 from time import monotonic
 from .common import identity, stamp
@@ -25,6 +26,7 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
     path = Path(database).resolve(strict=True)
     connection = sqlite3.connect(path.as_uri()+"?mode=ro", uri=True, timeout=.005)
     connection.row_factory = sqlite3.Row
+    connection.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 8 * 1024**2)
     try:
         connection.execute("PRAGMA query_only=ON")
         # One WAL snapshot for all safety, catalogue and observation reads.
@@ -64,13 +66,23 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
             finally:
                 if diagnostics is not None:
                     detail = {"stage": stage, "elapsed_ms": round((monotonic()-started)*1000, 3),
-                              "rows": len(rows),
+                              "rows": (rows[0]["packed_rows"] if rows and "packed_rows" in rows[0].keys() else len(rows)),
                               "remaining_ms": round(max(0, deadline-monotonic())*1000, 3),
                               "deadline_elapsed": monotonic() > deadline,
                               "interrupted_by_deadline": interrupted_by_deadline}
                     if error is not None:
                         detail["sqlite_errorname"] = getattr(error, "sqlite_errorname", "SQLITE_UNKNOWN")
                     diagnostics["stages"].append(detail)
+
+        def packed_rows(stage, fields, sql, parameters, maximum):
+            # Encode in SQLite once. Decode outside the SQL/WAL transaction:
+            # thousands of Python Row allocations used most of the 2s budget
+            # before the intraday stage could finish on the single-core host.
+            row=read_rows(stage,"SELECT COUNT(*) packed_rows,json_group_array(json_array("+
+                fields+")) packed_payload FROM ("+sql+")",parameters)[0]
+            if row["packed_rows"]>maximum:
+                raise ValueError("FULL_CATALOG_READ_TRUNCATED" if stage=="CATALOG_FULL" else stage+"_READ_TRUNCATED")
+            return row["packed_payload"]
 
         connection.set_progress_handler(progress, 1000)
         state = connection.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
@@ -79,29 +91,33 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
         # Both views have the same ordered columns. Read the full bounded
         # catalogue once and derive READY locally: a second SQLite scan can
         # exceed the shared deadline when the observer is under IO contention.
-        full_catalog_rows = read_rows("CATALOG_FULL", """SELECT ticker,instrument_type,market,
-            currency,settlement,status,capability FROM financial_instrument_catalog
-            ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?""", (row_limit+1,))
-        if len(full_catalog_rows) > row_limit:
-            raise ValueError("FULL_CATALOG_READ_TRUNCATED")
+        catalog_fields="ticker,instrument_type,market,currency,settlement,status,capability"
+        full_catalog_payload = packed_rows("CATALOG_FULL", catalog_fields, "SELECT "+catalog_fields+
+            " FROM financial_instrument_catalog ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?",
+            (row_limit+1,),row_limit)
         opened_rows = read_rows("OPEN_POSITIONS", """SELECT symbol,asset_class,market,currency,settlement
             FROM paper_positions WHERE status='OPEN' ORDER BY paper_id LIMIT ?""", (row_limit+1,))
         if len(opened_rows) > row_limit:
             raise ValueError("OPEN_POSITION_READ_TRUNCATED")
         tables = {r[0] for r in read_rows("SCHEMA_TABLES", "SELECT name FROM sqlite_master WHERE type='table'")}
         contracts_rows = []
+        contracts_payload = None
         intraday_rows = []
         snapshot_rows = []
         if "ppi_intraday_points" in tables:
             if "ppi_intraday_contract_state" in tables:
-                contracts_rows = read_rows("INTRADAY_CONTRACTS", "SELECT * FROM ppi_intraday_contract_state LIMIT ?", (row_limit+1,))
-            intraday_rows = read_rows("INTRADAY_POINTS", """SELECT symbol,asset_class,market,currency,settlement,
+                contract_fields="symbol,asset_class,market,currency,settlement,state,last_source_at,checked_at"
+                contracts_payload = packed_rows("INTRADAY_CONTRACTS",contract_fields,
+                    "SELECT "+contract_fields+" FROM ppi_intraday_contract_state LIMIT ?",
+                    (row_limit+1,),row_limit)
+            intraday_fields="symbol,asset_class,market,currency,settlement,event_at,first_received_at,last_verified_at,price,volume,source"
+            intraday_payload = packed_rows("INTRADAY_POINTS", intraday_fields, """SELECT symbol,asset_class,market,currency,settlement,
                 event_at,first_received_at,last_verified_at,price,volume,source FROM ppi_intraday_points
                 WHERE julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?)
                   AND julianday(first_received_at)<=julianday(?)
                   AND julianday(last_verified_at)<=julianday(?)
                 ORDER BY julianday(event_at) DESC LIMIT ?""", (at.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(),
-                                                    at.isoformat(), at.isoformat(), at.isoformat(), observation_limit+1))
+                                                    at.isoformat(), at.isoformat(), at.isoformat(), observation_limit+1),observation_limit+1)
         if "market_snapshots" in tables:
             snapshot_rows = read_rows("MARKET_SNAPSHOTS", """SELECT symbol,asset_class,market,currency,settlement,
                 last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size,last_kind FROM market_snapshots NOT INDEXED
@@ -133,7 +149,14 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
         # Transform only after all SQL cursors have finished. In the previous
         # layout, thousands of timestamp parses consumed the SQLite deadline
         # between queries and interrupted a later, otherwise indexed read.
-        full_catalog = [dict(r) for r in full_catalog_rows]
+        full_catalog = [dict(zip(catalog_fields.split(','),r)) for r in json.loads(full_catalog_payload)]
+        del full_catalog_payload
+        if contracts_payload is not None:
+            contracts_rows=[dict(zip(contract_fields.split(','),r)) for r in json.loads(contracts_payload)]
+            del contracts_payload
+        if "ppi_intraday_points" in tables:
+            intraday_rows=[dict(zip(intraday_fields.split(','),r)) for r in json.loads(intraday_payload)]
+            del intraday_payload
         catalog = [row for row in full_catalog if row["status"] == "AVAILABLE"
                    and row["capability"].upper().startswith("READY_PAPER")]
         transform_guard("CATALOG_FULL")

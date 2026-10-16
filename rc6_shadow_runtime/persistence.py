@@ -192,3 +192,92 @@ class EvidenceFiles:
         for target in self.root.glob("computed-*.json.gz"):
             if target.name != keep and re.fullmatch(r"computed-[a-f0-9]{64}\.json\.gz", target.name):
                 self.path(target.name).unlink()
+
+    def publish_generation(self, report, status):
+        """Publish the small dashboard cut only after all worker writes commit.
+
+        The causal checkpoint remains private to the worker. Readers need the
+        exact selection report and status, not a 64 MiB checkpoint per request.
+        A single atomic pointer commits both immutable members together.
+        """
+        if (report.get("as_of") != status.get("as_of") or
+                digest(report) != status.get("report_digest")):
+            raise ValueError("GENERATION_REPORT_STATUS_MISMATCH")
+        watermark = {"as_of": report["as_of"]}
+        configuration = status["configuration_fingerprint"]
+        ident = digest({"report": report, "status": status})
+        from datetime import datetime
+        sequence = int(datetime.fromisoformat(report["as_of"].replace("Z", "+00:00")).timestamp()*1000000)
+        members = {role: {**member, "generation_id": ident,
+                   "source_watermark": watermark, "configuration_fingerprint": configuration}
+                   for role, member in (("report", report), ("status", status))}
+        manifest = {"schema": "rc6.dashboard-generation.v1", "generation_id": ident,
+                    "sequence": sequence, "source_watermark": watermark,
+                    "configuration_fingerprint": configuration,
+                    "files": {role: {"payload_digest": digest(member)}
+                              for role, member in members.items()}}
+        name = "cut-" + ident + ".json.gz"
+        cut = {"manifest": manifest, **members}
+        encoded_size = sum(len(fragment.encode()) for fragment in json.JSONEncoder(
+            sort_keys=True,separators=(",", ":"),default=str,allow_nan=False).iterencode(cut))
+        if encoded_size > 4 * 1024**2 - 1024:
+            raise ValueError("SHADOW_DASHBOARD_CUT_LIMIT")
+        old = self.read("CURRENT.json")
+        if old and sequence <= old['sequence'] and old['generation_id'] != ident:
+            raise ValueError("GENERATION_CLOCK_REGRESSION")
+        self.write(name, cut, immutable=True)
+        self.write("CURRENT.json", {"generation_id": ident, "sequence": sequence,
+                   "manifest_sha256": digest(manifest), "file": name})
+        # Keep the previous generation for a concurrent reader. A reader of a
+        # much older pointer fails closed if it loses a race with bounded GC.
+        cuts = sorted(self.root.glob("cut-*.json.gz"), key=lambda p: p.stat().st_mtime_ns, reverse=True)
+        for old in cuts[2:]:
+            if re.fullmatch(r"cut-[a-f0-9]{64}\.json\.gz", old.name):
+                self.path(old.name).unlink()
+
+
+def read_committed_generation(root, *, payload_limit=4 * 1024**2, require_current_status=True):
+    """Read immutable bytes. Historical consumers may explicitly waive live health.
+
+    The default always checks current status; the historical option never
+    attests runtime health and retains manifest, identity and safety checks.
+    """
+    if type(require_current_status) is not bool:
+        raise ValueError("GENERATION_READER_MODE_INVALID")
+    files = EvidenceFiles(root, payload_limit=payload_limit)
+    pointer = files.read("CURRENT.json")
+    if not isinstance(pointer, dict):
+        raise ValueError("COMMITTED_GENERATION_MISSING")
+    name = pointer.get("file", "")
+    if not isinstance(name, str) or not re.fullmatch(r"cut-[a-f0-9]{64}\.json\.gz", name):
+        raise ValueError("GENERATION_PATH_INVALID")
+    cut = files.read(name)
+    if not isinstance(cut, dict):
+        raise ValueError("GENERATION_CUT_MISSING")
+    manifest = cut.get("manifest", {})
+    if (digest(manifest) != pointer.get("manifest_sha256") or
+            manifest.get("generation_id") != pointer.get("generation_id") or
+            manifest.get("sequence") != pointer.get("sequence")):
+        raise ValueError("GENERATION_ENVELOPE_MISMATCH")
+    for role in ("report", "status"):
+        member = cut[role]
+        if (digest(member) != manifest["files"][role]["payload_digest"] or
+                member.get("generation_id") != pointer["generation_id"] or
+                member.get("source_watermark") != manifest["source_watermark"] or
+                member.get("configuration_fingerprint") != manifest["configuration_fingerprint"] or
+                member.get("as_of") != manifest["source_watermark"]["as_of"]):
+            raise ValueError("GENERATION_MEMBER_MISMATCH")
+    # A new failure revokes a previously good cut, even if CURRENT was not
+    # advanced. An incomplete publication also cannot resurrect old health.
+    status = cut["status"]
+    if require_current_status:
+        live = files.read("status.json")
+        if (not isinstance(live, dict) or live.get("as_of") != status.get("as_of") or
+                live.get("status") != status.get("status") or
+                live.get("report_digest") != status.get("report_digest")):
+            raise ValueError("GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS")
+    for member in (cut["report"], status):
+        if (type(member.get("real_orders_sent")) is not int or member["real_orders_sent"] != 0 or
+                member.get("real_routes") != "NOT_CALLED"):
+            raise ValueError("GENERATION_SAFETY_UNVERIFIED")
+    return {"pointer": pointer, "live_status_required":require_current_status, **cut}

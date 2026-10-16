@@ -23,7 +23,7 @@ def render(p, destination, tab):
     if tab == "mercado":
         return render_table(p, destination, tab, instrument_market(p), "Mercado & Liquidez · identidad exacta",
                             fields("symbol|Ticker;last|Último|money;freshness|Freshness|status;bid|Bid|money;ask|Ask|money"),
-                            fields("bid_size|Bid depth|number;ask_size|Ask depth|number;spread|Spread;trade_at|Último negocio|time;provider_clock|Reloj provider|time;receipt_clock|Reloj captura|time;historical_activity|Actividad histórica;source|Fuente"),
+                            fields("bid_size|Bid depth|number;ask_size|Ask depth|number;spread|Spread;book_freshness|Frescura book (120s)|status;trade_freshness|Frescura trade (120s)|status;receipt_freshness|Frescura recepción (120s)|status;trade_at|Último negocio|time;provider_clock|Reloj provider|time;receipt_clock|Reloj captura|time;historical_activity|Actividad histórica;source|Fuente"),
                             note="Seleccione una identidad completa desde Buscador. El reloj de captura no reemplaza el reloj del proveedor.")
     page = contracts(p)
     columns = fields("symbol|Ticker;source_class|Fuente contractual;state|Evidencia|status;observed_at|Observado|time")

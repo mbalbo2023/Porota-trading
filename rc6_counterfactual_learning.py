@@ -58,7 +58,7 @@ def _normalise(row: Any) -> dict[str, Any]:
     }
 
 
-def _evidence_fallback(root: Path | str | None = None) -> dict[str, Any]:
+def _evidence_fallback(root: Path | str | None = None, *, loader=None) -> dict[str, Any]:
     """Project verified SHADOW profile evaluations when no standalone feed exists.
 
     The source is the signed decision-evidence publication. This remains a
@@ -77,15 +77,17 @@ def _evidence_fallback(root: Path | str | None = None) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     for path in candidates:
         try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
+            loaded = loader(path) if loader else json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict) and (not loader or loaded.get('decisions')):
                 payload = loaded
                 break
         except (FileNotFoundError, OSError, json.JSONDecodeError):
+            if loader:
+                raise
             continue
     decisions = payload.get("decisions") if isinstance(payload.get("decisions"), list) else []
     rows: list[dict[str, Any]] = []
-    for decision in decisions:
+    for decision in decisions[:100] if loader else decisions:
         if not isinstance(decision, dict) or decision.get("state") != "VERIFIED":
             continue
         decision_key = str(decision.get("decision_key") or "").strip()
@@ -120,6 +122,8 @@ def _evidence_fallback(root: Path | str | None = None) -> dict[str, Any]:
                 "reason": reason,
                 "evidence_at": evidence_at,
                 "compared_at": payload.get("generated_at") or evidence_at,
+                "profile": profile.get('name'),
+                "currency": decision.get('currency'), "family": decision.get('asset_class'),
             })
     if not rows:
         return {}
@@ -128,6 +132,62 @@ def _evidence_fallback(root: Path | str | None = None) -> dict[str, Any]:
         "source": str(payload.get("source") or "decision_evidence_snapshots/read-only") + " · SHADOW_DUAL_EVALUATION",
         "entries": rows[:100],
     }
+
+
+def read_bounded(root=None, *, as_of, offset=0, limit=10):
+    """Web adapter to historical publications, independent of LIVE SHADOW.
+
+    One MiB per fixed file, at most100 comparisons,10 rows per page. Existing
+    legacy read() remains compatible; this path never calls its unbounded I/O.
+    """
+    from datetime import datetime
+    import stat
+    def clock(value):
+        try:
+            at=datetime.fromisoformat(str(value).replace('Z','+00:00'))
+            return at if at.tzinfo else None
+        except (TypeError,ValueError): return None
+    def load(path):
+        try:
+            with os.fdopen(os.open(path,os.O_RDONLY|os.O_NONBLOCK|os.O_NOFOLLOW),'rb') as stream:
+                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode): raise ValueError('PUBLICATION_NOT_REGULAR')
+                raw=stream.read(1024**2+1)
+            if len(raw)>1024**2: raise ValueError('PUBLICATION_BYTE_BUDGET')
+            value=json.loads(raw)
+            if not isinstance(value,dict): raise ValueError('PUBLICATION_SHAPE')
+            return value
+        except FileNotFoundError: return {}
+    empty={'rows':[],'counts':{},'total':None,'source':'counterfactual published evidence',
+           'state':'NO_VERIFICADO','reason':'SIN_PUBLICACION','scope':'At most100 published comparisons; not a full-history metric'}
+    if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=10:
+        raise ValueError('COUNTERFACTUAL_PAGE_BUDGET')
+    try:
+        raw=load(snapshot_path(root))
+        source=SNAPSHOT_NAME
+        if not isinstance(raw.get('entries'),list) or not raw.get('entries'):
+            raw=_evidence_fallback(root,loader=load);source='decision_evidence_latest.json · published profile comparisons'
+        generated=clock(raw.get('generated_at'))
+        if not generated or generated>as_of:
+            return empty|{'reason':'PUBLICATION_CLOCK_UNVERIFIED' if raw else 'SIN_PUBLICACION'}
+        entries=raw.get('entries')
+        if not isinstance(entries,list): return empty|{'reason':'PUBLICATION_SHAPE'}
+        rows=[]
+        for item in entries[:100]:
+            row=_normalise(item)
+            evidenced,compared=clock(row.get('evidence_at')),clock(row.get('compared_at'))
+            if not evidenced or not compared or not evidenced<=compared<=generated:
+                row=_insufficient(item if isinstance(item,dict) else {},'Clocks no contemporáneos verificables')
+            original=item if isinstance(item,dict) else {}
+            row.update(currency=original.get('currency') or 'NO_VERIFICADO',
+                       family=original.get('family') or 'NO_VERIFICADO',profile=original.get('profile'),
+                       as_of=row.get('compared_at'),entry_authority=False)
+            rows.append(row)
+        counts={key:sum(r['outcome']==key for r in rows) for key in (*VALID_OUTCOMES,'INSUFFICIENT_EVIDENCE')}
+        return empty|{'state':'HISTORICAL_OBSERVABLE','reason':'HISTORICAL_PUBLICATION_NOT_LIVE',
+            'rows':rows[offset:offset+limit],'total':len(rows),'counts':counts,
+            'source':source,'as_of':generated.isoformat(),'sample_truncated':len(entries)>100}
+    except (OSError,ValueError,TypeError):
+        return empty|{'reason':'PUBLICATION_REJECTED'}
 
 
 def read(root: Path | str | None = None) -> dict[str, Any]:

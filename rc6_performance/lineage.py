@@ -91,6 +91,7 @@ def resolved_configuration(broker):
              "intraday_fee_rebate")
     import au_fee_schedule as fees
     config = {name: getattr(broker, name) for name in names}
+    config['signal_temporal_safety_policy'] = 'PAPER_EVENT_COVERAGE_60S_V1'
     config["tariff"] = {family: asdict(fees.arancel_de(family)) for family in
                         ("ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES")}
     config["vat"] = fees.IVA_PCT

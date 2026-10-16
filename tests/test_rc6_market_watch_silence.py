@@ -77,13 +77,24 @@ def test_public_api_identity_and_bounded_response():
     def opener(request, timeout):
         assert timeout == 6 and request.full_url == watch.RUNS_URL
         return Response({"workflow_runs": [{"event": "schedule", "path": watch.WORKFLOW,
-            "head_branch": "main", "created_at": "2026-10-14T16:27:00Z"}]})
+            "head_branch": "main", "status":"completed", "run_attempt":1,
+            "created_at": "2026-10-14T16:26:00Z", "run_started_at":"2026-10-14T16:27:00Z"}]})
     assert watch.latest_schedule(opener=opener) == datetime(
         2026, 10, 14, 16, 27, tzinfo=timezone.utc)
     with pytest.raises(ValueError, match="GITHUB_RUN_IDENTITY_INVALID"):
         watch.latest_schedule(opener=lambda request, timeout: Response({"workflow_runs": [{
             "event": "workflow_dispatch", "path": watch.WORKFLOW,
             "head_branch": "main", "created_at": "2026-10-14T16:27:00Z"}]}))
+    for status,attempt in [('queued',1),('in_progress',1),('completed',2)]:
+        value={'workflow_runs':[{'event':'schedule','path':watch.WORKFLOW,
+            'head_branch':'main','status':status,'run_attempt':attempt,
+            'created_at':'2026-10-14T16:27:00Z','run_started_at':'2026-10-14T16:27:00Z'}]}
+        assert watch.latest_schedule(opener=lambda request,timeout:Response(value)) is None
+
+
+def test_holiday_and_unreviewed_calendar_never_report_active():
+    assert not watch.active_window(NOW.replace(day=12))
+    assert not watch.active_window(NOW.replace(year=2027))
 
 
 def test_nonpaper_and_offhours_never_call_network_or_transport(tmp_path, monkeypatch):

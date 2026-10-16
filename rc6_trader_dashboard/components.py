@@ -179,8 +179,11 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
         drawer_fields = tuple(dict.fromkeys((*IDENTITY, *columns, *extra, *EVIDENCE)))
         body.append(f"<tr id='{row_id}' data-row='true'>{cells}<td data-label='Detalle'>{detail(row, drawer_fields, row_id, index + 1)}</td></tr>")
     if not body:
+        reasons = {"SHADOW_CUT_NOT_FRESH": "El corte SHADOW está vencido; revisar el worker y la hora de publicación.",
+                   "COMMITTED_GENERATION_NOT_PUBLISHED": "El worker SHADOW aún no publicó una generación comprometida.",
+                   "COMMITTED_GENERATION_REJECTED": "La lectura rechazó la generación SHADOW por integridad o publicación incompleta."}
         message = ("Sin registros en este scope." if page.state == "AVAILABLE" else
-                   "NO_VERIFICADO · " + (page.reason or "evidencia aún no publicada o lectura no disponible."))
+                   "NO_VERIFICADO · " + reasons.get(page.reason, page.reason or "evidencia aún no publicada o lectura no disponible."))
         body.append(f"<tr><td colspan='{len(columns) + 1}' class='empty'>{e(message)}</td></tr>")
     heads = "".join(f"<th scope='col' class='{column_classes[i]}'>{e(f.label)}</th>" for i, f in enumerate(columns))
     provenance = f"<div class='source-line'>Fuente: {e(page.source)} · {badge(page.state)}"

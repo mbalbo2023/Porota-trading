@@ -49,7 +49,7 @@ def render(p, destination, tab):
         return (notice("Sólo CURRENT.json y su generación comprometida/coherente. El adapter requiere el reader canónico de #466; latest/checkpoint/status independientes no son autoridad.") +
                 "<section class='panel'><h2>Integridad de generación SHADOW</h2>" + definition_list(row, fields(
                     "state|Estado de verificación|status;as_of|Watermark as_of|time;reason|Motivo"))
-                + detail(row, fields("observation_coverage|Cobertura de observaciones SHADOW|status;generation_id|Generation ID;sequence|Sequence|number;manifest_digest|Manifest digest;source_watermark|Source watermark;configuration_fingerprint|Configuration fingerprint;members|Report / checkpoint / status cross hashes;retention|Retención / pins / ACK;preopen_digest|Preopen freeze"), "sistema-evidencia", 1)
+                + detail(row, fields("observation_coverage|Cobertura de observaciones SHADOW|status;generation_id|Generation ID;sequence|Sequence|number;manifest_digest|Manifest digest;source_watermark|Source watermark;configuration_fingerprint|Configuration fingerprint;members|Report / status cross hashes;retention|Retención / pins / ACK;preopen_digest|Preopen freeze"), "sistema-evidencia", 1)
                 + "</section>")
     if tab == "backups":
         return render_table(p, destination, tab, artifact(p, "backups"), "Backups & protected stores",
