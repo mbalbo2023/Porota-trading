@@ -64,6 +64,29 @@ jobs:
           echo "CONTRACT_PID=$PID"
           sudo -n timeout 12 "$TOOL" dump --pid "$PID" --nonblocking
           HOST
+      - name: Read bounded candidate readiness RCA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,sqlite3,time
+          path='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=3)
+          c.execute('PRAGMA query_only=ON')
+          end=time.monotonic()+10
+          c.set_progress_handler(lambda:int(time.monotonic()>end),1000)
+          out={}
+          out['candidate_by_family']=[list(r) for r in c.execute("SELECT instrument_type,COUNT(*),SUM(can_simulate),MAX(checked_at) FROM candidate_identity_v2 GROUP BY instrument_type ORDER BY instrument_type")]
+          out['catalog_ready_by_family']=[list(r) for r in c.execute("SELECT instrument_type,COUNT(*) FROM financial_instrument_catalog WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER_%' GROUP BY instrument_type ORDER BY instrument_type")]
+          out['candidate_reasons']=[list(r) for r in c.execute("SELECT substr(detail,1,100),COUNT(*) n FROM candidate_identity_v2 WHERE can_simulate=0 GROUP BY substr(detail,1,100) ORDER BY n DESC LIMIT 12")]
+          out['letras']=[list(r) for r in c.execute("SELECT r.status,r.can_simulate,substr(r.detail,1,110),COUNT(*) FROM candidate_identity_v2 r WHERE r.instrument_type='LETRAS' GROUP BY r.status,r.can_simulate,substr(r.detail,1,110) ORDER BY COUNT(*) DESC LIMIT 8")]
+          out['observer']=[list(r) for r in c.execute("SELECT mode,real_orders_sent,session_state,process_state,heartbeat_at FROM observer_state WHERE id=1")]
+          c.close()
+          print('CANDIDATE_RCA='+json.dumps(out,sort_keys=True,separators=(',',':')))
+          PY
+          HOST
       - name: Cleanup SSH
         if: always()
         run: rm -f "$HOME/.ssh/key"
