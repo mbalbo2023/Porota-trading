@@ -456,8 +456,20 @@ def _db_snapshot(path):
                              "ready": int(row["ready"] or 0)}
             except sqlite3.Error:
                 pass
+        # Open ledger contracts are separate from today's trade counts and
+        # from an in-flight evaluation/fill, which this reader cannot attest.
+        activity = {'inflight_evaluation_or_fill':'NO_VERIFICADO'}
+        for table,status in (('paper_positions','OPEN'),('paper_future_positions','ACTIVE'),
+                             ('paper_cauciones','OPEN')):
+            activity[table] = None
+            if table in tables:
+                try:
+                    activity[table] = db.execute('SELECT COUNT(*) FROM '+table+' WHERE status=?',(status,)).fetchone()[0]
+                except sqlite3.Error:
+                    pass
         return {"observer": observer, "workers": workers,
-                "cursors": cursors, "readiness": readiness, "sqlite_ops": sqlite_ops}
+                "cursors": cursors, "readiness": readiness, "sqlite_ops": sqlite_ops,
+                'paper_open_contracts':activity}
 
 
 def probe(*, root=ROOT, expected_sha, at=None, inspect=None):

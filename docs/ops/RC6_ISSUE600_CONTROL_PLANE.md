@@ -76,3 +76,11 @@ reescribe ningún heartbeat, no se aumenta TTL ni tolerancia al futuro real.
 Regresión: avance+0.2s durante lecturaPASS; futuro+2s con referencia+1s y stale
 301s conservan alarma.42contratos monitor/auditorPASS. Scalping314s en la muestra
 sigue siendo stale real contra300s; el fix no lo oculta. Sin deploy/runtime write.
+
+Postclose ledger observation: paper_open_contracts añade counts ro para
+paper_positions OPEN, paper_future_positions ACTIVE y paper_cauciones OPEN.
+Tabla/columna ausente =>null, nunca0 inventado. No exporta IDs/importes ni
+confunde contrato overnight con evaluación/fill en curso, que conserva
+NO_VERIFICADO.43contratos localesPASS. Refuerza evidencia de cierre sin activar
+ni cerrar operaciones. Metadata PR se debe releer de GitHub al retomar y validar
+los cinco campos de attestation antes de reemplazarla; no usar fallback mínimo.

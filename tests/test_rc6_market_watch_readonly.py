@@ -118,6 +118,19 @@ class MonitorContracts(unittest.TestCase):
                 db.execute('UPDATE paper_notification_worker SET heartbeat_at=?',(bad.isoformat(),))
             self.assertIn('WORKER_HEARTBEAT_INVALID:paper_notification_worker',self.codes(capture_live()))
 
+    def test_open_contract_counts_do_not_invent_missing_ledgers_or_inflight_authority(self):
+        value=self.capture()['paper_open_contracts']
+        self.assertIsNone(value['paper_positions'])
+        self.assertEqual(value['inflight_evaluation_or_fill'],'NO_VERIFICADO')
+        with sqlite3.connect(self.db) as db:
+            db.execute('CREATE TABLE paper_positions(id INTEGER PRIMARY KEY,status TEXT)')
+            db.execute("INSERT INTO paper_positions VALUES(1,'OPEN')")
+        self.assertEqual(self.capture()['paper_open_contracts']['paper_positions'],1)
+        with sqlite3.connect(self.db) as db:
+            db.execute("UPDATE paper_positions SET status='CLOSED'")
+        self.assertEqual(self.capture()['paper_open_contracts']['paper_positions'],0)
+        self.assertIsNone(self.capture()['paper_open_contracts']['paper_future_positions'])
+
     def test_independent_watchdog_ack_is_read_only_and_not_schedule_cadence(self):
         path=self.root/'data/paper_v17/market_watch_silence.json'
         path.write_text(json.dumps({'schema':'rc6.market-watch-silence.v1','status':'SILENT',
