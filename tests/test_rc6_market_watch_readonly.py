@@ -288,6 +288,11 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(monitor.schedule_health([real[0]]*3,NOW,expected_open=True)['state'],'NO_VERIFICADO')
         self.assertEqual(monitor.schedule_health([{k:v for k,v in r.items() if k!='run_attempt'} for r in real],NOW,expected_open=True)['state'],'SCHEDULE_SILENT')
         self.assertFalse(monitor.schedule_health([],NOW,expected_open=False)['silence'])
+        snapshot=self.capture()
+        snapshot['schedule_watchdog_receipt']={'status':'SILENT','message_id':'932','ack_age_seconds':80000}
+        monitor.add_schedule_health(snapshot,'mbalbo2023/Porota-trading',get=lambda _: {'workflow_runs':[]})
+        self.assertEqual(snapshot['schedule_health']['independent_watchdog_ack'],'HISTORICAL_VERIFIED')
+        self.assertEqual(snapshot['schedule_health']['state'],'SCHEDULE_SILENT')
 
     def test_memory_shortage_is_not_hidden(self):
         self.resources["mem_available_bytes"] = 20 * 1024**2

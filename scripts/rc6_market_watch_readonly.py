@@ -282,6 +282,13 @@ def add_schedule_health(current, repo, *, get=None):
         health=schedule_health(result['workflow_runs'],timestamp(current['generated_at']),expected_open=expected)
     except (OSError,ValueError,KeyError,TypeError):
         health={'state':'NO_VERIFICADO','reason':'SCHEDULE_API_UNAVAILABLE','silence':None}
+    receipt=current.get('schedule_watchdog_receipt') or {}
+    ack=str(receipt.get('message_id',''))
+    ack_age=receipt.get('ack_age_seconds')
+    if (receipt.get('status') in {'OK','SILENT','UNKNOWN'} and ack.isdecimal() and int(ack)>0 and
+            type(ack_age) in (int,float) and 0<=ack_age):
+        health['independent_watchdog_ack']='HISTORICAL_VERIFIED'
+        health['independent_watchdog_ack_age_seconds']=ack_age
     current['schedule_health']=health
     if health.get('silence') is True:
         current['findings'].append(finding('SCHEDULE_SILENCE_TWO_INTERVALS','P1'))
