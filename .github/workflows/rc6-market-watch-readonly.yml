@@ -581,53 +581,76 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Independently verify exact619 CI session JSON and all eight XML byte hashes
+      - name: Read actual completed native619 RED receipt without host access
         shell: bash
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
-          import base64,hashlib,io,json,os,pathlib,urllib.request,zipfile,xml.etree.ElementTree as ET
-          req=urllib.request.Request("https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/12102419143/zip")
-          req.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
-          with urllib.request.urlopen(req,timeout=30) as response:raw=response.read(2*1024**2+1)
-          assert len(raw)==28782 and hashlib.sha256(raw).hexdigest()=="328a9cf3eb779094566f5374e1adb58c060b37ebbe970941bd4d6a62d22d6d6e"
-          with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-              print("RC6_CI_READBACK_ZIP_MEMBERS="+json.dumps([{"name":v.filename,"bytes":v.file_size} for v in archive.infolist()],separators=(",",":")))
-              def member(name):
-                  values=[x for x in archive.infolist() if pathlib.PurePosixPath(x.filename).name==name]
-                  assert len(values)==1 and values[0].file_size<=4*1024**2
-                  return archive.read(values[0])
-              stress_raw=member("stress.json");stress=json.loads(stress_raw)
-              assert stress["status"]=="GREEN" and stress["evidence_kind"]=="CI_EXACT_IMAGE_PREFLIGHT" and stress["smoke"] is False
-              assert stress["production_data_mounted"] is False and stress["ppi_watch_accessed"] is False
-              assert stress["session"]["simulated_minutes"]==405 and stress["session"]["real_orders_sent"]==0 and stress["session"]["provider_requests"]==0
-              assert len(stress["scenarios"])==8
-              xmls=[]
-              for group in stress["scenarios"]:
-                  content=member(group["name"]+".xml");cases=list(ET.fromstring(content).iter("testcase"))
-                  counts={key:sum(len(case.findall(key)) for case in cases) for key in ("failure","error","skipped")}
-                  digest=hashlib.sha256(content).hexdigest()
-                  assert cases and not any(counts.values())
-                  assert len(cases)==group["cases"] and digest==group["junit_sha256"] and group["exit_code"]==0
-                  xmls.append({"name":group["name"],"cases":len(cases),**counts,"sha256":digest})
-              assert sum(x["cases"] for x in xmls)==771
-              cert_raw=member("rc6-predeploy619-receipt.json");cert=json.loads(cert_raw)
-              assert len(cert_raw)==5725 and hashlib.sha256(cert_raw).hexdigest()=="1962f4ce67599a0f192cfb5efbe3664927e7910c8e6d0b54291f301de429fe63"
-              assert cert["frozen"]["candidate_sha"]=="5baeae7b0478d61d2dea04e5dbee4e0c1a3af951"
-              result={"schema":"rc6.exact619-ci-fullstress-byte-readback.v1",
-                  "context":"CI_EXACT_IMAGE_PREFLIGHT","source_sha":"5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
-                  "tree_sha":"268009eb5fb2416fb92435ea828be7ad8d875965",
-                  "image_id":cert["frozen"]["image_id"],"image_tar_sha256":cert["frozen"]["image_tar_sha256"],
-                  "source_run":39038468598,"source_job":117412987489,"artifact_id":12102419143,
-                  "artifact_zip_sha256":hashlib.sha256(raw).hexdigest(),"artifact_zip_bytes":len(raw),
-                  "stress_json_sha256":hashlib.sha256(stress_raw).hexdigest(),"stress":stress,"xml":xmls,
-                  "cases":771,"groups":8,"failure":0,"error":0,"skipped":0,"docker_exit_code":0,"docker_oom_killed":False,
-                  "docker_state_proof_source":"COMPLETED_ACTION_LOG_RC6_619_PREFLIGHT_DOCKER",
-                  "reader_member_bound_bytes":4*1024**2,"previous_reader_guard_red_run":39039309896,
-                  "previous_reader_guard_red_job":117415393812,
-                  "memory_bytes":512*1024**2,"nano_cpus":750000000,"production_runtime_restore":"NOT_PERFORMED_BY_CI",
-                  "not_a_native_acceptance":True}
-              receipt=(json.dumps(result,sort_keys=True,indent=2)+"\n").encode()
-              print("RC6_EXACT619_CI_STRESS_BYTE_RECEIPT="+json.dumps({"bytes":len(receipt),"sha256":hashlib.sha256(receipt).hexdigest(),"base64":base64.b64encode(receipt).decode()},separators=(",",":")))
-              print("RC6_EXACT619_CI_STRESS_SAFE_SUMMARY="+json.dumps({"cases":771,"groups":8,"session":stress["session"],"full_catalog":stress["full_catalog"],"elapsed_seconds":stress["elapsed_seconds"]},sort_keys=True,separators=(",",":")))
+          import base64,hashlib,json,os,re,urllib.request
+          ROOT="https://api.github.com/repos/mbalbo2023/Porota-trading"
+          def get(path,bound=2*1024**2):
+              req=urllib.request.Request(ROOT+path)
+              req.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
+              with urllib.request.urlopen(req,timeout=45) as response:raw=response.read(bound+1)
+              assert len(raw)<=bound
+              return raw
+          raw=get("/actions/jobs/117412357625/logs")
+          job=json.loads(get("/actions/jobs/117412357625"))
+          run=json.loads(get("/actions/runs/39038259114"))
+          artifacts=json.loads(get("/actions/runs/39038259114/artifacts"))
+          assert job["id"]==117412357625 and job["run_id"]==39038259114 and job["conclusion"]=="failure"
+          assert run["head_sha"]=="47d949b72f0b3affffecdc6cc90d31ba1347d9b7" and run["run_attempt"]==1
+          assert artifacts["total_count"]==0
+          lines=[re.sub(r"^\d{4}-\d\d-\d\dT\S+\s","",re.sub(r"\x1b\[[0-9;]*m","",line)) for line in raw.decode().splitlines()]
+          objects=[]
+          for line in lines:
+              if line.startswith("{"):
+                  try:objects.append(json.loads(line))
+                  except ValueError:pass
+          gates=[x for x in objects if x.get("schema")=="rc6.deploy-generation-gate.v1"]
+          assert len(gates)==1
+          gate=gates[0]
+          assert gate["status"]=="RED" and gate["reason"]=="TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED"
+          assert len(gate["generations"])==1
+          assert gate["generations"][0]["source_sha"]=="5baeae7b0478d61d2dea04e5dbee4e0c1a3af951"
+          assert gate["generations"][0]["candidate_tree_sha"]=="268009eb5fb2416fb92435ea828be7ad8d875965"
+          assert type(gate["generations"][0]["real_orders_sent"]) is int and gate["generations"][0]["real_orders_sent"]==0
+          assert gate["generations"][0]["provider_requests"]==0 and gate["generations"][0]["real_routes"]=="NOT_CALLED"
+          cleanup=[x for x in objects if x.get("schema")=="POROTA_DEPLOY_FAILURE_CLEANUP_V1"]
+          recovery=[x for x in objects if x.get("status")=="FIX_FORWARD_VALIDATION_REQUIRED"]
+          assert len(cleanup)==len(recovery)==1 and cleanup[0]["status"]=="GREEN" and not cleanup[0]["errors"]
+          http=[x for x in lines if x.startswith("POROTA_RUNTIME_AUDIT_HTTP_RESULT=")]
+          assert len(http)==252 and all("|HTTP=200|" in x for x in http)
+          routes=sorted({x.split("=",1)[1].split("|")[0] for x in http})
+          assert len(routes)==63
+          allow=("POROTA_DEPLOY_V2_TREE_IDENTITY=","POROTA_FROZEN_PREDEPLOY_FOUND=","POROTA_FROZEN_ARTIFACT_VERIFY=",
+          "POROTA_BUILD_ONCE_PROMOTION=","POROTA_IMAGE_ID_VERIFY=","POROTA_IMAGE_CONFIG_DIAGNOSTIC=","POROTA_IMAGE_TAR_VERIFY=",
+          "POROTA_RUNTIME_IMAGE_ID_VERIFY=","POROTA_RUNNING_SOURCE_IDENTITY=","POST_CONTAINER_STATUS=","POST_STATE=",
+          "RC6_FULL_CONTRACT_RECONCILIATION=","RC6_POST_RECONCILIATION_RESTART_BASELINE=","RC6_SCALPING_STABILIZATION=",
+          "POROTA_ZERO_KNOWN_ERROR_RUNTIME_AUDIT=","RC6_EXIT139_SOAK","RC6_RECENT_CRITICAL_LOG_SIGNATURES=",
+          "POROTA_DEPLOY_FAILURE_CLEANUP=","POROTA_DEPLOY_V2_RUNNER_CLEANUP=",
+          "RC6_DISK_PRETRANSFER_GATE=","RC6_DISK_POSTLOAD_RESERVE=")
+          markers=[x for x in lines if x.startswith(allow)]
+          assert any(x=="RC6_EXIT139_SOAK=GREEN" for x in markers)
+          steps=[{key:x.get(key) for key in ("name","number","status","conclusion","started_at","completed_at")} for x in job["steps"]]
+          assert next(x for x in steps if x["name"]=="Postdeploy full-session stress in the exact installed image")["conclusion"]=="skipped"
+          result={"schema":"rc6.native619-completed-deploy-byte-readback.v1",
+          "scope":"ACTUAL_CANONICAL_DROPLET_DEPLOY_RED_NOT_ACCEPTANCE",
+          "source_run":39038259114,"source_job":117412357625,"run_attempt":1,
+          "candidate_sha":"5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+          "candidate_tree_sha":"268009eb5fb2416fb92435ea828be7ad8d875965",
+          "merge_sha":run["head_sha"],"conclusion":job["conclusion"],"started_at":job["started_at"],"completed_at":job["completed_at"],
+          "frozen_image_id":"sha256:a75628801d37ea6a995c9789c6e65e5a8f493884f59ccbbd6a7677142f743060",
+          "installed_engine_image_id":"sha256:77e9e14083dd3f018ff55892457b854a9a9f3d249cfcdd0b6f9a416e812fcb8e",
+          "frozen_image_tar_sha256":"fd106b956939923a552a452840187b5687c1874696d06f4539c786e10c5e6719",
+          "raw_log_bytes":len(raw),"raw_log_sha256":hashlib.sha256(raw).hexdigest(),
+          "native_generation_gate":gate,"http":{"results":len(http),"unique_routes":len(routes),"non200":0,"routes":routes},
+          "observed_markers":markers,"recovery_control":recovery[0],"material_cleanup":cleanup[0],"steps":steps,
+          "native_acceptance":False,"full_droplet_stress":"SKIPPED","full_stress_runtime_restore":"NOT_PERFORMED",
+          "artifact_count":0,"provider_requests_scope":"ZERO_FOR_SHADOW_GATE_NOT_ENTIRE_COMPATIBILITY_DEPLOY",
+          "real_orders_sent":0,"ppi_watch_accessed":False,"retained_red":True,
+          "no_two_cycle_gap_measured":True,"next_action":"FIX_FORWARD_NEW_LOT_WITH_UNCHANGED_FRESHNESS_120S"}
+          receipt=(json.dumps(result,sort_keys=True,indent=2)+"\n").encode()
+          print("RC6_NATIVE619_DEPLOY_BYTE_RECEIPT="+json.dumps({"bytes":len(receipt),"sha256":hashlib.sha256(receipt).hexdigest(),"base64":base64.b64encode(receipt).decode()},separators=(",",":")))
+          print("RC6_NATIVE619_DEPLOY_SAFE_SUMMARY="+json.dumps({"status":"RED","reason":gate["reason"],"generation_count":len(gate["generations"]),"last_observation":gate["last_observation"],"http_results":len(http),"routes":len(routes),"cleanup":cleanup[0]["status"],"control":recovery[0]["status"],"stress":"SKIPPED"},sort_keys=True,separators=(",",":")))
           PY
