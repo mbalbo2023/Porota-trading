@@ -924,11 +924,14 @@ try:
   try:
    argv=(process/"cmdline").read_bytes()[:4096].split(b"\\0")
    if b"--dynamic-shadow-worker" not in argv: continue
-   state=(process/"stat").read_text().split(") ",1)[1].split()[0]
+   fields=(process/"stat").read_text().split(") ",1)[1].split()
+   state=fields[0]
    wchan=(process/"wchan").read_text().strip()
    workers.append({"state":state if state in "RSDTZI" else "UNKNOWN",
-                   "wchan":wchan if re.fullmatch(r"[A-Za-z0-9_]{1,64}",wchan) else "UNKNOWN"})
-  except (OSError,IndexError): continue
+                   "wchan":wchan if re.fullmatch(r"[A-Za-z0-9_]{1,64}",wchan) else "UNKNOWN",
+                   "rss_kib":int(fields[21])*os.sysconf("SC_PAGESIZE")//1024,
+                   "cpu_seconds":round((int(fields[11])+int(fields[12]))/os.sysconf("SC_CLK_TCK"),3)})
+  except (OSError,IndexError,ValueError): continue
  result["shadow_worker_process_count"]=min(10,len(workers))
  result["shadow_worker_processes"]=workers[:3]
  try: result["wal_bytes"]=db.with_name(db.name+"-wal").stat().st_size
