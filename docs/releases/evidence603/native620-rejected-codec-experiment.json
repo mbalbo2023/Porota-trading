@@ -1,0 +1,24 @@
+{
+  "schema": "rc6.issue620.rejected-codec-experiment.v1",
+  "status": "REJECTED_NOT_IN_PRODUCT",
+  "scope": "LOCAL_CPROFILE_ONLY_NOT_NATIVE",
+  "baseline_two_tick_compute_seconds": 34.411,
+  "experiment_two_tick_compute_seconds": 66.297,
+  "baseline_durable_seconds": [
+    5.476,
+    5.712
+  ],
+  "experiment_durable_seconds": [
+    22.216,
+    21.402
+  ],
+  "baseline_function_calls": 64242185,
+  "experiment_function_calls": 216219434,
+  "change": "Per-traversal FrozenJSONDict memoization with structural parent traversal",
+  "decision": "Remove attempted optimization; retained product still uses619 encoder and cache bounds",
+  "limitations": [
+    "Clocks differ across runs; this is not an exact whole-report A/B digest comparison",
+    "Canonical unit byte/Unicode/tamper tests passed; native resource or performance gain was not shown"
+  ],
+  "causal_reproduction_harness_note": "First baseline replay from product cwd imported new modules and incorrectly passed two tests; invalid receipt retained locally. Corrected isolated cwd with import-root/source assertion reproduces two failures and exact after replay passes both."
+}
