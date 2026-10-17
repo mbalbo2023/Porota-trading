@@ -1139,6 +1139,54 @@
       "source": "ACTUAL_COMPLETED_NATIVE619_DEPLOY39038259114_RED;READBACK39042911561;ONE_COHERENT_GENERATION;FULL_DROPLET_STRESS_SKIPPED;MATERIAL_CLEANUP_GREEN_CONTROL_RED",
       "bytes": 13195,
       "sha256": "840ee5f9b137fc6f480739b16048e1e8368923a3bc45d60abd5326159c77c09a"
+    },
+    {
+      "path": "docs/releases/evidence603/native620-final-health-39047764577.json",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 1605,
+      "sha256": "6bc54f65c7848daf550e99b1233300fdd7af33eaa7ebed1dc9b08242db939fa3"
+    },
+    {
+      "path": "docs/releases/evidence603/native620-passive-39046830865.json",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 10644,
+      "sha256": "e1ed396f106acb7cb284ce095f740693b3a7c0372bbb3f7627e4e9f1c1a43cfb"
+    },
+    {
+      "path": "docs/releases/evidence603/native620-rejected-codec-experiment.json",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 1139,
+      "sha256": "530ca7e84ade1fb2dcf253ee1d0360dddfa7198095aaa4ab6b1f616821153847"
+    },
+    {
+      "path": "docs/releases/evidence603/native620-swap-39047388608.json",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 3885,
+      "sha256": "5785a49d83c214bc4b6e2547ecbce3ea2de0b1f23a64c841eb9935645ca00ecb"
+    },
+    {
+      "path": "docs/releases/evidence603/rc6-620-causal-after.xml.gz",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 292,
+      "sha256": "384d6fb84a324b1ac74279fcefaa8cf6353332fdad5cc40bc95fdce87941d85b"
+    },
+    {
+      "path": "docs/releases/evidence603/rc6-620-causal-before.xml.gz",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 519,
+      "sha256": "cfb8c9004eb9ab6d63ef0cfffb2781eca0d07f0bc5d131fc9de83e01e97e8d30"
+    },
+    {
+      "path": "docs/releases/evidence603/rc6-620-full-local.xml.gz",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 89359,
+      "sha256": "effbbbc7cb54a2db33f6406aa7333126a8be8050fff262a05299213b5c00259d"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy620-39047648539-byte-validation.json",
+      "source": "CANONICAL_PREDEPLOY39047648539_SUCCESS_AND_LOCAL_BYTE_VALIDATION_NOT_DROPLET",
+      "bytes": 5738,
+      "sha256": "98c408929f0b8f550542f14448407bbf763a069a993e36e3c36356ab67820105"
     }
   ]
 }

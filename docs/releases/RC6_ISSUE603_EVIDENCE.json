@@ -949,6 +949,111 @@
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39025796758",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Any duplicate fetch, changed deadline/budget, missing actual follower join, or full Predeploy/native adversary failure reopens this test finding."
+    },
+    {
+      "id": "620-NATIVE-TEMPORAL-GAP",
+      "capability": "NATIVE_SHADOW_FRESHNESS",
+      "path": "rc6_shadow_runtime/worker.py",
+      "symbol": "tick",
+      "classification": "CONFIRMED_RUNTIME",
+      "detail": "Actual native60.835+poll30+69.032>120; seven oldCURRENT samples124.226–155.677s. Not a hypothetical pairing. No causal performance repair accepted.",
+      "test": "tests/test_rc6_issue620_temporal.py",
+      "status": "OPEN_NO_GO",
+      "code_state": "NO_NATIVE_FIX",
+      "runtime_occurrence": "NATIVE_PASSIVE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/620",
+      "owner": "WS-RC6-SHADOW-NATIVE-ACCEPTANCE-20261017",
+      "reopen": "Any mismatch of source/tree/tests/native clocks/resources invalidates closure; mission remains OPEN."
+    },
+    {
+      "id": "620-NATIVE-CAPACITY-PRESSURE",
+      "capability": "HOST_CAPACITY",
+      "path": "ops/policy/porota-policy.yaml",
+      "symbol": "native host",
+      "classification": "CONFIRMED_RUNTIME",
+      "detail": "RAM reserve below128MiB40/57 and8/18; scheduler wait142.787s versus49.625CPU-s; swap-in33135/out21836pages and IO pressure, cgroup throttling0. Individual fsync/GC contribution NO_VERIFICADO.",
+      "test": "native620-passive-39046830865.json;native620-swap-39047388608.json",
+      "status": "OPEN_NO_GO_CAPACITY",
+      "code_state": "NO_NATIVE_FIX",
+      "runtime_occurrence": "NATIVE_PASSIVE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/620",
+      "owner": "WS-RC6-SHADOW-NATIVE-ACCEPTANCE-20261017",
+      "reopen": "Any mismatch of source/tree/tests/native clocks/resources invalidates closure; mission remains OPEN."
+    },
+    {
+      "id": "620-POST-CURRENT-COST",
+      "capability": "PUBLICATION_MEASUREMENT",
+      "path": "rc6_shadow_runtime/worker.py",
+      "symbol": "tick",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Separate post-CURRENT publication receipt ties generation/source/manifest without circular hash. Injected7s pointer latency counted; before absent receipt RED, after PASS. No source clock reset. Exact Predeploy39047648539:3963cases/0FAIL-ERROR-SKIP-XFAIL; artifact12106950949 independently byte-validated. No native performance/acceptance claim.",
+      "test": "tests/test_rc6_issue620_temporal.py::test_publication_cost_includes_pointer_write_latency",
+      "status": "ARTEFACTO_VALIDADO_RUNTIME_PENDING",
+      "code_state": "ARTEFACTO_VALIDADO",
+      "runtime_occurrence": "LOCAL_CAUSAL_OR_DIAGNOSTIC_NOT_PRODUCT_ACCEPTANCE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/620",
+      "owner": "WS-RC6-SHADOW-NATIVE-ACCEPTANCE-20261017",
+      "reopen": "Any mismatch of source/tree/tests/native clocks/resources invalidates closure; mission remains OPEN."
+    },
+    {
+      "id": "620-OPENED-PRIORITY-INDEX",
+      "capability": "FUNNEL_COST",
+      "path": "rc6_shadow_runtime/funnel.py",
+      "symbol": "_planner_stages",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "One exact five-field index per engine replaces40list rebuilds in40row causal fixture; currency/market/settlement/duplicates/Unicode preserve output/checkpoint. Native contribution NO_VERIFICADO. Exact Predeploy39047648539:3963cases/0FAIL-ERROR-SKIP-XFAIL; artifact12106950949 independently byte-validated. No native performance/acceptance claim.",
+      "test": "tests/test_rc6_issue620_temporal.py::test_open_priority_index_is_built_once_per_engine",
+      "status": "ARTEFACTO_VALIDADO_RUNTIME_PENDING",
+      "code_state": "ARTEFACTO_VALIDADO",
+      "runtime_occurrence": "LOCAL_CAUSAL_OR_DIAGNOSTIC_NOT_PRODUCT_ACCEPTANCE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/620",
+      "owner": "WS-RC6-SHADOW-NATIVE-ACCEPTANCE-20261017",
+      "reopen": "Any mismatch of source/tree/tests/native clocks/resources invalidates closure; mission remains OPEN."
+    },
+    {
+      "id": "620-GATE-REJECTION-HISTORY",
+      "capability": "DEPLOY_OBSERVABILITY",
+      "path": "scripts/rc6_deploy_generation_gate.py",
+      "symbol": "collect",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Keep128observations plus total rejection count; final null error no longer hides an earlier rejection; order regressions rejected; unknown exception messages never exported. Exact Predeploy39047648539:3963cases/0FAIL-ERROR-SKIP-XFAIL; artifact12106950949 independently byte-validated. No native performance/acceptance claim.",
+      "test": "tests/test_rc6_issue620_temporal.py",
+      "status": "ARTEFACTO_VALIDADO_RUNTIME_PENDING",
+      "code_state": "ARTEFACTO_VALIDADO",
+      "runtime_occurrence": "LOCAL_CAUSAL_OR_DIAGNOSTIC_NOT_PRODUCT_ACCEPTANCE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/620",
+      "owner": "WS-RC6-SHADOW-NATIVE-ACCEPTANCE-20261017",
+      "reopen": "Any mismatch of source/tree/tests/native clocks/resources invalidates closure; mission remains OPEN."
+    },
+    {
+      "id": "620-STRESS-RAM-RESERVE",
+      "capability": "STRESS_HOST_SAFETY",
+      "path": "scripts/rc6_postdeploy_stress_host.py",
+      "symbol": "run",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Stress loop incorrectly permitted RAM down to32MiB despite128MiB invariant. Abort now below128MiB;100MiB case requires RED and restores OWNED containers. No stress run on production. Exact Predeploy39047648539:3963cases/0FAIL-ERROR-SKIP-XFAIL; artifact12106950949 independently byte-validated. No native performance/acceptance claim.",
+      "test": "tests/test_rc6_postdeploy_stress_contract.py::test_memory_reserve_during_stress_is_128mib_and_abort_restores",
+      "status": "ARTEFACTO_VALIDADO_RUNTIME_PENDING",
+      "code_state": "ARTEFACTO_VALIDADO",
+      "runtime_occurrence": "LOCAL_CAUSAL_OR_DIAGNOSTIC_NOT_PRODUCT_ACCEPTANCE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/620",
+      "owner": "WS-RC6-SHADOW-NATIVE-ACCEPTANCE-20261017",
+      "reopen": "Any mismatch of source/tree/tests/native clocks/resources invalidates closure; mission remains OPEN."
+    },
+    {
+      "id": "620-PASSIVE-IO-PARSER",
+      "capability": "DIAGNOSTIC_EVIDENCE",
+      "path": "scripts/rc6_native620_passive_profile.py",
+      "symbol": "counters",
+      "classification": "DIAGNOSTIC_FIXED",
+      "detail": "First probe IO counters null because colon retained in keys. Second probe strips colon and records actual counters/swap/PSI; original null retained. This is not evidence of zero IO.",
+      "test": "39047388608/job117438793146",
+      "status": "DIAGNOSTIC_GREEN_ONLY",
+      "code_state": "EN_GITHUB_DIAGNOSTIC_7bd44584",
+      "runtime_occurrence": "LOCAL_CAUSAL_OR_DIAGNOSTIC_NOT_PRODUCT_ACCEPTANCE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/620",
+      "owner": "WS-RC6-SHADOW-NATIVE-ACCEPTANCE-20261017",
+      "reopen": "Any mismatch of source/tree/tests/native clocks/resources invalidates closure; mission remains OPEN."
     }
   ],
   "candidate_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
@@ -2825,7 +2930,7 @@
     ],
     "native_acceptance": false
   },
-  "updated_at": "2026-10-17T15:02:26.001Z",
+  "updated_at": "2026-10-17T16:07:46Z",
   "previous_deploy_result_613": {
     "run": 39003668897,
     "job": 117311624166,
@@ -3239,7 +3344,7 @@
     "canonical_bytes_identical": true,
     "promoted": false
   },
-  "receipt_count": 146,
+  "receipt_count": 154,
   "native_serialization_fast_bound_experiment": {
     "run": 39023354447,
     "job": 117369424731,
@@ -6525,5 +6630,68 @@
       "cause": "REPLACED_MONITOR_WORKFLOW_REMOVED_TWO_REQUIRED_ORIGINAL_STEP_NAMES",
       "correction": "RESTORE_ORIGINAL_MONITOR_STEPS_AND_TESTS_UNCHANGED; PR_WINDOW_OFF; ONLY_SCOPED_READONLY_TRACE_ENABLED"
     }
+  },
+  "issue620": {
+    "mission_state": "OPEN_NO_GO",
+    "product_sha": "47d949b72f0b3affffecdc6cc90d31ba1347d9b7",
+    "guard_candidate_sha": "3a1ce8a4000458982d6b31dec47e8269867e28ab",
+    "guard_candidate_tree": "c159d2ab879db262e782e347eb6351ece14dd005",
+    "pr": 622,
+    "predeploy_run": 39047648539,
+    "predeploy_state": "SUCCESS_ARTIFACT_VALIDATED_ONLY_NOT_PROMOTABLE",
+    "deploy_new_started": false,
+    "stress_droplet_executed": false,
+    "restore_new_executed": false,
+    "report": "docs/releases/RC6_ISSUE620_20261017.md",
+    "operator_transfer": {
+      "issue471": 6236036405,
+      "issue473": 6236036801
+    },
+    "passive_runs": [
+      39046830865,
+      39047388608,
+      39047764577
+    ],
+    "local_tests": {
+      "cases": 3963,
+      "passed": 3959,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 4,
+      "reason": "UID0"
+    },
+    "prior_findings_preserved": 61,
+    "prior_receipts_preserved": 146,
+    "predeploy_artifact": 12106950949,
+    "artifact_zip_sha256": "c32af34436820ee304d38591464db79f5ff580bc54339c10b7bb13930fb83ba5",
+    "native_tests": {
+      "discovered": 3963,
+      "errors": 0,
+      "exclusions": [
+        "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+      ],
+      "executed": 3963,
+      "failures": 0,
+      "pytest_exit_code": 0,
+      "schema_version": 1,
+      "scope": "repository-root automatic pytest discovery",
+      "skipped": 0,
+      "status": "GREEN",
+      "xfail": 0
+    },
+    "image": {
+      "build_once": true,
+      "candidate_sha": "3a1ce8a4000458982d6b31dec47e8269867e28ab",
+      "candidate_tree_sha": "c159d2ab879db262e782e347eb6351ece14dd005",
+      "image_config_sha256": "69d528a39db28e0d0ed82c55a1a3372566a7f353bbdc843560501caf4da08f0f",
+      "image_id": "sha256:ef87ce8388c1d4a1ace842299c4f31c670f7e29cbcf8cfe5c24c2cbc96b13d15",
+      "image_size_bytes": 1175975810,
+      "image_tar_sha256": "ffccad6be8c1a79ca3a7c3b0b2d133a20d8ca3cf37559a5ec43b2f03705631a7",
+      "paper_mode_required": "PRODUCTION_PAPER",
+      "real_order_capability_required": "BLOCKED",
+      "real_orders_sent_required": 0,
+      "schema_version": 1
+    },
+    "receipt_path": "docs/releases/evidence603/predeploy620-39047648539-byte-validation.json"
   }
 }

@@ -1,0 +1,128 @@
+{
+  "schema": "rc6.native620-passive-profile.v1",
+  "source_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+  "read_only": true,
+  "ppi_watch_accessed": false,
+  "services_changed": false,
+  "status": "GREEN_PASSIVE_MEASUREMENT_ONLY",
+  "started_at": "2026-10-17T15:58:53.506334+00:00",
+  "finished_at": "2026-10-17T16:00:27.691759+00:00",
+  "samples": 18,
+  "elapsed_seconds": 88.56074951775372,
+  "memory_min_bytes": 95383552,
+  "below128_samples": 8,
+  "cgroup_throttled_delta": 0,
+  "same_owned_runtime": true,
+  "source_generations": [
+    {
+      "as_of": "2026-10-17T15:57:20.896956+00:00",
+      "sequence": 1792252640896956,
+      "timing": {
+        "poll_seconds": 30,
+        "stages_cpu_seconds": {
+          "durable_serialization": 13.686,
+          "economic_exit_lab": 0.01,
+          "entry_signal_lab": 0.231,
+          "family_routing": 4.056,
+          "operational_funnel": 6.534,
+          "planner_pipeline": 3.645,
+          "preopen": 3.747,
+          "state_and_inputs": 3.097
+        },
+        "stages_seconds": {
+          "durable_serialization": 17.665,
+          "economic_exit_lab": 0.012,
+          "entry_signal_lab": 0.235,
+          "family_routing": 5.623,
+          "operational_funnel": 9.377,
+          "planner_pipeline": 9.49,
+          "preopen": 6.145,
+          "state_and_inputs": 12.288
+        },
+        "tick_cpu_seconds": 35.007,
+        "tick_seconds": 60.835
+      }
+    },
+    {
+      "as_of": "2026-10-17T15:58:51.931559+00:00",
+      "sequence": 1792252731931559,
+      "timing": {
+        "poll_seconds": 30,
+        "stages_cpu_seconds": {
+          "durable_serialization": 15.008,
+          "economic_exit_lab": 0.011,
+          "entry_signal_lab": 0.304,
+          "family_routing": 5.181,
+          "operational_funnel": 6.887,
+          "planner_pipeline": 4.101,
+          "preopen": 4.146,
+          "state_and_inputs": 2.113
+        },
+        "stages_seconds": {
+          "durable_serialization": 30.349,
+          "economic_exit_lab": 0.024,
+          "entry_signal_lab": 0.521,
+          "family_routing": 9.826,
+          "operational_funnel": 10.367,
+          "planner_pipeline": 6.539,
+          "preopen": 7.812,
+          "state_and_inputs": 3.585
+        },
+        "tick_cpu_seconds": 37.753,
+        "tick_seconds": 69.032
+      }
+    }
+  ],
+  "stale_samples": [
+    {
+      "at": "2026-10-17T15:59:25.122898+00:00",
+      "as_of": "2026-10-17T15:57:20.896956+00:00",
+      "age_seconds": 124.226
+    },
+    {
+      "at": "2026-10-17T15:59:30.300708+00:00",
+      "as_of": "2026-10-17T15:57:20.896956+00:00",
+      "age_seconds": 129.404
+    },
+    {
+      "at": "2026-10-17T15:59:35.461720+00:00",
+      "as_of": "2026-10-17T15:57:20.896956+00:00",
+      "age_seconds": 134.565
+    },
+    {
+      "at": "2026-10-17T15:59:40.739534+00:00",
+      "as_of": "2026-10-17T15:57:20.896956+00:00",
+      "age_seconds": 139.843
+    },
+    {
+      "at": "2026-10-17T15:59:46.041216+00:00",
+      "as_of": "2026-10-17T15:57:20.896956+00:00",
+      "age_seconds": 145.145
+    },
+    {
+      "at": "2026-10-17T15:59:51.414008+00:00",
+      "as_of": "2026-10-17T15:57:20.896956+00:00",
+      "age_seconds": 150.518
+    },
+    {
+      "at": "2026-10-17T15:59:56.573348+00:00",
+      "as_of": "2026-10-17T15:57:20.896956+00:00",
+      "age_seconds": 155.677
+    }
+  ],
+  "vmstat_delta": {
+    "pgfault": 437270,
+    "pgmajfault": 30896,
+    "pgscan_direct": 1491,
+    "pgscan_kswapd": 274565,
+    "pswpin": 33135,
+    "pswpout": 21836
+  },
+  "cgroup_swap_current_first": 479105024,
+  "cgroup_swap_current_last": 488108032,
+  "limitations": [
+    "Passive status/CURRENT envelopes verified; not full immutable cut acceptance or fullstress",
+    "I/O counters in first probe were null due colon parser; corrected second probe",
+    "No per-stage fsync/GC causal intervention; not a complete profiler attribution"
+  ]
+}

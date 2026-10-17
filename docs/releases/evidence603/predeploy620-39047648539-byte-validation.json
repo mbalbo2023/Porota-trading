@@ -1,0 +1,152 @@
+{
+  "all_bundle_hashes_and_local_git_checkout_bytes_match": true,
+  "artifact_id": 12106950949,
+  "bundle_file_count": 508,
+  "bundle_sha256": "91cdf34e0c4ff663c780fa0568fe7dd8892666fbb61d68d1b433c74e6cf604ad",
+  "candidate_sha": "3a1ce8a4000458982d6b31dec47e8269867e28ab",
+  "candidate_tree_sha": "c159d2ab879db262e782e347eb6351ece14dd005",
+  "catalog_ci_synthetic": {
+    "actual_market_acceptance": false,
+    "catalog_count": 14611,
+    "cuts": [
+      {
+        "as_of": "2026-10-05T13:20:00.000205+00:00",
+        "computed_report_sha256": "a8d44d816792aa61c244a712775bd12a1a137e16757aebfd6857f165ac75d463",
+        "freshness_budget_seconds": 96.97200000000001,
+        "generation_id": "4503a74ffed8939e3dc8359cb115d9b05c305ce779d3f1462d06a532be58b4d0",
+        "manifest_sha256": "02cf83fd4fe226066b1aa4a900c2742bd03c494537959970ad6c44a8b214c474",
+        "sequence": 1791206400000205,
+        "tick_seconds": 18.486,
+        "worker_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 4.478,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.002,
+            "family_routing": 1.875,
+            "operational_funnel": 3.144,
+            "planner_pipeline": 1.319,
+            "preopen": 3.007,
+            "state_and_inputs": 0.034
+          },
+          "stages_seconds": {
+            "durable_serialization": 5.98,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.002,
+            "family_routing": 2.499,
+            "operational_funnel": 4.194,
+            "planner_pipeline": 1.768,
+            "preopen": 4.004,
+            "state_and_inputs": 0.034
+          },
+          "tick_cpu_seconds": 13.862,
+          "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+          "tick_seconds": 18.486
+        }
+      },
+      {
+        "as_of": "2026-10-05T13:20:48.590985+00:00",
+        "computed_report_sha256": "a55079a9700af08bce25e6b9d25d935db49fbee6542a7047c9cc68f4cd22cec6",
+        "freshness_budget_seconds": 90.688,
+        "generation_id": "42a5e6a9205b8afe9e1a5a3a5cda6d384b74a500d13b7c073b5520fa43097f1f",
+        "manifest_sha256": "b1b1441bad0b24e2c17f62f7d7a2515d7a6b86f4055ef81ecd8b740771425605",
+        "previous_cut_age_seconds": 64.031837,
+        "previous_cut_freshness_budget_seconds": 96.97200000000001,
+        "sequence": 1791206448590985,
+        "tick_seconds": 15.344,
+        "worker_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 4.33,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.002,
+            "family_routing": 1.912,
+            "operational_funnel": 2.137,
+            "planner_pipeline": 1.305,
+            "preopen": 1.179,
+            "state_and_inputs": 0.669
+          },
+          "stages_seconds": {
+            "durable_serialization": 5.757,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.002,
+            "family_routing": 2.537,
+            "operational_funnel": 2.862,
+            "planner_pipeline": 1.756,
+            "preopen": 1.579,
+            "state_and_inputs": 0.85
+          },
+          "tick_cpu_seconds": 11.536,
+          "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+          "tick_seconds": 15.344
+        }
+      }
+    ],
+    "elapsed_seconds": 64.032,
+    "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+    "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+    "process_peak_rss_kib": 457076,
+    "production_data_mounted": false,
+    "provider_requests": 0,
+    "ready_fixture_count": 9902,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "schema": "rc6.synthetic-full-catalog.v1"
+  },
+  "droplet_touched": false,
+  "frozen": {
+    "build_once": true,
+    "candidate_sha": "3a1ce8a4000458982d6b31dec47e8269867e28ab",
+    "candidate_tree_sha": "c159d2ab879db262e782e347eb6351ece14dd005",
+    "image_config_sha256": "69d528a39db28e0d0ed82c55a1a3372566a7f353bbdc843560501caf4da08f0f",
+    "image_id": "sha256:ef87ce8388c1d4a1ace842299c4f31c670f7e29cbcf8cfe5c24c2cbc96b13d15",
+    "image_size_bytes": 1175975810,
+    "image_tar_sha256": "ffccad6be8c1a79ca3a7c3b0b2d133a20d8ca3cf37559a5ec43b2f03705631a7",
+    "paper_mode_required": "PRODUCTION_PAPER",
+    "real_order_capability_required": "BLOCKED",
+    "real_orders_sent_required": 0,
+    "schema_version": 1
+  },
+  "fullstress_droplet_executed": false,
+  "image_config_digest_matches_frozen_image_id": true,
+  "independent_validation_limits": [
+    "Docker unavailable locally: exact-image execution/import/smoke results are those of canonical CI",
+    "No runtime equivalence or native capacity claimed by artifact readback"
+  ],
+  "job_id": 117439502861,
+  "junit": {
+    "cases": 3963,
+    "error": 0,
+    "failure": 0,
+    "skipped": 0
+  },
+  "native_backend_junit": {
+    "cases": 46,
+    "error": 0,
+    "failure": 0,
+    "skipped": 0
+  },
+  "native_runtime_accepted": false,
+  "pr": 622,
+  "promotion": "NO_GO_CAPACITY_AND_KNOWN_NATIVE_FRESHNESS",
+  "run_id": 39047648539,
+  "schema": "rc6.issue620.predeploy-byte-validation.v1",
+  "status": "GREEN_ARTIFACT_ONLY_NOT_PROMOTABLE",
+  "tests": {
+    "discovered": 3963,
+    "errors": 0,
+    "exclusions": [
+      "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+    ],
+    "executed": 3963,
+    "failures": 0,
+    "pytest_exit_code": 0,
+    "schema_version": 1,
+    "scope": "repository-root automatic pytest discovery",
+    "skipped": 0,
+    "status": "GREEN",
+    "xfail": 0
+  },
+  "zip_bytes": 414609275,
+  "zip_sha256": "c32af34436820ee304d38591464db79f5ff580bc54339c10b7bb13930fb83ba5"
+}

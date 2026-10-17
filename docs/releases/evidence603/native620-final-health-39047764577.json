@@ -1,0 +1,45 @@
+{
+  "schema": "rc6.native620-final-current-health.v1",
+  "candidate_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+  "status": "GREEN_PASSIVE_MEASUREMENT_ONLY",
+  "started_at": "2026-10-17T16:03:58.090617+00:00",
+  "finished_at": "2026-10-17T16:04:48.482438+00:00",
+  "run_id": 39047764577,
+  "job_id": 117439860514,
+  "artifact_id": 12106577220,
+  "artifact_zip_sha256": "35a520bb1e91ac3ea387fbd624bafc0196ae2953f0102d0b9e79fb4dd24d8865",
+  "read_only": true,
+  "services_changed": false,
+  "ppi_watch_accessed": false,
+  "runtime_before": {
+    "health_http": 200,
+    "heartbeat_age_seconds": 139.263004,
+    "heartbeat_at": "2026-10-17T16:01:39.648070+00:00",
+    "mode": "PRODUCTION_PAPER",
+    "process_state": "WAITING_MARKET",
+    "real_orders_sent": 0,
+    "session_state": "MARKET_CLOSED",
+    "source_identity": {
+      "candidate_tree_sha": "268009eb5fb2416fb92435ea828be7ad8d875965",
+      "source_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951"
+    },
+    "unauth_trading_http": 401
+  },
+  "runtime_after": {
+    "health_http": 200,
+    "heartbeat_age_seconds": 5.08126,
+    "heartbeat_at": "2026-10-17T16:04:43.050503+00:00",
+    "mode": "PRODUCTION_PAPER",
+    "process_state": "WAITING_MARKET",
+    "real_orders_sent": 0,
+    "session_state": "MARKET_CLOSED",
+    "source_identity": {
+      "candidate_tree_sha": "268009eb5fb2416fb92435ea828be7ad8d875965",
+      "source_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951"
+    },
+    "unauth_trading_http": 401
+  },
+  "same_owned_ids_images_and_lifecycle": true,
+  "not_shadow_acceptance": true,
+  "fullstress_droplet_executed": false
+}
