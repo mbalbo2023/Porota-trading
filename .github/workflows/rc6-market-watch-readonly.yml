@@ -55,11 +55,80 @@ jobs:
           python3 -m unittest discover -s tests -p test_rc6_operator_dashboard_readonly.py -v
           git diff --check
 
+      - name: Read pinned READ_ONLY diagnostic receipts without host access
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import hashlib, io, json, math, re, urllib.request, zipfile, os
+          artifacts = [
+           (12091516859, "4a71ce4f28bfcbc5b91d421bbe4af52027c0f10b0891a41a02d00b219169a5b4"),
+           (12091867055, "b749d35f4dfead62dcfc129237ba2398c9172abe1c2dfb3a57a251c02e37085f"),
+          ]
+          numeric = {"age_seconds","liveness_budget_seconds","native_sql_elapsed_ms","native_transform_elapsed_ms",
+           "elapsed_ms","remaining_ms","rows","shadow_age_seconds","rss_kib","cpu_seconds","shadow_worker_process_count",
+           "wal_bytes","sequence","selected_count","duration_seconds","planned_cadence_seconds","query_budget_ms",
+           "provider_requests","real_orders_sent","error_line"}
+          booleans = {"read_only","live_status_required","native_sql_within_budget","deadline_elapsed",
+           "interrupted_by_deadline","deadline_expired","runtime_deadline_expired"}
+          patterns = {
+           "generation_id":r"[0-9a-f]{64}", "manifest_sha256":r"[0-9a-f]{64}",
+           "configuration_fingerprint":r"[0-9a-f]{64}",
+           "source_sha":r"[0-9a-f]{40}", "candidate_tree_sha":r"[0-9a-f]{40}",
+           "as_of":r"20[0-9:T.+Z-]{17,40}", "generated_at":r"20[0-9:T.+Z-]{17,40}",
+           "captured_at":r"20[0-9:T.+Z-]{17,40}", "started_at":r"20[0-9:T.+Z-]{17,40}",
+           "finished_at":r"20[0-9:T.+Z-]{17,40}",
+           "error_class":r"(?:ValueError|KeyError|TypeError|OSError|OperationalError|EvidencePayloadLimit)",
+           "sqlite_errorname":r"SQLITE_[A-Z0-9_]{1,40}",
+           "state":r"(?:R|S|D|T|Z|I|UNKNOWN)", "wchan":r"[A-Za-z0-9_]{1,64}",
+           "status":r"(?:SHADOW_OBSERVING|FAIL_CLOSED|PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION|OK|FAIL_CLOSED|SKIP_BUDGET|CONTAINER_PROBE_TIMEOUT|CONTAINER_PROBE_FAILED|UNAVAILABLE|NOT_RUN_STAGE_ONLY)",
+           "integrity":r"(?:UNVERIFIED|VERIFIED)", "worker_status":r"(?:SHADOW_OBSERVING|PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION)",
+           "stage":r"(?:CATALOG_FULL|CATALOG_READY|OPEN_POSITIONS|SCHEMA_TABLES|INTRADAY_CONTRACTS|INTRADAY_POINTS|MARKET_SNAPSHOTS|RUNTIME_INPUT|CONTRACTS|INTRADAY|SNAPSHOTS|EVENTS)",
+           "error_module":r"(?:runtime|worker|preopen|promotion|stages|families|lab|entry_signals|funnel|source_reads|read_contract|persistence|snapshot|common|live)",
+           "runtime_read_stage":r"(?:CATALOG_FULL|OPEN_POSITIONS|SCHEMA_TABLES|INTRADAY_CONTRACTS|INTRADAY_POINTS|MARKET_SNAPSHOTS)",
+           "real_routes":r"NOT_CALLED"
+          }
+          containers = {"shadow","committed_generation","native_sql_stages","runtime_sql_stages","query_stages",
+           "shadow_worker_processes","observer_cycles","stages"}
+          def clean(value, depth=0):
+           if depth>6:return None
+           if isinstance(value,list):return [clean(v,depth+1) for v in value[:20] if isinstance(v,dict)]
+           if not isinstance(value,dict):return None
+           out={}
+           for key,v in value.items():
+            if key in numeric and type(v) in (int,float) and math.isfinite(v) and 0<=v<=2**53:out[key]=v
+            elif key in booleans and type(v) is bool:out[key]=v
+            elif key in patterns and type(v) is str and re.fullmatch(patterns[key],v):out[key]=v
+            elif key in containers and isinstance(v,(dict,list)):out[key]=clean(v,depth+1)
+           return out
+          for artifact_id,expected in artifacts:
+           request=urllib.request.Request(
+            f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/artifacts/{artifact_id}/zip",
+            headers={"Accept":"application/vnd.github+json"})
+           request.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
+           with urllib.request.urlopen(request,timeout=30) as response:
+            raw=response.read(2*1024**2+1)
+           assert len(raw)<=2*1024**2 and hashlib.sha256(raw).hexdigest()==expected,"ARTIFACT_IDENTITY_INVALID"
+           with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            for member in archive.infolist():
+             if member.filename not in {"snapshot.json","shadow_diagnostic.json"}:continue
+             assert member.file_size<=1024**2,"DIAGNOSTIC_TOO_LARGE"
+             data=json.loads(archive.read(member))
+             print("RC6_PINNED_ARTIFACT_READBACK="+json.dumps(
+              {"artifact_id":artifact_id,"sha256":expected,"member":member.filename,"safe":clean(data)},
+              sort_keys=True,separators=(",",":")))
+          
+          PY
+
   watch:
     needs: contracts
-    if: github.event_name != 'pull_request'
+    # Passive620 evidence captured; no further host diagnostics from this branch.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 9
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -68,7 +137,40 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+      - name: Compile current619 read-only trace before host use
+        if: github.event_name == 'pull_request'
+        run: python3 -B -m py_compile scripts/rc6_native620_passive_profile.py
+      - name: Prepare strict SSH
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_market_watch"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_market_watch" "$HOME/.ssh/known_hosts"
+      - name: Observe current619 health and generation transitions without service actions
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/native620-passive
+          timeout 370 ssh -i "$HOME/.ssh/rc6_market_watch" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
+            "$DO_USER@$DO_HOST" "sudo -n timeout 350 python3 -B -" \
+            < scripts/rc6_native620_passive_profile.py > evidence/native620-passive/host-summary.json
+          cat evidence/native620-passive/host-summary.json
+      - uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'pull_request'
+        with:
+          name: rc6-native620-passive-${{ github.run_id }}
+          path: evidence/native620-passive
+          if-no-files-found: error
+          retention-days: 14
       - name: Gate market-hours schedule
+        if: github.event_name != 'pull_request'
         id: window
         shell: bash
         run: |
@@ -161,8 +263,35 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/recent_critical.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.recent-critical-readonly.v1","read_only":true,"status":"UNAVAILABLE"}' > evidence/recent_critical.json
           fi
+      - name: Inventory public instrument metadata on manual runs only
+        if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017') && steps.window.outputs.active == '1'
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p audit-inventory
+          set +e
+          timeout 40 ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" "sudo -n timeout 10 python3 - instrument-inventory-host" \
+            < scripts/rc6_market_watch_readonly.py > audit-inventory/instruments.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool audit-inventory/instruments.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.instrument-audit-inventory.v1","status":"UNVERIFIED","read_only":true,"complete_inventory":false}' > audit-inventory/instruments.json
+          fi
+      - name: Preserve separate manual instrument inventory
+        if: always() && (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017') && steps.window.outputs.active == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-instrument-inventory-${{ github.run_id }}
+          path: audit-inventory/instruments.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Diagnose SHADOW SQLite stages on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017') && steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -179,8 +308,24 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/shadow_diagnostic.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.shadow-readonly-diagnostic.v1","status":"REMOTE_DIAGNOSTIC_UNAVAILABLE","read_only":true}' > evidence/shadow_diagnostic.json
           fi
+          python3 - <<'PY'
+          import json, math, re
+          d=json.load(open("evidence/shadow_diagnostic.json"))
+          g=d.get("committed_generation",{})
+          keep={}
+          for k in ("schema","integrity","error_class","error_reason","worker_status","source_sha","candidate_tree_sha","as_of"):
+              v=g.get(k)
+              if type(v) is str and re.fullmatch(r"[A-Za-z0-9_.:+-]{1,100}",v): keep[k]=v
+          for k in ("age_seconds","liveness_budget_seconds","generation_tick_seconds","native_sql_elapsed_ms","native_transform_elapsed_ms","computed_report_raw_bytes","computed_report_compressed_bytes"):
+              v=g.get(k)
+              limit=512*1024**2 if k.startswith("computed_report_") else 1000000
+              if type(v) in (int,float) and math.isfinite(v) and 0<=v<=limit: keep[k]=v
+          print("RC6_GENERATION_DIAGNOSTIC="+json.dumps(keep,sort_keys=True,separators=(",",":")))
+          print("RC6_NATIVE_STATUS_DIAGNOSTIC="+json.dumps(d.get("native_status_metadata",{}),sort_keys=True,separators=(",",":")))
+          print("RC6_SHADOW_PROCESS_DIAGNOSTIC="+json.dumps(d.get("shadow_worker_processes",[]),sort_keys=True,separators=(",",":")))
+          PY
       - name: Probe public GitHub schedule API from observer on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017') && steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -198,7 +343,7 @@ jobs:
             printf '%s\n' '{"schema":"rc6.market-schedule-api.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true}' > evidence/schedule_api.json
           fi
       - name: Sample observer Docker lifecycle metadata on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017') && steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -215,8 +360,21 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/observer_lifecycle.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.observer-lifecycle.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true,"events":[]}' > evidence/observer_lifecycle.json
           fi
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 22 python3 - porota-image-inventory-host" \
+            < scripts/rc6_market_watch_readonly.py > evidence/porota_images.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/porota_images.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.porota-image-inventory.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true}' > evidence/porota_images.json
+          fi
       - name: Audit authenticated dashboard routes and connector states without exporting content
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.window.outputs.active == '1'
+        if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017')) && steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -299,7 +457,7 @@ jobs:
         if: steps.window.outputs.active == '1'
         shell: bash
         env:
-          NOTIFICATION_MODE: ${{ inputs.notification_mode || 'normal' }}
+          NOTIFICATION_MODE: ${{ github.event_name == 'pull_request' && 'read_only' || inputs.notification_mode || 'normal' }}
         run: |
           set -Eeuo pipefail
           request="$(python3 scripts/rc6_market_watch_readonly.py prepare-alert \
@@ -342,6 +500,7 @@ jobs:
             evidence/shadow_diagnostic.json
             evidence/schedule_api.json
             evidence/observer_lifecycle.json
+            evidence/porota_images.json
             evidence/recent_critical.json
             evidence/dashboard_audit.json
             evidence/delivery.json
@@ -443,3 +602,89 @@ jobs:
         if: always()
         run: rm -f "$HOME/.ssh/rc6_market_watch"
 
+
+
+  profile:
+    needs: contracts
+    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Read actual completed native619 RED receipt without host access
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,json,os,re,urllib.request
+          ROOT="https://api.github.com/repos/mbalbo2023/Porota-trading"
+          def get(path,bound=2*1024**2):
+              req=urllib.request.Request(ROOT+path)
+              req.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
+              with urllib.request.urlopen(req,timeout=45) as response:raw=response.read(bound+1)
+              assert len(raw)<=bound
+              return raw
+          raw=get("/actions/jobs/117412357625/logs")
+          job=json.loads(get("/actions/jobs/117412357625"))
+          run=json.loads(get("/actions/runs/39038259114"))
+          artifacts=json.loads(get("/actions/runs/39038259114/artifacts"))
+          assert job["id"]==117412357625 and job["run_id"]==39038259114 and job["conclusion"]=="failure"
+          assert run["head_sha"]=="47d949b72f0b3affffecdc6cc90d31ba1347d9b7" and run["run_attempt"]==1
+          assert artifacts["total_count"]==0
+          lines=[re.sub(r"^\d{4}-\d\d-\d\dT\S+\s","",re.sub(r"\x1b\[[0-9;]*m","",line)) for line in raw.decode().splitlines()]
+          objects=[]
+          for line in lines:
+              if line.startswith("{"):
+                  try:objects.append(json.loads(line))
+                  except ValueError:pass
+          gates=[x for x in objects if x.get("schema")=="rc6.deploy-generation-gate.v1"]
+          assert len(gates)==1
+          gate=gates[0]
+          assert gate["status"]=="RED" and gate["reason"]=="TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED"
+          assert len(gate["generations"])==1
+          assert gate["generations"][0]["source_sha"]=="5baeae7b0478d61d2dea04e5dbee4e0c1a3af951"
+          assert gate["generations"][0]["candidate_tree_sha"]=="268009eb5fb2416fb92435ea828be7ad8d875965"
+          assert type(gate["generations"][0]["real_orders_sent"]) is int and gate["generations"][0]["real_orders_sent"]==0
+          assert gate["generations"][0]["provider_requests"]==0 and gate["generations"][0]["real_routes"]=="NOT_CALLED"
+          cleanup=[x for x in objects if x.get("schema")=="POROTA_DEPLOY_FAILURE_CLEANUP_V1"]
+          recovery=[x for x in objects if x.get("status")=="FIX_FORWARD_VALIDATION_REQUIRED"]
+          assert len(cleanup)==len(recovery)==1 and cleanup[0]["status"]=="GREEN" and not cleanup[0]["errors"]
+          http=[x for x in lines if x.startswith("POROTA_RUNTIME_AUDIT_HTTP_RESULT=")]
+          assert len(http)==252 and all("|HTTP=200|" in x for x in http)
+          routes=sorted({x.split("=",1)[1].split("|")[0] for x in http})
+          assert len(routes)==63
+          allow=("POROTA_DEPLOY_V2_TREE_IDENTITY=","POROTA_FROZEN_PREDEPLOY_FOUND=","POROTA_FROZEN_ARTIFACT_VERIFY=",
+          "POROTA_BUILD_ONCE_PROMOTION=","POROTA_IMAGE_ID_VERIFY=","POROTA_IMAGE_CONFIG_DIAGNOSTIC=","POROTA_IMAGE_TAR_VERIFY=",
+          "POROTA_RUNTIME_IMAGE_ID_VERIFY=","POROTA_RUNNING_SOURCE_IDENTITY=","POST_CONTAINER_STATUS=","POST_STATE=",
+          "RC6_FULL_CONTRACT_RECONCILIATION=","RC6_POST_RECONCILIATION_RESTART_BASELINE=","RC6_SCALPING_STABILIZATION=",
+          "POROTA_ZERO_KNOWN_ERROR_RUNTIME_AUDIT=","RC6_EXIT139_SOAK","RC6_RECENT_CRITICAL_LOG_SIGNATURES=",
+          "POROTA_DEPLOY_FAILURE_CLEANUP=","POROTA_DEPLOY_V2_RUNNER_CLEANUP=",
+          "RC6_DISK_PRETRANSFER_GATE=","RC6_DISK_POSTLOAD_RESERVE=")
+          markers=[x for x in lines if x.startswith(allow)]
+          assert any(x=="RC6_EXIT139_SOAK=GREEN" for x in markers)
+          steps=[{key:x.get(key) for key in ("name","number","status","conclusion","started_at","completed_at")} for x in job["steps"]]
+          assert next(x for x in steps if x["name"]=="Postdeploy full-session stress in the exact installed image")["conclusion"]=="skipped"
+          result={"schema":"rc6.native619-completed-deploy-byte-readback.v1",
+          "scope":"ACTUAL_CANONICAL_DROPLET_DEPLOY_RED_NOT_ACCEPTANCE",
+          "source_run":39038259114,"source_job":117412357625,"run_attempt":1,
+          "candidate_sha":"5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+          "candidate_tree_sha":"268009eb5fb2416fb92435ea828be7ad8d875965",
+          "merge_sha":run["head_sha"],"conclusion":job["conclusion"],"started_at":job["started_at"],"completed_at":job["completed_at"],
+          "frozen_image_id":"sha256:a75628801d37ea6a995c9789c6e65e5a8f493884f59ccbbd6a7677142f743060",
+          "installed_engine_image_id":"sha256:77e9e14083dd3f018ff55892457b854a9a9f3d249cfcdd0b6f9a416e812fcb8e",
+          "frozen_image_tar_sha256":"fd106b956939923a552a452840187b5687c1874696d06f4539c786e10c5e6719",
+          "raw_log_bytes":len(raw),"raw_log_sha256":hashlib.sha256(raw).hexdigest(),
+          "native_generation_gate":gate,"http":{"results":len(http),"unique_routes":len(routes),"non200":0,"routes":routes},
+          "observed_markers":markers,"recovery_control":recovery[0],"material_cleanup":cleanup[0],"steps":steps,
+          "native_acceptance":False,"full_droplet_stress":"SKIPPED","full_stress_runtime_restore":"NOT_PERFORMED",
+          "artifact_count":0,"provider_requests_scope":"ZERO_FOR_SHADOW_GATE_NOT_ENTIRE_COMPATIBILITY_DEPLOY",
+          "real_orders_sent":0,"ppi_watch_accessed":False,"retained_red":True,
+          "no_two_cycle_gap_measured":True,"next_action":"FIX_FORWARD_NEW_LOT_WITH_UNCHANGED_FRESHNESS_120S"}
+          receipt=(json.dumps(result,sort_keys=True,indent=2)+"\n").encode()
+          print("RC6_NATIVE619_DEPLOY_BYTE_RECEIPT="+json.dumps({"bytes":len(receipt),"sha256":hashlib.sha256(receipt).hexdigest(),"base64":base64.b64encode(receipt).decode()},separators=(",",":")))
+          print("RC6_NATIVE619_DEPLOY_SAFE_SUMMARY="+json.dumps({"status":"RED","reason":gate["reason"],"generation_count":len(gate["generations"]),"last_observation":gate["last_observation"],"http_results":len(http),"routes":len(routes),"cleanup":cleanup[0]["status"],"control":recovery[0]["status"],"stress":"SKIPPED"},sort_keys=True,separators=(",",":")))
+          PY
