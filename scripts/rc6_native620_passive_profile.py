@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 
 ROOT = Path('/opt/porota-trading')
 SHA = '5baeae7b0478d61d2dea04e5dbee4e0c1a3af951'
-IMAGE = 'sha256:77e9e14083dd3f01855892457b854a9a9f3d249cfcdd0b6f9a416e812fcb8e'
 OWNED = ('porota_production_observer', 'porota_production_dashboard')
 
 def command(args):
@@ -36,13 +35,16 @@ def envelope(path):
     return v['payload']
 
 def counters(path):
-    return {a:int(b) for line in path.read_text().splitlines()
+    return {a.rstrip(':'):int(b) for line in path.read_text().splitlines()
             for a,b in [line.split()] if b.isdigit()}
 
 def process(pid):
     p = Path('/proc') / str(pid)
     stat = p.joinpath('stat').read_text().rsplit(')',1)[1].split()
     io = counters(p/'io')
+    memory = {line.split(':')[0]:int(line.split()[1])*1024
+              for line in (p/'status').read_text().splitlines()
+              if line.startswith(('VmSwap:','RssAnon:','RssFile:','VmRSS:'))}
     states = {}
     runtime = wait = slices = 0
     for task in p.joinpath('task').iterdir():
@@ -57,7 +59,7 @@ def process(pid):
         'user_ticks':int(stat[11]),'system_ticks':int(stat[12]),
         'minor_faults':int(stat[7]),'major_faults':int(stat[9]),
         'rss_bytes':int(stat[21])*os.sysconf('SC_PAGE_SIZE'),
-        'thread_states':states,'sched_runtime_ns':runtime,'sched_wait_ns':wait,
+        'memory':memory,'thread_states':states,'sched_runtime_ns':runtime,'sched_wait_ns':wait,
         'sched_slices':slices,'io':{k:io.get(k) for k in ('read_bytes','write_bytes','rchar','wchar')}}
 
 def sample(baseline):
@@ -78,7 +80,14 @@ def sample(baseline):
         'host_cpu_counters':Path('/proc/stat').read_text().splitlines()[0],
         'cgroup_cpu':counters(cgroup/'cpu.stat'),
         'cgroup_memory_current':int((cgroup/'memory.current').read_text()),
-        'cgroup_memory_events':counters(cgroup/'memory.events')}
+        'cgroup_memory_events':counters(cgroup/'memory.events'),
+        'cgroup_swap_current':int((cgroup/'memory.swap.current').read_text()),
+        'host_swap_free':mem['SwapFree'],'host_swap_total':mem['SwapTotal'],
+        'host_vmstat':{k:v for k,v in counters(Path('/proc/vmstat')).items()
+                       if k in {'pgfault','pgmajfault','pswpin','pswpout','pgscan_kswapd','pgscan_direct'}},
+        'host_memory_pressure':Path('/proc/pressure/memory').read_text(),
+        'host_io_pressure':Path('/proc/pressure/io').read_text(),
+        'cgroup_memory_pressure':(cgroup/'memory.pressure').read_text()}
     folder=ROOT/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
     try:
         status=envelope(folder/'status.json'); pointer=envelope(folder/'CURRENT.json')
@@ -99,7 +108,7 @@ try:
     assert state['candidate_sha']==SHA
     before=lifecycle(); report['before']=before
     started=time.monotonic()
-    while time.monotonic()-started<300:
+    while time.monotonic()-started<90:
         report['samples'].append(sample(before))
         time.sleep(5)
     report['after']=lifecycle()
