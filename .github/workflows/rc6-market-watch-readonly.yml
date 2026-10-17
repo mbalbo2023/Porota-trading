@@ -574,148 +574,18 @@ jobs:
     needs: contracts
     if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
     runs-on: ubuntu-24.04
-    timeout-minutes: 18
+    timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - uses: actions/checkout@v4
-        with:
-          ref: 5cb663231b52aee566dec0b3bf9c5d45684b98f5
-          path: candidate
-      - name: Verify exact PR616 frozen image artifact without host access
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python3 - <<'PY'
-          import hashlib,json,os,pathlib,shutil,urllib.request,zipfile
-          request=urllib.request.Request("https://api.github.com/repos/"+os.environ["GITHUB_REPOSITORY"]+"/actions/artifacts/12093264982/zip")
-          request.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
-          target=pathlib.Path("/tmp/rc6-profile-frozen.zip");h=hashlib.sha256();total=0
-          with urllib.request.urlopen(request,timeout=45) as response,target.open("wb") as stream:
-              while block:=response.read(1024**2):
-                  total+=len(block);assert total<=500*1024**2
-                  h.update(block);stream.write(block)
-          assert h.hexdigest()=="b5360a86627fbc8a954467065a034b7a90081e1d3cc699bc23cdb6b2da0b8b63"
-          with zipfile.ZipFile(target) as archive:
-              matches=[x for x in archive.infolist() if pathlib.PurePosixPath(x.filename).name=="porota-predeploy-image.tar.gz"]
-              assert len(matches)==1 and matches[0].file_size<=500*1024**2
-              with archive.open(matches[0]) as source,open("/tmp/rc6-profile-image.tar.gz","wb") as output:shutil.copyfileobj(source,output)
-          print("RC6_PROFILE_EXACT616_ARTIFACT=GREEN")
-          PY
-          docker load -i /tmp/rc6-profile-image.tar.gz >/dev/null
-          docker image inspect sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d >/dev/null
-          install -d -m 777 /tmp/rc6-profile-603
-
-
-          test "$(git -C candidate rev-parse HEAD)" = 5cb663231b52aee566dec0b3bf9c5d45684b98f5
-      - name: Reproduce bootstrap read snapshot versus owner commit with fail closed guard
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          docker run --interactive --rm --pull never --network none --user 1000:1000 --read-only \
-            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
-            --memory 512m --memory-swap 512m --cpus 0.75 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
-            -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
-            -e PYTHONPATH=/candidate -e PYTHONDONTWRITEBYTECODE=1 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-            --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
-            -B - < scripts/rc6_single_flight_causal_control.py
-      - name: Validate synchronized budget suite and repeat actual process joining
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          docker run --interactive --rm --pull never --network none --user 1000:1000 --read-only \
-            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
-            --memory 512m --memory-swap 512m --cpus 0.75 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
-            -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
-            -e PYTHONPATH=/candidate -e PYTHONDONTWRITEBYTECODE=1 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-            --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
-            -B - <<'PY'
-          import subprocess,sys
-          command=[sys.executable,"-B","-m","pytest","-p","no:cacheprovider","-q"]
-          subprocess.run(command+["tests/test_issue465_budget_adversarial.py","--junitxml=/work/budget-tests.xml"],check=True,timeout=600)
-          node="tests/test_issue465_budget_adversarial.py::test_shared_book_single_flight_has_no_duplicate_fetch_across_real_processes"
-          for index in range(10):
-              subprocess.run(command+[node,"--junitxml=/work/single-flight-repeat-"+str(index)+".xml"],check=True,timeout=30)
-          print("RC6_SINGLE_FLIGHT_REPEAT=GREEN|repeats=10",flush=True)
-          PY
-      - name: Test candidate publication and shared cache under canonical resources
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          docker run --rm --pull never --network none --user 1000:1000 --read-only \
-            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
-            --memory 512m --memory-swap 512m --cpus 0.75 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=256m -v /tmp/rc6-profile-603:/work \
-            -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
-            -e PYTHONPATH=/candidate -e PYTHONDONTWRITEBYTECODE=1 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-            --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
-            -m pytest -p no:cacheprovider -q \
-            tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_streaming_cost.py \
-            tests/test_rc6_shadow_report_lifetime.py tests/test_rc6_shadow_owned_state.py \
-            tests/test_rc6_shadow_contract_projection.py tests/test_rc6_shadow_runtime_wiring.py \
-            tests/test_rc6_shadow_failure_context.py \
-            --junitxml=/work/candidate-tests.xml
-      - name: Run full catalogue inline with native stress process shape
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          docker run --name rc6-shared-audit-full --pull never --network none --user 1000:1000 --read-only \
-            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
-            --memory 512m --memory-swap 512m --cpus 0.75 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
-            -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
-            -e PYTHONPATH=/candidate -e PYTHONDONTWRITEBYTECODE=1 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-            --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
-            -B scripts/rc6_postdeploy_stress.py --output /work/full-catalog --full-catalog-check
-          RC=$?
-          set -e
-          docker inspect --format '{{json .State}}' rc6-shared-audit-full
-          docker rm rc6-shared-audit-full >/dev/null
-          test "$RC" = 0
-          python3 - <<'PY'
-          import json,pathlib
-          value=json.loads(pathlib.Path("/tmp/rc6-profile-603/full-catalog/full-catalog.json").read_text())
-          assert value["catalog_count"]==14611 and value["ready_fixture_count"]==9902
-          assert len(value["cuts"])==2 and value["cuts"][1]["sequence"]>value["cuts"][0]["sequence"]
-          assert value["process_peak_rss_kib"]<=512*1024 and value["real_orders_sent"]==0
-          assert value["cuts"][1]["previous_cut_age_seconds"]<=value["cuts"][1]["previous_cut_freshness_budget_seconds"]
-          print("RC6_SHARED_AUDIT_INLINE_FULL_CATALOG=GREEN")
-          PY
-      - name: Compare exact candidate serializer on one fixed full-cardinality report
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          docker run --interactive --rm --pull never --network none --user 1000:1000 --read-only \
-            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
-            --memory 512m --memory-swap 512m --cpus 0.75 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=256m -v /tmp/rc6-profile-603:/work \
-            -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
-            -e PYTHONPATH=/candidate -e PYTHONDONTWRITEBYTECODE=1 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-            --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
-            - < scripts/rc6_codec_experiment.py
-          python3 - <<'PY'
-          import json,pathlib,xml.etree.ElementTree as ET
-          root=ET.parse("/tmp/rc6-profile-603/candidate-tests.xml").getroot()
-          cases=root.findall(".//testcase")
-          assert len(cases)>=50 and not root.findall(".//failure") and not root.findall(".//error") and not root.findall(".//skipped")
-          value=json.loads(pathlib.Path("/tmp/rc6-profile-603/shared-snapshot-benchmark.json").read_text())
-          assert len(value["receipts"])==4 and value["canonical_bytes_identical"] is True
-          assert len({(x["raw_bytes"],x["raw_sha256"]) for x in value["receipts"]})==1
-          assert all(x["cpu_seconds"]>0 and x["peak_rss_kib"]<=512*1024 for x in value["receipts"])
-          print("RC6_SHARED_AUDIT_CANDIDATE=GREEN|testcases="+str(len(cases))+"|measurements=4")
-          PY
-      - name: Make diagnostic receipts readable
-        if: always()
-        run: sudo chown -R "$(id -u):$(id -g)" /tmp/rc6-profile-603
+      - name: Verify exact shared-audit CI artifact without host access
+        run: python3 scripts/rc6_shared_audit_ci_readback.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-shared-audit-candidate-${{ github.run_id }}
-          path: /tmp/rc6-profile-603
+          name: rc6-shared-audit-readback-${{ github.run_id }}
+          path: shared-audit-development-readback.json
           retention-days: 7
