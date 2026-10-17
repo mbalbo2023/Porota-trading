@@ -1,0 +1,85 @@
+{
+  "candidate_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+  "error_class": "ValueError",
+  "error_code": "RCA_IDLE_WINDOW_NOT_OBSERVED",
+  "exact_original_runtime_recovered": true,
+  "finished_at": "2026-10-17T12:08:59.772563+00:00",
+  "full_session_stress": false,
+  "heartbeat_after": "2026-10-17T12:08:58.180247+00:00",
+  "heartbeat_before": "2026-10-17T12:06:09.789070+00:00",
+  "host_cpu_metadata": {
+    "aggregate_proc_stat": [
+      95871015,
+      4402967,
+      34570277,
+      269016503,
+      60295316,
+      0,
+      277238,
+      7818985
+    ],
+    "loadavg": [
+      3.282,
+      2.561,
+      2.342
+    ],
+    "logical_cpus": 1
+  },
+  "image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+  "memory_limit_bytes": 67108864,
+  "nano_cpus": 250000000,
+  "native_acceptance": false,
+  "network": "none",
+  "owned_resource_configuration": {
+    "porota_production_dashboard": {
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "Memory": 0,
+      "NanoCpus": 0
+    },
+    "porota_production_observer": {
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "Memory": 0,
+      "NanoCpus": 0
+    }
+  },
+  "payload_exported": false,
+  "phase": "WAIT_IDLE",
+  "planned_closed_quiesce": true,
+  "ppi_watch_accessed": false,
+  "pre_quiesce_resources": {
+    "disk_free": 4677595136,
+    "memory_available": 93523968
+  },
+  "production_input_files": 1,
+  "production_input_read_only": true,
+  "purpose": "FROZEN_ROW_CACHE_ELIGIBILITY_METADATA_ONLY",
+  "real_orders_sent": 0,
+  "run_key": "39031183326-1",
+  "runtime_lifecycle_checks": {
+    "porota_production_dashboard": {
+      "identity_sha256_after": "deee5816d77b9bbfcb1fb5965400fa0060d9a1111622e7ccce58579d35b86731",
+      "identity_sha256_before": "deee5816d77b9bbfcb1fb5965400fa0060d9a1111622e7ccce58579d35b86731",
+      "image_id_after": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+      "image_id_before": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+      "restart_count_after": 0,
+      "restart_count_before": 0,
+      "status_after": "running"
+    },
+    "porota_production_observer": {
+      "identity_sha256_after": "dccef189dd8049b5a722a316954c7c2dfbe2316559dd7dd2f66bb4fb6b95ff57",
+      "identity_sha256_before": "dccef189dd8049b5a722a316954c7c2dfbe2316559dd7dd2f66bb4fb6b95ff57",
+      "image_id_after": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+      "image_id_before": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+      "restart_count_after": 0,
+      "restart_count_before": 0,
+      "status_after": "running"
+    }
+  },
+  "runtime_restore": "NOT_NEEDED_NO_SERVICE_ACTION",
+  "schema": "rc6.readonly-row-shape-host.v1",
+  "services_restarted": false,
+  "started_at": "2026-10-17T12:07:08.637888+00:00",
+  "status": "RED"
+}

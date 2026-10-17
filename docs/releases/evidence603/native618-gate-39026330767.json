@@ -1,0 +1,91 @@
+{
+  "schema": "rc6.native-deploy-failure-receipt.v1",
+  "source_run": 39026330767,
+  "source_job": 117377929224,
+  "finished_at": "2026-10-17T11:50:15Z",
+  "candidate_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+  "candidate_tree": "2f1825afed2417e4d4d7a8f003fecc009708921f",
+  "merge_sha": "616fd460b7b8577c7c6f8a62ebb00294d9182b0d",
+  "certified_image_id": "sha256:2f581a5cc45e34dad4974d35398aeef89f3dbc4c9ca7f4c3c172efd1123b62d9",
+  "installed_image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+  "image_tar_sha256": "be43e9ee781a157d1b23169827b839280f8ca0a2475f9c9fd2da3ba7ed574f52",
+  "source_bundle_files": 507,
+  "source_identity": "GREEN",
+  "http": {
+    "unique_routes": 63,
+    "audits": 4,
+    "results": 252,
+    "non200": 0
+  },
+  "soak": "FIVE_60_SECOND_ROUNDS_GREEN_NO_RESTART_NO_CRITICAL_SIGNATURE",
+  "contract_reconciliation": "GREEN_EXIT0_STATUS_OK",
+  "gate": {
+    "error_class": null,
+    "error_reason": null,
+    "generations": [
+      {
+        "as_of": "2026-10-17T11:48:37.204415+00:00",
+        "candidate_tree_sha": "2f1825afed2417e4d4d7a8f003fecc009708921f",
+        "configuration_fingerprint": "cbd2be0d55d3eeec94bf1fef07ecc10d0671298b4a1db8659384b6641efbf107",
+        "generation_id": "6ea774825c8c829e8b1c86b329c1d86b9dfff869df8dc83e764966cf70f47085",
+        "manifest_sha256": "f80a002851363b038060a2fe095032c54d3dcb165cecf424a15d84bf7745361e",
+        "native_sql_elapsed_ms": 175.814,
+        "native_transform_elapsed_ms": 65.682,
+        "provider_requests": 0,
+        "real_orders_sent": 0,
+        "real_routes": "NOT_CALLED",
+        "sequence": 1792237717204415,
+        "source_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+        "worker_status": "SHADOW_OBSERVING"
+      }
+    ],
+    "last_observation": {
+      "age_seconds": 89.255,
+      "as_of": "2026-10-17T11:48:37.204415+00:00",
+      "budget_ms": 2000,
+      "poll_seconds": 30,
+      "sql_elapsed_ms": 175.814,
+      "stages_cpu_seconds": {
+        "durable_serialization": 20.292,
+        "economic_exit_lab": 0.009,
+        "entry_signal_lab": 0.274,
+        "family_routing": 4.799,
+        "operational_funnel": 6.33,
+        "planner_pipeline": 3.487,
+        "preopen": 3.651,
+        "state_and_inputs": 2.263
+      },
+      "stages_seconds": {
+        "durable_serialization": 34.406,
+        "economic_exit_lab": 0.014,
+        "entry_signal_lab": 0.335,
+        "family_routing": 10.971,
+        "operational_funnel": 10.238,
+        "planner_pipeline": 5.99,
+        "preopen": 6.038,
+        "state_and_inputs": 3.238
+      },
+      "tick_cpu_seconds": 41.107,
+      "tick_seconds": 71.233,
+      "transform_elapsed_ms": 65.682,
+      "worker_status": "SHADOW_OBSERVING"
+    },
+    "read_only": true,
+    "reason": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+    "schema": "rc6.deploy-generation-gate.v1",
+    "status": "RED"
+  },
+  "stress_droplet_executed": false,
+  "native_stress_artifact_available": false,
+  "recovery": "FIX_FORWARD_VALIDATION_REQUIRED",
+  "cleanup": {
+    "material_status": "GREEN",
+    "control_exit": 1,
+    "staging_removed": true,
+    "space_recovered": 147456
+  },
+  "rollback": false,
+  "real_orders_sent": 0,
+  "ppi_watch_accessed": false,
+  "qualification": "CURATED_FROM_COMPLETED_CANONICAL_ACTION_LOG; NOT_NATIVE_ACCEPTANCE; CI_GAIN_NOT_A_NATIVE_GAIN_CLAIM"
+}

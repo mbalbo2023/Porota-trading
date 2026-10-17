@@ -1,7 +1,7 @@
 {
   "schema": "rc6.causal-receipts.v1",
   "workstream": "WS-RC6-AUDIT-REMEDIATION-20261016",
-  "note": "Raw causal RED/GREEN receipts are retained; local checks are never claims of full Droplet stress or actual market acceptance. Native Predeploy certificate applies only to its exact candidate.\nLa RCA numérica39020921103 se conserva con bytes idénticos a la salida codificada del productor y lectura posterior del blobGit. No hubo hash local adicional ni fullstress; el payload productivo no se exporta.\nShared-audit development receipt9058bytes is identical to producer-base64 bytes after Git blob readback; ZIP e46e09e8... actually downloaded/hashed in CI39025796758, twelve JUnit XML parsed; this proves isolated development only. Four canonical files still await offline filesystem writeback.\nExact618 CI full-stress receipt is explicitly CI_EXACT_IMAGE_PREFLIGHT; eight XML/stress JSON bytes independently verified in CI39027150461, producer bytes preserved in Git. It is not a Droplet stress or production-runtime restoration claim.",
+  "note": "Raw causal RED/GREEN receipts are retained; local checks are never claims of full Droplet stress or actual market acceptance. Native Predeploy certificate applies only to its exact candidate.\nLa RCA numérica39020921103 se conserva con bytes idénticos a la salida codificada del productor y lectura posterior del blobGit. No hubo hash local adicional ni fullstress; el payload productivo no se exporta.\nShared-audit development receipt9058bytes is identical to producer-base64 bytes after Git blob readback; ZIP e46e09e8... actually downloaded/hashed in CI39025796758, twelve JUnit XML parsed; this proves isolated development only. Four canonical files still await offline filesystem writeback.\nExact618 CI full-stress receipt is explicitly CI_EXACT_IMAGE_PREFLIGHT; eight XML/stress JSON bytes independently verified in CI39027150461, producer bytes preserved in Git. It is not a Droplet stress or production-runtime restoration claim.\nNative618 failure and no-service-action idle refusal receipts preserved byte-identically to producer with Git readback.137receipts total; no local filesystem hash/readback performed while workspaceoffline.",
   "receipts": [
     {
       "path": "docs/releases/evidence603/issue603-before.xml",
@@ -1073,6 +1073,18 @@
       "error": 0,
       "skipped": 0,
       "simulated_minutes": 405
+    },
+    {
+      "path": "docs/releases/evidence603/native618-gate-39026330767.json",
+      "source": "CURATED_COMPLETED_NATIVE_DEPLOY39026330767_JOB117377929224; BYTES_HASHED_CI117391807858; NOT_ACCEPTED_NOT_STRESSED",
+      "bytes": 3365,
+      "sha256": "2678d34aa90787a95b158da6ca1eb67ebf1dc335a5fa7012f644476986b4ca46"
+    },
+    {
+      "path": "docs/releases/evidence603/native-rowshape-blocked-39031183326.json",
+      "source": "READ_ONLY_NATIVE_RCA39031183326_JOB117392008708; BLOCKED_BEFORE_SERVICE_ACTION_OR_PROBE; EXACT_RUNTIME_UNCHANGED",
+      "bytes": 2858,
+      "sha256": "6de6daac2290480fd0411848250b07e7146bbf09da0f191cd77f7484785c1a46"
     }
   ]
 }
