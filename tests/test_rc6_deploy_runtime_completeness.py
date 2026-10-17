@@ -118,6 +118,18 @@ def test_contract_runner_uses_host_timeout_and_python_entrypoint():
     assert '--entrypoint timeout' not in source
 
 
+def test_predeploy_preserves_the_entire_native_proof_directory():
+    import yaml
+    workflow=yaml.safe_load(_predeploy())
+    steps=workflow['jobs']['artifact-gate']['steps']
+    upload=next(step for step in steps if step.get('name')=='Upload predeploy evidence')
+    # Keep every current/future JUnit and session receipt, includingRED output,
+    # instead of a partial file list that silently drops the added405min run.
+    paths={line.strip().rstrip('/') for line in upload['with']['path'].splitlines()}
+    assert '${{ runner.temp }}/porota-native-sizing-evidence' in paths
+    assert upload['if']=='always()'
+
+
 def test_sector_map_and_multisource_helpers_are_immutable_deploy_inputs():
     from scripts.porota_build_deploy_bundle_v2 import select_bundle_paths
 

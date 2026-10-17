@@ -416,8 +416,7 @@ jobs:
             /tmp/porota-predeploy-image.tar.gz
             /tmp/porota-frozen-candidate.json
             /tmp/porota-governed-tests.xml
-            ${{ runner.temp }}/porota-native-sizing-evidence/native-bound.xml
-            ${{ runner.temp }}/porota-native-sizing-evidence/catalog/full-catalog.json
+            ${{ runner.temp }}/porota-native-sizing-evidence/
             /tmp/porota-governed-tests.json
             /tmp/porota-test-collection.txt
             /tmp/porota-test-exclusions.txt
