@@ -609,6 +609,76 @@ jobs:
           assert probe==pathlib.Path("scripts/rc6_compress_native_probe.py").read_bytes()
           print("RC6_NATIVE_COMPRESSION_PACKET_REUSED=GREEN|origin_run=39019289116|six_lossless_selfchecks=GREEN|probe_bytes_match=true")
           PY
+      - name: Verify exact PR616 frozen image artifact without host access
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,shutil,urllib.request,zipfile
+          request=urllib.request.Request("https://api.github.com/repos/"+os.environ["GITHUB_REPOSITORY"]+"/actions/artifacts/12093264982/zip")
+          request.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
+          target=pathlib.Path("/tmp/rc6-profile-frozen.zip");h=hashlib.sha256();total=0
+          with urllib.request.urlopen(request,timeout=45) as response,target.open("wb") as stream:
+              while block:=response.read(1024**2):
+                  total+=len(block);assert total<=500*1024**2
+                  h.update(block);stream.write(block)
+          assert h.hexdigest()=="b5360a86627fbc8a954467065a034b7a90081e1d3cc699bc23cdb6b2da0b8b63"
+          with zipfile.ZipFile(target) as archive:
+              matches=[x for x in archive.infolist() if pathlib.PurePosixPath(x.filename).name=="porota-predeploy-image.tar.gz"]
+              assert len(matches)==1 and matches[0].file_size<=500*1024**2
+              with archive.open(matches[0]) as source,open("/tmp/rc6-profile-image.tar.gz","wb") as output:shutil.copyfileobj(source,output)
+          print("RC6_PROFILE_EXACT616_ARTIFACT=GREEN")
+          PY
+          docker load -i /tmp/rc6-profile-image.tar.gz >/dev/null
+          docker image inspect sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d >/dev/null
+          install -d -m 777 /tmp/rc6-profile-603
+
+
+      - name: Check exact packet under the stricter 64 MiB diagnostic cap
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import gzip,hashlib,os,pathlib,tarfile
+          root=pathlib.Path("/tmp/rc6-native-selfcheck64");root.mkdir(mode=0o777);os.chmod(root,0o777)
+          tool=root/"tool";tool.mkdir()
+          with tarfile.open("/tmp/rc6-native-packet-reuse/rc6-native-compression-packet.tgz","r:gz") as archive:
+              for member in archive.getmembers():
+                  path=pathlib.PurePosixPath(member.name)
+                  assert not path.is_absolute() and ".." not in path.parts and (member.isfile() or member.isdir())
+              archive.extractall(tool,filter="data")
+          output=root/"output";output.mkdir(mode=0o777);os.chmod(output,0o777)
+          payload=bytes(range(256))*16384
+          with gzip.open(root/"input.gz","wb",compresslevel=1) as stream:stream.write(payload)
+          with open(os.environ["GITHUB_ENV"],"a") as out:out.write("RCA_SELFCHECK_RAW="+hashlib.sha256(payload).hexdigest()+"\n")
+          PY
+          RCA_SELFCHECK_RAW="$(python3 -c 'import hashlib; print(hashlib.sha256(bytes(range(256))*16384).hexdigest())')"
+          docker run --rm --pull never --network none --user 1000:1000 --read-only \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
+            --memory 64m --memory-swap 64m --cpus 0.25 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=32m \
+            --mount type=bind,src=/tmp/rc6-native-selfcheck64/tool,dst=/tool,readonly \
+            --mount type=bind,src=/tmp/rc6-native-selfcheck64/input.gz,dst=/input/report.json.gz,readonly \
+            --mount type=bind,src=/tmp/rc6-native-selfcheck64/output,dst=/work \
+            --env PYTHONPATH=/tool/isal-module --env PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
+            /tool/probe.py --input /input/report.json.gz --expected-sha256 "$RCA_SELFCHECK_RAW" \
+            --raw-bytes 4194304 --context CI_SYNTHETIC_SELF_CHECK
+          python3 - <<'PY'
+          import json,pathlib
+          value=json.loads(pathlib.Path("/tmp/rc6-native-selfcheck64/output/metrics.json").read_text())
+          assert value["status"]=="GREEN" and len(value["measurements"])==6
+          assert value["context"]=="CI_SYNTHETIC_SELF_CHECK" and value["nice"]==19
+          assert all(row["peak_rss_kib"]<=64*1024 for row in value["measurements"])
+          assert value["legacy_reader_verified"] is True and value["stdlib_reader_verified"] is True
+          print("RC6_COMPRESSION_SELFCHECK64=GREEN|six_lossless|peak_rss_kib="+str(max(row["peak_rss_kib"] for row in value["measurements"])))
+          PY
+      - name: Preserve stricter diagnostic cap self-check
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-native-compress-selfcheck64-${{ github.run_id }}
+          path: /tmp/rc6-native-selfcheck64/output/metrics.json
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: rc6-native-compression-packet-${{ github.run_id }}

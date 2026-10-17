@@ -9,7 +9,7 @@ ROOT=Path("/opt/porota-trading").resolve(strict=True)
 DATA=(ROOT/"data").resolve(strict=True)
 IMAGE="sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed"
 OWNED=("porota_production_observer","porota_production_dashboard")
-MEMORY=128*1024**2
+MEMORY=64*1024**2
 RESERVE=2*1024**3
 def require(ok,code):
     if not ok:raise ValueError(code)
@@ -70,6 +70,7 @@ def safe_metrics(raw,descriptor):
     for row in rows:
         require(row.get("variant") in {"stdlib1","isal0","isal1"} and row.get("raw_sha256")==descriptor["raw_sha256"],"RCA_MEASUREMENT_IDENTITY_INVALID")
         require(all(type(row.get(k)) in (int,float) and math.isfinite(row[k]) and 0<=row[k]<=1024**3 for k in numeric),"RCA_MEASUREMENT_NUMERIC_INVALID")
+        require(row["peak_rss_kib"]<=MEMORY//1024,"RCA_PEAK_RSS_OVER_CONFIGURED_LIMIT")
         result["measurements"].append({"variant":row["variant"],"raw_sha256":row["raw_sha256"],**{k:row[k] for k in numeric}})
     if raw.get("status")=="GREEN":
         require(len(rows)==6 and raw.get("legacy_reader_verified") is True and raw.get("stdlib_reader_verified") is True,"RCA_NONEMPTY_GUARD_RED")
