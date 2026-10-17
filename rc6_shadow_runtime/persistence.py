@@ -52,92 +52,78 @@ class FrozenJSONDict(dict):
     def __deepcopy__(self,memo):return self
 
 
-class _JSONBounds:
-    """Per-encoding bounds reuse shared subtrees without caching JSON bytes.
-
-    Every pass measures its live input. Capped caches retain references, so
-    recycled object IDs cannot reuse another object's bound. Bounds saturate
-    above the only threshold consumed by the fragment encoder.
-    """
-    def __init__(self, maximum=65536, nodes=4096):
-        self.maximum, self.nodes = maximum, nodes
-        self.objects, self.strings, self.active = {}, {}, set()
-
-    def _string_bytes(self, value):
-        result = self.strings.get(value)
-        if result is None:
-            result = len(json.encoder.encode_basestring_ascii(value))
-            if len(self.strings) < 4096:
-                self.strings[value] = result
-        return result
-
-    def bound(self, value):
-        kind = type(value)
-        if kind is FrozenJSONDict:
-            # This remains only a size hint. The writer encodes live values.
-            return len(value._canonical_json), 1
-        if kind is str:
-            return self._string_bytes(value), 1
-        if value is None or kind is bool:
-            return 5, 1
-        if kind is int:
-            return max(1, value.bit_length()) + 3, 1
-        if kind is float:
-            return 64, 1
-        if kind not in (dict, list, tuple) or len(value) > 256:
-            return self.maximum + 1, self.nodes + 1
-        ident = id(value)
-        cached = self.objects.get(ident)
-        if cached is not None and cached[0] is value:
-            return cached[1], cached[2]
-        if ident in self.active:
-            return self.maximum + 1, self.nodes + 1
-        self.active.add(ident)
-        size, nodes = 2 + 2 * len(value), 1
-        try:
-            if kind is dict:
-                for key, item in value.items():
-                    if type(key) is str:
-                        size += self._string_bytes(key)
-                    else:
-                        key_size, key_nodes = self.bound(key)
-                        size += key_size + 2
-                        nodes += key_nodes
-                    child_size, child_nodes = self.bound(item)
-                    size += child_size
-                    nodes += child_nodes
-                    if size > self.maximum or nodes > self.nodes:
-                        break
-            else:
-                for item in value:
-                    child_size, child_nodes = self.bound(item)
-                    size += child_size
-                    nodes += child_nodes
-                    if size > self.maximum or nodes > self.nodes:
-                        break
-        finally:
-            self.active.remove(ident)
-        size, nodes = min(size, self.maximum + 1), min(nodes, self.nodes + 1)
-        if len(self.objects) < 8192:
-            self.objects[ident] = (value, size, nodes)
-        return size, nodes
-
-    def small(self, value):
-        size, nodes = self.bound(value)
-        return size <= self.maximum and nodes <= self.nodes
-
-
 def _small_json_tree(value, maximum=65536, nodes=4096):
-    return _JSONBounds(maximum, nodes).small(value)
+    """Bound one C-encoded record without recursively walking every key."""
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        nodes -= 1
+        if nodes < 0:
+            return False
+        kind = type(item)
+        if kind is FrozenJSONDict:
+            # Keep shared immutable summaries visible to the pass-local encoder.
+            return False
+        elif kind is str:
+            maximum -= len(json.encoder.encode_basestring_ascii(item))
+        elif item is None or kind is bool:
+            maximum -= 5
+        elif kind is int:
+            maximum -= max(1, item.bit_length()) + 3
+        elif kind is float:
+            maximum -= 64
+        elif kind is dict:
+            if len(item) > 256:
+                return False
+            maximum -= 2 + 2 * len(item)
+            # String keys are overwhelmingly common. Their exact C escape
+            # length avoids a pessimistic 12x bound splitting ordinary rows.
+            for key in item:
+                if type(key) is str:
+                    maximum -= len(json.encoder.encode_basestring_ascii(key))
+                else:
+                    pending.append(key)
+                    maximum -= 2  # numeric/null/bool keys become strings
+            pending.extend(item.values())
+        elif kind is list or kind is tuple:
+            if len(item) > 256:
+                return False
+            maximum -= 2 + len(item)
+            pending.extend(item)
+        else:
+            return False
+        if maximum < 0:
+            return False
+    return True
 
 
 def _canonical_fragments(encoder, payload):
     """Use bounded C-encoded subtrees instead of a Python yield per token."""
     active = set()
-    bounds = _JSONBounds()
+    frozen_encodings = {}
     def fragments(value):
+        if type(value) is FrozenJSONDict:
+            # Never trust the construction-time size hint as canonical bytes.
+            # Re-encode live values on the first encounter of EVERY pass.
+            ident = id(value)
+            cached = frozen_encodings.get(ident)
+            if cached is not None and cached[0] is value:
+                yield cached[1]
+                return
+            encoded = encoder.encode(value)
+            # Only the immutable scalar/empty-array contract is reusable.
+            # A deliberate base-class bypass with arbitrary objects still
+            # uses the ordinary encoder on every encounter.
+            safe = all(type(key) is str and
+                (item is None or type(item) in (str, int, float, bool) or
+                 type(item) is _FrozenEmptyList and not item)
+                for key, item in value.items())
+            if safe and len(encoded) <= 65536 and len(frozen_encodings) < 256:
+                frozen_encodings[ident] = (value, encoded)
+            yield encoded
+            return
         container = isinstance(value, (dict, list, tuple))
-        if not container or bounds.small(value):
+        if not container or _small_json_tree(value):
             yield encoder.encode(value)
             return
         if id(value) in active:

@@ -87,3 +87,19 @@ def test_option_lookup_does_not_rescan_catalogue_for_each_series(tmp_path,monkey
     assert len(report["instruments"])==len(catalog)
     complete=[value for value in observed if len(value)>=len(catalog)]
     assert complete and max(value.full_scans for value in complete)<=2
+
+
+def test_pass_local_immutable_encoding_uses_live_bytes_after_base_class_bypass(tmp_path):
+    from rc6_shadow_runtime.persistence import FrozenJSONDict
+    shared=FrozenJSONDict({"value":None,"candidates":[]})
+    payload={"rows":[{"n":n,"evidence":shared} for n in range(700)]}
+    files=EvidenceFiles(tmp_path/"shadow")
+    with files:
+        for value in (True,1,1.0,"ñ🚀"*4000):
+            dict.__setitem__(shared,"value",value)
+            if isinstance(value,str):payload["rows"]=payload["rows"][:5]
+            expected=json.dumps(payload,sort_keys=True,separators=(",",":"),allow_nan=False).encode()
+            receipt=files.write_streamed_report(payload)
+            actual=gzip.decompress((files.root/receipt["file"]).read_bytes())
+            assert actual==expected
+            assert receipt["sha256"]==hashlib.sha256(expected).hexdigest()
