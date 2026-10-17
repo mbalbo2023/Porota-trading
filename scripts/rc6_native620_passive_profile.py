@@ -5,6 +5,10 @@ import os
 from pathlib import Path
 import subprocess
 import time
+import sqlite3
+from contextlib import closing
+from urllib.request import urlopen
+from urllib.error import HTTPError
 from datetime import datetime, timezone
 
 ROOT = Path('/opt/porota-trading')
@@ -24,6 +28,29 @@ def lifecycle():
         assert v['State']['Status'] == 'running' and not v['State']['OOMKilled']
     assert len({v['Image'] for v in result.values()}) == 1
     return result
+
+def runtime_state():
+    db=ROOT/'data/paper_v17/observer_v17.db'
+    with closing(sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2)) as c:
+        c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON');c.execute('PRAGMA busy_timeout=200')
+        deadline=time.monotonic()+2;c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+        state=dict(c.execute('SELECT mode,real_orders_sent,heartbeat_at,process_state,session_state FROM observer_state WHERE id=1').fetchone())
+    assert state['mode']=='PRODUCTION_PAPER' and type(state['real_orders_sent']) is int and state['real_orders_sent']==0
+    age=(datetime.now(timezone.utc)-datetime.fromisoformat(state['heartbeat_at'])).total_seconds()
+    assert 0<=age<=180
+    state['heartbeat_age_seconds']=age
+    with urlopen('http://127.0.0.1:8000/health',timeout=5) as response:state['health_http']=response.status
+    assert state['health_http']==200
+    try:
+        urlopen('http://127.0.0.1:8000/trading',timeout=5)
+    except HTTPError as error:state['unauth_trading_http']=error.code
+    assert state.get('unauth_trading_http')==401
+    health=ROOT/'data/paper_v17/artifacts/observer_v17.db/runtime-health.json'
+    assert health.stat().st_size<131072
+    value=json.loads(health.read_text())
+    state['source_identity']={k:value.get(k) for k in ('source_sha','candidate_tree_sha')}
+    assert value['source_sha']==SHA
+    return state
 
 def envelope(path):
     assert not path.is_symlink() and path.stat().st_size <= 131072
@@ -106,13 +133,15 @@ report={'schema':'rc6.native620-passive-profile.v1','read_only':True,'services_c
 try:
     state=json.loads((ROOT/'data/deploy/CURRENT_STATE_V2.json').read_text())
     assert state['candidate_sha']==SHA
-    before=lifecycle(); report['before']=before
+    before=lifecycle(); report['before']=before;report['runtime_before']=runtime_state()
     started=time.monotonic()
-    while time.monotonic()-started<90:
+    while time.monotonic()-started<45:
         report['samples'].append(sample(before))
         time.sleep(5)
     report['after']=lifecycle()
+    report['runtime_after']=runtime_state()
     assert before==report['after']
+    assert datetime.fromisoformat(report['runtime_after']['heartbeat_at'])>datetime.fromisoformat(report['runtime_before']['heartbeat_at'])
     report['status']='GREEN_PASSIVE_MEASUREMENT_ONLY'
 except Exception as error:
     report['status']='RED';report['error_class']=type(error).__name__
