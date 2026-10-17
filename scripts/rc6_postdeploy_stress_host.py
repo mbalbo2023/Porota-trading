@@ -62,6 +62,17 @@ def database_state(path, *, require_waiting=True):
         return row
 
 
+def restored_state(before,current,image):
+    if current['Id']!=before['Id'] or current['Image']!=image:
+        raise ValueError('STRESS_RESTORE_IDENTITY_MISMATCH')
+    if current['State']['Status']!='running':
+        raise ValueError('STRESS_RESTORE_PROCESS_NOT_RUNNING')
+    previous=before.get('RestartCount'); observed=current.get('RestartCount')
+    if type(previous) is not int or type(observed) is not int or observed!=previous:
+        raise ValueError('STRESS_RESTORE_RESTART_COUNT_CHANGED_OR_UNKNOWN')
+    return dict(lifecycle(current),RestartCount=observed)
+
+
 def run(candidate, run_id):
     if not re.fullmatch('[0-9a-f]{40}',candidate) or not re.fullmatch('[0-9]+',run_id):
         raise ValueError('STRESS_IDENTITY_INVALID')
@@ -77,6 +88,7 @@ def run(candidate, run_id):
             'github_run_id':run_id,'status':'ADMISSION','started_at':datetime.now(timezone.utc).isoformat(),
             'owned_containers':list(OWNED),'ppi_watch_accessed':False,'runtime_restore':'NOT_NEEDED',
             'production_data_mounted':False,'network':'none','memory_limit_bytes':MEMORY,
+            'stress_container_cleanup':'NOT_NEEDED',
             'resource_samples':[]}
     stopped=[];name='porota_stress_'+run_id;test_created=False
     def interrupted(signum,frame):raise RuntimeError('STRESS_INTERRUPTED')
@@ -85,7 +97,8 @@ def run(candidate, run_id):
     stream=lock.open('a+')
     try:
         fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        database_state(ROOT/'data/paper_v17/observer_v17.db')
+        admitted=database_state(ROOT/'data/paper_v17/observer_v17.db')
+        report['heartbeat_before_quiesce']=admitted['heartbeat_at']
         if shutil.disk_usage(ROOT).free < RESERVE+768*1024**2:raise ValueError('STRESS_DISK_ADMISSION_BLOCKED')
         before={};before_details={}
         for container in OWNED:
@@ -142,21 +155,38 @@ def run(candidate, run_id):
         failures=[]
         if test_created:
             try:
-                subprocess.run(['docker','rm','-f',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=20)
-            except Exception as error:failures.append('STRESS_CONTAINER_CLEANUP_'+type(error).__name__)
+                removed=subprocess.run(['docker','rm','-f',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=20)
+                report['stress_container_cleanup_exit_code']=removed.returncode
+                if removed.returncode:raise RuntimeError('STRESS_CONTAINER_REMOVE_FAILED')
+                report['stress_container_cleanup']='GREEN'
+            except Exception as error:
+                # Cleanup failure must remain RED without suppressing recovery.
+                report.update(status='RED',stress_container_cleanup='RED',
+                              cleanup_error_class=type(error).__name__)
         # Restart the SAME containers, never recreate from a tag or build.
         for container in stopped:
             try:
                 command(['docker','start',container],timeout=35)
                 current=json.loads(command(['docker','inspect',container]))[0]
-                if current['Id']!=report['original_container_ids'][container] or current['Image']!=image:
-                    raise ValueError('STRESS_RESTORE_IDENTITY_MISMATCH')
+                restored_state(before_details[container],current,image)
             except Exception as error:failures.append(type(error).__name__)
         for _ in range(24):
             try:
-                database_state(ROOT/'data/paper_v17/observer_v17.db')
+                # A healthy dashboard and a still-fresh old heartbeat do not
+                # prove the observer resumed. Recheck both process states.
+                restored={}
+                if stopped:
+                    for container in OWNED:
+                        current=json.loads(command(['docker','inspect',container]))[0]
+                        restored[container]=restored_state(before_details[container],current,image)
+                row=database_state(ROOT/'data/paper_v17/observer_v17.db')
+                if stopped and (datetime.fromisoformat(row['heartbeat_at'])
+                                <=datetime.fromisoformat(report['heartbeat_before_quiesce'])):
+                    raise ValueError('STRESS_RESTORE_HEARTBEAT_NOT_ADVANCED')
                 with urlopen('http://127.0.0.1:8000/health',timeout=3) as response:
                     if response.status!=200:raise ValueError('health')
+                report['heartbeat_after_restore']=row['heartbeat_at']
+                if stopped:report['restored_lifecycle']=restored
                 break
             except Exception:
                 time.sleep(5)
