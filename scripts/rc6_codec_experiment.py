@@ -54,7 +54,7 @@ assert len({(x["raw_bytes"],x["raw_sha256"]) for x in receipts})==1
 medians={mode:statistics.median(x["cpu_seconds"] for x in receipts if x["mode"]==mode)
          for mode in ("baseline","compressed_owned")}
 assert medians["compressed_owned"]<medians["baseline"],medians
-result={"candidate_sha":"2c7f5bc22057bb5ffbd37ce636d0da3fe30da5af","canonical_bytes_identical":True,
+result={"candidate_sha":"5cb663231b52aee566dec0b3bf9c5d45684b98f5","canonical_bytes_identical":True,
         "cpu_medians":medians,"receipts":receipts,"native_acceptance":False,"full_session_stress":False}
 pathlib.Path("/work/shared-snapshot-benchmark.json").write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
 print("RC6_SHARED_AUDIT_CANDIDATE_MEDIANS="+json.dumps(medians,sort_keys=True),flush=True)

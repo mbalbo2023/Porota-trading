@@ -583,7 +583,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/checkout@v4
         with:
-          ref: 2c7f5bc22057bb5ffbd37ce636d0da3fe30da5af
+          ref: 5cb663231b52aee566dec0b3bf9c5d45684b98f5
           path: candidate
       - name: Verify exact PR616 frozen image artifact without host access
         shell: bash
@@ -610,7 +610,39 @@ jobs:
           install -d -m 777 /tmp/rc6-profile-603
 
 
-          test "$(git -C candidate rev-parse HEAD)" = 2c7f5bc22057bb5ffbd37ce636d0da3fe30da5af
+          test "$(git -C candidate rev-parse HEAD)" = 5cb663231b52aee566dec0b3bf9c5d45684b98f5
+      - name: Reproduce bootstrap read snapshot versus owner commit with fail closed guard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run --interactive --rm --pull never --network none --user 1000:1000 --read-only \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
+            --memory 512m --memory-swap 512m --cpus 0.75 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
+            -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
+            -e PYTHONPATH=/candidate -e PYTHONDONTWRITEBYTECODE=1 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+            --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
+            -B - < scripts/rc6_single_flight_causal_control.py
+      - name: Validate synchronized budget suite and repeat actual process joining
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run --interactive --rm --pull never --network none --user 1000:1000 --read-only \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
+            --memory 512m --memory-swap 512m --cpus 0.75 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
+            -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
+            -e PYTHONPATH=/candidate -e PYTHONDONTWRITEBYTECODE=1 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+            --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
+            -B - <<'PY'
+          import subprocess,sys
+          command=[sys.executable,"-B","-m","pytest","-p","no:cacheprovider","-q"]
+          subprocess.run(command+["tests/test_issue465_budget_adversarial.py","--junitxml=/work/budget-tests.xml"],check=True,timeout=600)
+          node="tests/test_issue465_budget_adversarial.py::test_shared_book_single_flight_has_no_duplicate_fetch_across_real_processes"
+          for index in range(10):
+              subprocess.run(command+[node,"--junitxml=/work/single-flight-repeat-"+str(index)+".xml"],check=True,timeout=30)
+          print("RC6_SINGLE_FLIGHT_REPEAT=GREEN|repeats=10",flush=True)
+          PY
       - name: Test candidate publication and shared cache under canonical resources
         shell: bash
         run: |
