@@ -1342,21 +1342,29 @@ def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_sec
               'broker_requests': 0, 'ppi_watch_accessed': False,
               'source_database_effect': 'READ_ONLY', 'complete_inventory': False}
     connection = None
+    started = time.monotonic(); stage = 'ADMISSION'; interrupted = False
+    def expired():
+        nonlocal interrupted
+        interrupted = time.monotonic() > deadline
+        return int(interrupted)
     try:
         if type(row_limit) is not int or not 1 <= row_limit <= 20000 or not 0 < budget_seconds <= 2:
             raise ValueError('INVENTORY_BUDGET_INVALID')
         database = Path(root) / DB_REL
         if database.is_symlink() or database.resolve(strict=True) != database.absolute():
             raise ValueError('INVENTORY_PATH_ALIAS')
+        stage = 'CONNECT'
         connection = sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=.005)
         connection.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 8 * 1024**2)
         connection.execute('PRAGMA query_only=ON')
         deadline = time.monotonic() + budget_seconds
-        connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+        connection.set_progress_handler(expired, 1000)
         connection.execute('BEGIN')
+        stage = 'PAPER_SAFETY'
         safety = connection.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
         if not safety or safety[0] != 'PRODUCTION_PAPER' or type(safety[1]) is not int or safety[1] != 0:
             raise ValueError('INVENTORY_PAPER_REQUIRED')
+        stage = 'SCHEMA'
         tables = {r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         columns = ['ticker', 'instrument_type', 'market', 'currency', 'settlement',
                    'settlement_source', 'last_seen_at', 'catalog_status', 'catalog_capability']
@@ -1379,10 +1387,12 @@ def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_sec
         public_fields = ','.join(x[2:] for x in fields[:9])
         sql = ('SELECT COUNT(*),json_group_array(json_array(' + ','.join(fields) + ')) FROM '
                '(SELECT ' + public_fields + ' FROM financial_instrument_catalog ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?) c' + joins)
+        stage = 'PACKED_METADATA'
         count, packed = connection.execute(sql, (row_limit + 1,)).fetchone()
         connection.rollback(); connection.close(); connection = None
         if count > row_limit:
             raise ValueError('INVENTORY_TRUNCATED_OR_DUPLICATED')
+        stage = 'DECODE_AND_IDENTITY'
         captured = at or now_utc()
         rows = json.loads(packed)
         if len(rows) != count or len({tuple(r[:5]) for r in rows}) != count:
@@ -1403,9 +1413,21 @@ def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_sec
                       contract_flags_are_not_live_tradeability=True)
     except (OSError, ValueError, TypeError, sqlite3.Error) as exc:
         result['error_class'] = type(exc).__name__
+        if isinstance(exc, sqlite3.Error):
+            message = str(exc).lower()
+            if 'no such function' in message: code = 'SQLITE_FUNCTION_UNAVAILABLE'
+            elif 'no such column' in message: code = 'SQLITE_SCHEMA_COLUMN_MISMATCH'
+            elif 'no such table' in message: code = 'SQLITE_SCHEMA_TABLE_MISMATCH'
+            elif 'locked' in message or 'busy' in message: code = 'SQLITE_BUSY_OR_LOCKED'
+            elif 'interrupted' in message: code = 'SQLITE_DEADLINE_INTERRUPTED' if interrupted else 'SQLITE_INTERRUPT_UNATTRIBUTED'
+            elif 'too big' in message: code = 'SQLITE_LENGTH_LIMIT'
+            else: code = 'SQLITE_OTHER_ERROR'
+            result['error_code'] = code
     finally:
         if connection is not None:
             connection.close()
+        result['diagnostic'] = {'stage':stage,'elapsed_ms':round((time.monotonic()-started)*1000,3),
+                                'interrupted_by_deadline':interrupted,'sqlite_version':sqlite3.sqlite_version}
     return result
 
 

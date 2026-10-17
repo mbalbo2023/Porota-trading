@@ -906,6 +906,34 @@ class InstrumentInventoryContracts(unittest.TestCase):
         self.assertFalse(value['complete_inventory'])
         self.assertNotIn('records', value)
 
+    def test_schema_failure_reports_safe_stage_without_column_or_sql(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('ALTER TABLE candidate_identity_v2 RENAME COLUMN checked_at TO PRIVATE_SQL_COLUMN')
+        value = monitor.instrument_inventory_host(self.root, at=NOW)
+        self.assertEqual(value['status'], 'UNVERIFIED')
+        self.assertEqual(value['error_code'], 'SQLITE_SCHEMA_COLUMN_MISMATCH')
+        self.assertEqual(value['diagnostic']['stage'], 'PACKED_METADATA')
+        self.assertFalse(value['diagnostic']['interrupted_by_deadline'])
+        self.assertNotIn('PRIVATE_', json.dumps(value))
+        self.assertNotIn('records', value)
+
+    def test_unavailable_host_function_has_typed_cause_without_raw_error(self):
+        connect = sqlite3.connect
+        class WithoutJson:
+            def __init__(self,*args,**kwargs): self.connection=connect(*args,**kwargs)
+            def __getattr__(self,name): return getattr(self.connection,name)
+            def execute(self,sql,*args):
+                if 'json_group_array(' in sql:
+                    raise sqlite3.OperationalError('no such function: PRIVATE_HOST_DETAIL')
+                return self.connection.execute(sql,*args)
+        with patch.object(monitor.sqlite3,'connect',WithoutJson):
+            value = monitor.instrument_inventory_host(self.root, at=NOW)
+        self.assertEqual(value['status'], 'UNVERIFIED')
+        self.assertEqual(value['error_code'], 'SQLITE_FUNCTION_UNAVAILABLE')
+        self.assertEqual(value['diagnostic']['stage'], 'PACKED_METADATA')
+        self.assertNotIn('PRIVATE_', json.dumps(value))
+        self.assertNotIn('records', value)
+
     def test_manual_inventory_does_not_expand_comparison_artifact_or_schedule(self):
         text = (SOURCE.parents[1] / '.github/workflows/rc6-market-watch-readonly.yml').read_text()
         start = text.index('name: Inventory public instrument metadata on manual runs only')
