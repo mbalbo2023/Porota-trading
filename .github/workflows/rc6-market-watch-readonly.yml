@@ -107,7 +107,8 @@ jobs:
           for artifact_id,expected in artifacts:
            request=urllib.request.Request(
             f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/artifacts/{artifact_id}/zip",
-            headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],"Accept":"application/vnd.github+json"})
+            headers={"Accept":"application/vnd.github+json"})
+           request.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
            with urllib.request.urlopen(request,timeout=30) as response:
             raw=response.read(2*1024**2+1)
            assert len(raw)<=2*1024**2 and hashlib.sha256(raw).hexdigest()==expected,"ARTIFACT_IDENTITY_INVALID"
