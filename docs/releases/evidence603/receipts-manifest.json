@@ -1,7 +1,7 @@
 {
   "schema": "rc6.causal-receipts.v1",
   "workstream": "WS-RC6-AUDIT-REMEDIATION-20261016",
-  "note": "Raw causal RED/GREEN receipts are retained; local checks are never claims of full Droplet stress or actual market acceptance. Native Predeploy certificate applies only to its exact candidate.",
+  "note": "Raw causal RED/GREEN receipts are retained; local checks are never claims of full Droplet stress or actual market acceptance. Native Predeploy certificate applies only to its exact candidate.\nLa RCA numérica39020921103 se conserva con bytes idénticos a la salida codificada del productor y lectura posterior del blobGit. No hubo hash local adicional ni fullstress; el payload productivo no se exporta.",
   "receipts": [
     {
       "path": "docs/releases/evidence603/issue603-before.xml",
@@ -1044,6 +1044,12 @@
       "failure": 1,
       "error": 0,
       "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/native-compression-rca-39020921103.json",
+      "source": "READ_ONLY_NATIVE_RCA_RUN39020921103_JOB117362618438; NOT_FULL_STRESS; HASHED_SOURCE_ONLY; RESTORE_GREEN",
+      "bytes": 7385,
+      "sha256": "139fdfac084c34007e17d143c8109748d6b885a69ed76b6c5908af104aeb5d4a"
     }
   ]
 }

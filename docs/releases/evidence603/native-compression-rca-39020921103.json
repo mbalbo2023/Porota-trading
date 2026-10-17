@@ -1,0 +1,207 @@
+{
+  "admission": {
+    "disk_free": 4224856064,
+    "maximum_memory_seen": 636026880,
+    "memory_available": 636026880,
+    "minimum_memory_seen": 636026880,
+    "required_disk": 2147483648,
+    "required_memory": 201326592,
+    "wait_seconds": 0
+  },
+  "candidate_sha": "7bad982559f56323c00f555f0d8bb480dd00dfd0",
+  "diagnostic_container_cleanup": "GREEN",
+  "exact_original_runtime_recovered": true,
+  "finished_at": "2026-10-17T09:28:41.844501+00:00",
+  "full_session_stress": false,
+  "heartbeat_after": "2026-10-17T09:28:37.902877+00:00",
+  "heartbeat_before": "2026-10-17T09:24:30.932135+00:00",
+  "image_id": "sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed",
+  "memory_limit_bytes": 67108864,
+  "metrics": {
+    "context": "READ_ONLY_NATIVE_COMPRESSION_RCA",
+    "full_session_stress": false,
+    "isal_version": "1.8.0",
+    "legacy_reader_verified": true,
+    "measurements": [
+      {
+        "compressed_bytes": 5680901,
+        "compression_cpu_seconds": 1.0714,
+        "peak_rss_kib": 31444,
+        "raw_bytes": 254743492,
+        "raw_hash_cpu_seconds": 0.9256,
+        "raw_sha256": "0589e5aea93eb00fe6842869474b73336c20c18a38abd6c25be561edc12699d5",
+        "source_decode_cpu_seconds": 0.5232,
+        "stdlib_readback_cpu_seconds": 1.3306,
+        "total_write_cpu_seconds": 2.5669,
+        "variant": "stdlib1",
+        "write_wall_seconds": 15.3677
+      },
+      {
+        "compressed_bytes": 7790701,
+        "compression_cpu_seconds": 0.1648,
+        "peak_rss_kib": 33032,
+        "raw_bytes": 254743492,
+        "raw_hash_cpu_seconds": 0.8772,
+        "raw_sha256": "0589e5aea93eb00fe6842869474b73336c20c18a38abd6c25be561edc12699d5",
+        "source_decode_cpu_seconds": 0.4271,
+        "stdlib_readback_cpu_seconds": 1.2334,
+        "total_write_cpu_seconds": 1.5007,
+        "variant": "isal0",
+        "write_wall_seconds": 8.1871
+      },
+      {
+        "compressed_bytes": 6953632,
+        "compression_cpu_seconds": 0.1755,
+        "peak_rss_kib": 42632,
+        "raw_bytes": 254743492,
+        "raw_hash_cpu_seconds": 0.8849,
+        "raw_sha256": "0589e5aea93eb00fe6842869474b73336c20c18a38abd6c25be561edc12699d5",
+        "source_decode_cpu_seconds": 0.4271,
+        "stdlib_readback_cpu_seconds": 1.2069,
+        "total_write_cpu_seconds": 1.5187,
+        "variant": "isal1",
+        "write_wall_seconds": 8.2027
+      },
+      {
+        "compressed_bytes": 6953632,
+        "compression_cpu_seconds": 0.1714,
+        "peak_rss_kib": 42632,
+        "raw_bytes": 254743492,
+        "raw_hash_cpu_seconds": 0.9207,
+        "raw_sha256": "0589e5aea93eb00fe6842869474b73336c20c18a38abd6c25be561edc12699d5",
+        "source_decode_cpu_seconds": 0.4409,
+        "stdlib_readback_cpu_seconds": 1.3309,
+        "total_write_cpu_seconds": 1.5647,
+        "variant": "isal1",
+        "write_wall_seconds": 6.2898
+      },
+      {
+        "compressed_bytes": 7790701,
+        "compression_cpu_seconds": 0.1818,
+        "peak_rss_kib": 42632,
+        "raw_bytes": 254743492,
+        "raw_hash_cpu_seconds": 0.9268,
+        "raw_sha256": "0589e5aea93eb00fe6842869474b73336c20c18a38abd6c25be561edc12699d5",
+        "source_decode_cpu_seconds": 0.4497,
+        "stdlib_readback_cpu_seconds": 1.1991,
+        "total_write_cpu_seconds": 1.5915,
+        "variant": "isal0",
+        "write_wall_seconds": 6.3922
+      },
+      {
+        "compressed_bytes": 5680901,
+        "compression_cpu_seconds": 0.9033,
+        "peak_rss_kib": 42632,
+        "raw_bytes": 254743492,
+        "raw_hash_cpu_seconds": 0.8164,
+        "raw_sha256": "0589e5aea93eb00fe6842869474b73336c20c18a38abd6c25be561edc12699d5",
+        "source_decode_cpu_seconds": 0.4157,
+        "stdlib_readback_cpu_seconds": 1.2649,
+        "total_write_cpu_seconds": 2.1689,
+        "variant": "stdlib1",
+        "write_wall_seconds": 8.6946
+      }
+    ],
+    "median_compression_cpu_seconds": {
+      "isal0": 0.1733,
+      "isal1": 0.17345,
+      "stdlib1": 0.98735
+    },
+    "median_total_write_cpu_seconds": {
+      "isal0": 1.5461,
+      "isal1": 1.5417,
+      "stdlib1": 2.3678999999999997
+    },
+    "native_acceptance": false,
+    "network": "NONE",
+    "nice": 19,
+    "payload_exported": false,
+    "production_input_read_only": true,
+    "provider_requests": 0,
+    "raw_bytes": 254743492,
+    "raw_sha256": "0589e5aea93eb00fe6842869474b73336c20c18a38abd6c25be561edc12699d5",
+    "real_orders_sent": 0,
+    "schema": "rc6.bounded-native-compression-rca.v1",
+    "status": "GREEN",
+    "stdlib_reader_verified": true,
+    "threads": 1
+  },
+  "minimum_disk_free_bytes": 4224716800,
+  "minimum_host_memory_available": 473575424,
+  "nano_cpus": 250000000,
+  "native_acceptance": false,
+  "network": "none",
+  "oom_killed": false,
+  "payload_exported": false,
+  "phase": "PROBE",
+  "planned_closed_quiesce": true,
+  "ppi_watch_accessed": false,
+  "pre_quiesce_resources": {
+    "disk_free": 4222078976,
+    "memory_available": 151162880
+  },
+  "private_file_size_metadata": {
+    "checkpoint": {
+      "compressed_bytes": 4192356,
+      "gzip_isize_mod2_32": 27107455
+    },
+    "full_audit": {
+      "compressed_bytes": 5680931,
+      "gzip_isize_mod2_32": 254743492
+    },
+    "selection": {
+      "compressed_bytes": 2970,
+      "gzip_isize_mod2_32": 8218
+    }
+  },
+  "process_exit_code": 0,
+  "production_input_files": 1,
+  "production_input_read_only": true,
+  "real_orders_sent": 0,
+  "resource_samples": 50,
+  "run_key": "39020921103-1",
+  "runtime_lifecycle_checks": {
+    "porota_production_dashboard": {
+      "identity_sha256_after": "5e5162df57f99ca7955a61089c35c2588277588438fe891fbfef43142702bc36",
+      "identity_sha256_before": "5e5162df57f99ca7955a61089c35c2588277588438fe891fbfef43142702bc36",
+      "image_id_after": "sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed",
+      "image_id_before": "sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed",
+      "restart_count_after": 0,
+      "restart_count_before": 0,
+      "status_after": "running"
+    },
+    "porota_production_observer": {
+      "identity_sha256_after": "59130dce8deedecb353524c04358b0f6e29d092f06887ba03e2b5044659653b8",
+      "identity_sha256_before": "59130dce8deedecb353524c04358b0f6e29d092f06887ba03e2b5044659653b8",
+      "image_id_after": "sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed",
+      "image_id_before": "sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed",
+      "restart_count_after": 0,
+      "restart_count_before": 0,
+      "status_after": "running"
+    }
+  },
+  "runtime_restore": "GREEN",
+  "schema": "rc6.readonly-compression-host.v1",
+  "services_restarted": true,
+  "source": {
+    "compressed_bytes": 5680931,
+    "generation_id": "4906a744514e802026fdd66761e6935ceadd3b62d035e4337b47f054bbc486b3",
+    "manifest_sha256": "9d1906f91b75112d371a00a274c4120b4efcdef3ebfb1369d672fc7307eb739f",
+    "raw_bytes": 254743492,
+    "raw_sha256": "0589e5aea93eb00fe6842869474b73336c20c18a38abd6c25be561edc12699d5"
+  },
+  "started_at": "2026-10-17T09:24:33.290935+00:00",
+  "status": "GREEN",
+  "stop_evidence": {
+    "porota_production_dashboard": {
+      "classification": "CLEAN_EXIT",
+      "exit_code": 0,
+      "oom_killed": false
+    },
+    "porota_production_observer": {
+      "classification": "CLEAN_EXIT",
+      "exit_code": 0,
+      "oom_killed": false
+    }
+  }
+}

@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "616_INSTALLED_NATIVE_TWO_GENERATION_GATE_RED_SERIALIZATION_RCA_ACTIVE",
+  "release_state": "616_COHERENCE_RED_NATIVE_RCA_EXACT_RUNTIME_RECOVERED_NO_NEW_CANDIDATE",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -17,10 +17,10 @@
     "deploy_owner_issue471": 6228525290,
     "deploy_owner_issue473": 6228525416,
     "latest_deploy_owner_refresh": {
-      "issue471": 6231733985,
-      "issue473": 6231734640,
-      "at": "2026-10-17T08:27Z",
-      "state": "HELD_THROUGH_NATIVE_ACCEPTANCE_STRESS_RESTORE"
+      "issue471": 6232527295,
+      "issue473": 6232528010,
+      "at": "2026-10-17T09:55Z",
+      "state": "HELD_THROUGH_FIX_FORWARD_NATIVE_ACCEPTANCE_STRESS_RESTORE"
     }
   },
   "findings": [
@@ -600,12 +600,12 @@
       "path": "scripts/rc6_postdeploy_stress_host.py",
       "symbol": "restored_state",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "RCA: identity/image checks plus healthy dashboard could accept an exited observer. Private adversary reproduced GREEN with observer exited. FIX/GUARD: both original IDs/images and running states required immediately and on every recovery health retry. Same-identity dead process remainsRED; dashboard recovery is still attempted. Causal3FAIL+1FAIL receipts and final48PASS preserved. Exact native suite and actual Droplet stress pending. Exact native3764PASS/zero errors/skips/xfails on4e2bdd, raw JUnit independently checked. Full Droplet stress still not run.",
+      "detail": "RCA: identity/image checks plus healthy dashboard could accept an exited observer. Private adversary reproduced GREEN with observer exited. FIX/GUARD: both original IDs/images and running states required immediately and on every recovery health retry. Same-identity dead process remainsRED; dashboard recovery is still attempted. Causal3FAIL+1FAIL receipts and final48PASS preserved. Exact native suite and actual Droplet stress pending. Exact native3764PASS/zero errors/skips/xfails on4e2bdd, raw JUnit independently checked. Full Droplet stress still not run. RCA nativa39020921103 recuperó mismos contenedores e imagen, RestartCount0→0, heartbeat9:28:37>9:24:30 y health200; no es ejecución del fullstress.",
       "test": "tests/test_rc6_postdeploy_stress_contract.py",
-      "status": "VERIFIED_PREDEPLOY_PENDING_DROPLET",
+      "status": "VERIFICADO_NATIVE_RCA_RESTORE_FULL_STRESS_PENDIENTE",
       "code_state": "EN_GITHUB",
-      "runtime_occurrence": "REPRODUCED_PRIVATE_FIXTURE_NOT_OBSERVED_DROPLET",
-      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "runtime_occurrence": "OBSERVED_NATIVE_RCA_QUIESCE_RESTORE_39020921103",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39020921103",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Any causal failure or missing cleanup/recovery proof keeps this finding open."
     },
@@ -615,12 +615,12 @@
       "path": "scripts/rc6_postdeploy_stress_host.py",
       "symbol": "heartbeat_before_quiesce",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "RCA: heartbeat freshness180s admitted an unchanged pre-stress row after recovery. Private adversary reproduced GREEN with no heartbeat advance. FIX/GUARD: record admitted heartbeat and require actual strictly newer heartbeat from the restored native observer in addition to PAPER0/CLOSED/WAITING/ledgers and HTTP health. Frozen heartbeat remainsRED. Causal3FAIL+1FAIL receipts and final48PASS preserved. Exact native suite and actual Droplet stress pending. Exact native3764PASS/zero errors/skips/xfails on4e2bdd, raw JUnit independently checked. Full Droplet stress still not run.",
+      "detail": "RCA: heartbeat freshness180s admitted an unchanged pre-stress row after recovery. Private adversary reproduced GREEN with no heartbeat advance. FIX/GUARD: record admitted heartbeat and require actual strictly newer heartbeat from the restored native observer in addition to PAPER0/CLOSED/WAITING/ledgers and HTTP health. Frozen heartbeat remainsRED. Causal3FAIL+1FAIL receipts and final48PASS preserved. Exact native suite and actual Droplet stress pending. Exact native3764PASS/zero errors/skips/xfails on4e2bdd, raw JUnit independently checked. Full Droplet stress still not run. RCA nativa39020921103 recuperó mismos contenedores e imagen, RestartCount0→0, heartbeat9:28:37>9:24:30 y health200; no es ejecución del fullstress.",
       "test": "tests/test_rc6_postdeploy_stress_contract.py",
-      "status": "VERIFIED_PREDEPLOY_PENDING_DROPLET",
+      "status": "VERIFICADO_NATIVE_RCA_RESTORE_FULL_STRESS_PENDIENTE",
       "code_state": "EN_GITHUB",
-      "runtime_occurrence": "REPRODUCED_PRIVATE_FIXTURE_NOT_OBSERVED_DROPLET",
-      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "runtime_occurrence": "OBSERVED_NATIVE_RCA_QUIESCE_RESTORE_39020921103",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39020921103",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Any causal failure or missing cleanup/recovery proof keeps this finding open."
     },
@@ -630,12 +630,12 @@
       "path": "scripts/rc6_postdeploy_stress_host.py",
       "symbol": "restored_state",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "RCA: a process could restart after docker start and still satisfy identity/image/health, hiding the crash. Private adversary reproduced GREEN with RestartCount0to1. FIX/GUARD: original and observed restart counters must be typed ints and unchanged on every recovery check; final lifecycle publishes counter. Increased or unknown count remainsRED. Causal3FAIL+1FAIL receipts and final48PASS preserved. Exact native suite and actual Droplet stress pending. Exact native3764PASS/zero errors/skips/xfails on4e2bdd, raw JUnit independently checked. Full Droplet stress still not run.",
+      "detail": "RCA: a process could restart after docker start and still satisfy identity/image/health, hiding the crash. Private adversary reproduced GREEN with RestartCount0to1. FIX/GUARD: original and observed restart counters must be typed ints and unchanged on every recovery check; final lifecycle publishes counter. Increased or unknown count remainsRED. Causal3FAIL+1FAIL receipts and final48PASS preserved. Exact native suite and actual Droplet stress pending. Exact native3764PASS/zero errors/skips/xfails on4e2bdd, raw JUnit independently checked. Full Droplet stress still not run. RCA nativa39020921103 recuperó mismos contenedores e imagen, RestartCount0→0, heartbeat9:28:37>9:24:30 y health200; no es ejecución del fullstress.",
       "test": "tests/test_rc6_postdeploy_stress_contract.py",
-      "status": "VERIFIED_PREDEPLOY_PENDING_DROPLET",
+      "status": "VERIFICADO_NATIVE_RCA_RESTORE_FULL_STRESS_PENDIENTE",
       "code_state": "EN_GITHUB",
-      "runtime_occurrence": "REPRODUCED_PRIVATE_FIXTURE_NOT_OBSERVED_DROPLET",
-      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "runtime_occurrence": "OBSERVED_NATIVE_RCA_QUIESCE_RESTORE_39020921103",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39020921103",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Any causal failure or missing cleanup/recovery proof keeps this finding open."
     },
@@ -855,7 +855,7 @@
       "path": "rc6_shadow_runtime/persistence.py",
       "symbol": "_canonical_chunks",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "Full audit248MB raw/4.6MB gzip: per-token compressor writes and duplicate envelope encoding caused excessive CPU. Bounded64KiB writes, single canonical payload pass, bounded C subtrees and exact type/Unicode/key/NaN/cycle/size/atomic checks preserve complete audit and hashes. Exact sample codec28.048→13.171 CPU seconds before final immutable empty-field optimization. Actualización nativa616: durable25.627wall/19.640CPU-s de tick49.259wall/35.853CPU-s. Las guardas previas se conservan; queda costo residual de serialización y gateRED. Investigación de subárboles/diccionarios normales en CI aislado, no nueva promoción.",
+      "detail": "Full audit248MB raw/4.6MB gzip: per-token compressor writes and duplicate envelope encoding caused excessive CPU. Bounded64KiB writes, single canonical payload pass, bounded C subtrees and exact type/Unicode/key/NaN/cycle/size/atomic checks preserve complete audit and hashes. Exact sample codec28.048→13.171 CPU seconds before final immutable empty-field optimization. Actualización nativa616: durable25.627wall/19.640CPU-s de tick49.259wall/35.853CPU-s. Las guardas previas se conservan; queda costo residual de serialización y gateRED. Investigación de subárboles/diccionarios normales en CI aislado, no nueva promoción. RCA gzip nativa: stdlib0.98735CPU-s/isal0 0.17330, diferencia0.81405 insuficiente sola; no nueva dependencia. Caché de listas frozen compartidas en CI6.5105→5.334CPU-s con mismo JSON/hash; variante comprimida/key-bounds aún en investigación.",
       "test": "tests/test_rc6_shadow_streaming_cost.py",
       "status": "NATIVE_RESIDUAL_SERIALIZATION_CPU_19_640_FIX_FORWARD_PENDING",
       "code_state": "EN_GITHUB_F167_FROZEN",
@@ -1444,7 +1444,7 @@
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
   },
   "next_candidate": {
-    "state": "NONE_READY; SYNTHETIC_SERIALIZATION_RCA_IN_PROGRESS",
+    "state": "NONE_READY_AWAITING_MEASURED_COMPRESSED_CACHE",
     "source_sha": null,
     "frozen": false,
     "certified": false,
@@ -1614,7 +1614,21 @@
     "validation": "FIX_FORWARD_VALIDATION_REQUIRED",
     "stress": "NOT_EXECUTED",
     "last_native_run": 39013855958,
-    "one_generation_only": true
+    "one_generation_only": true,
+    "last_native_control_receipt": {
+      "run": 39020921103,
+      "job": 117362618438,
+      "as_of": "2026-10-17T09:28:41.844501+00:00",
+      "runtime_restore": "GREEN",
+      "exact_same_container_ids_images": true,
+      "restart_counts": [
+        0,
+        0
+      ],
+      "heartbeat_after": "2026-10-17T09:28:37.902877+00:00",
+      "real_orders_sent": 0,
+      "native_acceptance": false
+    }
   },
   "wiring_610": {
     "path": "docs/releases/RC6_ISSUE603_WIRING_610.json",
@@ -2103,11 +2117,11 @@
     "control_plane": "GITHUB_MCP_AND_CANONICAL_ACTIONS",
     "source_and_receipts_already_published": true,
     "additional_local_zip_verification": "NOT_EXECUTED",
-    "four_project_file_writeback": "PENDING; latest remote metadata versions14/13/10/10 unchanged at07:32Z",
+    "four_project_file_writeback": "PENDING; last full remote read versions14/13/10/10; no successful writeback",
     "direct_ssh": "NOT_USED",
     "new_timers": "NONE",
     "subagents": "NONE",
-    "last_local_recovery_attempt": "2026-10-17T07:45:18Z; pwd NO_RESPONSE_WITHIN5S; no canonical writes",
+    "last_local_recovery_attempt": "2026-10-17T09:47:55Z; pwd NO_RESPONSE_WITHIN5S; no canonical writes",
     "canonical_history_reconstruction": "4_FULL_READS; UTF8_BYTE_SIZES_MATCH_WITH_TERMINAL_NEWLINE; PREPARED_TEXT_PRESERVES_ORIGINAL_PREFIX"
   },
   "native_generation_freshness_rca": {
@@ -2272,7 +2286,7 @@
     ],
     "native_acceptance": false
   },
-  "updated_at": "2026-10-17T08:39:31.952Z",
+  "updated_at": "2026-10-17T09:56:48.109Z",
   "previous_deploy_result_613": {
     "run": 39003668897,
     "job": 117311624166,
@@ -2483,8 +2497,125 @@
   },
   "native_serialization_experiment": {
     "diagnostic_pr": 614,
+    "sha": "7638fd980097935d5f21d9808800fd656495a4fa",
+    "run": 39022930524,
+    "state": "IN_PROGRESS_COMPRESSED_SHARED_SNAPSHOT_CACHE_AND_KEY_BOUNDS",
+    "memory_limit_mib": 512,
+    "cpu_limit": 0.75,
+    "compressed_cache_limit_mib": 4,
+    "raw_snapshot_limit_mib": 32,
+    "key_length_entries_limit": 512,
+    "measurements_required": 8,
+    "production_data_mounted": false,
+    "droplet_accessed": false,
+    "native_acceptance": false,
+    "new_dependencies": false
+  },
+  "native_compression_rca": {
+    "run": 39020921103,
+    "job": 117362618438,
+    "diagnostic_sha": "c953a33a527eb204bd16f0b6b4b3a41659ed3f47",
+    "status": "GREEN_RCA_ONLY",
+    "receipt_path": "docs/releases/evidence603/native-compression-rca-39020921103.json",
+    "receipt_sha256": "139fdfac084c34007e17d143c8109748d6b885a69ed76b6c5908af104aeb5d4a",
+    "receipt_bytes": 7385,
+    "git_blob_bytes_read_back": true,
+    "additional_local_hash_verification": "NOT_EXECUTED_OFFLINE",
+    "artifact_id": 12096915823,
+    "artifact_zip_sha256": "bb3332b717286557f7a3c8983278678dc4d966a06dc2275e9122128ac921a78d",
+    "raw_bytes": 254743492,
+    "raw_sha256": "0589e5aea93eb00fe6842869474b73336c20c18a38abd6c25be561edc12699d5",
+    "median_compression_cpu_seconds": {
+      "isal0": 0.1733,
+      "isal1": 0.17345,
+      "stdlib1": 0.98735
+    },
+    "compression_cpu_saving_stdlib_to_isal0": 0.81405,
+    "private_file_size_metadata": {
+      "checkpoint": {
+        "compressed_bytes": 4192356,
+        "gzip_isize_mod2_32": 27107455
+      },
+      "full_audit": {
+        "compressed_bytes": 5680931,
+        "gzip_isize_mod2_32": 254743492
+      },
+      "selection": {
+        "compressed_bytes": 2970,
+        "gzip_isize_mod2_32": 8218
+      }
+    },
+    "mode": "ONE_PRIVATE_FULL_AUDIT_READ_ONLY; PAYLOAD_NOT_EXPORTED; NOT_FULL_SESSION_STRESS",
+    "resources": {
+      "memory_bytes": 67108864,
+      "nano_cpus": 250000000,
+      "nice": 19,
+      "network": "none"
+    },
+    "runtime_restore": "GREEN",
+    "runtime_lifecycle_checks": {
+      "porota_production_dashboard": {
+        "identity_sha256_after": "5e5162df57f99ca7955a61089c35c2588277588438fe891fbfef43142702bc36",
+        "identity_sha256_before": "5e5162df57f99ca7955a61089c35c2588277588438fe891fbfef43142702bc36",
+        "image_id_after": "sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed",
+        "image_id_before": "sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed",
+        "restart_count_after": 0,
+        "restart_count_before": 0,
+        "status_after": "running"
+      },
+      "porota_production_observer": {
+        "identity_sha256_after": "59130dce8deedecb353524c04358b0f6e29d092f06887ba03e2b5044659653b8",
+        "identity_sha256_before": "59130dce8deedecb353524c04358b0f6e29d092f06887ba03e2b5044659653b8",
+        "image_id_after": "sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed",
+        "image_id_before": "sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed",
+        "restart_count_after": 0,
+        "restart_count_before": 0,
+        "status_after": "running"
+      }
+    },
+    "heartbeat_before": "2026-10-17T09:24:30.932135+00:00",
+    "heartbeat_after": "2026-10-17T09:28:37.902877+00:00",
+    "real_orders_sent": 0,
+    "full_session_stress": false,
+    "native_acceptance": false,
+    "decision": "DO_NOT_ADD_DEPENDENCY_FOR_THIS_GAIN_ALONE"
+  },
+  "native_rca_admission_history": [
+    {
+      "run": 39019289116,
+      "result": "RESOURCE_ADMISSION_BLOCKED_NO_CONTAINER_OR_SERVICE_ACTION",
+      "memory_cap_mib": 128
+    },
+    {
+      "run": 39019643668,
+      "result": "MEMORY_ADMISSION_BLOCKED_NO_CONTAINER_OR_SERVICE_ACTION",
+      "memory_available_min": 95883264,
+      "memory_available_max": 214982656,
+      "required": 268435456,
+      "wait_seconds": 60
+    },
+    {
+      "run": 39019929033,
+      "result": "MEMORY_ADMISSION_BLOCKED_NO_CONTAINER_OR_SERVICE_ACTION",
+      "memory_available_min": 66535424,
+      "memory_available_max": 170008576,
+      "required": 201326592,
+      "wait_seconds": 60
+    }
+  ],
+  "native_rca_resource_margin": {
+    "after_quiesce_memory_available": 636026880,
+    "stress_memory_plus_reserve_required": 671088640,
+    "full_stress_admission": "NOT_PROVEN_BY_RCA",
+    "during_rca_minimum_host_memory": 473575424,
+    "disk_floor": 2147483648,
+    "minimum_disk_free": 4224716800,
+    "no_paid_resize": true
+  },
+  "completed_bounded_subtree_experiment": {
+    "diagnostic_pr": 614,
     "source_sha": "e1c34aeaa794d26d2b6e9d6c25ff23235bdef62a",
-    "state": "IN_PROGRESS",
+    "state": "COMPLETED_NO_MEANINGFUL_GAIN",
     "exact_image_artifact": 12093264982,
     "fixture": "SYNTHETIC_FULL_CARDINALITY; SAME_JSON_WITH_FROZEN_AND_ORDINARY_CONTAINERS",
     "variants": [
@@ -2509,6 +2640,47 @@
       "cause": "DOCKER_STDIN_NOT_INTERACTIVE; PYTHON_EXECUTED_NO_SCRIPT",
       "guard": "REQUIRE_12_NONEMPTY_EQUAL_BYTE_HASH_MEASUREMENTS"
     },
-    "attestation_metadata": "PR_BODY_FIXED_CHECKPOINT_SAFETY_REFERENCES"
-  }
+    "attestation_metadata": "PR_BODY_FIXED_CHECKPOINT_SAFETY_REFERENCES",
+    "run": 39018123229,
+    "job": 117354337737,
+    "measurements": 12,
+    "raw_bytes": 265449852,
+    "raw_sha256": "df7d75888d1ca13faa1c9dc487a6577334bc5172d16c0031b598fdfe7560b329",
+    "median_cpu": {
+      "immutable": {
+        "baseline64k": 5.193,
+        "bound256k": 5.1675,
+        "bound1m": 5.1415
+      },
+      "ordinary": {
+        "baseline64k": 5.726,
+        "bound256k": 5.7265,
+        "bound1m": 5.7315
+      }
+    },
+    "artifact_id": 12095487256,
+    "artifact_zip_sha256": "eb77149db200f1a7c0183bacdad28fb3e9f5ca449957b312a84431735a28612c",
+    "promoted": false
+  },
+  "shared_snapshot_cache_experiment": {
+    "run": 39022358302,
+    "job": 117366550976,
+    "sha": "973d0bbeae7fd144460cd0238476de9c6ffdf7c2",
+    "environment": "ISOLATED_CI_NOT_DROPLET",
+    "raw_bytes": 265449852,
+    "raw_sha256": "24238acf4100e90a424bbd17e40971da830a7f3b5cdce6839ddcc5390f9107aa",
+    "measurements": 8,
+    "median_cpu_seconds": {
+      "baseline": 6.5105,
+      "cache16": 6.6165,
+      "cache32": 5.334,
+      "cache64": 5.326
+    },
+    "charged_cache_bytes": 23129604,
+    "reused_characters": 43683534,
+    "reuses": 2,
+    "canonical_bytes_identical": true,
+    "promoted": false
+  },
+  "receipt_count": 133
 }
