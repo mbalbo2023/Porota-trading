@@ -2423,7 +2423,7 @@
     ],
     "native_acceptance": false
   },
-  "updated_at": "2026-10-17T10:53:25.712Z",
+  "updated_at": "2026-10-17T11:03:56.526Z",
   "previous_deploy_result_613": {
     "run": 39003668897,
     "job": 117311624166,
@@ -2837,7 +2837,7 @@
     "canonical_bytes_identical": true,
     "promoted": false
   },
-  "receipt_count": 134,
+  "receipt_count": 135,
   "native_serialization_fast_bound_experiment": {
     "run": 39023354447,
     "job": 117369424731,
@@ -3112,6 +3112,189 @@
     "frozen_contract": "GREEN",
     "actual_artifact_download_verification": "DEPLOY39026330767_DOWNLOAD_AND_VERIFY_STEP_SUCCESS",
     "additional_local_zip_verification": "NOT_EXECUTED_OFFLINE",
-    "not_native_acceptance_or_full_stress": true
+    "not_native_acceptance_or_full_stress": true,
+    "image_tar_sha256": "be43e9ee781a157d1b23169827b839280f8ca0a2475f9c9fd2da3ba7ed574f52",
+    "supplemental_ci_actual_zip_tar_hash_verified": 39026405201
+  },
+  "ci_exact_image_preflight_618": {
+    "run": 39026405201,
+    "job": 117378170472,
+    "candidate": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+    "image": "sha256:2f581a5cc45e34dad4974d35398aeef89f3dbc4c9ca7f4c3c172efd1123b62d9",
+    "state": "GREEN",
+    "context": "CI_EXACT_IMAGE_PREFLIGHT",
+    "scenarios": [
+      {
+        "name": "sql_shadow_wal",
+        "cases": 36,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "af6e5d917338e5bba054253c0129a3cd9948926be31b707ae72e1b26dc1429d2"
+      },
+      {
+        "name": "publication_io_identity",
+        "cases": 71,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "44c103380bca31a18cfa053d53c819fbaed847c25a7c631beb84998b8b859d89"
+      },
+      {
+        "name": "signals_risk_exit_ledger",
+        "cases": 160,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "b7c8ce144745671074e9af895eed4297a276d9fb1cdc24c1cc9f2f9963d15183"
+      },
+      {
+        "name": "sources_readiness_network",
+        "cases": 99,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "68dfa56e9c919544837928c2b5ddef91f1ca301f337e115255c7df417e04595e"
+      },
+      {
+        "name": "scalping_capacity",
+        "cases": 106,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "675dadce41bd04df5722d11f46f99bcf3939a34a1c6042cc45da2b80763aa6f0"
+      },
+      {
+        "name": "treasury_caucion",
+        "cases": 72,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "769cee9b2141c8442fe5dbd607c6ba44262df8c009429d474d137f16838226a4"
+      },
+      {
+        "name": "dashboard_auth_52",
+        "cases": 198,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "ee6a1a0db8377f79d69cca49aaff3ae4c29878dd717736f15a9b9abe7dd2db26"
+      },
+      {
+        "name": "scheduler_monitor_backup",
+        "cases": 14,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "91848630adc155b1030f61f6b1cb30c88ec140e85b39685ca5b0218a131b229d"
+      }
+    ],
+    "cuts": [
+      {
+        "as_of": "2026-10-05T13:20:00.000190+00:00",
+        "computed_report_sha256": "22567a5d8233aeb57bd9805001838f17c0a07078d03c4a607c4c245c9d066cfc",
+        "freshness_budget_seconds": 105.702,
+        "generation_id": "970fb097c21ba1acc34e00e578dd84e1c92c58683b29761ceb309ec5636825b7",
+        "manifest_sha256": "7f4d1691f2277d1951f60df7ed8db85f2a7b51af1c82fcec2a2c3dce85fe3708",
+        "sequence": 1791206400000190,
+        "tick_seconds": 22.851,
+        "worker_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 6.518,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.002,
+            "family_routing": 1.857,
+            "operational_funnel": 3.052,
+            "planner_pipeline": 1.25,
+            "preopen": 3.478,
+            "state_and_inputs": 0.032
+          },
+          "stages_seconds": {
+            "durable_serialization": 9.318,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.002,
+            "family_routing": 2.482,
+            "operational_funnel": 4.394,
+            "planner_pipeline": 1.65,
+            "preopen": 4.969,
+            "state_and_inputs": 0.032
+          },
+          "tick_cpu_seconds": 16.194,
+          "tick_seconds": 22.851
+        }
+      },
+      {
+        "as_of": "2026-10-05T13:20:52.954401+00:00",
+        "computed_report_sha256": "e21b5fcd1ede57a25de45ee461131b6ffee948b7fce014ab5f14ba29b008fa47",
+        "freshness_budget_seconds": 94.944,
+        "generation_id": "eca5f23af25d25777632a5756223bf723a314208d760f3c671739cfb3056016f",
+        "manifest_sha256": "199e273eade5116fc29b9be260972f6dfd3fb16559e6e72f9bf1d9618388982e",
+        "previous_cut_age_seconds": 70.526048,
+        "previous_cut_freshness_budget_seconds": 105.702,
+        "sequence": 1791206452954401,
+        "tick_seconds": 17.472,
+        "worker_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 6.336,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.002,
+            "family_routing": 1.839,
+            "operational_funnel": 2.014,
+            "planner_pipeline": 1.127,
+            "preopen": 1.162,
+            "state_and_inputs": 0.643
+          },
+          "stages_seconds": {
+            "durable_serialization": 8.461,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.002,
+            "family_routing": 2.465,
+            "operational_funnel": 2.663,
+            "planner_pipeline": 1.502,
+            "preopen": 1.537,
+            "state_and_inputs": 0.84
+          },
+          "tick_cpu_seconds": 13.124,
+          "tick_seconds": 17.472
+        }
+      }
+    ],
+    "docker": "RC6_618_PREFLIGHT_DOCKER={\"ExitCode\": 0, \"OOMKilled\": false, \"Status\": \"exited\"}",
+    "bytes": "RC6_618_PREFLIGHT_FROZEN_BYTES=GREEN|zip_sha=7c6355cb6c156e37d83ff0d2e61a0116f54d75ce7a42dc63d9b43b136c0586b8|tar_sha=be43e9ee781a157d1b23169827b839280f8ca0a2475f9c9fd2da3ba7ed574f52",
+    "artifact_id": 12097989198,
+    "artifact_zip_sha256": "afd5f33d126876704f539d14e03fcb1f33f7359dab624d6c64d61f76c29bdf8e",
+    "native_acceptance": false,
+    "full_stress_inside_droplet": false,
+    "actual_artifact_byte_readback": {
+      "run": 39027150461,
+      "job": 117380309875,
+      "state": "GREEN",
+      "receipt_path": "docs/releases/evidence603/exact618-ci-stress-39026405201.json",
+      "receipt_bytes": 14556,
+      "receipt_sha256": "e8d0fa8214934609b2d98c18cad2925ad41498fe46c74efc57daf27050e24c36",
+      "git_byte_readback_verified": true
+    },
+    "simulated_minutes": 405,
+    "paper_fills": 176,
+    "paper_positions": 88,
+    "exit_reasons": {
+      "MAX_HOLD_PAPER": 1,
+      "STOP_PAPER": 16,
+      "TAKE_PROFIT_PAPER": 71
+    },
+    "full_catalog_peak_rss_kib": 449540,
+    "elapsed_seconds": 333.141,
+    "production_runtime_restore": "NOT_PERFORMED_BY_CI",
+    "not_a_native_acceptance": true
   }
 }
