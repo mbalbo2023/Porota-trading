@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "F167_INSTALLED_DEPLOY613_RED_NATIVE_GENERATION_FRESHNESS_FIX_FORWARD_RCA",
+  "release_state": "F167_INSTALLED_NATIVE_FRESHNESS_RED_NO_NEW_PROMOTION_READY",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -1450,14 +1450,12 @@
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
   },
   "next_candidate": {
-    "pr": 613,
-    "sha": "f1677af431f45cf2fd3d63cdcadfbcb0fba2bfe3",
-    "tree": "7bb44d4700e3320df8912007f99d4727949c6b5c",
-    "predeploy_run": 39002866893,
-    "status": "MERGED_CANONICAL_DEPLOY_IN_PROGRESS",
-    "local_focused_cases": 248,
-    "local_full_catalog_cases": 1,
-    "local_full_catalog_receipt": "docs/releases/evidence603/full-catalog-final-receipt.json"
+    "state": "NONE_READY; CANONICAL_CODEC_COST_EXPERIMENT_IN_PROGRESS",
+    "source_sha": "db06f0a20787ffc4d9f1211b7f2f5fdf04557c14",
+    "source_branch": "work/rc6-603-shared-evidence-encoding-20261017",
+    "frozen": false,
+    "certified": false,
+    "deployed": false
   },
   "latest_deploy_result": {
     "run": 39003668897,
@@ -1570,13 +1568,15 @@
   },
   "latest_candidate_source_bundle_installed": true,
   "installed_runtime": {
-    "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
-    "image_id": "sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f",
-    "validation_status": "DEPLOYED_VALIDATION_PENDING_KNOWN_HTTP500",
-    "critical_container_now_same_image": true,
-    "source_identity": "OBSERVED_IMAGE_ENVIRONMENT_BOTH_CONTAINERS_GREEN",
-    "real_orders_sent": 0,
-    "full_stress_executed": false
+    "candidate_sha": "f1677af431f45cf2fd3d63cdcadfbcb0fba2bfe3",
+    "candidate_tree": "7bb44d4700e3320df8912007f99d4727949c6b5c",
+    "deploy_sha": "a6246794a09ae24a25a0af6dde14c0b9004f9ab3",
+    "image_id": "sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710",
+    "source_identity": "CANONICAL_DEPLOY_GREEN; NATIVE_PROMOTION_GATE_RED",
+    "validation": "FIX_FORWARD_VALIDATION_REQUIRED",
+    "stress": "NOT_EXECUTED",
+    "last_native_readonly_run": 39008452962,
+    "critical_service_alignment": "NOT_COMPLETED; CURRENT_NONMATCHING_IMAGE_ID_NOT_EXPORTED"
   },
   "wiring_610": {
     "path": "docs/releases/RC6_ISSUE603_WIRING_610.json",
@@ -2014,7 +2014,8 @@
     "four_project_file_writeback": "PENDING; metadata confirms versions14/13/10/10 unchanged",
     "direct_ssh": "NOT_USED",
     "new_timers": "NONE",
-    "subagents": "NONE"
+    "subagents": "NONE",
+    "last_local_recovery_attempt": "2026-10-17T06:28Z; pwd yielded no result; cell439 terminated; no file writes"
   },
   "native_generation_freshness_rca": {
     "source_run": 39008452962,
@@ -2047,5 +2048,103 @@
       "state": "IN_PROGRESS",
       "native_acceptance": false
     }
-  }
+  },
+  "superseded_predeploy_615": {
+    "pr": 615,
+    "pr_state": "CLOSED_NOT_MERGED",
+    "candidate_sha": "0236e4e22df8ddbd5a3d04c1a9d754d74c462b67",
+    "tree": "94e555bb7d097267d742062a7fc0db3723674df4",
+    "run": 39009551013,
+    "job": 117329146090,
+    "conclusion": "SUCCESS",
+    "discovered": 3918,
+    "executed": 3918,
+    "failure": 0,
+    "error": 0,
+    "skip": 0,
+    "xfail": 0,
+    "governed_legacy_exclusions_unchanged": 1,
+    "image_id": "sha256:a63a82a4385e07a46a26fed6750f8ba94a0f7f3513c5716d0cb5ca6ca167dbe9",
+    "artifact_id": 12092546441,
+    "zip_sha256": "e5fb654893f2a08e8fdde9ecfe38a139a55b9a53fa8549fe68c2c98eed459bd5",
+    "promoted": false,
+    "reason": "NO_NET_COST_IMPROVEMENT_MEASURED; DO_NOT_PROMOTE"
+  },
+  "native_cost_development_history": [
+    {
+      "sha": "0236e4e22df8ddbd5a3d04c1a9d754d74c462b67",
+      "run": 39009274876,
+      "job": 117328103370,
+      "environment": "SYNTHETIC_GITHUB_RUNNER_512MIB_0.75CPU",
+      "baseline_seconds": 79.936,
+      "candidate_seconds": 81.99,
+      "baseline_ticks": [
+        27.671,
+        21.991
+      ],
+      "candidate_ticks": [
+        28.481,
+        23.497
+      ],
+      "baseline_rss_kib": 452736,
+      "candidate_rss_kib": 451160,
+      "result": "NO_NET_COST_IMPROVEMENT_MEASURED",
+      "artifact_id": 12091748047,
+      "zip_sha256": "3846a7119d11c63f59b621ec15af8ab5b36d61ee2c6e92315b280a7c73d576bb",
+      "deployed": false
+    },
+    {
+      "sha": "db06f0a20787ffc4d9f1211b7f2f5fdf04557c14",
+      "run": 39009905292,
+      "job": 117330063449,
+      "focused_junit": {
+        "executed": 64,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "environment": "SYNTHETIC_GITHUB_RUNNER_512MIB_0.75CPU",
+      "baseline_seconds": 77.201,
+      "candidate_seconds": 80.754,
+      "baseline_ticks": [
+        25.769,
+        21.178
+      ],
+      "candidate_ticks": [
+        27.776,
+        22.667
+      ],
+      "baseline_rss_kib": 451096,
+      "candidate_rss_kib": 448176,
+      "result": "NO_NET_COST_IMPROVEMENT_MEASURED",
+      "additional_adverse_cpu": 0.25,
+      "additional_adverse_exit": 1,
+      "artifact_id": 12092727306,
+      "zip_sha256": "1b7c93a5a6069ea33fbe0414c3567a76ae4d282bbd43e26328e249a7f66a59e7",
+      "deployed": false
+    }
+  ],
+  "codec_cost_experiment": {
+    "run": 39010833235,
+    "job": 117332859359,
+    "diagnostic_pr": 614,
+    "diagnostic_sha": "e5ee65c3f2399c1298482ae91159996286243052",
+    "source_script": "scripts/rc6_codec_experiment.py",
+    "state": "IN_PROGRESS",
+    "fixture": "ONE_FIXED_FULL_CARDINALITY_REPORT; 14611identities; NO_PRICES_NO_PROVIDER_NO_PRODUCTION_DATA",
+    "variants": [
+      "baseline",
+      "keys",
+      "key_bounds",
+      "flat_bounds"
+    ],
+    "repeats_each": 2,
+    "invariants": [
+      "EXACT_RAW_BYTES_AND_SHA256_EQUAL",
+      "PROCESS_RSS_LE_512MIB",
+      "CPU_LIMIT_0.75"
+    ],
+    "native_acceptance": false
+  },
+  "updated_at": "2026-10-17T06:44:30.636Z"
 }
