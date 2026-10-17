@@ -1421,49 +1421,57 @@ def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_sec
         tables = {r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         columns = ['ticker', 'instrument_type', 'market', 'currency', 'settlement',
                    'settlement_source', 'last_seen_at', 'catalog_status', 'catalog_capability']
-        fields = ['c.' + x for x in columns[:7]] + ['c.status', 'c.capability']
-        joins = ''
+        # Read each relation once in the SAME read-only snapshot. A join did
+        # one random non-covering lookup for each of 14k catalogue identities
+        # on this 1GiB host; sequential packed projections avoid that fan-out.
+        specifications = [('CATALOG', 'financial_instrument_catalog',
+            columns[:7] + ['status', 'capability'])]
         if 'candidate_identity_v2' in tables:
-            joins += ' LEFT JOIN candidate_identity_v2 i ON ' + ' AND '.join('i.'+x+'=c.'+x for x in columns[:5])
-            fields += ['i.can_simulate', 'i.status', 'i.checked_at']
-        else:
-            fields += ['NULL'] * 3
-        columns += ['candidate_can_simulate', 'candidate_status', 'candidate_checked_at']
+            specifications.append(('CANDIDATE', 'candidate_identity_v2',
+                columns[:5] + ['can_simulate', 'status', 'checked_at']))
         if 'ppi_intraday_contract_state' in tables:
-            joins += (' LEFT JOIN ppi_intraday_contract_state t ON t.symbol=c.ticker'
-                      ' AND t.asset_class=c.instrument_type AND t.market=c.market'
-                      ' AND t.currency=c.currency AND t.settlement=c.settlement')
-            fields += ['t.state', 't.last_source_at', 't.checked_at']
-        else:
-            fields += ['NULL'] * 3
-        columns += ['intraday_contract_state', 'intraday_source_at', 'intraday_checked_at']
-        public_fields = ','.join(x[2:] for x in fields[:9])
-        # Ordering the source by its non-covering catalog index forces one
-        # large-table lookup per row for clocks/source. Scan metadata once;
-        # the sentinel rejects any partial inventory before publication, so
-        # deterministic output ordering can happen after bounded decoding.
-        sql = ('SELECT COUNT(*),json_group_array(json_array(' + ','.join(fields) + ')) FROM '
-               '(SELECT ' + public_fields + ' FROM financial_instrument_catalog NOT INDEXED LIMIT ?) c' + joins)
-        stage = 'QUERY_PLAN'
-        for item in connection.execute('EXPLAIN QUERY PLAN ' + sql, (row_limit + 1,)):
-            detail = str(item[3]).upper(); words = detail.split()
-            # Only structural flags/known aliases: never export index names,
-            # arbitrary schema identifiers, SQL or parameter values.
-            target = words[1] if len(words)>1 and words[1] in {'C','I','T','FINANCIAL_INSTRUMENT_CATALOG'} else 'INTERNAL'
-            plan.append({'operation':words[0] if words and words[0] in {'SCAN','SEARCH'} else 'INTERNAL',
-                         'target':target,'covering_index':'COVERING INDEX' in detail,
-                         'automatic_index':'AUTOMATIC' in detail,'temporary_btree':'TEMP B-TREE' in detail})
-            if len(plan)>24:raise ValueError('INVENTORY_QUERY_PLAN_UNBOUNDED')
-        stage = 'PACKED_METADATA'
-        count, packed = connection.execute(sql, (row_limit + 1,)).fetchone()
+            specifications.append(('INTRADAY', 'ppi_intraday_contract_state',
+                ['symbol', 'asset_class', 'market', 'currency', 'settlement',
+                 'state', 'last_source_at', 'checked_at']))
+        packed_relations = {}
+        total_bytes = 0
+        for label, table, projection in specifications:
+            sql = ('SELECT COUNT(*),json_group_array(json_array(' + ','.join(projection) +
+                   ')) FROM (SELECT ' + ','.join(projection) + ' FROM ' + table +
+                   ' NOT INDEXED LIMIT ?)')
+            stage = 'QUERY_PLAN'
+            for item in connection.execute('EXPLAIN QUERY PLAN ' + sql, (row_limit + 1,)):
+                detail = str(item[3]).upper(); words = detail.split()
+                target = words[1] if len(words)>1 and words[1] in {
+                    'FINANCIAL_INSTRUMENT_CATALOG','CANDIDATE_IDENTITY_V2',
+                    'PPI_INTRADAY_CONTRACT_STATE'} else 'INTERNAL'
+                plan.append({'operation':words[0] if words and words[0] in {'SCAN','SEARCH'} else 'INTERNAL',
+                             'target':target,'covering_index':'COVERING INDEX' in detail,
+                             'automatic_index':'AUTOMATIC' in detail,'temporary_btree':'TEMP B-TREE' in detail})
+                if len(plan)>24:raise ValueError('INVENTORY_QUERY_PLAN_UNBOUNDED')
+            stage = 'PACKED_METADATA'
+            count, packed = connection.execute(sql, (row_limit + 1,)).fetchone()
+            if count > row_limit:
+                raise ValueError('INVENTORY_TRUNCATED_OR_DUPLICATED')
+            total_bytes += len(packed.encode('utf-8'))
+            if total_bytes > 8*1024**2:
+                raise ValueError('INVENTORY_TOTAL_LENGTH_LIMIT')
+            packed_relations[label] = (count, packed)
         connection.rollback(); connection.close(); connection = None
-        if count > row_limit:
-            raise ValueError('INVENTORY_TRUNCATED_OR_DUPLICATED')
         stage = 'DECODE_AND_IDENTITY'
         captured = at or now_utc()
-        rows = json.loads(packed)
-        if len(rows) != count or len({tuple(r[:5]) for r in rows}) != count:
-            raise ValueError('INVENTORY_IDENTITY_NOT_UNIQUE')
+        decoded = {}
+        for label, (relation_count, packed) in packed_relations.items():
+            relation = json.loads(packed)
+            if len(relation) != relation_count or len({tuple(r[:5]) for r in relation}) != relation_count:
+                raise ValueError('INVENTORY_IDENTITY_NOT_UNIQUE')
+            decoded[label] = {tuple(r[:5]): r[5:] for r in relation}
+        rows = [list(identity) + values + decoded.get('CANDIDATE', {}).get(identity, [None]*3) +
+                decoded.get('INTRADAY', {}).get(identity, [None]*3)
+                for identity, values in decoded['CATALOG'].items()]
+        count = len(rows)
+        columns += ['candidate_can_simulate', 'candidate_status', 'candidate_checked_at',
+                    'intraday_contract_state', 'intraday_source_at', 'intraday_checked_at']
         rows.sort(key=lambda row:tuple(row[:5]))
         provenance = load_bounded(Path(root) / 'data/deploy/CURRENT_STATE_V2.json') or {}
         observed = {}

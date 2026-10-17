@@ -931,6 +931,32 @@ class InstrumentInventoryContracts(unittest.TestCase):
         self.assertEqual({row[3]:row[9] for row in value['records']},{'ARS':1,'USD':0})
         self.assertNotIn('PRIVATE_',json.dumps(value))
 
+    def test_packed_relations_are_read_once_without_join_fanout(self):
+        connect = sqlite3.connect; queries = []
+        class Observe:
+            def __init__(self,*args,**kwargs): self.connection=connect(*args,**kwargs)
+            def __getattr__(self,name): return getattr(self.connection,name)
+            def execute(self,sql,*args):
+                if 'json_group_array(' in sql and not sql.startswith('EXPLAIN'):
+                    queries.append(sql)
+                    if ' JOIN ' in sql.upper():
+                        raise sqlite3.OperationalError('interrupted')
+                return self.connection.execute(sql,*args)
+        with patch.object(monitor.sqlite3,'connect',Observe):
+            value=monitor.instrument_inventory_host(self.root,at=NOW)
+        self.assertTrue(value['complete_inventory'])
+        self.assertEqual(len(queries),3)
+        self.assertTrue(all('NOT INDEXED LIMIT ?' in sql for sql in queries))
+        self.assertEqual({row[3]:row[9] for row in value['records']},{'ARS':1,'USD':0})
+
+    def test_duplicate_optional_identity_outside_catalog_still_fails_closed(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute("INSERT INTO ppi_intraday_contract_state VALUES('OTHER','BONOS','BYMA','ARS','CI','READY',NULL,NULL)")
+            c.execute('INSERT INTO ppi_intraday_contract_state SELECT * FROM ppi_intraday_contract_state')
+        value=monitor.instrument_inventory_host(self.root,at=NOW)
+        self.assertFalse(value['complete_inventory'])
+        self.assertNotIn('records',value)
+
     def test_unknown_or_nonzero_real_orders_blocks_inventory(self):
         for count in (None, 1):
             with sqlite3.connect(self.db) as c:
