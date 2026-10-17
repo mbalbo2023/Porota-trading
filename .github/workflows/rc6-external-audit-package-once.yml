@@ -1,0 +1,68 @@
+name: RC6 external audit packet (one-shot, no Droplet)
+
+on:
+  push:
+    branches:
+      - audit/rc6-external-shadow-peer-review-20261017
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-external-peer-review-packet
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Build sanitized offline packet
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GIT_TERMINAL_PROMPT: "0"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch exact reviewed refs, never checkout product runtime
+        run: |
+          set -Eeuo pipefail
+          git fetch --no-tags origin \
+            'refs/pull/622/head:refs/remotes/origin/audit-guard622' \
+            'refs/pull/621/head:refs/remotes/origin/audit-diag621' \
+            'refs/heads/docs/rc6-603-remediation-evidence-20261016:refs/remotes/origin/audit-docs'
+          test "$(git rev-parse refs/remotes/origin/audit-guard622)" = "3a1ce8a4000458982d6b31dec47e8269867e28ab"
+          test "$(git rev-parse refs/remotes/origin/audit-diag621)" = "95ea79450f681fb781046ff2cfce54101a435180"
+          git cat-file -e 'dd1200430fe571765335b243120a7e393449887a^{commit}'
+          git cat-file -e '47d949b72f0b3affffecdc6cc90d31ba1347d9b7^{commit}'
+          echo 'AUDIT_REFS_EXACT=GREEN'
+      - name: Build offline ZIP using stdlib only, readonly repo and Actions artifacts
+        run: |
+          set -Eeuo pipefail
+          python3 -B -m py_compile docs/external_audit/rc6_shadow_20261017/build_audit_bundle.py
+          python3 -B docs/external_audit/rc6_shadow_20261017/build_audit_bundle.py
+          python3 -B - <<'PY'
+          import zipfile,hashlib,pathlib
+          p=pathlib.Path('release-audit/POROTA_RC6_AUDITORIA_EXTERNA_2026-10-17.zip')
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None
+              assert any(n.endswith('REPORTE_TECNICO_PARA_AUDITOR_EXTERNO.md') for n in z.namelist())
+              assert 'SHA256SUMS.txt' in z.namelist()
+          print('AUDIT_PACKET_GREEN',p.stat().st_size,hashlib.sha256(p.read_bytes()).hexdigest())
+          PY
+      - name: Upload standalone offline review packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: POROTA_RC6_AUDITORIA_EXTERNA_2026-10-17
+          path: release-audit/POROTA_RC6_AUDITORIA_EXTERNA_2026-10-17.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+      - name: Summary without sensitive host data
+        run: |
+          echo 'Review-only artifact. Product/Droplet was NOT touched.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'The complete Markdown report is inside the ZIP and on this audit branch.' >> "$GITHUB_STEP_SUMMARY"
