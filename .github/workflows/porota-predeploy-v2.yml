@@ -278,6 +278,9 @@ jobs:
           from scripts.porota_image_source_identity import verify_source_identity
           identity = verify_source_identity(sys.argv[1], sys.argv[2])
           print('POROTA_IMAGE_SOURCE_IDENTITY=GREEN|' + identity['candidate_sha'] + '|' + identity['candidate_tree_sha'])
+          from rc6_shadow_runtime import persistence
+          assert persistence._native_json_bound is not None, "EXACT_IMAGE_NATIVE_BOUND_MISSING"
+          print("POROTA_EXACT_IMAGE_NATIVE_BACKEND=CPYTHON_C")
           import bg_paper_dashboard
           import bf_production_paper_observer
           import bv_paper_runtime
@@ -290,13 +293,45 @@ jobs:
           PY
           grep -Fxq 'POROTA_RUNTIME_IMPORT_SMOKE=GREEN' /tmp/porota-image-import-smoke.txt
 
+      - name: Exact image native sizing and generated catalog proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -d -m 777 "$RUNNER_TEMP/porota-native-sizing-evidence" "$RUNNER_TEMP/porota-native-sizing-evidence/tmp"
+          trap 'docker rm -f "porota-native-cases-$GITHUB_RUN_ID" "porota-native-catalog-$GITHUB_RUN_ID" >/dev/null 2>&1 || true' EXIT
+          run_native_proof() {
+            rc6_label="$1"; shift
+            rc6_name="porota-native-$rc6_label-$GITHUB_RUN_ID"
+            docker create --name "$rc6_name" --pull never --memory 512m --memory-swap 512m --cpus .75 \
+              --network none --no-healthcheck --read-only --user 1000:1000 --workdir /app \
+              --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 \
+              -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e TMPDIR=/proof/tmp \
+              -v "$RUNNER_TEMP/porota-native-sizing-evidence:/proof" "$IMAGE" "$@"
+            set +e
+            timeout 480 docker start -a "$rc6_name"
+            rc6_result=$?
+            set -e
+            rc6_state="$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$rc6_name")"
+            printf 'POROTA_NATIVE_SIZING_CONTAINER=%s|%s\n' "$rc6_label" "$rc6_state"
+            test "$rc6_result" -eq 0
+            test "$rc6_state" = '0|false'
+            docker rm "$rc6_name" >/dev/null
+          }
+          run_native_proof cases python -m pytest -q -p no:cacheprovider \
+            tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_streaming_cost.py \
+            tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_owned_state.py \
+            tests/test_rc6_shadow_report_lifetime.py --junitxml=/proof/native-bound.xml
+          # The generated catalogue runs inline without a pytest parent beside it.
+          run_native_proof catalog python scripts/rc6_postdeploy_stress.py \
+            --full-catalog-check --output /proof/catalog
+          echo 'POROTA_EXACT_IMAGE_NATIVE_SIZING=GREEN'
       - name: Exact image runtime smoke contract
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Runtime images intentionally exclude tests and CI metadata. The exact
-          # image has already passed compile/import-closure/import-smoke gates.
-          echo "POROTA_EXACT_IMAGE_TEST_SOURCES=EXCLUDED_FROM_RUNTIME_IMAGE"
+          # Supplemental native-backend proofs use tests actually present in
+          # this frozen image; root discovery above remains the primary suite.
+          echo "POROTA_EXACT_IMAGE_TEST_SOURCES=AVAILABLE_IN_FROZEN_IMAGE"
           echo "POROTA_EXACT_IMAGE_IMPORT_SMOKE=GREEN"
           echo "POROTA_FULL_SUITE=SEE_GOVERNED_TEST_EVIDENCE"
           echo "POROTA_GOVERNED_TEST_DISCOVERY=REPOSITORY_ROOT_AUTOMATIC"
@@ -377,6 +412,8 @@ jobs:
             /tmp/porota-predeploy-image.tar.gz
             /tmp/porota-frozen-candidate.json
             /tmp/porota-governed-tests.xml
+            ${{ runner.temp }}/porota-native-sizing-evidence/native-bound.xml
+            ${{ runner.temp }}/porota-native-sizing-evidence/catalog/full-catalog.json
             /tmp/porota-governed-tests.json
             /tmp/porota-test-collection.txt
             /tmp/porota-test-exclusions.txt
@@ -417,5 +454,5 @@ jobs:
           set +e
           docker ps -aq --filter "ancestor=$IMAGE" | xargs -r docker rm -f
           docker image rm "$IMAGE" >/dev/null 2>&1 || true
-          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence"
+          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence" "${RUNNER_TEMP}/porota-native-sizing-evidence"
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'

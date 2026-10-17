@@ -68,3 +68,45 @@ def test_static_binding_assets_are_runtime_relevant():
 
 def test_dependency_lock_is_runtime_relevant():
     assert is_runtime_relevant("requirements.lock.txt")
+
+def native_fixture(tmp_path):
+    repo=tmp_path/"repo";artifact=tmp_path/"artifact"
+    repo.mkdir();artifact.mkdir()
+    source="PyMODINIT_FUNC PyInit__bounded(void) { return 0; }\n"
+    write(repo,"pkg/_bounded.c",source);write(artifact,"pkg/_bounded.c",source)
+    return repo,artifact
+
+def test_native_source_and_binary_assets_are_automatically_runtime_relevant():
+    assert is_runtime_relevant("pkg/_bounded.c")
+    assert is_runtime_relevant("pkg/contract.h")
+    assert is_runtime_relevant("pkg/_bounded.so")
+    assert not is_runtime_relevant("tests/fixture.c")
+
+def test_missing_compiled_module_is_rejected_from_its_source_definition(tmp_path):
+    repo,artifact=native_fixture(tmp_path)
+    result=validate(repo,artifact,["pkg/_bounded.c"])
+    assert result["status"]=="FAILED"
+    assert result["missing_native_extensions"][0]["module"]=="_bounded"
+
+def test_compiled_module_is_hashed_in_exact_image_manifest(tmp_path):
+    repo,artifact=native_fixture(tmp_path)
+    (artifact/"pkg/_bounded.so").write_bytes(b"synthetic closure asset")
+    result=validate(repo,artifact,["pkg/_bounded.c"])
+    assert result["status"]=="GREEN"
+    assert {f["path"] for f in result["files"]}=={"pkg/_bounded.c","pkg/_bounded.so"}
+    assert result["native_extensions"][0]["path"]=="pkg/_bounded.so"
+    assert len(result["native_extensions"][0]["sha256"])==64
+
+def test_multiple_possible_native_binaries_are_rejected(tmp_path):
+    repo,artifact=native_fixture(tmp_path)
+    (artifact/"pkg/_bounded.so").write_bytes(b"one")
+    (artifact/"pkg/_bounded.abi3.so").write_bytes(b"two")
+    result=validate(repo,artifact,["pkg/_bounded.c"])
+    assert result["status"]=="FAILED" and result["missing_native_extensions"]
+
+def test_aliased_native_binary_is_rejected(tmp_path):
+    repo,artifact=native_fixture(tmp_path)
+    target=tmp_path/"outside.so";target.write_bytes(b"synthetic outside")
+    (artifact/"pkg/_bounded.so").symlink_to(target)
+    result=validate(repo,artifact,["pkg/_bounded.c"])
+    assert result["status"]=="FAILED" and result["missing_native_extensions"]

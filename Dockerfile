@@ -1,6 +1,27 @@
 # ============================================================================
 # Dockerfile - Porota Trading v16.2
 # ============================================================================
+# Compile only the sizing predicate. The actual content remains encoded by
+# stdlib JSON, and the final runtime dependencies/base stay unchanged.
+FROM python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9 AS rc6-python-headers
+FROM python:3.11-bookworm@sha256:5887f265d8d44d8b4734d3658b21d668edf5aaf92e4945bc0c984afbfab105d3 AS rc6-json-bound-build
+COPY --from=rc6-python-headers /usr/local/include/python3.11/ /frozen-python-headers/
+COPY rc6_shadow_runtime/_rc6_json_bound.c /src/_rc6_json_bound.c
+RUN mkdir -p /out \\
+    && cc -O3 -DNDEBUG -nostdlib -Wall -Wextra -shared -fPIC \\
+       -I/frozen-python-headers /src/_rc6_json_bound.c -o /out/_rc6_json_bound.so \\
+    && readelf -d /out/_rc6_json_bound.so > /out/needed.txt \\
+    && readelf --version-info /out/_rc6_json_bound.so > /out/versions.txt \\
+    && readelf --dyn-syms --wide /out/_rc6_json_bound.so > /out/symbols.txt
+RUN python - <<'PY'
+from pathlib import Path
+assert "NEEDED" not in Path("/out/needed.txt").read_text(), "NATIVE_BOUND_LIBRARY_DEPENDENCY"
+assert "GLIBC_" not in Path("/out/versions.txt").read_text(), "NATIVE_BOUND_GLIBC_DEPENDENCY"
+rows=Path("/out/symbols.txt").read_text().splitlines()
+names=[row.split()[7] for row in rows if len(row.split())>=8 and row.split()[6]=="UND"]
+assert names and all(name.startswith(("Py","_Py")) for name in names), "NATIVE_BOUND_NON_CPYTHON_API"
+PY
+
 FROM python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9
 
 # Identity travels inside the frozen image to every runtime child. Labels
@@ -39,6 +60,8 @@ RUN pip install --no-cache-dir -r requirements.lock.txt
 # El .dockerignore (nuevo en v16.2) impide que este COPY meta archivos de
 # entorno, la base de datos o el indice vectorial dentro de la imagen.
 COPY . .
+COPY --from=rc6-json-bound-build /out/_rc6_json_bound.so /app/rc6_shadow_runtime/_rc6_json_bound.so
+RUN python -c 'from rc6_shadow_runtime import persistence; assert persistence._native_json_bound is not None, "NATIVE_JSON_BOUND_REQUIRED"'
 
 # Reassert every dashboard module verified by the RC6 deploy.  `COPY . .` is a
 # convenience layer, never the provenance authority for the live dashboard.
