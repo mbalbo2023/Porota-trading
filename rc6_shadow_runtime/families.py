@@ -538,6 +538,12 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
             identity_reviews.append({"source": row.get("source"), "source_path": row.get("source_path") or row.get("source"),
                 "identity": list(key) if key else None, "reason": "IDENTITY_NOT_IN_PRIMARY_CATALOG" if key else "EXACT_IDENTITY_AMBIGUOUS",
                 "status": "CONFLICT_REVIEW_REQUIRED", "identity_assigned": False, "entry_authority": False})
+    # Index the complete evidence identity set, including ambiguous matches.
+    # Quote laziness must never reduce the identity authority used for options.
+    underlying_index = defaultdict(list)
+    for evidence_key in evidence:
+        if evidence_key[1] in {"ACCIONES", "CEDEARS", "ETFS"}:
+            underlying_index[(evidence_key[0], *evidence_key[2:4])].append(evidence_key)
     empty_fields={} if compact_missing else None
     quotes = {}
     selected_options, excluded_options = [], []
@@ -594,8 +600,7 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
         terms = {name: _field(name, rows, at=at, ttl=None, static=True, numeric=name == "strike")
                  for name in ("underlying", "strike", "expires_at", "strike_unit", "option_right")}
         underlying = terms["underlying"]["value"]
-        matches = [k for k in evidence if k[0] == str(underlying or "").upper()
-                   and k[1] in {"ACCIONES", "CEDEARS", "ETFS"} and k[2:4] == key[2:4]]
+        matches = underlying_index.get((str(underlying or "").upper(), *key[2:4]), ())
         same_settlement = [k for k in matches if k[4] == key[4]]
         matches = same_settlement or matches
         underlying_rows = {}
