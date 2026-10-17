@@ -18,7 +18,9 @@ concurrency:
 jobs:
   promote:
     runs-on: ubuntu-24.04
-    timeout-minutes: 110
+    # Ten native cycles before stress and ten after exact restoration add up
+    # to two bounded20-minute observation windows; freshness gates stay120s.
+    timeout-minutes: 150
     env:
       GH_TOKEN: ${{ github.token }}
       DO_HOST: ${{ secrets.DO_HOST }}
@@ -1081,6 +1083,10 @@ jobs:
               --expected-sha "$CANDIDATE_SHA" --expected-tree "$CANDIDATE_TREE" \
               --output /app/data/deploy/native-generation-acceptance.json
           echo "RC6_TWO_NATIVE_GENERATIONS=GREEN"
+          sudo -n python3 "$REPO/scripts/rc6_native_soak.py" \
+            --expected-sha "$CANDIDATE_SHA" --expected-tree "$CANDIDATE_TREE" \
+            --output "$REPO/data/deploy/native-ten-generation-soak.json"
+          echo "RC6_TEN_NATIVE_GENERATIONS_WITH_RESERVES=GREEN"
 
           PPI_WATCH_AFTER="$(
             for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
@@ -1319,6 +1325,22 @@ jobs:
           cat evidence/postdeploy-stress/host-summary.json
           echo "RC6_POSTDEPLOY_STRESS_EXIT=$result"
           test "$result" -eq 0
+
+      - name: Independent sustained native acceptance after stress restoration
+        if: success() && steps.stress.outcome == 'success'
+        timeout-minutes: 22
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/postdeploy-stress
+          timeout 1260 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 /opt/porota-trading/scripts/rc6_native_soak.py --expected-sha '$CANDIDATE_SHA' --expected-tree '$CANDIDATE_TREE' --output '/opt/porota-trading/data/deploy/native-postrestore-soak.json'" \
+            > evidence/postdeploy-stress/native-postrestore-soak.json
+          cat evidence/postdeploy-stress/native-postrestore-soak.json
 
       - name: Collect postdeploy stress evidence even on RED
         if: always() && steps.stress.outcome != 'skipped' && steps.stress.outcome != ''

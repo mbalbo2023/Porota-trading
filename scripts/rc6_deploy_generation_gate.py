@@ -89,6 +89,8 @@ _SAFE_FAILURE_REASONS = {
     'GENERATION_MEMBER_MISMATCH', 'GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS',
     'GENERATION_SAFETY_UNVERIFIED', 'SHADOW_EVIDENCE_DIGEST_MISMATCH',
     'SHADOW_PAYLOAD_LIMIT',
+    'NATIVE_SOAK_SERVICE_CHANGED', 'NATIVE_SOAK_SERVICE_UNAVAILABLE',
+    'NATIVE_SOAK_RAM_RESERVE_BREACHED', 'NATIVE_SOAK_DISK_RESERVE_BREACHED',
 }
 
 
@@ -134,9 +136,12 @@ def _observation_context(cut, at):
 
 
 def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monotonic,
-            wait=time.sleep, now=lambda: datetime.now(timezone.utc), reader=read_committed_generation):
+            wait=time.sleep, now=lambda: datetime.now(timezone.utc), reader=read_committed_generation,
+            minimum_generations=2, strict=False, sample=None):
+    if type(minimum_generations) is not int or not 2 <= minimum_generations <= 100 or type(strict) is not bool:
+        raise ValueError('GENERATION_COLLECTION_CONTRACT_INVALID')
     start = clock(); first = None; last_error = None; last_reason = None; last_observation = {}
-    history = []; rejection_count = 0
+    history = []; rejection_count = 0; generations = []; resources = []
     def remember(kind, detail):
         row = {'kind':kind, 'elapsed_seconds':round(clock()-start,6), **detail}
         # Bound the series without mistaking the last null error for a clean run.
@@ -145,6 +150,11 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
         history.append(row)
     while clock() - start < timeout:
         try:
+            if sample is not None:
+                resource_receipt = sample()
+                if len(resources) == 1024:
+                    del resources[0]
+                resources.append(resource_receipt)
             health_path = root.parent / 'runtime-health.json'
             if health_path.is_symlink() or health_path.stat().st_size > 131072:
                 raise ValueError('WORKER_HEALTH_UNVERIFIED')
@@ -160,12 +170,19 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
                 raise ValueError('GENERATION_ORDER_REGRESSION')
             if first and advances(first, current):
                 remember('ADVANCING_GENERATION', {'sequence':current['sequence'], **last_observation})
-                return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'GREEN',
-                        'read_only': True, 'generations': [first, current],
-                        'rejection_count':rejection_count,'observations':history}
+                generations.append(current)
+                first = current
+                if len(generations) >= minimum_generations:
+                    return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'GREEN',
+                            'read_only': True, 'generations': generations,
+                            'rejection_count':rejection_count,'observations':history,
+                            'minimum_generations':minimum_generations,'strict':strict,'resources':resources}
             if first is None or current['configuration_fingerprint'] != first['configuration_fingerprint']:
+                if strict and generations:
+                    raise ValueError('GENERATION_ORDER_REGRESSION')
                 remember('FIRST_GENERATION', {'sequence':current['sequence'], **last_observation})
                 first = current
+                generations = [current]
             last_error = None; last_reason = None
         except (OSError, ValueError, KeyError, TypeError) as exc:
             # Only reviewed literal codes may cross the native log boundary.
@@ -173,13 +190,21 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
             last_reason = str(exc) if type(exc) is ValueError and str(exc) in _SAFE_FAILURE_REASONS else None
             rejection_count += 1
             remember('REJECTED', {'error_class':last_error,'reason':last_reason, **last_observation})
+            if strict:
+                return {'schema':'rc6.deploy-generation-gate.v1','status':'RED','read_only':True,
+                        'reason':'SUSTAINED_NATIVE_GENERATIONS_REJECTED','error_class':last_error,
+                        'error_reason':last_reason,'rejection_count':rejection_count,'observations':history,
+                        'generations':generations,'minimum_generations':minimum_generations,
+                        'strict':strict,'resources':resources}
             first = None
+            generations = []
         wait(2)
     return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'RED',
             'read_only': True, 'reason': 'TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED',
             'error_class': last_error, 'error_reason': last_reason,
             'rejection_count':rejection_count,'observations':history,
-            'last_observation': last_observation, 'generations': [first] if first else []}
+            'last_observation': last_observation, 'generations': generations,
+            'minimum_generations':minimum_generations,'strict':strict,'resources':resources}
 
 
 def main():
