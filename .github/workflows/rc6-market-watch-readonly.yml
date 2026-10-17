@@ -626,87 +626,22 @@ jobs:
           assert cases and not root.findall(".//failure") and not root.findall(".//error") and not root.findall(".//skipped")
           print("RC6_DEVELOPMENT_FOCUSED="+json.dumps({"executed":len(cases),"failure":0,"error":0,"skipped":0},separators=(",",":")))
           PY
-      - name: Paired uninstrumented baseline and development full-catalog guards
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: diagnostic
+      - name: Compare canonical encoders over the same synthetic report
         shell: bash
         run: |
           set -Eeuo pipefail
           install -d -m 777 /tmp/rc6-profile-603
-          for variant in baseline candidate; do
-            install -d -m 777 "/tmp/rc6-profile-603/$variant"
-            source_args=()
-            if [ "$variant" = candidate ]; then
-              source_args=(-v "$GITHUB_WORKSPACE/candidate:/candidate:ro" --workdir /candidate -e PYTHONPATH=/candidate)
-            fi
-            set +e
-            timeout --signal=TERM --kill-after=15 300 docker run --rm --pull never --network none \
-              --user 1000:1000 --read-only --cap-drop ALL --security-opt no-new-privileges \
-              --pids-limit 96 --memory 512m --memory-swap 512m --cpus 0.75 \
-              --tmpfs /tmp:rw,nosuid,nodev,size=512m -v "/tmp/rc6-profile-603/$variant:/work" \
-              "${source_args[@]}" --entrypoint python \
-              sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
-              scripts/rc6_postdeploy_stress.py --full-catalog-check --output /work/result \
-              > "/tmp/rc6-profile-603/$variant/output.log" 2>&1
-            rc=$?
-            set -e
-            echo "RC6_PAIRED_FULL_CATALOG=$variant|exit=$rc|native_acceptance=false"
-            if [ "$variant" = candidate ]; then test "$rc" -eq 0; fi
-          done
-          python3 - <<'PY'
-          import json,pathlib
-          for variant in ("baseline","candidate"):
-              path=pathlib.Path("/tmp/rc6-profile-603")/variant/"result/full-catalog.json"
-              if path.is_file():print("RC6_PAIRED_RESOURCE_RECEIPT="+json.dumps({"variant":variant,"receipt":json.loads(path.read_text())},separators=(",",":")))
-          PY
-      - name: Profile existing full-catalog synthetic guard in exact image
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          timeout --signal=TERM --kill-after=15 420 docker run --rm --pull never --network none \
+          timeout --signal=TERM --kill-after=15 480 docker run --rm -i --pull never --network none \
             --user 1000:1000 --read-only --cap-drop ALL --security-opt no-new-privileges \
             --pids-limit 96 --memory 512m --memory-swap 512m --cpus 0.75 \
             --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
             -v "$GITHUB_WORKSPACE/candidate:/candidate:ro" --workdir /candidate -e PYTHONPATH=/candidate \
             --entrypoint python sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
-            -m cProfile -o /work/profile.pstats scripts/rc6_postdeploy_stress.py \
-            --full-catalog-check --output /work/result > /tmp/rc6-profile-603/output.log 2>&1
-          rc=$?
-          set -e
-          echo "RC6_SYNTHETIC_PROFILE_EXIT=$rc|profiling_overhead_included=true|native_acceptance=false"
-          python3 - <<'PY'
-          import json,pathlib,pstats
-          root=pathlib.Path("/tmp/rc6-profile-603")
-          stats=pstats.Stats(str(root/"profile.pstats"))
-          rows=[]
-          for (filename,line,function),(primitive,calls,self_seconds,cumulative,_) in stats.stats.items():
-              if "/app/" not in filename and "/candidate/" not in filename:continue
-              rows.append({"module":pathlib.Path(filename).name,"line":line,"function":function,
-                           "calls":calls,"self_seconds":round(self_seconds,3),"cumulative_seconds":round(cumulative,3)})
-          print("RC6_SYNTHETIC_PROFILE="+json.dumps(sorted(rows,key=lambda x:x["cumulative_seconds"],reverse=True)[:55],separators=(",",":")))
-          PY
-      - name: Additional adverse CPU fixture without host access
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          install -d -m 777 /tmp/rc6-profile-603/adverse
-          set +e
-          timeout --signal=TERM --kill-after=15 300 docker run --rm --pull never --network none \
-            --user 1000:1000 --read-only --cap-drop ALL --security-opt no-new-privileges \
-            --pids-limit 96 --memory 512m --memory-swap 512m --cpus 0.25 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603/adverse:/work \
-            -v "$GITHUB_WORKSPACE/candidate:/candidate:ro" --workdir /candidate -e PYTHONPATH=/candidate \
-            --entrypoint python sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
-            scripts/rc6_postdeploy_stress.py --full-catalog-check --output /work/result \
-            > /tmp/rc6-profile-603/adverse/output.log 2>&1
-          rc=$?
-          set -e
-          echo "RC6_ADVERSE_CPU_FULL_CATALOG=$rc|cpu=0.25|memory_mib=512|native_acceptance=false"
-          python3 - <<'PY'
-          import json,pathlib
-          path=pathlib.Path("/tmp/rc6-profile-603/adverse/result/full-catalog.json")
-          if path.is_file():print("RC6_ADVERSE_RESOURCE_RECEIPT="+json.dumps(json.loads(path.read_text()),separators=(",",":")))
-          PY
-          test "$rc" -eq 0
+            - < "$GITHUB_WORKSPACE/diagnostic/scripts/rc6_codec_experiment.py"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
