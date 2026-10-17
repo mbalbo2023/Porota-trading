@@ -574,13 +574,17 @@ jobs:
     needs: contracts
     if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 18
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/checkout@v4
+        with:
+          ref: 2c7f5bc22057bb5ffbd37ce636d0da3fe30da5af
+          path: candidate
       - name: Verify exact PR616 frozen image artifact without host access
         shell: bash
         run: |
@@ -606,24 +610,46 @@ jobs:
           install -d -m 777 /tmp/rc6-profile-603
 
 
-      - name: Compare conservative bounds and compressed immutable snapshot reuse
+          test "$(git -C candidate rev-parse HEAD)" = 2c7f5bc22057bb5ffbd37ce636d0da3fe30da5af
+      - name: Test candidate publication and shared cache under canonical resources
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -m py_compile scripts/rc6_codec_experiment.py
+          docker run --rm --pull never --network none --user 1000:1000 --read-only \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
+            --memory 512m --memory-swap 512m --cpus 0.75 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m -v /tmp/rc6-profile-603:/work \
+            -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
+            -e PYTHONPATH=/candidate -e PYTHONPYCACHEPREFIX=/tmp/pycache -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+            --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
+            -m pytest -p no:cacheprovider -q \
+            tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_streaming_cost.py \
+            tests/test_rc6_shadow_report_lifetime.py tests/test_rc6_shadow_owned_state.py \
+            tests/test_rc6_shadow_contract_projection.py tests/test_rc6_shadow_runtime_wiring.py \
+            tests/test_rc6_shadow_failure_context.py tests/test_rc6_shadow_full_catalog.py \
+            --junitxml=/work/candidate-tests.xml
+      - name: Compare exact candidate serializer on one fixed full-cardinality report
+        shell: bash
+        run: |
+          set -Eeuo pipefail
           docker run --interactive --rm --pull never --network none --user 1000:1000 --read-only \
             --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
             --memory 512m --memory-swap 512m --cpus 0.75 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m -v /tmp/rc6-profile-603:/work \
+            -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
+            -e PYTHONPATH=/candidate -e PYTHONPYCACHEPREFIX=/tmp/pycache -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
             --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
             - < scripts/rc6_codec_experiment.py
           python3 - <<'PY'
-          import json,pathlib
+          import json,pathlib,xml.etree.ElementTree as ET
+          root=ET.parse("/tmp/rc6-profile-603/candidate-tests.xml").getroot()
+          cases=root.findall(".//testcase")
+          assert len(cases)>=50 and not root.findall(".//failure") and not root.findall(".//error") and not root.findall(".//skipped")
           value=json.loads(pathlib.Path("/tmp/rc6-profile-603/shared-snapshot-benchmark.json").read_text())
-          assert len(value["receipts"])==8 and value["canonical_bytes_identical"] is True
+          assert len(value["receipts"])==4 and value["canonical_bytes_identical"] is True
           assert len({(x["raw_bytes"],x["raw_sha256"]) for x in value["receipts"]})==1
           assert all(x["cpu_seconds"]>0 and x["peak_rss_kib"]<=512*1024 for x in value["receipts"])
-          print("RC6_SHARED_SNAPSHOT_NONEMPTY=GREEN|measurements=8")
+          print("RC6_SHARED_AUDIT_CANDIDATE=GREEN|testcases="+str(len(cases))+"|measurements=4")
           PY
       - name: Make diagnostic receipts readable
         if: always()
@@ -631,6 +657,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-shared-snapshot-benchmark-${{ github.run_id }}
+          name: rc6-shared-audit-candidate-${{ github.run_id }}
           path: /tmp/rc6-profile-603
           retention-days: 7
