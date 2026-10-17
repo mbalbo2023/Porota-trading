@@ -507,6 +507,8 @@ class EvidenceFiles:
         for old in cuts[2:]:
             if re.fullmatch(r"cut-[a-f0-9]{64}\.json\.gz", old.name):
                 self.path(old.name).unlink()
+        return {"generation_id": ident, "sequence": sequence,
+                "manifest_sha256": digest(manifest)}
 
 
 def read_committed_generation(root, *, payload_limit=4 * 1024**2, require_current_status=True):
@@ -553,4 +555,15 @@ def read_committed_generation(root, *, payload_limit=4 * 1024**2, require_curren
         if (type(member.get("real_orders_sent")) is not int or member["real_orders_sent"] != 0 or
                 member.get("real_routes") != "NOT_CALLED"):
             raise ValueError("GENERATION_SAFETY_UNVERIFIED")
-    return {"pointer": pointer, "live_status_required":require_current_status, **cut}
+    result = {"pointer": pointer, "live_status_required":require_current_status, **cut}
+    # Measurement is outside the immutable generation hash to avoid recursion.
+    # A missing/racing receipt is visible to strict deployment consumers;
+    # ordinary report readers still validate the complete immutable cut above.
+    if (status.get('generation_timing') or {}).get('tick_measurement_boundary') == 'BEFORE_STATUS_AND_CURRENT':
+        measured = files.read('publication.json')
+        if (isinstance(measured,dict) and measured.get('generation_id')==pointer['generation_id']
+                and measured.get('manifest_sha256')==pointer['manifest_sha256']
+                and measured.get('sequence')==pointer['sequence']
+                and measured.get('source_as_of')==status['as_of']):
+            result['publication'] = measured
+    return result

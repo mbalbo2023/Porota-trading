@@ -556,12 +556,27 @@ class ShadowRuntime:
             status["runtime_sql_diagnostics"] = _runtime_sql_status(self.last_sqlite_diagnostics)
             status['generation_timing'] = {'poll_seconds':POLL_SECONDS,
                 'tick_seconds':round(time.monotonic()-tick_started,3),
+                'tick_measurement_boundary':'BEFORE_STATUS_AND_CURRENT',
                 'stages_seconds':phase_seconds,
                 'tick_cpu_seconds':round(time.process_time()-tick_cpu_started,3),
                 'stages_cpu_seconds':phase_cpu_seconds}
+            publish_started = time.monotonic()
             files.write("status.json", status)
-            files.publish_generation(durable, status)
+            committed = files.publish_generation(durable, status)
+            publish_completed = time.monotonic()
             files.prune_computed_reports(keep=audit["file"])
+            # Separate receipt avoids a circular hash: the immutable cut is
+            # already committed. These clocks never replace the source as_of.
+            files.write("publication.json", {"schema":"rc6.publication-cost.v1",
+                **committed, "source_as_of":at.isoformat(),
+                "publish_completed_at":datetime.now(timezone.utc).isoformat(),
+                "start_compute_monotonic":tick_started,
+                "pointer_committed_monotonic":publish_completed,
+                "total_seconds":round(publish_completed-tick_started,6),
+                "total_cpu_seconds":round(time.process_time()-tick_cpu_started,6),
+                "publish_seconds":round(publish_completed-publish_started,6),
+                "prune_seconds":round(time.monotonic()-publish_completed,6),
+                "poll_seconds":POLL_SECONDS})
             return report
 
 
