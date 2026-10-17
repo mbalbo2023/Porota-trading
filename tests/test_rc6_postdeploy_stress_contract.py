@@ -95,6 +95,19 @@ def test_memory_barrier_never_starts_stress_and_restores_runtime(installation,mo
     assert report['runtime_restore']=='GREEN' and all(s=='running' for s in states.values())
 
 
+def test_memory_reserve_during_stress_is_128mib_and_abort_restores(installation,monkeypatch):
+    root,db,calls,states=installation
+    memory=iter([1024**3,1024**3,100*1024**2])
+    monkeypatch.setattr(host,'memory_available',lambda:next(memory))
+    process=SimpleNamespace(returncode=0,poll=lambda:None,wait=lambda **kwargs:0)
+    monkeypatch.setattr(host.subprocess,'Popen',lambda *args,**kwargs:process)
+    assert host.run(SHA,'620')==2
+    report=json.loads((root/'data/deploy/stress'/SHA/'620/host-stress.json').read_text())
+    assert report['error_code']=='STRESS_RESOURCE_OR_TIME_ABORT'
+    assert report['resource_samples'][0]['host_memory_available']==100*1024**2
+    assert report['runtime_restore']=='GREEN' and all(states[n]=='running' for n in host.OWNED)
+
+
 @pytest.mark.parametrize('change',['active_future','missing_ledger','unknown_orders','open_market'])
 def test_financial_unknown_or_active_never_quiesces(installation,change):
     root,db,calls,states=installation

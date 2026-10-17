@@ -17,6 +17,17 @@ from scripts.porota_image_source_identity import verify_source_identity
 
 def receipt(cut, health, expected_sha, expected_tree, at):
     status, pointer = cut['status'], cut['pointer']
+    timing = status.get('generation_timing') or {}
+    if timing.get('tick_measurement_boundary') == 'BEFORE_STATUS_AND_CURRENT':
+        publication = cut.get('publication')
+        if (not isinstance(publication,dict)
+                or publication.get('generation_id') != pointer['generation_id']
+                or publication.get('source_as_of') != status['as_of']
+                or type(publication.get('total_seconds')) not in (int,float)
+                or not math.isfinite(publication['total_seconds'])
+                or publication['total_seconds'] < timing['tick_seconds']
+                or publication.get('poll_seconds') != 30):
+            raise ValueError('GENERATION_PUBLICATION_COST_UNVERIFIED')
     budget, authority = generation_budget(status)
     stamp = datetime.fromisoformat(status['as_of'].replace('Z', '+00:00'))
     if stamp.tzinfo is None or authority != 'TWO_MEASURED_CYCLES_SOURCE_CAPPED':
@@ -68,6 +79,7 @@ def advances(first, second):
 
 
 _SAFE_FAILURE_REASONS = {
+    'GENERATION_PUBLICATION_COST_UNVERIFIED', 'GENERATION_ORDER_REGRESSION',
     'GENERATION_CLOCK_UNVERIFIED', 'GENERATION_STALE_OR_FUTURE',
     'GENERATION_AUTHORITY_UNVERIFIED', 'GENERATION_HASH_UNVERIFIED',
     'GENERATION_SEQUENCE_UNVERIFIED', 'WORKER_SOURCE_IDENTITY_UNVERIFIED',
@@ -124,6 +136,13 @@ def _observation_context(cut, at):
 def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monotonic,
             wait=time.sleep, now=lambda: datetime.now(timezone.utc), reader=read_committed_generation):
     start = clock(); first = None; last_error = None; last_reason = None; last_observation = {}
+    history = []; rejection_count = 0
+    def remember(kind, detail):
+        row = {'kind':kind, 'elapsed_seconds':round(clock()-start,6), **detail}
+        # Bound the series without mistaking the last null error for a clean run.
+        if len(history) == 128:
+            del history[0]
+        history.append(row)
     while clock() - start < timeout:
         try:
             health_path = root.parent / 'runtime-health.json'
@@ -136,21 +155,30 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
             observed_at = now()
             last_observation = _observation_context(cut, observed_at)
             current = receipt(cut, health, expected_sha, expected_tree, observed_at)
+            if first and (current['sequence'] < first['sequence'] or
+                    (current['sequence'] == first['sequence'] and current['generation_id'] != first['generation_id'])):
+                raise ValueError('GENERATION_ORDER_REGRESSION')
             if first and advances(first, current):
+                remember('ADVANCING_GENERATION', {'sequence':current['sequence'], **last_observation})
                 return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'GREEN',
-                        'read_only': True, 'generations': [first, current]}
+                        'read_only': True, 'generations': [first, current],
+                        'rejection_count':rejection_count,'observations':history}
             if first is None or current['configuration_fingerprint'] != first['configuration_fingerprint']:
+                remember('FIRST_GENERATION', {'sequence':current['sequence'], **last_observation})
                 first = current
             last_error = None; last_reason = None
         except (OSError, ValueError, KeyError, TypeError) as exc:
             # Only reviewed literal codes may cross the native log boundary.
             last_error = type(exc).__name__
             last_reason = str(exc) if type(exc) is ValueError and str(exc) in _SAFE_FAILURE_REASONS else None
+            rejection_count += 1
+            remember('REJECTED', {'error_class':last_error,'reason':last_reason, **last_observation})
             first = None
         wait(2)
     return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'RED',
             'read_only': True, 'reason': 'TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED',
             'error_class': last_error, 'error_reason': last_reason,
+            'rejection_count':rejection_count,'observations':history,
             'last_observation': last_observation, 'generations': [first] if first else []}
 
 
