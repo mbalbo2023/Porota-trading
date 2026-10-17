@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "619_MERGED_NATIVE_PROMOTION_IN_PROGRESS_NOT_ACCEPTED",
+  "release_state": "619_NATIVE_RED_FIX_FORWARD_NEW_LOT_PENDING",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -17,14 +17,14 @@
     "deploy_owner_issue471": 6228525290,
     "deploy_owner_issue473": 6228525416,
     "latest_deploy_owner_refresh": {
-      "at": "2026-10-17T11:59:16.590Z",
-      "issue471": 6233619512,
-      "issue473": 6233619749,
+      "at": "2026-10-17T14:46:13.434Z",
+      "issue471": 6235270370,
+      "issue473": 6235270531,
       "state": "HELD_THROUGH_FIX_FORWARD_NATIVE_ACCEPTANCE_STRESS_RESTORE"
     },
-    "last_refresh": "2026-10-17T13:59:53.400Z",
-    "issue471_comment": 6234780234,
-    "issue473_comment": 6234780511
+    "last_refresh": "2026-10-17T14:46:13.434Z",
+    "issue471_comment": 6235270370,
+    "issue473_comment": 6235270531
   },
   "findings": [
     {
@@ -170,12 +170,14 @@
       "classification": "FIX_PRESENT+TEST",
       "detail": "Absorbido602:CURRENT/root/manifest/digests/revocación/fsync/lock. EstrésI/O/path/tamper/restart preexistente y replay deworker, aceptación52vistaspostdeploy pendiente. Native Deploy613 rejected two-cut acceptance; reviewed READ_ONLY receipt confirmed GENERATION_FRESHNESS_UNVERIFIED, age246.605s/tick116.365s against120s, SQL208.737ms and transform316.037ms within2000ms. RCA profiles actual frozen image with synthetic catalogue in isolated CI; no native stress or acceptance claim.",
       "test": "tests/test_rc6_shadow_runtime_wiring.py",
-      "status": "NATIVE_616_RED_ONE_GENERATION_FIX_FORWARD_PENDING",
+      "status": "NATIVE619_RED_ONE_GENERATION_FIX_FORWARD_PENDING",
       "code_state": "DESARROLLADO",
       "runtime_occurrence": "DEMONSTRATED_39013855958",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39013855958",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
-      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre.",
+      "native_619_receipt": "docs/releases/evidence603/native619-deploy-red-39038259114.json",
+      "native_619_scope": "NATIVE_ONE_COHERENT_CUT_ONLY; FULL_DROPLET_STRESS_SKIPPED"
     },
     {
       "id": "HISTORY-LOCAL",
@@ -860,12 +862,14 @@
       "classification": "FIX_PRESENT+TEST",
       "detail": "Full audit248MB raw/4.6MB gzip: per-token compressor writes and duplicate envelope encoding caused excessive CPU. Bounded64KiB writes, single canonical payload pass, bounded C subtrees and exact type/Unicode/key/NaN/cycle/size/atomic checks preserve complete audit and hashes. Exact sample codec28.048→13.171 CPU seconds before final immutable empty-field optimization. Actualización nativa616: durable25.627wall/19.640CPU-s de tick49.259wall/35.853CPU-s. Las guardas previas se conservan; queda costo residual de serialización y gateRED. Investigación de subárboles/diccionarios normales en CI aislado, no nueva promoción. RCA gzip nativa: stdlib0.98735CPU-s/isal0 0.17330, diferencia0.81405 insuficiente sola; no nueva dependencia. Caché de listas frozen compartidas en CI6.5105→5.334CPU-s con mismo JSON/hash; variante comprimida/key-bounds aún en investigación. PR617 congelado2c7f5bc2: memo comprimido4MiB/raw32MiB sólo de listas preopen inmutables compartidas;11regresiones nuevas. CI39024332118 conserva265449852bytes/hashfd6d957e... y CPUmed5.96625→4.92725s,58pruebasGREEN. Predeploy39024613945 en curso; nativo616 sigueRED. #617 terminóPredeployRED por prueba single-flight; reemplazado sinmerge por618/5cb66323. Runtimeidéntico entre ambos; corrección sólo de sincronización de esa prueba, causal y10repeticiones verificadas. Predeploy61839025705021 pendiente. Native618 stillRED:tick71.233wall/41.107CPU,durable34.406wall/20.292CPU; CI gain is not accepted as native improvement. Onlyonegeneration; no exception atfinalobservation. Next governed RCA must measure actual frozen rows/cache eligibility; no new product source ready. 619/5bae/tree268009 normalmerge47d949b:3950root cases0FAIL/ERROR/SKIP/XFAIL/1unchanged exclusion; exact-image C sizing/native compatibility and catalogue proofGREEN. C sizing only preserves stdlib JSON/gzip/hash and64KiB/4096nodes; paired fixed-object auditCPU31.205% andcheckpoint23.688% gains are CI only. Exact-image CI39038468598:771cases/eightgroups/405minsynthetic/512MiB-.75CPU/Exit0/noOOM, catalogue17.779/14.732s,poll30,age62.715136<=95.558,RSS450856KiB; independently byte-readback39039561890. Native61939038259114 stillPROMOTING; no native gain, acceptance, Droplet fullstress or restore claimed. PriorREDs preserved.",
       "test": "tests/test_rc6_shadow_streaming_cost.py;tests/test_rc6_shadow_shared_audit.py; tests/test_rc6_shadow_native_bound.py",
-      "status": "619_PREDEPLOY_GREEN_NATIVE_ACCEPTANCE_PENDING",
+      "status": "619_NATIVE_COST_REDUCED_ACCEPTANCE_RED_FIX_FORWARD_PENDING",
       "code_state": "619_FROZEN_PREDEPLOY_GREEN_NATIVE_PROMOTION_RUNNING",
       "runtime_occurrence": "OBSERVED_NATIVE_PHASE_TIMINGS_39026330767;619_NATIVE_PENDING",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/pull/619",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
-      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre.",
+      "native_619_receipt": "docs/releases/evidence603/native619-deploy-red-39038259114.json",
+      "native_619_scope": "NATIVE_ONE_COHERENT_CUT_ONLY; FULL_DROPLET_STRESS_SKIPPED"
     },
     {
       "id": "SHADOW-REPORT-LIFETIME",
@@ -875,12 +879,14 @@
       "classification": "FIX_PRESENT+TEST",
       "detail": "Cold preopen unnecessarily computed and discarded a full plan; previous full report remained live during next tick. Before full-cardinality peak875968KiB then warm CATALOG_FULL transform budget failure. Freeze-only and explicit post-log report release verified causally, plus immutable equal rank rows share storage and planner reads verified freeze without cloning it. PR617 libera además referencias locales sin uso antes de serializar; control de catálogo inline14611 en512MiB/.75CPU, dos cortes20.895/16.584s, ExitCode0/OOMKilledfalse. No equivale a estrés Droplet. #617 terminóPredeployRED por prueba single-flight; reemplazado sinmerge por618/5cb66323. Runtimeidéntico entre ambos; corrección sólo de sincronización de esa prueba, causal y10repeticiones verificadas. Predeploy61839025705021 pendiente. 619/5bae/tree268009 normalmerge47d949b:3950root cases0FAIL/ERROR/SKIP/XFAIL/1unchanged exclusion; exact-image C sizing/native compatibility and catalogue proofGREEN. C sizing only preserves stdlib JSON/gzip/hash and64KiB/4096nodes; paired fixed-object auditCPU31.205% andcheckpoint23.688% gains are CI only. Exact-image CI39038468598:771cases/eightgroups/405minsynthetic/512MiB-.75CPU/Exit0/noOOM, catalogue17.779/14.732s,poll30,age62.715136<=95.558,RSS450856KiB; independently byte-readback39039561890. Native61939038259114 stillPROMOTING; no native gain, acceptance, Droplet fullstress or restore claimed. PriorREDs preserved.",
       "test": "tests/test_rc6_shadow_report_lifetime.py",
-      "status": "619_PREDEPLOY_GREEN_NATIVE_ACCEPTANCE_PENDING",
+      "status": "619_NATIVE_ACCEPTANCE_RED_FULL_STRESS_SKIPPED",
       "code_state": "619_FROZEN_PREDEPLOY_GREEN_NATIVE_PROMOTION_RUNNING",
       "runtime_occurrence": "LOCAL_CAUSAL_REPRO_MATCHES_NATIVE_ERROR_STAGE;619_NATIVE_PENDING",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/pull/619",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
-      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre.",
+      "native_619_receipt": "docs/releases/evidence603/native619-deploy-red-39038259114.json",
+      "native_619_scope": "NATIVE_ONE_COHERENT_CUT_ONLY; FULL_DROPLET_STRESS_SKIPPED"
     },
     {
       "id": "SHADOW-PRIVATE-CAUSAL-COPY",
@@ -920,12 +926,14 @@
       "classification": "FIX_PRESENT+TEST",
       "detail": "Permanent generated14611identity/9902catalog-capability READY fixture with long symbols, no prices/providers. RED peak550060KiB then RED freshness gap160.443s preserved. Final two committed cuts31.127/26.448s, actual30s poll, total87.949s and446072KiB. Same case runs in Predeploy and inline before405minute/eight-group native isolated stress, without pytest parent beside large worker. Process RSS is distinct from the native container memory cap; no native stress claim. Control39024139298 mantuvo58PASS+1SIGKILL de hijo pytest, OOM no confirmado. Mismo SHA617 pasó control inline39024332118 en512MiB/.75CPU, edad67.723483<=101.79s, sinOOM. Test automático permanece en Predeploy y nuevo archivo compartido se agrega a publication_io_identity. Fullstressnativo no ejecutado. Control61839025376522 y byte-readback39025796758:dos cortes22.332/17.547s, edad70.075836<=104.664s, picoRSS458948KiB, contenedor512MiB/.75CPU/Exit0/noOOM. No estrésnativo. 619/5bae/tree268009 normalmerge47d949b:3950root cases0FAIL/ERROR/SKIP/XFAIL/1unchanged exclusion; exact-image C sizing/native compatibility and catalogue proofGREEN. C sizing only preserves stdlib JSON/gzip/hash and64KiB/4096nodes; paired fixed-object auditCPU31.205% andcheckpoint23.688% gains are CI only. Exact-image CI39038468598:771cases/eightgroups/405minsynthetic/512MiB-.75CPU/Exit0/noOOM, catalogue17.779/14.732s,poll30,age62.715136<=95.558,RSS450856KiB; independently byte-readback39039561890. Native61939038259114 stillPROMOTING; no native gain, acceptance, Droplet fullstress or restore claimed. PriorREDs preserved.",
       "test": "tests/test_rc6_shadow_full_catalog.py",
-      "status": "619_EXACT_IMAGE_CI_GREEN_NATIVE_ACCEPTANCE_AND_STRESS_PENDING",
+      "status": "619_NATIVE_TWO_CUT_ACCEPTANCE_RED_FULL_STRESS_SKIPPED",
       "code_state": "619_FROZEN_PREDEPLOY_GREEN_NATIVE_PROMOTION_RUNNING",
       "runtime_occurrence": "LOCAL_FULL_PIPELINE_RESOURCE_AND_FRESHNESS_GUARD;619_NATIVE_PENDING",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/pull/619",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
-      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre.",
+      "native_619_receipt": "docs/releases/evidence603/native619-deploy-red-39038259114.json",
+      "native_619_scope": "NATIVE_ONE_COHERENT_CUT_ONLY; FULL_DROPLET_STRESS_SKIPPED"
     },
     {
       "id": "CI-SINGLE-FLIGHT-UNOBSERVED-RELEASE",
@@ -1499,7 +1507,7 @@
       "sha256": "2745a98453471b98c82711d7eaf95ba2f39e35226b330a58867feebc57a67fc3"
     }
   },
-  "source_bundle_installed": null,
+  "source_bundle_installed": true,
   "predeploy_certificate": {
     "pr": 619,
     "candidate_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
@@ -1644,7 +1652,7 @@
     "oom_flag_after_recovery": false,
     "whole_workflow_conclusion": "FAILURE_EXPECTED_DEPLOY_SHA_MISMATCH_AFTER_REJECTED_PROMOTION"
   },
-  "current_deploy_stage": "PROMOTE_EXACT_FROZEN_CANDIDATE_AND_VERIFY_IN_PROGRESS",
+  "current_deploy_stage": "COMPLETED_RED_NATIVE_TWO_GENERATION_GATE",
   "external_backup_review": {
     "droplet_id": 594077619,
     "size": "s-1vcpu-1gb",
@@ -2016,12 +2024,12 @@
     "source_immutable": true
   },
   "latest_deploy_result": {
-    "run": 39026330767,
-    "job": 117377929224,
+    "run": 39038259114,
+    "job": 117412357625,
     "conclusion": "FAILURE",
-    "candidate_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
-    "tree": "2f1825afed2417e4d4d7a8f003fecc009708921f",
-    "merge_sha": "616fd460b7b8577c7c6f8a62ebb00294d9182b0d",
+    "candidate_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+    "tree": "268009eb5fb2416fb92435ea828be7ad8d875965",
+    "merge_sha": "47d949b72f0b3affffecdc6cc90d31ba1347d9b7",
     "stage": "FAILED_NATIVE_GENERATION_COHERENCE",
     "artifact_actual_byte_verification": "GREEN",
     "installation_observed": true,
@@ -2031,57 +2039,57 @@
     "disk_guard": "GREEN",
     "paper_admission_and_drain": "GREEN",
     "transfer": "GREEN",
-    "finished_at": "2026-10-17T11:50:15Z",
+    "finished_at": "2026-10-17T14:54:41Z",
     "failed_gate": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
     "native_gate": {
       "error_class": null,
       "error_reason": null,
       "generations": [
         {
-          "as_of": "2026-10-17T11:48:37.204415+00:00",
-          "candidate_tree_sha": "2f1825afed2417e4d4d7a8f003fecc009708921f",
+          "as_of": "2026-10-17T14:53:22.711970+00:00",
+          "candidate_tree_sha": "268009eb5fb2416fb92435ea828be7ad8d875965",
           "configuration_fingerprint": "cbd2be0d55d3eeec94bf1fef07ecc10d0671298b4a1db8659384b6641efbf107",
-          "generation_id": "6ea774825c8c829e8b1c86b329c1d86b9dfff869df8dc83e764966cf70f47085",
-          "manifest_sha256": "f80a002851363b038060a2fe095032c54d3dcb165cecf424a15d84bf7745361e",
-          "native_sql_elapsed_ms": 175.814,
-          "native_transform_elapsed_ms": 65.682,
+          "generation_id": "dd469f219a67e043e91392ec0826f7a097e9d970f6311c70ccda063d81977654",
+          "manifest_sha256": "53de623dced46ddc1a5f074575a2db570eddf8ac2f28298ccc7b72f138dd3487",
+          "native_sql_elapsed_ms": 137.877,
+          "native_transform_elapsed_ms": 367.287,
           "provider_requests": 0,
           "real_orders_sent": 0,
           "real_routes": "NOT_CALLED",
-          "sequence": 1792237717204415,
-          "source_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+          "sequence": 1792248802711970,
+          "source_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
           "worker_status": "SHADOW_OBSERVING"
         }
       ],
       "last_observation": {
-        "age_seconds": 89.255,
-        "as_of": "2026-10-17T11:48:37.204415+00:00",
+        "age_seconds": 66.607,
+        "as_of": "2026-10-17T14:53:22.711970+00:00",
         "budget_ms": 2000,
         "poll_seconds": 30,
-        "sql_elapsed_ms": 175.814,
+        "sql_elapsed_ms": 137.877,
         "stages_cpu_seconds": {
-          "durable_serialization": 20.292,
-          "economic_exit_lab": 0.009,
-          "entry_signal_lab": 0.274,
-          "family_routing": 4.799,
-          "operational_funnel": 6.33,
-          "planner_pipeline": 3.487,
-          "preopen": 3.651,
-          "state_and_inputs": 2.263
+          "durable_serialization": 13.811,
+          "economic_exit_lab": 0.007,
+          "entry_signal_lab": 0.259,
+          "family_routing": 4.302,
+          "operational_funnel": 6.822,
+          "planner_pipeline": 4.112,
+          "preopen": 3.652,
+          "state_and_inputs": 2.159
         },
         "stages_seconds": {
-          "durable_serialization": 34.406,
-          "economic_exit_lab": 0.014,
-          "entry_signal_lab": 0.335,
-          "family_routing": 10.971,
-          "operational_funnel": 10.238,
-          "planner_pipeline": 5.99,
-          "preopen": 6.038,
-          "state_and_inputs": 3.238
+          "durable_serialization": 19.181,
+          "economic_exit_lab": 0.009,
+          "entry_signal_lab": 0.429,
+          "family_routing": 6.792,
+          "operational_funnel": 8.836,
+          "planner_pipeline": 6.1,
+          "preopen": 6.403,
+          "state_and_inputs": 3.48
         },
-        "tick_cpu_seconds": 41.107,
-        "tick_seconds": 71.233,
-        "transform_elapsed_ms": 65.682,
+        "tick_cpu_seconds": 35.124,
+        "tick_seconds": 51.231,
+        "transform_elapsed_ms": 367.287,
         "worker_status": "SHADOW_OBSERVING"
       },
       "read_only": true,
@@ -2099,7 +2107,10 @@
     "cleanup_control_exit": 1,
     "cleanup_space_recovered": 147456,
     "rollback": false,
-    "real_orders_sent": 0
+    "real_orders_sent": 0,
+    "receipt": "docs/releases/evidence603/native619-deploy-red-39038259114.json",
+    "receipt_sha256": "840ee5f9b137fc6f480739b16048e1e8368923a3bc45d60abd5326159c77c09a",
+    "no_two_cycle_gap_measured": true
   },
   "failed_predeploy_608": {
     "run": 38988131821,
@@ -2274,19 +2285,21 @@
       "2026-10-17T01:22:07.2856031Z Artifact porota-predeploy-v2-1fbae11682c6d9ded064226f296c7db18dccccf5 has been successfully uploaded! Final size is 414166126 bytes. Artifact ID is 12084822787"
     ]
   },
-  "latest_candidate_source_bundle_installed": "PENDING_NATIVE619_FINAL_RECEIPT; DO_NOT_INFER_FROM_GIT_MERGE",
+  "latest_candidate_source_bundle_installed": "GREEN_NATIVE619_BUNDLE508_AND_RUNNING_SOURCE_IDENTITY; NOT_ACCEPTANCE",
   "installed_runtime": {
     "candidate_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
     "candidate_tree": "268009eb5fb2416fb92435ea828be7ad8d875965",
     "deploy_sha": "47d949b72f0b3affffecdc6cc90d31ba1347d9b7",
     "certified_image_id": "sha256:a75628801d37ea6a995c9789c6e65e5a8f493884f59ccbbd6a7677142f743060",
     "image_tar_sha256": "fd106b956939923a552a452840187b5687c1874696d06f4539c786e10c5e6719",
-    "image_id": null,
-    "source_identity": "PENDING_NATIVE_FINAL_RECEIPT",
-    "validation": "PROMOTION_IN_PROGRESS_NOT_ACCEPTED",
-    "stress": "NOT_VERIFIED",
+    "image_id": "sha256:77e9e14083dd3f018ff55892457b854a9a9f3d249cfcdd0b6f9a416e812fcb8e",
+    "source_identity": "GREEN_NATIVE619_RUNNING_SOURCE_IDENTITY",
+    "validation": "RED_NOT_VALIDATED_RUNTIME",
+    "stress": "SKIPPED",
     "last_native_run": 39038259114,
-    "prior_618_health_not_a_current_619_proof": true
+    "prior_618_health_not_a_current_619_proof": true,
+    "container_ids": "PENDING_READONLY_CURRENT619_HEALTH_TRACE",
+    "engine_config_normalization": "OBSERVED_WITH_IDENTICAL_FROZEN_TAR_SHA256"
   },
   "wiring_610": {
     "path": "docs/releases/RC6_ISSUE603_WIRING_610.json",
@@ -2300,18 +2313,92 @@
   "active_deploy": {
     "run": 39038259114,
     "job": 117412357625,
-    "conclusion": null,
+    "conclusion": "FAILURE",
     "candidate_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
     "tree": "268009eb5fb2416fb92435ea828be7ad8d875965",
     "merge_sha": "47d949b72f0b3affffecdc6cc90d31ba1347d9b7",
-    "stage": "PROMOTE_EXACT_FROZEN_CANDIDATE_AND_VERIFY_IN_PROGRESS",
-    "artifact_actual_byte_verification": "GREEN_CANONICAL_ACTION_STEP",
+    "stage": "FAILED_NATIVE_GENERATION_COHERENCE",
+    "artifact_actual_byte_verification": "GREEN",
     "disk_guard": "GREEN",
     "source_bundle_installation": "NOT_YET_OBSERVED_IN_FINAL_RECEIPT",
-    "native_acceptance": "PENDING",
-    "stress": "NOT_YET_OBSERVED",
-    "recovery": "PENDING",
-    "rollback": false
+    "native_acceptance": "RED",
+    "stress": "SKIPPED_NOT_EXECUTED",
+    "recovery": "FIX_FORWARD_VALIDATION_REQUIRED",
+    "rollback": false,
+    "installation_observed": true,
+    "paper_admission_and_drain": "GREEN",
+    "transfer": "GREEN",
+    "finished_at": "2026-10-17T14:54:41Z",
+    "failed_gate": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+    "native_gate": {
+      "error_class": null,
+      "error_reason": null,
+      "generations": [
+        {
+          "as_of": "2026-10-17T14:53:22.711970+00:00",
+          "candidate_tree_sha": "268009eb5fb2416fb92435ea828be7ad8d875965",
+          "configuration_fingerprint": "cbd2be0d55d3eeec94bf1fef07ecc10d0671298b4a1db8659384b6641efbf107",
+          "generation_id": "dd469f219a67e043e91392ec0826f7a097e9d970f6311c70ccda063d81977654",
+          "manifest_sha256": "53de623dced46ddc1a5f074575a2db570eddf8ac2f28298ccc7b72f138dd3487",
+          "native_sql_elapsed_ms": 137.877,
+          "native_transform_elapsed_ms": 367.287,
+          "provider_requests": 0,
+          "real_orders_sent": 0,
+          "real_routes": "NOT_CALLED",
+          "sequence": 1792248802711970,
+          "source_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+          "worker_status": "SHADOW_OBSERVING"
+        }
+      ],
+      "last_observation": {
+        "age_seconds": 66.607,
+        "as_of": "2026-10-17T14:53:22.711970+00:00",
+        "budget_ms": 2000,
+        "poll_seconds": 30,
+        "sql_elapsed_ms": 137.877,
+        "stages_cpu_seconds": {
+          "durable_serialization": 13.811,
+          "economic_exit_lab": 0.007,
+          "entry_signal_lab": 0.259,
+          "family_routing": 4.302,
+          "operational_funnel": 6.822,
+          "planner_pipeline": 4.112,
+          "preopen": 3.652,
+          "state_and_inputs": 2.159
+        },
+        "stages_seconds": {
+          "durable_serialization": 19.181,
+          "economic_exit_lab": 0.009,
+          "entry_signal_lab": 0.429,
+          "family_routing": 6.792,
+          "operational_funnel": 8.836,
+          "planner_pipeline": 6.1,
+          "preopen": 6.403,
+          "state_and_inputs": 3.48
+        },
+        "tick_cpu_seconds": 35.124,
+        "tick_seconds": 51.231,
+        "transform_elapsed_ms": 367.287,
+        "worker_status": "SHADOW_OBSERVING"
+      },
+      "read_only": true,
+      "reason": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+      "schema": "rc6.deploy-generation-gate.v1",
+      "status": "RED"
+    },
+    "http_unique_routes": 63,
+    "http_audit_rounds": 4,
+    "http_results": 252,
+    "http_non200": 0,
+    "contract_reconciliation": "GREEN_EXIT0_STATUS_OK",
+    "soak": "5_X_60S_GREEN_ZERO_RESTART_NO_CRITICAL_SIGNATURE",
+    "cleanup_material": "GREEN_STAGING_REMOVED",
+    "cleanup_control_exit": 1,
+    "cleanup_space_recovered": 147456,
+    "real_orders_sent": 0,
+    "receipt": "docs/releases/evidence603/native619-deploy-red-39038259114.json",
+    "receipt_sha256": "840ee5f9b137fc6f480739b16048e1e8368923a3bc45d60abd5326159c77c09a",
+    "no_two_cycle_gap_measured": true
   },
   "metadata_inventory_runtime": {
     "schema": "rc6.metadata-matrix-summary.v1",
@@ -2405,7 +2492,7 @@
     "parse_errors": 0,
     "authority": "STATIC_NOT_LIVE_TRACE"
   },
-  "operator_acceptance": "NO_GO_NATIVE_VALIDATION_AND_DROPLET_STRESS_PENDING",
+  "operator_acceptance": "NO_GO_NATIVE_VALIDATION_RED_FULL_DROPLET_STRESS_SKIPPED",
   "native_dashboard_probe": {
     "run": 38995874816,
     "artifact_id": 12086373573,
@@ -2573,7 +2660,7 @@
     "direct_ssh": "NOT_USED",
     "new_timers": "NONE",
     "subagents": "NONE",
-    "last_local_recovery_attempt": "2026-10-17T13:42:12.718Z; harmless pwd NO_RESPONSE_WITHIN15S; no canonical writes",
+    "last_local_recovery_attempt": "2026-10-17T14:42:25Z; harmless pwd NO_RESPONSE_WITHIN15S; no canonical writes",
     "canonical_history_reconstruction": "4_FULL_READS; UTF8_BYTE_SIZES_MATCH_WITH_TERMINAL_NEWLINE; PREPARED_TEXT_PRESERVES_ORIGINAL_PREFIX"
   },
   "native_generation_freshness_rca": {
@@ -2738,7 +2825,7 @@
     ],
     "native_acceptance": false
   },
-  "updated_at": "2026-10-17T14:15:57.434Z",
+  "updated_at": "2026-10-17T15:02:26.001Z",
   "previous_deploy_result_613": {
     "run": 39003668897,
     "job": 117311624166,
@@ -3152,7 +3239,7 @@
     "canonical_bytes_identical": true,
     "promoted": false
   },
-  "receipt_count": 145,
+  "receipt_count": 146,
   "native_serialization_fast_bound_experiment": {
     "run": 39023354447,
     "job": 117369424731,
@@ -5621,7 +5708,7 @@
     "exact_git_bytes_verified": true,
     "zip_tar_xml_manifest_actually_downloaded_hashed": true
   },
-  "latest_deploy_result_scope": "LAST_COMPLETED_RUN618; ACTIVE619_STILL_RUNNING",
+  "latest_deploy_result_scope": "LAST_COMPLETED_NATIVE619_RED_NOT_ACCEPTED",
   "ci_exact_image_preflight_619": {
     "run": 39038468598,
     "job": 117412987489,
@@ -6290,5 +6377,153 @@
         "bound_basis": "EXISTING_EXACT618_READER_BOUND_REUSED; NOT_PRODUCT_RESOURCE_OR_TEST_FLOOR_CHANGE"
       }
     ]
+  },
+  "previous_deploy_result_618_completed": {
+    "run": 39026330767,
+    "job": 117377929224,
+    "conclusion": "FAILURE",
+    "candidate_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+    "tree": "2f1825afed2417e4d4d7a8f003fecc009708921f",
+    "merge_sha": "616fd460b7b8577c7c6f8a62ebb00294d9182b0d",
+    "stage": "FAILED_NATIVE_GENERATION_COHERENCE",
+    "artifact_actual_byte_verification": "GREEN",
+    "installation_observed": true,
+    "native_acceptance": "RED",
+    "stress": "SKIPPED_NOT_EXECUTED",
+    "recovery": "FIX_FORWARD_VALIDATION_REQUIRED",
+    "disk_guard": "GREEN",
+    "paper_admission_and_drain": "GREEN",
+    "transfer": "GREEN",
+    "finished_at": "2026-10-17T11:50:15Z",
+    "failed_gate": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+    "native_gate": {
+      "error_class": null,
+      "error_reason": null,
+      "generations": [
+        {
+          "as_of": "2026-10-17T11:48:37.204415+00:00",
+          "candidate_tree_sha": "2f1825afed2417e4d4d7a8f003fecc009708921f",
+          "configuration_fingerprint": "cbd2be0d55d3eeec94bf1fef07ecc10d0671298b4a1db8659384b6641efbf107",
+          "generation_id": "6ea774825c8c829e8b1c86b329c1d86b9dfff869df8dc83e764966cf70f47085",
+          "manifest_sha256": "f80a002851363b038060a2fe095032c54d3dcb165cecf424a15d84bf7745361e",
+          "native_sql_elapsed_ms": 175.814,
+          "native_transform_elapsed_ms": 65.682,
+          "provider_requests": 0,
+          "real_orders_sent": 0,
+          "real_routes": "NOT_CALLED",
+          "sequence": 1792237717204415,
+          "source_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+          "worker_status": "SHADOW_OBSERVING"
+        }
+      ],
+      "last_observation": {
+        "age_seconds": 89.255,
+        "as_of": "2026-10-17T11:48:37.204415+00:00",
+        "budget_ms": 2000,
+        "poll_seconds": 30,
+        "sql_elapsed_ms": 175.814,
+        "stages_cpu_seconds": {
+          "durable_serialization": 20.292,
+          "economic_exit_lab": 0.009,
+          "entry_signal_lab": 0.274,
+          "family_routing": 4.799,
+          "operational_funnel": 6.33,
+          "planner_pipeline": 3.487,
+          "preopen": 3.651,
+          "state_and_inputs": 2.263
+        },
+        "stages_seconds": {
+          "durable_serialization": 34.406,
+          "economic_exit_lab": 0.014,
+          "entry_signal_lab": 0.335,
+          "family_routing": 10.971,
+          "operational_funnel": 10.238,
+          "planner_pipeline": 5.99,
+          "preopen": 6.038,
+          "state_and_inputs": 3.238
+        },
+        "tick_cpu_seconds": 41.107,
+        "tick_seconds": 71.233,
+        "transform_elapsed_ms": 65.682,
+        "worker_status": "SHADOW_OBSERVING"
+      },
+      "read_only": true,
+      "reason": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+      "schema": "rc6.deploy-generation-gate.v1",
+      "status": "RED"
+    },
+    "http_unique_routes": 63,
+    "http_audit_rounds": 4,
+    "http_results": 252,
+    "http_non200": 0,
+    "contract_reconciliation": "GREEN_EXIT0_STATUS_OK",
+    "soak": "5_X_60S_GREEN_ZERO_RESTART_NO_CRITICAL_SIGNATURE",
+    "cleanup_material": "GREEN_STAGING_REMOVED",
+    "cleanup_control_exit": 1,
+    "cleanup_space_recovered": 147456,
+    "rollback": false,
+    "real_orders_sent": 0
+  },
+  "native_619_gate_receipt": {
+    "path": "docs/releases/evidence603/native619-deploy-red-39038259114.json",
+    "bytes": 13195,
+    "sha256": "840ee5f9b137fc6f480739b16048e1e8368923a3bc45d60abd5326159c77c09a",
+    "git_byte_readback": "EXACT_PRODUCER_BASE64_MATCH",
+    "readback_run": 39042911561,
+    "readback_job": 117425856336,
+    "source_native_run": 39038259114,
+    "source_native_job": 117412357625,
+    "scope": "ACTUAL_CANONICAL_DROPLET_DEPLOY_RED_NOT_ACCEPTANCE"
+  },
+  "native_generation_freshness_rca_619": {
+    "status": "ACTUAL_NATIVE_RED_ONE_COHERENT_GENERATION",
+    "observed": {
+      "age_seconds": 66.607,
+      "as_of": "2026-10-17T14:53:22.711970+00:00",
+      "budget_ms": 2000,
+      "poll_seconds": 30,
+      "sql_elapsed_ms": 137.877,
+      "stages_cpu_seconds": {
+        "durable_serialization": 13.811,
+        "economic_exit_lab": 0.007,
+        "entry_signal_lab": 0.259,
+        "family_routing": 4.302,
+        "operational_funnel": 6.822,
+        "planner_pipeline": 4.112,
+        "preopen": 3.652,
+        "state_and_inputs": 2.159
+      },
+      "stages_seconds": {
+        "durable_serialization": 19.181,
+        "economic_exit_lab": 0.009,
+        "entry_signal_lab": 0.429,
+        "family_routing": 6.792,
+        "operational_funnel": 8.836,
+        "planner_pipeline": 6.1,
+        "preopen": 6.403,
+        "state_and_inputs": 3.48
+      },
+      "tick_cpu_seconds": 35.124,
+      "tick_seconds": 51.231,
+      "transform_elapsed_ms": 367.287,
+      "worker_status": "SHADOW_OBSERVING"
+    },
+    "source_run": 39038259114,
+    "no_actual_two_cycle_gap_measured": true,
+    "no_exception_cause_in_final_observation": true,
+    "next": "READONLY_TRACE_BEFORE_NEW_FIX_FORWARD; NO_FRESHNESS_BUDGET_CHANGE"
+  },
+  "diagnostic_619_current_health": {
+    "state": "PREPARED_READ_ONLY_NO_SERVICE_ACTIONS",
+    "source": "4bc5b411b938cbd7fc00e396f3ff3ca9fe462207",
+    "prior_preparation_red": {
+      "run": 39043120584,
+      "job": 117426443419,
+      "cases": 71,
+      "errors": 2,
+      "host_job": "SKIPPED",
+      "cause": "REPLACED_MONITOR_WORKFLOW_REMOVED_TWO_REQUIRED_ORIGINAL_STEP_NAMES",
+      "correction": "RESTORE_ORIGINAL_MONITOR_STEPS_AND_TESTS_UNCHANGED; PR_WINDOW_OFF; ONLY_SCOPED_READONLY_TRACE_ENABLED"
+    }
   }
 }
