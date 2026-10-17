@@ -609,13 +609,28 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 -m py_compile scripts/rc6_codec_experiment.py
-          docker run --rm --pull never --network none --user 1000:1000 --read-only \
+          docker run --interactive --rm --pull never --network none --user 1000:1000 --read-only \
             --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
             --memory 512m --memory-swap 512m --cpus 0.75 \
             --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
             --entrypoint python \
             sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
             - < scripts/rc6_codec_experiment.py
+          python3 - <<'PY'
+          import json,pathlib
+          path=pathlib.Path("/tmp/rc6-profile-603/bounded-subtree-experiment.json")
+          assert path.is_file(),"BENCHMARK_DID_NOT_EXECUTE"
+          data=json.loads(path.read_text())
+          assert data["schema"]=="rc6.synthetic-bounded-subtree-experiment.v1"
+          rows=data["measurements"]
+          assert len(rows)==12,"BENCHMARK_MEASUREMENT_COUNT_INVALID"
+          assert {x["representation"] for x in rows}=={"immutable_missing_summaries","ordinary_json_containers"}
+          assert {x["variant"] for x in rows}=={"64k","256k","1m"}
+          assert len({(x["raw_bytes"],x["raw_sha256"]) for x in rows})==1
+          assert all(x["cpu_seconds"]>0 and x["wall_seconds"]>0 and x["peak_rss_kib"]<=512*1024 for x in rows)
+          assert data["same_canonical_json_across_all_representations"] is True
+          print("RC6_BENCHMARK_NONEMPTY_GUARD=GREEN|measurements=12")
+          PY
       - name: Make synthetic receipts readable to the artifact action
         if: always()
         shell: bash
