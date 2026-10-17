@@ -203,7 +203,8 @@ jobs:
             echo "RC6_DISK_PRECLEAN=START|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
             POLICY_B64="$(base64 -w0 ops/policy/rc6-disk-housekeeping-v1.json)"
             IMAGE_CLEANUP_B64="$(base64 -w0 scripts/rc6_pretransfer_image_cleanup.py)"
-            "${SSH[@]}" "$DO_USER@$DO_HOST" "POLICY_B64='$POLICY_B64' IMAGE_CLEANUP_B64='$IMAGE_CLEANUP_B64' bash -s" <<'PRECLEAN_REMOTE'
+            HOUSEKEEPING_B64="$(base64 -w0 scripts/rc6_disk_housekeeping.py)"
+            "${SSH[@]}" "$DO_USER@$DO_HOST" "POLICY_B64='$POLICY_B64' IMAGE_CLEANUP_B64='$IMAGE_CLEANUP_B64' HOUSEKEEPING_B64='$HOUSEKEEPING_B64' bash -s" <<'PRECLEAN_REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           TMP_POLICY=/tmp/porota-dynamic-deploy-disk-policy.json
@@ -223,8 +224,11 @@ jobs:
           # residual-space result, then enforce the full admission gate below.
           sudo -n rm -f /tmp/porota-predeploy-housekeeping.json
           set +e
-          sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py" \
-            --policy "$TMP_POLICY" --mode cleanup \
+          # The installed legacy helper may predate --preserve-backups. Run
+          # this already-certified candidate's stdlib helper from stdin;
+          # no product source is installed before the admission gate.
+          printf '%s' "$HOUSEKEEPING_B64" | base64 -d | sudo -n python3 - \
+            --policy "$TMP_POLICY" --mode cleanup --preserve-backups \
             --json-out /tmp/porota-predeploy-housekeeping.json
           PRECLEAN_HOUSEKEEPING_RC=$?
           set -e
@@ -1239,7 +1243,7 @@ jobs:
           sudo -n mkdir -p "$REPO/data/deploy"
           sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py" \
             --policy "$REPO/ops/policy/rc6-disk-housekeeping-v1.json" \
-            --mode cleanup \
+            --mode cleanup --preserve-backups \
             --json-out "$REPO/data/deploy/last-deploy-housekeeping.json"
           sudo -n docker image rm "$FROZEN_IMAGE" >/dev/null 2>&1 || true
           sudo -n docker image prune -f
