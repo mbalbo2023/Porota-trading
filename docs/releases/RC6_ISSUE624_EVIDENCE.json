@@ -3,11 +3,11 @@
   "workstream": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
   "source_issue": 624,
   "product_baseline_sha": "47d949b72f0b3affffecdc6cc90d31ba1347d9b7",
-  "candidate_sha": "529cc8b9d74a95d71e234e41bf084db72f87d989",
-  "candidate_tree": "0baeb895fde5f008f8ae1d66dd437793fc018b1d",
+  "candidate_sha": "538677cdae30ca2b3609294e0cd835c8caefc4c1",
+  "candidate_tree": "60b578b7b8712ccdf5d2dce512b6801f5b7ee75a",
   "pr": 626,
   "runtime_state": "NO_VERIFICADO",
-  "predeploy_run": 39063557593,
+  "predeploy_run": 39064838844,
   "original_findings_count": 68,
   "original_findings_sha256": "a57b4beca7aae6c2235b87d0a5b992f0be3f24f0d0975207cf48afad7e2fa537",
   "findings": [
@@ -1122,9 +1122,33 @@
       "test": "tests/test_rc6_deploy_runtime_completeness.py",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Any omitted mandatory XML/JSON/soak receipt reopens."
+    },
+    {
+      "id": "624-BACKUP-PRESERVATION",
+      "capability": "RC6_RELEASE_SAFETY",
+      "classification": "RCA_FIX_GUARD_TEST",
+      "cause": "Canonical cleanup retention deletes excess backups despite mission624 prohibition.",
+      "fix": "Explicitpreserve_backups onbothcleanup paths; candidatehelper executedfromstdin beforeinstall; policykeep3 unchanged.3FAILbefore/55PASSafter, diskfloorRED43 retained.",
+      "test": "tests/test_rc6_backup_preservation.py",
+      "status": "EN_GITHUB",
+      "runtime_state": "NO_VERIFICADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any backup deletion, artifact omission, safety or native acceptance failure reopens."
+    },
+    {
+      "id": "624-NATIVE-PROOF-UID",
+      "capability": "RC6_RELEASE_SAFETY",
+      "classification": "RCA_FIX_GUARD_TEST",
+      "cause": "Native proof UID1000 privateTMP directories cause artifact glob scandirEACCES evenwithnegativeglob.",
+      "fix": "Reclaim runner ownership of this outputtree onlyAFTER sandbox beforeupload,always;1FAILbefore/35PASSafter; actualnewCIpending.",
+      "test": "tests/test_rc6_deploy_runtime_completeness.py",
+      "status": "EN_GITHUB",
+      "runtime_state": "NO_VERIFICADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any backup deletion, artifact omission, safety or native acceptance failure reopens."
     }
   ],
-  "findings_count": 75,
+  "findings_count": 77,
   "predeploy_state": "IN_PROGRESS",
   "historical_ci_995": {
     "run": 39061986441,
@@ -1255,5 +1279,22 @@
     "failure": 1,
     "error": 0,
     "skipped": 4
+  },
+  "historical_ci_529": {
+    "run": 39063557593,
+    "job": 117486658886,
+    "candidate_sha": "529cc8b9d74a95d71e234e41bf084db72f87d989",
+    "candidate_tree": "0baeb895fde5f008f8ae1d66dd437793fc018b1d",
+    "conclusion": "FAILURE",
+    "failed_step": "Upload predeploy evidence",
+    "error": "EACCES scandir runner.temp/porota-native-sizing-evidence/tmp/pytest-of-botuser",
+    "prior_all_steps_success": true,
+    "promotable": false,
+    "raw_log_sha256": "6077629d367fc0783a7793e3997f590c67678cd4681cd70caf199ea2685bf423",
+    "guard_failure_before": 1,
+    "focal_pass_after": 35,
+    "local_cross_uid_fixture": "NOT_EXECUTED: uid_map only0; chown1000EINVAL",
+    "new_predeploy": 39064838844,
+    "new_sha": "538677cdae30ca2b3609294e0cd835c8caefc4c1"
   }
 }

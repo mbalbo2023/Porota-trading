@@ -1,0 +1,17 @@
+{
+  "run": 39063557593,
+  "job": 117486658886,
+  "candidate_sha": "529cc8b9d74a95d71e234e41bf084db72f87d989",
+  "candidate_tree": "0baeb895fde5f008f8ae1d66dd437793fc018b1d",
+  "conclusion": "FAILURE",
+  "failed_step": "Upload predeploy evidence",
+  "error": "EACCES scandir runner.temp/porota-native-sizing-evidence/tmp/pytest-of-botuser",
+  "prior_all_steps_success": true,
+  "promotable": false,
+  "raw_log_sha256": "6077629d367fc0783a7793e3997f590c67678cd4681cd70caf199ea2685bf423",
+  "guard_failure_before": 1,
+  "focal_pass_after": 35,
+  "local_cross_uid_fixture": "NOT_EXECUTED: uid_map only0; chown1000EINVAL",
+  "new_predeploy": 39064838844,
+  "new_sha": "538677cdae30ca2b3609294e0cd835c8caefc4c1"
+}

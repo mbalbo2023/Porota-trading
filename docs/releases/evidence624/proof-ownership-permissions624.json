@@ -1,0 +1,12 @@
+{
+  "schema": "rc6.proof-publication-uid.v1",
+  "local_cross_uid_fixture": "NOT_EXECUTED",
+  "cause": "chown(1000,1000):EINVAL; uid_map 0:0:1 only",
+  "observed_native_failure": {
+    "run": 39063557593,
+    "job": 117486658886,
+    "error": "EACCES scandir tmp/pytest-of-botuser"
+  },
+  "regression": "workflow ownership reclaimed always after sandbox before artifact upload",
+  "native_verification": "PENDING_NEW_PREDEPLOY"
+}

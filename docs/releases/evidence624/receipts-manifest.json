@@ -1327,6 +1327,55 @@
       "sha256": "17a49eebac4865a3009399471309fd8392354d747b5e002ad70c2a65f90c942f",
       "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
       "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/backup-preserve-before624.xml.gz",
+      "bytes": 1060,
+      "sha256": "9511eb4a398c6ac66b62ba7586856b0bea1fa32fdc15c221a918cdcf98f4e231",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/backup-preserve-after624.xml.gz",
+      "bytes": 1750,
+      "sha256": "1f16dcaa2338710b83e125349fb32cbd36645bfaf8a5edb2859c99b380ab2952",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-ownership-before624.xml.gz",
+      "bytes": 645,
+      "sha256": "f6ed5bbe8d3ba1ae4339eed55dc1fe036684a1738fe9a06638978310a2211fb9",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-ownership-after624.xml.gz",
+      "bytes": 1316,
+      "sha256": "90052a7f36ebb42b49cbd208f5ec29e1a2fef97d06fc9276de2175e886b80627",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-ownership-permissions624.json",
+      "bytes": 429,
+      "sha256": "7242f7899fccc4ab5540dac84e2c44bee3e1ee0d324ba49d7ad2b03f0db4b81c",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy529-raw.log.gz",
+      "bytes": 166784,
+      "sha256": "38115ad09313077de24cc3319a177e2ca0c5cc0c4a56c724f44312819943f09b",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy529-red-summary.json",
+      "bytes": 708,
+      "sha256": "fb2186b95ddcd9e35a63b43c681f63509babe41e65cba4461c7f9e44888d32e6",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
     }
   ]
 }
