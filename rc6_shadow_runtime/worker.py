@@ -425,7 +425,7 @@ class ShadowRuntime:
             capacity = self._capacity(as_of=at, capacity_policy=capacity_policy)
             measured("state_and_inputs")
             freeze_name = "preopen-" + context["session"] + ".json.gz"
-            frozen = files.read(freeze_name)
+            frozen = files.read(freeze_name, compact_preopen=True)
             if frozen and frozen["source_identity"] != source_id:
                 raise ValueError("SHADOW_PREOPEN_SOURCE_IDENTITY_MISMATCH")
             if frozen is None and at < context["opening"]:

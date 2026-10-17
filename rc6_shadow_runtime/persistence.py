@@ -54,6 +54,49 @@ class FrozenJSONDict(dict):
     def __deepcopy__(self,memo):return self
 
 
+def _preopen_scalar_decoder():
+    """Intern only exact scalar metrics within one immutable preopen read.
+
+    The on-disk envelope remains unchanged. No cross-generation cache exists,
+    and the canonical digest below is calculated from the decoded values.
+    Type-tagged keys preserve bool/int and signed-zero distinctions.
+    """
+    shared = {}
+    def decode(value):
+        if not ("status" in value and "value" in value) or len(value) > 16:
+            return value
+        key = []
+        for name, item in value.items():
+            kind = type(item)
+            if item is None or kind in (str, int, bool):
+                key.append((name, kind.__name__, item))
+            elif kind is float:
+                key.append((name, "float", item.hex()))
+            elif kind is list and not item:
+                key.append((name, "empty_array", None))
+            else:
+                return value
+        key = tuple(sorted(key))
+        prior = shared.get(key)
+        if prior is not None:
+            return prior
+        if len(shared) < 4096:
+            value = FrozenJSONDict(value)
+            shared[key] = value
+        return value
+    return decode
+
+
+def streamed_digest(payload):
+    """Canonical SHA without a document-sized string and UTF-8 copy."""
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
+                               default=str, allow_nan=False)
+    hasher = hashlib.sha256()
+    for chunk in _canonical_chunks(encoder, payload):
+        hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def _small_json_tree_python(value, maximum=65536, nodes=4096):
     """Bound one C-encoded record without recursively walking every key."""
     pending = [value]
@@ -342,7 +385,7 @@ class EvidenceFiles:
             raise ValueError("SHADOW_OUTPUT_MUST_BE_SEPARATE")
         return target
 
-    def read(self, name):
+    def read(self, name, *, compact_preopen=False):
         path = self.path(name)
         if not path.exists():
             return None
@@ -353,9 +396,12 @@ class EvidenceFiles:
             raw = stream.read(self.payload_limit + 1)
         if len(raw) > self.payload_limit:
             raise EvidencePayloadLimit(name, len(raw), self.payload_limit)
-        envelope = json.loads(raw)
+        if compact_preopen and not re.fullmatch(r"preopen-\d{4}-\d{2}-\d{2}\.json\.gz", name):
+            raise ValueError("SHADOW_COMPACT_PREOPEN_ROLE_REQUIRED")
+        envelope = json.loads(raw, object_hook=_preopen_scalar_decoder() if compact_preopen else None)
         del raw  # release the decoded input before canonical digest buffers
-        if envelope.get("digest") != digest(envelope.get("payload")):
+        calculated = streamed_digest(envelope.get("payload")) if compact_preopen else digest(envelope.get("payload"))
+        if envelope.get("digest") != calculated:
             raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
         return envelope["payload"]
 
