@@ -125,7 +125,7 @@ jobs:
 
   watch:
     needs: contracts
-    if: github.event_name != 'pull_request' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     env:
@@ -567,3 +567,67 @@ jobs:
         if: always()
         run: rm -f "$HOME/.ssh/rc6_market_watch"
 
+
+  profile:
+    needs: contracts
+    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verify pinned frozen image artifact without host access
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,shutil,urllib.request,zipfile
+          request=urllib.request.Request("https://api.github.com/repos/"+os.environ["GITHUB_REPOSITORY"]+"/actions/artifacts/12089837016/zip")
+          request.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
+          target=pathlib.Path("/tmp/rc6-profile-frozen.zip");h=hashlib.sha256();total=0
+          with urllib.request.urlopen(request,timeout=45) as response,target.open("wb") as stream:
+              while block:=response.read(1024**2):
+                  total+=len(block);assert total<=500*1024**2
+                  h.update(block);stream.write(block)
+          assert h.hexdigest()=="59d238e1af1758afaa87ca6983085795d918a36d40eff13a36a1b4aa88b6b220"
+          with zipfile.ZipFile(target) as archive:
+              matches=[x for x in archive.infolist() if pathlib.PurePosixPath(x.filename).name=="porota-predeploy-image.tar.gz"]
+              assert len(matches)==1 and matches[0].file_size<=500*1024**2
+              with archive.open(matches[0]) as source,open("/tmp/rc6-profile-image.tar.gz","wb") as output:shutil.copyfileobj(source,output)
+          print("RC6_PROFILE_ARTIFACT_SHA256=GREEN")
+          PY
+          docker load -i /tmp/rc6-profile-image.tar.gz >/dev/null
+          docker image inspect sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 >/dev/null
+          install -d -m 777 /tmp/rc6-profile-603
+      - name: Profile existing full-catalog synthetic guard in exact image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          timeout --signal=TERM --kill-after=15 420 docker run --rm --pull never --network none \
+            --user 1000:1000 --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --pids-limit 96 --memory 512m --memory-swap 512m --cpus 0.75 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
+            --entrypoint python sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
+            -m cProfile -o /work/profile.pstats scripts/rc6_postdeploy_stress.py \
+            --full-catalog-check --output /work/result > /tmp/rc6-profile-603/output.log 2>&1
+          rc=$?
+          set -e
+          echo "RC6_SYNTHETIC_PROFILE_EXIT=$rc|profiling_overhead_included=true|native_acceptance=false"
+          python3 - <<'PY'
+          import json,pathlib,pstats
+          root=pathlib.Path("/tmp/rc6-profile-603")
+          stats=pstats.Stats(str(root/"profile.pstats"))
+          rows=[]
+          for (filename,line,function),(primitive,calls,self_seconds,cumulative,_) in stats.stats.items():
+              if "/app/" not in filename:continue
+              rows.append({"module":pathlib.Path(filename).name,"line":line,"function":function,
+                           "calls":calls,"self_seconds":round(self_seconds,3),"cumulative_seconds":round(cumulative,3)})
+          print("RC6_SYNTHETIC_PROFILE="+json.dumps(sorted(rows,key=lambda x:x["cumulative_seconds"],reverse=True)[:55],separators=(",",":")))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-synthetic-profile-${{ github.run_id }}
+          path: /tmp/rc6-profile-603
+          retention-days: 7
