@@ -43,111 +43,37 @@ new="""                    if type(key) is str:
 assert old in key_fragments
 key_fragments=key_fragments.replace(old,new)
 
-def measured_small_factory(flat=False):
-    key_shapes,flat_shapes={},{}
-    scalar={str,int,float,bool,type(None)}
-    def flat_upper(values):
-        kinds=tuple(map(type,values))
-        shape=flat_shapes.get(kinds)
-        if shape is None:
-            if set(kinds)<=scalar:
-                strings=tuple(i for i,t in enumerate(kinds) if t is str)
-                integers=tuple(i for i,t in enumerate(kinds) if t is int)
-                fixed=sum(64 if t is float else 5 if t in (bool,type(None)) else 0 for t in kinds)
-                shape=(strings,integers,fixed)
-            else:shape=False
-            if len(flat_shapes)<512:flat_shapes[kinds]=shape
-        if shape is False:return None
-        strings,integers,fixed=shape
-        get=values.__getitem__
-        return (12*sum(map(len,map(get,strings)))+2*len(strings)
-                +sum(map(int.bit_length,map(get,integers)))+3*len(integers)+fixed)
-    def small(value,maximum=65536,nodes=4096):
-        pending=[value]
-        while pending:
-            item=pending.pop();nodes-=1
-            if nodes<0:return False
-            kind=type(item)
-            if kind is candidate.FrozenJSONDict:maximum-=len(item._canonical_json)
-            elif kind is str:maximum-=len(json.encoder.encode_basestring_ascii(item))
-            elif item is None or kind is bool:maximum-=5
-            elif kind is int:maximum-=max(1,item.bit_length())+3
-            elif kind is float:maximum-=64
-            elif kind is dict:
-                if len(item)>256:return False
-                keys=tuple(item);types=tuple(map(type,keys));shape=(types,keys)
-                bound=key_shapes.get(shape)
-                if bound is None and all(t is str for t in types):
-                    bound=(len(json.dumps(keys,separators=(",",":"),allow_nan=False))+len(keys)+1 if keys else 2)
-                    if len(key_shapes)<1024:key_shapes[shape]=bound
-                if bound is None:
-                    maximum-=2+2*len(item)
-                    for key in keys:
-                        if type(key) is str:maximum-=len(json.encoder.encode_basestring_ascii(key))
-                        else:pending.append(key);maximum-=2
-                else:maximum-=bound
-                values=tuple(item.values())
-                upper=flat_upper(values) if flat else None
-                if upper is not None and upper<=maximum:
-                    maximum-=upper;nodes-=len(values)
-                else:pending.extend(values)
-            elif kind is list or kind is tuple:
-                if len(item)>256:return False
-                maximum-=2+len(item)
-                upper=flat_upper(tuple(item)) if flat else None
-                if upper is not None and upper<=maximum:
-                    maximum-=upper;nodes-=len(item)
-                else:pending.extend(item)
-            else:return False
-            if maximum<0 or nodes<0:return False
-        return True
-    return small
-
-class SizedRecord(dict):
-    def __init__(self,record):
-        super().__init__(record)
-        self.canonical_size=len(json.dumps(record,sort_keys=True,separators=(",",":"),default=str,allow_nan=False))
-
-hint_small=inspect.getsource(original_small).replace(
-    "if kind is FrozenJSONDict:",
-    "if kind is SizedRecord:\n            maximum -= item.canonical_size\n        elif kind is FrozenJSONDict:")
-assert "kind is SizedRecord" in hint_small
-baseline.SizedRecord=SizedRecord
-receipts=[];expected=None
-for variant in ("baseline","row_hints","row_hints_keys","row_hints_keys","row_hints","baseline"):
-    baseline._small_json_tree=original_small
-    if variant=="baseline":
-        exec(original_fragments,baseline.__dict__)
-    else:
-        exec(hint_small,baseline.__dict__)
-        exec(key_fragments if variant.endswith("_keys") else original_fragments,baseline.__dict__)
-    gc.collect()
-    start=time.monotonic();cpu=time.process_time();size=0;compressed=0;h=hashlib.sha256()
-    payload=report
-    if variant!="baseline":
-        payload={**report,"family_routing":dict(report["family_routing"])}
-        payload["family_routing"]["instruments"]=[SizedRecord(row) for row in report["family_routing"]["instruments"]]
-    hint_wall=time.monotonic()-start
-    compressor=zlib.compressobj(1,wbits=31)
-    encoder=json.JSONEncoder(sort_keys=True,separators=(",",":"),default=str,allow_nan=False)
-    for block in baseline._canonical_chunks(encoder,payload):
-        size+=len(block);h.update(block);compressed+=len(compressor.compress(block))
-    compressed+=len(compressor.flush())
-    receipt={"variant":variant,"wall_seconds":round(time.monotonic()-start,3),
-        "cpu_seconds":round(time.process_time()-cpu,3),"hint_preparation_wall_seconds":round(hint_wall,3),
-        "raw_bytes":size,"sha256":h.hexdigest(),"compressed_bytes":compressed,
+baseline._small_json_tree=original_small
+exec(original_fragments,baseline.__dict__)
+encoder=json.JSONEncoder(sort_keys=True,separators=(",",":"),default=str,allow_nan=False)
+receipts=[]
+def measure(value):
+    started=time.monotonic();cpu=time.process_time();size=0
+    for block in baseline._canonical_chunks(encoder,value):size+=len(block)
+    return size,round(time.monotonic()-started,3),round(time.process_time()-cpu,3)
+pending=[("root",report,0)]
+while pending:
+    path,value,depth=pending.pop(0)
+    if not isinstance(value,dict):continue
+    for key,child in value.items():
+        if not isinstance(key,str):continue
+        size,wall,cpu=measure(child)
+        receipt={"path":path+"."+key,"raw_bytes":size,"wall_seconds":wall,"cpu_seconds":cpu,
+                 "type":type(child).__name__}
+        if isinstance(child,(dict,list,tuple)):receipt["count"]=len(child)
+        if isinstance(child,list) and child:
+            first=child[0]
+            if isinstance(first,dict):
+                receipt["first_record_keys"]=list(first)[:40]
+                sample=measure(first);receipt["first_record_raw_bytes"]=sample[0]
+                receipt["first_record_children"]={k:{"type":type(v).__name__,"count":len(v)}
+                    for k,v in first.items() if isinstance(v,(dict,list,tuple))}
+        receipts.append(receipt)
+        print("RC6_CODEC_SECTION="+json.dumps(receipt,separators=(",",":")),flush=True)
+        if isinstance(child,dict) and size>5*1024**2 and depth<3:
+            pending.append((path+"."+key,child,depth+1))
+result={"schema":"rc6.synthetic-codec-section-cost.v1","receipts":receipts,"native_acceptance":False,
+        "source_sha":"db06f0a20787ffc4d9f1211b7f2f5fdf04557c14",
         "peak_rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
-    assert size>100*1024**2 and receipt["peak_rss_kib"]<=512*1024
-    if expected is None:expected=(size,h.hexdigest())
-    assert expected==(size,h.hexdigest()),"CANONICAL_BYTES_CHANGED"
-    receipts.append(receipt)
-    print("RC6_CODEC_EXPERIMENT="+json.dumps(receipt,separators=(",",":")),flush=True)
-    del payload
-summary={v:statistics.median(r["wall_seconds"] for r in receipts if r["variant"]==v)
-         for v in {r["variant"] for r in receipts}}
-result={"schema":"rc6.synthetic-codec-experiment.v2","source_sha":"db06f0a20787ffc4d9f1211b7f2f5fdf04557c14",
-        "receipts":receipts,"median_wall_seconds":summary,"raw_bytes_and_hash_identical":True,
-        "cpu_limit":.75,"memory_limit_mib":512,"native_acceptance":False,
-        "provider_requests":0,"real_orders_sent":0,"hint_preparation_included":True}
-pathlib.Path("/work/codec-experiment.json").write_text(json.dumps(result,indent=2)+"\n")
-print("RC6_CODEC_MEDIANS="+json.dumps(summary,sort_keys=True,separators=(",",":")))
+assert result["peak_rss_kib"]<=512*1024
+pathlib.Path("/work/codec-sections.json").write_text(json.dumps(result,indent=2)+"\n")
