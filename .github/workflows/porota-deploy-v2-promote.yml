@@ -713,15 +713,21 @@ jobs:
                   c.close()
               except sqlite3.Error:
                   last=None
-              paper=bool(last and last[0]=='PRODUCTION_PAPER' and int(last[1] or 0)==0)
+              paper=bool(last and last[0]=='PRODUCTION_PAPER'
+                         and type(last[1]) is int and last[1]==0)
               heartbeat=paper and fresh(last[6],120)
               market_required=bool(last and last[4]=='MARKET_OPEN')
               market_fresh=(not market_required) or fresh(last[5],300)
-              if paper and last[2]=='OK' and heartbeat and market_fresh:
+              ready=bool(last and last[3] in {'RUNNING','WAITING_MARKET','READY_PREOPEN'})
+              if paper and last[2]=='OK' and heartbeat and market_fresh and ready:
                   print('GO_CHECK=GREEN|'+'|'.join(map(str,last))+f'|MARKET_DATA_REQUIRED={market_required}')
                   break
+              # STARTING can include a full catalog/policy refresh. Wait within
+              # the existing 1200s budget; only an operational state with a
+              # fresh heartbeat can pass GO and establish a stable baseline.
+              startup_pending=bool(paper and last[2]=='OK' and last[3]=='STARTING')
               if time.monotonic() >= startup_deadline and not (
-                      paper and heartbeat and last[2]=='COOLDOWN'):
+                      (paper and heartbeat and last[2]=='COOLDOWN') or startup_pending):
                   print(f'GO_CHECK_FAILED_AFTER_STARTUP={last}')
                   raise SystemExit(1)
               time.sleep(5)

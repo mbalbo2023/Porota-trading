@@ -1,7 +1,7 @@
 """Observador productivo con paper trading completo y cero capacidad operativa."""
 
 from __future__ import annotations
-from contextlib import closing, nullcontext
+from contextlib import closing, contextmanager, nullcontext
 
 import faulthandler
 import fcntl
@@ -430,7 +430,41 @@ def _catalog_records(value):
     return found
 
 
+@contextmanager
+def _candidate_publication(store):
+    """Mark discovery, policy and projection as one incomplete publication.
+
+    Catalog writers are serialized between the observer and deploy runner.
+    A nested complementary pass finishes the last candidate write before the
+    outer download records its health/source-sync receipts.
+    """
+    with store.connect() as connection:
+        connection.execute("""CREATE TABLE IF NOT EXISTS candidate_refresh_state(
+            id INTEGER PRIMARY KEY CHECK(id=1),state TEXT NOT NULL,
+            checked_at TEXT NOT NULL)""")
+        connection.execute("""INSERT INTO candidate_refresh_state VALUES(1,'RUNNING',?)
+            ON CONFLICT(id) DO UPDATE SET state=excluded.state,
+            checked_at=excluded.checked_at""", (now_iso(),))
+    try:
+        yield
+    except BaseException as error:
+        try:
+            with store.connect() as connection:
+                connection.execute("UPDATE candidate_refresh_state SET state='FAILED' WHERE id=1")
+        except Exception as marker_error:
+            error.add_note("CANDIDATE_REFRESH_FAILURE_MARKER:" + type(marker_error).__name__)
+        raise
+    else:
+        with store.connect() as connection:
+            connection.execute("UPDATE candidate_refresh_state SET state='COMPLETE' WHERE id=1")
+
+
 def _download_catalog(reader, store):
+    with _candidate_publication(store):
+        return _download_catalog_generation(reader, store)
+
+
+def _download_catalog_generation(reader, store):
     """Publica un lote atómico; conserva registros previos como STALE.
 
     Los filtros de búsqueda y los instrumentos devueltos son entidades
@@ -585,6 +619,11 @@ def _download_catalog(reader, store):
 
 
 def _reconcile_complementary_catalog(store):
+    with _candidate_publication(store):
+        return _reconcile_complementary_catalog_generation(store)
+
+
+def _reconcile_complementary_catalog_generation(store):
     """Apply complements in strict PPI-primary -> IOL -> BYMA order.
 
     PPI rows remain the canonical identity whenever they exist. IOL and BYMA

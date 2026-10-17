@@ -397,6 +397,12 @@ def _assert_snapshot(snapshot, baseline=None):
     assert isinstance(statuses, dict) and set(CORE_GET_PATHS) <= set(statuses), "DASHBOARD_HTTP_COVERAGE_INCOMPLETE"
     assert all(code == 200 for code in statuses.values())
     _assert_surface_metrics(snapshot.get("surface_metrics", {}))
+    refresh = readiness.get("refresh") or {}
+    if refresh:
+        if refresh.get("state") == "RUNNING" and 0 <= _age_seconds(
+                refresh.get("checked_at")) <= 300:
+            raise RuntimeError("CANDIDATE_REFRESH_IN_PROGRESS|publication_incomplete")
+        assert refresh.get("state") == "COMPLETE", "CANDIDATE_REFRESH_NOT_COMPLETE"
     if dashboard_ready != readiness["ready"]:
         raise RuntimeError(
             "DASHBOARD_READINESS_MISMATCH|"
@@ -417,13 +423,6 @@ def _assert_snapshot(snapshot, baseline=None):
     below_baseline = (baseline is not None and
                       readiness["ready"] < baseline["database"]["readiness"]["ready"])
     if (readiness["ready"] < 5558 or low_families or below_baseline):
-        refresh = readiness.get("refresh") or {}
-        if refresh.get("state") == "RUNNING" and 0 <= _age_seconds(
-                refresh.get("checked_at")) <= 300:
-            raise RuntimeError(
-                "CANDIDATE_REFRESH_IN_PROGRESS|"
-                f"ready={readiness['ready']}|low_families={low_families}|"
-                f"checked_at={refresh['checked_at']}")
         assert readiness["ready"] >= 5558
         assert not low_families, (low_families, readiness)
         assert not below_baseline, (readiness, baseline["database"]["readiness"])
@@ -500,7 +499,12 @@ def consistent_snapshot(label, baseline=None, attempts=8, retry_seconds=5):
                 raise
             print(f"POROTA_RUNTIME_AUDIT_READINESS_RETRY={attempt}/{attempts}",
                   flush=True)
-            time.sleep(retry_seconds)
+            # The full discovery/policy publication observed on the host took
+            # about four minutes. Keep eight attempts and the workflow's 300s
+            # timeout; space refresh retries instead of certifying old READY.
+            wait = max(retry_seconds, 30) if str(exc).startswith(
+                "CANDIDATE_REFRESH_IN_PROGRESS|") else retry_seconds
+            time.sleep(wait)
             continue
         return snapshot
     raise AssertionError("RUNTIME_AUDIT_UNREACHABLE")
