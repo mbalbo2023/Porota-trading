@@ -1,0 +1,638 @@
+{
+  "artifact_id": 12102419143,
+  "artifact_zip_bytes": 28782,
+  "artifact_zip_sha256": "328a9cf3eb779094566f5374e1adb58c060b37ebbe970941bd4d6a62d22d6d6e",
+  "cases": 771,
+  "context": "CI_EXACT_IMAGE_PREFLIGHT",
+  "docker_exit_code": 0,
+  "docker_oom_killed": false,
+  "docker_state_proof_source": "COMPLETED_ACTION_LOG_RC6_619_PREFLIGHT_DOCKER",
+  "error": 0,
+  "failure": 0,
+  "groups": 8,
+  "image_id": "sha256:a75628801d37ea6a995c9789c6e65e5a8f493884f59ccbbd6a7677142f743060",
+  "image_tar_sha256": "fd106b956939923a552a452840187b5687c1874696d06f4539c786e10c5e6719",
+  "memory_bytes": 536870912,
+  "nano_cpus": 750000000,
+  "not_a_native_acceptance": true,
+  "previous_reader_guard_red_job": 117415393812,
+  "previous_reader_guard_red_run": 39039309896,
+  "production_runtime_restore": "NOT_PERFORMED_BY_CI",
+  "reader_member_bound_bytes": 4194304,
+  "schema": "rc6.exact619-ci-fullstress-byte-readback.v1",
+  "skipped": 0,
+  "source_job": 117412987489,
+  "source_run": 39038468598,
+  "source_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+  "stress": {
+    "child_peak_rss_kib": 450856,
+    "elapsed_seconds": 318.769,
+    "evidence_kind": "CI_EXACT_IMAGE_PREFLIGHT",
+    "finished_at": "2026-10-17T14:00:13.923992+00:00",
+    "full_catalog": {
+      "actual_market_acceptance": false,
+      "catalog_count": 14611,
+      "cuts": [
+        {
+          "as_of": "2026-10-05T13:20:00.000189+00:00",
+          "computed_report_sha256": "b2ac55e4a6c994af34406e15f8bb9366521f6b3fa8321fb9f008926a4f75008f",
+          "freshness_budget_seconds": 95.55799999999999,
+          "generation_id": "73155e595ce32ee0edb36021fe8ce2f1d58cb61277e0137bbf2d3209d8d481b7",
+          "manifest_sha256": "a5b5dc90f09290a18368172f740152b36e8bcab2eb5d6cb5ac2e3390f8f4ac6a",
+          "sequence": 1791206400000189,
+          "tick_seconds": 17.779,
+          "worker_timing": {
+            "poll_seconds": 30,
+            "stages_cpu_seconds": {
+              "durable_serialization": 4.399,
+              "economic_exit_lab": 0.004,
+              "entry_signal_lab": 0.001,
+              "family_routing": 1.817,
+              "operational_funnel": 3.049,
+              "planner_pipeline": 1.188,
+              "preopen": 2.837,
+              "state_and_inputs": 0.033
+            },
+            "stages_seconds": {
+              "durable_serialization": 5.873,
+              "economic_exit_lab": 0.004,
+              "entry_signal_lab": 0.001,
+              "family_routing": 2.442,
+              "operational_funnel": 4.049,
+              "planner_pipeline": 1.588,
+              "preopen": 3.763,
+              "state_and_inputs": 0.057
+            },
+            "tick_cpu_seconds": 13.329,
+            "tick_seconds": 17.779
+          }
+        },
+        {
+          "as_of": "2026-10-05T13:20:47.883948+00:00",
+          "computed_report_sha256": "9c951b2de637a0b42987cc6ddddefa69b8c1f8a5213e508a7de7d51d262ee06b",
+          "freshness_budget_seconds": 89.464,
+          "generation_id": "07eccccdbdf2f7b380e6a8fd1ee220f21ca88a9b49d8a80d5050f4014adecd7d",
+          "manifest_sha256": "9919a510889b5bc91047255ee0fdae55bc7c24c8589ef75ad1fded5d70e8571f",
+          "previous_cut_age_seconds": 62.715136,
+          "previous_cut_freshness_budget_seconds": 95.55799999999999,
+          "sequence": 1791206447883948,
+          "tick_seconds": 14.732,
+          "worker_timing": {
+            "poll_seconds": 30,
+            "stages_cpu_seconds": {
+              "durable_serialization": 4.235,
+              "economic_exit_lab": 0.002,
+              "entry_signal_lab": 0.002,
+              "family_routing": 1.843,
+              "operational_funnel": 2.05,
+              "planner_pipeline": 1.121,
+              "preopen": 1.188,
+              "state_and_inputs": 0.645
+            },
+            "stages_seconds": {
+              "durable_serialization": 5.635,
+              "economic_exit_lab": 0.002,
+              "entry_signal_lab": 0.002,
+              "family_routing": 2.467,
+              "operational_funnel": 2.725,
+              "planner_pipeline": 1.497,
+              "preopen": 1.587,
+              "state_and_inputs": 0.817
+            },
+            "tick_cpu_seconds": 11.086,
+            "tick_seconds": 14.732
+          }
+        }
+      ],
+      "elapsed_seconds": 62.715,
+      "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+      "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+      "process_peak_rss_kib": 450856,
+      "production_data_mounted": false,
+      "provider_requests": 0,
+      "ready_fixture_count": 9902,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "schema": "rc6.synthetic-full-catalog.v1"
+    },
+    "limitations": [
+      "Real provider/network capacity and Android voice interaction are not simulated facts."
+    ],
+    "network": "NO_LIVE_TRANSPORT_CONFIGURED",
+    "ppi_watch_accessed": false,
+    "production_data_mounted": false,
+    "scenarios": [
+      {
+        "cases": 36,
+        "error": 0,
+        "exit_code": 0,
+        "failure": 0,
+        "junit_sha256": "84335224e6c3b1a94d7b791c4e722b526daf9c98f2083774f62071ab78df0911",
+        "name": "sql_shadow_wal",
+        "skipped": 0
+      },
+      {
+        "cases": 86,
+        "error": 0,
+        "exit_code": 0,
+        "failure": 0,
+        "junit_sha256": "55099c7cda46e1dcffb7fb87be7456b266a3fb4c2cc652eeae34970c901de29f",
+        "name": "publication_io_identity",
+        "skipped": 0
+      },
+      {
+        "cases": 160,
+        "error": 0,
+        "exit_code": 0,
+        "failure": 0,
+        "junit_sha256": "e0b811586da37b29f646ba3272452fddbfb6978b9e6474773c35f720da269354",
+        "name": "signals_risk_exit_ledger",
+        "skipped": 0
+      },
+      {
+        "cases": 99,
+        "error": 0,
+        "exit_code": 0,
+        "failure": 0,
+        "junit_sha256": "3b6d212a24f9be1405a0f2a373c3c8bd3fb4aaaa78c9bfe39582231191104028",
+        "name": "sources_readiness_network",
+        "skipped": 0
+      },
+      {
+        "cases": 106,
+        "error": 0,
+        "exit_code": 0,
+        "failure": 0,
+        "junit_sha256": "8a238e8b710172654898ef2fe51e08accf7261e4bba5fd5ed2069d5ea133021d",
+        "name": "scalping_capacity",
+        "skipped": 0
+      },
+      {
+        "cases": 72,
+        "error": 0,
+        "exit_code": 0,
+        "failure": 0,
+        "junit_sha256": "b2716f1545de5d4da87c5e666150b8caf6b804f47bacd0538e425bef8ffb0d9a",
+        "name": "treasury_caucion",
+        "skipped": 0
+      },
+      {
+        "cases": 198,
+        "error": 0,
+        "exit_code": 0,
+        "failure": 0,
+        "junit_sha256": "c31411096125e75b4c8bc256478d2de079c5c306b114a69d56fbea986ea3268e",
+        "name": "dashboard_auth_52",
+        "skipped": 0
+      },
+      {
+        "cases": 14,
+        "error": 0,
+        "exit_code": 0,
+        "failure": 0,
+        "junit_sha256": "9a8aabebb2e144ea6f4429ff8412f51da41a81345d3fffdad7b978a9af043874",
+        "name": "scheduler_monitor_backup",
+        "skipped": 0
+      }
+    ],
+    "schema": "rc6.postdeploy-stress.v1",
+    "self_peak_rss_kib": 450856,
+    "session": {
+      "actual_market_acceptance": false,
+      "captured_notification_count": 176,
+      "counts": {
+        "candle_versions": 1872,
+        "market_snapshots": 1560,
+        "paper_decisions": 876,
+        "paper_fills": 176,
+        "paper_positions": 88
+      },
+      "dashboard_routes": [
+        {
+          "bytes": 23260,
+          "elapsed_ms": 3.045,
+          "path": "/",
+          "read_queries": "21"
+        },
+        {
+          "bytes": 26265,
+          "elapsed_ms": 3.652,
+          "path": "/analitica",
+          "read_queries": "5"
+        },
+        {
+          "bytes": 23008,
+          "elapsed_ms": 2.753,
+          "path": "/analitica/anual",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 22980,
+          "elapsed_ms": 2.05,
+          "path": "/analitica/cierre-diario",
+          "read_queries": "8"
+        },
+        {
+          "bytes": 24309,
+          "elapsed_ms": 5.028,
+          "path": "/analitica/contrafactuales",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 22902,
+          "elapsed_ms": 1.649,
+          "path": "/analitica/experimentos",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 22916,
+          "elapsed_ms": 1.773,
+          "path": "/analitica/historico",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 22625,
+          "elapsed_ms": 1.677,
+          "path": "/analitica/reportes",
+          "read_queries": "5"
+        },
+        {
+          "bytes": 57602,
+          "elapsed_ms": 6.168,
+          "path": "/analitica/salidas",
+          "read_queries": "11"
+        },
+        {
+          "bytes": 22898,
+          "elapsed_ms": 1.586,
+          "path": "/analitica/senales",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 24202,
+          "elapsed_ms": 3.445,
+          "path": "/en-vivo",
+          "read_queries": "29"
+        },
+        {
+          "bytes": 22833,
+          "elapsed_ms": 1.587,
+          "path": "/en-vivo/capacidad",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 23969,
+          "elapsed_ms": 1.965,
+          "path": "/en-vivo/cierres",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 111220,
+          "elapsed_ms": 7.355,
+          "path": "/en-vivo/decisiones",
+          "read_queries": "9"
+        },
+        {
+          "bytes": 40935,
+          "elapsed_ms": 5.754,
+          "path": "/en-vivo/fuentes",
+          "read_queries": "12"
+        },
+        {
+          "bytes": 24320,
+          "elapsed_ms": 1.679,
+          "path": "/en-vivo/oportunidades",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 23752,
+          "elapsed_ms": 1.823,
+          "path": "/en-vivo/posiciones",
+          "read_queries": "5"
+        },
+        {
+          "bytes": 43934,
+          "elapsed_ms": 2.446,
+          "path": "/en-vivo/workers",
+          "read_queries": "12"
+        },
+        {
+          "bytes": 56006,
+          "elapsed_ms": 3.21,
+          "path": "/instrumentos",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 46955,
+          "elapsed_ms": 2.621,
+          "path": "/instrumentos/contrato",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 46983,
+          "elapsed_ms": 2.653,
+          "path": "/instrumentos/evidencia",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 56015,
+          "elapsed_ms": 27.719,
+          "path": "/instrumentos/ficha",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 22625,
+          "elapsed_ms": 1.921,
+          "path": "/instrumentos/mercado",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 22732,
+          "elapsed_ms": 1.712,
+          "path": "/riesgo",
+          "read_queries": "7"
+        },
+        {
+          "bytes": 22705,
+          "elapsed_ms": 1.569,
+          "path": "/riesgo/event-risk",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 23659,
+          "elapsed_ms": 1.871,
+          "path": "/riesgo/exposicion",
+          "read_queries": "5"
+        },
+        {
+          "bytes": 22674,
+          "elapsed_ms": 1.621,
+          "path": "/riesgo/limites",
+          "read_queries": "5"
+        },
+        {
+          "bytes": 23697,
+          "elapsed_ms": 1.79,
+          "path": "/riesgo/liquidez",
+          "read_queries": "5"
+        },
+        {
+          "bytes": 26073,
+          "elapsed_ms": 3.275,
+          "path": "/riesgo/pnl",
+          "read_queries": "5"
+        },
+        {
+          "bytes": 23655,
+          "elapsed_ms": 1.782,
+          "path": "/riesgo/posiciones",
+          "read_queries": "5"
+        },
+        {
+          "bytes": 44621,
+          "elapsed_ms": 2.573,
+          "path": "/sistema",
+          "read_queries": "12"
+        },
+        {
+          "bytes": 22552,
+          "elapsed_ms": 1.621,
+          "path": "/sistema/backups",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 37789,
+          "elapsed_ms": 1.961,
+          "path": "/sistema/configuracion",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 23129,
+          "elapsed_ms": 1.539,
+          "path": "/sistema/evidencia",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 38089,
+          "elapsed_ms": 2.126,
+          "path": "/sistema/integraciones",
+          "read_queries": "8"
+        },
+        {
+          "bytes": 22495,
+          "elapsed_ms": 1.695,
+          "path": "/sistema/logs",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 44781,
+          "elapsed_ms": 2.475,
+          "path": "/sistema/salud",
+          "read_queries": "12"
+        },
+        {
+          "bytes": 22726,
+          "elapsed_ms": 1.612,
+          "path": "/sistema/scheduler",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 48177,
+          "elapsed_ms": 2.578,
+          "path": "/sistema/workers",
+          "read_queries": "14"
+        },
+        {
+          "bytes": 22714,
+          "elapsed_ms": 1.544,
+          "path": "/trading",
+          "read_queries": "3"
+        },
+        {
+          "bytes": 24087,
+          "elapsed_ms": 1.683,
+          "path": "/trading/cauciones",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 23799,
+          "elapsed_ms": 1.683,
+          "path": "/trading/derivados",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 68576,
+          "elapsed_ms": 3.797,
+          "path": "/trading/equity-spot",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 23782,
+          "elapsed_ms": 1.724,
+          "path": "/trading/renta-fija",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 64713,
+          "elapsed_ms": 3.3,
+          "path": "/trading/scalping",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 23818,
+          "elapsed_ms": 1.705,
+          "path": "/trading/tesoreria",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 23150,
+          "elapsed_ms": 1.76,
+          "path": "/universo",
+          "read_queries": "6"
+        },
+        {
+          "bytes": 22721,
+          "elapsed_ms": 1.508,
+          "path": "/universo/coverage",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 24005,
+          "elapsed_ms": 1.533,
+          "path": "/universo/discovery",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 24005,
+          "elapsed_ms": 1.518,
+          "path": "/universo/excluidos",
+          "read_queries": "2"
+        },
+        {
+          "bytes": 22506,
+          "elapsed_ms": 1.532,
+          "path": "/universo/familias",
+          "read_queries": "3"
+        },
+        {
+          "bytes": 24026,
+          "elapsed_ms": 1.503,
+          "path": "/universo/tradeability",
+          "read_queries": "2"
+        }
+      ],
+      "decision_reasons": {
+        "Aprendiendo serie: 1/8 muestras": 4,
+        "Aprendiendo serie: 2/8 muestras": 4,
+        "Aprendiendo serie: 3/8 muestras": 4,
+        "Aprendiendo serie: 4/8 muestras": 4,
+        "Aprendiendo serie: 5/8 muestras": 4,
+        "Aprendiendo serie: 6/8 muestras": 4,
+        "Aprendiendo serie: 7/8 muestras": 4,
+        "EOD_NO_NEW_ENTRIES": 120,
+        "Momentum positivo y friccion admisible": 99,
+        "OPEN_POSITION_NEEDS_SUPERVISION_OR_EXIT": 144,
+        "Score paper debajo del umbral versionado": 485
+      },
+      "exit_reasons": {
+        "MAX_HOLD_PAPER": 1,
+        "STOP_PAPER": 16,
+        "TAKE_PROFIT_PAPER": 71
+      },
+      "local_eod_batches": 4,
+      "local_eod_repeated_imported": 0,
+      "provider_contracts": "SYNTHETIC_NOT_VALIDATED",
+      "provider_requests": 0,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "schema": "rc6.synthetic-full-session.v1",
+      "shadow_cuts": 16,
+      "simulated_minutes": 405,
+      "tick_max_seconds": 2.4323752939999963,
+      "tick_p95_seconds": 1.4312163160000182,
+      "treasury_attempts": [
+        {
+          "code": "NO_ELIGIBLE_OFFER",
+          "minute": 365,
+          "status": "HOLD"
+        },
+        {
+          "code": "NO_ELIGIBLE_OFFER",
+          "minute": 375,
+          "status": "HOLD"
+        }
+      ]
+    },
+    "smoke": false,
+    "started_at": "2026-10-17T13:54:55.155373+00:00",
+    "status": "GREEN"
+  },
+  "stress_json_sha256": "d92306a551bee9a7de2377ab2b85e57483a56802480e5a7e4a903572e3753bfd",
+  "tree_sha": "268009eb5fb2416fb92435ea828be7ad8d875965",
+  "xml": [
+    {
+      "cases": 36,
+      "error": 0,
+      "failure": 0,
+      "name": "sql_shadow_wal",
+      "sha256": "84335224e6c3b1a94d7b791c4e722b526daf9c98f2083774f62071ab78df0911",
+      "skipped": 0
+    },
+    {
+      "cases": 86,
+      "error": 0,
+      "failure": 0,
+      "name": "publication_io_identity",
+      "sha256": "55099c7cda46e1dcffb7fb87be7456b266a3fb4c2cc652eeae34970c901de29f",
+      "skipped": 0
+    },
+    {
+      "cases": 160,
+      "error": 0,
+      "failure": 0,
+      "name": "signals_risk_exit_ledger",
+      "sha256": "e0b811586da37b29f646ba3272452fddbfb6978b9e6474773c35f720da269354",
+      "skipped": 0
+    },
+    {
+      "cases": 99,
+      "error": 0,
+      "failure": 0,
+      "name": "sources_readiness_network",
+      "sha256": "3b6d212a24f9be1405a0f2a373c3c8bd3fb4aaaa78c9bfe39582231191104028",
+      "skipped": 0
+    },
+    {
+      "cases": 106,
+      "error": 0,
+      "failure": 0,
+      "name": "scalping_capacity",
+      "sha256": "8a238e8b710172654898ef2fe51e08accf7261e4bba5fd5ed2069d5ea133021d",
+      "skipped": 0
+    },
+    {
+      "cases": 72,
+      "error": 0,
+      "failure": 0,
+      "name": "treasury_caucion",
+      "sha256": "b2716f1545de5d4da87c5e666150b8caf6b804f47bacd0538e425bef8ffb0d9a",
+      "skipped": 0
+    },
+    {
+      "cases": 198,
+      "error": 0,
+      "failure": 0,
+      "name": "dashboard_auth_52",
+      "sha256": "c31411096125e75b4c8bc256478d2de079c5c306b114a69d56fbea986ea3268e",
+      "skipped": 0
+    },
+    {
+      "cases": 14,
+      "error": 0,
+      "failure": 0,
+      "name": "scheduler_monitor_backup",
+      "sha256": "9a8aabebb2e144ea6f4429ff8412f51da41a81345d3fffdad7b978a9af043874",
+      "skipped": 0
+    }
+  ]
+}

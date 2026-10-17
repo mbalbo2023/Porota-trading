@@ -1,0 +1,156 @@
+{
+  "artifact_id": 12103440231,
+  "artifact_zip_bytes": 414613525,
+  "artifact_zip_sha256": "8fc12720b33ec4e6dd4dd30ff275ddc61cd8584e5a09637fc07c9e233702e498",
+  "context": "PREDEPLOY_EXACT_IMAGE_NOT_DROPLET_ACCEPTANCE",
+  "exact_image_generated_catalog": {
+    "actual_market_acceptance": false,
+    "catalog_count": 14611,
+    "cuts": [
+      {
+        "as_of": "2026-10-05T13:20:00.000133+00:00",
+        "computed_report_sha256": "b1d196d4b92d0d97df9491c9837f9c6b6b645c9a34646ecb9f4201f379baa6cc",
+        "freshness_budget_seconds": 88.112,
+        "generation_id": "8459624b38d165e78ed19b8ea61208e64c344acb557bcf79cad40ba33d652fd6",
+        "manifest_sha256": "f73491949fbf1133d9fc02f2133072ddc655eb82abb7e8ac67d7d47d2281bbdb",
+        "sequence": 1791206400000133,
+        "tick_seconds": 14.056,
+        "worker_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 3.503,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.278,
+            "operational_funnel": 2.367,
+            "planner_pipeline": 1.009,
+            "preopen": 2.349,
+            "state_and_inputs": 0.026
+          },
+          "stages_seconds": {
+            "durable_serialization": 4.698,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.703,
+            "operational_funnel": 3.142,
+            "planner_pipeline": 1.36,
+            "preopen": 3.122,
+            "state_and_inputs": 0.026
+          },
+          "tick_cpu_seconds": 10.537,
+          "tick_seconds": 14.056
+        }
+      },
+      {
+        "as_of": "2026-10-05T13:20:44.139594+00:00",
+        "computed_report_sha256": "127ee827c1084f33e88e20fe86e81ac491def63ae1580713c4e81db62d1a0740",
+        "freshness_budget_seconds": 84.268,
+        "generation_id": "20399aa33509f3c4c0d5869a1b6f4c8bf86ea828a01b0817ce7d691962380677",
+        "manifest_sha256": "e201897940e9e4b2d65d3631e820e3c3b7666337c8af7a6feae777b89b1c722d",
+        "previous_cut_age_seconds": 56.350892,
+        "previous_cut_freshness_budget_seconds": 88.112,
+        "sequence": 1791206444139594,
+        "tick_seconds": 12.134,
+        "worker_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 3.36,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.363,
+            "operational_funnel": 1.737,
+            "planner_pipeline": 1.099,
+            "preopen": 0.988,
+            "state_and_inputs": 0.565
+          },
+          "stages_seconds": {
+            "durable_serialization": 4.505,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.813,
+            "operational_funnel": 2.311,
+            "planner_pipeline": 1.474,
+            "preopen": 1.314,
+            "state_and_inputs": 0.715
+          },
+          "tick_cpu_seconds": 9.116,
+          "tick_seconds": 12.134
+        }
+      }
+    ],
+    "elapsed_seconds": 56.351,
+    "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+    "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+    "process_peak_rss_kib": 449096,
+    "production_data_mounted": false,
+    "provider_requests": 0,
+    "ready_fixture_count": 9902,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "schema": "rc6.synthetic-full-catalog.v1"
+  },
+  "frozen": {
+    "build_once": true,
+    "candidate_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+    "candidate_tree_sha": "268009eb5fb2416fb92435ea828be7ad8d875965",
+    "image_config_sha256": "612adffdfa99b5cb35648fc4d0f224dcbe71f74328ba8cbe4924b936c57e40b3",
+    "image_id": "sha256:a75628801d37ea6a995c9789c6e65e5a8f493884f59ccbbd6a7677142f743060",
+    "image_size_bytes": 1175881104,
+    "image_tar_sha256": "fd106b956939923a552a452840187b5687c1874696d06f4539c786e10c5e6719",
+    "paper_mode_required": "PRODUCTION_PAPER",
+    "real_order_capability_required": "BLOCKED",
+    "real_orders_sent_required": 0,
+    "schema_version": 1
+  },
+  "full_session_stress": false,
+  "governed_root": {
+    "discovered": 3950,
+    "errors": 0,
+    "exclusions": [
+      "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+    ],
+    "executed": 3950,
+    "failures": 0,
+    "pytest_exit_code": 0,
+    "schema_version": 1,
+    "scope": "repository-root automatic pytest discovery",
+    "skipped": 0,
+    "status": "GREEN",
+    "xfail": 0
+  },
+  "job": 117410222547,
+  "missing_runtime_files": [],
+  "native_acceptance": false,
+  "native_extension": {
+    "bytes": 15464,
+    "module": "_rc6_json_bound",
+    "path": "rc6_shadow_runtime/_rc6_json_bound.so",
+    "sha256": "e0eed2fc86dde099583e2635ae6c6e57b8a7f53124bb71a04bef11f026daac99",
+    "source": "rc6_shadow_runtime/_rc6_json_bound.c"
+  },
+  "native_source": {
+    "bytes": 4697,
+    "path": "rc6_shadow_runtime/_rc6_json_bound.c",
+    "sha256": "12ce21146fe9de9845b4458c7abc3d81b0eb00ec645dd10a37e9e4e255c50a43"
+  },
+  "native_xml": {
+    "cases": 46,
+    "error": 0,
+    "failure": 0,
+    "sha256": "80378765705daf4f4becaeec22f4aa96bab01e88e76ffd19046e75e46711baf3",
+    "skipped": 0
+  },
+  "real_orders_sent": 0,
+  "root_xml": {
+    "cases": 3950,
+    "error": 0,
+    "failure": 0,
+    "sha256": "87902d6f7384b3b324676eb8a4ff3d801fea3353141ac333d463719a57a46193",
+    "skipped": 0
+  },
+  "run": 39037517622,
+  "runtime_files": 500,
+  "schema": "rc6.predeploy619-actual-byte-readback.v1",
+  "source_bundle_files": 508,
+  "source_bundle_sha256": "53b1bd6d429c0b492719319a897ed40c4b7af9b3ffa7405ad608a7b946a986b6"
+}
