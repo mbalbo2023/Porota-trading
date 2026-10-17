@@ -570,86 +570,50 @@ jobs:
 
 
 
-  profile:
+  recovery_readonly:
     needs: contracts
     if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 3
     env:
-      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Build pinned public streaming-parser RCA packet and hash completed618 failure receipt
+      - name: Compile READ_ONLY current health observer
+        run: python3 -m py_compile scripts/rc6_post_rca_current_health.py
+      - name: Prepare strict SSH
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -m py_compile scripts/rc6_audit_rowshape_native_probe.py scripts/rc6_audit_rowshape_native_host.py scripts/rc6_audit_rowshape_governor_selfcheck.py scripts/rc6_audit_rowshape_packet_prepare.py
-          python3 scripts/rc6_audit_rowshape_packet_prepare.py
-          python3 scripts/rc6_rowshape_idle_selfcheck.py
-      - name: Verify and load exact PR618 frozen artifact without rebuilding
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_current_health"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_current_health" "$HOME/.ssh/known_hosts"
+      - name: Verify exact retained container identities and current health without changing services
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 - <<'PY'
-          import hashlib,json,os,pathlib,shutil,urllib.request,zipfile
-          def request(url):
-              req=urllib.request.Request(url)
-              req.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
-              return urllib.request.urlopen(req,timeout=45)
-          base="https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/12097933526"
-          with request(base) as response:metadata=json.load(response)
-          assert metadata["workflow_run"]["id"]==39025705021
-          assert metadata["workflow_run"]["head_sha"]=="5cb663231b52aee566dec0b3bf9c5d45684b98f5"
-          target=pathlib.Path("/tmp/rc6-exact618.zip");h=hashlib.sha256();total=0
-          with request(base+"/zip") as response,target.open("wb") as output:
-              while block:=response.read(1024**2):
-                  total+=len(block);assert total<=500*1024**2
-                  h.update(block);output.write(block)
-          assert total==414541894 and h.hexdigest()=="7c6355cb6c156e37d83ff0d2e61a0116f54d75ce7a42dc63d9b43b136c0586b8"
-          with zipfile.ZipFile(target) as archive:
-              def member(name):
-                  matches=[x for x in archive.infolist() if pathlib.PurePosixPath(x.filename).name==name]
-                  assert len(matches)==1
-                  return matches[0]
-              frozen=json.loads(archive.read(member("porota-frozen-candidate.json")))
-              assert frozen["candidate_sha"]=="5cb663231b52aee566dec0b3bf9c5d45684b98f5"
-              assert frozen["candidate_tree_sha"]=="2f1825afed2417e4d4d7a8f003fecc009708921f"
-              assert frozen["image_id"]=="sha256:2f581a5cc45e34dad4974d35398aeef89f3dbc4c9ca7f4c3c172efd1123b62d9"
-              image=member("porota-predeploy-image.tar.gz");assert image.file_size<=500*1024**2
-              image_hash=hashlib.sha256()
-              with archive.open(image) as source,open("/tmp/rc6-exact618-image.tar.gz","wb") as output:
-                  while block:=source.read(1024**2):
-                      image_hash.update(block);output.write(block)
-              assert image_hash.hexdigest()==frozen["image_tar_sha256"]
-          print("RC6_618_PREFLIGHT_FROZEN_BYTES=GREEN|zip_sha="+h.hexdigest()+"|tar_sha="+image_hash.hexdigest(),flush=True)
-          PY
-          docker load -i /tmp/rc6-exact618-image.tar.gz >/dev/null
-          docker image inspect sha256:2f581a5cc45e34dad4974d35398aeef89f3dbc4c9ca7f4c3c172efd1123b62d9 >/dev/null
-          install -d -m 777 /tmp/rc6-pref618
-      - name: Verify64MiB parser and exact recovery on success plus injected failure
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          sudo -n env GITHUB_RUN_ID="$GITHUB_RUN_ID" python3 scripts/rc6_audit_rowshape_governor_selfcheck.py \
-            --image sha256:2f581a5cc45e34dad4974d35398aeef89f3dbc4c9ca7f4c3c172efd1123b62d9 \
-            --packet /tmp/rc6-native-packet-reuse/rc6-native-compression-packet.tgz \
-            --driver scripts/rc6_audit_rowshape_native_host.py
-      - name: Preserve CI-only governor and native failure receipt
+          mkdir -p evidence
+          timeout 45 ssh -i "$HOME/.ssh/rc6_current_health" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" "sudo -n timeout 30 python3 -" \
+            < scripts/rc6_post_rca_current_health.py | tee evidence/current-health.txt
+      - name: Preserve separate current health evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rc6-rowshape-governor-selfcheck-${{ github.run_id }}
-          path: |
-            quiesce-governor-selfcheck.json
-            /tmp/rc6-native-packet-reuse/native618-gate-receipt.json
+          name: rc6-post-rca-current-health-${{ github.run_id }}
+          path: evidence/current-health.txt
+          if-no-files-found: warn
           retention-days: 14
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rc6-native-compression-packet-${{ github.run_id }}
-          path: |
-            /tmp/rc6-native-packet-reuse/rc6-native-compression-packet.tgz
-            /tmp/rc6-native-packet-reuse/rc6-native-compression-packet.sha256
-          retention-days: 7
-
+      - name: Destroy SSH credential
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_current_health"
