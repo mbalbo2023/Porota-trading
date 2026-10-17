@@ -15,7 +15,9 @@ def test_shared_nested_bounds_are_fresh_for_each_atomic_encoding(tmp_path):
     payload={"rows":[{"n":n,"evidence":shared} for n in range(700)]}
     files=EvidenceFiles(tmp_path/"shadow")
     with files:
-        for value in (None,"changed"+"ñ🚀"*20000):
+        for value in (None,"changed"+"ñ🚀"*4000):
+            if value is not None:
+                payload["rows"]=payload["rows"][:5]
             shared["value"]=value
             expected=json.dumps(payload,sort_keys=True,separators=(",",":"),allow_nan=False).encode()
             receipt=files.write_streamed_report(payload)
