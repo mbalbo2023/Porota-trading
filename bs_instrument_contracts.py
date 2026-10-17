@@ -67,7 +67,10 @@ def utc_microseconds(value):
     """An exact UTC instant, including offsets, without SQLite/float rounding."""
     if value is None:
         return None
-    delta = aware_datetime(value).astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    try:
+        delta = aware_datetime(value).astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    except OverflowError as exc:
+        raise ValueError("fecha: instante UTC fuera de rango") from exc
     return (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
 
 
