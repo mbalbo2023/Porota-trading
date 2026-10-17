@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "616_NATIVE_RED_SHARED_AUDIT_FROZEN_PREDEPLOY_PENDING",
+  "release_state": "616_NATIVE_COHERENCE_RED_618_FROZEN_EXACT_PREDEPLOY_PENDING",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -17,9 +17,9 @@
     "deploy_owner_issue471": 6228525290,
     "deploy_owner_issue473": 6228525416,
     "latest_deploy_owner_refresh": {
-      "issue471": 6232708036,
-      "issue473": 6232708161,
-      "at": "2026-10-17T10:15:25.330Z",
+      "issue471": 6232914898,
+      "issue473": 6232915086,
+      "at": "2026-10-17T10:39:04.064Z",
       "state": "HELD_THROUGH_FIX_FORWARD_NATIVE_ACCEPTANCE_STRESS_RESTORE"
     }
   },
@@ -855,10 +855,10 @@
       "path": "rc6_shadow_runtime/persistence.py",
       "symbol": "_canonical_chunks",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "Full audit248MB raw/4.6MB gzip: per-token compressor writes and duplicate envelope encoding caused excessive CPU. Bounded64KiB writes, single canonical payload pass, bounded C subtrees and exact type/Unicode/key/NaN/cycle/size/atomic checks preserve complete audit and hashes. Exact sample codec28.048→13.171 CPU seconds before final immutable empty-field optimization. Actualización nativa616: durable25.627wall/19.640CPU-s de tick49.259wall/35.853CPU-s. Las guardas previas se conservan; queda costo residual de serialización y gateRED. Investigación de subárboles/diccionarios normales en CI aislado, no nueva promoción. RCA gzip nativa: stdlib0.98735CPU-s/isal0 0.17330, diferencia0.81405 insuficiente sola; no nueva dependencia. Caché de listas frozen compartidas en CI6.5105→5.334CPU-s con mismo JSON/hash; variante comprimida/key-bounds aún en investigación. PR617 congelado2c7f5bc2: memo comprimido4MiB/raw32MiB sólo de listas preopen inmutables compartidas;11regresiones nuevas. CI39024332118 conserva265449852bytes/hashfd6d957e... y CPUmed5.96625→4.92725s,58pruebasGREEN. Predeploy39024613945 en curso; nativo616 sigueRED.",
+      "detail": "Full audit248MB raw/4.6MB gzip: per-token compressor writes and duplicate envelope encoding caused excessive CPU. Bounded64KiB writes, single canonical payload pass, bounded C subtrees and exact type/Unicode/key/NaN/cycle/size/atomic checks preserve complete audit and hashes. Exact sample codec28.048→13.171 CPU seconds before final immutable empty-field optimization. Actualización nativa616: durable25.627wall/19.640CPU-s de tick49.259wall/35.853CPU-s. Las guardas previas se conservan; queda costo residual de serialización y gateRED. Investigación de subárboles/diccionarios normales en CI aislado, no nueva promoción. RCA gzip nativa: stdlib0.98735CPU-s/isal0 0.17330, diferencia0.81405 insuficiente sola; no nueva dependencia. Caché de listas frozen compartidas en CI6.5105→5.334CPU-s con mismo JSON/hash; variante comprimida/key-bounds aún en investigación. PR617 congelado2c7f5bc2: memo comprimido4MiB/raw32MiB sólo de listas preopen inmutables compartidas;11regresiones nuevas. CI39024332118 conserva265449852bytes/hashfd6d957e... y CPUmed5.96625→4.92725s,58pruebasGREEN. Predeploy39024613945 en curso; nativo616 sigueRED. #617 terminóPredeployRED por prueba single-flight; reemplazado sinmerge por618/5cb66323. Runtimeidéntico entre ambos; corrección sólo de sincronización de esa prueba, causal y10repeticiones verificadas. Predeploy61839025705021 pendiente.",
       "test": "tests/test_rc6_shadow_streaming_cost.py;tests/test_rc6_shadow_shared_audit.py",
       "status": "NATIVE_RESIDUAL_SERIALIZATION_CPU_19_640_FIX_FORWARD_PENDING",
-      "code_state": "617_FROZEN_PREDEPLOY_PENDING",
+      "code_state": "618_FROZEN_PREDEPLOY_PENDING",
       "runtime_occurrence": "OBSERVED_NATIVE_PHASE_TIMINGS_39013855958",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39013855958",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
@@ -870,10 +870,10 @@
       "path": "rc6_shadow_runtime/worker.py",
       "symbol": "run_worker",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "Cold preopen unnecessarily computed and discarded a full plan; previous full report remained live during next tick. Before full-cardinality peak875968KiB then warm CATALOG_FULL transform budget failure. Freeze-only and explicit post-log report release verified causally, plus immutable equal rank rows share storage and planner reads verified freeze without cloning it. PR617 libera además referencias locales sin uso antes de serializar; control de catálogo inline14611 en512MiB/.75CPU, dos cortes20.895/16.584s, ExitCode0/OOMKilledfalse. No equivale a estrés Droplet.",
+      "detail": "Cold preopen unnecessarily computed and discarded a full plan; previous full report remained live during next tick. Before full-cardinality peak875968KiB then warm CATALOG_FULL transform budget failure. Freeze-only and explicit post-log report release verified causally, plus immutable equal rank rows share storage and planner reads verified freeze without cloning it. PR617 libera además referencias locales sin uso antes de serializar; control de catálogo inline14611 en512MiB/.75CPU, dos cortes20.895/16.584s, ExitCode0/OOMKilledfalse. No equivale a estrés Droplet. #617 terminóPredeployRED por prueba single-flight; reemplazado sinmerge por618/5cb66323. Runtimeidéntico entre ambos; corrección sólo de sincronización de esa prueba, causal y10repeticiones verificadas. Predeploy61839025705021 pendiente.",
       "test": "tests/test_rc6_shadow_report_lifetime.py",
       "status": "PREDEPLOY39002866893_GREEN_RUNTIME_ACCEPTANCE_BLOCKED_NATIVE_FRESHNESS",
-      "code_state": "617_FROZEN_PREDEPLOY_PENDING",
+      "code_state": "618_FROZEN_PREDEPLOY_PENDING",
       "runtime_occurrence": "LOCAL_CAUSAL_REPRO_MATCHES_NATIVE_ERROR_STAGE",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
@@ -915,14 +915,29 @@
       "path": "scripts/rc6_postdeploy_stress.py",
       "symbol": "full_catalog_replay",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "Permanent generated14611identity/9902catalog-capability READY fixture with long symbols, no prices/providers. RED peak550060KiB then RED freshness gap160.443s preserved. Final two committed cuts31.127/26.448s, actual30s poll, total87.949s and446072KiB. Same case runs in Predeploy and inline before405minute/eight-group native isolated stress, without pytest parent beside large worker. Process RSS is distinct from the native container memory cap; no native stress claim. Control39024139298 mantuvo58PASS+1SIGKILL de hijo pytest, OOM no confirmado. Mismo SHA617 pasó control inline39024332118 en512MiB/.75CPU, edad67.723483<=101.79s, sinOOM. Test automático permanece en Predeploy y nuevo archivo compartido se agrega a publication_io_identity. Fullstressnativo no ejecutado.",
+      "detail": "Permanent generated14611identity/9902catalog-capability READY fixture with long symbols, no prices/providers. RED peak550060KiB then RED freshness gap160.443s preserved. Final two committed cuts31.127/26.448s, actual30s poll, total87.949s and446072KiB. Same case runs in Predeploy and inline before405minute/eight-group native isolated stress, without pytest parent beside large worker. Process RSS is distinct from the native container memory cap; no native stress claim. Control39024139298 mantuvo58PASS+1SIGKILL de hijo pytest, OOM no confirmado. Mismo SHA617 pasó control inline39024332118 en512MiB/.75CPU, edad67.723483<=101.79s, sinOOM. Test automático permanece en Predeploy y nuevo archivo compartido se agrega a publication_io_identity. Fullstressnativo no ejecutado. Control61839025376522 y byte-readback39025796758:dos cortes22.332/17.547s, edad70.075836<=104.664s, picoRSS458948KiB, contenedor512MiB/.75CPU/Exit0/noOOM. No estrésnativo.",
       "test": "tests/test_rc6_shadow_full_catalog.py",
       "status": "NATIVE_STRESS_NOT_EXECUTED_GENERATION_GATE_RED",
-      "code_state": "EN_GITHUB_F167_FROZEN",
+      "code_state": "618_FROZEN_PREDEPLOY_PENDING",
       "runtime_occurrence": "LOCAL_FULL_PIPELINE_RESOURCE_AND_FRESHNESS_GUARD",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39013855958",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "CI-SINGLE-FLIGHT-UNOBSERVED-RELEASE",
+      "capability": "REAL_PROCESS_SINGLE_FLIGHT_TEST",
+      "path": "tests/test_issue465_budget_adversarial.py",
+      "symbol": "test_shared_book_single_flight_has_no_duplicate_fetch_across_real_processes",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Predeploy617 ran3928cases with one failure: ownerSTATE_UNAVAILABLE/followerEXIT_DEADLINE. Positive test released owner after15ms before observing follower bootstrap/join. Controlled SQLite read-snapshot interleaving reproduced both failures, ownerOperationalError/SQLITE_BUSY5 and followerdeadline, with onefetch; actual failed run was not transaction-instrumented. Fix only test choreography: two initialized clients and a genuine read-only follower poll after its waiting transaction commits, then release owner. Same runtime/budget module/deadlines unchanged. CI39025376522/byte-readback39025796758:100budgetcases+58publication+10processrepeats,12JUnitXML,0FAIL/ERROR/SKIP. New frozen618 awaits full Predeploy.",
+      "test": "tests/test_issue465_budget_adversarial.py",
+      "status": "VERIFICADO_CI_HARNESS_FIX_PREDEPLOY618_PENDIENTE",
+      "code_state": "618_FROZEN_PREDEPLOY_PENDING",
+      "runtime_occurrence": "CI_TEST_CHOREOGRAPHY_DEFECT; NOT_A_PRODUCTION_BUDGET_CHANGE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39025796758",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Any duplicate fetch, changed deadline/budget, missing actual follower join, or full Predeploy/native adversary failure reopens this test finding."
     }
   ],
   "candidate_sha": "7bad982559f56323c00f555f0d8bb480dd00dfd0",
@@ -1444,178 +1459,190 @@
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
   },
   "next_candidate": {
-    "state": "FROZEN_AWAITING_EXACT_PREDEPLOY_V2",
-    "source_sha": "2c7f5bc22057bb5ffbd37ce636d0da3fe30da5af",
-    "tree": "96441086e67e89353f918a4d160f70c26303276b",
-    "branch": "work/rc6-603-shared-audit-persist-20261017",
-    "changes": [
-      "COMPRESSED_PASS_LOCAL_SHARED_IMMUTABLE_PREOPEN_ROWS",
-      "RELEASE_UNUSED_TICK_LOCALS_BEFORE_DURABLE_WRITE"
-    ],
-    "dependencies_changed": false,
-    "standard_gzip": true,
-    "resources_unchanged": true,
+    "sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+    "tree": "2f1825afed2417e4d4d7a8f003fecc009708921f",
+    "branch": "work/rc6-603-shared-audit-sync-20261017",
     "frozen": true,
+    "state": "FROZEN_PREDEPLOY_V2_IN_PROGRESS",
+    "base": "5d888cd64d9547397fac400829af05ab92baa3c4",
+    "runtime_source_identical_to_617": true,
+    "production_budget_module_changed": false,
+    "qualification_run": 39025376522,
+    "diagnostic_sha": "dbfec74040aa133ac199b78f4cd98ac3e103aafb",
+    "native_job_present": false,
     "certified": false,
     "deployed": false,
-    "qualification_run": 39024332118,
-    "qualification_diagnostic_sha": "58cdc0b73f85cdad7743f26029ed0fb1df008f61",
-    "qualification_environment": "ISOLATED_CI_NOT_DROPLET",
-    "native_job_present": false,
-    "qualification_history": [
-      {
-        "run": 39024139298,
-        "job": 117371697263,
-        "diagnostic_sha": "f5f0dde544852bc91e87be436c0ef8ded9761ca4",
-        "state": "RED_58_PASS_1_FULL_CATALOG_CHILD_SIGKILL",
-        "first_cut": {
-          "tick_seconds": 22.686,
-          "tick_cpu_seconds": 16.063,
-          "durable_seconds": 9.369,
-          "durable_cpu_seconds": 6.545
-        },
-        "second_cut": "NO_RECEIPT_CHILD_RETURN_MINUS9",
-        "oom_kill": "NOT_INDEPENDENTLY_PROVEN_CONTAINER_REMOVED",
-        "full_catalog_test_shape": "PYTEST_PARENT_AND_WORKER_SUBPROCESS_IN_ONE_512MIB_CGROUP; TMPFS_AND_NEW_BYTECODE_CACHE",
-        "benchmark": "SKIPPED",
-        "artifact_id": 12097746672,
-        "artifact_zip_sha256": "65a5266263d489782c2a9b9b90053c88f3c28163ed635984771d6f45bdec4b2a"
-      }
-    ],
-    "qualification_process_control": "FUNCTIONAL_TESTS_THEN_INLINE_FULL_CATALOG_NO_PYTEST_PARENT; NATIVE_TMPFS512MIB; NO_BYTECODE_WRITES; SAME_SOURCE_AND_CGROUP_512MIB_075CPU; INSPECT_OOM_STATE",
-    "qualification_control_state": "GREEN_INLINE_TWO_CUTS_EXACT_BYTES",
+    "frozen_at": "2026-10-17T10:38:47.998Z",
+    "source_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+    "pr": 618,
+    "predeploy_run": 39025705021,
+    "predeploy_job": 117376149710,
+    "predeploy_state": "IN_PROGRESS",
     "development_qualification": {
-      "run": 39024332118,
-      "job": 117372243934,
-      "candidate": "2c7f5bc22057bb5ffbd37ce636d0da3fe30da5af",
+      "run": 39025376522,
+      "job": 117375247054,
+      "candidate": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+      "causal": {
+        "droplet_accessed": false,
+        "fetch_count": 1,
+        "follower": {
+          "result": "PPI_BOOK_EXIT_DEADLINE_EXCEEDED",
+          "role": "follower"
+        },
+        "injected_bootstrap_read_snapshot": true,
+        "owner": {
+          "cause_class": "OperationalError",
+          "result": "PPI_BUDGET_STATE_UNAVAILABLE",
+          "role": "owner",
+          "sqlite_errorcode": 5
+        },
+        "production_budget_code_changed": false,
+        "production_data_mounted": false,
+        "real_orders_sent": 0,
+        "schema": "rc6.single-flight-bootstrap-control.v1",
+        "status": "EXPECTED_FAIL_CLOSED"
+      },
       "cuts": [
         {
-          "as_of": "2026-10-05T13:20:00.000152+00:00",
-          "computed_report_sha256": "b54cec8ea38841aa86a2d1eee110b0bea723278f3b79f44542ad7de519048d65",
-          "freshness_budget_seconds": 101.78999999999999,
-          "generation_id": "777625f25d6f80629bd3c7d62183f66aee47303fccfce77f717732506c8dbd29",
-          "manifest_sha256": "ba36b336a5ed83767fb7a3871c91f97f6df79d5604e3d2d33b574746d62566c0",
-          "sequence": 1791206400000152,
-          "tick_seconds": 20.895,
+          "as_of": "2026-10-05T13:20:00.000151+00:00",
+          "computed_report_sha256": "77dcce34d925094e8b1d7801c91f66ff85a3ad9f1673078a62544cd6ab5ee364",
+          "freshness_budget_seconds": 104.664,
+          "generation_id": "b1ca458558dbd8551d43de6485f3332395696bc7639e4b118be5c443a1fb8874",
+          "manifest_sha256": "ddc60382b25aac6326367f7d38d236c956f51f728959b228e31f2626e818c234",
+          "sequence": 1791206400000151,
+          "tick_seconds": 22.332,
           "worker_timing": {
             "poll_seconds": 30,
             "stages_cpu_seconds": {
-              "durable_serialization": 5.892,
+              "durable_serialization": 6.511,
               "economic_exit_lab": 0.005,
-              "entry_signal_lab": 0.001,
-              "family_routing": 1.631,
-              "operational_funnel": 2.841,
-              "planner_pipeline": 1.193,
-              "preopen": 3.33,
+              "entry_signal_lab": 0.002,
+              "family_routing": 1.762,
+              "operational_funnel": 2.911,
+              "planner_pipeline": 1.191,
+              "preopen": 3.415,
               "state_and_inputs": 0.032
             },
             "stages_seconds": {
-              "durable_serialization": 8.253,
-              "economic_exit_lab": 0.03,
-              "entry_signal_lab": 0.001,
-              "family_routing": 2.156,
-              "operational_funnel": 4.069,
-              "planner_pipeline": 1.594,
-              "preopen": 4.758,
+              "durable_serialization": 9.268,
+              "economic_exit_lab": 0.029,
+              "entry_signal_lab": 0.002,
+              "family_routing": 2.337,
+              "operational_funnel": 4.197,
+              "planner_pipeline": 1.591,
+              "preopen": 4.876,
               "state_and_inputs": 0.032
             },
-            "tick_cpu_seconds": 14.926,
-            "tick_seconds": 20.895
+            "tick_cpu_seconds": 15.827,
+            "tick_seconds": 22.332
           }
         },
         {
-          "as_of": "2026-10-05T13:20:51.085415+00:00",
-          "computed_report_sha256": "4e19acd4dd6798b9abde5769a3368bca19741be89362f391dd2a30d4f61a9c79",
-          "freshness_budget_seconds": 93.168,
-          "generation_id": "716f138714db3bf6d2a4a59e529ef1d94bc317c295798294d0f759ddf2703cee",
-          "manifest_sha256": "8af5f54d0e11ce43f0e49d4758baddcb1aabccae4913534436cd1bb14b002e26",
-          "previous_cut_age_seconds": 67.723483,
-          "previous_cut_freshness_budget_seconds": 101.78999999999999,
-          "sequence": 1791206451085415,
-          "tick_seconds": 16.584,
+          "as_of": "2026-10-05T13:20:52.433490+00:00",
+          "computed_report_sha256": "7c34aed96feba0070faa74dbe50a5234e09adec447a4e5633385dfbcb65dcd1a",
+          "freshness_budget_seconds": 95.094,
+          "generation_id": "ed9a0e57592c326d3d34ce54a6e19aa3ff52a2727980cdfd95ea5e11a80a51b7",
+          "manifest_sha256": "fdb3f9139531db216c19aedec99a75f58c95b9780895d31a27457b0903dc73c4",
+          "previous_cut_age_seconds": 70.075836,
+          "previous_cut_freshness_budget_seconds": 104.664,
+          "sequence": 1791206452433490,
+          "tick_seconds": 17.547,
           "worker_timing": {
             "poll_seconds": 30,
             "stages_cpu_seconds": {
-              "durable_serialization": 5.747,
+              "durable_serialization": 6.383,
               "economic_exit_lab": 0.002,
               "entry_signal_lab": 0.002,
-              "family_routing": 1.712,
-              "operational_funnel": 1.993,
-              "planner_pipeline": 1.213,
-              "preopen": 1.143,
-              "state_and_inputs": 0.64
+              "family_routing": 1.81,
+              "operational_funnel": 1.978,
+              "planner_pipeline": 1.245,
+              "preopen": 1.12,
+              "state_and_inputs": 0.631
             },
             "stages_seconds": {
-              "durable_serialization": 7.672,
+              "durable_serialization": 8.509,
               "economic_exit_lab": 0.002,
               "entry_signal_lab": 0.002,
-              "family_routing": 2.286,
-              "operational_funnel": 2.668,
-              "planner_pipeline": 1.614,
-              "preopen": 1.517,
-              "state_and_inputs": 0.822
+              "family_routing": 2.41,
+              "operational_funnel": 2.653,
+              "planner_pipeline": 1.67,
+              "preopen": 1.47,
+              "state_and_inputs": 0.83
             },
-            "tick_cpu_seconds": 12.452,
-            "tick_seconds": 16.584
+            "tick_cpu_seconds": 13.172,
+            "tick_seconds": 17.547
           }
         }
       ],
       "measurements": [
         {
-          "cpu_seconds": 6.0151,
+          "cpu_seconds": 6.6624,
           "mode": "baseline",
-          "peak_rss_kib": 382120,
+          "peak_rss_kib": 382564,
           "raw_bytes": 265449852,
-          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "raw_sha256": "72fe735e809e3757e1854209b9c988f028d0b1955bb787d92bc39dff8908b371",
           "round": 0,
-          "wall_seconds": 8.3171
+          "wall_seconds": 9.2744
         },
         {
-          "cpu_seconds": 4.9398,
+          "cpu_seconds": 5.4508,
           "mode": "compressed_owned",
-          "peak_rss_kib": 382120,
+          "peak_rss_kib": 382564,
           "raw_bytes": 265449852,
-          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "raw_sha256": "72fe735e809e3757e1854209b9c988f028d0b1955bb787d92bc39dff8908b371",
           "round": 0,
-          "wall_seconds": 7.0658
+          "wall_seconds": 7.5836
         },
         {
-          "cpu_seconds": 5.9174,
+          "cpu_seconds": 6.567,
           "mode": "baseline",
-          "peak_rss_kib": 382120,
+          "peak_rss_kib": 382564,
           "raw_bytes": 265449852,
-          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "raw_sha256": "72fe735e809e3757e1854209b9c988f028d0b1955bb787d92bc39dff8908b371",
           "round": 1,
-          "wall_seconds": 8.1971
+          "wall_seconds": 9.0719
         },
         {
-          "cpu_seconds": 4.9147,
+          "cpu_seconds": 5.4157,
           "mode": "compressed_owned",
-          "peak_rss_kib": 382120,
+          "peak_rss_kib": 382564,
           "raw_bytes": 265449852,
-          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "raw_sha256": "72fe735e809e3757e1854209b9c988f028d0b1955bb787d92bc39dff8908b371",
           "round": 1,
-          "wall_seconds": 6.5396
+          "wall_seconds": 7.2153
         }
       ],
       "medians": {
-        "baseline": 5.9662500000000005,
-        "compressed_owned": 4.92725
+        "baseline": 6.6147,
+        "compressed_owned": 5.43325
       },
       "dockerState": {
+        "ExitCode": 0,
         "OOMKilled": false,
-        "ExitCode": 0
+        "Status": "exited"
       },
-      "artifact_id": 12098410650,
-      "artifact_zip_sha256": "85506e327c3497f1158914b2c5ee34681e7b92850f43fe8bda84de7ddfc194c6",
-      "junit_cases": 58,
-      "junit_failures": 0,
-      "junit_errors": 0,
-      "junit_skipped": 0
+      "repeat_guard": "RC6_SINGLE_FLIGHT_REPEAT=GREEN|repeats=10",
+      "final_guard": "RC6_SHARED_AUDIT_CANDIDATE=GREEN|testcases=58|measurements=4",
+      "artifact_id": 12098526003,
+      "artifact_zip_sha256": "e46e09e80f4213bd7b898e439cca679e9128d0a3f06069fe34cb98ffd89867c6"
     },
-    "pr": 617,
-    "predeploy_run": 39024613945,
-    "predeploy_state": "IN_PROGRESS"
+    "development_readback": {
+      "run": 39025796758,
+      "job": 117376428207,
+      "state": "GREEN",
+      "receipt_path": "docs/releases/evidence603/shared-audit-development-39025376522.json",
+      "sha256": "53d5c06377d8889aead1f75f366ccf18e8f24f59b3e3a8c34e2e48c7e1d759e5",
+      "bytes": 9058,
+      "git_byte_readback_verified": true,
+      "budget_cases": 100,
+      "publication_cases": 58,
+      "actual_process_repetitions": 10,
+      "junit_xml_count": 12,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "full_catalog_peak_rss_kib": 458948
+    }
   },
   "latest_deploy_result": {
     "run": 39013855958,
@@ -2453,7 +2480,7 @@
     ],
     "native_acceptance": false
   },
-  "updated_at": "2026-10-17T10:22:21.975Z",
+  "updated_at": "2026-10-17T10:42:10.021Z",
   "previous_deploy_result_613": {
     "run": 39003668897,
     "job": 117311624166,
@@ -2867,7 +2894,7 @@
     "canonical_bytes_identical": true,
     "promoted": false
   },
-  "receipt_count": 133,
+  "receipt_count": 134,
   "native_serialization_fast_bound_experiment": {
     "run": 39023354447,
     "job": 117369424731,
@@ -2886,5 +2913,153 @@
     "promoted": false,
     "decision": "OMIT_FAST_BOUNDS_SMALL_INCREMENTAL_GAIN",
     "native_acceptance": false
+  },
+  "failed_predeploy_617": {
+    "run": 39024613945,
+    "job": 117373035553,
+    "sha": "2c7f5bc22057bb5ffbd37ce636d0da3fe30da5af",
+    "state": "RED",
+    "discovered": 3928,
+    "executed": 3928,
+    "failures": 1,
+    "errors": 0,
+    "skipped": 0,
+    "xfail": 0,
+    "exclusions": 1,
+    "failing_case": "tests/test_issue465_budget_adversarial.py::test_shared_book_single_flight_has_no_duplicate_fetch_across_real_processes",
+    "owner_result": "PPI_BUDGET_STATE_UNAVAILABLE",
+    "follower_result": "PPI_BOOK_EXIT_DEADLINE_EXCEEDED",
+    "artifact_id": 12098725428,
+    "artifact_zip_sha256": "daebcabfe77e8802973132f47acb95c6bce5adcf93b3171c8a6807ccd9177f2f",
+    "image_built": false,
+    "merged": false,
+    "deployed": false,
+    "frozen_unchanged": true,
+    "development_qualification": {
+      "run": 39024332118,
+      "job": 117372243934,
+      "candidate": "2c7f5bc22057bb5ffbd37ce636d0da3fe30da5af",
+      "cuts": [
+        {
+          "as_of": "2026-10-05T13:20:00.000152+00:00",
+          "computed_report_sha256": "b54cec8ea38841aa86a2d1eee110b0bea723278f3b79f44542ad7de519048d65",
+          "freshness_budget_seconds": 101.78999999999999,
+          "generation_id": "777625f25d6f80629bd3c7d62183f66aee47303fccfce77f717732506c8dbd29",
+          "manifest_sha256": "ba36b336a5ed83767fb7a3871c91f97f6df79d5604e3d2d33b574746d62566c0",
+          "sequence": 1791206400000152,
+          "tick_seconds": 20.895,
+          "worker_timing": {
+            "poll_seconds": 30,
+            "stages_cpu_seconds": {
+              "durable_serialization": 5.892,
+              "economic_exit_lab": 0.005,
+              "entry_signal_lab": 0.001,
+              "family_routing": 1.631,
+              "operational_funnel": 2.841,
+              "planner_pipeline": 1.193,
+              "preopen": 3.33,
+              "state_and_inputs": 0.032
+            },
+            "stages_seconds": {
+              "durable_serialization": 8.253,
+              "economic_exit_lab": 0.03,
+              "entry_signal_lab": 0.001,
+              "family_routing": 2.156,
+              "operational_funnel": 4.069,
+              "planner_pipeline": 1.594,
+              "preopen": 4.758,
+              "state_and_inputs": 0.032
+            },
+            "tick_cpu_seconds": 14.926,
+            "tick_seconds": 20.895
+          }
+        },
+        {
+          "as_of": "2026-10-05T13:20:51.085415+00:00",
+          "computed_report_sha256": "4e19acd4dd6798b9abde5769a3368bca19741be89362f391dd2a30d4f61a9c79",
+          "freshness_budget_seconds": 93.168,
+          "generation_id": "716f138714db3bf6d2a4a59e529ef1d94bc317c295798294d0f759ddf2703cee",
+          "manifest_sha256": "8af5f54d0e11ce43f0e49d4758baddcb1aabccae4913534436cd1bb14b002e26",
+          "previous_cut_age_seconds": 67.723483,
+          "previous_cut_freshness_budget_seconds": 101.78999999999999,
+          "sequence": 1791206451085415,
+          "tick_seconds": 16.584,
+          "worker_timing": {
+            "poll_seconds": 30,
+            "stages_cpu_seconds": {
+              "durable_serialization": 5.747,
+              "economic_exit_lab": 0.002,
+              "entry_signal_lab": 0.002,
+              "family_routing": 1.712,
+              "operational_funnel": 1.993,
+              "planner_pipeline": 1.213,
+              "preopen": 1.143,
+              "state_and_inputs": 0.64
+            },
+            "stages_seconds": {
+              "durable_serialization": 7.672,
+              "economic_exit_lab": 0.002,
+              "entry_signal_lab": 0.002,
+              "family_routing": 2.286,
+              "operational_funnel": 2.668,
+              "planner_pipeline": 1.614,
+              "preopen": 1.517,
+              "state_and_inputs": 0.822
+            },
+            "tick_cpu_seconds": 12.452,
+            "tick_seconds": 16.584
+          }
+        }
+      ],
+      "measurements": [
+        {
+          "cpu_seconds": 6.0151,
+          "mode": "baseline",
+          "peak_rss_kib": 382120,
+          "raw_bytes": 265449852,
+          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "round": 0,
+          "wall_seconds": 8.3171
+        },
+        {
+          "cpu_seconds": 4.9398,
+          "mode": "compressed_owned",
+          "peak_rss_kib": 382120,
+          "raw_bytes": 265449852,
+          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "round": 0,
+          "wall_seconds": 7.0658
+        },
+        {
+          "cpu_seconds": 5.9174,
+          "mode": "baseline",
+          "peak_rss_kib": 382120,
+          "raw_bytes": 265449852,
+          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "round": 1,
+          "wall_seconds": 8.1971
+        },
+        {
+          "cpu_seconds": 4.9147,
+          "mode": "compressed_owned",
+          "peak_rss_kib": 382120,
+          "raw_bytes": 265449852,
+          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "round": 1,
+          "wall_seconds": 6.5396
+        }
+      ],
+      "medians": {
+        "baseline": 5.9662500000000005,
+        "compressed_owned": 4.92725
+      },
+      "dockerState": {
+        "OOMKilled": false,
+        "ExitCode": 0
+      }
+    },
+    "pr": 617,
+    "closed_without_merge": true,
+    "superseded_by": 618
   }
 }

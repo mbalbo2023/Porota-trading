@@ -1,7 +1,7 @@
 {
   "schema": "rc6.causal-receipts.v1",
   "workstream": "WS-RC6-AUDIT-REMEDIATION-20261016",
-  "note": "Raw causal RED/GREEN receipts are retained; local checks are never claims of full Droplet stress or actual market acceptance. Native Predeploy certificate applies only to its exact candidate.\nLa RCA numérica39020921103 se conserva con bytes idénticos a la salida codificada del productor y lectura posterior del blobGit. No hubo hash local adicional ni fullstress; el payload productivo no se exporta.",
+  "note": "Raw causal RED/GREEN receipts are retained; local checks are never claims of full Droplet stress or actual market acceptance. Native Predeploy certificate applies only to its exact candidate.\nLa RCA numérica39020921103 se conserva con bytes idénticos a la salida codificada del productor y lectura posterior del blobGit. No hubo hash local adicional ni fullstress; el payload productivo no se exporta.\nShared-audit development receipt9058bytes is identical to producer-base64 bytes after Git blob readback; ZIP e46e09e8... actually downloaded/hashed in CI39025796758, twelve JUnit XML parsed; this proves isolated development only. Four canonical files still await offline filesystem writeback.",
   "receipts": [
     {
       "path": "docs/releases/evidence603/issue603-before.xml",
@@ -1050,6 +1050,17 @@
       "source": "READ_ONLY_NATIVE_RCA_RUN39020921103_JOB117362618438; NOT_FULL_STRESS; HASHED_SOURCE_ONLY; RESTORE_GREEN",
       "bytes": 7385,
       "sha256": "139fdfac084c34007e17d143c8109748d6b885a69ed76b6c5908af104aeb5d4a"
+    },
+    {
+      "path": "docs/releases/evidence603/shared-audit-development-39025376522.json",
+      "source": "EXACT_CI_ARTIFACT_BYTE_READBACK_RUN39025796758_JOB117376428207; NOT_NATIVE_ACCEPTANCE_OR_FULL_STRESS",
+      "bytes": 9058,
+      "sha256": "53d5c06377d8889aead1f75f366ccf18e8f24f59b3e3a8c34e2e48c7e1d759e5",
+      "junit_xmls": 12,
+      "cases": 168,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
     }
   ]
 }
