@@ -125,7 +125,7 @@ jobs:
 
   watch:
     needs: contracts
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     env:
@@ -282,7 +282,7 @@ jobs:
           for k in ("schema","integrity","error_class","error_reason","worker_status","source_sha","candidate_tree_sha","as_of"):
               v=g.get(k)
               if type(v) is str and re.fullmatch(r"[A-Za-z0-9_.:+-]{1,100}",v): keep[k]=v
-          for k in ("age_seconds","liveness_budget_seconds","generation_tick_seconds","native_sql_elapsed_ms","native_transform_elapsed_ms"):
+          for k in ("age_seconds","liveness_budget_seconds","generation_tick_seconds","native_sql_elapsed_ms","native_transform_elapsed_ms","computed_report_raw_bytes","computed_report_compressed_bytes"):
               v=g.get(k)
               if type(v) in (int,float) and math.isfinite(v) and 0<=v<=1000000: keep[k]=v
           print("RC6_GENERATION_DIAGNOSTIC="+json.dumps(keep,sort_keys=True,separators=(",",":")))
@@ -570,7 +570,7 @@ jobs:
 
   profile:
     needs: contracts
-    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
+    if: false # One bounded native READ_ONLY sample; no repeat of resource fixtures.
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:

@@ -763,6 +763,11 @@ def _committed_generation_receipt():
   root=db.parent/"artifacts"/db.name
   cut=read_committed_generation(root/"dynamic-shadow",payload_limit=4*1024**2,require_current_status=True)
   status=cut["status"]; pointer=cut["pointer"]
+  audit=cut.get("report",{}).get("computed_report",{})
+  if isinstance(audit,dict):
+   for key,target,limit in (("raw_bytes","computed_report_raw_bytes",512*1024**2),("compressed_bytes","computed_report_compressed_bytes",128*1024**2)):
+    value=audit.get(key)
+    if type(value) is int and 0<=value<=limit:receipt[target]=value
   captured=datetime.now(timezone.utc)
   stamp=datetime.fromisoformat(status["as_of"].replace("Z","+00:00"))
   budget,authority=generation_budget(status)
@@ -812,7 +817,7 @@ def _committed_generation_receipt():
     value=source.get(key)
     receipt[key]=value if isinstance(value,str) and re.fullmatch("[0-9a-f]{40}",value) else None
  except Exception as exc:
-  receipt={key:value for key,value in receipt.items() if key in {"schema","integrity","read_only","as_of","age_seconds","liveness_budget_seconds","generation_tick_seconds"}}
+  receipt={key:value for key,value in receipt.items() if key in {"schema","integrity","read_only","as_of","age_seconds","liveness_budget_seconds","generation_tick_seconds","computed_report_raw_bytes","computed_report_compressed_bytes"}}
   receipt.update(integrity="UNVERIFIED",error_class=type(exc).__name__)
   allowed_reasons={"GENERATION_CLOCK_UNVERIFIED","GENERATION_FRESHNESS_UNVERIFIED","GENERATION_HASH_UNVERIFIED","GENERATION_AUTHORITY_UNVERIFIED","GENERATION_WORKER_STATE_UNVERIFIED","GENERATION_SAFETY_UNVERIFIED","COMMITTED_GENERATION_MISSING","GENERATION_PATH_INVALID","GENERATION_CUT_MISSING","GENERATION_ENVELOPE_MISMATCH","GENERATION_MEMBER_MISMATCH","GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS","SHADOW_EVIDENCE_DIGEST_MISMATCH","SHADOW_PAYLOAD_LIMIT"}
   if type(exc) is ValueError and str(exc) in allowed_reasons:receipt["error_reason"]=str(exc)
