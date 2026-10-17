@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "PR612_PREDEPLOY_PENDING_CATALOG_INDEX_AND_OWNED_DIGEST_FIX",
+  "release_state": "DEPLOY612_BUNDLE_INSTALLED_RUNTIME_ACCEPTANCE_PENDING",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -14,8 +14,8 @@
     "issue471": 6225616632,
     "issue473": 6225616839,
     "deploy_owner": "ACQUIRED",
-    "deploy_owner_issue471": 6228003693,
-    "deploy_owner_issue473": 6228003826
+    "deploy_owner_issue471": 6228525290,
+    "deploy_owner_issue473": 6228525416
   },
   "findings": [
     {
@@ -694,10 +694,10 @@
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
     }
   ],
-  "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
-  "candidate_tree": "7600f6ebb1430490f9fa41c8118ddd5188f3080a",
-  "predeploy_run": 38981525324,
-  "predeploy_state": "SUCCESS",
+  "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
+  "candidate_tree": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6",
+  "predeploy_run": 38994512568,
+  "predeploy_state": "SUCCESS_INDEPENDENTLY_VERIFIED",
   "monitor_merge_sha": "5a87538d3816601a4fddf4aaafc975b4ebc674d7",
   "latest_readonly": {
     "run_id": 38987351472,
@@ -719,9 +719,9 @@
     "skipped": 0,
     "junit_sha256": "1cca94530e343a508407a63552464c9dc304e87787978c6236a27cf85fdd4840"
   },
-  "deploy_merge_sha": "559151ff63e0a32726b8f8cc80a4c2630618d732",
-  "deploy_run": 38994065356,
-  "current_productive_base": "559151ff63e0a32726b8f8cc80a4c2630618d732",
+  "deploy_merge_sha": "74dd18e697e987747384eb419dc953257003cdb1",
+  "deploy_run": 38995165551,
+  "current_productive_base": "74dd18e697e987747384eb419dc953257003cdb1",
   "deploy_attempts": [
     {
       "run": 38981124467,
@@ -1000,6 +1000,49 @@
         }
       ],
       "not_a_droplet_acceptance_or_stress_result": true
+    },
+    {
+      "schema": "rc6.frozen-artifact-independent-verification.v2",
+      "status": "GREEN",
+      "artifact_id": 12086687961,
+      "predeploy_run": 38994512568,
+      "zip_bytes": 414252340,
+      "zip_sha256": "e4fa7af36bf2352d1361cbab757afe0712eeb14dce875d592818e7e72db088f2",
+      "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
+      "candidate_tree_sha": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6",
+      "image_id": "sha256:af9394bc485de5f86f6d57063b050d6a13b5119a49bfbc63c7315d69d4315bb3",
+      "image_size_bytes": 1175003476,
+      "image_tar_sha256": "5dd286938a31abfd1c48e682efd0883783e966b114dd4e560a74eab3b78cda6d",
+      "bundle_sha256": "56ea4f2cbc88c8a52d23c41d97f6e2164f734fc18e7c5920f9b01a4505627f8f",
+      "bundle_hashes_verified": 507,
+      "all_bundle_sources_equal_checkout": true,
+      "image_config_blob_sha256_verified": "af9394bc485de5f86f6d57063b050d6a13b5119a49bfbc63c7315d69d4315bb3",
+      "source_environment_observed": {
+        "POROTA_BUILD_SHA": "19c26d2eba13d5855f653dff67605d11c518996b",
+        "POROTA_CANDIDATE_TREE_SHA": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6"
+      },
+      "tests": {
+        "discovered": 3788,
+        "errors": 0,
+        "exclusions": [
+          "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+        ],
+        "executed": 3788,
+        "failures": 0,
+        "pytest_exit_code": 0,
+        "schema_version": 1,
+        "scope": "repository-root automatic pytest discovery",
+        "skipped": 0,
+        "status": "GREEN",
+        "xfail": 0
+      },
+      "native_privilege_properties": [
+        {
+          "name": "RC6_PRECLEAN_PRIVILEGE_BOUNDARY",
+          "value": "OS_DIFFERENT_UID"
+        }
+      ],
+      "not_a_droplet_acceptance_or_stress_result": true
     }
   ],
   "drain_causal_tests": {
@@ -1020,30 +1063,30 @@
   "predeploy_certificate": {
     "schema": "rc6.frozen-artifact-independent-verification.v2",
     "status": "GREEN",
-    "artifact_id": 12084844028,
-    "predeploy_run": 38990671984,
-    "zip_bytes": 414179553,
-    "zip_sha256": "d628220f3fc6b1104fb56d303cb832716f934a33d23463190443c6c52614ab56",
-    "candidate_sha": "4e2bddc2c1c15ed0333301c4f462f790852a3a17",
-    "candidate_tree_sha": "8d23feb520ac7a983bb4091a02b7a5e479885681",
-    "image_id": "sha256:34bf2907f2209d82cf132362fad30a9a4a44c70639ee38dfaa65d5548e2378f7",
-    "image_size_bytes": 1174838978,
-    "image_tar_sha256": "ac7f6432f14c4161e74e6b128a7e0e8ba2963f0b371c10ea442f1208f4219dd9",
-    "bundle_sha256": "332971729c1525a3fd87fb5d736bb6354395d4236dcda0acf1c90ef97f58f7c2",
-    "bundle_hashes_verified": 506,
+    "artifact_id": 12086687961,
+    "predeploy_run": 38994512568,
+    "zip_bytes": 414252340,
+    "zip_sha256": "e4fa7af36bf2352d1361cbab757afe0712eeb14dce875d592818e7e72db088f2",
+    "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
+    "candidate_tree_sha": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6",
+    "image_id": "sha256:af9394bc485de5f86f6d57063b050d6a13b5119a49bfbc63c7315d69d4315bb3",
+    "image_size_bytes": 1175003476,
+    "image_tar_sha256": "5dd286938a31abfd1c48e682efd0883783e966b114dd4e560a74eab3b78cda6d",
+    "bundle_sha256": "56ea4f2cbc88c8a52d23c41d97f6e2164f734fc18e7c5920f9b01a4505627f8f",
+    "bundle_hashes_verified": 507,
     "all_bundle_sources_equal_checkout": true,
-    "image_config_blob_sha256_verified": "34bf2907f2209d82cf132362fad30a9a4a44c70639ee38dfaa65d5548e2378f7",
+    "image_config_blob_sha256_verified": "af9394bc485de5f86f6d57063b050d6a13b5119a49bfbc63c7315d69d4315bb3",
     "source_environment_observed": {
-      "POROTA_BUILD_SHA": "4e2bddc2c1c15ed0333301c4f462f790852a3a17",
-      "POROTA_CANDIDATE_TREE_SHA": "8d23feb520ac7a983bb4091a02b7a5e479885681"
+      "POROTA_BUILD_SHA": "19c26d2eba13d5855f653dff67605d11c518996b",
+      "POROTA_CANDIDATE_TREE_SHA": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6"
     },
     "tests": {
-      "discovered": 3764,
+      "discovered": 3788,
       "errors": 0,
       "exclusions": [
         "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
       ],
-      "executed": 3764,
+      "executed": 3788,
       "failures": 0,
       "pytest_exit_code": 0,
       "schema_version": 1,
@@ -1074,7 +1117,7 @@
     "oom_flag_after_recovery": false,
     "whole_workflow_conclusion": "FAILURE_EXPECTED_DEPLOY_SHA_MISMATCH_AFTER_REJECTED_PROMOTION"
   },
-  "current_deploy_stage": "PRETRANSFER_DIGEST_OVERPROTECTION",
+  "current_deploy_stage": "EXACT_ARTIFACT_LOADED_HOST_CONTROL_PLANE_PENDING",
   "external_backup_review": {
     "droplet_id": 594077619,
     "size": "s-1vcpu-1gb",
@@ -1125,7 +1168,7 @@
     "sha": "19c26d2eba13d5855f653dff67605d11c518996b",
     "tree": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6",
     "predeploy_run": 38994512568,
-    "status": "EN_GITHUB_PREDEPLOY_IN_PROGRESS"
+    "status": "MERGED_DEPLOY_IN_PROGRESS"
   },
   "latest_deploy_result": {
     "schema": "rc6.deploy-attempt-receipt.v1",
@@ -1167,30 +1210,30 @@
   "last_certified_candidate": {
     "schema": "rc6.frozen-artifact-independent-verification.v2",
     "status": "GREEN",
-    "artifact_id": 12086038677,
-    "predeploy_run": 38993352249,
-    "zip_bytes": 414223717,
-    "zip_sha256": "9a4a5b3d5fd7b218c709d94e8ce64817bdba6ecee0bd1cd10d0be0e3ec7b3275",
-    "candidate_sha": "65a0bf3173ac05b272e0bdb21523a20725764a70",
-    "candidate_tree_sha": "9313e330f3052a4abc0ca9fa270d30c92539251f",
-    "image_id": "sha256:af3547bc27bc11db8939ae8fd625ead6e89ffdb8cfc23e1193dbb7fe51ae5a92",
-    "image_size_bytes": 1174967828,
-    "image_tar_sha256": "532e7e74dffb77c68a98336031d971fe1462fa708cf4d4db3c9704f5ead44526",
-    "bundle_sha256": "9d2b860c2e57d1fd06ca9dff83d427174857b877568ae630f8fb334838c0e33b",
+    "artifact_id": 12086687961,
+    "predeploy_run": 38994512568,
+    "zip_bytes": 414252340,
+    "zip_sha256": "e4fa7af36bf2352d1361cbab757afe0712eeb14dce875d592818e7e72db088f2",
+    "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
+    "candidate_tree_sha": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6",
+    "image_id": "sha256:af9394bc485de5f86f6d57063b050d6a13b5119a49bfbc63c7315d69d4315bb3",
+    "image_size_bytes": 1175003476,
+    "image_tar_sha256": "5dd286938a31abfd1c48e682efd0883783e966b114dd4e560a74eab3b78cda6d",
+    "bundle_sha256": "56ea4f2cbc88c8a52d23c41d97f6e2164f734fc18e7c5920f9b01a4505627f8f",
     "bundle_hashes_verified": 507,
     "all_bundle_sources_equal_checkout": true,
-    "image_config_blob_sha256_verified": "af3547bc27bc11db8939ae8fd625ead6e89ffdb8cfc23e1193dbb7fe51ae5a92",
+    "image_config_blob_sha256_verified": "af9394bc485de5f86f6d57063b050d6a13b5119a49bfbc63c7315d69d4315bb3",
     "source_environment_observed": {
-      "POROTA_BUILD_SHA": "65a0bf3173ac05b272e0bdb21523a20725764a70",
-      "POROTA_CANDIDATE_TREE_SHA": "9313e330f3052a4abc0ca9fa270d30c92539251f"
+      "POROTA_BUILD_SHA": "19c26d2eba13d5855f653dff67605d11c518996b",
+      "POROTA_CANDIDATE_TREE_SHA": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6"
     },
     "tests": {
-      "discovered": 3784,
+      "discovered": 3788,
       "errors": 0,
       "exclusions": [
         "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
       ],
-      "executed": 3784,
+      "executed": 3788,
       "failures": 0,
       "pytest_exit_code": 0,
       "schema_version": 1,
@@ -1247,13 +1290,13 @@
       "2026-10-17T01:22:07.2856031Z Artifact porota-predeploy-v2-1fbae11682c6d9ded064226f296c7db18dccccf5 has been successfully uploaded! Final size is 414166126 bytes. Artifact ID is 12084822787"
     ]
   },
-  "latest_candidate_source_bundle_installed": false,
+  "latest_candidate_source_bundle_installed": true,
   "installed_runtime": {
-    "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
-    "image_id": "sha256:abf744a305a847ed922e7df2474f6d991f23d9abfb0a584b93930216c117dd54",
-    "validation_status": "DEPLOYED_VALIDATION_PENDING",
+    "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
+    "image_id": "sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f",
+    "validation_status": "PROMOTION_IN_PROGRESS_RUNTIME_NOT_YET_REACCEPTED",
     "critical_container_now_same_image": true,
-    "source_identity": "UNKNOWN_IMAGE_ENV_ABSENT",
+    "source_identity": "IMAGE_TAR_AND_HOST_BUNDLE_CONFIRMED_RUNTIME_SOURCE_PENDING",
     "real_orders_sent": 0,
     "full_stress_executed": false
   },
@@ -1265,5 +1308,27 @@
     "bundle_matches": 261,
     "parse_errors": 0,
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
+  },
+  "active_deploy": {
+    "run_id": 38995165551,
+    "job_id": 117286013260,
+    "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
+    "merge_sha": "74dd18e697e987747384eb419dc953257003cdb1",
+    "conclusion": null,
+    "status": "IN_PROGRESS",
+    "preclean": "SUCCESS",
+    "drain": "SUCCESS",
+    "transfer": "SUCCESS",
+    "bundle_files": 507,
+    "pretransfer_available_bytes": 6971023360,
+    "pretransfer_required_bytes": 4915518811,
+    "postload_available_bytes": 4328554496,
+    "postload_reserve_bytes": 2147483648,
+    "image_tar_sha256": "5dd286938a31abfd1c48e682efd0883783e966b114dd4e560a74eab3b78cda6d",
+    "loaded_image_id": "sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f",
+    "engine_normalization": "OBSERVED",
+    "runtime_accepted": false,
+    "stress_executed": false,
+    "source_receipt": "docs/releases/evidence603/deploy-38995165551-live-stage.json"
   }
 }

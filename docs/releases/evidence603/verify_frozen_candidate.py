@@ -60,6 +60,8 @@ def verify(meta):
     for needle in ('failed_stress_container_removal','same_identity_but_exited_observer',
                    'unchanged_heartbeat','restored_process_restart'):
         assert any(needle in p.get('name','') for p in root.iter('testcase')),needle
+    for required in meta.get('required_tests', []):
+        assert any(required in node.get('name', '') for node in root.iter('testcase')), required
     assert sha(dest/names[3])==manifest['bundle_sha256']
     assert sha(dest/names[4])==frozen['image_tar_sha256']
     source_root=Path(meta['checkout'])
