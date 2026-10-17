@@ -601,7 +601,7 @@ jobs:
           install -d -m 777 /tmp/rc6-profile-603
       - uses: actions/checkout@v4
         with:
-          ref: db06f0a20787ffc4d9f1211b7f2f5fdf04557c14
+          ref: b1ca9a06130139a38ebc56b1e183480723b08705
           path: candidate
       - name: Development regression tests against candidate source and certified dependencies
         shell: bash
@@ -626,22 +626,83 @@ jobs:
           assert cases and not root.findall(".//failure") and not root.findall(".//error") and not root.findall(".//skipped")
           print("RC6_DEVELOPMENT_FOCUSED="+json.dumps({"executed":len(cases),"failure":0,"error":0,"skipped":0},separators=(",",":")))
           PY
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          path: diagnostic
-      - name: Compare canonical encoders over the same synthetic report
+      - name: Paired uninstrumented baseline and development full-catalog guards
         shell: bash
         run: |
           set -Eeuo pipefail
           install -d -m 777 /tmp/rc6-profile-603
-          timeout --signal=TERM --kill-after=15 480 docker run --rm -i --pull never --network none \
+          for variant in baseline candidate; do
+            install -d -m 777 "/tmp/rc6-profile-603/$variant"
+            source_args=()
+            if [ "$variant" = candidate ]; then
+              source_args=(-v "$GITHUB_WORKSPACE/candidate:/candidate:ro" --workdir /candidate -e PYTHONPATH=/candidate)
+            fi
+            set +e
+            timeout --signal=TERM --kill-after=15 300 docker run --rm --pull never --network none \
+              --user 1000:1000 --read-only --cap-drop ALL --security-opt no-new-privileges \
+              --pids-limit 96 --memory 512m --memory-swap 512m --cpus 0.75 \
+              --tmpfs /tmp:rw,nosuid,nodev,size=512m -v "/tmp/rc6-profile-603/$variant:/work" \
+              "${source_args[@]}" --entrypoint python \
+              sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
+              scripts/rc6_postdeploy_stress.py --full-catalog-check --output /work/result \
+              > "/tmp/rc6-profile-603/$variant/output.log" 2>&1
+            rc=$?
+            set -e
+            echo "RC6_PAIRED_FULL_CATALOG=$variant|exit=$rc|native_acceptance=false"
+            if [ "$variant" = candidate ]; then test "$rc" -eq 0; fi
+          done
+          python3 - <<'PY'
+          import json,pathlib
+          for variant in ("baseline","candidate"):
+              path=pathlib.Path("/tmp/rc6-profile-603")/variant/"result/full-catalog.json"
+              if path.is_file():print("RC6_PAIRED_RESOURCE_RECEIPT="+json.dumps({"variant":variant,"receipt":json.loads(path.read_text())},separators=(",",":")))
+          PY
+      - name: Additional adverse CPU fixture without host access
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -d -m 777 /tmp/rc6-profile-603/adverse
+          set +e
+          timeout --signal=TERM --kill-after=15 300 docker run --rm --pull never --network none \
             --user 1000:1000 --read-only --cap-drop ALL --security-opt no-new-privileges \
-            --pids-limit 96 --memory 512m --memory-swap 512m --cpus 0.75 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
+            --pids-limit 96 --memory 512m --memory-swap 512m --cpus 0.25 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603/adverse:/work \
             -v "$GITHUB_WORKSPACE/candidate:/candidate:ro" --workdir /candidate -e PYTHONPATH=/candidate \
             --entrypoint python sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
-            - < "$GITHUB_WORKSPACE/diagnostic/scripts/rc6_codec_experiment.py"
+            scripts/rc6_postdeploy_stress.py --full-catalog-check --output /work/result \
+            > /tmp/rc6-profile-603/adverse/output.log 2>&1
+          rc=$?
+          set -e
+          echo "RC6_ADVERSE_CPU_FULL_CATALOG=$rc|cpu=0.25|memory_mib=512|native_acceptance=false"
+          python3 - <<'PY'
+          import json,pathlib
+          path=pathlib.Path("/tmp/rc6-profile-603/adverse/result/full-catalog.json")
+          if path.is_file():print("RC6_ADVERSE_RESOURCE_RECEIPT="+json.dumps(json.loads(path.read_text()),separators=(",",":")))
+          PY
+          test "$rc" -eq 0
+      - name: Expose bounded phase clocks from synthetic receipts
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,pathlib
+          for variant in ("candidate","adverse"):
+              root=pathlib.Path("/tmp/rc6-profile-603")/variant
+              for path in root.rglob("status.json"):
+                  try:
+                      data=json.loads(path.read_text()).get("payload",{})
+                      timing=data.get("generation_timing")
+                      if data.get("mode")=="SHADOW" and isinstance(timing,dict):
+                          print("RC6_SYNTHETIC_PHASE_CLOCKS="+json.dumps(
+                              {"variant":variant,"timing":timing},sort_keys=True,separators=(",",":")))
+                  except (OSError,ValueError,TypeError):pass
+              output=root/"output.log"
+              if output.is_file():
+                  import re
+                  text=output.read_text()[-5000:]
+                  match=re.search(r"FULL_CATALOG_FRESHNESS_GAP['\"], ([0-9.]+)",text)
+                  if match:print("RC6_SYNTHETIC_FRESHNESS_GAP="+json.dumps({"variant":variant,"age_seconds":float(match[1])},separators=(",",":")))
+          PY
       - name: Make synthetic receipts readable to the artifact action
         if: always()
         shell: bash
