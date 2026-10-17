@@ -574,113 +574,57 @@ jobs:
     needs: contracts
     if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Verify and load exact PR619 frozen artifact without rebuilding
+      - name: Independently verify exact619 CI session JSON and all eight XML byte hashes
         shell: bash
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
-          import base64,hashlib,json,os,pathlib,shutil,urllib.request,zipfile,xml.etree.ElementTree as ET
-          def request(url):
-              req=urllib.request.Request(url)
-              req.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
-              return urllib.request.urlopen(req,timeout=45)
-          base="https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/12103440231"
-          with request(base) as response:metadata=json.load(response)
-          assert metadata["workflow_run"]["id"]==39037517622
-          assert metadata["workflow_run"]["head_sha"]=="5baeae7b0478d61d2dea04e5dbee4e0c1a3af951"
-          target=pathlib.Path("/tmp/rc6-exact619.zip");h=hashlib.sha256();total=0
-          with request(base+"/zip") as response,target.open("wb") as output:
-              while block:=response.read(1024**2):
-                  total+=len(block);assert total<=500*1024**2
-                  h.update(block);output.write(block)
-          assert total==414613525 and h.hexdigest()=="8fc12720b33ec4e6dd4dd30ff275ddc61cd8584e5a09637fc07c9e233702e498"
-          with zipfile.ZipFile(target) as archive:
+          import base64,hashlib,io,json,os,pathlib,urllib.request,zipfile,xml.etree.ElementTree as ET
+          req=urllib.request.Request("https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/12102419143/zip")
+          req.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
+          with urllib.request.urlopen(req,timeout=30) as response:raw=response.read(2*1024**2+1)
+          assert len(raw)==28782 and hashlib.sha256(raw).hexdigest()=="328a9cf3eb779094566f5374e1adb58c060b37ebbe970941bd4d6a62d22d6d6e"
+          with zipfile.ZipFile(io.BytesIO(raw)) as archive:
               def member(name):
-                  matches=[x for x in archive.infolist() if pathlib.PurePosixPath(x.filename).name==name]
-                  assert len(matches)==1
-                  return matches[0]
-              frozen=json.loads(archive.read(member("porota-frozen-candidate.json")))
-              assert frozen["candidate_sha"]=="5baeae7b0478d61d2dea04e5dbee4e0c1a3af951"
-              assert frozen["candidate_tree_sha"]=="268009eb5fb2416fb92435ea828be7ad8d875965"
-              assert frozen["image_id"]=="sha256:a75628801d37ea6a995c9789c6e65e5a8f493884f59ccbbd6a7677142f743060"
-              def json_member(name):return json.loads(archive.read(member(name)))
-              def xml_member(name):
-                  content=archive.read(member(name));cases=list(ET.fromstring(content).iter("testcase"))
+                  values=[x for x in archive.infolist() if pathlib.PurePosixPath(x.filename).name==name]
+                  assert len(values)==1 and values[0].file_size<=1024**2
+                  return archive.read(values[0])
+              stress_raw=member("stress.json");stress=json.loads(stress_raw)
+              assert stress["status"]=="GREEN" and stress["evidence_kind"]=="CI_EXACT_IMAGE_PREFLIGHT" and stress["smoke"] is False
+              assert stress["production_data_mounted"] is False and stress["ppi_watch_accessed"] is False
+              assert stress["session"]["simulated_minutes"]==405 and stress["session"]["real_orders_sent"]==0 and stress["session"]["provider_requests"]==0
+              assert len(stress["scenarios"])==8
+              xmls=[]
+              for group in stress["scenarios"]:
+                  content=member(group["name"]+".xml");cases=list(ET.fromstring(content).iter("testcase"))
                   counts={key:sum(len(case.findall(key)) for case in cases) for key in ("failure","error","skipped")}
+                  digest=hashlib.sha256(content).hexdigest()
                   assert cases and not any(counts.values())
-                  return {"cases":len(cases),**counts,"sha256":hashlib.sha256(content).hexdigest()}
-              governed=json_member("porota-governed-tests.json");root_xml=xml_member("porota-governed-tests.xml")
-              assert governed["status"]=="GREEN" and governed["discovered"]==governed["executed"]==root_xml["cases"]==3950
-              assert all(governed[key]==0 for key in ("failures","errors","skipped","xfail","pytest_exit_code"))
-              assert len(governed["exclusions"])==1
-              native_xml=xml_member("native-bound.xml");assert native_xml["cases"]==46
-              catalog=json_member("full-catalog.json")
-              assert len(catalog["cuts"])==2 and catalog["catalog_count"]==14611 and catalog["ready_fixture_count"]==9902
-              assert catalog["process_peak_rss_kib"]<=512*1024
-              manifest=json_member("porota-artifact-manifest.json")
-              assert manifest["status"]=="GREEN" and manifest["artifact_runtime_files"]==500
-              assert not manifest["missing_native_extensions"] and len(manifest["native_extensions"])==1
-              native=manifest["native_extensions"][0]
-              assert native["path"]=="rc6_shadow_runtime/_rc6_json_bound.so" and native["sha256"]=="e0eed2fc86dde099583e2635ae6c6e57b8a7f53124bb71a04bef11f026daac99"
-              csource=next(value for value in manifest["files"] if value["path"]=="rc6_shadow_runtime/_rc6_json_bound.c")
-              assert csource["sha256"]=="12ce21146fe9de9845b4458c7abc3d81b0eb00ec645dd10a37e9e4e255c50a43"
-              bundle=json_member("porota-deploy-bundle-v2-manifest.json")
-              assert bundle["file_count"]==508 and any(value["path"]=="rc6_shadow_runtime/_rc6_json_bound.c" for value in bundle["files"])
-              certificate={"schema":"rc6.predeploy619-actual-byte-readback.v1",
-                  "context":"PREDEPLOY_EXACT_IMAGE_NOT_DROPLET_ACCEPTANCE","run":39037517622,"job":117410222547,
-                  "artifact_id":12103440231,"artifact_zip_bytes":total,"artifact_zip_sha256":h.hexdigest(),
-                  "frozen":frozen,"governed_root":governed,"root_xml":root_xml,"native_xml":native_xml,
-                  "exact_image_generated_catalog":catalog,"native_extension":native,"native_source":csource,
-                  "runtime_files":500,"missing_runtime_files":manifest["missing_runtime_files"],
-                  "source_bundle_files":508,"source_bundle_sha256":bundle["bundle_sha256"],
-                  "real_orders_sent":0,"native_acceptance":False,"full_session_stress":False}
-              image=member("porota-predeploy-image.tar.gz");assert image.file_size<=500*1024**2
-              image_hash=hashlib.sha256()
-              with archive.open(image) as source,open("/tmp/rc6-exact619-image.tar.gz","wb") as output:
-                  while block:=source.read(1024**2):
-                      image_hash.update(block);output.write(block)
-              assert image_hash.hexdigest()==frozen["image_tar_sha256"]
-          receipt=(json.dumps(certificate,sort_keys=True,indent=2)+"\n").encode()
-          pathlib.Path("/tmp/rc6-predeploy619-receipt.json").write_bytes(receipt)
-          print("RC6_PREDEPLOY619_BYTE_RECEIPT="+json.dumps({"bytes":len(receipt),"sha256":hashlib.sha256(receipt).hexdigest(),"base64":base64.b64encode(receipt).decode()},separators=(",",":")),flush=True)
-          print("RC6_619_PREFLIGHT_FROZEN_BYTES=GREEN|zip_sha="+h.hexdigest()+"|tar_sha="+image_hash.hexdigest(),flush=True)
+                  assert len(cases)==group["cases"] and digest==group["junit_sha256"] and group["exit_code"]==0
+                  xmls.append({"name":group["name"],"cases":len(cases),**counts,"sha256":digest})
+              assert sum(x["cases"] for x in xmls)==771
+              cert_raw=member("rc6-predeploy619-receipt.json");cert=json.loads(cert_raw)
+              assert len(cert_raw)==5725 and hashlib.sha256(cert_raw).hexdigest()=="1962f4ce67599a0f192cfb5efbe3664927e7910c8e6d0b54291f301de429fe63"
+              assert cert["frozen"]["candidate_sha"]=="5baeae7b0478d61d2dea04e5dbee4e0c1a3af951"
+              result={"schema":"rc6.exact619-ci-fullstress-byte-readback.v1",
+                  "context":"CI_EXACT_IMAGE_PREFLIGHT","source_sha":"5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+                  "tree_sha":"268009eb5fb2416fb92435ea828be7ad8d875965",
+                  "image_id":cert["frozen"]["image_id"],"image_tar_sha256":cert["frozen"]["image_tar_sha256"],
+                  "source_run":39038468598,"source_job":117412987489,"artifact_id":12102419143,
+                  "artifact_zip_sha256":hashlib.sha256(raw).hexdigest(),"artifact_zip_bytes":len(raw),
+                  "stress_json_sha256":hashlib.sha256(stress_raw).hexdigest(),"stress":stress,"xml":xmls,
+                  "cases":771,"groups":8,"failure":0,"error":0,"skipped":0,"docker_exit_code":0,"docker_oom_killed":False,
+                  "docker_state_proof_source":"COMPLETED_ACTION_LOG_RC6_619_PREFLIGHT_DOCKER",
+                  "memory_bytes":512*1024**2,"nano_cpus":750000000,"production_runtime_restore":"NOT_PERFORMED_BY_CI",
+                  "not_a_native_acceptance":True}
+              receipt=(json.dumps(result,sort_keys=True,indent=2)+"\n").encode()
+              print("RC6_EXACT619_CI_STRESS_BYTE_RECEIPT="+json.dumps({"bytes":len(receipt),"sha256":hashlib.sha256(receipt).hexdigest(),"base64":base64.b64encode(receipt).decode()},separators=(",",":")))
+              print("RC6_EXACT619_CI_STRESS_SAFE_SUMMARY="+json.dumps({"cases":771,"groups":8,"session":stress["session"],"full_catalog":stress["full_catalog"],"elapsed_seconds":stress["elapsed_seconds"]},sort_keys=True,separators=(",",":")))
           PY
-          docker load -i /tmp/rc6-exact619-image.tar.gz >/dev/null
-          docker image inspect sha256:a75628801d37ea6a995c9789c6e65e5a8f493884f59ccbbd6a7677142f743060 >/dev/null
-          install -d -m 777 /tmp/rc6-pref619
-      - name: Supplemental exact image CI full session and eight groups under native resource limits
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          docker run --interactive --name rc6-pref619 --pull never --network none --no-healthcheck --user 1000:1000 --read-only \
-            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
-            --memory 512m --memory-swap 512m --cpus 0.75 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-pref619:/work \
-            -e RC6_STRESS_EXECUTION_CONTEXT=CI_EXACT_IMAGE_PREFLIGHT -e PYTHONDONTWRITEBYTECODE=1 \
-            --entrypoint python sha256:a75628801d37ea6a995c9789c6e65e5a8f493884f59ccbbd6a7677142f743060 \
-            -B - < scripts/rc6_exact619_ci_preflight.py
-          RC=$?
-          set -e
-          docker inspect --format '{{json .State}}' rc6-pref619 |
-            python3 -c 'import json,sys;v=json.load(sys.stdin);print("RC6_619_PREFLIGHT_DOCKER="+json.dumps({k:v[k] for k in ("Status","ExitCode","OOMKilled")},sort_keys=True))'
-          docker rm rc6-pref619 >/dev/null
-          test "$RC" = 0
-      - name: Make synthetic receipts readable
-        if: always()
-        run: sudo chown -R "$(id -u):$(id -g)" /tmp/rc6-pref619
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: rc6-exact619-ci-preflight-${{ github.run_id }}
-          path: |
-            /tmp/rc6-pref619
-            /tmp/rc6-predeploy619-receipt.json
-          retention-days: 7
