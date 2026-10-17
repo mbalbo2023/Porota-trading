@@ -592,9 +592,10 @@ jobs:
           with urllib.request.urlopen(req,timeout=30) as response:raw=response.read(2*1024**2+1)
           assert len(raw)==28782 and hashlib.sha256(raw).hexdigest()=="328a9cf3eb779094566f5374e1adb58c060b37ebbe970941bd4d6a62d22d6d6e"
           with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+              print("RC6_CI_READBACK_ZIP_MEMBERS="+json.dumps([{"name":v.filename,"bytes":v.file_size} for v in archive.infolist()],separators=(",",":")))
               def member(name):
                   values=[x for x in archive.infolist() if pathlib.PurePosixPath(x.filename).name==name]
-                  assert len(values)==1 and values[0].file_size<=1024**2
+                  assert len(values)==1 and values[0].file_size<=4*1024**2
                   return archive.read(values[0])
               stress_raw=member("stress.json");stress=json.loads(stress_raw)
               assert stress["status"]=="GREEN" and stress["evidence_kind"]=="CI_EXACT_IMAGE_PREFLIGHT" and stress["smoke"] is False
@@ -622,6 +623,8 @@ jobs:
                   "stress_json_sha256":hashlib.sha256(stress_raw).hexdigest(),"stress":stress,"xml":xmls,
                   "cases":771,"groups":8,"failure":0,"error":0,"skipped":0,"docker_exit_code":0,"docker_oom_killed":False,
                   "docker_state_proof_source":"COMPLETED_ACTION_LOG_RC6_619_PREFLIGHT_DOCKER",
+                  "reader_member_bound_bytes":4*1024**2,"previous_reader_guard_red_run":39039309896,
+                  "previous_reader_guard_red_job":117415393812,
                   "memory_bytes":512*1024**2,"nano_cpus":750000000,"production_runtime_restore":"NOT_PERFORMED_BY_CI",
                   "not_a_native_acceptance":True}
               receipt=(json.dumps(result,sort_keys=True,indent=2)+"\n").encode()
