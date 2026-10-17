@@ -125,7 +125,7 @@ jobs:
 
   watch:
     needs: contracts
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     env:
@@ -230,7 +230,7 @@ jobs:
             printf '%s\n' '{"schema":"rc6.recent-critical-readonly.v1","read_only":true,"status":"UNAVAILABLE"}' > evidence/recent_critical.json
           fi
       - name: Inventory public instrument metadata on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017') && steps.window.outputs.active == '1'
         timeout-minutes: 2
         shell: bash
         run: |
@@ -249,7 +249,7 @@ jobs:
             printf '%s\n' '{"schema":"rc6.instrument-audit-inventory.v1","status":"UNVERIFIED","read_only":true,"complete_inventory":false}' > audit-inventory/instruments.json
           fi
       - name: Preserve separate manual instrument inventory
-        if: always() && github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        if: always() && (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017') && steps.window.outputs.active == '1'
         uses: actions/upload-artifact@v4
         with:
           name: rc6-instrument-inventory-${{ github.run_id }}
@@ -257,7 +257,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Diagnose SHADOW SQLite stages on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017') && steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -274,8 +274,23 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/shadow_diagnostic.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.shadow-readonly-diagnostic.v1","status":"REMOTE_DIAGNOSTIC_UNAVAILABLE","read_only":true}' > evidence/shadow_diagnostic.json
           fi
+          python3 - <<'PY'
+          import json, math, re
+          d=json.load(open("evidence/shadow_diagnostic.json"))
+          g=d.get("committed_generation",{})
+          keep={}
+          for k in ("schema","integrity","error_class","error_reason","worker_status","source_sha","candidate_tree_sha","as_of"):
+              v=g.get(k)
+              if type(v) is str and re.fullmatch(r"[A-Za-z0-9_.:+-]{1,100}",v): keep[k]=v
+          for k in ("age_seconds","liveness_budget_seconds","generation_tick_seconds","native_sql_elapsed_ms","native_transform_elapsed_ms"):
+              v=g.get(k)
+              if type(v) in (int,float) and math.isfinite(v) and 0<=v<=1000000: keep[k]=v
+          print("RC6_GENERATION_DIAGNOSTIC="+json.dumps(keep,sort_keys=True,separators=(",",":")))
+          print("RC6_NATIVE_STATUS_DIAGNOSTIC="+json.dumps(d.get("native_status_metadata",{}),sort_keys=True,separators=(",",":")))
+          print("RC6_SHADOW_PROCESS_DIAGNOSTIC="+json.dumps(d.get("shadow_worker_processes",[]),sort_keys=True,separators=(",",":")))
+          PY
       - name: Probe public GitHub schedule API from observer on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017') && steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -293,7 +308,7 @@ jobs:
             printf '%s\n' '{"schema":"rc6.market-schedule-api.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true}' > evidence/schedule_api.json
           fi
       - name: Sample observer Docker lifecycle metadata on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017') && steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -324,7 +339,7 @@ jobs:
             printf '%s\n' '{"schema":"rc6.porota-image-inventory.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true}' > evidence/porota_images.json
           fi
       - name: Audit authenticated dashboard routes and connector states without exporting content
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.window.outputs.active == '1'
+        if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017')) && steps.window.outputs.active == '1'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -407,7 +422,7 @@ jobs:
         if: steps.window.outputs.active == '1'
         shell: bash
         env:
-          NOTIFICATION_MODE: ${{ inputs.notification_mode || 'normal' }}
+          NOTIFICATION_MODE: ${{ github.event_name == 'pull_request' && 'read_only' || inputs.notification_mode || 'normal' }}
         run: |
           set -Eeuo pipefail
           request="$(python3 scripts/rc6_market_watch_readonly.py prepare-alert \

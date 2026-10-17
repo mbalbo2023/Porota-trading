@@ -838,6 +838,25 @@ class CommittedGenerationProbeTests(unittest.TestCase):
         self.assertEqual(self.capture()["integrity"], "UNVERIFIED")
 
 
+    def test_reviewed_failure_code_is_exposed_but_arbitrary_exception_text_is_not(self):
+        value=self.capture(error=ValueError("GENERATION_MEMBER_MISMATCH"))
+        self.assertEqual(value["error_reason"],"GENERATION_MEMBER_MISMATCH")
+        value=self.capture(error=ValueError("SECRET_MARKET_VALUES"))
+        self.assertNotIn("error_reason",value)
+        self.assertNotIn("SECRET_MARKET_VALUES",json.dumps(value))
+
+    def test_stale_receipt_preserves_bounded_timing_without_authority(self):
+        self.cut["status"]["as_of"]=(datetime.now(timezone.utc)-timedelta(seconds=200)).isoformat()
+        self.cut["status"]["generation_timing"]={"tick_seconds":170.5,"SECRET":"SECRET_MARKET_VALUES"}
+        value=self.capture()
+        self.assertEqual(value["integrity"],"UNVERIFIED")
+        self.assertEqual(value["error_reason"],"GENERATION_FRESHNESS_UNVERIFIED")
+        self.assertEqual(value["generation_tick_seconds"],170.5)
+        self.assertGreater(value["age_seconds"],190)
+        self.assertNotIn("real_orders_sent",value)
+        self.assertNotIn("SECRET_MARKET_VALUES",json.dumps(value))
+
+
 class ImageInventoryContracts(unittest.TestCase):
     def test_manual_image_receipt_is_preserved_by_existing_artifact(self):
         text=(SOURCE.parents[1]/'.github/workflows/rc6-market-watch-readonly.yml').read_text()

@@ -768,6 +768,9 @@ def _committed_generation_receipt():
   budget,authority=generation_budget(status)
   if stamp.tzinfo is None or authority!="TWO_MEASURED_CYCLES_SOURCE_CAPPED":raise ValueError("GENERATION_CLOCK_UNVERIFIED")
   age=(captured-stamp).total_seconds()
+  receipt.update(as_of=status["as_of"],age_seconds=round(age,3),liveness_budget_seconds=budget)
+  tick=(status.get("generation_timing") or {}).get("tick_seconds")
+  if type(tick) in (int,float) and math.isfinite(tick) and 0<=tick<=1000000:receipt["generation_tick_seconds"]=tick
   if not 0<=age<=budget:raise ValueError("GENERATION_FRESHNESS_UNVERIFIED")
   for value in (pointer["generation_id"],pointer["manifest_sha256"],status["configuration_fingerprint"]):
    if not isinstance(value,str) or not re.fullmatch("[0-9a-f]{64}",value):raise ValueError("GENERATION_HASH_UNVERIFIED")
@@ -809,7 +812,10 @@ def _committed_generation_receipt():
     value=source.get(key)
     receipt[key]=value if isinstance(value,str) and re.fullmatch("[0-9a-f]{40}",value) else None
  except Exception as exc:
-  receipt={"schema":"rc6.committed-generation-receipt.v1","integrity":"UNVERIFIED","read_only":True,"error_class":type(exc).__name__}
+  receipt={key:value for key,value in receipt.items() if key in {"schema","integrity","read_only","as_of","age_seconds","liveness_budget_seconds","generation_tick_seconds"}}
+  receipt.update(integrity="UNVERIFIED",error_class=type(exc).__name__)
+  allowed_reasons={"GENERATION_CLOCK_UNVERIFIED","GENERATION_FRESHNESS_UNVERIFIED","GENERATION_HASH_UNVERIFIED","GENERATION_AUTHORITY_UNVERIFIED","GENERATION_WORKER_STATE_UNVERIFIED","GENERATION_SAFETY_UNVERIFIED","COMMITTED_GENERATION_MISSING","GENERATION_PATH_INVALID","GENERATION_CUT_MISSING","GENERATION_ENVELOPE_MISMATCH","GENERATION_MEMBER_MISMATCH","GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS","SHADOW_EVIDENCE_DIGEST_MISMATCH","SHADOW_PAYLOAD_LIMIT"}
+  if type(exc) is ValueError and str(exc) in allowed_reasons:receipt["error_reason"]=str(exc)
  return receipt
 generation_receipt=_committed_generation_receipt()
 '''
@@ -829,6 +835,23 @@ at=datetime.now(timezone.utc)
 db=Path(os.getenv("PAPER_V17_DB_PATH", "/app/data/paper_v17/observer_v17.db"))
 result={"schema":"rc6.shadow-readonly-diagnostic.v1","generated_at":at.isoformat(),"read_only":True,"stages":[]}
 result["committed_generation"]=generation_receipt
+result["native_status_metadata"]={}
+try:
+ from rc6_shadow_runtime.persistence import EvidenceFiles
+ live=EvidenceFiles(db.parent/"artifacts"/db.name/"dynamic-shadow",payload_limit=4*1024**2).read("status.json")
+ import math
+ safe={}
+ for key in ("as_of","status"):
+  v=live.get(key)
+  if type(v) is str and re.fullmatch(r"[A-Za-z0-9_.:+-]{1,100}",v):safe[key]=v
+ for group,keys in (("generation_timing",("poll_seconds","tick_seconds")),("runtime_sql_diagnostics",("budget_ms","sql_elapsed_ms","transform_elapsed_ms"))):
+  raw=live.get(group,{})
+  for key in keys:
+   v=raw.get(key)
+   if type(v) in (int,float) and math.isfinite(v) and 0<=v<=1000000:safe[key]=v
+ result["native_status_metadata"]=safe
+except Exception as exc:
+ result["native_status_metadata"]={"error_class":type(exc).__name__}
 result["query_shape_authority"]="LEGACY_ROW_CONTROL_NOT_CURRENT_NATIVE_RUNTIME"
 try:
  # The prior probe first executed the entire 1.5-second runtime read and
