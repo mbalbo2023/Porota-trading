@@ -620,14 +620,41 @@ jobs:
             --memory 512m --memory-swap 512m --cpus 0.75 \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m -v /tmp/rc6-profile-603:/work \
             -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
-            -e PYTHONPATH=/candidate -e PYTHONPYCACHEPREFIX=/tmp/pycache -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+            -e PYTHONPATH=/candidate -e PYTHONDONTWRITEBYTECODE=1 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
             --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
             -m pytest -p no:cacheprovider -q \
             tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_streaming_cost.py \
             tests/test_rc6_shadow_report_lifetime.py tests/test_rc6_shadow_owned_state.py \
             tests/test_rc6_shadow_contract_projection.py tests/test_rc6_shadow_runtime_wiring.py \
-            tests/test_rc6_shadow_failure_context.py tests/test_rc6_shadow_full_catalog.py \
+            tests/test_rc6_shadow_failure_context.py \
             --junitxml=/work/candidate-tests.xml
+      - name: Run full catalogue inline with native stress process shape
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          docker run --name rc6-shared-audit-full --pull never --network none --user 1000:1000 --read-only \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
+            --memory 512m --memory-swap 512m --cpus 0.75 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
+            -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
+            -e PYTHONPATH=/candidate -e PYTHONDONTWRITEBYTECODE=1 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+            --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
+            -B scripts/rc6_postdeploy_stress.py --output /work/full-catalog --full-catalog-check
+          RC=$?
+          set -e
+          docker inspect --format '{{json .State}}' rc6-shared-audit-full
+          docker rm rc6-shared-audit-full >/dev/null
+          test "$RC" = 0
+          python3 - <<'PY'
+          import json,pathlib
+          value=json.loads(pathlib.Path("/tmp/rc6-profile-603/full-catalog/full-catalog.json").read_text())
+          assert value["catalog_count"]==14611 and value["ready_fixture_count"]==9902
+          assert len(value["cuts"])==2 and value["cuts"][1]["sequence"]>value["cuts"][0]["sequence"]
+          assert value["process_peak_rss_kib"]<=512*1024 and value["real_orders_sent"]==0
+          assert value["cuts"][1]["previous_cut_age_seconds"]<=value["cuts"][1]["previous_cut_freshness_budget_seconds"]
+          print("RC6_SHARED_AUDIT_INLINE_FULL_CATALOG=GREEN")
+          PY
       - name: Compare exact candidate serializer on one fixed full-cardinality report
         shell: bash
         run: |
@@ -637,7 +664,7 @@ jobs:
             --memory 512m --memory-swap 512m --cpus 0.75 \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m -v /tmp/rc6-profile-603:/work \
             -v "$PWD/candidate:/candidate:ro" --workdir /candidate \
-            -e PYTHONPATH=/candidate -e PYTHONPYCACHEPREFIX=/tmp/pycache -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+            -e PYTHONPATH=/candidate -e PYTHONDONTWRITEBYTECODE=1 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
             --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
             - < scripts/rc6_codec_experiment.py
           python3 - <<'PY'
