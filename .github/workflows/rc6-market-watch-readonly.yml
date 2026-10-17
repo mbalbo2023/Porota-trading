@@ -601,7 +601,7 @@ jobs:
           install -d -m 777 /tmp/rc6-profile-603
       - uses: actions/checkout@v4
         with:
-          ref: b1ca9a06130139a38ebc56b1e183480723b08705
+          ref: 7bad982559f56323c00f555f0d8bb480dd00dfd0
           path: candidate
       - name: Development regression tests against candidate source and certified dependencies
         shell: bash
@@ -700,6 +700,10 @@ jobs:
               if output.is_file():
                   import re
                   text=output.read_text()[-5000:]
+                  for line in text.splitlines():
+                      if line.startswith("RC6_FULL_CATALOG_CUT="):
+                          print("RC6_VERIFIED_SYNTHETIC_CUT="+json.dumps(
+                              {"variant":variant,"cut":json.loads(line.split("=",1)[1])},sort_keys=True,separators=(",",":")))
                   match=re.search(r"FULL_CATALOG_FRESHNESS_GAP['\"], ([0-9.]+)",text)
                   if match:print("RC6_SYNTHETIC_FRESHNESS_GAP="+json.dumps({"variant":variant,"age_seconds":float(match[1])},separators=(",",":")))
           PY
