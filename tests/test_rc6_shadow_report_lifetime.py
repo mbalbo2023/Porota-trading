@@ -61,3 +61,29 @@ def test_real_worker_releases_full_report_before_waiting_or_next_tick(tmp_path, 
     monkeypatch.setattr(runtime, 'ShadowRuntime', Worker)
     monkeypatch.setattr(runtime.os, 'nice', lambda _value: None)
     runtime.run_worker(tmp_path / 'paper.db', Stop(), clock_fn=lambda: PRE.isoformat())
+
+
+def test_idle_heap_release_preserves_live_evidence_and_records_actual_capability():
+    from rc6_dynamic_universe.common import digest
+    live = {'identity':['S','ACCIONES','BYMA','ARS','A-24HS'], 'evidence':[{'price':'1.25'}]}
+    expected = digest(live)
+    measured = runtime.release_idle_heap()
+    assert digest(live) == expected
+    assert type(measured['allocator_trim_available']) is bool
+    assert measured['elapsed_seconds'] >= 0
+    for key in ('rss_before_kib','rss_after_kib'):
+        assert measured[key] is None or type(measured[key]) is int and measured[key] > 0
+
+
+def test_optional_heap_telemetry_failure_cannot_revoke_committed_cut(tmp_path, monkeypatch):
+    class Worker:
+        def __init__(self,*args,**kwargs):pass
+        def tick(self,_at):return {'status':'SHADOW_OBSERVING','phase':'CLOSED'}
+    class Stop:
+        done=False
+        def is_set(self):return self.done
+        def wait(self,_seconds):self.done=True
+    monkeypatch.setattr(runtime,'ShadowRuntime',Worker)
+    monkeypatch.setattr(runtime.os,'nice',lambda _value:None)
+    monkeypatch.setattr(runtime,'release_idle_heap',lambda:(_ for _ in ()).throw(OSError('allocator unavailable')))
+    runtime.run_worker(tmp_path/'paper.db',Stop(),clock_fn=lambda:PRE.isoformat())

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import time
 import zlib
 from pathlib import Path
 import tempfile
@@ -62,12 +63,16 @@ def _preopen_scalar_decoder():
     Type-tagged keys preserve bool/int and signed-zero distinctions.
     """
     shared = {}
+    charged = 0
     def decode(value):
+        nonlocal charged
         if not ("status" in value and "value" in value) or len(value) > 16:
             return value
         key = []
         for name, item in value.items():
             kind = type(item)
+            if len(name) > 128 or (kind is str and len(item) > 4096):
+                return value
             if item is None or kind in (str, int, bool):
                 key.append((name, kind.__name__, item))
             elif kind is float:
@@ -80,9 +85,13 @@ def _preopen_scalar_decoder():
         prior = shared.get(key)
         if prior is not None:
             return prior
-        if len(shared) < 4096:
-            value = FrozenJSONDict(value)
-            shared[key] = value
+        if len(shared) < 4096 and charged < 1024**2:
+            frozen = FrozenJSONDict(value)
+            cost = len(frozen._canonical_json) + 256 + 96 * len(key)
+            if charged + cost <= 1024**2:
+                value = frozen
+                shared[key] = value
+                charged += cost
         return value
     return decode
 
@@ -472,6 +481,11 @@ class EvidenceFiles:
                                    default=str, allow_nan=False)
         hasher = hashlib.sha256()
         raw_bytes = 0
+        profile = {name: 0.0 for name in ('encode_seconds', 'encode_cpu_seconds',
+            'compress_hash_seconds', 'compress_hash_cpu_seconds', 'fsync_seconds', 'fsync_cpu_seconds')}
+        def charge(name, wall, cpu):
+            profile[name + '_seconds'] += time.monotonic() - wall
+            profile[name + '_cpu_seconds'] += time.process_time() - cpu
         with tempfile.NamedTemporaryFile(dir=self.root, prefix=".computed-report.",
                 suffix=".tmp", delete=False) as stream:
             tmp = Path(stream.name)
@@ -479,14 +493,26 @@ class EvidenceFiles:
                 with gzip.GzipFile(fileobj=stream, mode="wb", compresslevel=1, mtime=0) as zipped:
                     chunks = (_canonical_chunks(encoder, payload, immutable_shared_rows=immutable_shared_rows)
                               if immutable_shared_rows else _canonical_chunks(encoder, payload))
-                    for chunk in chunks:
+                    chunks = iter(chunks)
+                    while True:
+                        wall, cpu = time.monotonic(), time.process_time()
+                        try:
+                            chunk = next(chunks)
+                        except StopIteration:
+                            charge('encode', wall, cpu)
+                            break
+                        charge('encode', wall, cpu)
                         raw_bytes += len(chunk)
                         if raw_bytes > raw_limit:
                             raise EvidencePayloadLimit("computed-report", raw_bytes, raw_limit)
+                        wall, cpu = time.monotonic(), time.process_time()
                         hasher.update(chunk)
                         zipped.write(chunk)
+                        charge('compress_hash', wall, cpu)
+                wall, cpu = time.monotonic(), time.process_time()
                 stream.flush()
                 os.fsync(stream.fileno())
+                charge('fsync', wall, cpu)
                 name = "computed-" + hasher.hexdigest() + ".json.gz"
                 target = self.path(name)
                 files = list(self.root.iterdir())
@@ -499,6 +525,8 @@ class EvidenceFiles:
                         os.fsync(directory)
                     finally:
                         os.close(directory)
+                self.report_write_profile = {key: round(value, 6) for key, value in profile.items()}
+                self.report_write_profile.update(raw_bytes=raw_bytes, compressed_bytes=target.stat().st_size)
                 return {"file": name, "sha256": hasher.hexdigest(),
                         "raw_bytes": raw_bytes, "compressed_bytes": target.stat().st_size}
             finally:

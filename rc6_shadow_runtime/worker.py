@@ -4,9 +4,11 @@ No market-data client, trading writer, broker, fill, network transport or manual
 bundle. A missing preopen/OPEN capacity remains an explicit closed gate.
 """
 from datetime import datetime, timedelta, timezone
+import gc
 import json
 import logging
 import os
+import resource
 from pathlib import Path
 import sqlite3
 import time
@@ -27,6 +29,36 @@ VERSION = "WS-CLOSE-PROGRAMMING-05-RUNTIME-v2"
 SOURCE_FILES = {"BYMA": "rc6_public_sources_latest.json",
                 "IOL_MCP": "iol_shadow_latest.json",
                 "IOL_FAMILY_REFERENCE": "iol_family_reference_latest.json"}
+
+
+def release_idle_heap():
+    """Return already-free glibc heap pages after the full report is released.
+
+    This changes neither a live object nor a cgroup/host policy. The optional
+    allocator capability and actual RSS delta are recorded, never assumed.
+    """
+    def rss():
+        try:
+            return next(int(line.split()[1]) for line in
+                Path('/proc/self/status').read_text().splitlines() if line.startswith('VmRSS:'))
+        except (OSError, ValueError, StopIteration):
+            return None
+    before = rss()
+    started = time.monotonic()
+    gc.collect()
+    available = False
+    try:
+        import ctypes
+        libc = ctypes.CDLL(None)
+        trim = libc.malloc_trim
+        trim.argtypes = [ctypes.c_size_t]
+        trim.restype = ctypes.c_int
+        trim(0)
+        available = True
+    except (AttributeError, OSError):
+        pass
+    return {'allocator_trim_available': available, 'rss_before_kib': before,
+            'rss_after_kib': rss(), 'elapsed_seconds': round(time.monotonic()-started, 6)}
 
 
 def session_context(as_of):
@@ -391,6 +423,18 @@ class ShadowRuntime:
         tick_cpu_started = time.process_time()
         measured_cpu_at = tick_cpu_started
         phase_seconds, phase_cpu_seconds = {}, {}
+        storage_profile = {}
+        def stored(name, operation):
+            wall, cpu = time.monotonic(), time.process_time()
+            before = resource.getrusage(resource.RUSAGE_SELF)
+            value = operation()
+            after = resource.getrusage(resource.RUSAGE_SELF)
+            storage_profile[name] = {'wall_seconds':round(time.monotonic()-wall, 6),
+                'cpu_seconds':round(time.process_time()-cpu, 6),
+                'major_faults':after.ru_majflt-before.ru_majflt,
+                'block_outputs':after.ru_oublock-before.ru_oublock,
+                'peak_rss_kib':after.ru_maxrss}
+            return value
         def measured(name):
             nonlocal measured_at, measured_cpu_at
             ended = time.monotonic()
@@ -537,11 +581,13 @@ class ShadowRuntime:
             # avoiding a previous tick and unused source data beside the audit.
             previous = compatible = bundle = inputs = sources = source_reports = observations = None
             capacity = frozen = checkpoint = result = base = None
-            audit = (files.write_streamed_report(report, immutable_shared_rows=reusable_rows)
-                     if reusable_rows else files.write_streamed_report(report))
+            audit = stored('computed', lambda: (
+                files.write_streamed_report(report, immutable_shared_rows=reusable_rows)
+                if reusable_rows else files.write_streamed_report(report)))
+            storage_profile['computed'].update(getattr(files,'report_write_profile',{}))
             durable["computed_report"] = audit
-            files.write("latest.json.gz", durable)
-            files.write("checkpoint.json.gz", causal)
+            stored('latest', lambda: files.write("latest.json.gz", durable))
+            stored('checkpoint', lambda: files.write("checkpoint.json.gz", causal))
             measured("durable_serialization")
             status = {k: report[k] for k in ("schema", "as_of", "phase", "status", "mode",
                 "provider_requests", "real_orders_sent", "real_routes", "source_database_effect")}
@@ -559,7 +605,9 @@ class ShadowRuntime:
                 'tick_measurement_boundary':'BEFORE_STATUS_AND_CURRENT',
                 'stages_seconds':phase_seconds,
                 'tick_cpu_seconds':round(time.process_time()-tick_cpu_started,3),
-                'stages_cpu_seconds':phase_cpu_seconds}
+                'stages_cpu_seconds':phase_cpu_seconds,
+                'storage_profile':storage_profile,
+                'process_peak_rss_kib':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
             publish_started = time.monotonic()
             files.write("status.json", status)
             committed = files.publish_generation(durable, status)
@@ -604,6 +652,12 @@ def run_worker(database, stop, *, clock_fn=None):
                 # The full audit already lives in private committed bytes.
                 # Do not retain it while the next tick allocates another one.
                 del report
+                try:
+                    LOG.info("DYNAMIC_SHADOW_IDLE_MEMORY %s", json.dumps(release_idle_heap(), sort_keys=True))
+                except Exception as memory_error:
+                    # Optional allocator telemetry cannot revoke a committed
+                    # financial cut or terminate the scanner's child loop.
+                    LOG.warning("DYNAMIC_SHADOW_IDLE_MEMORY_UNAVAILABLE:%s", type(memory_error).__name__)
         except Exception as exc:
             # A bounded failed SHADOW read/write cannot stop the exit clock or
             # turn a stale prior report into current success. No source event.
