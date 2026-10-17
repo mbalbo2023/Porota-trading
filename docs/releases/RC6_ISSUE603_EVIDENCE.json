@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "616_EXACT_FROZEN_CANDIDATE_MERGED_CANONICAL_DEPLOY_IN_PROGRESS_NATIVE_ACCEPTANCE_PENDING",
+  "release_state": "616_INSTALLED_NATIVE_TWO_GENERATION_GATE_RED_SERIALIZATION_RCA_ACTIVE",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -17,9 +17,9 @@
     "deploy_owner_issue471": 6228525290,
     "deploy_owner_issue473": 6228525416,
     "latest_deploy_owner_refresh": {
-      "issue471": 6231235854,
-      "issue473": 6231235992,
-      "at": "2026-10-17T07:30Z",
+      "issue471": 6231733985,
+      "issue473": 6231734640,
+      "at": "2026-10-17T08:27Z",
       "state": "HELD_THROUGH_NATIVE_ACCEPTANCE_STRESS_RESTORE"
     }
   },
@@ -167,10 +167,10 @@
       "classification": "FIX_PRESENT+TEST",
       "detail": "Absorbido602:CURRENT/root/manifest/digests/revocación/fsync/lock. EstrésI/O/path/tamper/restart preexistente y replay deworker, aceptación52vistaspostdeploy pendiente. Native Deploy613 rejected two-cut acceptance; reviewed READ_ONLY receipt confirmed GENERATION_FRESHNESS_UNVERIFIED, age246.605s/tick116.365s against120s, SQL208.737ms and transform316.037ms within2000ms. RCA profiles actual frozen image with synthetic catalogue in isolated CI; no native stress or acceptance claim.",
       "test": "tests/test_rc6_shadow_runtime_wiring.py",
-      "status": "NATIVE_RED_FRESHNESS_120S_FIX_FORWARD_PENDING",
+      "status": "NATIVE_616_RED_ONE_GENERATION_FIX_FORWARD_PENDING",
       "code_state": "DESARROLLADO",
-      "runtime_occurrence": "DEMONSTRATED_39003668897_AND_39008452962",
-      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "runtime_occurrence": "DEMONSTRATED_39013855958",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39013855958",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
     },
@@ -855,12 +855,12 @@
       "path": "rc6_shadow_runtime/persistence.py",
       "symbol": "_canonical_chunks",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "Full audit248MB raw/4.6MB gzip: per-token compressor writes and duplicate envelope encoding caused excessive CPU. Bounded64KiB writes, single canonical payload pass, bounded C subtrees and exact type/Unicode/key/NaN/cycle/size/atomic checks preserve complete audit and hashes. Exact sample codec28.048→13.171 CPU seconds before final immutable empty-field optimization.",
+      "detail": "Full audit248MB raw/4.6MB gzip: per-token compressor writes and duplicate envelope encoding caused excessive CPU. Bounded64KiB writes, single canonical payload pass, bounded C subtrees and exact type/Unicode/key/NaN/cycle/size/atomic checks preserve complete audit and hashes. Exact sample codec28.048→13.171 CPU seconds before final immutable empty-field optimization. Actualización nativa616: durable25.627wall/19.640CPU-s de tick49.259wall/35.853CPU-s. Las guardas previas se conservan; queda costo residual de serialización y gateRED. Investigación de subárboles/diccionarios normales en CI aislado, no nueva promoción.",
       "test": "tests/test_rc6_shadow_streaming_cost.py",
-      "status": "PREDEPLOY39002866893_GREEN_RUNTIME_ACCEPTANCE_BLOCKED_NATIVE_FRESHNESS",
+      "status": "NATIVE_RESIDUAL_SERIALIZATION_CPU_19_640_FIX_FORWARD_PENDING",
       "code_state": "EN_GITHUB_F167_FROZEN",
-      "runtime_occurrence": "LOCAL_CAUSAL_COST_AND_COMPLETE_BYTE_EQUIVALENCE",
-      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "runtime_occurrence": "OBSERVED_NATIVE_PHASE_TIMINGS_39013855958",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39013855958",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
     },
@@ -900,7 +900,7 @@
       "path": "rc6_shadow_runtime/families.py",
       "symbol": "family_reports",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "Eliminate25 unused quote fallbacks in causal fixture, unused quote families, and repeated nested-view flattening. Only zero-candidate field summaries share per-tick immutable JSON objects; observations, quote wrappers, fields with invalid/future/stale/conflicting evidence remain independent. Whole JSON comparison and native-origin/unit/clock/alias regressions preserved; normal mutation APIs rejected.",
+      "detail": "Eliminate25 unused quote fallbacks in causal fixture, unused quote families, and repeated nested-view flattening. Only zero-candidate field summaries share per-tick immutable JSON objects; observations, quote wrappers, fields with invalid/future/stale/conflicting evidence remain independent. Whole JSON comparison and native-origin/unit/clock/alias regressions preserved; normal mutation APIs rejected.616 agrega índice completo de subyacentes conservando identidad/settlement/ambigüedad; fase nativa family4.626wall/3.444CPU-s. El gate global sigueRED, sin cierre por rendimiento sintético.",
       "test": "tests/test_rc6_family_quote_lookup_cost.py",
       "status": "PREDEPLOY39002866893_GREEN_RUNTIME_ACCEPTANCE_BLOCKED_NATIVE_FRESHNESS",
       "code_state": "EN_GITHUB_F167_FROZEN",
@@ -917,10 +917,10 @@
       "classification": "FIX_PRESENT+TEST",
       "detail": "Permanent generated14611identity/9902catalog-capability READY fixture with long symbols, no prices/providers. RED peak550060KiB then RED freshness gap160.443s preserved. Final two committed cuts31.127/26.448s, actual30s poll, total87.949s and446072KiB. Same case runs in Predeploy and inline before405minute/eight-group native isolated stress, without pytest parent beside large worker. Process RSS is distinct from the native container memory cap; no native stress claim.",
       "test": "tests/test_rc6_shadow_full_catalog.py",
-      "status": "PREDEPLOY39002866893_GREEN_RUNTIME_ACCEPTANCE_BLOCKED_NATIVE_FRESHNESS",
+      "status": "NATIVE_STRESS_NOT_EXECUTED_GENERATION_GATE_RED",
       "code_state": "EN_GITHUB_F167_FROZEN",
       "runtime_occurrence": "LOCAL_FULL_PIPELINE_RESOURCE_AND_FRESHNESS_GUARD",
-      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39013855958",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
     }
@@ -1353,47 +1353,35 @@
   },
   "source_bundle_installed": true,
   "predeploy_certificate": {
-    "schema": "rc6.frozen-artifact-independent-verification.v2",
-    "status": "GREEN",
-    "artifact_id": 12086687961,
-    "predeploy_run": 38994512568,
-    "zip_bytes": 414252340,
-    "zip_sha256": "e4fa7af36bf2352d1361cbab757afe0712eeb14dce875d592818e7e72db088f2",
-    "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
-    "candidate_tree_sha": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6",
-    "image_id": "sha256:af9394bc485de5f86f6d57063b050d6a13b5119a49bfbc63c7315d69d4315bb3",
-    "image_size_bytes": 1175003476,
-    "image_tar_sha256": "5dd286938a31abfd1c48e682efd0883783e966b114dd4e560a74eab3b78cda6d",
-    "bundle_sha256": "56ea4f2cbc88c8a52d23c41d97f6e2164f734fc18e7c5920f9b01a4505627f8f",
-    "bundle_hashes_verified": 507,
-    "all_bundle_sources_equal_checkout": true,
-    "image_config_blob_sha256_verified": "af9394bc485de5f86f6d57063b050d6a13b5119a49bfbc63c7315d69d4315bb3",
-    "source_environment_observed": {
-      "POROTA_BUILD_SHA": "19c26d2eba13d5855f653dff67605d11c518996b",
-      "POROTA_CANDIDATE_TREE_SHA": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6"
-    },
-    "tests": {
-      "discovered": 3788,
-      "errors": 0,
-      "exclusions": [
-        "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
-      ],
-      "executed": 3788,
-      "failures": 0,
-      "pytest_exit_code": 0,
-      "schema_version": 1,
-      "scope": "repository-root automatic pytest discovery",
-      "skipped": 0,
-      "status": "GREEN",
-      "xfail": 0
-    },
-    "native_privilege_properties": [
-      {
-        "name": "RC6_PRECLEAN_PRIVILEGE_BOUNDARY",
-        "value": "OS_DIFFERENT_UID"
-      }
-    ],
-    "not_a_droplet_acceptance_or_stress_result": true
+    "pr": 616,
+    "candidate_sha": "7bad982559f56323c00f555f0d8bb480dd00dfd0",
+    "candidate_tree": "22a87b95ee7b601eb92ffcb0e9a5d3178ee316ec",
+    "run": 39013160959,
+    "job": 117339774295,
+    "conclusion": "SUCCESS",
+    "discovered": 3917,
+    "executed": 3917,
+    "failure": 0,
+    "error": 0,
+    "skip": 0,
+    "xfail": 0,
+    "governed_legacy_exclusions_unchanged": 1,
+    "image_id": "sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d",
+    "bundle_sha256": "42d9d8ab876b9cb5a952743c74fe140847457996a6daa1e9b8f93dfbdace1dfc",
+    "artifact_id": 12093264982,
+    "zip_bytes": 414441582,
+    "zip_sha256": "b5360a86627fbc8a954467065a034b7a90081e1d3cc699bc23cdb6b2da0b8b63",
+    "artifact_runtime_files": 498,
+    "missing": 0,
+    "identity": "GREEN",
+    "completeness": "GREEN",
+    "imports": "GREEN",
+    "runtime_smoke": "GREEN",
+    "paper_safety": "GREEN",
+    "frozen_contract": "GREEN",
+    "additional_local_zip_verification": "NOT_EXECUTED_OFFLINE",
+    "canonical_deploy_step5_frozen_bytes_reverified": "SUCCESS",
+    "not_droplet_acceptance": true
   },
   "latest_lifecycle_probe": {
     "run": 38981573685,
@@ -1409,7 +1397,7 @@
     "oom_flag_after_recovery": false,
     "whole_workflow_conclusion": "FAILURE_EXPECTED_DEPLOY_SHA_MISMATCH_AFTER_REJECTED_PROMOTION"
   },
-  "current_deploy_stage": "39013855958_IN_PROGRESS_STEP10; STRESS_PENDING",
+  "current_deploy_stage": "COMPLETED_FAILURE_GENERATION_GATE_STRESS_SKIPPED",
   "external_backup_review": {
     "droplet_id": 594077619,
     "size": "s-1vcpu-1gb",
@@ -1456,19 +1444,88 @@
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
   },
   "next_candidate": {
-    "state": "FROZEN_MERGED_NATIVE_PROMOTION_ACTIVE",
-    "source_sha": "7bad982559f56323c00f555f0d8bb480dd00dfd0",
-    "source_branch": "work/rc6-603-native-phase-evidence-20261017",
-    "frozen": true,
-    "certified": true,
-    "native_acceptance": false
+    "state": "NONE_READY; SYNTHETIC_SERIALIZATION_RCA_IN_PROGRESS",
+    "source_sha": null,
+    "frozen": false,
+    "certified": false,
+    "deployed": false
   },
   "latest_deploy_result": {
     "run": 39013855958,
-    "conclusion": null,
-    "status": "IN_PROGRESS_NATIVE_ACCEPTANCE_PENDING",
-    "last_finished_run": 39003668897,
-    "last_finished_conclusion": "FAILURE"
+    "job": 117341792509,
+    "conclusion": "FAILURE",
+    "finished_at": "2026-10-17T08:29:50Z",
+    "failed_gate": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+    "native_gate": {
+      "error_class": null,
+      "error_reason": null,
+      "generations": [
+        {
+          "as_of": "2026-10-17T08:28:36.623749+00:00",
+          "candidate_tree_sha": "22a87b95ee7b601eb92ffcb0e9a5d3178ee316ec",
+          "configuration_fingerprint": "cbd2be0d55d3eeec94bf1fef07ecc10d0671298b4a1db8659384b6641efbf107",
+          "generation_id": "db91eaa7b7ad0aaaaf2abd85571a99bbdca96b7e5bc1b66da61df48973f68010",
+          "manifest_sha256": "a3162204bd6a16ec82247f02e296ade17472a034df4fb6a8e1b8a3197070af22",
+          "native_sql_elapsed_ms": 122.174,
+          "native_transform_elapsed_ms": 51.001,
+          "provider_requests": 0,
+          "real_orders_sent": 0,
+          "real_routes": "NOT_CALLED",
+          "sequence": 1792225716623749,
+          "source_sha": "7bad982559f56323c00f555f0d8bb480dd00dfd0",
+          "worker_status": "SHADOW_OBSERVING"
+        }
+      ],
+      "last_observation": {
+        "age_seconds": 64.339,
+        "as_of": "2026-10-17T08:28:36.623749+00:00",
+        "budget_ms": 2000,
+        "poll_seconds": 30,
+        "sql_elapsed_ms": 122.174,
+        "stages_cpu_seconds": {
+          "durable_serialization": 19.64,
+          "economic_exit_lab": 0.008,
+          "entry_signal_lab": 0.251,
+          "family_routing": 3.444,
+          "operational_funnel": 5.06,
+          "planner_pipeline": 2.768,
+          "preopen": 3.056,
+          "state_and_inputs": 1.624
+        },
+        "stages_seconds": {
+          "durable_serialization": 25.627,
+          "economic_exit_lab": 0.009,
+          "entry_signal_lab": 0.334,
+          "family_routing": 4.626,
+          "operational_funnel": 6.872,
+          "planner_pipeline": 5.189,
+          "preopen": 4.866,
+          "state_and_inputs": 1.735
+        },
+        "tick_cpu_seconds": 35.853,
+        "tick_seconds": 49.259,
+        "transform_elapsed_ms": 51.001,
+        "worker_status": "SHADOW_OBSERVING"
+      },
+      "read_only": true,
+      "reason": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+      "schema": "rc6.deploy-generation-gate.v1",
+      "status": "RED"
+    },
+    "contract_records": 18783,
+    "contract_quick_check": "GREEN",
+    "http_unique_routes": 63,
+    "http_audit_rounds": 4,
+    "http_results": 252,
+    "http_non200": 0,
+    "soak": "5_X_60S_GREEN_NO_RESTART_NO_CRITICAL_SIGNATURE",
+    "stress": "SKIPPED_NOT_EXECUTED",
+    "recovery": "FIX_FORWARD_VALIDATION_REQUIRED",
+    "cleanup_material": "GREEN_STAGING_REMOVED",
+    "cleanup_control_exit": 1,
+    "cleanup_space_recovered": 147456,
+    "rollback": false,
+    "real_orders_sent": 0
   },
   "failed_predeploy_608": {
     "run": 38988131821,
@@ -1546,17 +1603,18 @@
   },
   "latest_candidate_source_bundle_installed": true,
   "installed_runtime": {
-    "candidate_sha": "f1677af431f45cf2fd3d63cdcadfbcb0fba2bfe3",
-    "candidate_tree": "7bb44d4700e3320df8912007f99d4727949c6b5c",
-    "deploy_sha": "a6246794a09ae24a25a0af6dde14c0b9004f9ab3",
-    "image_id": "sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710",
-    "source_identity": "CANONICAL_DEPLOY_GREEN; NATIVE_PROMOTION_GATE_RED",
+    "candidate_sha": "7bad982559f56323c00f555f0d8bb480dd00dfd0",
+    "candidate_tree": "22a87b95ee7b601eb92ffcb0e9a5d3178ee316ec",
+    "deploy_sha": "5d888cd64d9547397fac400829af05ab92baa3c4",
+    "image_id": "sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed",
+    "certified_image_id": "sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d",
+    "engine_normalization": "OBSERVED_TAR_SHA_MATCH",
+    "image_tar_sha256": "e6726936584d56a1f7626234d854222cab43fdd0be075938ff26174f7792d76f",
+    "source_identity": "GREEN",
     "validation": "FIX_FORWARD_VALIDATION_REQUIRED",
     "stress": "NOT_EXECUTED",
-    "last_native_readonly_run": 39008452962,
-    "critical_service_alignment": "NOT_COMPLETED; CURRENT_NONMATCHING_IMAGE_ID_NOT_EXPORTED",
-    "last_independently_verified_before_616_active_deploy": true,
-    "observed_before_616_deploy_at": "2026-10-17T07:15:47Z"
+    "last_native_run": 39013855958,
+    "one_generation_only": true
   },
   "wiring_610": {
     "path": "docs/releases/RC6_ISSUE603_WIRING_610.json",
@@ -1570,18 +1628,79 @@
   "active_deploy": {
     "run": 39013855958,
     "job": 117341792509,
-    "merge_sha": "5d888cd64d9547397fac400829af05ab92baa3c4",
-    "candidate_sha": "7bad982559f56323c00f555f0d8bb480dd00dfd0",
-    "candidate_tree": "22a87b95ee7b601eb92ffcb0e9a5d3178ee316ec",
-    "status": "IN_PROGRESS",
-    "stage": "STEP10_PROMOTE_EXACT_FROZEN_CANDIDATE_AND_VERIFY",
-    "observed_at": "2026-10-17T07:37:10.186Z",
-    "steps3_to9": "SUCCESS",
-    "frozen_artifact_download_hashes_tree_verification": "SUCCESS",
-    "stress_executed": false,
-    "runtime_accepted": false,
-    "internal_installation_subphase": "NOT_EXPORTED_WHILE_JOB_ACTIVE",
-    "rollback": false
+    "conclusion": "FAILURE",
+    "finished_at": "2026-10-17T08:29:50Z",
+    "failed_gate": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+    "native_gate": {
+      "error_class": null,
+      "error_reason": null,
+      "generations": [
+        {
+          "as_of": "2026-10-17T08:28:36.623749+00:00",
+          "candidate_tree_sha": "22a87b95ee7b601eb92ffcb0e9a5d3178ee316ec",
+          "configuration_fingerprint": "cbd2be0d55d3eeec94bf1fef07ecc10d0671298b4a1db8659384b6641efbf107",
+          "generation_id": "db91eaa7b7ad0aaaaf2abd85571a99bbdca96b7e5bc1b66da61df48973f68010",
+          "manifest_sha256": "a3162204bd6a16ec82247f02e296ade17472a034df4fb6a8e1b8a3197070af22",
+          "native_sql_elapsed_ms": 122.174,
+          "native_transform_elapsed_ms": 51.001,
+          "provider_requests": 0,
+          "real_orders_sent": 0,
+          "real_routes": "NOT_CALLED",
+          "sequence": 1792225716623749,
+          "source_sha": "7bad982559f56323c00f555f0d8bb480dd00dfd0",
+          "worker_status": "SHADOW_OBSERVING"
+        }
+      ],
+      "last_observation": {
+        "age_seconds": 64.339,
+        "as_of": "2026-10-17T08:28:36.623749+00:00",
+        "budget_ms": 2000,
+        "poll_seconds": 30,
+        "sql_elapsed_ms": 122.174,
+        "stages_cpu_seconds": {
+          "durable_serialization": 19.64,
+          "economic_exit_lab": 0.008,
+          "entry_signal_lab": 0.251,
+          "family_routing": 3.444,
+          "operational_funnel": 5.06,
+          "planner_pipeline": 2.768,
+          "preopen": 3.056,
+          "state_and_inputs": 1.624
+        },
+        "stages_seconds": {
+          "durable_serialization": 25.627,
+          "economic_exit_lab": 0.009,
+          "entry_signal_lab": 0.334,
+          "family_routing": 4.626,
+          "operational_funnel": 6.872,
+          "planner_pipeline": 5.189,
+          "preopen": 4.866,
+          "state_and_inputs": 1.735
+        },
+        "tick_cpu_seconds": 35.853,
+        "tick_seconds": 49.259,
+        "transform_elapsed_ms": 51.001,
+        "worker_status": "SHADOW_OBSERVING"
+      },
+      "read_only": true,
+      "reason": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+      "schema": "rc6.deploy-generation-gate.v1",
+      "status": "RED"
+    },
+    "contract_records": 18783,
+    "contract_quick_check": "GREEN",
+    "http_unique_routes": 63,
+    "http_audit_rounds": 4,
+    "http_results": 252,
+    "http_non200": 0,
+    "soak": "5_X_60S_GREEN_NO_RESTART_NO_CRITICAL_SIGNATURE",
+    "stress": "SKIPPED_NOT_EXECUTED",
+    "recovery": "FIX_FORWARD_VALIDATION_REQUIRED",
+    "cleanup_material": "GREEN_STAGING_REMOVED",
+    "cleanup_control_exit": 1,
+    "cleanup_space_recovered": 147456,
+    "rollback": false,
+    "real_orders_sent": 0
   },
   "metadata_inventory_runtime": {
     "schema": "rc6.metadata-matrix-summary.v1",
@@ -1988,7 +2107,8 @@
     "direct_ssh": "NOT_USED",
     "new_timers": "NONE",
     "subagents": "NONE",
-    "last_local_recovery_attempt": "2026-10-17T07:25Z; pwd and harmless temporary patch no response within5s; no canonical writes"
+    "last_local_recovery_attempt": "2026-10-17T07:45:18Z; pwd NO_RESPONSE_WITHIN5S; no canonical writes",
+    "canonical_history_reconstruction": "4_FULL_READS; UTF8_BYTE_SIZES_MATCH_WITH_TERMINAL_NEWLINE; PREPARED_TEXT_PRESERVES_ORIGINAL_PREFIX"
   },
   "native_generation_freshness_rca": {
     "source_run": 39008452962,
@@ -2019,7 +2139,8 @@
       "cpu": 0.75,
       "memory_mib": 512,
       "state": "IN_PROGRESS",
-      "native_acceptance": false
+      "native_acceptance": false,
+      "historical_snapshot": true
     }
   },
   "superseded_predeploy_615": {
@@ -2135,7 +2256,7 @@
     "diagnostic_pr": 614,
     "diagnostic_sha": "e5ee65c3f2399c1298482ae91159996286243052",
     "source_script": "scripts/rc6_codec_experiment.py",
-    "state": "COMPLETED_SYNTHETIC_RESEARCH_NOT_PROMOTED",
+    "state": "COMPUTATION_COMPLETED_ARTIFACT_UPLOAD_FAILED_EACCES; NOT_PROMOTED",
     "fixture": "ONE_FIXED_FULL_CARDINALITY_REPORT; 14611identities; NO_PRICES_NO_PROVIDER_NO_PRODUCTION_DATA",
     "variants": [
       "baseline",
@@ -2151,7 +2272,7 @@
     ],
     "native_acceptance": false
   },
-  "updated_at": "2026-10-17T07:38:58.980Z",
+  "updated_at": "2026-10-17T08:39:31.952Z",
   "previous_deploy_result_613": {
     "run": 39003668897,
     "job": 117311624166,
@@ -2252,5 +2373,142 @@
     "candidate_dependencies_changed": false,
     "product_codec_changed": false,
     "decision": "NO_CHANGE_TO_FROZEN_616; SMALL_SYNTHETIC_GAIN_WITH_LARGER_GZIP_NOT_SUFFICIENT_NATIVE_CAUSE"
+  },
+  "native_generation_freshness_rca_616": {
+    "native_run": 39013855958,
+    "job": 117341792509,
+    "gate": {
+      "error_class": null,
+      "error_reason": null,
+      "generations": [
+        {
+          "as_of": "2026-10-17T08:28:36.623749+00:00",
+          "candidate_tree_sha": "22a87b95ee7b601eb92ffcb0e9a5d3178ee316ec",
+          "configuration_fingerprint": "cbd2be0d55d3eeec94bf1fef07ecc10d0671298b4a1db8659384b6641efbf107",
+          "generation_id": "db91eaa7b7ad0aaaaf2abd85571a99bbdca96b7e5bc1b66da61df48973f68010",
+          "manifest_sha256": "a3162204bd6a16ec82247f02e296ade17472a034df4fb6a8e1b8a3197070af22",
+          "native_sql_elapsed_ms": 122.174,
+          "native_transform_elapsed_ms": 51.001,
+          "provider_requests": 0,
+          "real_orders_sent": 0,
+          "real_routes": "NOT_CALLED",
+          "sequence": 1792225716623749,
+          "source_sha": "7bad982559f56323c00f555f0d8bb480dd00dfd0",
+          "worker_status": "SHADOW_OBSERVING"
+        }
+      ],
+      "last_observation": {
+        "age_seconds": 64.339,
+        "as_of": "2026-10-17T08:28:36.623749+00:00",
+        "budget_ms": 2000,
+        "poll_seconds": 30,
+        "sql_elapsed_ms": 122.174,
+        "stages_cpu_seconds": {
+          "durable_serialization": 19.64,
+          "economic_exit_lab": 0.008,
+          "entry_signal_lab": 0.251,
+          "family_routing": 3.444,
+          "operational_funnel": 5.06,
+          "planner_pipeline": 2.768,
+          "preopen": 3.056,
+          "state_and_inputs": 1.624
+        },
+        "stages_seconds": {
+          "durable_serialization": 25.627,
+          "economic_exit_lab": 0.009,
+          "entry_signal_lab": 0.334,
+          "family_routing": 4.626,
+          "operational_funnel": 6.872,
+          "planner_pipeline": 5.189,
+          "preopen": 4.866,
+          "state_and_inputs": 1.735
+        },
+        "tick_cpu_seconds": 35.853,
+        "tick_seconds": 49.259,
+        "transform_elapsed_ms": 51.001,
+        "worker_status": "SHADOW_OBSERVING"
+      },
+      "read_only": true,
+      "reason": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+      "schema": "rc6.deploy-generation-gate.v1",
+      "status": "RED"
+    },
+    "primary_cpu_cost": "DURABLE_SERIALIZATION_19.640_OF_35.853_CPU_SECONDS",
+    "inferred_equal_cycle_age_seconds": 128.518,
+    "inference_not_measured_gap": true,
+    "budgets_unchanged": true
+  },
+  "predeploy_certificate_historical_612": {
+    "schema": "rc6.frozen-artifact-independent-verification.v2",
+    "status": "GREEN",
+    "artifact_id": 12086687961,
+    "predeploy_run": 38994512568,
+    "zip_bytes": 414252340,
+    "zip_sha256": "e4fa7af36bf2352d1361cbab757afe0712eeb14dce875d592818e7e72db088f2",
+    "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
+    "candidate_tree_sha": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6",
+    "image_id": "sha256:af9394bc485de5f86f6d57063b050d6a13b5119a49bfbc63c7315d69d4315bb3",
+    "image_size_bytes": 1175003476,
+    "image_tar_sha256": "5dd286938a31abfd1c48e682efd0883783e966b114dd4e560a74eab3b78cda6d",
+    "bundle_sha256": "56ea4f2cbc88c8a52d23c41d97f6e2164f734fc18e7c5920f9b01a4505627f8f",
+    "bundle_hashes_verified": 507,
+    "all_bundle_sources_equal_checkout": true,
+    "image_config_blob_sha256_verified": "af9394bc485de5f86f6d57063b050d6a13b5119a49bfbc63c7315d69d4315bb3",
+    "source_environment_observed": {
+      "POROTA_BUILD_SHA": "19c26d2eba13d5855f653dff67605d11c518996b",
+      "POROTA_CANDIDATE_TREE_SHA": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6"
+    },
+    "tests": {
+      "discovered": 3788,
+      "errors": 0,
+      "exclusions": [
+        "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+      ],
+      "executed": 3788,
+      "failures": 0,
+      "pytest_exit_code": 0,
+      "schema_version": 1,
+      "scope": "repository-root automatic pytest discovery",
+      "skipped": 0,
+      "status": "GREEN",
+      "xfail": 0
+    },
+    "native_privilege_properties": [
+      {
+        "name": "RC6_PRECLEAN_PRIVILEGE_BOUNDARY",
+        "value": "OS_DIFFERENT_UID"
+      }
+    ],
+    "not_a_droplet_acceptance_or_stress_result": true
+  },
+  "native_serialization_experiment": {
+    "diagnostic_pr": 614,
+    "source_sha": "e1c34aeaa794d26d2b6e9d6c25ff23235bdef62a",
+    "state": "IN_PROGRESS",
+    "exact_image_artifact": 12093264982,
+    "fixture": "SYNTHETIC_FULL_CARDINALITY; SAME_JSON_WITH_FROZEN_AND_ORDINARY_CONTAINERS",
+    "variants": [
+      "64K",
+      "256K",
+      "1M"
+    ],
+    "repeats_each": 2,
+    "required_measurements": 12,
+    "resources": {
+      "memory_mib": 512,
+      "cpu": 0.75,
+      "network": "NONE"
+    },
+    "production_data_mounted": false,
+    "droplet_accessed": false,
+    "native_acceptance": false,
+    "invalidated_initial_run": {
+      "run": 39017945248,
+      "job": 117353819088,
+      "result": "SUCCESS_EMPTY_INVALID",
+      "cause": "DOCKER_STDIN_NOT_INTERACTIVE; PYTHON_EXECUTED_NO_SCRIPT",
+      "guard": "REQUIRE_12_NONEMPTY_EQUAL_BYTE_HASH_MEASUREMENTS"
+    },
+    "attestation_metadata": "PR_BODY_FIXED_CHECKPOINT_SAFETY_REFERENCES"
   }
 }
