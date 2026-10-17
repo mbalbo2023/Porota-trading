@@ -108,14 +108,15 @@ def test_preclean_only_defers_exact_residual_space_result_to_final_admission(tmp
     import os
     import shlex
     workflow = (ROOT / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
-    start = workflow.index('          rm -f /tmp/porota-predeploy-housekeeping.json')
+    start = workflow.index('          sudo -n rm -f /tmp/porota-predeploy-housekeeping.json')
     end = workflow.index('          sudo -n docker image prune -f', start)
     block = '\n'.join(line[10:] for line in workflow[start:end].splitlines())
     receipt = tmp_path / 'housekeeping.json'
     block = block.replace('/tmp/porota-predeploy-housekeeping.json', shlex.quote(str(receipt)))
     stub = tmp_path / 'sudo'
     data = json.dumps({'status': 'RED', 'reason': reason, 'effective_mode': 'cleanup'})
-    stub.write_text('#!/bin/bash\n' + "printf '%s' " + shlex.quote(data) + ' > ' + shlex.quote(str(receipt))
+    stub.write_text('#!/bin/bash\nset -eu\nshift\nif [ "$1" = rm ]; then shift; exec rm "$@"; fi\n'
+                    + '[ "$1" = python3 ]\n' + "printf '%s' " + shlex.quote(data) + ' > ' + shlex.quote(str(receipt))
                     + '\nexit ' + str(housekeeping_rc) + '\n')
     stub.chmod(0o700)
     env = dict(os.environ, PATH=str(tmp_path) + os.pathsep + os.environ['PATH'], REPO=str(ROOT), TMP_POLICY=str(POLICY))

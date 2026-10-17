@@ -4,6 +4,7 @@ import fcntl
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -35,7 +36,7 @@ def installation(tmp_path,monkeypatch):
         calls.append(args)
         if args[:2]==['docker','inspect']:
             n=args[2]
-            return json.dumps([{'Id':n+'_id','Image':IMAGE,
+            return json.dumps([{'Id':n+'_id','Image':IMAGE,'RestartCount':0,
                 'State':{'Status':states.get(n,'exited'),'OOMKilled':False,'ExitCode':0}}])
         if args[:2]==['docker','stop']:states[args[-1]]='exited'
         if args[:2]==['docker','start']:
@@ -43,6 +44,10 @@ def installation(tmp_path,monkeypatch):
             with (tmp_path/'data/deploy/.postdeploy-stress.lock').open('a+') as stream:
                 with pytest.raises(BlockingIOError):fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
             states[args[-1]]='running'
+            if args[-1]==host.OWNED[0]:
+                with sqlite3.connect(db) as c:
+                    c.execute('UPDATE observer_state SET heartbeat_at=?',
+                              (datetime.now(timezone.utc).isoformat(),))
         return ''
     monkeypatch.setattr(host,'command',command)
     monkeypatch.setattr(host,'memory_available',lambda:1024**3)
@@ -128,6 +133,82 @@ def test_stop_effect_before_client_timeout_still_restores_runtime(installation,m
     assert all(s=='running' for s in states.values())
     report=json.loads((root/'data/deploy/stress'/SHA/'125/host-stress.json').read_text())
     assert report['status']=='RED' and report['runtime_restore']=='GREEN'
+
+
+def successful_stress(installation, monkeypatch):
+    root,db,calls,states=installation
+    def spawn(args,**kwargs):
+        work=next((root/'data/deploy/stress'/SHA).iterdir())
+        (work/'stress.json').write_text(json.dumps({'status':'GREEN','smoke':False}))
+        return SimpleNamespace(returncode=0,poll=lambda:0)
+    monkeypatch.setattr(host.subprocess,'Popen',spawn)
+    monkeypatch.setattr(host.time,'sleep',lambda seconds:None)
+
+
+@pytest.mark.parametrize('cleanup_failure',['nonzero','timeout'])
+def test_failed_stress_container_removal_cannot_certify_green(installation,monkeypatch,cleanup_failure):
+    root,db,calls,states=installation
+    successful_stress(installation,monkeypatch)
+    def remove(*args,**kwargs):
+        if cleanup_failure=='timeout':raise subprocess.TimeoutExpired('docker rm',20)
+        return SimpleNamespace(returncode=1)
+    monkeypatch.setattr(host.subprocess,'run',remove)
+    assert host.run(SHA,'126')==2
+    report=json.loads((root/'data/deploy/stress'/SHA/'126/host-stress.json').read_text())
+    assert report['status']=='RED' and report['stress_container_cleanup']=='RED'
+    assert report['runtime_restore']=='GREEN' and all(s=='running' for s in states.values())
+
+
+def test_same_identity_but_exited_observer_cannot_certify_restore(installation,monkeypatch):
+    root,db,calls,states=installation
+    successful_stress(installation,monkeypatch)
+    original=host.command
+    def no_process(args,**kwargs):
+        result=original(args,**kwargs)
+        if args[:2]==['docker','start'] and args[-1]==host.OWNED[0]:
+            states[host.OWNED[0]]='exited'
+        return result
+    monkeypatch.setattr(host,'command',no_process)
+    assert host.run(SHA,'127')==2
+    report=json.loads((root/'data/deploy/stress'/SHA/'127/host-stress.json').read_text())
+    assert report['status']=='RED' and report['runtime_restore']=='RED'
+    assert states[host.OWNED[1]]=='running'
+
+
+def test_running_processes_with_unchanged_heartbeat_cannot_certify_restore(installation,monkeypatch):
+    root,db,calls,states=installation
+    successful_stress(installation,monkeypatch)
+    original=host.command
+    with sqlite3.connect(db) as c:
+        original_heartbeat=c.execute('SELECT heartbeat_at FROM observer_state').fetchone()[0]
+    def frozen_heartbeat(args,**kwargs):
+        result=original(args,**kwargs)
+        if args[:2]==['docker','start']:
+            with sqlite3.connect(db) as c:
+                c.execute('UPDATE observer_state SET heartbeat_at=?',(original_heartbeat,))
+        return result
+    monkeypatch.setattr(host,'command',frozen_heartbeat)
+    assert host.run(SHA,'128')==2
+    report=json.loads((root/'data/deploy/stress'/SHA/'128/host-stress.json').read_text())
+    assert report['status']=='RED' and report['runtime_restore']=='RED'
+
+
+def test_restored_process_restart_must_not_disappear_behind_health(installation,monkeypatch):
+    root,db,calls,states=installation
+    successful_stress(installation,monkeypatch)
+    original=host.command
+    restarted=set()
+    def auto_restart(args,**kwargs):
+        result=original(args,**kwargs)
+        if args[:2]==['docker','start']:restarted.add(args[-1])
+        if args[:2]==['docker','inspect'] and args[-1] in restarted:
+            value=json.loads(result);value[0]['RestartCount']=1
+            result=json.dumps(value)
+        return result
+    monkeypatch.setattr(host,'command',auto_restart)
+    assert host.run(SHA,'129')==2
+    report=json.loads((root/'data/deploy/stress'/SHA/'129/host-stress.json').read_text())
+    assert report['status']=='RED' and report['runtime_restore']=='RED'
 
 
 def test_short_harness_requires_real_isolated_fills_and_eod(tmp_path,monkeypatch):
