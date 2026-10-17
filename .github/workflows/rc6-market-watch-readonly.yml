@@ -606,7 +606,7 @@ jobs:
           install -d -m 777 /tmp/rc6-profile-603
 
 
-      - name: Measure compressed shared snapshots and bounded key lengths
+      - name: Compare conservative bounds and compressed immutable snapshot reuse
         shell: bash
         run: |
           set -Eeuo pipefail

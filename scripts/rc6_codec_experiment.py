@@ -183,12 +183,32 @@ def key_cached_small():
     exec(small_source.replace(needle,"_key_length(key)"),env)
     return env["_small_json_tree"]
 
+def fast_cached_small():
+    lengths={}
+    def key_length(key):
+        value=lengths.get(key)
+        if value is None:
+            value=len(json.encoder.encode_basestring_ascii(key))
+            if len(key)<=256 and len(lengths)<512:lengths[key]=value
+        return value
+    source=small_source.replace("maximum=65536, nodes=4096","maximum=262144, nodes=16384")
+    source=source.replace("len(json.encoder.encode_basestring_ascii(item))","12*len(item)+2")
+    source=source.replace(needle,"_key_length(key)")
+    env=dict(candidate.__dict__);env["_key_length"]=key_length
+    exec(source,env)
+    return env["_small_json_tree"]
+
 expected=None;receipts=[]
-for variant in ("baseline","raw32","zcache4","zcache_keys4","zcache_keys4","zcache4","raw32","baseline"):
+for variant in ("baseline","zcache4","fast256","zfast256","zfast256","fast256","zcache4","baseline"):
     gc.collect();stats={"hits":0,"reused_characters":0,"entries":0,"charged_bytes":0,"budget_rejections":0,"compressed_cache_bytes":0}
-    candidate._small_json_tree=key_cached_small() if variant=="zcache_keys4" else original_small
-    candidate._canonical_fragments=(original_fragments if variant=="baseline" else
-        cached_fragments(32*1024**2,stats) if variant=="raw32" else compressed_fragments(stats))
+    selected_small=fast_cached_small() if variant in {"fast256","zfast256"} else original_small
+    stats["small_accepted"]=0;stats["small_rejected"]=0
+    def observed_small(value):
+        result=selected_small(value)
+        stats["small_accepted" if result else "small_rejected"]+=1
+        return result
+    candidate._small_json_tree=observed_small
+    candidate._canonical_fragments=(original_fragments if variant in {"baseline","fast256"} else compressed_fragments(stats))
     cpu=time.process_time();wall=time.monotonic();raw=hashlib.sha256();size=0
     path=root/(variant+".json.gz")
     with path.open("wb") as output:
@@ -209,7 +229,7 @@ summary={variant:statistics.median(r["cpu_seconds"] for r in receipts if r["vari
 result={"schema":"rc6.shared-frozen-snapshot-benchmark.v1","receipts":receipts,
         "median_cpu_seconds":summary,"canonical_bytes_identical":True,"native_acceptance":False,
         "production_data_mounted":False,"droplet_accessed":False,
-        "scope":"Per-pass compressed cache max4MiB, raw_snapshot32MiB, exact shared immutable preopen rows only",
+        "scope":"Conservative allocation-free string bounds with256KiB Csubtrees; compressed shared frozen lists max4MiB/raw32MiB; exact bytes",
         "provider_requests":0,"real_orders_sent":0}
 pathlib.Path("/work/shared-snapshot-benchmark.json").write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
 print("RC6_SHARED_SNAPSHOT_MEDIANS="+json.dumps(summary,sort_keys=True,separators=(",",":")),flush=True)
