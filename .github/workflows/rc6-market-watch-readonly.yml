@@ -601,23 +601,31 @@ jobs:
           install -d -m 777 /tmp/rc6-profile-603
       - uses: actions/checkout@v4
         with:
-          ref: 0236e4e22df8ddbd5a3d04c1a9d754d74c462b67
+          ref: db06f0a20787ffc4d9f1211b7f2f5fdf04557c14
           path: candidate
       - name: Development regression tests against candidate source and certified dependencies
         shell: bash
         run: |
           set -Eeuo pipefail
+          install -d -m 777 /tmp/rc6-profile-603
           docker run --rm --pull never --network none --user 1000:1000 --read-only \
             --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
             --memory 512m --memory-swap 512m --cpus 0.75 \
             --tmpfs /tmp:rw,nosuid,nodev,size=512m \
-            -v "$GITHUB_WORKSPACE/candidate:/candidate:ro" --workdir /candidate \
+            -v "$GITHUB_WORKSPACE/candidate:/candidate:ro" -v /tmp/rc6-profile-603:/work --workdir /candidate \
             -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e PYTHONPATH=/candidate \
             --entrypoint python sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
-            -m pytest -q tests/test_rc6_native_generation_cost.py \
+            -m pytest -q --junitxml=/work/focused.xml tests/test_rc6_native_generation_cost.py \
             tests/test_rc6_shadow_streaming_cost.py tests/test_rc6_shadow_family_runtime.py \
             tests/test_rc6_family_quote_lookup_cost.py tests/test_rc6_shadow_report_lifetime.py \
             tests/test_rc6_shadow_owned_state.py tests/test_rc6_deploy_generation_gate.py
+          python3 - <<'PY'
+          import json,xml.etree.ElementTree as E
+          root=E.parse("/tmp/rc6-profile-603/focused.xml").getroot()
+          cases=root.findall(".//testcase")
+          assert cases and not root.findall(".//failure") and not root.findall(".//error") and not root.findall(".//skipped")
+          print("RC6_DEVELOPMENT_FOCUSED="+json.dumps({"executed":len(cases),"failure":0,"error":0,"skipped":0},separators=(",",":")))
+          PY
       - name: Paired uninstrumented baseline and development full-catalog guards
         shell: bash
         run: |
@@ -676,6 +684,29 @@ jobs:
                            "calls":calls,"self_seconds":round(self_seconds,3),"cumulative_seconds":round(cumulative,3)})
           print("RC6_SYNTHETIC_PROFILE="+json.dumps(sorted(rows,key=lambda x:x["cumulative_seconds"],reverse=True)[:55],separators=(",",":")))
           PY
+      - name: Additional adverse CPU fixture without host access
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -d -m 777 /tmp/rc6-profile-603/adverse
+          set +e
+          timeout --signal=TERM --kill-after=15 300 docker run --rm --pull never --network none \
+            --user 1000:1000 --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --pids-limit 96 --memory 512m --memory-swap 512m --cpus 0.25 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603/adverse:/work \
+            -v "$GITHUB_WORKSPACE/candidate:/candidate:ro" --workdir /candidate -e PYTHONPATH=/candidate \
+            --entrypoint python sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
+            scripts/rc6_postdeploy_stress.py --full-catalog-check --output /work/result \
+            > /tmp/rc6-profile-603/adverse/output.log 2>&1
+          rc=$?
+          set -e
+          echo "RC6_ADVERSE_CPU_FULL_CATALOG=$rc|cpu=0.25|memory_mib=512|native_acceptance=false"
+          python3 - <<'PY'
+          import json,pathlib
+          path=pathlib.Path("/tmp/rc6-profile-603/adverse/result/full-catalog.json")
+          if path.is_file():print("RC6_ADVERSE_RESOURCE_RECEIPT="+json.dumps(json.loads(path.read_text()),separators=(",",":")))
+          PY
+          test "$rc" -eq 0
       - uses: actions/upload-artifact@v4
         if: always()
         with:
