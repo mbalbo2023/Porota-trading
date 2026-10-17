@@ -1331,6 +1331,84 @@ def _read_optional(path):
     return load_bounded(Path(path), MAX_JSON_BYTES)
 
 
+def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_seconds=2):
+    """Complete bounded metadata inventory; never market/financial acceptance.
+
+    No positions, prices, account values, free-text detail or metadata_json are
+    selected. Exported contract flags cannot grant entry or freshness authority.
+    """
+    result = {'schema': 'rc6.instrument-audit-inventory.v1', 'read_only': True,
+              'status': 'UNVERIFIED', 'entry_authority': False,
+              'broker_requests': 0, 'ppi_watch_accessed': False,
+              'source_database_effect': 'READ_ONLY', 'complete_inventory': False}
+    connection = None
+    try:
+        if type(row_limit) is not int or not 1 <= row_limit <= 20000 or not 0 < budget_seconds <= 2:
+            raise ValueError('INVENTORY_BUDGET_INVALID')
+        database = Path(root) / DB_REL
+        if database.is_symlink() or database.resolve(strict=True) != database.absolute():
+            raise ValueError('INVENTORY_PATH_ALIAS')
+        connection = sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=.005)
+        connection.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 8 * 1024**2)
+        connection.execute('PRAGMA query_only=ON')
+        deadline = time.monotonic() + budget_seconds
+        connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+        connection.execute('BEGIN')
+        safety = connection.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+        if not safety or safety[0] != 'PRODUCTION_PAPER' or type(safety[1]) is not int or safety[1] != 0:
+            raise ValueError('INVENTORY_PAPER_REQUIRED')
+        tables = {r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        columns = ['ticker', 'instrument_type', 'market', 'currency', 'settlement',
+                   'settlement_source', 'last_seen_at', 'catalog_status', 'catalog_capability']
+        fields = ['c.' + x for x in columns[:7]] + ['c.status', 'c.capability']
+        joins = ''
+        if 'candidate_identity_v2' in tables:
+            joins += ' LEFT JOIN candidate_identity_v2 i ON ' + ' AND '.join('i.'+x+'=c.'+x for x in columns[:5])
+            fields += ['i.can_simulate', 'i.status', 'i.checked_at']
+        else:
+            fields += ['NULL'] * 3
+        columns += ['candidate_can_simulate', 'candidate_status', 'candidate_checked_at']
+        if 'ppi_intraday_contract_state' in tables:
+            joins += (' LEFT JOIN ppi_intraday_contract_state t ON t.symbol=c.ticker'
+                      ' AND t.asset_class=c.instrument_type AND t.market=c.market'
+                      ' AND t.currency=c.currency AND t.settlement=c.settlement')
+            fields += ['t.state', 't.last_source_at', 't.checked_at']
+        else:
+            fields += ['NULL'] * 3
+        columns += ['intraday_contract_state', 'intraday_source_at', 'intraday_checked_at']
+        public_fields = ','.join(x[2:] for x in fields[:9])
+        sql = ('SELECT COUNT(*),json_group_array(json_array(' + ','.join(fields) + ')) FROM '
+               '(SELECT ' + public_fields + ' FROM financial_instrument_catalog ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?) c' + joins)
+        count, packed = connection.execute(sql, (row_limit + 1,)).fetchone()
+        connection.rollback(); connection.close(); connection = None
+        if count > row_limit:
+            raise ValueError('INVENTORY_TRUNCATED_OR_DUPLICATED')
+        captured = at or now_utc()
+        rows = json.loads(packed)
+        if len(rows) != count or len({tuple(r[:5]) for r in rows}) != count:
+            raise ValueError('INVENTORY_IDENTITY_NOT_UNIQUE')
+        provenance = load_bounded(Path(root) / 'data/deploy/CURRENT_STATE_V2.json') or {}
+        observed = {}
+        for key in ('candidate_sha', 'deploy_sha'):
+            value = provenance.get(key)
+            observed[key] = value if isinstance(value, str) and re.fullmatch('[0-9a-f]{40}', value) else None
+        observed['validation_status'] = provenance.get('validation_status') if provenance.get('validation_status') in {
+            'VALIDATED_RUNTIME', 'DEPLOYED_VALIDATION_PENDING'} else None
+        result.update(status='OBSERVED_METADATA_ONLY', complete_inventory=True,
+                      generated_at=captured.isoformat(), columns=columns, records=rows, count=count,
+                      real_orders_sent=0, mode='PRODUCTION_PAPER', provenance=observed,
+                      missing_optional_tables=sorted({'candidate_identity_v2','ppi_intraday_contract_state'}-tables),
+                      unverified_per_identity_stages=['quote_freshness','candle','history','signal','risk',
+                          'decision','fill','exit','pnl','external_alert'],
+                      contract_flags_are_not_live_tradeability=True)
+    except (OSError, ValueError, TypeError, sqlite3.Error) as exc:
+        result['error_class'] = type(exc).__name__
+    finally:
+        if connection is not None:
+            connection.close()
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     actions = parser.add_subparsers(dest="action", required=True)
@@ -1345,6 +1423,7 @@ def main(argv=None):
     actions.add_parser("schedule-api-host")
     actions.add_parser("observer-lifecycle-host")
     actions.add_parser("recent-critical-host")
+    actions.add_parser("instrument-inventory-host")
     cadence = actions.add_parser('schedule-health')
     cadence.add_argument('--current',required=True)
     cadence.add_argument('--repo',required=True)
@@ -1392,6 +1471,8 @@ def main(argv=None):
         data = observer_lifecycle_host()
     elif args.action == "recent-critical-host":
         data = recent_critical_host()
+    elif args.action == "instrument-inventory-host":
+        data = instrument_inventory_host()
     elif args.action == "alert-host":
         data = alert_host(args.encoded)
     elif args.action == "prepare-alert":

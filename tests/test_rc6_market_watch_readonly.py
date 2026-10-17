@@ -838,6 +838,85 @@ class CommittedGenerationProbeTests(unittest.TestCase):
         self.assertEqual(self.capture()["integrity"], "UNVERIFIED")
 
 
+class InstrumentInventoryContracts(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.db = self.root / monitor.DB_REL; self.db.parent.mkdir(parents=True)
+        with sqlite3.connect(self.db) as c:
+            c.executescript('''
+                CREATE TABLE observer_state(id INTEGER PRIMARY KEY,mode TEXT,real_orders_sent INTEGER);
+                INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER',0);
+                CREATE TABLE financial_instrument_catalog(ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,settlement_source TEXT,last_seen_at TEXT,status TEXT,capability TEXT,metadata_json TEXT);
+                CREATE TABLE candidate_identity_v2(ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,can_simulate INTEGER,status TEXT,checked_at TEXT);
+                CREATE TABLE ppi_intraday_contract_state(symbol TEXT,asset_class TEXT,market TEXT,currency TEXT,settlement TEXT,state TEXT,last_source_at TEXT,checked_at TEXT);
+                CREATE TABLE private_account_data(secret TEXT);
+                INSERT INTO private_account_data VALUES('PRIVATE_ACCOUNT_SECRET');
+            ''')
+            for currency in ('ARS', 'USD'):
+                key = ('SAME', 'ACCIONES', 'BYMA', currency, 'A-24HS')
+                c.execute('INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?)',
+                    (*key, 'PPI', NOW.isoformat(), 'AVAILABLE', 'READY_PAPER_SPOT', 'PRIVATE_METADATA_SECRET'))
+                c.execute('INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?)',
+                    (*key, int(currency == 'ARS'), 'AVAILABLE', NOW.isoformat()))
+
+    def test_complete_five_part_inventory_is_readonly_and_excludes_private_fields(self):
+        before = hashlib.sha256(self.db.read_bytes()).hexdigest()
+        value = monitor.instrument_inventory_host(self.root, at=NOW)
+        self.assertEqual(value['status'], 'OBSERVED_METADATA_ONLY')
+        self.assertEqual(value['count'], 2)
+        self.assertTrue(value['complete_inventory'])
+        self.assertFalse(value['entry_authority'])
+        self.assertEqual({r[3] for r in value['records']}, {'ARS', 'USD'})
+        by_currency = {r[3]: dict(zip(value['columns'],r)) for r in value['records']}
+        self.assertEqual(by_currency['ARS']['candidate_can_simulate'], 1)
+        self.assertEqual(by_currency['USD']['candidate_can_simulate'], 0)
+        self.assertIn('fill', value['unverified_per_identity_stages'])
+        self.assertIsNone(value['provenance']['candidate_sha'])
+        self.assertNotIn('PRIVATE_', json.dumps(value))
+        self.assertEqual(before, hashlib.sha256(self.db.read_bytes()).hexdigest())
+
+    def test_row_sentinel_never_publishes_partial_inventory_as_complete(self):
+        value = monitor.instrument_inventory_host(self.root, at=NOW, row_limit=1)
+        self.assertFalse(value['complete_inventory'])
+        self.assertEqual(value['status'], 'UNVERIFIED')
+        self.assertNotIn('records', value)
+
+    def test_unknown_or_nonzero_real_orders_blocks_inventory(self):
+        for count in (None, 1):
+            with sqlite3.connect(self.db) as c:
+                c.execute('UPDATE observer_state SET real_orders_sent=?', (count,))
+            value = monitor.instrument_inventory_host(self.root, at=NOW)
+            self.assertFalse(value['complete_inventory'])
+            self.assertNotIn('records', value)
+
+    def test_missing_optional_contract_data_remains_explicit(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('DROP TABLE candidate_identity_v2')
+            c.execute('DROP TABLE ppi_intraday_contract_state')
+        value = monitor.instrument_inventory_host(self.root, at=NOW)
+        self.assertTrue(value['complete_inventory'])
+        self.assertEqual(len(value['missing_optional_tables']), 2)
+        self.assertTrue(all(v is None for row in value['records'] for v in row[9:]))
+
+    def test_duplicate_join_cannot_silently_multiply_an_identity(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('INSERT INTO candidate_identity_v2 SELECT * FROM candidate_identity_v2')
+        value = monitor.instrument_inventory_host(self.root, at=NOW)
+        self.assertFalse(value['complete_inventory'])
+        self.assertNotIn('records', value)
+
+    def test_manual_inventory_does_not_expand_comparison_artifact_or_schedule(self):
+        text = (SOURCE.parents[1] / '.github/workflows/rc6-market-watch-readonly.yml').read_text()
+        start = text.index('name: Inventory public instrument metadata on manual runs only')
+        end = text.index('name: Diagnose SHADOW SQLite stages on manual runs only', start)
+        self.assertIn("github.event_name == 'workflow_dispatch'", text[start:end])
+        self.assertIn('name: rc6-instrument-inventory-', text[start:end])
+        start = text.index('name: Save immutable per-run evidence')
+        end = text.index('name: Fail checks on verified critical or confirmed P1', start)
+        self.assertNotIn('audit-inventory', text[start:end])
+
+
 if __name__ == "__main__":
     unittest.main()
 
