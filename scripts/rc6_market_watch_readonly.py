@@ -1013,23 +1013,28 @@ def porota_image_inventory_host():
         if len(refs)!=len(containers) or any(not image_id.fullmatch(x) for x in refs):
             raise ValueError('IMAGE_REFERENCES_UNVERIFIED')
         records=[]
-        details=run(['image','inspect','--format','{{.Id}}|{{.Size}}|{{json .RepoTags}}',*images]).splitlines() if images else []
+        details=run(['image','inspect','--format','{{.Id}}|{{.Size}}|{{json .RepoTags}}|{{json .RepoDigests}}',*images]).splitlines() if images else []
         if len(details)!=len(images):raise ValueError('IMAGE_SIZES_UNVERIFIED')
         seen=set()
         for line in details:
-            parts=line.split('|',2)
-            if len(parts)!=3:raise ValueError('IMAGE_SIZE_INVALID')
-            ident,size,raw_tags=parts;all_tags=json.loads(raw_tags)
+            parts=line.split('|',3)
+            if len(parts)!=4:raise ValueError('IMAGE_SIZE_INVALID')
+            ident,size,raw_tags,raw_digests=parts;all_tags=json.loads(raw_tags);digests=json.loads(raw_digests) or []
             if (ident not in images or ident in seen or not size.isdecimal() or not isinstance(all_tags,list)
                     or not all_tags or len(all_tags)>64 or any(not isinstance(tag,str) for tag in all_tags)):
                 raise ValueError('IMAGE_SIZE_OR_ALIASES_INVALID')
+            if not isinstance(digests,list) or len(digests)>64 or any(not isinstance(value,str) for value in digests):
+                raise ValueError('IMAGE_DIGESTS_INVALID')
+            known_digests=[value for value in digests if re.fullmatch(r'(?:porota-predeploy-v2|porota-trading-bot)@sha256:[0-9a-f]{64}',value)]
+            external_digests=len(digests)-len(known_digests)
             seen.add(ident);tags=sorted(images[ident]);references=refs.count(ident)
             eligible=all(re.fullmatch(r'porota-predeploy-v2:[0-9a-f]{40}|porota-trading-bot:17\.0\.0-rc6-candidate-[0-9a-f]{40}',tag) for tag in all_tags)
             records.append({'image_id':ident,'porota_tags':tags,'size_bytes':int(size),
                             'all_container_reference_count':references,
                             'scoped_candidate_tags_only':eligible,'unlisted_alias_count':len(set(all_tags)-set(tags)),
+                            'canonical_repository_digests':known_digests,'external_digest_count':external_digests,
                             'deletion_authority':False,
-                            'unreferenced_candidate_observed':not references and eligible})
+                            'unreferenced_candidate_observed':not references and eligible and not external_digests})
         result.update(status='OBSERVED_READ_ONLY',complete_inventory=True,
                       records=sorted(records,key=lambda r:r['image_id']),container_count=len(containers))
     except (OSError,ValueError,TypeError,subprocess.TimeoutExpired) as exc:

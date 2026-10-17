@@ -845,13 +845,13 @@ class ImageInventoryContracts(unittest.TestCase):
         end=text.index('name: Fail checks on verified critical or confirmed P1',start)
         self.assertIn('evidence/porota_images.json',text[start:end])
 
-    def capture(self,referenced=False,foreign_alias=False,inspection_failed=False):
+    def capture(self,referenced=False,foreign_alias=False,inspection_failed=False,digests=None):
         ident='sha256:'+'c'*64;tag='porota-predeploy-v2:'+'a'*40
         aliases=[tag]+(['PRIVATE_OTHER_REPOSITORY:SECRET'] if foreign_alias else [])
         rows=[subprocess.CompletedProcess([],0,stdout=json.dumps({'ID':ident,'Repository':'porota-predeploy-v2','Tag':'a'*40,'Env':'PRIVATE_SECRET'}),stderr=''),
               subprocess.CompletedProcess([],0,stdout='d'*12,stderr=''),
               subprocess.CompletedProcess([],1 if inspection_failed else 0,stdout=ident if referenced else 'sha256:'+'e'*64,stderr='PRIVATE_SECRET'),
-              subprocess.CompletedProcess([],0,stdout=ident+'|12345|'+json.dumps(aliases),stderr='')]
+              subprocess.CompletedProcess([],0,stdout=ident+'|12345|'+json.dumps(aliases)+'|'+json.dumps(digests or []),stderr='')]
         with patch.object(monitor.subprocess,'run',side_effect=rows) as calls:
             value=monitor.porota_image_inventory_host()
         self.assertNotIn('PRIVATE_',json.dumps(value))
@@ -867,6 +867,15 @@ class ImageInventoryContracts(unittest.TestCase):
         self.assertFalse(self.capture(referenced=True)['records'][0]['unreferenced_candidate_observed'])
         row=self.capture(foreign_alias=True)['records'][0]
         self.assertFalse(row['scoped_candidate_tags_only']);self.assertEqual(row['unlisted_alias_count'],1)
+
+    def test_digest_inventory_preserves_canonical_names_and_redacts_external(self):
+        known='porota-predeploy-v2@sha256:'+'a'*64
+        row=self.capture(digests=[known])['records'][0]
+        self.assertEqual(row['canonical_repository_digests'],[known])
+        self.assertEqual(row['external_digest_count'],0)
+        row=self.capture(digests=[known,'PRIVATE_REGISTRY/SECRET@sha256:'+'b'*64])['records'][0]
+        self.assertEqual(row['external_digest_count'],1)
+        self.assertFalse(row['unreferenced_candidate_observed'])
 
     def test_failed_ownership_inspection_cannot_claim_unused(self):
         value=self.capture(inspection_failed=True)
