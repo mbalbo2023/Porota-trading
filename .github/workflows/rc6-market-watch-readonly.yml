@@ -125,7 +125,8 @@ jobs:
 
   watch:
     needs: contracts
-    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-620-native-profile-20261017'
+    # Passive620 evidence captured; no further host diagnostics from this branch.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 9
     env:
