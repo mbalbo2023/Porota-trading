@@ -375,6 +375,42 @@
       "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
       "bytes": 360,
       "sha256": "64d5bf5b74233f330fdb21b54dfc8ecac174d30585b68b46d30675fe5750784f"
+    },
+    {
+      "path": "docs/releases/evidence603/stress-recovery-causal-before.xml",
+      "source": "LABELLED_PRIVATE_ADVERSARY_OR_CANONICAL_ACTION_LOG_RECEIPT",
+      "bytes": 4925,
+      "sha256": "c3ebd942a004c8d0d2e9c0e0bf769d94141bb53fde1cc0daf68cd4e9d2d85354",
+      "cases": 3,
+      "failure": 3,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/stress-restart-causal-before.xml",
+      "source": "LABELLED_PRIVATE_ADVERSARY_OR_CANONICAL_ACTION_LOG_RECEIPT",
+      "bytes": 1964,
+      "sha256": "ca192cc5794b1929dc2d6c68f2d5bd663d86b5aa723d2297f1f4790ec756964a",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/stress-recovery-final-after.xml",
+      "source": "LABELLED_PRIVATE_ADVERSARY_OR_CANONICAL_ACTION_LOG_RECEIPT",
+      "bytes": 7887,
+      "sha256": "5bcbc1d785cc1be09e858df9ca7232b0f5b7cc1d239f5608cce7ed25178c2bf3",
+      "cases": 48,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38989979153-superseded.json",
+      "source": "LABELLED_PRIVATE_ADVERSARY_OR_CANONICAL_ACTION_LOG_RECEIPT",
+      "bytes": 1417,
+      "sha256": "b8da22228e2a74209b7e75acb3f1c608625a4f7703db0ecf6836985ebe93de11"
     }
   ]
 }

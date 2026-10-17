@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.578" timestamp="2026-10-16T21:22:44.438977-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_postdeploy_stress_contract" name="test_restored_process_restart_must_not_disappear_behind_health" time="0.013"><failure message="AssertionError: assert 0 == 2&#10; +  where 0 = &lt;function run at 0x7f2071895080&gt;('1111111111111111111111111111111111111111', '129')&#10; +    where &lt;function run at 0x7f2071895080&gt; = host.run">installation = (PosixPath('/tmp/pytest-of-root/pytest-67/test_restored_process_restart_0'), PosixPath('/tmp/pytest-of-root/pytest-67/...rota_production_dashboard'], ...], {'porota_production_observer': 'running', 'porota_production_dashboard': 'running'})
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f20719eed20&gt;
+
+    def test_restored_process_restart_must_not_disappear_behind_health(installation,monkeypatch):
+        root,db,calls,states=installation
+        successful_stress(installation,monkeypatch)
+        original=host.command
+        restarted=set()
+        def auto_restart(args,**kwargs):
+            result=original(args,**kwargs)
+            if args[:2]==['docker','start']:restarted.add(args[-1])
+            if args[:2]==['docker','inspect'] and args[-1] in restarted:
+                value=json.loads(result);value[0]['RestartCount']=1
+                result=json.dumps(value)
+            return result
+        monkeypatch.setattr(host,'command',auto_restart)
+&gt;       assert host.run(SHA,'129')==2
+E       AssertionError: assert 0 == 2
+E        +  where 0 = &lt;function run at 0x7f2071895080&gt;('1111111111111111111111111111111111111111', '129')
+E        +    where &lt;function run at 0x7f2071895080&gt; = host.run
+
+tests/test_rc6_postdeploy_stress_contract.py:209: AssertionError</failure></testcase></testsuite></testsuites>

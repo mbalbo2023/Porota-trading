@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="0.389" timestamp="2026-10-16T21:21:15.799134-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_postdeploy_stress_contract" name="test_failed_stress_container_removal_cannot_certify_green" time="0.012"><failure message="AssertionError: assert 0 == 2&#10; +  where 0 = &lt;function run at 0x7f576f348900&gt;('1111111111111111111111111111111111111111', '126')&#10; +    where &lt;function run at 0x7f576f348900&gt; = host.run">installation = (PosixPath('/tmp/pytest-of-root/pytest-65/test_failed_stress_container_r0'), PosixPath('/tmp/pytest-of-root/pytest-65/...rota_production_dashboard'], ...], {'porota_production_observer': 'running', 'porota_production_dashboard': 'running'})
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f576f3b1790&gt;
+
+    def test_failed_stress_container_removal_cannot_certify_green(installation,monkeypatch):
+        root,db,calls,states=installation
+        successful_stress(installation,monkeypatch)
+        monkeypatch.setattr(host.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=1))
+&gt;       assert host.run(SHA,'126')==2
+E       AssertionError: assert 0 == 2
+E        +  where 0 = &lt;function run at 0x7f576f348900&gt;('1111111111111111111111111111111111111111', '126')
+E        +    where &lt;function run at 0x7f576f348900&gt; = host.run
+
+tests/test_rc6_postdeploy_stress_contract.py:147: AssertionError</failure></testcase><testcase classname="tests.test_rc6_postdeploy_stress_contract" name="test_same_identity_but_exited_observer_cannot_certify_restore" time="0.012"><failure message="AssertionError: assert 0 == 2&#10; +  where 0 = &lt;function run at 0x7f576f348900&gt;('1111111111111111111111111111111111111111', '127')&#10; +    where &lt;function run at 0x7f576f348900&gt; = host.run">installation = (PosixPath('/tmp/pytest-of-root/pytest-65/test_same_identity_but_exited_0'), PosixPath('/tmp/pytest-of-root/pytest-65/...orota_production_dashboard'], ...], {'porota_production_observer': 'exited', 'porota_production_dashboard': 'running'})
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f576f3afce0&gt;
+
+    def test_same_identity_but_exited_observer_cannot_certify_restore(installation,monkeypatch):
+        root,db,calls,states=installation
+        successful_stress(installation,monkeypatch)
+        original=host.command
+        def no_process(args,**kwargs):
+            result=original(args,**kwargs)
+            if args[:2]==['docker','start'] and args[-1]==host.OWNED[0]:
+                states[host.OWNED[0]]='exited'
+            return result
+        monkeypatch.setattr(host,'command',no_process)
+&gt;       assert host.run(SHA,'127')==2
+E       AssertionError: assert 0 == 2
+E        +  where 0 = &lt;function run at 0x7f576f348900&gt;('1111111111111111111111111111111111111111', '127')
+E        +    where &lt;function run at 0x7f576f348900&gt; = host.run
+
+tests/test_rc6_postdeploy_stress_contract.py:163: AssertionError</failure></testcase><testcase classname="tests.test_rc6_postdeploy_stress_contract" name="test_running_processes_with_unchanged_heartbeat_cannot_certify_restore" time="0.009"><failure message="AssertionError: assert 0 == 2&#10; +  where 0 = &lt;function run at 0x7f576f348900&gt;('1111111111111111111111111111111111111111', '128')&#10; +    where &lt;function run at 0x7f576f348900&gt; = host.run">installation = (PosixPath('/tmp/pytest-of-root/pytest-65/test_running_processes_with_un0'), PosixPath('/tmp/pytest-of-root/pytest-65/...rota_production_dashboard'], ...], {'porota_production_observer': 'running', 'porota_production_dashboard': 'running'})
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f576f3b5be0&gt;
+
+    def test_running_processes_with_unchanged_heartbeat_cannot_certify_restore(installation,monkeypatch):
+        root,db,calls,states=installation
+        successful_stress(installation,monkeypatch)
+        original=host.command
+        with sqlite3.connect(db) as c:
+            original_heartbeat=c.execute('SELECT heartbeat_at FROM observer_state').fetchone()[0]
+        def frozen_heartbeat(args,**kwargs):
+            result=original(args,**kwargs)
+            if args[:2]==['docker','start']:
+                with sqlite3.connect(db) as c:
+                    c.execute('UPDATE observer_state SET heartbeat_at=?',(original_heartbeat,))
+            return result
+        monkeypatch.setattr(host,'command',frozen_heartbeat)
+&gt;       assert host.run(SHA,'128')==2
+E       AssertionError: assert 0 == 2
+E        +  where 0 = &lt;function run at 0x7f576f348900&gt;('1111111111111111111111111111111111111111', '128')
+E        +    where &lt;function run at 0x7f576f348900&gt; = host.run
+
+tests/test_rc6_postdeploy_stress_contract.py:182: AssertionError</failure></testcase></testsuite></testsuites>

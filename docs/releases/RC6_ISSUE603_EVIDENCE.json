@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "PRETRANSFER_FAILED_SUCCESSOR_609_IN_PREDEPLOY",
+  "release_state": "SUCCESSOR_610_IN_PREDEPLOY_AFTER_STRESS_CERTIFIER_ADVERSARIES",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -14,8 +14,8 @@
     "issue471": 6225616632,
     "issue473": 6225616839,
     "deploy_owner": "ACQUIRED",
-    "deploy_owner_issue471": 6227771990,
-    "deploy_owner_issue473": 6227772178
+    "deploy_owner_issue471": 6227887596,
+    "deploy_owner_issue473": 6227887759
   },
   "findings": [
     {
@@ -572,6 +572,66 @@
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Any causal failure, identity drift or missing runtime receipt keeps this finding open."
+    },
+    {
+      "id": "STRESS-CLEANUP-RESULT",
+      "capability": "CLEANUP_CERTIFICATION",
+      "path": "scripts/rc6_postdeploy_stress_host.py",
+      "symbol": "docker rm",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "RCA: subprocess.run returncode was ignored, so failed removal could certify GREEN. Private negative test returned0 instead of2. FIX/GUARD: require and record removal exit0; exception/nonzero leaves overallRED but still restores both runtime containers. Separate cleanup status preserves successful restoration evidence. Nonzero and timeout adversaries nowPASS. Causal3FAIL+1FAIL receipts and final48PASS preserved. Exact native suite and actual Droplet stress pending.",
+      "test": "tests/test_rc6_postdeploy_stress_contract.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "REPRODUCED_PRIVATE_FIXTURE_NOT_OBSERVED_DROPLET",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Any causal failure or missing cleanup/recovery proof keeps this finding open."
+    },
+    {
+      "id": "STRESS-RESTORE-PROCESS",
+      "capability": "RUNTIME_PROCESS_RECOVERY",
+      "path": "scripts/rc6_postdeploy_stress_host.py",
+      "symbol": "restored_state",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "RCA: identity/image checks plus healthy dashboard could accept an exited observer. Private adversary reproduced GREEN with observer exited. FIX/GUARD: both original IDs/images and running states required immediately and on every recovery health retry. Same-identity dead process remainsRED; dashboard recovery is still attempted. Causal3FAIL+1FAIL receipts and final48PASS preserved. Exact native suite and actual Droplet stress pending.",
+      "test": "tests/test_rc6_postdeploy_stress_contract.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "REPRODUCED_PRIVATE_FIXTURE_NOT_OBSERVED_DROPLET",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Any causal failure or missing cleanup/recovery proof keeps this finding open."
+    },
+    {
+      "id": "STRESS-RESTORE-HEARTBEAT",
+      "capability": "RUNTIME_LIVENESS_RECOVERY",
+      "path": "scripts/rc6_postdeploy_stress_host.py",
+      "symbol": "heartbeat_before_quiesce",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "RCA: heartbeat freshness180s admitted an unchanged pre-stress row after recovery. Private adversary reproduced GREEN with no heartbeat advance. FIX/GUARD: record admitted heartbeat and require actual strictly newer heartbeat from the restored native observer in addition to PAPER0/CLOSED/WAITING/ledgers and HTTP health. Frozen heartbeat remainsRED. Causal3FAIL+1FAIL receipts and final48PASS preserved. Exact native suite and actual Droplet stress pending.",
+      "test": "tests/test_rc6_postdeploy_stress_contract.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "REPRODUCED_PRIVATE_FIXTURE_NOT_OBSERVED_DROPLET",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Any causal failure or missing cleanup/recovery proof keeps this finding open."
+    },
+    {
+      "id": "STRESS-RESTORE-RESTART",
+      "capability": "RUNTIME_CRASH_VISIBILITY",
+      "path": "scripts/rc6_postdeploy_stress_host.py",
+      "symbol": "restored_state",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "RCA: a process could restart after docker start and still satisfy identity/image/health, hiding the crash. Private adversary reproduced GREEN with RestartCount0to1. FIX/GUARD: original and observed restart counters must be typed ints and unchanged on every recovery check; final lifecycle publishes counter. Increased or unknown count remainsRED. Causal3FAIL+1FAIL receipts and final48PASS preserved. Exact native suite and actual Droplet stress pending.",
+      "test": "tests/test_rc6_postdeploy_stress_contract.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "REPRODUCED_PRIVATE_FIXTURE_NOT_OBSERVED_DROPLET",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Any causal failure or missing cleanup/recovery proof keeps this finding open."
     }
   ],
   "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
@@ -788,17 +848,17 @@
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
   },
   "next_candidate": {
-    "pr": 609,
-    "sha": "1fbae11682c6d9ded064226f296c7db18dccccf5",
-    "tree": "23a9d5566b9905c24f4828ffc0f63d6ebda66c01",
+    "pr": 610,
+    "sha": "4e2bddc2c1c15ed0333301c4f462f790852a3a17",
+    "tree": "8d23feb520ac7a983bb4091a02b7a5e479885681",
     "base": "c739a83f395b07ed1a5b39d52fbb565e743f3b67",
-    "predeploy_run": 38989979153,
+    "parent": "1fbae11682c6d9ded064226f296c7db18dccccf5",
+    "predeploy_run": 38990671984,
     "predeploy_state": "IN_PROGRESS",
-    "local_cases": 79,
+    "local_cases": 48,
     "local_failures": 0,
     "local_errors": 0,
     "local_skipped": 0,
-    "local_privilege_proof": "LOCAL_PERMISSION_MODEL_NOT_NATIVE_OS_PROOF",
     "native_required_property": "RC6_PRECLEAN_PRIVILEGE_BOUNDARY=OS_DIFFERENT_UID"
   },
   "latest_deploy_result": {
@@ -884,5 +944,29 @@
     "local_contracts": 60,
     "droplet_inventory_executed": false,
     "merge": "HELD_UNTIL_RUNTIME_VALIDATED_AND_STRESS_RESTORED"
+  },
+  "superseded_without_deploy_609": {
+    "run_id": 38989979153,
+    "job_id": 117269987290,
+    "conclusion": "SUCCESS",
+    "candidate": "1fbae11682c6d9ded064226f296c7db18dccccf5",
+    "artifact_id": 12084822787,
+    "zip_bytes": 414166126,
+    "zip_sha256": "a42239d9c4730017d3dddd96159656698c7a8ea068cdf3033cf753b56dd98fe4",
+    "independent_zip_verification": "NOT_PERFORMED_SUPERSEDED_WITHOUT_PROMOTION",
+    "lines": [
+      "2026-10-17T01:15:53.1041549Z POROTA_TEST_EXCLUSIONS=1",
+      "2026-10-17T01:19:38.1276990Z POROTA_TEST_DISCOVERED=3759",
+      "2026-10-17T01:19:38.1277645Z POROTA_TEST_EXECUTED=3759",
+      "2026-10-17T01:19:38.1278145Z POROTA_TEST_SKIPPED=0",
+      "2026-10-17T01:19:38.1278603Z POROTA_TEST_XFAIL=0",
+      "2026-10-17T01:19:38.1279041Z POROTA_TEST_FAILURES=0",
+      "2026-10-17T01:19:38.1279493Z POROTA_TEST_ERRORS=0",
+      "2026-10-17T01:19:38.1279945Z POROTA_TEST_EXCLUSIONS=1",
+      "2026-10-17T01:19:38.1280428Z POROTA_GOVERNED_TEST_STATUS=GREEN",
+      "2026-10-17T01:21:29.5918976Z POROTA_IMAGE_SOURCE_IDENTITY=GREEN|1fbae11682c6d9ded064226f296c7db18dccccf5|23a9d5566b9905c24f4828ffc0f63d6ebda66c01",
+      "2026-10-17T01:22:07.0491574Z SHA256 digest of uploaded artifact zip is a42239d9c4730017d3dddd96159656698c7a8ea068cdf3033cf753b56dd98fe4",
+      "2026-10-17T01:22:07.2856031Z Artifact porota-predeploy-v2-1fbae11682c6d9ded064226f296c7db18dccccf5 has been successfully uploaded! Final size is 414166126 bytes. Artifact ID is 12084822787"
+    ]
   }
 }
