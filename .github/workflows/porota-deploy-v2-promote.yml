@@ -143,6 +143,7 @@ jobs:
           chmod 600 "$HOME/.ssh/porota_rc6_deploy" "$HOME/.ssh/known_hosts"
 
       - name: Dynamic pre-transfer disk guard and conditional safe cleanup
+        id: diskguard
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -217,7 +218,7 @@ jobs:
           # because Docker's unused cache/old critical image is not reclaimed
           # until the following steps. Accept only that exact structured
           # residual-space result, then enforce the full admission gate below.
-          rm -f /tmp/porota-predeploy-housekeeping.json
+          sudo -n rm -f /tmp/porota-predeploy-housekeeping.json
           set +e
           sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py" \
             --policy "$TMP_POLICY" --mode cleanup \
@@ -1263,7 +1264,7 @@ jobs:
           REMOTE
 
       - name: Failure-safe host cleanup
-        if: ${{ always() && (steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled') }}
+        if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled') }}
         timeout-minutes: 4
         shell: bash
         run: |
