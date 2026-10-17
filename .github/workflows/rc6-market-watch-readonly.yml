@@ -574,45 +574,113 @@ jobs:
     needs: contracts
     if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 25
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Independently download and verify development XML and JSON bytes without native access
+      - name: Verify and load exact PR619 frozen artifact without rebuilding
         shell: bash
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
-          import base64,hashlib,io,json,os,urllib.request,zipfile,xml.etree.ElementTree as ET
-          for artifact,size,expected,run in (
-              (12102203547,1439,"9e5272f9b1ba0999f6006dd01a52e4fa462f39281abda5dc4f50940024262152",39036688448),
-              (12102149687,6933,"0cb0b3d23332c03d156dc6e1798988c0627176a786f1845db5c7c3a1e7f46a4b",39037003384)):
-              req=urllib.request.Request(f"https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/{artifact}/zip")
+          import base64,hashlib,json,os,pathlib,shutil,urllib.request,zipfile,xml.etree.ElementTree as ET
+          def request(url):
+              req=urllib.request.Request(url)
               req.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
-              with urllib.request.urlopen(req,timeout=30) as response:raw=response.read(2*1024**2+1)
-              assert len(raw)==size and hashlib.sha256(raw).hexdigest()==expected
-              with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-                  xmls=[]
-                  for member in archive.infolist():
-                      if not member.filename.endswith(".xml"):continue
-                      assert member.file_size<1024**2
-                      content=archive.read(member);cases=list(ET.fromstring(content).iter("testcase"))
-                      counts={k:sum(len(c.findall(k)) for c in cases) for k in ("failure","error","skipped")}
-                      assert cases and not any(counts.values())
-                      xmls.append({"name":member.filename,"cases":len(cases),**counts,"sha256":hashlib.sha256(content).hexdigest()})
-                  print("RC6_NATIVE_DEV_XML_READBACK="+json.dumps({"run":run,"xml":xmls},sort_keys=True,separators=(",",":")))
-                  if run==39037003384:
-                      content=archive.read("development.json");data=json.loads(content)
-                      assert data["source_sha"]=="5baeae7b0478d61d2dea04e5dbee4e0c1a3af951" and data["tree_sha"]=="268009eb5fb2416fb92435ea828be7ad8d875965"
-                      assert data["context"]=="CI_DEVELOPMENT_SOURCE_OVER_FROZEN618_DEPENDENCY_BASE"
-                      assert data["native_acceptance"] is False and data["final_product_image_built"] is False
-                      assert len(xmls)==2 and sum(x["cases"] for x in xmls)==89
-                      for group in data["groups"]:
-                          assert any(x["name"]==group["name"]+".xml" and x["sha256"]==group["junit_sha256"] and x["cases"]==group["cases"] for x in xmls)
-                      catalog=json.loads(archive.read("catalog/full-catalog.json"))
-                      assert catalog==data["full_catalog"] and len(catalog["cuts"])==2 and catalog["catalog_count"]==14611 and catalog["ready_fixture_count"]==9902
-                      print("RC6_NATIVE_DEV_RECEIPT_BYTE_READBACK="+json.dumps({"bytes":len(content),"sha256":hashlib.sha256(content).hexdigest(),"base64":base64.b64encode(content).decode()},separators=(",",":")))
+              return urllib.request.urlopen(req,timeout=45)
+          base="https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/12103440231"
+          with request(base) as response:metadata=json.load(response)
+          assert metadata["workflow_run"]["id"]==39037517622
+          assert metadata["workflow_run"]["head_sha"]=="5baeae7b0478d61d2dea04e5dbee4e0c1a3af951"
+          target=pathlib.Path("/tmp/rc6-exact619.zip");h=hashlib.sha256();total=0
+          with request(base+"/zip") as response,target.open("wb") as output:
+              while block:=response.read(1024**2):
+                  total+=len(block);assert total<=500*1024**2
+                  h.update(block);output.write(block)
+          assert total==414613525 and h.hexdigest()=="8fc12720b33ec4e6dd4dd30ff275ddc61cd8584e5a09637fc07c9e233702e498"
+          with zipfile.ZipFile(target) as archive:
+              def member(name):
+                  matches=[x for x in archive.infolist() if pathlib.PurePosixPath(x.filename).name==name]
+                  assert len(matches)==1
+                  return matches[0]
+              frozen=json.loads(archive.read(member("porota-frozen-candidate.json")))
+              assert frozen["candidate_sha"]=="5baeae7b0478d61d2dea04e5dbee4e0c1a3af951"
+              assert frozen["candidate_tree_sha"]=="268009eb5fb2416fb92435ea828be7ad8d875965"
+              assert frozen["image_id"]=="sha256:a75628801d37ea6a995c9789c6e65e5a8f493884f59ccbbd6a7677142f743060"
+              def json_member(name):return json.loads(archive.read(member(name)))
+              def xml_member(name):
+                  content=archive.read(member(name));cases=list(ET.fromstring(content).iter("testcase"))
+                  counts={key:sum(len(case.findall(key)) for case in cases) for key in ("failure","error","skipped")}
+                  assert cases and not any(counts.values())
+                  return {"cases":len(cases),**counts,"sha256":hashlib.sha256(content).hexdigest()}
+              governed=json_member("porota-governed-tests.json");root_xml=xml_member("porota-governed-tests.xml")
+              assert governed["status"]=="GREEN" and governed["discovered"]==governed["executed"]==root_xml["cases"]==3950
+              assert all(governed[key]==0 for key in ("failures","errors","skipped","xfail","pytest_exit_code"))
+              assert len(governed["exclusions"])==1
+              native_xml=xml_member("native-bound.xml");assert native_xml["cases"]==46
+              catalog=json_member("full-catalog.json")
+              assert len(catalog["cuts"])==2 and catalog["catalog_count"]==14611 and catalog["ready_fixture_count"]==9902
+              assert catalog["process_peak_rss_kib"]<=512*1024
+              manifest=json_member("porota-artifact-manifest.json")
+              assert manifest["status"]=="GREEN" and manifest["artifact_runtime_files"]==500
+              assert not manifest["missing_native_extensions"] and len(manifest["native_extensions"])==1
+              native=manifest["native_extensions"][0]
+              assert native["path"]=="rc6_shadow_runtime/_rc6_json_bound.so" and native["sha256"]=="e0eed2fc86dde099583e2635ae6c6e57b8a7f53124bb71a04bef11f026daac99"
+              csource=next(value for value in manifest["files"] if value["path"]=="rc6_shadow_runtime/_rc6_json_bound.c")
+              assert csource["sha256"]=="12ce21146fe9de9845b4458c7abc3d81b0eb00ec645dd10a37e9e4e255c50a43"
+              bundle=json_member("porota-deploy-bundle-v2-manifest.json")
+              assert bundle["file_count"]==508 and any(value["path"]=="rc6_shadow_runtime/_rc6_json_bound.c" for value in bundle["files"])
+              certificate={"schema":"rc6.predeploy619-actual-byte-readback.v1",
+                  "context":"PREDEPLOY_EXACT_IMAGE_NOT_DROPLET_ACCEPTANCE","run":39037517622,"job":117410222547,
+                  "artifact_id":12103440231,"artifact_zip_bytes":total,"artifact_zip_sha256":h.hexdigest(),
+                  "frozen":frozen,"governed_root":governed,"root_xml":root_xml,"native_xml":native_xml,
+                  "exact_image_generated_catalog":catalog,"native_extension":native,"native_source":csource,
+                  "runtime_files":500,"missing_runtime_files":manifest["missing_runtime_files"],
+                  "source_bundle_files":508,"source_bundle_sha256":bundle["bundle_sha256"],
+                  "real_orders_sent":0,"native_acceptance":False,"full_session_stress":False}
+              image=member("porota-predeploy-image.tar.gz");assert image.file_size<=500*1024**2
+              image_hash=hashlib.sha256()
+              with archive.open(image) as source,open("/tmp/rc6-exact619-image.tar.gz","wb") as output:
+                  while block:=source.read(1024**2):
+                      image_hash.update(block);output.write(block)
+              assert image_hash.hexdigest()==frozen["image_tar_sha256"]
+          receipt=(json.dumps(certificate,sort_keys=True,indent=2)+"\n").encode()
+          pathlib.Path("/tmp/rc6-predeploy619-receipt.json").write_bytes(receipt)
+          print("RC6_PREDEPLOY619_BYTE_RECEIPT="+json.dumps({"bytes":len(receipt),"sha256":hashlib.sha256(receipt).hexdigest(),"base64":base64.b64encode(receipt).decode()},separators=(",",":")),flush=True)
+          print("RC6_619_PREFLIGHT_FROZEN_BYTES=GREEN|zip_sha="+h.hexdigest()+"|tar_sha="+image_hash.hexdigest(),flush=True)
           PY
+          docker load -i /tmp/rc6-exact619-image.tar.gz >/dev/null
+          docker image inspect sha256:a75628801d37ea6a995c9789c6e65e5a8f493884f59ccbbd6a7677142f743060 >/dev/null
+          install -d -m 777 /tmp/rc6-pref619
+      - name: Supplemental exact image CI full session and eight groups under native resource limits
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          docker run --interactive --name rc6-pref619 --pull never --network none --no-healthcheck --user 1000:1000 --read-only \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
+            --memory 512m --memory-swap 512m --cpus 0.75 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-pref619:/work \
+            -e RC6_STRESS_EXECUTION_CONTEXT=CI_EXACT_IMAGE_PREFLIGHT -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python sha256:a75628801d37ea6a995c9789c6e65e5a8f493884f59ccbbd6a7677142f743060 \
+            -B - < scripts/rc6_exact619_ci_preflight.py
+          RC=$?
+          set -e
+          docker inspect --format '{{json .State}}' rc6-pref619 |
+            python3 -c 'import json,sys;v=json.load(sys.stdin);print("RC6_619_PREFLIGHT_DOCKER="+json.dumps({k:v[k] for k in ("Status","ExitCode","OOMKilled")},sort_keys=True))'
+          docker rm rc6-pref619 >/dev/null
+          test "$RC" = 0
+      - name: Make synthetic receipts readable
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" /tmp/rc6-pref619
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-exact619-ci-preflight-${{ github.run_id }}
+          path: |
+            /tmp/rc6-pref619
+            /tmp/rc6-predeploy619-receipt.json
+          retention-days: 7
