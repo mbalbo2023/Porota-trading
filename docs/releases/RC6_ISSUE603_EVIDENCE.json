@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "616_COHERENCE_RED_NATIVE_RCA_EXACT_RUNTIME_RECOVERED_NO_NEW_CANDIDATE",
+  "release_state": "616_NATIVE_RED_SHARED_AUDIT_FROZEN_PREDEPLOY_PENDING",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -17,9 +17,9 @@
     "deploy_owner_issue471": 6228525290,
     "deploy_owner_issue473": 6228525416,
     "latest_deploy_owner_refresh": {
-      "issue471": 6232527295,
-      "issue473": 6232528010,
-      "at": "2026-10-17T09:55Z",
+      "issue471": 6232708036,
+      "issue473": 6232708161,
+      "at": "2026-10-17T10:15:25.330Z",
       "state": "HELD_THROUGH_FIX_FORWARD_NATIVE_ACCEPTANCE_STRESS_RESTORE"
     }
   },
@@ -855,10 +855,10 @@
       "path": "rc6_shadow_runtime/persistence.py",
       "symbol": "_canonical_chunks",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "Full audit248MB raw/4.6MB gzip: per-token compressor writes and duplicate envelope encoding caused excessive CPU. Bounded64KiB writes, single canonical payload pass, bounded C subtrees and exact type/Unicode/key/NaN/cycle/size/atomic checks preserve complete audit and hashes. Exact sample codec28.048→13.171 CPU seconds before final immutable empty-field optimization. Actualización nativa616: durable25.627wall/19.640CPU-s de tick49.259wall/35.853CPU-s. Las guardas previas se conservan; queda costo residual de serialización y gateRED. Investigación de subárboles/diccionarios normales en CI aislado, no nueva promoción. RCA gzip nativa: stdlib0.98735CPU-s/isal0 0.17330, diferencia0.81405 insuficiente sola; no nueva dependencia. Caché de listas frozen compartidas en CI6.5105→5.334CPU-s con mismo JSON/hash; variante comprimida/key-bounds aún en investigación.",
-      "test": "tests/test_rc6_shadow_streaming_cost.py",
+      "detail": "Full audit248MB raw/4.6MB gzip: per-token compressor writes and duplicate envelope encoding caused excessive CPU. Bounded64KiB writes, single canonical payload pass, bounded C subtrees and exact type/Unicode/key/NaN/cycle/size/atomic checks preserve complete audit and hashes. Exact sample codec28.048→13.171 CPU seconds before final immutable empty-field optimization. Actualización nativa616: durable25.627wall/19.640CPU-s de tick49.259wall/35.853CPU-s. Las guardas previas se conservan; queda costo residual de serialización y gateRED. Investigación de subárboles/diccionarios normales en CI aislado, no nueva promoción. RCA gzip nativa: stdlib0.98735CPU-s/isal0 0.17330, diferencia0.81405 insuficiente sola; no nueva dependencia. Caché de listas frozen compartidas en CI6.5105→5.334CPU-s con mismo JSON/hash; variante comprimida/key-bounds aún en investigación. PR617 congelado2c7f5bc2: memo comprimido4MiB/raw32MiB sólo de listas preopen inmutables compartidas;11regresiones nuevas. CI39024332118 conserva265449852bytes/hashfd6d957e... y CPUmed5.96625→4.92725s,58pruebasGREEN. Predeploy39024613945 en curso; nativo616 sigueRED.",
+      "test": "tests/test_rc6_shadow_streaming_cost.py;tests/test_rc6_shadow_shared_audit.py",
       "status": "NATIVE_RESIDUAL_SERIALIZATION_CPU_19_640_FIX_FORWARD_PENDING",
-      "code_state": "EN_GITHUB_F167_FROZEN",
+      "code_state": "617_FROZEN_PREDEPLOY_PENDING",
       "runtime_occurrence": "OBSERVED_NATIVE_PHASE_TIMINGS_39013855958",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39013855958",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
@@ -870,10 +870,10 @@
       "path": "rc6_shadow_runtime/worker.py",
       "symbol": "run_worker",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "Cold preopen unnecessarily computed and discarded a full plan; previous full report remained live during next tick. Before full-cardinality peak875968KiB then warm CATALOG_FULL transform budget failure. Freeze-only and explicit post-log report release verified causally, plus immutable equal rank rows share storage and planner reads verified freeze without cloning it.",
+      "detail": "Cold preopen unnecessarily computed and discarded a full plan; previous full report remained live during next tick. Before full-cardinality peak875968KiB then warm CATALOG_FULL transform budget failure. Freeze-only and explicit post-log report release verified causally, plus immutable equal rank rows share storage and planner reads verified freeze without cloning it. PR617 libera además referencias locales sin uso antes de serializar; control de catálogo inline14611 en512MiB/.75CPU, dos cortes20.895/16.584s, ExitCode0/OOMKilledfalse. No equivale a estrés Droplet.",
       "test": "tests/test_rc6_shadow_report_lifetime.py",
       "status": "PREDEPLOY39002866893_GREEN_RUNTIME_ACCEPTANCE_BLOCKED_NATIVE_FRESHNESS",
-      "code_state": "EN_GITHUB_F167_FROZEN",
+      "code_state": "617_FROZEN_PREDEPLOY_PENDING",
       "runtime_occurrence": "LOCAL_CAUSAL_REPRO_MATCHES_NATIVE_ERROR_STAGE",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
@@ -915,7 +915,7 @@
       "path": "scripts/rc6_postdeploy_stress.py",
       "symbol": "full_catalog_replay",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "Permanent generated14611identity/9902catalog-capability READY fixture with long symbols, no prices/providers. RED peak550060KiB then RED freshness gap160.443s preserved. Final two committed cuts31.127/26.448s, actual30s poll, total87.949s and446072KiB. Same case runs in Predeploy and inline before405minute/eight-group native isolated stress, without pytest parent beside large worker. Process RSS is distinct from the native container memory cap; no native stress claim.",
+      "detail": "Permanent generated14611identity/9902catalog-capability READY fixture with long symbols, no prices/providers. RED peak550060KiB then RED freshness gap160.443s preserved. Final two committed cuts31.127/26.448s, actual30s poll, total87.949s and446072KiB. Same case runs in Predeploy and inline before405minute/eight-group native isolated stress, without pytest parent beside large worker. Process RSS is distinct from the native container memory cap; no native stress claim. Control39024139298 mantuvo58PASS+1SIGKILL de hijo pytest, OOM no confirmado. Mismo SHA617 pasó control inline39024332118 en512MiB/.75CPU, edad67.723483<=101.79s, sinOOM. Test automático permanece en Predeploy y nuevo archivo compartido se agrega a publication_io_identity. Fullstressnativo no ejecutado.",
       "test": "tests/test_rc6_shadow_full_catalog.py",
       "status": "NATIVE_STRESS_NOT_EXECUTED_GENERATION_GATE_RED",
       "code_state": "EN_GITHUB_F167_FROZEN",
@@ -1444,11 +1444,178 @@
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
   },
   "next_candidate": {
-    "state": "NONE_READY_AWAITING_MEASURED_COMPRESSED_CACHE",
-    "source_sha": null,
-    "frozen": false,
+    "state": "FROZEN_AWAITING_EXACT_PREDEPLOY_V2",
+    "source_sha": "2c7f5bc22057bb5ffbd37ce636d0da3fe30da5af",
+    "tree": "96441086e67e89353f918a4d160f70c26303276b",
+    "branch": "work/rc6-603-shared-audit-persist-20261017",
+    "changes": [
+      "COMPRESSED_PASS_LOCAL_SHARED_IMMUTABLE_PREOPEN_ROWS",
+      "RELEASE_UNUSED_TICK_LOCALS_BEFORE_DURABLE_WRITE"
+    ],
+    "dependencies_changed": false,
+    "standard_gzip": true,
+    "resources_unchanged": true,
+    "frozen": true,
     "certified": false,
-    "deployed": false
+    "deployed": false,
+    "qualification_run": 39024332118,
+    "qualification_diagnostic_sha": "58cdc0b73f85cdad7743f26029ed0fb1df008f61",
+    "qualification_environment": "ISOLATED_CI_NOT_DROPLET",
+    "native_job_present": false,
+    "qualification_history": [
+      {
+        "run": 39024139298,
+        "job": 117371697263,
+        "diagnostic_sha": "f5f0dde544852bc91e87be436c0ef8ded9761ca4",
+        "state": "RED_58_PASS_1_FULL_CATALOG_CHILD_SIGKILL",
+        "first_cut": {
+          "tick_seconds": 22.686,
+          "tick_cpu_seconds": 16.063,
+          "durable_seconds": 9.369,
+          "durable_cpu_seconds": 6.545
+        },
+        "second_cut": "NO_RECEIPT_CHILD_RETURN_MINUS9",
+        "oom_kill": "NOT_INDEPENDENTLY_PROVEN_CONTAINER_REMOVED",
+        "full_catalog_test_shape": "PYTEST_PARENT_AND_WORKER_SUBPROCESS_IN_ONE_512MIB_CGROUP; TMPFS_AND_NEW_BYTECODE_CACHE",
+        "benchmark": "SKIPPED",
+        "artifact_id": 12097746672,
+        "artifact_zip_sha256": "65a5266263d489782c2a9b9b90053c88f3c28163ed635984771d6f45bdec4b2a"
+      }
+    ],
+    "qualification_process_control": "FUNCTIONAL_TESTS_THEN_INLINE_FULL_CATALOG_NO_PYTEST_PARENT; NATIVE_TMPFS512MIB; NO_BYTECODE_WRITES; SAME_SOURCE_AND_CGROUP_512MIB_075CPU; INSPECT_OOM_STATE",
+    "qualification_control_state": "GREEN_INLINE_TWO_CUTS_EXACT_BYTES",
+    "development_qualification": {
+      "run": 39024332118,
+      "job": 117372243934,
+      "candidate": "2c7f5bc22057bb5ffbd37ce636d0da3fe30da5af",
+      "cuts": [
+        {
+          "as_of": "2026-10-05T13:20:00.000152+00:00",
+          "computed_report_sha256": "b54cec8ea38841aa86a2d1eee110b0bea723278f3b79f44542ad7de519048d65",
+          "freshness_budget_seconds": 101.78999999999999,
+          "generation_id": "777625f25d6f80629bd3c7d62183f66aee47303fccfce77f717732506c8dbd29",
+          "manifest_sha256": "ba36b336a5ed83767fb7a3871c91f97f6df79d5604e3d2d33b574746d62566c0",
+          "sequence": 1791206400000152,
+          "tick_seconds": 20.895,
+          "worker_timing": {
+            "poll_seconds": 30,
+            "stages_cpu_seconds": {
+              "durable_serialization": 5.892,
+              "economic_exit_lab": 0.005,
+              "entry_signal_lab": 0.001,
+              "family_routing": 1.631,
+              "operational_funnel": 2.841,
+              "planner_pipeline": 1.193,
+              "preopen": 3.33,
+              "state_and_inputs": 0.032
+            },
+            "stages_seconds": {
+              "durable_serialization": 8.253,
+              "economic_exit_lab": 0.03,
+              "entry_signal_lab": 0.001,
+              "family_routing": 2.156,
+              "operational_funnel": 4.069,
+              "planner_pipeline": 1.594,
+              "preopen": 4.758,
+              "state_and_inputs": 0.032
+            },
+            "tick_cpu_seconds": 14.926,
+            "tick_seconds": 20.895
+          }
+        },
+        {
+          "as_of": "2026-10-05T13:20:51.085415+00:00",
+          "computed_report_sha256": "4e19acd4dd6798b9abde5769a3368bca19741be89362f391dd2a30d4f61a9c79",
+          "freshness_budget_seconds": 93.168,
+          "generation_id": "716f138714db3bf6d2a4a59e529ef1d94bc317c295798294d0f759ddf2703cee",
+          "manifest_sha256": "8af5f54d0e11ce43f0e49d4758baddcb1aabccae4913534436cd1bb14b002e26",
+          "previous_cut_age_seconds": 67.723483,
+          "previous_cut_freshness_budget_seconds": 101.78999999999999,
+          "sequence": 1791206451085415,
+          "tick_seconds": 16.584,
+          "worker_timing": {
+            "poll_seconds": 30,
+            "stages_cpu_seconds": {
+              "durable_serialization": 5.747,
+              "economic_exit_lab": 0.002,
+              "entry_signal_lab": 0.002,
+              "family_routing": 1.712,
+              "operational_funnel": 1.993,
+              "planner_pipeline": 1.213,
+              "preopen": 1.143,
+              "state_and_inputs": 0.64
+            },
+            "stages_seconds": {
+              "durable_serialization": 7.672,
+              "economic_exit_lab": 0.002,
+              "entry_signal_lab": 0.002,
+              "family_routing": 2.286,
+              "operational_funnel": 2.668,
+              "planner_pipeline": 1.614,
+              "preopen": 1.517,
+              "state_and_inputs": 0.822
+            },
+            "tick_cpu_seconds": 12.452,
+            "tick_seconds": 16.584
+          }
+        }
+      ],
+      "measurements": [
+        {
+          "cpu_seconds": 6.0151,
+          "mode": "baseline",
+          "peak_rss_kib": 382120,
+          "raw_bytes": 265449852,
+          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "round": 0,
+          "wall_seconds": 8.3171
+        },
+        {
+          "cpu_seconds": 4.9398,
+          "mode": "compressed_owned",
+          "peak_rss_kib": 382120,
+          "raw_bytes": 265449852,
+          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "round": 0,
+          "wall_seconds": 7.0658
+        },
+        {
+          "cpu_seconds": 5.9174,
+          "mode": "baseline",
+          "peak_rss_kib": 382120,
+          "raw_bytes": 265449852,
+          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "round": 1,
+          "wall_seconds": 8.1971
+        },
+        {
+          "cpu_seconds": 4.9147,
+          "mode": "compressed_owned",
+          "peak_rss_kib": 382120,
+          "raw_bytes": 265449852,
+          "raw_sha256": "fd6d957e23c7682ac2223c1a0ca6673679ef0eb5032faca62df5eed68626f70a",
+          "round": 1,
+          "wall_seconds": 6.5396
+        }
+      ],
+      "medians": {
+        "baseline": 5.9662500000000005,
+        "compressed_owned": 4.92725
+      },
+      "dockerState": {
+        "OOMKilled": false,
+        "ExitCode": 0
+      },
+      "artifact_id": 12098410650,
+      "artifact_zip_sha256": "85506e327c3497f1158914b2c5ee34681e7b92850f43fe8bda84de7ddfc194c6",
+      "junit_cases": 58,
+      "junit_failures": 0,
+      "junit_errors": 0,
+      "junit_skipped": 0
+    },
+    "pr": 617,
+    "predeploy_run": 39024613945,
+    "predeploy_state": "IN_PROGRESS"
   },
   "latest_deploy_result": {
     "run": 39013855958,
@@ -2286,7 +2453,7 @@
     ],
     "native_acceptance": false
   },
-  "updated_at": "2026-10-17T09:56:48.109Z",
+  "updated_at": "2026-10-17T10:22:21.975Z",
   "previous_deploy_result_613": {
     "run": 39003668897,
     "job": 117311624166,
@@ -2499,7 +2666,7 @@
     "diagnostic_pr": 614,
     "sha": "7638fd980097935d5f21d9808800fd656495a4fa",
     "run": 39022930524,
-    "state": "IN_PROGRESS_COMPRESSED_SHARED_SNAPSHOT_CACHE_AND_KEY_BOUNDS",
+    "state": "COMPLETED_COMPRESSED_SHARED_CACHE_SELECTED_KEYS_OMITTED",
     "memory_limit_mib": 512,
     "cpu_limit": 0.75,
     "compressed_cache_limit_mib": 4,
@@ -2509,7 +2676,25 @@
     "production_data_mounted": false,
     "droplet_accessed": false,
     "native_acceptance": false,
-    "new_dependencies": false
+    "new_dependencies": false,
+    "job": 117368201036,
+    "measurements": 8,
+    "raw_bytes": 265449852,
+    "raw_sha256": "85d152fcdb6313c7c3cabc082f5c9770d984005d1cf12d89016ec29ff828a367",
+    "median_cpu_seconds": {
+      "baseline": 5.5735,
+      "raw32": 4.6455,
+      "compressed4": 4.7265,
+      "compressed_and_keys": 4.718
+    },
+    "charged_cache_bytes": 270608,
+    "compressed_content_bytes": 269606,
+    "reuses": 2,
+    "reused_characters": 43683534,
+    "peak_rss_kib": 382848,
+    "canonical_bytes_identical": true,
+    "promoted": false,
+    "key_cache_promoted": false
   },
   "native_compression_rca": {
     "run": 39020921103,
@@ -2682,5 +2867,24 @@
     "canonical_bytes_identical": true,
     "promoted": false
   },
-  "receipt_count": 133
+  "receipt_count": 133,
+  "native_serialization_fast_bound_experiment": {
+    "run": 39023354447,
+    "job": 117369424731,
+    "source_sha": "b06247cb08d9ce59d1f7b363526c44cf5bf96282",
+    "environment": "ISOLATED_CI_NOT_DROPLET",
+    "measurements": 8,
+    "raw_bytes": 265449852,
+    "raw_sha256": "cb96c9977dfce43c7fc68ee56da5843303dd601207a2f3d2b380e7af5991ccb2",
+    "median_cpu_seconds": {
+      "baseline": 6.526,
+      "fast256": 6.4875,
+      "compressed4": 5.4135,
+      "compressed_fast256": 5.346
+    },
+    "peak_rss_kib": 385864,
+    "promoted": false,
+    "decision": "OMIT_FAST_BOUNDS_SMALL_INCREMENTAL_GAIN",
+    "native_acceptance": false
+  }
 }
