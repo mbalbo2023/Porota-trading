@@ -580,13 +580,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 4121fbe79db8fd20abbefac098e273f6ba3fd5c5
+          ref: 5baeae7b0478d61d2dea04e5dbee4e0c1a3af951
       - name: Verify development source identity and syntax without freezing a product candidate
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = 4121fbe79db8fd20abbefac098e273f6ba3fd5c5
-          test "$(git rev-parse HEAD^{tree})" = 05f9581231369a7b7f08f8689657fdf1de908ec6
+          test "$(git rev-parse HEAD)" = 5baeae7b0478d61d2dea04e5dbee4e0c1a3af951
+          test "$(git rev-parse HEAD^{tree})" = 268009eb5fb2416fb92435ea828be7ad8d875965
           python3 -m py_compile rc6_shadow_runtime/persistence.py scripts/porota_validate_deploy_artifact.py \
             scripts/porota_dependency_repro_audit.py scripts/rc6_postdeploy_stress.py \
             tests/test_rc6_shadow_native_bound.py tests/test_porota_validate_deploy_artifact.py \
@@ -695,7 +695,7 @@ jobs:
           binary=pathlib.Path("/tmp/rc6-native-dev-source/rc6_shadow_runtime/_rc6_json_bound.so")
           source=pathlib.Path("rc6_shadow_runtime/_rc6_json_bound.c")
           result={"schema":"rc6.native-bound-development.v1","context":"CI_DEVELOPMENT_SOURCE_OVER_FROZEN618_DEPENDENCY_BASE",
-            "source_sha":"4121fbe79db8fd20abbefac098e273f6ba3fd5c5","tree_sha":"05f9581231369a7b7f08f8689657fdf1de908ec6",
+            "source_sha":"5baeae7b0478d61d2dea04e5dbee4e0c1a3af951","tree_sha":"268009eb5fb2416fb92435ea828be7ad8d875965",
             "source_sha256":hashlib.sha256(source.read_bytes()).hexdigest(),"compiled_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
             "groups":groups,"full_catalog":catalog,"memory_bytes":512*1024**2,"nano_cpus":750000000,
             "final_product_image_built":False,"frozen_product_candidate":False,"native_acceptance":False,
