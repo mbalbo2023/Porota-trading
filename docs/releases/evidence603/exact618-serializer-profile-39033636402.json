@@ -1,0 +1,283 @@
+{
+  "benchmarks_same_exact_full_audit": [
+    {
+      "cpu_seconds": 4.977143,
+      "mode": "NO_MEMO",
+      "raw_bytes": 265449725,
+      "sha256": "194e100e504ff2e68fb3f7de6519daf6e641589cf009072daf99251c8638f501",
+      "wall_seconds": 6.91148
+    },
+    {
+      "cpu_seconds": 4.166534,
+      "mode": "COMPRESSED_SHARED_MEMO",
+      "raw_bytes": 265449725,
+      "sha256": "194e100e504ff2e68fb3f7de6519daf6e641589cf009072daf99251c8638f501",
+      "wall_seconds": 5.816461
+    },
+    {
+      "cpu_seconds": 5.00233,
+      "mode": "NO_MEMO",
+      "raw_bytes": 265449725,
+      "sha256": "194e100e504ff2e68fb3f7de6519daf6e641589cf009072daf99251c8638f501",
+      "wall_seconds": 6.94006
+    },
+    {
+      "cpu_seconds": 4.166359,
+      "mode": "COMPRESSED_SHARED_MEMO",
+      "raw_bytes": 265449725,
+      "sha256": "194e100e504ff2e68fb3f7de6519daf6e641589cf009072daf99251c8638f501",
+      "wall_seconds": 5.579006
+    }
+  ],
+  "candidate_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+  "candidate_tree_sha": "2f1825afed2417e4d4d7a8f003fecc009708921f",
+  "catalog_count": 14611,
+  "context": "CI_EXACT_IMAGE_SERIALIZER_RCA_NOT_NATIVE",
+  "full_session_stress": false,
+  "image_id": "sha256:2f581a5cc45e34dad4974d35398aeef89f3dbc4c9ca7f4c3c172efd1123b62d9",
+  "native_acceptance": false,
+  "peak_rss_kib": 382856,
+  "production_data_mounted": false,
+  "profile_instrumentation_changes_elapsed_time": true,
+  "profiled_audit": {
+    "audit": {
+      "compressed_bytes": 3955588,
+      "file": "computed-194e100e504ff2e68fb3f7de6519daf6e641589cf009072daf99251c8638f501.json.gz",
+      "raw_bytes": 265449725,
+      "sha256": "194e100e504ff2e68fb3f7de6519daf6e641589cf009072daf99251c8638f501"
+    },
+    "cache_replay_inflater_creations": 2,
+    "cpu_seconds": 10.978881984,
+    "frozen_engine_lists": 2,
+    "shared_target_lists": 1,
+    "shared_target_rows": [
+      9902
+    ],
+    "unique_engine_list_identities": 1,
+    "wall_seconds": 15.173358148000005
+  },
+  "provider_requests": 0,
+  "ready_fixture_count": 9902,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "runtime_restore": "NOT_APPLICABLE_CI_ONLY",
+  "schema": "rc6.exact618-serializer-callgraph.v1",
+  "top_own_cpu": [
+    {
+      "cumulative_cpu_seconds": 10.656925,
+      "function": "_small_json_tree",
+      "line": 57,
+      "module": "persistence.py",
+      "own_cpu_seconds": 7.956024,
+      "primitive_calls": 127784,
+      "total_calls": 127784
+    },
+    {
+      "cumulative_cpu_seconds": 2.35521,
+      "function": "iterencode",
+      "line": 205,
+      "module": "encoder.py",
+      "own_cpu_seconds": 2.35521,
+      "primitive_calls": 131072,
+      "total_calls": 131072
+    },
+    {
+      "cumulative_cpu_seconds": 1.074293,
+      "function": "<built-in method _json.encode_basestring_ascii>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 1.074293,
+      "primitive_calls": 9347063,
+      "total_calls": 9347063
+    },
+    {
+      "cumulative_cpu_seconds": 0.671554,
+      "function": "<built-in method builtins.len>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.671554,
+      "primitive_calls": 12231751,
+      "total_calls": 12231751
+    },
+    {
+      "cumulative_cpu_seconds": 14.108681,
+      "function": "fresh",
+      "line": 218,
+      "module": "persistence.py",
+      "own_cpu_seconds": 0.484862,
+      "primitive_calls": 263170,
+      "total_calls": 1137842
+    },
+    {
+      "cumulative_cpu_seconds": 0.460404,
+      "function": "<method _pop_ of _list_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.460404,
+      "primitive_calls": 7348344,
+      "total_calls": 7348344
+    },
+    {
+      "cumulative_cpu_seconds": 0.418602,
+      "function": "<method _compress_ of _zlib.Compress_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.418602,
+      "primitive_calls": 4504,
+      "total_calls": 4504
+    },
+    {
+      "cumulative_cpu_seconds": 14.147727,
+      "function": "fragments",
+      "line": 123,
+      "module": "persistence.py",
+      "own_cpu_seconds": 0.299976,
+      "primitive_calls": 263170,
+      "total_calls": 1138522
+    },
+    {
+      "cumulative_cpu_seconds": 0.269245,
+      "function": "<method _extend_ of _list_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.269245,
+      "primitive_calls": 1155884,
+      "total_calls": 1155884
+    },
+    {
+      "cumulative_cpu_seconds": 0.210721,
+      "function": "<method _update_ of __hashlib.HASH_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.210721,
+      "primitive_calls": 5182,
+      "total_calls": 5182
+    },
+    {
+      "cumulative_cpu_seconds": 14.468138,
+      "function": "_canonical_chunks",
+      "line": 249,
+      "module": "persistence.py",
+      "own_cpu_seconds": 0.189114,
+      "primitive_calls": 4166,
+      "total_calls": 4166
+    },
+    {
+      "cumulative_cpu_seconds": 2.551841,
+      "function": "encode",
+      "line": 183,
+      "module": "encoder.py",
+      "own_cpu_seconds": 0.162154,
+      "primitive_calls": 131198,
+      "total_calls": 131198
+    },
+    {
+      "cumulative_cpu_seconds": 0.098136,
+      "function": "<built-in method builtins.max>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.098136,
+      "primitive_calls": 762954,
+      "total_calls": 762954
+    },
+    {
+      "cumulative_cpu_seconds": 0.090097,
+      "function": "<built-in method zlib.crc32>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.090097,
+      "primitive_calls": 4166,
+      "total_calls": 4166
+    },
+    {
+      "cumulative_cpu_seconds": 0.079497,
+      "function": "<method _values_ of _dict_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.079497,
+      "primitive_calls": 794403,
+      "total_calls": 794403
+    },
+    {
+      "cumulative_cpu_seconds": 0.069399,
+      "function": "<method _bit_length_ of _int_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.069399,
+      "primitive_calls": 762954,
+      "total_calls": 762954
+    },
+    {
+      "cumulative_cpu_seconds": 0.05622,
+      "function": "<method _join_ of _str_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.05622,
+      "primitive_calls": 135583,
+      "total_calls": 135583
+    },
+    {
+      "cumulative_cpu_seconds": 14.189832,
+      "function": "_canonical_fragments",
+      "line": 105,
+      "module": "persistence.py",
+      "own_cpu_seconds": 0.042105,
+      "primitive_calls": 263170,
+      "total_calls": 263170
+    },
+    {
+      "cumulative_cpu_seconds": 0.033868,
+      "function": "<built-in method builtins.isinstance>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.033862,
+      "primitive_calls": 394553,
+      "total_calls": 394553
+    },
+    {
+      "cumulative_cpu_seconds": 0.021553,
+      "function": "<method _append_ of _list_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.021553,
+      "primitive_calls": 283005,
+      "total_calls": 283005
+    },
+    {
+      "cumulative_cpu_seconds": 0.019665,
+      "function": "<built-in method posix.fsync>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.019665,
+      "primitive_calls": 2,
+      "total_calls": 2
+    },
+    {
+      "cumulative_cpu_seconds": 0.01959,
+      "function": "<method _decompress_ of _zlib.Decompress_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.01959,
+      "primitive_calls": 682,
+      "total_calls": 682
+    },
+    {
+      "cumulative_cpu_seconds": 0.53009,
+      "function": "write",
+      "line": 272,
+      "module": "gzip.py",
+      "own_cpu_seconds": 0.012807,
+      "primitive_calls": 4165,
+      "total_calls": 4165
+    },
+    {
+      "cumulative_cpu_seconds": 0.010738,
+      "function": "<built-in method builtins.id>",
+      "line": 0,
+      "module": "~",
+      "own_cpu_seconds": 0.010738,
+      "primitive_calls": 128183,
+      "total_calls": 128183
+    }
+  ]
+}

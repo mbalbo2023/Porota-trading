@@ -1,0 +1,551 @@
+{
+  "benchmarks_same_exact_full_audit": [
+    {
+      "cpu_seconds": 6.509023,
+      "mode": "NO_MEMO",
+      "raw_bytes": 265449725,
+      "sha256": "b844b90bdafcfdbee3964005871e09089eb0b2987e34d595ba295ba331dc9bda",
+      "wall_seconds": 8.686011
+    },
+    {
+      "cpu_seconds": 5.481352,
+      "mode": "COMPRESSED_SHARED_MEMO",
+      "raw_bytes": 265449725,
+      "sha256": "b844b90bdafcfdbee3964005871e09089eb0b2987e34d595ba295ba331dc9bda",
+      "wall_seconds": 7.310327
+    },
+    {
+      "cpu_seconds": 6.523396,
+      "mode": "NO_MEMO",
+      "raw_bytes": 265449725,
+      "sha256": "b844b90bdafcfdbee3964005871e09089eb0b2987e34d595ba295ba331dc9bda",
+      "wall_seconds": 8.700061
+    },
+    {
+      "cpu_seconds": 5.448478,
+      "mode": "COMPRESSED_SHARED_MEMO",
+      "raw_bytes": 265449725,
+      "sha256": "b844b90bdafcfdbee3964005871e09089eb0b2987e34d595ba295ba331dc9bda",
+      "wall_seconds": 7.274326
+    }
+  ],
+  "candidate_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+  "candidate_tree_sha": "2f1825afed2417e4d4d7a8f003fecc009708921f",
+  "catalog_count": 14611,
+  "context": "CI_EXACT_IMAGE_SERIALIZER_RCA_NOT_NATIVE",
+  "full_session_stress": false,
+  "identity_scan_visits": 281,
+  "image_id": "sha256:2f581a5cc45e34dad4974d35398aeef89f3dbc4c9ca7f4c3c172efd1123b62d9",
+  "large_list_identity_groups": [
+    {
+      "kind": "dict",
+      "occurrences": 1,
+      "paths": [
+        "report.engines.SCALPING.instruments"
+      ],
+      "rows": 1429,
+      "supplied_shared_target": false
+    },
+    {
+      "kind": "list",
+      "occurrences": 1,
+      "paths": [
+        "report.engines.SCALPING.telemetry"
+      ],
+      "rows": 9902,
+      "supplied_shared_target": false
+    },
+    {
+      "kind": "dict",
+      "occurrences": 1,
+      "paths": [
+        "report.engines.EQUITY_SPOT.instruments"
+      ],
+      "rows": 1429,
+      "supplied_shared_target": false
+    },
+    {
+      "kind": "list",
+      "occurrences": 1,
+      "paths": [
+        "report.engines.EQUITY_SPOT.telemetry"
+      ],
+      "rows": 9902,
+      "supplied_shared_target": false
+    },
+    {
+      "kind": "list",
+      "occurrences": 3,
+      "paths": [
+        "report.frozen.SCALPING.payload.rows",
+        "report.frozen.EQUITY_SPOT.payload.rows",
+        "report.tradeability.rows"
+      ],
+      "rows": 9902,
+      "supplied_shared_target": true
+    },
+    {
+      "kind": "list",
+      "occurrences": 1,
+      "paths": [
+        "report.catalog_ready"
+      ],
+      "rows": 9902,
+      "supplied_shared_target": false
+    },
+    {
+      "kind": "list",
+      "occurrences": 1,
+      "paths": [
+        "report.family_routing.instruments"
+      ],
+      "rows": 14611,
+      "supplied_shared_target": false
+    },
+    {
+      "kind": "list",
+      "occurrences": 1,
+      "paths": [
+        "report.family_routing.fixed_income_observation_universe.excluded"
+      ],
+      "rows": 8174,
+      "supplied_shared_target": false
+    },
+    {
+      "kind": "list",
+      "occurrences": 1,
+      "paths": [
+        "report.family_routing.option_observation_universe.excluded"
+      ],
+      "rows": 2502,
+      "supplied_shared_target": false
+    },
+    {
+      "kind": "list",
+      "occurrences": 1,
+      "paths": [
+        "report.operational_funnel.cohorts"
+      ],
+      "rows": 19804,
+      "supplied_shared_target": false
+    },
+    {
+      "kind": "list",
+      "occurrences": 1,
+      "paths": [
+        "report.operational_funnel.state_reaches"
+      ],
+      "rows": 19804,
+      "supplied_shared_target": false
+    },
+    {
+      "kind": "list",
+      "occurrences": 1,
+      "paths": [
+        "report.operational_funnel.lineage"
+      ],
+      "rows": 512,
+      "supplied_shared_target": false
+    },
+    {
+      "kind": "list",
+      "occurrences": 1,
+      "paths": [
+        "report.operational_funnel.observation_metrics"
+      ],
+      "rows": 19804,
+      "supplied_shared_target": false
+    }
+  ],
+  "native_acceptance": false,
+  "peak_rss_kib": 383188,
+  "prior_profile39033636402_errata": "pstats *_cpu_seconds field names mean default profiler wall seconds; separate benchmark cpu_seconds uses process_time correctly",
+  "production_data_mounted": false,
+  "profile_instrumentation_changes_elapsed_time": true,
+  "profile_timer": "DEFAULT_REAL_TIME_NOT_PROCESS_CPU",
+  "profiled_audit": {
+    "audit": {
+      "compressed_bytes": 3955576,
+      "file": "computed-b844b90bdafcfdbee3964005871e09089eb0b2987e34d595ba295ba331dc9bda.json.gz",
+      "raw_bytes": 265449725,
+      "sha256": "b844b90bdafcfdbee3964005871e09089eb0b2987e34d595ba295ba331dc9bda"
+    },
+    "cache_replay_inflater_creations": 2,
+    "cpu_seconds": 14.629099207999996,
+    "frozen_engine_lists": 2,
+    "shared_target_lists": 1,
+    "shared_target_rows": [
+      9902
+    ],
+    "unique_engine_list_identities": 1,
+    "wall_seconds": 19.505575123
+  },
+  "provider_requests": 0,
+  "ready_fixture_count": 9902,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "runtime_restore": "NOT_APPLICABLE_CI_ONLY",
+  "schema": "rc6.exact618-whole-worker-callgraph.v2",
+  "top_own_profile_wall": [
+    {
+      "cumulative_profile_wall_seconds": 20.556525,
+      "function": "_small_json_tree",
+      "line": 57,
+      "module": "persistence.py",
+      "own_profile_wall_seconds": 15.29635,
+      "primitive_calls": 190647,
+      "total_calls": 190647
+    },
+    {
+      "cumulative_profile_wall_seconds": 7.936364,
+      "function": "iterencode",
+      "line": 205,
+      "module": "encoder.py",
+      "own_profile_wall_seconds": 7.93636,
+      "primitive_calls": 419074,
+      "total_calls": 419074
+    },
+    {
+      "cumulative_profile_wall_seconds": 1.968636,
+      "function": "<built-in method _json.encode_basestring_ascii>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 1.968636,
+      "primitive_calls": 13791261,
+      "total_calls": 13791261
+    },
+    {
+      "cumulative_profile_wall_seconds": 1.49691,
+      "function": "<built-in method builtins.len>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 1.496908,
+      "primitive_calls": 18728189,
+      "total_calls": 18728197
+    },
+    {
+      "cumulative_profile_wall_seconds": 27.069643,
+      "function": "fresh",
+      "line": 218,
+      "module": "persistence.py",
+      "own_profile_wall_seconds": 0.946417,
+      "primitive_calls": 565198,
+      "total_calls": 2305630
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.94373,
+      "function": "<method _pop_ of _list_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.94373,
+      "primitive_calls": 10810036,
+      "total_calls": 10810036
+    },
+    {
+      "cumulative_profile_wall_seconds": 27.192474,
+      "function": "fragments",
+      "line": 123,
+      "module": "persistence.py",
+      "own_profile_wall_seconds": 0.88961,
+      "primitive_calls": 565198,
+      "total_calls": 2306310
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.815351,
+      "function": "<method _get_ of _dict_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.815351,
+      "primitive_calls": 5590784,
+      "total_calls": 5590784
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.757609,
+      "function": "<method _compress_ of _zlib.Compress_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.757609,
+      "primitive_calls": 5596,
+      "total_calls": 5596
+    },
+    {
+      "cumulative_profile_wall_seconds": 8.870403,
+      "function": "encode",
+      "line": 183,
+      "module": "encoder.py",
+      "own_profile_wall_seconds": 0.711403,
+      "primitive_calls": 441954,
+      "total_calls": 441954
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.846485,
+      "function": "<genexpr>",
+      "line": 22,
+      "module": "common.py",
+      "own_profile_wall_seconds": 0.611141,
+      "primitive_calls": 836814,
+      "total_calls": 836814
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.845647,
+      "function": "_field",
+      "line": 134,
+      "module": "families.py",
+      "own_profile_wall_seconds": 0.496756,
+      "primitive_calls": 218410,
+      "total_calls": 218410
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.491997,
+      "function": "<method _extend_ of _list_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.489576,
+      "primitive_calls": 1796012,
+      "total_calls": 1796012
+    },
+    {
+      "cumulative_profile_wall_seconds": 3.087005,
+      "function": "_event",
+      "line": 76,
+      "module": "funnel.py",
+      "own_profile_wall_seconds": 0.477777,
+      "primitive_calls": 22662,
+      "total_calls": 22662
+    },
+    {
+      "cumulative_profile_wall_seconds": 27.863116,
+      "function": "_canonical_chunks",
+      "line": 249,
+      "module": "persistence.py",
+      "own_profile_wall_seconds": 0.421644,
+      "primitive_calls": 5258,
+      "total_calls": 5258
+    },
+    {
+      "cumulative_profile_wall_seconds": 1.736508,
+      "function": "plan",
+      "line": 50,
+      "module": "orchestrator.py",
+      "own_profile_wall_seconds": 0.370452,
+      "primitive_calls": 2,
+      "total_calls": 2
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.33371,
+      "function": "<method _update_ of __hashlib.HASH_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.33371,
+      "primitive_calls": 6268,
+      "total_calls": 6268
+    },
+    {
+      "cumulative_profile_wall_seconds": 4.50175,
+      "function": "_planner_stages",
+      "line": 131,
+      "module": "funnel.py",
+      "own_profile_wall_seconds": 0.327053,
+      "primitive_calls": 1,
+      "total_calls": 1
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.947439,
+      "function": "rank_tradeability",
+      "line": 194,
+      "module": "tradeability.py",
+      "own_profile_wall_seconds": 0.325258,
+      "primitive_calls": 1,
+      "total_calls": 1
+    },
+    {
+      "cumulative_profile_wall_seconds": 1.438387,
+      "function": "identity",
+      "line": 20,
+      "module": "common.py",
+      "own_profile_wall_seconds": 0.314214,
+      "primitive_calls": 139469,
+      "total_calls": 139469
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.393599,
+      "function": "<built-in method builtins.isinstance>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.289008,
+      "primitive_calls": 1771656,
+      "total_calls": 1771656
+    },
+    {
+      "cumulative_profile_wall_seconds": 1.102804,
+      "function": "_key",
+      "line": 86,
+      "module": "families.py",
+      "own_profile_wall_seconds": 0.269572,
+      "primitive_calls": 58443,
+      "total_calls": 58443
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.73492,
+      "function": "<built-in method builtins.any>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.268999,
+      "primitive_calls": 249223,
+      "total_calls": 249223
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.542768,
+      "function": "deepcopy",
+      "line": 128,
+      "module": "copy.py",
+      "own_profile_wall_seconds": 0.26834,
+      "primitive_calls": 104,
+      "total_calls": 297382
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.237161,
+      "function": "<built-in method builtins.max>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.237127,
+      "primitive_calls": 1199140,
+      "total_calls": 1199140
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.301995,
+      "function": "<genexpr>",
+      "line": 71,
+      "module": "common.py",
+      "own_profile_wall_seconds": 0.221804,
+      "primitive_calls": 265902,
+      "total_calls": 265902
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.269959,
+      "function": "family_name",
+      "line": 82,
+      "module": "bs_instrument_contracts.py",
+      "own_profile_wall_seconds": 0.212303,
+      "primitive_calls": 102770,
+      "total_calls": 102770
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.278203,
+      "function": "_time",
+      "line": 63,
+      "module": "families.py",
+      "own_profile_wall_seconds": 0.206278,
+      "primitive_calls": 53260,
+      "total_calls": 53260
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.999565,
+      "function": "_quote",
+      "line": 302,
+      "module": "families.py",
+      "own_profile_wall_seconds": 0.191186,
+      "primitive_calls": 13315,
+      "total_calls": 13315
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.232099,
+      "function": "enrich_pipeline",
+      "line": 15,
+      "module": "stages.py",
+      "own_profile_wall_seconds": 0.171463,
+      "primitive_calls": 1,
+      "total_calls": 1
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.170876,
+      "function": "<built-in method _hashlib.openssl_sha256>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.170876,
+      "primitive_calls": 137114,
+      "total_calls": 137114
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.153716,
+      "function": "<method _upper_ of _str_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.153716,
+      "primitive_calls": 1191874,
+      "total_calls": 1191874
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.153248,
+      "function": "<method _join_ of _str_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.153127,
+      "primitive_calls": 425145,
+      "total_calls": 425145
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.471773,
+      "function": "_deepcopy_dict",
+      "line": 227,
+      "module": "copy.py",
+      "own_profile_wall_seconds": 0.149755,
+      "primitive_calls": 19810,
+      "total_calls": 19825
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.143771,
+      "function": "<built-in method zlib.crc32>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.143771,
+      "primitive_calls": 5262,
+      "total_calls": 5262
+    },
+    {
+      "cumulative_profile_wall_seconds": 2.121043,
+      "function": "digest",
+      "line": 31,
+      "module": "common.py",
+      "own_profile_wall_seconds": 0.143456,
+      "primitive_calls": 110464,
+      "total_calls": 110464
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.141173,
+      "function": "__init__",
+      "line": 105,
+      "module": "encoder.py",
+      "own_profile_wall_seconds": 0.141173,
+      "primitive_calls": 159789,
+      "total_calls": 159789
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.233241,
+      "function": "<genexpr>",
+      "line": 140,
+      "module": "families.py",
+      "own_profile_wall_seconds": 0.137067,
+      "primitive_calls": 125205,
+      "total_calls": 125205
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.136819,
+      "function": "<method _values_ of _dict_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.136819,
+      "primitive_calls": 1267773,
+      "total_calls": 1267773
+    },
+    {
+      "cumulative_profile_wall_seconds": 0.132486,
+      "function": "<method _isoformat_ of _datetime.datetime_ objects>",
+      "line": 0,
+      "module": "~",
+      "own_profile_wall_seconds": 0.132486,
+      "primitive_calls": 55284,
+      "total_calls": 55284
+    }
+  ]
+}
