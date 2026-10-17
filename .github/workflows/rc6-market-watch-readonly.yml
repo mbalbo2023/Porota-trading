@@ -606,7 +606,7 @@ jobs:
           install -d -m 777 /tmp/rc6-profile-603
 
 
-      - name: Measure reuse of exact shared immutable frozen rows
+      - name: Measure compressed shared snapshots and bounded key lengths
         shell: bash
         run: |
           set -Eeuo pipefail
