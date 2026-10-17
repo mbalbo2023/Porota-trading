@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "DEPLOY612_FAILED_PUBLICATION_RACE_SUCCESSOR613_NEW_PREDEPLOY",
+  "release_state": "F167_FROZEN_PREDEPLOY_IN_PROGRESS_SHADOW_RESOURCE_GUARD_GREEN_LOCAL",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -827,6 +827,96 @@
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "CI-RECONCILER-AST-CLOSURE",
+      "capability": "PREDEPLOY_HARNESS",
+      "path": "tests/test_rc6_contract_reconciliation_guard.py",
+      "symbol": "IntegrationTests.setUp",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Native f312 executed3882/3882 with6FAIL NameError _candidate_publication: AST fixture extracted only wrapper. Recursive actual top-level function closure now retains wrapper/helper/implementation and every original regression case.",
+      "test": "tests/test_rc6_contract_reconciliation_guard.py",
+      "status": "F167_EXACT_PREDEPLOY_AND_NATIVE_ACCEPTANCE_PENDING",
+      "code_state": "EN_GITHUB_F167_FROZEN",
+      "runtime_occurrence": "NATIVE_CI_WITH_LOCAL_FIX",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "SHADOW-ENCODER-TOKEN-COST",
+      "capability": "FULL_AUDIT_PERSISTENCE",
+      "path": "rc6_shadow_runtime/persistence.py",
+      "symbol": "_canonical_chunks",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Full audit248MB raw/4.6MB gzip: per-token compressor writes and duplicate envelope encoding caused excessive CPU. Bounded64KiB writes, single canonical payload pass, bounded C subtrees and exact type/Unicode/key/NaN/cycle/size/atomic checks preserve complete audit and hashes. Exact sample codec28.048→13.171 CPU seconds before final immutable empty-field optimization.",
+      "test": "tests/test_rc6_shadow_streaming_cost.py",
+      "status": "F167_EXACT_PREDEPLOY_AND_NATIVE_ACCEPTANCE_PENDING",
+      "code_state": "EN_GITHUB_F167_FROZEN",
+      "runtime_occurrence": "LOCAL_CAUSAL_COST_AND_COMPLETE_BYTE_EQUIVALENCE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "SHADOW-REPORT-LIFETIME",
+      "capability": "WORKER_MEMORY_OWNERSHIP",
+      "path": "rc6_shadow_runtime/worker.py",
+      "symbol": "run_worker",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Cold preopen unnecessarily computed and discarded a full plan; previous full report remained live during next tick. Before full-cardinality peak875968KiB then warm CATALOG_FULL transform budget failure. Freeze-only and explicit post-log report release verified causally, plus immutable equal rank rows share storage and planner reads verified freeze without cloning it.",
+      "test": "tests/test_rc6_shadow_report_lifetime.py",
+      "status": "F167_EXACT_PREDEPLOY_AND_NATIVE_ACCEPTANCE_PENDING",
+      "code_state": "EN_GITHUB_F167_FROZEN",
+      "runtime_occurrence": "LOCAL_CAUSAL_REPRO_MATCHES_NATIVE_ERROR_STAGE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "SHADOW-PRIVATE-CAUSAL-COPY",
+      "capability": "FUNNEL_CAUSAL_STATE",
+      "path": "rc6_shadow_runtime/funnel.py",
+      "symbol": "evaluate_runtime_funnel",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Private worker consumes freshly read owned checkpoint and avoids copying full normalized report. Complete report, causal hash, invalid-checkpoint revocation and ordinary isolated public API remain equivalent across three cuts.",
+      "test": "tests/test_rc6_shadow_owned_state.py",
+      "status": "F167_EXACT_PREDEPLOY_AND_NATIVE_ACCEPTANCE_PENDING",
+      "code_state": "EN_GITHUB_F167_FROZEN",
+      "runtime_occurrence": "LOCAL_EQUIVALENCE_AND_TAMPER_GUARD",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "SHADOW-FAMILY-EMPTY-EVIDENCE-COST",
+      "capability": "FAMILY_SOURCE_PROJECTION",
+      "path": "rc6_shadow_runtime/families.py",
+      "symbol": "family_reports",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Eliminate25 unused quote fallbacks in causal fixture, unused quote families, and repeated nested-view flattening. Only zero-candidate field summaries share per-tick immutable JSON objects; observations, quote wrappers, fields with invalid/future/stale/conflicting evidence remain independent. Whole JSON comparison and native-origin/unit/clock/alias regressions preserved; normal mutation APIs rejected.",
+      "test": "tests/test_rc6_family_quote_lookup_cost.py",
+      "status": "F167_EXACT_PREDEPLOY_AND_NATIVE_ACCEPTANCE_PENDING",
+      "code_state": "EN_GITHUB_F167_FROZEN",
+      "runtime_occurrence": "LOCAL_CAUSAL_COST_AND_COMPLETE_EQUIVALENCE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "SHADOW-FULL-CATALOG-RESOURCE-CADENCE",
+      "capability": "PREDEPLOY_AND_DROPLET_STRESS",
+      "path": "scripts/rc6_postdeploy_stress.py",
+      "symbol": "full_catalog_replay",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Permanent generated14611identity/9902catalog-capability READY fixture with long symbols, no prices/providers. RED peak550060KiB then RED freshness gap160.443s preserved. Final two committed cuts31.127/26.448s, actual30s poll, total87.949s and446072KiB. Same case runs in Predeploy and inline before405minute/eight-group native isolated stress, without pytest parent beside large worker. Process RSS is distinct from the native container memory cap; no native stress claim.",
+      "test": "tests/test_rc6_shadow_full_catalog.py",
+      "status": "F167_EXACT_PREDEPLOY_AND_NATIVE_ACCEPTANCE_PENDING",
+      "code_state": "EN_GITHUB_F167_FROZEN",
+      "runtime_occurrence": "LOCAL_FULL_PIPELINE_RESOURCE_AND_FRESHNESS_GUARD",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
     }
   ],
   "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
@@ -1313,7 +1403,7 @@
     "oom_flag_after_recovery": false,
     "whole_workflow_conclusion": "FAILURE_EXPECTED_DEPLOY_SHA_MISMATCH_AFTER_REJECTED_PROMOTION"
   },
-  "current_deploy_stage": "COMPLETED_FAILURE_NO_ACTIVE_DEPLOY",
+  "current_deploy_stage": "NO_ACTIVE_DEPLOY_PREDEPLOY_39002866893",
   "external_backup_review": {
     "droplet_id": 594077619,
     "size": "s-1vcpu-1gb",
@@ -1361,10 +1451,13 @@
   },
   "next_candidate": {
     "pr": 613,
-    "sha": "f3123dbf9971a29c869969336addf3d9a650b0bb",
-    "tree": "72fba2e9b5af61939b12e7b6e9ad6f8188fdad3e",
-    "predeploy_run": 38999323211,
-    "status": "EN_GITHUB_PREDEPLOY_IN_PROGRESS"
+    "sha": "f1677af431f45cf2fd3d63cdcadfbcb0fba2bfe3",
+    "tree": "7bb44d4700e3320df8912007f99d4727949c6b5c",
+    "predeploy_run": 39002866893,
+    "status": "EXACT_PREDEPLOY_IN_PROGRESS",
+    "local_focused_cases": 248,
+    "local_full_catalog_cases": 1,
+    "local_full_catalog_receipt": "docs/releases/evidence603/full-catalog-final-receipt.json"
   },
   "latest_deploy_result": {
     "schema": "rc6.deploy-attempt-receipt.v1",
@@ -1448,20 +1541,13 @@
   },
   "pending_monitor": {
     "pr": 607,
-    "sha": "53244334e62ee586535ea4ce3afba3d16a21efa9",
-    "tree": "14178dba7026dfc03a427327345c033f42bec642",
-    "local_contracts": 69,
-    "ci_success": [
-      38991712550,
-      38991712552,
-      38991712562,
-      38991760360
-    ],
-    "current_probe_run": 38991867432,
-    "merge": "HELD_UNTIL_RUNTIME_ACCEPTANCE_STRESS_RESTORE",
-    "inventory_status": "VALIDADO_RUNTIME_METADATA_ONLY_547_946ms",
-    "image_inventory_status": "PROBE_PENDING",
-    "native_inventory_run": 38995874816
+    "sha": "bdc8cd95741e631ac7a6758d7c84686d9f584b71",
+    "tree": "3585652077beb6fea6ce79750dcf6ac1ca638916",
+    "ci": "GREEN_39000571274_39000571169_39000571177",
+    "latest_manual_readonly_run": 39001580361,
+    "native_findings": "P0_PROVENANCE_AND_CRITICAL_IMAGE;P1_SHADOW_FAIL_CLOSED",
+    "merged": false,
+    "requires": "ACCEPTED_PRODUCT_AND_STRESS_RESTORE_FIRST"
   },
   "superseded_without_deploy_609": {
     "run_id": 38989979153,
@@ -1633,7 +1719,7 @@
     "parse_errors": 0,
     "authority": "STATIC_NOT_LIVE_TRACE"
   },
-  "operator_acceptance": "NO_GO_KNOWN_HTTP500_AND_PREMATURE_STARTUP_BASELINE",
+  "operator_acceptance": "NO_GO_NATIVE_DEPLOY_AND_STRESS_PENDING",
   "native_dashboard_probe": {
     "run": 38995874816,
     "artifact_id": 12086373573,
@@ -1689,5 +1775,187 @@
     "revoked_ready_identities": 12,
     "new_ready_identities": 1,
     "revocation_does_not_authorize_override": true
+  },
+  "failed_predeploy_613_f312": {
+    "run": 38999323211,
+    "sha": "f3123dbf9971a29c869969336addf3d9a650b0bb",
+    "discovered": 3882,
+    "executed": 3882,
+    "failure": 6,
+    "error": 0,
+    "skip": 0,
+    "xfail": 0,
+    "failure_class": "AST_HARNESS_MISSING_HELPER_CLOSURE",
+    "promoted": false,
+    "regression_cases_retained": true
+  },
+  "latest_readonly_operational": {
+    "schema": "rc6.operational-readonly-checkpoint.v1",
+    "run_id": 39001580361,
+    "monitor_sha": "bdc8cd95741e631ac7a6758d7c84686d9f584b71",
+    "artifact_id": 12089541358,
+    "artifact_zip_sha256": "4f5962f7424a88ce0cbf73df47f04c84adaa1cc726f3b67c95298c7c1c1cde7d",
+    "artifact_bytes": 8451,
+    "snapshot": {
+      "generated_at": "2026-10-17T04:10:56.391664+00:00",
+      "containers": {
+        "porota_critical_approval_rc6": {
+          "image": "sha256:abf744a305a847ed922e7df2474f6d991f23d9abfb0a584b93930216c117dd54",
+          "oom": false,
+          "restarts": 0,
+          "state": "running"
+        },
+        "porota_production_dashboard": {
+          "image": "sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f",
+          "oom": false,
+          "restarts": 0,
+          "state": "running"
+        },
+        "porota_production_observer": {
+          "image": "sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f",
+          "oom": false,
+          "restarts": 0,
+          "state": "running"
+        }
+      },
+      "observer": {
+        "heartbeat_at": "2026-10-17T04:10:48.201396+00:00",
+        "last_market_data_at": "2026-10-16T19:58:53.922141+00:00",
+        "mode": "PRODUCTION_PAPER",
+        "ppi_auth": "OK",
+        "process_state": "WAITING_MARKET",
+        "real_orders_sent": 0,
+        "session_state": "MARKET_CLOSED"
+      },
+      "observer_heartbeat_age_seconds": 8.19,
+      "readiness": {
+        "ready": 9862,
+        "total": 14611
+      },
+      "provenance": {
+        "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
+        "deploy_sha": "74dd18e697e987747384eb419dc953257003cdb1",
+        "image_id": "sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f",
+        "mode": "PRODUCTION_PAPER",
+        "real_order_routes": "NOT_CALLED",
+        "real_orders_sent": 0,
+        "validation_status": "DEPLOYED_VALIDATION_PENDING"
+      },
+      "resources": {
+        "disk_free_bytes": 4728053760,
+        "inode_free_pct": 89.56,
+        "mem_available_bytes": 124141568
+      },
+      "shadow": {
+        "as_of": "2026-10-17T03:43:58.021350+00:00",
+        "entry_signal_lab_status": null,
+        "error_class": "ValueError",
+        "error_line": 148,
+        "error_module": "runtime",
+        "operational_funnel_status": null,
+        "phase": null,
+        "provider_requests": 0,
+        "real_orders_sent": 0,
+        "real_routes": "NOT_CALLED",
+        "runtime_deadline_expired": false,
+        "runtime_read_stage": "CATALOG_FULL",
+        "runtime_sql_stages": [
+          {
+            "deadline_elapsed": false,
+            "elapsed_ms": 169.444,
+            "interrupted_by_deadline": false,
+            "remaining_ms": 1544.83,
+            "rows": 14611,
+            "stage": "CATALOG_FULL"
+          },
+          {
+            "deadline_elapsed": false,
+            "elapsed_ms": 39.39,
+            "interrupted_by_deadline": false,
+            "remaining_ms": 1503.793,
+            "rows": 0,
+            "stage": "OPEN_POSITIONS"
+          },
+          {
+            "deadline_elapsed": false,
+            "elapsed_ms": 0.571,
+            "interrupted_by_deadline": false,
+            "remaining_ms": 1500.52,
+            "rows": 103,
+            "stage": "SCHEMA_TABLES"
+          },
+          {
+            "deadline_elapsed": false,
+            "elapsed_ms": 625.735,
+            "interrupted_by_deadline": false,
+            "remaining_ms": 873.425,
+            "rows": 2424,
+            "stage": "INTRADAY_CONTRACTS"
+          },
+          {
+            "deadline_elapsed": false,
+            "elapsed_ms": 28.202,
+            "interrupted_by_deadline": false,
+            "remaining_ms": 839.485,
+            "rows": 0,
+            "stage": "INTRADAY_POINTS"
+          },
+          {
+            "deadline_elapsed": false,
+            "elapsed_ms": 34.761,
+            "interrupted_by_deadline": false,
+            "remaining_ms": 804.643,
+            "rows": 0,
+            "stage": "MARKET_SNAPSHOTS"
+          }
+        ],
+        "status": "FAIL_CLOSED"
+      },
+      "workers": {
+        "intraday_scalping_worker_state": {
+          "candidates": 0,
+          "failed": 0,
+          "heartbeat_at": "2026-10-17T04:10:36.342686+00:00",
+          "real_orders_sent": 0,
+          "selected": 0,
+          "state": "WAITING_MARKET",
+          "successful": 0
+        },
+        "paper_caucion_cash_sweep_state": {
+          "heartbeat_at": "2026-10-17T04:10:43.487580+00:00",
+          "real_orders_sent": 0,
+          "state": "WAITING_CALENDAR"
+        },
+        "paper_notification_worker": {
+          "heartbeat_at": "2026-10-17T04:10:53.238519+00:00",
+          "state": "RUNNING"
+        },
+        "paper_supervisor_state": {
+          "heartbeat_at": "2026-10-17T04:10:47.466700+00:00",
+          "state": "RUNNING"
+        }
+      },
+      "real_order_routes_called": 0,
+      "ppi_watch_accessed": false
+    },
+    "diagnostic": {
+      "generated_at": "2026-10-17T04:11:11.729214+00:00",
+      "shadow_worker_process_count": 1,
+      "shadow_worker_processes": [
+        {
+          "cpu_seconds": 510.24,
+          "rss_kib": 234220,
+          "state": "R",
+          "wchan": "0"
+        }
+      ],
+      "wal_bytes": 51940872,
+      "committed_generation": {
+        "error_class": "ValueError",
+        "integrity": "UNVERIFIED",
+        "read_only": true,
+        "schema": "rc6.committed-generation-receipt.v1"
+      }
+    }
   }
 }

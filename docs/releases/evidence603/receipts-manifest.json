@@ -928,6 +928,122 @@
       "failure": 8,
       "error": 0,
       "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/audit-codec-benchmark-iterative.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 119,
+      "sha256": "85500f7a63568ba19bcb7d860e1711f1d3820a6819b8335ea20b6e248d7f1fbc"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-shadow-phases.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 5152,
+      "sha256": "00228997ff97fe1c4792f32556c46c5ed150c5092e055a0ed55ad51ed4336807"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-shadow-subtrees.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 7982,
+      "sha256": "f4ec7a0115f779aecf179cae0d971f6750cb7fab941e8ac9f0294849dea7aa12"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-compact-junit.xml.gz",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 266,
+      "sha256": "24aedfb5a248442652f1b707af854c8697959719f574ba42d50e1495dc7ad50c",
+      "cases": 1,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-shadow-released.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 7974,
+      "sha256": "dd3b9de1235fe38f2fb73a79b1d36fb8cd4d26a07155c05eb9f4cb50409f7475"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-guard-junit.xml.gz",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 1004,
+      "sha256": "24a68bfbafb8a1bd9122280e79cf86393f2dad751efe51bd5e2891e5f40f8226",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/shadow-bounded-candidate.json",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 606,
+      "sha256": "ab96ea8808790cd88af2e7a7a8a61c10f4e1bc5e0564387973ac519b3e0ffeb3"
+    },
+    {
+      "path": "docs/releases/evidence603/613-complete-focused.xml.gz",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 5704,
+      "sha256": "f2e9bdf917fad169b41b210bf6553b571719b3a8b6f76f041f06057d21bc16f0",
+      "cases": 248,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/frozen-missing-final.xml.gz",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 1477,
+      "sha256": "23fc2e505ec4bf8f695d6665d04b700c950462064846549d355992ad179fb115",
+      "cases": 37,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-shadow-owned.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 7990,
+      "sha256": "2d8e0812ca442b72e96f4089d1e6f868ce2f2ca5b8679907099277ab907f4380"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-shadow-shared.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 7990,
+      "sha256": "2efebfba5a7dc65f200a2b8e004939123c5609bdf1eeebdba13ed9398fe602d4"
+    },
+    {
+      "path": "docs/releases/evidence603/audit-codec-benchmark.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 239,
+      "sha256": "4a80eddb47c5c84d876c1559e2adcbfe930d21204296b22f7a944809e0ebe884"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-final-receipt.json",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 1023,
+      "sha256": "34a7ef4b4dabde7fb761bfb0dc3e3a888a337af8d687732ecd974227c62b5331"
+    },
+    {
+      "path": "docs/releases/evidence603/native-readonly-39001580361.json",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 5173,
+      "sha256": "c89c76ec0ed831627e4f116e04d942f9c29fccb571d19e38bb0a1a09bce5d519"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-f312-six-ast-failures.json",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 16990,
+      "sha256": "ca7fa8748e15e3442b6200175a3e7d4e5a896b686691c709f0a5ea8c0f464b4e"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-cadence-junit.xml.gz",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 1199,
+      "sha256": "7d9e8cc531819ed278b724ae7aa92e03b2adc3f8b5cdbb8ec693201dbbcdb661",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
     }
   ]
 }

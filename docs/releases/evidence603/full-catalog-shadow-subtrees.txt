@@ -1,0 +1,93 @@
+{"stage": "read", "state": "START", "rss_kib": 44792}
+{"stage": "read", "state": "END", "seconds": 0.0005285590013954788, "rss_kib": 44792}
+{"stage": "read_runtime", "state": "START", "rss_kib": 44792}
+{"stage": "read_runtime", "state": "END", "seconds": 0.7683405960051459, "rss_kib": 59640}
+{"stage": "read", "state": "START", "rss_kib": 59768}
+{"stage": "read", "state": "END", "seconds": 0.002668246997927781, "rss_kib": 59768}
+{"stage": "build_preopen_inputs", "state": "START", "rss_kib": 59768}
+{"stage": "build_preopen_inputs", "state": "END", "seconds": 1.1816324790052022, "rss_kib": 79480}
+{"stage": "run_shadow", "state": "START", "rss_kib": 79480}
+{"stage": "run_shadow", "state": "END", "seconds": 4.190972759999568, "rss_kib": 290020}
+{"stage": "write:preopen-2026-10-19.json.gz", "state": "START", "rss_kib": 290020}
+{"stage": "write:preopen-2026-10-19.json.gz", "state": "END", "seconds": 3.848701062001055, "rss_kib": 290020}
+{"stage": "run_shadow", "state": "START", "rss_kib": 290020}
+{"stage": "run_shadow", "state": "END", "seconds": 5.260172378999414, "rss_kib": 351500}
+{"stage": "family_reports", "state": "START", "rss_kib": 351500}
+{"stage": "family_reports", "state": "END", "seconds": 7.709879452006135, "rss_kib": 509084}
+{"stage": "evaluate_runtime_lab", "state": "START", "rss_kib": 509084}
+{"stage": "evaluate_runtime_lab", "state": "END", "seconds": 0.009122648996708449, "rss_kib": 509084}
+{"stage": "evaluate_runtime_entry_signals", "state": "START", "rss_kib": 509084}
+{"stage": "evaluate_runtime_entry_signals", "state": "END", "seconds": 0.001662693997786846, "rss_kib": 509084}
+{"stage": "evaluate_runtime_funnel", "state": "START", "rss_kib": 509084}
+{"stage": "evaluate_runtime_funnel", "state": "END", "seconds": 5.328760024000076, "rss_kib": 726652}
+{"stage": "durable_report_view", "state": "START", "rss_kib": 726652}
+{"stage": "durable_report_view", "state": "END", "seconds": 0.08859067300363677, "rss_kib": 726652}
+{"stage": "durable_checkpoint_view", "state": "START", "rss_kib": 726652}
+{"stage": "durable_checkpoint_view", "state": "END", "seconds": 3.2634998206049204e-05, "rss_kib": 726652}
+{"stage": "write_streamed_report", "state": "START", "rss_kib": 726652}
+{"stage": "write_streamed_report", "state": "END", "seconds": 29.984867646002385, "rss_kib": 726652}
+{"stage": "write:latest.json.gz", "state": "START", "rss_kib": 726652}
+{"stage": "write:latest.json.gz", "state": "END", "seconds": 0.002662721999513451, "rss_kib": 726652}
+{"stage": "write:checkpoint.json.gz", "state": "START", "rss_kib": 726652}
+{"stage": "write:checkpoint.json.gz", "state": "END", "seconds": 4.517172339001263, "rss_kib": 726652}
+{"stage": "write:status.json", "state": "START", "rss_kib": 726652}
+{"stage": "write:status.json", "state": "END", "seconds": 0.0031597850029356778, "rss_kib": 726652}
+{"stage": "publish_generation", "state": "START", "rss_kib": 726652}
+{"stage": "read", "state": "START", "rss_kib": 726652}
+{"stage": "read", "state": "END", "seconds": 0.000373207003576681, "rss_kib": 726652}
+{"stage": "write:cut-c431eb70e24ba0b88c73c051c23284e736b2c8ad5727d94a94c5a48700d5bdd5.json.gz", "state": "START", "rss_kib": 726652}
+{"stage": "write:cut-c431eb70e24ba0b88c73c051c23284e736b2c8ad5727d94a94c5a48700d5bdd5.json.gz", "state": "END", "seconds": 0.005138695996720344, "rss_kib": 726652}
+{"stage": "write:CURRENT.json", "state": "START", "rss_kib": 726652}
+{"stage": "write:CURRENT.json", "state": "END", "seconds": 0.001473069998610299, "rss_kib": 726652}
+{"stage": "publish_generation", "state": "END", "seconds": 0.012702076004643459, "rss_kib": 726652}
+{"stage": "read", "state": "START", "rss_kib": 726652}
+{"stage": "read", "state": "END", "seconds": 0.00044125699787400663, "rss_kib": 726652}
+{"stage": "read", "state": "START", "rss_kib": 726652}
+{"stage": "read", "state": "END", "seconds": 0.0014128249968052842, "rss_kib": 726652}
+{"stage": "read", "state": "START", "rss_kib": 726652}
+{"stage": "read", "state": "END", "seconds": 0.0002875220015994273, "rss_kib": 726652}
+{"cycle": 1, "sequence": 1792209569071113, "as_of": "2026-10-17T03:59:29.071113+00:00", "status": "SHADOW_OBSERVING", "rss_kib": 726652}
+{"stage": "read", "state": "START", "rss_kib": 726652}
+{"stage": "read", "state": "END", "seconds": 0.9412862330063945, "rss_kib": 726652}
+{"stage": "read_runtime", "state": "START", "rss_kib": 726652}
+{"stage": "read_runtime", "state": "END", "seconds": 0.0602391149950563, "rss_kib": 726652}
+{"stage": "read", "state": "START", "rss_kib": 726652}
+{"stage": "read", "state": "END", "seconds": 2.199845101997198, "rss_kib": 726652}
+{"stage": "run_shadow", "state": "START", "rss_kib": 726652}
+{"stage": "run_shadow", "state": "END", "seconds": 7.7289447330040275, "rss_kib": 726652}
+{"stage": "family_reports", "state": "START", "rss_kib": 726652}
+{"stage": "family_reports", "state": "END", "seconds": 11.13887246500235, "rss_kib": 726652}
+{"stage": "evaluate_runtime_lab", "state": "START", "rss_kib": 726652}
+{"stage": "evaluate_runtime_lab", "state": "END", "seconds": 0.007277017000888009, "rss_kib": 726652}
+{"stage": "evaluate_runtime_entry_signals", "state": "START", "rss_kib": 726652}
+{"stage": "evaluate_runtime_entry_signals", "state": "END", "seconds": 0.004114745002880227, "rss_kib": 726652}
+{"stage": "evaluate_runtime_funnel", "state": "START", "rss_kib": 726652}
+{"stage": "evaluate_runtime_funnel", "state": "END", "seconds": 5.281284821001464, "rss_kib": 834984}
+{"stage": "durable_report_view", "state": "START", "rss_kib": 834984}
+{"stage": "durable_report_view", "state": "END", "seconds": 0.07592106299853185, "rss_kib": 834984}
+{"stage": "durable_checkpoint_view", "state": "START", "rss_kib": 834984}
+{"stage": "durable_checkpoint_view", "state": "END", "seconds": 2.9158996767364442e-05, "rss_kib": 834984}
+{"stage": "write_streamed_report", "state": "START", "rss_kib": 834984}
+{"stage": "write_streamed_report", "state": "END", "seconds": 27.935865216997627, "rss_kib": 834984}
+{"stage": "write:latest.json.gz", "state": "START", "rss_kib": 834984}
+{"stage": "write:latest.json.gz", "state": "END", "seconds": 0.0063402829982806, "rss_kib": 834984}
+{"stage": "write:checkpoint.json.gz", "state": "START", "rss_kib": 834984}
+{"stage": "write:checkpoint.json.gz", "state": "END", "seconds": 1.5843080619961256, "rss_kib": 834984}
+{"stage": "write:status.json", "state": "START", "rss_kib": 834984}
+{"stage": "write:status.json", "state": "END", "seconds": 0.0020519410027191043, "rss_kib": 834984}
+{"stage": "publish_generation", "state": "START", "rss_kib": 834984}
+{"stage": "read", "state": "START", "rss_kib": 834984}
+{"stage": "read", "state": "END", "seconds": 0.0010114909964613616, "rss_kib": 834984}
+{"stage": "write:cut-9cfd5d1fbdf7914c0a01ac6c1bb89485f450ada03eb567de06cfe4b74c0c0a52.json.gz", "state": "START", "rss_kib": 834984}
+{"stage": "write:cut-9cfd5d1fbdf7914c0a01ac6c1bb89485f450ada03eb567de06cfe4b74c0c0a52.json.gz", "state": "END", "seconds": 0.0026218970015179366, "rss_kib": 834984}
+{"stage": "write:CURRENT.json", "state": "START", "rss_kib": 834984}
+{"stage": "write:CURRENT.json", "state": "END", "seconds": 0.0008355690006283112, "rss_kib": 834984}
+{"stage": "publish_generation", "state": "END", "seconds": 0.0061776299990015104, "rss_kib": 834984}
+{"stage": "read", "state": "START", "rss_kib": 834984}
+{"stage": "read", "state": "END", "seconds": 0.0004228089965181425, "rss_kib": 834984}
+{"stage": "read", "state": "START", "rss_kib": 834984}
+{"stage": "read", "state": "END", "seconds": 0.00047991199971875176, "rss_kib": 834984}
+{"stage": "read", "state": "START", "rss_kib": 834984}
+{"stage": "read", "state": "END", "seconds": 0.0001561739991302602, "rss_kib": 834984}
+{"cycle": 2, "sequence": 1792209632771069, "as_of": "2026-10-17T04:00:32.771069+00:00", "status": "SHADOW_OBSERVING", "rss_kib": 834984}
+{"completed_cycles": 2, "elapsed": 121.57189797000319, "count": 14611, "poll_sleep": "REPLACED_FOR_LOCAL_BENCHMARK", "rss_kib": 834984}

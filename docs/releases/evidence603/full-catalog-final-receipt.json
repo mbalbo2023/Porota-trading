@@ -1,0 +1,30 @@
+{
+  "actual_market_acceptance": false,
+  "catalog_count": 14611,
+  "cuts": [
+    {
+      "as_of": "2026-10-05T13:20:00.000470+00:00",
+      "computed_report_sha256": "69662860d8eb8476020743e839e33a84f5deab6b8b197ebf606d0741c4b66e61",
+      "freshness_budget_seconds": 120,
+      "sequence": 1791206400000470,
+      "tick_seconds": 31.127
+    },
+    {
+      "as_of": "2026-10-05T13:21:01.379570+00:00",
+      "computed_report_sha256": "f5785b75c2da95087c85a54174f82b7766584e8cde36c81d3f67a181e1199d66",
+      "freshness_budget_seconds": 112.896,
+      "sequence": 1791206461379570,
+      "tick_seconds": 26.448
+    }
+  ],
+  "elapsed_seconds": 87.949,
+  "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+  "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+  "process_peak_rss_kib": 446072,
+  "production_data_mounted": false,
+  "provider_requests": 0,
+  "ready_fixture_count": 9902,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "schema": "rc6.synthetic-full-catalog.v1"
+}

@@ -1,0 +1,1 @@
+{"mode": "bounded_iterative", "wall": 13.246456016000593, "cpu": 13.170968368, "bytes": 247913698, "rss_kib": 1016644}

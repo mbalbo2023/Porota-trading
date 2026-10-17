@@ -1,0 +1,2 @@
+{"mode": "C_by_top_section", "wall": 6.982126745999267, "cpu": 6.959807575000001, "bytes": 247912894, "rss_kib": 1016096}
+{"mode": "bounded_current", "wall": 28.147853231996123, "cpu": 28.048453397, "bytes": 247913698, "rss_kib": 1016096}

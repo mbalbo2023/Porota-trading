@@ -1,0 +1,62 @@
+{"stage": "read", "state": "START", "rss_kib": 44696}
+{"stage": "read", "state": "END", "seconds": 0.0002674549978110008, "rss_kib": 44696}
+{"stage": "read_runtime", "state": "START", "rss_kib": 44696}
+{"stage": "read_runtime", "state": "END", "seconds": 0.15913748900493374, "rss_kib": 59672}
+{"stage": "read", "state": "START", "rss_kib": 59672}
+{"stage": "read", "state": "END", "seconds": 0.0001613830027054064, "rss_kib": 59672}
+{"stage": "build_preopen_inputs", "state": "START", "rss_kib": 59672}
+{"stage": "build_preopen_inputs", "state": "END", "seconds": 0.3980647790012881, "rss_kib": 79384}
+{"stage": "run_shadow", "state": "START", "rss_kib": 79384}
+{"stage": "run_shadow", "state": "END", "seconds": 15.074371664006321, "rss_kib": 402272}
+{"stage": "write:preopen-2026-10-19.json.gz", "state": "START", "rss_kib": 402272}
+{"stage": "write:preopen-2026-10-19.json.gz", "state": "END", "seconds": 4.794428467001126, "rss_kib": 402272}
+{"stage": "run_shadow", "state": "START", "rss_kib": 402272}
+{"stage": "run_shadow", "state": "END", "seconds": 7.274473015000694, "rss_kib": 508592}
+{"stage": "family_reports", "state": "START", "rss_kib": 508592}
+{"stage": "family_reports", "state": "END", "seconds": 11.90722561399889, "rss_kib": 683728}
+{"stage": "evaluate_runtime_lab", "state": "START", "rss_kib": 683728}
+{"stage": "evaluate_runtime_lab", "state": "END", "seconds": 0.007606915001815651, "rss_kib": 683728}
+{"stage": "evaluate_runtime_entry_signals", "state": "START", "rss_kib": 683728}
+{"stage": "evaluate_runtime_entry_signals", "state": "END", "seconds": 0.002618971004267223, "rss_kib": 683728}
+{"stage": "evaluate_runtime_funnel", "state": "START", "rss_kib": 683728}
+{"stage": "evaluate_runtime_funnel", "state": "END", "seconds": 7.876273180998396, "rss_kib": 875968}
+{"stage": "durable_report_view", "state": "START", "rss_kib": 875968}
+{"stage": "durable_report_view", "state": "END", "seconds": 0.08409728900005575, "rss_kib": 875968}
+{"stage": "durable_checkpoint_view", "state": "START", "rss_kib": 875968}
+{"stage": "durable_checkpoint_view", "state": "END", "seconds": 3.329000173835084e-05, "rss_kib": 875968}
+{"stage": "write_streamed_report", "state": "START", "rss_kib": 875968}
+{"stage": "write_streamed_report", "state": "END", "seconds": 25.18134117199952, "rss_kib": 875968}
+{"stage": "write:latest.json.gz", "state": "START", "rss_kib": 875968}
+{"stage": "write:latest.json.gz", "state": "END", "seconds": 0.003954192005039658, "rss_kib": 875968}
+{"stage": "write:checkpoint.json.gz", "state": "START", "rss_kib": 875968}
+{"stage": "write:checkpoint.json.gz", "state": "END", "seconds": 3.822513015002187, "rss_kib": 875968}
+{"stage": "write:status.json", "state": "START", "rss_kib": 875968}
+{"stage": "write:status.json", "state": "END", "seconds": 0.0027183349957340397, "rss_kib": 875968}
+{"stage": "publish_generation", "state": "START", "rss_kib": 875968}
+{"stage": "read", "state": "START", "rss_kib": 875968}
+{"stage": "read", "state": "END", "seconds": 0.00041277200216427445, "rss_kib": 875968}
+{"stage": "write:cut-15d3a2fcf6edd5174e8b8d4350f6d13557d7132ab9e56987cacaec455fff37c2.json.gz", "state": "START", "rss_kib": 875968}
+{"stage": "write:cut-15d3a2fcf6edd5174e8b8d4350f6d13557d7132ab9e56987cacaec455fff37c2.json.gz", "state": "END", "seconds": 0.004315868005505763, "rss_kib": 875968}
+{"stage": "write:CURRENT.json", "state": "START", "rss_kib": 875968}
+{"stage": "write:CURRENT.json", "state": "END", "seconds": 0.001022716001898516, "rss_kib": 875968}
+{"stage": "publish_generation", "state": "END", "seconds": 0.009478232997935265, "rss_kib": 875968}
+{"tick": 0, "count": 14611, "duration": 77.2261067349973, "status": "SHADOW_OBSERVING", "phase": "CLOSED", "rss_kib": 875968}
+{"stage": "read", "state": "START", "rss_kib": 875968}
+{"stage": "read", "state": "END", "seconds": 1.4021421650031698, "rss_kib": 875968}
+{"stage": "read_runtime", "state": "START", "rss_kib": 875968}
+{"stage": "read_runtime", "state": "END", "seconds": 2.7737348270020448, "rss_kib": 875968}
+Traceback (most recent call last):
+  File "/workspace/scratch/61d2db46059e/porota-clock-forward/../profile-full-catalog-shadow.py", line 32, in <module>
+    started=time.monotonic();at=datetime.now(timezone.utc);result=worker.tick(at)
+                                                                  ^^^^^^^^^^^^^^^
+  File "/workspace/scratch/61d2db46059e/porota-clock-forward/rc6_shadow_runtime/worker.py", line 367, in tick
+    inputs = read_runtime(self.database, as_of=at, row_limit=self.row_limit,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/61d2db46059e/porota-clock-forward/../profile-full-catalog-shadow.py", line 17, in call
+    try:return original(*args,**kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/61d2db46059e/porota-clock-forward/rc6_dynamic_universe/runtime.py", line 175, in read_runtime
+    transform_guard("CATALOG_FULL")
+  File "/workspace/scratch/61d2db46059e/porota-clock-forward/rc6_dynamic_universe/runtime.py", line 148, in transform_guard
+    raise exc
+ValueError: RUNTIME_TRANSFORM_BUDGET_EXCEEDED
