@@ -7,11 +7,11 @@ FROM python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88
 FROM python:3.11-bookworm@sha256:5887f265d8d44d8b4734d3658b21d668edf5aaf92e4945bc0c984afbfab105d3 AS rc6-json-bound-build
 COPY --from=rc6-python-headers /usr/local/include/python3.11/ /frozen-python-headers/
 COPY rc6_shadow_runtime/_rc6_json_bound.c /src/_rc6_json_bound.c
-RUN mkdir -p /out \\
-    && cc -O3 -DNDEBUG -nostdlib -Wall -Wextra -shared -fPIC \\
-       -I/frozen-python-headers /src/_rc6_json_bound.c -o /out/_rc6_json_bound.so \\
-    && readelf -d /out/_rc6_json_bound.so > /out/needed.txt \\
-    && readelf --version-info /out/_rc6_json_bound.so > /out/versions.txt \\
+RUN mkdir -p /out \
+    && cc -O3 -DNDEBUG -nostdlib -Wall -Wextra -shared -fPIC \
+       -I/frozen-python-headers /src/_rc6_json_bound.c -o /out/_rc6_json_bound.so \
+    && readelf -d /out/_rc6_json_bound.so > /out/needed.txt \
+    && readelf --version-info /out/_rc6_json_bound.so > /out/versions.txt \
     && readelf --dyn-syms --wide /out/_rc6_json_bound.so > /out/symbols.txt
 RUN python - <<'PY'
 from pathlib import Path
