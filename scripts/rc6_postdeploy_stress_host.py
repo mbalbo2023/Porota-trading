@@ -135,7 +135,7 @@ def run(candidate, run_id):
                 available=memory_available();free=shutil.disk_usage(ROOT).free
                 report['resource_samples'].append({'elapsed_seconds':round(1800-(deadline-time.monotonic()),1),
                                                    'host_memory_available':available,'disk_free':free})
-                if free<minimum_free or available<32*1024**2 or time.monotonic()>deadline:
+                if free<minimum_free or available<128*1024**2 or time.monotonic()>deadline:
                     command(['docker','stop','--time','5',name],timeout=12)
                     process.wait(timeout=15)
                     raise ValueError('STRESS_RESOURCE_OR_TIME_ABORT')
