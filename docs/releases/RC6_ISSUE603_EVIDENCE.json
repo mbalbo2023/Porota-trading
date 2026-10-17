@@ -578,5 +578,25 @@
       "https://docs.digitalocean.com/products/backups/details/features/",
       "https://docs.digitalocean.com/products/backups/how-to/enable/"
     ]
+  },
+  "wiring_reconciliation": {
+    "path": "docs/releases/RC6_ISSUE603_WIRING_RECONCILIATION.json",
+    "sha256": "e846d527802e73048c08400c8d92cb1363f87b8a3c97408ad9fee69decf7ec70",
+    "helper": "docs/releases/evidence603/wiring_audit.py",
+    "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
+    "root_python_count": 261,
+    "certified_bundle_hashes_matched": 261,
+    "parse_errors": 0,
+    "classification_counts": {
+      "STATIC_POSSIBLE_REACHABILITY_FROM_ACTIVE_ROOTS": 168,
+      "TEST_REFERENCE_ONLY_LIVE_AUTHORITY_UNKNOWN": 33,
+      "PRESERVED_LIVE_AUTHORITY_UNKNOWN": 11,
+      "CANONICAL_DEPLOY_CONTROL_PLANE_REFERENCE": 5,
+      "CONTAINER_ENTRYPOINT_OBSERVED_AT_START": 2,
+      "WORKFLOW_REFERENCE_ONLY_NOT_RUNTIME_PROOF": 28,
+      "VERSIONED_ACTIVE_SERVICE_REFERENCE": 11,
+      "TEST_MODULE_PRESERVED": 3
+    },
+    "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
   }
 }

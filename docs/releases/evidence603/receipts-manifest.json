@@ -110,6 +110,18 @@
       "source": "NATIVE_PREDEPLOY_38981525324",
       "bytes": 360,
       "sha256": "0bcb984e00ae090701a1ca78f459c9f6bf12823e13dda52a74b2c5e257212462"
+    },
+    {
+      "path": "docs/releases/RC6_ISSUE603_WIRING_RECONCILIATION.json",
+      "source": "STATIC_CANDIDATE_ANALYSIS_NOT_LIVE_TRACE",
+      "bytes": 234133,
+      "sha256": "e846d527802e73048c08400c8d92cb1363f87b8a3c97408ad9fee69decf7ec70"
+    },
+    {
+      "path": "docs/releases/evidence603/wiring_audit.py",
+      "source": "REPRODUCIBLE_STATIC_AUDIT_CODE",
+      "bytes": 7907,
+      "sha256": "bc8e38aa0b6aaa78635de3e1b39faca0bc9f5113bc7b81e4896b6d759bd28100"
     }
   ]
 }
