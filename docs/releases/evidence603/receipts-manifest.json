@@ -384,7 +384,8 @@
       "cases": 3,
       "failure": 3,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 3
     },
     {
       "path": "docs/releases/evidence603/stress-restart-causal-before.xml",
@@ -394,7 +395,8 @@
       "cases": 1,
       "failure": 1,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 1
     },
     {
       "path": "docs/releases/evidence603/stress-recovery-final-after.xml",
@@ -404,13 +406,80 @@
       "cases": 48,
       "failure": 0,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 48
     },
     {
       "path": "docs/releases/evidence603/predeploy-38989979153-superseded.json",
       "source": "LABELLED_PRIVATE_ADVERSARY_OR_CANONICAL_ACTION_LOG_RECEIPT",
       "bytes": 1417,
       "sha256": "b8da22228e2a74209b7e75acb3f1c608625a4f7703db0ecf6836985ebe93de11"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38991326475-deadline.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 415,
+      "sha256": "89aeb1853ef219db06487426075fe5057c9f07a3e10bda01d2e932c4c0c50695"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38990671984-green.xml.gz",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 85112,
+      "sha256": "326034163b139669ad63ee3d7b6702d766957c24cf82f94e2ad5c0ae30feda87",
+      "cases": 3764,
+      "junit_summary_tests_attribute": 3767,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "uncompressed_sha256": "35c4e1de0e38fbd121a8bbfadd3bb2ccef97d350b37ab11e1a28e94cf50383ce"
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38991391810-failure.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 1390,
+      "sha256": "b19a11b16fd322e3a378286268f282ab553a58d62100150742e346a096968a82"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38990671984-frozen.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 611,
+      "sha256": "e206a66c89ea1478e7ddfe5eb869270ad5da7b06a0972dcd0d16125cadcca6d3"
+    },
+    {
+      "path": "docs/releases/evidence603/merge-610-exact-tree.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 205,
+      "sha256": "d0395e979f5d087bef77f052c07d8188454f2ba03ecdb0a79b5900a2e88d3d9b"
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38991391810-selected-lines.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 3853,
+      "sha256": "0095062397d1a46c92cb04025309d7cb099f5ca2005eb2a6ebc0b6d0f5279de5"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38990671984-tests.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 360,
+      "sha256": "5bbf0e6015d9c2011ba8e492cfe716be3d9530658aaac731b663a44a0a1ff072"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38990671984-independent.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 1647,
+      "sha256": "d9533a4f75907e58429bf1958053a320cdd119385f2872381bc9d9d1978ac987"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38990927608-unverified.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 254,
+      "sha256": "215a8388dfb73a7946f9c99116d5abba0d627a4b5c1d0f4473991d6ec008ef52"
+    },
+    {
+      "path": "docs/releases/evidence603/housekeeping-38991391810.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 5989,
+      "sha256": "566344888a0c10615614b70bf4edad035fb711692d6b8cfc2e18821fa576fd8a"
     }
   ]
 }

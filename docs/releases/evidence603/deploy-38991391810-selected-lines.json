@@ -1,0 +1,30 @@
+{
+  "source": "GitHub Actions job117274341112 decoded actual log markers",
+  "lines": [
+    "2026-10-17T01:34:11.1141147Z  * [new branch]        audit/rc6-exit-book-errors-20261002 -> origin/audit/rc6-exit-book-errors-20261002",
+    "2026-10-17T01:34:11.1212718Z  * [new branch]        audit/ws-deploy-rca-scalping-read-errors-20260930 -> origin/audit/ws-deploy-rca-scalping-read-errors-20260930",
+    "2026-10-17T01:34:11.1618455Z  * [new branch]        fix/rc6-iol-diagnostic-capture-errors-20260923 -> origin/fix/rc6-iol-diagnostic-capture-errors-20260923",
+    "2026-10-17T01:34:11.1753127Z  * [new branch]        governance/rc6-error-learning-runner-20261007 -> origin/governance/rc6-error-learning-runner-20261007",
+    "2026-10-17T01:34:11.1869053Z  * [new branch]        release/rc6-zero-known-error-candidate-20261001 -> origin/release/rc6-zero-known-error-candidate-20261001",
+    "2026-10-17T01:34:11.1870053Z  * [new branch]        release/rc6-zero-known-error-candidate-v2-20261001 -> origin/release/rc6-zero-known-error-candidate-v2-20261001",
+    "2026-10-17T01:34:11.1871077Z  * [new branch]        release/rc6-zero-known-error-candidate-v3-20261001 -> origin/release/rc6-zero-known-error-candidate-v3-20261001",
+    "2026-10-17T01:34:11.1962169Z  * [new branch]        work/rc6-market-watch-shadow-valueerror-site-20261015 -> origin/work/rc6-market-watch-shadow-valueerror-site-20261015",
+    "2026-10-17T01:34:11.1996762Z  * [new branch]        work/rc6-shadow-valueerror-site-20261015 -> origin/work/rc6-shadow-valueerror-site-20261015",
+    "2026-10-17T01:34:11.2011929Z  * [new branch]        work/v17-ledger-error-evidence -> origin/work/v17-ledger-error-evidence",
+    "2026-10-17T01:34:11.2109789Z  * [new branch]        work/ws-integ-03-zero-known-error-20260929 -> origin/work/ws-integ-03-zero-known-error-20260929",
+    "2026-10-17T01:34:18.2253505Z RC6_DISK_REQUIRED_PRETRANSFER_FREE=4915107790",
+    "2026-10-17T01:34:19.7316374Z {\"available_bytes\": 1704435712, \"inode_free_percent\": 88.395723, \"inode_ok\": true, \"min_inode_free_percent\": 10.0, \"required_bytes\": 4915107790, \"space_ok\": false, \"status\": \"RED\"}",
+    "2026-10-17T01:34:19.7318230Z RC6_DISK_PRETRANSFER_PREFLIGHT=RED|available=1704435712|required=4915107790|inode_free_percent=88.40|inode_required_percent=10.00",
+    "2026-10-17T01:34:19.7319385Z RC6_DISK_PRECLEAN=START|available=1704435712|required=4915107790",
+    "2026-10-17T01:34:34.7942842Z Total reclaimed space: 0B",
+    "2026-10-17T01:35:06.1158793Z Total reclaimed space: 0B",
+    "2026-10-17T01:35:06.1279664Z RC6_PRECLEAN_CRITICAL_IMAGE_RECONCILED=GREEN|old_referenced=0|image=sha256:abf744a305a847ed922e7df2474f6d991f23d9abfb0a584b93930216c117dd54",
+    "2026-10-17T01:35:09.8021534Z RC6_DISK_PRECLEAN_REMOTE=GREEN",
+    "2026-10-17T01:35:11.0068709Z {\"available_bytes\": 4760752128, \"inode_free_percent\": 89.563115, \"inode_ok\": true, \"min_inode_free_percent\": 10.0, \"required_bytes\": 4915107790, \"space_ok\": false, \"status\": \"RED\"}",
+    "2026-10-17T01:35:11.0070625Z RC6_DISK_PRETRANSFER_PREFLIGHT=RED|available=4760752128|required=4915107790|inode_free_percent=89.56|inode_required_percent=10.00",
+    "2026-10-17T01:35:11.0087525Z ##[error]Process completed with exit code 1.",
+    "2026-10-17T01:35:11.0357059Z POROTA_DEPLOY_FAILURE_CLEANUP=START|original_failure_preserved=true",
+    "2026-10-17T01:35:14.2051737Z {\"candidate_sha\": \"4e2bddc2c1c15ed0333301c4f462f790852a3a17\", \"disk_after\": 4760752128, \"disk_before\": 4760752128, \"errors\": [], \"removed_tags\": [], \"retained_tags\": [], \"schema\": \"POROTA_DEPLOY_FAILURE_CLEANUP_V1\", \"shared_cache_action\": \"UNTOUCHED_NO_HOST_BUILD\", \"space_recovered\": 0, \"staging_removed\": true, \"status\": \"GREEN\"}",
+    "2026-10-17T01:35:14.3848864Z POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN"
+  ]
+}

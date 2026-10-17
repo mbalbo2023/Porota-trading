@@ -1,0 +1,174 @@
+{
+  "actions": [
+    "APT_CACHE_CLEAN",
+    "APT_LISTS_CLEAN",
+    "JOURNAL_VACUUM"
+  ],
+  "after": {
+    "band": "YELLOW",
+    "free_bytes": 2545053696,
+    "inode_free_percent": 88.39934666951497
+  },
+  "before": {
+    "band": "RED",
+    "free_bytes": 1704419328,
+    "inode_free_percent": 88.39575449625652
+  },
+  "candidates": {
+    "backups": {
+      "general": {
+        "delete": [
+          {
+            "mtime": 1791789788.5886002,
+            "path": "/opt/porota-backups/porota-general-20261012T071620Z.tar.gz",
+            "reason": "BACKUP_RETENTION_EXCESS",
+            "size_bytes": 380846020
+          }
+        ],
+        "kept": [
+          {
+            "mtime": 1792135553.7750554,
+            "path": "/opt/porota-backups/porota-general-20261016T071616Z.tar.gz",
+            "reason": "BACKUP",
+            "size_bytes": 431149443
+          },
+          {
+            "mtime": 1791962688.24053,
+            "path": "/opt/porota-backups/porota-general-20261014T071805Z.tar.gz",
+            "reason": "BACKUP",
+            "size_bytes": 239525888
+          },
+          {
+            "mtime": 1791876669.6913605,
+            "path": "/opt/porota-backups/porota-general-20261013T072347Z.tar.gz",
+            "reason": "BACKUP",
+            "size_bytes": 380971981
+          }
+        ]
+      },
+      "history": {
+        "delete": [],
+        "kept": [
+          {
+            "mtime": 1792122850.0265477,
+            "path": "/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-10-16.db.gz",
+            "reason": "BACKUP",
+            "size_bytes": 91182668
+          },
+          {
+            "mtime": 1792048500.7358558,
+            "path": "/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-10-15.db.gz",
+            "reason": "BACKUP",
+            "size_bytes": 91182668
+          },
+          {
+            "mtime": 1791976107.1935353,
+            "path": "/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-10-14.db.gz",
+            "reason": "BACKUP",
+            "size_bytes": 91182668
+          }
+        ]
+      },
+      "paper": {
+        "delete": [],
+        "kept": [
+          {
+            "mtime": 1792122543.7402203,
+            "path": "/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-10-16.db.gz",
+            "reason": "BACKUP",
+            "size_bytes": 208715009
+          },
+          {
+            "mtime": 1792048226.398161,
+            "path": "/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-10-15.db.gz",
+            "reason": "BACKUP",
+            "size_bytes": 200550156
+          },
+          {
+            "mtime": 1791975876.1929617,
+            "path": "/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-10-14.db.gz",
+            "reason": "BACKUP",
+            "size_bytes": 187290516
+          }
+        ]
+      }
+    },
+    "tmp": []
+  },
+  "deleted": [
+    {
+      "mtime": 1791789788.5886002,
+      "path": "/opt/porota-backups/porota-general-20261012T071620Z.tar.gz",
+      "reason": "BACKUP_RETENTION_EXCESS",
+      "size_bytes": 380846020
+    }
+  ],
+  "docker": "TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE\nImages          3         2         6.921GB   2.216GB (32%)\nContainers      3         3         65.54kB   0B (0%)\nLocal Volumes   0         0         0B        0B\nBuild Cache     8         8         1.402GB   0B",
+  "effective_mode": "cleanup",
+  "journal_vacuum_output": "Deleted archived journal /var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-000000000011d6ed-00065c1bda8dad7d.journal (34.8M).\nVacuuming done, freed 34.8M of archived journals from /var/log/journal/741c1aa9b86f46c98b8060832f38711c.\nVacuuming done, freed 0B of archived journals from /var/log/journal.\nVacuuming done, freed 0B of archived journals from /run/log/journal.",
+  "policy": {
+    "general_keep_newest": 3,
+    "history_keep_newest": 3,
+    "journal_max_bytes": 536870912,
+    "paper_keep_newest": 3,
+    "tmp_min_age_days": 7
+  },
+  "requested_mode": "cleanup",
+  "runtime_after": {
+    "containers": {
+      "porota_critical_approval_rc6": {
+        "image": "sha256:dd2e956fc96bc0483f15d8d69c26ab736a51825e322d7e58c434c053b2062ebd",
+        "oom_killed": false,
+        "restart_count": 0,
+        "status": "running"
+      },
+      "porota_production_dashboard": {
+        "image": "sha256:abf744a305a847ed922e7df2474f6d991f23d9abfb0a584b93930216c117dd54",
+        "oom_killed": false,
+        "restart_count": 0,
+        "status": "running"
+      },
+      "porota_production_observer": {
+        "image": "sha256:abf744a305a847ed922e7df2474f6d991f23d9abfb0a584b93930216c117dd54",
+        "oom_killed": false,
+        "restart_count": 0,
+        "status": "running"
+      }
+    },
+    "observer": {
+      "mode": "PRODUCTION_PAPER",
+      "real_orders_sent": 0
+    },
+    "ppi_watch": []
+  },
+  "runtime_before": {
+    "containers": {
+      "porota_critical_approval_rc6": {
+        "image": "sha256:dd2e956fc96bc0483f15d8d69c26ab736a51825e322d7e58c434c053b2062ebd",
+        "oom_killed": false,
+        "restart_count": 0,
+        "status": "running"
+      },
+      "porota_production_dashboard": {
+        "image": "sha256:abf744a305a847ed922e7df2474f6d991f23d9abfb0a584b93930216c117dd54",
+        "oom_killed": false,
+        "restart_count": 0,
+        "status": "running"
+      },
+      "porota_production_observer": {
+        "image": "sha256:abf744a305a847ed922e7df2474f6d991f23d9abfb0a584b93930216c117dd54",
+        "oom_killed": false,
+        "restart_count": 0,
+        "status": "running"
+      }
+    },
+    "observer": {
+      "mode": "PRODUCTION_PAPER",
+      "real_orders_sent": 0
+    },
+    "ppi_watch": []
+  },
+  "schema_version": 1,
+  "space_recovered_bytes": 840634368,
+  "status": "GREEN"
+}
