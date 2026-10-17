@@ -838,6 +838,35 @@ class CommittedGenerationProbeTests(unittest.TestCase):
         self.assertEqual(self.capture()["integrity"], "UNVERIFIED")
 
 
+class ImageInventoryContracts(unittest.TestCase):
+    def capture(self,referenced=False,foreign_alias=False,inspection_failed=False):
+        ident='sha256:'+'c'*64;tag='porota-predeploy-v2:'+'a'*40
+        aliases=[tag]+(['PRIVATE_OTHER_REPOSITORY:SECRET'] if foreign_alias else [])
+        rows=[subprocess.CompletedProcess([],0,stdout=json.dumps({'ID':ident,'Repository':'porota-predeploy-v2','Tag':'a'*40,'Env':'PRIVATE_SECRET'}),stderr=''),
+              subprocess.CompletedProcess([],0,stdout='d'*12,stderr=''),
+              subprocess.CompletedProcess([],1 if inspection_failed else 0,stdout=ident if referenced else 'sha256:'+'e'*64,stderr='PRIVATE_SECRET'),
+              subprocess.CompletedProcess([],0,stdout=ident+'|12345|'+json.dumps(aliases),stderr='')]
+        with patch.object(monitor.subprocess,'run',side_effect=rows) as calls:
+            value=monitor.porota_image_inventory_host()
+        self.assertNotIn('PRIVATE_',json.dumps(value))
+        self.assertFalse(any(token in c.args[0] for c in calls.call_args_list for token in ['rm','prune','stop','start','--force']))
+        return value
+
+    def test_unreferenced_candidate_is_observed_without_deletion_authority(self):
+        value=self.capture();self.assertTrue(value['complete_inventory'])
+        row=value['records'][0];self.assertTrue(row['unreferenced_candidate_observed'])
+        self.assertFalse(row['deletion_authority'])
+
+    def test_reference_or_foreign_alias_prevents_candidate_eligibility(self):
+        self.assertFalse(self.capture(referenced=True)['records'][0]['unreferenced_candidate_observed'])
+        row=self.capture(foreign_alias=True)['records'][0]
+        self.assertFalse(row['scoped_candidate_tags_only']);self.assertEqual(row['unlisted_alias_count'],1)
+
+    def test_failed_ownership_inspection_cannot_claim_unused(self):
+        value=self.capture(inspection_failed=True)
+        self.assertFalse(value['complete_inventory']);self.assertEqual(value['records'],[])
+
+
 class InstrumentInventoryContracts(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)

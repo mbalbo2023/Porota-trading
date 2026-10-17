@@ -984,6 +984,59 @@ except Exception as exc: print(json.dumps({"status":"API_UNAVAILABLE","error_cla
             "status": "CONTAINER_PROBE_UNAVAILABLE"}
 
 
+def porota_image_inventory_host():
+    """Manual read-only ownership evidence, no deletion or environment export."""
+    result={'schema':'rc6.porota-image-inventory.v1','read_only':True,
+            'status':'UNVERIFIED','complete_inventory':False,'records':[]}
+    def run(args):
+        completed=subprocess.run(['docker',*args],capture_output=True,text=True,timeout=4,check=False)
+        if completed.returncode or len(completed.stdout)>65536:raise ValueError('IMAGE_PROBE_UNAVAILABLE')
+        return completed.stdout.strip()
+    try:
+        image_id=re.compile(r'sha256:[0-9a-f]{64}')
+        listing=run(['image','ls','--no-trunc','--format','{{json .}}',
+                     '--filter','reference=porota-predeploy-v2:*',
+                     '--filter','reference=porota-trading-bot:*']).splitlines()
+        if len(listing)>64:raise ValueError('IMAGE_LIST_LIMIT')
+        images={}
+        for line in listing:
+            row=json.loads(line);ident=row.get('ID');repo=row.get('Repository');tag=row.get('Tag')
+            if not isinstance(ident,str) or not image_id.fullmatch(ident):raise ValueError('IMAGE_ID_INVALID')
+            if repo not in {'porota-predeploy-v2','porota-trading-bot'} or not isinstance(tag,str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,100}',tag):
+                raise ValueError('IMAGE_TAG_INVALID')
+            images.setdefault(ident,[]).append(repo+':'+tag)
+        if len(images)>16:raise ValueError('IMAGE_LIST_LIMIT')
+        containers=run(['ps','-aq']).splitlines()
+        if len(containers)>64 or any(not re.fullmatch(r'[0-9a-f]{12,64}',x) for x in containers):
+            raise ValueError('CONTAINER_LIST_INVALID')
+        refs=run(['inspect','--format','{{.Image}}',*containers]).splitlines() if containers else []
+        if len(refs)!=len(containers) or any(not image_id.fullmatch(x) for x in refs):
+            raise ValueError('IMAGE_REFERENCES_UNVERIFIED')
+        records=[]
+        details=run(['image','inspect','--format','{{.Id}}|{{.Size}}|{{json .RepoTags}}',*images]).splitlines() if images else []
+        if len(details)!=len(images):raise ValueError('IMAGE_SIZES_UNVERIFIED')
+        seen=set()
+        for line in details:
+            parts=line.split('|',2)
+            if len(parts)!=3:raise ValueError('IMAGE_SIZE_INVALID')
+            ident,size,raw_tags=parts;all_tags=json.loads(raw_tags)
+            if (ident not in images or ident in seen or not size.isdecimal() or not isinstance(all_tags,list)
+                    or not all_tags or len(all_tags)>64 or any(not isinstance(tag,str) for tag in all_tags)):
+                raise ValueError('IMAGE_SIZE_OR_ALIASES_INVALID')
+            seen.add(ident);tags=sorted(images[ident]);references=refs.count(ident)
+            eligible=all(re.fullmatch(r'porota-predeploy-v2:[0-9a-f]{40}|porota-trading-bot:17\.0\.0-rc6-candidate-[0-9a-f]{40}',tag) for tag in all_tags)
+            records.append({'image_id':ident,'porota_tags':tags,'size_bytes':int(size),
+                            'all_container_reference_count':references,
+                            'scoped_candidate_tags_only':eligible,'unlisted_alias_count':len(set(all_tags)-set(tags)),
+                            'deletion_authority':False,
+                            'unreferenced_candidate_observed':not references and eligible})
+        result.update(status='OBSERVED_READ_ONLY',complete_inventory=True,
+                      records=sorted(records,key=lambda r:r['image_id']),container_count=len(containers))
+    except (OSError,ValueError,TypeError,subprocess.TimeoutExpired) as exc:
+        result['error_class']=type(exc).__name__
+    return result
+
+
 def observer_lifecycle_host():
     """Manual-only Docker metadata and proximate exception classes, no raw logs."""
     until = now_utc().isoformat()
@@ -1455,6 +1508,7 @@ def main(argv=None):
     actions.add_parser("shadow-diagnostic-host")
     actions.add_parser("schedule-api-host")
     actions.add_parser("observer-lifecycle-host")
+    actions.add_parser("porota-image-inventory-host")
     actions.add_parser("recent-critical-host")
     actions.add_parser("instrument-inventory-host")
     cadence = actions.add_parser('schedule-health')
@@ -1502,6 +1556,8 @@ def main(argv=None):
         data = schedule_api_host()
     elif args.action == "observer-lifecycle-host":
         data = observer_lifecycle_host()
+    elif args.action == "porota-image-inventory-host":
+        data = porota_image_inventory_host()
     elif args.action == "recent-critical-host":
         data = recent_critical_host()
     elif args.action == "instrument-inventory-host":
