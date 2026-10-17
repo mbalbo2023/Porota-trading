@@ -142,6 +142,25 @@ def test_native_soak_receipts_are_preserved_before_and_after_stress():
     assert '> evidence/postdeploy-stress/native-postrestore-soak.json' in after['run']
 
 
+def test_native_proof_ownership_is_reclaimed_after_sandbox_before_upload():
+    import yaml
+    steps=yaml.safe_load(_predeploy())['jobs']['artifact-gate']['steps']
+    names=[step.get('name') for step in steps]
+    name='Reclaim native proof evidence for artifact publication'
+    assert name in names, 'NATIVE_PROOF_ARTIFACT_EACCES_UNGUARDED'
+    proof=names.index('Exact image native sizing and generated catalog proof')
+    reclaim=names.index(name)
+    upload=names.index('Upload predeploy evidence')
+    assert proof < reclaim < upload
+    step=steps[reclaim]
+    assert step['if']=='always()'  # Preserve the forensic evidence onRED too.
+    assert 'rc6_proof_root="$RUNNER_TEMP/porota-native-sizing-evidence"' in step['run']
+    assert 'sudo chown -R -- "$(id -u):$(id -g)" "$rc6_proof_root"' in step['run']
+    sandbox=steps[proof]['run']
+    assert '--user 1000:1000' in sandbox and '--read-only' in sandbox
+    assert '--cap-drop ALL' in sandbox and '--security-opt no-new-privileges' in sandbox
+
+
 def test_sector_map_and_multisource_helpers_are_immutable_deploy_inputs():
     from scripts.porota_build_deploy_bundle_v2 import select_bundle_paths
 

@@ -352,6 +352,19 @@ jobs:
           print('POROTA_PAPER_SAFETY_SOURCE_GATE=GREEN')
           PY
 
+      - name: Reclaim native proof evidence for artifact publication
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # UID1000 sandbox fixtures can have0700 directories. The upload
+          # glob walks directories before exclusions, so reclaim only this
+          # runner-owned output tree AFTER all sandbox processes have exited.
+          rc6_proof_root="$RUNNER_TEMP/porota-native-sizing-evidence"
+          if test -d "$rc6_proof_root"; then
+            sudo chown -R -- "$(id -u):$(id -g)" "$rc6_proof_root"
+          fi
+
       - name: Export frozen candidate artifacts
         shell: bash
         run: |
