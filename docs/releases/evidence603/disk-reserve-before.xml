@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="0" tests="6" time="0.749" timestamp="2026-10-16T20:36:24.339801-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_disk_materialization_reserve" name="test_recorded_insufficient_host_is_rejected_before_transfer" time="0.001"><failure message="assert 3738332881 &gt; 3963834368">def test_recorded_insufficient_host_is_rejected_before_transfer():
+        required = required_pretransfer_free(414838735, 1174520298, 745100,
+                                             load_policy(POLICY))
+        # The old 1x image allowance admitted this host; its measured final free
+        # bytes were 1766100992, below the unchanged 2147483648 reserve.
+&gt;       assert required &gt; 3963834368
+E       assert 3738332881 &gt; 3963834368
+
+tests/test_rc6_disk_materialization_reserve.py:20: AssertionError</failure></testcase><testcase classname="tests.test_rc6_disk_materialization_reserve" name="test_postload_checks_actual_reserve_and_inodes_without_new_transfer_budget[1766100992-89.56-42]" time="0.085"><failure message="AssertionError: usage: rc6_disk_space_guard.py [-h] --policy POLICY --image-tar-bytes&#10;                                 IMAGE_TAR_BYTES --image-unpacked-bytes&#10;                                 IMAGE_UNPACKED_BYTES --bundle-bytes&#10;                                 BUNDLE_BYTES&#10;                                 [--available-bytes AVAILABLE_BYTES]&#10;                                 [--inode-free-percent INODE_FREE_PERCENT]&#10;                                 [--json]&#10;  rc6_disk_space_guard.py: error: unrecognized arguments: --phase postload&#10;  &#10;assert 2 == 42&#10; +  where 2 = CompletedProcess(args=['/workspace/scratch/61d2db46059e/.venv/bin/python', '/workspace/scratch/61d2db46059e/porota-for...\n                               [--json]\nrc6_disk_space_guard.py: error: unrecognized arguments: --phase postload\n').returncode">free = 1766100992, inodes = 89.56, expected = 42
+
+    @pytest.mark.parametrize('free,inodes,expected', [
+        (1766100992, 89.56, 42),
+        (2147483647, 89.56, 42),
+        (2147483648, 9.99, 42),
+        (2147483648, 10.0, 0),
+    ])
+    def test_postload_checks_actual_reserve_and_inodes_without_new_transfer_budget(free, inodes, expected):
+        result = subprocess.run([
+            sys.executable, str(ROOT / 'scripts/rc6_disk_space_guard.py'),
+            '--policy', str(POLICY), '--phase', 'postload',
+            '--image-tar-bytes', '0', '--image-unpacked-bytes', '0', '--bundle-bytes', '0',
+            '--available-bytes', str(free), '--inode-free-percent', str(inodes), '--json',
+        ], capture_output=True, text=True, timeout=10)
+&gt;       assert result.returncode == expected, result.stderr + result.stdout
+E       AssertionError: usage: rc6_disk_space_guard.py [-h] --policy POLICY --image-tar-bytes
+E                                        IMAGE_TAR_BYTES --image-unpacked-bytes
+E                                        IMAGE_UNPACKED_BYTES --bundle-bytes
+E                                        BUNDLE_BYTES
+E                                        [--available-bytes AVAILABLE_BYTES]
+E                                        [--inode-free-percent INODE_FREE_PERCENT]
+E                                        [--json]
+E         rc6_disk_space_guard.py: error: unrecognized arguments: --phase postload
+E         
+E       assert 2 == 42
+E        +  where 2 = CompletedProcess(args=['/workspace/scratch/61d2db46059e/.venv/bin/python', '/workspace/scratch/61d2db46059e/porota-for...\n                               [--json]\nrc6_disk_space_guard.py: error: unrecognized arguments: --phase postload\n').returncode
+
+tests/test_rc6_disk_materialization_reserve.py:37: AssertionError</failure></testcase><testcase classname="tests.test_rc6_disk_materialization_reserve" name="test_postload_checks_actual_reserve_and_inodes_without_new_transfer_budget[2147483647-89.56-42]" time="0.092"><failure message="AssertionError: usage: rc6_disk_space_guard.py [-h] --policy POLICY --image-tar-bytes&#10;                                 IMAGE_TAR_BYTES --image-unpacked-bytes&#10;                                 IMAGE_UNPACKED_BYTES --bundle-bytes&#10;                                 BUNDLE_BYTES&#10;                                 [--available-bytes AVAILABLE_BYTES]&#10;                                 [--inode-free-percent INODE_FREE_PERCENT]&#10;                                 [--json]&#10;  rc6_disk_space_guard.py: error: unrecognized arguments: --phase postload&#10;  &#10;assert 2 == 42&#10; +  where 2 = CompletedProcess(args=['/workspace/scratch/61d2db46059e/.venv/bin/python', '/workspace/scratch/61d2db46059e/porota-for...\n                               [--json]\nrc6_disk_space_guard.py: error: unrecognized arguments: --phase postload\n').returncode">free = 2147483647, inodes = 89.56, expected = 42
+
+    @pytest.mark.parametrize('free,inodes,expected', [
+        (1766100992, 89.56, 42),
+        (2147483647, 89.56, 42),
+        (2147483648, 9.99, 42),
+        (2147483648, 10.0, 0),
+    ])
+    def test_postload_checks_actual_reserve_and_inodes_without_new_transfer_budget(free, inodes, expected):
+        result = subprocess.run([
+            sys.executable, str(ROOT / 'scripts/rc6_disk_space_guard.py'),
+            '--policy', str(POLICY), '--phase', 'postload',
+            '--image-tar-bytes', '0', '--image-unpacked-bytes', '0', '--bundle-bytes', '0',
+            '--available-bytes', str(free), '--inode-free-percent', str(inodes), '--json',
+        ], capture_output=True, text=True, timeout=10)
+&gt;       assert result.returncode == expected, result.stderr + result.stdout
+E       AssertionError: usage: rc6_disk_space_guard.py [-h] --policy POLICY --image-tar-bytes
+E                                        IMAGE_TAR_BYTES --image-unpacked-bytes
+E                                        IMAGE_UNPACKED_BYTES --bundle-bytes
+E                                        BUNDLE_BYTES
+E                                        [--available-bytes AVAILABLE_BYTES]
+E                                        [--inode-free-percent INODE_FREE_PERCENT]
+E                                        [--json]
+E         rc6_disk_space_guard.py: error: unrecognized arguments: --phase postload
+E         
+E       assert 2 == 42
+E        +  where 2 = CompletedProcess(args=['/workspace/scratch/61d2db46059e/.venv/bin/python', '/workspace/scratch/61d2db46059e/porota-for...\n                               [--json]\nrc6_disk_space_guard.py: error: unrecognized arguments: --phase postload\n').returncode
+
+tests/test_rc6_disk_materialization_reserve.py:37: AssertionError</failure></testcase><testcase classname="tests.test_rc6_disk_materialization_reserve" name="test_postload_checks_actual_reserve_and_inodes_without_new_transfer_budget[2147483648-9.99-42]" time="0.069"><failure message="AssertionError: usage: rc6_disk_space_guard.py [-h] --policy POLICY --image-tar-bytes&#10;                                 IMAGE_TAR_BYTES --image-unpacked-bytes&#10;                                 IMAGE_UNPACKED_BYTES --bundle-bytes&#10;                                 BUNDLE_BYTES&#10;                                 [--available-bytes AVAILABLE_BYTES]&#10;                                 [--inode-free-percent INODE_FREE_PERCENT]&#10;                                 [--json]&#10;  rc6_disk_space_guard.py: error: unrecognized arguments: --phase postload&#10;  &#10;assert 2 == 42&#10; +  where 2 = CompletedProcess(args=['/workspace/scratch/61d2db46059e/.venv/bin/python', '/workspace/scratch/61d2db46059e/porota-for...\n                               [--json]\nrc6_disk_space_guard.py: error: unrecognized arguments: --phase postload\n').returncode">free = 2147483648, inodes = 9.99, expected = 42
+
+    @pytest.mark.parametrize('free,inodes,expected', [
+        (1766100992, 89.56, 42),
+        (2147483647, 89.56, 42),
+        (2147483648, 9.99, 42),
+        (2147483648, 10.0, 0),
+    ])
+    def test_postload_checks_actual_reserve_and_inodes_without_new_transfer_budget(free, inodes, expected):
+        result = subprocess.run([
+            sys.executable, str(ROOT / 'scripts/rc6_disk_space_guard.py'),
+            '--policy', str(POLICY), '--phase', 'postload',
+            '--image-tar-bytes', '0', '--image-unpacked-bytes', '0', '--bundle-bytes', '0',
+            '--available-bytes', str(free), '--inode-free-percent', str(inodes), '--json',
+        ], capture_output=True, text=True, timeout=10)
+&gt;       assert result.returncode == expected, result.stderr + result.stdout
+E       AssertionError: usage: rc6_disk_space_guard.py [-h] --policy POLICY --image-tar-bytes
+E                                        IMAGE_TAR_BYTES --image-unpacked-bytes
+E                                        IMAGE_UNPACKED_BYTES --bundle-bytes
+E                                        BUNDLE_BYTES
+E                                        [--available-bytes AVAILABLE_BYTES]
+E                                        [--inode-free-percent INODE_FREE_PERCENT]
+E                                        [--json]
+E         rc6_disk_space_guard.py: error: unrecognized arguments: --phase postload
+E         
+E       assert 2 == 42
+E        +  where 2 = CompletedProcess(args=['/workspace/scratch/61d2db46059e/.venv/bin/python', '/workspace/scratch/61d2db46059e/porota-for...\n                               [--json]\nrc6_disk_space_guard.py: error: unrecognized arguments: --phase postload\n').returncode
+
+tests/test_rc6_disk_materialization_reserve.py:37: AssertionError</failure></testcase><testcase classname="tests.test_rc6_disk_materialization_reserve" name="test_postload_checks_actual_reserve_and_inodes_without_new_transfer_budget[2147483648-10.0-0]" time="0.334"><failure message="AssertionError: usage: rc6_disk_space_guard.py [-h] --policy POLICY --image-tar-bytes&#10;                                 IMAGE_TAR_BYTES --image-unpacked-bytes&#10;                                 IMAGE_UNPACKED_BYTES --bundle-bytes&#10;                                 BUNDLE_BYTES&#10;                                 [--available-bytes AVAILABLE_BYTES]&#10;                                 [--inode-free-percent INODE_FREE_PERCENT]&#10;                                 [--json]&#10;  rc6_disk_space_guard.py: error: unrecognized arguments: --phase postload&#10;  &#10;assert 2 == 0&#10; +  where 2 = CompletedProcess(args=['/workspace/scratch/61d2db46059e/.venv/bin/python', '/workspace/scratch/61d2db46059e/porota-for...\n                               [--json]\nrc6_disk_space_guard.py: error: unrecognized arguments: --phase postload\n').returncode">free = 2147483648, inodes = 10.0, expected = 0
+
+    @pytest.mark.parametrize('free,inodes,expected', [
+        (1766100992, 89.56, 42),
+        (2147483647, 89.56, 42),
+        (2147483648, 9.99, 42),
+        (2147483648, 10.0, 0),
+    ])
+    def test_postload_checks_actual_reserve_and_inodes_without_new_transfer_budget(free, inodes, expected):
+        result = subprocess.run([
+            sys.executable, str(ROOT / 'scripts/rc6_disk_space_guard.py'),
+            '--policy', str(POLICY), '--phase', 'postload',
+            '--image-tar-bytes', '0', '--image-unpacked-bytes', '0', '--bundle-bytes', '0',
+            '--available-bytes', str(free), '--inode-free-percent', str(inodes), '--json',
+        ], capture_output=True, text=True, timeout=10)
+&gt;       assert result.returncode == expected, result.stderr + result.stdout
+E       AssertionError: usage: rc6_disk_space_guard.py [-h] --policy POLICY --image-tar-bytes
+E                                        IMAGE_TAR_BYTES --image-unpacked-bytes
+E                                        IMAGE_UNPACKED_BYTES --bundle-bytes
+E                                        BUNDLE_BYTES
+E                                        [--available-bytes AVAILABLE_BYTES]
+E                                        [--inode-free-percent INODE_FREE_PERCENT]
+E                                        [--json]
+E         rc6_disk_space_guard.py: error: unrecognized arguments: --phase postload
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/workspace/scratch/61d2db46059e/.venv/bin/python', '/workspace/scratch/61d2db46059e/porota-for...\n                               [--json]\nrc6_disk_space_guard.py: error: unrecognized arguments: --phase postload\n').returncode
+
+tests/test_rc6_disk_materialization_reserve.py:37: AssertionError</failure></testcase><testcase classname="tests.test_rc6_disk_materialization_reserve" name="test_postload_guard_precedes_host_services_and_long_contract_sweep" time="0.001"><failure message="ValueError: substring not found">def test_postload_guard_precedes_host_services_and_long_contract_sweep():
+        text = (ROOT / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+        loaded = text.index('POROTA_BUILD_ONCE_PROMOTION=GREEN')
+&gt;       guard = text.index('RC6_DISK_POSTLOAD_RESERVE_GATE=GREEN', loaded)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       ValueError: substring not found
+
+tests/test_rc6_disk_materialization_reserve.py:47: ValueError</failure></testcase></testsuite></testsuites>

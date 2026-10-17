@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "DEPLOY_IN_PROGRESS_NOT_YET_VALIDATED_RUNTIME",
+  "release_state": "FAILED_VALIDATION_PENDING_FIX_FORWARD_IN_PREDEPLOY",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -422,6 +422,96 @@
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "DISK-MATERIALIZATION",
+      "capability": "DEPLOY_STORAGE_AMPLIFICATION",
+      "path": "ops/policy/rc6-disk-housekeeping-v1.json",
+      "symbol": "pretransfer_formula",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "1x admitted 3963834368 bytes but final measured free was 1766100992 below 2 GiB. Conservative 2x image allowance plus early postload measured reserve/inodes and reference-safe cache cleanup. Exact Docker-backend amplification remains unmeasured; no claim that 2x proves all future capacity.",
+      "test": "tests/test_rc6_disk_materialization_reserve.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_IN_DROPLET",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier fallo causal, drift de identidad o ausencia de evidencia runtime mantiene o reabre el hallazgo."
+    },
+    {
+      "id": "SOURCE-IDENTITY-PRODUCER",
+      "capability": "IMMUTABLE_IMAGE_SOURCE_IDENTITY",
+      "path": "Dockerfile",
+      "symbol": "POROTA_BUILD_SHA",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Exact frozen image config e908e37e had correct porota.commit label but lacked POROTA_BUILD_SHA and POROTA_CANDIDATE_TREE_SHA consumed by native children. Build args/ENV now carry exact identity; image and both running containers verify it. Stale env-file identity is reserved; UNKNOWN is never backfilled.",
+      "test": "tests/test_porota_image_source_identity.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "CONFIRMED_FROZEN_IMAGE_CONFIGURATION",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier fallo causal, drift de identidad o ausencia de evidencia runtime mantiene o reabre el hallazgo."
+    },
+    {
+      "id": "SHADOW-UNCONSUMED-CONTRACTS",
+      "capability": "TRANSFORM_BUDGET",
+      "path": "rc6_dynamic_universe/runtime.py",
+      "symbol": "read_runtime",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Probe observed FAIL_CLOSED ValueError runtime:148 at INTRADAY_CONTRACTS after SQL completed in budget with zero intraday points. Code parsed 2424 unconsumed contracts. Causal test reproduces transform expiry and 4849 conversions for one identity. Project conversion to exact observed identities; keep full catalogue, shared snapshot, TTL/order/2s guards. Host contention contribution is not independently quantified.",
+      "test": "tests/test_rc6_shadow_contract_projection.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_IN_DROPLET",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier fallo causal, drift de identidad o ausencia de evidencia runtime mantiene o reabre el hallazgo."
+    },
+    {
+      "id": "ACCEPTANCE-NATIVE-BLINDSPOT",
+      "capability": "POSTDEPLOY_ACCEPTANCE",
+      "path": "scripts/rc6_deploy_generation_gate.py",
+      "symbol": "collect",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Immediate HTTP/worker audit was GREEN while native SHADOW later failed. Before VALIDATED_RUNTIME require two distinct fresh canonical generations with increasing sequence/as_of, same configuration/source, exact observed child identity and native SQL/transform budgets. Revoked/stale/future/unsafe/unknown never pass; reader performs no ticks/providers/DB writes.",
+      "test": "tests/test_rc6_deploy_generation_gate.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_ACCEPTANCE_GAP",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier fallo causal, drift de identidad o ausencia de evidencia runtime mantiene o reabre el hallazgo."
+    },
+    {
+      "id": "PRECLEAN-RESERVE-DEADEND",
+      "capability": "SAFE_CLEANUP_ORDER",
+      "path": ".github/workflows/porota-deploy-v2-promote.yml",
+      "symbol": "PRECLEAN_HOUSEKEEPING_RC",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "General housekeeper can exit43 below reserve before Docker cache/old critical-image reclamation. Only exact structured RED/POST_CLEANUP_FREE_BELOW_MINIMUM/cleanup is deferred; all other codes abort and final dynamic admission remains mandatory. Postload drained stage uses only reference-safe Docker/cache pruning because general housekeeping requires running containers.",
+      "test": "tests/test_rc6_disk_materialization_reserve.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "STATIC_REVIEW_WITH_EXECUTED_SHELL_REGRESSION",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier fallo causal, drift de identidad o ausencia de evidencia runtime mantiene o reabre el hallazgo."
+    },
+    {
+      "id": "MON-GENERATION-PROOF",
+      "capability": "CAUSAL_READ_ONLY_EVIDENCE",
+      "path": "scripts/rc6_market_watch_readonly.py",
+      "symbol": "GENERATION_RECEIPT_PROBE",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "PR607 adds strict native committed-generation receipt and explicitly labels legacy row-control timing. 54 local contracts and all three CI gates passed. Actual probe38987351472 correctly reports generation UNVERIFIED during native failure; does not manufacture source identity or READY. Main merge remains pending until runtime certification.",
+      "test": "tests/test_rc6_market_watch_readonly.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_READ_ONLY_PROBE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier fallo causal, drift de identidad o ausencia de evidencia runtime mantiene o reabre el hallazgo."
     }
   ],
   "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
@@ -430,21 +520,17 @@
   "predeploy_state": "SUCCESS",
   "monitor_merge_sha": "5a87538d3816601a4fddf4aaafc975b4ebc674d7",
   "latest_readonly": {
-    "run": 38980476862,
-    "artifact": 12080034694,
-    "zip_sha256": "0d8da83fb03bfa9b74d388606eaa8de21cba3a5ea1e784a0b862c1bf0f2bcd87",
-    "as_of": "2026-10-16T23:16:04.164160+00:00",
-    "mode": "PRODUCTION_PAPER",
-    "real_orders_sent": 0,
-    "session": "MARKET_CLOSED",
-    "heartbeat_age_seconds": 5.396,
-    "open_spot": 0,
-    "open_future": 0,
-    "open_caucion": 0,
-    "inflight": "NO_VERIFICADO_PRE_DRAIN",
-    "disk_free_bytes": 3898707968,
-    "mem_available_bytes": 122081280,
-    "shadow": "FAIL_CLOSED_OLD_RUNTIME"
+    "run_id": 38987351472,
+    "artifact_id": 12083194434,
+    "zip_sha256": "45a8dfefc4d37ed10da9e87a8860773b1ea82400a25256214e62ee5b1ad3aad2",
+    "snapshot_utc": "2026-10-17T00:39:29.082050+00:00",
+    "paper_real_orders_sent": 0,
+    "severity": "P0",
+    "notification_mode": "read_only",
+    "delivery_status": "NOT_REQUESTED",
+    "shadow": "FAIL_CLOSED",
+    "shadow_generation": "UNVERIFIED",
+    "disk_free_bytes": 1765457920
   },
   "local_quiescence_tests": {
     "cases": 60,
@@ -539,21 +625,7 @@
     "oom_flag_after_recovery": false,
     "whole_workflow_conclusion": "FAILURE_EXPECTED_DEPLOY_SHA_MISMATCH_AFTER_REJECTED_PROMOTION"
   },
-  "current_deploy_stage": {
-    "drain": "SUCCESS",
-    "transfer": "SUCCESS",
-    "source_bundle_install": "GREEN_504_FILES",
-    "runtime_validation": "IN_PROGRESS",
-    "stress": "NOT_STARTED",
-    "pretransfer_disk_available": 3963834368,
-    "pretransfer_disk_required": 3739823081,
-    "inodes_free_percent": 89.56,
-    "observer_stop_exit_code": 0,
-    "dashboard_stop_exit_code": 0,
-    "observer_stop_oom": false,
-    "dashboard_stop_oom": false,
-    "inflight": "ABSENT_OWNED_RUNTIME_STOPPED_AT_INSTALL_BOUNDARY"
-  },
+  "current_deploy_stage": "FAILED_POSTLOAD_RESIDUAL_DISK_FLOOR",
   "external_backup_review": {
     "droplet_id": 594077619,
     "size": "s-1vcpu-1gb",
@@ -598,5 +670,60 @@
       "TEST_MODULE_PRESERVED": 3
     },
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
+  },
+  "next_candidate": {
+    "pr": 608,
+    "sha": "43f1fa07639aa93482a4895e3145c362f64ffb96",
+    "tree": "bd4d336173e4797ab22e2aa5e34dc70428bd3425",
+    "base": "a9e7504895e17f9b7f1e84b0af36f3492128a494",
+    "predeploy_state": "REQUESTED_NOT_YET_CERTIFIED",
+    "local_cases": 142,
+    "local_failures": 0,
+    "local_errors": 0,
+    "local_skipped": 0
+  },
+  "latest_deploy_result": {
+    "schema": "rc6.deploy-attempt-receipt.v1",
+    "run_id": 38982377181,
+    "job_id": 117245956648,
+    "conclusion": "FAILURE",
+    "finished_utc": "2026-10-17T00:25:51Z",
+    "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
+    "deploy_sha": "a9e7504895e17f9b7f1e84b0af36f3492128a494",
+    "installed_image_id": "sha256:abf744a305a847ed922e7df2474f6d991f23d9abfb0a584b93930216c117dd54",
+    "pretransfer_available_bytes": 3963834368,
+    "pretransfer_required_bytes": 3739823081,
+    "pretransfer_image_multiplier": 1,
+    "bundle_files": 504,
+    "contract_reconciliation": {
+      "exit_code": 0,
+      "status": "OK",
+      "observer_restarted_utc": "2026-10-17T00:24:17Z"
+    },
+    "immediate_audit": {
+      "status": "GREEN",
+      "at": "2026-10-17T00:25:39Z",
+      "canonical_views": 52
+    },
+    "failure": {
+      "class": "POST_CLEANUP_RESERVE_BELOW_FLOOR",
+      "available_bytes": 1766100992,
+      "required_bytes": 2147483648,
+      "canonical_preopen_soak_final_validation_executed": false
+    },
+    "recovery": {
+      "status": "FIX_FORWARD_VALIDATION_REQUIRED",
+      "installation_started": true,
+      "rollback": false
+    },
+    "cleanup": {
+      "operations_status": "GREEN",
+      "reclaimed_bytes": 143360,
+      "step_conclusion": "FAILURE",
+      "step_reason": "recovery explicitly returned FIX_FORWARD_VALIDATION_REQUIRED"
+    },
+    "current_state": "DEPLOYED_VALIDATION_PENDING",
+    "stress_executed": false,
+    "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38982377181"
   }
 }

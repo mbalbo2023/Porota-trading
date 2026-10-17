@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="7" time="0.668" timestamp="2026-10-16T20:43:26.955740-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_shadow_contract_projection" name="test_empty_intraday_does_not_exhaust_budget_parsing_2424_unconsumed_contracts" time="0.054"><failure message="ValueError: RUNTIME_TRANSFORM_BUDGET_EXCEEDED">database = PosixPath('/tmp/tmpw7ekhnbh/paper.db')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7feb7bdec0e0&gt;
+
+    def test_empty_intraday_does_not_exhaust_budget_parsing_2424_unconsumed_contracts(database, monkeypatch):
+        real_stamp = runtime.stamp
+        conversions = [0]
+        def costed_stamp(value):
+            conversions[0] += 1
+            return real_stamp(value)
+        monkeypatch.setattr(runtime, 'stamp', costed_stamp)
+        monkeypatch.setattr(runtime, 'monotonic', lambda: conversions[0] * .01)
+        diagnostics = {}
+&gt;       result = runtime.read_runtime(database, as_of=AT, query_budget_seconds=2, diagnostics=diagnostics)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_shadow_contract_projection.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rc6_dynamic_universe/runtime.py:178: in read_runtime
+    transform_guard("INTRADAY_CONTRACTS")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+stage = 'INTRADAY_CONTRACTS'
+
+    def transform_guard(stage):
+        if monotonic() &gt; transform_deadline:
+            if diagnostics is not None:
+                diagnostics["transform_elapsed_ms"] = round((monotonic()-transform_started)*1000, 3)
+                diagnostics["transform_expired_stage"] = stage
+            exc = ValueError("RUNTIME_TRANSFORM_BUDGET_EXCEEDED")
+            exc.rc6_stage = stage
+&gt;           raise exc
+E           ValueError: RUNTIME_TRANSFORM_BUDGET_EXCEEDED
+
+rc6_dynamic_universe/runtime.py:148: ValueError</failure></testcase><testcase classname="tests.test_rc6_shadow_contract_projection" name="test_only_observed_identity_has_contract_timestamps_converted" time="0.089"><failure message="AssertionError: assert 4849 == 3&#10; +  where 4849 = len([datetime.datetime(2026, 10, 15, 14, 30, tzinfo=datetime.timezone.utc), '2026-10-15T14:30:00+00:00', '2026-10-15T14:30:00+00:00', '2026-10-15T14:30:00+00:00', '2026-10-15T14:30:00+00:00', '2026-10-15T14:30:00+00:00', ...])">database = PosixPath('/tmp/tmpzf29hekk/paper.db')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7feb7b59c1a0&gt;
+
+    def test_only_observed_identity_has_contract_timestamps_converted(database, monkeypatch):
+        point(database)
+        real_stamp = runtime.stamp
+        calls = []
+        def tracked_stamp(value):
+            calls.append(value)
+            return real_stamp(value)
+        monkeypatch.setattr(runtime, 'stamp', tracked_stamp)
+        result = runtime.read_runtime(database, as_of=AT, query_budget_seconds=2)
+&gt;       assert len(calls) == 3
+E       AssertionError: assert 4849 == 3
+E        +  where 4849 = len([datetime.datetime(2026, 10, 15, 14, 30, tzinfo=datetime.timezone.utc), '2026-10-15T14:30:00+00:00', '2026-10-15T14:30:00+00:00', '2026-10-15T14:30:00+00:00', '2026-10-15T14:30:00+00:00', '2026-10-15T14:30:00+00:00', ...])
+
+tests/test_rc6_shadow_contract_projection.py:61: AssertionError</failure></testcase><testcase classname="tests.test_rc6_shadow_contract_projection" name="test_requested_contract_retains_freshness_and_order_fail_closed[-121-0]" time="0.072" /><testcase classname="tests.test_rc6_shadow_contract_projection" name="test_requested_contract_retains_freshness_and_order_fail_closed[1-1]" time="0.049" /><testcase classname="tests.test_rc6_shadow_contract_projection" name="test_requested_contract_retains_freshness_and_order_fail_closed[0--1]" time="0.051" /><testcase classname="tests.test_rc6_shadow_contract_projection" name="test_requested_contract_retains_freshness_and_order_fail_closed[0-121]" time="0.106" /><testcase classname="tests.test_rc6_shadow_contract_projection" name="test_consumed_contract_work_still_cannot_overrun_transform_budget" time="0.037" /></testsuite></testsuites>

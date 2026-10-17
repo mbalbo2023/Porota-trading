@@ -1,0 +1,21 @@
+{
+  "schema": "rc6.image-source-env-observation.v1",
+  "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
+  "predeploy_run": 38981525324,
+  "image_config_blob_sha256": "e908e37ebe3d9fb8a2425e72bcd75afe07eef6dd309b32e16cebf8002ee4b707",
+  "image_expected_id": "sha256:e908e37ebe3d9fb8a2425e72bcd75afe07eef6dd309b32e16cebf8002ee4b707",
+  "source_commit_label": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
+  "environment_key_names": [
+    "GPG_KEY",
+    "LANG",
+    "MPLCONFIGDIR",
+    "PATH",
+    "PYTHONDONTWRITEBYTECODE",
+    "PYTHONUNBUFFERED",
+    "PYTHON_SHA256",
+    "PYTHON_VERSION",
+    "XDG_CACHE_HOME"
+  ],
+  "POROTA_BUILD_SHA_present": false,
+  "POROTA_CANDIDATE_TREE_SHA_present": false
+}

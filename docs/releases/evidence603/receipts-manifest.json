@@ -122,6 +122,122 @@
       "source": "REPRODUCIBLE_STATIC_AUDIT_CODE",
       "bytes": 7907,
       "sha256": "bc8e38aa0b6aaa78635de3e1b39faca0bc9f5113bc7b81e4896b6d759bd28100"
+    },
+    {
+      "path": "docs/releases/evidence603/source-identity-after.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 5596,
+      "sha256": "be6faa96bc7cd61616bc4efa58357d2f1c7153b248e135cf09135a781ea22c56",
+      "cases": 35,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/disk-reserve-before.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 13226,
+      "sha256": "6fc59378a4be57a812e088207aa25493632204c16392f543c97c4988477c6298",
+      "cases": 6,
+      "failure": 6,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/disk-identity-after.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 9756,
+      "sha256": "067f68c589b53f4a27ca2f725bd5f91045335c60cf3b25d4d08d96400510cf9e",
+      "cases": 59,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/consolidated-forward-after-final.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 14855,
+      "sha256": "b353600b9b13fe632f2b6cc9ab46a33ec3ddc3cc773b07c5250b8090040a430f",
+      "cases": 89,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/disk-reserve-final.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 2367,
+      "sha256": "76695b3a06d340af46c5cd0b35528119cf5ff9d710d58145d1229f13757c8f3f",
+      "cases": 12,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/shadow-contract-before-isolated.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 4319,
+      "sha256": "65b53f2678e01d514e3f26c3f13ddd9712cff2eae61b925721e388c25f1d7d88",
+      "cases": 7,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/generation-gate-after.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 2895,
+      "sha256": "7402a8c99ed3d55c6164937861c02b6c766b1f3cb80db752ed3db20ceaf538c2",
+      "cases": 17,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/final-batch-local.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 21662,
+      "sha256": "6e0079abfe00c6d9bc3a7f6376dc50046128965a3087814ab8e954317093208d",
+      "cases": 142,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/probe-38987351472-snapshot.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 5692,
+      "sha256": "7991a10611e4da60ee4b402da7e675cbc3e048b7d46c5835b1fb70d3a7281570"
+    },
+    {
+      "path": "docs/releases/evidence603/probe-38987351472-shadow_diagnostic.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 5293,
+      "sha256": "6c55a7daa9bd970ece9e96b5a16b19965ccfa81e120f3555ffef5d3a9e968eae"
+    },
+    {
+      "path": "docs/releases/evidence603/probe-38987351472-decision.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 984,
+      "sha256": "955de7840f22ae03aac2f49d69a37260ec6a01482f70287624b0674ae2a348b0"
+    },
+    {
+      "path": "docs/releases/evidence603/probe-38987351472-delivery.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 44,
+      "sha256": "5a8af2c817d0f12431bba9e6b3cf8d73f12469167c6b0135c325052454e4d881"
+    },
+    {
+      "path": "docs/releases/evidence603/image-source-env-bdac26d.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 709,
+      "sha256": "775d48b4be284aa7d83b8b21de0b8e9067af56ae384ee52d56f657e81b2d95c3"
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38982377181-failure.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 1478,
+      "sha256": "fe52a5822a25c8dd71f9282b51c720a03df91fd1f4399152fdeacadf36b51b42"
     }
   ]
 }
