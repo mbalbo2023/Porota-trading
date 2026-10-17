@@ -54,6 +54,7 @@ def evaluate(
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--policy", required=True)
+    ap.add_argument("--phase", choices=("pretransfer", "postload"), default="pretransfer")
     ap.add_argument("--image-tar-bytes", type=int, required=True)
     ap.add_argument("--image-unpacked-bytes", type=int, required=True)
     ap.add_argument("--bundle-bytes", type=int, required=True)
@@ -63,8 +64,12 @@ def main() -> int:
     args = ap.parse_args()
 
     policy = load_policy(args.policy)
-    required = required_pretransfer_free(
-        args.image_tar_bytes, args.image_unpacked_bytes, args.bundle_bytes, policy
+    required = (
+        int(policy["disk"]["post_cleanup_min_free_bytes"])
+        if args.phase == "postload"
+        else required_pretransfer_free(
+            args.image_tar_bytes, args.image_unpacked_bytes, args.bundle_bytes, policy
+        )
     )
 
     if args.available_bytes is None or args.inode_free_percent is None:
@@ -79,8 +84,9 @@ def main() -> int:
     )
     if args.json:
         print(json.dumps(payload, sort_keys=True))
+    prefix = "RC6_DISK_POSTLOAD_RESERVE" if args.phase == "postload" else "RC6_DISK_PRETRANSFER_PREFLIGHT"
     print(
-        "RC6_DISK_PRETRANSFER_PREFLIGHT="
+        f"{prefix}="
         f"{payload['status']}|available={payload['available_bytes']}"
         f"|required={payload['required_bytes']}"
         f"|inode_free_percent={payload['inode_free_percent']:.2f}"

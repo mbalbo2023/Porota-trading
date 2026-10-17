@@ -23,8 +23,8 @@ def test_disk_policy_metadata_matches_executable_contract():
     factors = gate["pretransfer_formula"]
     assert policy["droplet_disk_pretransfer_min_free_bytes"] == "dynamic"
     assert policy["droplet_disk_pretransfer_formula"] == (
-        "image_tar_bytes + image_unpacked_bytes + 2 * bundle_bytes + fixed_headroom_bytes")
-    assert factors == {"image_tar_multiplier": 1, "image_unpacked_multiplier": 1,
+        "image_tar_bytes + 2 * image_unpacked_bytes + 2 * bundle_bytes + fixed_headroom_bytes")
+    assert factors == {"image_tar_multiplier": 1, "image_unpacked_multiplier": 2,
                        "bundle_multiplier": 2, "fixed_headroom_bytes": 2 * 1024**3}
 
 

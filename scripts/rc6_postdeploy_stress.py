@@ -27,7 +27,8 @@ sys.path.insert(0,str(ROOT))
 # suite. Each group names a runtime subsystem and its causal adversaries.
 GROUPS={
  'sql_shadow_wal':['tests/test_rc6_shadow_sqlite_load.py','tests/test_rc6_shadow_sqlite_stage_diagnostics.py',
-                   'tests/test_rc6_shadow_runtime_wiring.py','tests/test_rc6_observer_metric_contention.py'],
+                   'tests/test_rc6_shadow_runtime_wiring.py','tests/test_rc6_observer_metric_contention.py',
+                   'tests/test_rc6_shadow_contract_projection.py'],
  'publication_io_identity':['tests/test_rc6_issue600_regressions.py','tests/test_rc6_issue603_regressions.py',
                             'tests/test_rc6_shadow_failure_context.py','tests/test_rc6_shadow_stage_reads.py'],
  'signals_risk_exit_ledger':['tests/test_rc6_convergence_core_admission.py','tests/test_exit_supervision_v17.py',

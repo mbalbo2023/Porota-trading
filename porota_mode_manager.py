@@ -238,7 +238,8 @@ def dashboard_env(mode):
         if "=" not in line:
             continue
         key = line.split("=", 1)[0].strip()
-        if not key.startswith(forbidden) and key not in {"DASHBOARD_OPERATION_MODE", "PAPER_DB_PATH", DB_ENV, *PAPER_DEFAULTS}:
+        if not key.startswith(forbidden) and key not in {"DASHBOARD_OPERATION_MODE", "PAPER_DB_PATH", DB_ENV,
+                "POROTA_BUILD_SHA", "POROTA_CANDIDATE_TREE_SHA", *PAPER_DEFAULTS}:
             safe.append(line)
     safe += [f"DASHBOARD_OPERATION_MODE={mode}",
              f"{DB_ENV}={CONTAINER_DB}",
