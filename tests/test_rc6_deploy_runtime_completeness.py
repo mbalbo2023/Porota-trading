@@ -127,6 +127,7 @@ def test_predeploy_preserves_the_entire_native_proof_directory():
     # instead of a partial file list that silently drops the added405min run.
     paths={line.strip().rstrip('/') for line in upload['with']['path'].splitlines()}
     assert '${{ runner.temp }}/porota-native-sizing-evidence' in paths
+    assert '!${{ runner.temp }}/porota-native-sizing-evidence/tmp/**' in paths
     assert upload['if']=='always()'
 
 
