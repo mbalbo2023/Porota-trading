@@ -912,7 +912,7 @@ class InstrumentInventoryContracts(unittest.TestCase):
         value = monitor.instrument_inventory_host(self.root, at=NOW)
         self.assertEqual(value['status'], 'UNVERIFIED')
         self.assertEqual(value['error_code'], 'SQLITE_SCHEMA_COLUMN_MISMATCH')
-        self.assertEqual(value['diagnostic']['stage'], 'PACKED_METADATA')
+        self.assertEqual(value['diagnostic']['stage'], 'QUERY_PLAN')
         self.assertFalse(value['diagnostic']['interrupted_by_deadline'])
         self.assertNotIn('PRIVATE_', json.dumps(value))
         self.assertNotIn('records', value)
@@ -930,7 +930,7 @@ class InstrumentInventoryContracts(unittest.TestCase):
             value = monitor.instrument_inventory_host(self.root, at=NOW)
         self.assertEqual(value['status'], 'UNVERIFIED')
         self.assertEqual(value['error_code'], 'SQLITE_FUNCTION_UNAVAILABLE')
-        self.assertEqual(value['diagnostic']['stage'], 'PACKED_METADATA')
+        self.assertEqual(value['diagnostic']['stage'], 'QUERY_PLAN')
         self.assertNotIn('PRIVATE_', json.dumps(value))
         self.assertNotIn('records', value)
 

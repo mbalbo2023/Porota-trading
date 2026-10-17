@@ -1342,7 +1342,7 @@ def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_sec
               'broker_requests': 0, 'ppi_watch_accessed': False,
               'source_database_effect': 'READ_ONLY', 'complete_inventory': False}
     connection = None
-    started = time.monotonic(); stage = 'ADMISSION'; interrupted = False
+    started = time.monotonic(); stage = 'ADMISSION'; interrupted = False; plan = []
     def expired():
         nonlocal interrupted
         interrupted = time.monotonic() > deadline
@@ -1387,6 +1387,16 @@ def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_sec
         public_fields = ','.join(x[2:] for x in fields[:9])
         sql = ('SELECT COUNT(*),json_group_array(json_array(' + ','.join(fields) + ')) FROM '
                '(SELECT ' + public_fields + ' FROM financial_instrument_catalog ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?) c' + joins)
+        stage = 'QUERY_PLAN'
+        for item in connection.execute('EXPLAIN QUERY PLAN ' + sql, (row_limit + 1,)):
+            detail = str(item[3]).upper(); words = detail.split()
+            # Only structural flags/known aliases: never export index names,
+            # arbitrary schema identifiers, SQL or parameter values.
+            target = words[1] if len(words)>1 and words[1] in {'C','I','T','FINANCIAL_INSTRUMENT_CATALOG'} else 'INTERNAL'
+            plan.append({'operation':words[0] if words and words[0] in {'SCAN','SEARCH'} else 'INTERNAL',
+                         'target':target,'covering_index':'COVERING INDEX' in detail,
+                         'automatic_index':'AUTOMATIC' in detail,'temporary_btree':'TEMP B-TREE' in detail})
+            if len(plan)>24:raise ValueError('INVENTORY_QUERY_PLAN_UNBOUNDED')
         stage = 'PACKED_METADATA'
         count, packed = connection.execute(sql, (row_limit + 1,)).fetchone()
         connection.rollback(); connection.close(); connection = None
@@ -1427,7 +1437,8 @@ def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_sec
         if connection is not None:
             connection.close()
         result['diagnostic'] = {'stage':stage,'elapsed_ms':round((time.monotonic()-started)*1000,3),
-                                'interrupted_by_deadline':interrupted,'sqlite_version':sqlite3.sqlite_version}
+                                'interrupted_by_deadline':interrupted,'sqlite_version':sqlite3.sqlite_version,
+                                'query_plan':plan}
     return result
 
 
