@@ -43,37 +43,47 @@ new="""                    if type(key) is str:
 assert old in key_fragments
 key_fragments=key_fragments.replace(old,new)
 
+import gzip
+from isal import igzip
 baseline._small_json_tree=original_small
 exec(original_fragments,baseline.__dict__)
-encoder=json.JSONEncoder(sort_keys=True,separators=(",",":"),default=str,allow_nan=False)
-receipts=[]
-def measure(value):
-    started=time.monotonic();cpu=time.process_time();size=0
-    for block in baseline._canonical_chunks(encoder,value):size+=len(block)
-    return size,round(time.monotonic()-started,3),round(time.process_time()-cpu,3)
-pending=[("root",report,0)]
-while pending:
-    path,value,depth=pending.pop(0)
-    if not isinstance(value,dict):continue
-    for key,child in value.items():
-        if not isinstance(key,str):continue
-        size,wall,cpu=measure(child)
-        receipt={"path":path+"."+key,"raw_bytes":size,"wall_seconds":wall,"cpu_seconds":cpu,
-                 "type":type(child).__name__}
-        if isinstance(child,(dict,list,tuple)):receipt["count"]=len(child)
-        if isinstance(child,list) and child:
-            first=child[0]
-            if isinstance(first,dict):
-                receipt["first_record_keys"]=list(first)[:40]
-                sample=measure(first);receipt["first_record_raw_bytes"]=sample[0]
-                receipt["first_record_children"]={k:{"type":type(v).__name__,"count":len(v)}
-                    for k,v in first.items() if isinstance(v,(dict,list,tuple))}
-        receipts.append(receipt)
-        print("RC6_CODEC_SECTION="+json.dumps(receipt,separators=(",",":")),flush=True)
-        if isinstance(child,dict) and size>5*1024**2 and depth<3:
-            pending.append((path+"."+key,child,depth+1))
-result={"schema":"rc6.synthetic-codec-section-cost.v1","receipts":receipts,"native_acceptance":False,
-        "source_sha":"db06f0a20787ffc4d9f1211b7f2f5fdf04557c14",
-        "peak_rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
-assert result["peak_rss_kib"]<=512*1024
-pathlib.Path("/work/codec-sections.json").write_text(json.dumps(result,indent=2)+"\n")
+receipts=[];expected=None
+def read_hash(path,opener):
+    h=hashlib.sha256();size=0;cpu=time.process_time();wall=time.monotonic()
+    with opener(path,"rb") as stream:
+        while block:=stream.read(65536):size+=len(block);h.update(block)
+    return size,h.hexdigest(),round(time.process_time()-cpu,3),round(time.monotonic()-wall,3)
+for variant in ("stdlib","isal0","isal1","isal1","isal0","stdlib"):
+    gc.collect();cpu=time.process_time();wall=time.monotonic();h=hashlib.sha256();size=0
+    path=root/(variant+".json.gz")
+    provider=gzip if variant=="stdlib" else igzip
+    level=1 if variant=="stdlib" else int(variant[-1])
+    encoder=json.JSONEncoder(sort_keys=True,separators=(",",":"),default=str,allow_nan=False)
+    with path.open("wb") as file:
+        with provider.GzipFile(filename="",mode="wb",compresslevel=level,fileobj=file,mtime=0) as zipped:
+            for block in baseline._canonical_chunks(encoder,report):
+                size+=len(block);h.update(block);zipped.write(block)
+    write_cpu=time.process_time()-cpu;write_wall=time.monotonic()-wall
+    if expected is None:expected=(size,h.hexdigest())
+    assert expected==(size,h.hexdigest()),"CANONICAL_JSON_CHANGED"
+    standard=read_hash(path,gzip.open);accelerated=read_hash(path,igzip.open)
+    assert standard[:2]==accelerated[:2]==expected,"GZIP_READ_COMPATIBILITY_FAILED"
+    row={"variant":variant,"write_cpu_seconds":round(write_cpu,3),"write_wall_seconds":round(write_wall,3),
+         "raw_bytes":size,"raw_sha256":h.hexdigest(),"compressed_bytes":path.stat().st_size,
+         "standard_read_cpu_seconds":standard[2],"accelerated_read_cpu_seconds":accelerated[2],
+         "peak_rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
+    assert row["peak_rss_kib"]<=512*1024 and row["compressed_bytes"]<128*1024**2
+    receipts.append(row)
+    print("RC6_GZIP_COMPAT_BENCH="+json.dumps(row,separators=(",",":")),flush=True)
+legacy=list((root/"shadow").glob("computed-*.json.gz"))
+assert len(legacy)==1
+old_standard=read_hash(legacy[0],gzip.open);new_reader=read_hash(legacy[0],igzip.open)
+assert old_standard[:2]==new_reader[:2]
+summary={v:statistics.median(r["write_cpu_seconds"] for r in receipts if r["variant"]==v)
+         for v in {r["variant"] for r in receipts}}
+result={"schema":"rc6.synthetic-gzip-compat-benchmark.v1","isal_version":"1.8.0","receipts":receipts,
+        "median_write_cpu_seconds":summary,"raw_bytes_hash_and_stdlib_reader_equal":True,
+        "legacy_stdlib_file_read_verified":True,"native_acceptance":False,
+        "production_data_mounted":False,"provider_requests":0,"real_orders_sent":0}
+pathlib.Path("/work/gzip-compat-benchmark.json").write_text(json.dumps(result,indent=2)+"\n")
+print("RC6_GZIP_CPU_MEDIANS="+json.dumps(summary,sort_keys=True,separators=(",",":")))

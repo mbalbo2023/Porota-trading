@@ -125,7 +125,7 @@ jobs:
 
   watch:
     needs: contracts
-    if: github.event_name != 'pull_request' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     env:
@@ -571,7 +571,7 @@ jobs:
 
   profile:
     needs: contracts
-    if: false # One bounded native READ_ONLY sample; no repeat of resource fixtures.
+    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
@@ -604,83 +604,47 @@ jobs:
         with:
           ref: 7bad982559f56323c00f555f0d8bb480dd00dfd0
           path: candidate
-      - name: Development regression tests against candidate source and certified dependencies
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: diagnostic
+      - name: Prepare one pinned experimental compression wheel outside the candidate
         shell: bash
         run: |
           set -Eeuo pipefail
-          install -d -m 777 /tmp/rc6-profile-603
-          docker run --rm --pull never --network none --user 1000:1000 --read-only \
-            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
-            --memory 512m --memory-swap 512m --cpus 0.75 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m \
-            -v "$GITHUB_WORKSPACE/candidate:/candidate:ro" -v /tmp/rc6-profile-603:/work --workdir /candidate \
-            -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e PYTHONPATH=/candidate \
-            --entrypoint python sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
-            -m pytest -q --junitxml=/work/focused.xml tests/test_rc6_native_generation_cost.py \
-            tests/test_rc6_shadow_streaming_cost.py tests/test_rc6_shadow_family_runtime.py \
-            tests/test_rc6_family_quote_lookup_cost.py tests/test_rc6_shadow_report_lifetime.py \
-            tests/test_rc6_shadow_owned_state.py tests/test_rc6_deploy_generation_gate.py
+          install -d -m 777 /tmp/rc6-profile-603/isal-wheel /tmp/rc6-profile-603/isal-module
+          docker run --rm --pull never --user 1000:1000 --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=128m \
+            -e PIP_CONFIG_FILE=/dev/null -e PIP_EXTRA_INDEX_URL= \
+            -v /tmp/rc6-profile-603/isal-wheel:/work --entrypoint python \
+            sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
+            -m pip download --disable-pip-version-check --no-cache-dir \
+            --index-url https://pypi.org/simple --only-binary=:all: --no-deps --dest /work isal==1.8.0
           python3 - <<'PY'
-          import json,xml.etree.ElementTree as E
-          root=E.parse("/tmp/rc6-profile-603/focused.xml").getroot()
-          cases=root.findall(".//testcase")
-          assert cases and not root.findall(".//failure") and not root.findall(".//error") and not root.findall(".//skipped")
-          print("RC6_DEVELOPMENT_FOCUSED="+json.dumps({"executed":len(cases),"failure":0,"error":0,"skipped":0},separators=(",",":")))
+          import hashlib,json,pathlib,urllib.request,zipfile
+          root=pathlib.Path("/tmp/rc6-profile-603")
+          wheels=list((root/"isal-wheel").glob("isal-1.8.0-*.whl"));assert len(wheels)==1
+          wheel=wheels[0]
+          with urllib.request.urlopen("https://pypi.org/pypi/isal/1.8.0/json",timeout=20) as response:metadata=json.load(response)
+          expected={row["filename"]:row["digests"]["sha256"] for row in metadata["urls"]}
+          digest=hashlib.sha256(wheel.read_bytes()).hexdigest();assert digest==expected[wheel.name]
+          with zipfile.ZipFile(wheel) as archive:
+              assert all(not pathlib.PurePosixPath(member.filename).is_absolute() and ".." not in pathlib.PurePosixPath(member.filename).parts for member in archive.infolist())
+              archive.extractall(root/"isal-module")
+          print("RC6_EXPERIMENTAL_WHEEL="+json.dumps({"name":wheel.name,"sha256":digest,"version":"1.8.0","source":"PYPI_HTTPS_METADATA_MATCH","candidate_dependencies_changed":False},separators=(",",":")))
           PY
-      - name: Paired uninstrumented baseline and development full-catalog guards
+      - name: Compare gzip providers without changing JSON or candidate dependencies
         shell: bash
         run: |
           set -Eeuo pipefail
-          install -d -m 777 /tmp/rc6-profile-603
-          for variant in baseline candidate; do
-            install -d -m 777 "/tmp/rc6-profile-603/$variant"
-            source_args=()
-            if [ "$variant" = candidate ]; then
-              source_args=(-v "$GITHUB_WORKSPACE/candidate:/candidate:ro" --workdir /candidate -e PYTHONPATH=/candidate)
-            fi
-            set +e
-            timeout --signal=TERM --kill-after=15 300 docker run --rm --pull never --network none \
-              --user 1000:1000 --read-only --cap-drop ALL --security-opt no-new-privileges \
-              --pids-limit 96 --memory 512m --memory-swap 512m --cpus 0.75 \
-              --tmpfs /tmp:rw,nosuid,nodev,size=512m -v "/tmp/rc6-profile-603/$variant:/work" \
-              "${source_args[@]}" --entrypoint python \
-              sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
-              scripts/rc6_postdeploy_stress.py --full-catalog-check --output /work/result \
-              > "/tmp/rc6-profile-603/$variant/output.log" 2>&1
-            rc=$?
-            set -e
-            echo "RC6_PAIRED_FULL_CATALOG=$variant|exit=$rc|native_acceptance=false"
-            if [ "$variant" = candidate ]; then test "$rc" -eq 0; fi
-          done
-          python3 - <<'PY'
-          import json,pathlib
-          for variant in ("baseline","candidate"):
-              path=pathlib.Path("/tmp/rc6-profile-603")/variant/"result/full-catalog.json"
-              if path.is_file():print("RC6_PAIRED_RESOURCE_RECEIPT="+json.dumps({"variant":variant,"receipt":json.loads(path.read_text())},separators=(",",":")))
-          PY
-      - name: Additional adverse CPU fixture without host access
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          install -d -m 777 /tmp/rc6-profile-603/adverse
-          set +e
-          timeout --signal=TERM --kill-after=15 300 docker run --rm --pull never --network none \
+          timeout --signal=TERM --kill-after=15 480 docker run --rm -i --pull never --network none \
             --user 1000:1000 --read-only --cap-drop ALL --security-opt no-new-privileges \
-            --pids-limit 96 --memory 512m --memory-swap 512m --cpus 0.25 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603/adverse:/work \
-            -v "$GITHUB_WORKSPACE/candidate:/candidate:ro" --workdir /candidate -e PYTHONPATH=/candidate \
-            --entrypoint python sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
-            scripts/rc6_postdeploy_stress.py --full-catalog-check --output /work/result \
-            > /tmp/rc6-profile-603/adverse/output.log 2>&1
-          rc=$?
-          set -e
-          echo "RC6_ADVERSE_CPU_FULL_CATALOG=$rc|cpu=0.25|memory_mib=512|native_acceptance=false"
-          python3 - <<'PY'
-          import json,pathlib
-          path=pathlib.Path("/tmp/rc6-profile-603/adverse/result/full-catalog.json")
-          if path.is_file():print("RC6_ADVERSE_RESOURCE_RECEIPT="+json.dumps(json.loads(path.read_text()),separators=(",",":")))
-          PY
-          test "$rc" -eq 0
+            --pids-limit 96 --memory 512m --memory-swap 512m --cpus 0.75 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
+            -v "$GITHUB_WORKSPACE/candidate:/candidate:ro" --workdir /candidate \
+            -e PYTHONPATH=/work/isal-module:/candidate --entrypoint python \
+            sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
+            - < "$GITHUB_WORKSPACE/diagnostic/scripts/rc6_codec_experiment.py"
       - name: Expose bounded phase clocks from synthetic receipts
         if: always()
         shell: bash
