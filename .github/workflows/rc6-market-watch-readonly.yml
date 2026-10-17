@@ -55,6 +55,73 @@ jobs:
           python3 -m unittest discover -s tests -p test_rc6_operator_dashboard_readonly.py -v
           git diff --check
 
+      - name: Read pinned READ_ONLY diagnostic receipts without host access
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import hashlib, io, json, math, re, urllib.request, zipfile, os
+          artifacts = [
+           (12091516859, "4a71ce4f28bfcbc5b91d421bbe4af52027c0f10b0891a41a02d00b219169a5b4"),
+           (12091867055, "b749d35f4dfead62dcfc129237ba2398c9172abe1c2dfb3a57a251c02e37085f"),
+          ]
+          numeric = {"age_seconds","liveness_budget_seconds","native_sql_elapsed_ms","native_transform_elapsed_ms",
+           "elapsed_ms","remaining_ms","rows","shadow_age_seconds","rss_kib","cpu_seconds","shadow_worker_process_count",
+           "wal_bytes","sequence","selected_count","duration_seconds","planned_cadence_seconds","query_budget_ms",
+           "provider_requests","real_orders_sent","error_line"}
+          booleans = {"read_only","live_status_required","native_sql_within_budget","deadline_elapsed",
+           "interrupted_by_deadline","deadline_expired","runtime_deadline_expired"}
+          patterns = {
+           "generation_id":r"[0-9a-f]{64}", "manifest_sha256":r"[0-9a-f]{64}",
+           "configuration_fingerprint":r"[0-9a-f]{64}",
+           "source_sha":r"[0-9a-f]{40}", "candidate_tree_sha":r"[0-9a-f]{40}",
+           "as_of":r"20[0-9:T.+Z-]{17,40}", "generated_at":r"20[0-9:T.+Z-]{17,40}",
+           "captured_at":r"20[0-9:T.+Z-]{17,40}", "started_at":r"20[0-9:T.+Z-]{17,40}",
+           "finished_at":r"20[0-9:T.+Z-]{17,40}",
+           "error_class":r"(?:ValueError|KeyError|TypeError|OSError|OperationalError|EvidencePayloadLimit)",
+           "sqlite_errorname":r"SQLITE_[A-Z0-9_]{1,40}",
+           "state":r"(?:R|S|D|T|Z|I|UNKNOWN)", "wchan":r"[A-Za-z0-9_]{1,64}",
+           "status":r"(?:SHADOW_OBSERVING|FAIL_CLOSED|PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION|OK|FAIL_CLOSED|SKIP_BUDGET|CONTAINER_PROBE_TIMEOUT|CONTAINER_PROBE_FAILED|UNAVAILABLE|NOT_RUN_STAGE_ONLY)",
+           "integrity":r"(?:UNVERIFIED|VERIFIED)", "worker_status":r"(?:SHADOW_OBSERVING|PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION)",
+           "stage":r"(?:CATALOG_FULL|CATALOG_READY|OPEN_POSITIONS|SCHEMA_TABLES|INTRADAY_CONTRACTS|INTRADAY_POINTS|MARKET_SNAPSHOTS|RUNTIME_INPUT|CONTRACTS|INTRADAY|SNAPSHOTS|EVENTS)",
+           "error_module":r"(?:runtime|worker|preopen|promotion|stages|families|lab|entry_signals|funnel|source_reads|read_contract|persistence|snapshot|common|live)",
+           "runtime_read_stage":r"(?:CATALOG_FULL|OPEN_POSITIONS|SCHEMA_TABLES|INTRADAY_CONTRACTS|INTRADAY_POINTS|MARKET_SNAPSHOTS)",
+           "real_routes":r"NOT_CALLED"
+          }
+          containers = {"shadow","committed_generation","native_sql_stages","runtime_sql_stages","query_stages",
+           "shadow_worker_processes","observer_cycles","stages"}
+          def clean(value, depth=0):
+           if depth>6:return None
+           if isinstance(value,list):return [clean(v,depth+1) for v in value[:20] if isinstance(v,dict)]
+           if not isinstance(value,dict):return None
+           out={}
+           for key,v in value.items():
+            if key in numeric and type(v) in (int,float) and math.isfinite(v) and 0<=v<=2**53:out[key]=v
+            elif key in booleans and type(v) is bool:out[key]=v
+            elif key in patterns and type(v) is str and re.fullmatch(patterns[key],v):out[key]=v
+            elif key in containers and isinstance(v,(dict,list)):out[key]=clean(v,depth+1)
+           return out
+          for artifact_id,expected in artifacts:
+           request=urllib.request.Request(
+            f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/artifacts/{artifact_id}/zip",
+            headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],"Accept":"application/vnd.github+json"})
+           with urllib.request.urlopen(request,timeout=30) as response:
+            raw=response.read(2*1024**2+1)
+           assert len(raw)<=2*1024**2 and hashlib.sha256(raw).hexdigest()==expected,"ARTIFACT_IDENTITY_INVALID"
+           with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            for member in archive.infolist():
+             if member.filename not in {"snapshot.json","shadow_diagnostic.json"}:continue
+             assert member.file_size<=1024**2,"DIAGNOSTIC_TOO_LARGE"
+             data=json.loads(archive.read(member))
+             print("RC6_PINNED_ARTIFACT_READBACK="+json.dumps(
+              {"artifact_id":artifact_id,"sha256":expected,"member":member.filename,"safe":clean(data)},
+              sort_keys=True,separators=(",",":")))
+          
+          PY
+
   watch:
     needs: contracts
     if: github.event_name != 'pull_request'
