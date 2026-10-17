@@ -1118,6 +1118,49 @@
         }
       ],
       "not_a_droplet_acceptance_or_stress_result": true
+    },
+    {
+      "schema": "rc6.frozen-artifact-independent-verification.v2",
+      "status": "GREEN",
+      "artifact_id": 12088062003,
+      "predeploy_run": 38997662394,
+      "zip_bytes": 414273011,
+      "zip_sha256": "d203da33618149cfca43b312dce68bea8754c03cb7af9c36f02c2f93e33adebf",
+      "candidate_sha": "40a38e53b8f073a2685c3bedae39900675a3b589",
+      "candidate_tree_sha": "cd06d1d1ec27e44e7920726dd8f964e5412e3e43",
+      "image_id": "sha256:553195fee19ee59a5024b643b4f50312fd93ec81aa847c1b750c94c9de7118a2",
+      "image_size_bytes": 1175071698,
+      "image_tar_sha256": "a8bc63f1cd6a2ab6896238b092f8df38cd7274ae23b5527253e86b2aecbb302c",
+      "bundle_sha256": "a61a5d36280e033826144dde280f98b523fdee87c9d231287f8030948c542627",
+      "bundle_hashes_verified": 507,
+      "all_bundle_sources_equal_checkout": true,
+      "image_config_blob_sha256_verified": "553195fee19ee59a5024b643b4f50312fd93ec81aa847c1b750c94c9de7118a2",
+      "source_environment_observed": {
+        "POROTA_BUILD_SHA": "40a38e53b8f073a2685c3bedae39900675a3b589",
+        "POROTA_CANDIDATE_TREE_SHA": "cd06d1d1ec27e44e7920726dd8f964e5412e3e43"
+      },
+      "tests": {
+        "discovered": 3867,
+        "errors": 0,
+        "exclusions": [
+          "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+        ],
+        "executed": 3867,
+        "failures": 0,
+        "pytest_exit_code": 0,
+        "schema_version": 1,
+        "scope": "repository-root automatic pytest discovery",
+        "skipped": 0,
+        "status": "GREEN",
+        "xfail": 0
+      },
+      "native_privilege_properties": [
+        {
+          "name": "RC6_PRECLEAN_PRIVILEGE_BOUNDARY",
+          "value": "OS_DIFFERENT_UID"
+        }
+      ],
+      "not_a_droplet_acceptance_or_stress_result": true
     }
   ],
   "drain_causal_tests": {
@@ -1243,7 +1286,9 @@
     "sha": "40a38e53b8f073a2685c3bedae39900675a3b589",
     "tree": "cd06d1d1ec27e44e7920726dd8f964e5412e3e43",
     "predeploy_run": 38997662394,
-    "status": "EN_GITHUB_PREDEPLOY_IN_PROGRESS"
+    "status": "ARTEFACTO_VALIDADO_PENDING_DEPLOY",
+    "artifact_id": 12088062003,
+    "zip_sha256": "d203da33618149cfca43b312dce68bea8754c03cb7af9c36f02c2f93e33adebf"
   },
   "latest_deploy_result": {
     "schema": "rc6.deploy-attempt-receipt.v1",
@@ -1532,5 +1577,12 @@
       "deploy": "NOT_DEPLOYED",
       "reason": "UTC_AND_CANDLE_ATOMICITY_CAUSAL_FINDINGS_REQUIRE_NEW_SHA"
     }
-  ]
+  ],
+  "wiring_613": {
+    "path": "docs/releases/RC6_ISSUE603_WIRING_613.json",
+    "root_python_count": 261,
+    "certified_host_bundle_root_count": 261,
+    "parse_errors": 0,
+    "static_only": true
+  }
 }
