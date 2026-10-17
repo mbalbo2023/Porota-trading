@@ -130,6 +130,17 @@ def test_predeploy_preserves_the_entire_native_proof_directory():
     assert upload['if']=='always()'
 
 
+def test_native_soak_receipts_are_preserved_before_and_after_stress():
+    import yaml
+    steps=yaml.safe_load(_deploy())['jobs']['promote']['steps']
+    before=next(step for step in steps if step.get('name')=='Collect postdeploy stress evidence even on RED')
+    after=next(step for step in steps if step.get('name')==
+        'Independent sustained native acceptance after stress restoration')
+    assert 'native-ten-generation-soak.json' in before['run']
+    assert '> evidence/postdeploy-stress/native-prestress-soak.json' in before['run']
+    assert '> evidence/postdeploy-stress/native-postrestore-soak.json' in after['run']
+
+
 def test_sector_map_and_multisource_helpers_are_immutable_deploy_inputs():
     from scripts.porota_build_deploy_bundle_v2 import select_bundle_paths
 

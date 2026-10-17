@@ -1355,6 +1355,12 @@ jobs:
             "$DO_USER@$DO_HOST" \
             "sudo -n tar -C '/opt/porota-trading/data/deploy/stress/$CANDIDATE_SHA/$GITHUB_RUN_ID' -czf - ." \
             > evidence/postdeploy-stress/isolated-stress.tgz
+          timeout 30 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n cat /opt/porota-trading/data/deploy/native-ten-generation-soak.json" \
+            > evidence/postdeploy-stress/native-prestress-soak.json
 
       - name: Preserve postdeploy stress and capacity receipts
         if: always() && steps.stress.outcome != 'skipped' && steps.stress.outcome != ''
