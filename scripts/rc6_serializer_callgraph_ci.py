@@ -46,12 +46,12 @@ def run(output):
             return inflater(*a,**kw)
         started=time.monotonic();cpu=time.process_time()
         with patch.object(persistence.zlib,"decompressobj",factory):
-            value=prof.runcall(original,self,payload,**kwargs)
+            value=original(self,payload,**kwargs)
         counts.update(wall_seconds=time.monotonic()-started,cpu_seconds=time.process_time()-cpu,audit=value)
         captured.append(counts)
         return value
     with patch.object(EvidenceFiles,"write_streamed_report",observed):
-        report=worker.tick(PRE)
+        report=prof.runcall(worker.tick,PRE)
     assert report["status"]=="SHADOW_OBSERVING"
     assert type(report["real_orders_sent"]) is int and report["real_orders_sent"]==0
     assert report["provider_requests"]==0 and report["real_routes"]=="NOT_CALLED"
@@ -67,30 +67,54 @@ def run(output):
         benchmarks.append({"mode":mode,"wall_seconds":round(time.monotonic()-started,6),
             "cpu_seconds":round(time.process_time()-cpu,6),"raw_bytes":value["raw_bytes"],
             "sha256":value["sha256"]})
+    groups={};visits=[0]
+    def inspect_lists(value,path,active):
+        visits[0]+=1
+        if visits[0]>200000:raise ValueError("REPORT_IDENTITY_INSPECTION_VISIT_LIMIT")
+        if isinstance(value,(dict,list)) and len(value)>256:
+            group=groups.setdefault(id(value),{"rows":len(value),"kind":type(value).__name__,"paths":[],"value":value})
+            if len(group["paths"])<16:group["paths"].append(path)
+            return
+        if not isinstance(value,(dict,list,tuple)):return
+        if id(value) in active:raise ValueError("REPORT_IDENTITY_INSPECTION_CYCLE")
+        active.add(id(value))
+        if isinstance(value,dict):
+            for key,item in value.items():
+                if isinstance(item,(dict,list,tuple)):inspect_lists(item,path+"."+str(key),active)
+        else:
+            for n,item in enumerate(value):
+                if isinstance(item,(dict,list,tuple)):inspect_lists(item,path+"[]",active)
+        active.remove(id(value))
+    inspect_lists(report,"report",set())
+    arrays=[{"rows":v["rows"],"kind":v["kind"],"occurrences":len(v["paths"]),"paths":v["paths"],
+        "supplied_shared_target":any(v["value"] is x for x in targets)} for v in groups.values()]
     stats=pstats.Stats(prof).stats
     hot=[]
     for (filename,line,function),(primitive,total_calls,own,cumulative,callers) in stats.items():
         name=Path(filename).name
-        if not (filename.startswith("/app/") or name in {"encoder.py","gzip.py","json","~"}):continue
+        if not (filename.startswith("/app/") or name in {"encoder.py","gzip.py","json","copy.py","~","_strptime.py"}):continue
         label=re.sub(r"[^A-Za-z0-9_.<> -]","_",function)[:100]
         hot.append({"module":name[:80],"line":line,"function":label,"primitive_calls":primitive,
-            "total_calls":total_calls,"own_cpu_seconds":round(own,6),"cumulative_cpu_seconds":round(cumulative,6)})
-    hot.sort(key=lambda x:x["own_cpu_seconds"],reverse=True)
-    result={"schema":"rc6.exact618-serializer-callgraph.v1","context":"CI_EXACT_IMAGE_SERIALIZER_RCA_NOT_NATIVE",
+            "total_calls":total_calls,"own_profile_wall_seconds":round(own,6),"cumulative_profile_wall_seconds":round(cumulative,6)})
+    hot.sort(key=lambda x:x["own_profile_wall_seconds"],reverse=True)
+    result={"schema":"rc6.exact618-whole-worker-callgraph.v2","context":"CI_EXACT_IMAGE_SERIALIZER_RCA_NOT_NATIVE",
         "candidate_sha":CANDIDATE,"candidate_tree_sha":TREE,
         "image_id":"sha256:2f581a5cc45e34dad4974d35398aeef89f3dbc4c9ca7f4c3c172efd1123b62d9",
         "catalog_count":total,"ready_fixture_count":sum(x[1] for x in FULL_CATALOG_SHAPE.values()),
         "production_data_mounted":False,"provider_requests":0,"real_orders_sent":0,"real_routes":"NOT_CALLED",
         "native_acceptance":False,"full_session_stress":False,"runtime_restore":"NOT_APPLICABLE_CI_ONLY",
-        "profile_instrumentation_changes_elapsed_time":True,"profiled_audit":captured[0],
-        "top_own_cpu":hot[:24],"benchmarks_same_exact_full_audit":benchmarks,
+        "profile_instrumentation_changes_elapsed_time":True,"profile_timer":"DEFAULT_REAL_TIME_NOT_PROCESS_CPU",
+        "prior_profile39033636402_errata":"pstats *_cpu_seconds field names mean default profiler wall seconds; separate benchmark cpu_seconds uses process_time correctly",
+        "profiled_audit":captured[0],
+        "large_list_identity_groups":arrays,"identity_scan_visits":visits[0],
+        "top_own_profile_wall":hot[:40],"benchmarks_same_exact_full_audit":benchmarks,
         "peak_rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
     assert result["catalog_count"]==14611 and result["ready_fixture_count"]==9902
     assert result["peak_rss_kib"]<=512*1024
     raw=(json.dumps(result,sort_keys=True,indent=2)+"\n").encode()
     (output/"serializer-profile.json").write_bytes(raw)
-    print("RC6_EXACT618_SERIALIZER_PROFILE="+json.dumps(result,sort_keys=True,separators=(",",":")),flush=True)
-    print("RC6_EXACT618_SERIALIZER_PROFILE_SHA256="+hashlib.sha256(raw).hexdigest(),flush=True)
+    print("RC6_EXACT618_WHOLE_WORKER_PROFILE="+json.dumps(result,sort_keys=True,separators=(",",":")),flush=True)
+    print("RC6_EXACT618_WHOLE_WORKER_PROFILE_SHA256="+hashlib.sha256(raw).hexdigest(),flush=True)
 if __name__=="__main__":
     parser=argparse.ArgumentParser();parser.add_argument("--output",type=Path,required=True);args=parser.parse_args()
     run(args.output)

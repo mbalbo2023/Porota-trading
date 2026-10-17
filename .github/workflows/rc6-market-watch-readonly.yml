@@ -581,8 +581,28 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Compile isolated CI-only call graph observer
+      - name: Compile isolated CI-only whole worker observer
         run: python3 -m py_compile scripts/rc6_serializer_callgraph_ci.py
+      - name: Read and hash prior serializer profile bytes and retain timer-label errata
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,io,json,os,urllib.request,zipfile
+          req=urllib.request.Request("https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/12101526598/zip")
+          req.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
+          with urllib.request.urlopen(req,timeout=30) as response:raw=response.read(2*1024**2+1)
+          assert len(raw)==1862 and hashlib.sha256(raw).hexdigest()=="02e0e17a273b5d16754e5f51f206f50d9a43d231b6f1107b42c4fda09b03936c"
+          with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+              values=[x for x in archive.infolist() if x.filename=="serializer-profile.json"]
+              assert len(values)==1 and values[0].file_size<65536
+              content=archive.read(values[0]);data=json.loads(content)
+          assert data["context"]=="CI_EXACT_IMAGE_SERIALIZER_RCA_NOT_NATIVE" and data["native_acceptance"] is False
+          assert len(data["benchmarks_same_exact_full_audit"])==4 and len({(x["raw_bytes"],x["sha256"]) for x in data["benchmarks_same_exact_full_audit"]})==1
+          assert data["profiled_audit"]["cache_replay_inflater_creations"]==2
+          print("RC6_PRIOR_PROFILE_TIMER_ERRATA=DEFAULT_REAL_TIME_NOT_PROCESS_CPU_FOR_PSTATS_ONLY; BENCHMARK_PROCESS_TIME_VALID")
+          print("RC6_PRIOR_PROFILE_BYTE_READBACK="+json.dumps({"bytes":len(content),"sha256":hashlib.sha256(content).hexdigest(),"base64":base64.b64encode(content).decode()},separators=(",",":")))
+          PY
       - name: Verify and load exact PR618 frozen artifact without rebuilding
         shell: bash
         run: |
@@ -618,12 +638,12 @@ jobs:
           PY
           docker load -i /tmp/rc6-exact618-image.tar.gz >/dev/null
           install -d -m 777 /tmp/rc6-perf618
-      - name: Profile full generated catalog and compare identical audit bytes without native access
+      - name: Profile whole generated-catalog worker and inspect actual list identities without native access
         shell: bash
         run: |
           set -Eeuo pipefail
           docker create --name rc6-serializer-ci --memory=512m --memory-swap=512m --cpus=.75 \
-            --network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=128 \
+            --network=none --no-healthcheck --read-only --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=128 \
             --user=1000:1000 --workdir=/app -e PYTHONPATH=/app -e PYTHONDONTWRITEBYTECODE=1 \
             -v /tmp/rc6-perf618:/profile:rw \
             -v "$GITHUB_WORKSPACE/scripts/rc6_serializer_callgraph_ci.py:/rc6-diagnostic.py:ro" \
@@ -640,7 +660,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rc6-exact618-serializer-callgraph-${{ github.run_id }}
+          name: rc6-exact618-whole-worker-callgraph-${{ github.run_id }}
           path: /tmp/rc6-perf618/serializer-profile.json
           if-no-files-found: warn
           retention-days: 14
