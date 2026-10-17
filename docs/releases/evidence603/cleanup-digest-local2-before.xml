@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="0.455" timestamp="2026-10-16T22:17:20.611834-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_pretransfer_image_cleanup" name="test_same_repository_digest_does_not_make_unused_candidate_immortal" time="0.003"><failure message="AssertionError: assert ([] == ['porota-pred...dddddddddddd']&#10;  &#10;  Right contains one more item: 'porota-predeploy-v2:dddddddddddddddddddddddddddddddddddddddd'&#10;  Use -v to get more diff)">host = &lt;test_rc6_pretransfer_image_cleanup.Docker object at 0x7fe3ea46ed80&gt;
+
+    def test_same_repository_digest_does_not_make_unused_candidate_immortal(host):
+        host.images[IMG] = ([TAG], ['porota-predeploy-v2@sha256:'+'f'*64])
+        result = clean.cleanup()
+&gt;       assert result['removed_tags'] == [TAG] and IMG not in host.images
+E       AssertionError: assert ([] == ['porota-pred...dddddddddddd']
+E         
+E         Right contains one more item: 'porota-predeploy-v2:dddddddddddddddddddddddddddddddddddddddd'
+E         Use -v to get more diff)
+
+tests/test_rc6_pretransfer_image_cleanup.py:196: AssertionError</failure></testcase><testcase classname="tests.test_rc6_pretransfer_image_cleanup" name="test_unpaired_canonical_repository_digest_still_protects_image" time="0.002" /></testsuite></testsuites>

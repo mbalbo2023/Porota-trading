@@ -1,0 +1,484 @@
+{
+  "schema": "rc6.absorption.v2",
+  "product_candidate": "19c26d2eba13d5855f653dff67605d11c518996b",
+  "product_tree": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6",
+  "monitor_candidate": "53244334e62ee586535ea4ce3afba3d16a21efa9",
+  "monitor_state": "PR607_NOT_MERGED_NOT_DEPLOYED",
+  "method": "Compare each original PR601/602 file SHA256 against exact successor checkout; original receipt retained. No deleted code inferred as dead.",
+  "files": [
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "DASHBOARD_TRUTH_MATRIX_RC6.json",
+      "classification": "PRESERVED",
+      "original_sha256": "e03e8b96e7b4ef384c0b82ff4086e17a98479c55b783d0b368ad136096e11b1a",
+      "successor_sha256": "e03e8b96e7b4ef384c0b82ff4086e17a98479c55b783d0b368ad136096e11b1a",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "bf_production_paper_observer.py",
+      "classification": "PRESERVED",
+      "original_sha256": "34849a111af7ca300796a96a49d580c1450e67ce5ffd678ca4fde0b772cea1ba",
+      "successor_sha256": "34849a111af7ca300796a96a49d580c1450e67ce5ffd678ca4fde0b772cea1ba",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "docs/releases/RC6_ISSUE600_20261016.md",
+      "classification": "PRESERVED",
+      "original_sha256": "9d2425234490544f40794a9100c93fb48e560b5d9711dc6b39bf2b25f7d3c4e1",
+      "successor_sha256": "9d2425234490544f40794a9100c93fb48e560b5d9711dc6b39bf2b25f7d3c4e1",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "docs/releases/RC6_ISSUE600_EVIDENCE_20261016.json",
+      "classification": "PRESERVED",
+      "original_sha256": "f145daeb40e655501ba7ed4c64e7f21c4c6486642afebaf5dd59f19ea7867020",
+      "successor_sha256": "f145daeb40e655501ba7ed4c64e7f21c4c6486642afebaf5dd59f19ea7867020",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "docs/releases/RC6_ISSUE600_PR_PREPARATION.md",
+      "classification": "PRESERVED",
+      "original_sha256": "67ce0237bebb52d448adf2cd1000ac5855d6820e903f4a2bbd3352f2e23f8168",
+      "successor_sha256": "67ce0237bebb52d448adf2cd1000ac5855d6820e903f4a2bbd3352f2e23f8168",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "historical_candle_shadow_rc6.py",
+      "classification": "PRESERVED",
+      "original_sha256": "576d007f85486318ff637d008e539cc97135f417806dc4f35d4e69c2fd468e02",
+      "successor_sha256": "576d007f85486318ff637d008e539cc97135f417806dc4f35d4e69c2fd468e02",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "ops/policy/host-control-plane-reconciliation-v2.json",
+      "classification": "PRESERVED",
+      "original_sha256": "3fb4142db196c986b0d27cb9ed35f0bc5f13ceb0b2a53627705eb8300bfba6ca",
+      "successor_sha256": "3fb4142db196c986b0d27cb9ed35f0bc5f13ceb0b2a53627705eb8300bfba6ca",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_counterfactual_learning.py",
+      "classification": "PRESERVED",
+      "original_sha256": "6aec88350d0df536363a8c0b29d8c63dcd6f893bca767866875b3d8d07ff7975",
+      "successor_sha256": "6aec88350d0df536363a8c0b29d8c63dcd6f893bca767866875b3d8d07ff7975",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_dynamic_universe/runtime.py",
+      "classification": "REFINED_PRESERVED",
+      "original_sha256": "e373a3e93c388607d54533126aa8c6d61b79eb6356220e9f2a1d7c55adb2c6c0",
+      "successor_sha256": "f492f46a688c4c04d6ce3133c851a96aab88f08e41b19b1fc2cc7cc089ceb52f",
+      "reason": "Original path preserved; successor refinement has causal regression and exact CI pending/current evidence; see finding ledger.",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_local_eod_history.py",
+      "classification": "REFINED_PRESERVED",
+      "original_sha256": "e662481fd6b4d1bc1de2f9936180a153c0be9df8e41becf7b9c1a33d03375ad2",
+      "successor_sha256": "b190b3b1dd32e6d051a6a50b6dbea9e56c9e40c0a9ce0a71101a1756fd2e19d4",
+      "reason": "Original path preserved; successor refinement has causal regression and exact CI pending/current evidence; see finding ledger.",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_market_watch_silence.py",
+      "classification": "PRESERVED",
+      "original_sha256": "cc719789783e5057aa4ab71672e0acafb31a8708cef0536c3b22caa08e306104",
+      "successor_sha256": "cc719789783e5057aa4ab71672e0acafb31a8708cef0536c3b22caa08e306104",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_shadow_runtime/persistence.py",
+      "classification": "PRESERVED",
+      "original_sha256": "3a7d06258c82a77ea9c5e347c2d25535c2f2e5363f36b10791f50f031a0721e9",
+      "successor_sha256": "3a7d06258c82a77ea9c5e347c2d25535c2f2e5363f36b10791f50f031a0721e9",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_shadow_runtime/timing.py",
+      "classification": "PRESERVED",
+      "original_sha256": "4830e4f5afbcde9a87ff6c348d86c29a43149b6dec9cbbdee73537d8242833b1",
+      "successor_sha256": "4830e4f5afbcde9a87ff6c348d86c29a43149b6dec9cbbdee73537d8242833b1",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_shadow_runtime/worker.py",
+      "classification": "PRESERVED",
+      "original_sha256": "1182ff80819e23d21769deb8937b6e4545da9eaf78122b034f56d08e2eaaa58e",
+      "successor_sha256": "1182ff80819e23d21769deb8937b6e4545da9eaf78122b034f56d08e2eaaa58e",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/annual.py",
+      "classification": "PRESERVED",
+      "original_sha256": "756d3f397357214c9f5339835fc4c450460ec0cfc1d72c2e9aedcb9b5b2c2698",
+      "successor_sha256": "756d3f397357214c9f5339835fc4c450460ec0cfc1d72c2e9aedcb9b5b2c2698",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/components.py",
+      "classification": "PRESERVED",
+      "original_sha256": "cffc413cc8b5473402c6a2c302a3b8d876e98e1c837edd4ae6fe8ff970602e25",
+      "successor_sha256": "cffc413cc8b5473402c6a2c302a3b8d876e98e1c837edd4ae6fe8ff970602e25",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/counterfactuals.py",
+      "classification": "PRESERVED",
+      "original_sha256": "7d010da5410dca97c7d722dcb20720c914cde08e574288510c0d4d1c11af6986",
+      "successor_sha256": "7d010da5410dca97c7d722dcb20720c914cde08e574288510c0d4d1c11af6986",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/datasets.py",
+      "classification": "PRESERVED",
+      "original_sha256": "73e60ae2a63f7550161e34066492d97e8eb130072d8e65091b6ba29b6dd72235",
+      "successor_sha256": "73e60ae2a63f7550161e34066492d97e8eb130072d8e65091b6ba29b6dd72235",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/generation.py",
+      "classification": "PRESERVED",
+      "original_sha256": "ecbf98e0b1e43974c78e98d3735d4226b432ac427d7ee7e7dbfd6d516b4adae5",
+      "successor_sha256": "ecbf98e0b1e43974c78e98d3735d4226b432ac427d7ee7e7dbfd6d516b4adae5",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/navigation.py",
+      "classification": "PRESERVED",
+      "original_sha256": "da613f3910ee15615ced162011ce1ab55251d0296d1298a36fccefe7135631ef",
+      "successor_sha256": "da613f3910ee15615ced162011ce1ab55251d0296d1298a36fccefe7135631ef",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/projection.py",
+      "classification": "PRESERVED",
+      "original_sha256": "3f1ab118c2b9beb3361e155e5eb436a566ddea09f45edf64e153866828f33974",
+      "successor_sha256": "3f1ab118c2b9beb3361e155e5eb436a566ddea09f45edf64e153866828f33974",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/routes.py",
+      "classification": "PRESERVED",
+      "original_sha256": "ef956476f37b33d1353d79e483a3cb98ac425ec825330af712847b1c646625f2",
+      "successor_sha256": "ef956476f37b33d1353d79e483a3cb98ac425ec825330af712847b1c646625f2",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/view_common.py",
+      "classification": "PRESERVED",
+      "original_sha256": "9dd1b1b36f46ea55f09e9e313a7df1e0b97eed0080cec9e06c9a2140cdf5206e",
+      "successor_sha256": "9dd1b1b36f46ea55f09e9e313a7df1e0b97eed0080cec9e06c9a2140cdf5206e",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/views_analytics.py",
+      "classification": "PRESERVED",
+      "original_sha256": "66abd6d81a0231a5320c599878294b41691745a77fb5eb64cbdfba9ef2bc2de1",
+      "successor_sha256": "66abd6d81a0231a5320c599878294b41691745a77fb5eb64cbdfba9ef2bc2de1",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/views_instruments.py",
+      "classification": "PRESERVED",
+      "original_sha256": "22fbde35b707e90903329e6472667ca544fb839dff685378bbe92ed032838282",
+      "successor_sha256": "22fbde35b707e90903329e6472667ca544fb839dff685378bbe92ed032838282",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/views_live.py",
+      "classification": "PRESERVED",
+      "original_sha256": "3471c2c0b9c2008b5616c5d90d143da0b08fe2299803f2f1255ccccf58f264cc",
+      "successor_sha256": "3471c2c0b9c2008b5616c5d90d143da0b08fe2299803f2f1255ccccf58f264cc",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "rc6_trader_dashboard/views_system.py",
+      "classification": "PRESERVED",
+      "original_sha256": "14f58b0439734196e4e1ee5edb1898cceb82f62e2e57c1710ef131f45479ebad",
+      "successor_sha256": "14f58b0439734196e4e1ee5edb1898cceb82f62e2e57c1710ef131f45479ebad",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "scripts/rc6_dashboard_route_inventory.py",
+      "classification": "PRESERVED",
+      "original_sha256": "a77116c10dd28e3e72d7fec8074a0f3591839a4935f0b8ad48a1f6c7f390c921",
+      "successor_sha256": "a77116c10dd28e3e72d7fec8074a0f3591839a4935f0b8ad48a1f6c7f390c921",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "scripts/rc6_history_cutoff_repair_once.py",
+      "classification": "PRESERVED",
+      "original_sha256": "74641d24dbe86b694c6cdb6f9dab6183d287cef70ca78459add2333fa41a1f9d",
+      "successor_sha256": "74641d24dbe86b694c6cdb6f9dab6183d287cef70ca78459add2333fa41a1f9d",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "scripts/rc6_zero_known_error_runtime_audit.py",
+      "classification": "PRESERVED",
+      "original_sha256": "e797dc99df4910f4940bb9a68487388e3a14a9ae96b70c8cb696ae949db007c8",
+      "successor_sha256": "e797dc99df4910f4940bb9a68487388e3a14a9ae96b70c8cb696ae949db007c8",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "systemd/porota-local-eod-history-rc6.service",
+      "classification": "REFINED_PRESERVED",
+      "original_sha256": "03f99fca30a13d183936479f838f00825f1b1f5bbfc0c69d2ad4cedc82db158b",
+      "successor_sha256": "47e9301838e9540a1c1505fb471bf9d9aedf8a4b3e81bff0ff11e75d72b4347f",
+      "reason": "Original path preserved; successor refinement has causal regression and exact CI pending/current evidence; see finding ledger.",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "systemd/porota-local-eod-history-rc6.timer",
+      "classification": "PRESERVED",
+      "original_sha256": "18640b709106a6286c19f4d993f15da1a7cafe1d80f4b179d8c17ced2bcf55f5",
+      "successor_sha256": "18640b709106a6286c19f4d993f15da1a7cafe1d80f4b179d8c17ced2bcf55f5",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "tests/test_rc6_history_convergence.py",
+      "classification": "PRESERVED",
+      "original_sha256": "2e8fc31140ff46cb710036060a39c8cb23602f93a1628828b4beca26e516f86a",
+      "successor_sha256": "2e8fc31140ff46cb710036060a39c8cb23602f93a1628828b4beca26e516f86a",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "tests/test_rc6_history_cutoff_repair_coverage.py",
+      "classification": "PRESERVED",
+      "original_sha256": "1961e21311d5e2bfe0f9a2155ece5a8052b886acbc4c8598dd20a978240c305c",
+      "successor_sha256": "1961e21311d5e2bfe0f9a2155ece5a8052b886acbc4c8598dd20a978240c305c",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "tests/test_rc6_issue600_dashboard_adenda.py",
+      "classification": "PRESERVED",
+      "original_sha256": "f8a6fb3bf29f92405966435033491b2ed2e5cadaffb052a7fbb4b84823b45006",
+      "successor_sha256": "f8a6fb3bf29f92405966435033491b2ed2e5cadaffb052a7fbb4b84823b45006",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "tests/test_rc6_issue600_regressions.py",
+      "classification": "PRESERVED",
+      "original_sha256": "2d1a9f57c6ef207634155b83ed84353376b6941b2d300c737971783e2fccded4",
+      "successor_sha256": "2d1a9f57c6ef207634155b83ed84353376b6941b2d300c737971783e2fccded4",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "tests/test_rc6_market_watch_silence.py",
+      "classification": "PRESERVED",
+      "original_sha256": "188d1c5c6016b69da3febb056125d333c6516b2b9ecfb0b1ddff55d7344ad242",
+      "successor_sha256": "188d1c5c6016b69da3febb056125d333c6516b2b9ecfb0b1ddff55d7344ad242",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "tests/test_rc6_night_input_contracts.py",
+      "classification": "PRESERVED",
+      "original_sha256": "dbd05bff24024840f60792252e4688a0da6b5dfa1c844f7a97f2d58d8d5e40ba",
+      "successor_sha256": "dbd05bff24024840f60792252e4688a0da6b5dfa1c844f7a97f2d58d8d5e40ba",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "tests/test_rc6_observer_metric_contention.py",
+      "classification": "PRESERVED",
+      "original_sha256": "cc325796b3ae1dd7ee2088b0b7b8063e660b5ac97135e01e354a9a50e76c69e1",
+      "successor_sha256": "cc325796b3ae1dd7ee2088b0b7b8063e660b5ac97135e01e354a9a50e76c69e1",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "tests/test_ws_dash_trader_terminal_08.py",
+      "classification": "PRESERVED",
+      "original_sha256": "e4eb37eea43c13ac3b8d8d4c1edbe606fc447da11e129d509a503405fa572e13",
+      "successor_sha256": "e4eb37eea43c13ac3b8d8d4c1edbe606fc447da11e129d509a503405fa572e13",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 602,
+      "baseline_sha": "65f0eb277398500f6b799348496bacf5d806fdd9",
+      "path": "tests/test_ws_integ_03_runtime_audit.py",
+      "classification": "PRESERVED",
+      "original_sha256": "0777a76519ad91cd7c19ffa824cd6fba23d711f32e0d2fe4e6423d54fa7a2382",
+      "successor_sha256": "0777a76519ad91cd7c19ffa824cd6fba23d711f32e0d2fe4e6423d54fa7a2382",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 601,
+      "baseline_sha": "6458bab0c3742d34408a9469f0457dd105d79c1c",
+      "path": ".github/workflows/rc6-market-watch-readonly.yml",
+      "classification": "REFINED_PRESERVED",
+      "original_sha256": "e0d18032a114556b70c503655fa62f096dadfb33d04cc7a50eec9ae99f9cbad1",
+      "successor_sha256": "ffabe2acb3282ceb67f39e00aec74f8048fea9eafd53a716dd1abf01b7009aa3",
+      "reason": "Original path preserved; successor refinement has causal regression and exact CI pending/current evidence; see finding ledger.",
+      "omitted": false
+    },
+    {
+      "pr": 601,
+      "baseline_sha": "6458bab0c3742d34408a9469f0457dd105d79c1c",
+      "path": "docs/ops/RC6_ISSUE600_CONTROL_PLANE.md",
+      "classification": "PRESERVED",
+      "original_sha256": "0408ede29f151ae2065bba71c2b5405eb9625dfefdb7f313574e3cd9ab31106a",
+      "successor_sha256": "0408ede29f151ae2065bba71c2b5405eb9625dfefdb7f313574e3cd9ab31106a",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 601,
+      "baseline_sha": "6458bab0c3742d34408a9469f0457dd105d79c1c",
+      "path": "scripts/rc6_market_watch_readonly.py",
+      "classification": "REFINED_PRESERVED",
+      "original_sha256": "a0d031dcf7ae167ad7c1ef144d9e361e87fd312f72c1a70db70320b18a1fc5f4",
+      "successor_sha256": "5b41acebe876894011b361759b0d9c648516a2ac2430785fbb0c0c803aafc49a",
+      "reason": "Original path preserved; successor refinement has causal regression and exact CI pending/current evidence; see finding ledger.",
+      "omitted": false
+    },
+    {
+      "pr": 601,
+      "baseline_sha": "6458bab0c3742d34408a9469f0457dd105d79c1c",
+      "path": "scripts/rc6_operator_dashboard_readonly.py",
+      "classification": "PRESERVED",
+      "original_sha256": "8938bd85986fde6856aa13910a79833232ef8771c41c6ae7e6d4dfb8944d1f86",
+      "successor_sha256": "8938bd85986fde6856aa13910a79833232ef8771c41c6ae7e6d4dfb8944d1f86",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    },
+    {
+      "pr": 601,
+      "baseline_sha": "6458bab0c3742d34408a9469f0457dd105d79c1c",
+      "path": "tests/test_rc6_market_watch_readonly.py",
+      "classification": "REFINED_PRESERVED",
+      "original_sha256": "f19d673956c8dfb939d3fda040f78cfe191c0e9cdd25d377ae213a3fd89b7be5",
+      "successor_sha256": "17f2e7042367a28d37bc74f4f98d28528a783455a109f6812ec2fd1ea4e8b6d9",
+      "reason": "Original path preserved; successor refinement has causal regression and exact CI pending/current evidence; see finding ledger.",
+      "omitted": false
+    },
+    {
+      "pr": 601,
+      "baseline_sha": "6458bab0c3742d34408a9469f0457dd105d79c1c",
+      "path": "tests/test_rc6_operator_dashboard_readonly.py",
+      "classification": "PRESERVED",
+      "original_sha256": "40b6f79db6f39fe3b6905bf1e941f212a8c621d54e09c92cdfedb5b206b06888",
+      "successor_sha256": "40b6f79db6f39fe3b6905bf1e941f212a8c621d54e09c92cdfedb5b206b06888",
+      "reason": "Exact original file hash preserved",
+      "omitted": false
+    }
+  ],
+  "counts": {
+    "PRESERVED": 41,
+    "REFINED_PRESERVED": 6
+  }
+}

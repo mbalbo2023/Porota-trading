@@ -540,6 +540,126 @@
       "failure": 0,
       "error": 0,
       "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-digest-local56-after.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 9087,
+      "sha256": "83659b978ad5c835a312ec972852effb4e7ab31c205b99444cc24fa4311b1241",
+      "cases": 56,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38993352249-independent.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1647,
+      "sha256": "03aad4b55b4507873dd3870e81046e6e8c3be6c9178bb89965d88951ca17a8ee"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-covering-local2-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 2275,
+      "sha256": "5df31f951ff37fab14025cc3a3224687ae1b98502f5c8874420b1bd8357c0095",
+      "cases": 2,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38994065356-failure.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 751,
+      "sha256": "5e2b985282a3a84f68b6b8c0823f3b348e958fb06328ce59f0410b50c7e0875c"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-covering-candidate.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 192,
+      "sha256": "fec95a0236e7e1d77d2dd22bccf9bceb09868aba9faf94ea279842c07ea9a133"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38993352249-porota-frozen-candidate.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 611,
+      "sha256": "2e2f6c5a062c4f7efbae6848eed03de211b23fe3be940e5587d64cbfed7729ce"
+    },
+    {
+      "path": "docs/releases/evidence603/images-38994353621-canonical-digests.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1362,
+      "sha256": "d581464daa338755ab890f1ee06b31b8574e6bb3241ba5d9037a3f682f676b39"
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-covering-candidate.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 273,
+      "sha256": "371793c151d28a6ecd157153a698419d8bd1c1c8e1221e2fb03036a0ff3f9030"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38993352249-porota-governed-tests.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 360,
+      "sha256": "c82031e656660daa66243290cf40650949717fef295e4da0062f19f1f89bd1f3"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38993827055-nojoins-deadline.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1067,
+      "sha256": "732461f3c5ecc071274967644b00f659615081df499cc81d3f8e18181c0a20fb"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-covering-local69-after.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 11210,
+      "sha256": "7f37fcf1609dec4172de9526dcdbf20a913260f77036e58c266583890a8d8f45",
+      "cases": 69,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/merge-611-exact-tree.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 251,
+      "sha256": "86aea59f90447b3a26a4ce3911bd8f19f841c974e79366513b5d4d4ae4ad0234"
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-covering-local2-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 2885,
+      "sha256": "5167e8c2cfa3e9297374065b15d0e542675eb1e1e0422f11d416ecc8f6eea52b",
+      "cases": 2,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38993352249-green.xml.gz",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 85558,
+      "sha256": "bab211f6d870f0c7825a6a2952767c7ae4c865d07a830e957e96a20d6b3ac7fc",
+      "cases": 3784,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38994065356-selected-lines.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1347,
+      "sha256": "229a994ae8dc8c4d6ea2603ff55bd519ad8964ed0d84c9da85ac0757c420dc31"
+    },
+    {
+      "path": "docs/releases/evidence603/cleanup-digest-local2-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1418,
+      "sha256": "007f6293237b52b93c6a759d31a9194d4819f1686d46c5ea3a00063238f21975",
+      "cases": 2,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
     }
   ]
 }

@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "PR611_PREDEPLOY_IN_PROGRESS_NATIVE_CAPACITY_EVIDENCE_AVAILABLE",
+  "release_state": "PR612_PREDEPLOY_PENDING_CATALOG_INDEX_AND_OWNED_DIGEST_FIX",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -639,7 +639,7 @@
       "path": ".github/workflows/porota-deploy-v2-promote.yml",
       "symbol": "Dynamic pre-transfer disk guard",
       "classification": "OBSERVED_BLOCKER",
-      "detail": "Observed38991391810: safe preclean+critical reconciliation recovered total3056316416B but available4760752128 remains154355662B below4915107790. Gate correctly blocks before drain/transfer; capacity RCA not closed. Dockerdf before critical had3images/2active/2.216GB reclaimable. Need scoped image ownership evidence before any deletion; no reduced2GiB reserve or backup retention, no referenced/PPI assets. New READ_ONLY38993434968 confirmed a72d609a image,1205355105B, only porota-predeploy-v2:7890f70b50b7148dd27be3ef7c05e9eb4d6a1eea,0references/0externalaliases. PR611 adds standalone candidate-only preclean, strict all-container inventory and runtime lifecycle/PAPER0 invariants.49localPASS; native cleanup/space still pending, no reserve relaxation.",
+      "detail": "Observed38991391810: safe preclean+critical reconciliation recovered total3056316416B but available4760752128 remains154355662B below4915107790. Gate correctly blocks before drain/transfer; capacity RCA not closed. Dockerdf before critical had3images/2active/2.216GB reclaimable. Need scoped image ownership evidence before any deletion; no reduced2GiB reserve or backup retention, no referenced/PPI assets. New READ_ONLY38993434968 confirmed a72d609a image,1205355105B, only porota-predeploy-v2:7890f70b50b7148dd27be3ef7c05e9eb4d6a1eea,0references/0externalaliases. PR611 adds standalone candidate-only preclean, strict all-container inventory and runtime lifecycle/PAPER0 invariants.49localPASS; native cleanup/space still pending, no reserve relaxation. 611 cleanup preserved image due anyRepoDigest;38994353621 identified only canonical same-repository digest, no external aliases/containers.612 permits this exact owned spelling; disk remains blocking until measured safe removal.",
       "test": "tests/test_rc6_disk_materialization_reserve.py",
       "status": "FIX_PRESENT_TEST_PENDING_NATIVE",
       "code_state": "EN_GITHUB",
@@ -654,7 +654,7 @@
       "path": "scripts/rc6_market_watch_readonly.py",
       "symbol": "instrument_inventory_host",
       "classification": "OBSERVED_BLOCKER",
-      "detail": "Observed inventory38990927608 OperationalError, then38991326475 typed SQLITE_DEADLINE_INTERRUPTED atPACKED_METADATA/2110.8ms, SQLite3.45.1, progress deadline true. No partial records or entry authority. Query plan RCA pending; do not inflate2s budget or claim full inventory observed. New structural plan probe621ed pending. First sequential-catalog optimization did NOT resolve native deadline:38993434968/artifact12085863183/2030.866ms. Plan still SEARCH I,T per catalogue row. New f0509a packs3 independent relations under SAME2s read-only snapshot and joins exact5field identities after close; sentinel+8MiBaggregate+duplicatesfailclosed preserved. Structural join-fanout adversary1FAIL old/66PASS new; native performance remains unproven. No claim the independent scans solve a cold-storage bottleneck before measured.",
+      "detail": "Observed inventory38990927608 OperationalError, then38991326475 typed SQLITE_DEADLINE_INTERRUPTED atPACKED_METADATA/2110.8ms, SQLite3.45.1, progress deadline true. No partial records or entry authority. Query plan RCA pending; do not inflate2s budget or claim full inventory observed. New structural plan probe621ed pending. First sequential-catalog optimization did NOT resolve native deadline:38993434968/artifact12085863183/2030.866ms. Plan still SEARCH I,T per catalogue row. New f0509a packs3 independent relations under SAME2s read-only snapshot and joins exact5field identities after close; sentinel+8MiBaggregate+duplicatesfailclosed preserved. Structural join-fanout adversary1FAIL old/66PASS new; native performance remains unproven. No claim the independent scans solve a cold-storage bottleneck before measured. 38993827055 proved2010.122ms in standalone catalog scan, no join plan. Missing covering projection for9publicfields confirmed;612 adds index during cold schema preparation, monitor5324433 explicitly verifies covering EXPLAIN before use.2causalFAILcatalog/2causalFAILmonitor,56product+69monitorlocalPASS; native proof still pending. Do not substitute structural local proof for host latency.",
       "test": "tests/test_rc6_market_watch_readonly.py",
       "status": "FIX_PRESENT_TEST_PENDING_NATIVE",
       "code_state": "EN_GITHUB",
@@ -677,6 +677,21 @@
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "No closure without measured native evidence for this predicate; external limits remain explicit."
+    },
+    {
+      "id": "DEPLOY-DIGEST-OVERPROTECTION",
+      "capability": "PRETRANSFER_IMAGE_OWNERSHIP",
+      "path": "scripts/rc6_pretransfer_image_cleanup.py",
+      "symbol": "eligibility",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "611 protected all RepoDigests; target Docker load retains same-repository digest even for unused frozen candidate. Native38994353621 confirms only porota-predeploy-v2@sha256:a72d...,0refs/0external. Fix permits canonicalSHA256 only paired with same repository candidate tags; external/unpaired/stable/unknown/refs/races still block. Local1FAILbefore/56PASSafter; no forced removal or reserve change.",
+      "test": "tests/test_rc6_pretransfer_image_cleanup.py",
+      "status": "FIX_PRESENT_TEST_PENDING_NATIVE",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_NATIVE_PRETRANSFER_BLOCKER",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
     }
   ],
   "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
@@ -704,9 +719,9 @@
     "skipped": 0,
     "junit_sha256": "1cca94530e343a508407a63552464c9dc304e87787978c6236a27cf85fdd4840"
   },
-  "deploy_merge_sha": "8f7406e2652dad7315ef496400444d4109a81013",
-  "deploy_run": 38991391810,
-  "current_productive_base": "8f7406e2652dad7315ef496400444d4109a81013",
+  "deploy_merge_sha": "559151ff63e0a32726b8f8cc80a4c2630618d732",
+  "deploy_run": 38994065356,
+  "current_productive_base": "559151ff63e0a32726b8f8cc80a4c2630618d732",
   "deploy_attempts": [
     {
       "run": 38981124467,
@@ -821,6 +836,29 @@
       "real_orders_sent": 0,
       "runtime_product_source": "bdac26d STILL_DEPLOYED_VALIDATION_PENDING; source ENV absent until successor installed",
       "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38991391810"
+    },
+    {
+      "schema": "rc6.deploy-attempt-receipt.v1",
+      "run_id": 38994065356,
+      "job_id": 117282555541,
+      "conclusion": "FAILURE",
+      "stage": "PRETRANSFER_DIGEST_OVERPROTECTION",
+      "candidate_sha": "65a0bf3173ac05b272e0bdb21523a20725764a70",
+      "deploy_sha": "559151ff63e0a32726b8f8cc80a4c2630618d732",
+      "installation_started": false,
+      "transfer": "SKIPPED",
+      "promotion": "SKIPPED",
+      "stress": "SKIPPED",
+      "available_after_preclean_bytes": 4755406848,
+      "required_pretransfer_bytes": 4915410216,
+      "removed_tags": [],
+      "runtime_unchanged": true,
+      "host_failure_cleanup": {
+        "status": "GREEN",
+        "space_recovered": 0,
+        "staging_removed": true
+      },
+      "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38994065356"
     }
   ],
   "predeploy_certificates": [
@@ -919,6 +957,49 @@
         }
       ],
       "not_a_droplet_acceptance_or_stress_result": true
+    },
+    {
+      "schema": "rc6.frozen-artifact-independent-verification.v2",
+      "status": "GREEN",
+      "artifact_id": 12086038677,
+      "predeploy_run": 38993352249,
+      "zip_bytes": 414223717,
+      "zip_sha256": "9a4a5b3d5fd7b218c709d94e8ce64817bdba6ecee0bd1cd10d0be0e3ec7b3275",
+      "candidate_sha": "65a0bf3173ac05b272e0bdb21523a20725764a70",
+      "candidate_tree_sha": "9313e330f3052a4abc0ca9fa270d30c92539251f",
+      "image_id": "sha256:af3547bc27bc11db8939ae8fd625ead6e89ffdb8cfc23e1193dbb7fe51ae5a92",
+      "image_size_bytes": 1174967828,
+      "image_tar_sha256": "532e7e74dffb77c68a98336031d971fe1462fa708cf4d4db3c9704f5ead44526",
+      "bundle_sha256": "9d2b860c2e57d1fd06ca9dff83d427174857b877568ae630f8fb334838c0e33b",
+      "bundle_hashes_verified": 507,
+      "all_bundle_sources_equal_checkout": true,
+      "image_config_blob_sha256_verified": "af3547bc27bc11db8939ae8fd625ead6e89ffdb8cfc23e1193dbb7fe51ae5a92",
+      "source_environment_observed": {
+        "POROTA_BUILD_SHA": "65a0bf3173ac05b272e0bdb21523a20725764a70",
+        "POROTA_CANDIDATE_TREE_SHA": "9313e330f3052a4abc0ca9fa270d30c92539251f"
+      },
+      "tests": {
+        "discovered": 3784,
+        "errors": 0,
+        "exclusions": [
+          "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+        ],
+        "executed": 3784,
+        "failures": 0,
+        "pytest_exit_code": 0,
+        "schema_version": 1,
+        "scope": "repository-root automatic pytest discovery",
+        "skipped": 0,
+        "status": "GREEN",
+        "xfail": 0
+      },
+      "native_privilege_properties": [
+        {
+          "name": "RC6_PRECLEAN_PRIVILEGE_BOUNDARY",
+          "value": "OS_DIFFERENT_UID"
+        }
+      ],
+      "not_a_droplet_acceptance_or_stress_result": true
     }
   ],
   "drain_causal_tests": {
@@ -993,7 +1074,7 @@
     "oom_flag_after_recovery": false,
     "whole_workflow_conclusion": "FAILURE_EXPECTED_DEPLOY_SHA_MISMATCH_AFTER_REJECTED_PROMOTION"
   },
-  "current_deploy_stage": "PRETRANSFER_CAPACITY_AFTER_SAFE_PRECLEAN",
+  "current_deploy_stage": "PRETRANSFER_DIGEST_OVERPROTECTION",
   "external_backup_review": {
     "droplet_id": 594077619,
     "size": "s-1vcpu-1gb",
@@ -1040,46 +1121,34 @@
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
   },
   "next_candidate": {
-    "state": "EN_GITHUB_PREDEPLOY_IN_PROGRESS",
-    "pr": 611,
-    "sha": "65a0bf3173ac05b272e0bdb21523a20725764a70",
-    "tree": "9313e330f3052a4abc0ca9fa270d30c92539251f",
-    "predeploy_run": 38993352249
+    "pr": 612,
+    "sha": "19c26d2eba13d5855f653dff67605d11c518996b",
+    "tree": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6",
+    "predeploy_run": 38994512568,
+    "status": "EN_GITHUB_PREDEPLOY_IN_PROGRESS"
   },
   "latest_deploy_result": {
     "schema": "rc6.deploy-attempt-receipt.v1",
-    "run_id": 38991391810,
-    "job_id": 117274341112,
+    "run_id": 38994065356,
+    "job_id": 117282555541,
     "conclusion": "FAILURE",
-    "stage": "PRETRANSFER_CAPACITY_AFTER_SAFE_PRECLEAN",
-    "candidate_sha": "4e2bddc2c1c15ed0333301c4f462f790852a3a17",
-    "deploy_sha": "8f7406e2652dad7315ef496400444d4109a81013",
+    "stage": "PRETRANSFER_DIGEST_OVERPROTECTION",
+    "candidate_sha": "65a0bf3173ac05b272e0bdb21523a20725764a70",
+    "deploy_sha": "559151ff63e0a32726b8f8cc80a4c2630618d732",
     "installation_started": false,
     "transfer": "SKIPPED",
     "promotion": "SKIPPED",
     "stress": "SKIPPED",
-    "preclean_before_bytes": 1704435712,
-    "housekeeping_reclaimed_bytes": 840634368,
-    "critical_reconciled": true,
-    "old_critical_image_removed": "sha256:dd2e956fc96bc0483f15d8d69c26ab736a51825e322d7e58c434c053b2062ebd",
-    "old_image_container_references": 0,
-    "observed_current_image": "sha256:abf744a305a847ed922e7df2474f6d991f23d9abfb0a584b93930216c117dd54",
-    "available_after_preclean_bytes": 4760752128,
-    "required_pretransfer_bytes": 4915107790,
-    "deficit_bytes": 154355662,
-    "inode_free_percent": 89.563115,
+    "available_after_preclean_bytes": 4755406848,
+    "required_pretransfer_bytes": 4915410216,
+    "removed_tags": [],
+    "runtime_unchanged": true,
     "host_failure_cleanup": {
       "status": "GREEN",
       "space_recovered": 0,
-      "staging_removed": true,
-      "errors": []
+      "staging_removed": true
     },
-    "runner_cleanup": "GREEN",
-    "ppi_watch": "UNCHANGED",
-    "paper_mode": "PRODUCTION_PAPER",
-    "real_orders_sent": 0,
-    "runtime_product_source": "bdac26d STILL_DEPLOYED_VALIDATION_PENDING; source ENV absent until successor installed",
-    "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38991391810"
+    "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38994065356"
   },
   "failed_predeploy_608": {
     "run": 38988131821,
@@ -1098,30 +1167,30 @@
   "last_certified_candidate": {
     "schema": "rc6.frozen-artifact-independent-verification.v2",
     "status": "GREEN",
-    "artifact_id": 12084844028,
-    "predeploy_run": 38990671984,
-    "zip_bytes": 414179553,
-    "zip_sha256": "d628220f3fc6b1104fb56d303cb832716f934a33d23463190443c6c52614ab56",
-    "candidate_sha": "4e2bddc2c1c15ed0333301c4f462f790852a3a17",
-    "candidate_tree_sha": "8d23feb520ac7a983bb4091a02b7a5e479885681",
-    "image_id": "sha256:34bf2907f2209d82cf132362fad30a9a4a44c70639ee38dfaa65d5548e2378f7",
-    "image_size_bytes": 1174838978,
-    "image_tar_sha256": "ac7f6432f14c4161e74e6b128a7e0e8ba2963f0b371c10ea442f1208f4219dd9",
-    "bundle_sha256": "332971729c1525a3fd87fb5d736bb6354395d4236dcda0acf1c90ef97f58f7c2",
-    "bundle_hashes_verified": 506,
+    "artifact_id": 12086038677,
+    "predeploy_run": 38993352249,
+    "zip_bytes": 414223717,
+    "zip_sha256": "9a4a5b3d5fd7b218c709d94e8ce64817bdba6ecee0bd1cd10d0be0e3ec7b3275",
+    "candidate_sha": "65a0bf3173ac05b272e0bdb21523a20725764a70",
+    "candidate_tree_sha": "9313e330f3052a4abc0ca9fa270d30c92539251f",
+    "image_id": "sha256:af3547bc27bc11db8939ae8fd625ead6e89ffdb8cfc23e1193dbb7fe51ae5a92",
+    "image_size_bytes": 1174967828,
+    "image_tar_sha256": "532e7e74dffb77c68a98336031d971fe1462fa708cf4d4db3c9704f5ead44526",
+    "bundle_sha256": "9d2b860c2e57d1fd06ca9dff83d427174857b877568ae630f8fb334838c0e33b",
+    "bundle_hashes_verified": 507,
     "all_bundle_sources_equal_checkout": true,
-    "image_config_blob_sha256_verified": "34bf2907f2209d82cf132362fad30a9a4a44c70639ee38dfaa65d5548e2378f7",
+    "image_config_blob_sha256_verified": "af3547bc27bc11db8939ae8fd625ead6e89ffdb8cfc23e1193dbb7fe51ae5a92",
     "source_environment_observed": {
-      "POROTA_BUILD_SHA": "4e2bddc2c1c15ed0333301c4f462f790852a3a17",
-      "POROTA_CANDIDATE_TREE_SHA": "8d23feb520ac7a983bb4091a02b7a5e479885681"
+      "POROTA_BUILD_SHA": "65a0bf3173ac05b272e0bdb21523a20725764a70",
+      "POROTA_CANDIDATE_TREE_SHA": "9313e330f3052a4abc0ca9fa270d30c92539251f"
     },
     "tests": {
-      "discovered": 3764,
+      "discovered": 3784,
       "errors": 0,
       "exclusions": [
         "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
       ],
-      "executed": 3764,
+      "executed": 3784,
       "failures": 0,
       "pytest_exit_code": 0,
       "schema_version": 1,
@@ -1140,9 +1209,9 @@
   },
   "pending_monitor": {
     "pr": 607,
-    "sha": "f0509a3aa2306b3223da2441e2f54a21d03b6b0d",
-    "tree": "9d8352e29cb61611e9371b9d812df7236a799716",
-    "local_contracts": 66,
+    "sha": "53244334e62ee586535ea4ce3afba3d16a21efa9",
+    "tree": "14178dba7026dfc03a427327345c033f42bec642",
+    "local_contracts": 69,
     "ci_success": [
       38991712550,
       38991712552,
@@ -1150,8 +1219,8 @@
       38991760360
     ],
     "current_probe_run": 38991867432,
-    "merge": "HELD_UNTIL_RUNTIME_VALIDATED_AND_STRESS_RESTORED",
-    "inventory_status": "NATIVE_FIRST_OPTIMIZATION_FAILED_2030ms_SUCCESSOR_PENDING",
+    "merge": "HELD_UNTIL_RUNTIME_ACCEPTANCE_STRESS_RESTORE",
+    "inventory_status": "NO_NATIVE_COVERING_INDEX_YET_EXPECTS_PRODUCT612",
     "image_inventory_status": "PROBE_PENDING"
   },
   "superseded_without_deploy_609": {

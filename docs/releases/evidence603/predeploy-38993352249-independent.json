@@ -1,0 +1,43 @@
+{
+  "schema": "rc6.frozen-artifact-independent-verification.v2",
+  "status": "GREEN",
+  "artifact_id": 12086038677,
+  "predeploy_run": 38993352249,
+  "zip_bytes": 414223717,
+  "zip_sha256": "9a4a5b3d5fd7b218c709d94e8ce64817bdba6ecee0bd1cd10d0be0e3ec7b3275",
+  "candidate_sha": "65a0bf3173ac05b272e0bdb21523a20725764a70",
+  "candidate_tree_sha": "9313e330f3052a4abc0ca9fa270d30c92539251f",
+  "image_id": "sha256:af3547bc27bc11db8939ae8fd625ead6e89ffdb8cfc23e1193dbb7fe51ae5a92",
+  "image_size_bytes": 1174967828,
+  "image_tar_sha256": "532e7e74dffb77c68a98336031d971fe1462fa708cf4d4db3c9704f5ead44526",
+  "bundle_sha256": "9d2b860c2e57d1fd06ca9dff83d427174857b877568ae630f8fb334838c0e33b",
+  "bundle_hashes_verified": 507,
+  "all_bundle_sources_equal_checkout": true,
+  "image_config_blob_sha256_verified": "af3547bc27bc11db8939ae8fd625ead6e89ffdb8cfc23e1193dbb7fe51ae5a92",
+  "source_environment_observed": {
+    "POROTA_BUILD_SHA": "65a0bf3173ac05b272e0bdb21523a20725764a70",
+    "POROTA_CANDIDATE_TREE_SHA": "9313e330f3052a4abc0ca9fa270d30c92539251f"
+  },
+  "tests": {
+    "discovered": 3784,
+    "errors": 0,
+    "exclusions": [
+      "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+    ],
+    "executed": 3784,
+    "failures": 0,
+    "pytest_exit_code": 0,
+    "schema_version": 1,
+    "scope": "repository-root automatic pytest discovery",
+    "skipped": 0,
+    "status": "GREEN",
+    "xfail": 0
+  },
+  "native_privilege_properties": [
+    {
+      "name": "RC6_PRECLEAN_PRIVILEGE_BOUNDARY",
+      "value": "OS_DIFFERENT_UID"
+    }
+  ],
+  "not_a_droplet_acceptance_or_stress_result": true
+}

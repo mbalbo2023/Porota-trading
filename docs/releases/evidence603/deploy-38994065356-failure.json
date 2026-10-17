@@ -1,0 +1,23 @@
+{
+  "schema": "rc6.deploy-attempt-receipt.v1",
+  "run_id": 38994065356,
+  "job_id": 117282555541,
+  "conclusion": "FAILURE",
+  "stage": "PRETRANSFER_DIGEST_OVERPROTECTION",
+  "candidate_sha": "65a0bf3173ac05b272e0bdb21523a20725764a70",
+  "deploy_sha": "559151ff63e0a32726b8f8cc80a4c2630618d732",
+  "installation_started": false,
+  "transfer": "SKIPPED",
+  "promotion": "SKIPPED",
+  "stress": "SKIPPED",
+  "available_after_preclean_bytes": 4755406848,
+  "required_pretransfer_bytes": 4915410216,
+  "removed_tags": [],
+  "runtime_unchanged": true,
+  "host_failure_cleanup": {
+    "status": "GREEN",
+    "space_recovered": 0,
+    "staging_removed": true
+  },
+  "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38994065356"
+}
