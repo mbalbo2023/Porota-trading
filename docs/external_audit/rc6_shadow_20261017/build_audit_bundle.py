@@ -52,7 +52,7 @@ NAME_EXCLUDE = re.compile(
 )
 EXT_EXCLUDE = (".pem", ".key", ".p12", ".pfx", ".db", ".sqlite", ".sqlite3", ".wal", ".shm", ".pyc", ".log")
 SENSITIVE_LINE = re.compile(
-    r"(?im)^\s*(?:[A-Z0-9_]*(?:TOKEN|PASSWORD|SECRET|API_KEY|PRIVATE_KEY)[A-Z0-9_]*)"
+    r"(?m)^\s*(?:[A-Z0-9_]*(?:TOKEN|PASSWORD|SECRET|API_KEY|PRIVATE_KEY)[A-Z0-9_]*)"
     r"\s*=\s*[^\s#][^\n]*$"
 )
 
