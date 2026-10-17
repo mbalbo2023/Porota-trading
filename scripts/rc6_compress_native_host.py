@@ -112,7 +112,17 @@ def run(args):
     try:
         fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
         report["phase"]="ADMISSION"
-        require(available()>=MEMORY+128*1024**2 and shutil.disk_usage(ROOT).free>=RESERVE,"RCA_RESOURCE_ADMISSION_BLOCKED")
+        admitted_samples=[]
+        for attempt in range(31):
+            memory=available();disk=shutil.disk_usage(ROOT).free
+            admitted_samples.append(memory)
+            report["admission"]={"memory_available":memory,"required_memory":MEMORY+128*1024**2,
+                "disk_free":disk,"required_disk":RESERVE,"wait_seconds":attempt*2,
+                "minimum_memory_seen":min(admitted_samples),"maximum_memory_seen":max(admitted_samples)}
+            require(disk>=RESERVE,"RCA_DISK_ADMISSION_BLOCKED")
+            if memory>=MEMORY+128*1024**2:break
+            if attempt<30:time.sleep(2)
+        else:raise ValueError("RCA_MEMORY_ADMISSION_BLOCKED")
         db=DATA/"paper_v17/observer_v17.db"
         admitted=database_state(db)
         report["heartbeat_before"]=admitted["heartbeat_at"]
