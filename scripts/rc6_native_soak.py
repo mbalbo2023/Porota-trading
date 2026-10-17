@@ -16,6 +16,7 @@ from scripts.rc6_deploy_generation_gate import collect
 OWNED=('porota_production_observer','porota_production_dashboard')
 RAM_FLOOR=128*1024**2
 DISK_FLOOR=2*1024**3
+SOAK_TIMEOUT_SECONDS=1200
 
 def owned_state():
     p=subprocess.run(['docker','inspect',*OWNED],capture_output=True,text=True,timeout=8,check=True)
@@ -68,7 +69,7 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--expected-sha',required=True)
     p.add_argument('--expected-tree',required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--root',type=Path,default=Path('/opt/porota-trading'))
-    p.add_argument('--timeout',type=int,default=1200);args=p.parse_args()
+    p.add_argument('--timeout',type=int,default=SOAK_TIMEOUT_SECONDS);args=p.parse_args()
     root=args.root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
     baseline=owned_state()
     if len(baseline)!=2 or len({r['image'] for r in baseline})!=1:

@@ -100,9 +100,20 @@ def test_late_verification_uses_retained_stable_image_tag():
 
 
 def test_contract_runner_uses_host_timeout_and_python_entrypoint():
+    import yaml
+    from scripts.rc6_native_soak import SOAK_TIMEOUT_SECONDS
     source = _deploy()
     assert 'sudo -n timeout --signal=TERM --kill-after=60 3300 sudo -n docker run' in source
-    assert 'timeout-minutes: 110' in source
+    job = yaml.safe_load(source)['jobs']['promote']
+    stress = next(step for step in job['steps'] if step.get('id') == 'stress')
+    restored = next(step for step in job['steps'] if step.get('name') ==
+        'Independent sustained native acceptance after stress restoration')
+    # The administrative parent deadline must cover the unchanged55-minute
+    # contract child, native soak, stress and the independent restore soak.
+    # A literal former110-minute setting cannot express that dependency.
+    mandatory_seconds = 3300 + SOAK_TIMEOUT_SECONDS + 60 * (
+        stress['timeout-minutes'] + restored['timeout-minutes'])
+    assert job['timeout-minutes'] * 60 > mandatory_seconds
     assert '--entrypoint python "$STABLE_IMAGE" ck_contract_evidence_runner_hf6.py' in source
     assert '--entrypoint timeout' not in source
 
