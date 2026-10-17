@@ -1438,12 +1438,16 @@ def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_sec
             specifications.append(('INTRADAY', 'ppi_intraday_contract_state',
                 ['symbol', 'asset_class', 'market', 'currency', 'settlement',
                  'state', 'last_source_at', 'checked_at']))
+        metadata_index = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_catalog_public_metadata_v1'").fetchone() is not None
         packed_relations = {}
         total_bytes = 0
         for label, table, projection in specifications:
+            source_hint = (' INDEXED BY idx_catalog_public_metadata_v1'
+                           if label == 'CATALOG' and metadata_index else ' NOT INDEXED')
             sql = ('SELECT COUNT(*),json_group_array(json_array(' + ','.join(projection) +
                    ')) FROM (SELECT ' + ','.join(projection) + ' FROM ' + table +
-                   ' NOT INDEXED LIMIT ?)')
+                   source_hint + ' LIMIT ?)')
             stage = 'QUERY_PLAN'
             for item in connection.execute('EXPLAIN QUERY PLAN ' + sql, (row_limit + 1,)):
                 detail = str(item[3]).upper(); words = detail.split()
@@ -1454,6 +1458,8 @@ def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_sec
                              'target':target,'covering_index':'COVERING INDEX' in detail,
                              'automatic_index':'AUTOMATIC' in detail,'temporary_btree':'TEMP B-TREE' in detail})
                 if len(plan)>24:raise ValueError('INVENTORY_QUERY_PLAN_UNBOUNDED')
+            if label == 'CATALOG' and metadata_index and not any(item['covering_index'] for item in plan):
+                raise ValueError('INVENTORY_INDEX_CONTRACT_MISMATCH')
             stage = 'PACKED_METADATA'
             count, packed = connection.execute(sql, (row_limit + 1,)).fetchone()
             if count > row_limit:

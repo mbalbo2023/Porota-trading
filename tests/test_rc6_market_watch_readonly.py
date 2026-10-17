@@ -958,6 +958,24 @@ class InstrumentInventoryContracts(unittest.TestCase):
         self.assertTrue(all('NOT INDEXED LIMIT ?' in sql for sql in queries))
         self.assertEqual({row[3]:row[9] for row in value['records']},{'ARS':1,'USD':0})
 
+    def test_metadata_covering_index_avoids_large_catalog_payload(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('CREATE INDEX idx_catalog_public_metadata_v1 ON financial_instrument_catalog(instrument_type,market,currency,ticker,settlement,status,capability,settlement_source,last_seen_at)')
+            c.execute("UPDATE financial_instrument_catalog SET metadata_json=?", ('PRIVATE_LARGE_'*50000,))
+        value=monitor.instrument_inventory_host(self.root,at=NOW)
+        self.assertTrue(value['complete_inventory'])
+        self.assertTrue(any(row['covering_index'] and row['target']=='FINANCIAL_INSTRUMENT_CATALOG' for row in value['diagnostic']['query_plan']))
+        self.assertNotIn('PRIVATE_',json.dumps(value))
+        self.assertEqual({row[3]:row[9] for row in value['records']},{'ARS':1,'USD':0})
+
+    def test_wrong_named_index_is_not_mistaken_for_covering_contract(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('CREATE INDEX idx_catalog_public_metadata_v1 ON financial_instrument_catalog(ticker)')
+        value=monitor.instrument_inventory_host(self.root,at=NOW)
+        self.assertFalse(value['complete_inventory'])
+        self.assertNotIn('records',value)
+        self.assertEqual(value['diagnostic']['stage'],'QUERY_PLAN')
+
     def test_duplicate_optional_identity_outside_catalog_still_fails_closed(self):
         with sqlite3.connect(self.db) as c:
             c.execute("INSERT INTO ppi_intraday_contract_state VALUES('OTHER','BONOS','BYMA','ARS','CI','READY',NULL,NULL)")
