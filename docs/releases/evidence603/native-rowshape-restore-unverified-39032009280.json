@@ -1,0 +1,274 @@
+{
+  "admission": {
+    "disk_free": 4697690112,
+    "maximum_memory_seen": 568725504,
+    "memory_available": 568725504,
+    "minimum_memory_seen": 568725504,
+    "required_disk": 2147483648,
+    "required_memory": 201326592,
+    "wait_seconds": 0
+  },
+  "candidate_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+  "committed_cardinality": {
+    "catalog_full_count": 14611,
+    "catalog_ready_count": 9902
+  },
+  "diagnostic_container_cleanup": "GREEN",
+  "finished_at": "2026-10-17T12:25:19.105046+00:00",
+  "full_session_stress": false,
+  "heartbeat_before": "2026-10-17T12:19:59.070186+00:00",
+  "host_cpu_metadata": {
+    "aggregate_proc_stat": [
+      95892629,
+      4427211,
+      34582280,
+      269020765,
+      60308053,
+      0,
+      277276,
+      7819961
+    ],
+    "loadavg": [
+      2.553,
+      2.672,
+      2.542
+    ],
+    "logical_cpus": 1
+  },
+  "idle_first_observation": {
+    "age_since_tick_end_seconds": 41.515,
+    "as_of": "2026-10-17T12:18:02.046436+00:00",
+    "elapsed_seconds": 0,
+    "poll_seconds": 30,
+    "source_age_seconds": 118.673,
+    "sql": {
+      "budget_ms": 2000,
+      "sql_elapsed_ms": 142.142,
+      "transform_elapsed_ms": 64.395
+    },
+    "status": "SHADOW_OBSERVING",
+    "tick_cpu_seconds": 41.133,
+    "tick_seconds": 77.158
+  },
+  "idle_observations": [
+    {
+      "age_since_tick_end_seconds": 98.565,
+      "as_of": "2026-10-17T12:18:02.046436+00:00",
+      "elapsed_seconds": 57,
+      "poll_seconds": 30,
+      "source_age_seconds": 175.723,
+      "sql": {
+        "budget_ms": 2000,
+        "sql_elapsed_ms": 142.142,
+        "transform_elapsed_ms": 64.395
+      },
+      "status": "SHADOW_OBSERVING",
+      "tick_cpu_seconds": 41.133,
+      "tick_seconds": 77.158
+    },
+    {
+      "age_since_tick_end_seconds": 101.565,
+      "as_of": "2026-10-17T12:18:02.046436+00:00",
+      "elapsed_seconds": 60,
+      "poll_seconds": 30,
+      "source_age_seconds": 178.723,
+      "sql": {
+        "budget_ms": 2000,
+        "sql_elapsed_ms": 142.142,
+        "transform_elapsed_ms": 64.395
+      },
+      "status": "SHADOW_OBSERVING",
+      "tick_cpu_seconds": 41.133,
+      "tick_seconds": 77.158
+    },
+    {
+      "age_since_tick_end_seconds": 104.567,
+      "as_of": "2026-10-17T12:18:02.046436+00:00",
+      "elapsed_seconds": 63,
+      "poll_seconds": 30,
+      "source_age_seconds": 181.725,
+      "sql": {
+        "budget_ms": 2000,
+        "sql_elapsed_ms": 142.142,
+        "transform_elapsed_ms": 64.395
+      },
+      "status": "SHADOW_OBSERVING",
+      "tick_cpu_seconds": 41.133,
+      "tick_seconds": 77.158
+    },
+    {
+      "age_since_tick_end_seconds": 107.569,
+      "as_of": "2026-10-17T12:18:02.046436+00:00",
+      "elapsed_seconds": 66,
+      "poll_seconds": 30,
+      "source_age_seconds": 184.727,
+      "sql": {
+        "budget_ms": 2000,
+        "sql_elapsed_ms": 142.142,
+        "transform_elapsed_ms": 64.395
+      },
+      "status": "SHADOW_OBSERVING",
+      "tick_cpu_seconds": 41.133,
+      "tick_seconds": 77.158
+    },
+    {
+      "age_since_tick_end_seconds": 110.571,
+      "as_of": "2026-10-17T12:18:02.046436+00:00",
+      "elapsed_seconds": 69,
+      "poll_seconds": 30,
+      "source_age_seconds": 187.729,
+      "sql": {
+        "budget_ms": 2000,
+        "sql_elapsed_ms": 142.142,
+        "transform_elapsed_ms": 64.395
+      },
+      "status": "SHADOW_OBSERVING",
+      "tick_cpu_seconds": 41.133,
+      "tick_seconds": 77.158
+    },
+    {
+      "age_since_tick_end_seconds": 1.731,
+      "as_of": "2026-10-17T12:19:49.721319+00:00",
+      "elapsed_seconds": 72,
+      "poll_seconds": 30,
+      "source_age_seconds": 83.055,
+      "sql": {
+        "budget_ms": 2000,
+        "sql_elapsed_ms": 163.253,
+        "transform_elapsed_ms": 72.574
+      },
+      "status": "SHADOW_OBSERVING",
+      "tick_cpu_seconds": 43.779,
+      "tick_seconds": 81.324
+    }
+  ],
+  "idle_window_observed": true,
+  "image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+  "memory_limit_bytes": 67108864,
+  "metrics": {
+    "context": "READ_ONLY_NATIVE_ROW_STRUCTURE_RCA",
+    "full_session_stress": false,
+    "native_acceptance": false,
+    "network": "NONE",
+    "nice": 19,
+    "normalized_frozen_arrays_equal": true,
+    "parser_backend": "yajl2_c",
+    "parser_version": "3.4.0.post0",
+    "payload_exported": false,
+    "production_input_read_only": true,
+    "provider_requests": 0,
+    "raw_bytes": 254744798,
+    "raw_sha256": "612896f417c62088320c5aeb84427f44d7b0d19f6a004e5c9dcc0384f4ef8efa",
+    "raw_source_hash_verified_each_pass": true,
+    "real_orders_sent": 0,
+    "rows": [
+      {
+        "canonical_array_bytes": 21580831,
+        "canonical_array_sha256": "4c77c3871bf01f290364cef896735f43b42a0a99900a28e94b6749514b087812",
+        "charged_cache_upper_bound_bytes": 362530,
+        "compressed_4m_upper_bound_fit": true,
+        "compressed_content_bytes": 329482,
+        "count": 9910,
+        "cpu_seconds": 9.9849,
+        "engine": "SCALPING",
+        "max_row_bytes": 2722,
+        "peak_rss_kib": 24240,
+        "raw_32m_fit": true,
+        "wall_seconds": 54.7995
+      },
+      {
+        "canonical_array_bytes": 21580831,
+        "canonical_array_sha256": "4c77c3871bf01f290364cef896735f43b42a0a99900a28e94b6749514b087812",
+        "charged_cache_upper_bound_bytes": 362530,
+        "compressed_4m_upper_bound_fit": true,
+        "compressed_content_bytes": 329482,
+        "count": 9910,
+        "cpu_seconds": 9.6791,
+        "engine": "EQUITY_SPOT",
+        "max_row_bytes": 2722,
+        "peak_rss_kib": 24240,
+        "raw_32m_fit": true,
+        "wall_seconds": 40.9972
+      }
+    ],
+    "runtime_identity_sharing": "NOT_OBSERVABLE_FROM_SERIALIZED_JSON",
+    "schema": "rc6.bounded-native-row-shape-rca.v1",
+    "status": "GREEN",
+    "threads": 1
+  },
+  "minimum_disk_free_bytes": 4697567232,
+  "minimum_host_memory_available": 517451776,
+  "nano_cpus": 250000000,
+  "native_acceptance": false,
+  "network": "none",
+  "oom_killed": false,
+  "owned_resource_configuration": {
+    "porota_production_dashboard": {
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "Memory": 0,
+      "NanoCpus": 0
+    },
+    "porota_production_observer": {
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "Memory": 0,
+      "NanoCpus": 0
+    }
+  },
+  "payload_exported": false,
+  "phase": "PROBE",
+  "planned_closed_quiesce": true,
+  "ppi_watch_accessed": false,
+  "pre_quiesce_resources": {
+    "disk_free": 4667088896,
+    "memory_available": 131563520
+  },
+  "private_file_size_metadata": {
+    "checkpoint": {
+      "compressed_bytes": 4192354,
+      "gzip_isize_mod2_32": 27107455
+    },
+    "full_audit": {
+      "compressed_bytes": 5667004,
+      "gzip_isize_mod2_32": 254744798
+    },
+    "selection": {
+      "compressed_bytes": 2972,
+      "gzip_isize_mod2_32": 8218
+    }
+  },
+  "process_exit_code": 0,
+  "production_input_files": 1,
+  "production_input_read_only": true,
+  "purpose": "FROZEN_ROW_CACHE_ELIGIBILITY_METADATA_ONLY",
+  "resource_samples": 50,
+  "restore_failures": [
+    "RCA_RESTORE_LIVENESS_OR_HEALTH_UNVERIFIED"
+  ],
+  "run_key": "39032009280-1",
+  "runtime_restore": "RED",
+  "schema": "rc6.readonly-row-shape-host.v1",
+  "services_restarted": true,
+  "source": {
+    "compressed_bytes": 5667004,
+    "generation_id": "55cb2429a7a60ac6873fc42545333268d2fe2454281c1892e03453c16ef0782f",
+    "manifest_sha256": "8fd3f479a8077ac57636c7d3df7af4b0b49487c1c5a37e508be8db2425fd5feb",
+    "raw_bytes": 254744798,
+    "raw_sha256": "612896f417c62088320c5aeb84427f44d7b0d19f6a004e5c9dcc0384f4ef8efa"
+  },
+  "started_at": "2026-10-17T12:19:59.652857+00:00",
+  "status": "RED",
+  "stop_evidence": {
+    "porota_production_dashboard": {
+      "classification": "CLEAN_EXIT",
+      "exit_code": 0,
+      "oom_killed": false
+    },
+    "porota_production_observer": {
+      "classification": "CLEAN_EXIT",
+      "exit_code": 0,
+      "oom_killed": false
+    }
+  }
+}

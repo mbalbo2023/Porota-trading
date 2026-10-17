@@ -1,0 +1,102 @@
+{
+  "native_acceptance": false,
+  "notification_mode": "read_only",
+  "original_rca_restore": "RED_UNVERIFIED_WITHIN_120_SECONDS",
+  "payload_exported": false,
+  "ppi_watch_accessed": false,
+  "provider_requests": 0,
+  "read_only": true,
+  "samples": [
+    {
+      "captured_at": "2026-10-17T12:37:11.991003+00:00",
+      "containers": {
+        "porota_production_dashboard": {
+          "id_sha256": "deee5816d77b9bbfcb1fb5965400fa0060d9a1111622e7ccce58579d35b86731",
+          "identity_matches": true,
+          "image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+          "image_matches": true,
+          "lifecycle": {
+            "ExitCode": 0,
+            "FinishedAt": "2026-10-17T12:21:27.491759536Z",
+            "OOMKilled": false,
+            "StartedAt": "2026-10-17T12:23:12.949933008Z",
+            "Status": "running"
+          },
+          "restart_count": 0
+        },
+        "porota_production_observer": {
+          "id_sha256": "dccef189dd8049b5a722a316954c7c2dfbe2316559dd7dd2f66bb4fb6b95ff57",
+          "identity_matches": true,
+          "image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+          "image_matches": true,
+          "lifecycle": {
+            "ExitCode": 0,
+            "FinishedAt": "2026-10-17T12:21:21.623031833Z",
+            "OOMKilled": false,
+            "StartedAt": "2026-10-17T12:23:12.074931865Z",
+            "Status": "running"
+          },
+          "restart_count": 0
+        }
+      },
+      "failures": [],
+      "health_http": 200,
+      "observer": {
+        "heartbeat_advanced_since_rca": true,
+        "heartbeat_age_seconds": 5.819,
+        "heartbeat_at": "2026-10-17T12:37:06.171926+00:00",
+        "mode": "PRODUCTION_PAPER",
+        "process_state": "WAITING_MARKET",
+        "real_orders_sent": 0,
+        "session_state": "MARKET_CLOSED"
+      }
+    },
+    {
+      "captured_at": "2026-10-17T12:37:15.746971+00:00",
+      "containers": {
+        "porota_production_dashboard": {
+          "id_sha256": "deee5816d77b9bbfcb1fb5965400fa0060d9a1111622e7ccce58579d35b86731",
+          "identity_matches": true,
+          "image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+          "image_matches": true,
+          "lifecycle": {
+            "ExitCode": 0,
+            "FinishedAt": "2026-10-17T12:21:27.491759536Z",
+            "OOMKilled": false,
+            "StartedAt": "2026-10-17T12:23:12.949933008Z",
+            "Status": "running"
+          },
+          "restart_count": 0
+        },
+        "porota_production_observer": {
+          "id_sha256": "dccef189dd8049b5a722a316954c7c2dfbe2316559dd7dd2f66bb4fb6b95ff57",
+          "identity_matches": true,
+          "image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+          "image_matches": true,
+          "lifecycle": {
+            "ExitCode": 0,
+            "FinishedAt": "2026-10-17T12:21:21.623031833Z",
+            "OOMKilled": false,
+            "StartedAt": "2026-10-17T12:23:12.074931865Z",
+            "Status": "running"
+          },
+          "restart_count": 0
+        }
+      },
+      "failures": [],
+      "health_http": 200,
+      "observer": {
+        "heartbeat_advanced_since_rca": true,
+        "heartbeat_age_seconds": 3.013,
+        "heartbeat_at": "2026-10-17T12:37:12.733896+00:00",
+        "mode": "PRODUCTION_PAPER",
+        "process_state": "WAITING_MARKET",
+        "real_orders_sent": 0,
+        "session_state": "MARKET_CLOSED"
+      }
+    }
+  ],
+  "schema": "rc6.post-rca-current-health.v1",
+  "services_stopped_or_restarted": false,
+  "status": "GREEN"
+}

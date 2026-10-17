@@ -1898,173 +1898,28 @@
     "regression_cases_retained": true
   },
   "latest_readonly_operational": {
-    "schema": "rc6.operational-readonly-checkpoint.v1",
-    "run_id": 39001580361,
-    "monitor_sha": "bdc8cd95741e631ac7a6758d7c84686d9f584b71",
-    "artifact_id": 12089541358,
-    "artifact_zip_sha256": "4f5962f7424a88ce0cbf73df47f04c84adaa1cc726f3b67c95298c7c1c1cde7d",
-    "artifact_bytes": 8451,
-    "snapshot": {
-      "generated_at": "2026-10-17T04:10:56.391664+00:00",
-      "containers": {
-        "porota_critical_approval_rc6": {
-          "image": "sha256:abf744a305a847ed922e7df2474f6d991f23d9abfb0a584b93930216c117dd54",
-          "oom": false,
-          "restarts": 0,
-          "state": "running"
-        },
-        "porota_production_dashboard": {
-          "image": "sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f",
-          "oom": false,
-          "restarts": 0,
-          "state": "running"
-        },
-        "porota_production_observer": {
-          "image": "sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f",
-          "oom": false,
-          "restarts": 0,
-          "state": "running"
-        }
-      },
-      "observer": {
-        "heartbeat_at": "2026-10-17T04:10:48.201396+00:00",
-        "last_market_data_at": "2026-10-16T19:58:53.922141+00:00",
-        "mode": "PRODUCTION_PAPER",
-        "ppi_auth": "OK",
-        "process_state": "WAITING_MARKET",
-        "real_orders_sent": 0,
-        "session_state": "MARKET_CLOSED"
-      },
-      "observer_heartbeat_age_seconds": 8.19,
-      "readiness": {
-        "ready": 9862,
-        "total": 14611
-      },
-      "provenance": {
-        "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
-        "deploy_sha": "74dd18e697e987747384eb419dc953257003cdb1",
-        "image_id": "sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f",
-        "mode": "PRODUCTION_PAPER",
-        "real_order_routes": "NOT_CALLED",
-        "real_orders_sent": 0,
-        "validation_status": "DEPLOYED_VALIDATION_PENDING"
-      },
-      "resources": {
-        "disk_free_bytes": 4728053760,
-        "inode_free_pct": 89.56,
-        "mem_available_bytes": 124141568
-      },
-      "shadow": {
-        "as_of": "2026-10-17T03:43:58.021350+00:00",
-        "entry_signal_lab_status": null,
-        "error_class": "ValueError",
-        "error_line": 148,
-        "error_module": "runtime",
-        "operational_funnel_status": null,
-        "phase": null,
-        "provider_requests": 0,
-        "real_orders_sent": 0,
-        "real_routes": "NOT_CALLED",
-        "runtime_deadline_expired": false,
-        "runtime_read_stage": "CATALOG_FULL",
-        "runtime_sql_stages": [
-          {
-            "deadline_elapsed": false,
-            "elapsed_ms": 169.444,
-            "interrupted_by_deadline": false,
-            "remaining_ms": 1544.83,
-            "rows": 14611,
-            "stage": "CATALOG_FULL"
-          },
-          {
-            "deadline_elapsed": false,
-            "elapsed_ms": 39.39,
-            "interrupted_by_deadline": false,
-            "remaining_ms": 1503.793,
-            "rows": 0,
-            "stage": "OPEN_POSITIONS"
-          },
-          {
-            "deadline_elapsed": false,
-            "elapsed_ms": 0.571,
-            "interrupted_by_deadline": false,
-            "remaining_ms": 1500.52,
-            "rows": 103,
-            "stage": "SCHEMA_TABLES"
-          },
-          {
-            "deadline_elapsed": false,
-            "elapsed_ms": 625.735,
-            "interrupted_by_deadline": false,
-            "remaining_ms": 873.425,
-            "rows": 2424,
-            "stage": "INTRADAY_CONTRACTS"
-          },
-          {
-            "deadline_elapsed": false,
-            "elapsed_ms": 28.202,
-            "interrupted_by_deadline": false,
-            "remaining_ms": 839.485,
-            "rows": 0,
-            "stage": "INTRADAY_POINTS"
-          },
-          {
-            "deadline_elapsed": false,
-            "elapsed_ms": 34.761,
-            "interrupted_by_deadline": false,
-            "remaining_ms": 804.643,
-            "rows": 0,
-            "stage": "MARKET_SNAPSHOTS"
-          }
-        ],
-        "status": "FAIL_CLOSED"
-      },
-      "workers": {
-        "intraday_scalping_worker_state": {
-          "candidates": 0,
-          "failed": 0,
-          "heartbeat_at": "2026-10-17T04:10:36.342686+00:00",
-          "real_orders_sent": 0,
-          "selected": 0,
-          "state": "WAITING_MARKET",
-          "successful": 0
-        },
-        "paper_caucion_cash_sweep_state": {
-          "heartbeat_at": "2026-10-17T04:10:43.487580+00:00",
-          "real_orders_sent": 0,
-          "state": "WAITING_CALENDAR"
-        },
-        "paper_notification_worker": {
-          "heartbeat_at": "2026-10-17T04:10:53.238519+00:00",
-          "state": "RUNNING"
-        },
-        "paper_supervisor_state": {
-          "heartbeat_at": "2026-10-17T04:10:47.466700+00:00",
-          "state": "RUNNING"
-        }
-      },
-      "real_order_routes_called": 0,
-      "ppi_watch_accessed": false
-    },
-    "diagnostic": {
-      "generated_at": "2026-10-17T04:11:11.729214+00:00",
-      "shadow_worker_process_count": 1,
-      "shadow_worker_processes": [
-        {
-          "cpu_seconds": 510.24,
-          "rss_kib": 234220,
-          "state": "R",
-          "wchan": "0"
-        }
-      ],
-      "wal_bytes": 51940872,
-      "committed_generation": {
-        "error_class": "ValueError",
-        "integrity": "UNVERIFIED",
-        "read_only": true,
-        "schema": "rc6.committed-generation-receipt.v1"
-      }
-    }
+    "run": 39001580361,
+    "attempt": 5,
+    "job": 117396255335,
+    "finished_at": "2026-10-17T12:30:17Z",
+    "purpose": "POST_RCA_CURRENT_AVAILABILITY_NOT_RELEASE_ACCEPTANCE",
+    "status": "P0",
+    "findings": [
+      "CONTAINER_IMAGE_MISMATCH:porota_critical_approval_rc6",
+      "DEPLOY_PROVENANCE_INVALID",
+      "DISK_BELOW_TARGET"
+    ],
+    "read_only": true,
+    "telegram": "NOT_REQUESTED",
+    "delivery_state_created": false,
+    "route_http_200": 13,
+    "root_projection_over_2s": true,
+    "root_elapsed_ms": 2403,
+    "no_recent_critical_signatures": true,
+    "monitor_pr_merge_permitted": false,
+    "artifact_id": 12100982292,
+    "artifact_zip_sha256": "dd79cd74ce787b0390ecd88df68c29d6894089e7afe08968e2d9f9a3d9afaf86",
+    "artifact_bytes_independently_downloaded": false
   },
   "predeploy_f167_native_certificate": {
     "source": "NATIVE_GITHUB_ACTIONS; additional local ZIP verification unavailable due offline workspace",
@@ -2305,7 +2160,7 @@
     ],
     "native_acceptance": false
   },
-  "updated_at": "2026-10-17T12:22:28.289Z",
+  "updated_at": "2026-10-17T12:39:00Z",
   "previous_deploy_result_613": {
     "run": 39003668897,
     "job": 117311624166,
@@ -2719,7 +2574,7 @@
     "canonical_bytes_identical": true,
     "promoted": false
   },
-  "receipt_count": 137,
+  "receipt_count": 139,
   "native_serialization_fast_bound_experiment": {
     "run": 39023354447,
     "job": 117369424731,
@@ -3245,11 +3100,11 @@
     "two_equal_cycle_model_seconds": 172.466,
     "two_equal_cycle_model": "INFERENCE_NOT_MEASURED_PUBLICATION_GAP",
     "ci_gain_does_not_prove_native_gain": true,
-    "next": "CHECK_NATIVE_FROZEN_ROW_EQUIVALENCE_CACHE_ELIGIBILITY_AND_HOST_RESOURCE_METADATA_BEFORE_NEW_PRODUCT_SOURCE",
+    "next": "INSPECT_ACTUAL_SERIALIZER_CALL_GRAPH_AND_RUNTIME_IMMUTABLE_ROW_IDENTITY_IN_CI_BEFORE_NEW_PRODUCT_SOURCE; NO_NEW_NATIVE_QUIESCE",
     "new_product_source": false
   },
   "native_rowshape_rca_618": {
-    "state": "EXTENDED_IDLE_OBSERVATION_IN_PROGRESS",
+    "state": "PROBE_GREEN_ORIGINAL_RESTORE_RED_CURRENT_HEALTH_GREEN",
     "source_sha": "277803c92f08724713cd024bc68c88fc155f07f3",
     "diagnostic_pr": 614,
     "product_source_unchanged": true,
@@ -3381,7 +3236,404 @@
           "status": "RED"
         }
       }
-    ]
+    ],
+    "finished_at": "2026-10-17T12:25:19.105046+00:00",
+    "observed_receipt": {
+      "admission": {
+        "disk_free": 4697690112,
+        "maximum_memory_seen": 568725504,
+        "memory_available": 568725504,
+        "minimum_memory_seen": 568725504,
+        "required_disk": 2147483648,
+        "required_memory": 201326592,
+        "wait_seconds": 0
+      },
+      "candidate_sha": "5cb663231b52aee566dec0b3bf9c5d45684b98f5",
+      "committed_cardinality": {
+        "catalog_full_count": 14611,
+        "catalog_ready_count": 9902
+      },
+      "diagnostic_container_cleanup": "GREEN",
+      "finished_at": "2026-10-17T12:25:19.105046+00:00",
+      "full_session_stress": false,
+      "heartbeat_before": "2026-10-17T12:19:59.070186+00:00",
+      "host_cpu_metadata": {
+        "aggregate_proc_stat": [
+          95892629,
+          4427211,
+          34582280,
+          269020765,
+          60308053,
+          0,
+          277276,
+          7819961
+        ],
+        "loadavg": [
+          2.553,
+          2.672,
+          2.542
+        ],
+        "logical_cpus": 1
+      },
+      "idle_first_observation": {
+        "age_since_tick_end_seconds": 41.515,
+        "as_of": "2026-10-17T12:18:02.046436+00:00",
+        "elapsed_seconds": 0,
+        "poll_seconds": 30,
+        "source_age_seconds": 118.673,
+        "sql": {
+          "budget_ms": 2000,
+          "sql_elapsed_ms": 142.142,
+          "transform_elapsed_ms": 64.395
+        },
+        "status": "SHADOW_OBSERVING",
+        "tick_cpu_seconds": 41.133,
+        "tick_seconds": 77.158
+      },
+      "idle_observations": [
+        {
+          "age_since_tick_end_seconds": 98.565,
+          "as_of": "2026-10-17T12:18:02.046436+00:00",
+          "elapsed_seconds": 57,
+          "poll_seconds": 30,
+          "source_age_seconds": 175.723,
+          "sql": {
+            "budget_ms": 2000,
+            "sql_elapsed_ms": 142.142,
+            "transform_elapsed_ms": 64.395
+          },
+          "status": "SHADOW_OBSERVING",
+          "tick_cpu_seconds": 41.133,
+          "tick_seconds": 77.158
+        },
+        {
+          "age_since_tick_end_seconds": 101.565,
+          "as_of": "2026-10-17T12:18:02.046436+00:00",
+          "elapsed_seconds": 60,
+          "poll_seconds": 30,
+          "source_age_seconds": 178.723,
+          "sql": {
+            "budget_ms": 2000,
+            "sql_elapsed_ms": 142.142,
+            "transform_elapsed_ms": 64.395
+          },
+          "status": "SHADOW_OBSERVING",
+          "tick_cpu_seconds": 41.133,
+          "tick_seconds": 77.158
+        },
+        {
+          "age_since_tick_end_seconds": 104.567,
+          "as_of": "2026-10-17T12:18:02.046436+00:00",
+          "elapsed_seconds": 63,
+          "poll_seconds": 30,
+          "source_age_seconds": 181.725,
+          "sql": {
+            "budget_ms": 2000,
+            "sql_elapsed_ms": 142.142,
+            "transform_elapsed_ms": 64.395
+          },
+          "status": "SHADOW_OBSERVING",
+          "tick_cpu_seconds": 41.133,
+          "tick_seconds": 77.158
+        },
+        {
+          "age_since_tick_end_seconds": 107.569,
+          "as_of": "2026-10-17T12:18:02.046436+00:00",
+          "elapsed_seconds": 66,
+          "poll_seconds": 30,
+          "source_age_seconds": 184.727,
+          "sql": {
+            "budget_ms": 2000,
+            "sql_elapsed_ms": 142.142,
+            "transform_elapsed_ms": 64.395
+          },
+          "status": "SHADOW_OBSERVING",
+          "tick_cpu_seconds": 41.133,
+          "tick_seconds": 77.158
+        },
+        {
+          "age_since_tick_end_seconds": 110.571,
+          "as_of": "2026-10-17T12:18:02.046436+00:00",
+          "elapsed_seconds": 69,
+          "poll_seconds": 30,
+          "source_age_seconds": 187.729,
+          "sql": {
+            "budget_ms": 2000,
+            "sql_elapsed_ms": 142.142,
+            "transform_elapsed_ms": 64.395
+          },
+          "status": "SHADOW_OBSERVING",
+          "tick_cpu_seconds": 41.133,
+          "tick_seconds": 77.158
+        },
+        {
+          "age_since_tick_end_seconds": 1.731,
+          "as_of": "2026-10-17T12:19:49.721319+00:00",
+          "elapsed_seconds": 72,
+          "poll_seconds": 30,
+          "source_age_seconds": 83.055,
+          "sql": {
+            "budget_ms": 2000,
+            "sql_elapsed_ms": 163.253,
+            "transform_elapsed_ms": 72.574
+          },
+          "status": "SHADOW_OBSERVING",
+          "tick_cpu_seconds": 43.779,
+          "tick_seconds": 81.324
+        }
+      ],
+      "idle_window_observed": true,
+      "image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+      "memory_limit_bytes": 67108864,
+      "metrics": {
+        "context": "READ_ONLY_NATIVE_ROW_STRUCTURE_RCA",
+        "full_session_stress": false,
+        "native_acceptance": false,
+        "network": "NONE",
+        "nice": 19,
+        "normalized_frozen_arrays_equal": true,
+        "parser_backend": "yajl2_c",
+        "parser_version": "3.4.0.post0",
+        "payload_exported": false,
+        "production_input_read_only": true,
+        "provider_requests": 0,
+        "raw_bytes": 254744798,
+        "raw_sha256": "612896f417c62088320c5aeb84427f44d7b0d19f6a004e5c9dcc0384f4ef8efa",
+        "raw_source_hash_verified_each_pass": true,
+        "real_orders_sent": 0,
+        "rows": [
+          {
+            "canonical_array_bytes": 21580831,
+            "canonical_array_sha256": "4c77c3871bf01f290364cef896735f43b42a0a99900a28e94b6749514b087812",
+            "charged_cache_upper_bound_bytes": 362530,
+            "compressed_4m_upper_bound_fit": true,
+            "compressed_content_bytes": 329482,
+            "count": 9910,
+            "cpu_seconds": 9.9849,
+            "engine": "SCALPING",
+            "max_row_bytes": 2722,
+            "peak_rss_kib": 24240,
+            "raw_32m_fit": true,
+            "wall_seconds": 54.7995
+          },
+          {
+            "canonical_array_bytes": 21580831,
+            "canonical_array_sha256": "4c77c3871bf01f290364cef896735f43b42a0a99900a28e94b6749514b087812",
+            "charged_cache_upper_bound_bytes": 362530,
+            "compressed_4m_upper_bound_fit": true,
+            "compressed_content_bytes": 329482,
+            "count": 9910,
+            "cpu_seconds": 9.6791,
+            "engine": "EQUITY_SPOT",
+            "max_row_bytes": 2722,
+            "peak_rss_kib": 24240,
+            "raw_32m_fit": true,
+            "wall_seconds": 40.9972
+          }
+        ],
+        "runtime_identity_sharing": "NOT_OBSERVABLE_FROM_SERIALIZED_JSON",
+        "schema": "rc6.bounded-native-row-shape-rca.v1",
+        "status": "GREEN",
+        "threads": 1
+      },
+      "minimum_disk_free_bytes": 4697567232,
+      "minimum_host_memory_available": 517451776,
+      "nano_cpus": 250000000,
+      "native_acceptance": false,
+      "network": "none",
+      "oom_killed": false,
+      "owned_resource_configuration": {
+        "porota_production_dashboard": {
+          "CpuPeriod": 0,
+          "CpuQuota": 0,
+          "Memory": 0,
+          "NanoCpus": 0
+        },
+        "porota_production_observer": {
+          "CpuPeriod": 0,
+          "CpuQuota": 0,
+          "Memory": 0,
+          "NanoCpus": 0
+        }
+      },
+      "payload_exported": false,
+      "phase": "PROBE",
+      "planned_closed_quiesce": true,
+      "ppi_watch_accessed": false,
+      "pre_quiesce_resources": {
+        "disk_free": 4667088896,
+        "memory_available": 131563520
+      },
+      "private_file_size_metadata": {
+        "checkpoint": {
+          "compressed_bytes": 4192354,
+          "gzip_isize_mod2_32": 27107455
+        },
+        "full_audit": {
+          "compressed_bytes": 5667004,
+          "gzip_isize_mod2_32": 254744798
+        },
+        "selection": {
+          "compressed_bytes": 2972,
+          "gzip_isize_mod2_32": 8218
+        }
+      },
+      "process_exit_code": 0,
+      "production_input_files": 1,
+      "production_input_read_only": true,
+      "purpose": "FROZEN_ROW_CACHE_ELIGIBILITY_METADATA_ONLY",
+      "resource_samples": 50,
+      "restore_failures": [
+        "RCA_RESTORE_LIVENESS_OR_HEALTH_UNVERIFIED"
+      ],
+      "run_key": "39032009280-1",
+      "runtime_restore": "RED",
+      "schema": "rc6.readonly-row-shape-host.v1",
+      "services_restarted": true,
+      "source": {
+        "compressed_bytes": 5667004,
+        "generation_id": "55cb2429a7a60ac6873fc42545333268d2fe2454281c1892e03453c16ef0782f",
+        "manifest_sha256": "8fd3f479a8077ac57636c7d3df7af4b0b49487c1c5a37e508be8db2425fd5feb",
+        "raw_bytes": 254744798,
+        "raw_sha256": "612896f417c62088320c5aeb84427f44d7b0d19f6a004e5c9dcc0384f4ef8efa"
+      },
+      "started_at": "2026-10-17T12:19:59.652857+00:00",
+      "status": "RED",
+      "stop_evidence": {
+        "porota_production_dashboard": {
+          "classification": "CLEAN_EXIT",
+          "exit_code": 0,
+          "oom_killed": false
+        },
+        "porota_production_observer": {
+          "classification": "CLEAN_EXIT",
+          "exit_code": 0,
+          "oom_killed": false
+        }
+      }
+    },
+    "receipt": {
+      "path": "docs/releases/evidence603/native-rowshape-restore-unverified-39032009280.json",
+      "bytes": 7915,
+      "sha256": "e026027668cd651436d76b1d82492c515b1d56b63dd5da0693b7faf37b0595cb",
+      "exact_git_bytes_verified": true
+    },
+    "native_job_armed": false,
+    "current_health_followup": {
+      "run": 39033228076,
+      "job": 117397840238,
+      "source_sha": "4585a014a48939470512d89454d4d7b8a82dffce",
+      "status": "GREEN",
+      "receipt_path": "docs/releases/evidence603/post-rca-current-health-39033228076.json",
+      "receipt_sha256": "3f51b1f3b4a68e9046a59fe53f756f49fe8795dc30efef181c805f1ffab34a61",
+      "exact_git_bytes_verified": true,
+      "receipt": {
+        "native_acceptance": false,
+        "notification_mode": "read_only",
+        "original_rca_restore": "RED_UNVERIFIED_WITHIN_120_SECONDS",
+        "payload_exported": false,
+        "ppi_watch_accessed": false,
+        "provider_requests": 0,
+        "read_only": true,
+        "samples": [
+          {
+            "captured_at": "2026-10-17T12:37:11.991003+00:00",
+            "containers": {
+              "porota_production_dashboard": {
+                "id_sha256": "deee5816d77b9bbfcb1fb5965400fa0060d9a1111622e7ccce58579d35b86731",
+                "identity_matches": true,
+                "image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+                "image_matches": true,
+                "lifecycle": {
+                  "ExitCode": 0,
+                  "FinishedAt": "2026-10-17T12:21:27.491759536Z",
+                  "OOMKilled": false,
+                  "StartedAt": "2026-10-17T12:23:12.949933008Z",
+                  "Status": "running"
+                },
+                "restart_count": 0
+              },
+              "porota_production_observer": {
+                "id_sha256": "dccef189dd8049b5a722a316954c7c2dfbe2316559dd7dd2f66bb4fb6b95ff57",
+                "identity_matches": true,
+                "image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+                "image_matches": true,
+                "lifecycle": {
+                  "ExitCode": 0,
+                  "FinishedAt": "2026-10-17T12:21:21.623031833Z",
+                  "OOMKilled": false,
+                  "StartedAt": "2026-10-17T12:23:12.074931865Z",
+                  "Status": "running"
+                },
+                "restart_count": 0
+              }
+            },
+            "failures": [],
+            "health_http": 200,
+            "observer": {
+              "heartbeat_advanced_since_rca": true,
+              "heartbeat_age_seconds": 5.819,
+              "heartbeat_at": "2026-10-17T12:37:06.171926+00:00",
+              "mode": "PRODUCTION_PAPER",
+              "process_state": "WAITING_MARKET",
+              "real_orders_sent": 0,
+              "session_state": "MARKET_CLOSED"
+            }
+          },
+          {
+            "captured_at": "2026-10-17T12:37:15.746971+00:00",
+            "containers": {
+              "porota_production_dashboard": {
+                "id_sha256": "deee5816d77b9bbfcb1fb5965400fa0060d9a1111622e7ccce58579d35b86731",
+                "identity_matches": true,
+                "image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+                "image_matches": true,
+                "lifecycle": {
+                  "ExitCode": 0,
+                  "FinishedAt": "2026-10-17T12:21:27.491759536Z",
+                  "OOMKilled": false,
+                  "StartedAt": "2026-10-17T12:23:12.949933008Z",
+                  "Status": "running"
+                },
+                "restart_count": 0
+              },
+              "porota_production_observer": {
+                "id_sha256": "dccef189dd8049b5a722a316954c7c2dfbe2316559dd7dd2f66bb4fb6b95ff57",
+                "identity_matches": true,
+                "image_id": "sha256:df464efbca8a4b4f35bcdfa71635815b35d70a5bdd522920aaf18ce796f1706d",
+                "image_matches": true,
+                "lifecycle": {
+                  "ExitCode": 0,
+                  "FinishedAt": "2026-10-17T12:21:21.623031833Z",
+                  "OOMKilled": false,
+                  "StartedAt": "2026-10-17T12:23:12.074931865Z",
+                  "Status": "running"
+                },
+                "restart_count": 0
+              }
+            },
+            "failures": [],
+            "health_http": 200,
+            "observer": {
+              "heartbeat_advanced_since_rca": true,
+              "heartbeat_age_seconds": 3.013,
+              "heartbeat_at": "2026-10-17T12:37:12.733896+00:00",
+              "mode": "PRODUCTION_PAPER",
+              "process_state": "WAITING_MARKET",
+              "real_orders_sent": 0,
+              "session_state": "MARKET_CLOSED"
+            }
+          }
+        ],
+        "schema": "rc6.post-rca-current-health.v1",
+        "services_stopped_or_restarted": false,
+        "status": "GREEN"
+      }
+    },
+    "original_restore_status_preserved": "RED_UNVERIFIED_WITHIN_120_SECONDS",
+    "original_restore_failure_cause": "NOT_ISOLATED_GENERIC_CATCH",
+    "normalized_array_equality_does_not_prove_runtime_identity_or_cache_hits": true,
+    "new_product_source": false
   },
   "native_618_gate_receipt": {
     "path": "docs/releases/evidence603/native618-gate-39026330767.json",
