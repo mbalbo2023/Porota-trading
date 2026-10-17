@@ -1438,8 +1438,12 @@ def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_sec
             fields += ['NULL'] * 3
         columns += ['intraday_contract_state', 'intraday_source_at', 'intraday_checked_at']
         public_fields = ','.join(x[2:] for x in fields[:9])
+        # Ordering the source by its non-covering catalog index forces one
+        # large-table lookup per row for clocks/source. Scan metadata once;
+        # the sentinel rejects any partial inventory before publication, so
+        # deterministic output ordering can happen after bounded decoding.
         sql = ('SELECT COUNT(*),json_group_array(json_array(' + ','.join(fields) + ')) FROM '
-               '(SELECT ' + public_fields + ' FROM financial_instrument_catalog ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?) c' + joins)
+               '(SELECT ' + public_fields + ' FROM financial_instrument_catalog NOT INDEXED LIMIT ?) c' + joins)
         stage = 'QUERY_PLAN'
         for item in connection.execute('EXPLAIN QUERY PLAN ' + sql, (row_limit + 1,)):
             detail = str(item[3]).upper(); words = detail.split()
@@ -1460,6 +1464,7 @@ def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_sec
         rows = json.loads(packed)
         if len(rows) != count or len({tuple(r[:5]) for r in rows}) != count:
             raise ValueError('INVENTORY_IDENTITY_NOT_UNIQUE')
+        rows.sort(key=lambda row:tuple(row[:5]))
         provenance = load_bounded(Path(root) / 'data/deploy/CURRENT_STATE_V2.json') or {}
         observed = {}
         for key in ('candidate_sha', 'deploy_sha'):

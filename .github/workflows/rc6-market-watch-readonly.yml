@@ -382,6 +382,7 @@ jobs:
             evidence/shadow_diagnostic.json
             evidence/schedule_api.json
             evidence/observer_lifecycle.json
+            evidence/porota_images.json
             evidence/recent_critical.json
             evidence/dashboard_audit.json
             evidence/delivery.json

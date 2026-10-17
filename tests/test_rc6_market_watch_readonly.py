@@ -839,6 +839,12 @@ class CommittedGenerationProbeTests(unittest.TestCase):
 
 
 class ImageInventoryContracts(unittest.TestCase):
+    def test_manual_image_receipt_is_preserved_by_existing_artifact(self):
+        text=(SOURCE.parents[1]/'.github/workflows/rc6-market-watch-readonly.yml').read_text()
+        start=text.index('name: Save immutable per-run evidence')
+        end=text.index('name: Fail checks on verified critical or confirmed P1',start)
+        self.assertIn('evidence/porota_images.json',text[start:end])
+
     def capture(self,referenced=False,foreign_alias=False,inspection_failed=False):
         ident='sha256:'+'c'*64;tag='porota-predeploy-v2:'+'a'*40
         aliases=[tag]+(['PRIVATE_OTHER_REPOSITORY:SECRET'] if foreign_alias else [])
@@ -910,6 +916,20 @@ class InstrumentInventoryContracts(unittest.TestCase):
         self.assertFalse(value['complete_inventory'])
         self.assertEqual(value['status'], 'UNVERIFIED')
         self.assertNotIn('records', value)
+
+    def test_complete_inventory_order_does_not_depend_on_physical_catalog_order(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('DELETE FROM financial_instrument_catalog')
+            for currency in ('USD','ARS'):
+                c.execute('INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?)',
+                    ('SAME','ACCIONES','BYMA',currency,'A-24HS','PPI',NOW.isoformat(),
+                     'AVAILABLE','READY_PAPER_SPOT','PRIVATE_LARGE_METADATA'*10000))
+            c.execute('CREATE INDEX idx_shadow_catalog_order ON financial_instrument_catalog(instrument_type,market,currency,ticker,settlement,status,capability)')
+        value=monitor.instrument_inventory_host(self.root,at=NOW)
+        self.assertTrue(value['complete_inventory'])
+        self.assertEqual([row[3] for row in value['records']],['ARS','USD'])
+        self.assertEqual({row[3]:row[9] for row in value['records']},{'ARS':1,'USD':0})
+        self.assertNotIn('PRIVATE_',json.dumps(value))
 
     def test_unknown_or_nonzero_real_orders_blocks_inventory(self):
         for count in (None, 1):
