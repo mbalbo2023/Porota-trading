@@ -642,6 +642,12 @@ jobs:
             -v "$GITHUB_WORKSPACE/candidate:/candidate:ro" --workdir /candidate -e PYTHONPATH=/candidate \
             --entrypoint python sha256:b197c88efde13f69e3113725c0f986cc6702909bf463a411f630a3dec257c710 \
             - < "$GITHUB_WORKSPACE/diagnostic/scripts/rc6_codec_experiment.py"
+      - name: Make synthetic receipts readable to the artifact action
+        if: always()
+        shell: bash
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" /tmp/rc6-profile-603
+          chmod -R u+rX /tmp/rc6-profile-603
       - uses: actions/upload-artifact@v4
         if: always()
         with:

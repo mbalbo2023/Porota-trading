@@ -103,36 +103,51 @@ def measured_small_factory(flat=False):
         return True
     return small
 
+class SizedRecord(dict):
+    def __init__(self,record):
+        super().__init__(record)
+        self.canonical_size=len(json.dumps(record,sort_keys=True,separators=(",",":"),default=str,allow_nan=False))
+
+hint_small=inspect.getsource(original_small).replace(
+    "if kind is FrozenJSONDict:",
+    "if kind is SizedRecord:\n            maximum -= item.canonical_size\n        elif kind is FrozenJSONDict:")
+assert "kind is SizedRecord" in hint_small
+baseline.SizedRecord=SizedRecord
 receipts=[];expected=None
-for variant in ("baseline","keys","key_bounds","flat_bounds","flat_bounds","key_bounds","keys","baseline"):
+for variant in ("baseline","row_hints","row_hints_keys","row_hints_keys","row_hints","baseline"):
+    baseline._small_json_tree=original_small
     if variant=="baseline":
-        baseline._small_json_tree=original_small
         exec(original_fragments,baseline.__dict__)
     else:
-        baseline._small_json_tree=(original_small if variant=="keys"
-                                  else measured_small_factory(flat=variant=="flat_bounds"))
-        exec(key_fragments,baseline.__dict__)
+        exec(hint_small,baseline.__dict__)
+        exec(key_fragments if variant.endswith("_keys") else original_fragments,baseline.__dict__)
     gc.collect()
     start=time.monotonic();cpu=time.process_time();size=0;compressed=0;h=hashlib.sha256()
+    payload=report
+    if variant!="baseline":
+        payload={**report,"family_routing":dict(report["family_routing"])}
+        payload["family_routing"]["instruments"]=[SizedRecord(row) for row in report["family_routing"]["instruments"]]
+    hint_wall=time.monotonic()-start
     compressor=zlib.compressobj(1,wbits=31)
     encoder=json.JSONEncoder(sort_keys=True,separators=(",",":"),default=str,allow_nan=False)
-    for block in baseline._canonical_chunks(encoder,report):
+    for block in baseline._canonical_chunks(encoder,payload):
         size+=len(block);h.update(block);compressed+=len(compressor.compress(block))
     compressed+=len(compressor.flush())
     receipt={"variant":variant,"wall_seconds":round(time.monotonic()-start,3),
-        "cpu_seconds":round(time.process_time()-cpu,3),"raw_bytes":size,
-        "sha256":h.hexdigest(),"compressed_bytes":compressed,
+        "cpu_seconds":round(time.process_time()-cpu,3),"hint_preparation_wall_seconds":round(hint_wall,3),
+        "raw_bytes":size,"sha256":h.hexdigest(),"compressed_bytes":compressed,
         "peak_rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
     assert size>100*1024**2 and receipt["peak_rss_kib"]<=512*1024
     if expected is None:expected=(size,h.hexdigest())
     assert expected==(size,h.hexdigest()),"CANONICAL_BYTES_CHANGED"
     receipts.append(receipt)
     print("RC6_CODEC_EXPERIMENT="+json.dumps(receipt,separators=(",",":")),flush=True)
+    del payload
 summary={v:statistics.median(r["wall_seconds"] for r in receipts if r["variant"]==v)
          for v in {r["variant"] for r in receipts}}
-result={"schema":"rc6.synthetic-codec-experiment.v1","source_sha":"db06f0a20787ffc4d9f1211b7f2f5fdf04557c14",
+result={"schema":"rc6.synthetic-codec-experiment.v2","source_sha":"db06f0a20787ffc4d9f1211b7f2f5fdf04557c14",
         "receipts":receipts,"median_wall_seconds":summary,"raw_bytes_and_hash_identical":True,
         "cpu_limit":.75,"memory_limit_mib":512,"native_acceptance":False,
-        "provider_requests":0,"real_orders_sent":0}
+        "provider_requests":0,"real_orders_sent":0,"hint_preparation_included":True}
 pathlib.Path("/work/codec-experiment.json").write_text(json.dumps(result,indent=2)+"\n")
 print("RC6_CODEC_MEDIANS="+json.dumps(summary,sort_keys=True,separators=(",",":")))
