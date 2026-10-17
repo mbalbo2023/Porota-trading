@@ -29,9 +29,9 @@ def audit(requirements_text: str, lock_text: str, dockerfile_text: str) -> dict:
     source_rows = requirement_rows(requirements_text)
     lock_rows = requirement_rows(lock_text)
     lock_non_exact = [r["requirement"] for r in lock_rows if not r["exact_pin"]]
-    m = FROM_RE.search(dockerfile_text)
-    base = m.group(1) if m else ""
-    digest_pinned = "@sha256:" in base
+    bases = FROM_RE.findall(dockerfile_text)
+    base = bases[0] if bases else ""
+    digest_pinned = bool(bases) and all(re.search(r"@sha256:[0-9a-f]{64}$", image) for image in bases)
     docker_uses_lock = "-r requirements.lock.txt" in dockerfile_text
     return {
         "schema_version": 2,
@@ -41,6 +41,8 @@ def audit(requirements_text: str, lock_text: str, dockerfile_text: str) -> dict:
         "lock_exact_requirements": sum(bool(r["exact_pin"]) for r in lock_rows),
         "lock_non_exact_requirements": lock_non_exact,
         "base_image": base,
+        "build_stage_images": bases,
+        "unpinned_stage_images": [image for image in bases if not re.search(r"@sha256:[0-9a-f]{64}$", image)],
         "base_image_digest_pinned": digest_pinned,
         "docker_uses_lock": docker_uses_lock,
     }

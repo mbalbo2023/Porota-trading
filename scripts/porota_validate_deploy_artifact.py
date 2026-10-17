@@ -12,12 +12,14 @@ import argparse
 import ast
 import hashlib
 import json
+import re
+from importlib.machinery import EXTENSION_SUFFIXES
 import subprocess
 import sys
 from pathlib import Path
 from typing import Iterable
 
-RUNTIME_SUFFIXES = {".py", ".sh", ".service", ".timer"}
+RUNTIME_SUFFIXES = {".py", ".c", ".h", ".so", ".sh", ".service", ".timer"}
 RUNTIME_EXACT = {
     ".dockerignore",
     "Dockerfile",
@@ -106,6 +108,29 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+
+def native_extension_closure(artifact_root: Path, present: set[str], expected: list[str]) -> tuple[list, list]:
+    """Derive binary requirements from tracked CPython module definitions."""
+    modules, missing = [], []
+    for rel in sorted(path for path in expected if path.endswith(".c") and path in present):
+        source = artifact_root / rel
+        definitions = re.findall(r"\bPyMODINIT_FUNC\s+PyInit_([A-Za-z0-9_]+)\s*\(", source.read_text(encoding="utf-8"))
+        for name in sorted(set(definitions)):
+            parent = Path(rel).parent
+            names = {(parent / (name + suffix)).as_posix() for suffix in EXTENSION_SUFFIXES}
+            matches = sorted(names & present)
+            valid = len(matches) == 1
+            if valid:
+                binary = artifact_root / matches[0]
+                valid = not binary.is_symlink() and binary.stat().st_nlink == 1
+            if not valid:
+                missing.append({"source": rel, "module": name, "reason": "MISSING_AMBIGUOUS_OR_ALIASED_NATIVE_BINARY"})
+                continue
+            modules.append({"source": rel, "module": name, "path": matches[0],
+                "sha256": sha256(binary), "bytes": binary.stat().st_size})
+    return modules, missing
+
+
 def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
     present = artifact_files(artifact_root)
     missing_runtime = sorted(p for p in expected if p not in present)
@@ -128,6 +153,8 @@ def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
                     {"file": rel, "module": module, "expected_path": target}
                 )
 
+    native_extensions, missing_native = native_extension_closure(artifact_root, present, expected)
+
     manifest_files = []
     for rel in sorted(p for p in present if is_runtime_relevant(p)):
         manifest_files.append(
@@ -141,13 +168,15 @@ def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
     result = {
         "schema_version": 1,
         "status": "GREEN"
-        if not (missing_runtime or missing_imports or parse_errors)
+        if not (missing_runtime or missing_imports or parse_errors or missing_native)
         else "FAILED",
         "expected_runtime_files": len(expected),
         "artifact_runtime_files": len(manifest_files),
         "missing_runtime_files": missing_runtime,
         "missing_local_imports": missing_imports,
         "parse_errors": parse_errors,
+        "native_extensions": native_extensions,
+        "missing_native_extensions": missing_native,
         "files": manifest_files,
     }
     return result
@@ -178,6 +207,8 @@ def main() -> int:
         print("POROTA_ARTIFACT_INTEGRITY=FAILED_MISSING_RUNTIME_FILES", file=sys.stderr)
     if result["missing_local_imports"]:
         print("POROTA_ARTIFACT_INTEGRITY=FAILED_IMPORT_CLOSURE", file=sys.stderr)
+    if result["missing_native_extensions"]:
+        print("POROTA_ARTIFACT_INTEGRITY=FAILED_NATIVE_EXTENSION_CLOSURE", file=sys.stderr)
     if result["parse_errors"]:
         print("POROTA_ARTIFACT_INTEGRITY=FAILED_PARSE", file=sys.stderr)
     return 1

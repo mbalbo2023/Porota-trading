@@ -54,7 +54,7 @@ class FrozenJSONDict(dict):
     def __deepcopy__(self,memo):return self
 
 
-def _small_json_tree(value, maximum=65536, nodes=4096):
+def _small_json_tree_python(value, maximum=65536, nodes=4096):
     """Bound one C-encoded record without recursively walking every key."""
     pending = [value]
     while pending:
@@ -96,6 +96,24 @@ def _small_json_tree(value, maximum=65536, nodes=4096):
         if maximum < 0:
             return False
     return True
+
+
+try:
+    from . import _rc6_json_bound as _native_json_bound
+except ImportError:
+    _native_json_bound = None
+
+
+def _small_json_tree(value, maximum=65536, nodes=4096):
+    """Select the same bounded size predicate; canonical values still encode normally.
+
+    Source-only tools retain the Python implementation. Frozen images must
+    prove the compiled backend during exact-image Predeploy validation.
+    """
+    if (_native_json_bound is None or type(maximum) is not int or type(nodes) is not int
+            or maximum != 65536 or nodes != 4096):
+        return _small_json_tree_python(value, maximum, nodes)
+    return _native_json_bound.is_small(value, FrozenJSONDict, maximum, nodes)
 
 
 _SHARED_SNAPSHOT_COMPRESSED_LIMIT = 4 * 1024**2

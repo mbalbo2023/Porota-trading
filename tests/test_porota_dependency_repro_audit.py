@@ -44,3 +44,21 @@ def test_docker_must_install_the_lock():
     )
     assert result["status"] == "REPRODUCIBILITY_GAP"
     assert result["docker_uses_lock"] is False
+
+def test_every_build_stage_image_must_be_digest_pinned():
+    pinned="python:3.11-slim@sha256:"+"a"*64
+    result=audit("requests>=2\n","requests==2.34.2\n",
+        "FROM "+pinned+" AS headers\nFROM python:3.11-bookworm AS compiler\nFROM "+pinned+
+        "\nRUN pip install -r requirements.lock.txt\n")
+    assert result["status"]=="REPRODUCIBILITY_GAP"
+    assert result["unpinned_stage_images"]==["python:3.11-bookworm"]
+
+def test_immutable_build_only_compiler_and_runtime_bases_pass():
+    pinned="python:3.11-slim@sha256:"+"a"*64
+    builder="python:3.11-bookworm@sha256:"+"b"*64
+    result=audit("requests>=2\n","requests==2.34.2\n",
+        "FROM "+pinned+" AS headers\nFROM "+builder+" AS compiler\nFROM "+pinned+
+        "\nRUN pip install -r requirements.lock.txt\n")
+    assert result["status"]=="GREEN"
+    assert result["build_stage_images"]==[pinned,builder,pinned]
+    assert result["unpinned_stage_images"]==[]
