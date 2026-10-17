@@ -324,6 +324,10 @@ jobs:
           # The generated catalogue runs inline without a pytest parent beside it.
           run_native_proof catalog python scripts/rc6_postdeploy_stress.py \
             --full-catalog-check --output /proof/catalog
+          # Same offline405-minute replay and eight adversarial groups later
+          # required on the Droplet. CI success never substitutes for that host.
+          run_native_proof session python scripts/rc6_postdeploy_stress.py \
+            --output /proof/session
           echo 'POROTA_EXACT_IMAGE_NATIVE_SIZING=GREEN'
       - name: Exact image runtime smoke contract
         shell: bash
