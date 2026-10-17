@@ -3,11 +3,11 @@
   "workstream": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
   "source_issue": 624,
   "product_baseline_sha": "47d949b72f0b3affffecdc6cc90d31ba1347d9b7",
-  "candidate_sha": "995ddb704a013642f39d2a15c4fc662d9a91da12",
-  "candidate_tree": "fef1685504c27e2fd130ed74bc945c6e9baae5d8",
+  "candidate_sha": "529cc8b9d74a95d71e234e41bf084db72f87d989",
+  "candidate_tree": "0baeb895fde5f008f8ae1d66dd437793fc018b1d",
   "pr": 626,
   "runtime_state": "NO_VERIFICADO",
-  "predeploy_run": 39061986441,
+  "predeploy_run": 39063557593,
   "original_findings_count": 68,
   "original_findings_sha256": "a57b4beca7aae6c2235b87d0a5b992f0be3f24f0d0975207cf48afad7e2fa537",
   "findings": [
@@ -1104,13 +1104,156 @@
       "capability": "SHADOW_RUNTIME_ARCHITECTURE",
       "classification": "RCA_FIX_GUARD_TEST",
       "cause": "Literal110min assertion drifted after adding boundedsoaks",
-      "fix": "Root4002:1FAIL4SKIP; YAML parent>137mandatorymin,actual150;55focalPASS",
+      "fix": "Actual3999testcases/XMLattr4002:1FAIL4SKIP; YAML parent>137mandatorymin,actual150;55focalPASS",
       "status": "EN_GITHUB",
       "runtime_state": "NO_VERIFICADO",
       "test": "tests/test_rc6_deploy_runtime_completeness.py",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Any parity, freshness, resource or native safety failure reopens the finding."
+    },
+    {
+      "id": "624-EVIDENCE-RETENTION",
+      "capability": "CI_AND_NATIVE_EVIDENCE",
+      "classification": "RCA_FIX_GUARD_TEST",
+      "cause": "Added exact-image session directory was not in artifact upload; first native soak only persisted on host/logs.",
+      "fix": "Upload entire native result dir excluding TMPfixtures and collect both prestress/postrestore JSON receipts.1causalFAILbefore/56PASSafter;57focalinclbothsoaks.",
+      "status": "EN_GITHUB",
+      "runtime_state": "NO_VERIFICADO",
+      "test": "tests/test_rc6_deploy_runtime_completeness.py",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any omitted mandatory XML/JSON/soak receipt reopens."
     }
   ],
-  "findings_count": 74
+  "findings_count": 75,
+  "predeploy_state": "IN_PROGRESS",
+  "historical_ci_995": {
+    "run": 39061986441,
+    "job": 117481988873,
+    "source": "995ddb704a013642f39d2a15c4fc662d9a91da12",
+    "tree": "fef1685504c27e2fd130ed74bc945c6e9baae5d8",
+    "scope": "HISTORICAL_CI_EXACT_IMAGE_ONLY_NOT_NATIVE_HOST_NOT_CURRENT_CANDIDATE",
+    "counts": {
+      "DISCOVERED": 4002,
+      "EXECUTED": 4002,
+      "SKIPPED": 0,
+      "XFAIL": 0,
+      "FAILURES": 0,
+      "ERRORS": 0
+    },
+    "scenarios": [
+      {
+        "name": "sql_shadow_wal",
+        "cases": 36,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "abd5b5cd2a8374e2fd54350276dc1313c06d5ade92f502020dcbd033252b870b"
+      },
+      {
+        "name": "publication_io_identity",
+        "cases": 156,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "62602bd8c4b6de38c84c694501dce906ea8daa42c5b26bc6a91131c7acae81f3"
+      },
+      {
+        "name": "signals_risk_exit_ledger",
+        "cases": 160,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "fb9f35a3e0c4401e5df1883874dfdb517b31786e71c6e66b0e0923764fafb807"
+      },
+      {
+        "name": "sources_readiness_network",
+        "cases": 99,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "14cbaa228643576f3fd90e626fcf4ebc0774bbe9efa094988c4695b0baa80b3b"
+      },
+      {
+        "name": "scalping_capacity",
+        "cases": 106,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "5fcc8155edb7fd43a70594e6b433870454e204e407ef9121b9d8edc1f32801ff"
+      },
+      {
+        "name": "treasury_caucion",
+        "cases": 72,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "e3c34f07a6c7bf24c0f4fa446261e8662e24a70cea2f51986be8a6251f13ef51"
+      },
+      {
+        "name": "dashboard_auth_52",
+        "cases": 198,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "6d2364234498f2d9c1bb3db42e8234501d71fe639f118c70cce299dd4dd051ca"
+      },
+      {
+        "name": "scheduler_monitor_backup",
+        "cases": 14,
+        "exit_code": 0,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0,
+        "junit_sha256": "0ba0becca9bd61a6cbc35c484082fae6d295c236a6fed07466393171ec1e891f"
+      }
+    ],
+    "stress_cases": 841,
+    "image_id": "sha256:d1759b7e7b9a81a29806b5d58e03894a2fc2ef817c28d8b8d5b9eadd8228cf45",
+    "artifact": {
+      "id": 12112377020,
+      "name": "porota-predeploy-v2-995ddb704a013642f39d2a15c4fc662d9a91da12",
+      "size_in_bytes": 414706850,
+      "url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/12112377020",
+      "archive_download_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/12112377020/zip",
+      "expired": false,
+      "created_at": "2026-10-17T19:35:57Z",
+      "expires_at": "2026-10-24T19:35:42Z",
+      "updated_at": "2026-10-17T19:35:57Z",
+      "digest": "sha256:8f59524394052a8dac47cd097d09408a034d8d0611c840fa97e0993048986e54",
+      "workflow_run": {
+        "id": 39061986441,
+        "repository_id": 1338680554,
+        "head_repository_id": 1338680554,
+        "head_branch": "work/rc6-624-shadow-architecture-20261017",
+        "head_sha": "995ddb704a013642f39d2a15c4fc662d9a91da12"
+      }
+    },
+    "artifact_byte_validation": "NOT_DOWNLOADED_HISTORICAL_NOT_PROMOTABLE"
+  },
+  "local_root_actual_counts": {
+    "path": "/workspace/scratch/88594b90c2a3/root624.xml",
+    "actual_testcases": 3999,
+    "summary_attributes": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "1",
+        "skipped": "4",
+        "tests": "4002",
+        "time": "238.152",
+        "timestamp": "2026-10-17T19:12:14.030910+00:00",
+        "hostname": "114bd077b61b"
+      }
+    ],
+    "failure": 1,
+    "error": 0,
+    "skipped": 4
+  }
 }

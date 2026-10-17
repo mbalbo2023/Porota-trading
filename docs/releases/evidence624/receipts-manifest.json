@@ -1257,6 +1257,76 @@
       "sha256": "291d996a8817dd3a86c2783bc50abbc7ea69fce4a9b7e4fd3188691268fcbfa2",
       "source": "LOCAL_CONTROLLED_EXPERIMENT",
       "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-a1-995ddb7-summary.json",
+      "bytes": 3361,
+      "sha256": "3e0c091f87fc5a36c11b97b7ae68413e2660b3b9f8c255622617f95b2febe9ec",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/inventory624-byte-validation.json",
+      "bytes": 365,
+      "sha256": "e3e4ea52458bce2118f55a698a860f523b8321819d85011f778c3051b396ac64",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/junit_counts.py",
+      "bytes": 683,
+      "sha256": "aa38fb5908b51c148fbbf818989e1111d74bd964b69f2a06d32402c1f67245c5",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/local-root-actual-counts.json",
+      "bytes": 403,
+      "sha256": "1a4ea8106162707659af1de2a5b343542aed1b934e6170c1eae85936b1e05a4b",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/profile624-call-counts.json",
+      "bytes": 13360,
+      "sha256": "089e84371f83fac55dbada01dc82626d1690a35859e16fc99c114f83bc70882d",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-directory-final624.xml.gz",
+      "bytes": 1042,
+      "sha256": "c9c38cb72005f9111d47337a9879b8e6eda48b3c457448ffc74cb441d1f8ae3d",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-receipts-final624.xml.gz",
+      "bytes": 1756,
+      "sha256": "ab69bb779cc0242675992ffe6da9de103461f222019cbf354e3bc1d89ef03906",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-upload-after624.xml.gz",
+      "bytes": 1731,
+      "sha256": "8b8e4bddf17423f313afb50117e9e4477f089e4f1dd047fb1ecd70087456580d",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-upload-before624.xml.gz",
+      "bytes": 720,
+      "sha256": "c888f5a546813123e2fa1bb9e6527829b843184e1775edaedcdec66d1a54758f",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/validate-frozen-artifact.py",
+      "bytes": 8199,
+      "sha256": "17a49eebac4865a3009399471309fd8392354d747b5e002ad70c2a65f90c942f",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
     }
   ]
 }
