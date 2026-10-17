@@ -587,6 +587,7 @@ jobs:
           set -Eeuo pipefail
           python3 -m py_compile scripts/rc6_audit_rowshape_native_probe.py scripts/rc6_audit_rowshape_native_host.py scripts/rc6_audit_rowshape_governor_selfcheck.py scripts/rc6_audit_rowshape_packet_prepare.py
           python3 scripts/rc6_audit_rowshape_packet_prepare.py
+          python3 scripts/rc6_rowshape_idle_selfcheck.py
       - name: Verify and load exact PR618 frozen artifact without rebuilding
         shell: bash
         run: |

@@ -125,25 +125,69 @@ def source_descriptor(root):
     require(type(audit.get("raw_bytes")) is int and 0<audit["raw_bytes"]<=512*1024**2
         and type(audit.get("compressed_bytes")) is int and 0<audit["compressed_bytes"]<=128*1024**2,
         "RCA_AUDIT_SIZE_INVALID")
-    return {"root_relative":str(root.relative_to(DATA)),"file":audit["file"],
+    counts={}
+    for key,value in (("catalog_ready_count",cut["report"].get("catalog_ready_count")),
+                      ("catalog_full_count",(cut["report"].get("family_routing") or {}).get("instruments_total"))):
+        if type(value) is int and 0<=value<=1000000:counts[key]=value
+    return {**counts,"root_relative":str(root.relative_to(DATA)),"file":audit["file"],
         "raw_sha256":audit["sha256"],"raw_bytes":audit["raw_bytes"],
         "compressed_bytes":audit["compressed_bytes"],"generation_id":pointer["generation_id"],
         "manifest_sha256":pointer["manifest_sha256"]}
 
-def await_idle_hint(root):
-    for _ in range(31):
+def await_idle_hint(root, report=None):
+    report={} if report is None else report
+    report["idle_observations"]=[]
+    classes={"ValueError","OperationalError","DatabaseError","MemoryError","OSError","FileNotFoundError","TypeError","KeyError","EvidencePayloadLimit"}
+    modules={"runtime","worker","preopen","promotion","stages","families","lab","entry_signals","funnel","source_reads","read_contract","persistence","snapshot","common","live"}
+    stages={"CATALOG_FULL","OPEN_POSITIONS","SCHEMA_TABLES","INTRADAY_CONTRACTS","INTRADAY_POINTS","MARKET_SNAPSHOTS","COMPLETE"}
+    def numeric(value,maximum=60000):
+        return type(value) in (int,float) and math.isfinite(value) and 0<=value<=maximum
+    for attempt in range(61):
+        observed={"elapsed_seconds":attempt*3}
+        valid=False
         try:
             status=envelope(root/"status.json",131072)
+            require(isinstance(status,dict),"RCA_IDLE_STATUS_TYPE")
+            label=status.get("status")
+            observed["status"]=label if label in {"SHADOW_OBSERVING","PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION","FAIL_CLOSED"} else "UNREVIEWED_STATUS"
+            for key in ("error_class","error_module","runtime_read_stage"):
+                value=status.get(key)
+                allowed=classes if key=="error_class" else modules if key=="error_module" else stages
+                if value in allowed:observed[key]=value
+            for key in ("error_line","sqlite_errorcode","evidence_measured_bytes","evidence_limit_bytes"):
+                value=status.get(key)
+                if type(value) is int and 0<=value<=2**40:observed[key]=value
+            if type(status.get("runtime_deadline_expired")) is bool:observed["runtime_deadline_expired"]=status["runtime_deadline_expired"]
+            sql=status.get("runtime_sql_diagnostics")
+            if isinstance(sql,dict):
+                observed["sql"]={key:sql[key] for key in ("budget_ms","sql_elapsed_ms","transform_elapsed_ms") if numeric(sql.get(key))}
+                if sql.get("transform_expired_stage") in stages:observed["sql"]["transform_expired_stage"]=sql["transform_expired_stage"]
             stamp=datetime.fromisoformat(status["as_of"].replace("Z","+00:00"))
-            tick=(status.get("generation_timing") or {}).get("tick_seconds")
-            require(type(tick) in (int,float) and math.isfinite(tick) and 0<=tick<=1200
-                and stamp.tzinfo is not None,"RCA_IDLE_CLOCK_INVALID")
-            age=(datetime.now(timezone.utc)-stamp).total_seconds()-tick
-            if (status.get("status") in {"SHADOW_OBSERVING","PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION"}
-                    and 0<=age<=20):return
-        except (ValueError,KeyError,FileNotFoundError):
-            pass
-        time.sleep(3)
+            require(stamp.tzinfo is not None,"RCA_IDLE_CLOCK_INVALID")
+            observed["as_of"]=stamp.isoformat()
+            age=(datetime.now(timezone.utc)-stamp).total_seconds()
+            if math.isfinite(age) and abs(age)<=10**7:observed["source_age_seconds"]=round(age,3)
+            timing=status.get("generation_timing") or {}
+            tick=timing.get("tick_seconds")
+            if numeric(tick,1200):
+                observed["tick_seconds"]=tick
+                since_end=age-tick
+                if math.isfinite(since_end) and abs(since_end)<=10**7:observed["age_since_tick_end_seconds"]=round(since_end,3)
+                for key in ("tick_cpu_seconds","poll_seconds"):
+                    if numeric(timing.get(key),1200):observed[key]=timing[key]
+                valid=(label in {"SHADOW_OBSERVING","PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION"} and 0<=since_end<=20)
+            else:observed["timing"]="UNAVAILABLE"
+        except (OSError,ValueError,KeyError,TypeError) as error:
+            observed["read_error_class"]=type(error).__name__ if type(error).__name__ in classes else "RCA_UNAVAILABLE"
+            code=str(error)
+            if type(error) is ValueError and re.fullmatch("RCA_[A-Z_0-9]{1,75}",code):observed["read_error_code"]=code
+        if "idle_first_observation" not in report:report["idle_first_observation"]=observed
+        report["idle_observations"].append(observed)
+        if len(report["idle_observations"])>6:report["idle_observations"].pop(0)
+        if valid:
+            report["idle_window_observed"]=True
+            return
+        if attempt<60:time.sleep(3)
     raise ValueError("RCA_IDLE_WINDOW_NOT_OBSERVED")
 
 def safe_metrics(raw,descriptor):
@@ -244,7 +288,12 @@ def run(args):
         report["phase"]="WAIT_IDLE"
         shadow_root=DATA/"paper_v17/artifacts/observer_v17.db/dynamic-shadow"
         require(not any(x.is_symlink() for x in (shadow_root,*shadow_root.parents)),"RCA_SHADOW_ROOT_ALIAS")
-        await_idle_hint(shadow_root)
+        try:
+            current=source_descriptor(shadow_root)
+            report["committed_cardinality"]={key:current[key] for key in ("catalog_ready_count","catalog_full_count") if key in current}
+        except (OSError,ValueError,KeyError,TypeError):
+            report["committed_cardinality_status"]="UNAVAILABLE_READ_ONLY_RACE_OR_VALIDATION"
+        await_idle_hint(shadow_root, report)
         database_state(db)
         require(runtime_snapshot()==before,"RCA_RUNTIME_CHANGED_BEFORE_QUIESCE")
         report["phase"]="QUIESCE"
