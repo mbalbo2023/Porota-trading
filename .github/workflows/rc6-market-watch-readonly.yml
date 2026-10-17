@@ -125,9 +125,9 @@ jobs:
 
   watch:
     needs: contracts
-    if: github.event_name != 'pull_request' || github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
+    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-620-native-profile-20261017'
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 9
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -138,7 +138,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compile current619 read-only trace before host use
         if: github.event_name == 'pull_request'
-        run: python3 -B -m py_compile scripts/rc6_native619_health_trace_readonly.py
+        run: python3 -B -m py_compile scripts/rc6_native620_passive_profile.py
       - name: Prepare strict SSH
         if: github.event_name == 'pull_request'
         shell: bash
@@ -154,18 +154,18 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          mkdir -p evidence/native619-health
-          timeout 250 ssh -i "$HOME/.ssh/rc6_market_watch" -o BatchMode=yes -o ConnectTimeout=10 \
+          mkdir -p evidence/native620-passive
+          timeout 370 ssh -i "$HOME/.ssh/rc6_market_watch" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
-            "$DO_USER@$DO_HOST" "sudo -n timeout 230 python3 -B -" \
-            < scripts/rc6_native619_health_trace_readonly.py > evidence/native619-health/host-summary.json
-          cat evidence/native619-health/host-summary.json
+            "$DO_USER@$DO_HOST" "sudo -n timeout 350 python3 -B -" \
+            < scripts/rc6_native620_passive_profile.py > evidence/native620-passive/host-summary.json
+          cat evidence/native620-passive/host-summary.json
       - uses: actions/upload-artifact@v4
         if: always() && github.event_name == 'pull_request'
         with:
-          name: rc6-native619-health-trace-${{ github.run_id }}
-          path: evidence/native619-health
+          name: rc6-native620-passive-${{ github.run_id }}
+          path: evidence/native620-passive
           if-no-files-found: error
           retention-days: 14
       - name: Gate market-hours schedule
