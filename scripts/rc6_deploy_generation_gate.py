@@ -168,6 +168,12 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
             if first and (current['sequence'] < first['sequence'] or
                     (current['sequence'] == first['sequence'] and current['generation_id'] != first['generation_id'])):
                 raise ValueError('GENERATION_ORDER_REGRESSION')
+            if (strict and first and current['sequence'] != first['sequence']
+                    and not advances(first,current)):
+                raise ValueError('GENERATION_ORDER_REGRESSION')
+            raced = (cut.get('reader_observation') or {}).get('publication_race_retries',0)
+            if type(raced) is int and 0 < raced <= 10:
+                remember('BOUNDED_PUBLICATION_RACE',{'retries':raced,'sequence':current['sequence']})
             if first and advances(first, current):
                 remember('ADVANCING_GENERATION', {'sequence':current['sequence'], **last_observation})
                 generations.append(current)

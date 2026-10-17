@@ -44,7 +44,7 @@ def stable_reader(root, **kwargs):
     # explicit publication race for <=0.5s, never stale/FAIL_CLOSED or safety.
     for attempt in range(11):
         try:
-            return read_committed_generation(root,**kwargs)
+            cut = read_committed_generation(root,**kwargs)
         except ValueError as exc:
             if str(exc)!='GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS' or attempt==10:raise
             path=Path(root)/'status.json'
@@ -53,6 +53,16 @@ def stable_reader(root, **kwargs):
                     {'SHADOW_OBSERVING','PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION'}
                     or not 0<=time.time()-path.stat().st_mtime<=2):raise
             time.sleep(.05)
+            continue
+        if ((cut.get('status',{}).get('generation_timing') or {}).get('tick_measurement_boundary')
+                == 'BEFORE_STATUS_AND_CURRENT' and not cut.get('publication')):
+            if attempt==10 or not 0<=time.time()-(Path(root)/'CURRENT.json').stat().st_mtime<=2:
+                raise ValueError('GENERATION_PUBLICATION_COST_UNVERIFIED')
+            time.sleep(.05)
+            continue
+        if attempt:
+            cut['reader_observation']={'publication_race_retries':attempt}
+        return cut
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--expected-sha',required=True)
