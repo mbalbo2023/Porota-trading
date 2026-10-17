@@ -1,0 +1,124 @@
+{
+  "compiled_sha256": "e0eed2fc86dde099583e2635ae6c6e57b8a7f53124bb71a04bef11f026daac99",
+  "context": "CI_DEVELOPMENT_SOURCE_OVER_FROZEN618_DEPENDENCY_BASE",
+  "droplet_accessed": false,
+  "final_product_image_built": false,
+  "frozen_product_candidate": false,
+  "full_catalog": {
+    "actual_market_acceptance": false,
+    "catalog_count": 14611,
+    "cuts": [
+      {
+        "as_of": "2026-10-05T13:20:00.000131+00:00",
+        "computed_report_sha256": "169e0fcc084264b33bb9c22c5691a7e50f5ca562f245752314541a3150ec2f4d",
+        "freshness_budget_seconds": 88.934,
+        "generation_id": "e1b27561e411aa650e748ef86e7e79762d17c0836fcf74bbff1bd80e513eda8c",
+        "manifest_sha256": "92b5649d523e90d0473e31b27f8b0fc745b63a3894254a33617b595980f76afd",
+        "sequence": 1791206400000131,
+        "tick_seconds": 14.467,
+        "worker_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 3.539,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.334,
+            "operational_funnel": 2.483,
+            "planner_pipeline": 1.065,
+            "preopen": 2.411,
+            "state_and_inputs": 0.026
+          },
+          "stages_seconds": {
+            "durable_serialization": 4.719,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.784,
+            "operational_funnel": 3.308,
+            "planner_pipeline": 1.414,
+            "preopen": 3.21,
+            "state_and_inputs": 0.026
+          },
+          "tick_cpu_seconds": 10.863,
+          "tick_seconds": 14.467
+        }
+      },
+      {
+        "as_of": "2026-10-05T13:20:44.595537+00:00",
+        "computed_report_sha256": "7f21400165a5c8f4fc2fdece78b474f40d5aae9b45eb29cdf064960f66eb0f20",
+        "freshness_budget_seconds": 84.7,
+        "generation_id": "0353580a2eff54046ebeb8862a38a814a543d63751037f3ec5866a83351913ad",
+        "manifest_sha256": "c9049ac13ce87ad294ae1d5959d909dcac27f07a77a2b4b33577872ec7c7f874",
+        "previous_cut_age_seconds": 57.028693,
+        "previous_cut_freshness_budget_seconds": 88.934,
+        "sequence": 1791206444595537,
+        "tick_seconds": 12.35,
+        "worker_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 3.364,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.378,
+            "operational_funnel": 1.798,
+            "planner_pipeline": 1.073,
+            "preopen": 1.046,
+            "state_and_inputs": 0.6
+          },
+          "stages_seconds": {
+            "durable_serialization": 4.505,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.828,
+            "operational_funnel": 2.398,
+            "planner_pipeline": 1.447,
+            "preopen": 1.396,
+            "state_and_inputs": 0.773
+          },
+          "tick_cpu_seconds": 9.262,
+          "tick_seconds": 12.35
+        }
+      }
+    ],
+    "elapsed_seconds": 57.029,
+    "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+    "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+    "process_peak_rss_kib": 458776,
+    "production_data_mounted": false,
+    "provider_requests": 0,
+    "ready_fixture_count": 9902,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "schema": "rc6.synthetic-full-catalog.v1"
+  },
+  "full_session_stress": false,
+  "groups": [
+    {
+      "cases": 43,
+      "error": 0,
+      "failure": 0,
+      "junit_sha256": "6783d67eab801466c8597f99e0535ef826285ce86d5f867d03c2b9a551df4624",
+      "name": "host-contracts",
+      "skipped": 0
+    },
+    {
+      "cases": 46,
+      "error": 0,
+      "failure": 0,
+      "junit_sha256": "ba06b838cc0633f395d841edb89a48e70564409de974127fb3fe860132c55710",
+      "name": "container-contracts",
+      "skipped": 0
+    }
+  ],
+  "memory_bytes": 536870912,
+  "nano_cpus": 750000000,
+  "native_acceptance": false,
+  "production_data_mounted": false,
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "schema": "rc6.native-bound-development.v1",
+  "source_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+  "source_sha256": "12ce21146fe9de9845b4458c7abc3d81b0eb00ec645dd10a37e9e4e255c50a43",
+  "status": "GREEN",
+  "tree_sha": "268009eb5fb2416fb92435ea828be7ad8d875965"
+}

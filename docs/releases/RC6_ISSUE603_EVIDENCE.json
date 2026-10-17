@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "618_INSTALLED_NATIVE_COHERENCE_RED_FULL_STRESS_NOT_EXECUTED",
+  "release_state": "619_FROZEN_PREDEPLOY_IN_PROGRESS__618_INSTALLED_NATIVE_NOT_ACCEPTED",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -1463,14 +1463,146 @@
     "sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
     "tree": "268009eb5fb2416fb92435ea828be7ad8d875965",
     "base": "616fd460b7b8577c7c6f8a62ebb00294d9182b0d",
-    "state": "DEVELOPMENT_NOT_FROZEN_NO_PR",
+    "state": "FROZEN_NEW_PR_PREDEPLOY_PENDING",
     "file_count": 10,
     "production_changed": false,
     "requires": "CI_DEVELOPMENT_QUALIFICATION_BEFORE_OPENING_NEW_PRODUCT_PR",
     "qualification": {
-      "diagnostic_sha": "c59d91db60364495bded71d268adb746c0d057e4",
+      "state": "GREEN_TARGETED_DEVELOPMENT_ONLY",
       "run": 39037003384,
-      "state": "IN_PROGRESS"
+      "job": 117408782001,
+      "receipt_path": "docs/releases/evidence603/native-bound-development-39037003384.json",
+      "receipt_sha256": "cac37908639dc9fc95af8f95af0f2c38285250374477830e1c8d6b38e396568a",
+      "receipt_bytes": 4482,
+      "exact_git_bytes_verified": true,
+      "actual_zip_xml_json_readback": {
+        "run": 39037651489,
+        "job": 117410638979
+      },
+      "receipt": {
+        "compiled_sha256": "e0eed2fc86dde099583e2635ae6c6e57b8a7f53124bb71a04bef11f026daac99",
+        "context": "CI_DEVELOPMENT_SOURCE_OVER_FROZEN618_DEPENDENCY_BASE",
+        "droplet_accessed": false,
+        "final_product_image_built": false,
+        "frozen_product_candidate": false,
+        "full_catalog": {
+          "actual_market_acceptance": false,
+          "catalog_count": 14611,
+          "cuts": [
+            {
+              "as_of": "2026-10-05T13:20:00.000131+00:00",
+              "computed_report_sha256": "169e0fcc084264b33bb9c22c5691a7e50f5ca562f245752314541a3150ec2f4d",
+              "freshness_budget_seconds": 88.934,
+              "generation_id": "e1b27561e411aa650e748ef86e7e79762d17c0836fcf74bbff1bd80e513eda8c",
+              "manifest_sha256": "92b5649d523e90d0473e31b27f8b0fc745b63a3894254a33617b595980f76afd",
+              "sequence": 1791206400000131,
+              "tick_seconds": 14.467,
+              "worker_timing": {
+                "poll_seconds": 30,
+                "stages_cpu_seconds": {
+                  "durable_serialization": 3.539,
+                  "economic_exit_lab": 0.004,
+                  "entry_signal_lab": 0.001,
+                  "family_routing": 1.334,
+                  "operational_funnel": 2.483,
+                  "planner_pipeline": 1.065,
+                  "preopen": 2.411,
+                  "state_and_inputs": 0.026
+                },
+                "stages_seconds": {
+                  "durable_serialization": 4.719,
+                  "economic_exit_lab": 0.004,
+                  "entry_signal_lab": 0.001,
+                  "family_routing": 1.784,
+                  "operational_funnel": 3.308,
+                  "planner_pipeline": 1.414,
+                  "preopen": 3.21,
+                  "state_and_inputs": 0.026
+                },
+                "tick_cpu_seconds": 10.863,
+                "tick_seconds": 14.467
+              }
+            },
+            {
+              "as_of": "2026-10-05T13:20:44.595537+00:00",
+              "computed_report_sha256": "7f21400165a5c8f4fc2fdece78b474f40d5aae9b45eb29cdf064960f66eb0f20",
+              "freshness_budget_seconds": 84.7,
+              "generation_id": "0353580a2eff54046ebeb8862a38a814a543d63751037f3ec5866a83351913ad",
+              "manifest_sha256": "c9049ac13ce87ad294ae1d5959d909dcac27f07a77a2b4b33577872ec7c7f874",
+              "previous_cut_age_seconds": 57.028693,
+              "previous_cut_freshness_budget_seconds": 88.934,
+              "sequence": 1791206444595537,
+              "tick_seconds": 12.35,
+              "worker_timing": {
+                "poll_seconds": 30,
+                "stages_cpu_seconds": {
+                  "durable_serialization": 3.364,
+                  "economic_exit_lab": 0.002,
+                  "entry_signal_lab": 0.001,
+                  "family_routing": 1.378,
+                  "operational_funnel": 1.798,
+                  "planner_pipeline": 1.073,
+                  "preopen": 1.046,
+                  "state_and_inputs": 0.6
+                },
+                "stages_seconds": {
+                  "durable_serialization": 4.505,
+                  "economic_exit_lab": 0.002,
+                  "entry_signal_lab": 0.001,
+                  "family_routing": 1.828,
+                  "operational_funnel": 2.398,
+                  "planner_pipeline": 1.447,
+                  "preopen": 1.396,
+                  "state_and_inputs": 0.773
+                },
+                "tick_cpu_seconds": 9.262,
+                "tick_seconds": 12.35
+              }
+            }
+          ],
+          "elapsed_seconds": 57.029,
+          "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+          "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+          "process_peak_rss_kib": 458776,
+          "production_data_mounted": false,
+          "provider_requests": 0,
+          "ready_fixture_count": 9902,
+          "real_orders_sent": 0,
+          "real_routes": "NOT_CALLED",
+          "schema": "rc6.synthetic-full-catalog.v1"
+        },
+        "full_session_stress": false,
+        "groups": [
+          {
+            "cases": 43,
+            "error": 0,
+            "failure": 0,
+            "junit_sha256": "6783d67eab801466c8597f99e0535ef826285ce86d5f867d03c2b9a551df4624",
+            "name": "host-contracts",
+            "skipped": 0
+          },
+          {
+            "cases": 46,
+            "error": 0,
+            "failure": 0,
+            "junit_sha256": "ba06b838cc0633f395d841edb89a48e70564409de974127fb3fe860132c55710",
+            "name": "container-contracts",
+            "skipped": 0
+          }
+        ],
+        "memory_bytes": 536870912,
+        "nano_cpus": 750000000,
+        "native_acceptance": false,
+        "production_data_mounted": false,
+        "provider_requests": 0,
+        "real_orders_sent": 0,
+        "real_routes": "NOT_CALLED",
+        "schema": "rc6.native-bound-development.v1",
+        "source_sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+        "source_sha256": "12ce21146fe9de9845b4458c7abc3d81b0eb00ec645dd10a37e9e4e255c50a43",
+        "status": "GREEN",
+        "tree_sha": "268009eb5fb2416fb92435ea828be7ad8d875965"
+      }
     },
     "build_only_image": "python:3.11-bookworm@sha256:5887f265d8d44d8b4734d3658b21d668edf5aaf92e4945bc0c984afbfab105d3",
     "final_runtime_base_unchanged": true,
@@ -1499,7 +1631,17 @@
         "artifact_zip_sha256": "9e5272f9b1ba0999f6006dd01a52e4fa462f39281abda5dc4f50940024262152",
         "guard": "DEVELOPMENT_COMPILER_STAGE_DOCKER_PARSE_BEFORE_PR_FREEZE; FINAL_PREDEPLOY_DOCKER_BUILD"
       }
-    ]
+    ],
+    "frozen_at": "2026-10-17T13:40:15.534Z",
+    "immutable": true,
+    "pr": 619,
+    "predeploy": {
+      "run": 39037517622,
+      "job": 117410222547,
+      "state": "GOVERNED_ROOT_TEST_EXECUTION_IN_PROGRESS"
+    },
+    "final_predeploy_image_built": "NOT_OBSERVED_YET",
+    "deployed": false
   },
   "latest_deploy_result": {
     "run": 39026330767,
@@ -2027,11 +2169,11 @@
     "control_plane": "GITHUB_MCP_AND_CANONICAL_ACTIONS",
     "source_and_receipts_already_published": true,
     "additional_local_zip_verification": "NOT_EXECUTED",
-    "four_project_file_writeback": "PENDING; full remote read10:43 versions14/13/10/10 unchanged; draft618 preserves exact original history",
+    "four_project_file_writeback": "STILL_BLOCKED; private drafts preserve original history; last remote full read10:43; fresh Library versions required before any recovery writeback",
     "direct_ssh": "NOT_USED",
     "new_timers": "NONE",
     "subagents": "NONE",
-    "last_local_recovery_attempt": "2026-10-17 around12:42Z (prior draft labelled12:46); harmless pwd NO_RESPONSE_WITHIN15S; no canonical writes",
+    "last_local_recovery_attempt": "2026-10-17T13:42:12.718Z; harmless pwd NO_RESPONSE_WITHIN15S; no canonical writes",
     "canonical_history_reconstruction": "4_FULL_READS; UTF8_BYTE_SIZES_MATCH_WITH_TERMINAL_NEWLINE; PREPARED_TEXT_PRESERVES_ORIGINAL_PREFIX"
   },
   "native_generation_freshness_rca": {
@@ -2196,7 +2338,7 @@
     ],
     "native_acceptance": false
   },
-  "updated_at": "2026-10-17T13:33:31.686Z",
+  "updated_at": "2026-10-17T13:45:39.542Z",
   "previous_deploy_result_613": {
     "run": 39003668897,
     "job": 117311624166,
@@ -2610,7 +2752,7 @@
     "canonical_bytes_identical": true,
     "promoted": false
   },
-  "receipt_count": 142,
+  "receipt_count": 143,
   "native_serialization_fast_bound_experiment": {
     "run": 39023354447,
     "job": 117369424731,
@@ -4784,5 +4926,16 @@
     "audit_cpu_gain_percent": 31.204997205025386,
     "checkpoint_cpu_gain_percent": 23.68810034030513,
     "native_performance_inferred": false
+  },
+  "active_frozen_candidate": {
+    "pr": 619,
+    "sha": "5baeae7b0478d61d2dea04e5dbee4e0c1a3af951",
+    "tree": "268009eb5fb2416fb92435ea828be7ad8d875965",
+    "base": "616fd460b7b8577c7c6f8a62ebb00294d9182b0d",
+    "predeploy_run": 39037517622,
+    "predeploy_job": 117410222547,
+    "certificate": "PENDING",
+    "frozen_at": "2026-10-17T13:40:15Z",
+    "installed": false
   }
 }
