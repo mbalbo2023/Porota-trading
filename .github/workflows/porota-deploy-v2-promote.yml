@@ -200,7 +200,8 @@ jobs:
             RC6_DISK_PRECLEAN_TRIGGERED=1
             echo "RC6_DISK_PRECLEAN=START|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
             POLICY_B64="$(base64 -w0 ops/policy/rc6-disk-housekeeping-v1.json)"
-            "${SSH[@]}" "$DO_USER@$DO_HOST" "POLICY_B64='$POLICY_B64' bash -s" <<'PRECLEAN_REMOTE'
+            IMAGE_CLEANUP_B64="$(base64 -w0 scripts/rc6_pretransfer_image_cleanup.py)"
+            "${SSH[@]}" "$DO_USER@$DO_HOST" "POLICY_B64='$POLICY_B64' IMAGE_CLEANUP_B64='$IMAGE_CLEANUP_B64' bash -s" <<'PRECLEAN_REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           TMP_POLICY=/tmp/porota-dynamic-deploy-disk-policy.json
@@ -311,6 +312,9 @@ jobs:
             fi
             echo "RC6_PRECLEAN_CRITICAL_IMAGE_RECONCILED=GREEN|old_referenced=$OLD_IMAGE_USERS|image=$CURRENT_IMAGE"
           fi
+          # Execute only the exact checkout's bounded reference-safe cleanup.
+          # This is pretransfer housekeeping, never a product installation.
+          sudo -n timeout 120 python3 -c "import base64; exec(compile(base64.b64decode('$IMAGE_CLEANUP_B64'), '<rc6-pretransfer-cleanup>', 'exec'))"
           PPI_AFTER="$(
             for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
               printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
