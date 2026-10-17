@@ -1,0 +1,55 @@
+{
+  "broker_requests": 0,
+  "complete_inventory": false,
+  "diagnostic": {
+    "elapsed_ms": 2030.866,
+    "interrupted_by_deadline": true,
+    "query_plan": [
+      {
+        "automatic_index": false,
+        "covering_index": false,
+        "operation": "INTERNAL",
+        "target": "C",
+        "temporary_btree": false
+      },
+      {
+        "automatic_index": false,
+        "covering_index": false,
+        "operation": "SCAN",
+        "target": "FINANCIAL_INSTRUMENT_CATALOG",
+        "temporary_btree": false
+      },
+      {
+        "automatic_index": false,
+        "covering_index": false,
+        "operation": "SCAN",
+        "target": "C",
+        "temporary_btree": false
+      },
+      {
+        "automatic_index": false,
+        "covering_index": false,
+        "operation": "SEARCH",
+        "target": "I",
+        "temporary_btree": false
+      },
+      {
+        "automatic_index": false,
+        "covering_index": false,
+        "operation": "SEARCH",
+        "target": "T",
+        "temporary_btree": false
+      }
+    ],
+    "sqlite_version": "3.45.1",
+    "stage": "PACKED_METADATA"
+  },
+  "entry_authority": false,
+  "error_class": "OperationalError",
+  "error_code": "SQLITE_DEADLINE_INTERRUPTED",
+  "ppi_watch_accessed": false,
+  "read_only": true,
+  "schema": "rc6.instrument-audit-inventory.v1",
+  "source_database_effect": "READ_ONLY",
+  "status": "UNVERIFIED"
+}

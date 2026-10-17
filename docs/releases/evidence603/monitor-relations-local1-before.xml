@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.278" timestamp="2026-10-16T22:06:30.999393-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_market_watch_readonly.InstrumentInventoryContracts" name="test_packed_relations_are_read_once_without_join_fanout" time="0.008"><failure message="AssertionError: False is not true">self = &lt;test_rc6_market_watch_readonly.InstrumentInventoryContracts testMethod=test_packed_relations_are_read_once_without_join_fanout&gt;
+
+    def test_packed_relations_are_read_once_without_join_fanout(self):
+        connect = sqlite3.connect; queries = []
+        class Observe:
+            def __init__(self,*args,**kwargs): self.connection=connect(*args,**kwargs)
+            def __getattr__(self,name): return getattr(self.connection,name)
+            def execute(self,sql,*args):
+                if 'json_group_array(' in sql and not sql.startswith('EXPLAIN'):
+                    queries.append(sql)
+                    if ' JOIN ' in sql.upper():
+                        raise sqlite3.OperationalError('interrupted')
+                return self.connection.execute(sql,*args)
+        with patch.object(monitor.sqlite3,'connect',Observe):
+            value=monitor.instrument_inventory_host(self.root,at=NOW)
+&gt;       self.assertTrue(value['complete_inventory'])
+E       AssertionError: False is not true
+
+tests/test_rc6_market_watch_readonly.py:947: AssertionError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,1 @@
+{"sha":"65a0bf3173ac05b272e0bdb21523a20725764a70","tree":"9313e330f3052a4abc0ca9fa270d30c92539251f","files":[".github/workflows/porota-deploy-v2-promote.yml","scripts/rc6_pretransfer_image_cleanup.py","tests/test_rc6_pretransfer_image_cleanup.py"]}

@@ -480,6 +480,66 @@
       "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
       "bytes": 5989,
       "sha256": "566344888a0c10615614b70bf4edad035fb711692d6b8cfc2e18821fa576fd8a"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38993434968-deadline.json",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1395,
+      "sha256": "775c2db56c54639593587e8f77558cfb45f386cb8816363ae8b8997eb27d4b39"
+    },
+    {
+      "path": "docs/releases/evidence603/orphan-preclean-candidate.json",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 249,
+      "sha256": "cd7c136c4c8f578020fc244a7ad2f7031d68cfbaea51cc449286a0f95c6c09af"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-relations-candidate.json",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 192,
+      "sha256": "5e5c6f8797636d07faafdd9dffccde09ca4ffa4e110fc0ea1967562d2bdd7ba5"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-relations-local1-before.xml",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1563,
+      "sha256": "cd6ee8b4200a768a2aed68d4d45d0ff036b839fe95f0329039c8c37b4ee7ebc5",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/snapshot-38993434968-readonly.json",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 5613,
+      "sha256": "6f37577b4cf2ecec592b74038c4529ccf8f0ceb580d4cb9e7cd11bf774cd9a1d"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-relations-local66-after.xml",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 10697,
+      "sha256": "35892aea1cb776d6e4f87cb48b44d843580cdbcde4c1ff5a6a7adc8b564c3cd8",
+      "cases": 66,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/images-38993434968-readonly.json",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 963,
+      "sha256": "2814e9f79fd3d7faa53b413012ff88ff2b62444382906e3eb21b91dbb8ec2aea"
+    },
+    {
+      "path": "docs/releases/evidence603/orphan-preclean-local49-after.xml",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 8063,
+      "sha256": "2bfe428c60e17226d82eb4f1eff2899fe05f76a1bb884fc12c1ab4283e17dab1",
+      "cases": 49,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
     }
   ]
 }

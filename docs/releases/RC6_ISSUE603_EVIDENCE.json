@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "CAPACITY_BLOCKED_BEFORE_TRANSFER_SCOPED_IMAGE_RCA_IN_PROGRESS",
+  "release_state": "PR611_PREDEPLOY_IN_PROGRESS_NATIVE_CAPACITY_EVIDENCE_AVAILABLE",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -639,10 +639,10 @@
       "path": ".github/workflows/porota-deploy-v2-promote.yml",
       "symbol": "Dynamic pre-transfer disk guard",
       "classification": "OBSERVED_BLOCKER",
-      "detail": "Observed38991391810: safe preclean+critical reconciliation recovered total3056316416B but available4760752128 remains154355662B below4915107790. Gate correctly blocks before drain/transfer; capacity RCA not closed. Dockerdf before critical had3images/2active/2.216GB reclaimable. Need scoped image ownership evidence before any deletion; no reduced2GiB reserve or backup retention, no referenced/PPI assets.",
+      "detail": "Observed38991391810: safe preclean+critical reconciliation recovered total3056316416B but available4760752128 remains154355662B below4915107790. Gate correctly blocks before drain/transfer; capacity RCA not closed. Dockerdf before critical had3images/2active/2.216GB reclaimable. Need scoped image ownership evidence before any deletion; no reduced2GiB reserve or backup retention, no referenced/PPI assets. New READ_ONLY38993434968 confirmed a72d609a image,1205355105B, only porota-predeploy-v2:7890f70b50b7148dd27be3ef7c05e9eb4d6a1eea,0references/0externalaliases. PR611 adds standalone candidate-only preclean, strict all-container inventory and runtime lifecycle/PAPER0 invariants.49localPASS; native cleanup/space still pending, no reserve relaxation.",
       "test": "tests/test_rc6_disk_materialization_reserve.py",
-      "status": "OPEN_RCA_CAPACITY",
-      "code_state": "RCA_IN_PROGRESS",
+      "status": "FIX_PRESENT_TEST_PENDING_NATIVE",
+      "code_state": "EN_GITHUB",
       "runtime_occurrence": "OBSERVED_NATIVE_BLOCKER",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
@@ -654,10 +654,10 @@
       "path": "scripts/rc6_market_watch_readonly.py",
       "symbol": "instrument_inventory_host",
       "classification": "OBSERVED_BLOCKER",
-      "detail": "Observed inventory38990927608 OperationalError, then38991326475 typed SQLITE_DEADLINE_INTERRUPTED atPACKED_METADATA/2110.8ms, SQLite3.45.1, progress deadline true. No partial records or entry authority. Query plan RCA pending; do not inflate2s budget or claim full inventory observed. New structural plan probe621ed pending.",
+      "detail": "Observed inventory38990927608 OperationalError, then38991326475 typed SQLITE_DEADLINE_INTERRUPTED atPACKED_METADATA/2110.8ms, SQLite3.45.1, progress deadline true. No partial records or entry authority. Query plan RCA pending; do not inflate2s budget or claim full inventory observed. New structural plan probe621ed pending. First sequential-catalog optimization did NOT resolve native deadline:38993434968/artifact12085863183/2030.866ms. Plan still SEARCH I,T per catalogue row. New f0509a packs3 independent relations under SAME2s read-only snapshot and joins exact5field identities after close; sentinel+8MiBaggregate+duplicatesfailclosed preserved. Structural join-fanout adversary1FAIL old/66PASS new; native performance remains unproven. No claim the independent scans solve a cold-storage bottleneck before measured.",
       "test": "tests/test_rc6_market_watch_readonly.py",
-      "status": "OPEN_RCA_QUERY_PLAN",
-      "code_state": "RCA_IN_PROGRESS",
+      "status": "FIX_PRESENT_TEST_PENDING_NATIVE",
+      "code_state": "EN_GITHUB",
       "runtime_occurrence": "OBSERVED_NATIVE_READ_ONLY_FAILURE",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
@@ -1040,12 +1040,11 @@
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
   },
   "next_candidate": {
-    "state": "NOT_CREATED_PENDING_CAPACITY_RCA",
-    "current_frozen_candidate": "4e2bddc2c1c15ed0333301c4f462f790852a3a17",
-    "current_frozen_tree": "8d23feb520ac7a983bb4091a02b7a5e479885681",
-    "pr610": "MERGED_8f7406e2652dad7315ef496400444d4109a81013",
-    "last_predeploy_run": 38990671984,
-    "last_predeploy_state": "SUCCESS_INDEPENDENTLY_VERIFIED"
+    "state": "EN_GITHUB_PREDEPLOY_IN_PROGRESS",
+    "pr": 611,
+    "sha": "65a0bf3173ac05b272e0bdb21523a20725764a70",
+    "tree": "9313e330f3052a4abc0ca9fa270d30c92539251f",
+    "predeploy_run": 38993352249
   },
   "latest_deploy_result": {
     "schema": "rc6.deploy-attempt-receipt.v1",
@@ -1141,9 +1140,9 @@
   },
   "pending_monitor": {
     "pr": 607,
-    "sha": "621ed309e77a0d6629f1274f94d0592246ccc2ff",
-    "tree": "90b8b7c107146909cded01cb9373cd88a07dc095",
-    "local_contracts": 65,
+    "sha": "f0509a3aa2306b3223da2441e2f54a21d03b6b0d",
+    "tree": "9d8352e29cb61611e9371b9d812df7236a799716",
+    "local_contracts": 66,
     "ci_success": [
       38991712550,
       38991712552,
@@ -1152,7 +1151,7 @@
     ],
     "current_probe_run": 38991867432,
     "merge": "HELD_UNTIL_RUNTIME_VALIDATED_AND_STRESS_RESTORED",
-    "inventory_status": "UNVERIFIED_SQLITE_DEADLINE_INTERRUPTED",
+    "inventory_status": "NATIVE_FIRST_OPTIMIZATION_FAILED_2030ms_SUCCESSOR_PENDING",
     "image_inventory_status": "PROBE_PENDING"
   },
   "superseded_without_deploy_609": {
