@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.742" timestamp="2026-10-16T22:51:25.103420-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_partial_http_receipt_cannot_be_certified_as_all_routes_green" time="0.056"><failure message="Failed: DID NOT RAISE AssertionError">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f440efa5f10&gt;
+
+    def test_partial_http_receipt_cannot_be_certified_as_all_routes_green(monkeypatch):
+        from tests.test_ws_integ_03_runtime_audit import _snapshot
+        monkeypatch.setenv('PAPER_SCALPING_MODE','ACTIVE_PAPER')
+        monkeypatch.setenv('PAPER_CAUCION_SWEEP_MODE','ACTIVE_PAPER')
+        snapshot = _snapshot()
+        snapshot['http_status'].pop('/en-vivo/fuentes')
+&gt;       with pytest.raises(AssertionError, match='DASHBOARD_HTTP_COVERAGE_INCOMPLETE'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE AssertionError
+
+tests/test_rc6_runtime_all_routes_http.py:36: Failed</failure></testcase></testsuite></testsuites>

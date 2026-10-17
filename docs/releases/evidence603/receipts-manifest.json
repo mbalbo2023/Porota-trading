@@ -700,6 +700,98 @@
       "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
       "bytes": 611,
       "sha256": "50eca1e89477bc513787314688a3d9ff8b6aef335e29b363c12a94b456031bec"
+    },
+    {
+      "path": "docs/releases/evidence603/dashboard-clock-and-http-candidate.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 238,
+      "sha256": "bc7afc5183ea05f1d3480625745f389b7c5adbb274bd98a8a77c40e5ca60ada2"
+    },
+    {
+      "path": "docs/releases/evidence603/native-http-partial-local1-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 1205,
+      "sha256": "8341285c9cc1383566815c1cb91bb429803ccbc51eb790532c73a2b3695bb4e3",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38995874816-complete.json.gz",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 125052,
+      "sha256": "7194c1745c52991db11348f24dd98513e100c6aabc6f2d5c0ad22003c0fca783"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38995874816-summary.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 2220,
+      "sha256": "9ac7df4c5b1f48a46ef69885033b49b4ac9c4fbf681512894915f4ac59f81f5b"
+    },
+    {
+      "path": "docs/releases/evidence603/dashboard-38995874816-native500.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 19149,
+      "sha256": "294c04d1ba919fb6a03982bf7f8ac9484d19b67c4f180db957d4f381fa627cb0"
+    },
+    {
+      "path": "docs/releases/evidence603/dashboard-clock-local7-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 19441,
+      "sha256": "e462be0fe3371d88013ed54981f238c9d8358d75d9d794b11ac8ae8c95e0c52c",
+      "cases": 7,
+      "failure": 6,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/snapshot-38995874816-planned-pause.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 6132,
+      "sha256": "4bf4f5cd29d297d7702552622791f7659d0772052deecfc55c5bae7b672c95f8"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38995874816-e2e-matrix.csv.gz",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 121839,
+      "sha256": "b1b0f5650159c4bda8825d57e84f40c20313e717be4f0ee504d5519c49fd31bc"
+    },
+    {
+      "path": "docs/releases/evidence603/dashboard-clock-local160-after.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 1072952,
+      "sha256": "0f8b03a34f9479ec30e0573e5e40f6de680c4c48f53054518bf1839451d516bd",
+      "cases": 160,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38995165551-startup.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 1463,
+      "sha256": "2249ac8efdc23c79773cfda3603af2b020c4473cf27db4cdeb6c7e5da1441c31"
+    },
+    {
+      "path": "docs/releases/evidence603/clock-native-http-local242-after.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 1086309,
+      "sha256": "0db1fe07c29c2db8c85165dc806d3c1e9121e4f3929e3da00ce6604bc08dbfb3",
+      "cases": 242,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/native-http-local53-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 86270,
+      "sha256": "c8ebe454fef29bfa2fa58930649221b6882316382890934f3a7f241521cf2c9d",
+      "cases": 53,
+      "failure": 47,
+      "error": 0,
+      "skipped": 0
     }
   ]
 }

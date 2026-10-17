@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "DEPLOY612_BUNDLE_INSTALLED_RUNTIME_ACCEPTANCE_PENDING",
+  "release_state": "DEPLOY612_PROVISIONAL_HTTP500_KNOWN_SUCCESSOR613_PREDEPLOY",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -639,10 +639,10 @@
       "path": ".github/workflows/porota-deploy-v2-promote.yml",
       "symbol": "Dynamic pre-transfer disk guard",
       "classification": "OBSERVED_BLOCKER",
-      "detail": "Observed38991391810: safe preclean+critical reconciliation recovered total3056316416B but available4760752128 remains154355662B below4915107790. Gate correctly blocks before drain/transfer; capacity RCA not closed. Dockerdf before critical had3images/2active/2.216GB reclaimable. Need scoped image ownership evidence before any deletion; no reduced2GiB reserve or backup retention, no referenced/PPI assets. New READ_ONLY38993434968 confirmed a72d609a image,1205355105B, only porota-predeploy-v2:7890f70b50b7148dd27be3ef7c05e9eb4d6a1eea,0references/0externalaliases. PR611 adds standalone candidate-only preclean, strict all-container inventory and runtime lifecycle/PAPER0 invariants.49localPASS; native cleanup/space still pending, no reserve relaxation. 611 cleanup preserved image due anyRepoDigest;38994353621 identified only canonical same-repository digest, no external aliases/containers.612 permits this exact owned spelling; disk remains blocking until measured safe removal.",
+      "detail": "Observed38991391810: safe preclean+critical reconciliation recovered total3056316416B but available4760752128 remains154355662B below4915107790. Gate correctly blocks before drain/transfer; capacity RCA not closed. Dockerdf before critical had3images/2active/2.216GB reclaimable. Need scoped image ownership evidence before any deletion; no reduced2GiB reserve or backup retention, no referenced/PPI assets. New READ_ONLY38993434968 confirmed a72d609a image,1205355105B, only porota-predeploy-v2:7890f70b50b7148dd27be3ef7c05e9eb4d6a1eea,0references/0externalaliases. PR611 adds standalone candidate-only preclean, strict all-container inventory and runtime lifecycle/PAPER0 invariants.49localPASS; native cleanup/space still pending, no reserve relaxation. 611 cleanup preserved image due anyRepoDigest;38994353621 identified only canonical same-repository digest, no external aliases/containers.612 permits this exact owned spelling; disk remains blocking until measured safe removal. 38995165551 actual preclean/diskguard/drain/transfer SUCCESS;pretransfer6971023360>4915518811B,postload4328554496>2147483648B. Global/runtime acceptance and stress remain separate pending gates.",
       "test": "tests/test_rc6_disk_materialization_reserve.py",
-      "status": "FIX_PRESENT_TEST_PENDING_NATIVE",
-      "code_state": "EN_GITHUB",
+      "status": "VALIDADO_NATIVE_PRETRANSFER_ADMISSION",
+      "code_state": "DESPLEGADO",
       "runtime_occurrence": "OBSERVED_NATIVE_BLOCKER",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
@@ -654,10 +654,10 @@
       "path": "scripts/rc6_market_watch_readonly.py",
       "symbol": "instrument_inventory_host",
       "classification": "OBSERVED_BLOCKER",
-      "detail": "Observed inventory38990927608 OperationalError, then38991326475 typed SQLITE_DEADLINE_INTERRUPTED atPACKED_METADATA/2110.8ms, SQLite3.45.1, progress deadline true. No partial records or entry authority. Query plan RCA pending; do not inflate2s budget or claim full inventory observed. New structural plan probe621ed pending. First sequential-catalog optimization did NOT resolve native deadline:38993434968/artifact12085863183/2030.866ms. Plan still SEARCH I,T per catalogue row. New f0509a packs3 independent relations under SAME2s read-only snapshot and joins exact5field identities after close; sentinel+8MiBaggregate+duplicatesfailclosed preserved. Structural join-fanout adversary1FAIL old/66PASS new; native performance remains unproven. No claim the independent scans solve a cold-storage bottleneck before measured. 38993827055 proved2010.122ms in standalone catalog scan, no join plan. Missing covering projection for9publicfields confirmed;612 adds index during cold schema preparation, monitor5324433 explicitly verifies covering EXPLAIN before use.2causalFAILcatalog/2causalFAILmonitor,56product+69monitorlocalPASS; native proof still pending. Do not substitute structural local proof for host latency.",
+      "detail": "Observed inventory38990927608 OperationalError, then38991326475 typed SQLITE_DEADLINE_INTERRUPTED atPACKED_METADATA/2110.8ms, SQLite3.45.1, progress deadline true. No partial records or entry authority. Query plan RCA pending; do not inflate2s budget or claim full inventory observed. New structural plan probe621ed pending. First sequential-catalog optimization did NOT resolve native deadline:38993434968/artifact12085863183/2030.866ms. Plan still SEARCH I,T per catalogue row. New f0509a packs3 independent relations under SAME2s read-only snapshot and joins exact5field identities after close; sentinel+8MiBaggregate+duplicatesfailclosed preserved. Structural join-fanout adversary1FAIL old/66PASS new; native performance remains unproven. No claim the independent scans solve a cold-storage bottleneck before measured. 38993827055 proved2010.122ms in standalone catalog scan, no join plan. Missing covering projection for9publicfields confirmed;612 adds index during cold schema preparation, monitor5324433 explicitly verifies covering EXPLAIN before use.2causalFAILcatalog/2causalFAILmonitor,56product+69monitorlocalPASS; native proof still pending. Do not substitute structural local proof for host latency. Native38995874816/5324433 read14608exactunique identities in547.946ms with catalogue covering plan/nointerrupt/all optionaltables present. Artifact12087340273/ZIP4ffad3b884e54189328572cb7b8a071a5ea5a3993e2a8d4045c3de77fe3c3d09 downloaded/hash verified; raw+E2Ematrix compressed preserved. This validates metadata read only, not live tradeability/freshness/entry or main-monitor promotion.",
       "test": "tests/test_rc6_market_watch_readonly.py",
-      "status": "FIX_PRESENT_TEST_PENDING_NATIVE",
-      "code_state": "EN_GITHUB",
+      "status": "VALIDADO_RUNTIME_METADATA_ONLY",
+      "code_state": "INDEX_DEPLOYED_MONITOR_PROBE_EN_GITHUB",
       "runtime_occurrence": "OBSERVED_NATIVE_READ_ONLY_FAILURE",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
@@ -684,11 +684,56 @@
       "path": "scripts/rc6_pretransfer_image_cleanup.py",
       "symbol": "eligibility",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "611 protected all RepoDigests; target Docker load retains same-repository digest even for unused frozen candidate. Native38994353621 confirms only porota-predeploy-v2@sha256:a72d...,0refs/0external. Fix permits canonicalSHA256 only paired with same repository candidate tags; external/unpaired/stable/unknown/refs/races still block. Local1FAILbefore/56PASSafter; no forced removal or reserve change.",
+      "detail": "611 protected all RepoDigests; target Docker load retains same-repository digest even for unused frozen candidate. Native38994353621 confirms only porota-predeploy-v2@sha256:a72d...,0refs/0external. Fix permits canonicalSHA256 only paired with same repository candidate tags; external/unpaired/stable/unknown/refs/races still block. Local1FAILbefore/56PASSafter; no forced removal or reserve change. 38995165551 actual preclean/diskguard/drain/transfer SUCCESS;pretransfer6971023360>4915518811B,postload4328554496>2147483648B. Global/runtime acceptance and stress remain separate pending gates.",
       "test": "tests/test_rc6_pretransfer_image_cleanup.py",
-      "status": "FIX_PRESENT_TEST_PENDING_NATIVE",
-      "code_state": "EN_GITHUB",
+      "status": "VALIDADO_NATIVE_PRETRANSFER_ADMISSION",
+      "code_state": "DESPLEGADO",
       "runtime_occurrence": "OBSERVED_NATIVE_PRETRANSFER_BLOCKER",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "DASH-CLOCK-BOUND-OVERFLOW",
+      "capability": "DASHBOARD_SOURCES_500",
+      "path": "rc6_trader_dashboard/components.py",
+      "symbol": "clock",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Native38995874816 reports /en-vivo/fuentes HTTP500;51otherHTTP200/max568ms. Its cohort contains0001-01-01T00:00:00-03:00. Exact-format replay produces OverflowError converting historicalART offset; authenticated route reproduces same callgraph. Native exception stack was not captured, so runtime attribution is supported by payload+exact source+causal replay, not invented logs. Guard catches OverflowError→NO_VERIFICADO, no date wrapping/TTL/data/strategy change; normal display unchanged.7cases/6FAILbefore,160PASSafter;included inDroplet stress group. Await nativefixed52/52.",
+      "test": "tests/test_rc6_dashboard_clock_bounds.py",
+      "status": "EN_GITHUB_PENDING_NATIVE_ACCEPTANCE",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_NATIVE_HTTP500_WITH_CAUSAL_LOCAL_REPLAY",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "GATE-CANONICAL-HTTP-COVERAGE",
+      "capability": "NATIVE_CERTIFIER_COVERAGE",
+      "path": "scripts/rc6_zero_known_error_runtime_audit.py",
+      "symbol": "CORE_GET_PATHS",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Certifier required inventory52 but only16HTTPchecks;47canonical surfaces were absent. READ_ONLY code proof +53adversaries47FAILbefore. Successor unions all52canonical with originallegacy/API checks;no lost old checks or relaxedtimeouts. HTTP500 on anycanonical blocks before database/certification.242combinedlocalPASS;native acceptance pending.",
+      "test": "tests/test_rc6_runtime_all_routes_http.py",
+      "status": "EN_GITHUB_PENDING_NATIVE_ACCEPTANCE",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_CODE_GUARD_GAP_REPRODUCED",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "GATE-HTTP-PARTIAL-RECEIPT",
+      "capability": "NATIVE_CERTIFIER_RECEIPT",
+      "path": "scripts/rc6_zero_known_error_runtime_audit.py",
+      "symbol": "_assert_snapshot",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "all(status==200) accepted incompletehttp_status mapping. Separate1case FAILED before (missingFuentes still accepted), now requires completeCOREpathset and existing200checks;242combinedlocalPASS. Newtest is also inDropletstress group. No authority from declared routecount alone.",
+      "test": "tests/test_rc6_runtime_all_routes_http.py",
+      "status": "EN_GITHUB_PENDING_NATIVE_ACCEPTANCE",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_CODE_GUARD_GAP_REPRODUCED",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
@@ -1164,11 +1209,11 @@
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
   },
   "next_candidate": {
-    "pr": 612,
-    "sha": "19c26d2eba13d5855f653dff67605d11c518996b",
-    "tree": "d85ecfd4f642ba75e02f288b9f601bfc8ff285c6",
-    "predeploy_run": 38994512568,
-    "status": "MERGED_DEPLOY_IN_PROGRESS"
+    "pr": 613,
+    "sha": "349c418eef909e9998f7ba8ae7ee55c7ad1f08e2",
+    "tree": "43233fea9ef6408ac5a4694e6504f136e8102c8b",
+    "predeploy_run": 38996624409,
+    "status": "EN_GITHUB_PREDEPLOY_IN_PROGRESS"
   },
   "latest_deploy_result": {
     "schema": "rc6.deploy-attempt-receipt.v1",
@@ -1263,8 +1308,9 @@
     ],
     "current_probe_run": 38991867432,
     "merge": "HELD_UNTIL_RUNTIME_ACCEPTANCE_STRESS_RESTORE",
-    "inventory_status": "NO_NATIVE_COVERING_INDEX_YET_EXPECTS_PRODUCT612",
-    "image_inventory_status": "PROBE_PENDING"
+    "inventory_status": "VALIDADO_RUNTIME_METADATA_ONLY_547_946ms",
+    "image_inventory_status": "PROBE_PENDING",
+    "native_inventory_run": 38995874816
   },
   "superseded_without_deploy_609": {
     "run_id": 38989979153,
@@ -1294,9 +1340,9 @@
   "installed_runtime": {
     "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
     "image_id": "sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f",
-    "validation_status": "PROMOTION_IN_PROGRESS_RUNTIME_NOT_YET_REACCEPTED",
+    "validation_status": "DEPLOYED_VALIDATION_PENDING_KNOWN_HTTP500",
     "critical_container_now_same_image": true,
-    "source_identity": "IMAGE_TAR_AND_HOST_BUNDLE_CONFIRMED_RUNTIME_SOURCE_PENDING",
+    "source_identity": "OBSERVED_IMAGE_ENVIRONMENT_BOTH_CONTAINERS_GREEN",
     "real_orders_sent": 0,
     "full_stress_executed": false
   },
@@ -1329,6 +1375,118 @@
     "engine_normalization": "OBSERVED",
     "runtime_accepted": false,
     "stress_executed": false,
-    "source_receipt": "docs/releases/evidence603/deploy-38995165551-live-stage.json"
+    "source_receipt": "docs/releases/evidence603/deploy-38995165551-live-stage.json",
+    "state": "CONTRACT_RECONCILIATION_RUNNING",
+    "observer_startup_source_identity": "GREEN",
+    "dashboard_startup_source_identity": "GREEN",
+    "host_control_plane_units": 44,
+    "legacy_retired_units": 2,
+    "observer_pause": "PLANNED_CANONICAL_CONTRACT_RUNNER",
+    "operator_accepted": false
+  },
+  "metadata_inventory_runtime": {
+    "schema": "rc6.metadata-matrix-summary.v1",
+    "source_run": 38995874816,
+    "artifact_id": 12087340273,
+    "zip_sha256": "4ffad3b884e54189328572cb7b8a071a5ea5a3993e2a8d4045c3de77fe3c3d09",
+    "source_sha": "53244334e62ee586535ea4ce3afba3d16a21efa9",
+    "runtime_index_candidate": "19c26d2eba13d5855f653dff67605d11c518996b",
+    "snapshot": "2026-10-17T02:41:10.446131+00:00",
+    "exact_five_field_identity_unique": true,
+    "complete_inventory": true,
+    "count": 14608,
+    "elapsed_ms": 547.946,
+    "catalog_covering_plan": true,
+    "families": {
+      "BONOS": {
+        "total": 3011,
+        "catalog_ready": 2413,
+        "candidate_can_simulate": 2413,
+        "intraday_contract_present": 586
+      },
+      "OBLIGACIONES": {
+        "total": 5017,
+        "catalog_ready": 3639,
+        "candidate_can_simulate": 3627,
+        "intraday_contract_present": 0
+      },
+      "FCI": {
+        "total": 1082,
+        "catalog_ready": 1060,
+        "candidate_can_simulate": 1060,
+        "intraday_contract_present": 0
+      },
+      "ACCIONES": {
+        "total": 198,
+        "catalog_ready": 163,
+        "candidate_can_simulate": 163,
+        "intraday_contract_present": 154
+      },
+      "CEDEARS": {
+        "total": 2440,
+        "catalog_ready": 1266,
+        "candidate_can_simulate": 1245,
+        "intraday_contract_present": 1082
+      },
+      "LETRAS": {
+        "total": 53,
+        "catalog_ready": 38,
+        "candidate_can_simulate": 34,
+        "intraday_contract_present": 20
+      },
+      "FUTUROS": {
+        "total": 203,
+        "catalog_ready": 0,
+        "candidate_can_simulate": 0,
+        "intraday_contract_present": 43
+      },
+      "OPCIONES": {
+        "total": 2502,
+        "catalog_ready": 1326,
+        "candidate_can_simulate": 1326,
+        "intraday_contract_present": 438
+      },
+      "CAUCIONES": {
+        "total": 10,
+        "catalog_ready": 5,
+        "candidate_can_simulate": 5,
+        "intraday_contract_present": 10
+      },
+      "ON": {
+        "total": 91,
+        "catalog_ready": 0,
+        "candidate_can_simulate": 0,
+        "intraday_contract_present": 91
+      },
+      "INDICES": {
+        "total": 1,
+        "catalog_ready": 0,
+        "candidate_can_simulate": 0,
+        "intraday_contract_present": 0
+      }
+    },
+    "other_e2e_stages": "NO_VERIFICADO",
+    "entry_authority": false
+  },
+  "wiring_612": {
+    "path": "docs/releases/RC6_ISSUE603_WIRING_612.json",
+    "candidate": "19c26d2eba13d5855f653dff67605d11c518996b",
+    "root_python": 261,
+    "bundle_matches": 261,
+    "parse_errors": 0,
+    "authority": "STATIC_NOT_LIVE_TRACE"
+  },
+  "operator_acceptance": "NO_GO_KNOWN_HTTP500_SOURCES",
+  "native_dashboard_probe": {
+    "run": 38995874816,
+    "artifact_id": 12086373573,
+    "zip_sha256": "1ace2ea3690aa1dcb6c215242bb14a30d9fe0ec04608c92b087ac8bcced2e3c9",
+    "canonical_routes": 52,
+    "http200": 51,
+    "http500": [
+      "/en-vivo/fuentes"
+    ],
+    "max_elapsed_ms": 568,
+    "visual_tablet": "NO_VERIFICADO"
   }
 }

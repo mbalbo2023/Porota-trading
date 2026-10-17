@@ -1,0 +1,1364 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="47" skipped="0" tests="53" time="4.271" timestamp="2026-10-16T22:50:42.243242-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/]" time="0.002" /><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/analitica]" time="0.010"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff42120&gt;
+broken = '/analitica'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/analitica/anual]" time="0.012"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff46780&gt;
+broken = '/analitica/anual'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/analitica/cierre-diario]" time="0.010"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff534d0&gt;
+broken = '/analitica/cierre-diario'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/analitica/contrafactuales]" time="0.012"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff5d8b0&gt;
+broken = '/analitica/contrafactuales'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/analitica/experimentos]" time="0.005"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff66750&gt;
+broken = '/analitica/experimentos'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/analitica/historico]" time="0.007"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe73710&gt;
+broken = '/analitica/historico'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/analitica/reportes]" time="0.008"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe72960&gt;
+broken = '/analitica/reportes'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/analitica/salidas]" time="0.012"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff67980&gt;
+broken = '/analitica/salidas'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/analitica/senales]" time="0.007"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff5dcd0&gt;
+broken = '/analitica/senales'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/en-vivo]" time="0.008"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff52660&gt;
+broken = '/en-vivo'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/en-vivo/capacidad]" time="0.007"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff45a60&gt;
+broken = '/en-vivo/capacidad'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/en-vivo/cierres]" time="0.007"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe8bfb0&gt;
+broken = '/en-vivo/cierres'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/en-vivo/decisiones]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff43440&gt;
+broken = '/en-vivo/decisiones'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/en-vivo/fuentes]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff47b60&gt;
+broken = '/en-vivo/fuentes'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/en-vivo/oportunidades]" time="0.003"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff529c0&gt;
+broken = '/en-vivo/oportunidades'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/en-vivo/posiciones]" time="0.003"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff5dbe0&gt;
+broken = '/en-vivo/posiciones'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/en-vivo/workers]" time="0.006"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff66060&gt;
+broken = '/en-vivo/workers'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/instrumentos]" time="0.001" /><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/instrumentos/contrato]" time="0.010"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe90f50&gt;
+broken = '/instrumentos/contrato'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/instrumentos/evidencia]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe71670&gt;
+broken = '/instrumentos/evidencia'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/instrumentos/ficha]" time="0.010"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff66c30&gt;
+broken = '/instrumentos/ficha'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/instrumentos/mercado]" time="0.012"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff5d820&gt;
+broken = '/instrumentos/mercado'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/riesgo]" time="0.001" /><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/riesgo/event-risk]" time="0.006"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff50ad0&gt;
+broken = '/riesgo/event-risk'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/riesgo/exposicion]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff45460&gt;
+broken = '/riesgo/exposicion'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/riesgo/limites]" time="0.005"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efea0140&gt;
+broken = '/riesgo/limites'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/riesgo/liquidez]" time="0.003"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe8bbf0&gt;
+broken = '/riesgo/liquidez'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/riesgo/pnl]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff5e960&gt;
+broken = '/riesgo/pnl'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/riesgo/posiciones]" time="0.006"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff537d0&gt;
+broken = '/riesgo/posiciones'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/sistema]" time="0.001" /><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/sistema/backups]" time="0.005"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff65250&gt;
+broken = '/sistema/backups'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/sistema/configuracion]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe98380&gt;
+broken = '/sistema/configuracion'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/sistema/evidencia]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe93aa0&gt;
+broken = '/sistema/evidencia'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/sistema/integraciones]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe719d0&gt;
+broken = '/sistema/integraciones'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/sistema/logs]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff43890&gt;
+broken = '/sistema/logs'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/sistema/salud]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff59460&gt;
+broken = '/sistema/salud'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/sistema/scheduler]" time="0.005"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff51040&gt;
+broken = '/sistema/scheduler'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/sistema/workers]" time="0.002"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe8a2d0&gt;
+broken = '/sistema/workers'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/trading]" time="0.001" /><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/trading/cauciones]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efeab6b0&gt;
+broken = '/trading/cauciones'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/trading/derivados]" time="0.002"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff5d820&gt;
+broken = '/trading/derivados'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/trading/equity-spot]" time="0.002"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff47e60&gt;
+broken = '/trading/equity-spot'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/trading/renta-fija]" time="0.002"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff67770&gt;
+broken = '/trading/renta-fija'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/trading/scalping]" time="0.002"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff595e0&gt;
+broken = '/trading/scalping'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/trading/tesoreria]" time="0.003"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe99340&gt;
+broken = '/trading/tesoreria'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/universo]" time="0.003"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efeba360&gt;
+broken = '/universo'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/universo/coverage]" time="0.010"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe8c0b0&gt;
+broken = '/universo/coverage'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/universo/discovery]" time="0.007"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9f134edb0&gt;
+broken = '/universo/discovery'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/universo/excluidos]" time="0.004"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9f13c04d0&gt;
+broken = '/universo/excluidos'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/universo/familias]" time="0.005"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9efe99ee0&gt;
+broken = '/universo/familias'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_any_broken_canonical_page_blocks_native_acceptance_before_database[/universo/tradeability]" time="0.008"><failure message="AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fa9eff5a570&gt;
+broken = '/universo/tradeability'
+
+    @pytest.mark.parametrize('broken', sorted(CANONICAL_PATHS))
+    def test_any_broken_canonical_page_blocks_native_acceptance_before_database(monkeypatch, broken):
+        called = []
+        def http(path):
+            called.append(path)
+            return (500, b'Internal Server Error') if path == broken else (200, b'{}')
+        def forbidden():
+            raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+        monkeypatch.setattr(audit, '_http', http)
+        monkeypatch.setattr(audit, '_surface_metrics', lambda path, body: {})
+        monkeypatch.setattr(audit, '_assert_surface_metrics', lambda metrics: None)
+        monkeypatch.setattr(audit, '_database_snapshot', forbidden)
+        with pytest.raises(RuntimeError, match='DASHBOARD_HTTP_FAILURES=') as failure:
+&gt;           audit.collect('canonical-route-negative')
+
+tests/test_rc6_runtime_all_routes_http.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/rc6_zero_known_error_runtime_audit.py:453: in collect
+    "database": _database_snapshot(),
+                ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def forbidden():
+&gt;       raise AssertionError('UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE')
+E       AssertionError: UNGUARDED_CANONICAL_HTTP_REACHED_DATABASE
+
+tests/test_rc6_runtime_all_routes_http.py:15: AssertionError</failure></testcase><testcase classname="tests.test_rc6_runtime_all_routes_http" name="test_required_legacy_and_truth_routes_are_retained" time="0.000" /></testsuite></testsuites>

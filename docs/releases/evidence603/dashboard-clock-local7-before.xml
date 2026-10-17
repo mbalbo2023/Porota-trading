@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="0" tests="7" time="1.823" timestamp="2026-10-16T22:47:48.745287-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_dashboard_clock_bounds" name="test_unrepresentable_art_clock_is_unknown_without_wrapping_or_crashing[0001-01-01T00:00:00-03:00]" time="0.001"><failure message="OverflowError: date value out of range">value = '0001-01-01T00:00:00-03:00'
+
+    @pytest.mark.parametrize('value', [
+        '0001-01-01T00:00:00-03:00',
+        '0001-01-01T00:00:00+00:00',
+        '0001-01-01T00:00:00+14:00',
+        '9999-12-31T23:59:59-12:00',
+    ])
+    def test_unrepresentable_art_clock_is_unknown_without_wrapping_or_crashing(value):
+&gt;       assert clock(value) == 'NO_VERIFICADO'
+               ^^^^^^^^^^^^
+
+tests/test_rc6_dashboard_clock_bounds.py:17: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = '0001-01-01T00:00:00-03:00'
+
+    def clock(value):
+        try:
+            stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                return UNKNOWN
+&gt;           return stamp.astimezone(TZ).strftime("%d/%m %H:%M:%S ART")
+                   ^^^^^^^^^^^^^^^^^^^^
+E           OverflowError: date value out of range
+
+rc6_trader_dashboard/components.py:54: OverflowError</failure></testcase><testcase classname="tests.test_rc6_dashboard_clock_bounds" name="test_unrepresentable_art_clock_is_unknown_without_wrapping_or_crashing[0001-01-01T00:00:00+00:00]" time="0.001"><failure message="OverflowError: date value out of range">value = '0001-01-01T00:00:00+00:00'
+
+    @pytest.mark.parametrize('value', [
+        '0001-01-01T00:00:00-03:00',
+        '0001-01-01T00:00:00+00:00',
+        '0001-01-01T00:00:00+14:00',
+        '9999-12-31T23:59:59-12:00',
+    ])
+    def test_unrepresentable_art_clock_is_unknown_without_wrapping_or_crashing(value):
+&gt;       assert clock(value) == 'NO_VERIFICADO'
+               ^^^^^^^^^^^^
+
+tests/test_rc6_dashboard_clock_bounds.py:17: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = '0001-01-01T00:00:00+00:00'
+
+    def clock(value):
+        try:
+            stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                return UNKNOWN
+&gt;           return stamp.astimezone(TZ).strftime("%d/%m %H:%M:%S ART")
+                   ^^^^^^^^^^^^^^^^^^^^
+E           OverflowError: date value out of range
+
+rc6_trader_dashboard/components.py:54: OverflowError</failure></testcase><testcase classname="tests.test_rc6_dashboard_clock_bounds" name="test_unrepresentable_art_clock_is_unknown_without_wrapping_or_crashing[0001-01-01T00:00:00+14:00]" time="0.001"><failure message="OverflowError: date value out of range">value = '0001-01-01T00:00:00+14:00'
+
+    @pytest.mark.parametrize('value', [
+        '0001-01-01T00:00:00-03:00',
+        '0001-01-01T00:00:00+00:00',
+        '0001-01-01T00:00:00+14:00',
+        '9999-12-31T23:59:59-12:00',
+    ])
+    def test_unrepresentable_art_clock_is_unknown_without_wrapping_or_crashing(value):
+&gt;       assert clock(value) == 'NO_VERIFICADO'
+               ^^^^^^^^^^^^
+
+tests/test_rc6_dashboard_clock_bounds.py:17: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = '0001-01-01T00:00:00+14:00'
+
+    def clock(value):
+        try:
+            stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                return UNKNOWN
+&gt;           return stamp.astimezone(TZ).strftime("%d/%m %H:%M:%S ART")
+                   ^^^^^^^^^^^^^^^^^^^^
+E           OverflowError: date value out of range
+
+rc6_trader_dashboard/components.py:54: OverflowError</failure></testcase><testcase classname="tests.test_rc6_dashboard_clock_bounds" name="test_unrepresentable_art_clock_is_unknown_without_wrapping_or_crashing[9999-12-31T23:59:59-12:00]" time="0.001"><failure message="OverflowError: date value out of range">value = '9999-12-31T23:59:59-12:00'
+
+    @pytest.mark.parametrize('value', [
+        '0001-01-01T00:00:00-03:00',
+        '0001-01-01T00:00:00+00:00',
+        '0001-01-01T00:00:00+14:00',
+        '9999-12-31T23:59:59-12:00',
+    ])
+    def test_unrepresentable_art_clock_is_unknown_without_wrapping_or_crashing(value):
+&gt;       assert clock(value) == 'NO_VERIFICADO'
+               ^^^^^^^^^^^^
+
+tests/test_rc6_dashboard_clock_bounds.py:17: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = '9999-12-31T23:59:59-12:00'
+
+    def clock(value):
+        try:
+            stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                return UNKNOWN
+&gt;           return stamp.astimezone(TZ).strftime("%d/%m %H:%M:%S ART")
+                   ^^^^^^^^^^^^^^^^^^^^
+E           OverflowError: date value out of range
+
+rc6_trader_dashboard/components.py:54: OverflowError</failure></testcase><testcase classname="tests.test_rc6_dashboard_clock_bounds" name="test_authenticated_sources_page_survives_provider_clock_bounds[0001-01-01T00:00:00-03:00]" time="0.074"><failure message="OverflowError: date value out of range">database = PosixPath('/tmp/pytest-of-root/pytest-75/test_authenticated_sources_pag0/observer.db')
+client = &lt;starlette.testclient.TestClient object at 0x7f615266d280&gt;
+value = '0001-01-01T00:00:00-03:00'
+
+    @pytest.mark.parametrize('value', [
+        '0001-01-01T00:00:00-03:00',
+        '9999-12-31T23:59:59-12:00',
+    ])
+    def test_authenticated_sources_page_survives_provider_clock_bounds(database, client, value):
+        with sqlite3.connect(database) as c:
+            c.execute('INSERT INTO market_snapshots VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                      (1,'PPI',STAMP,'T000','ACCIONES','BYMA','ARS','INMEDIATA',
+                       '100','99','101','10','10',value,value,None))
+&gt;       response = client.get('/en-vivo/fuentes')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_dashboard_clock_bounds.py:29: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:1113: in get
+    return self.request(
+../.venv/lib/python3.12/site-packages/starlette/testclient.py:463: in request
+    return super().request(
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:797: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:980: in send
+    response = self._send_handling_auth(
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:1008: in _send_handling_auth
+    response = self._send_handling_redirects(
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:1043: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:1076: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/starlette/testclient.py:360: in handle_request
+    raise exc
+../.venv/lib/python3.12/site-packages/starlette/testclient.py:357: in handle_request
+    portal.call(self.app, scope, receive, send)
+../.venv/lib/python3.12/site-packages/anyio/from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+../.venv/lib/python3.12/site-packages/anyio/from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/fastapi/applications.py:1163: in __call__
+    await super().__call__(scope, receive, send)
+../.venv/lib/python3.12/site-packages/starlette/applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+../.venv/lib/python3.12/site-packages/starlette/middleware/errors.py:186: in __call__
+    raise exc
+../.venv/lib/python3.12/site-packages/starlette/middleware/errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+../.venv/lib/python3.12/site-packages/starlette/middleware/base.py:197: in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/routes.py:88: in trader_terminal
+    content, headers = await run_in_threadpool(build_page, path, dict(request.query_params), database_path())
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/starlette/concurrency.py:34: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/anyio/to_thread.py:65: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+../.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2706: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:1100: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/routes.py:33: in build_page
+    content = VIEWS[destination.key].render(projection, destination, tab)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/views_live.py:61: in render
+    panel+="&lt;details&gt;&lt;summary&gt;"+e(' / '.join(str(row.get(k) or 'NO_VERIFICADO') for k in ('symbol','family','market','currency','settlement')))+"&lt;/summary&gt;"+definition_list(row,fields('book_freshness|Book|status;trade_freshness|Trade|status;receipt_freshness|Recepción|status;book_at|Book|time;trade_at|Trade|time;received_at|Recepción|time;source|Fuente'))+"&lt;/details&gt;"
+                                                                                                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/components.py:134: in definition_list
+    return "&lt;dl class='facts'&gt;" + "".join(f"&lt;div&gt;&lt;dt&gt;{e(f.label)}&lt;/dt&gt;&lt;dd&gt;{value_html(row, f)}&lt;/dd&gt;&lt;/div&gt;" for f in columns) + "&lt;/dl&gt;"
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/components.py:134: in &lt;genexpr&gt;
+    return "&lt;dl class='facts'&gt;" + "".join(f"&lt;div&gt;&lt;dt&gt;{e(f.label)}&lt;/dt&gt;&lt;dd&gt;{value_html(row, f)}&lt;/dd&gt;&lt;/div&gt;" for f in columns) + "&lt;/dl&gt;"
+                                                                           ^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/components.py:114: in value_html
+    return e(clock(value))
+             ^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = '0001-01-01T00:00:00-03:00'
+
+    def clock(value):
+        try:
+            stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                return UNKNOWN
+&gt;           return stamp.astimezone(TZ).strftime("%d/%m %H:%M:%S ART")
+                   ^^^^^^^^^^^^^^^^^^^^
+E           OverflowError: date value out of range
+
+rc6_trader_dashboard/components.py:54: OverflowError</failure></testcase><testcase classname="tests.test_rc6_dashboard_clock_bounds" name="test_authenticated_sources_page_survives_provider_clock_bounds[9999-12-31T23:59:59-12:00]" time="0.031"><failure message="OverflowError: date value out of range">database = PosixPath('/tmp/pytest-of-root/pytest-75/test_authenticated_sources_pag1/observer.db')
+client = &lt;starlette.testclient.TestClient object at 0x7f6152565f70&gt;
+value = '9999-12-31T23:59:59-12:00'
+
+    @pytest.mark.parametrize('value', [
+        '0001-01-01T00:00:00-03:00',
+        '9999-12-31T23:59:59-12:00',
+    ])
+    def test_authenticated_sources_page_survives_provider_clock_bounds(database, client, value):
+        with sqlite3.connect(database) as c:
+            c.execute('INSERT INTO market_snapshots VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                      (1,'PPI',STAMP,'T000','ACCIONES','BYMA','ARS','INMEDIATA',
+                       '100','99','101','10','10',value,value,None))
+&gt;       response = client.get('/en-vivo/fuentes')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_dashboard_clock_bounds.py:29: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:1113: in get
+    return self.request(
+../.venv/lib/python3.12/site-packages/starlette/testclient.py:463: in request
+    return super().request(
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:797: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:980: in send
+    response = self._send_handling_auth(
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:1008: in _send_handling_auth
+    response = self._send_handling_redirects(
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:1043: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/httpx2/_client.py:1076: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/starlette/testclient.py:360: in handle_request
+    raise exc
+../.venv/lib/python3.12/site-packages/starlette/testclient.py:357: in handle_request
+    portal.call(self.app, scope, receive, send)
+../.venv/lib/python3.12/site-packages/anyio/from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+../.venv/lib/python3.12/site-packages/anyio/from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/fastapi/applications.py:1163: in __call__
+    await super().__call__(scope, receive, send)
+../.venv/lib/python3.12/site-packages/starlette/applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+../.venv/lib/python3.12/site-packages/starlette/middleware/errors.py:186: in __call__
+    raise exc
+../.venv/lib/python3.12/site-packages/starlette/middleware/errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+../.venv/lib/python3.12/site-packages/starlette/middleware/base.py:197: in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/routes.py:88: in trader_terminal
+    content, headers = await run_in_threadpool(build_page, path, dict(request.query_params), database_path())
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/starlette/concurrency.py:34: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/anyio/to_thread.py:65: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+../.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2706: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+../.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:1100: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/routes.py:33: in build_page
+    content = VIEWS[destination.key].render(projection, destination, tab)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/views_live.py:61: in render
+    panel+="&lt;details&gt;&lt;summary&gt;"+e(' / '.join(str(row.get(k) or 'NO_VERIFICADO') for k in ('symbol','family','market','currency','settlement')))+"&lt;/summary&gt;"+definition_list(row,fields('book_freshness|Book|status;trade_freshness|Trade|status;receipt_freshness|Recepción|status;book_at|Book|time;trade_at|Trade|time;received_at|Recepción|time;source|Fuente'))+"&lt;/details&gt;"
+                                                                                                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/components.py:134: in definition_list
+    return "&lt;dl class='facts'&gt;" + "".join(f"&lt;div&gt;&lt;dt&gt;{e(f.label)}&lt;/dt&gt;&lt;dd&gt;{value_html(row, f)}&lt;/dd&gt;&lt;/div&gt;" for f in columns) + "&lt;/dl&gt;"
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/components.py:134: in &lt;genexpr&gt;
+    return "&lt;dl class='facts'&gt;" + "".join(f"&lt;div&gt;&lt;dt&gt;{e(f.label)}&lt;/dt&gt;&lt;dd&gt;{value_html(row, f)}&lt;/dd&gt;&lt;/div&gt;" for f in columns) + "&lt;/dl&gt;"
+                                                                           ^^^^^^^^^^^^^^^^^^
+rc6_trader_dashboard/components.py:114: in value_html
+    return e(clock(value))
+             ^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = '9999-12-31T23:59:59-12:00'
+
+    def clock(value):
+        try:
+            stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                return UNKNOWN
+&gt;           return stamp.astimezone(TZ).strftime("%d/%m %H:%M:%S ART")
+                   ^^^^^^^^^^^^^^^^^^^^
+E           OverflowError: date value out of range
+
+rc6_trader_dashboard/components.py:54: OverflowError</failure></testcase><testcase classname="tests.test_rc6_dashboard_clock_bounds" name="test_normal_source_clock_preserves_exact_art_display" time="0.001" /></testsuite></testsuites>

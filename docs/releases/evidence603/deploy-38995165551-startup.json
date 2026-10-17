@@ -1,0 +1,20 @@
+{
+  "schema": "rc6.browser-visible-startup-receipt.v1",
+  "observed_at": "2026-10-17T02:39:53.088Z",
+  "url": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38995165551/job/117286013260",
+  "state": "CONTRACT_RECONCILIATION_IN_PROGRESS",
+  "lines": [
+    "POROTA_HOST_CONTROL_PLANE_APPLY=GREEN|units=44",
+    "POROTA_HOST_LEGACY_RETIREMENT=GREEN|units=2",
+    "POROTA_MODE=OK",
+    "ACCION=SIMULATION",
+    "POROTA_RUNTIME_IMAGE_ID_VERIFY=observer=sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f|dashboard=sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f|loaded=sha256:799b659f9f537fd700364b7891a1c93fe90bbf0c827674dba0a70a821c0c9f2f",
+    "{\"candidate_sha\": \"19c26d2eba13d5855f653dff67605d11c518996b\", \"candidate_tree_sha\": \"d85ecfd4f642ba75e02f288b9f601bfc8ff285c6\", \"schema\": \"porota.image-source-identity.v1\", \"source\": \"OBSERVED_IMAGE_ENVIRONMENT\", \"status\": \"GREEN\"}",
+    "{\"candidate_sha\": \"19c26d2eba13d5855f653dff67605d11c518996b\", \"candidate_tree_sha\": \"d85ecfd4f642ba75e02f288b9f601bfc8ff285c6\", \"schema\": \"porota.image-source-identity.v1\", \"source\": \"OBSERVED_IMAGE_ENVIRONMENT\", \"status\": \"GREEN\"}",
+    "POROTA_RUNNING_SOURCE_IDENTITY=GREEN",
+    "POST_CONTAINER_STATUS=running|OOM_KILLED=false",
+    "POST_STATE=STATE_FAST|PRODUCTION_PAPER|0",
+    "RC6_CURRENT_STATE_PROVISIONAL=GREEN",
+    "OBSERVER_PAUSED_FOR_CONTRACT_RECONCILIATION=GREEN"
+  ]
+}

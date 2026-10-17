@@ -1,0 +1,84 @@
+{
+  "schema": "rc6.metadata-matrix-summary.v1",
+  "source_run": 38995874816,
+  "artifact_id": 12087340273,
+  "zip_sha256": "4ffad3b884e54189328572cb7b8a071a5ea5a3993e2a8d4045c3de77fe3c3d09",
+  "source_sha": "53244334e62ee586535ea4ce3afba3d16a21efa9",
+  "runtime_index_candidate": "19c26d2eba13d5855f653dff67605d11c518996b",
+  "snapshot": "2026-10-17T02:41:10.446131+00:00",
+  "exact_five_field_identity_unique": true,
+  "complete_inventory": true,
+  "count": 14608,
+  "elapsed_ms": 547.946,
+  "catalog_covering_plan": true,
+  "families": {
+    "BONOS": {
+      "total": 3011,
+      "catalog_ready": 2413,
+      "candidate_can_simulate": 2413,
+      "intraday_contract_present": 586
+    },
+    "OBLIGACIONES": {
+      "total": 5017,
+      "catalog_ready": 3639,
+      "candidate_can_simulate": 3627,
+      "intraday_contract_present": 0
+    },
+    "FCI": {
+      "total": 1082,
+      "catalog_ready": 1060,
+      "candidate_can_simulate": 1060,
+      "intraday_contract_present": 0
+    },
+    "ACCIONES": {
+      "total": 198,
+      "catalog_ready": 163,
+      "candidate_can_simulate": 163,
+      "intraday_contract_present": 154
+    },
+    "CEDEARS": {
+      "total": 2440,
+      "catalog_ready": 1266,
+      "candidate_can_simulate": 1245,
+      "intraday_contract_present": 1082
+    },
+    "LETRAS": {
+      "total": 53,
+      "catalog_ready": 38,
+      "candidate_can_simulate": 34,
+      "intraday_contract_present": 20
+    },
+    "FUTUROS": {
+      "total": 203,
+      "catalog_ready": 0,
+      "candidate_can_simulate": 0,
+      "intraday_contract_present": 43
+    },
+    "OPCIONES": {
+      "total": 2502,
+      "catalog_ready": 1326,
+      "candidate_can_simulate": 1326,
+      "intraday_contract_present": 438
+    },
+    "CAUCIONES": {
+      "total": 10,
+      "catalog_ready": 5,
+      "candidate_can_simulate": 5,
+      "intraday_contract_present": 10
+    },
+    "ON": {
+      "total": 91,
+      "catalog_ready": 0,
+      "candidate_can_simulate": 0,
+      "intraday_contract_present": 91
+    },
+    "INDICES": {
+      "total": 1,
+      "catalog_ready": 0,
+      "candidate_can_simulate": 0,
+      "intraday_contract_present": 0
+    }
+  },
+  "other_e2e_stages": "NO_VERIFICADO",
+  "entry_authority": false
+}
