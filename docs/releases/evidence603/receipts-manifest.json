@@ -858,6 +858,76 @@
       "source": "EXACT_NATIVE_PREDEPLOY_38997662394_OR_INDEPENDENT_BYTE_VERIFICATION",
       "bytes": 1647,
       "sha256": "a5a678bbb806bb332c0632753f85c489fe109b7aaff70174c0ed7eb8d8569991"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38998730556-complete.json.gz",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 108306,
+      "sha256": "e4a6edc618315ffd49f83a3164ca5a4a8ffab185888211e8ddd3a950bff8bf80"
+    },
+    {
+      "path": "docs/releases/evidence603/snapshot-38998730556-startup.json",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 4185,
+      "sha256": "544d76aa119447ecdb9c1c2bcd662a19bd2d028b86428cf76df327915ebf336f"
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-startup-candidate.json",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 368,
+      "sha256": "f8d0722fcb4861bbf3abb13b21f770a7ab884b714a5ce67aaaa0e8612a52e8a0"
+    },
+    {
+      "path": "docs/releases/evidence603/readiness-delta-38998730556-complete.json",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 18803,
+      "sha256": "7f64534fb0a968d0dec7afc9c70bb37f0626dd41b33755d60383fd6cd42cdd76"
+    },
+    {
+      "path": "docs/releases/evidence603/go-startup-before.xml.gz",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 864,
+      "sha256": "15b994e2cc9ecb4001872b51c24ca1d46d028ac15c08cd30fbd209e82339d53b",
+      "cases": 6,
+      "failure": 4,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-publication-after.xml.gz",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 3704,
+      "sha256": "887d3b796566c8837233e51c7ebbf2e2288661f743a0a46dfe657f9dc139ffa3",
+      "cases": 176,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-and-go-after.xml.gz",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 4700,
+      "sha256": "aea19eb21be5f9e2b94ec4c0449fb67cb5734f6a8e14793570ce2a00ec721269",
+      "cases": 213,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-612-final-markers.json",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 10692,
+      "sha256": "1ddee0099cc7d3c99b11e4763570d85acadc8e2a0b057afc9b117b7ad1fff45a"
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-publication-before.xml.gz",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 2111,
+      "sha256": "ac76cc4db079de6f4226aaaa1c0e09f379ca3fdffb7007cb3356f73778d57a50",
+      "cases": 9,
+      "failure": 8,
+      "error": 0,
+      "skipped": 0
     }
   ]
 }

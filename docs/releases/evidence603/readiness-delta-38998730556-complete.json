@@ -1,0 +1,582 @@
+{
+  "schema": "rc6.exact-readiness-delta.v1",
+  "before_run": 38995874816,
+  "after_run": 38998730556,
+  "before_count": 14608,
+  "after_count": 14611,
+  "missing": [],
+  "added": [
+    [
+      "CRWVC",
+      "CEDEARS",
+      "BYMA",
+      "UNKNOWN",
+      "A-24HS"
+    ],
+    [
+      "MR43C",
+      "OBLIGACIONES",
+      "BYMA",
+      "UNKNOWN",
+      "A-24HS"
+    ],
+    [
+      "MY53B",
+      "BONOS",
+      "BYMA",
+      "ARS",
+      "A-24HS"
+    ]
+  ],
+  "revoked": [
+    {
+      "identity": [
+        "BYMV220.NO",
+        "OPCIONES",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "before": {
+        "ticker": "BYMV220.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "IOL_COMPLEMENTARY",
+        "last_seen_at": "2026-10-15T19:31:21.450097+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_OPTION_LONG",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "BYMV220.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-17T03:19:26.581148+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "CONTRACT_EVIDENCE_REVIEW_REQUIRED",
+        "candidate_can_simulate": 0,
+        "candidate_status": "PAUSED_EXPLICIT",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    },
+    {
+      "identity": [
+        "BYMV230.NO",
+        "OPCIONES",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "before": {
+        "ticker": "BYMV230.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "IOL_COMPLEMENTARY",
+        "last_seen_at": "2026-10-15T19:31:21.450097+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_OPTION_LONG",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "BYMV230.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-17T03:19:26.581148+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "CONTRACT_EVIDENCE_REVIEW_REQUIRED",
+        "candidate_can_simulate": 0,
+        "candidate_status": "PAUSED_EXPLICIT",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    },
+    {
+      "identity": [
+        "BYMV240.NO",
+        "OPCIONES",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "before": {
+        "ticker": "BYMV240.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "IOL_COMPLEMENTARY",
+        "last_seen_at": "2026-10-15T19:31:21.450097+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_OPTION_LONG",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "BYMV240.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-17T03:19:26.581148+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "CONTRACT_EVIDENCE_REVIEW_REQUIRED",
+        "candidate_can_simulate": 0,
+        "candidate_status": "PAUSED_EXPLICIT",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    },
+    {
+      "identity": [
+        "BYMV250.NO",
+        "OPCIONES",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "before": {
+        "ticker": "BYMV250.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "IOL_COMPLEMENTARY",
+        "last_seen_at": "2026-10-15T19:31:21.450097+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_OPTION_LONG",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "BYMV250.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-17T03:19:26.581148+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "CONTRACT_EVIDENCE_REVIEW_REQUIRED",
+        "candidate_can_simulate": 0,
+        "candidate_status": "PAUSED_EXPLICIT",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    },
+    {
+      "identity": [
+        "BYMV260.NO",
+        "OPCIONES",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "before": {
+        "ticker": "BYMV260.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "IOL_COMPLEMENTARY",
+        "last_seen_at": "2026-10-15T19:31:21.450097+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_OPTION_LONG",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "BYMV260.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-17T03:19:26.581148+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "CONTRACT_EVIDENCE_REVIEW_REQUIRED",
+        "candidate_can_simulate": 0,
+        "candidate_status": "PAUSED_EXPLICIT",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    },
+    {
+      "identity": [
+        "BYMV270.NO",
+        "OPCIONES",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "before": {
+        "ticker": "BYMV270.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "IOL_COMPLEMENTARY",
+        "last_seen_at": "2026-10-15T19:31:21.450097+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_OPTION_LONG",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "BYMV270.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-17T03:19:26.581148+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "CONTRACT_EVIDENCE_REVIEW_REQUIRED",
+        "candidate_can_simulate": 0,
+        "candidate_status": "PAUSED_EXPLICIT",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    },
+    {
+      "identity": [
+        "BYMV280.NO",
+        "OPCIONES",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "before": {
+        "ticker": "BYMV280.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "IOL_COMPLEMENTARY",
+        "last_seen_at": "2026-10-15T19:31:21.450097+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_OPTION_LONG",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "BYMV280.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-17T03:19:26.581148+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "CONTRACT_EVIDENCE_REVIEW_REQUIRED",
+        "candidate_can_simulate": 0,
+        "candidate_status": "PAUSED_EXPLICIT",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    },
+    {
+      "identity": [
+        "BYMV290.NO",
+        "OPCIONES",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "before": {
+        "ticker": "BYMV290.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "IOL_COMPLEMENTARY",
+        "last_seen_at": "2026-10-15T19:31:21.450097+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_OPTION_LONG",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "BYMV290.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-17T03:19:26.581148+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "CONTRACT_EVIDENCE_REVIEW_REQUIRED",
+        "candidate_can_simulate": 0,
+        "candidate_status": "PAUSED_EXPLICIT",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    },
+    {
+      "identity": [
+        "BYMV300.NO",
+        "OPCIONES",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "before": {
+        "ticker": "BYMV300.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "IOL_COMPLEMENTARY",
+        "last_seen_at": "2026-10-15T19:31:21.450097+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_OPTION_LONG",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "BYMV300.NO",
+        "instrument_type": "OPCIONES",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "INMEDIATA",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-17T03:19:26.581148+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "CONTRACT_EVIDENCE_REVIEW_REQUIRED",
+        "candidate_can_simulate": 0,
+        "candidate_status": "PAUSED_EXPLICIT",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    },
+    {
+      "identity": [
+        "SJO5X",
+        "BONOS",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "before": {
+        "ticker": "SJO5X",
+        "instrument_type": "BONOS",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "A-24HS",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-03T03:00:00.122066+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_SPOT",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "SJO5X",
+        "instrument_type": "BONOS",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "A-24HS",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-03T03:00:00.122066+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_SPOT",
+        "candidate_can_simulate": 0,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    },
+    {
+      "identity": [
+        "SJO5Y",
+        "BONOS",
+        "BYMA",
+        "USD_MEP",
+        "A-24HS"
+      ],
+      "before": {
+        "ticker": "SJO5Y",
+        "instrument_type": "BONOS",
+        "market": "BYMA",
+        "currency": "USD_MEP",
+        "settlement": "A-24HS",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-03T03:00:00.122066+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_SPOT",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "SJO5Y",
+        "instrument_type": "BONOS",
+        "market": "BYMA",
+        "currency": "USD_MEP",
+        "settlement": "A-24HS",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-03T03:00:00.122066+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_SPOT",
+        "candidate_can_simulate": 0,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    },
+    {
+      "identity": [
+        "SJO5Z",
+        "BONOS",
+        "BYMA",
+        "USD_CCL",
+        "A-24HS"
+      ],
+      "before": {
+        "ticker": "SJO5Z",
+        "instrument_type": "BONOS",
+        "market": "BYMA",
+        "currency": "USD_CCL",
+        "settlement": "A-24HS",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-03T03:00:00.122066+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_SPOT",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T02:23:37.868327+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      },
+      "after": {
+        "ticker": "SJO5Z",
+        "instrument_type": "BONOS",
+        "market": "BYMA",
+        "currency": "USD_CCL",
+        "settlement": "A-24HS",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-03T03:00:00.122066+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_SPOT",
+        "candidate_can_simulate": 0,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    }
+  ],
+  "new_ready": [
+    {
+      "identity": [
+        "MY53B",
+        "BONOS",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "before": null,
+      "after": {
+        "ticker": "MY53B",
+        "instrument_type": "BONOS",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "A-24HS",
+        "settlement_source": "REQUEST_CANDIDATE",
+        "last_seen_at": "2026-10-17T03:19:26.581148+00:00",
+        "catalog_status": "AVAILABLE",
+        "catalog_capability": "READY_PAPER_SPOT",
+        "candidate_can_simulate": 1,
+        "candidate_status": "AVAILABLE",
+        "candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+        "intraday_contract_state": null,
+        "intraday_source_at": null,
+        "intraday_checked_at": null
+      }
+    }
+  ],
+  "entry_authority": false,
+  "three_bond_revocation_reason": "NO_VERIFICADO_NOT_IN_PUBLIC_METADATA_PROJECTION",
+  "nine_option_revocation_evidence": "catalog_capability=CONTRACT_EVIDENCE_REVIEW_REQUIRED;candidate_status=PAUSED_EXPLICIT",
+  "not_a_live_trading_acceptance": true
+}

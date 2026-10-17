@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "DEPLOY612_PROVISIONAL_HTTP500_KNOWN_SUCCESSOR613_PREDEPLOY",
+  "release_state": "DEPLOY612_FAILED_PUBLICATION_RACE_SUCCESSOR613_NEW_PREDEPLOY",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -767,6 +767,66 @@
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "CATALOG-PUBLICATION-WINDOW",
+      "capability": "CATALOG_PUBLICATION_LIFECYCLE",
+      "path": "bf_production_paper_observer.py",
+      "symbol": "_candidate_publication",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Native612 immediate9870/stability1same then7335 while candidate_refresh_state incorrectly retained previous COMPLETE. Recovery9862/0missing/3added proves large drop transient, not loss of identities. Causal fixtures show old COMPLETE during provider/policy/reconciliation and after policy failure. Wrapper marks RUNNING before all work and FAILED on exception; completes after candidate writes. Existing readiness floors unchanged.",
+      "test": "tests/test_rc6_catalog_publication_lifecycle.py",
+      "status": "EN_GITHUB_PENDING_EXACT_PREDEPLOY_AND_NATIVE_ACCEPTANCE",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_NATIVE_SEQUENCE_WITH_CAUSAL_REPLAY",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "GATE-INCOMPLETE-PUBLICATION",
+      "capability": "NATIVE_CERTIFIER_GENERATION_STATE",
+      "path": "scripts/rc6_zero_known_error_runtime_audit.py",
+      "symbol": "_assert_snapshot",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Previously RUNNING or FAILED could certify whenever ready counts remained above floors. Now any fresh RUNNING is retried and FAILED/staleRUNNING rejected after safety/route checks. Eight attempts and outer300s timeout retained, publication retries spaced30s to cover native~4minute generation. Baseline only after COMPLETE; persistent family loss still blocks.",
+      "test": "tests/test_rc6_catalog_publication_lifecycle.py",
+      "status": "EN_GITHUB_PENDING_EXACT_PREDEPLOY_AND_NATIVE_ACCEPTANCE",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_CODE_GUARD_GAP_REPRODUCED",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "GO-STARTUP-PREMATURE",
+      "capability": "DEPLOY_OPERATIONAL_STARTUP",
+      "path": ".github/workflows/porota-deploy-v2-promote.yml",
+      "symbol": "RUNTIME_CHECK",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Native GO accepted STARTING03:19:28; independent03:25 probe stillSTARTING/heartbeat388s, processesrunning/restarts0. Actual embedded Python replay proves immediate acceptance before startup. Now waits RUNNING/WAITING_MARKET/READY_PREOPEN with120s fresh heartbeat; STARTING only waits within existing1200/1260 budgets. No new heartbeat fabrication or timeout increase.",
+      "test": "tests/test_rc6_go_startup_readiness.py",
+      "status": "EN_GITHUB_PENDING_EXACT_PREDEPLOY_AND_NATIVE_ACCEPTANCE",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_NATIVE_AND_CAUSAL_REPLAY",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "GO-UNKNOWN-COUNTER",
+      "capability": "DEPLOY_STRICT_PAPER_COUNTER",
+      "path": ".github/workflows/porota-deploy-v2-promote.yml",
+      "symbol": "RUNTIME_CHECK",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Actual embedded GO program accepted SQLiteNULL real_orders_sent because int(value or0). New exact integer0 predicate blocks unknown. Local adversary only; native persisted counter observed0. No native NULL incident asserted.",
+      "test": "tests/test_rc6_go_startup_readiness.py",
+      "status": "EN_GITHUB_PENDING_EXACT_PREDEPLOY_AND_NATIVE_ACCEPTANCE",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "LOCAL_ADVERSARIAL_ONLY",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
     }
   ],
   "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
@@ -934,6 +994,24 @@
         "staging_removed": true
       },
       "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38994065356"
+    },
+    {
+      "run_id": 38995165551,
+      "job_id": 117286013260,
+      "conclusion": "FAILURE",
+      "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
+      "deploy_sha": "74dd18e697e987747384eb419dc953257003cdb1",
+      "installation_started": true,
+      "contract_reconciliation": "GREEN_EXIT_0_QUICK_CHECK_OK",
+      "immediate": "GREEN",
+      "stability_1": "GREEN",
+      "stability_2": "RED_READY_FAMILY_FLOORS_DURING_STARTUP_REFRESH",
+      "stress": "SKIPPED",
+      "material_cleanup": "GREEN",
+      "cleanup_bytes_reclaimed": 147456,
+      "recovery_status": "FIX_FORWARD_VALIDATION_REQUIRED",
+      "cleanup_workflow_step": "FAILURE_RECOVERY_VALIDATION_REQUIRED",
+      "rollback": "NOT_PERFORMED"
     }
   ],
   "predeploy_certificates": [
@@ -1235,7 +1313,7 @@
     "oom_flag_after_recovery": false,
     "whole_workflow_conclusion": "FAILURE_EXPECTED_DEPLOY_SHA_MISMATCH_AFTER_REJECTED_PROMOTION"
   },
-  "current_deploy_stage": "EXACT_ARTIFACT_LOADED_HOST_CONTROL_PLANE_PENDING",
+  "current_deploy_stage": "COMPLETED_FAILURE_NO_ACTIVE_DEPLOY",
   "external_backup_review": {
     "droplet_id": 594077619,
     "size": "s-1vcpu-1gb",
@@ -1283,12 +1361,10 @@
   },
   "next_candidate": {
     "pr": 613,
-    "sha": "40a38e53b8f073a2685c3bedae39900675a3b589",
-    "tree": "cd06d1d1ec27e44e7920726dd8f964e5412e3e43",
-    "predeploy_run": 38997662394,
-    "status": "ARTEFACTO_VALIDADO_PENDING_DEPLOY",
-    "artifact_id": 12088062003,
-    "zip_sha256": "d203da33618149cfca43b312dce68bea8754c03cb7af9c36f02c2f93e33adebf"
+    "sha": "f3123dbf9971a29c869969336addf3d9a650b0bb",
+    "tree": "72fba2e9b5af61939b12e7b6e9ad6f8188fdad3e",
+    "predeploy_run": 38999323211,
+    "status": "EN_GITHUB_PREDEPLOY_IN_PROGRESS"
   },
   "latest_deploy_result": {
     "schema": "rc6.deploy-attempt-receipt.v1",
@@ -1435,7 +1511,7 @@
     "job_id": 117286013260,
     "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
     "merge_sha": "74dd18e697e987747384eb419dc953257003cdb1",
-    "conclusion": null,
+    "conclusion": "FAILURE",
     "status": "IN_PROGRESS",
     "preclean": "SUCCESS",
     "drain": "SUCCESS",
@@ -1451,13 +1527,19 @@
     "runtime_accepted": false,
     "stress_executed": false,
     "source_receipt": "docs/releases/evidence603/deploy-38995165551-live-stage.json",
-    "state": "CONTRACT_RECONCILIATION_RUNNING",
+    "state": "COMPLETED_FAILURE",
     "observer_startup_source_identity": "GREEN",
     "dashboard_startup_source_identity": "GREEN",
     "host_control_plane_units": 44,
     "legacy_retired_units": 2,
     "observer_pause": "PLANNED_CANONICAL_CONTRACT_RUNNER",
-    "operator_accepted": false
+    "operator_accepted": false,
+    "contract_reconciliation": "GREEN_EXIT_0",
+    "contract_records": 18781,
+    "observer_restart": "GREEN",
+    "observer_restarts": 0,
+    "dashboard_restarts": 0,
+    "stress": "SKIPPED"
   },
   "metadata_inventory_runtime": {
     "schema": "rc6.metadata-matrix-summary.v1",
@@ -1551,7 +1633,7 @@
     "parse_errors": 0,
     "authority": "STATIC_NOT_LIVE_TRACE"
   },
-  "operator_acceptance": "NO_GO_KNOWN_HTTP500_SOURCES",
+  "operator_acceptance": "NO_GO_KNOWN_HTTP500_AND_PREMATURE_STARTUP_BASELINE",
   "native_dashboard_probe": {
     "run": 38995874816,
     "artifact_id": 12086373573,
@@ -1562,7 +1644,8 @@
       "/en-vivo/fuentes"
     ],
     "max_elapsed_ms": 568,
-    "visual_tablet": "NO_VERIFICADO"
+    "visual_tablet": "NO_VERIFICADO",
+    "native_exception_stack": "CONFIRMED_IN_DEPLOY612_CONTAINER_LOGS_components.clock_astimezone_OverflowError"
   },
   "superseded_predeploy_613": [
     {
@@ -1576,6 +1659,13 @@
       "conclusion": "SUCCESS",
       "deploy": "NOT_DEPLOYED",
       "reason": "UTC_AND_CANDLE_ATOMICITY_CAUSAL_FINDINGS_REQUIRE_NEW_SHA"
+    },
+    {
+      "sha": "40a38e53b8f073a2685c3bedae39900675a3b589",
+      "run": 38997662394,
+      "conclusion": "SUCCESS",
+      "deploy": "NOT_DEPLOYED",
+      "reason": "NATIVE_PUBLICATION_WINDOW_AND_STARTING_GO_REPRODUCED"
     }
   ],
   "wiring_613": {
@@ -1584,5 +1674,20 @@
     "certified_host_bundle_root_count": 261,
     "parse_errors": 0,
     "static_only": true
+  },
+  "native_ready_publication_sequence": {
+    "immediate": 9870,
+    "stability_1": 9870,
+    "stability_2": 7335,
+    "recovery_probe": 9862,
+    "old_complete_marker_checked_at": "2026-10-17T03:15:07.095146+00:00",
+    "startup_catalog_as_of": "2026-10-17T03:19:26.581148+00:00",
+    "recovery_candidate_checked_at": "2026-10-17T03:23:24.216189+00:00",
+    "complete_recovered_inventory_count": 14611,
+    "missing_prior_identities": 0,
+    "added_identities": 3,
+    "revoked_ready_identities": 12,
+    "new_ready_identities": 1,
+    "revocation_does_not_authorize_override": true
   }
 }

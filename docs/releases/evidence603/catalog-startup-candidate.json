@@ -1,0 +1,1 @@
+{"sha":"f3123dbf9971a29c869969336addf3d9a650b0bb","tree":"72fba2e9b5af61939b12e7b6e9ad6f8188fdad3e","files":[".github/workflows/porota-deploy-v2-promote.yml","bf_production_paper_observer.py","scripts/rc6_postdeploy_stress.py","scripts/rc6_zero_known_error_runtime_audit.py","tests/test_rc6_catalog_publication_lifecycle.py","tests/test_rc6_go_startup_readiness.py"]}
