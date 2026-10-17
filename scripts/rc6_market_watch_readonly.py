@@ -750,18 +750,86 @@ def shadow_diagnostic():
     return result
 
 
+GENERATION_RECEIPT_PROBE = '''
+def _committed_generation_receipt():
+ import json, math, os, re
+ from datetime import datetime, timezone
+ from pathlib import Path
+ receipt={"schema":"rc6.committed-generation-receipt.v1","integrity":"UNVERIFIED","read_only":True}
+ try:
+  from rc6_shadow_runtime.persistence import read_committed_generation
+  from rc6_shadow_runtime.timing import generation_budget
+  db=Path(os.getenv("PAPER_V17_DB_PATH","/app/data/paper_v17/observer_v17.db"))
+  root=db.parent/"artifacts"/db.name
+  cut=read_committed_generation(root/"dynamic-shadow",payload_limit=4*1024**2,require_current_status=True)
+  status=cut["status"]; pointer=cut["pointer"]
+  captured=datetime.now(timezone.utc)
+  stamp=datetime.fromisoformat(status["as_of"].replace("Z","+00:00"))
+  budget,authority=generation_budget(status)
+  if stamp.tzinfo is None or authority!="TWO_MEASURED_CYCLES_SOURCE_CAPPED":raise ValueError("GENERATION_CLOCK_UNVERIFIED")
+  age=(captured-stamp).total_seconds()
+  if not 0<=age<=budget:raise ValueError("GENERATION_FRESHNESS_UNVERIFIED")
+  for value in (pointer["generation_id"],pointer["manifest_sha256"],status["configuration_fingerprint"]):
+   if not isinstance(value,str) or not re.fullmatch("[0-9a-f]{64}",value):raise ValueError("GENERATION_HASH_UNVERIFIED")
+  if (type(pointer["sequence"]) is not int or pointer["sequence"]<=0 or
+      status.get("mode")!="SHADOW" or type(status.get("provider_requests")) is not int or status["provider_requests"]!=0):
+   raise ValueError("GENERATION_AUTHORITY_UNVERIFIED")
+  if status.get("status") not in {"SHADOW_OBSERVING","PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION"}:
+   raise ValueError("GENERATION_WORKER_STATE_UNVERIFIED")
+  if type(status.get("real_orders_sent")) is not int or status["real_orders_sent"]!=0 or status.get("real_routes")!="NOT_CALLED":
+   raise ValueError("GENERATION_SAFETY_UNVERIFIED")
+  def number(value):
+   return type(value) in (int,float) and math.isfinite(value) and 0<=value<=120000
+  raw=status.get("runtime_sql_diagnostics") or {}
+  stages=[]
+  allowed={"CATALOG_FULL","OPEN_POSITIONS","SCHEMA_TABLES","INTRADAY_CONTRACTS","INTRADAY_POINTS","MARKET_SNAPSHOTS"}
+  for row in raw.get("stages",[])[:6]:
+   if not isinstance(row,dict) or row.get("stage") not in allowed:continue
+   clean={"stage":row["stage"]}
+   for key in ("elapsed_ms","remaining_ms","rows"):
+    if number(row.get(key)):clean[key]=row[key]
+   for key in ("deadline_elapsed","interrupted_by_deadline"):
+    if type(row.get(key)) is bool:clean[key]=row[key]
+   stages.append(clean)
+  elapsed=raw.get("sql_elapsed_ms")
+  within=(raw.get("budget_ms")==2000 and number(elapsed) and elapsed<=2000 and bool(stages)
+          and all(row.get("deadline_elapsed") is False and row.get("interrupted_by_deadline") is False for row in stages))
+  receipt.update(integrity="VERIFIED",captured_at=captured.isoformat(),as_of=status["as_of"],
+   generation_id=pointer["generation_id"],sequence=pointer["sequence"],manifest_sha256=pointer["manifest_sha256"],
+   configuration_fingerprint=status["configuration_fingerprint"],worker_status=status["status"],
+   live_status_required=True,age_seconds=round(age,3),liveness_budget_seconds=budget,
+   native_sql_within_budget=within,native_sql_elapsed_ms=elapsed if number(elapsed) else None,
+   native_sql_stages=stages,real_orders_sent=0,real_routes="NOT_CALLED",provider_requests=0)
+  # Source identity is reported exactly as observed; unknown is never filled
+  # from GitHub's expected SHA or from a different container.
+  health=root/"runtime-health.json"
+  if health.is_file() and not health.is_symlink() and health.stat().st_size<=131072:
+   source=json.loads(health.read_text())
+   for key in ("source_sha","candidate_tree_sha"):
+    value=source.get(key)
+    receipt[key]=value if isinstance(value,str) and re.fullmatch("[0-9a-f]{40}",value) else None
+ except Exception as exc:
+  receipt={"schema":"rc6.committed-generation-receipt.v1","integrity":"UNVERIFIED","read_only":True,"error_class":type(exc).__name__}
+ return receipt
+generation_receipt=_committed_generation_receipt()
+'''
+
+
 def shadow_diagnostic_host():
     """Use the already authorized root Python entry to execute an isolated probe.
 
     The host never emits Docker stderr, exception messages, paths or SQL. A
     subprocess timeout bounds the entire container probe independently of SSH.
     """
-    child = '''import json, os, re, sqlite3, time
+    child = GENERATION_RECEIPT_PROBE + '''
+import json, os, re, sqlite3, time
 from datetime import datetime, timezone
 from pathlib import Path
 at=datetime.now(timezone.utc)
 db=Path(os.getenv("PAPER_V17_DB_PATH", "/app/data/paper_v17/observer_v17.db"))
 result={"schema":"rc6.shadow-readonly-diagnostic.v1","generated_at":at.isoformat(),"read_only":True,"stages":[]}
+result["committed_generation"]=generation_receipt
+result["query_shape_authority"]="LEGACY_ROW_CONTROL_NOT_CURRENT_NATIVE_RUNTIME"
 try:
  # The prior probe first executed the entire 1.5-second runtime read and
  # then a second 2-second timing pass. Under live load it exceeded the
@@ -792,8 +860,8 @@ try:
  # One bounded live timing pass over the production query shapes. No values,
  # SQL parameters, result rows, account data or exception messages are exported.
  floor=at.replace(hour=0,minute=0,second=0,microsecond=0).isoformat()
- # Mirror the deployed runtime's full catalogue and independently bounded
- # observation sources; keep one timing pass within the 2s shared deadline.
+ # Historical row-per-row control, not the current packed native query model.
+ # Current native SQL timings come only from the committed generation above.
  observation_limit=3001
  detailed=(
   ("CATALOG_FULL", "SELECT ticker,instrument_type,market,currency,settlement,status,capability FROM financial_instrument_catalog ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?", (20001,)),

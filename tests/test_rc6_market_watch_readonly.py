@@ -750,6 +750,94 @@ class MonitorContracts(unittest.TestCase):
 
 
 
+class CommittedGenerationProbeTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.cut = {
+            "pointer": {"generation_id": "a" * 64, "manifest_sha256": "b" * 64, "sequence": 123},
+            "status": {"as_of": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+                       "configuration_fingerprint": "c" * 64, "mode": "SHADOW",
+                       "status": "PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION",
+                       "provider_requests": 0, "real_orders_sent": 0, "real_routes": "NOT_CALLED",
+                       "runtime_sql_diagnostics": {"budget_ms": 2000, "sql_elapsed_ms": 12,
+                           "plans": {"CATALOG_FULL": ["SECRET_MARKET_VALUES"]},
+                           "stages": [{"stage": "CATALOG_FULL", "elapsed_ms": 12, "rows": 14608,
+                                       "deadline_elapsed": False, "interrupted_by_deadline": False}]}},
+            "report": {"private_source_value": "SECRET_MARKET_VALUES"}}
+        self.calls = []
+
+    def capture(self, *, error=None, authority="TWO_MEASURED_CYCLES_SOURCE_CAPPED"):
+        persistence = types.ModuleType("rc6_shadow_runtime.persistence")
+        timing = types.ModuleType("rc6_shadow_runtime.timing")
+        def reader(*args, **kwargs):
+            self.calls.append((args, kwargs))
+            if error:
+                raise error
+            return self.cut
+        persistence.read_committed_generation = reader
+        timing.generation_budget = lambda status: (60, authority)
+        scope = {}
+        with patch.dict(sys.modules, {"rc6_shadow_runtime.persistence": persistence,
+                                     "rc6_shadow_runtime.timing": timing}), patch.dict(
+                monitor.os.environ, {"PAPER_V17_DB_PATH": str(self.root / "book.db")}):
+            exec(compile(monitor.GENERATION_RECEIPT_PROBE, "<strict-generation-probe>", "exec"), scope)
+        return scope["generation_receipt"]
+
+    def test_strict_read_receipt_does_not_promote_missing_preopen_to_ready(self):
+        value = self.capture()
+        self.assertEqual(value["integrity"], "VERIFIED")
+        self.assertEqual(value["worker_status"], "PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION")
+        self.assertTrue(value["native_sql_within_budget"])
+        self.assertEqual(self.calls[0][1], {"payload_limit": 4 * 1024**2, "require_current_status": True})
+        self.assertNotIn("SECRET_MARKET_VALUES", json.dumps(value))
+        self.assertFalse((self.root / "artifacts").exists())
+
+    def test_revoked_or_tampered_generation_never_claims_verified(self):
+        value = self.capture(error=ValueError("SECRET_MARKET_VALUES"))
+        self.assertEqual(value["integrity"], "UNVERIFIED")
+        self.assertNotIn("SECRET_MARKET_VALUES", json.dumps(value))
+        self.assertNotIn("real_orders_sent", value)
+
+    def test_future_stale_or_legacy_cadence_cannot_qualify(self):
+        for seconds in (-600, 600):
+            self.cut["status"]["as_of"] = (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat()
+            self.assertEqual(self.capture()["integrity"], "UNVERIFIED")
+        self.cut["status"]["as_of"] = datetime.now(timezone.utc).isoformat()
+        self.assertEqual(self.capture(authority="CADENCE_UNVERIFIED_LEGACY_CUT")["integrity"], "UNVERIFIED")
+
+    def test_unknown_or_nonzero_safety_is_not_replaced_with_zero(self):
+        for value in (None, 1, False):
+            self.cut["status"]["real_orders_sent"] = value
+            self.assertEqual(self.capture()["integrity"], "UNVERIFIED")
+
+    def test_sql_budget_failure_is_separate_from_generation_integrity(self):
+        self.cut["status"]["runtime_sql_diagnostics"]["stages"][0]["interrupted_by_deadline"] = True
+        value = self.capture()
+        self.assertEqual(value["integrity"], "VERIFIED")
+        self.assertFalse(value["native_sql_within_budget"])
+        self.cut["status"]["runtime_sql_diagnostics"]["sql_elapsed_ms"] = 2001
+        self.assertFalse(self.capture()["native_sql_within_budget"])
+
+    def test_runtime_identity_unknown_is_preserved(self):
+        path = self.root / "artifacts/book.db/runtime-health.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"source_sha": None, "candidate_tree_sha": "SECRET_MARKET_VALUES"}))
+        value = self.capture()
+        self.assertEqual(value["integrity"], "VERIFIED")
+        self.assertIsNone(value["source_sha"])
+        self.assertIsNone(value["candidate_tree_sha"])
+        self.assertNotIn("SECRET_MARKET_VALUES", json.dumps(value))
+
+    def test_fail_closed_worker_or_invalid_hash_cannot_qualify(self):
+        self.cut["status"]["status"] = "FAIL_CLOSED"
+        self.assertEqual(self.capture()["integrity"], "UNVERIFIED")
+        self.cut["status"]["status"] = "SHADOW_OBSERVING"
+        self.cut["pointer"]["generation_id"] = "SECRET_MARKET_VALUES"
+        self.assertEqual(self.capture()["integrity"], "UNVERIFIED")
+
+
 if __name__ == "__main__":
     unittest.main()
 
