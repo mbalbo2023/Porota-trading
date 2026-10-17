@@ -18,3 +18,11 @@ def test_full_catalog_two_committed_generations_under_process_memory_budget(tmp_
     assert len(report['cuts'])==2 and report['cuts'][1]['sequence']>report['cuts'][0]['sequence']
     assert report['process_peak_rss_kib']<=512*1024
     assert report['real_orders_sent']==0 and report['provider_requests']==0
+
+    emitted=[json.loads(line.split('RC6_FULL_CATALOG_CUT=',1)[1])
+             for line in run.stdout.splitlines() if line.startswith('RC6_FULL_CATALOG_CUT=')]
+    assert len(emitted)==2 and emitted[0]['generation_id']!=emitted[1]['generation_id']
+    assert [row['computed_report_sha256'] for row in emitted]==[row['computed_report_sha256'] for row in report['cuts']]
+    assert all(set(row['worker_timing']['stages_seconds'])==set(row['worker_timing']['stages_cpu_seconds'])
+               for row in emitted)
+    assert emitted[1]['previous_cut_age_seconds']<=emitted[1]['previous_cut_freshness_budget_seconds']

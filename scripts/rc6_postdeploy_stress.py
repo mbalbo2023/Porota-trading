@@ -98,14 +98,23 @@ def full_catalog_replay(folder):
             assert all(p['telemetry_total']==ready for p in report['engines'].values())
             assert report['computed_report']['raw_bytes']>100*1024**2
             receipt={'sequence':cut['pointer']['sequence'],'as_of':status['as_of'],
+                     'generation_id':cut['pointer']['generation_id'],
+                     'manifest_sha256':cut['pointer']['manifest_sha256'],
                      'tick_seconds':status['generation_timing']['tick_seconds'],
-                     'computed_report_sha256':report['computed_report']['sha256']}
+                     'worker_timing':status['generation_timing'],
+                     'computed_report_sha256':report['computed_report']['sha256'],
+                     'freshness_budget_seconds':generation_budget(status)[0]}
             if cuts:
                 assert receipt['sequence']>cuts[-1]['sequence']
                 previous_age=(PRE+timedelta(seconds=time.monotonic()-started)-
                     datetime.fromisoformat(cuts[-1]['as_of'])).total_seconds()
+                receipt['previous_cut_age_seconds']=previous_age
+                receipt['previous_cut_freshness_budget_seconds']=cuts[-1]['freshness_budget_seconds']
+            # The TemporaryDirectory is removed even on RED. Preserve each
+            # verified synthetic cut in the job log BEFORE a cadence failure.
+            print('RC6_FULL_CATALOG_CUT='+json.dumps(receipt,sort_keys=True,separators=(',',':')),flush=True)
+            if cuts:
                 assert previous_age<=cuts[-1]['freshness_budget_seconds'],('FULL_CATALOG_FRESHNESS_GAP',previous_age)
-            receipt['freshness_budget_seconds']=generation_budget(status)[0]
             cuts.append(receipt)
             if len(cuts)<2:
                 time.sleep(_seconds)

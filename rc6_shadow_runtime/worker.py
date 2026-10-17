@@ -371,6 +371,17 @@ class ShadowRuntime:
 
     def tick(self, as_of):
         tick_started = time.monotonic()
+        measured_at = tick_started
+        tick_cpu_started = time.process_time()
+        measured_cpu_at = tick_cpu_started
+        phase_seconds, phase_cpu_seconds = {}, {}
+        def measured(name):
+            nonlocal measured_at, measured_cpu_at
+            ended = time.monotonic()
+            cpu_ended = time.process_time()
+            phase_seconds[name] = round(max(0, ended-measured_at), 3)
+            phase_cpu_seconds[name] = round(max(0, cpu_ended-measured_cpu_at), 3)
+            measured_at, measured_cpu_at = ended, cpu_ended
         at = stamp(as_of)
         with self.files as files:
             capacity_policy = self.capacity_controller.state(at)
@@ -396,6 +407,7 @@ class ShadowRuntime:
             context = session_context(at)
             sources, source_errors = self._sources()
             capacity = self._capacity(as_of=at, capacity_policy=capacity_policy)
+            measured("state_and_inputs")
             freeze_name = "preopen-" + context["session"] + ".json.gz"
             frozen = files.read(freeze_name)
             if frozen and frozen["source_identity"] != source_id:
@@ -417,6 +429,7 @@ class ShadowRuntime:
                 del pre_report
             if frozen is not None:
                 _share_equal_frozen_rows(frozen)
+            measured("preopen")
             base = {"schema": VERSION, "mode": "SHADOW", "as_of": at.isoformat(),
                 "session": context["session"], "phase": context["phase"],
                 "source_database_effect": "READ_ONLY", "provider_requests": 0,
@@ -475,21 +488,26 @@ class ShadowRuntime:
                     "active_paper_scanner_authority": "FACTUAL_SIGNAL_AND_ADMISSION_UNCHANGED; sampling_policy="
                         + capacity_policy["status"] + "; shadow fills NOT_CALLED"}
                 checkpoint["engines"] = result["engines"]
+            measured("planner_pipeline")
             from .families import family_reports
             from .lab import evaluate_runtime_lab
             from .entry_signals import evaluate_runtime_entry_signals
             from .funnel import evaluate_runtime_funnel
             report["family_routing"] = family_reports(self.database, as_of=at,
                 catalog=inputs["full_catalog"], sources=sources,compact_missing=True)
+            measured("family_routing")
             report["economic_exit_lab"], checkpoint["lab"] = evaluate_runtime_lab(
                 self.database, as_of=at, previous=previous.get("lab"))
+            measured("economic_exit_lab")
             report["entry_signal_lab"], checkpoint["entry_signals"] = evaluate_runtime_entry_signals(
                 self.database, as_of=at, previous=previous.get("entry_signals"))
+            measured("entry_signal_lab")
             report["operational_funnel"], checkpoint["funnel"] = evaluate_runtime_funnel(
                 self.database, as_of=at, planner_report=report,
                 entry_signal_report=report["entry_signal_lab"],
                 exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"),
                 private_runtime=True)
+            measured("operational_funnel")
             # Never call a signal, economics or risk result as an execution
             # callback. These reports cannot reach the factual broker.
             durable = durable_report_view(report, catalog_ready_count=len(inputs["catalog"]))
@@ -498,6 +516,7 @@ class ShadowRuntime:
             durable["computed_report"] = audit
             files.write("latest.json.gz", durable)
             files.write("checkpoint.json.gz", causal)
+            measured("durable_serialization")
             status = {k: report[k] for k in ("schema", "as_of", "phase", "status", "mode",
                 "provider_requests", "real_orders_sent", "real_routes", "source_database_effect")}
             status.update(configuration_fingerprint=configuration,
@@ -510,7 +529,10 @@ class ShadowRuntime:
                 operational_funnel_status=report["operational_funnel"]["status"])
             status["runtime_sql_diagnostics"] = _runtime_sql_status(self.last_sqlite_diagnostics)
             status['generation_timing'] = {'poll_seconds':POLL_SECONDS,
-                'tick_seconds':round(time.monotonic()-tick_started,3)}
+                'tick_seconds':round(time.monotonic()-tick_started,3),
+                'stages_seconds':phase_seconds,
+                'tick_cpu_seconds':round(time.process_time()-tick_cpu_started,3),
+                'stages_cpu_seconds':phase_cpu_seconds}
             files.write("status.json", status)
             files.publish_generation(durable, status)
             files.prune_computed_reports(keep=audit["file"])
