@@ -57,7 +57,7 @@ jobs:
 
   watch:
     needs: contracts
-    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-624-consumer-profile-20261017'
+    if: false # host inventory completed39060769025; do not repeat native observation
     runs-on: ubuntu-24.04
     timeout-minutes: 7
     env:
@@ -100,3 +100,4 @@ jobs:
       - name: Remove credential
         if: always()
         run: rm -f "$HOME/.ssh/rc6_market_watch"
+
