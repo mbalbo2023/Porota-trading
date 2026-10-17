@@ -78,8 +78,7 @@ def gzip_identity(path):
     return size,h.hexdigest()
 def run(output,extension,source):
     output.mkdir(parents=True,exist_ok=True)
-    subprocess.run(["cc","-O3","-Wall","-Wextra","-shared","-fPIC",
-        "-I"+sysconfig.get_path("include"),str(source),"-o",str(extension)],check=True,timeout=60)
+    assert extension.is_file(),"PRECOMPILED_RESEARCH_BINARY_REQUIRED"
     native=load_native(extension)
     controls=selfcheck(native);gc.collect()
     print("RC6_NATIVE_BOUND_DIFFERENTIAL="+json.dumps(controls,sort_keys=True),flush=True)

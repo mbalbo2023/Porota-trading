@@ -641,6 +641,28 @@ jobs:
           PY
           docker load -i /tmp/rc6-exact618-image.tar.gz >/dev/null
           install -d -m 777 /tmp/rc6-perf618
+      - name: Compile experimental binary on CI host using Python headers extracted from the exact image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p /tmp/rc6-python618-headers
+          cid="$(docker create sha256:2f581a5cc45e34dad4974d35398aeef89f3dbc4c9ca7f4c3c172efd1123b62d9)"
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          docker cp "$cid:/usr/local/include/python3.11/." /tmp/rc6-python618-headers/
+          docker rm "$cid" >/dev/null
+          trap - EXIT
+          cc -O3 -Wall -Wextra -shared -fPIC -I/tmp/rc6-python618-headers \
+            scripts/rc6_json_bound_research.c -o /tmp/rc6-perf618/_rc6_json_bound.so
+          readelf --version-info /tmp/rc6-perf618/_rc6_json_bound.so > /tmp/rc6-perf618/binary-symbol-versions.txt
+          readelf -d /tmp/rc6-perf618/_rc6_json_bound.so > /tmp/rc6-perf618/binary-needed.txt
+          python3 - <<'PY'
+          import pathlib,re
+          versions=pathlib.Path("/tmp/rc6-perf618/binary-symbol-versions.txt").read_text()
+          needed=pathlib.Path("/tmp/rc6-perf618/binary-needed.txt").read_text()
+          assert "NEEDED" not in needed,"UNEXPECTED_NATIVE_LIBRARY_DEPENDENCY"
+          assert not re.search(r"GLIBC_[0-9]",versions),"UNEXPECTED_GLIBC_VERSION_DEPENDENCY"
+          print("RC6_NATIVE_BOUND_LINK_DEPENDENCIES=NONE; EXACT_FROZEN_PYTHON_HEADERS")
+          PY
       - name: Compile and test C sizing predicate over exact frozen base without product changes
         shell: bash
         run: |
@@ -668,6 +690,8 @@ jobs:
           path: |
             /tmp/rc6-perf618/native-bound-research.json
             /tmp/rc6-perf618/_rc6_json_bound.so
+            /tmp/rc6-perf618/binary-symbol-versions.txt
+            /tmp/rc6-perf618/binary-needed.txt
           if-no-files-found: warn
           retention-days: 14
       - name: Remove isolated CI container
