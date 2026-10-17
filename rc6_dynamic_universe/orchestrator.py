@@ -52,7 +52,9 @@ class UniverseOrchestrator:
         at, opening = stamp(at), stamp(session_open)
         if phase not in {"OPEN", "PREOPEN", "CLOSED"}:
             raise ValueError("INVALID_MARKET_PHASE")
-        payload = deepcopy(frozen.get("payload", {}))
+        # The verified freeze is read-only. Telemetry may reference its
+        # rank components; no planner operation mutates these inputs.
+        payload = frozen.get("payload", {})
         if frozen.get("digest") != digest(payload) or stamp(payload["frozen_at"]) >= opening:
             raise ValueError("INVALID_PREOPEN_FREEZE")
         if stamp(payload["session_open"]) != opening:

@@ -487,8 +487,15 @@ def _shadow_entries(checkpoint, report, at):
 
 
 def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_report=None,
-                            exit_lab_report=None, previous=None, row_limit=500):
-    """Return report/state; caller owns the existing atomic evidence writer."""
+                            exit_lab_report=None, previous=None, row_limit=500, private_runtime=False):
+    """Return report/state; caller owns the existing atomic evidence writer.
+
+    private_runtime consumes the caller-owned checkpoint read for this tick.
+    Its report shares causal containers until the atomic writer serializes it;
+    the ordinary API continues to return an isolated JSON-normalized report.
+    """
+    if type(private_runtime) is not bool:
+        raise ValueError("FUNNEL_PRIVATE_RUNTIME_MODE_INVALID")
     at = stamp(as_of)
     if not isinstance(planner_report, dict) or (planner_report.get("real_orders_sent", 0) != 0 or
             planner_report.get("real_routes", "NOT_CALLED") != "NOT_CALLED"):
@@ -518,7 +525,7 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
             "spot_positions": {}, "future_positions": {}, "gaps": {}, "evaluations": 0, "distinct_inputs": {}}
         status = "START_AT_CURRENT_TAIL"
     else:
-        checkpoint = _json(prior)
+        checkpoint = prior if private_runtime else _json(prior)
         status = "PROSPECTIVE_OPERATIONAL_FUNNEL_EVALUATED"
         for row in source["rows"].get("decision_evidence_snapshots", []):
             try:
@@ -586,4 +593,4 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
         "late_missed_discovery": measure_discovery_outcomes(planner_report.get("causal_discovery_evidence", []), as_of=at),
         "shadow_to_factual_causality": "NOT_CLAIMED",
         "currencies_added_together": False, "factual_exit_policy_effect": "NONE"}
-    return _json(report), checkpoint
+    return (report if private_runtime else _json(report)), checkpoint

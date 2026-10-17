@@ -23,6 +23,7 @@ from rc6_dynamic_universe.routing import (
     dispatch_observation, option_observation_universe, strategy_route,
 )
 from rc6_dynamic_universe.sources import MARKETS, TERMS, SOURCE_ALIASES
+from .persistence import FrozenJSONDict
 from .source_authority import VERSION as SOURCE_POLICY_VERSION, resolve_field
 
 MAX_ROWS = 20000
@@ -122,74 +123,89 @@ def _views(row):
             yield from _views(nested)
 
 
+class _FieldRows(list):
+    """Flatten immutable source views once for one identity's field pass."""
+    def __init__(self, rows, empty_fields=None):
+        super().__init__(rows)
+        self.empty_fields=empty_fields
+        self.field_views = tuple(view for row in self for view in _views(row))
+
+
 def _field(name, rows, *, at, ttl=QUOTE_TTL_SECONDS, static=False, signed=False, numeric=False):
     candidates = []
-    for row in rows:
-        for view in _views(row):
-            value = next((view[key] for key in _ALIASES.get(name, (name,)) if view.get(key) is not None), None)
-            if value is None:
-                continue
-            envelope = dict(view)
-            if isinstance(value, Mapping) and "value" in value:
-                field = dict(value)
-                envelope.update(field)
-                value = field.get("value")
-                # An independent publication cannot borrow its parent's clocks.
-                envelope["source_at"] = field.get("source_at") or field.get("provider_observed_at")
-                if field.get("clock_basis") in {"PROVIDER_EVENT_TIME", "FEATURE_COMPUTED_AT", "STATIC_NATIVE_PUBLICATION"}:
-                    envelope["source_at"] = envelope["source_at"] or field.get("observed_at")
-                if static:
-                    envelope["source_at"] = envelope["source_at"] or field.get("published_at")
-                envelope["received_at"] = field.get("received_at") or field.get("published_at")
-                envelope["observed_at"] = field.get("observed_at")
-            evidence = view.get(name+"_evidence")
-            if isinstance(evidence, Mapping):
-                envelope.update(evidence)
-                envelope["source_at"] = evidence.get("source_at") or evidence.get("provider_observed_at")
-                if evidence.get("clock_basis") in {"PROVIDER_EVENT_TIME", "FEATURE_COMPUTED_AT", "STATIC_NATIVE_PUBLICATION"}:
-                    envelope["source_at"] = envelope["source_at"] or evidence.get("observed_at")
-                if static:
-                    envelope["source_at"] = envelope["source_at"] or evidence.get("published_at")
-                envelope["received_at"] = evidence.get("received_at") or evidence.get("published_at")
-                envelope["observed_at"] = evidence.get("observed_at")
-            source_at = envelope.get("source_at") or envelope.get("provider_observed_at")
-            received_at = envelope.get("received_at") or envelope.get("published_at") or envelope.get("observed_at")
-            source = envelope.get("source") or envelope.get("metadata_source")
-            valid = str(envelope.get("state") or envelope.get("source_state") or "READY").upper() in {"READY", "LIVE_FRESH", "FRESH", "OBSERVE_ONLY", "AVAILABLE"}
-            if numeric:
-                value = _number(value, signed=signed, positive=name in {"ratio", "ccl", "nav", "strike", "cash_multiplier", "price", "bid", "ask", "bid_size", "ask_size"})
-                valid = valid and value is not None
-            elif name == "greeks":
-                value = {key: parsed for key in ("delta", "gamma", "theta", "vega", "rho")
-                         if (parsed := _number(value.get(key), signed=True)) is not None} if isinstance(value, Mapping) else None
-                valid = valid and bool(value)
-            elif name == "flows":
-                cleaned = []
-                valid = valid and isinstance(value, list) and 0 < len(value) <= 250
-                for flow in value if valid else []:
-                    if not isinstance(flow, Mapping):
-                        continue
-                    payment_at = _time(flow.get("payment_at") or flow.get("at"))
-                    amount = _number(flow.get("amount"), signed=True)
-                    currency = flow.get("currency")
-                    if payment_at and amount is not None and currency in {"ARS", "USD", "USD_MEP", "USD_CCL"}:
-                        cleaned.append({"payment_at": payment_at.isoformat(), "amount": amount, "currency": currency})
-                valid = valid and len(cleaned) == len(value)
-                value = cleaned if valid else None
-            else:
-                valid = valid and isinstance(value, (str, bool, int, float)) and not (isinstance(value, str) and len(value) > 256)
-                if not valid:
-                    value = None
-            unit = envelope.get("unit") or envelope.get(name+"_unit")
-            if name in {"price", "bid", "ask"}:
-                unit = envelope.get("price_unit") or unit
-            elif name in {"bid_size", "ask_size"}:
-                unit = envelope.get("quantity_unit") or envelope.get("depth_unit") or unit
-            candidates.append({"value": value, "source": source, "source_path": envelope.get("source_path") or source,
-                               "source_at": source_at, "received_at": received_at, "valid": valid,
-                               "unit": unit, "native_reason": envelope.get("reason")})
+    views = getattr(rows, "field_views", None)
+    if views is None:
+        views = (view for row in rows for view in _views(row))
+    for view in views:
+        value = next((view[key] for key in _ALIASES.get(name, (name,)) if view.get(key) is not None), None)
+        if value is None:
+            continue
+        envelope = dict(view)
+        if isinstance(value, Mapping) and "value" in value:
+            field = dict(value)
+            envelope.update(field)
+            value = field.get("value")
+            # An independent publication cannot borrow its parent's clocks.
+            envelope["source_at"] = field.get("source_at") or field.get("provider_observed_at")
+            if field.get("clock_basis") in {"PROVIDER_EVENT_TIME", "FEATURE_COMPUTED_AT", "STATIC_NATIVE_PUBLICATION"}:
+                envelope["source_at"] = envelope["source_at"] or field.get("observed_at")
+            if static:
+                envelope["source_at"] = envelope["source_at"] or field.get("published_at")
+            envelope["received_at"] = field.get("received_at") or field.get("published_at")
+            envelope["observed_at"] = field.get("observed_at")
+        evidence = view.get(name+"_evidence")
+        if isinstance(evidence, Mapping):
+            envelope.update(evidence)
+            envelope["source_at"] = evidence.get("source_at") or evidence.get("provider_observed_at")
+            if evidence.get("clock_basis") in {"PROVIDER_EVENT_TIME", "FEATURE_COMPUTED_AT", "STATIC_NATIVE_PUBLICATION"}:
+                envelope["source_at"] = envelope["source_at"] or evidence.get("observed_at")
+            if static:
+                envelope["source_at"] = envelope["source_at"] or evidence.get("published_at")
+            envelope["received_at"] = evidence.get("received_at") or evidence.get("published_at")
+            envelope["observed_at"] = evidence.get("observed_at")
+        source_at = envelope.get("source_at") or envelope.get("provider_observed_at")
+        received_at = envelope.get("received_at") or envelope.get("published_at") or envelope.get("observed_at")
+        source = envelope.get("source") or envelope.get("metadata_source")
+        valid = str(envelope.get("state") or envelope.get("source_state") or "READY").upper() in {"READY", "LIVE_FRESH", "FRESH", "OBSERVE_ONLY", "AVAILABLE"}
+        if numeric:
+            value = _number(value, signed=signed, positive=name in {"ratio", "ccl", "nav", "strike", "cash_multiplier", "price", "bid", "ask", "bid_size", "ask_size"})
+            valid = valid and value is not None
+        elif name == "greeks":
+            value = {key: parsed for key in ("delta", "gamma", "theta", "vega", "rho")
+                     if (parsed := _number(value.get(key), signed=True)) is not None} if isinstance(value, Mapping) else None
+            valid = valid and bool(value)
+        elif name == "flows":
+            cleaned = []
+            valid = valid and isinstance(value, list) and 0 < len(value) <= 250
+            for flow in value if valid else []:
+                if not isinstance(flow, Mapping):
+                    continue
+                payment_at = _time(flow.get("payment_at") or flow.get("at"))
+                amount = _number(flow.get("amount"), signed=True)
+                currency = flow.get("currency")
+                if payment_at and amount is not None and currency in {"ARS", "USD", "USD_MEP", "USD_CCL"}:
+                    cleaned.append({"payment_at": payment_at.isoformat(), "amount": amount, "currency": currency})
+            valid = valid and len(cleaned) == len(value)
+            value = cleaned if valid else None
+        else:
+            valid = valid and isinstance(value, (str, bool, int, float)) and not (isinstance(value, str) and len(value) > 256)
+            if not valid:
+                value = None
+        unit = envelope.get("unit") or envelope.get(name+"_unit")
+        if name in {"price", "bid", "ask"}:
+            unit = envelope.get("price_unit") or unit
+        elif name in {"bid_size", "ask_size"}:
+            unit = envelope.get("quantity_unit") or envelope.get("depth_unit") or unit
+        candidates.append({"value": value, "source": source, "source_path": envelope.get("source_path") or source,
+                           "source_at": source_at, "received_at": received_at, "valid": valid,
+                           "unit": unit, "native_reason": envelope.get("reason")})
+    cache=getattr(rows,"empty_fields",None)
+    if not candidates and cache is not None and static in cache:
+        return cache[static]
     result = resolve_field(candidates, as_of=at, ttl_seconds=ttl, static=static)
     result["clock_basis"] = "STATIC_EVIDENCE_AVAILABILITY_SEPARATE_FROM_NATIVE_TIME" if static else "PROVIDER_EVENT_TIME"
+    if not candidates and cache is not None:
+        result=cache[static]=FrozenJSONDict(result)
     return result
 
 
@@ -302,6 +318,7 @@ def _quote(rows, at):
                     "received_at": row.get("received_at"), "price_unit": row.get("price_unit"),
                     "quantity_unit": row.get("quantity_unit") or row.get("depth_unit")}
         normalized.append(row)
+    normalized = _FieldRows(normalized,getattr(rows,"empty_fields",None))
     fields = {name: _field(name, normalized, at=at, numeric=True)
               for name in ("price", "bid", "ask", "bid_size", "ask_size", "volume", "cash_volume")}
     price = fields["price"]["value"]
@@ -484,7 +501,7 @@ def _fixed_income_priority(instruments, at):
             "partition": "FAMILY_MARKET_CURRENCY_SETTLEMENT", "yield_is_buy_signal": False, "entry_authority": False}
 
 
-def family_reports(database, *, as_of, catalog, sources=None):
+def family_reports(database, *, as_of, catalog, sources=None, compact_missing=False):
     """Dispatch every catalog row through its owner using existing offline data.
 
     ``sources`` accepts the regular BYMA/IOL/PPI source-cache identifiers,
@@ -521,25 +538,34 @@ def family_reports(database, *, as_of, catalog, sources=None):
             identity_reviews.append({"source": row.get("source"), "source_path": row.get("source_path") or row.get("source"),
                 "identity": list(key) if key else None, "reason": "IDENTITY_NOT_IN_PRIMARY_CATALOG" if key else "EXACT_IDENTITY_AMBIGUOUS",
                 "status": "CONFLICT_REVIEW_REQUIRED", "identity_assigned": False, "entry_authority": False})
-    quotes = {key: _quote(rows, at) for key, rows in evidence.items()}
+    empty_fields={} if compact_missing else None
+    quotes = {}
     selected_options, excluded_options = [], []
+
+    def quote_for(key):
+        # Resolve only quotes actually consumed by a family/underlying. Keep
+        # the complete evidence index for identity and ambiguity checks.
+        if key not in quotes:
+            quotes[key] = _quote(_FieldRows(evidence.get(key, []),empty_fields), at)
+        return quotes[key]
 
     def equity(record, *, as_of):
         key = identity(record)
-        result = {"status": "OBSERVE_ONLY", "quote": quotes.get(key, _quote([], at)),
+        result = {"status": "OBSERVE_ONLY", "quote": quote_for(key),
                   "entry_authority": False, "momentum_signal": "NOT_EVALUATED_BY_FAMILY_OBSERVER"}
         if key[1] == "CEDEARS":
+            rows = _FieldRows(evidence[key],empty_fields)
             result["cedear_features"] = {
-                "ratio": _field("ratio", evidence[key], at=at, ttl=86400, static=True, numeric=True),
+                "ratio": _field("ratio", rows, at=at, ttl=86400, static=True, numeric=True),
                 "underlying_us_session": calendar_status(at),
-                "ccl": _field("ccl", evidence[key], at=at, numeric=True),
-                "local_divergence": _field("local_divergence", evidence[key], at=at, signed=True, numeric=True),
+                "ccl": _field("ccl", rows, at=at, numeric=True),
+                "local_divergence": _field("local_divergence", rows, at=at, signed=True, numeric=True),
             }
         return result
 
     def fixed_income(record, *, as_of):
         key = identity(record)
-        rows = evidence[key]
+        rows = _FieldRows(evidence[key],empty_fields)
         terms = {name: _field(name, rows, at=at, ttl=None, static=True, numeric=True)
                  for name in ("quote_basis_nominal", "quantity_step_nominal", "minimum_nominal", "cash_multiplier")}
         basis = terms["quote_basis_nominal"]
@@ -555,7 +581,7 @@ def family_reports(database, *, as_of, catalog, sources=None):
         analytics = {name: _field(name, rows, at=at, ttl=300, numeric=name not in {"flows", "curve"}, signed=name in {"yield", "carry"})
                      for name in ("yield", "duration", "parity", "carry", "flows", "curve")}
         maturity = _field("maturity_at", rows, at=at, ttl=None, static=True)
-        return {"status": "OBSERVE_ONLY", "quote": quotes.get(key, _quote([], at)), "terms": terms,
+        return {"status": "OBSERVE_ONLY", "quote": quote_for(key), "terms": terms,
                 "nominal_contract_status": "VERIFIED_NOMINAL_CONTRACT" if valid else "NO_VERIFICADO",
                 "analytics": analytics, "maturity": maturity, "cash_per_nominal_currency": key[3], "cash_per_nominal": (
                     quotes[key]["price"]*multiplier if valid and quotes.get(key, {}).get("price") is not None else None),
@@ -564,18 +590,18 @@ def family_reports(database, *, as_of, catalog, sources=None):
 
     def options(record, *, as_of):
         key = identity(record)
-        rows, quote = evidence[key], quotes.get(key, _quote([], at))
+        rows, quote = _FieldRows(evidence[key],empty_fields), quote_for(key)
         terms = {name: _field(name, rows, at=at, ttl=None, static=True, numeric=name == "strike")
                  for name in ("underlying", "strike", "expires_at", "strike_unit", "option_right")}
         underlying = terms["underlying"]["value"]
-        matches = [k for k in quotes if k[0] == str(underlying or "").upper()
+        matches = [k for k in evidence if k[0] == str(underlying or "").upper()
                    and k[1] in {"ACCIONES", "CEDEARS", "ETFS"} and k[2:4] == key[2:4]]
         same_settlement = [k for k in matches if k[4] == key[4]]
         matches = same_settlement or matches
         underlying_rows = {}
         if len(matches) == 1:
             match = matches[0]
-            underlying_rows[match[0]] = {**dict(zip(IDENTITY_KEYS, match)), **quotes[match]}
+            underlying_rows[match[0]] = {**dict(zip(IDENTITY_KEYS, match)), **quote_for(match)}
             # Existing standard BYMA contracts prove a strike per underlying
             # share. This is a dimensional contract derivation, not a ticker
             # parse or a guessed lot. Other contracts still need explicit units.
@@ -617,7 +643,7 @@ def family_reports(database, *, as_of, catalog, sources=None):
 
     def caucion(record, *, as_of):
         key = identity(record)
-        rows = evidence[key]
+        rows = _FieldRows(evidence[key],empty_fields)
         terms = {name: _field(name, rows, at=at, numeric=name in {"annual_rate_fraction", "term_days", "available_principal"})
                  for name in ("annual_rate_fraction", "term_days", "available_principal", "maturity_at")}
         cash_rows = [row for row in data["cash"] if row.get("currency") == key[3]]
@@ -635,7 +661,7 @@ def family_reports(database, *, as_of, catalog, sources=None):
 
     def fci(record, *, as_of):
         key = identity(record)
-        rows = evidence[key]
+        rows = _FieldRows(evidence[key],empty_fields)
         terms = {name: _field(name, rows, at=at, ttl=86400, numeric=name == "nav")
                  for name in ("nav", "nav_date", "subscription_status", "redemption_term", "cutoff_time")}
         return {"status": "OBSERVE_ONLY", "terms": terms, "trigger": "NAV_SUBSCRIPTION_REDEMPTION_EVENT",

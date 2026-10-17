@@ -8,6 +8,7 @@ without matching testcase nodes, which breaks the governed discovered/executed g
 from __future__ import annotations
 import ast
 import copy
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 import os
@@ -167,11 +168,20 @@ class IntegrationTests(unittest.TestCase):
                 PRIMARY KEY(ticker,instrument_type,market,currency,settlement,source));
             ''')
         tree=ast.parse((ROOT/'bf_production_paper_observer.py').read_text())
-        fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_reconcile_complementary_catalog')
-        ns=dict(Path=Path,os=os,json=json,financial_catalog=catalog,
+        definitions={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+        entry='_reconcile_complementary_catalog'
+        required=set();pending=[entry]
+        while pending:
+            name=pending.pop()
+            if name in required:continue
+            required.add(name)
+            pending.extend(n.id for n in ast.walk(definitions[name])
+                           if isinstance(n,ast.Name) and n.id in definitions and n.id not in required)
+        functions=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name in required]
+        ns=dict(Path=Path,os=os,json=json,financial_catalog=catalog,contextmanager=contextmanager,
             complementary_discovery=lambda root:[],now_iso=lambda:NOW,COMPLEMENTARY_CONTRACT_TTL_SECONDS=86400)
-        exec(compile(ast.Module(body=[fn],type_ignores=[]),'actual-reconciler','exec'),ns)
-        self.reconcile=ns[fn.name]
+        exec(compile(ast.Module(body=functions,type_ignores=[]),'actual-reconciler','exec'),ns)
+        self.reconcile=ns[entry]
         self.env=patch.dict(os.environ,{'POROTA_MARKET_DATA_ROOT':self.tmp.name});self.env.start()
 
     def tearDown(self):self.env.stop();self.tmp.cleanup()
