@@ -238,6 +238,32 @@
       "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
       "bytes": 1478,
       "sha256": "fe52a5822a25c8dd71f9282b51c720a03df91fd1f4399152fdeacadf36b51b42"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988131821-red.xml",
+      "source": "NATIVE_PREDEPLOY_OR_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 1590594,
+      "sha256": "e1f35941ba2988b8233fbc2fdfb9e6ede18a18fdd68475d638dfc3e4da80e465",
+      "cases": 3759,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988131821-red.json",
+      "source": "NATIVE_PREDEPLOY_OR_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 358,
+      "sha256": "63b5fb56f48bfb6dd4ccad974eefd9d41a396e3e75e609c6b8b4642c1b35741c"
+    },
+    {
+      "path": "docs/releases/evidence603/policy-regression-after.xml",
+      "source": "NATIVE_PREDEPLOY_OR_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 7598,
+      "sha256": "a3b5e1e75b698deb642daa9fc60d61b02af6ccb23dc78450501119e95347d07c",
+      "cases": 50,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
     }
   ]
 }

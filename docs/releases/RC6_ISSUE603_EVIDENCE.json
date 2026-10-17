@@ -512,6 +512,21 @@
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier fallo causal, drift de identidad o ausencia de evidencia runtime mantiene o reabre el hallazgo."
+    },
+    {
+      "id": "CI-DISK-POLICY-EXPECTATION",
+      "capability": "REGRESSION_POLICY_ALIGNMENT",
+      "path": "tests/test_rc6_residual_adverse.py",
+      "symbol": "test_disk_policy_metadata_matches_executable_contract",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Predeploy38988131821 found one stale 1x formula/factor expectation among3756 cases. Expected formula and strict factor dictionary now require2x; no test removed or weakened.50 focused cases PASS after. Full successor suite must pass anew; no image built or host modified by the RED attempt.",
+      "test": "tests/test_rc6_residual_adverse.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "NOT_A_RUNTIME_DEFECT",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier fallo causal, drift de identidad o ausencia de evidencia runtime mantiene o reabre el hallazgo."
     }
   ],
   "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
@@ -673,14 +688,15 @@
   },
   "next_candidate": {
     "pr": 608,
-    "sha": "43f1fa07639aa93482a4895e3145c362f64ffb96",
-    "tree": "bd4d336173e4797ab22e2aa5e34dc70428bd3425",
+    "sha": "b91aa368efa16baf430050bae3f67185b5e02720",
+    "tree": "d26034f649107b2c5cb4b0fd0e13854e8294a638",
     "base": "a9e7504895e17f9b7f1e84b0af36f3492128a494",
-    "predeploy_state": "REQUESTED_NOT_YET_CERTIFIED",
+    "predeploy_state": "IN_PROGRESS",
     "local_cases": 142,
     "local_failures": 0,
     "local_errors": 0,
-    "local_skipped": 0
+    "local_skipped": 0,
+    "predeploy_run": 38988534535
   },
   "latest_deploy_result": {
     "schema": "rc6.deploy-attempt-receipt.v1",
@@ -725,5 +741,19 @@
     "current_state": "DEPLOYED_VALIDATION_PENDING",
     "stress_executed": false,
     "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38982377181"
+  },
+  "failed_predeploy_608": {
+    "run": 38988131821,
+    "sha": "43f1fa07639aa93482a4895e3145c362f64ffb96",
+    "artifact": 12084330877,
+    "zip_sha256": "1c8019ec31e96a675812c39170605afb948ab5ade718132b06dddd282b4e8aa4",
+    "discovered": 3756,
+    "executed": 3756,
+    "failures": 1,
+    "errors": 0,
+    "skipped": 0,
+    "xfail": 0,
+    "image_built": false,
+    "failure_test": "tests/test_rc6_residual_adverse.py::test_disk_policy_metadata_matches_executable_contract"
   }
 }
