@@ -11,6 +11,146 @@ import tempfile
 from rc6_dynamic_universe.common import digest
 
 
+class _FrozenEmptyList(list):
+    """An empty JSON array which cannot be changed through normal list APIs."""
+    def _readonly(self,*args,**kwargs):
+        raise TypeError("IMMUTABLE_JSON_EVIDENCE")
+    __setitem__=__delitem__=__iadd__=__imul__=_readonly
+    append=clear=extend=insert=pop=remove=reverse=sort=_readonly
+    __init__=_readonly
+    def __copy__(self):return self
+    def __deepcopy__(self,memo):return self
+
+
+class FrozenJSONDict(dict):
+    """Private scalar/empty-array evidence with a bounded encoding-size hint.
+
+    Only missing-field summaries use this type. Other field observations and
+    all mutable quote/identity envelopes remain independent ordinary objects.
+    """
+    __slots__=("_canonical_json",)
+    def __init__(self,payload):
+        if hasattr(self,"_canonical_json"):
+            raise TypeError("IMMUTABLE_JSON_EVIDENCE")
+        values={}
+        for key,value in payload.items():
+            if type(key) is not str:
+                raise TypeError("IMMUTABLE_JSON_SCALAR_KEYS_REQUIRED")
+            if type(value) is list and not value:
+                value=list.__new__(_FrozenEmptyList)
+            elif value is not None and type(value) not in (str,int,float,bool):
+                raise TypeError("IMMUTABLE_JSON_SCALARS_OR_EMPTY_ARRAYS_REQUIRED")
+            values[key]=value
+        encoded=json.dumps(values,sort_keys=True,separators=(",",":"),allow_nan=False)
+        dict.__init__(self,values)
+        object.__setattr__(self,"_canonical_json",encoded)
+    def _readonly(self,*args,**kwargs):
+        raise TypeError("IMMUTABLE_JSON_EVIDENCE")
+    __setitem__=__delitem__=__ior__=__setattr__=__delattr__=_readonly
+    clear=pop=popitem=setdefault=update=_readonly
+    def __copy__(self):return self
+    def __deepcopy__(self,memo):return self
+
+
+def _small_json_tree(value, maximum=65536, nodes=4096):
+    """Bound one C-encoded record without recursively walking every key."""
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        nodes -= 1
+        if nodes < 0:
+            return False
+        kind = type(item)
+        if kind is FrozenJSONDict:
+            maximum -= len(item._canonical_json)
+        elif kind is str:
+            maximum -= len(json.encoder.encode_basestring_ascii(item))
+        elif item is None or kind is bool:
+            maximum -= 5
+        elif kind is int:
+            maximum -= max(1, item.bit_length()) + 3
+        elif kind is float:
+            maximum -= 64
+        elif kind is dict:
+            if len(item) > 256:
+                return False
+            maximum -= 2 + 2 * len(item)
+            # String keys are overwhelmingly common. Their exact C escape
+            # length avoids a pessimistic 12x bound splitting ordinary rows.
+            for key in item:
+                if type(key) is str:
+                    maximum -= len(json.encoder.encode_basestring_ascii(key))
+                else:
+                    pending.append(key)
+                    maximum -= 2  # numeric/null/bool keys become strings
+            pending.extend(item.values())
+        elif kind is list or kind is tuple:
+            if len(item) > 256:
+                return False
+            maximum -= 2 + len(item)
+            pending.extend(item)
+        else:
+            return False
+        if maximum < 0:
+            return False
+    return True
+
+
+def _canonical_fragments(encoder, payload):
+    """Use bounded C-encoded subtrees instead of a Python yield per token."""
+    active = set()
+    def fragments(value):
+        container = isinstance(value, (dict, list, tuple))
+        if not container or _small_json_tree(value):
+            yield encoder.encode(value)
+            return
+        if id(value) in active:
+            raise ValueError("Circular reference detected")
+        active.add(id(value))
+        try:
+            if isinstance(value, dict):
+                yield '{'
+                for index, key in enumerate(sorted(value)):
+                    if index:
+                        yield ','
+                    # Delegate all JSON key coercion/rejection to the encoder.
+                    key_object = encoder.encode({key: None})
+                    yield key_object[1:-len(':null}')]
+                    yield ':'
+                    yield from fragments(value[key])
+                yield '}'
+            else:
+                yield '['
+                for index, item in enumerate(value):
+                    if index:
+                        yield ','
+                    yield from fragments(item)
+                yield ']'
+        finally:
+            active.remove(id(value))
+    yield from fragments(payload)
+
+
+def _canonical_chunks(encoder, payload, block_bytes=65536):
+    """Bounded byte blocks preserve the exact canonical JSON token stream."""
+    # These canonical encoders escape non-ASCII characters, so character and
+    # UTF-8 byte lengths agree. Join small tokens in C before encoding them.
+    pending, pending_size = [], 0
+    for fragment in _canonical_fragments(encoder, payload):
+        size = len(fragment)
+        if pending and pending_size + size > block_bytes:
+            yield ''.join(pending).encode('ascii')
+            pending, pending_size = [], 0
+        if size > block_bytes:
+            for offset in range(0, size, block_bytes):
+                yield fragment[offset:offset + block_bytes].encode('ascii')
+        else:
+            pending.append(fragment)
+            pending_size += size
+    if pending:
+        yield ''.join(pending).encode('ascii')
+
+
 class EvidencePayloadLimit(ValueError):
     """Bounded context for a rejected evidence payload; never contains its data."""
     def __init__(self, name, measured_bytes, limit_bytes):
@@ -79,6 +219,7 @@ class EvidenceFiles:
         if len(raw) > self.payload_limit:
             raise EvidencePayloadLimit(name, len(raw), self.payload_limit)
         envelope = json.loads(raw)
+        del raw  # release the decoded input before canonical digest buffers
         if envelope.get("digest") != digest(envelope.get("payload")):
             raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
         return envelope["payload"]
@@ -92,24 +233,26 @@ class EvidenceFiles:
             if digest(existing) != digest(payload):
                 raise ValueError("SHADOW_IMMUTABLE_FREEZE_CONFLICT")
             return
-        # The checkpoint can approach the 64 MiB raw limit. Constructing a
-        # canonical payload string, its encoded copy, the envelope and the
-        # compressed copy at once can exhaust the host before fail-closed
-        # evidence is published. Stream both canonical passes instead.
+        # One bounded canonical pass hashes and compresses the payload. The
+        # digest follows it in the envelope; readers already validate by keys.
+        # A zlib call per tiny JSON token stalled full-catalog generations.
         encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
                                    default=str, allow_nan=False)
         hasher = hashlib.sha256()
-        payload_bytes = 0
-        for fragment in encoder.iterencode(payload):
-            chunk = fragment.encode()
-            payload_bytes += len(chunk)
-            if payload_bytes > self.payload_limit:
-                raise EvidencePayloadLimit(name, payload_bytes, self.payload_limit)
-            hasher.update(chunk)
-        prefix = b'{"digest":"' + hasher.hexdigest().encode() + b'","payload":'
-        raw_bytes = len(prefix) + payload_bytes + 1
-        if raw_bytes > self.payload_limit:
-            raise EvidencePayloadLimit(name, raw_bytes, self.payload_limit)
+        prefix = b'{"payload":'
+        overhead = len(prefix) + len(b',"digest":"') + 64 + len(b'"}')
+
+        def emit(sink):
+            payload_bytes = 0
+            sink.write(prefix)
+            for chunk in _canonical_chunks(encoder, payload):
+                payload_bytes += len(chunk)
+                if payload_bytes + overhead > self.payload_limit:
+                    raise EvidencePayloadLimit(name, payload_bytes + overhead, self.payload_limit)
+                hasher.update(chunk)
+                sink.write(chunk)
+            sink.write(b',"digest":"' + hasher.hexdigest().encode() + b'"}')
+
         files = list(self.root.iterdir())
         # The fsynced staging file temporarily coexists with the prior target.
         # Both file and byte quotas bound that peak, not just the final rename.
@@ -123,15 +266,9 @@ class EvidenceFiles:
                 if name.endswith(".gz"):
                     with gzip.GzipFile(fileobj=stream, filename="", mode="wb", compresslevel=1,
                                        mtime=0) as zipped:
-                        zipped.write(prefix)
-                        for fragment in encoder.iterencode(payload):
-                            zipped.write(fragment.encode())
-                        zipped.write(b'}')
+                        emit(zipped)
                 else:
-                    stream.write(prefix)
-                    for fragment in encoder.iterencode(payload):
-                        stream.write(fragment.encode())
-                    stream.write(b'}')
+                    emit(stream)
                 stream.flush()
                 os.fsync(stream.fileno())
                 if size + stream.tell() > self.maximum_bytes:
@@ -159,8 +296,7 @@ class EvidenceFiles:
             tmp = Path(stream.name)
             try:
                 with gzip.GzipFile(fileobj=stream, mode="wb", compresslevel=1, mtime=0) as zipped:
-                    for fragment in encoder.iterencode(payload):
-                        chunk = fragment.encode()
+                    for chunk in _canonical_chunks(encoder, payload):
                         raw_bytes += len(chunk)
                         if raw_bytes > raw_limit:
                             raise EvidencePayloadLimit("computed-report", raw_bytes, raw_limit)

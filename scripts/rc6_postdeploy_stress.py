@@ -30,20 +30,94 @@ GROUPS={
                    'tests/test_rc6_shadow_runtime_wiring.py','tests/test_rc6_observer_metric_contention.py',
                    'tests/test_rc6_shadow_contract_projection.py'],
  'publication_io_identity':['tests/test_rc6_issue600_regressions.py','tests/test_rc6_issue603_regressions.py',
-                            'tests/test_rc6_shadow_failure_context.py','tests/test_rc6_shadow_stage_reads.py'],
+                            'tests/test_rc6_shadow_failure_context.py','tests/test_rc6_shadow_stage_reads.py',
+                            'tests/test_rc6_shadow_streaming_cost.py','tests/test_rc6_shadow_report_lifetime.py',
+                            'tests/test_rc6_shadow_owned_state.py'],
  'signals_risk_exit_ledger':['tests/test_rc6_convergence_core_admission.py','tests/test_exit_supervision_v17.py',
                            'tests/test_exit_ledger_isolation_v17.py','tests/test_rc6_future_programming_complete.py',
-                           'tests/test_rc6_performance_runtime.py','tests/test_rc6_final_programming_runtime.py'],
+                           'tests/test_rc6_performance_runtime.py','tests/test_rc6_final_programming_runtime.py',
+                           'tests/test_rc6_timestamp_atomicity.py',
+                           'tests/test_rc6_catalog_publication_lifecycle.py',
+                           'tests/test_rc6_go_startup_readiness.py'],
  'sources_readiness_network':['tests/test_rc6_dynamic_sources.py','tests/test_rc6_source_consolidation.py',
                              'tests/test_rc6_family_readiness.py','tests/test_rc6_official_source_adapters.py',
-                             'tests/test_rc6_final_family_source_policy.py'],
+                             'tests/test_rc6_final_family_source_policy.py','tests/test_rc6_family_quote_lookup_cost.py'],
  'scalping_capacity':['tests/test_intraday_scalping_rc6_integration.py','tests/test_issue465_budget_adversarial.py'],
  'treasury_caucion':['tests/test_caucion_treasury_v17.py','tests/test_caucion_ledger_v17.py',
                      'tests/test_ws_caucion_12_live_ppi_wiring.py'],
- 'dashboard_auth_52':['tests/test_ws_dash_trader_terminal_08.py','tests/test_rc6_issue600_dashboard_adenda.py'],
+ 'dashboard_auth_52':['tests/test_ws_dash_trader_terminal_08.py','tests/test_rc6_issue600_dashboard_adenda.py',
+                      'tests/test_rc6_dashboard_clock_bounds.py','tests/test_rc6_runtime_all_routes_http.py'],
  'scheduler_monitor_backup':['tests/test_rc6_market_watch_silence.py','tests/test_host_general_backup_v17.py',
                              'tests/test_rc6_host_backup_symlink.py','tests/test_rc6_reader_status_connection_lifecycle.py'],
 }
+
+
+# Public native metadata cardinalities (READ_ONLY run 38998730556), synthetic
+# identities, empty prices/history and zero providers. Counts are load, not
+# readiness/contract evidence for any real instrument.
+FULL_CATALOG_SHAPE = {
+ 'BONOS':(3012,2414), 'OBLIGACIONES':(5018,3639), 'FCI':(1082,1060),
+ 'ACCIONES':(198,163), 'CEDEARS':(2441,1266), 'LETRAS':(53,38),
+ 'FUTUROS':(203,0), 'OPCIONES':(2502,1317), 'CAUCIONES':(10,5),
+ 'ON':(91,0), 'INDICES':(1,0)}
+
+
+def full_catalog_replay(folder):
+    """Two real worker cuts at catalogue scale and its actual poll cadence."""
+    from be_paper_engine import PaperStore
+    from bf_production_paper_observer import _support_schema
+    from cf_intraday_scalping import init_schema
+    from tests.test_rc6_shadow_runtime_wiring import PRE
+    from rc6_shadow_runtime import worker as runtime
+    from rc6_shadow_runtime.persistence import read_committed_generation
+    from rc6_shadow_runtime.timing import generation_budget
+    folder.mkdir(parents=True,exist_ok=True)
+    store=PaperStore(str(folder/'paper.db'));_support_schema(store);init_schema(store)
+    rows=[]
+    for family,(total,ready) in FULL_CATALOG_SHAPE.items():
+        for n in range(total):
+            rows.append((f'LOAD_{family}_{n:05d}',family,'BYMA',
+                ('ARS','USD_MEP','USD_CCL')[n%3],'A-24HS','SYNTHETIC',
+                'synthetic public-cardinality fixture',PRE.isoformat(),'stress-full-catalog',
+                'AVAILABLE' if n<ready else 'PAUSED_EXPLICIT',
+                'READY_PAPER_SPOT' if n<ready else 'NO_VERIFICADO','{}'))
+    with store.connect() as c:
+        c.executemany('INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',rows)
+    total=len(rows);del rows
+    ready=sum(ready for _,ready in FULL_CATALOG_SHAPE.values())
+    worker=runtime.ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[])
+    started=time.monotonic();cuts=[]
+    class Stop:
+        def is_set(self):return len(cuts)>=2
+        def wait(self,_seconds):
+            cut=read_committed_generation(worker.root)
+            report,status=cut['report'],cut['status']
+            assert status['status']=='SHADOW_OBSERVING'
+            assert status['real_orders_sent']==0 and status['real_routes']=='NOT_CALLED'
+            assert report['family_routing']['instruments_total']==total
+            assert all(p['telemetry_total']==ready for p in report['engines'].values())
+            assert report['computed_report']['raw_bytes']>100*1024**2
+            receipt={'sequence':cut['pointer']['sequence'],'as_of':status['as_of'],
+                     'tick_seconds':status['generation_timing']['tick_seconds'],
+                     'computed_report_sha256':report['computed_report']['sha256']}
+            if cuts:
+                assert receipt['sequence']>cuts[-1]['sequence']
+                previous_age=(PRE+timedelta(seconds=time.monotonic()-started)-
+                    datetime.fromisoformat(cuts[-1]['as_of'])).total_seconds()
+                assert previous_age<=cuts[-1]['freshness_budget_seconds'],('FULL_CATALOG_FRESHNESS_GAP',previous_age)
+            receipt['freshness_budget_seconds']=generation_budget(status)[0]
+            cuts.append(receipt)
+            if len(cuts)<2:
+                time.sleep(_seconds)
+    with patch.object(runtime,'ShadowRuntime',lambda *_args,**_kwargs:worker):
+        runtime.run_worker(store.path,Stop(),clock_fn=lambda:(PRE+timedelta(seconds=time.monotonic()-started)).isoformat())
+    peak=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    assert len(cuts)==2 and peak<=512*1024,('FULL_CATALOG_PEAK_RSS_OVER_512MIB',peak)
+    return {'schema':'rc6.synthetic-full-catalog.v1','catalog_count':total,'ready_fixture_count':ready,
+            'cuts':cuts,'elapsed_seconds':round(time.monotonic()-started,3),'process_peak_rss_kib':peak,
+            'poll_sleep':'ACTUAL_WORKER_POLL_SECONDS','real_orders_sent':0,'real_routes':'NOT_CALLED',
+            'provider_requests':0,'production_data_mounted':False,'actual_market_acceptance':False,
+            'memory_measurement':'PROCESS_RSS; host launcher independently enforces container memory cap'}
 
 
 def session_replay(folder, *, minutes=405):
@@ -186,6 +260,11 @@ def run(output, *, smoke=False):
             'smoke':smoke,'scenarios':[],'limitations':['Real provider/network capacity and Android voice interaction are not simulated facts.']}
     start=time.monotonic()
     try:
+        if not smoke:
+            # Run inline before the session and pytest children, so the 512MiB
+            # container does not hold a second Python/pytest parent beside it.
+            with tempfile.TemporaryDirectory(prefix='rc6-catalog-') as temporary:
+                result['full_catalog']=full_catalog_replay(Path(temporary))
         with tempfile.TemporaryDirectory(prefix='rc6-day-') as temporary:
             result['session']=session_replay(Path(temporary),minutes=8 if smoke else 405)
         if not smoke:
@@ -220,5 +299,12 @@ def run(output, *, smoke=False):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--smoke',action='store_true');args=parser.parse_args()
-    run(args.output,smoke=args.smoke)
+    parser.add_argument('--smoke',action='store_true')
+    parser.add_argument('--full-catalog-check',action='store_true');args=parser.parse_args()
+    if args.full_catalog_check:
+        with tempfile.TemporaryDirectory(prefix='rc6-catalog-') as temporary:
+            receipt=full_catalog_replay(Path(temporary))
+        args.output.mkdir(parents=True,exist_ok=True)
+        (args.output/'full-catalog.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
+    else:
+        run(args.output,smoke=args.smoke)

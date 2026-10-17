@@ -268,7 +268,11 @@ class SampleMaterializer:
                     factor=str(contract.get('cash_multiplier','UNKNOWN'))
                     if not row['market'] or row['market']=='UNKNOWN' or not row['settlement']:
                         raise ValueError('INCOMPLETE_IDENTITY')
-                    for resolution in self.resolutions:
+                    # Validate every clock boundary before registering any
+                    # series/sample: a rejected source row must leave no data.
+                    intervals=[(resolution,*bounds(event,resolution))
+                               for resolution in self.resolutions]
+                    for resolution,start,end in intervals:
                         series=Series(row['symbol'],row['asset_class'],row['market'],currency,row['settlement'],
                             resolution,'PRODUCTION_PAPER_SNAPSHOTS','RAW','OBSERVED_NOMINAL_PRICE',
                             'TRADE_SAMPLES','UNKNOWN',factor)
@@ -276,7 +280,6 @@ class SampleMaterializer:
                         inserted=c.execute('INSERT OR IGNORE INTO candle_samples VALUES(?,?,?,?,?)',
                             (series.key,event,price,received,row['id'])).rowcount
                         if inserted:
-                            start,end=bounds(event,resolution)
                             c.execute('INSERT OR IGNORE INTO candle_dirty VALUES(?,?,?)',(series.key,start,end))
                     accepted+=1
                 except (ValueError,TypeError,ArithmeticError) as exc:

@@ -197,6 +197,24 @@ def durable_report_view(report, *, catalog_ready_count):
     return view
 
 
+def _share_equal_frozen_rows(frozen):
+    """Equal immutable rankings can share storage within this private tick.
+
+    Engines retain independent envelopes/capacity fingerprints. Compare full
+    values before sharing; no row, identity or provenance field is discarded.
+    """
+    rows = None
+    for engine in frozen.get("frozen", {}).values():
+        payload = engine.get("payload", {})
+        candidate = payload.get("rows")
+        if isinstance(candidate, list):
+            if rows is not None and candidate == rows:
+                payload["rows"] = rows
+            else:
+                rows = candidate
+    return frozen
+
+
 def durable_checkpoint_view(checkpoint):
     """Keep only causal state required by the next SHADOW tick."""
     view = {key: value for key, value in checkpoint.items()
@@ -391,11 +409,14 @@ class ShadowRuntime:
                     "preopen_cutoff": context["cutoff"].isoformat(), "frozen_at": at.isoformat(),
                     "capacity_report": capacity, "capacity_policy": capacity_policy,
                     "policies": self.policies, "observations": []}
-                pre_report = run_shadow(bundle)
+                pre_report = run_shadow(bundle, frozen_only=True)
                 frozen = {"schema": VERSION, "source_identity": source_id,
                     "frozen": pre_report["frozen"], "quality": pre["quality"],
                     "intraday_history": pre.get("intraday_history", [])}
                 files.write(freeze_name, frozen, immutable=True)
+                del pre_report
+            if frozen is not None:
+                _share_equal_frozen_rows(frozen)
             base = {"schema": VERSION, "mode": "SHADOW", "as_of": at.isoformat(),
                 "session": context["session"], "phase": context["phase"],
                 "source_database_effect": "READ_ONLY", "provider_requests": 0,
@@ -459,7 +480,7 @@ class ShadowRuntime:
             from .entry_signals import evaluate_runtime_entry_signals
             from .funnel import evaluate_runtime_funnel
             report["family_routing"] = family_reports(self.database, as_of=at,
-                catalog=inputs["full_catalog"], sources=sources)
+                catalog=inputs["full_catalog"], sources=sources,compact_missing=True)
             report["economic_exit_lab"], checkpoint["lab"] = evaluate_runtime_lab(
                 self.database, as_of=at, previous=previous.get("lab"))
             report["entry_signal_lab"], checkpoint["entry_signals"] = evaluate_runtime_entry_signals(
@@ -467,7 +488,8 @@ class ShadowRuntime:
             report["operational_funnel"], checkpoint["funnel"] = evaluate_runtime_funnel(
                 self.database, as_of=at, planner_report=report,
                 entry_signal_report=report["entry_signal_lab"],
-                exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"))
+                exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"),
+                private_runtime=True)
             # Never call a signal, economics or risk result as an execution
             # callback. These reports cannot reach the factual broker.
             durable = durable_report_view(report, catalog_ready_count=len(inputs["catalog"]))
@@ -512,8 +534,13 @@ def run_worker(database, stop, *, clock_fn=None):
                     evidence_root=artifact_root(database) / "dynamic-shadow",
                     history_database=history if history.exists() else None)
             report = worker.tick(clock_fn())
-            LOG.info("DYNAMIC_SHADOW_RUNTIME status=%s phase=%s real_orders_sent=0 provider_requests=0",
-                     report["status"], report["phase"])
+            try:
+                LOG.info("DYNAMIC_SHADOW_RUNTIME status=%s phase=%s real_orders_sent=0 provider_requests=0",
+                         report["status"], report["phase"])
+            finally:
+                # The full audit already lives in private committed bytes.
+                # Do not retain it while the next tick allocates another one.
+                del report
         except Exception as exc:
             # A bounded failed SHADOW read/write cannot stop the exit clock or
             # turn a stale prior report into current success. No source event.

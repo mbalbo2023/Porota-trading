@@ -52,7 +52,10 @@ def clock(value):
         if stamp.tzinfo is None:
             return UNKNOWN
         return stamp.astimezone(TZ).strftime("%d/%m %H:%M:%S ART")
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # Provider boundary clocks (observed year1) may parse successfully but
+        # underflow when historical ART offsets are applied. Display unknown;
+        # never wrap, fabricate a date, or crash the complete source page.
         return UNKNOWN
 
 

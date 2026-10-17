@@ -8,7 +8,7 @@ from .sources import audit_sources, source_observations
 from .tradeability import rank_tradeability, freeze_preopen, anomaly_events
 from cf_intraday_scalping import shadow_sampling_plan
 
-def run_shadow(bundle, *, previous=None):
+def run_shadow(bundle, *, previous=None, frozen_only=False):
     safety = bundle.get("safety", {})
     if (safety.get("mode") not in {"PRODUCTION_PAPER", "SIMULATION"} or
             safety.get("real_orders_sent") != 0 or safety.get("real_routes") != "NOT_CALLED"):
@@ -80,6 +80,8 @@ def run_shadow(bundle, *, previous=None):
             if at >= opening:
                 raise ValueError("PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION")
         frozen_reports[policy.engine] = frozen
+        if frozen_only:
+            continue
         kwargs = dict(at=at, session_open=opening, frozen=frozen, capacity=capacity,
             observations=observations, events=events["events"], opened=bundle.get("opened", []),
             previous=(previous or {}).get("engines", previous or {}).get(policy.engine), phase=phase)
@@ -88,6 +90,8 @@ def run_shadow(bundle, *, previous=None):
         else:
             plan = UniverseOrchestrator(bundle["catalog"], policy=policy).plan(**kwargs)
         plans.append((plan, policy))
+    if frozen_only:
+        return {"frozen": frozen_reports}
     # Reserve per-endpoint against the minimum jointly verified capacity.
     available = {}
     for plan, policy in plans:
