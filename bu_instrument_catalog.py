@@ -57,6 +57,12 @@ def init_schema(store):
         CREATE INDEX IF NOT EXISTS idx_shadow_catalog_order
           ON financial_instrument_catalog(instrument_type,market,currency,ticker,
             settlement,status,capability);
+        -- The audit projection includes source/clocks, unlike the SHADOW
+        -- identity index. Build once during schema preparation, never in a
+        -- bounded read-only HOT query. Large metadata_json stays out of it.
+        CREATE INDEX IF NOT EXISTS idx_catalog_public_metadata_v1
+          ON financial_instrument_catalog(instrument_type,market,currency,ticker,
+            settlement,status,capability,settlement_source,last_seen_at);
         CREATE TABLE IF NOT EXISTS catalog_query_results(
           run_id TEXT NOT NULL, ticker_query TEXT NOT NULL, name_query TEXT NOT NULL,
           instrument_type TEXT NOT NULL, market TEXT NOT NULL, status TEXT NOT NULL,

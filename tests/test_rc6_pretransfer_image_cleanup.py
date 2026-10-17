@@ -188,3 +188,15 @@ def test_new_external_alias_between_inspections_blocks(host, monkeypatch):
     monkeypatch.setattr(clean, 'eligibility', inspect)
     with pytest.raises(clean.Rejected, match='IMAGE_OWNERSHIP_CHANGED'): clean.cleanup()
     assert TAG in host.images[IMG][0]
+
+
+def test_same_repository_digest_does_not_make_unused_candidate_immortal(host):
+    host.images[IMG] = ([TAG], ['porota-predeploy-v2@sha256:'+'f'*64])
+    result = clean.cleanup()
+    assert result['removed_tags'] == [TAG] and IMG not in host.images
+
+
+def test_unpaired_canonical_repository_digest_still_protects_image(host):
+    host.images[IMG] = ([TAG], ['porota-trading-bot@sha256:'+'f'*64])
+    assert clean.cleanup()['removed_tags'] == []
+    assert IMG in host.images

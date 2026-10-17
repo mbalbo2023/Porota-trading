@@ -106,8 +106,16 @@ def eligibility(image):
     refs = references()  # includes stopped containers, not just running ones
     if image in refs:
         return tags, 'CONTAINER_REFERENCED'
-    if digests or not tags or any(CANDIDATE.fullmatch(tag) is None for tag in tags):
+    if not tags or any(CANDIDATE.fullmatch(tag) is None for tag in tags):
         return tags, 'PROTECTED_OR_NONCANDIDATE_ALIAS'
+    # Docker load on the target engine retains a canonical RepoDigest alongside
+    # its candidate tag. That immutable spelling is the same repository owner,
+    # not an external alias. Unknown or unpaired repositories remain protected.
+    repositories = {tag.split(':', 1)[0] for tag in tags}
+    for digest in digests:
+        match = re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[0-9a-f]{64}', digest)
+        if match is None or match.group(1) not in repositories:
+            return tags, 'PROTECTED_OR_UNPAIRED_DIGEST'
     return tags, 'UNREFERENCED_CANDIDATE_ONLY'
 
 
