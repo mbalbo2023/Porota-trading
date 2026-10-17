@@ -569,7 +569,6 @@ jobs:
         run: rm -f "$HOME/.ssh/rc6_market_watch"
 
 
-
   profile:
     needs: contracts
     if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
@@ -604,42 +603,159 @@ jobs:
           docker load -i /tmp/rc6-profile-image.tar.gz >/dev/null
           docker image inspect sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d >/dev/null
           install -d -m 777 /tmp/rc6-profile-603
-      - name: Compare bounded subtrees on exact same full synthetic JSON and ordinary containers
+
+      - name: Compile probe and prepare pinned compression packet
+        id: packet
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -m py_compile scripts/rc6_codec_experiment.py
-          docker run --interactive --rm --pull never --network none --user 1000:1000 --read-only \
-            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
-            --memory 512m --memory-swap 512m --cpus 0.75 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
-            --entrypoint python \
-            sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
-            - < scripts/rc6_codec_experiment.py
+          python3 -m py_compile scripts/rc6_compress_native_probe.py scripts/rc6_compress_native_host.py
+          python3 - <<'PY'
+          import gzip,hashlib,json,os,pathlib,shutil,stat,tarfile,urllib.parse,urllib.request,zipfile
+          root=pathlib.Path("/tmp/rc6-native-compress-packet");root.mkdir()
+          module=root/"isal-module";module.mkdir()
+          filename="isal-1.8.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"
+          expected="4207dde1088b899c461792c1fb5db6b0cbfeb453460fb176042b2104559fc4f1"
+          with urllib.request.urlopen("https://pypi.org/pypi/isal/1.8.0/json",timeout=30) as response:metadata=json.load(response)
+          files=[item for item in metadata["urls"] if item["filename"]==filename]
+          assert len(files)==1 and files[0]["digests"]["sha256"]==expected
+          url=urllib.parse.urlsplit(files[0]["url"]);assert url.scheme=="https" and url.hostname=="files.pythonhosted.org"
+          with urllib.request.urlopen(files[0]["url"],timeout=30) as response:raw=response.read(8*1024**2+1)
+          assert len(raw)<=8*1024**2 and hashlib.sha256(raw).hexdigest()==expected
+          wheel=pathlib.Path("/tmp/rc6-native-compress.whl");wheel.write_bytes(raw)
+          with zipfile.ZipFile(wheel) as archive:
+              members=archive.infolist();assert len(members)<=300 and sum(x.file_size for x in members)<=32*1024**2
+              for item in members:
+                  path=pathlib.PurePosixPath(item.filename)
+                  assert not path.is_absolute() and ".." not in path.parts and not stat.S_ISLNK(item.external_attr>>16)
+                  target=module/path
+                  if item.is_dir():target.mkdir(parents=True,exist_ok=True);continue
+                  target.parent.mkdir(parents=True,exist_ok=True)
+                  with archive.open(item) as source,target.open("xb") as sink:shutil.copyfileobj(source,sink)
+          shutil.copyfile("scripts/rc6_compress_native_probe.py",root/"probe.py")
+          packet=pathlib.Path("/tmp/rc6-native-compression-packet.tgz")
+          with tarfile.open(packet,"w:gz") as archive:
+              archive.add(root/"probe.py",arcname="probe.py")
+              archive.add(module,arcname="isal-module")
+          packet_sha=hashlib.sha256(packet.read_bytes()).hexdigest()
+          pathlib.Path("/tmp/rc6-native-compression-packet.sha256").write_text(packet_sha+"\n")
+          fixture=pathlib.Path("/tmp/rc6-native-compress-selfcheck");fixture.mkdir(mode=0o777)
+          os.chmod(fixture,0o777)
+          payload=bytes(range(256))*16384
+          with gzip.open(fixture/"input.json.gz","wb",compresslevel=1) as stream:stream.write(payload)
+          output=fixture/"output";output.mkdir(mode=0o777);os.chmod(output,0o777)
+          with open(os.environ["GITHUB_OUTPUT"],"a") as out:
+              out.write("raw_sha="+hashlib.sha256(payload).hexdigest()+"\n")
+          print("RC6_NATIVE_COMPRESSION_PACKET=PINNED_SHA256_VERIFIED|isal=1.8.0")
+          PY
+      - name: Self-check exact packet losslessly without network or credentials
+        shell: bash
+        env:
+          EXPECTED_RAW_SHA: ${{ steps.packet.outputs.raw_sha }}
+        run: |
+          set -Eeuo pipefail
+          docker run --rm --pull never --network none --user 1000:1000 --read-only \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
+            --memory 128m --memory-swap 128m --cpus 0.25 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=32m \
+            --mount type=bind,src=/tmp/rc6-native-compress-packet,dst=/tool,readonly \
+            --mount type=bind,src=/tmp/rc6-native-compress-selfcheck/input.json.gz,dst=/input/report.json.gz,readonly \
+            --mount type=bind,src=/tmp/rc6-native-compress-selfcheck/output,dst=/work \
+            --env PYTHONPATH=/tool/isal-module --env PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
+            /tool/probe.py --input /input/report.json.gz --expected-sha256 "$EXPECTED_RAW_SHA" \
+            --raw-bytes 4194304 --context CI_SYNTHETIC_SELF_CHECK
           python3 - <<'PY'
           import json,pathlib
-          path=pathlib.Path("/tmp/rc6-profile-603/bounded-subtree-experiment.json")
-          assert path.is_file(),"BENCHMARK_DID_NOT_EXECUTE"
-          data=json.loads(path.read_text())
-          assert data["schema"]=="rc6.synthetic-bounded-subtree-experiment.v1"
-          rows=data["measurements"]
-          assert len(rows)==12,"BENCHMARK_MEASUREMENT_COUNT_INVALID"
-          assert {x["representation"] for x in rows}=={"immutable_missing_summaries","ordinary_json_containers"}
-          assert {x["variant"] for x in rows}=={"64k","256k","1m"}
-          assert len({(x["raw_bytes"],x["raw_sha256"]) for x in rows})==1
-          assert all(x["cpu_seconds"]>0 and x["wall_seconds"]>0 and x["peak_rss_kib"]<=512*1024 for x in rows)
-          assert data["same_canonical_json_across_all_representations"] is True
-          print("RC6_BENCHMARK_NONEMPTY_GUARD=GREEN|measurements=12")
+          value=json.loads(pathlib.Path("/tmp/rc6-native-compress-selfcheck/output/metrics.json").read_text())
+          assert value["status"]=="GREEN" and value["context"]=="CI_SYNTHETIC_SELF_CHECK"
+          assert len(value["measurements"])==6 and value["nice"]==19
+          assert value["legacy_reader_verified"] is True and value["stdlib_reader_verified"] is True
+          assert value["native_acceptance"] is False and value["full_session_stress"] is False
+          print("RC6_NATIVE_COMPRESSION_PACKET_SELFCHECK=GREEN|six_nonempty_lossless_measurements")
           PY
-      - name: Make synthetic receipts readable to the artifact action
-        if: always()
+      - name: Publish pinned diagnostic packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-native-compression-packet-${{ github.run_id }}
+          path: |
+            /tmp/rc6-native-compression-packet.tgz
+            /tmp/rc6-native-compression-packet.sha256
+          retention-days: 7
+
+  native_compression:
+    needs: [contracts, profile]
+    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: rc6-native-compression-packet-${{ github.run_id }}
+          path: packet
+      - name: Prepare strict one-shot diagnostic transport
         shell: bash
         run: |
-          sudo chown -R "$(id -u):$(id -g)" /tmp/rc6-profile-603
-          chmod -R u+rX /tmp/rc6-profile-603
-      - uses: actions/upload-artifact@v4
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import hashlib,os,pathlib,re
+          key=os.environ["GITHUB_RUN_ID"]+"-"+os.environ["GITHUB_RUN_ATTEMPT"]
+          assert re.fullmatch("[0-9]+-[0-9]+",key)
+          sha=pathlib.Path("packet/rc6-native-compression-packet.sha256").read_text().strip()
+          assert re.fullmatch("[0-9a-f]{64}",sha)
+          assert hashlib.sha256(pathlib.Path("packet/rc6-native-compression-packet.tgz").read_bytes()).hexdigest()==sha
+          with open(os.environ["GITHUB_ENV"],"a") as out:out.write("RCA_KEY="+key+"\nPACKET_SHA="+sha+"\n")
+          PY
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_native_compress"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/rc6_native_compress_known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_native_compress" "$HOME/.ssh/rc6_native_compress_known_hosts"
+          mkdir -p evidence
+      - name: Transfer public pinned packet only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 90 scp -i "$HOME/.ssh/rc6_native_compress" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/rc6_native_compress_known_hosts" \
+            packet/rc6-native-compression-packet.tgz \
+            "$DO_USER@$DO_HOST:/tmp/rc6-native-compress-$RCA_KEY.tgz"
+      - name: Measure read-only committed gzip with guarded resources and no service actions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          timeout --signal=TERM --kill-after=30 780 ssh -i "$HOME/.ssh/rc6_native_compress" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/rc6_native_compress_known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 - --key '$RCA_KEY' --packet '/tmp/rc6-native-compress-$RCA_KEY.tgz' --packet-sha '$PACKET_SHA'" \
+            < scripts/rc6_compress_native_host.py > evidence/native-compression.jsonl 2> evidence/.transport.stderr
+          result=$?
+          set -e
+          rm -f evidence/.transport.stderr
+          cat evidence/native-compression.jsonl
+          echo "RC6_NATIVE_COMPRESSION_RCA_EXIT=$result"
+          test "$result" -eq 0
+      - name: Preserve numeric-only diagnostic receipt
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: rc6-synthetic-profile-${{ github.run_id }}
-          path: /tmp/rc6-profile-603
-          retention-days: 7
+          name: rc6-native-compression-rca-${{ github.run_id }}
+          path: evidence/native-compression.jsonl
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Destroy diagnostic credentials
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/rc6_native_compress" "$HOME/.ssh/rc6_native_compress_known_hosts"
