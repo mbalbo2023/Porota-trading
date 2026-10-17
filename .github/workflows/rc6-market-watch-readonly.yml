@@ -574,147 +574,45 @@ jobs:
     needs: contracts
     if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 5baeae7b0478d61d2dea04e5dbee4e0c1a3af951
-      - name: Verify development source identity and syntax without freezing a product candidate
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = 5baeae7b0478d61d2dea04e5dbee4e0c1a3af951
-          test "$(git rev-parse HEAD^{tree})" = 268009eb5fb2416fb92435ea828be7ad8d875965
-          python3 -m py_compile rc6_shadow_runtime/persistence.py scripts/porota_validate_deploy_artifact.py \
-            scripts/porota_dependency_repro_audit.py scripts/rc6_postdeploy_stress.py \
-            tests/test_rc6_shadow_native_bound.py tests/test_porota_validate_deploy_artifact.py \
-            tests/test_porota_dependency_repro_audit.py
-          git diff --check
-      - name: Qualify native semantics and artifact contracts on CI host Python before image mount
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          install -d -m 777 /tmp/rc6-native-dev /tmp/rc6-native-dev/tmp
-          python3 -m pip install --disable-pip-version-check -r requirements.lock.txt
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q -p no:cacheprovider \
-            tests/test_rc6_shadow_native_bound.py tests/test_porota_validate_deploy_artifact.py \
-            tests/test_porota_dependency_repro_audit.py tests/test_porota_build_deploy_bundle_v2.py \
-            tests/test_ci_productive_predeploy_contract.py tests/test_deploy_v2_frozen_artifact_contract.py \
-            --junitxml=/tmp/rc6-native-dev/host-contracts.xml
-      - name: Build only pinned compiler stage and archive tracked source without Git credentials
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          docker build --target rc6-json-bound-build -t rc6-native-development-builder .
-          install -d /tmp/rc6-native-dev-source
-          git archive HEAD | tar -x -C /tmp/rc6-native-dev-source
-          cid="$(docker create rc6-native-development-builder)"
-          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
-          docker cp "$cid:/out/_rc6_json_bound.so" /tmp/rc6-native-dev-source/rc6_shadow_runtime/_rc6_json_bound.so
-          docker cp "$cid:/out/needed.txt" /tmp/rc6-native-dev/needed.txt
-          docker cp "$cid:/out/symbols.txt" /tmp/rc6-native-dev/symbols.txt
-          docker rm "$cid" >/dev/null
-          trap - EXIT
-          test ! -e /tmp/rc6-native-dev-source/.git
-      - name: Verify and load exact PR618 frozen artifact without rebuilding
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Independently download and verify development XML and JSON bytes without native access
         shell: bash
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
-          import hashlib,json,os,pathlib,urllib.request,zipfile
-          def request(url):
-              req=urllib.request.Request(url)
+          import base64,hashlib,io,json,os,urllib.request,zipfile,xml.etree.ElementTree as ET
+          for artifact,size,expected,run in (
+              (12102203547,1439,"9e5272f9b1ba0999f6006dd01a52e4fa462f39281abda5dc4f50940024262152",39036688448),
+              (12102149687,6933,"0cb0b3d23332c03d156dc6e1798988c0627176a786f1845db5c7c3a1e7f46a4b",39037003384)):
+              req=urllib.request.Request(f"https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/{artifact}/zip")
               req.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
-              return urllib.request.urlopen(req,timeout=45)
-          base="https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/12097933526"
-          with request(base) as response:metadata=json.load(response)
-          assert metadata["workflow_run"]["id"]==39025705021 and metadata["workflow_run"]["head_sha"]=="5cb663231b52aee566dec0b3bf9c5d45684b98f5"
-          target=pathlib.Path("/tmp/rc6-exact618.zip");h=hashlib.sha256();total=0
-          with request(base+"/zip") as response,target.open("wb") as output:
-              while block:=response.read(1024**2):
-                  total+=len(block);assert total<=500*1024**2
-                  h.update(block);output.write(block)
-          assert total==414541894 and h.hexdigest()=="7c6355cb6c156e37d83ff0d2e61a0116f54d75ce7a42dc63d9b43b136c0586b8"
-          with zipfile.ZipFile(target) as archive:
-              def member(name):
-                  values=[x for x in archive.infolist() if pathlib.PurePosixPath(x.filename).name==name];assert len(values)==1
-                  return values[0]
-              frozen=json.loads(archive.read(member("porota-frozen-candidate.json")))
-              assert frozen["candidate_sha"]=="5cb663231b52aee566dec0b3bf9c5d45684b98f5" and frozen["candidate_tree_sha"]=="2f1825afed2417e4d4d7a8f003fecc009708921f"
-              assert frozen["image_id"]=="sha256:2f581a5cc45e34dad4974d35398aeef89f3dbc4c9ca7f4c3c172efd1123b62d9"
-              image_hash=hashlib.sha256()
-              with archive.open(member("porota-predeploy-image.tar.gz")) as source,open("/tmp/rc6-exact618-image.tar.gz","wb") as output:
-                  while block:=source.read(1024**2):
-                      image_hash.update(block);output.write(block)
-              assert image_hash.hexdigest()==frozen["image_tar_sha256"]=="be43e9ee781a157d1b23169827b839280f8ca0a2475f9c9fd2da3ba7ed574f52"
-          print("RC6_SERIALIZER_EXACT_FROZEN_BYTES=GREEN|zip_sha="+h.hexdigest()+"|tar_sha="+image_hash.hexdigest(),flush=True)
+              with urllib.request.urlopen(req,timeout=30) as response:raw=response.read(2*1024**2+1)
+              assert len(raw)==size and hashlib.sha256(raw).hexdigest()==expected
+              with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                  xmls=[]
+                  for member in archive.infolist():
+                      if not member.filename.endswith(".xml"):continue
+                      assert member.file_size<1024**2
+                      content=archive.read(member);cases=list(ET.fromstring(content).iter("testcase"))
+                      counts={k:sum(len(c.findall(k)) for c in cases) for k in ("failure","error","skipped")}
+                      assert cases and not any(counts.values())
+                      xmls.append({"name":member.filename,"cases":len(cases),**counts,"sha256":hashlib.sha256(content).hexdigest()})
+                  print("RC6_NATIVE_DEV_XML_READBACK="+json.dumps({"run":run,"xml":xmls},sort_keys=True,separators=(",",":")))
+                  if run==39037003384:
+                      content=archive.read("development.json");data=json.loads(content)
+                      assert data["source_sha"]=="5baeae7b0478d61d2dea04e5dbee4e0c1a3af951" and data["tree_sha"]=="268009eb5fb2416fb92435ea828be7ad8d875965"
+                      assert data["context"]=="CI_DEVELOPMENT_SOURCE_OVER_FROZEN618_DEPENDENCY_BASE"
+                      assert data["native_acceptance"] is False and data["final_product_image_built"] is False
+                      assert len(xmls)==2 and sum(x["cases"] for x in xmls)==89
+                      for group in data["groups"]:
+                          assert any(x["name"]==group["name"]+".xml" and x["sha256"]==group["junit_sha256"] and x["cases"]==group["cases"] for x in xmls)
+                      catalog=json.loads(archive.read("catalog/full-catalog.json"))
+                      assert catalog==data["full_catalog"] and len(catalog["cuts"])==2 and catalog["catalog_count"]==14611 and catalog["ready_fixture_count"]==9902
+                      print("RC6_NATIVE_DEV_RECEIPT_BYTE_READBACK="+json.dumps({"bytes":len(content),"sha256":hashlib.sha256(content).hexdigest(),"base64":base64.b64encode(content).decode()},separators=(",",":")))
           PY
-          docker load -i /tmp/rc6-exact618-image.tar.gz >/dev/null
-          install -d -m 777 /tmp/rc6-perf618
-      - name: Qualify new source and compiled predicate over frozen618 dependency base without native host access
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          trap 'docker rm -f rc6-native-dev-cases rc6-native-dev-catalog >/dev/null 2>&1 || true' EXIT
-          run_dev() {
-            rc6_label="$1"; shift
-            rc6_name="rc6-native-dev-$rc6_label"
-            docker create --name "$rc6_name" --memory 512m --memory-swap 512m --cpus .75 \
-              --network none --no-healthcheck --read-only --user 1000:1000 --workdir /app \
-              --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 \
-              -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e TMPDIR=/proof/tmp \
-              -v /tmp/rc6-native-dev-source:/app:ro -v /tmp/rc6-native-dev:/proof \
-              sha256:2f581a5cc45e34dad4974d35398aeef89f3dbc4c9ca7f4c3c172efd1123b62d9 "$@"
-            set +e
-            timeout 480 docker start -a "$rc6_name"
-            rc6_result=$?
-            set -e
-            rc6_state="$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$rc6_name")"
-            printf 'RC6_NATIVE_DEVELOPMENT_CONTAINER=%s|%s\n' "$rc6_label" "$rc6_state"
-            test "$rc6_result" -eq 0
-            test "$rc6_state" = '0|false'
-            docker rm "$rc6_name" >/dev/null
-          }
-          run_dev cases python -m pytest -q -p no:cacheprovider \
-            tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_streaming_cost.py \
-            tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_owned_state.py \
-            tests/test_rc6_shadow_report_lifetime.py --junitxml=/proof/container-contracts.xml
-          run_dev catalog python scripts/rc6_postdeploy_stress.py --full-catalog-check --output /proof/catalog
-          python3 - <<'PY'
-          import hashlib,json,pathlib,xml.etree.ElementTree as ET
-          root=pathlib.Path("/tmp/rc6-native-dev");groups=[]
-          for name in ("host-contracts","container-contracts"):
-              content=(root/(name+".xml")).read_bytes();cases=list(ET.fromstring(content).iter("testcase"))
-              counts={k:sum(len(c.findall(k)) for c in cases) for k in ("failure","error","skipped")}
-              assert cases and not any(counts.values())
-              groups.append({"name":name,"cases":len(cases),**counts,"junit_sha256":hashlib.sha256(content).hexdigest()})
-          catalog=json.loads((root/"catalog/full-catalog.json").read_text())
-          assert catalog["catalog_count"]==14611 and catalog["ready_fixture_count"]==9902 and len(catalog["cuts"])==2
-          binary=pathlib.Path("/tmp/rc6-native-dev-source/rc6_shadow_runtime/_rc6_json_bound.so")
-          source=pathlib.Path("rc6_shadow_runtime/_rc6_json_bound.c")
-          result={"schema":"rc6.native-bound-development.v1","context":"CI_DEVELOPMENT_SOURCE_OVER_FROZEN618_DEPENDENCY_BASE",
-            "source_sha":"5baeae7b0478d61d2dea04e5dbee4e0c1a3af951","tree_sha":"268009eb5fb2416fb92435ea828be7ad8d875965",
-            "source_sha256":hashlib.sha256(source.read_bytes()).hexdigest(),"compiled_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
-            "groups":groups,"full_catalog":catalog,"memory_bytes":512*1024**2,"nano_cpus":750000000,
-            "final_product_image_built":False,"frozen_product_candidate":False,"native_acceptance":False,
-            "full_session_stress":False,"production_data_mounted":False,"droplet_accessed":False,
-            "provider_requests":0,"real_orders_sent":0,"real_routes":"NOT_CALLED","status":"GREEN"}
-          (root/"development.json").write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
-          print("RC6_NATIVE_BOUND_DEVELOPMENT="+json.dumps(result,sort_keys=True,separators=(",",":")))
-          PY
-      - name: Preserve development proof without production source-identity claims
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc6-native-bound-development-${{ github.run_id }}
-          path: |
-            /tmp/rc6-native-dev/host-contracts.xml
-            /tmp/rc6-native-dev/container-contracts.xml
-            /tmp/rc6-native-dev/catalog/full-catalog.json
-            /tmp/rc6-native-dev/development.json
-            /tmp/rc6-native-dev/needed.txt
-            /tmp/rc6-native-dev/symbols.txt
-          if-no-files-found: warn
-          retention-days: 14
