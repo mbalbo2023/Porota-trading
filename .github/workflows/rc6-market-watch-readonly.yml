@@ -679,6 +679,22 @@ jobs:
           name: rc6-native-compress-selfcheck64-${{ github.run_id }}
           path: /tmp/rc6-native-selfcheck64/output/metrics.json
           retention-days: 7
+
+      - name: Verify governed quiescence and recovery on synthetic containers
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_compress_governor_selfcheck.py
+          sudo -n env GITHUB_RUN_ID="$GITHUB_RUN_ID" python3 scripts/rc6_compress_governor_selfcheck.py \
+            --image sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
+            --packet /tmp/rc6-native-packet-reuse/rc6-native-compression-packet.tgz \
+            --driver scripts/rc6_compress_native_host.py
+      - name: Preserve CI-only quiescence governor proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-quiesce-governor-selfcheck-${{ github.run_id }}
+          path: quiesce-governor-selfcheck.json
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: rc6-native-compression-packet-${{ github.run_id }}
@@ -691,7 +707,7 @@ jobs:
     needs: [contracts, profile]
     if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -733,12 +749,12 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/rc6_native_compress_known_hosts" \
             packet/rc6-native-compression-packet.tgz \
             "$DO_USER@$DO_HOST:/tmp/rc6-native-compress-$RCA_KEY.tgz"
-      - name: Measure read-only committed gzip with guarded resources and no service actions
+      - name: Measure read-only gzip after CLOSED quiesce and recover exact original runtime
         shell: bash
         run: |
           set -Eeuo pipefail
           set +e
-          timeout --signal=TERM --kill-after=30 780 ssh -i "$HOME/.ssh/rc6_native_compress" \
+          timeout --signal=TERM --kill-after=30 1080 ssh -i "$HOME/.ssh/rc6_native_compress" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/rc6_native_compress_known_hosts" \

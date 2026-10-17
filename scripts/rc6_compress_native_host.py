@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""One bounded read-only compression probe. No service start/stop/restart."""
-import argparse, base64, fcntl, hashlib, json, math, os, pathlib, re, shutil
+"""Bounded compression RCA after governed CLOSED/PAPER quiescence; exact restore."""
+import argparse, base64, io, fcntl, hashlib, json, math, os, pathlib, re, shutil
 import signal, sqlite3, subprocess, tarfile, time
 from contextlib import closing
 from datetime import datetime,timezone
 from pathlib import Path
+from urllib.request import urlopen
 ROOT=Path("/opt/porota-trading").resolve(strict=True)
 DATA=(ROOT/"data").resolve(strict=True)
 IMAGE="sha256:bc406686ad8774469e72def0ad94d468e2320de56d790c830f90f20d2a7b6fed"
@@ -20,12 +21,52 @@ def command(args,timeout=30):
 def available():
     return int(next(x.split()[1] for x in Path("/proc/meminfo").read_text().splitlines() if x.startswith("MemAvailable:")))*1024
 def snapshot(name):
-    fmt='{"Id":{{json .Id}},"Image":{{json .Image}},"RestartCount":{{json .RestartCount}},"Status":{{json .State.Status}},"StartedAt":{{json .State.StartedAt}}}'
+    fmt='{"Id":{{json .Id}},"Image":{{json .Image}},"RestartCount":{{json .RestartCount}},"State":{"Status":{{json .State.Status}},"StartedAt":{{json .State.StartedAt}},"FinishedAt":{{json .State.FinishedAt}},"ExitCode":{{json .State.ExitCode}},"OOMKilled":{{json .State.OOMKilled}}}}'
     return json.loads(command(["docker","inspect","--format",fmt,name]))
 def runtime_snapshot():
     values={name:snapshot(name) for name in OWNED}
-    require(all(x["Image"]==IMAGE and x["Status"]=="running" and type(x["RestartCount"]) is int for x in values.values()),"RCA_OWNED_RUNTIME_IDENTITY_INVALID")
+    require(all(x["Image"]==IMAGE and x["State"]["Status"]=="running" and type(x["RestartCount"]) is int for x in values.values()),"RCA_OWNED_RUNTIME_IDENTITY_INVALID")
     return values
+
+def lifecycle(value):
+    return {key: value.get('State', {}).get(key) for key in
+            ('Status', 'StartedAt', 'FinishedAt', 'ExitCode', 'OOMKilled')}
+
+def clean_stop(before, after):
+    """Distinguish a retained historical OOM flag from this clean stop.
+
+    A new/unknown OOM or any nonzero exit remains blocking. Docker may retain
+    OOMKilled across starts; a fresh clean ExitCode alone does not erase its
+    history. Accept that history only when the prior lifecycle was verified.
+    """
+    old, new = lifecycle(before), lifecycle(after)
+    if before['Id'] != after['Id'] or before['Image'] != after['Image']:
+        raise ValueError('QUIESCENCE_STOP_IDENTITY_CHANGED')
+    if new['Status'] != 'exited': raise ValueError('QUIESCENCE_STOP_NOT_EXITED')
+    if type(new['ExitCode']) is not int or new['ExitCode'] != 0:
+        raise ValueError('QUIESCENCE_STOP_NONZERO_OR_UNKNOWN_EXIT')
+    if new['OOMKilled'] is False: return 'CLEAN_EXIT'
+    try:
+        started = datetime.fromisoformat(old['StartedAt'].replace('Z', '+00:00'))
+        previous_finish = datetime.fromisoformat(old['FinishedAt'].replace('Z', '+00:00'))
+        finished = datetime.fromisoformat(new['FinishedAt'].replace('Z', '+00:00'))
+        if (old['Status'] == 'running' and old['OOMKilled'] is True and new['OOMKilled'] is True
+                and type(old['ExitCode']) is int and old['ExitCode'] == 0
+                and new['StartedAt'] == old['StartedAt'] and previous_finish.year >= 2020
+                and previous_finish < started <= finished <= datetime.now(timezone.utc)):
+            return 'INHERITED_OOM_FLAG_CLEAN_EXIT'
+    except (AttributeError, TypeError, ValueError): pass
+    raise ValueError('QUIESCENCE_STOP_OOM_NEW_OR_UNVERIFIED')
+
+def restored_state(before,current,image):
+    if current['Id']!=before['Id'] or current['Image']!=image:
+        raise ValueError('STRESS_RESTORE_IDENTITY_MISMATCH')
+    if current['State']['Status']!='running':
+        raise ValueError('STRESS_RESTORE_PROCESS_NOT_RUNNING')
+    previous=before.get('RestartCount'); observed=current.get('RestartCount')
+    if type(previous) is not int or type(observed) is not int or observed!=previous:
+        raise ValueError('STRESS_RESTORE_RESTART_COUNT_CHANGED_OR_UNKNOWN')
+    return dict(lifecycle(current),RestartCount=observed)
 
 def database_state(path, *, require_waiting=True):
     with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2)) as c:
@@ -47,7 +88,63 @@ def database_state(path, *, require_waiting=True):
         return row
 
 
-DESCRIPTOR_CODE="import json,os,re\nfrom pathlib import Path\nfrom rc6_shadow_runtime.persistence import read_committed_generation\ndb=Path(os.getenv(\"PAPER_V17_DB_PATH\",\"/app/data/paper_v17/observer_v17.db\"))\nroot=db.parent/\"artifacts\"/db.name/\"dynamic-shadow\"\ncut=read_committed_generation(root,payload_limit=4*1024**2,require_current_status=False)\naudit=cut[\"report\"][\"computed_report\"]\nassert re.fullmatch(r\"computed-[0-9a-f]{64}\\.json\\.gz\",audit[\"file\"])\nassert re.fullmatch(r\"[0-9a-f]{64}\",audit[\"sha256\"])\nassert type(audit[\"raw_bytes\"]) is int and 0<audit[\"raw_bytes\"]<=512*1024**2\nassert type(audit[\"compressed_bytes\"]) is int and 0<audit[\"compressed_bytes\"]<=128*1024**2\nprint(json.dumps({\"root_relative\":str(root.relative_to(\"/app/data\")),\n \"file\":audit[\"file\"],\"raw_sha256\":audit[\"sha256\"],\"raw_bytes\":audit[\"raw_bytes\"],\n \"compressed_bytes\":audit[\"compressed_bytes\"],\"generation_id\":cut[\"pointer\"][\"generation_id\"],\n \"manifest_sha256\":cut[\"pointer\"][\"manifest_sha256\"]},sort_keys=True))\n"
+
+def envelope(path,limit=4*1024**2):
+    import gzip
+    require(path.is_file() and not path.is_symlink() and path.stat().st_nlink==1,"RCA_ENVELOPE_ALIAS")
+    with (gzip.open(path,"rb") if path.name.endswith(".gz") else path.open("rb")) as source:
+        raw=source.read(limit+1)
+    require(len(raw)<=limit,"RCA_ENVELOPE_SIZE_LIMIT")
+    value=json.loads(raw)
+    payload=value["payload"]
+    digest=hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(",",":"),default=str,allow_nan=False).encode()).hexdigest()
+    require(digest==value.get("digest"),"RCA_ENVELOPE_DIGEST_MISMATCH")
+    return payload
+
+def source_descriptor(root):
+    pointer=envelope(root/"CURRENT.json",131072)
+    require(re.fullmatch(r"cut-[0-9a-f]{64}\.json\.gz",pointer.get("file","")),"RCA_CUT_NAME_INVALID")
+    cut=envelope(root/pointer["file"])
+    manifest=cut["manifest"]
+    digest=lambda x:hashlib.sha256(json.dumps(x,sort_keys=True,separators=(",",":"),default=str,allow_nan=False).encode()).hexdigest()
+    require(digest(manifest)==pointer.get("manifest_sha256")
+        and manifest.get("generation_id")==pointer.get("generation_id")
+        and manifest.get("sequence")==pointer.get("sequence"),"RCA_CUT_MANIFEST_MISMATCH")
+    for role in ("report","status"):
+        member=cut[role]
+        require(digest(member)==manifest["files"][role]["payload_digest"]
+            and member.get("generation_id")==pointer["generation_id"]
+            and member.get("source_watermark")==manifest["source_watermark"]
+            and member.get("configuration_fingerprint")==manifest["configuration_fingerprint"],
+            "RCA_CUT_MEMBER_MISMATCH")
+        require(type(member.get("real_orders_sent")) is int and member["real_orders_sent"]==0
+            and member.get("real_routes")=="NOT_CALLED","RCA_CUT_AUTHORITY_INVALID")
+    audit=cut["report"]["computed_report"]
+    require(re.fullmatch(r"[0-9a-f]{64}",audit.get("sha256","")) is not None
+        and audit.get("file")=="computed-"+audit["sha256"]+".json.gz","RCA_AUDIT_IDENTITY_INVALID")
+    require(type(audit.get("raw_bytes")) is int and 0<audit["raw_bytes"]<=512*1024**2
+        and type(audit.get("compressed_bytes")) is int and 0<audit["compressed_bytes"]<=128*1024**2,
+        "RCA_AUDIT_SIZE_INVALID")
+    return {"root_relative":str(root.relative_to(DATA)),"file":audit["file"],
+        "raw_sha256":audit["sha256"],"raw_bytes":audit["raw_bytes"],
+        "compressed_bytes":audit["compressed_bytes"],"generation_id":pointer["generation_id"],
+        "manifest_sha256":pointer["manifest_sha256"]}
+
+def await_idle_hint(root):
+    for _ in range(31):
+        try:
+            status=envelope(root/"status.json",131072)
+            stamp=datetime.fromisoformat(status["as_of"].replace("Z","+00:00"))
+            tick=(status.get("generation_timing") or {}).get("tick_seconds")
+            require(type(tick) in (int,float) and math.isfinite(tick) and 0<=tick<=1200
+                and stamp.tzinfo is not None,"RCA_IDLE_CLOCK_INVALID")
+            age=(datetime.now(timezone.utc)-stamp).total_seconds()-tick
+            if (status.get("status") in {"SHADOW_OBSERVING","PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION"}
+                    and 0<=age<=20):return
+        except (ValueError,KeyError,FileNotFoundError):
+            pass
+        time.sleep(3)
+    raise ValueError("RCA_IDLE_WINDOW_NOT_OBSERVED")
 
 def safe_metrics(raw,descriptor):
     require(raw.get("schema")=="rc6.bounded-native-compression-rca.v1"
@@ -91,13 +188,14 @@ def run(args):
     packet=Path(args.packet)
     require(packet==expected and not packet.is_symlink() and packet.is_file()
         and packet.stat().st_nlink==1 and packet.stat().st_size<=16*1024**2,"RCA_PACKET_PATH_INVALID")
-    require(hashlib.sha256(packet.read_bytes()).hexdigest()==args.packet_sha,"RCA_PACKET_HASH_MISMATCH")
+    with packet.open("rb") as source:packet_content=source.read(16*1024**2+1)
+    require(len(packet_content)<=16*1024**2 and hashlib.sha256(packet_content).hexdigest()==args.packet_sha,"RCA_PACKET_HASH_MISMATCH")
     report={"schema":"rc6.readonly-compression-host.v1","status":"RED","run_key":args.key,
             "candidate_sha":"7bad982559f56323c00f555f0d8bb480dd00dfd0","image_id":IMAGE,
             "native_acceptance":False,"full_session_stress":False,"services_restarted":False,
             "production_input_read_only":True,"production_input_files":1,"payload_exported":False,
             "network":"none","memory_limit_bytes":MEMORY,"nano_cpus":250000000,
-            "ppi_watch_accessed":False,"runtime_restore":"NOT_NEEDED_NO_SERVICE_ACTION",
+            "ppi_watch_accessed":False,"runtime_restore":"NOT_NEEDED_NO_SERVICE_ACTION","planned_closed_quiesce":True,
             "started_at":datetime.now(timezone.utc).isoformat()}
     work=ROOT/"data/deploy/diagnostics/compression"/args.key
     require(not any(x.is_symlink() for x in (work,*work.parents)),"RCA_WORK_PATH_ALIAS")
@@ -107,29 +205,20 @@ def run(args):
     lock_fd=os.open(ROOT/"data/deploy/.readonly-compression-rca.lock",os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
     require(os.fstat(lock_fd).st_nlink==1,"RCA_LOCK_ALIAS")
     stream=os.fdopen(lock_fd,"a+")
-    container=None;before=None;process=None;samples=[]
+    container=None;before=None;process=None;samples=[];stopped=[]
     def interrupted(signum,frame):raise ValueError("RCA_INTERRUPTED")
-    signal.signal(signal.SIGTERM,interrupted);signal.signal(signal.SIGINT,interrupted)
+    signal.signal(signal.SIGTERM,interrupted);signal.signal(signal.SIGINT,interrupted);signal.signal(signal.SIGHUP,interrupted)
     try:
         fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        report["phase"]="ADMISSION"
-        admitted_samples=[]
-        for attempt in range(31):
-            memory=available();disk=shutil.disk_usage(ROOT).free
-            admitted_samples.append(memory)
-            report["admission"]={"memory_available":memory,"required_memory":MEMORY+128*1024**2,
-                "disk_free":disk,"required_disk":RESERVE,"wait_seconds":attempt*2,
-                "minimum_memory_seen":min(admitted_samples),"maximum_memory_seen":max(admitted_samples)}
-            require(disk>=RESERVE,"RCA_DISK_ADMISSION_BLOCKED")
-            if memory>=MEMORY+128*1024**2:break
-            if attempt<30:time.sleep(2)
-        else:raise ValueError("RCA_MEMORY_ADMISSION_BLOCKED")
+        report["phase"]="PRE_ADMISSION"
+        report["pre_quiesce_resources"]={"memory_available":available(),"disk_free":shutil.disk_usage(ROOT).free}
+        require(shutil.disk_usage(ROOT).free>=RESERVE,"RCA_DISK_ADMISSION_BLOCKED")
         db=DATA/"paper_v17/observer_v17.db"
         admitted=database_state(db)
         report["heartbeat_before"]=admitted["heartbeat_at"]
         before=runtime_snapshot()
         report["phase"]="PACKET"
-        with tarfile.open(packet,"r:gz") as archive:
+        with tarfile.open(fileobj=io.BytesIO(packet_content),mode="r:gz") as archive:
             members=archive.getmembers()
             require(len(members)<=300 and sum(x.size for x in members)<=32*1024**2,"RCA_PACKET_EXPANSION_LIMIT")
             for member in members:
@@ -141,8 +230,35 @@ def run(args):
                 target.parent.mkdir(parents=True,exist_ok=True,mode=0o755)
                 with archive.extractfile(member) as source,target.open("xb") as sink:shutil.copyfileobj(source,sink)
                 os.chmod(target,0o444)
+        report["phase"]="WAIT_IDLE"
+        shadow_root=DATA/"paper_v17/artifacts/observer_v17.db/dynamic-shadow"
+        require(not any(x.is_symlink() for x in (shadow_root,*shadow_root.parents)),"RCA_SHADOW_ROOT_ALIAS")
+        await_idle_hint(shadow_root)
+        database_state(db)
+        require(runtime_snapshot()==before,"RCA_RUNTIME_CHANGED_BEFORE_QUIESCE")
+        report["phase"]="QUIESCE"
+        report["stop_evidence"]={}
+        for name in OWNED:
+            stopped.append(name)
+            command(["docker","stop","--time","45",before[name]["Id"]],timeout=55)
+            current=snapshot(name)
+            classification=clean_stop(before[name],current)
+            report["stop_evidence"][name]={"classification":classification,"exit_code":current["State"]["ExitCode"],"oom_killed":current["State"]["OOMKilled"]}
+        database_state(db,require_waiting=False)
+        report["runtime_restore"]="PENDING_EXACT_ORIGINAL_CONTAINERS"
+        report["phase"]="ADMISSION_AFTER_QUIESCE"
+        admitted_samples=[]
+        for attempt in range(31):
+            memory=available();disk=shutil.disk_usage(ROOT).free;admitted_samples.append(memory)
+            report["admission"]={"memory_available":memory,"required_memory":MEMORY+128*1024**2,
+                "disk_free":disk,"required_disk":RESERVE,"wait_seconds":attempt*2,
+                "minimum_memory_seen":min(admitted_samples),"maximum_memory_seen":max(admitted_samples)}
+            require(disk>=RESERVE,"RCA_DISK_ADMISSION_BLOCKED")
+            if memory>=MEMORY+128*1024**2:break
+            if attempt<30:time.sleep(2)
+        else:raise ValueError("RCA_MEMORY_ADMISSION_BLOCKED")
         report["phase"]="SOURCE"
-        descriptor=json.loads(command(["docker","exec",OWNED[1],"python","-c",DESCRIPTOR_CODE],timeout=25))
+        descriptor=source_descriptor(shadow_root)
         relative=pathlib.PurePosixPath(descriptor["root_relative"])
         require(not relative.is_absolute() and ".." not in relative.parts,"RCA_INPUT_ROOT_INVALID")
         source=DATA/Path(*relative.parts)/descriptor["file"]
@@ -199,7 +315,7 @@ def run(args):
         value=str(error)
         report["error_code"]=value if type(error) is ValueError and re.fullmatch(r"(?:RCA|STRESS)_[A-Z_0-9]{1,75}",value) else None
     finally:
-        signal.signal(signal.SIGTERM,signal.SIG_IGN);signal.signal(signal.SIGINT,signal.SIG_IGN)
+        signal.signal(signal.SIGTERM,signal.SIG_IGN);signal.signal(signal.SIGINT,signal.SIG_IGN);signal.signal(signal.SIGHUP,signal.SIG_IGN)
         if container and re.fullmatch(r"[0-9a-f]{64}",container):
             try:
                 removed=subprocess.run(["docker","rm","--force",container],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=20)
@@ -208,20 +324,40 @@ def run(args):
                 report["diagnostic_container_cleanup"]="RED_TIMEOUT"
             if report["diagnostic_container_cleanup"]!="GREEN":report["status"]="RED"
         if before is not None:
-            try:
-                after=runtime_snapshot()
-                require(after==before,"RCA_OWNED_RUNTIME_CHANGED")
-                for _ in range(12):
+            failures=[]
+            for name in stopped:
+                try:
+                    current=snapshot(name)
+                    require(current["Id"]==before[name]["Id"] and current["Image"]==IMAGE,"RCA_RESTORE_IDENTITY_CHANGED")
+                    if current["State"]["Status"]!="running":
+                        command(["docker","start",before[name]["Id"]],timeout=35)
+                        report["services_restarted"]=True
+                    restored_state(before[name],snapshot(name),IMAGE)
+                except Exception:
+                    failures.append("RCA_RESTORE_PROCESS_OR_IDENTITY_UNVERIFIED")
+            for _ in range(24):
+                try:
+                    after=runtime_snapshot()
+                    for name in OWNED:restored_state(before[name],after[name],IMAGE)
+                    if not stopped:require(after==before,"RCA_UNPLANNED_RUNTIME_CHANGE")
                     row=database_state(DATA/"paper_v17/observer_v17.db")
-                    if datetime.fromisoformat(row["heartbeat_at"])>datetime.fromisoformat(report["heartbeat_before"]):break
+                    require(datetime.fromisoformat(row["heartbeat_at"])>datetime.fromisoformat(report["heartbeat_before"]),"RCA_HEARTBEAT_NOT_ADVANCED")
+                    with urlopen("http://127.0.0.1:8000/health",timeout=3) as response:
+                        require(response.status==200,"RCA_RESTORE_HEALTH_NOT_200")
+                    report["heartbeat_after"]=row["heartbeat_at"];report["real_orders_sent"]=0
+                    report["runtime_lifecycle_checks"]={name:{
+                        "identity_sha256_before":hashlib.sha256(before[name]["Id"].encode()).hexdigest(),
+                        "identity_sha256_after":hashlib.sha256(after[name]["Id"].encode()).hexdigest(),
+                        "image_id_before":before[name]["Image"],"image_id_after":after[name]["Image"],
+                        "restart_count_before":before[name]["RestartCount"],"restart_count_after":after[name]["RestartCount"],
+                        "status_after":after[name]["State"]["Status"]} for name in OWNED}
+                    report["exact_original_runtime_recovered"]=True
+                    break
+                except Exception:
                     time.sleep(5)
-                else:raise ValueError("RCA_HEARTBEAT_NOT_ADVANCED")
-                report["owned_runtime_unchanged"]=True
-                report["heartbeat_after"]=row["heartbeat_at"]
-                report["real_orders_sent"]=0
-            except Exception:
-                report["owned_runtime_unchanged"]=False;report["status"]="RED"
-                report["runtime_after_check"]="UNVERIFIED"
+            else:failures.append("RCA_RESTORE_LIVENESS_OR_HEALTH_UNVERIFIED")
+            report["runtime_restore"]=("GREEN" if not failures else "RED") if stopped else ("NOT_NEEDED_NO_SERVICE_ACTION" if not failures else "RED")
+            if failures:report["restore_failures"]=failures;report["status"]="RED"
         if samples:
             report["minimum_host_memory_available"]=min(x[0] for x in samples)
             report["minimum_disk_free_bytes"]=min(x[1] for x in samples)
