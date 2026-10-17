@@ -737,6 +737,36 @@
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "QUOTE-UTC-OVERFLOW",
+      "capability": "QUOTE_TYPED_CLOCK_REJECTION",
+      "path": "bs_instrument_contracts.py",
+      "symbol": "utc_microseconds",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Adversarial local proof: year1+14 and year9999-12 UTC conversion propagated OverflowError through Quote.time_error for book/trade/receipt/decision clocks. UTC normalization now raises ValueError so the quote rejects as INVALID_OR_NAIVE_TIMESTAMP. Valid microseconds/offset equality preserved. Financial SQL UDF deliberately continues to reject invalid ledger clocks rather than returning NULL and concealing risk movements. No native quote incident asserted.",
+      "test": "tests/test_rc6_timestamp_atomicity.py",
+      "status": "EN_GITHUB_PENDING_NATIVE_ACCEPTANCE",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "LOCAL_ADVERSARIAL_ONLY_NATIVE_FINANCIAL_OCCURRENCE_NO_VERIFICADO",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
+    },
+    {
+      "id": "CANDLE-REJECTED-ROW-PARTIAL",
+      "capability": "CANDLE_TRANSACTION_ATOMICITY",
+      "path": "bl_candle_engine.py",
+      "symbol": "SampleMaterializer.tick",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Adversarial local replay of native-observed year1-03 format as a TRADE row: accepted0/rejected1 but series1/sample1. Source clock eligibility as TRADE in native DB is NO_VERIFICADO. Every resolution boundary now validates before any series/sample insertion. Tests assert zero series/samples/dirty/versions after rejection, cursor progress, healthy subsequent row and idempotent replay. No destructive production repair or arbitrary freshness rule introduced.",
+      "test": "tests/test_rc6_timestamp_atomicity.py",
+      "status": "EN_GITHUB_PENDING_NATIVE_ACCEPTANCE",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "LOCAL_ADVERSARIAL_ONLY_NATIVE_FINANCIAL_OCCURRENCE_NO_VERIFICADO",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Cualquier adversario causal, drift SHA/tree/manifest o incumplimiento runtime invalida el cierre."
     }
   ],
   "candidate_sha": "19c26d2eba13d5855f653dff67605d11c518996b",
@@ -1210,9 +1240,9 @@
   },
   "next_candidate": {
     "pr": 613,
-    "sha": "349c418eef909e9998f7ba8ae7ee55c7ad1f08e2",
-    "tree": "43233fea9ef6408ac5a4694e6504f136e8102c8b",
-    "predeploy_run": 38996624409,
+    "sha": "40a38e53b8f073a2685c3bedae39900675a3b589",
+    "tree": "cd06d1d1ec27e44e7920726dd8f964e5412e3e43",
+    "predeploy_run": 38997662394,
     "status": "EN_GITHUB_PREDEPLOY_IN_PROGRESS"
   },
   "latest_deploy_result": {
@@ -1488,5 +1518,19 @@
     ],
     "max_elapsed_ms": 568,
     "visual_tablet": "NO_VERIFICADO"
-  }
+  },
+  "superseded_predeploy_613": [
+    {
+      "sha": "7bf42d7d764f2e78e5d542a14bd9571b02cd2759",
+      "run": 38996412535,
+      "reason": "ALL_CANONICAL_HTTP_AND_PARTIAL_RECEIPT_GUARDS"
+    },
+    {
+      "sha": "349c418eef909e9998f7ba8ae7ee55c7ad1f08e2",
+      "run": 38996624409,
+      "conclusion": "SUCCESS",
+      "deploy": "NOT_DEPLOYED",
+      "reason": "UTC_AND_CANDLE_ATOMICITY_CAUSAL_FINDINGS_REQUIRE_NEW_SHA"
+    }
+  ]
 }

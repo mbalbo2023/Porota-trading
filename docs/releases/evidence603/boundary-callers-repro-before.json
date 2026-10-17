@@ -1,0 +1,29 @@
+{
+  "0001-01-01T00:00:00-03:00": {
+    "time_error": "BOOK_STALE"
+  },
+  "9999-12-31T23:59:59-12:00": {
+    "exception": "OverflowError",
+    "detail": "date value out of range"
+  },
+  "0001-01-01T00:00:00+14:00": {
+    "exception": "OverflowError",
+    "detail": "date value out of range"
+  },
+  "tick": {
+    "cursor": 1,
+    "accepted": 0,
+    "rejected": 1,
+    "versions": 0,
+    "state": "RUNNING"
+  },
+  "tables": {
+    "candle_samples": 1,
+    "candle_series": 1,
+    "candle_rejections": 1
+  },
+  "udf_exception": {
+    "type": "DataError",
+    "detail": "string or blob too big"
+  }
+}

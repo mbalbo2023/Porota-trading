@@ -792,6 +792,38 @@
       "failure": 47,
       "error": 0,
       "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/dashboard-clock-timestamp-candidate.json",
+      "source": "LOCAL_CAUSAL_TEST_OR_EXACT_SOURCE_COMMIT",
+      "bytes": 237,
+      "sha256": "b33ccce6885ddcecc130dde5118bb170dacc2365153a5a6655c4b89b55f48303"
+    },
+    {
+      "path": "docs/releases/evidence603/timestamp-atomicity-after.xml.gz",
+      "source": "LOCAL_CAUSAL_TEST_OR_EXACT_SOURCE_COMMIT",
+      "bytes": 4160,
+      "sha256": "b356f990a7561dd3f8657a115405c90df783b7e5c310d3be6020b4d988ce32ed",
+      "cases": 204,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/timestamp-atomicity-before.xml.gz",
+      "source": "LOCAL_CAUSAL_TEST_OR_EXACT_SOURCE_COMMIT",
+      "bytes": 1718,
+      "sha256": "b5e6ff995279498aeb3ee7fc6225afc9be647b19072d1b9b842a245b1843a376",
+      "cases": 18,
+      "failure": 12,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/boundary-callers-repro-before.json",
+      "source": "LOCAL_CAUSAL_TEST_OR_EXACT_SOURCE_COMMIT",
+      "bytes": 595,
+      "sha256": "f37b969393bc864b5940459d71b1ea620f89e228321943827b92169964d833ff"
     }
   ]
 }
