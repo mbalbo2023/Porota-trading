@@ -213,9 +213,29 @@ jobs:
           )"
 
           find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' -exec rm -rf -- {} +
+          # General retention cleanup may finish safely but still report 43
+          # because Docker's unused cache/old critical image is not reclaimed
+          # until the following steps. Accept only that exact structured
+          # residual-space result, then enforce the full admission gate below.
+          rm -f /tmp/porota-predeploy-housekeeping.json
+          set +e
           sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py" \
             --policy "$TMP_POLICY" --mode cleanup \
             --json-out /tmp/porota-predeploy-housekeeping.json
+          PRECLEAN_HOUSEKEEPING_RC=$?
+          set -e
+          if [ "$PRECLEAN_HOUSEKEEPING_RC" -eq 43 ]; then
+            python3 - /tmp/porota-predeploy-housekeeping.json <<'PY'
+          import json,sys
+          result=json.load(open(sys.argv[1],encoding="utf-8"))
+          assert result.get("status")=="RED"
+          assert result.get("reason")=="POST_CLEANUP_FREE_BELOW_MINIMUM"
+          assert result.get("effective_mode")=="cleanup"
+          print("RC6_PRECLEAN_RETENTION_COMPLETE_RESERVE_PENDING=1")
+          PY
+          elif [ "$PRECLEAN_HOUSEKEEPING_RC" -ne 0 ]; then
+            exit "$PRECLEAN_HOUSEKEEPING_RC"
+          fi
           sudo -n docker image prune -f
           sudo -n docker builder prune -af
           if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
@@ -472,6 +492,32 @@ jobs:
           sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
           echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
 
+          # Docker may retain both compressed/content-store and materialized
+          # layers. Verify measured reserve now, before starting services and
+          # the long contract sweep; never lower the residual floor.
+          check_postload_reserve() {
+            local metrics
+            mapfile -t metrics < <(python3 -c 'import os,shutil; d=shutil.disk_usage("/"); v=os.statvfs("/"); print(d.free); print(f"{100.0*v.f_ffree/v.f_files:.6f}")')
+            python3 "$REPO/scripts/rc6_disk_space_guard.py" \
+              --policy "$REPO/ops/policy/rc6-disk-housekeeping-v1.json" --phase postload \
+              --image-tar-bytes 0 --image-unpacked-bytes 0 --bundle-bytes 0 \
+              --available-bytes "${metrics[0]}" --inode-free-percent "${metrics[1]}" --json
+          }
+          if ! check_postload_reserve; then
+            echo "RC6_DISK_POSTLOAD_SAFE_CLEANUP=START"
+            # General housekeeping requires running containers and already ran
+            # in preclean. At this drained stage reclaim only unused caches
+            # and dangling images; Docker preserves all container references.
+            sudo -n docker image prune -f
+            sudo -n docker builder prune -af
+            if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
+            if ! check_postload_reserve; then
+              echo "RC6_DISK_POSTLOAD_RESERVE_GATE=RED|FIX_FORWARD_VALIDATION_REQUIRED"
+              exit 42
+            fi
+          fi
+          echo "RC6_DISK_POSTLOAD_RESERVE_GATE=GREEN"
+
           sudo -n python3 "$REPO/scripts/porota_apply_host_control_plane_v2.py" \
             --root "$REPO" \
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
@@ -496,6 +542,11 @@ jobs:
           echo "POROTA_RUNTIME_IMAGE_ID_VERIFY=observer=$OBSERVER_IMAGE_ID|dashboard=$DASHBOARD_IMAGE_ID|loaded=$RUNTIME_IMAGE_ID"
           test "$OBSERVER_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
           test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
+          for IDENTITY_CONTAINER in porota_production_observer porota_production_dashboard; do
+            sudo -n docker exec "$IDENTITY_CONTAINER" python /app/scripts/porota_image_source_identity.py \
+              --expected-sha "$CANDIDATE_SHA" --expected-tree "$CANDIDATE_TREE"
+          done
+          echo "POROTA_RUNNING_SOURCE_IDENTITY=GREEN"
 
           POST_CONTAINER_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)"
           POST_CONTAINER_OOM_KILLED="$(sudo -n docker inspect -f '{{.State.OOMKilled}}' porota_production_observer 2>/dev/null || true)"
@@ -1010,6 +1061,15 @@ jobs:
           } | grep -E 'Traceback|REAL_ORDER_CAPABILITY=(ENABLED|REAL)|real_orders_sent=[1-9][0-9]*' || true)"
           test -z "$RECENT_CRITICAL"
           echo "RC6_RECENT_CRITICAL_LOG_SIGNATURES=0"
+
+          # HTTP/worker health alone did not expose the SHADOW transform
+          # failure in run 38982377181. Require direct native progress before
+          # granting VALIDATED_RUNTIME. The gate only reads committed bytes.
+          sudo -n docker exec porota_production_dashboard timeout 195 \
+            python /app/scripts/rc6_deploy_generation_gate.py \
+              --expected-sha "$CANDIDATE_SHA" --expected-tree "$CANDIDATE_TREE" \
+              --output /app/data/deploy/native-generation-acceptance.json
+          echo "RC6_TWO_NATIVE_GENERATIONS=GREEN"
 
           PPI_WATCH_AFTER="$(
             for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do

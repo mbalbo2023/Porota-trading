@@ -50,7 +50,7 @@ jobs:
           assert p['disk']['post_cleanup_min_free_bytes'] == 2 * 1024**3
           f=p['deploy']['pretransfer_formula']
           assert f['image_tar_multiplier'] == 1
-          assert f['image_unpacked_multiplier'] == 1
+          assert f['image_unpacked_multiplier'] == 2
           assert f['bundle_multiplier'] == 2
           assert f['fixed_headroom_bytes'] == 2 * 1024**3
           assert p['backups']['paper']['keep_newest'] == 3
@@ -225,7 +225,11 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          docker build             --label "porota.commit=${CANDIDATE_SHA}"             --label "porota.predeploy=v2"             -t "$IMAGE" .
+          docker build \
+            --build-arg "POROTA_BUILD_SHA=$CANDIDATE_SHA" \
+            --build-arg "POROTA_CANDIDATE_TREE_SHA=$(git rev-parse HEAD^{tree})" \
+            --label "porota.commit=${CANDIDATE_SHA}" --label "porota.predeploy=v2" \
+            -t "$IMAGE" .
           docker image inspect "$IMAGE" >/dev/null
           echo "POROTA_BUILD_ONCE=GREEN|IMAGE=$IMAGE"
 
@@ -269,7 +273,11 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          docker run --rm --pull never -i --entrypoint python "$IMAGE" - <<'PY' | tee /tmp/porota-image-import-smoke.txt
+          docker run --rm --pull never -i --entrypoint python "$IMAGE" - "$CANDIDATE_SHA" "$(git rev-parse HEAD^{tree})" <<'PY' | tee /tmp/porota-image-import-smoke.txt
+          import sys
+          from scripts.porota_image_source_identity import verify_source_identity
+          identity = verify_source_identity(sys.argv[1], sys.argv[2])
+          print('POROTA_IMAGE_SOURCE_IDENTITY=GREEN|' + identity['candidate_sha'] + '|' + identity['candidate_tree_sha'])
           import bg_paper_dashboard
           import bf_production_paper_observer
           import bv_paper_runtime

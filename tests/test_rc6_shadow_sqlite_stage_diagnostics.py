@@ -85,6 +85,12 @@ class ReadStages(unittest.TestCase):
                 (f"S{i:05d}", "ACCIONES", "BYMA", "ARS", "A-24HS",
                  "CONFIRMED_INTERVAL_VOLUME", AT.isoformat(), AT.isoformat())
                 for i in range(30)])
+            # These contracts must have consumers to exercise conversion:
+            # unrelated/empty intraday rows now correctly bypass their clocks.
+            c.executemany("INSERT INTO ppi_intraday_points VALUES(?,?,?,?,?,?,?,?,?,?,?)", [
+                (f"S{i:05d}", "ACCIONES", "BYMA", "ARS", "A-24HS",
+                 AT.isoformat(), AT.isoformat(), AT.isoformat(), 100, 1, "FIXTURE")
+                for i in range(30)])
         actual_stamp = runtime.stamp
 
         def slow_stamp(value):
@@ -95,7 +101,7 @@ class ReadStages(unittest.TestCase):
         with patch.object(runtime, "stamp", side_effect=slow_stamp):
             data = runtime.read_runtime(self.db, as_of=AT, row_limit=3000,
                                         query_budget_seconds=.2, diagnostics=trace)
-        self.assertEqual(data["observations"], [])
+        self.assertEqual(len(data["observations"]), 30)
         self.assertGreater(trace["transform_elapsed_ms"], 200)
         self.assertGreater(trace["sql_remaining_ms"], 0)
         self.assertEqual(trace["stages"][-1]["stage"], "INTRADAY_POINTS")

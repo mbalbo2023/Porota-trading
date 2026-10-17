@@ -15,11 +15,11 @@
     "pretransfer_guard_required": true,
     "pretransfer_formula": {
       "image_tar_multiplier": 1,
-      "image_unpacked_multiplier": 1,
+      "image_unpacked_multiplier": 2,
       "bundle_multiplier": 2,
       "fixed_headroom_bytes": 2147483648
     },
-    "operator_authorized_floor_note": "2026-10-01: 2 GiB is residual reserve after deploy/cleanup, not a fixed start gate. Pre-transfer admission is dynamic: compressed image + exact unpacked Docker image + bundle/staging + residual reserve; on RED, safe cleanup runs before frozen-artifact transfer and the gate is re-evaluated."
+    "operator_authorized_floor_note": "2026-10-17: 2 GiB remains residual reserve. Deploy 38982377181 admitted 3963834368 free bytes with a 1x unpacked-image allowance but left only 1766100992 after materialization/reconciliation and transient reclamation. Use compressed image + 2x exact unpacked image + bundle/staging + reserve as conservative storage-amplification allowance. Recheck actual reserve/inodes immediately after load, before services/long reconciliation; safe cleanup and re-evaluation on RED. No volume, database or referenced-image deletion."
   },
   "tmp": {
     "root": "/tmp",

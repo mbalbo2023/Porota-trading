@@ -3,6 +3,14 @@
 # ============================================================================
 FROM python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9
 
+# Identity travels inside the frozen image to every runtime child. Labels
+# remain useful to the host, but are not visible through os.environ inside
+# the observer, scalping and performance processes.
+ARG POROTA_BUILD_SHA=""
+ARG POROTA_CANDIDATE_TREE_SHA=""
+ENV POROTA_BUILD_SHA=${POROTA_BUILD_SHA} \
+    POROTA_CANDIDATE_TREE_SHA=${POROTA_CANDIDATE_TREE_SHA}
+
 # No escribir bytecode en la capa del contenedor. Las caches descargables van
 # a un volumen persistente y los temporales a tmpfs desde Docker Compose.
 ENV PYTHONDONTWRITEBYTECODE=1 \

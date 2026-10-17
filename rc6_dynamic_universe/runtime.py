@@ -149,14 +149,27 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
         # Transform only after all SQL cursors have finished. In the previous
         # layout, thousands of timestamp parses consumed the SQLite deadline
         # between queries and interrupted a later, otherwise indexed read.
-        full_catalog = [dict(zip(catalog_fields.split(','),r)) for r in json.loads(full_catalog_payload)]
+        catalog_columns = catalog_fields.split(',')
+        full_catalog = [dict(zip(catalog_columns,r)) for r in json.loads(full_catalog_payload)]
         del full_catalog_payload
-        if contracts_payload is not None:
-            contracts_rows=[dict(zip(contract_fields.split(','),r)) for r in json.loads(contracts_payload)]
-            del contracts_payload
         if "ppi_intraday_points" in tables:
-            intraday_rows=[dict(zip(intraday_fields.split(','),r)) for r in json.loads(intraday_payload)]
+            intraday_columns = intraday_fields.split(',')
+            intraday_rows=[dict(zip(intraday_columns,r)) for r in json.loads(intraday_payload)]
             del intraday_payload
+        if contracts_payload is not None:
+            # Contracts only annotate the bounded intraday observations below.
+            # At the UTC day boundary there may be no points at all: parsing
+            # every old contract clock spent the transform budget without a
+            # consumer. Preserve the single SQL snapshot and full catalogue,
+            # but project conversion to exact five-field observed identities.
+            required_contracts = {tuple(r[k] for k in
+                ("symbol", "asset_class", "market", "currency", "settlement"))
+                for r in intraday_rows[:observation_limit]}
+            if required_contracts:
+                contract_columns = contract_fields.split(',')
+                contracts_rows=[dict(zip(contract_columns,r)) for r in json.loads(contracts_payload)
+                                if tuple(r[:5]) in required_contracts]
+            del contracts_payload
         catalog = [row for row in full_catalog if row["status"] == "AVAILABLE"
                    and row["capability"].upper().startswith("READY_PAPER")]
         transform_guard("CATALOG_FULL")
