@@ -284,7 +284,8 @@ jobs:
               if type(v) is str and re.fullmatch(r"[A-Za-z0-9_.:+-]{1,100}",v): keep[k]=v
           for k in ("age_seconds","liveness_budget_seconds","generation_tick_seconds","native_sql_elapsed_ms","native_transform_elapsed_ms","computed_report_raw_bytes","computed_report_compressed_bytes"):
               v=g.get(k)
-              if type(v) in (int,float) and math.isfinite(v) and 0<=v<=1000000: keep[k]=v
+              limit=512*1024**2 if k.startswith("computed_report_") else 1000000
+              if type(v) in (int,float) and math.isfinite(v) and 0<=v<=limit: keep[k]=v
           print("RC6_GENERATION_DIAGNOSTIC="+json.dumps(keep,sort_keys=True,separators=(",",":")))
           print("RC6_NATIVE_STATUS_DIAGNOSTIC="+json.dumps(d.get("native_status_metadata",{}),sort_keys=True,separators=(",",":")))
           print("RC6_SHADOW_PROCESS_DIAGNOSTIC="+json.dumps(d.get("shadow_worker_processes",[]),sort_keys=True,separators=(",",":")))
