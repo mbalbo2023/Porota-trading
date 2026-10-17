@@ -601,7 +601,7 @@ jobs:
           install -d -m 777 /tmp/rc6-profile-603
       - uses: actions/checkout@v4
         with:
-          ref: 5f4a3eecdda624323dab87e719f3181a619183b8
+          ref: 0236e4e22df8ddbd5a3d04c1a9d754d74c462b67
           path: candidate
       - name: Development regression tests against candidate source and certified dependencies
         shell: bash
@@ -617,11 +617,12 @@ jobs:
             -m pytest -q tests/test_rc6_native_generation_cost.py \
             tests/test_rc6_shadow_streaming_cost.py tests/test_rc6_shadow_family_runtime.py \
             tests/test_rc6_family_quote_lookup_cost.py tests/test_rc6_shadow_report_lifetime.py \
-            tests/test_rc6_shadow_owned_state.py
+            tests/test_rc6_shadow_owned_state.py tests/test_rc6_deploy_generation_gate.py
       - name: Paired uninstrumented baseline and development full-catalog guards
         shell: bash
         run: |
           set -Eeuo pipefail
+          install -d -m 777 /tmp/rc6-profile-603
           for variant in baseline candidate; do
             install -d -m 777 "/tmp/rc6-profile-603/$variant"
             source_args=()
