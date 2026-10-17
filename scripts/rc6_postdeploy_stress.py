@@ -32,7 +32,7 @@ GROUPS={
  'publication_io_identity':['tests/test_rc6_issue600_regressions.py','tests/test_rc6_issue603_regressions.py',
                             'tests/test_rc6_shadow_failure_context.py','tests/test_rc6_shadow_stage_reads.py',
                             'tests/test_rc6_shadow_streaming_cost.py','tests/test_rc6_shadow_report_lifetime.py',
-                            'tests/test_rc6_shadow_owned_state.py'],
+                            'tests/test_rc6_shadow_owned_state.py','tests/test_rc6_shadow_shared_audit.py'],
  'signals_risk_exit_ledger':['tests/test_rc6_convergence_core_admission.py','tests/test_exit_supervision_v17.py',
                            'tests/test_exit_ledger_isolation_v17.py','tests/test_rc6_future_programming_complete.py',
                            'tests/test_rc6_performance_runtime.py','tests/test_rc6_final_programming_runtime.py',

@@ -227,6 +227,22 @@ def durable_checkpoint_view(checkpoint):
     return view
 
 
+def shared_preopen_row_lists(report):
+    """Only equal immutable preopen lists shared by engine envelopes are reusable."""
+    if report.get("preopen_immutable") is not True:
+        return ()
+    groups = {}
+    for engine in report.get("frozen", {}).values():
+        if not isinstance(engine, dict):
+            continue
+        payload = engine.get("payload", {})
+        rows = payload.get("rows") if isinstance(payload, dict) else None
+        if type(rows) is list and len(rows) > 256:
+            entry = groups.setdefault(id(rows), [rows, 0])
+            entry[1] += 1
+    return tuple(rows for rows, count in groups.values() if count > 1)
+
+
 class ShadowRuntime:
     def __init__(self, database, *, evidence_root=None, history_database=None,
                  source_roots=None, capacity_path=None, policies=None,
@@ -510,9 +526,19 @@ class ShadowRuntime:
             measured("operational_funnel")
             # Never call a signal, economics or risk result as an execution
             # callback. These reports cannot reach the factual broker.
-            durable = durable_report_view(report, catalog_ready_count=len(inputs["catalog"]))
+            ready_count = len(inputs["catalog"])
+            preopen_digests = {key: value["digest"]
+                for key, value in (frozen or {}).get("frozen", {}).items()}
+            reusable_rows = shared_preopen_row_lists(report)
+            durable = durable_report_view(report, catalog_ready_count=ready_count)
             causal = durable_checkpoint_view(checkpoint)
-            audit = files.write_streamed_report(report)
+            # These inputs have no remaining caller. Releasing local references
+            # preserves every value still owned by report/durable/causal, while
+            # avoiding a previous tick and unused source data beside the audit.
+            previous = compatible = bundle = inputs = sources = source_reports = observations = None
+            capacity = frozen = checkpoint = result = base = None
+            audit = (files.write_streamed_report(report, immutable_shared_rows=reusable_rows)
+                     if reusable_rows else files.write_streamed_report(report))
             durable["computed_report"] = audit
             files.write("latest.json.gz", durable)
             files.write("checkpoint.json.gz", causal)
@@ -520,8 +546,8 @@ class ShadowRuntime:
             status = {k: report[k] for k in ("schema", "as_of", "phase", "status", "mode",
                 "provider_requests", "real_orders_sent", "real_routes", "source_database_effect")}
             status.update(configuration_fingerprint=configuration,
-                preopen_digests={k: v["digest"] for k, v in (frozen or {}).get("frozen", {}).items()},
-                catalog_ready_count=len(inputs["catalog"]), report_digest=digest(durable),
+                preopen_digests=preopen_digests,
+                catalog_ready_count=ready_count, report_digest=digest(durable),
                 computed_report_digest=audit["sha256"], report_projection="SELECTION_CONTRACT_V1",
                 provider_capacity_open="NO_VERIFICADO", ppi_watch="UNTOUCHED",
                 capacity_policy_status=capacity_policy["status"],

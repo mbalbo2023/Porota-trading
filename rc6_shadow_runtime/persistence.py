@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 import re
+import sys
+import zlib
 from pathlib import Path
 import tempfile
 
@@ -96,10 +98,124 @@ def _small_json_tree(value, maximum=65536, nodes=4096):
     return True
 
 
-def _canonical_fragments(encoder, payload):
-    """Use bounded C-encoded subtrees instead of a Python yield per token."""
+_SHARED_SNAPSHOT_COMPRESSED_LIMIT = 4 * 1024**2
+_SHARED_SNAPSHOT_RAW_LIMIT = 32 * 1024**2
+
+
+def _canonical_fragments(encoder, payload, *, immutable_shared_rows=()):
+    """Encode actual values; memoize only explicitly owned immutable row lists.
+
+    The private worker supplies shared preopen lists which cannot change during
+    this write. The default generic path has no snapshot memo. No constructor
+    encoding hint is used as content authority; the first pass uses the normal
+    encoder and every later pass verifies the captured byte digest.
+    """
     active = set()
+    targets = {}
+    for rows in immutable_shared_rows:
+        if type(rows) is not list:
+            raise ValueError("SHADOW_IMMUTABLE_ROWS_LIST_REQUIRED")
+        targets[id(rows)] = rows
+    memo = {}
+    charged = 0
+    capturing = False
+
     def fragments(value):
+        nonlocal charged, capturing
+        identity = id(value)
+        cached = memo.get(identity)
+        if cached is not None:
+            original, pieces, expected_bytes, expected_digest = cached
+            if original is not value:
+                raise ValueError("SHADOW_SNAPSHOT_CACHE_IDENTITY_MISMATCH")
+            decoded = 0
+            hasher = hashlib.sha256()
+            inflater = zlib.decompressobj()
+            for piece in pieces:
+                pending = piece
+                while pending:
+                    block = inflater.decompress(pending, 65536)
+                    pending = inflater.unconsumed_tail
+                    if block:
+                        decoded += len(block)
+                        if decoded > expected_bytes:
+                            raise ValueError("SHADOW_SNAPSHOT_CACHE_SIZE_MISMATCH")
+                        hasher.update(block)
+                        yield block.decode("ascii")
+            while True:
+                block = inflater.decompress(b"", 65536)
+                if not block:
+                    break
+                decoded += len(block)
+                if decoded > expected_bytes:
+                    raise ValueError("SHADOW_SNAPSHOT_CACHE_SIZE_MISMATCH")
+                hasher.update(block)
+                yield block.decode("ascii")
+            if (not inflater.eof or inflater.unused_data or decoded != expected_bytes
+                    or hasher.hexdigest() != expected_digest):
+                raise ValueError("SHADOW_SNAPSHOT_CACHE_DIGEST_MISMATCH")
+            return
+        if identity not in targets or capturing:
+            yield from fresh(value)
+            return
+        compressor = zlib.compressobj(level=1)
+        pieces, pending = [], []
+        pending_size = cost = raw_size = 0
+        raw_hash = hashlib.sha256()
+        fits = True
+
+        def remember(piece):
+            nonlocal cost, fits
+            if not piece:
+                return
+            cost += sys.getsizeof(piece) + 16
+            if charged + cost + 512 <= _SHARED_SNAPSHOT_COMPRESSED_LIMIT:
+                pieces.append(piece)
+            else:
+                pieces.clear()
+                fits = False
+
+        def flush_pending():
+            nonlocal pending_size
+            if pending:
+                raw = "".join(pending).encode("ascii")
+                raw_hash.update(raw)
+                remember(compressor.compress(raw))
+                pending.clear()
+                pending_size = 0
+
+        capturing = True
+        try:
+            for fragment in fresh(value):
+                if fits:
+                    raw_size += len(fragment)
+                    if raw_size > _SHARED_SNAPSHOT_RAW_LIMIT:
+                        pieces.clear()
+                        pending.clear()
+                        fits = False
+                    else:
+                        # A scalar string may exceed one encoder chunk. Never
+                        # create an unbounded joined capture buffer for it.
+                        for offset in range(0, len(fragment), 65536):
+                            part = fragment[offset:offset + 65536]
+                            if pending and pending_size + len(part) > 65536:
+                                flush_pending()
+                            if not fits:
+                                break
+                            pending.append(part)
+                            pending_size += len(part)
+                yield fragment
+            if fits:
+                flush_pending()
+                if fits:
+                    remember(compressor.flush())
+        finally:
+            capturing = False
+        if fits:
+            memo[identity] = (value, tuple(pieces), raw_size, raw_hash.hexdigest())
+            charged += cost + 512
+
+    def fresh(value):
         container = isinstance(value, (dict, list, tuple))
         if not container or _small_json_tree(value):
             yield encoder.encode(value)
@@ -109,34 +225,35 @@ def _canonical_fragments(encoder, payload):
         active.add(id(value))
         try:
             if isinstance(value, dict):
-                yield '{'
+                yield "{"
                 for index, key in enumerate(sorted(value)):
                     if index:
-                        yield ','
-                    # Delegate all JSON key coercion/rejection to the encoder.
+                        yield ","
                     key_object = encoder.encode({key: None})
-                    yield key_object[1:-len(':null}')]
-                    yield ':'
+                    yield key_object[1:-len(":null}")]
+                    yield ":"
                     yield from fragments(value[key])
-                yield '}'
+                yield "}"
             else:
-                yield '['
+                yield "["
                 for index, item in enumerate(value):
                     if index:
-                        yield ','
+                        yield ","
                     yield from fragments(item)
-                yield ']'
+                yield "]"
         finally:
             active.remove(id(value))
     yield from fragments(payload)
 
 
-def _canonical_chunks(encoder, payload, block_bytes=65536):
+def _canonical_chunks(encoder, payload, block_bytes=65536, *, immutable_shared_rows=()):
     """Bounded byte blocks preserve the exact canonical JSON token stream."""
     # These canonical encoders escape non-ASCII characters, so character and
     # UTF-8 byte lengths agree. Join small tokens in C before encoding them.
     pending, pending_size = [], 0
-    for fragment in _canonical_fragments(encoder, payload):
+    fragments = (_canonical_fragments(encoder, payload, immutable_shared_rows=immutable_shared_rows)
+                 if immutable_shared_rows else _canonical_fragments(encoder, payload))
+    for fragment in fragments:
         size = len(fragment)
         if pending and pending_size + size > block_bytes:
             yield ''.join(pending).encode('ascii')
@@ -283,7 +400,7 @@ class EvidenceFiles:
             finally:
                 tmp.unlink(missing_ok=True)
 
-    def write_streamed_report(self, payload, *, raw_limit=512 * 1024**2):
+    def write_streamed_report(self, payload, *, raw_limit=512 * 1024**2, immutable_shared_rows=()):
         """Store canonical full audit separately from the bounded hot-path view."""
         if self.lock is None:
             raise ValueError("SHADOW_WRITER_LOCK_REQUIRED")
@@ -296,7 +413,9 @@ class EvidenceFiles:
             tmp = Path(stream.name)
             try:
                 with gzip.GzipFile(fileobj=stream, mode="wb", compresslevel=1, mtime=0) as zipped:
-                    for chunk in _canonical_chunks(encoder, payload):
+                    chunks = (_canonical_chunks(encoder, payload, immutable_shared_rows=immutable_shared_rows)
+                              if immutable_shared_rows else _canonical_chunks(encoder, payload))
+                    for chunk in chunks:
                         raw_bytes += len(chunk)
                         if raw_bytes > raw_limit:
                             raise EvidencePayloadLimit("computed-report", raw_bytes, raw_limit)

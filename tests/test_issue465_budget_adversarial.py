@@ -1552,9 +1552,22 @@ def test_three_real_processes_exit_scanner_scalping_burst_cannot_steal_floor(tmp
     assert len(envelopes) == 1 and envelopes[0]["priority_reserves"]["EXIT_CRITICAL"]["book"] == 5
 
 
-def _single_flight_worker(path, config, at, ready, release, output, calls, owner):
+def _single_flight_worker(path, config, at, ready, release, output, calls, owner,
+                          initialized=None, start=None, joined=None):
     clock = Clock(at)
     budget = GlobalPPIBudget(path, config, clock=clock.now)
+    if initialized is not None:
+        initialized.put(owner)
+    if start is not None:
+        assert start.wait(5)
+    if not owner and joined is not None:
+        original_pending = budget._book_flight_pending
+        def observed_pending(*args, **kwargs):
+            result = original_pending(*args, **kwargs)
+            if result[0]:
+                joined.set()
+            return result
+        budget._book_flight_pending = observed_pending
     identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
     def fetch():
         with calls.get_lock():
@@ -1573,31 +1586,46 @@ def _single_flight_worker(path, config, at, ready, release, output, calls, owner
 
 
 def test_shared_book_single_flight_has_no_duplicate_fetch_across_real_processes(tmp_path):
-    import threading
     clock = Clock()
     config = exit_floor(clock, common=1)
     path = str(tmp_path / "budget.sqlite")
     GlobalPPIBudget(path, config, clock=clock.now)
     context = multiprocessing.get_context("fork")
     ready, release, output, calls = context.Event(), context.Event(), context.Queue(), context.Value("i", 0)
-    owner = context.Process(target=_single_flight_worker, args=(path, config, clock.now().isoformat(), ready, release, output, calls, True))
-    follower = context.Process(target=_single_flight_worker, args=(path, config, clock.now().isoformat(), ready, release, output, calls, False))
-    owner.start()
-    assert ready.wait(5)
-    follower.start()
-    timer = threading.Timer(.015, release.set)
-    timer.start()
+    initialized, start, joined = context.Queue(), context.Event(), context.Event()
+    common = (path, config, clock.now().isoformat(), ready, release, output, calls)
+    owner = context.Process(target=_single_flight_worker,
+        args=(*common, True, initialized, start, joined))
+    follower = context.Process(target=_single_flight_worker,
+        args=(*common, False, initialized, start, joined))
     try:
+        # This case proves joining an existing flight, not bootstrap/commit
+        # contention. Complete both independent clients before the owner starts.
+        owner.start()
+        assert initialized.get(timeout=5) is True
+        follower.start()
+        assert initialized.get(timeout=5) is False
+        start.set()
+        assert ready.wait(5)
+        # The observer runs after the follower's real read-only poll returned:
+        # its waiting EXIT transaction has committed and no SQL lock is held.
+        assert joined.wait(5)
+        release.set()
         for process in (owner, follower):
             process.join(timeout=10)
             assert process.exitcode == 0
     finally:
+        start.set()
         release.set()
-        timer.cancel()
+        for process in (owner, follower):
+            if process.pid is not None:
+                process.join(timeout=2)
+                if process.is_alive():
+                    process.terminate()
+                    process.join(timeout=2)
     results = dict(output.get(timeout=2) for _ in range(2))
     assert results[True] == results[False] == clock.now().isoformat()
     assert calls.value == 1
-
 
 def test_book_cache_and_single_flight_are_cardinality_bounded(tmp_path):
     clock = Clock()
