@@ -40,7 +40,8 @@ GROUPS={
  'scalping_capacity':['tests/test_intraday_scalping_rc6_integration.py','tests/test_issue465_budget_adversarial.py'],
  'treasury_caucion':['tests/test_caucion_treasury_v17.py','tests/test_caucion_ledger_v17.py',
                      'tests/test_ws_caucion_12_live_ppi_wiring.py'],
- 'dashboard_auth_52':['tests/test_ws_dash_trader_terminal_08.py','tests/test_rc6_issue600_dashboard_adenda.py'],
+ 'dashboard_auth_52':['tests/test_ws_dash_trader_terminal_08.py','tests/test_rc6_issue600_dashboard_adenda.py',
+                      'tests/test_rc6_dashboard_clock_bounds.py'],
  'scheduler_monitor_backup':['tests/test_rc6_market_watch_silence.py','tests/test_host_general_backup_v17.py',
                              'tests/test_rc6_host_backup_symlink.py','tests/test_rc6_reader_status_connection_lifecycle.py'],
 }
