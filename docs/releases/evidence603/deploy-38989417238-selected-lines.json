@@ -1,0 +1,12 @@
+{
+  "source": "GitHub Actions job 117268227132 decoded logs",
+  "lines": [
+    "2026-10-17T01:06:58.4825741Z RC6_DISK_REQUIRED_PRETRANSFER_FREE=4914881954",
+    "2026-10-17T01:07:00.1024989Z {\"available_bytes\": 1705684992, \"inode_free_percent\": 88.395913, \"inode_ok\": true, \"min_inode_free_percent\": 10.0, \"required_bytes\": 4914881954, \"space_ok\": false, \"status\": \"RED\"}",
+    "2026-10-17T01:07:00.1026554Z RC6_DISK_PRETRANSFER_PREFLIGHT=RED|available=1705684992|required=4914881954|inode_free_percent=88.40|inode_required_percent=10.00",
+    "2026-10-17T01:07:00.1027646Z RC6_DISK_PRECLEAN=START|available=1705684992|required=4914881954",
+    "2026-10-17T01:07:04.7244496Z rm: cannot remove '/tmp/porota-predeploy-housekeeping.json': Operation not permitted",
+    "2026-10-17T01:07:04.7292984Z ##[error]Process completed with exit code 1.",
+    "2026-10-17T01:07:04.8654351Z POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN"
+  ]
+}

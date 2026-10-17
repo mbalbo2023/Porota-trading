@@ -11,7 +11,8 @@
       "cases": 10,
       "failure": 4,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 10
     },
     {
       "path": "docs/releases/evidence603/issue603-first-after.xml",
@@ -21,7 +22,8 @@
       "cases": 114,
       "failure": 2,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 114
     },
     {
       "path": "docs/releases/evidence603/issue603-after.xml",
@@ -31,7 +33,8 @@
       "cases": 114,
       "failure": 0,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 114
     },
     {
       "path": "docs/releases/evidence603/issue603-adversarial-before.xml",
@@ -41,7 +44,8 @@
       "cases": 13,
       "failure": 1,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 13
     },
     {
       "path": "docs/releases/evidence603/issue603-adversarial-after.xml",
@@ -51,7 +55,8 @@
       "cases": 39,
       "failure": 0,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 39
     },
     {
       "path": "docs/releases/evidence603/issue603-prepublish.xml",
@@ -61,7 +66,8 @@
       "cases": 23,
       "failure": 0,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 23
     },
     {
       "path": "docs/releases/evidence603/issue603-quiescence-final.xml",
@@ -71,7 +77,8 @@
       "cases": 60,
       "failure": 0,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 60
     },
     {
       "path": "docs/releases/evidence603/drain-oom-before.xml",
@@ -81,7 +88,8 @@
       "cases": 1,
       "failure": 1,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 1
     },
     {
       "path": "docs/releases/evidence603/drain-oom-after.xml",
@@ -91,7 +99,8 @@
       "cases": 65,
       "failure": 0,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 65
     },
     {
       "path": "docs/releases/evidence603/local-harness-smoke4.json",
@@ -131,7 +140,8 @@
       "cases": 35,
       "failure": 0,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 35
     },
     {
       "path": "docs/releases/evidence603/disk-reserve-before.xml",
@@ -141,7 +151,8 @@
       "cases": 6,
       "failure": 6,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 6
     },
     {
       "path": "docs/releases/evidence603/disk-identity-after.xml",
@@ -151,7 +162,8 @@
       "cases": 59,
       "failure": 1,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 59
     },
     {
       "path": "docs/releases/evidence603/consolidated-forward-after-final.xml",
@@ -161,7 +173,8 @@
       "cases": 89,
       "failure": 1,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 89
     },
     {
       "path": "docs/releases/evidence603/disk-reserve-final.xml",
@@ -171,7 +184,8 @@
       "cases": 12,
       "failure": 0,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 12
     },
     {
       "path": "docs/releases/evidence603/shadow-contract-before-isolated.xml",
@@ -181,7 +195,8 @@
       "cases": 7,
       "failure": 2,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 7
     },
     {
       "path": "docs/releases/evidence603/generation-gate-after.xml",
@@ -191,7 +206,8 @@
       "cases": 17,
       "failure": 0,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 17
     },
     {
       "path": "docs/releases/evidence603/final-batch-local.xml",
@@ -201,7 +217,8 @@
       "cases": 142,
       "failure": 0,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 142
     },
     {
       "path": "docs/releases/evidence603/probe-38987351472-snapshot.json",
@@ -244,10 +261,11 @@
       "source": "NATIVE_PREDEPLOY_OR_LOCAL_CAUSAL_RECEIPT",
       "bytes": 1590594,
       "sha256": "e1f35941ba2988b8233fbc2fdfb9e6ede18a18fdd68475d638dfc3e4da80e465",
-      "cases": 3759,
+      "cases": 3756,
       "failure": 1,
       "error": 0,
-      "skipped": 0
+      "skipped": 0,
+      "junit_summary_tests_attribute": 3759
     },
     {
       "path": "docs/releases/evidence603/predeploy-38988131821-red.json",
@@ -263,7 +281,100 @@
       "cases": 50,
       "failure": 0,
       "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 50
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38989417238-failure.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 896,
+      "sha256": "a2be2e3d5a8fac50fd92363ecd94e6fa7b6582fa09c0f2a4850dc25589f19e62"
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38989417238-selected-lines.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 938,
+      "sha256": "b20ee6927de1443037c432ced470963e1b04fc542614df4a344acd813ef3c50d"
+    },
+    {
+      "path": "docs/releases/evidence603/merge-608-exact-tree.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 199,
+      "sha256": "ee7965e96b6f0849e724561b44950f78c403230231dbc95cc3701ef0c7e15184"
+    },
+    {
+      "path": "docs/releases/evidence603/preclean-privileges-after.xml",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 14266,
+      "sha256": "bf151ecf5a1f96cb66387d9cb633eed4b6937a5b68c2817648d9c4ad1c028970",
+      "cases": 79,
+      "junit_summary_tests_attribute": 79,
+      "failure": 1,
+      "error": 0,
       "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/preclean-privileges-before.xml",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 3559,
+      "sha256": "f675449d2c7423ed3a46398318b0d71b10a4565f9fac2efc007eef0ffa83073f",
+      "cases": 3,
+      "junit_summary_tests_attribute": 3,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/preclean-privileges-causal-before.xml",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 6617,
+      "sha256": "fc1615b2690cfe37c0f9993996a97403891f4e4270fc1e0b85171af3c7a4b7fc",
+      "cases": 3,
+      "junit_summary_tests_attribute": 3,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/preclean-privileges-final-after.xml",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 12458,
+      "sha256": "29e3c5b629973bfc95454d5f7a900ecf0647e068a477275e4fb79afe17e5f9fe",
+      "cases": 79,
+      "junit_summary_tests_attribute": 79,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988534535-frozen.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 611,
+      "sha256": "cd582f900a4e8d287ea561839b713cccb680bb1545703217e66eec581a2ea4dd"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988534535-green.xml.gz",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 84949,
+      "sha256": "29d1076512207d3711c5b24479e93a530a10231f55f3f0d0053c9c25a8824d1d",
+      "cases": 3756,
+      "junit_summary_tests_attribute": 3759,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "uncompressed_sha256": "26fdbbe9ab99f311a165e3a250c6d66bd67d80539d1eb5084c3cd6489e33205f"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988534535-independent.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 1462,
+      "sha256": "420cfb4c0d635d0536a6bb3e42718832257b5c6aea9543c774a5966b7466473c"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988534535-tests.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 360,
+      "sha256": "64d5bf5b74233f330fdb21b54dfc8ecac174d30585b68b46d30675fe5750784f"
     }
   ]
 }

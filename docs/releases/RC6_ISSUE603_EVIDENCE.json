@@ -6,7 +6,7 @@
   "baseline_productive_sha": "fa751eb1f985b55f6aeb6729704452150c93c5e4",
   "monitor_sha": "cd407fa91940f252dbc40ac80bbdf9421f8cbe1f",
   "monitor_pr": 604,
-  "release_state": "FAILED_VALIDATION_PENDING_FIX_FORWARD_IN_PREDEPLOY",
+  "release_state": "PRETRANSFER_FAILED_SUCCESSOR_609_IN_PREDEPLOY",
   "deploy_started": true,
   "stress_droplet_executed": false,
   "ownership": {
@@ -14,8 +14,8 @@
     "issue471": 6225616632,
     "issue473": 6225616839,
     "deploy_owner": "ACQUIRED",
-    "deploy_owner_issue471": 6226585799,
-    "deploy_owner_issue473": 6226586016
+    "deploy_owner_issue471": 6227771990,
+    "deploy_owner_issue473": 6227772178
   },
   "findings": [
     {
@@ -504,7 +504,7 @@
       "path": "scripts/rc6_market_watch_readonly.py",
       "symbol": "GENERATION_RECEIPT_PROBE",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "PR607 adds strict native committed-generation receipt and explicitly labels legacy row-control timing. 54 local contracts and all three CI gates passed. Actual probe38987351472 correctly reports generation UNVERIFIED during native failure; does not manufacture source identity or READY. Main merge remains pending until runtime certification.",
+      "detail": "PR607 adds strict native committed-generation receipt and explicitly labels legacy row-control timing. 54 local contracts and all three CI gates passed. Actual probe38987351472 correctly reports generation UNVERIFIED during native failure; does not manufacture source identity or READY. Main merge remains pending until runtime certification. Successor5c129 adds separate full metadata inventory;60 local contracts and native CI GREEN. No new Droplet receipt yet.",
       "test": "tests/test_rc6_market_watch_readonly.py",
       "status": "NO_VERIFICADO_RUNTIME",
       "code_state": "EN_GITHUB",
@@ -519,14 +519,59 @@
       "path": "tests/test_rc6_residual_adverse.py",
       "symbol": "test_disk_policy_metadata_matches_executable_contract",
       "classification": "FIX_PRESENT+TEST",
-      "detail": "Predeploy38988131821 found one stale 1x formula/factor expectation among3756 cases. Expected formula and strict factor dictionary now require2x; no test removed or weakened.50 focused cases PASS after. Full successor suite must pass anew; no image built or host modified by the RED attempt.",
+      "detail": "Predeploy38988131821 found one stale 1x formula/factor expectation among3756 cases. Expected formula and strict factor dictionary now require2x; no test removed or weakened.50 focused cases PASS after. Full successor suite must pass anew; no image built or host modified by the RED attempt. Exact successor38988534535 executed3756testcase elements, zero FAIL/ERROR/SKIP/XFAIL; certificate verified independently.",
       "test": "tests/test_rc6_residual_adverse.py",
-      "status": "NO_VERIFICADO_RUNTIME",
+      "status": "VERIFICADO_PREDEPLOY_NO_RUNTIME_DEFECT",
       "code_state": "EN_GITHUB",
       "runtime_occurrence": "NOT_A_RUNTIME_DEFECT",
       "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
       "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
       "reopen": "Cualquier fallo causal, drift de identidad o ausencia de evidencia runtime mantiene o reabre el hallazgo."
+    },
+    {
+      "id": "DEPLOY-PRECLEAN-PRIVILEGE",
+      "capability": "HOST_PRECLEAN_PERMISSION_BOUNDARY",
+      "path": ".github/workflows/porota-deploy-v2-promote.yml",
+      "symbol": "Dynamic pre-transfer disk guard and conditional safe cleanup",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "RCA: native deploy38989417238 failed before transfer while the SSH user removed a previous owner receipt in sticky /tmp. FIX: exact receipt removal uses sudo -n rm -f, matching the privileged writer. GUARD: canonical shell command exercised against a retained sticky-directory fixture; bare rm is a required failing negative control. Local79PASS explicitly use LOCAL_PERMISSION_MODEL because sandbox lacks setuid; full native CI must report OS_DIFFERENT_UID. No native pass or Droplet repair claimed yet.",
+      "test": "tests/test_rc6_preclean_privileges.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_NATIVE_PRETRANSFER_FAILURE",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Any causal failure, identity drift or missing runtime receipt keeps this finding open."
+    },
+    {
+      "id": "DEPLOY-PRECLEAN-CLEANUP-SELECTOR",
+      "capability": "FAILURE_CLEANUP_COVERAGE",
+      "path": ".github/workflows/porota-deploy-v2-promote.yml",
+      "symbol": "Failure-safe host cleanup",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "RCA: failure-safe host cleanup selected only drain/transfer/promotion outcomes, so the diskguard failure omitted host cleanup. Runner cleanup alone was GREEN. FIX: diskguard has explicit id and failure/cancelled outcomes enter measured host cleanup. GUARD: workflow selector contract and NO_DRAIN_RECEIPT recovery regression forbid any runtime command before a drain receipt. Local causal3cases2FAIL then79PASS; native and actual successor outcome pending.",
+      "test": "tests/test_rc6_preclean_privileges.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "OBSERVED_NATIVE_CLEANUP_SKIPPED",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Any causal failure, identity drift or missing runtime receipt keeps this finding open."
+    },
+    {
+      "id": "MON-FULL-METADATA-INVENTORY",
+      "capability": "READ_ONLY_INSTRUMENT_COVERAGE",
+      "path": "scripts/rc6_market_watch_readonly.py",
+      "symbol": "instrument_inventory_host",
+      "classification": "FIX_PRESENT+TEST",
+      "detail": "Audit gap: compact monitor receipts did not expose all instrument metadata for exhaustive source/capability review. FIX/GUARD: manual-only existing workflow adds a separate bounded metadata artifact, one query_only SQLite snapshot, 2s progress budget, 20000row cap, explicit public columns, full five-part identity joins and no credentials/positions/prices/free-text. OBSERVED_METADATA_ONLY and entry_authority=false prevent catalog flags becoming tradeability claims. 60 local contracts PASS and all CI gates GREEN on5c129; actual Droplet inventory remains NOT_EXECUTED.",
+      "test": "tests/test_rc6_market_watch_readonly.py",
+      "status": "NO_VERIFICADO_RUNTIME",
+      "code_state": "EN_GITHUB",
+      "runtime_occurrence": "EVIDENCE_COVERAGE_GAP_NOT_TRADING_DEFECT",
+      "source_ref": "https://github.com/mbalbo2023/Porota-trading/issues/603",
+      "owner": "WS-RC6-AUDIT-REMEDIATION-20261016",
+      "reopen": "Any causal failure, identity drift or missing runtime receipt keeps this finding open."
     }
   ],
   "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
@@ -554,9 +599,9 @@
     "skipped": 0,
     "junit_sha256": "1cca94530e343a508407a63552464c9dc304e87787978c6236a27cf85fdd4840"
   },
-  "deploy_merge_sha": "a9e7504895e17f9b7f1e84b0af36f3492128a494",
-  "deploy_run": 38982377181,
-  "current_productive_base": "06c22b5251b94d9bb31074dfc8294355d6341e73",
+  "deploy_merge_sha": "c739a83f395b07ed1a5b39d52fbb565e743f3b67",
+  "deploy_run": 38989417238,
+  "current_productive_base": "c739a83f395b07ed1a5b39d52fbb565e743f3b67",
   "deploy_attempts": [
     {
       "run": 38981124467,
@@ -572,6 +617,26 @@
       "cleanup": "GREEN",
       "space_recovered": 32768,
       "remote_predicate_cause": "NO_VERIFICADO_PENDING_LIFECYCLE_EVENTS"
+    },
+    {
+      "schema": "rc6.deploy-attempt-receipt.v1",
+      "run_id": 38989417238,
+      "job_id": 117268227132,
+      "conclusion": "FAILURE",
+      "candidate_sha": "b91aa368efa16baf430050bae3f67185b5e02720",
+      "deploy_sha": "c739a83f395b07ed1a5b39d52fbb565e743f3b67",
+      "stage": "PRETRANSFER_PRECLEAN",
+      "installation_started": false,
+      "available_bytes": 1705684992,
+      "required_bytes": 4914881954,
+      "inode_free_percent": 88.395913,
+      "failure": "rm: cannot remove '/tmp/porota-predeploy-housekeeping.json': Operation not permitted",
+      "host_housekeeping_prune_critical_reconcile": "NOT_EXECUTED",
+      "drain_transfer_promotion_stress": "SKIPPED",
+      "host_failure_cleanup": "NOT_EXECUTED_SELECTOR_GAP",
+      "runner_cleanup": "GREEN",
+      "existing_runtime": "bdac26d DEPLOYED_VALIDATION_PENDING; unchanged by this attempt",
+      "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38989417238"
     }
   ],
   "predeploy_certificates": [
@@ -591,6 +656,42 @@
       "skipped": 0,
       "xfail": 0,
       "declared_legacy_exclusion": "test_a3_primary_readonly_hf6.py SUPERSEDED_DUPLICATE_MODULE; successor tests/test_a3_primary_readonly_hf6.py executed"
+    },
+    {
+      "schema": "rc6.frozen-artifact-independent-verification.v1",
+      "status": "GREEN",
+      "artifact_id": 12083988477,
+      "predeploy_run": 38988534535,
+      "zip_bytes": 414124544,
+      "zip_sha256": "cfd31fc5d27cf5faf378be69867ce411488283a83ea2973be9b17192ea741a37",
+      "candidate_sha": "b91aa368efa16baf430050bae3f67185b5e02720",
+      "candidate_tree_sha": "d26034f649107b2c5cb4b0fd0e13854e8294a638",
+      "image_id": "sha256:639f7453067183ebd8443fedd3433140a048c009815b4bcd0c76658fafbd0ed4",
+      "image_size_bytes": 1174750830,
+      "image_tar_sha256": "5c635c9e6124bc13e8eb103d3ebc8f8c109c0c4dc1e74ba978b030a78f42398a",
+      "bundle_sha256": "fb3768d841e81afe622a625ede7b8f907b8758d762335842b7b4ebd204c76d2f",
+      "bundle_hashes_verified": 506,
+      "image_config_sha256_verified": "639f7453067183ebd8443fedd3433140a048c009815b4bcd0c76658fafbd0ed4",
+      "source_environment_observed": {
+        "POROTA_BUILD_SHA": "b91aa368efa16baf430050bae3f67185b5e02720",
+        "POROTA_CANDIDATE_TREE_SHA": "d26034f649107b2c5cb4b0fd0e13854e8294a638"
+      },
+      "tests": {
+        "discovered": 3756,
+        "errors": 0,
+        "exclusions": [
+          "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+        ],
+        "executed": 3756,
+        "failures": 0,
+        "pytest_exit_code": 0,
+        "schema_version": 1,
+        "scope": "repository-root automatic pytest discovery",
+        "skipped": 0,
+        "status": "GREEN",
+        "xfail": 0
+      },
+      "not_a_droplet_acceptance_or_stress_result": true
     }
   ],
   "drain_causal_tests": {
@@ -640,7 +741,7 @@
     "oom_flag_after_recovery": false,
     "whole_workflow_conclusion": "FAILURE_EXPECTED_DEPLOY_SHA_MISMATCH_AFTER_REJECTED_PROMOTION"
   },
-  "current_deploy_stage": "FAILED_POSTLOAD_RESIDUAL_DISK_FLOOR",
+  "current_deploy_stage": "PRETRANSFER_PRECLEAN_PERMISSION_FAILURE",
   "external_backup_review": {
     "droplet_id": 594077619,
     "size": "s-1vcpu-1gb",
@@ -687,60 +788,38 @@
     "runtime_trace": "NOT_PROVEN_BY_STATIC_ANALYSIS"
   },
   "next_candidate": {
-    "pr": 608,
-    "sha": "b91aa368efa16baf430050bae3f67185b5e02720",
-    "tree": "d26034f649107b2c5cb4b0fd0e13854e8294a638",
-    "base": "a9e7504895e17f9b7f1e84b0af36f3492128a494",
+    "pr": 609,
+    "sha": "1fbae11682c6d9ded064226f296c7db18dccccf5",
+    "tree": "23a9d5566b9905c24f4828ffc0f63d6ebda66c01",
+    "base": "c739a83f395b07ed1a5b39d52fbb565e743f3b67",
+    "predeploy_run": 38989979153,
     "predeploy_state": "IN_PROGRESS",
-    "local_cases": 142,
+    "local_cases": 79,
     "local_failures": 0,
     "local_errors": 0,
     "local_skipped": 0,
-    "predeploy_run": 38988534535
+    "local_privilege_proof": "LOCAL_PERMISSION_MODEL_NOT_NATIVE_OS_PROOF",
+    "native_required_property": "RC6_PRECLEAN_PRIVILEGE_BOUNDARY=OS_DIFFERENT_UID"
   },
   "latest_deploy_result": {
     "schema": "rc6.deploy-attempt-receipt.v1",
-    "run_id": 38982377181,
-    "job_id": 117245956648,
+    "run_id": 38989417238,
+    "job_id": 117268227132,
     "conclusion": "FAILURE",
-    "finished_utc": "2026-10-17T00:25:51Z",
-    "candidate_sha": "bdac26d87436205a93ca1e8a76c7d08b9bffd78a",
-    "deploy_sha": "a9e7504895e17f9b7f1e84b0af36f3492128a494",
-    "installed_image_id": "sha256:abf744a305a847ed922e7df2474f6d991f23d9abfb0a584b93930216c117dd54",
-    "pretransfer_available_bytes": 3963834368,
-    "pretransfer_required_bytes": 3739823081,
-    "pretransfer_image_multiplier": 1,
-    "bundle_files": 504,
-    "contract_reconciliation": {
-      "exit_code": 0,
-      "status": "OK",
-      "observer_restarted_utc": "2026-10-17T00:24:17Z"
-    },
-    "immediate_audit": {
-      "status": "GREEN",
-      "at": "2026-10-17T00:25:39Z",
-      "canonical_views": 52
-    },
-    "failure": {
-      "class": "POST_CLEANUP_RESERVE_BELOW_FLOOR",
-      "available_bytes": 1766100992,
-      "required_bytes": 2147483648,
-      "canonical_preopen_soak_final_validation_executed": false
-    },
-    "recovery": {
-      "status": "FIX_FORWARD_VALIDATION_REQUIRED",
-      "installation_started": true,
-      "rollback": false
-    },
-    "cleanup": {
-      "operations_status": "GREEN",
-      "reclaimed_bytes": 143360,
-      "step_conclusion": "FAILURE",
-      "step_reason": "recovery explicitly returned FIX_FORWARD_VALIDATION_REQUIRED"
-    },
-    "current_state": "DEPLOYED_VALIDATION_PENDING",
-    "stress_executed": false,
-    "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38982377181"
+    "candidate_sha": "b91aa368efa16baf430050bae3f67185b5e02720",
+    "deploy_sha": "c739a83f395b07ed1a5b39d52fbb565e743f3b67",
+    "stage": "PRETRANSFER_PRECLEAN",
+    "installation_started": false,
+    "available_bytes": 1705684992,
+    "required_bytes": 4914881954,
+    "inode_free_percent": 88.395913,
+    "failure": "rm: cannot remove '/tmp/porota-predeploy-housekeeping.json': Operation not permitted",
+    "host_housekeeping_prune_critical_reconcile": "NOT_EXECUTED",
+    "drain_transfer_promotion_stress": "SKIPPED",
+    "host_failure_cleanup": "NOT_EXECUTED_SELECTOR_GAP",
+    "runner_cleanup": "GREEN",
+    "existing_runtime": "bdac26d DEPLOYED_VALIDATION_PENDING; unchanged by this attempt",
+    "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38989417238"
   },
   "failed_predeploy_608": {
     "run": 38988131821,
@@ -755,5 +834,55 @@
     "xfail": 0,
     "image_built": false,
     "failure_test": "tests/test_rc6_residual_adverse.py::test_disk_policy_metadata_matches_executable_contract"
+  },
+  "last_certified_candidate": {
+    "schema": "rc6.frozen-artifact-independent-verification.v1",
+    "status": "GREEN",
+    "artifact_id": 12083988477,
+    "predeploy_run": 38988534535,
+    "zip_bytes": 414124544,
+    "zip_sha256": "cfd31fc5d27cf5faf378be69867ce411488283a83ea2973be9b17192ea741a37",
+    "candidate_sha": "b91aa368efa16baf430050bae3f67185b5e02720",
+    "candidate_tree_sha": "d26034f649107b2c5cb4b0fd0e13854e8294a638",
+    "image_id": "sha256:639f7453067183ebd8443fedd3433140a048c009815b4bcd0c76658fafbd0ed4",
+    "image_size_bytes": 1174750830,
+    "image_tar_sha256": "5c635c9e6124bc13e8eb103d3ebc8f8c109c0c4dc1e74ba978b030a78f42398a",
+    "bundle_sha256": "fb3768d841e81afe622a625ede7b8f907b8758d762335842b7b4ebd204c76d2f",
+    "bundle_hashes_verified": 506,
+    "image_config_sha256_verified": "639f7453067183ebd8443fedd3433140a048c009815b4bcd0c76658fafbd0ed4",
+    "source_environment_observed": {
+      "POROTA_BUILD_SHA": "b91aa368efa16baf430050bae3f67185b5e02720",
+      "POROTA_CANDIDATE_TREE_SHA": "d26034f649107b2c5cb4b0fd0e13854e8294a638"
+    },
+    "tests": {
+      "discovered": 3756,
+      "errors": 0,
+      "exclusions": [
+        "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+      ],
+      "executed": 3756,
+      "failures": 0,
+      "pytest_exit_code": 0,
+      "schema_version": 1,
+      "scope": "repository-root automatic pytest discovery",
+      "skipped": 0,
+      "status": "GREEN",
+      "xfail": 0
+    },
+    "not_a_droplet_acceptance_or_stress_result": true
+  },
+  "pending_monitor": {
+    "pr": 607,
+    "sha": "5c12918b12d7fc4b085fc722a3da2d896859d74c",
+    "tree": "51f91d8893f730921efc073e80c10ea089bdf059",
+    "ci_success": [
+      38989300851,
+      38989300885,
+      38989300918,
+      38989302860
+    ],
+    "local_contracts": 60,
+    "droplet_inventory_executed": false,
+    "merge": "HELD_UNTIL_RUNTIME_VALIDATED_AND_STRESS_RESTORED"
   }
 }

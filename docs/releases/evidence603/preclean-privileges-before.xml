@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="3" time="0.221" timestamp="2026-10-16T21:10:37.487647-04:00" hostname="b27e91fd36e5"><testcase classname="tests.test_rc6_preclean_privileges" name="test_canonical_preclean_clears_retained_receipt_as_unprivileged_user" time="0.003"><failure message="PermissionError: [Errno 1] Operation not permitted">def test_canonical_preclean_clears_retained_receipt_as_unprivileged_user():
+        # Real sticky-directory rejection, with a narrowly scoped owner broker for
+        # the exact fixture unlink. Neither sudo nor the broker can touch host data.
+        with tempfile.TemporaryDirectory(prefix='rc6-preclean-sticky-') as folder:
+            root = Path(folder); root.chmod(0o1777)
+            receipt = root / 'retained-root-receipt.json'
+            receipt.write_text('OLD_RECEIPT'); receipt.chmod(0o644)
+            bin_dir = root / 'bin'; bin_dir.mkdir(mode=0o755)
+            endpoint = root / 'owner.sock'
+&gt;           server = socket.socket(socket.AF_UNIX); server.bind(str(endpoint)); server.listen(1)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_preclean_privileges.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;socket.socket fd=-1, family=0, type=0, proto=0&gt;
+family = &lt;AddressFamily.AF_UNIX: 1&gt;, type = &lt;SocketKind.SOCK_STREAM: 1&gt;
+proto = 0, fileno = None
+
+    def __init__(self, family=-1, type=-1, proto=-1, fileno=None):
+        # For user code address family and type values are IntEnum members, but
+        # for the underlying _socket.socket they're just integers. The
+        # constructor of _socket.socket converts the given argument to an
+        # integer automatically.
+        if fileno is None:
+            if family == -1:
+                family = AF_INET
+            if type == -1:
+                type = SOCK_STREAM
+            if proto == -1:
+                proto = 0
+&gt;       _socket.socket.__init__(self, family, type, proto, fileno)
+E       PermissionError: [Errno 1] Operation not permitted
+
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/socket.py:233: PermissionError</failure></testcase><testcase classname="tests.test_rc6_preclean_privileges" name="test_pretransfer_failure_also_enters_measured_failure_cleanup" time="0.001"><failure message="assert 'id: diskguard' in '- name: Dynamic pre-transfer disk guard and conditional safe cleanup\n        shell: bash\n        run: |\n          ...hon3 - --candidate-sha \'$CANDIDATE_SHA\' --action drain&quot; \\\n            &lt; scripts/rc6_deploy_quiescence.py\n\n      '">def test_pretransfer_failure_also_enters_measured_failure_cleanup():
+        text = WORKFLOW.read_text()
+        start = text.index('- name: Dynamic pre-transfer disk guard and conditional safe cleanup')
+        end = text.index('- name: Transfer frozen artifact', start)
+&gt;       assert 'id: diskguard' in text[start:end]
+E       assert 'id: diskguard' in '- name: Dynamic pre-transfer disk guard and conditional safe cleanup\n        shell: bash\n        run: |\n          ...hon3 - --candidate-sha \'$CANDIDATE_SHA\' --action drain" \\\n            &lt; scripts/rc6_deploy_quiescence.py\n\n      '
+
+tests/test_rc6_preclean_privileges.py:75: AssertionError</failure></testcase><testcase classname="tests.test_rc6_preclean_privileges" name="test_cleanup_before_any_drain_cannot_restart_a_runtime" time="0.005" /></testsuite></testsuites>

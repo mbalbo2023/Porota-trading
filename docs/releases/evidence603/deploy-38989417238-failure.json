@@ -1,0 +1,20 @@
+{
+  "schema": "rc6.deploy-attempt-receipt.v1",
+  "run_id": 38989417238,
+  "job_id": 117268227132,
+  "conclusion": "FAILURE",
+  "candidate_sha": "b91aa368efa16baf430050bae3f67185b5e02720",
+  "deploy_sha": "c739a83f395b07ed1a5b39d52fbb565e743f3b67",
+  "stage": "PRETRANSFER_PRECLEAN",
+  "installation_started": false,
+  "available_bytes": 1705684992,
+  "required_bytes": 4914881954,
+  "inode_free_percent": 88.395913,
+  "failure": "rm: cannot remove '/tmp/porota-predeploy-housekeeping.json': Operation not permitted",
+  "host_housekeeping_prune_critical_reconcile": "NOT_EXECUTED",
+  "drain_transfer_promotion_stress": "SKIPPED",
+  "host_failure_cleanup": "NOT_EXECUTED_SELECTOR_GAP",
+  "runner_cleanup": "GREEN",
+  "existing_runtime": "bdac26d DEPLOYED_VALIDATION_PENDING; unchanged by this attempt",
+  "evidence_source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/38989417238"
+}
