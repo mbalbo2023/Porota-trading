@@ -651,17 +651,22 @@ jobs:
           docker cp "$cid:/usr/local/include/python3.11/." /tmp/rc6-python618-headers/
           docker rm "$cid" >/dev/null
           trap - EXIT
-          cc -O3 -Wall -Wextra -shared -fPIC -I/tmp/rc6-python618-headers \
+          cc -O3 -DNDEBUG -nostdlib -Wall -Wextra -shared -fPIC -I/tmp/rc6-python618-headers \
             scripts/rc6_json_bound_research.c -o /tmp/rc6-perf618/_rc6_json_bound.so
           readelf --version-info /tmp/rc6-perf618/_rc6_json_bound.so > /tmp/rc6-perf618/binary-symbol-versions.txt
           readelf -d /tmp/rc6-perf618/_rc6_json_bound.so > /tmp/rc6-perf618/binary-needed.txt
+          readelf --dyn-syms --wide /tmp/rc6-perf618/_rc6_json_bound.so > /tmp/rc6-perf618/binary-symbols.txt
           python3 - <<'PY'
           import pathlib,re
           versions=pathlib.Path("/tmp/rc6-perf618/binary-symbol-versions.txt").read_text()
           needed=pathlib.Path("/tmp/rc6-perf618/binary-needed.txt").read_text()
+          print("RC6_NATIVE_BOUND_NEEDED="+repr([x.strip() for x in needed.splitlines() if "NEEDED" in x]))
           assert "NEEDED" not in needed,"UNEXPECTED_NATIVE_LIBRARY_DEPENDENCY"
           assert not re.search(r"GLIBC_[0-9]",versions),"UNEXPECTED_GLIBC_VERSION_DEPENDENCY"
-          print("RC6_NATIVE_BOUND_LINK_DEPENDENCIES=NONE; EXACT_FROZEN_PYTHON_HEADERS")
+          symbols=pathlib.Path("/tmp/rc6-perf618/binary-symbols.txt").read_text()
+          names=[x.split()[7] for x in symbols.splitlines() if len(x.split())>=8 and x.split()[6]=="UND"]
+          assert names and all(x.startswith(("Py","_Py")) for x in names),"NON_CPYTHON_UNDEFINED_SYMBOL"
+          print("RC6_NATIVE_BOUND_LINK_DEPENDENCIES=NONE; EXACT_FROZEN_PYTHON_HEADERS; ONLY_CPYTHON_API_SYMBOLS")
           PY
       - name: Compile and test C sizing predicate over exact frozen base without product changes
         shell: bash
@@ -692,6 +697,7 @@ jobs:
             /tmp/rc6-perf618/_rc6_json_bound.so
             /tmp/rc6-perf618/binary-symbol-versions.txt
             /tmp/rc6-perf618/binary-needed.txt
+            /tmp/rc6-perf618/binary-symbols.txt
           if-no-files-found: warn
           retention-days: 14
       - name: Remove isolated CI container
