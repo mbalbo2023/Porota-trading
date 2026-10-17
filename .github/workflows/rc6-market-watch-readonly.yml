@@ -574,41 +574,13 @@ jobs:
     needs: contracts
     if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Reuse exact packet whose six lossless self-checks already passed
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python3 -m py_compile scripts/rc6_compress_native_probe.py scripts/rc6_compress_native_host.py
-          python3 - <<'PY'
-          import hashlib,io,os,pathlib,re,tarfile,urllib.request,zipfile
-          request=urllib.request.Request("https://api.github.com/repos/"+os.environ["GITHUB_REPOSITORY"]+"/actions/artifacts/12095274267/zip")
-          request.add_unredirected_header("Authorization","Bearer "+os.environ["GH_TOKEN"])
-          with urllib.request.urlopen(request,timeout=45) as response:raw=response.read(2*1024**2+1)
-          assert len(raw)<=2*1024**2
-          assert hashlib.sha256(raw).hexdigest()=="86dce5d3b1a50b9560345a5c0a180dafd5d3652e257328e39f73246464f0d9ed"
-          root=pathlib.Path("/tmp/rc6-native-packet-reuse");root.mkdir()
-          with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-              for filename in ("rc6-native-compression-packet.tgz","rc6-native-compression-packet.sha256"):
-                  matches=[x for x in archive.infolist() if pathlib.PurePosixPath(x.filename).name==filename]
-                  assert len(matches)==1 and matches[0].file_size<=16*1024**2
-                  (root/filename).write_bytes(archive.read(matches[0]))
-          packet=root/"rc6-native-compression-packet.tgz"
-          sha=(root/"rc6-native-compression-packet.sha256").read_text().strip()
-          assert re.fullmatch("[0-9a-f]{64}",sha) and hashlib.sha256(packet.read_bytes()).hexdigest()==sha
-          with tarfile.open(packet,"r:gz") as archive:
-              choices=[m for m in archive.getmembers() if m.name=="probe.py" and m.isfile()]
-              assert len(choices)==1 and choices[0].size<=65536
-              with archive.extractfile(choices[0]) as source:probe=source.read()
-          assert probe==pathlib.Path("scripts/rc6_compress_native_probe.py").read_bytes()
-          print("RC6_NATIVE_COMPRESSION_PACKET_REUSED=GREEN|origin_run=39019289116|six_lossless_selfchecks=GREEN|probe_bytes_match=true")
-          PY
       - name: Verify exact PR616 frozen image artifact without host access
         shell: bash
         run: |
@@ -634,148 +606,31 @@ jobs:
           install -d -m 777 /tmp/rc6-profile-603
 
 
-      - name: Check exact packet under the stricter 64 MiB diagnostic cap
+      - name: Measure reuse of exact shared immutable frozen rows
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 - <<'PY'
-          import gzip,hashlib,os,pathlib,tarfile
-          root=pathlib.Path("/tmp/rc6-native-selfcheck64");root.mkdir(mode=0o777);os.chmod(root,0o777)
-          tool=root/"tool";tool.mkdir()
-          with tarfile.open("/tmp/rc6-native-packet-reuse/rc6-native-compression-packet.tgz","r:gz") as archive:
-              for member in archive.getmembers():
-                  path=pathlib.PurePosixPath(member.name)
-                  assert not path.is_absolute() and ".." not in path.parts and (member.isfile() or member.isdir())
-              archive.extractall(tool,filter="data")
-          output=root/"output";output.mkdir(mode=0o777);os.chmod(output,0o777)
-          payload=bytes(range(256))*16384
-          with gzip.open(root/"input.gz","wb",compresslevel=1) as stream:stream.write(payload)
-          with open(os.environ["GITHUB_ENV"],"a") as out:out.write("RCA_SELFCHECK_RAW="+hashlib.sha256(payload).hexdigest()+"\n")
-          PY
-          RCA_SELFCHECK_RAW="$(python3 -c 'import hashlib; print(hashlib.sha256(bytes(range(256))*16384).hexdigest())')"
-          docker run --rm --pull never --network none --user 1000:1000 --read-only \
-            --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
-            --memory 64m --memory-swap 64m --cpus 0.25 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=32m \
-            --mount type=bind,src=/tmp/rc6-native-selfcheck64/tool,dst=/tool,readonly \
-            --mount type=bind,src=/tmp/rc6-native-selfcheck64/input.gz,dst=/input/report.json.gz,readonly \
-            --mount type=bind,src=/tmp/rc6-native-selfcheck64/output,dst=/work \
-            --env PYTHONPATH=/tool/isal-module --env PYTHONDONTWRITEBYTECODE=1 \
+          python3 -m py_compile scripts/rc6_codec_experiment.py
+          docker run --interactive --rm --pull never --network none --user 1000:1000 --read-only \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
+            --memory 512m --memory-swap 512m --cpus 0.75 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m -v /tmp/rc6-profile-603:/work \
             --entrypoint python sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
-            /tool/probe.py --input /input/report.json.gz --expected-sha256 "$RCA_SELFCHECK_RAW" \
-            --raw-bytes 4194304 --context CI_SYNTHETIC_SELF_CHECK
+            - < scripts/rc6_codec_experiment.py
           python3 - <<'PY'
           import json,pathlib
-          value=json.loads(pathlib.Path("/tmp/rc6-native-selfcheck64/output/metrics.json").read_text())
-          assert value["status"]=="GREEN" and len(value["measurements"])==6
-          assert value["context"]=="CI_SYNTHETIC_SELF_CHECK" and value["nice"]==19
-          assert all(row["peak_rss_kib"]<=64*1024 for row in value["measurements"])
-          assert value["legacy_reader_verified"] is True and value["stdlib_reader_verified"] is True
-          print("RC6_COMPRESSION_SELFCHECK64=GREEN|six_lossless|peak_rss_kib="+str(max(row["peak_rss_kib"] for row in value["measurements"])))
+          value=json.loads(pathlib.Path("/tmp/rc6-profile-603/shared-snapshot-benchmark.json").read_text())
+          assert len(value["receipts"])==8 and value["canonical_bytes_identical"] is True
+          assert len({(x["raw_bytes"],x["raw_sha256"]) for x in value["receipts"]})==1
+          assert all(x["cpu_seconds"]>0 and x["peak_rss_kib"]<=512*1024 for x in value["receipts"])
+          print("RC6_SHARED_SNAPSHOT_NONEMPTY=GREEN|measurements=8")
           PY
-      - name: Preserve stricter diagnostic cap self-check
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc6-native-compress-selfcheck64-${{ github.run_id }}
-          path: /tmp/rc6-native-selfcheck64/output/metrics.json
-          retention-days: 7
-
-      - name: Verify governed quiescence and recovery on synthetic containers
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python3 -m py_compile scripts/rc6_compress_governor_selfcheck.py
-          sudo -n env GITHUB_RUN_ID="$GITHUB_RUN_ID" python3 scripts/rc6_compress_governor_selfcheck.py \
-            --image sha256:8d5d8254a3b5efa65f39a2c1736d85139c1b9049e75a1bd9b079766daf1a379d \
-            --packet /tmp/rc6-native-packet-reuse/rc6-native-compression-packet.tgz \
-            --driver scripts/rc6_compress_native_host.py
-      - name: Preserve CI-only quiescence governor proof
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc6-quiesce-governor-selfcheck-${{ github.run_id }}
-          path: quiesce-governor-selfcheck.json
-          retention-days: 14
+      - name: Make diagnostic receipts readable
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" /tmp/rc6-profile-603
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: rc6-native-compression-packet-${{ github.run_id }}
-          path: |
-            /tmp/rc6-native-packet-reuse/rc6-native-compression-packet.tgz
-            /tmp/rc6-native-packet-reuse/rc6-native-compression-packet.sha256
+          name: rc6-shared-snapshot-benchmark-${{ github.run_id }}
+          path: /tmp/rc6-profile-603
           retention-days: 7
-
-  native_compression:
-    needs: [contracts, profile]
-    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-603-artifact-readback-20261017' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      DO_HOST: ${{ secrets.DO_HOST }}
-      DO_USER: ${{ secrets.DO_USER }}
-      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
-      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      - uses: actions/download-artifact@v4
-        with:
-          name: rc6-native-compression-packet-${{ github.run_id }}
-          path: packet
-      - name: Prepare strict one-shot diagnostic transport
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python3 - <<'PY'
-          import hashlib,os,pathlib,re
-          key=os.environ["GITHUB_RUN_ID"]+"-"+os.environ["GITHUB_RUN_ATTEMPT"]
-          assert re.fullmatch("[0-9]+-[0-9]+",key)
-          sha=pathlib.Path("packet/rc6-native-compression-packet.sha256").read_text().strip()
-          assert re.fullmatch("[0-9a-f]{64}",sha)
-          assert hashlib.sha256(pathlib.Path("packet/rc6-native-compression-packet.tgz").read_bytes()).hexdigest()==sha
-          with open(os.environ["GITHUB_ENV"],"a") as out:out.write("RCA_KEY="+key+"\nPACKET_SHA="+sha+"\n")
-          PY
-          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_native_compress"
-          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/rc6_native_compress_known_hosts"
-          chmod 600 "$HOME/.ssh/rc6_native_compress" "$HOME/.ssh/rc6_native_compress_known_hosts"
-          mkdir -p evidence
-      - name: Transfer public pinned packet only
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          timeout 90 scp -i "$HOME/.ssh/rc6_native_compress" \
-            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/rc6_native_compress_known_hosts" \
-            packet/rc6-native-compression-packet.tgz \
-            "$DO_USER@$DO_HOST:/tmp/rc6-native-compress-$RCA_KEY.tgz"
-      - name: Measure read-only gzip after CLOSED quiesce and recover exact original runtime
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          timeout --signal=TERM --kill-after=30 1080 ssh -i "$HOME/.ssh/rc6_native_compress" \
-            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
-            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/rc6_native_compress_known_hosts" \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n python3 - --key '$RCA_KEY' --packet '/tmp/rc6-native-compress-$RCA_KEY.tgz' --packet-sha '$PACKET_SHA'" \
-            < scripts/rc6_compress_native_host.py > evidence/native-compression.jsonl 2> evidence/.transport.stderr
-          result=$?
-          set -e
-          rm -f evidence/.transport.stderr
-          cat evidence/native-compression.jsonl
-          echo "RC6_NATIVE_COMPRESSION_RCA_EXIT=$result"
-          test "$result" -eq 0
-      - name: Preserve numeric-only diagnostic receipt
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc6-native-compression-rca-${{ github.run_id }}
-          path: evidence/native-compression.jsonl
-          if-no-files-found: warn
-          retention-days: 14
-      - name: Destroy diagnostic credentials
-        if: always()
-        shell: bash
-        run: rm -f "$HOME/.ssh/rc6_native_compress" "$HOME/.ssh/rc6_native_compress_known_hosts"
