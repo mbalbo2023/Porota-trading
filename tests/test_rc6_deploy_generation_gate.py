@@ -94,3 +94,33 @@ def test_canonical_gate_precedes_validated_state():
     text = (root / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
     assert text.index('RC6_EXIT139_SOAK=GREEN') < text.index('rc6_deploy_generation_gate.py')
     assert text.index('rc6_deploy_generation_gate.py') < text.index('"validation_status":"VALIDATED_RUNTIME"')
+
+
+def test_native_red_preserves_reviewed_freshness_cause_and_bounded_costs(tmp_path):
+    root=tmp_path/'dynamic-shadow'
+    (tmp_path/'runtime-health.json').write_text(json.dumps(HEALTH))
+    value=cut()
+    value['status']['as_of']=(AT-timedelta(seconds=247)).isoformat()
+    value['status']['generation_timing']['tick_seconds']=116.365
+    value['status']['private_detail']='PRIVATE_TEST_PAYLOAD'
+    tick=[0]
+    def wait(seconds):tick[0]+=seconds
+    result=collect(root,SHA,TREE,timeout=3,clock=lambda:tick[0],wait=wait,now=lambda:AT,
+                   reader=lambda *args,**kwargs:value)
+    assert result['status']=='RED' and result['generations']==[]
+    assert result['error_reason']=='GENERATION_STALE_OR_FUTURE'
+    assert result['last_observation']['age_seconds']==247
+    assert result['last_observation']['tick_seconds']==116.365
+    assert result['last_observation']['sql_elapsed_ms']==100
+    assert 'PRIVATE_TEST_PAYLOAD' not in json.dumps(result)
+
+
+def test_native_reader_failure_only_reports_allowlisted_literal_code(tmp_path):
+    root=tmp_path/'dynamic-shadow'
+    (tmp_path/'runtime-health.json').write_text(json.dumps(HEALTH))
+    tick=[0]
+    def wait(seconds):tick[0]+=seconds
+    def reader(*args,**kwargs):raise ValueError('GENERATION_MEMBER_MISMATCH')
+    result=collect(root,SHA,TREE,timeout=3,clock=lambda:tick[0],wait=wait,now=lambda:AT,reader=reader)
+    assert result['status']=='RED' and result['error_reason']=='GENERATION_MEMBER_MISMATCH'
+    assert result['last_observation']=={}

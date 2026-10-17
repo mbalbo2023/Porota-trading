@@ -66,9 +66,54 @@ def advances(first, second):
             and datetime.fromisoformat(second['as_of']) > datetime.fromisoformat(first['as_of']))
 
 
+
+_SAFE_FAILURE_REASONS = {
+    'GENERATION_CLOCK_UNVERIFIED', 'GENERATION_STALE_OR_FUTURE',
+    'GENERATION_AUTHORITY_UNVERIFIED', 'GENERATION_HASH_UNVERIFIED',
+    'GENERATION_SEQUENCE_UNVERIFIED', 'WORKER_SOURCE_IDENTITY_UNVERIFIED',
+    'NATIVE_RUNTIME_BUDGET_UNVERIFIED', 'WORKER_HEALTH_UNVERIFIED',
+    'COMMITTED_GENERATION_MISSING', 'GENERATION_PATH_INVALID',
+    'GENERATION_CUT_MISSING', 'GENERATION_ENVELOPE_MISMATCH',
+    'GENERATION_MEMBER_MISMATCH', 'GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS',
+    'GENERATION_SAFETY_UNVERIFIED', 'SHADOW_EVIDENCE_DIGEST_MISMATCH',
+    'SHADOW_PAYLOAD_LIMIT',
+}
+
+
+def _observation_context(cut, at):
+    """Reviewed clocks/costs explain RED without exporting worker payloads."""
+    if not isinstance(cut, dict) or not isinstance(cut.get('status'), dict):
+        return {}
+    status = cut['status']
+    result = {}
+    try:
+        stamp = datetime.fromisoformat(status['as_of'].replace('Z', '+00:00'))
+        if stamp.tzinfo is not None:
+            result['as_of'] = stamp.isoformat()
+            age = (at-stamp).total_seconds()
+            if math.isfinite(age) and abs(age) <= 86400:
+                result['age_seconds'] = round(age, 3)
+    except (ValueError, TypeError, AttributeError, KeyError, OverflowError):
+        pass
+    if status.get('status') in {'SHADOW_OBSERVING', 'FAIL_CLOSED',
+                                'PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION'}:
+        result['worker_status'] = status['status']
+    for group, keys in (('generation_timing', ('poll_seconds', 'tick_seconds')),
+                        ('runtime_sql_diagnostics',
+                         ('budget_ms', 'sql_elapsed_ms', 'transform_elapsed_ms'))):
+        raw = status.get(group)
+        if not isinstance(raw, dict):
+            continue
+        for key in keys:
+            value = raw.get(key)
+            if type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 120000:
+                result[key] = value
+    return result
+
+
 def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monotonic,
             wait=time.sleep, now=lambda: datetime.now(timezone.utc), reader=read_committed_generation):
-    start = clock(); first = None; last_error = None
+    start = clock(); first = None; last_error = None; last_reason = None; last_observation = {}
     while clock() - start < timeout:
         try:
             health_path = root.parent / 'runtime-health.json'
@@ -77,23 +122,26 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
             health = json.loads(health_path.read_text())
             if not isinstance(health, dict):
                 raise ValueError('WORKER_HEALTH_UNVERIFIED')
-            current = receipt(reader(root, payload_limit=4 * 1024**2, require_current_status=True),
-                              health, expected_sha, expected_tree, now())
+            cut = reader(root, payload_limit=4 * 1024**2, require_current_status=True)
+            observed_at = now()
+            last_observation = _observation_context(cut, observed_at)
+            current = receipt(cut, health, expected_sha, expected_tree, observed_at)
             if first and advances(first, current):
                 return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'GREEN',
                         'read_only': True, 'generations': [first, current]}
             if first is None or current['configuration_fingerprint'] != first['configuration_fingerprint']:
                 first = current
-            last_error = None
+            last_error = None; last_reason = None
         except (OSError, ValueError, KeyError, TypeError) as exc:
-            # Error text may contain paths or payloads. Preserve only the class;
-            # the canonical worker status carries reviewed causal stage fields.
+            # Only reviewed literal codes may cross the native log boundary.
             last_error = type(exc).__name__
+            last_reason = str(exc) if type(exc) is ValueError and str(exc) in _SAFE_FAILURE_REASONS else None
             first = None
         wait(2)
     return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'RED',
             'read_only': True, 'reason': 'TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED',
-            'error_class': last_error, 'generations': [first] if first else []}
+            'error_class': last_error, 'error_reason': last_reason,
+            'last_observation': last_observation, 'generations': [first] if first else []}
 
 
 def main():
