@@ -21,6 +21,7 @@ from cf_intraday_scalping import SCALPING_HEALTHY_RUNTIME_STATES
 from cg_paper_workspace import database_path
 from di_caucion_cash_sweep_runtime_hf6 import CASH_SWEEP_HEALTHY_RUNTIME_STATES
 from scripts.rc6_dashboard_route_inventory import inventory
+from rc6_trader_dashboard.navigation import CANONICAL_PATHS
 
 
 BASELINE_READY = {
@@ -31,12 +32,15 @@ BASELINE_READY = {
     "OBLIGACIONES": 2041,
     "FCI": 1003,
 }
-CORE_GET_PATHS = (
+LEGACY_CORE_GET_PATHS = (
     "/", "/vivo", "/trading", "/trading/acciones",
     "/universo-operativo", "/instrumentos", "/validacion", "/analisis",
     "/aprendizaje", "/scalping", "/riesgo", "/historicos", "/reportes",
     "/sistema", "/salud", "/api/dashboard/truth",
 )
+# Inventory equality alone cannot attest HTTP health. Retain the historical
+# checks and exercise every published canonical subview before acceptance.
+CORE_GET_PATHS = tuple(dict.fromkeys((*sorted(CANONICAL_PATHS), *LEGACY_CORE_GET_PATHS)))
 ALLOWED_IOL_STATES = {"LIVE", "CACHE_FRESH", "CACHE_STALE", "SOURCE_UNAVAILABLE"}
 IOL_FALLBACK_ORDER = [
     "IOL_LIVE_BOUNDED_RETRY", "IOL_LAST_KNOWN_GOOD",
@@ -389,7 +393,9 @@ def _assert_snapshot(snapshot, baseline=None):
     assert matrix['route_count'] == artifact['route_count']
     assert matrix['registered_paths'] == artifact['registered_paths']
     assert snapshot["route_matrix_matches_artifact"] is True
-    assert all(code == 200 for code in snapshot["http_status"].values())
+    statuses = snapshot.get("http_status")
+    assert isinstance(statuses, dict) and set(CORE_GET_PATHS) <= set(statuses), "DASHBOARD_HTTP_COVERAGE_INCOMPLETE"
+    assert all(code == 200 for code in statuses.values())
     _assert_surface_metrics(snapshot.get("surface_metrics", {}))
     if dashboard_ready != readiness["ready"]:
         raise RuntimeError(
