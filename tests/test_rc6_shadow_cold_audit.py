@@ -619,3 +619,23 @@ def test_capture_fit_matches_original_bounds_at_byte_node_and_width_edges(codec)
         assert (raw is not None)==admitted
         if raw is not None:
             assert c.ENCODER.encode(codec.snapshot_decode(raw,codec.snapshot_context()))==c.ENCODER.encode(value)
+
+
+def test_deferred_hot_profile_never_contains_previous_cold_encode_cost(tmp_path):
+    from rc6_shadow_runtime.worker import ShadowRuntime
+    from tests.test_rc6_shadow_runtime_wiring import make_store,PRE
+    store,_=make_store(tmp_path,count=25)
+    worker=ShadowRuntime(store.path,evidence_root=tmp_path/'shadow',source_roots=[],spool_audit=True,defer_audit=True)
+    worker.tick(PRE)
+    with worker.files as files:
+        first=c.drain(files)
+    assert first['state']=='COMPLETE' and worker.files.report_write_profile['encode_cpu_seconds']>=0
+    worker.tick(PRE+timedelta(seconds=30))
+    cut=p.read_committed_generation(worker.root)
+    hot=cut['status']['generation_timing']['storage_profile']['computed']
+    assert hot['cpu_seconds']>=0 and hot['wall_seconds']>=0
+    assert not {'encode_cpu_seconds','encode_seconds','compress_hash_cpu_seconds','compress_hash_seconds',
+                'fsync_cpu_seconds','fsync_seconds','raw_bytes','compressed_bytes'} & hot.keys()
+    with worker.files as files:
+        second=c.drain(files)
+    assert second['state']=='COMPLETE' and second['source_as_of']==(PRE+timedelta(seconds=30)).isoformat()

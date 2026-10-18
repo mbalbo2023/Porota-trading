@@ -756,7 +756,10 @@ class ShadowRuntime:
                 if self.defer_audit else
                 files.write_streamed_report(report, immutable_shared_rows=reusable_rows)
                 if reusable_rows else files.write_streamed_report(report)))
-            storage_profile['computed'].update(getattr(files,'report_write_profile',{}))
+            # Deferred HOT is the current snapshot seal; the retained writer
+            # profile belongs to the PREVIOUS COLD materialization.
+            if not self.defer_audit:
+                storage_profile['computed'].update(getattr(files,'report_write_profile',{}))
             durable["computed_report"] = audit
             stored('latest', lambda: files.write("latest.json.gz", durable))
             stored('checkpoint', lambda: files.write_checkpoint(causal) if spool

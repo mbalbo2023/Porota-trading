@@ -6,6 +6,7 @@ synthetic evidence, never a claim of actual provider capacity or live fills.
 """
 import argparse
 from collections import Counter
+from contextlib import closing, nullcontext
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -52,7 +53,7 @@ GROUPS={
                      'tests/test_ws_caucion_12_live_ppi_wiring.py'],
  'dashboard_auth_52':['tests/test_ws_dash_trader_terminal_08.py','tests/test_rc6_issue600_dashboard_adenda.py',
                       'tests/test_rc6_dashboard_clock_bounds.py','tests/test_rc6_runtime_all_routes_http.py'],
- 'scheduler_monitor_backup':['tests/test_rc6_market_watch_silence.py','tests/test_host_general_backup_v17.py',
+ 'scheduler_monitor_backup':['tests/test_rc6_physical_cadence.py','tests/test_rc6_market_watch_silence.py','tests/test_host_general_backup_v17.py',
                              'tests/test_rc6_candle_inmarket_evidence.py',
                              'tests/test_rc6_host_backup_symlink.py','tests/test_rc6_reader_status_connection_lifecycle.py',
                              'tests/test_rc6_backup_preservation.py','tests/test_rc6_deploy_quiescence.py'],
@@ -69,8 +70,155 @@ FULL_CATALOG_SHAPE = {
  'ON':(91,0), 'INDICES':(1,0)}
 
 
-def full_catalog_replay(folder):
-    """Two real worker cuts at catalogue scale and its actual poll cadence."""
+CADENCE_GENERATIONS = 12
+
+
+def _file_sha(path):
+    value=hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        while block:=stream.read(65536):value.update(block)
+    return value.hexdigest()
+
+
+def _gzip_sha(path):
+    import gzip
+    value=hashlib.sha256();size=0
+    with gzip.open(path,'rb') as stream:
+        while block:=stream.read(65536):value.update(block);size+=len(block)
+    return {'sha256':value.hexdigest(),'bytes':size}
+
+
+def cadence_observation(*, origin, started, published, observed, as_of, budget, previous=None):
+    """Actual monotonic publication endpoints bound every intervening age.
+
+    The old cut is current until the next publication, not until the next
+    COLD audit finishes. Current source clocks are never refreshed here.
+    """
+    import math
+    from rc6_performance.common import stamp
+    numbers=(started,published,observed,budget)
+    if any(type(n) not in (int,float) or not math.isfinite(n) for n in numbers):
+        raise ValueError('CADENCE_CLOCK_UNVERIFIED')
+    if not 0<=started<=published<=observed or not 0<budget<=120:
+        raise ValueError('CADENCE_CLOCK_OR_BUDGET_INVALID')
+    source=stamp(as_of);base=stamp(origin)
+    publication_age=(base+timedelta(seconds=published-started)-source).total_seconds()
+    current_age=(base+timedelta(seconds=observed-started)-source).total_seconds()
+    if not 0<=publication_age<=current_age<=budget:
+        raise ValueError('CADENCE_CURRENT_SOURCE_STALE_OR_FUTURE')
+    result={'publication_source_age_seconds':publication_age,'observed_source_age_seconds':current_age,
+            'publication_monotonic':published,'observation_monotonic':observed,'source_as_of':source.isoformat(),
+            'freshness_budget_seconds':budget}
+    if previous is not None:
+        if published<=previous['publication_monotonic'] or source<=stamp(previous['source_as_of']):
+            raise ValueError('CADENCE_SOURCE_OR_PUBLICATION_NOT_ADVANCING')
+        age=(base+timedelta(seconds=published-started)-stamp(previous['source_as_of'])).total_seconds()
+        if not 0<=age<=previous['freshness_budget_seconds']<=120:
+            raise ValueError('CADENCE_PREVIOUS_SOURCE_EXPIRED_BEFORE_PUBLICATION')
+        result['previous_age_at_publication_seconds']=age
+    return result
+
+
+def verify_cadence_series(receipt):
+    """Promotion cannot substitute the historical two-cut smoke for twelve."""
+    import math,re
+    from rc6_performance.common import stamp
+    from rc6_shadow_runtime.timing import generation_budget
+    cuts=receipt.get('cuts',[])
+    if (receipt.get('cadence_mode') not in {'fresh','legacy'} or len(cuts)!=CADENCE_GENERATIONS
+            or type(receipt.get('required_generations'))is not int
+            or receipt.get('required_generations')!=CADENCE_GENERATIONS):
+        raise ValueError('CADENCE_TWELVE_PHYSICAL_CUTS_REQUIRED')
+    peak=receipt.get('process_peak_rss_kib')
+    if type(peak)is not int or not 0<peak<=192*1024:
+        raise ValueError('CADENCE_PROCESS_MEMORY_LIMIT')
+    if (receipt.get('real_orders_sent')!=0 or type(receipt.get('real_orders_sent'))is not int
+            or receipt.get('provider_requests')!=0 or type(receipt.get('provider_requests'))is not int
+            or receipt.get('real_routes')!='NOT_CALLED'):
+        raise ValueError('CADENCE_PAPER_REQUIRED')
+    if type(receipt.get('nice'))is not int or receipt['nice']!=10 or receipt.get('database_unchanged') is not True:
+        raise ValueError('CADENCE_PRIORITY_OR_INPUT_UNVERIFIED')
+    elapsed=receipt.get('elapsed_seconds')
+    if type(elapsed) not in (int,float) or not math.isfinite(elapsed):
+        raise ValueError('CADENCE_ELAPSED_CLOCK_UNVERIFIED')
+    if (any(type(receipt.get(k))is not int for k in ('catalog_count','ready_fixture_count','observed_publications'))
+            or receipt.get('catalog_count')!=14611 or receipt.get('ready_fixture_count')!=9902
+            or receipt.get('observed_publications')!=CADENCE_GENERATIONS
+            or receipt.get('elapsed_seconds',0)<(CADENCE_GENERATIONS-1)*30
+            or receipt.get('production_data_mounted')is not False
+            or receipt.get('actual_market_acceptance')is not False
+            or any(not isinstance(receipt.get(k),str) or not re.fullmatch('[0-9a-f]{40}',receipt[k]) for k in ('source_sha','candidate_tree'))):
+        raise ValueError('CADENCE_REAL_PERIOD_OR_SOURCE_UNVERIFIED')
+    if len({c['generation_id'] for c in cuts})!=CADENCE_GENERATIONS:
+        raise ValueError('CADENCE_DUPLICATE_GENERATION')
+    for index,cut in enumerate(cuts):
+        audit=cut.get('cold_audit',{});computed=audit.get('computed_report',{})
+        wall=audit.get('wall_seconds')
+        if (audit.get('state')!='COMPLETE' or type(wall) not in (int,float)
+                or not math.isfinite(wall) or not 0<=wall<=30
+                or audit.get('source_as_of')!=cut.get('as_of')
+                or type(computed.get('raw_bytes'))is not int
+                or computed.get('raw_bytes',0)!=cut.get('computed_report_raw_bytes')
+                or computed.get('raw_bytes',0)<=100*1024**2
+                or computed.get('sha256')!=cut.get('computed_report_sha256')
+                or not isinstance(computed.get('sha256'),str) or not re.fullmatch('[0-9a-f]{64}',computed['sha256'])):
+            raise ValueError('CADENCE_FULL_ORIGINAL_COLD_AUDIT_REQUIRED')
+        measured=cut['physical_observation']
+        if generation_budget({'generation_timing':cut['worker_timing']})[0]!=cut['freshness_budget_seconds']:
+            raise ValueError('CADENCE_ORIGINAL_BUDGET_CHANGED')
+        actual=cadence_observation(origin=receipt['source_origin'],started=receipt['measurement_started_monotonic'],
+            published=measured['publication_monotonic'],observed=measured['observation_monotonic'],
+            as_of=cut['as_of'],budget=cut['freshness_budget_seconds'],
+            previous=cuts[index-1]['physical_observation'] if index else None)
+        if actual!=measured or cut['worker_timing'].get('poll_seconds')!=30:
+            raise ValueError('CADENCE_ACTUAL_CLOCK_BINDING_INVALID')
+        if index and (stamp(cut['as_of'])-stamp(cuts[index-1]['as_of'])).total_seconds()<30:
+            raise ValueError('CADENCE_VIRTUAL_FAST_FORWARD_FORBIDDEN')
+        if not 0<=measured['publication_source_age_seconds']<=measured['observed_source_age_seconds']<=cut['freshness_budget_seconds']<=120:
+            raise ValueError('CADENCE_CURRENT_AGE_UNVERIFIED')
+        if index and (cut['sequence']<=cuts[index-1]['sequence'] or
+                not 0<=measured.get('previous_age_at_publication_seconds',121)<=cuts[index-1]['freshness_budget_seconds']):
+            raise ValueError('CADENCE_PROGRESS_OR_CONTINUITY_UNVERIFIED')
+    if elapsed+0.001<cuts[-1]['physical_observation']['observation_monotonic']-receipt['measurement_started_monotonic']:
+        raise ValueError('CADENCE_PHYSICAL_WINDOW_TRUNCATED')
+    if receipt['cadence_mode']=='legacy':
+        seed=receipt.get('legacy_seed',{})
+        if (seed.get('standard_gzip')is not True or seed.get('raw_before')!=seed.get('raw_after')
+                or receipt.get('first_checkpoint_reused')is not True):
+            raise ValueError('CADENCE_LEGACY_BOOTSTRAP_UNVERIFIED')
+    return True
+
+
+def standard_legacy_seed(source,target):
+    """Only original causal checkpoint/preopen bytes enter a new empty root."""
+    import gzip,shutil
+    from rc6_shadow_runtime.persistence import EvidenceFiles,checkpoint_ascii_chunks
+    from rc6_shadow_runtime.checkpoint_parts import CheckpointParts
+    source=Path(source);target=Path(target);source_files=EvidenceFiles(source)
+    checkpoint=source_files.path('checkpoint.json.gz')
+    with checkpoint.open('rb') as stream:
+        if stream.read(4)!=b'\x1f\x8b\x08\x04':raise ValueError('CADENCE_INDEXED_SEED_REQUIRED')
+    with CheckpointParts(source_files,checkpoint_ascii_chunks) as parts:
+        as_of=parts.head['as_of']
+    before=_gzip_sha(checkpoint);target.mkdir(mode=0o700,parents=True,exist_ok=False)
+    for path in sorted(source.glob('preopen-*.json.gz')):
+        checked=source_files.path(path.name);shutil.copy2(checked,target/path.name)
+    destination=target/'checkpoint.json.gz'
+    with gzip.open(checkpoint,'rb') as raw,destination.open('wb') as physical:
+        with gzip.GzipFile(filename='',fileobj=physical,mode='wb',compresslevel=1,mtime=0) as zipped:
+            shutil.copyfileobj(raw,zipped,65536)
+        physical.flush();os.fsync(physical.fileno())
+    os.chmod(destination,0o600)
+    after=_gzip_sha(destination)
+    with destination.open('rb') as stream:standard=stream.read(4)==b'\x1f\x8b\x08\x00'
+    if before!=after or not standard:raise ValueError('CADENCE_LEGACY_RAW_SOURCE_CHANGED')
+    return {'source_as_of':as_of,'raw_before':before,'raw_after':after,'standard_gzip':standard,
+            'source_checkpoint_sha256':_file_sha(checkpoint),'legacy_checkpoint_sha256':_file_sha(destination),
+            'files':{p.name:_file_sha(p) for p in target.iterdir()}}
+
+
+def full_catalog_replay(folder, *, required_generations=2, database=None, legacy_source=None):
+    """Default two-cut contract; optional twelve-cut physical cadence proof."""
     from be_paper_engine import PaperStore
     from bf_production_paper_observer import _support_schema
     from cf_intraday_scalping import init_schema
@@ -78,84 +226,142 @@ def full_catalog_replay(folder):
     from rc6_shadow_runtime import worker as runtime
     from rc6_shadow_runtime.persistence import read_committed_generation
     from rc6_shadow_runtime.timing import generation_budget
+    from rc6_performance.common import stamp
+    if type(required_generations)is not int or required_generations not in (2,CADENCE_GENERATIONS):
+        raise ValueError('CADENCE_GENERATION_COUNT_INVALID')
+    physical=required_generations==CADENCE_GENERATIONS
+    if legacy_source is not None and (not physical or database is None):
+        raise ValueError('CADENCE_LEGACY_SHARED_FIXTURE_REQUIRED')
     folder.mkdir(parents=True,exist_ok=True)
-    store=PaperStore(str(folder/'paper.db'));_support_schema(store);init_schema(store)
-    rows=[]
-    for family,(total,ready) in FULL_CATALOG_SHAPE.items():
-        for n in range(total):
-            rows.append((f'LOAD_{family}_{n:05d}',family,'BYMA',
-                ('ARS','USD_MEP','USD_CCL')[n%3],'A-24HS','SYNTHETIC',
-                'synthetic public-cardinality fixture',PRE.isoformat(),'stress-full-catalog',
-                'AVAILABLE' if n<ready else 'PAUSED_EXPLICIT',
-                'READY_PAPER_SPOT' if n<ready else 'NO_VERIFICADO','{}'))
-    with store.connect() as c:
-        c.executemany('INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',rows)
-    total=len(rows);del rows
-    ready=sum(ready for _,ready in FULL_CATALOG_SHAPE.values())
-    worker=runtime.ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[],spool_audit=True,defer_audit=True)
-    started=time.monotonic();cuts=[]
+    if database is None:
+        database=folder/'paper.db'
+        store=PaperStore(str(database));_support_schema(store);init_schema(store)
+        rows=[]
+        for family,(total,ready) in FULL_CATALOG_SHAPE.items():
+            for n in range(total):
+                rows.append((f'LOAD_{family}_{n:05d}',family,'BYMA',
+                    ('ARS','USD_MEP','USD_CCL')[n%3],'A-24HS','SYNTHETIC',
+                    'synthetic public-cardinality fixture',PRE.isoformat(),'stress-full-catalog',
+                    'AVAILABLE' if n<ready else 'PAUSED_EXPLICIT',
+                    'READY_PAPER_SPOT' if n<ready else 'NO_VERIFICADO','{}'))
+        with store.connect() as connection:
+            connection.executemany('INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',rows)
+        del rows,store
+    database=Path(database)
+    if database.is_symlink() or database.stat().st_nlink!=1:raise ValueError('CADENCE_FIXTURE_IDENTITY_INVALID')
+    database=database.resolve()
+    before={'path':str(database),'inode':database.stat().st_ino,'sha256':_file_sha(database)}
+    with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True)) as connection:
+        total,ready=connection.execute("SELECT COUNT(*),SUM(status='AVAILABLE' AND capability LIKE 'READY_PAPER%') FROM financial_instrument_catalog").fetchone()
+    assert (total,ready)==(14611,9902)
+    seed=standard_legacy_seed(legacy_source,folder/'shadow') if legacy_source is not None else None
+    origin=stamp(seed['source_as_of'])+timedelta(seconds=30) if seed else PRE
+    worker=runtime.ShadowRuntime(database,evidence_root=folder/'shadow',source_roots=[],spool_audit=True,defer_audit=True)
+    started=time.monotonic();cuts=[];publications=[];reused=[]
+    original_publish=worker.files.publish_generation
+    def observed_publish(report,status):
+        before_publish=time.monotonic();result=original_publish(report,status);after_publish=time.monotonic()
+        publications.append({**result,'source_as_of':status['as_of'],'before':before_publish,'after':after_publish})
+        reused.append(report.get('checkpoint_reused'))
+        return result
     class Stop:
-        def is_set(self):return len(cuts)>=2
-        def wait(self,_seconds):
-            cut=read_committed_generation(worker.root)
+        def is_set(self):return len(cuts)>=required_generations
+        def wait(self,seconds):
+            wait_started=time.monotonic();cut=read_committed_generation(worker.root)
             report,status=cut['report'],cut['status']
             assert status['status']=='SHADOW_OBSERVING'
-            assert status['real_orders_sent']==0 and status['real_routes']=='NOT_CALLED'
+            assert type(status['real_orders_sent'])is int and status['real_orders_sent']==0 and status['real_routes']=='NOT_CALLED'
             assert report['family_routing']['instruments_total']==total
-            assert all(p['telemetry_total']==ready for p in report['engines'].values())
-            # S2 equivalence: the actual production drain has completed the
-            # FULL audit from its original durable input after HOT publication.
-            audit = cut['computed_audit']
-            assert audit['state'] == 'COMPLETE'
-            computed = audit['computed_report']
-            assert computed['raw_bytes']>100*1024**2
-            import gzip, hashlib
-            verified, raw_bytes = hashlib.sha256(), 0
-            with gzip.open(worker.root / computed['file'], 'rb') as stream:
-                while block := stream.read(65536):
-                    verified.update(block); raw_bytes += len(block)
-            assert raw_bytes == computed['raw_bytes'] and verified.hexdigest() == computed['sha256']
-            assert audit['wall_seconds'] <= 30
-            assert audit['source_as_of'] == status['as_of']
+            assert set(report['engines'])=={'SCALPING','EQUITY_SPOT'}
+            assert all(plan['telemetry_total']==ready for plan in report['engines'].values())
+            assert type(report['provider_requests'])is int and report['provider_requests']==0
+            assert type(report['real_orders_sent'])is int and report['real_orders_sent']==0 and report['real_routes']=='NOT_CALLED'
+            audit=cut['computed_audit'];assert audit['state']=='COMPLETE'
+            computed=audit['computed_report'];raw=_gzip_sha(worker.root/computed['file'])
+            assert raw['bytes']==computed['raw_bytes']>100*1024**2 and raw['sha256']==computed['sha256']
+            assert 0<=audit['wall_seconds']<=30 and audit['source_as_of']==status['as_of']
             receipt={'sequence':cut['pointer']['sequence'],'as_of':status['as_of'],
-                     'generation_id':cut['pointer']['generation_id'],
-                     'manifest_sha256':cut['pointer']['manifest_sha256'],
-                     'tick_seconds':status['generation_timing']['tick_seconds'],
-                     'worker_timing':status['generation_timing'],
-                     'computed_report_sha256':computed['sha256'],
-                     'computed_report_raw_bytes':raw_bytes,
-                     'cold_audit':audit,
-                     'freshness_budget_seconds':generation_budget(status)[0]}
-            if cuts:
-                assert receipt['sequence']>cuts[-1]['sequence']
-                previous_age=(PRE+timedelta(seconds=time.monotonic()-started)-
-                    datetime.fromisoformat(cuts[-1]['as_of'])).total_seconds()
-                receipt['previous_cut_age_seconds']=previous_age
-                receipt['previous_cut_freshness_budget_seconds']=cuts[-1]['freshness_budget_seconds']
-            # The TemporaryDirectory is removed even on RED. Preserve each
-            # verified synthetic cut in the job log BEFORE a cadence failure.
-            print('RC6_FULL_CATALOG_CUT='+json.dumps(receipt,sort_keys=True,separators=(',',':')),flush=True)
-            if cuts:
-                assert previous_age<=cuts[-1]['freshness_budget_seconds'],('FULL_CATALOG_FRESHNESS_GAP',previous_age)
+                'generation_id':cut['pointer']['generation_id'],'manifest_sha256':cut['pointer']['manifest_sha256'],
+                'tick_seconds':status['generation_timing']['tick_seconds'],'worker_timing':status['generation_timing'],
+                'computed_report_sha256':computed['sha256'],'computed_report_raw_bytes':raw['bytes'],
+                'cold_audit':audit,'freshness_budget_seconds':generation_budget(status)[0]}
+            try:
+                if physical:
+                    assert len(publications)==len(cuts)+1
+                    publication=publications[-1]
+                    receipt['actual_publication']=dict(publication)
+                    assert all(publication[k]==receipt[k] for k in ('generation_id','sequence','manifest_sha256'))
+                    assert publication['source_as_of']==status['as_of']
+                    assert os.getpriority(os.PRIO_PROCESS,0)==10
+                    receipt['physical_observation']=cadence_observation(origin=origin,started=started,
+                        published=publication['after'],observed=time.monotonic(),as_of=status['as_of'],
+                        budget=receipt['freshness_budget_seconds'],
+                        previous=cuts[-1]['physical_observation'] if cuts else None)
+                if cuts:
+                    assert receipt['sequence']>cuts[-1]['sequence']
+                    previous_age=(origin+timedelta(seconds=time.monotonic()-started)-stamp(cuts[-1]['as_of'])).total_seconds()
+                    receipt['previous_cut_age_seconds']=previous_age
+                    receipt['previous_cut_freshness_budget_seconds']=cuts[-1]['freshness_budget_seconds']
+                    if not physical:
+                        assert previous_age<=cuts[-1]['freshness_budget_seconds'],('FULL_CATALOG_FRESHNESS_GAP',previous_age)
+            except Exception as error:
+                receipt['cadence_rejection']={'kind':type(error).__name__,'reason':str(error)}
+                raise
+            finally:
+                print('RC6_FULL_CATALOG_CUT='+json.dumps(receipt,sort_keys=True,separators=(',',':')),flush=True)
+                if physical:
+                    (folder/'full-catalog-progress.json').write_text(json.dumps({'status':'PARTIAL_NOT_ACCEPTED',
+                        'required_generations':required_generations,'cuts':cuts+[receipt]},indent=2)+'\n')
             cuts.append(receipt)
-            if len(cuts)<2:
-                time.sleep(_seconds)
-    def actual_factory(*_args, **kwargs):
-        assert kwargs['spool_audit'] is True and kwargs['defer_audit'] is True
-        worker.shutdown_requested = kwargs['shutdown_requested']
-        return worker
-    with patch.object(runtime,'ShadowRuntime',actual_factory):
-        runtime.run_worker(store.path,Stop(),clock_fn=lambda:(PRE+timedelta(seconds=time.monotonic()-started)).isoformat())
+            if len(cuts)<required_generations:
+                # Verification occurs inside the already remaining nominal wait.
+                # The historical default keeps its original stricter wait.
+                time.sleep(max(0,seconds-(time.monotonic()-wait_started)) if physical else seconds)
+    def actual_factory(*_args,**kwargs):
+        assert kwargs['spool_audit']is True and kwargs['defer_audit']is True
+        worker.shutdown_requested=kwargs['shutdown_requested'];return worker
+    with patch.object(worker.files,'publish_generation',observed_publish) if physical else nullcontext():
+        with patch.object(runtime,'ShadowRuntime',actual_factory):
+            runtime.run_worker(database,Stop(),clock_fn=lambda:(origin+timedelta(seconds=time.monotonic()-started)).isoformat())
     peak=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    assert len(cuts)==2 and peak<=512*1024,('FULL_CATALOG_PEAK_RSS_OVER_512MIB',peak)
-    # #624's paired architecture admission removes overlapping audit graphs.
-    # Keep its absolute peak as a permanent gate, in addition to container cap.
-    assert peak<=192*1024,('FULL_CATALOG_PROGRESSIVE_RSS_OVER_192MIB',peak)
-    return {'schema':'rc6.synthetic-full-catalog.v1','catalog_count':total,'ready_fixture_count':ready,
-            'cuts':cuts,'elapsed_seconds':round(time.monotonic()-started,3),'process_peak_rss_kib':peak,
-            'poll_sleep':'REMAINING_NOMINAL_30S_AFTER_HOT_PUBLICATION','real_orders_sent':0,'real_routes':'NOT_CALLED',
-            'provider_requests':0,'production_data_mounted':False,'actual_market_acceptance':False,
-            'memory_measurement':'PROCESS_RSS; host launcher independently enforces container memory cap'}
+    assert len(cuts)==required_generations and peak<=192*1024,('FULL_CATALOG_PROGRESSIVE_RSS_OVER_192MIB',peak)
+    unchanged=before=={'path':str(database),'inode':database.stat().st_ino,'sha256':_file_sha(database)}
+    assert unchanged,'CADENCE_INPUT_DATABASE_CHANGED'
+    result={'schema':'rc6.synthetic-full-catalog.v1','catalog_count':total,'ready_fixture_count':ready,
+        'cuts':cuts,'elapsed_seconds':round(time.monotonic()-started,3),'process_peak_rss_kib':peak,
+        'poll_sleep':'REMAINING_NOMINAL_30S_AFTER_HOT_PUBLICATION','real_orders_sent':0,'real_routes':'NOT_CALLED',
+        'provider_requests':0,'production_data_mounted':False,'actual_market_acceptance':False,
+        'memory_measurement':'PROCESS_RSS; host launcher independently enforces container memory cap',
+        'required_generations':required_generations,'fixture_database':before,'database_unchanged':unchanged}
+    if physical:
+        result.update(cadence_mode='legacy' if seed else 'fresh',source_origin=origin.isoformat(),
+            source_sha=os.environ.get('POROTA_BUILD_SHA'),candidate_tree=os.environ.get('POROTA_CANDIDATE_TREE_SHA'),
+            nice=os.getpriority(os.PRIO_PROCESS,0),legacy_seed=seed,first_checkpoint_reused=reused[0],
+            measurement_started_monotonic=started,
+            observed_publications=len(publications),native_host_acceptance=False)
+        verify_cadence_series(result)
+        result['status']='GREEN'
+    return result
+
+
+def cadence_stage_replay(output,stage):
+    if stage not in ('fresh','legacy'):raise ValueError('CADENCE_STAGE_INVALID')
+    output.mkdir(parents=True,exist_ok=True)
+    if stage=='fresh':
+        result=full_catalog_replay(output/'fresh',required_generations=CADENCE_GENERATIONS)
+    else:
+        prior=json.loads((output/'cadence-fresh.json').read_text())
+        verify_cadence_series(prior)
+        if (prior.get('cadence_mode')!='fresh' or prior.get('status')!='GREEN' or prior.get('source_sha')!=os.environ.get('POROTA_BUILD_SHA')
+                or prior.get('candidate_tree')!=os.environ.get('POROTA_CANDIDATE_TREE_SHA')):
+            raise ValueError('CADENCE_FROZEN_FRESH_SOURCE_REQUIRED')
+        database=Path(prior['fixture_database']['path'])
+        if _file_sha(database)!=prior['fixture_database']['sha256'] or database.stat().st_ino!=prior['fixture_database']['inode']:
+            raise ValueError('CADENCE_LEGACY_FIXTURE_CHANGED')
+        result=full_catalog_replay(output/'legacy',required_generations=CADENCE_GENERATIONS,
+            database=database,legacy_source=output/'fresh/shadow')
+    (output/('cadence-'+stage+'.json')).write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+    return result
 
 
 def session_replay(folder, *, minutes=405):
@@ -338,8 +544,12 @@ def run(output, *, smoke=False):
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--smoke',action='store_true')
-    parser.add_argument('--full-catalog-check',action='store_true');args=parser.parse_args()
-    if args.full_catalog_check:
+    parser.add_argument('--full-catalog-check',action='store_true')
+    parser.add_argument('--cadence-stage',choices=('fresh','legacy'));args=parser.parse_args()
+    if args.cadence_stage:
+        if args.smoke or args.full_catalog_check:parser.error('cadence stage cannot use smoke or two-cut mode')
+        cadence_stage_replay(args.output,args.cadence_stage)
+    elif args.full_catalog_check:
         with tempfile.TemporaryDirectory(prefix='rc6-catalog-') as temporary:
             receipt=full_catalog_replay(Path(temporary))
         args.output.mkdir(parents=True,exist_ok=True)
