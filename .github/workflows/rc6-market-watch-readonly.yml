@@ -57,7 +57,7 @@ jobs:
 
   watch:
     needs: contracts
-    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-624-consumer-profile-20261017'
+    if: false # native RAM RCA39088022968 captured; do not repeat host observation
     runs-on: ubuntu-24.04
     timeout-minutes: 7
     env:
