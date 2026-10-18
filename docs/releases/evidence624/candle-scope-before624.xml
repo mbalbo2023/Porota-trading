@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="0" tests="15" time="0.545" timestamp="2026-10-18T16:53:37.793208+08:00" hostname="38ad2494d116"><testcase classname="tests.test_rc6_candle_inmarket_evidence.CandleIntegrityScopeRegressionTests" name="test_bad_or_incomplete_partial_results_cannot_produce_green" time="0.030"><failure message="TypeError: build_summary() got an unexpected keyword argument 'table_quick_checks'">self = &lt;test_rc6_candle_inmarket_evidence.CandleIntegrityScopeRegressionTests testMethod=test_bad_or_incomplete_partial_results_cannot_produce_green&gt;
+
+    def test_bad_or_incomplete_partial_results_cannot_produce_green(self):
+        for values in ({},{'candle_dirty':'ok'},{'candle_dirty':'bad page','candle_worker_state':'ok'}):
+            with self.subTest(values=values):
+&gt;               result=build_summary(baseline_cursor=1,current_cursor=2,worker_state='RUNNING',
+                    heartbeat_at='2026-09-17T14:30:00+00:00',quick_check='DELEGATED_TO_RC6_FULL_DB_INTEGRITY',
+                    dirty_due_bars=0,dirty_open_bars=0,invalid_dirty_timestamp_count=0,
+                    observed_at='2026-09-17T14:30:30+00:00',table_quick_checks=values)
+E               TypeError: build_summary() got an unexpected keyword argument 'table_quick_checks'
+
+tests/test_rc6_candle_inmarket_evidence.py:87: TypeError</failure><failure message="TypeError: build_summary() got an unexpected keyword argument 'table_quick_checks'">self = &lt;test_rc6_candle_inmarket_evidence.CandleIntegrityScopeRegressionTests testMethod=test_bad_or_incomplete_partial_results_cannot_produce_green&gt;
+
+    def test_bad_or_incomplete_partial_results_cannot_produce_green(self):
+        for values in ({},{'candle_dirty':'ok'},{'candle_dirty':'bad page','candle_worker_state':'ok'}):
+            with self.subTest(values=values):
+&gt;               result=build_summary(baseline_cursor=1,current_cursor=2,worker_state='RUNNING',
+                    heartbeat_at='2026-09-17T14:30:00+00:00',quick_check='DELEGATED_TO_RC6_FULL_DB_INTEGRITY',
+                    dirty_due_bars=0,dirty_open_bars=0,invalid_dirty_timestamp_count=0,
+                    observed_at='2026-09-17T14:30:30+00:00',table_quick_checks=values)
+E               TypeError: build_summary() got an unexpected keyword argument 'table_quick_checks'
+
+tests/test_rc6_candle_inmarket_evidence.py:87: TypeError</failure><failure message="TypeError: build_summary() got an unexpected keyword argument 'table_quick_checks'">self = &lt;test_rc6_candle_inmarket_evidence.CandleIntegrityScopeRegressionTests testMethod=test_bad_or_incomplete_partial_results_cannot_produce_green&gt;
+
+    def test_bad_or_incomplete_partial_results_cannot_produce_green(self):
+        for values in ({},{'candle_dirty':'ok'},{'candle_dirty':'bad page','candle_worker_state':'ok'}):
+            with self.subTest(values=values):
+&gt;               result=build_summary(baseline_cursor=1,current_cursor=2,worker_state='RUNNING',
+                    heartbeat_at='2026-09-17T14:30:00+00:00',quick_check='DELEGATED_TO_RC6_FULL_DB_INTEGRITY',
+                    dirty_due_bars=0,dirty_open_bars=0,invalid_dirty_timestamp_count=0,
+                    observed_at='2026-09-17T14:30:30+00:00',table_quick_checks=values)
+E               TypeError: build_summary() got an unexpected keyword argument 'table_quick_checks'
+
+tests/test_rc6_candle_inmarket_evidence.py:87: TypeError</failure></testcase><testcase classname="tests.test_rc6_candle_inmarket_evidence.CandleIntegrityScopeRegressionTests" name="test_only_owned_table_btrees_are_checked_and_global_scope_is_explicit" time="0.089"><failure message="AssertionError: Items in the first set but not the second:&#10;'pragma quick_check'&#10;Items in the second set but not the first:&#10;&quot;pragma quick_check('candle_worker_state')&quot;&#10;&quot;pragma quick_check('candle_dirty')&quot;">self = &lt;test_rc6_candle_inmarket_evidence.CandleIntegrityScopeRegressionTests testMethod=test_only_owned_table_btrees_are_checked_and_global_scope_is_explicit&gt;
+
+    def test_only_owned_table_btrees_are_checked_and_global_scope_is_explicit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db=Path(directory)/'scope.db';_scope_store(db)
+            original=sqlite3.connect;statements=[]
+            def traced(*args,**kwargs):
+                conn=original(*args,**kwargs);conn.set_trace_callback(statements.append);return conn
+            before=hashlib.sha256(db.read_bytes()).hexdigest()
+            with patch('scripts.rc6_candle_inmarket_evidence.sqlite3.connect',traced):
+                collected=collect_inputs(db_path=str(db),observed_at='2026-09-17T14:30:30+00:00')
+            checks=[v.lower().strip() for v in statements if 'quick_check' in v.lower()]
+&gt;           self.assertEqual(set(checks),{"pragma quick_check('candle_dirty')","pragma quick_check('candle_worker_state')"})
+E           AssertionError: Items in the first set but not the second:
+E           'pragma quick_check'
+E           Items in the second set but not the first:
+E           "pragma quick_check('candle_worker_state')"
+E           "pragma quick_check('candle_dirty')"
+
+tests/test_rc6_candle_inmarket_evidence.py:50: AssertionError</failure></testcase><testcase classname="tests.test_rc6_candle_inmarket_evidence.CandleIntegrityScopeRegressionTests" name="test_real_corruption_of_each_owned_btree_cannot_produce_green" time="0.126" /><testcase classname="tests.test_rc6_candle_inmarket_evidence.CandleIntegrityScopeRegressionTests" name="test_real_sqlite_progress_budget_aborts_without_source_mutation" time="0.128"><failure message="TypeError: collect_inputs() got an unexpected keyword argument 'query_budget_seconds'">self = &lt;test_rc6_candle_inmarket_evidence.CandleIntegrityScopeRegressionTests testMethod=test_real_sqlite_progress_budget_aborts_without_source_mutation&gt;
+
+    def test_real_sqlite_progress_budget_aborts_without_source_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db=Path(directory)/'budget.db';_scope_store(db)
+            with sqlite3.connect(db) as conn:
+                conn.executemany('INSERT INTO candle_dirty VALUES(?,?,?)',[('x','a','2026-09-17T14:31:00+00:00')]*20000)
+            before=hashlib.sha256(db.read_bytes()).hexdigest()
+            with self.assertRaises(sqlite3.OperationalError):
+&gt;               collect_inputs(db_path=str(db),observed_at='2026-09-17T14:30:30+00:00',query_budget_seconds=.000001)
+E               TypeError: collect_inputs() got an unexpected keyword argument 'query_budget_seconds'
+
+tests/test_rc6_candle_inmarket_evidence.py:100: TypeError</failure></testcase><testcase classname="tests.test_rc6_candle_inmarket_evidence.CandleIntegrityScopeRegressionTests" name="test_unrelated_corruption_remains_the_full_integrity_owners_failure" time="0.042"><failure message="AssertionError: 'RED' != 'GREEN'&#10;- RED&#10;+ GREEN">self = &lt;test_rc6_candle_inmarket_evidence.CandleIntegrityScopeRegressionTests testMethod=test_unrelated_corruption_remains_the_full_integrity_owners_failure&gt;
+
+    def test_unrelated_corruption_remains_the_full_integrity_owners_failure(self):
+        from rc6_full_db_integrity import probe
+        with tempfile.TemporaryDirectory() as directory:
+            db=Path(directory)/'unrelated.db';_scope_store(db);_corrupt_root(db,'unrelated_history')
+            value=collect_inputs(db_path=str(db),observed_at='2026-09-17T14:30:30+00:00')
+            result=build_summary(baseline_cursor=118740,observed_at='2026-09-17T14:30:30+00:00',**value)
+&gt;           self.assertEqual(result['status'],'GREEN')
+E           AssertionError: 'RED' != 'GREEN'
+E           - RED
+E           + GREEN
+
+tests/test_rc6_candle_inmarket_evidence.py:80: AssertionError</failure></testcase><testcase classname="tests.test_rc6_candle_inmarket_evidence.CandleInmarketEvidenceTests" name="test_atomic_file_has_complete_non_secret_evidence" time="0.001" /><testcase classname="tests.test_rc6_candle_inmarket_evidence.CandleInmarketEvidenceTests" name="test_collect_uses_real_candle_dirty_schema_and_excludes_open_bar" time="0.007" /><testcase classname="tests.test_rc6_candle_inmarket_evidence.CandleInmarketEvidenceTests" name="test_freshness_is_not_latched" time="0.000" /><testcase classname="tests.test_rc6_candle_inmarket_evidence.CandleInmarketEvidenceTests" name="test_green_requires_cursor_running_integrity_and_no_overdue_dirty_bars" time="0.000" /><testcase classname="tests.test_rc6_candle_inmarket_evidence.CandleInmarketEvidenceTests" name="test_overdue_dirty_bar_prevents_green" time="0.000" /></testsuite></testsuites>

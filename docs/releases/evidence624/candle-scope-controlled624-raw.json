@@ -1,0 +1,89 @@
+{
+  "status": "GREEN_CONTROLLED_SQL_SCOPE_NOT_NATIVE_ACCEPTANCE",
+  "base_source_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
+  "baseline_source_sha256": "0c1ec15564ea4695db67b84eac9e7cbcd48a2d20c7159b467523bee44565346d",
+  "candidate_source_sha256": "68b9765b61159299efe032d64ec3fad952efe4ce1d069c10c7b7f2270cd1f0cf",
+  "fixture": {
+    "path": "/workspace/scratch/88594b90c2a3/candle-scope-shared624.db",
+    "bytes": 63193088,
+    "inode": 1595113,
+    "sha256": "ee67563720e7447f35a9d63dc0d7bef4ee931d7316a969fe866940abea73db59",
+    "unrelated_rows": 200000,
+    "observed_at": "2026-09-17T14:30:30+00:00"
+  },
+  "same_physical_database_unchanged": true,
+  "all_original_business_fields_equal": true,
+  "explicit_metadata_delta": [
+    "quick_check:global_ok\u2192DELEGATED_TO_RC6_FULL_DB_INTEGRITY",
+    "table_quick_checks:both_owned_btrees_ok"
+  ],
+  "global_full_auditor_changed": false,
+  "cpu_ratio": 0.0020027674216914234,
+  "vm_step_ratio": 0.0,
+  "rows": [
+    {
+      "arm": "baseline",
+      "cpu_seconds": 0.2759247,
+      "wall_seconds": 1.6799852490003104,
+      "vm_steps": 1015400,
+      "queries": [
+        "PRAGMA query_only=ON",
+        "SELECT name FROM sqlite_master WHERE type='table'",
+        "PRAGMA quick_check",
+        "SELECT cursor,heartbeat_at,state FROM candle_worker_state WHERE id=1",
+        "SELECT COUNT(*) FROM candle_dirty WHERE julianday(bar_end) IS NULL",
+        "SELECT COUNT(*) FROM candle_dirty WHERE julianday(bar_end) <= julianday('2026-09-17T14:30:30+00:00')",
+        "SELECT COUNT(*) FROM candle_dirty WHERE julianday(bar_end) > julianday('2026-09-17T14:30:30+00:00')"
+      ],
+      "value": {
+        "current_cursor": 101,
+        "heartbeat_at": "2026-09-17T14:30:00+00:00",
+        "worker_state": "RUNNING",
+        "quick_check": "ok",
+        "dirty_due_bars": 0,
+        "dirty_open_bars": 1,
+        "invalid_dirty_timestamp_count": 0,
+        "required_tables": [
+          "candle_dirty",
+          "candle_worker_state"
+        ]
+      }
+    },
+    {
+      "arm": "candidate",
+      "cpu_seconds": 0.0005526129999999796,
+      "wall_seconds": 0.0006918979997863062,
+      "vm_steps": 0,
+      "queries": [
+        "PRAGMA query_only=ON",
+        "BEGIN",
+        "SELECT name FROM sqlite_master WHERE type='table'",
+        "PRAGMA quick_check('candle_dirty')",
+        "PRAGMA quick_check('candle_worker_state')",
+        "SELECT cursor,heartbeat_at,state FROM candle_worker_state WHERE id=1",
+        "SELECT COUNT(*) FROM candle_dirty WHERE julianday(bar_end) IS NULL",
+        "SELECT COUNT(*) FROM candle_dirty WHERE julianday(bar_end) <= julianday('2026-09-17T14:30:30+00:00')",
+        "SELECT COUNT(*) FROM candle_dirty WHERE julianday(bar_end) > julianday('2026-09-17T14:30:30+00:00')"
+      ],
+      "value": {
+        "current_cursor": 101,
+        "heartbeat_at": "2026-09-17T14:30:00+00:00",
+        "worker_state": "RUNNING",
+        "quick_check": "DELEGATED_TO_RC6_FULL_DB_INTEGRITY",
+        "table_quick_checks": {
+          "candle_dirty": "ok",
+          "candle_worker_state": "ok"
+        },
+        "dirty_due_bars": 0,
+        "dirty_open_bars": 1,
+        "invalid_dirty_timestamp_count": 0,
+        "required_tables": [
+          "candle_dirty",
+          "candle_worker_state"
+        ]
+      }
+    }
+  ],
+  "real_orders_sent": 0,
+  "provider_requests": 0
+}

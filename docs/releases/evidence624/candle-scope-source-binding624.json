@@ -1,0 +1,98 @@
+{
+  "status": "GREEN_COLLATERAL_PRODUCER_ONLY_DIFFERENCE",
+  "base_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
+  "base_tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
+  "changed_paths": [
+    "scripts/rc6_candle_inmarket_evidence.py",
+    "scripts/rc6_postdeploy_stress.py",
+    "tests/test_rc6_candle_inmarket_evidence.py"
+  ],
+  "all_other_tracked_bytes_match_base": true,
+  "worker_bytes_match_abi_d1bd": true,
+  "full_global_auditor_and_units_unchanged": true,
+  "all_native_gates_and_resource_floors_unchanged": true,
+  "no_new_service_or_timer": true,
+  "new_complete_predeploy_required": true,
+  "unchanged_source_sha256": [
+    {
+      "path": "Dockerfile",
+      "sha256": "e9dc3507e92eecfeae27a635c8f19804f2fc820d899f36ef587f772f6369b7df"
+    },
+    {
+      "path": "rc6_candle_integrity.py",
+      "sha256": "5892aaebb7cc9425c66e780f80af8e53eb8df95c53f340a16740cacac5279886"
+    },
+    {
+      "path": "rc6_full_db_integrity.py",
+      "sha256": "900f6664ddc6bc6400d6140e233982573efb188286142c24a91c88a39a78b35a"
+    },
+    {
+      "path": "rc6_shadow_runtime/__init__.py",
+      "sha256": "38de867a361db0f93625c3beb8d4a6f31e772e66db5af076a7fcc87a62cf3051"
+    },
+    {
+      "path": "rc6_shadow_runtime/_rc6_json_bound.c",
+      "sha256": "12ce21146fe9de9845b4458c7abc3d81b0eb00ec645dd10a37e9e4e255c50a43"
+    },
+    {
+      "path": "rc6_shadow_runtime/audit_spool.py",
+      "sha256": "20ca143b2d4fc4a9369f5281f10f044f925376ff0cd302c8a8c5bcf4244a5944"
+    },
+    {
+      "path": "rc6_shadow_runtime/checkpoint_parts.py",
+      "sha256": "73124ad2c134a0970ec54fcc1047ae78e0a74060774d0f0373dcb443d0324fb3"
+    },
+    {
+      "path": "rc6_shadow_runtime/entry_signals.py",
+      "sha256": "038020d0e03f220dfd735aab89c45bb02e610f0fb203b8e42a68c58f25097303"
+    },
+    {
+      "path": "rc6_shadow_runtime/families.py",
+      "sha256": "e6a55859659e36dc66cf2e3ddb6d9658bd1e43ae290262cb9f2b78c5cb9d3994"
+    },
+    {
+      "path": "rc6_shadow_runtime/funnel.py",
+      "sha256": "3c8d3b45655450e071777927c9187938d6737ad5e415376c2bbe472975d603e5"
+    },
+    {
+      "path": "rc6_shadow_runtime/lab.py",
+      "sha256": "537ceb92654116b711658c366355803bd46213846439655910024563281e38cd"
+    },
+    {
+      "path": "rc6_shadow_runtime/persistence.py",
+      "sha256": "b7b1deb8f7ce16ef9fc813f90f73103d93c77aa3f0d1b90896baa32bb2012bee"
+    },
+    {
+      "path": "rc6_shadow_runtime/preopen.py",
+      "sha256": "11b5fb0c45f6be860f6f5eb6a670ead4712f08f5fecc4f5a76e40649053977f0"
+    },
+    {
+      "path": "rc6_shadow_runtime/read_contract.py",
+      "sha256": "35a9c720e33084d2a677277c1880a5e522ee32467acda71a935633770c35ef83"
+    },
+    {
+      "path": "rc6_shadow_runtime/source_authority.py",
+      "sha256": "b9277923784464adf61b9f78cd1f7952bcba97e7e6fe6a4bfcdc4f724eadfe35"
+    },
+    {
+      "path": "rc6_shadow_runtime/source_reads.py",
+      "sha256": "9e358bf5ca9e6c46b5c7d2725f8c0b4e8f71deda3d86658a7777bf7da3f64165"
+    },
+    {
+      "path": "rc6_shadow_runtime/stages.py",
+      "sha256": "1323b5934829d882f6acb1a47ad6ae5d964a588e7540c0a45979c0d3c639c92b"
+    },
+    {
+      "path": "rc6_shadow_runtime/timing.py",
+      "sha256": "4830e4f5afbcde9a87ff6c348d86c29a43149b6dec9cbbdee73537d8242833b1"
+    },
+    {
+      "path": "rc6_shadow_runtime/worker.py",
+      "sha256": "79ec3efcaa931c3b5f9ccb19df16cd6da40270a9d0836b1ba0c60632a43b6a09"
+    },
+    {
+      "path": "requirements.lock.txt",
+      "sha256": "5edf44a428d769acd34a8fa9429f3282000d02929d7103385587a1d24e9b3102"
+    }
+  ]
+}

@@ -3178,6 +3178,154 @@
       "bytes": 396,
       "sha256": "3c4b2115f7eac8d4266d3c7a3f5c55c044f56778851c34a0651f5ee5184473c7",
       "original_artifact_member": "tmp/porota-negative-fixtures.json"
+    },
+    {
+      "path": "docs/releases/evidence624/deploy-246ac-native-red624.log.gz",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 73871,
+      "sha256": "11169c070745aca71d400954d4114fc9b6edc37eba8a9117caa5c22ab03c8bb2",
+      "raw_bytes": 470756,
+      "raw_sha256": "53c953895ac809dee0339bf1b64bda8eb787781c3ecb29ee74725e11d6be6c0e"
+    },
+    {
+      "path": "docs/releases/evidence624/native-246ac-rca624.log.gz",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 32340,
+      "sha256": "704a03fbc45ec02676e06219bb13b21f83f884e19c1393a038854356a1d81026",
+      "raw_bytes": 265739,
+      "raw_sha256": "4aaab9f49f4ce389de019fe4a33091cb19529794ec9a438ccc2cff8101aef3b1"
+    },
+    {
+      "path": "docs/releases/evidence624/native-246ac-ram-profile624.json.gz",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 25999,
+      "sha256": "275060a8b57ae1f3ca147549107864faa104486a1abb03bea7bfe31d9358bfec",
+      "raw_bytes": 246300,
+      "raw_sha256": "2e2106fa6dd86e8dca4e2d9a8eb16bd1daafaef392ee840ed2ea37cec369eb1c"
+    },
+    {
+      "path": "docs/releases/evidence624/native-246ac-integrity-ownership624.log.gz",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 7185,
+      "sha256": "ac1935d91801cb32dd33ed71998e1b7ac0618b37d335fc68bb74becd6e8105fc",
+      "raw_bytes": 23817,
+      "raw_sha256": "1f92903ecd5d53a056dae6d92bb06560a74891393c8d2130738dd45233d91771"
+    },
+    {
+      "path": "docs/releases/evidence624/candle-scope-neighbor-collection624.log.gz",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 90,
+      "sha256": "f948c693fe52f710b10579075e3cba5ac7dad13aabb9377255232e41f00de1b4",
+      "raw_bytes": 73,
+      "raw_sha256": "af72e29b8a47db2402165c5964cc8c2c6084b68143a605c5af4025728f0c0c66"
+    },
+    {
+      "path": "docs/releases/evidence624/native-246ac-two-red624.json",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 41227,
+      "sha256": "88d1c9b1f7124f65fe5f48d01d58752da4f6aedbfa9cddddbccca3b40c56b42b"
+    },
+    {
+      "path": "docs/releases/evidence624/native-246ac-red-summary624.json",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 501,
+      "sha256": "3788b03cd0142f42c9f9c9ff333db4d9422347e806c85bee38ed1a8fbf57bc2f"
+    },
+    {
+      "path": "docs/releases/evidence624/native-246ac-rca624.zip",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 26801,
+      "sha256": "5630ade3fa610e739fb110142e44e77878b5767fcdd41d592db1ad77bdf0b6c5"
+    },
+    {
+      "path": "docs/releases/evidence624/native-246ac-image-mapping624.json",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 1075,
+      "sha256": "c87f457b8484feb4dba53a6e1fbf998bbe6e639aaa7768771785d57da2e3c543"
+    },
+    {
+      "path": "docs/releases/evidence624/native-246ac-profile-summary624.json",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 15446,
+      "sha256": "e86c4cef7084791ed1c3382ab3713e76ad6026ec24ab2aceacdcd7a067991893"
+    },
+    {
+      "path": "docs/releases/evidence624/native-246ac-rca624-byte-validation.json",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 926,
+      "sha256": "118bf73bcdec928e0b21ed164ac8c42cc734a0cfd42101572e43dda8392591b4"
+    },
+    {
+      "path": "docs/releases/evidence624/native-246ac-integrity-ownership624.zip",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 2494,
+      "sha256": "4af6b9dbf885c55e205be5c7a3f2534d8b5d6730fa4db7894f466f7a27324e8b"
+    },
+    {
+      "path": "docs/releases/evidence624/native-246ac-integrity-ownership624-original.json",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 6522,
+      "sha256": "b8a77eb6ae89c77c37f5898a07f9a7c64c225bd63fd8c9d8a8ec15bf5a306731"
+    },
+    {
+      "path": "docs/releases/evidence624/candle-scope-before624.xml",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 8731,
+      "sha256": "0d11d6a9bf2d4609948aef083e446cf36521d04c9b890b4c2c45e4ce3a3eb16b"
+    },
+    {
+      "path": "docs/releases/evidence624/candle-scope-after624.xml",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 1987,
+      "sha256": "1189f7d909b0465ef9da1b96c91b0a99b83ad53b2bd08fd5378816872c0821b5"
+    },
+    {
+      "path": "docs/releases/evidence624/candle-scope-final624.xml",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 2639,
+      "sha256": "903c3cb8f579346ac6db185964711e43203c707a7db6f7199add53628076e112"
+    },
+    {
+      "path": "docs/releases/evidence624/candle-scope-controlled624-raw.json",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 3359,
+      "sha256": "51a9a1d943c858e0656147f70343eb84a15991f3ca4363291528b102f8f91474"
+    },
+    {
+      "path": "docs/releases/evidence624/candle-scope-controlled624.json",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 3933,
+      "sha256": "5881fbef2e5bc1e08f5da31a9692fbcdfae7a77592930cddfb9ca883f3d7ba91"
+    },
+    {
+      "path": "docs/releases/evidence624/bench_candle_scope624-executed.py",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 3962,
+      "sha256": "5728e139d2d8a30e1a2f47b406bd6d3824f13981bfe35a2232c07d06014466de"
+    },
+    {
+      "path": "docs/releases/evidence624/candle_scope_old624.py",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 7806,
+      "sha256": "0c1ec15564ea4695db67b84eac9e7cbcd48a2d20c7159b467523bee44565346d"
+    },
+    {
+      "path": "docs/releases/evidence624/candle_scope_candidate_measured624.py",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 9928,
+      "sha256": "68b9765b61159299efe032d64ec3fad952efe4ce1d069c10c7b7f2270cd1f0cf"
+    },
+    {
+      "path": "docs/releases/evidence624/candle-scope-runtime-binding624.json",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 563,
+      "sha256": "2916d2d55d7198c45418391d937c9e3746b46b215d55e8499c001b4aaca294b8"
+    },
+    {
+      "path": "docs/releases/evidence624/candle-scope-source-binding624.json",
+      "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
+      "bytes": 3512,
+      "sha256": "3b7481c15e9ae83c176514360ef91f3b990636219d952871e7740e1f0ae0cc3d"
     }
   ]
 }

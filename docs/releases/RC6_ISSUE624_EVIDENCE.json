@@ -3,11 +3,11 @@
   "workstream": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
   "source_issue": 624,
   "product_baseline_sha": "47d949b72f0b3affffecdc6cc90d31ba1347d9b7",
-  "candidate_sha": "246ac975ed527f40db496af47584c9dcdec933f8",
-  "candidate_tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
-  "pr": 630,
-  "runtime_state": "CANONICAL_DEPLOY_IN_PROGRESS_NATIVE_NOT_YET_ACCEPTED",
-  "predeploy_run": 39106366763,
+  "candidate_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
+  "candidate_tree": "df970bae3415333d43c7c6a30442f6962188ae26",
+  "pr": 631,
+  "runtime_state": "246AC_INSTALLED_NOT_ACCEPTED_NEW_7CE_CANDIDATE_NOT_DEPLOYED",
+  "predeploy_run": 39113977768,
   "original_findings_count": 68,
   "original_findings_sha256": "a57b4beca7aae6c2235b87d0a5b992f0be3f24f0d0975207cf48afad7e2fa537",
   "findings": [
@@ -1510,10 +1510,43 @@
       "receipt": "docs/releases/evidence624/predeploy246ac-byte-validation.json",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Any source/tree/image change requires newcertificate. NativeDeploy2+10/405Droplet/restore2+10/independentprofile remain mandatory."
+    },
+    {
+      "id": "624-NATIVE-246AC-STALE-PAIR",
+      "capability": "TWO_COHERENT_FRESH_NATIVE_GENERATIONS",
+      "classification": "NATIVE_DEPLOY_RED_PREVIOUS_RELEASE_CERTIFICATE_STILL_TRUE",
+      "cause": "Deploy39107582047/job117616663151 native2 RED33stale rejections;three distinct FIRST_GENERATION observations but collector resets and endswith onecoherentgeneration. Lasttwo60.275+30+61.076=151.351s>120 beforepublicationoverhead;CPU36.206/35.454. SQL147–303ms/transform66–83ms pass. FullcontractEXIT0,safety/zeroaudits/stability passed;strict10/405DROPLET/restore NOT_EXECUTED.",
+      "fix": "Preserve raw470756B/SHA53c953895ac809dee0339bf1b64bda8eb787781c3ecb29ee74725e11d6be6c0e and actualnative2JSON;no unchangedrerun/SLAextension. CleanupGREEN/errors[]/referencednewimagesretained/stagingremoved,disknet-86016Bnotpositivegain. Runtimeinstalled246acVALIDATION_PENDING/fixforwardrequired.",
+      "status": "RED_PRESERVED_NEW_CAUSAL_FIX_PENDING",
+      "receipt": "docs/releases/evidence624/native-246ac-two-red624.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Actualnewnative2+10/stress/restore+10 mandatory."
+    },
+    {
+      "id": "624-INMARKET-GLOBAL-SCAN-CONTENTION",
+      "capability": "WHOLE_HOST_RESOURCE_AND_AUDIT_OWNERSHIP",
+      "classification": "ACTUAL_ACTIVE_PROCESS_IO_AND_INDEPENDENT_OWNER_VERIFIED",
+      "cause": "RCA39111872898/watch117629558357:18samples/87.4095s,SHADOWnativebackendmappedTRUE/Python3.11/nice10/noquota,HWM153316KiB butHOST5/18below128MiB/min101408768B,swap56444in/28235outpages4096,iowait13.50%. ACTUALPID1738118 rc6_candle_inmarket_evidence.py read1241780224physicalbytes/245823reads,9.66CPU/16.89runqueue in87s; source unconditionalglobalPRAGMAquick_check. This duplicatesalreadyownedfullglobalphysicalaudit and createscollateralload.",
+      "fix": "Targetedinventory39112689167/watch117631990201 provesfullglobaltimerenabledactivewaiting,lastserviceExit0/Friday20:25:37UTC,nextMonday;inmarkettimerenabledactive/serviceACTUALtransient,sourcehashesmatchfrozen. Preservebothoriginalartifactsandrawlogs. Scopeproducerchecks whileleavingfullglobalprobe/units/cadence unchanged. RootFS25/operativeconfig locallyverified;notcorruptimage/fallback. Unmeasuredspoolread-cachehypothesisNOTchanged.",
+      "status": "CONFIRMED_COLLATERAL_IO_CAUSE_CANDIDATE_NATIVE_EFFECT_PENDING",
+      "receipt": "docs/releases/evidence624/native-246ac-profile-summary624.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "No claimthatpassiveprofilealoneisnativeA/B orresourceacceptance. Newgatesmustprovehosteffect."
+    },
+    {
+      "id": "624-CANDLE-SCOPED-INTEGRITY-REGRESSION",
+      "capability": "BOUNDED_CANDLE_PROOF_WITH_FULL_INTEGRITY_OWNER_PRESERVED",
+      "classification": "S2_EXPLICIT_SCOPE_CORRECTION_WITH_BUSINESS_PARITY",
+      "cause": "Ten-minuteinmarketproofscanofunrelatedmultiGBtablesisnotrequiredforitscursor/heartbeat/dirtyqueuecontract. PhysicalglobalDBauditoralreadyexistsandwasactuallyverifiedenabled/active/success. PartialintegritymustnotbeadvertisedasglobalOK.",
+      "fix": "Frozen7ce63ec/tree df970ba scopesphysicalquick_check tobothfixedcandlebtrees/indexes,ROsnapshot/2sdeadline. Schema3partialscope/tablechecks/globalDELEGATED/NOT_ASSERTEDglobalstatus;allbusinessfields/clocks/TTL900 same. RealownedcorruptioncannotGreen;globalprobeSTILLREDonunrelatedcorruption;deadlineinterruptsourceunchanged;failedmainexplicitpartialscopeRED. Before10/4FAIL,after10GREEN,final14GREENincludingpriorownershipguards. Same63MBSQLite/inode/SHA/200000unrelatedrows:alloldbusinessfieldsequal,queryCPUratio.0020instrumented,VMworkupperratio.000886(callbackresolution100,nofalsezerowork). Rawmeasurement/helperpreserved;measuredsuccessASTboundfinalsource afteronlymainfailuremetadataargchange. NewFULLPredeploy39113977768/PR631 pending.",
+      "status": "GREEN_CODE_REGRESSION_NEW_RELEASE_AND_NATIVE_PENDING",
+      "receipt": "docs/releases/evidence624/candle-scope-source-binding624.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Fullglobalcheckhasdifferentpurpose/scopeandremainsrequired;newactualnativeallgatesmustpass."
     }
   ],
-  "findings_count": 105,
-  "predeploy_state": "GREEN_EXACT_IMAGE_AND_INDEPENDENT_BYTES",
+  "findings_count": 108,
+  "predeploy_state": "IN_PROGRESS_NEW_SOURCE",
   "historical_ci_995": {
     "run": 39061986441,
     "job": 117481988873,
@@ -1748,13 +1781,24 @@
     "native_acceptance": false
   },
   "current_candidate": {
-    "sha": "246ac975ed527f40db496af47584c9dcdec933f8",
-    "tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
-    "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
-    "merge_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
-    "pr": 630,
-    "predeploy_run": 39106366763,
-    "status": "FROZEN_CERTIFIED_DEPLOY_IN_PROGRESS"
+    "source_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
+    "source_tree": "df970bae3415333d43c7c6a30442f6962188ae26",
+    "base_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
+    "branch": "work/rc6-624-candle-integrity-scope-20261018",
+    "source_frozen": true,
+    "source_changes_after_freeze_allowed": false,
+    "release_artifact_frozen": false,
+    "status": "FROZEN_NEW_FULL_PREDEPLOY_IN_PROGRESS",
+    "pr": 631,
+    "predeploy_run": 39113977768,
+    "native_promotion": false,
+    "all_worker_bytes_match_246ac_and_d1bd": true,
+    "global_full_auditor_and_units_unchanged": true,
+    "changed_paths": [
+      "scripts/rc6_candle_inmarket_evidence.py",
+      "tests/test_rc6_candle_inmarket_evidence.py",
+      "scripts/rc6_postdeploy_stress.py"
+    ]
   },
   "historical_fe100_certificate": {
     "run": 39065412565,
@@ -1777,11 +1821,11 @@
     "merge_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
     "source_sha": "246ac975ed527f40db496af47584c9dcdec933f8",
     "source_tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
-    "status": "IN_PROGRESS",
-    "native_acceptance": "PENDING",
-    "host_stress_405": "NOT_YET_EXECUTED",
-    "restore": "NOT_YET_EXECUTED",
-    "postprofile": "NOT_YET_EXECUTED"
+    "status": "FAILED",
+    "native_acceptance": "RED_TWO_COHERENT_GENERATIONS_NOT_OBSERVED",
+    "host_stress_405": "NOT_EXECUTED",
+    "restore": "NOT_EXECUTED",
+    "postprofile": "RCA_ONLY_NOT_ACCEPTANCE"
   },
   "limited_image_ab": {
     "run": 39090738532,
@@ -1797,8 +1841,8 @@
   },
   "current_ownership": {
     "paired_comments": [
-      6247110038,
-      6247110202
+      6248016216,
+      6248016333
     ],
     "prior_plan": [
       6245844575,
@@ -1813,36 +1857,24 @@
     "native_promotion": "NOT_AUTHORIZED_BY_EVIDENCE_YET"
   },
   "engineering_candidate": {
-    "source_sha": "246ac975ed527f40db496af47584c9dcdec933f8",
-    "source_tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
-    "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
-    "branch": "work/rc6-624-rss-provenance-20261018",
+    "source_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
+    "source_tree": "df970bae3415333d43c7c6a30442f6962188ae26",
+    "base_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
+    "branch": "work/rc6-624-candle-integrity-scope-20261018",
     "source_frozen": true,
-    "release_artifact_frozen": true,
     "source_changes_after_freeze_allowed": false,
-    "status": "PREDEPLOY_GREEN_DEPLOY_IN_PROGRESS_RUNTIME_NOT_ACCEPTED",
-    "controlled_abi_run": 39103911869,
-    "controlled_abi_source": "4bf29e0755880f5d203e2a3d0fd0092b10793404",
+    "release_artifact_frozen": false,
+    "status": "FROZEN_NEW_FULL_PREDEPLOY_IN_PROGRESS",
+    "pr": 631,
+    "predeploy_run": 39113977768,
     "native_promotion": false,
-    "native_gate120s_128MiB": "UNCHANGED",
-    "restore_readiness": "TWO_CURRENT_GENERATIONS_BEFORE_UNCHANGED_STRICT_TEN",
-    "worker_bytes_match_abi_green_d1bd": true,
-    "harness_only_delta": [
-      "scripts/rc6_postdeploy_stress_host.py",
-      "tests/test_rc6_postdeploy_stress_contract.py"
-    ],
-    "predeploy_run": 39106366763,
-    "actual_root_cases": 4089,
-    "root_failures": 0,
-    "image_built": false,
-    "test_only_delta": [
-      "tests/test_rc6_shadow_full_catalog.py"
-    ],
-    "worker_and_native_harness_bytes_match_d196": true,
-    "artifact": 12129191130,
-    "artifact_zip_sha256": "b83c4456d957ca5c37e3ba618ec885208c571fdc46cc9db70575413e722abf08",
-    "image_id": "sha256:dbb0573f5f8abce78a6939319eaf3c502bda9b8e5f7bfcf2441896cd75315835",
-    "promotion_workflow_active": true
+    "all_worker_bytes_match_246ac_and_d1bd": true,
+    "global_full_auditor_and_units_unchanged": true,
+    "changed_paths": [
+      "scripts/rc6_candle_inmarket_evidence.py",
+      "tests/test_rc6_candle_inmarket_evidence.py",
+      "scripts/rc6_postdeploy_stress.py"
+    ]
   },
   "historical_engineering_candidates": [
     {
@@ -1898,6 +1930,38 @@
       "actual_root_cases": 4087,
       "root_failures": 1,
       "image_built": false
+    },
+    {
+      "source_sha": "246ac975ed527f40db496af47584c9dcdec933f8",
+      "source_tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
+      "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
+      "branch": "work/rc6-624-rss-provenance-20261018",
+      "source_frozen": true,
+      "release_artifact_frozen": true,
+      "source_changes_after_freeze_allowed": false,
+      "status": "RED_NATIVE_39107582047_STALE_PAIR_AND_COLLATERAL_PRESSURE",
+      "controlled_abi_run": 39103911869,
+      "controlled_abi_source": "4bf29e0755880f5d203e2a3d0fd0092b10793404",
+      "native_promotion": false,
+      "native_gate120s_128MiB": "UNCHANGED",
+      "restore_readiness": "TWO_CURRENT_GENERATIONS_BEFORE_UNCHANGED_STRICT_TEN",
+      "worker_bytes_match_abi_green_d1bd": true,
+      "harness_only_delta": [
+        "scripts/rc6_postdeploy_stress_host.py",
+        "tests/test_rc6_postdeploy_stress_contract.py"
+      ],
+      "predeploy_run": 39106366763,
+      "actual_root_cases": 4089,
+      "root_failures": 0,
+      "image_built": false,
+      "test_only_delta": [
+        "tests/test_rc6_shadow_full_catalog.py"
+      ],
+      "worker_and_native_harness_bytes_match_d196": true,
+      "artifact": 12129191130,
+      "artifact_zip_sha256": "b83c4456d957ca5c37e3ba618ec885208c571fdc46cc9db70575413e722abf08",
+      "image_id": "sha256:dbb0573f5f8abce78a6939319eaf3c502bda9b8e5f7bfcf2441896cd75315835",
+      "promotion_workflow_active": false
     }
   ]
 }
