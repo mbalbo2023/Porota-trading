@@ -138,10 +138,14 @@ def streamed_digest(payload):
     return hasher.hexdigest()
 
 
-def canonical_ascii_chunks(payload):
+def canonical_ascii_chunks(payload, *, batch_records=False):
     encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
                                default=str, allow_nan=False)
-    yield from _canonical_chunks(encoder, payload)
+    yield from _canonical_chunks(encoder, payload, batch_records=batch_records)
+
+
+def checkpoint_ascii_chunks(payload):
+    yield from canonical_ascii_chunks(payload, batch_records=True)
 
 
 def checkpoint_metrics(payload):
@@ -157,7 +161,7 @@ def checkpoint_metrics(payload):
                                separators=(",", ":"), default=str, allow_nan=False)
     body = {key: value for key, value in payload.items() if key != "checkpoint_sha256"}
     hasher, body_bytes = hashlib.sha256(), 0
-    for fragment in _canonical_fragments(encoder, body):
+    for fragment in _canonical_fragments(encoder, body, batch_records=True):
         # Even a large scalar stays bounded while converting to UTF-8.
         for offset in range(0, len(fragment), 16384):
             block = fragment[offset:offset + 16384].encode("utf-8")
@@ -240,7 +244,8 @@ _SHARED_SNAPSHOT_COMPRESSED_LIMIT = 4 * 1024**2
 _SHARED_SNAPSHOT_RAW_LIMIT = 32 * 1024**2
 
 
-def _canonical_fragments(encoder, payload, *, immutable_shared_rows=(), stream_bytes=False):
+def _canonical_fragments(encoder, payload, *, immutable_shared_rows=(), stream_bytes=False,
+                         batch_records=False):
     """Encode actual values; memoize only explicitly owned immutable row lists.
 
     The private worker supplies shared preopen lists which cannot change during
@@ -376,13 +381,26 @@ def _canonical_fragments(encoder, payload, *, immutable_shared_rows=(), stream_b
         try:
             if isinstance(value, dict):
                 yield "{"
-                for index, key in enumerate(sorted(value)):
-                    if index:
-                        yield ","
-                    key_object = encoder.encode({key: None})
-                    yield key_object[1:-len(":null}")]
-                    yield ":"
-                    yield from fragments(value[key])
+                keys = sorted(value)
+                width = 16 if batch_records else 1
+                for offset in range(0, len(keys), width):
+                    group_keys = keys[offset:offset+width]
+                    group = {key: value[key] for key in group_keys} if batch_records else None
+                    if batch_records and _small_json_tree(group):
+                        if offset:
+                            yield ','
+                        # The existing native predicate bounds actual records
+                        # to64KiB/4096nodes. Encode their current values once;
+                        # no cached content or value survives this iteration.
+                        yield encoder.encode(group)[1:-1]
+                    else:
+                        for index, key in enumerate(group_keys, offset):
+                            if index:
+                                yield ","
+                            key_object = encoder.encode({key: None})
+                            yield key_object[1:-len(":null}")]
+                            yield ":"
+                            yield from fragments(value[key])
                 yield "}"
             else:
                 yield "["
@@ -396,13 +414,15 @@ def _canonical_fragments(encoder, payload, *, immutable_shared_rows=(), stream_b
     yield from fragments(payload)
 
 
-def _canonical_chunks(encoder, payload, block_bytes=65536, *, immutable_shared_rows=()):
+def _canonical_chunks(encoder, payload, block_bytes=65536, *, immutable_shared_rows=(),
+                      batch_records=False):
     """Bounded byte blocks preserve the exact canonical JSON token stream."""
     # These canonical encoders escape non-ASCII characters, so character and
     # UTF-8 byte lengths agree. Join small tokens in C before encoding them.
     pending, pending_size = [], 0
     fragments = _canonical_fragments(encoder, payload,
-        immutable_shared_rows=immutable_shared_rows, stream_bytes=not bool(immutable_shared_rows))
+        immutable_shared_rows=immutable_shared_rows, stream_bytes=not bool(immutable_shared_rows),
+        batch_records=batch_records)
     for fragment in fragments:
         if type(fragment) is bytes:
             if pending:
@@ -572,7 +592,7 @@ class EvidenceFiles:
             tmp = Path(stream.name)
             try:
                 try:
-                    write_indexed(stream, payload, canonical_ascii_chunks,
+                    write_indexed(stream, payload, checkpoint_ascii_chunks,
                                   self.payload_limit-len(PREFIX)-TAIL_BYTES)
                 except CheckpointPayloadLimit as exc:
                     raise EvidencePayloadLimit('checkpoint.json.gz',

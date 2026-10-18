@@ -138,7 +138,9 @@ def test_four_cuts_preserve_full_audit_latest_checkpoint_and_session(tmp_path):
     for offset in (0, 30, 86400, 86430):
         ordinary, hot = old.tick(PRE+timedelta(seconds=offset)), new.tick(PRE+timedelta(seconds=offset))
         assert type(ordinary['engines']['SCALPING']['telemetry'][0]) is dict
-        assert type(hot['engines']['SCALPING']['telemetry'][0]) is dict
+        # Only the owned private projection is consumed after its last read.
+        # The complete audit and selected dashboard rows are checked below.
+        assert all(not plan['telemetry'] for plan in hot['engines'].values())
         with old.files as a, new.files as b:
             before, after = a.read('latest.json.gz'), b.read('latest.json.gz')
             assert before == after
@@ -284,3 +286,98 @@ def test_indexed_checkpoint_preserves_bounded_failure_context_and_old_target(tmp
         assert failure.value.evidence_file == 'checkpoint.json.gz'
         assert failure.value.limit_bytes == 100 < failure.value.measured_bytes
         assert files.path('checkpoint.json.gz').read_bytes() == original
+
+
+def test_batched_checkpoint_uses_actual_bounded_records_and_exact_utf8(monkeypatch):
+    from rc6_shadow_runtime.persistence import checkpoint_metrics, checkpoint_ascii_chunks
+    payload = {'rows': {f'{i:064x}': {'identity': ['é😀', 'ACCIONES', 'BYMA', 'USD', '24HS'],
+                 'value': -0.0, 'amount': '1.230', 'observed_at': '2026-10-05T13:31:00+00:00',
+                 'stages': {'CATALOG_READY': True, 'TRADEABLE': False}, 'notes': ['x', None]}
+                 for i in range(1000)}}
+    payload['decimal_fallback'] = Decimal('1.230')
+    original = json.JSONEncoder.encode
+    sizes = []
+    def bounded(self, value):
+        result = original(self, value)
+        sizes.append(len(result.encode('utf8')))
+        assert sizes[-1] <= 65536
+        return result
+    expected = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(',', ':'),
+                          default=str, allow_nan=False).encode('utf8')
+    with monkeypatch.context() as patch:
+        patch.setattr(json.JSONEncoder, 'encode', bounded)
+        measured = checkpoint_metrics(payload)
+        encoded = b''.join(checkpoint_ascii_chunks(payload))
+    assert measured['sha256'] == hashlib.sha256(expected).hexdigest()
+    assert measured['canonical_bytes'] == len(expected)
+    assert encoded == json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str).encode()
+    assert len(sizes) < 300  # bounded group dispatch, not one key/value call per row
+    payload['rows']['0'*64]['amount'] = Decimal('1.231')
+    assert checkpoint_metrics(payload)['sha256'] != measured['sha256']
+    payload['rows']['0'*64]['stages']['TRADEABLE'] = float('nan')
+    with pytest.raises(ValueError):
+        checkpoint_metrics(payload)
+    payload['rows']['0'*64]['stages']['TRADEABLE'] = payload
+    with pytest.raises(ValueError, match='Circular'):
+        checkpoint_metrics(payload)
+
+
+def test_public_and_consumed_private_cuts_match_open_warmup_and_adverse_books(tmp_path, monkeypatch):
+    from tests.test_rc6_shadow_runtime_wiring import PRE, OPEN, make_store, quote, capacity_stub
+    from rc6_shadow_runtime.worker import ShadowRuntime
+    from rc6_dynamic_universe import live
+    from rc6_dynamic_universe.common import identity
+    store, assets = make_store(tmp_path, count=25)
+    from bw_daily_risk import init_schema
+    init_schema(store)
+    args = {'source_roots': [], 'policies': {'SCALPING': {'warmup_samples': 3}}}
+    public = ShadowRuntime(store.path, evidence_root=tmp_path/'public-open', **args)
+    private = ShadowRuntime(store.path, evidence_root=tmp_path/'private-open', spool_audit=True, **args)
+    target = assets[-1]
+    states = []
+    def compare(at):
+        before, after = public.tick(at), private.tick(at)
+        assert before['operational_funnel'] == after['operational_funnel']
+        with public.files as a, private.files as b:
+            x, y = a.read('latest.json.gz'), b.read('latest.json.gz')
+            assert x == y
+            assert gzip.decompress(a.path(x['computed_report']['file']).read_bytes()) == gzip.decompress(b.path(y['computed_report']['file']).read_bytes())
+            assert gzip.decompress(a.path('checkpoint.json.gz').read_bytes()) == gzip.decompress(b.path('checkpoint.json.gz').read_bytes())
+        row = next(r for r in before['engines']['SCALPING']['telemetry'] if r['identity'][0] == target['ticker'])
+        states.append(row['state'])
+        assert all(not p['telemetry'] for p in after['engines'].values())
+        assert after['real_orders_sent'] == 0 and after['real_routes'] == 'NOT_CALLED'
+        return before, row
+    compare(PRE)
+    # Synthetic verified-capacity fixture only; never a real OPEN claim.
+    monkeypatch.setattr(live, 'safe_capacity', lambda report, **kw: capacity_stub(OPEN, **kw))
+    first = OPEN+timedelta(minutes=1)
+    store.add_quote(quote(target, first, ask='101'))
+    compare(first)
+    warm = first+timedelta(minutes=5)
+    store.add_quote(quote(target, warm))
+    _, row = compare(warm)
+    assert row['state'] == 'WARM'
+    for minute in range(1, 4):
+        at = warm+timedelta(minutes=minute)
+        store.add_quote(quote(target, at))
+        with store.connect() as c:
+            c.execute('INSERT INTO ppi_intraday_points VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                (*identity(target), at.isoformat(), '100', '10', at.isoformat(), at.isoformat(), 'PPI_MARKETDATA_INTRADAY'))
+            c.execute('INSERT OR REPLACE INTO ppi_intraday_contract_state VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (*identity(target), 'CONFIRMED_INTERVAL_VOLUME', 2, 5, 0, 1, at.isoformat(), at.isoformat(), 'fixture'))
+        _, row = compare(at)
+    assert row['state'] == 'HOT' and row['pipeline']['SIGNAL_READY_SHADOW']
+    compare(at+timedelta(seconds=30))  # same provider clock is not a new sample
+    adverse = at+timedelta(minutes=1)
+    store.add_quote(quote(target, adverse, bid='102', ask='101'))
+    with store.connect() as c:
+        c.execute('INSERT INTO paper_daily_risk VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+            (adverse.date().isoformat(), 'ARS', '100000', '1', '1000', '99000', '-1000',
+             'HARD_STOP', adverse.isoformat(), adverse.isoformat(), 'SYNTHETIC_FIXTURE'))
+    _, row = compare(adverse)
+    assert row['risk_shadow']['hard_stop_latched'] is True
+    assert {'DISCOVERY', 'WARM', 'HOT'} <= set(states)
+    with store.connect() as c:
+        assert c.execute('SELECT count(*) FROM paper_positions').fetchone()[0] == 0
+        assert c.execute('SELECT count(*) FROM paper_decisions').fetchone()[0] == 0

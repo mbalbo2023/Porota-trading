@@ -22,7 +22,8 @@ from rc6_dynamic_universe.common import digest, stamp
 from rc6_dynamic_universe.live import run_shadow
 from rc6_dynamic_universe.runtime import read_runtime
 from rc6_dynamic_universe.sources import source_observations
-from .persistence import EvidenceFiles, EvidencePayloadLimit, canonical_ascii_chunks
+from .persistence import (EvidenceFiles, EvidencePayloadLimit, canonical_ascii_chunks,
+                          checkpoint_ascii_chunks)
 from .audit_spool import AuditSpool
 from .checkpoint_parts import CheckpointParts
 from .timing import POLL_SECONDS
@@ -489,7 +490,7 @@ class ShadowRuntime:
         at = stamp(as_of)
         with self.files as files, ExitStack() as stack:
             spool = stack.enter_context(AuditSpool(files)) if self.spool_audit else None
-            parts = stack.enter_context(CheckpointParts(files, canonical_ascii_chunks)) if spool else None
+            parts = stack.enter_context(CheckpointParts(files, checkpoint_ascii_chunks)) if spool else None
             if spool:
                 spool.external_bytes = parts.temporary_bytes
             engine_views = family_view = None
@@ -665,7 +666,7 @@ class ShadowRuntime:
                 self.database, as_of=at, planner_report=hot,
                 entry_signal_report=report["entry_signal_lab"],
                 exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"),
-                private_runtime=True)
+                private_runtime=True, consume_planner=bool(spool))
             measured("operational_funnel")
             # Never call a signal, economics or risk result as an execution
             # callback. These reports cannot reach the factual broker.
