@@ -1385,9 +1385,112 @@
       "receipt": "docs/releases/evidence624/legacy-progressive624-summary-red.json",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Do not relabel the failed auxiliary or conflate whole-series CPU admission with a per-cut native deadline."
+    },
+    {
+      "id": "624-99EA-EXACT-ABI-RED",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_EXACT_ABI_REJECTION",
+      "cause": "Run39101367238/job117598142929 Python3.11.16:238focal0FAIL/ERROR/SKIP,16fullaudits complete and equal. Fresh344360→197816KiB/CPU1.0314217;legacy343868→198224/CPU1.0789665. Absolute196608KiB and legacyCPU1.05 reject despite ratio .574/.576. All4containersExit0/OOMfalse/constraints independently verified.",
+      "fix": "No productPR/Predeploy/Deploy from99ea. Retire experiment3adbd2de7aef8a7559e6e665466d4f0d2f4f218d; retirement39101991736SUCCESS/watchSKIPPED. New isolated source consumes completed private projections and reduces checkpoint dispatch, then replaces only un-serialized projection headers with readonly fixed-schema cells. No threshold change.",
+      "status": "RED_EXPERIMENT",
+      "runtime_state": "NOT_DEPLOYED",
+      "source_sha": "99ea4aa009d105de70c4b2841488084bf34b8e7b",
+      "source_tree": "2e2d2af172fc4c2f3fa5ccfa7e761ffee311e4f4",
+      "artifact": 12126453879,
+      "zip_sha256": "536db0fdaa67b42aae54c1ffac04e93aa154594cfdb4837a3f981e7a2bcf6939",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Never substitute localPython3.12 results or a good first cut for exactABI steady/session-boundary admission."
+    },
+    {
+      "id": "624-BATCH-CONSUME624-LOCAL-ADMISSION",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_LOCAL_EQUIVALENCE_AND_RESOURCE_ADMISSION",
+      "cause": "Both fresh4 and legacy4 paired controls use same physical DB/inode/hash/ABI/clocks.16actual full>100MiB audits verified before pruning, all canonical/funnel/session/checkpoint/latest values equal.",
+      "fix": "Bounded actual checkpoint records in16-row groups; release completed owned inputs. Readonly slot views only for private non-serialized15/6/7field projections, exact absence/None/type semantics, no data cache/originalrow retention. Full audit and selected dashboard rows remain complete ordinary data.",
+      "status": "GREEN_LOCAL_EQUIVALENCE_AND_ADMISSION",
+      "runtime_state": "NOT_DEPLOYED",
+      "source_reference": "9e2afae6e98c9cdce2ac12179e2607a2f2121410",
+      "controls": [
+        {
+          "mode": "fresh",
+          "peak_rss_kib": 180512,
+          "rss_ratio": 0.5758399367096684,
+          "cpu_ratio": 0.979080631163485
+        },
+        {
+          "mode": "legacy",
+          "peak_rss_kib": 180540,
+          "rss_ratio": 0.5755840644766375,
+          "cpu_ratio": 1.0189667297614216
+        }
+      ],
+      "source_scope": "For final d1bd, all runtimePython bytes independently match measured source; subsequent changes only tests/workflow, separately tested. New exactABI still required.",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "No source promotion from theoretical object sizes or local interpreter results alone."
+    },
+    {
+      "id": "624-PRIVATE-VIEWS624-LOCAL-ADMISSION",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_LOCAL_EQUIVALENCE_AND_RESOURCE_ADMISSION",
+      "cause": "Both fresh4 and legacy4 paired controls use same physical DB/inode/hash/ABI/clocks.16actual full>100MiB audits verified before pruning, all canonical/funnel/session/checkpoint/latest values equal.",
+      "fix": "Bounded actual checkpoint records in16-row groups; release completed owned inputs. Readonly slot views only for private non-serialized15/6/7field projections, exact absence/None/type semantics, no data cache/originalrow retention. Full audit and selected dashboard rows remain complete ordinary data.",
+      "status": "GREEN_LOCAL_EQUIVALENCE_AND_ADMISSION",
+      "runtime_state": "NOT_DEPLOYED",
+      "source_reference": "d1bd3127d051f1a01fe57f742fbded1a4f216a48",
+      "controls": [
+        {
+          "mode": "fresh",
+          "peak_rss_kib": 173628,
+          "rss_ratio": 0.5529061102831595,
+          "cpu_ratio": 1.0006692622945261
+        },
+        {
+          "mode": "legacy",
+          "peak_rss_kib": 172932,
+          "rss_ratio": 0.5515820362337331,
+          "cpu_ratio": 0.99896451933022
+        }
+      ],
+      "source_scope": "For final d1bd, all runtimePython bytes independently match measured source; subsequent changes only tests/workflow, separately tested. New exactABI still required.",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "No source promotion from theoretical object sizes or local interpreter results alone."
+    },
+    {
+      "id": "624-RESTORE-HEARTBEAT-CURRENT-READINESS",
+      "capability": "RC6_RESTORATION_AND_SUSTAINED_ACCEPTANCE",
+      "classification": "PROSPECTIVE_PROTOCOL_DEFECT_REPRODUCED_BEFORE_NATIVE_EXECUTION",
+      "cause": "Host restoration verifies advanced heartbeat/HTTP and exact same container IDs, while committed SHADOW CURRENT can still be pre-stop. Starting strict10 immediately deterministically rejects a cut aged>120s; for shorter pauses it can count an old pre-resume cut. Unit reproduces staleCURRENT with healthy resumed observer, then two advancing current generations and unchanged strict10. This has NOT happened inDroplet because stress/restore have not executed.",
+      "fix": "Separate existing read-only two-generation readiness gate after restoration, before unchanged strict10. Same180scollector/195scontainer limit as initial promotion. Preserve rejected observations; no clock, freshness120s, RAM128MiB/disk2GiB, poll30 or strict10 waiver. ActualJSON captured inpostdeployartifact. Before2cases1FAILmissingordergate;after38neighborcases0FAIL/ERROR/SKIP.",
+      "status": "GREEN_CODE_AND_REGRESSION_NATIVE_PENDING",
+      "runtime_state": "NOT_DEPLOYED",
+      "receipt": "docs/releases/evidence624/restore-readiness-after-guards624.xml",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Only native restored+readiness2+strict10 proves actual restoration. Never label this code regression as a successful native restore."
+    },
+    {
+      "id": "624-ABI-D1BD-GREEN",
+      "capability": "BOUNDED_FULL_AUDIT_EQUIVALENCE",
+      "classification": "MEASURED_SAME_FROZEN_ABI",
+      "cause": "Prior99ea rejected by absoluteRSS and legacyCPU. Owned fixed-schema input views avoid dict headers before peak; bounded actual-value checkpoint batching avoids repeated Python dispatch.",
+      "fix": "d1bd controlled run39103911869/job117605623713:248actualfocal0FAIL/ERROR/SKIP;16fullaudits independently streamed/hashed before pruning; fresh193824KiB/RSSratio.5601007941/CPUratio.9992490084;legacy190784/.5575479859/1.0270812142. All <=192MiB AND.60RSS,CPU<=1.05; allfour512MiB/.75CPU/networknone/readonly/UID1000 containersExit0/OOMfalse.",
+      "status": "GREEN_EXPERIMENT_NOT_RELEASE_IMAGE_OR_NATIVE_ACCEPTANCE",
+      "receipt": "docs/releases/evidence624/private-views-abi-green624-byte-validation.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "New release image still requires full Predeploy and all native gates."
+    },
+    {
+      "id": "624-HOST-STRESS-TMPDIR-DISK",
+      "capability": "HOST_405_MINUTE_ISOLATED_STRESS",
+      "classification": "PROSPECTIVE_HARNESS_DEFECT_BEFORE_HOST_EXECUTION",
+      "cause": "Host sandbox /tmp is512MiBtmpfs; legitimate auditspool disk admission requires2GiB+576MiB. Predeploy already uses reservedbounddisk.",
+      "fix": "TMPDIR=/work in existingfresh0700UID1000ownedboundworkspace; regression capturesactualDockerargs and executes freshPython tempfile resolution. Before1FAIL;after3actual0FAIL/ERROR/SKIP. /tmpcap512MiB and allcgroup/floors/groups/restoreunchanged.",
+      "status": "GREEN_CODE_AND_REGRESSION_NATIVE_PENDING",
+      "receipt": "docs/releases/evidence624/stress-workspace-after624.xml",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Only full exact Predeploy and native405/restore receipts prove execution."
     }
   ],
-  "findings_count": 97,
+  "findings_count": 103,
   "predeploy_state": "GREEN_BYTES_VALIDATED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -1731,8 +1834,8 @@
   },
   "current_ownership": {
     "paired_comments": [
-      6246189442,
-      6246189608
+      6246688256,
+      6246688481
     ],
     "prior_plan": [
       6245844575,
@@ -1747,17 +1850,55 @@
     "native_promotion": "NOT_AUTHORIZED_BY_EVIDENCE_YET"
   },
   "engineering_candidate": {
-    "source_sha": "99ea4aa009d105de70c4b2841488084bf34b8e7b",
-    "source_tree": "2e2d2af172fc4c2f3fa5ccfa7e761ffee311e4f4",
+    "source_sha": "d196ffc5ceb04b9cb35832409cd864ad858464a5",
+    "source_tree": "88fffbbffdca81cc166072cf6c61b3c17d453a6e",
     "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
-    "branch": "work/rc6-624-progressive-audit-spool-20261018",
+    "branch": "work/rc6-624-stress-workspace-20261018",
+    "source_frozen": true,
+    "release_artifact_frozen": false,
     "source_changes_after_freeze_allowed": false,
-    "status": "LOCAL_ADMISSION_GREEN_EXACT_ABI_PENDING",
-    "controlled_abi_run": 39101367238,
-    "controlled_abi_source": "96e5805784db06884af98900f04a955346b3d214",
+    "status": "FROZEN_REQUIRES_NEW_FULL_PREDEPLOY",
+    "controlled_abi_run": 39103911869,
+    "controlled_abi_source": "4bf29e0755880f5d203e2a3d0fd0092b10793404",
     "native_promotion": false,
     "native_gate120s_128MiB": "UNCHANGED",
-    "source_frozen": true,
-    "release_artifact_frozen": false
-  }
+    "restore_readiness": "TWO_CURRENT_GENERATIONS_BEFORE_UNCHANGED_STRICT_TEN",
+    "worker_bytes_match_abi_green_d1bd": true,
+    "harness_only_delta": [
+      "scripts/rc6_postdeploy_stress_host.py",
+      "tests/test_rc6_postdeploy_stress_contract.py"
+    ]
+  },
+  "historical_engineering_candidates": [
+    {
+      "source_sha": "99ea4aa009d105de70c4b2841488084bf34b8e7b",
+      "source_tree": "2e2d2af172fc4c2f3fa5ccfa7e761ffee311e4f4",
+      "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
+      "branch": "work/rc6-624-progressive-audit-spool-20261018",
+      "source_changes_after_freeze_allowed": false,
+      "status": "RED_EXACT_ABI_39101367238",
+      "controlled_abi_run": 39101367238,
+      "controlled_abi_source": "96e5805784db06884af98900f04a955346b3d214",
+      "native_promotion": false,
+      "native_gate120s_128MiB": "UNCHANGED",
+      "source_frozen": true,
+      "release_artifact_frozen": false,
+      "retired_diagnostic": "3adbd2de7aef8a7559e6e665466d4f0d2f4f218d"
+    },
+    {
+      "source_sha": "d1bd3127d051f1a01fe57f742fbded1a4f216a48",
+      "source_tree": "8834b276e806405fb49f55ea6862e639422ce21f",
+      "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
+      "branch": "work/rc6-624-progressive-audit-abi-fix-20261018",
+      "source_frozen": true,
+      "release_artifact_frozen": false,
+      "source_changes_after_freeze_allowed": false,
+      "status": "GREEN_EXACT_ABI_OVERLAY_NOT_RELEASE_CERTIFICATE",
+      "controlled_abi_run": 39103911869,
+      "controlled_abi_source": "4bf29e0755880f5d203e2a3d0fd0092b10793404",
+      "native_promotion": false,
+      "native_gate120s_128MiB": "UNCHANGED",
+      "restore_readiness": "TWO_CURRENT_GENERATIONS_BEFORE_UNCHANGED_STRICT_TEN"
+    }
+  ]
 }

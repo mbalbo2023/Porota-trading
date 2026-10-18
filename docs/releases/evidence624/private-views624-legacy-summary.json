@@ -1,0 +1,56 @@
+{
+  "schema": "rc6.progressive624.paired-admission.v1",
+  "status": "GREEN_EQUIVALENCE_AND_ADMISSION",
+  "native_host_acceptance": false,
+  "local_docker_limit_certificate": false,
+  "all_eight_full_audits_independently_verified_before_pruning": true,
+  "baseline_peak_rss_kib": 313520,
+  "candidate_peak_rss_kib": 172932,
+  "rss_ratio": 0.5515820362337331,
+  "total_cpu_ratio": 0.99896451933022,
+  "predeclared_limits": {
+    "rss_ratio_max": 0.6,
+    "absolute_peak_rss_kib_max": 196608,
+    "total_cpu_ratio_max": 1.05
+  },
+  "database_sha256": "1dae96bc8848bb01dfdcc683f96c1552ca23d0f94d91ed74cb47b992c2f3acde",
+  "database_inode": 1580198,
+  "rows": [
+    {
+      "source_as_of": "2026-10-06T13:21:00+00:00",
+      "raw_bytes": 265449928,
+      "sha256": "0b2d9c329bd3564017e1ceb87e6d2b244c3d008838733bee0ab92e1f8f8497cd",
+      "baseline_cpu": 9.596643084,
+      "candidate_cpu": 9.725823157,
+      "baseline_peak_rss_kib": 295400,
+      "candidate_peak_rss_kib": 152364
+    },
+    {
+      "source_as_of": "2026-10-06T13:21:30+00:00",
+      "raw_bytes": 265449928,
+      "sha256": "870b37d5b855160d9ede0dc040247974d7704e720281566e8727c1bc5fc1a4a2",
+      "baseline_cpu": 9.359310744,
+      "candidate_cpu": 9.027211270999999,
+      "baseline_peak_rss_kib": 296036,
+      "candidate_peak_rss_kib": 152364
+    },
+    {
+      "source_as_of": "2026-10-07T13:21:00+00:00",
+      "raw_bytes": 265449930,
+      "sha256": "77f4bcd8fff91c23de1fc03934f3687dc3e65add7fbcf34a2acee884ee756089",
+      "baseline_cpu": 10.970315406999998,
+      "candidate_cpu": 10.580762769,
+      "baseline_peak_rss_kib": 313520,
+      "candidate_peak_rss_kib": 172932
+    },
+    {
+      "source_as_of": "2026-10-07T13:21:30+00:00",
+      "raw_bytes": 265449928,
+      "sha256": "ec8b4e250b9c33c8dfb8ed9ad72dec8874cbb9fd03a77484a6c895f728d01b5e",
+      "baseline_cpu": 8.871926784000003,
+      "candidate_cpu": 9.424224039999995,
+      "baseline_peak_rss_kib": 313520,
+      "candidate_peak_rss_kib": 172932
+    }
+  ]
+}

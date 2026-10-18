@@ -1,0 +1,115 @@
+{
+  "status": "GREEN_EXACT_ABI_BYTE_VALIDATION",
+  "artifact": 12127856400,
+  "zip_bytes": 62017,
+  "zip_sha256": "d28b0a3c12b7408760b1e9fc4f904881f48bc8195b3d76dc732d42680bfb9e51",
+  "source_sha": "d1bd3127d051f1a01fe57f742fbded1a4f216a48",
+  "source_tree": "8834b276e806405fb49f55ea6862e639422ce21f",
+  "actual_focal_cases": 248,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "all_four_containers_constraints_verified": true,
+  "exit_zero_oom_false": true,
+  "all_sixteen_actual_audits_verified_before_pruning": true,
+  "native_host_acceptance": false,
+  "release_image_certificate": false,
+  "comparisons": [
+    {
+      "mode": "fresh",
+      "same_controls": true,
+      "all_full_report_hashes_equal": true,
+      "baseline_peak_rss_kib": 346052,
+      "candidate_peak_rss_kib": 193824,
+      "rss_ratio": 0.5601007941003087,
+      "cpu_ratio": 0.9992490083619474,
+      "rows": [
+        {
+          "as_of": "2026-10-05T13:20:00+00:00",
+          "raw_bytes": 265449852,
+          "sha256": "2d8215daeabc99b41e01929ca9601bac2a5f5b4ef716f48833f1d9241ae226af",
+          "baseline_cpu": 11.55402983,
+          "candidate_cpu": 11.356113854,
+          "baseline_peak_rss_kib": 283560,
+          "candidate_peak_rss_kib": 176520
+        },
+        {
+          "as_of": "2026-10-05T13:20:30+00:00",
+          "raw_bytes": 265449890,
+          "sha256": "891453acf0cf16af3bd757cc5aa197382164fa3d8923bb428b1ee0900c8e3194",
+          "baseline_cpu": 11.230108844,
+          "candidate_cpu": 11.462040685,
+          "baseline_peak_rss_kib": 330608,
+          "candidate_peak_rss_kib": 176520
+        },
+        {
+          "as_of": "2026-10-06T13:20:00+00:00",
+          "raw_bytes": 265449930,
+          "sha256": "82134bcbb43d8e6fd74f87683af58dc9c0e58389a162d80d37ad4a82ab53f5e4",
+          "baseline_cpu": 13.099772395000002,
+          "candidate_cpu": 12.79671359,
+          "baseline_peak_rss_kib": 346052,
+          "candidate_peak_rss_kib": 193152
+        },
+        {
+          "as_of": "2026-10-06T13:20:30+00:00",
+          "raw_bytes": 265449928,
+          "sha256": "fdf2094680ea2e157c085a43341bea6868b1f350827f2db2cd3de59954558ae9",
+          "baseline_cpu": 11.270748458,
+          "candidate_cpu": 11.504378643000003,
+          "baseline_peak_rss_kib": 346052,
+          "candidate_peak_rss_kib": 193824
+        }
+      ],
+      "status": "GREEN_EXPERIMENT"
+    },
+    {
+      "mode": "legacy",
+      "same_controls": true,
+      "all_full_report_hashes_equal": true,
+      "baseline_peak_rss_kib": 342184,
+      "candidate_peak_rss_kib": 190784,
+      "rss_ratio": 0.5575479858789423,
+      "cpu_ratio": 1.027081214154778,
+      "rows": [
+        {
+          "as_of": "2026-10-06T13:21:00+00:00",
+          "raw_bytes": 265449928,
+          "sha256": "87deb68eb33f0df02073406e844205608654fce3353d444e7a746e78d7657567",
+          "baseline_cpu": 11.384350505,
+          "candidate_cpu": 12.506348793999999,
+          "baseline_peak_rss_kib": 326108,
+          "candidate_peak_rss_kib": 172500
+        },
+        {
+          "as_of": "2026-10-06T13:21:30+00:00",
+          "raw_bytes": 265449928,
+          "sha256": "7a9b63265cde3f6cc8faa47f25264f220fd70170c5c328e313111ef26e683dc3",
+          "baseline_cpu": 11.322367818,
+          "candidate_cpu": 11.590397757000002,
+          "baseline_peak_rss_kib": 326516,
+          "candidate_peak_rss_kib": 174392
+        },
+        {
+          "as_of": "2026-10-07T13:21:00+00:00",
+          "raw_bytes": 265449930,
+          "sha256": "12b7ae58b3c6a454b351eb0d33bec1eafd089c4e6ae0e682e8940e03adb3471d",
+          "baseline_cpu": 13.306584513,
+          "candidate_cpu": 13.020977317000003,
+          "baseline_peak_rss_kib": 342184,
+          "candidate_peak_rss_kib": 190784
+        },
+        {
+          "as_of": "2026-10-07T13:21:30+00:00",
+          "raw_bytes": 265449928,
+          "sha256": "0bba5fb07692b3b0a5641fec889630e85d23dcfb8c32140cadc5ba66a483535c",
+          "baseline_cpu": 11.394892663,
+          "candidate_cpu": 11.574343125999995,
+          "baseline_peak_rss_kib": 342184,
+          "candidate_peak_rss_kib": 190784
+        }
+      ],
+      "status": "GREEN_EXPERIMENT"
+    }
+  ]
+}

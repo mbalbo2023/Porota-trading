@@ -1,0 +1,12 @@
+{
+  "status": "GREEN_RUNTIME_BYTES_MATCH_FINAL_FROZEN_SOURCE",
+  "source": "d1bd3127d051f1a01fe57f742fbded1a4f216a48",
+  "tree": "8834b276e806405fb49f55ea6862e639422ce21f",
+  "all_runtime_python_files_sha256_match_measurement": true,
+  "post_measurement_test_changes": [
+    "tests/test_rc6_native_soak.py",
+    "tests/test_rc6_progressive_audit.py"
+  ],
+  "workflow_change": "Read-only two-generation readiness before unchanged postrestore strict10, separately reproduced by tests",
+  "release_image_certificate": false
+}

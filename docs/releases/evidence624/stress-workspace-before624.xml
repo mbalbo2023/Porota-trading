@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.132" timestamp="2026-10-18T14:44:27.391783+08:00" hostname="38ad2494d116"><testcase classname="tests.test_rc6_postdeploy_stress_contract" name="test_python_temporary_files_use_isolated_bound_workspace_not_tmpfs" time="0.009"><failure message="AssertionError: assert 'TMPDIR=/work' in ['RC6_STRESS_EXECUTION_CONTEXT=DROPLET_ISOLATED_CONTAINER', 'PYTHONDONTWRITEBYTECODE=1']">installation = (PosixPath('/tmp/pytest-of-root/pytest-34/test_python_temporary_files_us0'), PosixPath('/tmp/pytest-of-root/pytest-34/...rota_production_dashboard'], ...], {'porota_production_observer': 'running', 'porota_production_dashboard': 'running'})
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f537ce37cb0&gt;
+
+    def test_python_temporary_files_use_isolated_bound_workspace_not_tmpfs(installation,monkeypatch):
+        import os
+        import sys
+        root,db,calls,states=installation
+        real_popen=subprocess.Popen
+        def spawn(args,**kwargs):
+            calls.append(args)
+            work=root/'data/deploy/stress'/SHA/'130'
+            (work/'stress.json').write_text(json.dumps({'status':'GREEN','smoke':False}))
+            return SimpleNamespace(returncode=0,poll=lambda:0)
+        monkeypatch.setattr(host.subprocess,'Popen',spawn)
+        assert host.run(SHA,'130')==0
+        docker=next(c for c in calls if c[:2]==['docker','run'])
+        environment=[docker[i+1] for i,item in enumerate(docker[:-1]) if item=='--env']
+&gt;       assert 'TMPDIR=/work' in environment
+E       AssertionError: assert 'TMPDIR=/work' in ['RC6_STRESS_EXECUTION_CONTEXT=DROPLET_ISOLATED_CONTAINER', 'PYTHONDONTWRITEBYTECODE=1']
+
+tests/test_rc6_postdeploy_stress_contract.py:102: AssertionError</failure></testcase></testsuite></testsuites>

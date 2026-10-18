@@ -2427,6 +2427,498 @@
       "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
       "bytes": 8175,
       "sha256": "ff50706d5df62cc363e55ab8a9c9d563f7bd5bc902f9e6410e8ee7f276517114"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-baseline-receipt.json",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 16059,
+      "sha256": "9acea90e88981eb8074fe2fdacd899d479a9d2db7561e66f87b2e42373b5272e"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-baseline-container.json",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 27214,
+      "sha256": "be60503bf95a273140854c00be36efa64688bc7792642bf69d5efea7d0e95f3a"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-baseline.log",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 11136,
+      "sha256": "40c0fb4d02d42bbb8a40d3213b4f133cae6174eb79df4b1595ab5d93772a159e"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-candidate-receipt.json",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 21831,
+      "sha256": "75aa0cff334b70d9eb3e8a8041faa42a75f0819988399253f690d01fc91119ca"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-candidate-container.json",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 27222,
+      "sha256": "5488117bf8ae9ed368a3e1f3d5ca9e3ad0eaf1e86063743e992be677f6066593"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-candidate.log",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 14600,
+      "sha256": "881a4fd5cf5542b45e591e791b1c52aeea8febb394fca55bccc528dabbf82714"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-comparison.json",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 4184,
+      "sha256": "3252125d88a2437df8c81afd1257195fcd272ad2373915be937cd44172bac730"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-focal.xml",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 35545,
+      "sha256": "4fa24d53d6207f6efb8e964d71a738e0481b7ad20f68228b1ae83d09b5bbd2b9"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-legacy-baseline-receipt.json",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 17416,
+      "sha256": "3fe091644864811e9c0ef6c4bf9c6e4ae425753de513f526f78c794d12379d2a"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-legacy-baseline-container.json",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 27276,
+      "sha256": "404506eb176519dbf830333eea5a6dbae8b7c688b65021b7624d1cb43cab3fe0"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-legacy-baseline.log",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 11214,
+      "sha256": "340b43298f1f54f245be347ed1c7032d2b0853e3921e59a07aeef387ade648d2"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-legacy-candidate-receipt.json",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 23184,
+      "sha256": "34a309cb63350e2d17e9d1436edac4aab540b8e9cfded8198672120cd0e527bd"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-legacy-candidate-container.json",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 27282,
+      "sha256": "97588e88e030eb107cf8a66bb46ddc81d842e4d3c842350834e79d2cf546ed02"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-evidence-legacy-candidate.log",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 14674,
+      "sha256": "b0bfc2d3e281b494abf9696238fb835da096ee8928439283202428d7910c04ae"
+    },
+    {
+      "path": "docs/releases/evidence624/abi99ea-red-ab624-validated-byte-validation.json",
+      "source": "EXACT_FROZEN_ABI_RED_ARTIFACT_MEMBER",
+      "bytes": 38158,
+      "sha256": "695db6065d38fd13cc89d7320e43e53ce60de6d3f49911f02191c57a5e638519"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-abi-red624.zip",
+      "source": "EXACT_FROZEN_ABI_RED_RAW_BYTES",
+      "bytes": 61835,
+      "sha256": "536db0fdaa67b42aae54c1ffac04e93aa154594cfdb4837a3f981e7a2bcf6939"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-abi-red624.log.gz",
+      "source": "EXACT_FROZEN_ABI_RED_RAW_BYTES",
+      "bytes": 14041,
+      "sha256": "fd99f5538689132ab3578eade3fe3fa926c6305de261a9918e5af3de38af21d4",
+      "raw_bytes": 68741,
+      "raw_sha256": "d0817cd74a2fddc73d7767b34a3406b3b39f84c030471fb3f3602ee20c5508ca"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-abi-red624-byte-validation.json",
+      "source": "EXACT_FROZEN_ABI_RED_RAW_BYTES",
+      "bytes": 342,
+      "sha256": "52be93e2e13a0471168e8e756e9e3ca8b382e28921808a8f2b20a003f9e6efe5"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-baseline-receipt.json",
+      "source": "LOCAL_CONTROL_NOT_RELEASE_CERTIFICATE",
+      "bytes": 15939,
+      "sha256": "7cfd4377cba8921b5351dc6329dc042313d7214a30082bef56ac040ec8a870d9"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-baseline-source-manifest.json.gz",
+      "source": "ACTUAL_LOCAL_SOURCE_BYTE_BINDING",
+      "bytes": 35512,
+      "sha256": "f1d26eae11404021c8050a9a834ed55bfba84f3e53ed5f5171b793c8f3b94569"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-baseline.log",
+      "source": "LOCAL_CONTROL_RAW_LOG",
+      "bytes": 10352,
+      "sha256": "2ebc28f44ea76924158ee3179d6d3ce882e7ae6eccf9aedc93e0bbc3391198a3"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-candidate-receipt.json",
+      "source": "LOCAL_CONTROL_NOT_RELEASE_CERTIFICATE",
+      "bytes": 21697,
+      "sha256": "8ffae9ec546a63d34ee3c573118656b7820b1f143942041189e7096d7a9bf0fc"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-candidate-source-manifest.json.gz",
+      "source": "ACTUAL_LOCAL_SOURCE_BYTE_BINDING",
+      "bytes": 35664,
+      "sha256": "464022f4fc2dbf1ec195089e4986b7a2d194adf0fc8d4e37ed61bc39a8015e34"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-candidate.log",
+      "source": "LOCAL_CONTROL_RAW_LOG",
+      "bytes": 13531,
+      "sha256": "4ce0aaae8d9ef092936529374847a068269fc1e24a01cf9eb7d088b74a1a98c9"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-summary.json",
+      "source": "LOCAL_PAIRED_ADMISSION_RESULT",
+      "bytes": 1996,
+      "sha256": "988fc8a7b8f9024f1680dae77e8374e831664cbba46bea558aaf9d2c02f2568d"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-legacy-baseline-receipt.json",
+      "source": "LOCAL_CONTROL_NOT_RELEASE_CERTIFICATE",
+      "bytes": 17500,
+      "sha256": "05ab1e529f49e4210fd4a2810b224cf93595a8629b4cf1c80c914bd2f5a10b6c"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-legacy-baseline-source-manifest.json.gz",
+      "source": "ACTUAL_LOCAL_SOURCE_BYTE_BINDING",
+      "bytes": 35512,
+      "sha256": "f1d26eae11404021c8050a9a834ed55bfba84f3e53ed5f5171b793c8f3b94569"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-legacy-baseline.log",
+      "source": "LOCAL_CONTROL_RAW_LOG",
+      "bytes": 10404,
+      "sha256": "322ecfba6454047e677b1034dda5900ee7f53e70efce5544d8f3f7ae8b38ac47"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-legacy-candidate-receipt.json",
+      "source": "LOCAL_CONTROL_NOT_RELEASE_CERTIFICATE",
+      "bytes": 23286,
+      "sha256": "dcbd04e3dcce03480a2bd05695d1d319302ac442bf165219e8c9b990db133fd8"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-legacy-candidate-source-manifest.json.gz",
+      "source": "ACTUAL_LOCAL_SOURCE_BYTE_BINDING",
+      "bytes": 35664,
+      "sha256": "464022f4fc2dbf1ec195089e4986b7a2d194adf0fc8d4e37ed61bc39a8015e34"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-legacy-candidate.log",
+      "source": "LOCAL_CONTROL_RAW_LOG",
+      "bytes": 13611,
+      "sha256": "f6a5a9ba32a049acaeeffe9deeac3f8c50f2e99b63a87fd95101ac2981ee29af"
+    },
+    {
+      "path": "docs/releases/evidence624/batch-consume624-legacy-summary.json",
+      "source": "LOCAL_PAIRED_ADMISSION_RESULT",
+      "bytes": 1992,
+      "sha256": "ebd9a5a8373572d9c7df5d9966c4b58588e3ce7d319e78eb5c2fb8967172d75e"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-baseline-receipt.json",
+      "source": "LOCAL_CONTROL_NOT_RELEASE_CERTIFICATE",
+      "bytes": 15936,
+      "sha256": "549de06e6d50db4ad0e4de678eb749a2a9291adca05517919453241ecbfe6a29"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-baseline-source-manifest.json.gz",
+      "source": "ACTUAL_LOCAL_SOURCE_BYTE_BINDING",
+      "bytes": 35512,
+      "sha256": "f1d26eae11404021c8050a9a834ed55bfba84f3e53ed5f5171b793c8f3b94569"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-baseline.log",
+      "source": "LOCAL_CONTROL_RAW_LOG",
+      "bytes": 10349,
+      "sha256": "eec4a85f55bcea5441a07eb4cac7ebbeb97011ac83c9254d490283ee84ead2dd"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-candidate-receipt.json",
+      "source": "LOCAL_CONTROL_NOT_RELEASE_CERTIFICATE",
+      "bytes": 21714,
+      "sha256": "381d7a0fa4c9385aa80cfb4c0c7ae252dfb8eb7c742364149af33409b07ddb54"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-candidate-source-manifest.json.gz",
+      "source": "ACTUAL_LOCAL_SOURCE_BYTE_BINDING",
+      "bytes": 35669,
+      "sha256": "bc11857dd6ac8f895c07dbe52ff388b320c1f5f09ab05e1e6919710eb2807c0c"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-candidate.log",
+      "source": "LOCAL_CONTROL_RAW_LOG",
+      "bytes": 13548,
+      "sha256": "40522fee8c95cb9b8c3e99fc108cdfcef5fe2f35f2a2e37c384ad67b2493d282"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-summary.json",
+      "source": "LOCAL_PAIRED_ADMISSION_RESULT",
+      "bytes": 2010,
+      "sha256": "5e47d294fa1d1d3de3e51205b14b1f69fb77387a15f2990efcae807373852f28"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-legacy-baseline-receipt.json",
+      "source": "LOCAL_CONTROL_NOT_RELEASE_CERTIFICATE",
+      "bytes": 17505,
+      "sha256": "3acbe7236a925e5ea8bc194ec24d4785a15223d1887726405bc9b0a6f5d10092"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-legacy-baseline-source-manifest.json.gz",
+      "source": "ACTUAL_LOCAL_SOURCE_BYTE_BINDING",
+      "bytes": 35512,
+      "sha256": "f1d26eae11404021c8050a9a834ed55bfba84f3e53ed5f5171b793c8f3b94569"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-legacy-baseline.log",
+      "source": "LOCAL_CONTROL_RAW_LOG",
+      "bytes": 10409,
+      "sha256": "f9ab0131b8325c71b2c0d3b5447a3bb7b2a767f8262b2e5259474b23aed5b421"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-legacy-candidate-receipt.json",
+      "source": "LOCAL_CONTROL_NOT_RELEASE_CERTIFICATE",
+      "bytes": 23286,
+      "sha256": "e8e53d781dec5f957637df34e84062587e202c71d5bfb830b90ca8a83529639f"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-legacy-candidate-source-manifest.json.gz",
+      "source": "ACTUAL_LOCAL_SOURCE_BYTE_BINDING",
+      "bytes": 35669,
+      "sha256": "bc11857dd6ac8f895c07dbe52ff388b320c1f5f09ab05e1e6919710eb2807c0c"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-legacy-candidate.log",
+      "source": "LOCAL_CONTROL_RAW_LOG",
+      "bytes": 13611,
+      "sha256": "5092ff298ba3f88afbfdb80941333500c6d90c37eb5e4489925425186bdf9a01"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views624-legacy-summary.json",
+      "source": "LOCAL_PAIRED_ADMISSION_RESULT",
+      "bytes": 1996,
+      "sha256": "dd64ddad6fdd340db1a85b11fc046325d69dc45e493ee9f144912d29919864dd"
+    },
+    {
+      "path": "docs/releases/evidence624/run_batch_consume624_ab.py",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 3014,
+      "sha256": "030669d7fa81d384753881d1d8a8a7d7f5ae8bcf3ac61954f026bf5092d69966"
+    },
+    {
+      "path": "docs/releases/evidence624/run_batch_consume624-legacy_ab.py",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 3045,
+      "sha256": "6b8bd000193d7e1062d9125a81c536b2e13857d90d21c3c3910beba91f33be4b"
+    },
+    {
+      "path": "docs/releases/evidence624/run_private_views624_ab.py",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 3014,
+      "sha256": "b130e440a7eeceda83cfe07cd9711a53864b37085d53ae4b078382d911e78d32"
+    },
+    {
+      "path": "docs/releases/evidence624/run_private_views624-legacy_ab.py",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 3045,
+      "sha256": "b1444bbcfee441870c418223e576622ede40a089372a67614c456690396fb8a7"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views-runtime-byte-binding624.json",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 523,
+      "sha256": "43a48eca6024d7fc9b0fbca5a46b7ba4e3c1e4c5a12e22dd69f41178f99501b2"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-abi-fix-before624.xml",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 4621,
+      "sha256": "74230821bcbf0a478b252f38c70d167cf55ccfbde78cc9256443df4df4667328"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-abi-fix-after624.xml",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 6649,
+      "sha256": "8d09e2d2539f15227b00eb52108591bf527f47e730cb764ae9a1665b7a2f8401"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-abi-fix-focal624.xml",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 11820,
+      "sha256": "9703abc123329b90fa2f99b7f6af290a2dcd42705a102f4763e73312fb1e0ef8"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-slots-focal624.xml",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 13532,
+      "sha256": "3c192c43218a4c937f0885f57fe91dafaf52c31d29fdc1b2b7fe1a6621cd3216"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-all-views-focal624.xml",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 13871,
+      "sha256": "512eed288ae1a1ed81451c7a3c05b2a46ef6cdf160de7a12dccd13cf0190dae1"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-consumption-ownership624.xml",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 701,
+      "sha256": "c4fb854f9a688c8e95917fc727b91f6f857f6358d310790944df091e38e8f7ce"
+    },
+    {
+      "path": "docs/releases/evidence624/restore-readiness-before624.xml",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 1205,
+      "sha256": "c31fbdda65cdf48450147670f7396bb2f2aa04935ad5e3972813a163688cf7cc"
+    },
+    {
+      "path": "docs/releases/evidence624/restore-readiness-after624.log.gz",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 91,
+      "sha256": "861d6b0ff9548837d5900d4c1f795d95e0c2062520318260c6a876e83b0a0a88",
+      "raw_bytes": 74,
+      "raw_sha256": "ec0accb915437895f5445bc95b828db70d8ffc131082a03548c2decb5932514c"
+    },
+    {
+      "path": "docs/releases/evidence624/restore-readiness-after-guards624.xml",
+      "source": "CAUSAL_REGRESSION_OR_EXPLICIT_HARNESS_ERROR",
+      "bytes": 5686,
+      "sha256": "bc9b351a434b80500af3795f2ba4082c435d28ebd354b32da1274122a3aa8160"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views-abi-green624.zip",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 62017,
+      "sha256": "d28b0a3c12b7408760b1e9fc4f904881f48bc8195b3d76dc732d42680bfb9e51"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views-abi-green624-byte-validation.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 4169,
+      "sha256": "4f342cf81416ab19e18baf85b51c788bfa0b1f4ebb567fade45fb2d6cc26013e"
+    },
+    {
+      "path": "docs/releases/evidence624/stress-workspace-before624.xml",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 1894,
+      "sha256": "e92a76781c58fe1446cd9a1dbabb5f31cae52f211040feca7d15828b71405b74"
+    },
+    {
+      "path": "docs/releases/evidence624/stress-workspace-after624.xml",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 689,
+      "sha256": "3b7d2cdbd7a280018245ac16eee584dbc99477e7f90f5227db68291d32502842"
+    },
+    {
+      "path": "docs/releases/evidence624/stress-workspace-source-binding624.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 2182,
+      "sha256": "dfb88705e769572de5378b439953c1d69592cf58e0c2e15c11581ef63e1c6dd2"
+    },
+    {
+      "path": "docs/releases/evidence624/private-views-abi-green624.log.gz",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 14062,
+      "sha256": "d6fd860f2ffb2118fc6b9db88acf3a626d8939da46a025df633c01fe3fbcab5e",
+      "raw_bytes": 68727,
+      "raw_sha256": "1c377b6cdbe94f934898ee0f2ce113c2532638ceed840bf57c2d5cae020ecd1f"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-baseline-receipt.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 16051,
+      "sha256": "980a0b538cdfe9aab51da79522a432fe01cf55d3019832c63f58efdf2d214845"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-baseline-container.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 27213,
+      "sha256": "3ae0eb603471477bc83677a51bc75dc48b103fa9c74e457daba9ec996d9aa773"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-baseline.log",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 11128,
+      "sha256": "c0ac57a01649ada8b37a478efedb3bcb2c84fb78907d623a44407ba86ec9660e"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-candidate-receipt.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 21831,
+      "sha256": "7d691444461d658b533365800a0b409169a4fbc2f1b46b9b46e37f09dd7bf1e5"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-candidate-container.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 27223,
+      "sha256": "de8f7c27168e0a7fc1a4f0e1ece83a4e2219ccdfa1a7d5c476b51bb1f4c97a0f"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-candidate.log",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 14600,
+      "sha256": "bffe087a257a9f9adf5bc92512da89fc1da98ba3b7d146bd03ca421bd5d0e172"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-comparison.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 4178,
+      "sha256": "627367624a112eee6bfeccc6e59293bf2e8857885f58534cb7b0d9ba84a5b36c"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-focal.xml",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 37068,
+      "sha256": "23ef33e0b59ef2fc18d868256ba305bfa3e61f24bb8dcf8c919abbfd627b0968"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-legacy-baseline-receipt.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 17407,
+      "sha256": "56437831ac426436421cb5e89a3715412deb8307f13bc35dbd330acfb8b0fbe1"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-legacy-baseline-container.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 27276,
+      "sha256": "6a1a2bee6fede9d571495e6290a087fa69713ec34353a4fa3a8246f3fff24ec7"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-legacy-baseline.log",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 11205,
+      "sha256": "6d148d17d1498dc8b36e289e409ed1d5a9a4487ff7e60367316100f1f4b72628"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-legacy-candidate-receipt.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 23212,
+      "sha256": "4376f9720d89d6d9740a5e06447eb3d9ca68e2f0feef86981bb532dc15221d1d"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-legacy-candidate-container.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 27283,
+      "sha256": "c2f4e538531b7eefbf3e2498ce849f85e7bf18810d9fb4068cf0f630ee00699a"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-evidence-legacy-candidate.log",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 14702,
+      "sha256": "63e1fefce997922916f15f81bb140000d27788a76f7704b28886b10cd6d6b76e"
+    },
+    {
+      "path": "docs/releases/evidence624/abi-d1bd-green-ab624-validated-byte-validation.json",
+      "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
+      "bytes": 38158,
+      "sha256": "695db6065d38fd13cc89d7320e43e53ce60de6d3f49911f02191c57a5e638519"
     }
   ]
 }
