@@ -422,8 +422,9 @@ class ShadowRuntime:
         measured_at = tick_started
         tick_cpu_started = time.process_time()
         measured_cpu_at = tick_cpu_started
-        phase_seconds, phase_cpu_seconds = {}, {}
+        phase_seconds, phase_cpu_seconds, phase_peak_rss = {}, {}, {}
         storage_profile = {}
+        allocator_phases = {}
         def stored(name, operation):
             wall, cpu = time.monotonic(), time.process_time()
             before = resource.getrusage(resource.RUSAGE_SELF)
@@ -441,6 +442,7 @@ class ShadowRuntime:
             cpu_ended = time.process_time()
             phase_seconds[name] = round(max(0, ended-measured_at), 3)
             phase_cpu_seconds[name] = round(max(0, cpu_ended-measured_cpu_at), 3)
+            phase_peak_rss[name] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             measured_at, measured_cpu_at = ended, cpu_ended
         at = stamp(as_of)
         with self.files as files:
@@ -481,7 +483,7 @@ class ShadowRuntime:
                     "preopen_cutoff": context["cutoff"].isoformat(), "frozen_at": at.isoformat(),
                     "capacity_report": capacity, "capacity_policy": capacity_policy,
                     "policies": self.policies, "observations": []}
-                pre_report = run_shadow(bundle, frozen_only=True)
+                pre_report = run_shadow(bundle, frozen_only=True, owned_frozen=True)
                 frozen = {"schema": VERSION, "source_identity": source_id,
                     "frozen": pre_report["frozen"], "quality": pre["quality"],
                     "intraday_history": pre.get("intraday_history", [])}
@@ -539,7 +541,7 @@ class ShadowRuntime:
                     "sources": {k: v for k, v in sources.items() if k != "IOL_FAMILY_REFERENCE"}}
                 result = run_shadow(bundle, previous=compatible)
                 from .stages import enrich_pipeline
-                result = enrich_pipeline(self.database, result, as_of=at)
+                result = enrich_pipeline(self.database, result, as_of=at, compact_missing=True)
                 report = {**result, **base, "status": "SHADOW_OBSERVING",
                     "preopen_quality": frozen["quality"],
                     "preopen_immutable": True, "preopen_file": freeze_name,
@@ -548,6 +550,13 @@ class ShadowRuntime:
                     "active_paper_scanner_authority": "FACTUAL_SIGNAL_AND_ADMISSION_UNCHANGED; sampling_policy="
                         + capacity_policy["status"] + "; shadow fills NOT_CALLED"}
                 checkpoint["engines"] = result["engines"]
+                # The planner has completed all reads and shared allocation
+                # against its old state. New plans own their surviving values.
+                # Do not retain the decoded old instruments beside the full
+                # family/funnel audit; lab/entry/funnel keep their own roles.
+                previous.pop("engines", None)
+                compatible = bundle = observations = source_reports = None
+                allocator_phases['planner_completed'] = release_idle_heap()
             measured("planner_pipeline")
             from .families import family_reports
             from .lab import evaluate_runtime_lab
@@ -558,9 +567,11 @@ class ShadowRuntime:
             measured("family_routing")
             report["economic_exit_lab"], checkpoint["lab"] = evaluate_runtime_lab(
                 self.database, as_of=at, previous=previous.get("lab"))
+            previous.pop("lab", None)
             measured("economic_exit_lab")
             report["entry_signal_lab"], checkpoint["entry_signals"] = evaluate_runtime_entry_signals(
                 self.database, as_of=at, previous=previous.get("entry_signals"))
+            previous.pop("entry_signals", None)
             measured("entry_signal_lab")
             report["operational_funnel"], checkpoint["funnel"] = evaluate_runtime_funnel(
                 self.database, as_of=at, planner_report=report,
@@ -606,7 +617,9 @@ class ShadowRuntime:
                 'stages_seconds':phase_seconds,
                 'tick_cpu_seconds':round(time.process_time()-tick_cpu_started,3),
                 'stages_cpu_seconds':phase_cpu_seconds,
+                'stages_process_peak_rss_kib':phase_peak_rss,
                 'storage_profile':storage_profile,
+                'allocator_phases':allocator_phases,
                 'process_peak_rss_kib':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
             publish_started = time.monotonic()
             files.write("status.json", status)

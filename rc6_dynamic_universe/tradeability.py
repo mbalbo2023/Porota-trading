@@ -377,7 +377,7 @@ class FrozenPreopen:
         return {"payload": self.payload, "digest": self.digest}
 
 
-def freeze_preopen(report, *, frozen_at, session_open, capacity_fingerprint):
+def _preopen_payload(report, *, frozen_at, session_open, capacity_fingerprint):
     cut, frozen, opening = stamp(report["cutoff"]), stamp(frozen_at), stamp(session_open)
     if not cut < frozen < opening:
         raise ValueError("PREOPEN_CUT_FREEZE_OPEN_ORDER_REQUIRED")
@@ -400,8 +400,32 @@ def freeze_preopen(report, *, frozen_at, session_open, capacity_fingerprint):
     payload = {**report, "version": VERSION, "frozen_at": frozen.isoformat(),
                "session_open": opening.isoformat(), "capacity_fingerprint": capacity_fingerprint,
                "config_fingerprint": report["config_fingerprint"], "inputs_hash": report["inputs_hash"]}
+    return payload
+
+
+def freeze_preopen(report, *, frozen_at, session_open, capacity_fingerprint):
+    payload = _preopen_payload(report, frozen_at=frozen_at, session_open=session_open,
+                               capacity_fingerprint=capacity_fingerprint)
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return FrozenPreopen(encoded, digest(payload))
+
+
+def freeze_preopen_owned(report, *, frozen_at, session_open, capacity_fingerprint):
+    """Private worker transfer of ownership; public freezes still copy.
+
+    Every validation and canonical byte remains identical. The worker owns
+    these inputs until its atomic evidence write and must not mutate them.
+    Hashing uses the strict public JSON policy, including no default coercion.
+    """
+    import hashlib
+    from rc6_shadow_runtime.persistence import _canonical_chunks
+    payload = _preopen_payload(report, frozen_at=frozen_at, session_open=session_open,
+                               capacity_fingerprint=capacity_fingerprint)
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), allow_nan=False)
+    hasher = hashlib.sha256()
+    for block in _canonical_chunks(encoder, payload):
+        hasher.update(block)
+    return {"payload": payload, "digest": hasher.hexdigest()}
 
 
 def _minute(row):

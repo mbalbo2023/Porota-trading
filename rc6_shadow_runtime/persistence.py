@@ -54,6 +54,36 @@ class FrozenJSONDict(dict):
     def __copy__(self):return self
     def __deepcopy__(self,memo):return self
 
+    @classmethod
+    def _from_owned_metadata_tree(cls, payload):
+        """Freeze one small missing-data summary, including its provenance.
+
+        Only scalar leaves, empty arrays and already frozen children are
+        supported. This is a per-call private view, never a cross-tick cache.
+        """
+        remaining = [256]
+        def freeze(value):
+            remaining[0] -= 1
+            if remaining[0] < 0:
+                raise ValueError("IMMUTABLE_METADATA_TREE_BUDGET")
+            if type(value) is cls:
+                return value
+            if type(value) is dict:
+                if any(type(key) is not str for key in value):
+                    raise TypeError("IMMUTABLE_JSON_SCALAR_KEYS_REQUIRED")
+                values = {key: freeze(item) for key,item in value.items()}
+                result = dict.__new__(cls)
+                dict.__init__(result, values)
+                object.__setattr__(result, '_canonical_json', json.dumps(values,
+                    sort_keys=True,separators=(',',':'),allow_nan=False))
+                return result
+            if type(value) is list and not value:
+                return list.__new__(_FrozenEmptyList)
+            if value is None or type(value) in (str,int,float,bool):
+                return value
+            raise TypeError("IMMUTABLE_METADATA_LEAVES_REQUIRED")
+        return freeze(payload)
+
 
 def _preopen_scalar_decoder():
     """Intern only exact scalar metrics within one immutable preopen read.
@@ -104,6 +134,36 @@ def streamed_digest(payload):
     for chunk in _canonical_chunks(encoder, payload):
         hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def checkpoint_metrics(payload):
+    """Hash and count the exact performance canonical JSON in bounded pieces.
+
+    The checkpoint signature excludes only its top-level signature field.
+    Its byte budget includes that field. A signed size is also returned so
+    a new signature can be installed without serializing the whole tree a
+    second time. This uses ensure_ascii=False, unlike the evidence envelope.
+    No encoded content or object survives this call.
+    """
+    encoder = json.JSONEncoder(sort_keys=True, ensure_ascii=False,
+                               separators=(",", ":"), default=str, allow_nan=False)
+    body = {key: value for key, value in payload.items() if key != "checkpoint_sha256"}
+    hasher, body_bytes = hashlib.sha256(), 0
+    for fragment in _canonical_fragments(encoder, body):
+        # Even a large scalar stays bounded while converting to UTF-8.
+        for offset in range(0, len(fragment), 16384):
+            block = fragment[offset:offset + 16384].encode("utf-8")
+            body_bytes += len(block)
+            hasher.update(block)
+    signature = hasher.hexdigest()
+    overhead = len(b'"checkpoint_sha256":') + (1 if body else 0)
+    actual = body_bytes
+    if "checkpoint_sha256" in payload:
+        # A malformed signature still has its exact original encoded size;
+        # callers independently compare its value with the computed hash.
+        actual += overhead + len(encoder.encode(payload["checkpoint_sha256"]).encode("utf-8"))
+    return {"sha256": signature, "canonical_bytes": actual,
+            "signed_canonical_bytes": body_bytes + overhead + 66}
 
 
 def _small_json_tree_python(value, maximum=65536, nodes=4096):
@@ -407,9 +467,14 @@ class EvidenceFiles:
             raise EvidencePayloadLimit(name, len(raw), self.payload_limit)
         if compact_preopen and not re.fullmatch(r"preopen-\d{4}-\d{2}-\d{2}\.json\.gz", name):
             raise ValueError("SHADOW_COMPACT_PREOPEN_ROLE_REQUIRED")
-        envelope = json.loads(raw, object_hook=_preopen_scalar_decoder() if compact_preopen else None)
-        del raw  # release the decoded input before canonical digest buffers
-        calculated = streamed_digest(envelope.get("payload")) if compact_preopen else digest(envelope.get("payload"))
+        # json.loads(bytes) retains the byte document while constructing the
+        # decoded object graph. Release it before construction. Preserve the
+        # stdlib's UTF-8/16/32 and surrogate policy for legacy envelopes.
+        text = raw.decode(json.detect_encoding(raw), "surrogatepass")
+        del raw
+        envelope = json.loads(text, object_hook=_preopen_scalar_decoder() if compact_preopen else None)
+        del text
+        calculated = streamed_digest(envelope.get("payload"))
         if envelope.get("digest") != calculated:
             raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
         return envelope["payload"]

@@ -55,7 +55,8 @@ class UniverseOrchestrator:
         # The verified freeze is read-only. Telemetry may reference its
         # rank components; no planner operation mutates these inputs.
         payload = frozen.get("payload", {})
-        if frozen.get("digest") != digest(payload) or stamp(payload["frozen_at"]) >= opening:
+        from rc6_shadow_runtime.persistence import streamed_digest
+        if frozen.get("digest") != streamed_digest(payload) or stamp(payload["frozen_at"]) >= opening:
             raise ValueError("INVALID_PREOPEN_FREEZE")
         if stamp(payload["session_open"]) != opening:
             raise ValueError("PREOPEN_SESSION_MISMATCH")

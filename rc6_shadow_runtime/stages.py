@@ -10,9 +10,20 @@ from rc6_dynamic_universe.common import stamp
 from rc6_dynamic_universe.economics import shadow_economics
 from rc6_performance.costs import paper_fee_model
 from .read_contract import query_budget_seconds
+from .persistence import FrozenJSONDict
 
 
-def enrich_pipeline(database, report, *, as_of):
+def enrich_pipeline(database, report, *, as_of, compact_missing=False):
+    if type(compact_missing) is not bool:
+        raise ValueError("PIPELINE_COMPACT_MODE_INVALID")
+    no_signal={"status":"NOT_READY","reason":"WARMUP_OR_CAPACITY_INCOMPLETE",
+               "score_is_probability":False,"entry_authority":False}
+    no_economics={"status":"NO_VERIFICADO","reason":"SIGNAL_OR_BOOK_UNAVAILABLE",
+                  "mode":"SHADOW","decision_effect":"NONE","real_order_routes":[]}
+    no_risk={"status":"NO_VERIFICADO","reason":"FRESH_NATIVE_RISK_UNAVAILABLE",
+             "decision_effect":"NONE","admission":"NOT_CALLED","entry_authority":False}
+    if compact_missing:
+        no_signal,no_economics,no_risk=map(FrozenJSONDict,(no_signal,no_economics,no_risk))
     at = stamp(as_of)
     c = sqlite3.connect(Path(database).resolve(strict=True).as_uri() + "?mode=ro",
                         uri=True, timeout=.005)
@@ -58,8 +69,7 @@ def enrich_pipeline(database, report, *, as_of):
             for row in plan["telemetry"]:
                 key = tuple(row["identity"])
                 ready = row["pipeline"]["SIGNAL_READY"]
-                signal = {"status": "NOT_READY", "reason": "WARMUP_OR_CAPACITY_INCOMPLETE",
-                          "score_is_probability": False, "entry_authority": False}
+                signal = no_signal if compact_missing else dict(no_signal)
                 if ready:
                     native = candidates.get(key) if engine == "SCALPING" else None
                     signal = {"status": "NO_VERIFICADO", "reason": "NATIVE_SIGNAL_UNAVAILABLE",
@@ -70,18 +80,17 @@ def enrich_pipeline(database, report, *, as_of):
                             evaluated_at=native["evaluated_at"], samples=native["points"],
                             provenance="cf_intraday_scalping.evaluate_candidate; unchanged native guards")
                 row["signal_shadow"] = signal
-                economics = {"status": "NO_VERIFICADO", "reason": "SIGNAL_OR_BOOK_UNAVAILABLE",
-                             "mode": "SHADOW", "decision_effect": "NONE", "real_order_routes": []}
+                economics = no_economics if compact_missing else {**no_economics,"real_order_routes":[]}
                 if ready and key in books and deadline > at:
                     economics = shadow_economics(books[key], decision_at=at, eod_at=deadline,
                         quantity=1, multiplier=1, model=None, fees=paper_fee_model(key[1]))
                     economics["sizing_basis"] = "UNIT_DIAGNOSTIC; factual sizing NOT_CALLED"
                     economics["eod_at"] = deadline.isoformat()
                     economics["movement_model_basis"] = "NO_VERIFICADO; prospective entry models in economic_exit_lab"
-                risk = {"status": "NO_VERIFICADO", "reason": "FRESH_NATIVE_RISK_UNAVAILABLE",
-                        "decision_effect": "NONE", "admission": "NOT_CALLED", "entry_authority": False}
+                risk = no_risk if compact_missing else dict(no_risk)
                 native_risk = risks.get(key[3])
                 if native_risk and 0 <= (at - stamp(native_risk["evaluated_at"])).total_seconds() <= 120:
+                    risk = dict(risk)
                     risk.update(status="OBSERVED_NATIVE_RISK", native_state=native_risk["state"],
                                 evaluated_at=native_risk["evaluated_at"],
                                 hard_stop_latched=bool(native_risk["latched_at"]))
