@@ -4,6 +4,7 @@ No market-data client, trading writer, broker, fill, network transport or manual
 bundle. A missing preopen/OPEN capacity remains an explicit closed gate.
 """
 from datetime import datetime, timedelta, timezone
+from contextlib import ExitStack
 import gc
 import json
 import logging
@@ -21,7 +22,9 @@ from rc6_dynamic_universe.common import digest, stamp
 from rc6_dynamic_universe.live import run_shadow
 from rc6_dynamic_universe.runtime import read_runtime
 from rc6_dynamic_universe.sources import source_observations
-from .persistence import EvidenceFiles, EvidencePayloadLimit
+from .persistence import EvidenceFiles, EvidencePayloadLimit, canonical_ascii_chunks
+from .audit_spool import AuditSpool
+from .checkpoint_parts import CheckpointParts
 from .timing import POLL_SECONDS
 
 LOG = logging.getLogger("dynamic_shadow")
@@ -182,7 +185,7 @@ def durable_exit_observations(lab):
             'economic_edge_validated':False,'decision_effect':'NONE'}
 
 
-def durable_report_view(report, *, catalog_ready_count):
+def durable_report_view(report, *, catalog_ready_count, engine_views=None, family_view=None):
     """Persist a bounded selection contract; preserve full in-memory evaluation.
 
     Immutable preopen evidence and the causal checkpoint remain separate. The
@@ -199,7 +202,7 @@ def durable_report_view(report, *, catalog_ready_count):
     view = {key: report[key] for key in base if key in report}
     view["catalog_ready_count"] = catalog_ready_count
     view["engines"] = {}
-    for engine, plan in report["engines"].items():
+    for engine, plan in (() if engine_views is not None else report["engines"].items()):
         needed = {tuple(key) for key in plan["selected"]}
         needed.update(tuple(key) for key in plan.get("opened_priority", []))
         rows = [row for row in plan["telemetry"]
@@ -215,7 +218,11 @@ def durable_report_view(report, *, catalog_ready_count):
             "telemetry_total": len(plan["telemetry"]),
             "discovery": plan.get("discovery", {}),
         }
-    if "family_routing" in report:
+    if engine_views is not None:
+        view['engines'] = engine_views
+    if family_view is not None:
+        view['family_routing'] = family_view
+    elif "family_routing" in report:
         view["family_routing"] = _durable_family_routing(report["family_routing"])
     # The dashboard consumes this bounded aggregate, never the full audit.
     # Previously only its status survived, so every funnel count was absent.
@@ -275,10 +282,45 @@ def shared_preopen_row_lists(report):
     return tuple(rows for rows, count in groups.values() if count > 1)
 
 
+FUNNEL_TELEMETRY_FIELDS = frozenset(('identity', 'strategy', 'pipeline', 'state', 'source',
+    'rejection_reason', 'promotion_reasons', 'promoted_at', 'discovery_age',
+    'discovery_age_lower_bound', 'revisit_seconds', 'achieved_revisit_seconds',
+    'time_to_warmup_seconds', 'event_to_promotion_seconds', 'warmup_progress'))
+FAMILY_FIELDS = frozenset(('identity', 'strategy', 'engine', 'reason_codes', 'catalog_ready', 'readiness'))
+CATALOG_FIELDS = frozenset(('ticker', 'instrument_type', 'market', 'currency', 'settlement', 'status', 'capability'))
+
+
+def _project(row, fields):
+    return {key: value for key, value in row.items() if key in fields}
+
+
+def _funnel_engine_views(engines):
+    return {engine: {**{key: value for key, value in plan.items() if key != 'telemetry'},
+                     'telemetry': [_project(row, FUNNEL_TELEMETRY_FIELDS) for row in plan['telemetry']]}
+            for engine, plan in engines.items()}
+
+
+def _stage_preopen_rows(report, spool):
+    nodes = {}
+    wrappers = [engine.get('payload', {}) for engine in report.get('frozen', {}).values()]
+    wrappers.append(report.get('tradeability', {}))
+    for wrapper in wrappers:
+        rows = wrapper.get('rows')
+        if type(rows) is not list:
+            continue
+        key = id(rows)
+        if key not in nodes:
+            nodes[key] = spool.stage('preopen_rows', canonical_ascii_chunks(rows))
+        wrapper['rows'] = nodes[key]
+
+
 class ShadowRuntime:
     def __init__(self, database, *, evidence_root=None, history_database=None,
                  source_roots=None, capacity_path=None, policies=None,
-                 maximum_bytes=128 * 1024**2, row_limit=20000):
+                 maximum_bytes=128 * 1024**2, row_limit=20000, spool_audit=False):
+        if type(spool_audit) is not bool:
+            raise ValueError('SHADOW_SPOOL_MODE_INVALID')
+        self.spool_audit = spool_audit
         self.database = Path(database).resolve(strict=True)
         self.history_database = Path(history_database).resolve() if history_database else None
         self.root = Path(evidence_root or (str(self.database) + ".shadow"))
@@ -445,13 +487,18 @@ class ShadowRuntime:
             phase_peak_rss[name] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             measured_at, measured_cpu_at = ended, cpu_ended
         at = stamp(as_of)
-        with self.files as files:
+        with self.files as files, ExitStack() as stack:
+            spool = stack.enter_context(AuditSpool(files)) if self.spool_audit else None
+            parts = stack.enter_context(CheckpointParts(files, canonical_ascii_chunks)) if spool else None
+            engine_views = family_view = None
             capacity_policy = self.capacity_controller.state(at)
             configuration = digest({"runtime": self.configuration,
                 "capacity_policy": capacity_policy["fingerprint"],
                 "entry_signal_lab": "rc6.runtime-entry-signals.v1",
                 "operational_funnel": "rc6.prospective-operational-funnel.v1"})
-            previous = files.read("checkpoint.json.gz") or {}
+            previous = dict(parts.head) if parts else (files.read("checkpoint.json.gz") or {})
+            if parts:
+                allocator_phases['checkpoint_verified'] = release_idle_heap()
             if previous and stamp(previous["as_of"]) > at:
                 raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
             self.last_sqlite_diagnostics = {}
@@ -463,6 +510,8 @@ class ShadowRuntime:
                      previous.get("runtime_configuration") == configuration)
             if not reuse:
                 previous = {}
+            elif parts and previous.get('session') == session_context(at)['session']:
+                previous['engines'] = parts.load('engines')
             # Source identity and runtime configuration are part of the durable
             # checkpoint, independent of the planner's capacity fingerprint.
             started = previous.get("started_at", at.isoformat())
@@ -505,6 +554,9 @@ class ShadowRuntime:
                 "catalog_ready": inputs["catalog"],
                 "source_identity": source_id}
             checkpoint = {**base, "started_at": started}
+            ready_count = len(inputs['catalog'])
+            preopen_digests = {key: value['digest']
+                for key, value in (frozen or {}).get('frozen', {}).items()}
             if frozen is None:
                 report = {**base, "status": "PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION",
                           "engines": {}, "catalog_ready_count": len(inputs["catalog"])}
@@ -558,6 +610,24 @@ class ShadowRuntime:
                 compatible = bundle = observations = source_reports = None
                 allocator_phases['planner_completed'] = release_idle_heap()
             measured("planner_pipeline")
+            hot = report
+            if spool:
+                engine_views = durable_report_view(report, catalog_ready_count=ready_count)['engines']
+                hot = {**base, 'status': report['status'],
+                       'engines': _funnel_engine_views(report['engines'])}
+                # Only explicit operational inputs survive the completed planner.
+                if 'causal_discovery_evidence' in report:
+                    hot['causal_discovery_evidence'] = report['causal_discovery_evidence']
+                hot['catalog_ready'] = [_project(row, CATALOG_FIELDS) for row in inputs['catalog']]
+                checkpoint = durable_checkpoint_view(checkpoint)
+                result = compatible = bundle = external = observations = source_reports = None
+                _stage_preopen_rows(report, spool)
+                report['engines'] = spool.stage('engines', canonical_ascii_chunks(report['engines']))
+                for key in ('source_reports', 'events'):
+                    if key in report:
+                        report[key] = spool.stage(key, canonical_ascii_chunks(report[key]))
+                frozen = pre = pre_report = None
+                allocator_phases['planner_staged'] = release_idle_heap()
             from .families import family_reports
             from .lab import evaluate_runtime_lab
             from .entry_signals import evaluate_runtime_entry_signals
@@ -565,27 +635,48 @@ class ShadowRuntime:
             report["family_routing"] = family_reports(self.database, as_of=at,
                 catalog=inputs["full_catalog"], sources=sources,compact_missing=True)
             measured("family_routing")
+            if spool:
+                family = report['family_routing']
+                family_view = _durable_family_routing(family)
+                hot['family_routing'] = {'families': family.get('families', []),
+                    'instruments': [_project(row, FAMILY_FIELDS) for row in family.get('instruments', [])]}
+                report['family_routing'] = spool.stage('family_routing', canonical_ascii_chunks(family))
+                report['catalog_ready'] = spool.stage('catalog_ready', canonical_ascii_chunks(report['catalog_ready']))
+                family = inputs = sources = base = None
+                allocator_phases['family_staged'] = release_idle_heap()
+            if parts and reuse:
+                previous['lab'] = parts.load('lab')
             report["economic_exit_lab"], checkpoint["lab"] = evaluate_runtime_lab(
                 self.database, as_of=at, previous=previous.get("lab"))
             previous.pop("lab", None)
             measured("economic_exit_lab")
+            if parts and reuse:
+                previous['entry_signals'] = parts.load('entry_signals')
             report["entry_signal_lab"], checkpoint["entry_signals"] = evaluate_runtime_entry_signals(
                 self.database, as_of=at, previous=previous.get("entry_signals"))
             previous.pop("entry_signals", None)
             measured("entry_signal_lab")
+            if parts and reuse:
+                previous['funnel'] = parts.load('funnel')
             report["operational_funnel"], checkpoint["funnel"] = evaluate_runtime_funnel(
-                self.database, as_of=at, planner_report=report,
+                self.database, as_of=at, planner_report=hot,
                 entry_signal_report=report["entry_signal_lab"],
                 exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"),
                 private_runtime=True)
             measured("operational_funnel")
             # Never call a signal, economics or risk result as an execution
             # callback. These reports cannot reach the factual broker.
-            ready_count = len(inputs["catalog"])
-            preopen_digests = {key: value["digest"]
-                for key, value in (frozen or {}).get("frozen", {}).items()}
-            reusable_rows = shared_preopen_row_lists(report)
-            durable = durable_report_view(report, catalog_ready_count=ready_count)
+            if spool:
+                for key in ('economic_exit_lab', 'entry_signal_lab', 'operational_funnel'):
+                    hot[key] = report[key]
+                # Restore all bounded dashboard metadata from the actual audit.
+                for key in ('preopen_immutable', 'preopen_file', 'preopen_quality',
+                            'capacity_open_status', 'observation_execution', 'active_paper_scanner_authority'):
+                    if key in report:
+                        hot[key] = report[key]
+            reusable_rows = () if spool else shared_preopen_row_lists(report)
+            durable = durable_report_view(hot, catalog_ready_count=ready_count,
+                engine_views=engine_views, family_view=family_view)
             causal = durable_checkpoint_view(checkpoint)
             # These inputs have no remaining caller. Releasing local references
             # preserves every value still owned by report/durable/causal, while
@@ -598,7 +689,8 @@ class ShadowRuntime:
             storage_profile['computed'].update(getattr(files,'report_write_profile',{}))
             durable["computed_report"] = audit
             stored('latest', lambda: files.write("latest.json.gz", durable))
-            stored('checkpoint', lambda: files.write("checkpoint.json.gz", causal))
+            stored('checkpoint', lambda: files.write_checkpoint(causal) if spool
+                   else files.write("checkpoint.json.gz", causal))
             measured("durable_serialization")
             status = {k: report[k] for k in ("schema", "as_of", "phase", "status", "mode",
                 "provider_requests", "real_orders_sent", "real_routes", "source_database_effect")}
@@ -621,6 +713,8 @@ class ShadowRuntime:
                 'storage_profile':storage_profile,
                 'allocator_phases':allocator_phases,
                 'process_peak_rss_kib':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
+            if spool:
+                status['generation_timing']['audit_staging'] = list(spool.profile)
             publish_started = time.monotonic()
             files.write("status.json", status)
             committed = files.publish_generation(durable, status)
@@ -638,7 +732,7 @@ class ShadowRuntime:
                 "publish_seconds":round(publish_completed-publish_started,6),
                 "prune_seconds":round(time.monotonic()-publish_completed,6),
                 "poll_seconds":POLL_SECONDS})
-            return report
+            return hot
 
 
 def run_worker(database, stop, *, clock_fn=None):
@@ -656,7 +750,7 @@ def run_worker(database, stop, *, clock_fn=None):
                 history = Path(os.getenv("HIST_DB_PATH", str(Path(os.getenv("DATA_DIR", "data")) / "market_history.db")))
                 worker = ShadowRuntime(database,
                     evidence_root=artifact_root(database) / "dynamic-shadow",
-                    history_database=history if history.exists() else None)
+                    history_database=history if history.exists() else None, spool_audit=True)
             report = worker.tick(clock_fn())
             try:
                 LOG.info("DYNAMIC_SHADOW_RUNTIME status=%s phase=%s real_orders_sent=0 provider_requests=0",

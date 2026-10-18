@@ -12,6 +12,7 @@ from pathlib import Path
 import tempfile
 
 from rc6_dynamic_universe.common import digest
+from .audit_spool import CanonicalJSONStream
 
 
 class _FrozenEmptyList(list):
@@ -134,6 +135,12 @@ def streamed_digest(payload):
     for chunk in _canonical_chunks(encoder, payload):
         hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def canonical_ascii_chunks(payload):
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
+                               default=str, allow_nan=False)
+    yield from _canonical_chunks(encoder, payload)
 
 
 def checkpoint_metrics(payload):
@@ -346,6 +353,12 @@ def _canonical_fragments(encoder, payload, *, immutable_shared_rows=()):
             charged += cost + 512
 
     def fresh(value):
+        if isinstance(value, CanonicalJSONStream):
+            if (not encoder.ensure_ascii or not encoder.sort_keys or encoder.allow_nan
+                    or encoder.item_separator != ',' or encoder.key_separator != ':'):
+                raise ValueError('SHADOW_STREAM_CANONICAL_ENCODER_REQUIRED')
+            yield from value.iter_ascii()
+            return
         container = isinstance(value, (dict, list, tuple))
         if not container or _small_json_tree(value):
             yield encoder.encode(value)
@@ -454,7 +467,9 @@ class EvidenceFiles:
             raise ValueError("SHADOW_OUTPUT_MUST_BE_SEPARATE")
         return target
 
-    def read(self, name, *, compact_preopen=False):
+    def read(self, name, *, compact_preopen=False, compact_checkpoint=False):
+        if type(compact_checkpoint) is not bool or (compact_checkpoint and name != 'checkpoint.json.gz'):
+            raise ValueError('SHADOW_COMPACT_CHECKPOINT_ROLE_REQUIRED')
         path = self.path(name)
         if not path.exists():
             return None
@@ -472,12 +487,45 @@ class EvidenceFiles:
         # stdlib's UTF-8/16/32 and surrogate policy for legacy envelopes.
         text = raw.decode(json.detect_encoding(raw), "surrogatepass")
         del raw
-        envelope = json.loads(text, object_hook=_preopen_scalar_decoder() if compact_preopen else None)
+        if compact_checkpoint:
+            from .checkpoint_parts import funnel_metadata_decoder
+            decoder = funnel_metadata_decoder()
+        else:
+            decoder = _preopen_scalar_decoder() if compact_preopen else None
+        envelope = json.loads(text, object_hook=decoder)
         del text
         calculated = streamed_digest(envelope.get("payload"))
         if envelope.get("digest") != calculated:
             raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
         return envelope["payload"]
+
+    def write_checkpoint(self, payload):
+        """Commit one indexed standard gzip with the original canonical envelope."""
+        from .checkpoint_parts import PREFIX, TAIL_BYTES, write_indexed
+        if self.lock is None:
+            raise ValueError('SHADOW_WRITER_LOCK_REQUIRED')
+        target = self.path('checkpoint.json.gz')
+        files = list(self.root.iterdir())
+        if len(files)+1 > 512:
+            raise ValueError('SHADOW_EVIDENCE_CAPACITY_REACHED')
+        size = sum(p.lstat().st_size for p in files)
+        with tempfile.NamedTemporaryFile(dir=self.root, prefix='.checkpoint.', suffix='.tmp', delete=False) as stream:
+            tmp = Path(stream.name)
+            try:
+                write_indexed(stream, payload, canonical_ascii_chunks,
+                              self.payload_limit-len(PREFIX)-TAIL_BYTES)
+                stream.flush()
+                os.fsync(stream.fileno())
+                if size+stream.tell() > self.maximum_bytes:
+                    raise ValueError('SHADOW_EVIDENCE_CAPACITY_REACHED')
+                tmp.replace(target)
+                directory = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+            finally:
+                tmp.unlink(missing_ok=True)
 
     def write(self, name, payload, *, immutable=False):
         if self.lock is None:
