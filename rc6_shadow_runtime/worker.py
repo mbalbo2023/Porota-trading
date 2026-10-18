@@ -14,6 +14,7 @@ from pathlib import Path
 import sqlite3
 import time
 import traceback
+from types import MappingProxyType
 
 import ak_byma_calendar as calendar
 from co_market_sessions_hf6 import (TZ, BYMA_PAPER_SPOT_OPEN,
@@ -289,6 +290,55 @@ FUNNEL_TELEMETRY_FIELDS = frozenset(('identity', 'strategy', 'pipeline', 'state'
     'time_to_warmup_seconds', 'event_to_promotion_seconds', 'warmup_progress'))
 FAMILY_FIELDS = frozenset(('identity', 'strategy', 'engine', 'reason_codes', 'catalog_ready', 'readiness'))
 CATALOG_FIELDS = frozenset(('ticker', 'instrument_type', 'market', 'currency', 'settlement', 'status', 'capability'))
+_FUNNEL_FIELD_ORDER = tuple(sorted(FUNNEL_TELEMETRY_FIELDS))
+_FUNNEL_FIELD_INDEX = MappingProxyType({name: index for index, name in enumerate(_FUNNEL_FIELD_ORDER)})
+_MISSING_PROJECTION_FIELD = object()
+
+
+class _ProjectionRow:
+    """Readonly field bindings used only by the owned, consumed funnel view.
+
+    The full audit and selected dashboard rows have independent owners. No
+    complete source row, serialized value or cross-tick data cache is retained.
+    """
+    __slots__ = ('_values',)
+
+    def __init__(self, row):
+        object.__setattr__(self, '_values', tuple(row.get(name, _MISSING_PROJECTION_FIELD)
+                                                for name in self._order))
+
+    def __setattr__(self, name, value):
+        raise TypeError('SHADOW_FUNNEL_PROJECTION_READONLY')
+
+    def __getitem__(self, name):
+        value = self._values[self._index[name]]
+        if value is _MISSING_PROJECTION_FIELD:
+            raise KeyError(name)
+        return value
+
+    def get(self, name, default=None):
+        index = self._index.get(name)
+        if index is None:
+            return default
+        value = self._values[index]
+        return default if value is _MISSING_PROJECTION_FIELD else value
+
+
+class _FunnelProjectionRow(_ProjectionRow):
+    __slots__ = ()
+    _order, _index = _FUNNEL_FIELD_ORDER, _FUNNEL_FIELD_INDEX
+
+
+class _FamilyProjectionRow(_ProjectionRow):
+    __slots__ = ()
+    _order = tuple(sorted(FAMILY_FIELDS))
+    _index = MappingProxyType({name: index for index, name in enumerate(_order)})
+
+
+class _CatalogProjectionRow(_ProjectionRow):
+    __slots__ = ()
+    _order = tuple(sorted(CATALOG_FIELDS))
+    _index = MappingProxyType({name: index for index, name in enumerate(_order)})
 
 
 def _project(row, fields):
@@ -297,7 +347,7 @@ def _project(row, fields):
 
 def _funnel_engine_views(engines):
     return {engine: {**{key: value for key, value in plan.items() if key != 'telemetry'},
-                     'telemetry': [_project(row, FUNNEL_TELEMETRY_FIELDS) for row in plan['telemetry']]}
+                     'telemetry': [_FunnelProjectionRow(row) for row in plan['telemetry']]}
             for engine, plan in engines.items()}
 
 
@@ -622,7 +672,7 @@ class ShadowRuntime:
                 # Only explicit operational inputs survive the completed planner.
                 if 'causal_discovery_evidence' in report:
                     hot['causal_discovery_evidence'] = report['causal_discovery_evidence']
-                hot['catalog_ready'] = [_project(row, CATALOG_FIELDS) for row in inputs['catalog']]
+                hot['catalog_ready'] = [_CatalogProjectionRow(row) for row in inputs['catalog']]
                 checkpoint = durable_checkpoint_view(checkpoint)
                 result = compatible = bundle = external = observations = source_reports = None
                 _stage_preopen_rows(report, spool)
@@ -643,7 +693,7 @@ class ShadowRuntime:
                 family = report['family_routing']
                 family_view = _durable_family_routing(family)
                 hot['family_routing'] = {'families': family.get('families', []),
-                    'instruments': [_project(row, FAMILY_FIELDS) for row in family.get('instruments', [])]}
+                    'instruments': [_FamilyProjectionRow(row) for row in family.get('instruments', [])]}
                 report['family_routing'] = spool.stage('family_routing', canonical_ascii_chunks(family))
                 report['catalog_ready'] = spool.stage('catalog_ready', canonical_ascii_chunks(report['catalog_ready']))
                 family = inputs = sources = base = None

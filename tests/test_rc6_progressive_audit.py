@@ -381,3 +381,71 @@ def test_public_and_consumed_private_cuts_match_open_warmup_and_adverse_books(tm
     with store.connect() as c:
         assert c.execute('SELECT count(*) FROM paper_positions').fetchone()[0] == 0
         assert c.execute('SELECT count(*) FROM paper_decisions').fetchone()[0] == 0
+
+
+def test_private_projection_preserves_absence_none_types_and_releases_full_rows():
+    import gc
+    import sys
+    import weakref
+    from rc6_shadow_runtime.worker import _FunnelProjectionRow, FUNNEL_TELEMETRY_FIELDS
+    row = {'identity': ['X', 'ACCIONES', 'BYMA', 'ARS', '24HS'], 'source': None,
+           'discovery_age': -0.0, 'discovery_age_lower_bound': False}
+    view = _FunnelProjectionRow(row)
+    assert view['identity'] is row['identity'] and view.get('source', 'default') is None
+    assert view.get('state', 'default') == 'default'
+    assert view.get('not_a_funnel_field', 7) == 7
+    assert type(view.get('discovery_age_lower_bound')) is bool
+    assert view.get('discovery_age').hex() == '-0x0.0p+0'
+    with pytest.raises(KeyError):
+        view['state']
+    with pytest.raises(TypeError, match='READONLY'):
+        view._values = ()
+    with pytest.raises(TypeError):
+        view['source'] = 'changed'
+    class Ignored:
+        pass
+    ignored = Ignored()
+    reference = weakref.ref(ignored)
+    row['large_unused_rank_graph'] = ignored
+    other = _FunnelProjectionRow(row)
+    del row, ignored
+    gc.collect()
+    assert reference() is None and other['source'] is None
+    ordinary = [{name: None for name in FUNNEL_TELEMETRY_FIELDS} for _ in range(1000)]
+    compact = [_FunnelProjectionRow(item) for item in ordinary]
+    before = sum(sys.getsizeof(item) for item in ordinary)
+    after = sum(sys.getsizeof(item)+sys.getsizeof(item._values) for item in compact)
+    assert after < .5*before
+
+
+@pytest.mark.parametrize('class_name', ['_FamilyProjectionRow', '_CatalogProjectionRow'])
+def test_family_and_catalog_views_preserve_all_actual_fields_and_defaults(class_name):
+    from rc6_shadow_runtime import worker
+    kind = getattr(worker, class_name)
+    source = {name: index for index, name in enumerate(kind._order)}
+    source[kind._order[0]] = None
+    view = kind(source)
+    for name, value in source.items():
+        assert view[name] is value and view.get(name, 'default') is value
+    assert view.get('not_a_schema_field', 'default') == 'default'
+    empty = kind({})
+    for name in kind._order:
+        assert empty.get(name, 'missing') == 'missing'
+        with pytest.raises(KeyError):
+            empty[name]
+    with pytest.raises(TypeError):
+        kind._index['new_field'] = 0
+
+
+@pytest.mark.parametrize(('private', 'consume'), [(False, True), (True, 'yes'), (True, 1)])
+def test_consumption_cannot_mutate_public_or_unowned_planner_inputs(tmp_path, private, consume):
+    from copy import deepcopy
+    from rc6_shadow_runtime.funnel import evaluate_runtime_funnel
+    planner = {'real_orders_sent': 0, 'real_routes': 'NOT_CALLED',
+               'engines': {'SCALPING': {'telemetry': [{'identity': ['X', 'ACCIONES', 'BYMA', 'ARS', '24HS']}]}}}
+    original = deepcopy(planner)
+    database = tmp_path/'must_not_be_accessed.db'
+    with pytest.raises(ValueError, match='OWNED_PROJECTION_REQUIRED'):
+        evaluate_runtime_funnel(database, as_of='2026-10-05T13:20:00+00:00',
+            planner_report=planner, private_runtime=private, consume_planner=consume)
+    assert planner == original and not database.exists()

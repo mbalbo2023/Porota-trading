@@ -26,6 +26,51 @@ def test_sustained_acceptance_requires_ten_distinct_ordered_cuts(tmp_path):
     assert [r['sequence'] for r in result['generations']]==list(range(1,11))
     assert len(result['resources'])>100
 
+
+def test_restored_heartbeat_needs_new_current_before_unchanged_strict_ten(tmp_path):
+    (tmp_path/'runtime-health.json').write_text(json.dumps(HEALTH))
+    elapsed=[0]
+    restored_at=AT+timedelta(seconds=300)
+    def reader(*args,**kwargs):
+        value=cut()
+        if elapsed[0]>=4:
+            sequence=100+int((elapsed[0]-4)//30)
+            value['pointer'].update(sequence=sequence,generation_id=f'{sequence:064x}')
+            value['status']['as_of']=(restored_at+timedelta(seconds=4+(sequence-100)*30)).isoformat()
+        return value
+    def observe(minimum, strict):
+        return collect(tmp_path/'dynamic-shadow',SHA,TREE,timeout=400,
+            minimum_generations=minimum,strict=strict,clock=lambda:elapsed[0],
+            wait=lambda seconds:elapsed.__setitem__(0,elapsed[0]+seconds),
+            now=lambda:restored_at+timedelta(seconds=elapsed[0]),reader=reader,
+            sample=lambda:{'memory':128*1024**2})
+    # Fresh HTTP/observer heartbeat cannot make the pre-stop CURRENT fresh.
+    premature=observe(10,True)
+    assert premature['status']=='RED' and premature['error_reason']=='GENERATION_STALE_OR_FUTURE'
+    ready=observe(2,False)
+    assert ready['status']=='GREEN' and ready['rejection_count']>=1
+    assert len(ready['generations'])==2
+    assert all(r['as_of']>restored_at.isoformat() for r in ready['generations'])
+    sustained=observe(10,True)
+    assert sustained['status']=='GREEN' and sustained['rejection_count']==0
+    assert len(sustained['generations'])==10 and sustained['strict'] is True
+
+
+def test_restore_readiness_is_separate_and_precedes_unmodified_strict_soak():
+    from pathlib import Path
+    text=(Path(__file__).resolve().parents[1]/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
+    stress=text.index('- name: Postdeploy full-session stress in the exact installed image')
+    ready=text.index('- name: Re-establish two current native generations after restoration')
+    strict=text.index('- name: Independent sustained native acceptance after stress restoration')
+    assert stress<ready<strict
+    segment=text[ready:strict]
+    assert "steps.stress.outcome == 'success'" in segment
+    assert 'docker exec porota_production_dashboard timeout 195' in segment
+    assert '/app/scripts/rc6_deploy_generation_gate.py' in segment
+    assert 'native-postrestore-generation-acceptance.json' in segment
+    assert 'rc6_native_soak.py' not in segment
+    assert 'minimum_generations=10,strict=True' in Path(soak.__file__).read_text().replace(' ','')
+
 def test_one_stale_cut_ends_the_soak_without_waiting_for_later_recovery(tmp_path):
     result=run_collection(tmp_path,stale_at=4)
     assert result['status']=='RED' and result['rejection_count']==1

@@ -511,6 +511,8 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
     private_runtime consumes the caller-owned checkpoint read for this tick.
     Its report shares causal containers until the atomic writer serializes it;
     the ordinary API continues to return an isolated JSON-normalized report.
+    consume_planner is only for a separately staged, caller-owned projection:
+    its engine/catalog/family input lists are released after their last read.
     """
     if type(private_runtime) is not bool:
         raise ValueError("FUNNEL_PRIVATE_RUNTIME_MODE_INVALID")
