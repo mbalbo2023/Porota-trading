@@ -1,0 +1,42 @@
+{
+  "state": "FROZEN_FOR_NEW_EXACT_RESOURCE_CONTROL_NOT_RELEASE",
+  "local_sha": "4601de8fb2fd25fc9b6f9de875af36742bb4bc5d",
+  "tree": "ba7bd625ac262eebe38fe039a28647a596bbcde5",
+  "remote_base": "889c7b4dd50b0ac7dcf18acef109ac7aab126f5a",
+  "branch": "work/rc6-624-owned-funnel-details-20261018",
+  "c_sha256": "4710a658bbdeae55dc71437c57be6a9766a892d759b5815a4c2d4029a831440f",
+  "files": [
+    {
+      "path": ".github/workflows/porota-predeploy-v2.yml",
+      "mode": "100644",
+      "sha": "07a111a260d3c0bdff680a3a77d94d082ff61353",
+      "bytes": 22856
+    },
+    {
+      "path": "docs/architecture/RC6_624_DURABLE_AUDIT_ADR.md",
+      "mode": "100644",
+      "sha": "bb7b673e50513d7c0e50987d406e22f422a4b10a",
+      "bytes": 12503
+    },
+    {
+      "path": "rc6_shadow_runtime/funnel.py",
+      "mode": "100644",
+      "sha": "0147a828a0893e4f30037d71519e5b9cb8f4e95b",
+      "bytes": 45373
+    },
+    {
+      "path": "scripts/rc6_postdeploy_stress.py",
+      "mode": "100644",
+      "sha": "aab948358cfdc5b35decda19caa265b8301a2dec",
+      "bytes": 21570
+    },
+    {
+      "path": "tests/test_rc6_owned_funnel_details.py",
+      "mode": "100644",
+      "sha": "2f2382ebd27aab1bf7914d5b78c09ab458b4b55f",
+      "bytes": 6892
+    }
+  ],
+  "remote_sha": "5ed59faff3ace236098a05ecd777f07d444eddd1",
+  "next_focal_cases": 425
+}

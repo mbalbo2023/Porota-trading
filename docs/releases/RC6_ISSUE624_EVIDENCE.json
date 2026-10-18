@@ -1642,9 +1642,42 @@
       "fix": "Transactional one-pass bounded encoder with O(newstrings) rollback and fixed4096ref index; all limits/decoder/is_small unchanged. Before one actual FAIL then final87GREEN; C4710a658/local3.12SOc808 preserved. Source889c7b4/tree d368 frozen; existingPR625 diagf590af94 runs finite exact3.11.16/512MiB/.75CPU388focal+16cut A/B39131137482/job117686369644. Original7ce immutableZIP and same physicalDB/clocks/commonstandardgziplegacyseed; newC compiled only via existing pinned target. watchFALSE/noDroplet action; pending actual result.",
       "status": "CONTROL_IN_PROGRESS_NO_RELEASE_ACCEPTANCE",
       "receipt": "docs/releases/evidence624/a3-singlepass-frozen624.json"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "reopen": "Newsource5ed exact control39133237208 in progress; release/native gates remain mandatory.",
+      "id": "624-A3-EXACT-ABI-HOT-RED",
+      "classification": "ACTUAL_EXACT_RESOURCE_CONTROL_RED",
+      "cause": "Source889 freshHOT.82089270 andlegacyHOT.81051872 exceed.80. Total1.27176108/1.24615992,RSS193376/192716KiB,COLD8.10371/8.10717 pass; all16full>100MiB/hash/checkpoint/business exact.",
+      "fix": "Preserve originalartifact12138620150/164331B/2e1f6c1f andexactdecodedlog74511B/e6a52875.388focal0FAILERRORSKIP,5fixedsandboxesExit0/OOMfalse,actual3.11SOe75/Py-only/noNEEDED/noGLIBC independently inspected. ABIguardGREEN is not resource/release acceptance; diag retireda231 aftercapture. No unchanged rerun/hostaction.",
+      "status": "RED_HISTORICAL_NOT_RELABELLED",
+      "receipt": "docs/releases/evidence624/a3-singlepass-abi-red624.json"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "reopen": "Newsource5ed exact control39133237208 in progress; release/native gates remain mandatory.",
+      "id": "624-A3-OWNED-DETAIL-MATERIALIZATION",
+      "classification": "ACTUAL_CAUSAL_PROFILE_AND_REGRESSION",
+      "cause": "Single finite unchanged-source functionprofile:22662_event calls/133116canonicalJSON/110454digests; source normalizes/hashes everydetail before retaining only512. Actual25MBmetrics profile.332 is smaller; no speculative checkpoint cache.",
+      "fix": "PRIVATE consumedbatch copies only exactsafeASCII scalar details; every causal key/reach/cohort/counter/clock/guard stillruns. Per-callowner marks onlynewrows; retained512same fields/SHA finalizedbefore return andonlatererror. Public/factual/unsupported/nested/Unicode/nonfinite/hugeint/custom preserveoriginalpath/errors. Before549vs512oneFAIL; final18GREEN; integration183GREENinclfullcatalog/COLD/host (overlap). Initialworkingafterprofile preservescheckpoint3af/full3466; timing notfinalbytebinding andnotcapacity.",
+      "status": "LOCAL_GUARDS_GREEN_NATIVE_ADMISSION_PENDING",
+      "receipt": "docs/releases/evidence624/a3-owned-details-engineering624.tar.gz"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "reopen": "Newsource5ed exact control39133237208 in progress; release/native gates remain mandatory.",
+      "id": "624-A3-OWNED-DETAIL-EXACT-CONTROL",
+      "classification": "FROZEN_NEW_SOURCE_CONTROL_IN_PROGRESS",
+      "cause": "Previoussource889 remains rejected; newalgorithm needs distinct frozen source and full identical-input control.",
+      "fix": "Isolated5ed59faff3ace236098a05ecd777f07d444eddd1/treeba7bd625ac262eebe38fe039a28647a596bbcde5/parent889;5filesonly/C4710unchanged. ExistingPR625 diag93fdd45d/treeb9a54e17,run39133237208,425discoveredfocal+16fullcuts/original7ceimmutableimage/physicalDB/inode/SHA/clocks/commonlegacyseed/5fixedsandboxes. RequireexactSOe75; unchanged.80/1.30/192MiB/30s. watchFALSE/noSSH/Droplet. Owners6250684773/6250684936 EXACT.",
+      "status": "CONTROL_IN_PROGRESS_NO_RELEASE_ACCEPTANCE",
+      "receipt": "docs/releases/evidence624/a3-owned-details-frozen624.json"
     }
   ],
-  "findings_count": 117,
+  "findings_count": 120,
   "predeploy_state": "GREEN_EXACT_IMAGE_INDEPENDENTLY_BYTE_VERIFIED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -2142,17 +2175,16 @@
     }
   ],
   "engineering_next": {
-    "state": "FROZEN_FOR_EXACT_ABI_CONTROL_NOT_RELEASE_CERTIFIED",
-    "source_sha": "889c7b4dd50b0ac7dcf18acef109ac7aab126f5a",
-    "tree": "d3688924118fc6e4522fbdc870d97e0792884524",
-    "branch": "work/rc6-624-durable-cold-audit-20261018",
+    "state": "FROZEN_FOR_NEW_EXACT_RESOURCE_CONTROL_NOT_RELEASE",
+    "source_sha": "5ed59faff3ace236098a05ecd777f07d444eddd1",
+    "tree": "ba7bd625ac262eebe38fe039a28647a596bbcde5",
+    "branch": "work/rc6-624-owned-funnel-details-20261018",
     "paired_owners": [
-      6250401978,
-      6250402106
+      6250684773,
+      6250684936
     ],
-    "diagnostic_sha": "f590af940cc629d178df63e3e09385fd513b4170",
-    "run": 39131137482,
-    "job": 117686369644,
+    "diagnostic_sha": "93fdd45d8cea9e2d4761f036649f9cda67b696ec",
+    "run": 39133237208,
     "runtime": "7ce_INSTALLED_NOT_ACCEPTED",
     "new_release_pr": null
   }

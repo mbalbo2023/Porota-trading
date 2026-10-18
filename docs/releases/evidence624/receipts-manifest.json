@@ -3476,6 +3476,36 @@
       "source": "ACTUAL_A3_ENGINEERING_HISTORY_NOT_RELEASE_OR_RUNTIME_ACCEPTANCE",
       "bytes": 1641,
       "sha256": "1823d4b94d7cb533b2b2fcb4233811d2a477f9618c8c799968bd0449723948d4"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-owned-details-engineering624.tar.gz",
+      "source": "ACTUAL_ABI_RED_AND_NEXT_FROZEN_OWNED_DETAIL_BATCH_NOT_RELEASE",
+      "bytes": 60193,
+      "sha256": "505cb26622580611be11761cfd8d379d61619c3a7175988f9d6d66e64f84b43c"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-singlepass-abi624.zip",
+      "source": "ACTUAL_ABI_RED_AND_NEXT_FROZEN_OWNED_DETAIL_BATCH_NOT_RELEASE",
+      "bytes": 164331,
+      "sha256": "2e1f6c1f4d232153056e0966c16679211fa46a2d4864babea1d1a2a4f6501ca6"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-singlepass-abi-red624.json",
+      "source": "ACTUAL_ABI_RED_AND_NEXT_FROZEN_OWNED_DETAIL_BATCH_NOT_RELEASE",
+      "bytes": 7852,
+      "sha256": "27adb6d53c6dc4d8e03b451d172a548d02cf3d34489fec8a5bf281c00a6607f3"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-owned-details-frozen624.json",
+      "source": "ACTUAL_ABI_RED_AND_NEXT_FROZEN_OWNED_DETAIL_BATCH_NOT_RELEASE",
+      "bytes": 1334,
+      "sha256": "5ec09361e389e561bbe8bce0bfdb828a95cccac267429947a910a53a412107dc"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-singlepass-abi624-raw.log.gz",
+      "source": "ACTUAL_ABI_RED_AND_NEXT_FROZEN_OWNED_DETAIL_BATCH_NOT_RELEASE",
+      "bytes": 15549,
+      "sha256": "e81ff329b67d5b5143149a180e77b4ff01f4ef9b93af9af4888f467b44c1eb89"
     }
   ]
 }
