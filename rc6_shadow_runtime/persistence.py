@@ -85,6 +85,71 @@ class FrozenJSONDict(dict):
         return freeze(payload)
 
 
+_METADATA_VALUE_FIELDS = frozenset({
+    'schema', 'status', 'mode', 'state', 'session', 'family', 'asset_class',
+    'instrument_type', 'currency', 'settlement', 'market', 'channel', 'source',
+    'strategy', 'strategy_id', 'strategy_version', 'configuration_fingerprint',
+    'registry_sha256', 'preopen_digest', 'real_routes', 'reason',
+    'started_at', 'last_as_of', 'planned_at', 'source_at', 'received_at',
+    'known_at', 'event_at', 'frozen_at', 'cutoff', 'session_open',
+    'selected_at', 'promoted_at', 'demoted_at', 'last_touched_at',
+    'last_useful_observation_at', 'book_at', 'warmup_complete_at', 'completed_at',
+    'CATALOG_READY', 'STRATEGY_ELIGIBLE', 'TRADEABLE', 'DISCOVERY_TOUCHED',
+    'WARM', 'HOT', 'SIGNAL_EVALUATED', 'SIGNAL_CANDIDATE', 'ECONOMICS_PASS',
+    'ECONOMICS_FAIL', 'RISK_PASS', 'RISK_FAIL', 'PAPER_OPENED', 'EXIT_REASON', 'NET_PNL',
+})
+_METADATA_ARRAY_FIELDS = frozenset({
+    'reasons', 'reason_codes', 'exclusion_reasons', 'promotion_reasons',
+})
+
+
+class _MetadataValuePool:
+    """Bounded immutable VALUE sharing during one private JSON construction.
+
+    The stdlib already shares object keys, but recreates repeated sessions,
+    fingerprints and clocks in every checkpoint row. Only equal plain strings
+    are shared here. Containers, numeric types and all values remain intact.
+    The pool dies with this read; it is neither a source nor a cross-tick cache.
+    """
+    __slots__ = ('values', 'charged_bytes', 'maximum_entries', 'maximum_bytes')
+
+    def __init__(self, maximum_entries=4096, maximum_bytes=256*1024):
+        if (type(maximum_entries) is not int or not 0 < maximum_entries <= 4096
+                or type(maximum_bytes) is not int or not 0 < maximum_bytes <= 256*1024):
+            raise ValueError('METADATA_VALUE_POOL_BUDGET_REQUIRED')
+        self.values = {}
+        self.charged_bytes = 0
+        self.maximum_entries, self.maximum_bytes = maximum_entries, maximum_bytes
+
+    def share(self, value):
+        if type(value) is not str or len(value) > 1024:
+            return value
+        previous = self.values.get(value)
+        if previous is not None:
+            return previous
+        # Conservative key/value/table charge, including Unicode storage.
+        cost = sys.getsizeof(value) + 128
+        if (len(self.values) < self.maximum_entries
+                and self.charged_bytes + cost <= self.maximum_bytes):
+            self.values[value] = value
+            self.charged_bytes += cost
+        return value
+
+    def __call__(self, value):
+        for name, item in value.items():
+            if name in _METADATA_VALUE_FIELDS:
+                value[name] = self.share(item)
+            elif name == 'identity' and type(item) is list and len(item) == 5:
+                # Both five-part orders put the high-cardinality symbol first.
+                # Preserve distinct mutable identity arrays and every component.
+                for index in range(1, 5):
+                    item[index] = self.share(item[index])
+            elif name in _METADATA_ARRAY_FIELDS and type(item) is list:
+                for index, part in enumerate(item):
+                    item[index] = self.share(part)
+        return value
+
+
 def _preopen_scalar_decoder():
     """Intern only exact scalar metrics within one immutable preopen read.
 
@@ -94,8 +159,10 @@ def _preopen_scalar_decoder():
     """
     shared = {}
     charged = 0
+    value_pool = _MetadataValuePool()
     def decode(value):
         nonlocal charged
+        value_pool(value)
         if not ("status" in value and "value" in value) or len(value) > 16:
             return value
         key = []
@@ -124,6 +191,30 @@ def _preopen_scalar_decoder():
                 charged += cost
         return value
     return decode
+
+
+def compact_owned_preopen(payload):
+    """Apply the existing read representation before the first private write.
+
+    The worker exclusively owns this newly built freeze. Reuse equal immutable
+    metric summaries now, rather than keeping all duplicate dictionaries until
+    the next tick decodes the same bytes. No encoded field or digest changes.
+    """
+    decode = _preopen_scalar_decoder()
+    def visit(value, depth=0):
+        if depth > 64:
+            raise ValueError('SHADOW_PREOPEN_JSON_DEPTH_BUDGET')
+        if type(value) is dict:
+            for key, item in value.items():
+                value[key] = visit(item, depth+1)
+            return decode(value)
+        if type(value) is list:
+            for index, item in enumerate(value):
+                value[index] = visit(item, depth+1)
+        elif type(value) is tuple:
+            return tuple(visit(item, depth+1) for item in value)
+        return value
+    return visit(payload)
 
 
 def streamed_digest(payload):
@@ -472,7 +563,8 @@ class EvidenceFiles:
         # stdlib's UTF-8/16/32 and surrogate policy for legacy envelopes.
         text = raw.decode(json.detect_encoding(raw), "surrogatepass")
         del raw
-        envelope = json.loads(text, object_hook=_preopen_scalar_decoder() if compact_preopen else None)
+        envelope = json.loads(text, object_hook=(
+            _preopen_scalar_decoder() if compact_preopen else _MetadataValuePool()))
         del text
         calculated = streamed_digest(envelope.get("payload"))
         if envelope.get("digest") != calculated:

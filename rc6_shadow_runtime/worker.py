@@ -21,7 +21,7 @@ from rc6_dynamic_universe.common import digest, stamp
 from rc6_dynamic_universe.live import run_shadow
 from rc6_dynamic_universe.runtime import read_runtime
 from rc6_dynamic_universe.sources import source_observations
-from .persistence import EvidenceFiles, EvidencePayloadLimit
+from .persistence import EvidenceFiles, EvidencePayloadLimit, compact_owned_preopen
 from .timing import POLL_SECONDS
 
 LOG = logging.getLogger("dynamic_shadow")
@@ -487,10 +487,15 @@ class ShadowRuntime:
                 frozen = {"schema": VERSION, "source_identity": source_id,
                     "frozen": pre_report["frozen"], "quality": pre["quality"],
                     "intraday_history": pre.get("intraday_history", [])}
+                frozen = compact_owned_preopen(frozen)
                 files.write(freeze_name, frozen, immutable=True)
                 del pre_report
+                pre = None
             if frozen is not None:
                 _share_equal_frozen_rows(frozen)
+            preopen_digests = {key: value["digest"]
+                for key, value in (frozen or {}).get("frozen", {}).items()}
+            ready_count = len(inputs["catalog"])
             measured("preopen")
             base = {"schema": VERSION, "mode": "SHADOW", "as_of": at.isoformat(),
                 "session": context["session"], "phase": context["phase"],
@@ -564,6 +569,9 @@ class ShadowRuntime:
             from .funnel import evaluate_runtime_funnel
             report["family_routing"] = family_reports(self.database, as_of=at,
                 catalog=inputs["full_catalog"], sources=sources,compact_missing=True)
+            # Planner and family routing have consumed the input-only rows.
+            # Every surviving audit value already has its own report reference.
+            inputs = sources = frozen = capacity = None
             measured("family_routing")
             report["economic_exit_lab"], checkpoint["lab"] = evaluate_runtime_lab(
                 self.database, as_of=at, previous=previous.get("lab"))
@@ -581,9 +589,6 @@ class ShadowRuntime:
             measured("operational_funnel")
             # Never call a signal, economics or risk result as an execution
             # callback. These reports cannot reach the factual broker.
-            ready_count = len(inputs["catalog"])
-            preopen_digests = {key: value["digest"]
-                for key, value in (frozen or {}).get("frozen", {}).items()}
             reusable_rows = shared_preopen_row_lists(report)
             durable = durable_report_view(report, catalog_ready_count=ready_count)
             causal = durable_checkpoint_view(checkpoint)
