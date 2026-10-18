@@ -509,7 +509,7 @@ def _fixed_income_priority(instruments, at):
             "partition": "FAMILY_MARKET_CURRENCY_SETTLEMENT", "yield_is_buy_signal": False, "entry_authority": False}
 
 
-def family_reports(database, *, as_of, catalog, sources=None, compact_missing=False):
+def family_reports(database, *, as_of, catalog, sources=None, compact_missing=False, record_registry=None):
     """Dispatch every catalog row through its owner using existing offline data.
 
     ``sources`` accepts the regular BYMA/IOL/PPI source-cache identifiers,
@@ -720,6 +720,12 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
         handler_result = instrument_results.get(tuple(row["identity"]))
         if handler_result is not None:
             handler_result["selection"] = row
+    if record_registry is not None:
+        for index, instrument in enumerate(instruments):
+            child = instrument.get('handler_result')
+            if type(child) is dict:
+                instrument['handler_result'] = record_registry.pack(child)
+            instruments[index] = record_registry.pack(instrument)
     return {"schema": "RC6_SHADOW_FAMILY_RUNTIME_V2", "as_of": at.isoformat(), "status": "OBSERVE_ONLY",
             "catalog_count": len(catalog), "catalog_preserved": len(instruments) == len(catalog),
             "instruments": instruments, "families": families,

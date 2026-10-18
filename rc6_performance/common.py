@@ -3,6 +3,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
+from rc6_shadow_runtime.records import json_default
 
 
 def number(value, *, positive=False, nonnegative=False):
@@ -25,7 +26,7 @@ def stamp(value):
 
 
 def canonical(value):
-    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str, allow_nan=False)
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=json_default, allow_nan=False)
 
 
 def digest(value):

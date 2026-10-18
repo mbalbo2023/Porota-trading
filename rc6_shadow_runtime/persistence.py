@@ -12,6 +12,7 @@ from pathlib import Path
 import tempfile
 
 from rc6_dynamic_universe.common import digest
+from .records import RecordMap, checkpoint_decoder, json_default
 
 
 class _FrozenEmptyList(list):
@@ -129,7 +130,7 @@ def _preopen_scalar_decoder():
 def streamed_digest(payload):
     """Canonical SHA without a document-sized string and UTF-8 copy."""
     encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
-                               default=str, allow_nan=False)
+                               default=json_default, allow_nan=False)
     hasher = hashlib.sha256()
     for chunk in _canonical_chunks(encoder, payload):
         hasher.update(chunk)
@@ -146,7 +147,7 @@ def checkpoint_metrics(payload):
     No encoded content or object survives this call.
     """
     encoder = json.JSONEncoder(sort_keys=True, ensure_ascii=False,
-                               separators=(",", ":"), default=str, allow_nan=False)
+                               separators=(",", ":"), default=json_default, allow_nan=False)
     body = {key: value for key, value in payload.items() if key != "checkpoint_sha256"}
     hasher, body_bytes = hashlib.sha256(), 0
     for fragment in _canonical_fragments(encoder, body):
@@ -346,6 +347,19 @@ def _canonical_fragments(encoder, payload, *, immutable_shared_rows=()):
             charged += cost + 512
 
     def fresh(value):
+        if type(value) is RecordMap:
+            identity = id(value)
+            if identity in active:
+                raise ValueError("Circular reference detected")
+            active.add(identity)
+            try:
+                # Only this record's header is reconstructed; its current
+                # cells remain the content authority and nested values share
+                # their existing ownership. No full report is duplicated.
+                yield from fresh(json_default(value))
+            finally:
+                active.remove(identity)
+            return
         container = isinstance(value, (dict, list, tuple))
         if not container or _small_json_tree(value):
             yield encoder.encode(value)
@@ -454,7 +468,7 @@ class EvidenceFiles:
             raise ValueError("SHADOW_OUTPUT_MUST_BE_SEPARATE")
         return target
 
-    def read(self, name, *, compact_preopen=False):
+    def read(self, name, *, compact_preopen=False, compact_records=False):
         path = self.path(name)
         if not path.exists():
             return None
@@ -467,12 +481,16 @@ class EvidenceFiles:
             raise EvidencePayloadLimit(name, len(raw), self.payload_limit)
         if compact_preopen and not re.fullmatch(r"preopen-\d{4}-\d{2}-\d{2}\.json\.gz", name):
             raise ValueError("SHADOW_COMPACT_PREOPEN_ROLE_REQUIRED")
+        if type(compact_records) is not bool or (compact_records and name != 'checkpoint.json.gz'):
+            raise ValueError('SHADOW_COMPACT_CHECKPOINT_ROLE_REQUIRED')
         # json.loads(bytes) retains the byte document while constructing the
         # decoded object graph. Release it before construction. Preserve the
         # stdlib's UTF-8/16/32 and surrogate policy for legacy envelopes.
         text = raw.decode(json.detect_encoding(raw), "surrogatepass")
         del raw
-        envelope = json.loads(text, object_hook=_preopen_scalar_decoder() if compact_preopen else None)
+        hook = (_preopen_scalar_decoder() if compact_preopen else
+                checkpoint_decoder() if compact_records else None)
+        envelope = json.loads(text, object_hook=hook)
         del text
         calculated = streamed_digest(envelope.get("payload"))
         if envelope.get("digest") != calculated:
@@ -492,7 +510,7 @@ class EvidenceFiles:
         # digest follows it in the envelope; readers already validate by keys.
         # A zlib call per tiny JSON token stalled full-catalog generations.
         encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
-                                   default=str, allow_nan=False)
+                                   default=json_default, allow_nan=False)
         hasher = hashlib.sha256()
         prefix = b'{"payload":'
         overhead = len(prefix) + len(b',"digest":"') + 64 + len(b'"}')
@@ -543,7 +561,7 @@ class EvidenceFiles:
         if self.lock is None:
             raise ValueError("SHADOW_WRITER_LOCK_REQUIRED")
         encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
-                                   default=str, allow_nan=False)
+                                   default=json_default, allow_nan=False)
         hasher = hashlib.sha256()
         raw_bytes = 0
         profile = {name: 0.0 for name in ('encode_seconds', 'encode_cpu_seconds',
@@ -631,7 +649,7 @@ class EvidenceFiles:
         name = "cut-" + ident + ".json.gz"
         cut = {"manifest": manifest, **members}
         encoded_size = sum(len(fragment.encode()) for fragment in json.JSONEncoder(
-            sort_keys=True,separators=(",", ":"),default=str,allow_nan=False).iterencode(cut))
+            sort_keys=True,separators=(",", ":"),default=json_default,allow_nan=False).iterencode(cut))
         if encoded_size > 4 * 1024**2 - 1024:
             raise ValueError("SHADOW_DASHBOARD_CUT_LIMIT")
         old = self.read("CURRENT.json")

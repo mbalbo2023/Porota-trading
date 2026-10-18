@@ -37,7 +37,8 @@ GROUPS={
                             'tests/test_rc6_issue620_temporal.py','tests/test_rc6_deploy_generation_gate.py',
                             'tests/test_rc6_preopen_scalar_storage.py','tests/test_rc6_native_soak.py',
                             'tests/test_rc6_checkpoint_streaming.py','tests/test_rc6_owned_preopen.py',
-                            'tests/test_rc6_missing_view_sharing.py'],
+                            'tests/test_rc6_missing_view_sharing.py',
+                            'tests/test_rc6_record_materialization.py'],
  'signals_risk_exit_ledger':['tests/test_rc6_convergence_core_admission.py','tests/test_exit_supervision_v17.py',
                            'tests/test_exit_ledger_isolation_v17.py','tests/test_rc6_future_programming_complete.py',
                            'tests/test_rc6_performance_runtime.py','tests/test_rc6_final_programming_runtime.py',
@@ -91,7 +92,7 @@ def full_catalog_replay(folder):
         c.executemany('INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',rows)
     total=len(rows);del rows
     ready=sum(ready for _,ready in FULL_CATALOG_SHAPE.values())
-    worker=runtime.ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[])
+    worker=runtime.ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[],compact_records=True)
     started=time.monotonic();cuts=[]
     class Stop:
         def is_set(self):return len(cuts)>=2
@@ -162,7 +163,7 @@ def session_replay(folder, *, minutes=405):
     supervisor=PositionExitSupervisor(broker,clock_fn=clock,
         session_policy=broker.session_policy,max_hold_minutes=30)
     candles=SampleMaterializer(store)
-    shadow=ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[])
+    shadow=ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[],compact_records=True)
     shadow.tick(PRE)
     deliveries=[]
     def captured_transport(body):
@@ -207,7 +208,7 @@ def session_replay(folder, *, minutes=405):
             broker.store=type(store)(store.path)
             supervisor=PositionExitSupervisor(broker,clock_fn=clock,
                 session_policy=broker.session_policy,max_hold_minutes=30)
-            shadow=ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[])
+            shadow=ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[],compact_records=True)
         durations.append(time.monotonic()-started)
     if minutes<380:
         # Harness smoke still reaches the actual EOD clock with fresh books;

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import math
+from rc6_shadow_runtime.records import json_default
 
 
 def stamp(value):
@@ -14,7 +15,7 @@ def stamp(value):
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
-                                     allow_nan=False, default=str).encode()).hexdigest()
+                                     allow_nan=False, default=json_default).encode()).hexdigest()
 
 
 def identity(record):

@@ -22,6 +22,7 @@ from rc6_dynamic_universe.live import run_shadow
 from rc6_dynamic_universe.runtime import read_runtime
 from rc6_dynamic_universe.sources import source_observations
 from .persistence import EvidenceFiles, EvidencePayloadLimit
+from .records import RecordRegistry, pack_telemetry
 from .timing import POLL_SECONDS
 
 LOG = logging.getLogger("dynamic_shadow")
@@ -278,7 +279,10 @@ def shared_preopen_row_lists(report):
 class ShadowRuntime:
     def __init__(self, database, *, evidence_root=None, history_database=None,
                  source_roots=None, capacity_path=None, policies=None,
-                 maximum_bytes=128 * 1024**2, row_limit=20000):
+                 maximum_bytes=128 * 1024**2, row_limit=20000, compact_records=False):
+        if type(compact_records) is not bool:
+            raise ValueError('SHADOW_PRIVATE_RECORD_MODE_INVALID')
+        self.compact_records = compact_records
         self.database = Path(database).resolve(strict=True)
         self.history_database = Path(history_database).resolve() if history_database else None
         self.root = Path(evidence_root or (str(self.database) + ".shadow"))
@@ -451,7 +455,7 @@ class ShadowRuntime:
                 "capacity_policy": capacity_policy["fingerprint"],
                 "entry_signal_lab": "rc6.runtime-entry-signals.v1",
                 "operational_funnel": "rc6.prospective-operational-funnel.v1"})
-            previous = files.read("checkpoint.json.gz") or {}
+            previous = files.read("checkpoint.json.gz", compact_records=self.compact_records) or {}
             if previous and stamp(previous["as_of"]) > at:
                 raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
             self.last_sqlite_diagnostics = {}
@@ -542,6 +546,9 @@ class ShadowRuntime:
                 result = run_shadow(bundle, previous=compatible)
                 from .stages import enrich_pipeline
                 result = enrich_pipeline(self.database, result, as_of=at, compact_missing=True)
+                registry = RecordRegistry() if self.compact_records else None
+                if registry is not None:
+                    pack_telemetry(result['engines'], registry)
                 report = {**result, **base, "status": "SHADOW_OBSERVING",
                     "preopen_quality": frozen["quality"],
                     "preopen_immutable": True, "preopen_file": freeze_name,
@@ -563,7 +570,8 @@ class ShadowRuntime:
             from .entry_signals import evaluate_runtime_entry_signals
             from .funnel import evaluate_runtime_funnel
             report["family_routing"] = family_reports(self.database, as_of=at,
-                catalog=inputs["full_catalog"], sources=sources,compact_missing=True)
+                catalog=inputs["full_catalog"], sources=sources,compact_missing=True,
+                record_registry=RecordRegistry() if self.compact_records else None)
             measured("family_routing")
             report["economic_exit_lab"], checkpoint["lab"] = evaluate_runtime_lab(
                 self.database, as_of=at, previous=previous.get("lab"))
@@ -577,7 +585,7 @@ class ShadowRuntime:
                 self.database, as_of=at, planner_report=report,
                 entry_signal_report=report["entry_signal_lab"],
                 exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"),
-                private_runtime=True)
+                private_runtime=True, private_records=self.compact_records)
             measured("operational_funnel")
             # Never call a signal, economics or risk result as an execution
             # callback. These reports cannot reach the factual broker.
@@ -656,7 +664,7 @@ def run_worker(database, stop, *, clock_fn=None):
                 history = Path(os.getenv("HIST_DB_PATH", str(Path(os.getenv("DATA_DIR", "data")) / "market_history.db")))
                 worker = ShadowRuntime(database,
                     evidence_root=artifact_root(database) / "dynamic-shadow",
-                    history_database=history if history.exists() else None)
+                    history_database=history if history.exists() else None, compact_records=True)
             report = worker.tick(clock_fn())
             try:
                 LOG.info("DYNAMIC_SHADOW_RUNTIME status=%s phase=%s real_orders_sent=0 provider_requests=0",

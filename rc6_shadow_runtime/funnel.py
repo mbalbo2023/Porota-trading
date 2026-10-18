@@ -16,6 +16,7 @@ from rc6_performance.costs import realized_round_trip_cost
 from rc6_performance.metrics import distribution
 from .entry_signals import ART, _json, _native_payload, _read_rows, _signal_input_fingerprint
 from .persistence import checkpoint_metrics
+from .records import record, record_context
 
 SCHEMA = "rc6.prospective-operational-funnel.v1"
 DISCOVERY_EVIDENCE_SCHEMA = "rc6.causal-discovery-evidence.v1"
@@ -28,6 +29,7 @@ MAX_EVENTS = 120000
 MAX_POSITIONS = 4096
 MAX_CHECKPOINT_BYTES = 32 * 1024**2
 TABLES = ("decision_evidence_snapshots", "paper_fills", "paper_family_lifecycle_events")
+_ABSENT = object()
 
 
 def planner_identity(parts):
@@ -99,18 +101,24 @@ def _event(checkpoint, *, ident, strategy, stage, event_at, as_of, event_id, cha
         if not _reclaim_oldest_session(checkpoint, session) or len(checkpoint["reaches"]) >= MAX_IDENTITIES:
             raise ValueError("FUNNEL_IDENTITY_CAPACITY_EXCEEDED")
     checkpoint["event_keys"][key] = session
-    reach = checkpoint["reaches"].setdefault(entity, {"session": session, "identity": list(ident),
+    reach = checkpoint["reaches"].get(entity, _ABSENT)
+    if reach is _ABSENT:
+        reach = record({"session": session, "identity": list(ident),
         "family": ident[1], "currency": ident[3], "strategy_id": strategy, "channel": channel,
         "strategy_version": version, "configuration_fingerprint": config, "registry_sha256": registry,
         "stages": {}, "reasons": []})
+        checkpoint["reaches"][entity] = reach
     reach["stages"].setdefault(stage, clock.isoformat())
     reach["reasons"] = list(dict.fromkeys(reach["reasons"] + list(reasons)))[:64]
     group_key = digest([session, strategy, version, config, registry, tuple(ident), clock.astimezone(ART).hour, channel])
-    group = checkpoint["cohorts"].setdefault(group_key, {"session": session, "strategy_id": strategy,
+    group = checkpoint["cohorts"].get(group_key, _ABSENT)
+    if group is _ABSENT:
+        group = record({"session": session, "strategy_id": strategy,
         "family": ident[1], "symbol": ident[0], "identity": list(ident), "settlement": ident[2], "market": ident[4],
         "strategy_version": version, "configuration_fingerprint": config, "registry_sha256": registry,
         "hour_art": clock.astimezone(ART).hour, "currency": ident[3],
         "channel": channel, "stages": {}, "reasons": {}, "net_pnl": "0", "gross_pnl": "0", "costs": "0"})
+        checkpoint["cohorts"][group_key] = group
     group["stages"][stage] = group["stages"].get(stage, 0) + 1
     for reason in set(reasons):
         group["reasons"][str(reason)] = group["reasons"].get(str(reason), 0) + 1
@@ -176,7 +184,7 @@ def _planner_stages(checkpoint, report, at):
             # receipt with an unchanged provider timestamp is not a new sample.
             clocks = {p[1] for p in attempts if len(p) >= 3}
             useful = {p[1] for p in attempts if len(p) >= 3 and p[2]}
-            observation_stats.append({"identity": list(ident), "family": ident[1], "strategy_id": strategy,
+            observation_stats.append(record({"identity": list(ident), "family": ident[1], "strategy_id": strategy,
                 "currency": ident[3], "source": row.get("source"), "state": row.get("state"),
                 "attempts": len(attempts), "distinct_observations": len(clocks), "useful_distinct_observations": len(useful),
                 "useful_fraction": sum(bool(p[2]) for p in attempts if len(p) >= 3) / len(attempts) if attempts else None,
@@ -185,7 +193,7 @@ def _planner_stages(checkpoint, report, at):
                 "planned_revisit_seconds": row.get("revisit_seconds"), "achieved_revisit_seconds": row.get("achieved_revisit_seconds"),
                 "warmup_seconds": row.get("time_to_warmup_seconds"), "event_to_promotion_seconds": row.get("event_to_promotion_seconds"),
                 "warmup_progress": row.get("warmup_progress"), "exclusion_reasons": exclusion,
-                "missed_late_discovery": "NO_VERIFICADO_EXTERNAL_RUNTIME_ONLY"})
+                "missed_late_discovery": "NO_VERIFICADO_EXTERNAL_RUNTIME_ONLY"}))
     # Specialized families stay explicit even if they have no equity plan.
     family = report.get("family_routing") or {}
     known = {(r["identity"][0], r["identity"][1], r["identity"][2], r["identity"][3], r["identity"][4])
@@ -492,6 +500,17 @@ def _shadow_entries(checkpoint, report, at):
 
 
 def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_report=None,
+                            exit_lab_report=None, previous=None, row_limit=500,
+                            private_runtime=False, private_records=False):
+    if type(private_records) is not bool or (private_records and private_runtime is not True):
+        raise ValueError('FUNNEL_PRIVATE_RECORD_OWNERSHIP_REQUIRED')
+    with record_context(private_records):
+        return _evaluate_runtime_funnel(database, as_of=as_of, planner_report=planner_report,
+            entry_signal_report=entry_signal_report, exit_lab_report=exit_lab_report,
+            previous=previous, row_limit=row_limit, private_runtime=private_runtime)
+
+
+def _evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_report=None,
                             exit_lab_report=None, previous=None, row_limit=500, private_runtime=False):
     """Return report/state; caller owns the existing atomic evidence writer.
 
