@@ -69,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Compile bounded native RCA probes
-        run: python3 -B -m py_compile scripts/rc6_native624_profile.py scripts/rc6_native624_image_mapping.py
+        run: python3 -B -m py_compile scripts/rc6_native624_integrity_ownership.py
       - name: Prepare strict SSH
         shell: bash
         run: |
@@ -79,24 +79,22 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_market_watch"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6_market_watch" "$HOME/.ssh/known_hosts"
-      - name: Capture one bounded native stale RCA READ_ONLY
+      - name: Read specific integrity owners and cache accounting once
         shell: bash
         run: |
           set -Eeuo pipefail
           mkdir -p evidence/native624
-          timeout 240 ssh -i "$HOME/.ssh/rc6_market_watch" -o BatchMode=yes -o ConnectTimeout=10 \
+          timeout 90 ssh -i "$HOME/.ssh/rc6_market_watch" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
-            "$DO_USER@$DO_HOST" "sudo -n timeout 220 python3 -B - --sha 246ac975ed527f40db496af47584c9dcdec933f8 --tree 05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb" \
-            < scripts/rc6_native624_profile.py > evidence/native624/profile.json
-          python3 -m json.tool evidence/native624/profile.json >/dev/null
-          cat evidence/native624/profile.json
-      - name: Verify loaded image content against frozen archive
-        run: python3 -B scripts/rc6_native624_image_mapping.py --profile evidence/native624/profile.json --output evidence/native624/image-mapping.json --artifact-id 12129191130 --zip-bytes 415025098 --zip-sha256 b83c4456d957ca5c37e3ba618ec885208c571fdc46cc9db70575413e722abf08 --expected-image-id sha256:dbb0573f5f8abce78a6939319eaf3c502bda9b8e5f7bfcf2441896cd75315835
+            "$DO_USER@$DO_HOST" "sudo -n timeout 75 python3 -B - --sha 246ac975ed527f40db496af47584c9dcdec933f8 --tree 05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb" \
+            < scripts/rc6_native624_integrity_ownership.py > evidence/native624/integrity-ownership.json
+          python3 -m json.tool evidence/native624/integrity-ownership.json >/dev/null
+          cat evidence/native624/integrity-ownership.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-native624-rca246-${{ github.run_id }}
+          name: rc6-native624-integrity-ownership-${{ github.run_id }}
           path: evidence/native624
           if-no-files-found: error
           retention-days: 14
