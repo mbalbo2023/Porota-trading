@@ -100,11 +100,65 @@ def test_late_verification_uses_retained_stable_image_tag():
 
 
 def test_contract_runner_uses_host_timeout_and_python_entrypoint():
+    import yaml
+    from scripts.rc6_native_soak import SOAK_TIMEOUT_SECONDS
     source = _deploy()
     assert 'sudo -n timeout --signal=TERM --kill-after=60 3300 sudo -n docker run' in source
-    assert 'timeout-minutes: 110' in source
+    job = yaml.safe_load(source)['jobs']['promote']
+    stress = next(step for step in job['steps'] if step.get('id') == 'stress')
+    restored = next(step for step in job['steps'] if step.get('name') ==
+        'Independent sustained native acceptance after stress restoration')
+    # The administrative parent deadline must cover the unchanged55-minute
+    # contract child, native soak, stress and the independent restore soak.
+    # A literal former110-minute setting cannot express that dependency.
+    mandatory_seconds = 3300 + SOAK_TIMEOUT_SECONDS + 60 * (
+        stress['timeout-minutes'] + restored['timeout-minutes'])
+    assert job['timeout-minutes'] * 60 > mandatory_seconds
     assert '--entrypoint python "$STABLE_IMAGE" ck_contract_evidence_runner_hf6.py' in source
     assert '--entrypoint timeout' not in source
+
+
+def test_predeploy_preserves_the_entire_native_proof_directory():
+    import yaml
+    workflow=yaml.safe_load(_predeploy())
+    steps=workflow['jobs']['artifact-gate']['steps']
+    upload=next(step for step in steps if step.get('name')=='Upload predeploy evidence')
+    # Keep every current/future JUnit and session receipt, includingRED output,
+    # instead of a partial file list that silently drops the added405min run.
+    paths={line.strip().rstrip('/') for line in upload['with']['path'].splitlines()}
+    assert '${{ runner.temp }}/porota-native-sizing-evidence' in paths
+    assert '!${{ runner.temp }}/porota-native-sizing-evidence/tmp/**' in paths
+    assert upload['if']=='always()'
+
+
+def test_native_soak_receipts_are_preserved_before_and_after_stress():
+    import yaml
+    steps=yaml.safe_load(_deploy())['jobs']['promote']['steps']
+    before=next(step for step in steps if step.get('name')=='Collect postdeploy stress evidence even on RED')
+    after=next(step for step in steps if step.get('name')==
+        'Independent sustained native acceptance after stress restoration')
+    assert 'native-ten-generation-soak.json' in before['run']
+    assert '> evidence/postdeploy-stress/native-prestress-soak.json' in before['run']
+    assert '> evidence/postdeploy-stress/native-postrestore-soak.json' in after['run']
+
+
+def test_native_proof_ownership_is_reclaimed_after_sandbox_before_upload():
+    import yaml
+    steps=yaml.safe_load(_predeploy())['jobs']['artifact-gate']['steps']
+    names=[step.get('name') for step in steps]
+    name='Reclaim native proof evidence for artifact publication'
+    assert name in names, 'NATIVE_PROOF_ARTIFACT_EACCES_UNGUARDED'
+    proof=names.index('Exact image native sizing and generated catalog proof')
+    reclaim=names.index(name)
+    upload=names.index('Upload predeploy evidence')
+    assert proof < reclaim < upload
+    step=steps[reclaim]
+    assert step['if']=='always()'  # Preserve the forensic evidence onRED too.
+    assert 'rc6_proof_root="$RUNNER_TEMP/porota-native-sizing-evidence"' in step['run']
+    assert 'sudo chown -R -- "$(id -u):$(id -g)" "$rc6_proof_root"' in step['run']
+    sandbox=steps[proof]['run']
+    assert '--user 1000:1000' in sandbox and '--read-only' in sandbox
+    assert '--cap-drop ALL' in sandbox and '--security-opt no-new-privileges' in sandbox
 
 
 def test_sector_map_and_multisource_helpers_are_immutable_deploy_inputs():

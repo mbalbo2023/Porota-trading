@@ -53,6 +53,8 @@ _ALIASES = {
 def _mapping(value):
     if isinstance(value, Mapping):
         return dict(value)
+    if value is None or (type(value) is str and value in ("", "{}")):
+        return {}
     try:
         parsed = json.loads(value or "{}")
     except (TypeError, ValueError):
@@ -516,7 +518,8 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
     data = _read(database, at)
     evidence = defaultdict(list)
     identity_reviews = []
-    primary_keys = {_key(row) for row in catalog if _key(row)}
+    catalog_keys = [_key(row) for row in catalog]
+    primary_keys = {key for key in catalog_keys if key is not None}
     for row in [*data["metadata"], *data["quotes"], *catalog]:
         key = _key(row)
         if key and key in primary_keys and key[1] != "FUTUROS":
@@ -678,8 +681,7 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
     handlers = {"EQUITY_SPOT": equity, "FIXED_INCOME_ANALYTICS": fixed_income,
                 "OPTION_STRUCTURE": options, "TREASURY": caucion, "FUND_NAV": fci}
     instruments = []
-    for record in catalog:
-        key = _key(record)
+    for record, key in zip(catalog, catalog_keys):
         if key is None:
             instruments.append({"identity": [record.get(name) for name in IDENTITY_KEYS],
                                 "status": "OBSERVE_ONLY", "observation_status": "EXCLUDED_IDENTITY",

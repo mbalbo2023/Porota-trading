@@ -132,6 +132,10 @@ def _planner_stages(checkpoint, report, at):
     session = report.get("session") or at.astimezone(ART).date().isoformat()
     observation_stats, reasons = [], Counter()
     for engine, plan in report.get("engines", {}).items():
+        # Planner order differs from performance order. Build the exact
+        # five-field index once, retaining currency/market/settlement distinctions.
+        opened_priority_index = {(k[0], k[1], k[4], k[3], k[2])
+                                 for k in plan.get("opened_priority", [])}
         for row in plan.get("telemetry", []):
             ident = planner_identity(row["identity"])
             strategy = _strategy(engine, row)
@@ -157,7 +161,7 @@ def _planner_stages(checkpoint, report, at):
                         as_of=at, event_id="first-native-touch", channel="UNIVERSE_SHADOW", session=session,
                         clock_basis="NATIVE_SOURCE_RECEIPT; selection intent is separate", reasons=exclusion,
                         detail={"source_at": state.get("source_at"), "source": state.get("source")})
-            opened_priority = list(ident) in [[k[0], k[1], k[4], k[3], k[2]] for k in plan.get("opened_priority", [])]
+            opened_priority = tuple(ident) in opened_priority_index
             if row.get("state") in {"WARM", "HOT"} and not opened_priority:
                 promotion = state.get("promoted_at") or row.get("promoted_at")
                 if promotion and stamp(promotion) >= stamp(checkpoint["started_at"]):

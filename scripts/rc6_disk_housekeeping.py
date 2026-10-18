@@ -312,7 +312,9 @@ def _docker_observation() -> str:
     return cp.stdout.strip()
 
 
-def execute(mode: str, policy: dict) -> tuple[dict, int]:
+def execute(mode: str, policy: dict, *, preserve_backups: bool = False) -> tuple[dict, int]:
+    if type(preserve_backups) is not bool:
+        raise ValueError("preserve_backups must be boolean")
     before_free = disk_free_bytes("/")
     before_inodes = inode_free_percent("/")
     before_band = disk_band(before_free, policy)
@@ -329,6 +331,15 @@ def execute(mode: str, policy: dict) -> tuple[dict, int]:
 
     tmp = tmp_candidates(policy)
     plans = all_backup_plans(policy)
+    if preserve_backups:
+        # An operator may forbid backup deletion for a particular mission.
+        # Retain the full counterfactual retention inventory and leave the
+        # frozen/global policy and all capacity floors unchanged. No backup
+        # enters the deletion list, including a file appearing after this scan.
+        for group in plans.values():
+            group["operator_preserved"] = group["delete"]
+            group["kept"] = group["kept"] + group["delete"]
+            group["delete"] = []
     backup_delete = [
         row
         for group in plans.values()
@@ -339,6 +350,7 @@ def execute(mode: str, policy: dict) -> tuple[dict, int]:
         "schema_version": 1,
         "requested_mode": mode,
         "effective_mode": effective_mode,
+        "preserve_backups": preserve_backups,
         "before": {
             "free_bytes": before_free,
             "inode_free_percent": before_inodes,
@@ -357,6 +369,7 @@ def execute(mode: str, policy: dict) -> tuple[dict, int]:
                 name: {
                     "kept": [asdict(x) for x in group["kept"]],
                     "delete": [asdict(x) for x in group["delete"]],
+                    "operator_preserved": [asdict(x) for x in group.get("operator_preserved", [])],
                 }
                 for name, group in plans.items()
             },
@@ -421,11 +434,13 @@ def main() -> int:
     ap.add_argument("--policy", required=True)
     ap.add_argument("--mode", choices=("audit", "cleanup", "auto"), default="audit")
     ap.add_argument("--json-out")
+    ap.add_argument("--preserve-backups", action="store_true",
+                    help="Retain all backups for this invocation; keep all disk/safety gates")
     args = ap.parse_args()
 
     policy = load_policy(args.policy)
     try:
-        result, exit_code = execute(args.mode, policy)
+        result, exit_code = execute(args.mode, policy, preserve_backups=args.preserve_backups)
     except Exception as exc:
         result = {
             "schema_version": 1,

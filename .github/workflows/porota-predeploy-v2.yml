@@ -324,6 +324,10 @@ jobs:
           # The generated catalogue runs inline without a pytest parent beside it.
           run_native_proof catalog python scripts/rc6_postdeploy_stress.py \
             --full-catalog-check --output /proof/catalog
+          # Same offline405-minute replay and eight adversarial groups later
+          # required on the Droplet. CI success never substitutes for that host.
+          run_native_proof session python scripts/rc6_postdeploy_stress.py \
+            --output /proof/session
           echo 'POROTA_EXACT_IMAGE_NATIVE_SIZING=GREEN'
       - name: Exact image runtime smoke contract
         shell: bash
@@ -347,6 +351,19 @@ jobs:
           assert 'real_orders_sent_required: 0' in policy
           print('POROTA_PAPER_SAFETY_SOURCE_GATE=GREEN')
           PY
+
+      - name: Reclaim native proof evidence for artifact publication
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # UID1000 sandbox fixtures can have0700 directories. The upload
+          # glob walks directories before exclusions, so reclaim only this
+          # runner-owned output tree AFTER all sandbox processes have exited.
+          rc6_proof_root="$RUNNER_TEMP/porota-native-sizing-evidence"
+          if test -d "$rc6_proof_root"; then
+            sudo chown -R -- "$(id -u):$(id -g)" "$rc6_proof_root"
+          fi
 
       - name: Export frozen candidate artifacts
         shell: bash
@@ -412,8 +429,8 @@ jobs:
             /tmp/porota-predeploy-image.tar.gz
             /tmp/porota-frozen-candidate.json
             /tmp/porota-governed-tests.xml
-            ${{ runner.temp }}/porota-native-sizing-evidence/native-bound.xml
-            ${{ runner.temp }}/porota-native-sizing-evidence/catalog/full-catalog.json
+            ${{ runner.temp }}/porota-native-sizing-evidence/
+            !${{ runner.temp }}/porota-native-sizing-evidence/tmp/**
             /tmp/porota-governed-tests.json
             /tmp/porota-test-collection.txt
             /tmp/porota-test-exclusions.txt

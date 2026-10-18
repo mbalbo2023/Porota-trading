@@ -17,6 +17,17 @@ from scripts.porota_image_source_identity import verify_source_identity
 
 def receipt(cut, health, expected_sha, expected_tree, at):
     status, pointer = cut['status'], cut['pointer']
+    timing = status.get('generation_timing') or {}
+    if timing.get('tick_measurement_boundary') == 'BEFORE_STATUS_AND_CURRENT':
+        publication = cut.get('publication')
+        if (not isinstance(publication,dict)
+                or publication.get('generation_id') != pointer['generation_id']
+                or publication.get('source_as_of') != status['as_of']
+                or type(publication.get('total_seconds')) not in (int,float)
+                or not math.isfinite(publication['total_seconds'])
+                or publication['total_seconds'] < timing['tick_seconds']
+                or publication.get('poll_seconds') != 30):
+            raise ValueError('GENERATION_PUBLICATION_COST_UNVERIFIED')
     budget, authority = generation_budget(status)
     stamp = datetime.fromisoformat(status['as_of'].replace('Z', '+00:00'))
     if stamp.tzinfo is None or authority != 'TWO_MEASURED_CYCLES_SOURCE_CAPPED':
@@ -68,6 +79,7 @@ def advances(first, second):
 
 
 _SAFE_FAILURE_REASONS = {
+    'GENERATION_PUBLICATION_COST_UNVERIFIED', 'GENERATION_ORDER_REGRESSION',
     'GENERATION_CLOCK_UNVERIFIED', 'GENERATION_STALE_OR_FUTURE',
     'GENERATION_AUTHORITY_UNVERIFIED', 'GENERATION_HASH_UNVERIFIED',
     'GENERATION_SEQUENCE_UNVERIFIED', 'WORKER_SOURCE_IDENTITY_UNVERIFIED',
@@ -77,6 +89,8 @@ _SAFE_FAILURE_REASONS = {
     'GENERATION_MEMBER_MISMATCH', 'GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS',
     'GENERATION_SAFETY_UNVERIFIED', 'SHADOW_EVIDENCE_DIGEST_MISMATCH',
     'SHADOW_PAYLOAD_LIMIT',
+    'NATIVE_SOAK_SERVICE_CHANGED', 'NATIVE_SOAK_SERVICE_UNAVAILABLE',
+    'NATIVE_SOAK_RAM_RESERVE_BREACHED', 'NATIVE_SOAK_DISK_RESERVE_BREACHED',
 }
 
 
@@ -122,10 +136,25 @@ def _observation_context(cut, at):
 
 
 def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monotonic,
-            wait=time.sleep, now=lambda: datetime.now(timezone.utc), reader=read_committed_generation):
+            wait=time.sleep, now=lambda: datetime.now(timezone.utc), reader=read_committed_generation,
+            minimum_generations=2, strict=False, sample=None):
+    if type(minimum_generations) is not int or not 2 <= minimum_generations <= 100 or type(strict) is not bool:
+        raise ValueError('GENERATION_COLLECTION_CONTRACT_INVALID')
     start = clock(); first = None; last_error = None; last_reason = None; last_observation = {}
+    history = []; rejection_count = 0; generations = []; resources = []
+    def remember(kind, detail):
+        row = {'kind':kind, 'elapsed_seconds':round(clock()-start,6), **detail}
+        # Bound the series without mistaking the last null error for a clean run.
+        if len(history) == 128:
+            del history[0]
+        history.append(row)
     while clock() - start < timeout:
         try:
+            if sample is not None:
+                resource_receipt = sample()
+                if len(resources) == 1024:
+                    del resources[0]
+                resources.append(resource_receipt)
             health_path = root.parent / 'runtime-health.json'
             if health_path.is_symlink() or health_path.stat().st_size > 131072:
                 raise ValueError('WORKER_HEALTH_UNVERIFIED')
@@ -136,22 +165,52 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
             observed_at = now()
             last_observation = _observation_context(cut, observed_at)
             current = receipt(cut, health, expected_sha, expected_tree, observed_at)
+            if first and (current['sequence'] < first['sequence'] or
+                    (current['sequence'] == first['sequence'] and current['generation_id'] != first['generation_id'])):
+                raise ValueError('GENERATION_ORDER_REGRESSION')
+            if (strict and first and current['sequence'] != first['sequence']
+                    and not advances(first,current)):
+                raise ValueError('GENERATION_ORDER_REGRESSION')
+            raced = (cut.get('reader_observation') or {}).get('publication_race_retries',0)
+            if type(raced) is int and 0 < raced <= 10:
+                remember('BOUNDED_PUBLICATION_RACE',{'retries':raced,'sequence':current['sequence']})
             if first and advances(first, current):
-                return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'GREEN',
-                        'read_only': True, 'generations': [first, current]}
-            if first is None or current['configuration_fingerprint'] != first['configuration_fingerprint']:
+                remember('ADVANCING_GENERATION', {'sequence':current['sequence'], **last_observation})
+                generations.append(current)
                 first = current
+                if len(generations) >= minimum_generations:
+                    return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'GREEN',
+                            'read_only': True, 'generations': generations,
+                            'rejection_count':rejection_count,'observations':history,
+                            'minimum_generations':minimum_generations,'strict':strict,'resources':resources}
+            if first is None or current['configuration_fingerprint'] != first['configuration_fingerprint']:
+                if strict and generations:
+                    raise ValueError('GENERATION_ORDER_REGRESSION')
+                remember('FIRST_GENERATION', {'sequence':current['sequence'], **last_observation})
+                first = current
+                generations = [current]
             last_error = None; last_reason = None
         except (OSError, ValueError, KeyError, TypeError) as exc:
             # Only reviewed literal codes may cross the native log boundary.
             last_error = type(exc).__name__
             last_reason = str(exc) if type(exc) is ValueError and str(exc) in _SAFE_FAILURE_REASONS else None
+            rejection_count += 1
+            remember('REJECTED', {'error_class':last_error,'reason':last_reason, **last_observation})
+            if strict:
+                return {'schema':'rc6.deploy-generation-gate.v1','status':'RED','read_only':True,
+                        'reason':'SUSTAINED_NATIVE_GENERATIONS_REJECTED','error_class':last_error,
+                        'error_reason':last_reason,'rejection_count':rejection_count,'observations':history,
+                        'generations':generations,'minimum_generations':minimum_generations,
+                        'strict':strict,'resources':resources}
             first = None
+            generations = []
         wait(2)
     return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'RED',
             'read_only': True, 'reason': 'TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED',
             'error_class': last_error, 'error_reason': last_reason,
-            'last_observation': last_observation, 'generations': [first] if first else []}
+            'rejection_count':rejection_count,'observations':history,
+            'last_observation': last_observation, 'generations': generations,
+            'minimum_generations':minimum_generations,'strict':strict,'resources':resources}
 
 
 def main():
