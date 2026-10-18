@@ -57,7 +57,7 @@ jobs:
 
   watch:
     needs: contracts
-    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-624-consumer-profile-20261017' # one bounded passive RCA after completed native stale rejection
+    if: false # targeted RCA and integrity ownership captured; no host action scheduled
     runs-on: ubuntu-24.04
     timeout-minutes: 7
     env:
