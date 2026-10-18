@@ -1565,9 +1565,42 @@
       "receipt": "docs/releases/evidence624/native-7ce-two-red624.json",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Strict10/405EN_DROPLET/restoreNOT_EXECUTED. Newarchitecturesource+allnewexactgatesmandatory; no marginaltuneandnative loop."
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Whole-worker fresh4+legacy4/exact ABI/new C guards and all native release gates remain mandatory. Runtime7ce NOT_ACCEPTED.",
+      "id": "624-A3-PICKLE-CODEC-REJECTED",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "classification": "ACTUAL_PROTOTYPE_RED",
+      "cause": "Exact265MB SHA parity but capture1.6771x baseline, combined8.4894x, pack.5366>predeclared bounds. Loaded graph outside measurement is NOT worker capacity.",
+      "fix": "Preserve raw evidence. Bounded new profile attributes most decoder cost to Python opcode walk; switch to fixed non-executable typed primitives, not relaxed criteria.",
+      "status": "RED_REJECTED",
+      "receipt": "docs/releases/evidence624/a3-codec624-receipt.json"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Whole-worker fresh4+legacy4/exact ABI/new C guards and all native release gates remain mandatory. Runtime7ce NOT_ACCEPTED.",
+      "id": "624-A3-FLAT-TYPED-CODEC-REJECTED",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "classification": "ACTUAL_PROTOTYPE_RED",
+      "cause": "Flat typed prototype capture1.3713x,combined3.1606x,pack.9807 despite exact SHA. Per-token reallocations and missing role topology. First owned topology correctly hits512MiB quota due unsupported readonly containers/literal framing.",
+      "fix": "Preserve both REDs. Actual-value readonly adapters, fixed131072Bbuffer, coalesced64KiBliterals and role-local bounded memo/backward refs implement declared topology. Before6/4FAIL;firstafter6/1FAIL;final6GREEN. No threshold raised.",
+      "status": "RED_HISTORICAL_FAILURES_PRESERVED",
+      "receipt": "docs/releases/evidence624/a3-codec2-624-receipt.json"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Whole-worker fresh4+legacy4/exact ABI/new C guards and all native release gates remain mandatory. Runtime7ce NOT_ACCEPTED.",
+      "id": "624-A3-ACTUAL-PRODUCER-SNAPSHOT-FEASIBLE",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "classification": "SERIALIZATION_FEASIBILITY_ONLY",
+      "cause": "Same physical SQLite/inode/SHA/PRE clock and exact unchanged worker values. All6roles+full265449852B SHA346682b9 match; SQLite requery forbidden.",
+      "fix": "Capture1.508574CPU/baseline3.316131=.454920;COLD3.916101;combined1.635845;pack122606754/.461883. Original executed Ccd98/binaryfb21 retained. Later copy fix retains CPython-only/no-libc symbols; not in measured CPU receipt. Concrete governed ADR precedes isolated product implementation from90dc.",
+      "status": "GREEN_FEASIBILITY_NOT_WHOLE_WORKER_OR_NATIVE",
+      "receipt": "docs/releases/evidence624/a3-owned-snapshot624-receipt.json"
     }
   ],
-  "findings_count": 110,
+  "findings_count": 113,
   "predeploy_state": "GREEN_EXACT_IMAGE_INDEPENDENTLY_BYTE_VERIFIED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -2065,10 +2098,18 @@
     }
   ],
   "engineering_next": {
-    "phase": "DESIGN_ONLY_A3_DURABLE_HOT_COLD",
-    "source_written": false,
-    "new_candidate_frozen": false,
-    "target": "durableboundedactual-valuessnapshot; samefullcanonicalCOLDaudit/sourceclocks/everybusinessvalue; atomicHOT; oneexistingworker; boundedqueue/crashreplay/quotas/backpressure; no laterDBreconstruction",
-    "reason": "Measurednativepair121.234>120 afterA2; no further marginalnative retries."
+    "state": "ISOLATED_A3_IMPLEMENTATION_STARTED_NOT_FROZEN_NOT_DEPLOYED",
+    "base_sha": "90dc852c36eaa95683db39ea1593cb6ff98bf202",
+    "branch": "work/rc6-624-durable-cold-audit-20261018",
+    "adr": "docs/releases/evidence624/a3-adr624.md",
+    "paired_owners": [
+      6249326702,
+      6249326881
+    ],
+    "local_initial_regressions": {
+      "cases": 36,
+      "failures": 0,
+      "scope": "DEVELOPMENT_ONLY_NOT_CAPACITY_OR_RELEASE_CERTIFICATE"
+    }
   }
 }

@@ -1,0 +1,47 @@
+{
+  "schema": "rc6.a3-codec624.fixed-native-feasibility.v1",
+  "scope": "CODEC_ONLY_INPUT_LOADED_OUTSIDE_TIMING",
+  "native_capacity_certificate": false,
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "input_path": "paired-private-views624-legacy-candidate/shadow/computed-0b2d9c329bd3564017e1ceb87e6d2b244c3d008838733bee0ab92e1f8f8497cd.json.gz",
+  "input_compressed_sha256": "a98c2850cca0965c0e32c58af56b7708ac1e921ba94e933ef00ae019750d5413",
+  "original_raw_sha256": "0b2d9c329bd3564017e1ceb87e6d2b244c3d008838733bee0ab92e1f8f8497cd",
+  "original_raw_bytes": 265449928,
+  "prototype_c_source_sha256": "fcaccdaa1a1fd691bd061a75b21e810a73e58d6e2fff418b0b4914b62e08aab6",
+  "prototype_binary_sha256": "e6390ea95fdc93bfa6b387a406891f4afc0f9ea0fc07c80dbcb50aacf8a4a85f",
+  "existing_bound_source_sha256": "12ce21146fe9de9845b4458c7abc3d81b0eb00ec645dd10a37e9e4e255c50a43",
+  "memo_limits": {
+    "strings": 4096,
+    "utf8_bytes": 262144
+  },
+  "limits": {
+    "capture_cpu_ratio_max": 0.5,
+    "combined_cpu_ratio_max": 2.0,
+    "snapshot_raw_ratio_max": 0.5
+  },
+  "baseline": {
+    "bytes": 265449928,
+    "sha256": "0b2d9c329bd3564017e1ceb87e6d2b244c3d008838733bee0ab92e1f8f8497cd",
+    "wall": 3.7340613739943365,
+    "cpu": 3.663001346
+  },
+  "capture": {
+    "wall": 5.099138382000092,
+    "cpu": 5.023068996,
+    "bytes": 260328125,
+    "sha256": "f88bd49d16ee3651e9391aa37d150f5d4ca6f38072e3f728a9c5b31a5e8fbedd",
+    "records": 51937,
+    "max_record_bytes": 59088
+  },
+  "cold": {
+    "bytes": 265449928,
+    "sha256": "0b2d9c329bd3564017e1ceb87e6d2b244c3d008838733bee0ab92e1f8f8497cd",
+    "wall": 6.6038674369992805,
+    "cpu": 6.554126234
+  },
+  "capture_cpu_ratio": 1.3712987033120243,
+  "combined_cpu_ratio": 3.160576296987252,
+  "snapshot_raw_ratio": 0.9807052010200583,
+  "peak_rss_kib_includes_loaded_input": 1077392,
+  "status": "RED_CODEC_HYPOTHESIS_INSUFFICIENT"
+}

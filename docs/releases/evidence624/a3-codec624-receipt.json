@@ -1,0 +1,41 @@
+{
+  "schema": "rc6.a3-codec624.feasibility.v1",
+  "scope": "CODEC_ONLY_INPUT_LOADED_OUTSIDE_TIMING",
+  "native_capacity_certificate": false,
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "input_path": "paired-private-views624-legacy-candidate/shadow/computed-0b2d9c329bd3564017e1ceb87e6d2b244c3d008838733bee0ab92e1f8f8497cd.json.gz",
+  "input_compressed_sha256": "a98c2850cca0965c0e32c58af56b7708ac1e921ba94e933ef00ae019750d5413",
+  "original_raw_sha256": "0b2d9c329bd3564017e1ceb87e6d2b244c3d008838733bee0ab92e1f8f8497cd",
+  "original_raw_bytes": 265449928,
+  "native_bound_sha256": "7f1dea2f35c74ac989099d3c525108fc9070d899e55ab6af7ceca931743bade8",
+  "limits": {
+    "capture_cpu_ratio_max": 0.5,
+    "combined_cpu_ratio_max": 2.0,
+    "snapshot_raw_ratio_max": 0.5
+  },
+  "baseline": {
+    "bytes": 265449928,
+    "sha256": "0b2d9c329bd3564017e1ceb87e6d2b244c3d008838733bee0ab92e1f8f8497cd",
+    "wall": 3.2624336000008043,
+    "cpu": 3.1888571169999995
+  },
+  "capture": {
+    "wall": 5.3882459640008165,
+    "cpu": 5.347993489,
+    "bytes": 142450261,
+    "sha256": "2a33e3ded8a2a43029f28554823cd7a3236404b338fd1854944c4e48d02aba54",
+    "records": 51937,
+    "max_record_bytes": 27949
+  },
+  "cold": {
+    "bytes": 265449928,
+    "sha256": "0b2d9c329bd3564017e1ceb87e6d2b244c3d008838733bee0ab92e1f8f8497cd",
+    "wall": 21.765015388999018,
+    "cpu": 21.723576395
+  },
+  "capture_cpu_ratio": 1.6770878383009098,
+  "combined_cpu_ratio": 8.489427055128855,
+  "snapshot_raw_ratio": 0.536637030091792,
+  "peak_rss_kib_includes_loaded_input": 1077884,
+  "status": "RED_CODEC_HYPOTHESIS_INSUFFICIENT"
+}

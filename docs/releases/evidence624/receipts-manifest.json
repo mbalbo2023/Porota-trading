@@ -3398,6 +3398,42 @@
       "source": "ACTUAL_NATIVE_7CE_RED_NOT_ACCEPTED_NO_RETRY",
       "bytes": 73163,
       "sha256": "12c4b1a77e98a069c3c8d1491ed570d5001be3412a4b0e5c9c3d701ec2aed65d"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-prototypes624.tar.gz",
+      "source": "A3_PROTOTYPE_FEASIBILITY_NOT_CAPACITY_OR_RUNTIME_CERTIFICATE",
+      "bytes": 117673,
+      "sha256": "de9b81e123e4a3a8819f8059b2af60b0509e3ac514d61322d103435d73def703"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-codec624-receipt.json",
+      "source": "A3_PROTOTYPE_FEASIBILITY_NOT_CAPACITY_OR_RUNTIME_CERTIFICATE",
+      "bytes": 1629,
+      "sha256": "53801babcf402525f2ffdc9aa3d5d40dbd74df3245fe15b7947869cee1f3de3e"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-codec2-624-receipt.json",
+      "source": "A3_PROTOTYPE_FEASIBILITY_NOT_CAPACITY_OR_RUNTIME_CERTIFICATE",
+      "bytes": 1909,
+      "sha256": "bc407d1e73d1b59594cc25ca04c677aa6a1c1bb08f6c591b7d9a79c1af6f249d"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-owned-snapshot624-receipt.json",
+      "source": "A3_PROTOTYPE_FEASIBILITY_NOT_CAPACITY_OR_RUNTIME_CERTIFICATE",
+      "bytes": 7943,
+      "sha256": "5e45d78b18e2d5919d3c84a7a8d1290875631aa319a497f6ab2184e48fd5dd12"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-cpython-symbol-guard624.json",
+      "source": "A3_PROTOTYPE_FEASIBILITY_NOT_CAPACITY_OR_RUNTIME_CERTIFICATE",
+      "bytes": 1887,
+      "sha256": "244162f0634983d045b776c4eb97d9692447ee77162ae8a337e397fb9dfc12a4"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-adr624.md",
+      "source": "A3_PROTOTYPE_FEASIBILITY_NOT_CAPACITY_OR_RUNTIME_CERTIFICATE",
+      "bytes": 5821,
+      "sha256": "e9c151158e4e28b6e43dc9ae428ec470c493d1ab83de336bd447deb43bf1dacc"
     }
   ]
 }
