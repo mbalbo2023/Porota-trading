@@ -3434,6 +3434,48 @@
       "source": "A3_PROTOTYPE_FEASIBILITY_NOT_CAPACITY_OR_RUNTIME_CERTIFICATE",
       "bytes": 5821,
       "sha256": "e9c151158e4e28b6e43dc9ae428ec470c493d1ab83de336bd447deb43bf1dacc"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-singlepass-engineering624.tar.gz",
+      "source": "ACTUAL_A3_ENGINEERING_HISTORY_NOT_RELEASE_OR_RUNTIME_ACCEPTANCE",
+      "bytes": 554626,
+      "sha256": "402ec071fbf50a44f0151da903715557200186745fff790122816be1072c2667"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-worker-first-red624.json",
+      "source": "ACTUAL_A3_ENGINEERING_HISTORY_NOT_RELEASE_OR_RUNTIME_ACCEPTANCE",
+      "bytes": 1762,
+      "sha256": "2d016f9ea81280de74e073e8f6cdcaea79f0846be92382f5d9e47d7c0028205e"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-prefix-workspace-red624.json",
+      "source": "ACTUAL_A3_ENGINEERING_HISTORY_NOT_RELEASE_OR_RUNTIME_ACCEPTANCE",
+      "bytes": 2453,
+      "sha256": "d43162dfd6f2344b5d126cd18f274f838e0df3f7e46937504251290abc0bd32c"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-worker-anonymous-summary624.json",
+      "source": "ACTUAL_A3_ENGINEERING_HISTORY_NOT_RELEASE_OR_RUNTIME_ACCEPTANCE",
+      "bytes": 897,
+      "sha256": "b1334ef157a3d5cb6390cf5282771745891ff5d7ed5d86d16dd7abe1fd8e3278"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-prefix-private-source-binding624.json",
+      "source": "ACTUAL_A3_ENGINEERING_HISTORY_NOT_RELEASE_OR_RUNTIME_ACCEPTANCE",
+      "bytes": 554,
+      "sha256": "7a9a657c968f1f686378262b56a669aef5d7791d79d175fa399b6aa8c78e47cc"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-singlepass-frozen624.json",
+      "source": "ACTUAL_A3_ENGINEERING_HISTORY_NOT_RELEASE_OR_RUNTIME_ACCEPTANCE",
+      "bytes": 1451,
+      "sha256": "ef7cf44d0fd0d0fd19c6d42d17d301a00af1623776f3c23e1c32cd143e08ac66"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-singlepass-native-binding624.json",
+      "source": "ACTUAL_A3_ENGINEERING_HISTORY_NOT_RELEASE_OR_RUNTIME_ACCEPTANCE",
+      "bytes": 1641,
+      "sha256": "1823d4b94d7cb533b2b2fcb4233811d2a477f9618c8c799968bd0449723948d4"
     }
   ]
 }

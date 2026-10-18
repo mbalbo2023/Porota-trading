@@ -1,0 +1,32 @@
+{
+  "schema": "rc6.a3-whole-worker-local-admission.v1",
+  "limits": {
+    "hot_cpu_ratio": 0.8,
+    "total_cpu_ratio": 1.3,
+    "rss_kib": 196608,
+    "cold_wall_seconds": 30
+  },
+  "status": "RED_ADMISSION",
+  "native_host_acceptance": false,
+  "local_docker_limit_certificate": false,
+  "results": [
+    {
+      "mode": "fresh",
+      "hot_cpu_ratio": 0.7707286910893234,
+      "total_cpu_ratio": 1.166995278813361,
+      "candidate_peak_rss_kib": 172096,
+      "maximum_cold_wall": 4.331261079001706,
+      "admitted": true,
+      "exact_full_hash_checkpoint_and_business_parity": true
+    },
+    {
+      "mode": "legacy",
+      "hot_cpu_ratio": 0.8410904902590887,
+      "total_cpu_ratio": 1.2620813930737695,
+      "candidate_peak_rss_kib": 173136,
+      "maximum_cold_wall": 4.36820730099862,
+      "admitted": false,
+      "exact_full_hash_checkpoint_and_business_parity": true
+    }
+  ]
+}

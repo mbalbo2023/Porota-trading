@@ -1,0 +1,47 @@
+{
+  "schema": "rc6.a3-whole-worker-first-red.v1",
+  "state": "RED_PRIVATE_NAMESPACE_FOREIGN_COPY",
+  "native_host_acceptance": false,
+  "source_sha256": "5e52b6578292bee761ef27854cd95a4096ca011bc0ca4f80b81147c8d80eed4c",
+  "candidate_root": "/workspace/scratch/88594b90c2a3/a3-worker-fresh-candidate624",
+  "error": "SHADOW_COLD_BASENAME_REQUIRED",
+  "cause_verified": "An unexpected partially copied named mutable capture exists beside the sealed pack; strict directory inventory rejects it. Canonical parity/capacity not reached.",
+  "copying_actor": "NO_VERIFICADO; not attributed to kernel, codec or a specific service without evidence",
+  "files": [
+    {
+      "name": "manifest-400ab7b321df49c299b6ccc926ca2d11.json",
+      "bytes": 1702,
+      "sha256": "7f7c9f6cdaf6ea6d280dbc8333f8946a31c7f1f2e8f8e9c0da32d938bd34cee9",
+      "inode": 132610,
+      "mode": "0o600"
+    },
+    {
+      "name": "receipt-400ab7b321df49c299b6ccc926ca2d11.json",
+      "bytes": 335,
+      "sha256": "6fd437c4d2a852e642fb3de11c6571d894b0ad5bff43d67c42c4e675fdb3b68f",
+      "inode": 132803,
+      "mode": "0o600"
+    },
+    {
+      "name": ".capture-400ab7b321df49c299b6ccc926ca2d11.tmp.etopfj",
+      "bytes": 60817408,
+      "sha256": "9e09ce5fba67f27b15df8af15ea46d06639929ac63e3a4608f5f2f2544df31db",
+      "inode": 132579,
+      "mode": "0o600"
+    },
+    {
+      "name": "queue.json",
+      "bytes": 240,
+      "sha256": "0f46865e4f6f6c8d2f5e87c02e96e496db8a0c4db6765e098724e6dd83f582ac",
+      "inode": 132833,
+      "mode": "0o600"
+    },
+    {
+      "name": "400ab7b321df49c299b6ccc926ca2d11.pack",
+      "bytes": 126098567,
+      "sha256": "bca9844a42b5ceddf09f68b11ffe0cf24c5ab11fd761d71dd447c064bb6264da",
+      "inode": 133783,
+      "mode": "0o600"
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "schema": "rc6.a3-prefix-workspace-interference-red.v1",
+  "state": "RED_LOCAL_PRIVATE_NAMESPACE_NOT_CPU_ADMISSION",
+  "scope": "LOCAL_EXECUTION_ONLY_NOT_HOST",
+  "candidate_source": "ccffd721c5b2f642d0447fd08b83b78ed2ee02f1a3613bb8c617c130f651ebf5",
+  "candidate_binary": "2761d3a2e0b418ec7a3276dd4ea70ae93d39d1e49629bba4da69cedea7523e00",
+  "completed_cuts": 2,
+  "actor": "NO_VERIFICADO",
+  "ptrace": "DENIED_BY_KERNEL_CAPABILITY",
+  "finite_inotify_probes": "NO_UNEXPECTED_EVENTS_OBSERVED_IN_ISOLATED_OR_ONE_CONCURRENT_20S_WINDOW",
+  "files": [
+    {
+      "name": "receipt-b88b84af26664989a5eaa8d45284f52d.json",
+      "bytes": 833,
+      "inode": 134338,
+      "ctime_ns": 1792325656346830575,
+      "sha256": "3594b24cea11cf6405dfd6ee50478a025a5fe168b3bb87bb8b74393260ee27d0"
+    },
+    {
+      "name": "manifest-b88b84af26664989a5eaa8d45284f52d.json",
+      "bytes": 1702,
+      "inode": 132991,
+      "ctime_ns": 1792325651760496109,
+      "sealed_pack_identity": [
+        27,
+        133282,
+        125233607,
+        1792325651754959773,
+        1792325651759939934
+      ],
+      "sealed_pack_sha256": "7e280e318a08f206d75dcd2714ffabc54ecdca6ebfa69b03ff3a50e09df9e40b",
+      "sha256": "fe6ae348c86f02226b38998dc48a8875819ad439c53bf907eb4e41db681701f9"
+    },
+    {
+      "name": "queue.json",
+      "bytes": 242,
+      "inode": 133051,
+      "ctime_ns": 1792325668978315918,
+      "sha256": "88cfe5e53185de3cf75ed037d978e4e4d4a934e6e903f398376876f7c45fe046"
+    },
+    {
+      "name": "manifest-ed33638c92744fa9b5bc960e96e10307.json",
+      "bytes": 1702,
+      "inode": 133049,
+      "ctime_ns": 1792325664533497705,
+      "sealed_pack_identity": [
+        27,
+        133045,
+        124167179,
+        1792325664527123452,
+        1792325664532883573
+      ],
+      "sealed_pack_sha256": "910dbd94232e1b2633366f1f87b39675684b40d2a6bedab340adf2a689b3889c",
+      "sha256": "193eded58468150f3eb165bc283f47e8772835abde0c5a533550ba7b7683279f"
+    },
+    {
+      "name": "ed33638c92744fa9b5bc960e96e10307.pack",
+      "bytes": 124167179,
+      "inode": 134466,
+      "ctime_ns": 1792325670902970382,
+      "sha256": "910dbd94232e1b2633366f1f87b39675684b40d2a6bedab340adf2a689b3889c"
+    },
+    {
+      "name": "receipt-ed33638c92744fa9b5bc960e96e10307.json",
+      "bytes": 832,
+      "inode": 134420,
+      "ctime_ns": 1792325668977175616,
+      "sha256": "cb0aae82b2b71b4566481660009a41657fa4f7ad80a7fbcfd065290194249f5d"
+    }
+  ]
+}

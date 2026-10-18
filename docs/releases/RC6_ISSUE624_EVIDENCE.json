@@ -1598,9 +1598,53 @@
       "fix": "Capture1.508574CPU/baseline3.316131=.454920;COLD3.916101;combined1.635845;pack122606754/.461883. Original executed Ccd98/binaryfb21 retained. Later copy fix retains CPython-only/no-libc symbols; not in measured CPU receipt. Concrete governed ADR precedes isolated product implementation from90dc.",
       "status": "GREEN_FEASIBILITY_NOT_WHOLE_WORKER_OR_NATIVE",
       "receipt": "docs/releases/evidence624/a3-owned-snapshot624-receipt.json"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "reopen": "Exact3.11 control39131137482 is in progress; release and native gates still mandatory. Runtime7ce NOT_ACCEPTED.",
+      "id": "624-A3-PRIVATE-NAMESPACE-REPLACEMENT",
+      "classification": "ACTUAL_CONTROL_INTERRUPTED_FAIL_CLOSED",
+      "cause": "Named capture acquired unexpected partial-copy namespace entry. Later prefix workspace control saw same-byte pack reappear with changed inode after removal. Actor NO_VERIFICADO; ptrace denied and finite safe inotify probes did not reproduce actor.",
+      "fix": "Anonymous O_TMPFILE capture/fsync then SAME-inode link, manifest/queue before CURRENT; unknown namespace guards unchanged. Before1FAIL/after74GREEN incl exact-source seal. One serial private/tmp control on same filesystem completed16 cuts without interference; exported byte manifest verified. No actor attribution or namespace allowlist.",
+      "status": "RESOLVED_IMPLEMENTATION_NATIVE_PENDING",
+      "receipt": "docs/releases/evidence624/a3-worker-first-red624.json"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "reopen": "Exact3.11 control39131137482 is in progress; release and native gates still mandatory. Runtime7ce NOT_ACCEPTED.",
+      "id": "624-A3-DURABLE-LIFECYCLE-REGRESSIONS",
+      "classification": "ACTUAL_DEVELOPMENT_GUARDS",
+      "cause": "New durable PENDING cut must survive stop/recovery and root read-only host acceptance without granting root writer ownership.",
+      "fix": "Private dir/read/write owner rules; existing parent waits35s ONLYdynamic_shadow vs other5, Docker45 unchanged. Unsealed stop cancels; sealed cut drains. Host verifies COMPLETE queue/cut after both same IDs stop before405. Actual136 local integration+61 laterColdGREEN overlap, not sum; earlier missingFastAPI/UID-map assertion harness REDs preserved.",
+      "status": "LOCAL_GREEN_EXACT_IMAGE_PENDING",
+      "receipt": "docs/releases/evidence624/a3-singlepass-engineering624.tar.gz"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "reopen": "Exact3.11 control39131137482 is in progress; release and native gates still mandatory. Runtime7ce NOT_ACCEPTED.",
+      "id": "624-A3-WHOLE-WORKER-LEGACY-HOT-RED",
+      "classification": "ACTUAL_FULL_CONTROL_RED",
+      "cause": "Initial anonymous16cut control preserved allfull>100MiB/checkpoint/business equality but legacyHOT.84109049>.80. Bounded-prefix serialprivate16control legacyHOT.82947351>.80; fresh.77790756/TOTAL1.16445 pass, legacyTOTAL1.24138/RSS172600/COLD4.40495 pass.",
+      "fix": "Preserve all source/binary/hash/XML/receipts and RED criteria. Fixed prefix removes failed16-then-singleton rescans; remaining code still bound_actual then encode_value twice. No local benchmark loop or new native attempt.",
+      "status": "RED_HISTORICAL_NOT_RELABELLED",
+      "receipt": "docs/releases/evidence624/a3-worker-anonymous-summary624.json"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "reopen": "Exact3.11 control39131137482 is in progress; release and native gates still mandatory. Runtime7ce NOT_ACCEPTED.",
+      "id": "624-A3-SINGLEPASS-EXACT-ABI-CONTROL",
+      "classification": "FROZEN_FOR_DIAGNOSTIC_NOT_RELEASE",
+      "cause": "Confirmed duplicate C actual-value walk remained in capture. New ABI cannot use historical unchanged-C proof.",
+      "fix": "Transactional one-pass bounded encoder with O(newstrings) rollback and fixed4096ref index; all limits/decoder/is_small unchanged. Before one actual FAIL then final87GREEN; C4710a658/local3.12SOc808 preserved. Source889c7b4/tree d368 frozen; existingPR625 diagf590af94 runs finite exact3.11.16/512MiB/.75CPU388focal+16cut A/B39131137482/job117686369644. Original7ce immutableZIP and same physicalDB/clocks/commonstandardgziplegacyseed; newC compiled only via existing pinned target. watchFALSE/noDroplet action; pending actual result.",
+      "status": "CONTROL_IN_PROGRESS_NO_RELEASE_ACCEPTANCE",
+      "receipt": "docs/releases/evidence624/a3-singlepass-frozen624.json"
     }
   ],
-  "findings_count": 113,
+  "findings_count": 117,
   "predeploy_state": "GREEN_EXACT_IMAGE_INDEPENDENTLY_BYTE_VERIFIED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -2098,18 +2142,18 @@
     }
   ],
   "engineering_next": {
-    "state": "ISOLATED_A3_IMPLEMENTATION_STARTED_NOT_FROZEN_NOT_DEPLOYED",
-    "base_sha": "90dc852c36eaa95683db39ea1593cb6ff98bf202",
+    "state": "FROZEN_FOR_EXACT_ABI_CONTROL_NOT_RELEASE_CERTIFIED",
+    "source_sha": "889c7b4dd50b0ac7dcf18acef109ac7aab126f5a",
+    "tree": "d3688924118fc6e4522fbdc870d97e0792884524",
     "branch": "work/rc6-624-durable-cold-audit-20261018",
-    "adr": "docs/releases/evidence624/a3-adr624.md",
     "paired_owners": [
-      6249326702,
-      6249326881
+      6250401978,
+      6250402106
     ],
-    "local_initial_regressions": {
-      "cases": 36,
-      "failures": 0,
-      "scope": "DEVELOPMENT_ONLY_NOT_CAPACITY_OR_RELEASE_CERTIFICATE"
-    }
+    "diagnostic_sha": "f590af940cc629d178df63e3e09385fd513b4170",
+    "run": 39131137482,
+    "job": 117686369644,
+    "runtime": "7ce_INSTALLED_NOT_ACCEPTED",
+    "new_release_pr": null
   }
 }
