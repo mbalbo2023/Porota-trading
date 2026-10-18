@@ -83,6 +83,26 @@ def test_memory_floor_is_enforced_in_every_sample(tmp_path,available,valid):
         with pytest.raises(ValueError,match='RAM_RESERVE_BREACHED'):
             soak.resource_sample(tmp_path,state,state_fn=lambda:state,memory_path=memory)
 
+
+@pytest.mark.parametrize('kind', ['ram', 'disk', 'service'])
+def test_exact_rejected_resource_sample_is_preserved_before_stopping(tmp_path, monkeypatch, kind):
+    memory=tmp_path/'meminfo'
+    available=100*1024**2 if kind=='ram' else 256*1024**2
+    memory.write_text(f'MemAvailable: {available//1024} kB\nSwapTotal: 100 kB\nSwapFree: 50 kB\n')
+    before=[{'status':'running','oom':False,'restarts':0}]
+    after=[{**before[0],'restarts':1}] if kind=='service' else before
+    free=1024**3 if kind=='disk' else 3*1024**3
+    monkeypatch.setattr(soak.shutil,'disk_usage',lambda _:type('Disk',(),{'free':free})())
+    result=collect(tmp_path/'dynamic-shadow',SHA,TREE,strict=True,minimum_generations=10,
+        sample=lambda:soak.resource_sample(tmp_path,before,state_fn=lambda:after,memory_path=memory))
+    assert result['status']=='RED' and result['rejection_count']==1
+    rejected=result['resources'][-1]
+    assert rejected['accepted'] is False
+    assert rejected['available_memory_bytes']==available and rejected['free_disk_bytes']==free
+    assert rejected['swap_used_bytes']==50*1024
+    assert rejected['services_unchanged'] is (kind!='service')
+    assert rejected['rejection_reason']==result['error_reason']
+
 def test_service_restart_is_a_red_sample(tmp_path):
     memory=tmp_path/'meminfo';memory.write_text('MemAvailable: 1048576 kB\n')
     before=[{'status':'running','oom':False,'restarts':0}]

@@ -194,6 +194,19 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
             # Only reviewed literal codes may cross the native log boundary.
             last_error = type(exc).__name__
             last_reason = str(exc) if type(exc) is ValueError and str(exc) in _SAFE_FAILURE_REASONS else None
+            # Preserve the exact resource sample that rejected the soak, not
+            # merely the last healthy sample. Export only reviewed fields.
+            rejected = getattr(exc, 'resource_receipt', None)
+            if (last_reason in {'NATIVE_SOAK_SERVICE_CHANGED','NATIVE_SOAK_RAM_RESERVE_BREACHED',
+                                'NATIVE_SOAK_DISK_RESERVE_BREACHED'} and isinstance(rejected,dict)
+                    and all(type(rejected.get(key)) is int and 0<=rejected[key]<2**63
+                            for key in ('available_memory_bytes','free_disk_bytes','swap_used_bytes'))
+                    and type(rejected.get('services_unchanged')) is bool
+                    and isinstance(rejected.get('at'),str) and len(rejected['at'])<=64):
+                if len(resources)==1024:del resources[0]
+                resources.append({key:rejected[key] for key in ('at','available_memory_bytes',
+                    'free_disk_bytes','swap_used_bytes','services_unchanged')} |
+                    {'accepted':False,'rejection_reason':last_reason})
             rejection_count += 1
             remember('REJECTED', {'error_class':last_error,'reason':last_reason, **last_observation})
             if strict:
