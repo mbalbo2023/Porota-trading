@@ -1,9 +1,9 @@
-"""Bounded READ_ONLY RCA after native RAM-reserve rejection; never acceptance."""
+"""Bounded independent READ_ONLY postrestore observation; never changes runtime."""
 import argparse,hashlib,json,os,re,shutil,sqlite3,subprocess,sys,time
 from datetime import datetime,timezone
 from pathlib import Path
 ROOT=Path('/opt/porota-trading');sys.path.insert(0,str(ROOT))
-from rc6_shadow_runtime.persistence import read_committed_generation
+from scripts.rc6_native_soak import stable_reader
 FLAGS={'--exit-reader':'EXITS','--notification-worker':'NOTIFICATIONS','--candle-worker':'CANDLES','--performance-worker':'PERFORMANCE','--dynamic-shadow-worker':'SHADOW','--intraday-scalping-worker':'SCALPING','--caucion-cash-sweep-worker':'TREASURY'}
 OWNED=['porota_production_observer','porota_production_dashboard']
 
@@ -51,6 +51,12 @@ def processes(ids):
             raw=(folder/'stat').read_text();fields=raw[raw.rfind(')')+2:].split()
             sched=[int(v) for v in (folder/'schedstat').read_text().split()]
             row={'pid':int(folder.name),'role':role,'safe_cmdline':safe,'status':keyed(folder/'status',{'VmRSS','VmHWM','VmSwap','Threads'}),'stat':{'utime_ticks':int(fields[11]),'stime_ticks':int(fields[12]),'major_faults':int(fields[9]),'nice':int(fields[16]),'start_ticks':int(fields[19])},'schedstat':{'cpu_nanoseconds':sched[0],'runqueue_wait_nanoseconds':sched[1],'timeslices':sched[2]}}
+            try:
+                row['python_executable_basename']=Path(os.readlink(folder/'exe')).name
+                row['native_json_bound_mapped']=any(line.rstrip().endswith('/_rc6_json_bound.so')
+                    for line in (folder/'maps').read_text().splitlines())
+            except OSError:
+                row['native_mapping_unavailable']=True
             try:row['io']=keyed(folder/'io')
             except OSError:row['io_unavailable']=True
             try:row['smaps_rollup']=keyed(folder/'smaps_rollup',{'Rss','Pss','Swap','Private_Dirty','Anonymous'})
@@ -70,7 +76,7 @@ def host_counters(rows):
             paths=[line.split(':',2)[2] for line in Path('/proc',str(row['root_pid']),'cgroup').read_text().splitlines() if line.startswith('0::')]
             if len(paths)!=1:raise ValueError('CGROUP_UNAVAILABLE')
             folder=(base/paths[0].lstrip('/')).resolve();folder.relative_to(base);group['path']=str(folder)
-            for name in ('memory.current','memory.peak','memory.swap.current','memory.events','cpu.stat','io.stat'):
+            for name in ('memory.current','memory.peak','memory.max','memory.swap.current','memory.events','cpu.max','cpu.weight','cpu.stat','io.stat'):
                 try:group[name]=(folder/name).read_text().strip()
                 except OSError:group[name]='UNAVAILABLE'
         except (OSError,ValueError):group['unavailable']=True
@@ -91,7 +97,7 @@ def main():
     assert len(rows)==2 and all(r['source_sha']==a.sha and r['source_tree']==a.tree and r['status']=='running' and not r['oom'] for r in rows)
     assert len({r['image'] for r in rows})==1
     image=docker_inspect('image',[rows[0]['image']])[0]
-    result={'schema':'rc6.native624.passive-profile.v2','purpose':'RCA_AFTER_RAM_RED_39091864291','read_only':True,'started_at':datetime.now(timezone.utc).isoformat(),'source_sha':a.sha,'source_tree':a.tree,'containers':rows,'clock_ticks_per_second':os.sysconf('SC_CLK_TCK'),'page_size_bytes':os.sysconf('SC_PAGE_SIZE'),'logical_cpu_count':os.cpu_count(),'samples':[],'loaded_image':{'id':image['Id'],'architecture':image.get('Architecture'),'os':image.get('Os'),'rootfs_diff_ids':image.get('RootFS',{}).get('Layers'),'semantic_config_sha256':semantic_config(image['Config'])}}
+    result={'schema':'rc6.native624.passive-profile.v2','purpose':'RCA_AFTER_NATIVE_STALE_39107582047','read_only':True,'started_at':datetime.now(timezone.utc).isoformat(),'source_sha':a.sha,'source_tree':a.tree,'containers':rows,'clock_ticks_per_second':os.sysconf('SC_CLK_TCK'),'page_size_bytes':os.sysconf('SC_PAGE_SIZE'),'logical_cpu_count':os.cpu_count(),'samples':[],'loaded_image':{'id':image['Id'],'architecture':image.get('Architecture'),'os':image.get('Os'),'rootfs_diff_ids':image.get('RootFS',{}).get('Layers'),'semantic_config_sha256':semantic_config(image['Config'])}}
     for name in ('CURRENT_STATE_V2.json','porota-frozen-candidate.json'):
         path=ROOT/'data/deploy'/name
         value=json.loads(path.read_text())
@@ -101,8 +107,8 @@ def main():
         for _ in range(18):
             sample={'at':datetime.now(timezone.utc).isoformat(),'monotonic':time.monotonic(),'memory':keyed(Path('/proc/meminfo'),{'MemTotal','MemAvailable','SwapTotal','SwapFree'}),'free_disk_bytes':shutil.disk_usage(ROOT).free,'host':host_counters(rows),'processes':processes(ids),'safety':safety()}
             try:
-                cut=read_committed_generation(root,payload_limit=4*1024**2,require_current_status=True)
-                sample.update(generation={k:cut['pointer'][k] for k in ('generation_id','sequence','manifest_sha256')},source_as_of=cut['status']['as_of'],worker_status=cut['status']['status'],timing=cut['status'].get('generation_timing'),publication=cut.get('publication'))
+                cut=stable_reader(root,payload_limit=4*1024**2,require_current_status=True)
+                sample.update(generation={k:cut['pointer'][k] for k in ('generation_id','sequence','manifest_sha256')},source_as_of=cut['status']['as_of'],worker_status=cut['status']['status'],timing=cut['status'].get('generation_timing'),publication=cut.get('publication'),reader_observation=cut.get('reader_observation'))
             except (OSError,ValueError,KeyError) as error:
                 sample.update(generation_read_race_or_failure=True,generation_error_class=type(error).__name__)
                 if str(error) in {'GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS','COMMITTED_GENERATION_MISSING','SHADOW_EVIDENCE_DIGEST_MISMATCH','GENERATION_ENVELOPE_MISMATCH','GENERATION_SAFETY_UNVERIFIED'}:sample['generation_error_code']=str(error)
