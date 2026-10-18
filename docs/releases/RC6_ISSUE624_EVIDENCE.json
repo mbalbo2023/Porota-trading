@@ -1307,9 +1307,87 @@
       "receipt": "docs/releases/evidence624/rejected-records624-summary.json",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Never relabel a rejected result or use its first-cut RSS as sustained capacity."
+    },
+    {
+      "id": "624-202E-PROGRESSIVE-CONTROL",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_INTERMEDIATE_RESOURCE_REJECTION",
+      "cause": "Four-cut controlled full-byte parity GREEN, admission RED. RSS 314424→251084KiB; ratio0.7985522733633564; totalCPUratio0.9975777506261422. Same DB/inode/SHA/clocks/ABI, eight >100MiB actual audits independently checked before retention.",
+      "fix": "Preserved source/history/receipts. No native promotion. Stage traces isolate whole-checkpoint materialization, then whole-preopen materialization, then redundant decoder allocation/encoding/live-graph GC. Criterion≤.60/192MiB/CPU1.05 stays unchanged.",
+      "status": "RED_HYPOTHESIS_INSUFFICIENT",
+      "runtime_state": "NOT_DEPLOYED",
+      "source_sha": "5ce27ac1b662654c6d4b1b14ffc4d99ac7a7c208",
+      "source_tree": "571848c05fcd43b00980fed58206d72a93bc0ece",
+      "receipt": "docs/releases/evidence624/progressive624-summary.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Do not relabel a prior RED when a later implementation changes the cause."
+    },
+    {
+      "id": "624-202E-PROGRESSIVE-BLOCKS-CONTROL",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_INTERMEDIATE_RESOURCE_REJECTION",
+      "cause": "Four-cut controlled full-byte parity GREEN, admission RED. RSS 313568→218864KiB; ratio0.6979793856515971; totalCPUratio1.0215985920817598. Same DB/inode/SHA/clocks/ABI, eight >100MiB actual audits independently checked before retention.",
+      "fix": "Preserved source/history/receipts. No native promotion. Stage traces isolate whole-checkpoint materialization, then whole-preopen materialization, then redundant decoder allocation/encoding/live-graph GC. Criterion≤.60/192MiB/CPU1.05 stays unchanged.",
+      "status": "RED_HYPOTHESIS_INSUFFICIENT",
+      "runtime_state": "NOT_DEPLOYED",
+      "source_sha": "906b08269f4cbe5487ca53cd45600a85a46b55d0",
+      "source_tree": "534cfa3176a262ae0c6ebd55f8996d69eaec820c",
+      "receipt": "docs/releases/evidence624/progressive-blocks624-summary.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Do not relabel a prior RED when a later implementation changes the cause."
+    },
+    {
+      "id": "624-202E-PROGRESSIVE-PREOPEN-CONTROL",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_INTERMEDIATE_RESOURCE_REJECTION",
+      "cause": "Four-cut controlled full-byte parity GREEN, admission RED. RSS 314204→181500KiB; ratio0.5776501890491528; totalCPUratio1.0934596234926108. Same DB/inode/SHA/clocks/ABI, eight >100MiB actual audits independently checked before retention.",
+      "fix": "Preserved source/history/receipts. No native promotion. Stage traces isolate whole-checkpoint materialization, then whole-preopen materialization, then redundant decoder allocation/encoding/live-graph GC. Criterion≤.60/192MiB/CPU1.05 stays unchanged.",
+      "status": "RED_HYPOTHESIS_INSUFFICIENT",
+      "runtime_state": "NOT_DEPLOYED",
+      "source_sha": "d050169c81075f8172ddc31369b5ca2c94c74209",
+      "source_tree": "ebd3b04d5a8421109103b181a2914c0f09c2440e",
+      "receipt": "docs/releases/evidence624/progressive-preopen624-summary.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Do not relabel a prior RED when a later implementation changes the cause."
+    },
+    {
+      "id": "624-202E-PROGRESSIVE-CPU-ADMISSION",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_LOCAL_EQUIVALENCE_AND_PHYSICAL_ADMISSION",
+      "cause": "Same-DB/inode/SHA/clocks/nativeABI four-cut control; all eight actual >100MiB audits independently checked before pruning. RSS313584→181116KiB, ratio0.5775677330476044, whole-seriesCPUratio1.0165412274990762. Exact canonical/funnel/session/checkpoint/latest parity.",
+      "fix": "Completed-section canonical staging, lazy verified checkpoint roles, bounded preopen decode. Remove redundant key copies, byte transcodes, live-planner GC and duplicate legacy verification pass. Full audit before CURRENT unchanged. Resource limits unchanged.",
+      "status": "GREEN_LOCAL_EQUIVALENCE_AND_ADMISSION",
+      "runtime_state": "NOT_DEPLOYED",
+      "receipt": "docs/releases/evidence624/progressive-cpu624-summary.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Exact frozen ABI/Predeploy/native gates remain required; local success is not runtime acceptance."
+    },
+    {
+      "id": "624-202E-LEGACY-SERIES-ADMISSION",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_LOCAL_EQUIVALENCE_AND_PHYSICAL_ADMISSION",
+      "cause": "Same-DB/inode/SHA/clocks/nativeABI four-cut control; all eight actual >100MiB audits independently checked before pruning. RSS313592→181144KiB, ratio0.5776422867930304, whole-seriesCPUratio1.0442460488755059. Exact canonical/funnel/session/checkpoint/latest parity.",
+      "fix": "Completed-section canonical staging, lazy verified checkpoint roles, bounded preopen decode. Remove redundant key copies, byte transcodes, live-planner GC and duplicate legacy verification pass. Full audit before CURRENT unchanged. Resource limits unchanged.",
+      "status": "GREEN_LOCAL_EQUIVALENCE_AND_ADMISSION",
+      "runtime_state": "NOT_DEPLOYED",
+      "receipt": "docs/releases/evidence624/legacy-series624-summary.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Exact frozen ABI/Predeploy/native gates remain required; local success is not runtime acceptance."
+    },
+    {
+      "id": "624-202E-LEGACY-AUXILIARY-CPU-RED",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_AUXILIARY_REJECTION_RETAINED",
+      "cause": "Separate one-cut legacy startup auxiliary boundCPU<=1.05 failed at1.1847764763047086, while memory168176KiB and all actual bytes matched. Source root recorded but no complete source SHA manifest; not a release control.",
+      "fix": "Preserve RED. Remove duplicate verification traversal and avoid redundant key sharing during whole-document bootstrap. The predeclared total-series CPU bound stays1.05; later legacy+three-cut experiment passes1.0442460488755059. Per-cut native120s unchanged and still untested.",
+      "status": "RED_AUXILIARY_SINGLE_CUT_CPU_BOUND",
+      "runtime_state": "NOT_DEPLOYED",
+      "receipt": "docs/releases/evidence624/legacy-progressive624-summary-red.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Do not relabel the failed auxiliary or conflate whole-series CPU admission with a per-cut native deadline."
     }
   ],
-  "findings_count": 91,
+  "findings_count": 97,
   "predeploy_state": "GREEN_BYTES_VALIDATED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -1653,8 +1731,8 @@
   },
   "current_ownership": {
     "paired_comments": [
-      6245927802,
-      6245927924
+      6246189442,
+      6246189608
     ],
     "prior_plan": [
       6245844575,
@@ -1667,5 +1745,19 @@
     "new_runtime_code_written": true,
     "architecture": "PROGRESSIVE_CANONICAL_AUDIT_SPOOL_AND_LAZY_CHECKPOINT_ROLES",
     "native_promotion": "NOT_AUTHORIZED_BY_EVIDENCE_YET"
+  },
+  "engineering_candidate": {
+    "source_sha": "99ea4aa009d105de70c4b2841488084bf34b8e7b",
+    "source_tree": "2e2d2af172fc4c2f3fa5ccfa7e761ffee311e4f4",
+    "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
+    "branch": "work/rc6-624-progressive-audit-spool-20261018",
+    "source_changes_after_freeze_allowed": false,
+    "status": "LOCAL_ADMISSION_GREEN_EXACT_ABI_PENDING",
+    "controlled_abi_run": 39101367238,
+    "controlled_abi_source": "96e5805784db06884af98900f04a955346b3d214",
+    "native_promotion": false,
+    "native_gate120s_128MiB": "UNCHANGED",
+    "source_frozen": true,
+    "release_artifact_frozen": false
   }
 }

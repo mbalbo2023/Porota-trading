@@ -1,0 +1,15 @@
+{
+  "schema": "rc6.legacy624.auxiliary-rejection-analysis.v1",
+  "status": "RED_AUXILIARY_SINGLE_CUT_CPU_BOUND",
+  "analysis_generated_from_actual_receipts": true,
+  "native_host_acceptance": false,
+  "baseline_peak_rss_kib": 295120,
+  "candidate_peak_rss_kib": 168176,
+  "cpu_ratio": 1.1847764763047086,
+  "auxiliary_per_cut_cpu_limit": 1.05,
+  "memory_limit_kib": 196608,
+  "memory_admission": "GREEN",
+  "actual_byte_equivalence": true,
+  "source_limitation": "Auxiliary records source root, not a complete source SHA/manifest; not a release certificate. Later complete four-cut source-manifest controls supersede scope, not this RED result.",
+  "disposition": "Retain failure. First migration parses/verifies/normalizes once; eliminate duplicate digest traversal. Original admission CPU criterion is whole four-cut total<=1.05; unchanged native each-cut120s still required."
+}

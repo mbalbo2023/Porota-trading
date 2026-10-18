@@ -2085,6 +2085,348 @@
       "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
       "bytes": 15,
       "sha256": "03a77fc8fe616a35134e8c35e252aace6bea37480f6891a20d745ace74e35464"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive624-baseline-receipt.json",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 15922,
+      "sha256": "5a9fb421b2adf080774569abafcef0d02f91c92cc088247c8f4fabf402367a33"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive624-baseline-source-manifest.json.gz",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 35512,
+      "sha256": "f1d26eae11404021c8050a9a834ed55bfba84f3e53ed5f5171b793c8f3b94569"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive624-baseline.log",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 10335,
+      "sha256": "827c5b2cf7de7aaf6ece9f71478ba334cd801535c67f59cdedca0d78c92d9505"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive624-candidate-receipt.json",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 22521,
+      "sha256": "5de911bd3b28bfd1adf33a5b90bbb6d6531c2d98f7581e74efc5f95e85a7cf65"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive624-candidate-source-manifest.json.gz",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 35669,
+      "sha256": "d3cbefd40842f1e478d77502cdfe789e4e814f971d935dd01a0cafd0c7460fe0"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive624-candidate.log",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 14039,
+      "sha256": "236abac6077c776ee7a42a6591a5ad1130e528ed4c8f992e0189c46b38ec7264"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive624-summary.json",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 1981,
+      "sha256": "b1d03b26631fa0b80640539d589dc6ba15ef4c3622afdda2263c3b4f5fa4ced3"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-blocks624-baseline-receipt.json",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 15928,
+      "sha256": "1614d66e445e69543b7b80a363ce6c4c8c58efdce1745583fb17ad0802d08489"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-blocks624-baseline-source-manifest.json.gz",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 35512,
+      "sha256": "f1d26eae11404021c8050a9a834ed55bfba84f3e53ed5f5171b793c8f3b94569"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-blocks624-baseline.log",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 10341,
+      "sha256": "1b45727d857c13818a4e881e2bbb9681c0e55c95505c8e2cb6ab7b317e4554fd"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-blocks624-candidate-receipt.json",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 22547,
+      "sha256": "6a19eabc5473e0f6fc2f7f66baeaa04151bfa7d795aab4f5b6367eb564fdda9e"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-blocks624-candidate-source-manifest.json.gz",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 35678,
+      "sha256": "9af6b51c7c8cdf5c8fdbde0e655303dd934abb55b343c9741f81c9d1ccec9cd8"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-blocks624-candidate.log",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 14065,
+      "sha256": "d452db929193d6738d6a87dd93de2dfdff1be69d856f5b5a03a37674e3f26d72"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-blocks624-summary.json",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 2003,
+      "sha256": "276beaed7e97c9464ec60d75591f37ad902e212712b9e9521f4c79d1646e4854"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-preopen624-baseline-receipt.json",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 15934,
+      "sha256": "7b43fd500e523e5c10bd17b57d033244dcedd1c9a7edaf71f46d1a14acf8083e"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-preopen624-baseline-source-manifest.json.gz",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 35512,
+      "sha256": "f1d26eae11404021c8050a9a834ed55bfba84f3e53ed5f5171b793c8f3b94569"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-preopen624-baseline.log",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 10347,
+      "sha256": "6fdaf8cefbc810cf3e72d7ecc75bac0dd035b82f28a598d7ebefc610910a8c95"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-preopen624-candidate-receipt.json",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 22543,
+      "sha256": "f65fffd326e61fc5e503bf1ce24a9e985d38080ffdede649c15c0dd48ca67cb9"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-preopen624-candidate-source-manifest.json.gz",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 35671,
+      "sha256": "32489ad3e57fd1ad304804bcb1f0ca73a40679b501ef28ed76920cb5dc3d3616"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-preopen624-candidate.log",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 14061,
+      "sha256": "2cec935480cc9a740099fa2f901f074dbdcbd180c1f21b4fcabdeda969b45f10"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-preopen624-summary.json",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 2002,
+      "sha256": "a9056fc354a8c5a80f8504771cef2c91cdfbbfe755296d51e59f02507edb2ef2"
+    },
+    {
+      "path": "docs/releases/evidence624/bench_progressive624.py",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 4322,
+      "sha256": "acab3f3237c2129c7d9ca02fb42b1e9a30a0febbcb10166974869a298cb3af84"
+    },
+    {
+      "path": "docs/releases/evidence624/run_progressive624_ab.py",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 3003,
+      "sha256": "3344418d653298f1f60a39710e9cc9837265c6b92b2e7755afe8a4b3303a4b11"
+    },
+    {
+      "path": "docs/releases/evidence624/bench_progressive_blocks624.py",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 4495,
+      "sha256": "317fb1d77c83357e19239ee5a18355b69d04caf9c84a02c555c9d3113fcb4fe5"
+    },
+    {
+      "path": "docs/releases/evidence624/run_progressive_blocks624_ab.py",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 3024,
+      "sha256": "57045292b542a15270160630cdecbb86a4dfdc4e8acdbeac43841f1bea78a562"
+    },
+    {
+      "path": "docs/releases/evidence624/run_progressive_preopen624_ab.py",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 3026,
+      "sha256": "79bc068353f0b04313af979bc9ad1c1987e2dac5210b0bca45dc45f06d2966b6"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-audit-focal624.xml",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 1626,
+      "sha256": "dea0076a93dd9e9232161e4208d12cd29437e25f2a63b34ed8b855fdf6b983f6"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-audit-incremental624.xml",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 5268,
+      "sha256": "44587072e6b08b284201dbbdc6b49bf65b5f7d906501a3adf2f858d1d2f29142"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-audit-incremental-after624.xml",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 3258,
+      "sha256": "56852c38bab0d42960bb30b8e7807dc189e0d42b42db5ea59ac1415bb8568f12"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-complete-focal624.xml",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 13952,
+      "sha256": "e0e8b9a5fe13f54685977b39fbe0ccb634867756a2f7291ed2fefc0dd67f04b6"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-cpu-focal624.xml",
+      "source": "CONTROLLED_INTERMEDIATE_RESOURCE_RED_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 12128,
+      "sha256": "cf7a4bfe623cd56e99da9176092e8372a32fbdc0ce765c4b9431052fa7b199a6"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-cpu624-baseline-receipt.json",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 15927,
+      "sha256": "02f2d3eb17fb7c0c13b6a66bbc6d6780285e044abd127e230a7cf6bde3b75a59"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-cpu624-baseline-source-manifest.json.gz",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 35512,
+      "sha256": "f1d26eae11404021c8050a9a834ed55bfba84f3e53ed5f5171b793c8f3b94569"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-cpu624-baseline.log",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 10340,
+      "sha256": "60d11153350e40b9e308e559070d6791b1c5719ad6b2c61f33ddd90f7393d045"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-cpu624-candidate-receipt.json",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 21709,
+      "sha256": "cb1447886e081ed48ed2d6f29e84f85d110e5e7d3f9417d62c644d8ad50b1cdb"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-cpu624-candidate-source-manifest.json.gz",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 35668,
+      "sha256": "5f20807890260b9089a0c81d2ec2ac213829ffe6ba8a484bee4e8e90f47b7a95"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-cpu624-candidate.log",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 13543,
+      "sha256": "3c83a7433556c5fd8537d6bff3a846d301462e0b624a151ecb1f8e7febd46b5e"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-cpu624-summary.json",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 1990,
+      "sha256": "bc5a1cf225e73358002b5f3f6f03b73820bf66b807175de8361121fa629f2b79"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-series624-baseline-receipt.json",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 17509,
+      "sha256": "39f76fea1d3b28d9d40ca94550c2cf0740349a674609f3926f8b6181e98d4072"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-series624-baseline-source-manifest.json.gz",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 35512,
+      "sha256": "f1d26eae11404021c8050a9a834ed55bfba84f3e53ed5f5171b793c8f3b94569"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-series624-baseline.log",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 10413,
+      "sha256": "c1acad66dacff62f68ed60ea24638985eaf03d61e0987fdd965752950ece65d4"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-series624-candidate-receipt.json",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 23295,
+      "sha256": "707e87aa3b3072f8c31e67bd2b1c15e172a1662a93acf9a1c37caf9d1f0148a6"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-series624-candidate-source-manifest.json.gz",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 35667,
+      "sha256": "7362166cf2bde11623d61d8f71297d9aa280509438ebb542389ccde4f6a82fc9"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-series624-candidate.log",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 13620,
+      "sha256": "1bdc6f20a42bd5e36da5d423fc5c6826598df660ca045a714ebfddab2d9be0a0"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-series624-summary.json",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 2005,
+      "sha256": "d14a127b8b306493a960ed9f8507f718d33e1bc1864b617ad0c174c865eec62c"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-progressive624-baseline-receipt.json",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 4648,
+      "sha256": "3add547104af2c0b8992fe178751bb91a63bac549881598457f83d734f65efca"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-progressive624-baseline.log",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 4004,
+      "sha256": "f57473dabcff6669301dadd016c2ef649abcb18a605709848b09544dba43042b"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-progressive624-candidate-receipt.json",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 5898,
+      "sha256": "6c28da307579e86030e8c4d7ac41290484ab53ab9e3c7b04c07122eb7289c3de"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-progressive624-candidate.log",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 4876,
+      "sha256": "894398b3e81173790b8f83fc66aa91239067b7a550203b6e3e7e7c9bac8899d3"
+    },
+    {
+      "path": "docs/releases/evidence624/legacy-progressive624-summary-red.json",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 881,
+      "sha256": "1b2495f55c42e53c22c65c24ffc416bcb7f06946ce6861d4bb50ce4260acfe32"
+    },
+    {
+      "path": "docs/releases/evidence624/bench_legacy_progressive624.py",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 2470,
+      "sha256": "0ff689f30c7b9ab5c114f3ff55fcb49928bb6032e61a450ab99e402e637bd5e6"
+    },
+    {
+      "path": "docs/releases/evidence624/bench_legacy_series624.py",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 4837,
+      "sha256": "8495d9400e2d9defc34afa13715f2cf0354761f3b27fd67efff09705016b7e94"
+    },
+    {
+      "path": "docs/releases/evidence624/run_legacy_series624_ab.py",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 3031,
+      "sha256": "6b149fe5fdaaa2edae0934f634fe1aad003fa9d3e8d3c6f1849ba59385f7f350"
+    },
+    {
+      "path": "docs/releases/evidence624/run_progressive_cpu624_ab.py",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 3018,
+      "sha256": "6c99f659aa5b78c1d79bea30d8f947324224b8769ce3ab27c7bb0fc36672950c"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-final-focal624.xml",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 16310,
+      "sha256": "1638b25f8347fc1e9965de9425ea09f2667787b3c95402a9faf4b30b98498ffb"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-final-boundary624.xml",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 5176,
+      "sha256": "8962e9f272fa24823fac58f7320d70f753dedaf7cd772eea9cec108ca7a981c3"
+    },
+    {
+      "path": "docs/releases/evidence624/progressive-legacy-focal624.xml",
+      "source": "LOCAL_CONTROL_AND_REGRESSION_ACTUAL_BYTES_NOT_NATIVE_OR_RELEASE_CERTIFICATE",
+      "bytes": 8175,
+      "sha256": "ff50706d5df62cc363e55ab8a9c9d563f7bd5bc902f9e6410e8ee7f276517114"
     }
   ]
 }

@@ -1,0 +1,56 @@
+{
+  "schema": "rc6.progressive624.paired-admission.v1",
+  "status": "RED_HYPOTHESIS_INSUFFICIENT",
+  "native_host_acceptance": false,
+  "local_docker_limit_certificate": false,
+  "all_eight_full_audits_independently_verified_before_pruning": true,
+  "baseline_peak_rss_kib": 314204,
+  "candidate_peak_rss_kib": 181500,
+  "rss_ratio": 0.5776501890491528,
+  "total_cpu_ratio": 1.0934596234926108,
+  "predeclared_limits": {
+    "rss_ratio_max": 0.6,
+    "absolute_peak_rss_kib_max": 196608,
+    "total_cpu_ratio_max": 1.05
+  },
+  "database_sha256": "1dae96bc8848bb01dfdcc683f96c1552ca23d0f94d91ed74cb47b992c2f3acde",
+  "database_inode": 1580198,
+  "rows": [
+    {
+      "source_as_of": "2026-10-05T13:20:00+00:00",
+      "raw_bytes": 265449852,
+      "sha256": "346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130",
+      "baseline_cpu": 8.859266671,
+      "candidate_cpu": 9.894659113,
+      "baseline_peak_rss_kib": 259012,
+      "candidate_peak_rss_kib": 163932
+    },
+    {
+      "source_as_of": "2026-10-05T13:20:30+00:00",
+      "raw_bytes": 265449890,
+      "sha256": "9c6c0bb0a182d899293ecd9330b7e03d4b24cb5ee8b7a55267a80ab26367739f",
+      "baseline_cpu": 9.347891922,
+      "candidate_cpu": 10.050871162999998,
+      "baseline_peak_rss_kib": 295868,
+      "candidate_peak_rss_kib": 168832
+    },
+    {
+      "source_as_of": "2026-10-06T13:20:00+00:00",
+      "raw_bytes": 265449930,
+      "sha256": "611c6e8dcd1a48616573522f0cb6a41c24c9c09a142522fbf99444a0e0cabe54",
+      "baseline_cpu": 10.679583180999998,
+      "candidate_cpu": 10.980060989000002,
+      "baseline_peak_rss_kib": 314204,
+      "candidate_peak_rss_kib": 181500
+    },
+    {
+      "source_as_of": "2026-10-06T13:20:30+00:00",
+      "raw_bytes": 265449928,
+      "sha256": "87c7837efa74eea00af12cb2fda6225a045b49043444f0d45aecd89e22a0aa8f",
+      "baseline_cpu": 8.994502924999999,
+      "candidate_cpu": 10.496020300999994,
+      "baseline_peak_rss_kib": 314204,
+      "candidate_peak_rss_kib": 181500
+    }
+  ]
+}
