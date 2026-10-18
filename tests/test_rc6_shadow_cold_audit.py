@@ -354,9 +354,9 @@ def test_foreign_partial_copy_is_rejected_before_seal_not_allowlisted(tmp_path):
             assert not (tmp_path/'CURRENT.json').exists()
 
 
-def test_anonymous_link_capability_for_current_uid_without_capabilities():
+def test_anonymous_link_capability_for_current_uid_without_capabilities(tmp_path):
     import shutil,sys,tempfile
-    folder=tempfile.mkdtemp(prefix='rc6-anonymous-link-',dir='/tmp')
+    folder=tempfile.mkdtemp(prefix='rc6-anonymous-link-',dir=tmp_path)
     # Local Work has a root-only UID map. The SAME case runs as1000 in
     # mandatory exact-image native gates; do not claim that UID locally.
     target_uid=os.getuid()
@@ -639,3 +639,24 @@ def test_deferred_hot_profile_never_contains_previous_cold_encode_cost(tmp_path)
     with worker.files as files:
         second=c.drain(files)
     assert second['state']=='COMPLETE' and second['source_as_of']==(PRE+timedelta(seconds=30)).isoformat()
+
+
+def test_native_capability_probe_uses_only_its_owned_fixture_directory(tmp_path,monkeypatch):
+    import inspect,tempfile
+    from pathlib import Path
+    original=tempfile.mkdtemp;observed=[]
+    def owned_directory(*args,**kwargs):
+        supplied=kwargs.get('dir')
+        assert supplied is not None and Path(supplied).resolve().is_relative_to(tmp_path.resolve()), 'NATIVE_CAPABILITY_PROBE_OUTSIDE_WRITABLE_FIXTURE'
+        observed.append(Path(supplied))
+        return original(*args,**kwargs)
+    monkeypatch.setattr(tempfile,'mkdtemp',owned_directory)
+    # The original fixed path is rejected even when local /tmp is writable.
+    with pytest.raises(AssertionError,match='NATIVE_CAPABILITY_PROBE_OUTSIDE_WRITABLE_FIXTURE'):
+        tempfile.mkdtemp(prefix='rc6-original-path-',dir='/tmp')
+    probe=test_anonymous_link_capability_for_current_uid_without_capabilities
+    if 'tmp_path' in inspect.signature(probe).parameters:
+        probe(tmp_path=tmp_path)
+    else:
+        probe()
+    assert observed
