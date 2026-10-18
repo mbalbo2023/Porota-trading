@@ -13,7 +13,7 @@ import time
 from datetime import timedelta
 
 BASELINE = '7ce63ec6b3b65a0d39a93c11968d97dc510f1c02'
-CANDIDATE = '889c7b4dd50b0ac7dcf18acef109ac7aab126f5a'
+CANDIDATE = '5ed59faff3ace236098a05ecd777f07d444eddd1'
 
 def sha(path):
     value = hashlib.sha256()
