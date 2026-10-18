@@ -53,6 +53,7 @@ GROUPS={
  'dashboard_auth_52':['tests/test_ws_dash_trader_terminal_08.py','tests/test_rc6_issue600_dashboard_adenda.py',
                       'tests/test_rc6_dashboard_clock_bounds.py','tests/test_rc6_runtime_all_routes_http.py'],
  'scheduler_monitor_backup':['tests/test_rc6_market_watch_silence.py','tests/test_host_general_backup_v17.py',
+                             'tests/test_rc6_candle_inmarket_evidence.py',
                              'tests/test_rc6_host_backup_symlink.py','tests/test_rc6_reader_status_connection_lifecycle.py',
                              'tests/test_rc6_backup_preservation.py','tests/test_rc6_deploy_quiescence.py'],
 }
