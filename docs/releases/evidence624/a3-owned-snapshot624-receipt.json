@@ -1,0 +1,237 @@
+{
+  "schema": "rc6.a3-owned-values624.paired-topology.v1",
+  "scope": "ACTUAL_PRODUCER_SERIALIZATION_INTERPOSITION_NOT_CAPACITY_CERTIFICATE",
+  "native_host_acceptance": false,
+  "local_cgroup_certificate": false,
+  "database": "/workspace/scratch/88594b90c2a3/shared624.db",
+  "database_sha256": "1dae96bc8848bb01dfdcc683f96c1552ca23d0f94d91ed74cb47b992c2f3acde",
+  "database_inode": 1580198,
+  "source_clock": "2026-10-05T13:20:00+00:00",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "prototype_c_sha256": "cd98f2674686148550aea25bce7c86f51f80158374cecf093243f053162fb9b8",
+  "prototype_binary_sha256": "fb21ac62355022c985fdbf6e8ccae42796ea628d22537be926cb06afca2dacae",
+  "limits": {
+    "capture_cpu_ratio_max": 0.5,
+    "combined_cpu_ratio_max": 2.0,
+    "snapshot_raw_ratio_max": 0.5
+  },
+  "roles": [
+    {
+      "role": "preopen_rows",
+      "candidate_capture": {
+        "cpu": 0.09839417600000022,
+        "wall": 0.10008414500043727,
+        "pack_bytes": 6222159
+      },
+      "baseline": {
+        "cpu": 0.2699555710000001,
+        "wall": 0.27528829999937443,
+        "raw_bytes": 21841767,
+        "sha256": "ef878352ee3b65e9aa2c2dce849e89e625f68c3bfdf3ce7c8f440e3e54d55ae6"
+      },
+      "descriptor": {
+        "role": "preopen_rows",
+        "offset": 0,
+        "length": 6222159,
+        "sha256": "11bb669a0d26a958923a73f23f40f571a4d3bdf574a9610d0f49edacd3f65cc8"
+      },
+      "independent_role_parity": {
+        "bytes": 21841767,
+        "sha256": "ef878352ee3b65e9aa2c2dce849e89e625f68c3bfdf3ce7c8f440e3e54d55ae6"
+      }
+    },
+    {
+      "role": "engines",
+      "candidate_capture": {
+        "cpu": 0.31135290599999976,
+        "wall": 0.31435608699393924,
+        "pack_bytes": 18025943
+      },
+      "baseline": {
+        "cpu": 0.8424141449999998,
+        "wall": 0.8577847209962783,
+        "raw_bytes": 64243056,
+        "sha256": "04af4d5b6e244c2591dda42bbe1976632f5d4da4f7eb3bbb43be460e4018727a"
+      },
+      "descriptor": {
+        "role": "engines",
+        "offset": 6222159,
+        "length": 18025943,
+        "sha256": "2675e42be9c46561463add48921838888a6b26080cbe3cca15e28138487b23c3"
+      },
+      "independent_role_parity": {
+        "bytes": 64243056,
+        "sha256": "04af4d5b6e244c2591dda42bbe1976632f5d4da4f7eb3bbb43be460e4018727a"
+      }
+    },
+    {
+      "role": "source_reports",
+      "candidate_capture": {
+        "cpu": 0.000270371000000047,
+        "wall": 0.000842333996843081,
+        "pack_bytes": 42
+      },
+      "baseline": {
+        "cpu": 0.00018633800000067424,
+        "wall": 0.0006672809977317229,
+        "raw_bytes": 2,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "descriptor": {
+        "role": "source_reports",
+        "offset": 24248102,
+        "length": 42,
+        "sha256": "e6900f9b9ec505db80540b7139c17d282bd91a7d58d75e547cf92d3e66bcb49e"
+      },
+      "independent_role_parity": {
+        "bytes": 2,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      }
+    },
+    {
+      "role": "events",
+      "candidate_capture": {
+        "cpu": 8.434600000040149e-05,
+        "wall": 0.0003808920009760186,
+        "pack_bytes": 1066
+      },
+      "baseline": {
+        "cpu": 0.00013734499999973337,
+        "wall": 0.00045615500130224973,
+        "raw_bytes": 888,
+        "sha256": "0305540255fe69c591e3b9cf3ac0237fa9bca3ac06ce6cf7c884a0a0de56bd6f"
+      },
+      "descriptor": {
+        "role": "events",
+        "offset": 24248144,
+        "length": 1066,
+        "sha256": "2f7f2741fa2bbf83a88083ab358f92dadc3a1f90bd3daa163f77b09e3dcb7a5e"
+      },
+      "independent_role_parity": {
+        "bytes": 888,
+        "sha256": "0305540255fe69c591e3b9cf3ac0237fa9bca3ac06ce6cf7c884a0a0de56bd6f"
+      }
+    },
+    {
+      "role": "family_routing",
+      "candidate_capture": {
+        "cpu": 0.796884704,
+        "wall": 0.8144479099937598,
+        "pack_bytes": 84301493
+      },
+      "baseline": {
+        "cpu": 0.9449483750000001,
+        "wall": 0.9694964590016752,
+        "raw_bytes": 99854279,
+        "sha256": "dce09895afc0e11f9039f4f9fc27696cfd297d256d02b3d15b85893217ee5d68"
+      },
+      "descriptor": {
+        "role": "family_routing",
+        "offset": 24249210,
+        "length": 84301493,
+        "sha256": "e6544559dc8e7ae2f18820e753b0f60f960259d18a506811a00664d17670248a"
+      },
+      "independent_role_parity": {
+        "bytes": 99854279,
+        "sha256": "dce09895afc0e11f9039f4f9fc27696cfd297d256d02b3d15b85893217ee5d68"
+      }
+    },
+    {
+      "role": "catalog_ready",
+      "candidate_capture": {
+        "cpu": 0.011687485000000386,
+        "wall": 0.012386825001158286,
+        "pack_bytes": 666789
+      },
+      "baseline": {
+        "cpu": 0.03832139000000012,
+        "wall": 0.03945180399750825,
+        "raw_bytes": 1711091,
+        "sha256": "1cbde87e45f72122b213d9be07737278e94dbe6b47ae80e6be98dafdbf824da4"
+      },
+      "descriptor": {
+        "role": "catalog_ready",
+        "offset": 108550703,
+        "length": 666789,
+        "sha256": "34d82ea3b1f8e170a2038dc36cb949d99452bbf54eb211298e3d618be8cede0c"
+      },
+      "independent_role_parity": {
+        "bytes": 1711091,
+        "sha256": "1cbde87e45f72122b213d9be07737278e94dbe6b47ae80e6be98dafdbf824da4"
+      }
+    }
+  ],
+  "pending_root": {
+    "baseline": {
+      "cpu": 1.220167717999999,
+      "wall": 1.2302937260028557,
+      "computed": {
+        "file": "computed-346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130.json.gz",
+        "sha256": "346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130",
+        "raw_bytes": 265449852,
+        "compressed_bytes": 3955574
+      }
+    },
+    "candidate_capture": {
+      "cpu": 0.28990046000000014,
+      "wall": 0.29393636099848663
+    },
+    "descriptor": {
+      "role": "full_computed_root",
+      "offset": 109217492,
+      "length": 16881075,
+      "sha256": "1f73a0ceb2c04f979f8a318fdac9e1a1e0dc3030a3be87efa4cf78c59111ccc5"
+    },
+    "pack_sha256": "bca9844a42b5ceddf09f68b11ffe0cf24c5ab11fd761d71dd447c064bb6264da"
+  },
+  "root": {
+    "baseline": {
+      "cpu": 1.220167717999999,
+      "wall": 1.2302937260028557,
+      "computed": {
+        "file": "computed-346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130.json.gz",
+        "sha256": "346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130",
+        "raw_bytes": 265449852,
+        "compressed_bytes": 3955574
+      }
+    },
+    "candidate_capture": {
+      "cpu": 0.28990046000000014,
+      "wall": 0.29393636099848663
+    },
+    "cold": {
+      "cpu": 3.9161011709999993,
+      "wall": 3.922579104997567,
+      "computed": {
+        "file": "computed-346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130.json.gz",
+        "sha256": "346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130",
+        "raw_bytes": 265449852,
+        "compressed_bytes": 3955574
+      }
+    },
+    "descriptor": {
+      "role": "full_computed_root",
+      "offset": 109217492,
+      "length": 16881075,
+      "sha256": "1f73a0ceb2c04f979f8a318fdac9e1a1e0dc3030a3be87efa4cf78c59111ccc5"
+    },
+    "pack_sha256": "bca9844a42b5ceddf09f68b11ffe0cf24c5ab11fd761d71dd447c064bb6264da",
+    "pack_bytes": 122606754
+  },
+  "baseline_verified": {
+    "bytes": 265449852,
+    "sha256": "346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130"
+  },
+  "cold_verified": {
+    "bytes": 265449852,
+    "sha256": "346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130"
+  },
+  "baseline_serialization_cpu": 3.3161308819999995,
+  "candidate_capture_cpu": 1.508574448000001,
+  "cold_cpu": 3.9161011709999993,
+  "capture_cpu_ratio": 0.45492005643943734,
+  "combined_cpu_ratio": 1.6358448481165833,
+  "snapshot_raw_ratio": 0.4618829246889164,
+  "peak_rss_kib_interposed_not_capacity": 159724,
+  "status": "GREEN_OWNED_SERIALIZATION_TOPOLOGY_ONLY"
+}

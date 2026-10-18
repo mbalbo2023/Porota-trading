@@ -1,0 +1,47 @@
+{
+  "local_commit": "aeaea9fb4d950a6c9bbcbc404c5592eb98ce4432",
+  "tree": "d3688924118fc6e4522fbdc870d97e0792884524",
+  "base_remote": "d82a5e5b0e2f319881e71e43a1236ad8e64a40a4",
+  "c_sha256": "4710a658bbdeae55dc71437c57be6a9766a892d759b5815a4c2d4029a831440f",
+  "state": "FROZEN_FOR_EXACT_ABI_CONTROL_NOT_RELEASE_CERTIFIED",
+  "paths": [
+    {
+      "path": "Dockerfile",
+      "mode": "100644",
+      "sha": "b1b50b12245fd6a34d9f415fd2994e4b6944de6d",
+      "bytes": 6050
+    },
+    {
+      "path": "docs/architecture/RC6_624_DURABLE_AUDIT_ADR.md",
+      "mode": "100644",
+      "sha": "b279398bf39df59b4193f45cd32607568373deaf",
+      "bytes": 9806
+    },
+    {
+      "path": "rc6_shadow_runtime/_rc6_json_bound.c",
+      "mode": "100644",
+      "sha": "7454a1dca701b0c3c18f1b9f18792d3619aa6d4e",
+      "bytes": 24950
+    },
+    {
+      "path": "rc6_shadow_runtime/cold_audit.py",
+      "mode": "100644",
+      "sha": "1eaa42e598754052e5c8ad8d75ea9f1e5fc964f3",
+      "bytes": 37444
+    },
+    {
+      "path": "tests/rc6_native_storage.py",
+      "mode": "100644",
+      "sha": "5ffe42949cd92235beced1c5bc87a82043668a77",
+      "bytes": 1597
+    },
+    {
+      "path": "tests/test_rc6_shadow_cold_audit.py",
+      "mode": "100644",
+      "sha": "f37f596c4e254dba45596d5fd220e1b0f4a40c87",
+      "bytes": 33772
+    }
+  ],
+  "remote_commit": "889c7b4dd50b0ac7dcf18acef109ac7aab126f5a",
+  "remote_parent": "d82a5e5b0e2f319881e71e43a1236ad8e64a40a4"
+}

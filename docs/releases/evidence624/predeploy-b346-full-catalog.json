@@ -1,0 +1,341 @@
+{
+  "actual_market_acceptance": false,
+  "catalog_count": 14611,
+  "cuts": [
+    {
+      "as_of": "2026-10-05T13:20:00.000519+00:00",
+      "cold_audit": {
+        "completed_at": 1792336668.085438,
+        "computed_identity": [
+          2049,
+          9486385,
+          3964748,
+          1792336667611099461,
+          1792336667614099486
+        ],
+        "computed_report": {
+          "compressed_bytes": 3964748,
+          "file": "computed-59253c86bb470fa18aa81f86e99288c579fa48a0b4266829c285b2cbcb7b1a1b.json.gz",
+          "raw_bytes": 265641048,
+          "sha256": "59253c86bb470fa18aa81f86e99288c579fa48a0b4266829c285b2cbcb7b1a1b"
+        },
+        "configuration_fingerprint": "3f51a5eb19e5d629b241421e5df7a276e7e679602d7960a4b58db763fc4f73f1",
+        "cpu_seconds": 5.447429292999999,
+        "epoch": "rc6.audit-actual-values.v1",
+        "manifest_sha256": "1abc432f2ebc440da5854bb1635fe23b87a2aba417410befc2c099316c114067",
+        "snapshot_id": "f59a4b3e107744e9ac895b9c66c2e69c",
+        "source_as_of": "2026-10-05T13:20:00.000519+00:00",
+        "state": "COMPLETE",
+        "wall_seconds": 7.28119390400002
+      },
+      "computed_report_raw_bytes": 265641048,
+      "computed_report_sha256": "59253c86bb470fa18aa81f86e99288c579fa48a0b4266829c285b2cbcb7b1a1b",
+      "freshness_budget_seconds": 82.55,
+      "generation_id": "1bd285fc3117d8b02a0902016c95509fbcb76f5781f6aeb3cfac632decdc1a1a",
+      "manifest_sha256": "636715da99ac56e251f7ddf0d5918e4577c2b998752c176e563470e27cd3981e",
+      "sequence": 1791206400000519,
+      "tick_seconds": 11.275,
+      "worker_timing": {
+        "allocator_phases": {
+          "checkpoint_verified": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.011931,
+            "rss_after_kib": 53440,
+            "rss_before_kib": 55836
+          },
+          "family_staged": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.030909,
+            "rss_after_kib": 154524,
+            "rss_before_kib": 168752
+          },
+          "planner_staged": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.022587,
+            "rss_after_kib": 146884,
+            "rss_before_kib": 176796
+          }
+        },
+        "audit_staging": [
+          {
+            "cpu_seconds": 0.113982,
+            "role": "preopen_rows",
+            "snapshot_bytes": 6222159,
+            "wall_seconds": 0.164319
+          },
+          {
+            "cpu_seconds": 0.376512,
+            "role": "engines",
+            "snapshot_bytes": 18025950,
+            "wall_seconds": 0.501672
+          },
+          {
+            "cpu_seconds": 0.000221,
+            "role": "source_reports",
+            "snapshot_bytes": 42,
+            "wall_seconds": 0.000532
+          },
+          {
+            "cpu_seconds": 0.000168,
+            "role": "events",
+            "snapshot_bytes": 1073,
+            "wall_seconds": 0.000503
+          },
+          {
+            "cpu_seconds": 0.731273,
+            "role": "family_routing",
+            "snapshot_bytes": 83436540,
+            "wall_seconds": 0.958796
+          },
+          {
+            "cpu_seconds": 0.020558,
+            "role": "catalog_ready",
+            "snapshot_bytes": 666789,
+            "wall_seconds": 0.043737
+          },
+          {
+            "cpu_seconds": 0.310243,
+            "role": "full_computed_root",
+            "snapshot_bytes": 16881382,
+            "wall_seconds": 0.41338
+          }
+        ],
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 176680,
+        "stages_cpu_seconds": {
+          "durable_serialization": 0.824,
+          "economic_exit_lab": 0.914,
+          "entry_signal_lab": 0.002,
+          "family_routing": 1.79,
+          "operational_funnel": 1.813,
+          "planner_pipeline": 1.23,
+          "preopen": 1.834,
+          "state_and_inputs": 0.045
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 176680,
+          "economic_exit_lab": 176680,
+          "entry_signal_lab": 176680,
+          "family_routing": 176680,
+          "operational_funnel": 176680,
+          "planner_pipeline": 170792,
+          "preopen": 123420,
+          "state_and_inputs": 65092
+        },
+        "stages_seconds": {
+          "durable_serialization": 1.1,
+          "economic_exit_lab": 1.215,
+          "entry_signal_lab": 0.002,
+          "family_routing": 2.39,
+          "operational_funnel": 2.437,
+          "planner_pipeline": 1.629,
+          "preopen": 2.457,
+          "state_and_inputs": 0.045
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7448,
+            "cpu_seconds": 0.511846,
+            "major_faults": 0,
+            "peak_rss_kib": 176680,
+            "wall_seconds": 0.683083
+          },
+          "computed": {
+            "block_outputs": 33008,
+            "cpu_seconds": 0.311117,
+            "major_faults": 0,
+            "peak_rss_kib": 176680,
+            "wall_seconds": 0.415179
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.001198,
+            "major_faults": 0,
+            "peak_rss_kib": 176680,
+            "wall_seconds": 0.001608
+          }
+        },
+        "tick_cpu_seconds": 8.452,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 11.275
+      }
+    },
+    {
+      "as_of": "2026-10-05T13:20:41.749432+00:00",
+      "cold_audit": {
+        "completed_at": 1792336710.1942487,
+        "computed_identity": [
+          2049,
+          9486380,
+          4561113,
+          1792336709715429338,
+          1792336709718429362
+        ],
+        "computed_report": {
+          "compressed_bytes": 4561113,
+          "file": "computed-076490299a473c7d9bb2bcdf7e807427557a965d7dc02483df94461fa74bb727.json.gz",
+          "raw_bytes": 265641086,
+          "sha256": "076490299a473c7d9bb2bcdf7e807427557a965d7dc02483df94461fa74bb727"
+        },
+        "configuration_fingerprint": "3f51a5eb19e5d629b241421e5df7a276e7e679602d7960a4b58db763fc4f73f1",
+        "cpu_seconds": 5.324503699000001,
+        "epoch": "rc6.audit-actual-values.v1",
+        "manifest_sha256": "c49444a965707ceb501e73b442fe07bd0c78a3fdbfe6858ae4b869005bd87f43",
+        "snapshot_id": "8f0702a1461f4442b80bce349abdcb4a",
+        "source_as_of": "2026-10-05T13:20:41.749432+00:00",
+        "state": "COMPLETE",
+        "wall_seconds": 7.107527621000031
+      },
+      "computed_report_raw_bytes": 265641086,
+      "computed_report_sha256": "076490299a473c7d9bb2bcdf7e807427557a965d7dc02483df94461fa74bb727",
+      "freshness_budget_seconds": 83.594,
+      "generation_id": "b7bfc08b076f15a52be6670cd71fd971f2aeea8f5388c3cfc535392953f9fd99",
+      "manifest_sha256": "bcff1d5b39eeff64767126d080b32ca8881d38481f407bb5c55f5034995d9f2c",
+      "previous_cut_age_seconds": 61.208851,
+      "previous_cut_freshness_budget_seconds": 82.55,
+      "sequence": 1791206441749432,
+      "tick_seconds": 11.797,
+      "worker_timing": {
+        "allocator_phases": {
+          "checkpoint_verified": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.011108,
+            "rss_after_kib": 120680,
+            "rss_before_kib": 123712
+          },
+          "family_staged": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.054845,
+            "rss_after_kib": 158628,
+            "rss_before_kib": 174536
+          },
+          "planner_staged": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.021022,
+            "rss_after_kib": 134792,
+            "rss_before_kib": 164704
+          }
+        },
+        "audit_staging": [
+          {
+            "cpu_seconds": 0.117611,
+            "role": "preopen_rows",
+            "snapshot_bytes": 6222159,
+            "wall_seconds": 0.16949
+          },
+          {
+            "cpu_seconds": 0.369609,
+            "role": "engines",
+            "snapshot_bytes": 18025950,
+            "wall_seconds": 0.496983
+          },
+          {
+            "cpu_seconds": 0.000201,
+            "role": "source_reports",
+            "snapshot_bytes": 42,
+            "wall_seconds": 0.000522
+          },
+          {
+            "cpu_seconds": 0.00015,
+            "role": "events",
+            "snapshot_bytes": 1073,
+            "wall_seconds": 0.000491
+          },
+          {
+            "cpu_seconds": 0.728301,
+            "role": "family_routing",
+            "snapshot_bytes": 83436540,
+            "wall_seconds": 0.981051
+          },
+          {
+            "cpu_seconds": 0.022394,
+            "role": "catalog_ready",
+            "snapshot_bytes": 666789,
+            "wall_seconds": 0.023513
+          },
+          {
+            "cpu_seconds": 0.284978,
+            "role": "full_computed_root",
+            "snapshot_bytes": 15814961,
+            "wall_seconds": 0.362478
+          }
+        ],
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 176680,
+        "stages_cpu_seconds": {
+          "durable_serialization": 0.74,
+          "economic_exit_lab": 0.913,
+          "entry_signal_lab": 0.005,
+          "family_routing": 1.821,
+          "operational_funnel": 1.994,
+          "planner_pipeline": 1.243,
+          "preopen": 1.921,
+          "state_and_inputs": 0.238
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 176680,
+          "economic_exit_lab": 176680,
+          "entry_signal_lab": 176680,
+          "family_routing": 176680,
+          "operational_funnel": 176680,
+          "planner_pipeline": 176680,
+          "preopen": 176680,
+          "state_and_inputs": 176680
+        },
+        "stages_seconds": {
+          "durable_serialization": 0.966,
+          "economic_exit_lab": 1.212,
+          "entry_signal_lab": 0.005,
+          "family_routing": 2.446,
+          "operational_funnel": 2.669,
+          "planner_pipeline": 1.644,
+          "preopen": 2.571,
+          "state_and_inputs": 0.284
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7448,
+            "cpu_seconds": 0.452452,
+            "major_faults": 0,
+            "peak_rss_kib": 176680,
+            "wall_seconds": 0.599506
+          },
+          "computed": {
+            "block_outputs": 30920,
+            "cpu_seconds": 0.285971,
+            "major_faults": 0,
+            "peak_rss_kib": 176680,
+            "wall_seconds": 0.364588
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.001202,
+            "major_faults": 0,
+            "peak_rss_kib": 176680,
+            "wall_seconds": 0.001661
+          }
+        },
+        "tick_cpu_seconds": 8.874,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 11.797
+      }
+    }
+  ],
+  "database_unchanged": true,
+  "elapsed_seconds": 61.215,
+  "fixture_database": {
+    "inode": 9485803,
+    "path": "/proof/tmp/rc6-catalog-sy77skcw/paper.db",
+    "sha256": "886ee18377ca0c50d12a97705c0e1a97d321d0a9ed0c4e7e8c27f304624711a5"
+  },
+  "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+  "poll_sleep": "REMAINING_NOMINAL_30S_AFTER_HOT_PUBLICATION",
+  "process_peak_rss_kib": 176680,
+  "production_data_mounted": false,
+  "provider_requests": 0,
+  "ready_fixture_count": 9902,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "required_generations": 2,
+  "schema": "rc6.synthetic-full-catalog.v1"
+}

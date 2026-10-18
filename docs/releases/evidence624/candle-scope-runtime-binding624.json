@@ -1,0 +1,12 @@
+{
+  "status": "GREEN_MEASURED_SUCCESS_PATH_BINDING",
+  "measured_source_sha256": "68b9765b61159299efe032d64ec3fad952efe4ce1d069c10c7b7f2270cd1f0cf",
+  "final_source_sha256": "da91b5292f1e6206d69b126ef1ce5f983f6b7cdd902e6376aa562e88e6c0bd44",
+  "function_bindings": {
+    "collect_inputs": "EXACT_MEASURED_AST",
+    "build_summary": "EXACT_MEASURED_AST",
+    "_parse_iso": "EXACT_MEASURED_AST"
+  },
+  "post_measurement_runtime_change": "main_failure_summary_explicit_partial_scope_empty_checks_only",
+  "new_main_failure_regression": "candle-scope-final624.xml"
+}

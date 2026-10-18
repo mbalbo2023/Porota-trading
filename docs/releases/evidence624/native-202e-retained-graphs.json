@@ -1,0 +1,581 @@
+{
+  "schema": "rc6.issue624.local-retained-graph-attribution.v1",
+  "source_sha": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+  "source_tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
+  "database_sha256": "1dae96bc8848bb01dfdcc683f96c1552ca23d0f94d91ed74cb47b992c2f3acde",
+  "database_inode": 1580198,
+  "timing_or_peak_rss_comparable": false,
+  "limitations": [
+    "Local synthetic fixture, not a native heap snapshot.",
+    "Sections share values; section byte totals must not be added.",
+    "Instrumentation creates a traversal set; no speed or RSS claim."
+  ],
+  "cuts": [
+    {
+      "as_of": "2026-10-05T13:20:00+00:00",
+      "whole_report": {
+        "retained_bytes": 205345335,
+        "bytes_by_type": {
+          "dict": 156994832,
+          "str": 24560799,
+          "bool": 56,
+          "list": 21752032,
+          "int": 173168,
+          "Decimal": 7176,
+          "NoneType": 16,
+          "float": 69072,
+          "Counter": 600,
+          "tuple": 1784584,
+          "FrozenJSONDict": 2640,
+          "_FrozenEmptyList": 360
+        },
+        "objects_by_type": {
+          "dict": 431058,
+          "str": 476711,
+          "bool": 2,
+          "list": 246988,
+          "int": 6184,
+          "Decimal": 69,
+          "NoneType": 1,
+          "float": 2878,
+          "Counter": 3,
+          "tuple": 22307,
+          "FrozenJSONDict": 7,
+          "_FrozenEmptyList": 5
+        }
+      },
+      "sections": {
+        "frozen": {
+          "retained_bytes": 50916684,
+          "bytes_by_type": {
+            "dict": 42882520,
+            "str": 3601636,
+            "int": 171164,
+            "list": 4261032,
+            "NoneType": 16,
+            "bool": 28,
+            "float": 288
+          },
+          "objects_by_type": {
+            "dict": 163506,
+            "str": 69463,
+            "int": 6113,
+            "list": 49513,
+            "NoneType": 1,
+            "bool": 1,
+            "float": 12
+          }
+        },
+        "tradeability": {
+          "retained_bytes": 50915025,
+          "bytes_by_type": {
+            "dict": 42881504,
+            "str": 3600993,
+            "int": 171164,
+            "list": 4261032,
+            "NoneType": 16,
+            "bool": 28,
+            "float": 288
+          },
+          "objects_by_type": {
+            "dict": 163502,
+            "str": 69454,
+            "int": 6113,
+            "list": 49513,
+            "NoneType": 1,
+            "bool": 1,
+            "float": 12
+          }
+        },
+        "catalog_ready": {
+          "retained_bytes": 6292122,
+          "bytes_by_type": {
+            "list": 85176,
+            "dict": 2693344,
+            "str": 3513602
+          },
+          "objects_by_type": {
+            "list": 1,
+            "dict": 9902,
+            "str": 69321
+          }
+        },
+        "family_routing": {
+          "retained_bytes": 36574016,
+          "bytes_by_type": {
+            "dict": 26678608,
+            "int": 672,
+            "str": 5479776,
+            "bool": 56,
+            "list": 4212352,
+            "float": 24,
+            "tuple": 200160,
+            "NoneType": 16,
+            "FrozenJSONDict": 2064,
+            "_FrozenEmptyList": 288
+          },
+          "objects_by_type": {
+            "dict": 75437,
+            "int": 24,
+            "str": 109703,
+            "bool": 2,
+            "list": 49186,
+            "float": 1,
+            "tuple": 2502,
+            "NoneType": 1,
+            "FrozenJSONDict": 4,
+            "_FrozenEmptyList": 4
+          }
+        },
+        "operational_funnel": {
+          "retained_bytes": 59424713,
+          "bytes_by_type": {
+            "dict": 42742024,
+            "str": 6736561,
+            "bool": 56,
+            "list": 9868232,
+            "int": 1456,
+            "Decimal": 7176,
+            "NoneType": 16,
+            "float": 68592,
+            "Counter": 600
+          },
+          "objects_by_type": {
+            "dict": 139695,
+            "str": 126010,
+            "bool": 2,
+            "list": 100070,
+            "int": 52,
+            "Decimal": 69,
+            "NoneType": 1,
+            "float": 2858,
+            "Counter": 3
+          }
+        },
+        "economic_exit_lab": {
+          "retained_bytes": 3970,
+          "bytes_by_type": {
+            "dict": 1016,
+            "bool": 28,
+            "int": 112,
+            "str": 2606,
+            "float": 24,
+            "NoneType": 16,
+            "list": 168
+          },
+          "objects_by_type": {
+            "dict": 2,
+            "bool": 1,
+            "int": 4,
+            "str": 43,
+            "float": 1,
+            "NoneType": 1,
+            "list": 3
+          }
+        },
+        "entry_signal_lab": {
+          "retained_bytes": 14079,
+          "bytes_by_type": {
+            "dict": 5416,
+            "str": 7547,
+            "bool": 28,
+            "int": 280,
+            "list": 792,
+            "NoneType": 16
+          },
+          "objects_by_type": {
+            "dict": 22,
+            "str": 131,
+            "bool": 1,
+            "int": 10,
+            "list": 9,
+            "NoneType": 1
+          }
+        }
+      },
+      "engines": {
+        "SCALPING": {
+          "instruments": {
+            "retained_bytes": 1651903,
+            "bytes_by_type": {
+              "dict": 715024,
+              "NoneType": 16,
+              "list": 320096,
+              "bool": 28,
+              "str": 502419,
+              "tuple": 114320
+            },
+            "objects_by_type": {
+              "dict": 1430,
+              "NoneType": 1,
+              "list": 5716,
+              "bool": 1,
+              "str": 8593,
+              "tuple": 1429
+            }
+          },
+          "telemetry": {
+            "retained_bytes": 62635660,
+            "bytes_by_type": {
+              "list": 2530248,
+              "dict": 55530416,
+              "str": 3576628,
+              "FrozenJSONDict": 576,
+              "bool": 56,
+              "_FrozenEmptyList": 72,
+              "NoneType": 16,
+              "int": 171192,
+              "tuple": 792160,
+              "float": 34296
+            },
+            "objects_by_type": {
+              "list": 39609,
+              "dict": 158432,
+              "str": 69439,
+              "FrozenJSONDict": 3,
+              "bool": 2,
+              "_FrozenEmptyList": 1,
+              "NoneType": 1,
+              "int": 6114,
+              "tuple": 9902,
+              "float": 1429
+            }
+          }
+        },
+        "EQUITY_SPOT": {
+          "instruments": {
+            "retained_bytes": 1651903,
+            "bytes_by_type": {
+              "dict": 715024,
+              "NoneType": 16,
+              "list": 320096,
+              "bool": 28,
+              "str": 502419,
+              "tuple": 114320
+            },
+            "objects_by_type": {
+              "dict": 1430,
+              "NoneType": 1,
+              "list": 5716,
+              "bool": 1,
+              "str": 8593,
+              "tuple": 1429
+            }
+          },
+          "telemetry": {
+            "retained_bytes": 62635662,
+            "bytes_by_type": {
+              "list": 2530248,
+              "dict": 55530416,
+              "str": 3576630,
+              "FrozenJSONDict": 576,
+              "bool": 56,
+              "_FrozenEmptyList": 72,
+              "NoneType": 16,
+              "int": 171192,
+              "tuple": 792160,
+              "float": 34296
+            },
+            "objects_by_type": {
+              "list": 39609,
+              "dict": 158432,
+              "str": 69439,
+              "FrozenJSONDict": 3,
+              "bool": 2,
+              "_FrozenEmptyList": 1,
+              "NoneType": 1,
+              "int": 6114,
+              "tuple": 9902,
+              "float": 1429
+            }
+          }
+        }
+      }
+    },
+    {
+      "as_of": "2026-10-05T13:20:30+00:00",
+      "whole_report": {
+        "retained_bytes": 221706877,
+        "bytes_by_type": {
+          "dict": 129477168,
+          "str": 67072509,
+          "bool": 56,
+          "list": 22878272,
+          "int": 173168,
+          "Decimal": 7176,
+          "NoneType": 16,
+          "float": 307320,
+          "Counter": 600,
+          "tuple": 1784584,
+          "FrozenJSONDict": 5648,
+          "_FrozenEmptyList": 360
+        },
+        "objects_by_type": {
+          "dict": 317078,
+          "str": 1271222,
+          "bool": 2,
+          "list": 246992,
+          "int": 6184,
+          "Decimal": 69,
+          "NoneType": 1,
+          "float": 12805,
+          "Counter": 3,
+          "tuple": 22307,
+          "FrozenJSONDict": 19,
+          "_FrozenEmptyList": 5
+        }
+      },
+      "sections": {
+        "frozen": {
+          "retained_bytes": 32635545,
+          "bytes_by_type": {
+            "dict": 15364792,
+            "str": 12415105,
+            "list": 4443160,
+            "bool": 28,
+            "NoneType": 16,
+            "int": 171164,
+            "float": 238272,
+            "FrozenJSONDict": 3008
+          },
+          "objects_by_type": {
+            "dict": 49525,
+            "str": 225127,
+            "list": 49517,
+            "bool": 1,
+            "NoneType": 1,
+            "int": 6113,
+            "float": 9928,
+            "FrozenJSONDict": 12
+          }
+        },
+        "tradeability": {
+          "retained_bytes": 32629322,
+          "bytes_by_type": {
+            "dict": 15362816,
+            "str": 12411722,
+            "list": 4442608,
+            "bool": 28,
+            "NoneType": 16,
+            "int": 171164,
+            "float": 237960,
+            "FrozenJSONDict": 3008
+          },
+          "objects_by_type": {
+            "dict": 49516,
+            "str": 225068,
+            "list": 49514,
+            "bool": 1,
+            "NoneType": 1,
+            "int": 6113,
+            "float": 9915,
+            "FrozenJSONDict": 12
+          }
+        },
+        "catalog_ready": {
+          "retained_bytes": 6292122,
+          "bytes_by_type": {
+            "list": 85176,
+            "dict": 2693344,
+            "str": 3513602
+          },
+          "objects_by_type": {
+            "list": 1,
+            "dict": 9902,
+            "str": 69321
+          }
+        },
+        "family_routing": {
+          "retained_bytes": 36574016,
+          "bytes_by_type": {
+            "dict": 26678608,
+            "int": 672,
+            "str": 5479776,
+            "bool": 56,
+            "list": 4212352,
+            "float": 24,
+            "tuple": 200160,
+            "NoneType": 16,
+            "FrozenJSONDict": 2064,
+            "_FrozenEmptyList": 288
+          },
+          "objects_by_type": {
+            "dict": 75437,
+            "int": 24,
+            "str": 109703,
+            "bool": 2,
+            "list": 49186,
+            "float": 1,
+            "tuple": 2502,
+            "NoneType": 1,
+            "FrozenJSONDict": 4,
+            "_FrozenEmptyList": 4
+          }
+        },
+        "operational_funnel": {
+          "retained_bytes": 94625710,
+          "bytes_by_type": {
+            "dict": 42742024,
+            "str": 40993446,
+            "bool": 56,
+            "list": 10812344,
+            "int": 1456,
+            "Decimal": 7176,
+            "NoneType": 16,
+            "float": 68592,
+            "Counter": 600
+          },
+          "objects_by_type": {
+            "dict": 139695,
+            "str": 773351,
+            "bool": 2,
+            "list": 100070,
+            "int": 52,
+            "Decimal": 69,
+            "NoneType": 1,
+            "float": 2858,
+            "Counter": 3
+          }
+        },
+        "economic_exit_lab": {
+          "retained_bytes": 4107,
+          "bytes_by_type": {
+            "dict": 1080,
+            "bool": 28,
+            "int": 112,
+            "str": 2679,
+            "float": 24,
+            "NoneType": 16,
+            "list": 168
+          },
+          "objects_by_type": {
+            "dict": 3,
+            "bool": 1,
+            "int": 4,
+            "str": 45,
+            "float": 1,
+            "NoneType": 1,
+            "list": 3
+          }
+        },
+        "entry_signal_lab": {
+          "retained_bytes": 14092,
+          "bytes_by_type": {
+            "dict": 5416,
+            "str": 7560,
+            "bool": 28,
+            "int": 280,
+            "list": 792,
+            "NoneType": 16
+          },
+          "objects_by_type": {
+            "dict": 22,
+            "str": 131,
+            "bool": 1,
+            "int": 10,
+            "list": 9,
+            "NoneType": 1
+          }
+        }
+      },
+      "engines": {
+        "SCALPING": {
+          "instruments": {
+            "retained_bytes": 1723303,
+            "bytes_by_type": {
+              "dict": 715024,
+              "NoneType": 16,
+              "list": 320096,
+              "bool": 28,
+              "str": 573819,
+              "tuple": 114320
+            },
+            "objects_by_type": {
+              "dict": 1430,
+              "NoneType": 1,
+              "list": 5716,
+              "bool": 1,
+              "str": 10021,
+              "tuple": 1429
+            }
+          },
+          "telemetry": {
+            "retained_bytes": 36671282,
+            "bytes_by_type": {
+              "list": 2530248,
+              "dict": 29389136,
+              "str": 3750802,
+              "FrozenJSONDict": 3304,
+              "bool": 56,
+              "_FrozenEmptyList": 72,
+              "NoneType": 16,
+              "int": 171192,
+              "tuple": 792160,
+              "float": 34296
+            },
+            "objects_by_type": {
+              "list": 39609,
+              "dict": 49510,
+              "str": 69560,
+              "FrozenJSONDict": 14,
+              "bool": 2,
+              "_FrozenEmptyList": 1,
+              "NoneType": 1,
+              "int": 6114,
+              "tuple": 9902,
+              "float": 1429
+            }
+          }
+        },
+        "EQUITY_SPOT": {
+          "instruments": {
+            "retained_bytes": 1723303,
+            "bytes_by_type": {
+              "dict": 715024,
+              "NoneType": 16,
+              "list": 320096,
+              "bool": 28,
+              "str": 573819,
+              "tuple": 114320
+            },
+            "objects_by_type": {
+              "dict": 1430,
+              "NoneType": 1,
+              "list": 5716,
+              "bool": 1,
+              "str": 10021,
+              "tuple": 1429
+            }
+          },
+          "telemetry": {
+            "retained_bytes": 36671284,
+            "bytes_by_type": {
+              "list": 2530248,
+              "dict": 29389136,
+              "str": 3750804,
+              "FrozenJSONDict": 3304,
+              "bool": 56,
+              "_FrozenEmptyList": 72,
+              "NoneType": 16,
+              "int": 171192,
+              "tuple": 792160,
+              "float": 34296
+            },
+            "objects_by_type": {
+              "list": 39609,
+              "dict": 49510,
+              "str": 69560,
+              "FrozenJSONDict": 14,
+              "bool": 2,
+              "_FrozenEmptyList": 1,
+              "NoneType": 1,
+              "int": 6114,
+              "tuple": 9902,
+              "float": 1429
+            }
+          }
+        }
+      }
+    }
+  ]
+}

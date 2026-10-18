@@ -1,0 +1,21 @@
+{
+  "parent_ru_maxrss_kib": 256000,
+  "direct_child": {
+    "ru_maxrss_kib": 256128,
+    "proc": {
+      "VmHWM": 8668,
+      "VmRSS": 8668
+    }
+  },
+  "via_clean_stdlib_launcher": {
+    "ru_maxrss_kib": 8448,
+    "proc": {
+      "VmHWM": 8660,
+      "VmRSS": 8660
+    }
+  },
+  "kernel": "Linux",
+  "alloc_mib": 240,
+  "physical_vs_inherited": true,
+  "clean_child_is_measured": true
+}

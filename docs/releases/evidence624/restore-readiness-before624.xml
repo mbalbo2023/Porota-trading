@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="0.129" timestamp="2026-10-18T14:18:51.038887+08:00" hostname="38ad2494d116"><testcase classname="tests.test_rc6_native_soak" name="test_restored_heartbeat_needs_new_current_before_unchanged_strict_ten" time="0.010" /><testcase classname="tests.test_rc6_native_soak" name="test_restore_readiness_is_separate_and_precedes_unmodified_strict_soak" time="0.000"><failure message="ValueError: substring not found">def test_restore_readiness_is_separate_and_precedes_unmodified_strict_soak():
+        from pathlib import Path
+        text=(Path(__file__).resolve().parents[1]/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
+        stress=text.index('- name: Postdeploy full-session stress in the exact installed image')
+&gt;       ready=text.index('- name: Re-establish two current native generations after restoration')
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       ValueError: substring not found
+
+tests/test_rc6_native_soak.py:63: ValueError</failure></testcase></testsuite></testsuites>

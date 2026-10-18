@@ -1,0 +1,213 @@
+{
+  "catalog_count": 5000,
+  "shape": {
+    "BONOS": 1031,
+    "OBLIGACIONES": 1717,
+    "FCI": 370,
+    "ACCIONES": 68,
+    "CEDEARS": 835,
+    "LETRAS": 18,
+    "FUTUROS": 70,
+    "OPCIONES": 856,
+    "CAUCIONES": 4,
+    "ON": 31,
+    "INDICES": 0
+  },
+  "ready_fixture_count": 3388,
+  "native_backend": true,
+  "import_root": "/workspace/scratch/88594b90c2a3/fix2-624",
+  "host_acceptance": false,
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "clocks": "PRE fixed; second PRE+30s; no physical cadence claim",
+  "ticks": [
+    {
+      "wall": 3.177310461000161,
+      "cpu": 3.168964978,
+      "peak_rss_kib": 117572,
+      "engine_count": 2,
+      "report": {
+        "compressed_bytes": 1562368,
+        "file": "computed-3e73da91ec1910b4b8a90befb587ed27e05929db961dfcc24014c9b98f9d8fba.json.gz",
+        "raw_bytes": 91157551,
+        "sha256": "3e73da91ec1910b4b8a90befb587ed27e05929db961dfcc24014c9b98f9d8fba"
+      },
+      "timing": {
+        "allocator_phases": {
+          "planner_completed": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.035521,
+            "rss_after_kib": 79628,
+            "rss_before_kib": 79656
+          }
+        },
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 117444,
+        "stages_cpu_seconds": {
+          "durable_serialization": 1.242,
+          "economic_exit_lab": 0.003,
+          "entry_signal_lab": 0.001,
+          "family_routing": 0.356,
+          "operational_funnel": 0.642,
+          "planner_pipeline": 0.37,
+          "preopen": 0.535,
+          "state_and_inputs": 0.014
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 117444,
+          "economic_exit_lab": 105552,
+          "entry_signal_lab": 105552,
+          "family_routing": 105552,
+          "operational_funnel": 116932,
+          "planner_pipeline": 79696,
+          "preopen": 62160,
+          "state_and_inputs": 43568
+        },
+        "stages_seconds": {
+          "durable_serialization": 1.245,
+          "economic_exit_lab": 0.003,
+          "entry_signal_lab": 0.001,
+          "family_routing": 0.356,
+          "operational_funnel": 0.642,
+          "planner_pipeline": 0.37,
+          "preopen": 0.537,
+          "state_and_inputs": 0.014
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 2600,
+            "cpu_seconds": 0.248443,
+            "major_faults": 0,
+            "peak_rss_kib": 117444,
+            "wall_seconds": 0.249645
+          },
+          "computed": {
+            "block_outputs": 3056,
+            "compress_hash_cpu_seconds": 0.155474,
+            "compress_hash_seconds": 0.155068,
+            "compressed_bytes": 1562368,
+            "cpu_seconds": 0.962126,
+            "encode_cpu_seconds": 0.804237,
+            "encode_seconds": 0.80367,
+            "fsync_cpu_seconds": 0.00023,
+            "fsync_seconds": 0.001205,
+            "major_faults": 0,
+            "peak_rss_kib": 117444,
+            "raw_bytes": 91157551,
+            "wall_seconds": 0.963606
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.0009,
+            "major_faults": 0,
+            "peak_rss_kib": 117444,
+            "wall_seconds": 0.001458
+          }
+        },
+        "tick_cpu_seconds": 3.162,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 3.168
+      },
+      "idle_allocator": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 110612,
+        "rss_after_kib": 84956,
+        "elapsed_seconds": 0.058572
+      }
+    },
+    {
+      "wall": 3.149767060999693,
+      "cpu": 3.1432271760000003,
+      "peak_rss_kib": 130292,
+      "engine_count": 2,
+      "report": {
+        "compressed_bytes": 1747946,
+        "file": "computed-0948e1db60ce1e7ef7005a9f42bbf7c06e73875b61b324c015ba54a362325211.json.gz",
+        "raw_bytes": 91157589,
+        "sha256": "0948e1db60ce1e7ef7005a9f42bbf7c06e73875b61b324c015ba54a362325211"
+      },
+      "timing": {
+        "allocator_phases": {
+          "planner_completed": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.090584,
+            "rss_after_kib": 106176,
+            "rss_before_kib": 106320
+          }
+        },
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 130292,
+        "stages_cpu_seconds": {
+          "durable_serialization": 1.166,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 0.393,
+          "operational_funnel": 0.493,
+          "planner_pipeline": 0.442,
+          "preopen": 0.396,
+          "state_and_inputs": 0.243
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 130292,
+          "economic_exit_lab": 130292,
+          "entry_signal_lab": 130292,
+          "family_routing": 130292,
+          "operational_funnel": 130292,
+          "planner_pipeline": 117768,
+          "preopen": 117768,
+          "state_and_inputs": 117572
+        },
+        "stages_seconds": {
+          "durable_serialization": 1.17,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 0.393,
+          "operational_funnel": 0.493,
+          "planner_pipeline": 0.442,
+          "preopen": 0.396,
+          "state_and_inputs": 0.243
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 2600,
+            "cpu_seconds": 0.191347,
+            "major_faults": 0,
+            "peak_rss_kib": 130292,
+            "wall_seconds": 0.192611
+          },
+          "computed": {
+            "block_outputs": 3432,
+            "compress_hash_cpu_seconds": 0.155172,
+            "compress_hash_seconds": 0.154764,
+            "compressed_bytes": 1747946,
+            "cpu_seconds": 0.940509,
+            "encode_cpu_seconds": 0.782412,
+            "encode_seconds": 0.781559,
+            "fsync_cpu_seconds": 0.000281,
+            "fsync_seconds": 0.001561,
+            "major_faults": 0,
+            "peak_rss_kib": 130292,
+            "raw_bytes": 91157589,
+            "wall_seconds": 0.942347
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.001053,
+            "major_faults": 0,
+            "peak_rss_kib": 130292,
+            "wall_seconds": 0.001686
+          }
+        },
+        "tick_cpu_seconds": 3.138,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 3.141
+      },
+      "idle_allocator": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 128992,
+        "rss_after_kib": 104292,
+        "elapsed_seconds": 0.04361
+      }
+    }
+  ]
+}

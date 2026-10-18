@@ -1,0 +1,15 @@
+{
+  "discovered": 4046,
+  "errors": 0,
+  "exclusions": [
+    "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+  ],
+  "executed": 4046,
+  "failures": 0,
+  "pytest_exit_code": 0,
+  "schema_version": 1,
+  "scope": "repository-root automatic pytest discovery",
+  "skipped": 0,
+  "status": "GREEN",
+  "xfail": 0
+}

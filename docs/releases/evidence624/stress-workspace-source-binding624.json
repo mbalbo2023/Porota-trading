@@ -1,0 +1,31 @@
+{
+  "status": "GREEN_HARNESS_ONLY_DIFFERENCE",
+  "measured_worker_source_sha": "d1bd3127d051f1a01fe57f742fbded1a4f216a48",
+  "measured_worker_tree": "8834b276e806405fb49f55ea6862e639422ce21f",
+  "changed_paths": [
+    "scripts/rc6_postdeploy_stress_host.py",
+    "tests/test_rc6_postdeploy_stress_contract.py"
+  ],
+  "all_other_tracked_bytes_match_measured_source": true,
+  "release_image_certificate": false,
+  "requires_new_full_predeploy_certificate": true,
+  "controlled_abi_run": 39103911869,
+  "artifact": 12127856400,
+  "application_worker_python_sha256": {
+    "rc6_shadow_runtime/__init__.py": "38de867a361db0f93625c3beb8d4a6f31e772e66db5af076a7fcc87a62cf3051",
+    "rc6_shadow_runtime/audit_spool.py": "20ca143b2d4fc4a9369f5281f10f044f925376ff0cd302c8a8c5bcf4244a5944",
+    "rc6_shadow_runtime/checkpoint_parts.py": "73124ad2c134a0970ec54fcc1047ae78e0a74060774d0f0373dcb443d0324fb3",
+    "rc6_shadow_runtime/entry_signals.py": "038020d0e03f220dfd735aab89c45bb02e610f0fb203b8e42a68c58f25097303",
+    "rc6_shadow_runtime/families.py": "e6a55859659e36dc66cf2e3ddb6d9658bd1e43ae290262cb9f2b78c5cb9d3994",
+    "rc6_shadow_runtime/funnel.py": "3c8d3b45655450e071777927c9187938d6737ad5e415376c2bbe472975d603e5",
+    "rc6_shadow_runtime/lab.py": "537ceb92654116b711658c366355803bd46213846439655910024563281e38cd",
+    "rc6_shadow_runtime/persistence.py": "b7b1deb8f7ce16ef9fc813f90f73103d93c77aa3f0d1b90896baa32bb2012bee",
+    "rc6_shadow_runtime/preopen.py": "11b5fb0c45f6be860f6f5eb6a670ead4712f08f5fecc4f5a76e40649053977f0",
+    "rc6_shadow_runtime/read_contract.py": "35a9c720e33084d2a677277c1880a5e522ee32467acda71a935633770c35ef83",
+    "rc6_shadow_runtime/source_authority.py": "b9277923784464adf61b9f78cd1f7952bcba97e7e6fe6a4bfcdc4f724eadfe35",
+    "rc6_shadow_runtime/source_reads.py": "9e358bf5ca9e6c46b5c7d2725f8c0b4e8f71deda3d86658a7777bf7da3f64165",
+    "rc6_shadow_runtime/stages.py": "1323b5934829d882f6acb1a47ad6ae5d964a588e7540c0a45979c0d3c639c92b",
+    "rc6_shadow_runtime/timing.py": "4830e4f5afbcde9a87ff6c348d86c29a43149b6dec9cbbdee73537d8242833b1",
+    "rc6_shadow_runtime/worker.py": "79ec3efcaa931c3b5f9ccb19df16cd6da40270a9d0836b1ba0c60632a43b6a09"
+  }
+}

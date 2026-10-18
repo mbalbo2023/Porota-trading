@@ -1,0 +1,10 @@
+{
+  "schema": "rc6.a3-prefix-red-source-binding.v1",
+  "local_commit": "8cd83e087acd986eea8791e6101aef170c396c66",
+  "tree": "9642c00f474517eb9deb7e642fed64501711fe8d",
+  "source_c_sha256": "ccffd721c5b2f642d0447fd08b83b78ed2ee02f1a3613bb8c617c130f651ebf5",
+  "summary_sha256": "d23b22de04d32b1235d2de07217c39d9fe03c5369d450da4af87406447c8f885",
+  "export_manifest_sha256": "4918a0105ebf216620a6d35a1a5cb9cee00dec1cbed5b134a1f6338cf965d073",
+  "state": "RED_LEGACY_HOT_CPU_0_8294735130588156_NOT_DEPLOYABLE",
+  "all_sixteen_full_audits_verified": true
+}

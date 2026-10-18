@@ -1,0 +1,31 @@
+{
+  "schema": "rc6.loaded-image-content-identity.v1",
+  "status": "GREEN_CONTENT_IDENTITY",
+  "candidate_sha": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+  "candidate_tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
+  "original_image_id": "sha256:c3229770ff31728df35e9c6a803b7e59894461786b3a0f1299687bec16052596",
+  "loaded_image_id": "sha256:3d09ea8ce266cfd89684db6926c684ea8831aaf798ecca926cc8f050620ec251",
+  "artifact_id": 12123121595,
+  "zip_bytes": 414812982,
+  "zip_sha256": "511a06390863d6a987958e057d696a301614ba539d9d006f2fe729941e1208f7",
+  "image_tar_sha256": "1214dd4e4625435d63740c74cc1e982655116d4229579cc2b637f4d1701e0c11",
+  "rootfs_layers_verified": 25,
+  "rootfs_diff_ids_equal": true,
+  "semantic_config_sha256": "34cc205a73740c20c4b60b9c88259b5dbf45429e8d9113a4e592ad315b5347e1",
+  "semantic_config_equal": true,
+  "normalization_fields": [
+    "Env",
+    "Entrypoint",
+    "Cmd",
+    "User",
+    "WorkingDir",
+    "StopSignal",
+    "Healthcheck",
+    "ExposedPorts",
+    "Volumes",
+    "Labels",
+    "OnBuild",
+    "Shell"
+  ],
+  "read_only": true
+}

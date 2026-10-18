@@ -1,0 +1,21 @@
+{
+  "status": "GREEN_RCA_ARTIFACT_IDENTITY_NOT_RUNTIME_ACCEPTANCE",
+  "run": 39111872898,
+  "job": 117629558357,
+  "artifact": 12130414541,
+  "zip_bytes": 26801,
+  "zip_sha256": "5630ade3fa610e739fb110142e44e77878b5767fcdd41d592db1ad77bdf0b6c5",
+  "actual_profile_equals_job_log": true,
+  "source_sha": "246ac975ed527f40db496af47584c9dcdec933f8",
+  "tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
+  "samples": 18,
+  "actual_worker_native_backend_mapped": true,
+  "all25_rootfs_equal_validated_artifact": true,
+  "all_operative_config_equal": true,
+  "semantic_config_sha256": "a38dac368361a2a81087e360e28ec02dc3ff4f6c17ab16f0c845b8fbbd877a13",
+  "raw_log_bytes": 265739,
+  "raw_log_sha256": "4aaab9f49f4ce389de019fe4a33091cb19529794ec9a438ccc2cff8101aef3b1",
+  "profile_original_bytes": 246300,
+  "profile_original_sha256": "2e2106fa6dd86e8dca4e2d9a8eb16bd1daafaef392ee840ed2ea37cec369eb1c",
+  "runtime_accepted": false
+}

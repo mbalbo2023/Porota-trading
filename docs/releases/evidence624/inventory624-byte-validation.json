@@ -1,0 +1,11 @@
+{
+  "artifact_id": 12110914761,
+  "run": 39060769025,
+  "job": 117478105318,
+  "zip_sha256": "324c50cf1fc0e78af7049b8e3d1a861eccba94650a72b45de767ac83a7ebb799",
+  "zip_bytes": 6157,
+  "member": "inventory.json",
+  "member_sha256": "c21a5736bf193eb601ccf4f4b952b924dcd5df1789aec7f26b160135fbfa4aab",
+  "member_bytes": 67497,
+  "content_matches_captured_log": true
+}

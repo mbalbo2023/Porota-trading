@@ -1,0 +1,22 @@
+{
+  "schema": "rc6.native624.rca-byte-validation.v1",
+  "artifact": 12124332880,
+  "bytes": 26585,
+  "zip_sha256": "ab1a34b693aa84a4177b61521a835734b8e13e8c1b978e0b834da1e5fdd72041",
+  "members": [
+    {
+      "member": "profile.json",
+      "bytes": 215838,
+      "sha256": "b1f53394b80c99f7b4238d6c6b5dc63e286f71ba228486632dba8a0e82c00af2",
+      "deep_equal_raw_log": true
+    },
+    {
+      "member": "image-mapping.json",
+      "bytes": 1075,
+      "sha256": "a41b1db121ac6c0edd5a2e6575a9b3d2684433d7742779734672720f22c80209",
+      "deep_equal_raw_log": true
+    }
+  ],
+  "status": "GREEN",
+  "droplet_mutation": false
+}

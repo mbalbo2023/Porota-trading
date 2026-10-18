@@ -1,0 +1,15 @@
+{
+  "source": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
+  "tree": "df970bae3415333d43c7c6a30442f6962188ae26",
+  "merge": "90dc852c36eaa95683db39ea1593cb6ff98bf202",
+  "run": 39115392916,
+  "job": 117640043081,
+  "status": "DEPLOYED_NOT_ACCEPTED_FIX_FORWARD_REQUIRED",
+  "native_two": "RED",
+  "native_ten": "NOT_EXECUTED",
+  "stress_405_droplet": "NOT_EXECUTED",
+  "restore": "NOT_EXECUTED",
+  "rejections": 7,
+  "coherent_generations": 1,
+  "last_pair_wall_seconds": 121.234
+}

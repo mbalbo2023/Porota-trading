@@ -1,0 +1,232 @@
+{
+  "root": "/workspace/scratch/88594b90c2a3/base624",
+  "folder": "/workspace/scratch/88594b90c2a3/ab-base624/profile-0d9odgdu",
+  "native_backend": true,
+  "fixture_sha256": "11f6901f75274d16df95b43de7778af2de04c7281d2a47df823c1d58d65c8a59",
+  "measurements": [
+    {
+      "operation": "read",
+      "name": "checkpoint.json.gz",
+      "wall": 0.0001264970014744904,
+      "cpu": 0.00012621800000001127
+    },
+    {
+      "operation": "read",
+      "name": "preopen-2026-10-05.json.gz",
+      "wall": 0.00018507400091039017,
+      "cpu": 0.00018521500000001634
+    },
+    {
+      "operation": "write",
+      "name": "preopen-2026-10-05.json.gz",
+      "wall": 0.6994599380013824,
+      "cpu": 0.6980293
+    },
+    {
+      "operation": "write_streamed_report",
+      "name": null,
+      "wall": 3.7535529810011212,
+      "cpu": 3.751769465999999
+    },
+    {
+      "operation": "write",
+      "name": "latest.json.gz",
+      "wall": 0.003059046000998933,
+      "cpu": 0.0018890630000001352
+    },
+    {
+      "operation": "write",
+      "name": "checkpoint.json.gz",
+      "wall": 1.3483679370001482,
+      "cpu": 1.3463321730000004
+    },
+    {
+      "operation": "write",
+      "name": "status.json",
+      "wall": 0.0014079190004849806,
+      "cpu": 0.000685149999998913
+    },
+    {
+      "operation": "read",
+      "name": "CURRENT.json",
+      "wall": 0.0001406779992976226,
+      "cpu": 0.00013964799999754973
+    },
+    {
+      "operation": "write",
+      "name": "cut-7d65ec12c2e354d2a5a59bb0b7447c18b90f93859ae4c87975dafb944708c89f.json.gz",
+      "wall": 0.002537887001381023,
+      "cpu": 0.0017677009999985671
+    },
+    {
+      "operation": "write",
+      "name": "CURRENT.json",
+      "wall": 0.0010355390004406217,
+      "cpu": 0.0005190830000003643
+    },
+    {
+      "operation": "publish_generation",
+      "name": null,
+      "wall": 0.007161051998991752,
+      "cpu": 0.005855275999998355
+    },
+    {
+      "operation": "prune_computed_reports",
+      "name": null,
+      "wall": 0.0003900360024999827,
+      "cpu": 0.000390321000001137
+    },
+    {
+      "operation": "write",
+      "name": "publication.json",
+      "wall": 0.0010889680015679915,
+      "cpu": 0.0005238679999983731
+    },
+    {
+      "operation": "read",
+      "name": "CURRENT.json",
+      "wall": 0.00014712700067320839,
+      "cpu": 0.00014714900000001307
+    },
+    {
+      "operation": "read",
+      "name": "cut-7d65ec12c2e354d2a5a59bb0b7447c18b90f93859ae4c87975dafb944708c89f.json.gz",
+      "wall": 0.00039838800148572773,
+      "cpu": 0.0003985829999990642
+    },
+    {
+      "operation": "read",
+      "name": "status.json",
+      "wall": 0.00015540900130872615,
+      "cpu": 0.00015552199999646632
+    },
+    {
+      "operation": "read",
+      "name": "publication.json",
+      "wall": 7.507099871872924e-05,
+      "cpu": 7.515199999730271e-05
+    },
+    {
+      "operation": "read",
+      "name": "checkpoint.json.gz",
+      "wall": 0.44466631099930964,
+      "cpu": 0.4446754619999993
+    },
+    {
+      "operation": "read",
+      "name": "preopen-2026-10-05.json.gz",
+      "wall": 1.1124195359989244,
+      "cpu": 1.1123876549999991
+    },
+    {
+      "operation": "write_streamed_report",
+      "name": null,
+      "wall": 3.618390907999128,
+      "cpu": 3.6162850370000044
+    },
+    {
+      "operation": "write",
+      "name": "latest.json.gz",
+      "wall": 0.0029212560002633836,
+      "cpu": 0.002006766999997467
+    },
+    {
+      "operation": "write",
+      "name": "checkpoint.json.gz",
+      "wall": 1.216116310999496,
+      "cpu": 1.2139986379999996
+    },
+    {
+      "operation": "write",
+      "name": "status.json",
+      "wall": 0.0013479920016834512,
+      "cpu": 0.0007062099999970428
+    },
+    {
+      "operation": "read",
+      "name": "CURRENT.json",
+      "wall": 0.00026474100013729185,
+      "cpu": 0.000264424000000929
+    },
+    {
+      "operation": "write",
+      "name": "cut-4c946391510044fae12ec92e8479ecdfb08f5642ebd28ccda519fb362d57444e.json.gz",
+      "wall": 0.0025166279992845375,
+      "cpu": 0.0018358820000017317
+    },
+    {
+      "operation": "write",
+      "name": "CURRENT.json",
+      "wall": 0.0011135749991808552,
+      "cpu": 0.0005602940000031253
+    },
+    {
+      "operation": "publish_generation",
+      "name": null,
+      "wall": 0.006998630000452977,
+      "cpu": 0.0057635089999976685
+    },
+    {
+      "operation": "prune_computed_reports",
+      "name": null,
+      "wall": 0.0003844479979306925,
+      "cpu": 0.0003848730000015621
+    },
+    {
+      "operation": "write",
+      "name": "publication.json",
+      "wall": 0.001086284999473719,
+      "cpu": 0.0005441799999985619
+    },
+    {
+      "operation": "read",
+      "name": "CURRENT.json",
+      "wall": 0.00014212000314728357,
+      "cpu": 0.00014224200000256815
+    },
+    {
+      "operation": "read",
+      "name": "cut-4c946391510044fae12ec92e8479ecdfb08f5642ebd28ccda519fb362d57444e.json.gz",
+      "wall": 0.0003563070022210013,
+      "cpu": 0.0003565199999968627
+    },
+    {
+      "operation": "read",
+      "name": "status.json",
+      "wall": 0.0001207389977935236,
+      "cpu": 0.00012081999999935533
+    },
+    {
+      "operation": "read",
+      "name": "publication.json",
+      "wall": 7.152599937398918e-05,
+      "cpu": 7.161700000324345e-05
+    }
+  ],
+  "ticks": [
+    {
+      "tick": 0,
+      "wall": 18.27554266900188,
+      "cpu": 18.265539111,
+      "rss_kib": 361904,
+      "computed": {
+        "compressed_bytes": 3955588,
+        "file": "computed-1bbfa0844135b2038d3f60256b073d7d81d98a485ea71220cde88e1cbdad6caf.json.gz",
+        "raw_bytes": 265449852,
+        "sha256": "1bbfa0844135b2038d3f60256b073d7d81d98a485ea71220cde88e1cbdad6caf"
+      }
+    },
+    {
+      "tick": 1,
+      "wall": 15.039285789996939,
+      "cpu": 15.031592923000002,
+      "rss_kib": 452448,
+      "computed": {
+        "compressed_bytes": 4560165,
+        "file": "computed-a7b949ad4682ba08eaa9150403d1a56f649c4f518ed42b915046c273a6736946.json.gz",
+        "raw_bytes": 265449890,
+        "sha256": "a7b949ad4682ba08eaa9150403d1a56f649c4f518ed42b915046c273a6736946"
+      }
+    }
+  ]
+}

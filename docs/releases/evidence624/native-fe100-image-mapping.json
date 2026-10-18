@@ -1,0 +1,30 @@
+{
+  "candidate_sha": "fe100cb337ba627e23aa4a006b6c30125e646ad7",
+  "candidate_tree": "8a6fc95a80a02142a15c29c18e05e5f1036de27d",
+  "image_tar_sha256": "0591558cba21a80d6baa327aefa53e3d98e253799b9c80a5dae1b1ff6e408855",
+  "loaded_image_id": "sha256:290a946ed68ea79fd428e82da4b32cb3028812006d14d0caa926232a3c04ea6c",
+  "normalization_fields": [
+    "Env",
+    "Entrypoint",
+    "Cmd",
+    "User",
+    "WorkingDir",
+    "StopSignal",
+    "Healthcheck",
+    "ExposedPorts",
+    "Volumes",
+    "Labels",
+    "OnBuild",
+    "Shell"
+  ],
+  "original_image_id": "sha256:2d61b2bae12cc1ab164eb997ce187a450da6eb2438239be3e8b40d44fa15d2e3",
+  "read_only": true,
+  "rootfs_diff_ids_equal": true,
+  "rootfs_layers_verified": 25,
+  "schema": "rc6.loaded-image-content-identity.v1",
+  "semantic_config_equal": true,
+  "semantic_config_sha256": "e21250bc4e84a6e254a13d1ad18eaaf8f2fa4e15493cb1e41f463445d4940747",
+  "status": "GREEN_CONTENT_IDENTITY",
+  "zip_sha256": "7a4161313698fc6f16b18a5eef22020fbe973ee4b50ae9510df775152395b4a9"
+}
+

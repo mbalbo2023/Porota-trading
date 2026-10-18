@@ -1,0 +1,14 @@
+{
+  "schema": "rc6.ab624.environment-red-byte-validation.v1",
+  "artifact": 12122154441,
+  "zip_sha256": "24e7983f20459047a1ec72035270f888ed7b133bd08011e3d4d16537d2f41b80",
+  "zip_bytes": 13050,
+  "actual_cases": 208,
+  "failures": 1,
+  "errors": 0,
+  "skipped": 0,
+  "focal_xml_sha256": "cb21736cb3191aa26cbe05fbb1921d43900f59ad98408e8330910ac1d2276d7a",
+  "cause": "FIXTURE_ON_64M_TMPFS_BELOW_REAL_2G_DISK_FLOOR",
+  "candidate_source_unchanged": true,
+  "status": "VERIFIED_RED_PRESERVED"
+}

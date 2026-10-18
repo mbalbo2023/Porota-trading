@@ -1,0 +1,40 @@
+{
+  "schema": "rc6.native624.deploy-red.v1",
+  "run": 39083752998,
+  "job": 117545904511,
+  "candidate_sha": "fe100cb337ba627e23aa4a006b6c30125e646ad7",
+  "candidate_tree": "8a6fc95a80a02142a15c29c18e05e5f1036de27d",
+  "merge_sha": "e636b3a20a408e0ff22089118634003e4de900f1",
+  "status": "FAILED",
+  "native_two": "GREEN_WITH_8_PRIOR_STALE_OBSERVATIONS",
+  "native_ten": "RED_NATIVE_SOAK_RAM_RESERVE_BREACHED",
+  "rejected_resource_value": "NOT_RETAINED_BY_OLD_COLLECTOR",
+  "stress_droplet": "NOT_EXECUTED",
+  "stress_restore": "NOT_EXECUTED",
+  "runtime_acceptance": false,
+  "cleanup_actual": {
+    "status": "GREEN",
+    "errors": [],
+    "reclaimed_bytes": 147456
+  },
+  "cleanup_step_red": "quiescence recover returns2/FIX_FORWARD_VALIDATION_REQUIRED; original validation RED preserved",
+  "raw_log": {
+    "github_url": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39083752998/job/117545904511",
+    "local_bytes": 455602,
+    "sha256": "9b9b2150deafee2a27a00532ba67594ea8475f2003978945f82284757f7ee9bf"
+  },
+  "rca_run": 39088022968,
+  "rca_job": 117558606343,
+  "rca_artifact": {
+    "id": 12121632352,
+    "bytes": 26579,
+    "server_sha256": "559ad5632ff26e269b0f81a873eb4eb8415fa22d1c0e67ca9b28547a4bdd7d2f",
+    "independent_zip_validation": "PENDING"
+  },
+  "diagnostic_retired_commit": "0a1e6180d70c7b7afd172fe8dd234adaa75484a3",
+  "ownership": [
+    6244546905,
+    6244547022
+  ],
+  "new_branch": "work/rc6-624-checkpoint-working-set-20261018"
+}

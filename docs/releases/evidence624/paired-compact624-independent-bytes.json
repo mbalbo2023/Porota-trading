@@ -1,0 +1,59 @@
+{
+  "schema": "rc6.paired624.independent-local-file-validation.v1",
+  "native_host_acceptance": false,
+  "rows": [
+    {
+      "arm": "baseline",
+      "source_as_of": "2026-10-05T13:20:00+00:00",
+      "status": "PRUNED_BY_EXISTING_BOUNDED_RETENTION",
+      "claimed_raw_sha256": "346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130"
+    },
+    {
+      "arm": "baseline",
+      "source_as_of": "2026-10-05T13:20:30+00:00",
+      "status": "PRUNED_BY_EXISTING_BOUNDED_RETENTION",
+      "claimed_raw_sha256": "9c6c0bb0a182d899293ecd9330b7e03d4b24cb5ee8b7a55267a80ab26367739f"
+    },
+    {
+      "arm": "baseline",
+      "source_as_of": "2026-10-06T13:20:00+00:00",
+      "status": "PRUNED_BY_EXISTING_BOUNDED_RETENTION",
+      "claimed_raw_sha256": "611c6e8dcd1a48616573522f0cb6a41c24c9c09a142522fbf99444a0e0cabe54"
+    },
+    {
+      "arm": "baseline",
+      "source_as_of": "2026-10-06T13:20:30+00:00",
+      "status": "ACTUAL_FULL_BYTES_VERIFIED",
+      "raw_bytes": 265449928,
+      "sha256": "87c7837efa74eea00af12cb2fda6225a045b49043444f0d45aecd89e22a0aa8f",
+      "compressed_bytes": 4560940
+    },
+    {
+      "arm": "candidate",
+      "source_as_of": "2026-10-05T13:20:00+00:00",
+      "status": "PRUNED_BY_EXISTING_BOUNDED_RETENTION",
+      "claimed_raw_sha256": "346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130"
+    },
+    {
+      "arm": "candidate",
+      "source_as_of": "2026-10-05T13:20:30+00:00",
+      "status": "PRUNED_BY_EXISTING_BOUNDED_RETENTION",
+      "claimed_raw_sha256": "9c6c0bb0a182d899293ecd9330b7e03d4b24cb5ee8b7a55267a80ab26367739f"
+    },
+    {
+      "arm": "candidate",
+      "source_as_of": "2026-10-06T13:20:00+00:00",
+      "status": "PRUNED_BY_EXISTING_BOUNDED_RETENTION",
+      "claimed_raw_sha256": "611c6e8dcd1a48616573522f0cb6a41c24c9c09a142522fbf99444a0e0cabe54"
+    },
+    {
+      "arm": "candidate",
+      "source_as_of": "2026-10-06T13:20:30+00:00",
+      "status": "ACTUAL_FULL_BYTES_VERIFIED",
+      "raw_bytes": 265449928,
+      "sha256": "87c7837efa74eea00af12cb2fda6225a045b49043444f0d45aecd89e22a0aa8f",
+      "compressed_bytes": 4560940
+    }
+  ],
+  "note": "Earlier audits are pruned by existing runtime retention; their writer hashes remain recorded. GH A/B verifies each before pruning."
+}

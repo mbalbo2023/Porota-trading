@@ -1,0 +1,43 @@
+{
+  "schema": "rc6.predeploy624.native-proof-tempdir-rca.v1",
+  "run": 39137079334,
+  "job": 117703665637,
+  "pr": 632,
+  "source": "8bf1cd4b9e7358c4f47fcdafefe8cdff0c2ef407",
+  "tree": "8a17e78104b81ea5d13fd56e772273564aafd6a5",
+  "status": "RED_NATIVE_TEST_HARNESS",
+  "root_suite": {
+    "discovered": 4229,
+    "errors": 0,
+    "exclusions": [
+      "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+    ],
+    "executed": 4229,
+    "failures": 0,
+    "pytest_exit_code": 0,
+    "schema_version": 1,
+    "scope": "repository-root automatic pytest discovery",
+    "skipped": 0,
+    "status": "GREEN",
+    "xfail": 0
+  },
+  "native_cases": 181,
+  "native_failures": 1,
+  "native_errors": 0,
+  "native_skipped": 0,
+  "failure_case": {
+    "classname": "tests.test_rc6_shadow_cold_audit",
+    "name": "test_anonymous_link_capability_for_current_uid_without_capabilities",
+    "time": "0.001"
+  },
+  "cause": "Capability test hardcodes dir=/tmp on read-only native container; fixture TMPDIR=/proof/tmp is the approved writable bound disk.",
+  "artifact": 12140033600,
+  "zip_bytes": 138555,
+  "zip_sha256": "00f37a3850b8e16452b6c2158da4a731ae1239db6f619c0667d93545065912ec",
+  "raw_log_bytes": 622280,
+  "raw_log_sha256": "ac63727ae7d74b7157731bfcc80a78f3cd19eb5f6a55ba88251bd952eca4da74",
+  "catalog_session_cadence": "NOT_EXECUTED_AFTER_NATIVE_CASE_FAILURE",
+  "release_image_exported": false,
+  "droplet_touched": false,
+  "fix_forward": "New isolated source uses pytest-owned tmp_path, same uid/capabilities/O_TMPFILE/link/fsync/inode checks and unchanged read-only/512MiB/.75CPU controls; permanent directory guard."
+}

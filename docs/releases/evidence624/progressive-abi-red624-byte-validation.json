@@ -1,0 +1,10 @@
+{
+  "status": "GREEN_ARTIFACT_BYTE_AND_CONSTRAINT_VALIDATION_RESULT_STILL_RED",
+  "zip_sha256": "536db0fdaa67b42aae54c1ffac04e93aa154594cfdb4837a3f981e7a2bcf6939",
+  "zip_bytes": 61835,
+  "containers": 4,
+  "all_constraints_verified": true,
+  "all_exit_zero_oom_false": true,
+  "native_host_acceptance": false,
+  "result": "RED_EXPERIMENT"
+}

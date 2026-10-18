@@ -1,0 +1,288 @@
+{
+  "actual_market_acceptance": false,
+  "catalog_count": 14611,
+  "cuts": [
+    {
+      "as_of": "2026-10-05T13:20:00.000177+00:00",
+      "computed_report_sha256": "f653b9bd6df3e19c87b580c545e98e6145b26ce5f0173cd70791b0f2a68dfe53",
+      "freshness_budget_seconds": 91.304,
+      "generation_id": "f5e5678206a8d1a03190ab0b75c8cd6dcfbc77ea6e5bef826b4a6d7295e35aae",
+      "manifest_sha256": "c62d0fbce9fa519ee7bd52adf346bc3bb710887745b14e6592849d4ac8801263",
+      "sequence": 1791206400000177,
+      "tick_seconds": 15.652,
+      "worker_timing": {
+        "allocator_phases": {
+          "checkpoint_verified": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.016953,
+            "rss_after_kib": 54256,
+            "rss_before_kib": 55164
+          },
+          "family_staged": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.065655,
+            "rss_after_kib": 153840,
+            "rss_before_kib": 168232
+          },
+          "planner_staged": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.032807,
+            "rss_after_kib": 147332,
+            "rss_before_kib": 177392
+          }
+        },
+        "audit_staging": [
+          {
+            "cpu_seconds": 0.356694,
+            "raw_bytes": 21841767,
+            "role": "preopen_rows",
+            "wall_seconds": 0.485894
+          },
+          {
+            "cpu_seconds": 1.005213,
+            "raw_bytes": 64257360,
+            "role": "engines",
+            "wall_seconds": 1.353612
+          },
+          {
+            "cpu_seconds": 0.000235,
+            "raw_bytes": 2,
+            "role": "source_reports",
+            "wall_seconds": 0.000687
+          },
+          {
+            "cpu_seconds": 0.000161,
+            "raw_bytes": 895,
+            "role": "events",
+            "wall_seconds": 0.000382
+          },
+          {
+            "cpu_seconds": 1.165149,
+            "raw_bytes": 99854286,
+            "role": "family_routing",
+            "wall_seconds": 1.567862
+          },
+          {
+            "cpu_seconds": 0.047265,
+            "raw_bytes": 1711091,
+            "role": "catalog_ready",
+            "wall_seconds": 0.048364
+          }
+        ],
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 177260,
+        "stages_cpu_seconds": {
+          "durable_serialization": 1.984,
+          "economic_exit_lab": 1.403,
+          "entry_signal_lab": 0.002,
+          "family_routing": 2.772,
+          "operational_funnel": 2.299,
+          "planner_pipeline": 1.283,
+          "preopen": 1.955,
+          "state_and_inputs": 0.053
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 177260,
+          "economic_exit_lab": 177260,
+          "entry_signal_lab": 177260,
+          "family_routing": 177260,
+          "operational_funnel": 177260,
+          "planner_pipeline": 171372,
+          "preopen": 123232,
+          "state_and_inputs": 65564
+        },
+        "stages_seconds": {
+          "durable_serialization": 2.634,
+          "economic_exit_lab": 1.879,
+          "entry_signal_lab": 0.002,
+          "family_routing": 3.697,
+          "operational_funnel": 3.074,
+          "planner_pipeline": 1.707,
+          "preopen": 2.606,
+          "state_and_inputs": 0.053
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7456,
+            "cpu_seconds": 0.546151,
+            "major_faults": 0,
+            "peak_rss_kib": 177260,
+            "wall_seconds": 0.719895
+          },
+          "computed": {
+            "block_outputs": 7736,
+            "compress_hash_cpu_seconds": 0.608874,
+            "compress_hash_seconds": 0.607714,
+            "compressed_bytes": 3958506,
+            "cpu_seconds": 1.436371,
+            "encode_cpu_seconds": 0.815367,
+            "encode_seconds": 0.938458,
+            "fsync_cpu_seconds": 0.000731,
+            "fsync_seconds": 0.00203,
+            "major_faults": 0,
+            "peak_rss_kib": 177260,
+            "raw_bytes": 265641048,
+            "wall_seconds": 1.912791
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.00116,
+            "major_faults": 0,
+            "peak_rss_kib": 177260,
+            "wall_seconds": 0.001653
+          }
+        },
+        "tick_cpu_seconds": 11.751,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 15.652
+      }
+    },
+    {
+      "as_of": "2026-10-05T13:20:45.750404+00:00",
+      "computed_report_sha256": "45ebf16fd9371ab7500210df565ce555ac1f8c58ae4779cfa6a69a8bdd667c7c",
+      "freshness_budget_seconds": 91.804,
+      "generation_id": "e0eaca820ebf9cc92365dec7c361aa2f57e8929ef5376c2e5399984d210ca475",
+      "manifest_sha256": "3c0716aa5262687e27db2a1146e72f1c9cbc32bfe977243dc2c9adf3ea29896f",
+      "previous_cut_age_seconds": 61.742771,
+      "previous_cut_freshness_budget_seconds": 91.304,
+      "sequence": 1791206445750404,
+      "tick_seconds": 15.902,
+      "worker_timing": {
+        "allocator_phases": {
+          "checkpoint_verified": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.011629,
+            "rss_after_kib": 123252,
+            "rss_before_kib": 128392
+          },
+          "family_staged": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.07683,
+            "rss_after_kib": 157960,
+            "rss_before_kib": 174140
+          },
+          "planner_staged": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.038895,
+            "rss_after_kib": 135248,
+            "rss_before_kib": 165432
+          }
+        },
+        "audit_staging": [
+          {
+            "cpu_seconds": 0.331401,
+            "raw_bytes": 21841767,
+            "role": "preopen_rows",
+            "wall_seconds": 0.432561
+          },
+          {
+            "cpu_seconds": 0.964224,
+            "raw_bytes": 64257358,
+            "role": "engines",
+            "wall_seconds": 1.265778
+          },
+          {
+            "cpu_seconds": 0.000269,
+            "raw_bytes": 2,
+            "role": "source_reports",
+            "wall_seconds": 0.000677
+          },
+          {
+            "cpu_seconds": 0.000141,
+            "raw_bytes": 895,
+            "role": "events",
+            "wall_seconds": 0.000325
+          },
+          {
+            "cpu_seconds": 1.15678,
+            "raw_bytes": 99854286,
+            "role": "family_routing",
+            "wall_seconds": 1.534891
+          },
+          {
+            "cpu_seconds": 0.048683,
+            "raw_bytes": 1711091,
+            "role": "catalog_ready",
+            "wall_seconds": 0.072096
+          }
+        ],
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 177260,
+        "stages_cpu_seconds": {
+          "durable_serialization": 1.896,
+          "economic_exit_lab": 1.424,
+          "entry_signal_lab": 0.005,
+          "family_routing": 2.815,
+          "operational_funnel": 2.164,
+          "planner_pipeline": 1.374,
+          "preopen": 2.019,
+          "state_and_inputs": 0.252
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 177260,
+          "economic_exit_lab": 177260,
+          "entry_signal_lab": 177260,
+          "family_routing": 177260,
+          "operational_funnel": 177260,
+          "planner_pipeline": 177260,
+          "preopen": 177260,
+          "state_and_inputs": 177260
+        },
+        "stages_seconds": {
+          "durable_serialization": 2.523,
+          "economic_exit_lab": 1.899,
+          "entry_signal_lab": 0.005,
+          "family_routing": 3.765,
+          "operational_funnel": 2.889,
+          "planner_pipeline": 1.824,
+          "preopen": 2.694,
+          "state_and_inputs": 0.302
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7456,
+            "cpu_seconds": 0.47097,
+            "major_faults": 0,
+            "peak_rss_kib": 177260,
+            "wall_seconds": 0.620213
+          },
+          "computed": {
+            "block_outputs": 8920,
+            "compress_hash_cpu_seconds": 0.63291,
+            "compress_hash_seconds": 0.631327,
+            "compressed_bytes": 4564145,
+            "cpu_seconds": 1.423868,
+            "encode_cpu_seconds": 0.77841,
+            "encode_seconds": 0.845508,
+            "fsync_cpu_seconds": 0.000806,
+            "fsync_seconds": 0.002362,
+            "major_faults": 0,
+            "peak_rss_kib": 177260,
+            "raw_bytes": 265641086,
+            "wall_seconds": 1.900745
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.001224,
+            "major_faults": 0,
+            "peak_rss_kib": 177260,
+            "wall_seconds": 0.001706
+          }
+        },
+        "tick_cpu_seconds": 11.95,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 15.902
+      }
+    }
+  ],
+  "elapsed_seconds": 61.743,
+  "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+  "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+  "process_peak_rss_kib": 177260,
+  "production_data_mounted": false,
+  "provider_requests": 0,
+  "ready_fixture_count": 9902,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "schema": "rc6.synthetic-full-catalog.v1"
+}

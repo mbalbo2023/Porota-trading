@@ -1,0 +1,152 @@
+{
+  "actual_market_acceptance": false,
+  "catalog_count": 14611,
+  "cuts": [
+    {
+      "as_of": "2026-10-05T13:20:00.000134+00:00",
+      "computed_report_sha256": "a85c5a9e2306af438c305c39e090f62745ce78347b1af070f42340090fdf820c",
+      "freshness_budget_seconds": 89.174,
+      "generation_id": "2db058961b2e3f463c29b79548fe2921a0de1a6ea971d0c36c7aa8b44c7d738f",
+      "manifest_sha256": "1f045d798765250c4c8282da0b3d229b0fd7f40e20d28f1bddec33d6fb4346de",
+      "sequence": 1791206400000134,
+      "tick_seconds": 14.587,
+      "worker_timing": {
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 384000,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.585,
+          "economic_exit_lab": 0.004,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.25,
+          "operational_funnel": 2.548,
+          "planner_pipeline": 1.091,
+          "preopen": 2.432,
+          "state_and_inputs": 0.026
+        },
+        "stages_seconds": {
+          "durable_serialization": 4.812,
+          "economic_exit_lab": 0.004,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.675,
+          "operational_funnel": 3.397,
+          "planner_pipeline": 1.464,
+          "preopen": 3.208,
+          "state_and_inputs": 0.026
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7448,
+            "cpu_seconds": 0.652018,
+            "major_faults": 0,
+            "peak_rss_kib": 384000,
+            "wall_seconds": 0.870393
+          },
+          "computed": {
+            "block_outputs": 7736,
+            "compress_hash_cpu_seconds": 0.511446,
+            "compress_hash_seconds": 0.510607,
+            "compressed_bytes": 3957935,
+            "cpu_seconds": 2.891537,
+            "encode_cpu_seconds": 2.368457,
+            "encode_seconds": 2.839648,
+            "fsync_cpu_seconds": 0.000701,
+            "fsync_seconds": 0.033084,
+            "major_faults": 0,
+            "peak_rss_kib": 384000,
+            "raw_bytes": 265641048,
+            "wall_seconds": 3.899802
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.000967,
+            "major_faults": 0,
+            "peak_rss_kib": 384000,
+            "wall_seconds": 0.001298
+          }
+        },
+        "tick_cpu_seconds": 10.936,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 14.587
+      }
+    },
+    {
+      "as_of": "2026-10-05T13:20:45.108350+00:00",
+      "computed_report_sha256": "cf4c5265e6e9666cd281e9cfe2d3fb38c7d5b930b164b88a06322dc775432dbf",
+      "freshness_budget_seconds": 85.27,
+      "generation_id": "059bb89d8563440b6c2bd7a9c2c157ac18cf9185ed11e8f359932e5cb6417a9d",
+      "manifest_sha256": "1c863b108d856a5c0195a6e020176ab56a81d5e30b45804e1c21ea09545cfb2e",
+      "previous_cut_age_seconds": 58.27355,
+      "previous_cut_freshness_budget_seconds": 89.174,
+      "sequence": 1791206445108350,
+      "tick_seconds": 12.635,
+      "worker_timing": {
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 418424,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.364,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.302,
+          "operational_funnel": 1.867,
+          "planner_pipeline": 1.102,
+          "preopen": 1.287,
+          "state_and_inputs": 0.547
+        },
+        "stages_seconds": {
+          "durable_serialization": 4.531,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.727,
+          "operational_funnel": 2.492,
+          "planner_pipeline": 1.475,
+          "preopen": 1.713,
+          "state_and_inputs": 0.693
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7448,
+            "cpu_seconds": 0.556497,
+            "major_faults": 0,
+            "peak_rss_kib": 418424,
+            "wall_seconds": 0.718542
+          },
+          "computed": {
+            "block_outputs": 8912,
+            "compress_hash_cpu_seconds": 0.524432,
+            "compress_hash_seconds": 0.54841,
+            "compressed_bytes": 4562228,
+            "cpu_seconds": 2.768112,
+            "encode_cpu_seconds": 2.231621,
+            "encode_seconds": 2.554668,
+            "fsync_cpu_seconds": 0.000814,
+            "fsync_seconds": 0.053477,
+            "major_faults": 0,
+            "peak_rss_kib": 418424,
+            "raw_bytes": 265635310,
+            "wall_seconds": 3.747284
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.001054,
+            "major_faults": 0,
+            "peak_rss_kib": 418424,
+            "wall_seconds": 0.001594
+          }
+        },
+        "tick_cpu_seconds": 9.473,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 12.635
+      }
+    }
+  ],
+  "elapsed_seconds": 58.274,
+  "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+  "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+  "process_peak_rss_kib": 418424,
+  "production_data_mounted": false,
+  "provider_requests": 0,
+  "ready_fixture_count": 9902,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "schema": "rc6.synthetic-full-catalog.v1"
+}

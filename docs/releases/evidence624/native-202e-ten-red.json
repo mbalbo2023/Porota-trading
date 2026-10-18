@@ -1,0 +1,315 @@
+{
+  "all_services_sampled_running": false,
+  "disk_floor_bytes": 2147483648,
+  "error_class": "ValueError",
+  "error_reason": "NATIVE_SOAK_RAM_RESERVE_BREACHED",
+  "generations": [
+    {
+      "as_of": "2026-10-18T04:03:25.081111+00:00",
+      "candidate_tree_sha": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
+      "configuration_fingerprint": "cbd2be0d55d3eeec94bf1fef07ecc10d0671298b4a1db8659384b6641efbf107",
+      "generation_id": "b9a12b761064f65503e466a727b0994d0a518350cc5998d2847c3b9ff74265b4",
+      "manifest_sha256": "5408d4e5edcbdd5efcdfba06540e021f5a336a33c93325fcdd067a7e5cf504e7",
+      "native_sql_elapsed_ms": 139.16,
+      "native_transform_elapsed_ms": 239.407,
+      "provider_requests": 0,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "sequence": 1792296205081111,
+      "source_sha": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+      "worker_status": "SHADOW_OBSERVING"
+    }
+  ],
+  "minimum_generations": 10,
+  "observations": [
+    {
+      "age_seconds": 40.549,
+      "as_of": "2026-10-18T04:03:25.081111+00:00",
+      "budget_ms": 2000,
+      "elapsed_seconds": 0.074429,
+      "kind": "FIRST_GENERATION",
+      "poll_seconds": 30,
+      "sequence": 1792296205081111,
+      "sql_elapsed_ms": 139.16,
+      "stages_cpu_seconds": {
+        "durable_serialization": 12.281,
+        "economic_exit_lab": 0.009,
+        "entry_signal_lab": 0.213,
+        "family_routing": 2.866,
+        "operational_funnel": 5.17,
+        "planner_pipeline": 3.504,
+        "preopen": 4.18,
+        "state_and_inputs": 2.709
+      },
+      "stages_seconds": {
+        "durable_serialization": 15.379,
+        "economic_exit_lab": 0.009,
+        "entry_signal_lab": 0.214,
+        "family_routing": 3.573,
+        "operational_funnel": 7.275,
+        "planner_pipeline": 3.587,
+        "preopen": 6.159,
+        "state_and_inputs": 2.869
+      },
+      "tick_cpu_seconds": 30.934,
+      "tick_seconds": 39.065,
+      "transform_elapsed_ms": 239.407,
+      "worker_status": "SHADOW_OBSERVING"
+    },
+    {
+      "age_seconds": 91.134,
+      "as_of": "2026-10-18T04:03:25.081111+00:00",
+      "budget_ms": 2000,
+      "elapsed_seconds": 52.662122,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "poll_seconds": 30,
+      "reason": "NATIVE_SOAK_RAM_RESERVE_BREACHED",
+      "sql_elapsed_ms": 139.16,
+      "stages_cpu_seconds": {
+        "durable_serialization": 12.281,
+        "economic_exit_lab": 0.009,
+        "entry_signal_lab": 0.213,
+        "family_routing": 2.866,
+        "operational_funnel": 5.17,
+        "planner_pipeline": 3.504,
+        "preopen": 4.18,
+        "state_and_inputs": 2.709
+      },
+      "stages_seconds": {
+        "durable_serialization": 15.379,
+        "economic_exit_lab": 0.009,
+        "entry_signal_lab": 0.214,
+        "family_routing": 3.573,
+        "operational_funnel": 7.275,
+        "planner_pipeline": 3.587,
+        "preopen": 6.159,
+        "state_and_inputs": 2.869
+      },
+      "tick_cpu_seconds": 30.934,
+      "tick_seconds": 39.065,
+      "transform_elapsed_ms": 239.407,
+      "worker_status": "SHADOW_OBSERVING"
+    }
+  ],
+  "ram_floor_bytes": 134217728,
+  "read_only": true,
+  "reason": "SUSTAINED_NATIVE_GENERATIONS_REJECTED",
+  "rejection_count": 1,
+  "resource_sampling_seconds": 2,
+  "resources": [
+    {
+      "at": "2026-10-18T04:04:05.605858+00:00",
+      "available_memory_bytes": 238772224,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 807989248
+    },
+    {
+      "at": "2026-10-18T04:04:07.631873+00:00",
+      "available_memory_bytes": 241954816,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 807727104
+    },
+    {
+      "at": "2026-10-18T04:04:09.646306+00:00",
+      "available_memory_bytes": 250363904,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 807727104
+    },
+    {
+      "at": "2026-10-18T04:04:11.651706+00:00",
+      "available_memory_bytes": 250531840,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 807727104
+    },
+    {
+      "at": "2026-10-18T04:04:13.656798+00:00",
+      "available_memory_bytes": 250380288,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 807727104
+    },
+    {
+      "at": "2026-10-18T04:04:15.692620+00:00",
+      "available_memory_bytes": 239054848,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 807202816
+    },
+    {
+      "at": "2026-10-18T04:04:17.698290+00:00",
+      "available_memory_bytes": 239165440,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 806940672
+    },
+    {
+      "at": "2026-10-18T04:04:19.703695+00:00",
+      "available_memory_bytes": 243859456,
+      "free_disk_bytes": 4551811072,
+      "services_unchanged": true,
+      "swap_used_bytes": 806940672
+    },
+    {
+      "at": "2026-10-18T04:04:21.719322+00:00",
+      "available_memory_bytes": 253014016,
+      "free_disk_bytes": 4551811072,
+      "services_unchanged": true,
+      "swap_used_bytes": 806678528
+    },
+    {
+      "at": "2026-10-18T04:04:23.726322+00:00",
+      "available_memory_bytes": 253161472,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 806678528
+    },
+    {
+      "at": "2026-10-18T04:04:25.770459+00:00",
+      "available_memory_bytes": 253022208,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 806416384
+    },
+    {
+      "at": "2026-10-18T04:04:27.776203+00:00",
+      "available_memory_bytes": 272023552,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 806154240
+    },
+    {
+      "at": "2026-10-18T04:04:29.780712+00:00",
+      "available_memory_bytes": 273793024,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 806154240
+    },
+    {
+      "at": "2026-10-18T04:04:31.784884+00:00",
+      "available_memory_bytes": 275390464,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 805892096
+    },
+    {
+      "at": "2026-10-18T04:04:33.790685+00:00",
+      "available_memory_bytes": 275431424,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 805892096
+    },
+    {
+      "at": "2026-10-18T04:04:35.869681+00:00",
+      "available_memory_bytes": 218996736,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 805629952
+    },
+    {
+      "at": "2026-10-18T04:04:37.881813+00:00",
+      "available_memory_bytes": 221380608,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 805629952
+    },
+    {
+      "at": "2026-10-18T04:04:39.893813+00:00",
+      "available_memory_bytes": 154771456,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 805629952
+    },
+    {
+      "at": "2026-10-18T04:04:41.905795+00:00",
+      "available_memory_bytes": 140578816,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 805367808
+    },
+    {
+      "at": "2026-10-18T04:04:43.917846+00:00",
+      "available_memory_bytes": 158105600,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 805367808
+    },
+    {
+      "at": "2026-10-18T04:04:46.010573+00:00",
+      "available_memory_bytes": 158216192,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 805367808
+    },
+    {
+      "at": "2026-10-18T04:04:48.021833+00:00",
+      "available_memory_bytes": 164118528,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 805367808
+    },
+    {
+      "at": "2026-10-18T04:04:50.035720+00:00",
+      "available_memory_bytes": 141541376,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 807714816
+    },
+    {
+      "at": "2026-10-18T04:04:52.058076+00:00",
+      "available_memory_bytes": 148746240,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 808292352
+    },
+    {
+      "at": "2026-10-18T04:04:54.071817+00:00",
+      "available_memory_bytes": 136503296,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 808030208
+    },
+    {
+      "at": "2026-10-18T04:04:56.203623+00:00",
+      "available_memory_bytes": 137056256,
+      "free_disk_bytes": 4551827456,
+      "services_unchanged": true,
+      "swap_used_bytes": 807768064
+    },
+    {
+      "accepted": false,
+      "at": "2026-10-18T04:04:58.217931+00:00",
+      "available_memory_bytes": 118923264,
+      "free_disk_bytes": 4551827456,
+      "rejection_reason": "NATIVE_SOAK_RAM_RESERVE_BREACHED",
+      "services_unchanged": true,
+      "swap_used_bytes": 807768064
+    }
+  ],
+  "schema": "rc6.deploy-generation-gate.v1",
+  "service_sampling_seconds": 10,
+  "services": [
+    {
+      "id": "c9693abcc5d12cf490c1a62f4e7e21969216ec25037246d55e8f34f4865de31e",
+      "image": "sha256:3d09ea8ce266cfd89684db6926c684ea8831aaf798ecca926cc8f050620ec251",
+      "name": "/porota_production_observer",
+      "oom": false,
+      "restarts": 0,
+      "status": "running"
+    },
+    {
+      "id": "f1b74236fa3d10df81c74370beffeb1e0e15015b6e701e913b37a34970f4ac8d",
+      "image": "sha256:3d09ea8ce266cfd89684db6926c684ea8831aaf798ecca926cc8f050620ec251",
+      "name": "/porota_production_dashboard",
+      "oom": false,
+      "restarts": 0,
+      "status": "running"
+    }
+  ],
+  "status": "RED",
+  "strict": true
+}

@@ -1,0 +1,431 @@
+{
+  "schema": "rc6.checkpoint624.controlled-ab.v1",
+  "root": "/workspace/scratch/88594b90c2a3/fix2-624",
+  "native_backend": true,
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "database": "/workspace/scratch/88594b90c2a3/shared624.db",
+  "inode": 1580198,
+  "database_sha256": "1dae96bc8848bb01dfdcc683f96c1552ca23d0f94d91ed74cb47b992c2f3acde",
+  "source_clock_policy": "PRE, PRE+30s, PRE+1day, PRE+1day+30s identical in both arms",
+  "host_acceptance": false,
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "ticks": [
+    {
+      "source_as_of": "2026-10-05T13:20:00+00:00",
+      "wall": 9.82521770800031,
+      "cpu": 9.813906106000001,
+      "peak_rss_kib": 285672,
+      "computed": {
+        "compressed_bytes": 3955574,
+        "file": "computed-346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130.json.gz",
+        "raw_bytes": 265449852,
+        "sha256": "346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130"
+      },
+      "timing": {
+        "allocator_phases": {
+          "planner_completed": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.119913,
+            "rss_after_kib": 163272,
+            "rss_before_kib": 163224
+          }
+        },
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 285672,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.609,
+          "economic_exit_lab": 0.003,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.194,
+          "operational_funnel": 2.136,
+          "planner_pipeline": 1.325,
+          "preopen": 1.512,
+          "state_and_inputs": 0.028
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 285672,
+          "economic_exit_lab": 253996,
+          "entry_signal_lab": 253996,
+          "family_routing": 253996,
+          "operational_funnel": 285672,
+          "planner_pipeline": 163244,
+          "preopen": 101656,
+          "state_and_inputs": 49560
+        },
+        "stages_seconds": {
+          "durable_serialization": 3.615,
+          "economic_exit_lab": 0.003,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.194,
+          "operational_funnel": 2.137,
+          "planner_pipeline": 1.325,
+          "preopen": 1.513,
+          "state_and_inputs": 0.028
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7440,
+            "cpu_seconds": 0.61836,
+            "major_faults": 0,
+            "peak_rss_kib": 285672,
+            "wall_seconds": 0.619898
+          },
+          "computed": {
+            "block_outputs": 7728,
+            "compress_hash_cpu_seconds": 0.435099,
+            "compress_hash_seconds": 0.433865,
+            "compressed_bytes": 3955574,
+            "cpu_seconds": 2.951475,
+            "encode_cpu_seconds": 2.510118,
+            "encode_seconds": 2.508353,
+            "fsync_cpu_seconds": 0.00044,
+            "fsync_seconds": 0.002356,
+            "major_faults": 0,
+            "peak_rss_kib": 285672,
+            "raw_bytes": 265449852,
+            "wall_seconds": 2.954859
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.000985,
+            "major_faults": 0,
+            "peak_rss_kib": 285672,
+            "wall_seconds": 0.00182
+          }
+        },
+        "tick_cpu_seconds": 9.807,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 9.816
+      },
+      "funnel": {
+        "reaches": 19804,
+        "cohorts": 19804,
+        "sha256": "3af16074aef96ccd56273fd886020d380bdf723fb8e04d05db4e90e94dab2755",
+        "gaps": {},
+        "sessions": [
+          "2026-10-05"
+        ]
+      },
+      "idle": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 173972,
+        "rss_after_kib": 118324,
+        "elapsed_seconds": 0.010757
+      }
+    },
+    {
+      "source_as_of": "2026-10-05T13:20:30+00:00",
+      "wall": 8.936119660000259,
+      "cpu": 8.928762374000002,
+      "peak_rss_kib": 322528,
+      "computed": {
+        "compressed_bytes": 4560178,
+        "file": "computed-9c6c0bb0a182d899293ecd9330b7e03d4b24cb5ee8b7a55267a80ab26367739f.json.gz",
+        "raw_bytes": 265449890,
+        "sha256": "9c6c0bb0a182d899293ecd9330b7e03d4b24cb5ee8b7a55267a80ab26367739f"
+      },
+      "timing": {
+        "allocator_phases": {
+          "planner_completed": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.223175,
+            "rss_after_kib": 236108,
+            "rss_before_kib": 247916
+          }
+        },
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 322528,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.055,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.288,
+          "operational_funnel": 1.26,
+          "planner_pipeline": 1.221,
+          "preopen": 1.358,
+          "state_and_inputs": 0.736
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 322528,
+          "economic_exit_lab": 322528,
+          "entry_signal_lab": 322528,
+          "family_routing": 322528,
+          "operational_funnel": 322528,
+          "planner_pipeline": 285672,
+          "preopen": 285672,
+          "state_and_inputs": 285672
+        },
+        "stages_seconds": {
+          "durable_serialization": 3.059,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.289,
+          "operational_funnel": 1.26,
+          "planner_pipeline": 1.222,
+          "preopen": 1.358,
+          "state_and_inputs": 0.736
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7424,
+            "cpu_seconds": 0.512087,
+            "major_faults": 0,
+            "peak_rss_kib": 322528,
+            "wall_seconds": 0.513695
+          },
+          "computed": {
+            "block_outputs": 8912,
+            "compress_hash_cpu_seconds": 0.414646,
+            "compress_hash_seconds": 0.413468,
+            "compressed_bytes": 4560178,
+            "cpu_seconds": 2.508305,
+            "encode_cpu_seconds": 2.088793,
+            "encode_seconds": 2.087456,
+            "fsync_cpu_seconds": 0.000357,
+            "fsync_seconds": 0.001736,
+            "major_faults": 0,
+            "peak_rss_kib": 322528,
+            "raw_bytes": 265449890,
+            "wall_seconds": 2.510083
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.000993,
+            "major_faults": 0,
+            "peak_rss_kib": 322528,
+            "wall_seconds": 0.001732
+          }
+        },
+        "tick_cpu_seconds": 8.922,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 8.926
+      },
+      "funnel": {
+        "reaches": 19804,
+        "cohorts": 19804,
+        "sha256": "0c8f30032b4345fb12b5e55cb55c1cec98de0a89d362598462126b4509fc0f95",
+        "gaps": {},
+        "sessions": [
+          "2026-10-05"
+        ]
+      },
+      "idle": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 208772,
+        "rss_after_kib": 152516,
+        "elapsed_seconds": 0.011253
+      }
+    },
+    {
+      "source_as_of": "2026-10-06T13:20:00+00:00",
+      "wall": 11.364157540000178,
+      "cpu": 11.355307441,
+      "peak_rss_kib": 340560,
+      "computed": {
+        "compressed_bytes": 3955984,
+        "file": "computed-611c6e8dcd1a48616573522f0cb6a41c24c9c09a142522fbf99444a0e0cabe54.json.gz",
+        "raw_bytes": 265449930,
+        "sha256": "611c6e8dcd1a48616573522f0cb6a41c24c9c09a142522fbf99444a0e0cabe54"
+      },
+      "timing": {
+        "allocator_phases": {
+          "planner_completed": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.209568,
+            "rss_after_kib": 253608,
+            "rss_before_kib": 280916
+          }
+        },
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 340560,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.643,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.318,
+          "operational_funnel": 2.474,
+          "planner_pipeline": 1.518,
+          "preopen": 1.659,
+          "state_and_inputs": 0.733
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 340560,
+          "economic_exit_lab": 340152,
+          "entry_signal_lab": 340152,
+          "family_routing": 340152,
+          "operational_funnel": 340560,
+          "planner_pipeline": 322528,
+          "preopen": 322528,
+          "state_and_inputs": 322528
+        },
+        "stages_seconds": {
+          "durable_serialization": 3.648,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.318,
+          "operational_funnel": 2.474,
+          "planner_pipeline": 1.518,
+          "preopen": 1.66,
+          "state_and_inputs": 0.733
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7432,
+            "cpu_seconds": 0.655192,
+            "major_faults": 0,
+            "peak_rss_kib": 340560,
+            "wall_seconds": 0.656673
+          },
+          "computed": {
+            "block_outputs": 7728,
+            "compress_hash_cpu_seconds": 0.44617,
+            "compress_hash_seconds": 0.444617,
+            "compressed_bytes": 3955984,
+            "cpu_seconds": 2.948227,
+            "encode_cpu_seconds": 2.495986,
+            "encode_seconds": 2.493287,
+            "fsync_cpu_seconds": 0.000477,
+            "fsync_seconds": 0.002126,
+            "major_faults": 0,
+            "peak_rss_kib": 340560,
+            "raw_bytes": 265449930,
+            "wall_seconds": 2.950379
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.001038,
+            "major_faults": 0,
+            "peak_rss_kib": 340560,
+            "wall_seconds": 0.002191
+          }
+        },
+        "tick_cpu_seconds": 11.348,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 11.354
+      },
+      "funnel": {
+        "reaches": 19804,
+        "cohorts": 19804,
+        "sha256": "255e24b53a4f7fe8a78b87ec2cdb64b0c030e07feff81f4b8baebccd5ac10d2f",
+        "gaps": {
+          "OLDER_SESSION_EVICTED_FOR_CAPACITY": 1
+        },
+        "sessions": [
+          "2026-10-06"
+        ]
+      },
+      "idle": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 222680,
+        "rss_after_kib": 165704,
+        "elapsed_seconds": 0.011481
+      }
+    },
+    {
+      "source_as_of": "2026-10-06T13:20:30+00:00",
+      "wall": 9.512829323999995,
+      "cpu": 9.504653099000002,
+      "peak_rss_kib": 340560,
+      "computed": {
+        "compressed_bytes": 4560940,
+        "file": "computed-87c7837efa74eea00af12cb2fda6225a045b49043444f0d45aecd89e22a0aa8f.json.gz",
+        "raw_bytes": 265449928,
+        "sha256": "87c7837efa74eea00af12cb2fda6225a045b49043444f0d45aecd89e22a0aa8f"
+      },
+      "timing": {
+        "allocator_phases": {
+          "planner_completed": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.222008,
+            "rss_after_kib": 236312,
+            "rss_before_kib": 265516
+          }
+        },
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 340560,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.195,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.455,
+          "operational_funnel": 1.391,
+          "planner_pipeline": 1.265,
+          "preopen": 1.413,
+          "state_and_inputs": 0.775
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 340560,
+          "economic_exit_lab": 340560,
+          "entry_signal_lab": 340560,
+          "family_routing": 340560,
+          "operational_funnel": 340560,
+          "planner_pipeline": 340560,
+          "preopen": 340560,
+          "state_and_inputs": 340560
+        },
+        "stages_seconds": {
+          "durable_serialization": 3.2,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.455,
+          "operational_funnel": 1.391,
+          "planner_pipeline": 1.266,
+          "preopen": 1.413,
+          "state_and_inputs": 0.775
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7432,
+            "cpu_seconds": 0.531211,
+            "major_faults": 0,
+            "peak_rss_kib": 340560,
+            "wall_seconds": 0.532653
+          },
+          "computed": {
+            "block_outputs": 8912,
+            "compress_hash_cpu_seconds": 0.432297,
+            "compress_hash_seconds": 0.431206,
+            "compressed_bytes": 4560940,
+            "cpu_seconds": 2.625648,
+            "encode_cpu_seconds": 2.187539,
+            "encode_seconds": 2.186018,
+            "fsync_cpu_seconds": 0.000327,
+            "fsync_seconds": 0.002187,
+            "major_faults": 0,
+            "peak_rss_kib": 340560,
+            "raw_bytes": 265449928,
+            "wall_seconds": 2.628169
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.001151,
+            "major_faults": 0,
+            "peak_rss_kib": 340560,
+            "wall_seconds": 0.001892
+          }
+        },
+        "tick_cpu_seconds": 9.498,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 9.503
+      },
+      "funnel": {
+        "reaches": 19804,
+        "cohorts": 19804,
+        "sha256": "ac055ff554c9c29fb1368d498da96e3e81c61949e42946865df0982a255218d4",
+        "gaps": {
+          "OLDER_SESSION_EVICTED_FOR_CAPACITY": 1
+        },
+        "sessions": [
+          "2026-10-06"
+        ]
+      },
+      "idle": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 242256,
+        "rss_after_kib": 186012,
+        "elapsed_seconds": 0.011942
+      }
+    }
+  ]
+}

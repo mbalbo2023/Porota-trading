@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="11" time="1.455" timestamp="2026-10-18T13:19:36.487702+08:00" hostname="38ad2494d116"><testcase classname="tests.test_rc6_progressive_audit" name="test_legacy_and_indexed_checkpoint_have_identical_standard_gzip_bytes" time="0.060" /><testcase classname="tests.test_rc6_progressive_audit" name="test_corrupt_checkpoint_cannot_become_lazy_authority[index]" time="0.007" /><testcase classname="tests.test_rc6_progressive_audit" name="test_corrupt_checkpoint_cannot_become_lazy_authority[deflate]" time="0.007" /><testcase classname="tests.test_rc6_progressive_audit" name="test_corrupt_checkpoint_cannot_become_lazy_authority[crc]" time="0.008" /><testcase classname="tests.test_rc6_progressive_audit" name="test_corrupt_checkpoint_cannot_become_lazy_authority[truncate]" time="0.008" /><testcase classname="tests.test_rc6_progressive_audit" name="test_corrupt_checkpoint_cannot_become_lazy_authority[role_binding]" time="0.012" /><testcase classname="tests.test_rc6_progressive_audit" name="test_changed_source_closed_reader_and_failed_atomic_write" time="0.012" /><testcase classname="tests.test_rc6_progressive_audit" name="test_anonymous_staging_replays_actual_bytes_and_fails_closed" time="0.002" /><testcase classname="tests.test_rc6_progressive_audit" name="test_staging_budget_and_disk_floor_cleanup" time="0.001" /><testcase classname="tests.test_rc6_progressive_audit" name="test_four_cuts_preserve_full_audit_latest_checkpoint_and_session" time="1.214" /><testcase classname="tests.test_rc6_progressive_audit" name="test_incremental_json_matches_stdlib_across_all_token_boundaries[1]" time="0.001"><failure message="ValueError: SHADOW_CHECKPOINT_JSON_SYNTAX">self = &lt;rc6_shadow_runtime.checkpoint_parts._JSONBlocks object at 0x7fcce4e426c0&gt;
+
+    def value(self):
+        char = self.peek()
+        if not char:
+            raise ValueError('SHADOW_CHECKPOINT_JSON_TRUNCATED')
+        while True:
+            try:
+&gt;               result, end = self.decoder.raw_decode(self.buffer, self.position)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+rc6_shadow_runtime/checkpoint_parts.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;json.decoder.JSONDecoder object at 0x7fcce4e42660&gt;, s = '[', idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+&gt;           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 2 (char 1)
+
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/json/decoder.py:356: JSONDecodeError
+
+During handling of the above exception, another exception occurred:
+
+block_size = 1
+
+    @pytest.mark.parametrize('block_size', [1, 2, 7, 31, 65536])
+    def test_incremental_json_matches_stdlib_across_all_token_boundaries(block_size):
+        from rc6_shadow_runtime.checkpoint_parts import _JSONBlocks, funnel_metadata_decoder
+        payload = {'keys_order': {'b': 1, 'a': 2, 'unknown': 3},
+                   'values': [True, False, None, -0.0, -12.3e20, 1234567890123456789,
+                              'é\x00\\"\ud800', ['nested', {'content': 'large'*20000}]],
+                   'items': [{'session': 's', 'strategy_id': 't', 'extra': i} for i in range(3)]}
+        raw = json.dumps(payload, ensure_ascii=True, separators=(',', ':'), allow_nan=False).encode()
+        chunks = (raw[i:i+block_size] for i in range(0, len(raw), block_size))
+&gt;       parsed = _JSONBlocks(chunks, funnel_metadata_decoder()).read()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_progressive_audit.py:163: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rc6_shadow_runtime/checkpoint_parts.py:161: in read
+    value = self.value()
+            ^^^^^^^^^^^^
+rc6_shadow_runtime/checkpoint_parts.py:126: in value
+    return self.object()
+           ^^^^^^^^^^^^^
+rc6_shadow_runtime/checkpoint_parts.py:141: in object
+    result[key] = self.value()
+                  ^^^^^^^^^^^^
+rc6_shadow_runtime/checkpoint_parts.py:128: in value
+    return self.array()
+           ^^^^^^^^^^^^
+rc6_shadow_runtime/checkpoint_parts.py:156: in array
+    self.take(',')
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;rc6_shadow_runtime.checkpoint_parts._JSONBlocks object at 0x7fcce4e426c0&gt;
+char = ','
+
+    def take(self, char):
+        if self.peek() != char:
+&gt;           raise ValueError('SHADOW_CHECKPOINT_JSON_SYNTAX')
+E           ValueError: SHADOW_CHECKPOINT_JSON_SYNTAX
+
+rc6_shadow_runtime/checkpoint_parts.py:110: ValueError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,113 @@
+{
+  "schema": "rc6.progressive624.ab-comparison.v1",
+  "purpose": "EXPERIMENT_SOURCE_OVERLAY_NOT_RELEASE_IMAGE",
+  "native_host_acceptance": false,
+  "baseline_source": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+  "candidate_source": "99ea4aa009d105de70c4b2841488084bf34b8e7b",
+  "acceptance": {
+    "max_rss_ratio": 0.6,
+    "absolute_rss_kib_max": 196608,
+    "max_total_cpu_ratio": 1.05,
+    "cpu_boundary": "WHOLE_FOUR_CUT_SERIES; legacy normalization paid once; native120s remains required for each cut"
+  },
+  "comparisons": [
+    {
+      "mode": "fresh",
+      "same_controls": true,
+      "all_full_report_hashes_equal": true,
+      "baseline_peak_rss_kib": 344360,
+      "candidate_peak_rss_kib": 197816,
+      "rss_ratio": 0.5744453478917412,
+      "cpu_ratio": 1.0314217006173305,
+      "rows": [
+        {
+          "as_of": "2026-10-05T13:20:00+00:00",
+          "raw_bytes": 265449852,
+          "sha256": "47f18f47ee79b964967c16c18959212ddbb241be2a4ec37c4d4723a9759848ad",
+          "baseline_cpu": 8.232967352000001,
+          "candidate_cpu": 8.274753983,
+          "baseline_peak_rss_kib": 282124,
+          "candidate_peak_rss_kib": 181300
+        },
+        {
+          "as_of": "2026-10-05T13:20:30+00:00",
+          "raw_bytes": 265449890,
+          "sha256": "2da5f887d7af77c2eaba5c774ec6d7e8ff24e7761897d34b5522a354f7e84608",
+          "baseline_cpu": 7.988119554999999,
+          "candidate_cpu": 8.460548915999999,
+          "baseline_peak_rss_kib": 329008,
+          "candidate_peak_rss_kib": 186592
+        },
+        {
+          "as_of": "2026-10-06T13:20:00+00:00",
+          "raw_bytes": 265449930,
+          "sha256": "2d058cd921f96a29b1a5bbdd6b4182a4629c46114685f39a8f710e3a9426b907",
+          "baseline_cpu": 9.390960256,
+          "candidate_cpu": 9.492948865999999,
+          "baseline_peak_rss_kib": 344360,
+          "candidate_peak_rss_kib": 197816
+        },
+        {
+          "as_of": "2026-10-06T13:20:30+00:00",
+          "raw_bytes": 265449928,
+          "sha256": "ceef6edebabc70b926b5896b5188965b5f6c332463d92731767ab92855603307",
+          "baseline_cpu": 7.973225029999998,
+          "candidate_cpu": 8.412326795999999,
+          "baseline_peak_rss_kib": 344360,
+          "candidate_peak_rss_kib": 197816
+        }
+      ],
+      "status": "RED_EXPERIMENT"
+    },
+    {
+      "mode": "legacy",
+      "same_controls": true,
+      "all_full_report_hashes_equal": true,
+      "baseline_peak_rss_kib": 343868,
+      "candidate_peak_rss_kib": 198224,
+      "rss_ratio": 0.5764537555108356,
+      "cpu_ratio": 1.0789665158793886,
+      "rows": [
+        {
+          "as_of": "2026-10-06T13:21:00+00:00",
+          "raw_bytes": 265449928,
+          "sha256": "978825d011f5c833c2878dc18615b855c321bebc2637b412ab091398f17f2729",
+          "baseline_cpu": 8.043949465,
+          "candidate_cpu": 9.369864233,
+          "baseline_peak_rss_kib": 327996,
+          "candidate_peak_rss_kib": 186864
+        },
+        {
+          "as_of": "2026-10-06T13:21:30+00:00",
+          "raw_bytes": 265449928,
+          "sha256": "e2519d800b5090d38878f90fc58fdf5a46627be72701560dc4a52dd6641593fc",
+          "baseline_cpu": 7.935680349000002,
+          "candidate_cpu": 8.346273323999998,
+          "baseline_peak_rss_kib": 328244,
+          "candidate_peak_rss_kib": 189024
+        },
+        {
+          "as_of": "2026-10-07T13:21:00+00:00",
+          "raw_bytes": 265449930,
+          "sha256": "af769883e4f8bcd00b018d9f7f49552df0ce987007226ec1598b427bb0266384",
+          "baseline_cpu": 9.433524963,
+          "candidate_cpu": 9.698388461,
+          "baseline_peak_rss_kib": 343868,
+          "candidate_peak_rss_kib": 198224
+        },
+        {
+          "as_of": "2026-10-07T13:21:30+00:00",
+          "raw_bytes": 265449928,
+          "sha256": "a20afe42aeaeb8bc92657f62671f473e2c60b576d9a7db13d35533579ac47b08",
+          "baseline_cpu": 7.9285798010000015,
+          "candidate_cpu": 8.560089173000001,
+          "baseline_peak_rss_kib": 343868,
+          "candidate_peak_rss_kib": 198224
+        }
+      ],
+      "status": "RED_EXPERIMENT"
+    }
+  ],
+  "all_sixteen_full_audits_verified_before_pruning": true,
+  "status": "RED_EXPERIMENT"
+}

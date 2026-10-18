@@ -1,0 +1,21 @@
+{
+  "state": "FROZEN_FIX_FORWARD_FOR_NEW_PREDEPLOY_NOT_CERTIFIED",
+  "branch": "work/rc6-624-native-proof-tmpdir-20261018",
+  "remote_base": "8bf1cd4b9e7358c4f47fcdafefe8cdff0c2ef407",
+  "local_sha": "467d4c0b2f16504e09580f171cb6be8259513bcd",
+  "tree": "07feba46b15af29565a75787eec98bb9e6e3f6d9",
+  "files": [
+    {
+      "path": "docs/architecture/RC6_624_DURABLE_AUDIT_ADR.md",
+      "mode": "100644",
+      "sha": "6924be765547135bc8029de888f6c02fc58ed3f2",
+      "bytes": 20339
+    },
+    {
+      "path": "tests/test_rc6_shadow_cold_audit.py",
+      "mode": "100644",
+      "sha": "6a9da160bd3abed3963d0c21c875df03c58543ea",
+      "bytes": 35949
+    }
+  ]
+}

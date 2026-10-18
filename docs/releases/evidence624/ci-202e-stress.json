@@ -1,0 +1,645 @@
+{
+  "child_peak_rss_kib": 331412,
+  "elapsed_seconds": 325.722,
+  "evidence_kind": "LOCAL_HARNESS_CHECK",
+  "finished_at": "2026-10-18T02:48:25.539990+00:00",
+  "full_catalog": {
+    "actual_market_acceptance": false,
+    "catalog_count": 14611,
+    "cuts": [
+      {
+        "as_of": "2026-10-05T13:20:00.000166+00:00",
+        "computed_report_sha256": "0fa2f49b6ff6943f69b09d98fe18e245cb111043ad542112625448773a793c01",
+        "freshness_budget_seconds": 91.366,
+        "generation_id": "3daa8bf179a78c7a3a28735b19fced8bb4997fa58d29b2e7771dc351b0e2eff4",
+        "manifest_sha256": "52a3471d76f5e0cfd2d5a843d7b3d1b5932fe55cf553393b7c739532ba856b21",
+        "sequence": 1791206400000166,
+        "tick_seconds": 15.683,
+        "worker_timing": {
+          "allocator_phases": {
+            "planner_completed": {
+              "allocator_trim_available": true,
+              "elapsed_seconds": 0.115069,
+              "rss_after_kib": 173716,
+              "rss_before_kib": 173456
+            }
+          },
+          "poll_seconds": 30,
+          "process_peak_rss_kib": 284852,
+          "stages_cpu_seconds": {
+            "durable_serialization": 4.475,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.34,
+            "operational_funnel": 2.653,
+            "planner_pipeline": 1.364,
+            "preopen": 1.889,
+            "state_and_inputs": 0.033
+          },
+          "stages_process_peak_rss_kib": {
+            "durable_serialization": 284852,
+            "economic_exit_lab": 253784,
+            "entry_signal_lab": 253784,
+            "family_routing": 253784,
+            "operational_funnel": 284852,
+            "planner_pipeline": 174472,
+            "preopen": 126088,
+            "state_and_inputs": 67780
+          },
+          "stages_seconds": {
+            "durable_serialization": 5.976,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.79,
+            "operational_funnel": 3.528,
+            "planner_pipeline": 1.814,
+            "preopen": 2.516,
+            "state_and_inputs": 0.054
+          },
+          "storage_profile": {
+            "checkpoint": {
+              "block_outputs": 7440,
+              "cpu_seconds": 0.773076,
+              "major_faults": 0,
+              "peak_rss_kib": 284852,
+              "wall_seconds": 1.022368
+            },
+            "computed": {
+              "block_outputs": 7728,
+              "compress_hash_cpu_seconds": 0.620497,
+              "compress_hash_seconds": 0.619203,
+              "compressed_bytes": 3956107,
+              "cpu_seconds": 3.653761,
+              "encode_cpu_seconds": 3.020058,
+              "encode_seconds": 3.639915,
+              "fsync_cpu_seconds": 0.000725,
+              "fsync_seconds": 0.001986,
+              "major_faults": 0,
+              "peak_rss_kib": 284852,
+              "raw_bytes": 265641048,
+              "wall_seconds": 4.880518
+            },
+            "latest": {
+              "block_outputs": 8,
+              "cpu_seconds": 0.001075,
+              "major_faults": 0,
+              "peak_rss_kib": 284852,
+              "wall_seconds": 0.001492
+            }
+          },
+          "tick_cpu_seconds": 11.76,
+          "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+          "tick_seconds": 15.683
+        }
+      },
+      {
+        "as_of": "2026-10-05T13:20:45.971486+00:00",
+        "computed_report_sha256": "83460bcce96d87695f355a0871a974d6782474ebf4737bc77f8353aaf99b1f9f",
+        "freshness_budget_seconds": 89.81,
+        "generation_id": "a43639bf5cda81ddb59c6efe0c06d03fa63ea71532b83247d28aa1b3405cc39b",
+        "manifest_sha256": "826b5500a03d0163a4ffaebdaf1ae8d628f4c5859b173264ca2695ea5cc54b87",
+        "previous_cut_age_seconds": 61.176977,
+        "previous_cut_freshness_budget_seconds": 91.366,
+        "sequence": 1791206445971486,
+        "tick_seconds": 14.905,
+        "worker_timing": {
+          "allocator_phases": {
+            "planner_completed": {
+              "allocator_trim_available": true,
+              "elapsed_seconds": 0.172507,
+              "rss_after_kib": 256688,
+              "rss_before_kib": 259168
+            }
+          },
+          "poll_seconds": 30,
+          "process_peak_rss_kib": 331412,
+          "stages_cpu_seconds": {
+            "durable_serialization": 4.234,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.002,
+            "family_routing": 1.38,
+            "operational_funnel": 1.75,
+            "planner_pipeline": 1.353,
+            "preopen": 1.594,
+            "state_and_inputs": 0.89
+          },
+          "stages_process_peak_rss_kib": {
+            "durable_serialization": 331412,
+            "economic_exit_lab": 331412,
+            "entry_signal_lab": 331412,
+            "family_routing": 331412,
+            "operational_funnel": 331412,
+            "planner_pipeline": 296768,
+            "preopen": 296768,
+            "state_and_inputs": 284852
+          },
+          "stages_seconds": {
+            "durable_serialization": 5.661,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.002,
+            "family_routing": 1.829,
+            "operational_funnel": 2.326,
+            "planner_pipeline": 1.802,
+            "preopen": 2.144,
+            "state_and_inputs": 1.138
+          },
+          "storage_profile": {
+            "checkpoint": {
+              "block_outputs": 7440,
+              "cpu_seconds": 0.689994,
+              "major_faults": 0,
+              "peak_rss_kib": 331412,
+              "wall_seconds": 0.914109
+            },
+            "computed": {
+              "block_outputs": 8912,
+              "compress_hash_cpu_seconds": 0.625368,
+              "compress_hash_seconds": 0.623883,
+              "compressed_bytes": 4562409,
+              "cpu_seconds": 3.497618,
+              "encode_cpu_seconds": 2.858929,
+              "encode_seconds": 3.429551,
+              "fsync_cpu_seconds": 0.00073,
+              "fsync_seconds": 0.002496,
+              "major_faults": 0,
+              "peak_rss_kib": 331412,
+              "raw_bytes": 265641086,
+              "wall_seconds": 4.674962
+            },
+            "latest": {
+              "block_outputs": 8,
+              "cpu_seconds": 0.001184,
+              "major_faults": 0,
+              "peak_rss_kib": 331412,
+              "wall_seconds": 0.001696
+            }
+          },
+          "tick_cpu_seconds": 11.205,
+          "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+          "tick_seconds": 14.905
+        }
+      }
+    ],
+    "elapsed_seconds": 61.177,
+    "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+    "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+    "process_peak_rss_kib": 331412,
+    "production_data_mounted": false,
+    "provider_requests": 0,
+    "ready_fixture_count": 9902,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "schema": "rc6.synthetic-full-catalog.v1"
+  },
+  "limitations": [
+    "Real provider/network capacity and Android voice interaction are not simulated facts."
+  ],
+  "network": "NO_LIVE_TRANSPORT_CONFIGURED",
+  "ppi_watch_accessed": false,
+  "production_data_mounted": false,
+  "scenarios": [
+    {
+      "cases": 36,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "a76c196fcfd3ddffb9c5eef455e0c2fa84130f22e13e0908f4dda8917843bcdb",
+      "name": "sql_shadow_wal",
+      "skipped": 0
+    },
+    {
+      "cases": 187,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "d690db56517648c98712910ccefcf30117350bc36be5c5500932eacce23b9759",
+      "name": "publication_io_identity",
+      "skipped": 0
+    },
+    {
+      "cases": 160,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "fd16a124bf161f9508640cadaa28b74e1cf29a7fa1fad07695eeff475c4b4528",
+      "name": "signals_risk_exit_ledger",
+      "skipped": 0
+    },
+    {
+      "cases": 99,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "db368a0ee48ba521cd87a00066d5f96394f1dedd47e5e67626420312cf537e98",
+      "name": "sources_readiness_network",
+      "skipped": 0
+    },
+    {
+      "cases": 106,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "eea54d64a926703a2f1fd40ca91a069a4c9dcc43fb8f6be7b398853c215a3c62",
+      "name": "scalping_capacity",
+      "skipped": 0
+    },
+    {
+      "cases": 72,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "7785ff125a71040e49d6d66f49a1b705db442d9b151c38a2ee67de99fefcb79a",
+      "name": "treasury_caucion",
+      "skipped": 0
+    },
+    {
+      "cases": 198,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "32997790174c46c03e2c934fcd4d47595d2d73d259cc90b8a92827d0c880da4a",
+      "name": "dashboard_auth_52",
+      "skipped": 0
+    },
+    {
+      "cases": 40,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "09466eddeb4a9249162b998f48fb051c1637d9f2f82afd7b768beeb9238b8634",
+      "name": "scheduler_monitor_backup",
+      "skipped": 0
+    }
+  ],
+  "schema": "rc6.postdeploy-stress.v1",
+  "self_peak_rss_kib": 331412,
+  "session": {
+    "actual_market_acceptance": false,
+    "captured_notification_count": 176,
+    "counts": {
+      "candle_versions": 1872,
+      "market_snapshots": 1560,
+      "paper_decisions": 876,
+      "paper_fills": 176,
+      "paper_positions": 88
+    },
+    "dashboard_routes": [
+      {
+        "bytes": 23260,
+        "elapsed_ms": 2.861,
+        "path": "/",
+        "read_queries": "21"
+      },
+      {
+        "bytes": 26265,
+        "elapsed_ms": 3.52,
+        "path": "/analitica",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23008,
+        "elapsed_ms": 2.632,
+        "path": "/analitica/anual",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22980,
+        "elapsed_ms": 1.903,
+        "path": "/analitica/cierre-diario",
+        "read_queries": "8"
+      },
+      {
+        "bytes": 24309,
+        "elapsed_ms": 4.91,
+        "path": "/analitica/contrafactuales",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22902,
+        "elapsed_ms": 1.486,
+        "path": "/analitica/experimentos",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22916,
+        "elapsed_ms": 23.74,
+        "path": "/analitica/historico",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22625,
+        "elapsed_ms": 1.595,
+        "path": "/analitica/reportes",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 57602,
+        "elapsed_ms": 5.983,
+        "path": "/analitica/salidas",
+        "read_queries": "11"
+      },
+      {
+        "bytes": 22898,
+        "elapsed_ms": 1.563,
+        "path": "/analitica/senales",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24202,
+        "elapsed_ms": 3.25,
+        "path": "/en-vivo",
+        "read_queries": "29"
+      },
+      {
+        "bytes": 22833,
+        "elapsed_ms": 1.483,
+        "path": "/en-vivo/capacidad",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23969,
+        "elapsed_ms": 1.83,
+        "path": "/en-vivo/cierres",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 111220,
+        "elapsed_ms": 7.295,
+        "path": "/en-vivo/decisiones",
+        "read_queries": "9"
+      },
+      {
+        "bytes": 40935,
+        "elapsed_ms": 5.22,
+        "path": "/en-vivo/fuentes",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 24320,
+        "elapsed_ms": 1.525,
+        "path": "/en-vivo/oportunidades",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23752,
+        "elapsed_ms": 1.681,
+        "path": "/en-vivo/posiciones",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 43934,
+        "elapsed_ms": 2.326,
+        "path": "/en-vivo/workers",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 56006,
+        "elapsed_ms": 3.042,
+        "path": "/instrumentos",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 46955,
+        "elapsed_ms": 2.534,
+        "path": "/instrumentos/contrato",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 46983,
+        "elapsed_ms": 2.493,
+        "path": "/instrumentos/evidencia",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 56015,
+        "elapsed_ms": 2.954,
+        "path": "/instrumentos/ficha",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22625,
+        "elapsed_ms": 1.811,
+        "path": "/instrumentos/mercado",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22732,
+        "elapsed_ms": 1.652,
+        "path": "/riesgo",
+        "read_queries": "7"
+      },
+      {
+        "bytes": 22705,
+        "elapsed_ms": 1.431,
+        "path": "/riesgo/event-risk",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23659,
+        "elapsed_ms": 1.71,
+        "path": "/riesgo/exposicion",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 22674,
+        "elapsed_ms": 1.569,
+        "path": "/riesgo/limites",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23697,
+        "elapsed_ms": 1.689,
+        "path": "/riesgo/liquidez",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 26073,
+        "elapsed_ms": 3.05,
+        "path": "/riesgo/pnl",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23655,
+        "elapsed_ms": 1.763,
+        "path": "/riesgo/posiciones",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 44621,
+        "elapsed_ms": 2.394,
+        "path": "/sistema",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 22552,
+        "elapsed_ms": 1.499,
+        "path": "/sistema/backups",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 37789,
+        "elapsed_ms": 1.863,
+        "path": "/sistema/configuracion",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23129,
+        "elapsed_ms": 1.472,
+        "path": "/sistema/evidencia",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 38089,
+        "elapsed_ms": 2.022,
+        "path": "/sistema/integraciones",
+        "read_queries": "8"
+      },
+      {
+        "bytes": 22495,
+        "elapsed_ms": 1.593,
+        "path": "/sistema/logs",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 44781,
+        "elapsed_ms": 28.827,
+        "path": "/sistema/salud",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 22726,
+        "elapsed_ms": 1.659,
+        "path": "/sistema/scheduler",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 48177,
+        "elapsed_ms": 2.442,
+        "path": "/sistema/workers",
+        "read_queries": "14"
+      },
+      {
+        "bytes": 22714,
+        "elapsed_ms": 1.513,
+        "path": "/trading",
+        "read_queries": "3"
+      },
+      {
+        "bytes": 24087,
+        "elapsed_ms": 1.643,
+        "path": "/trading/cauciones",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23799,
+        "elapsed_ms": 1.645,
+        "path": "/trading/derivados",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 68576,
+        "elapsed_ms": 3.415,
+        "path": "/trading/equity-spot",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23782,
+        "elapsed_ms": 1.661,
+        "path": "/trading/renta-fija",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 64713,
+        "elapsed_ms": 3.248,
+        "path": "/trading/scalping",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23818,
+        "elapsed_ms": 1.629,
+        "path": "/trading/tesoreria",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23150,
+        "elapsed_ms": 1.747,
+        "path": "/universo",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22721,
+        "elapsed_ms": 1.465,
+        "path": "/universo/coverage",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24005,
+        "elapsed_ms": 1.435,
+        "path": "/universo/discovery",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24005,
+        "elapsed_ms": 1.474,
+        "path": "/universo/excluidos",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22506,
+        "elapsed_ms": 1.446,
+        "path": "/universo/familias",
+        "read_queries": "3"
+      },
+      {
+        "bytes": 24026,
+        "elapsed_ms": 1.455,
+        "path": "/universo/tradeability",
+        "read_queries": "2"
+      }
+    ],
+    "decision_reasons": {
+      "Aprendiendo serie: 1/8 muestras": 4,
+      "Aprendiendo serie: 2/8 muestras": 4,
+      "Aprendiendo serie: 3/8 muestras": 4,
+      "Aprendiendo serie: 4/8 muestras": 4,
+      "Aprendiendo serie: 5/8 muestras": 4,
+      "Aprendiendo serie: 6/8 muestras": 4,
+      "Aprendiendo serie: 7/8 muestras": 4,
+      "EOD_NO_NEW_ENTRIES": 120,
+      "Momentum positivo y friccion admisible": 99,
+      "OPEN_POSITION_NEEDS_SUPERVISION_OR_EXIT": 144,
+      "Score paper debajo del umbral versionado": 485
+    },
+    "exit_reasons": {
+      "MAX_HOLD_PAPER": 1,
+      "STOP_PAPER": 16,
+      "TAKE_PROFIT_PAPER": 71
+    },
+    "local_eod_batches": 4,
+    "local_eod_repeated_imported": 0,
+    "provider_contracts": "SYNTHETIC_NOT_VALIDATED",
+    "provider_requests": 0,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "schema": "rc6.synthetic-full-session.v1",
+    "shadow_cuts": 16,
+    "simulated_minutes": 405,
+    "tick_max_seconds": 2.6655869070000335,
+    "tick_p95_seconds": 1.4355895339999734,
+    "treasury_attempts": [
+      {
+        "code": "NO_ELIGIBLE_OFFER",
+        "minute": 365,
+        "status": "HOLD"
+      },
+      {
+        "code": "NO_ELIGIBLE_OFFER",
+        "minute": 375,
+        "status": "HOLD"
+      }
+    ]
+  },
+  "smoke": false,
+  "started_at": "2026-10-18T02:42:59.817768+00:00",
+  "status": "GREEN"
+}

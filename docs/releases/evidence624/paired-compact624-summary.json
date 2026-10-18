@@ -1,0 +1,48 @@
+{
+  "schema": "rc6.compact624.paired-ab.v1",
+  "status": "GREEN_EQUIVALENCE_ONLY",
+  "native_host_acceptance": false,
+  "cpu_constraints": "same local host, sequential processes, no Docker CPU/memory certificate",
+  "database_sha256": "1dae96bc8848bb01dfdcc683f96c1552ca23d0f94d91ed74cb47b992c2f3acde",
+  "inode": 1580198,
+  "rows": [
+    {
+      "source_as_of": "2026-10-05T13:20:00+00:00",
+      "raw_bytes": 265449852,
+      "canonical_sha256": "346682b9645df7b8b6c396d550e720c3277761d63443f9db606f067b74ff5130",
+      "baseline_cpu": 9.904343651000001,
+      "candidate_cpu": 8.881084898,
+      "baseline_peak_rss_kib": 355356,
+      "candidate_peak_rss_kib": 258744
+    },
+    {
+      "source_as_of": "2026-10-05T13:20:30+00:00",
+      "raw_bytes": 265449890,
+      "canonical_sha256": "9c6c0bb0a182d899293ecd9330b7e03d4b24cb5ee8b7a55267a80ab26367739f",
+      "baseline_cpu": 8.717873740999998,
+      "candidate_cpu": 9.114433837,
+      "baseline_peak_rss_kib": 367128,
+      "candidate_peak_rss_kib": 295616
+    },
+    {
+      "source_as_of": "2026-10-06T13:20:00+00:00",
+      "raw_bytes": 265449930,
+      "canonical_sha256": "611c6e8dcd1a48616573522f0cb6a41c24c9c09a142522fbf99444a0e0cabe54",
+      "baseline_cpu": 11.700169136,
+      "candidate_cpu": 10.533648784,
+      "baseline_peak_rss_kib": 426860,
+      "candidate_peak_rss_kib": 313948
+    },
+    {
+      "source_as_of": "2026-10-06T13:20:30+00:00",
+      "raw_bytes": 265449928,
+      "canonical_sha256": "87c7837efa74eea00af12cb2fda6225a045b49043444f0d45aecd89e22a0aa8f",
+      "baseline_cpu": 9.471109564999995,
+      "candidate_cpu": 9.314347571000003,
+      "baseline_peak_rss_kib": 426860,
+      "candidate_peak_rss_kib": 313948
+    }
+  ],
+  "baseline_backend_sha256": "7f1dea2f35c74ac989099d3c525108fc9070d899e55ab6af7ceca931743bade8",
+  "candidate_backend_sha256": "7f1dea2f35c74ac989099d3c525108fc9070d899e55ab6af7ceca931743bade8"
+}

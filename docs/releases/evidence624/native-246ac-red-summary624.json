@@ -1,0 +1,15 @@
+{
+  "status": "NATIVE_NOT_ACCEPTED",
+  "run": 39107582047,
+  "job": 117616663151,
+  "source_sha": "246ac975ed527f40db496af47584c9dcdec933f8",
+  "tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
+  "reason": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+  "rejections": 33,
+  "strict10": "NOT_EXECUTED",
+  "405_DROPLET": "NOT_EXECUTED",
+  "restore": "NOT_EXECUTED",
+  "real_orders_sent": 0,
+  "raw_bytes": 470756,
+  "raw_sha256": "53c953895ac809dee0339bf1b64bda8eb787781c3ecb29ee74725e11d6be6c0e"
+}

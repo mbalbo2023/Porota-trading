@@ -1,0 +1,56 @@
+{
+  "schema": "rc6.progressive624.paired-admission.v1",
+  "status": "GREEN_EQUIVALENCE_AND_ADMISSION",
+  "native_host_acceptance": false,
+  "local_docker_limit_certificate": false,
+  "all_eight_full_audits_independently_verified_before_pruning": true,
+  "baseline_peak_rss_kib": 313592,
+  "candidate_peak_rss_kib": 181144,
+  "rss_ratio": 0.5776422867930304,
+  "total_cpu_ratio": 1.0442460488755059,
+  "predeclared_limits": {
+    "rss_ratio_max": 0.6,
+    "absolute_peak_rss_kib_max": 196608,
+    "total_cpu_ratio_max": 1.05
+  },
+  "database_sha256": "1dae96bc8848bb01dfdcc683f96c1552ca23d0f94d91ed74cb47b992c2f3acde",
+  "database_inode": 1580198,
+  "rows": [
+    {
+      "source_as_of": "2026-10-06T13:21:00+00:00",
+      "raw_bytes": 265449928,
+      "sha256": "0b2d9c329bd3564017e1ceb87e6d2b244c3d008838733bee0ab92e1f8f8497cd",
+      "baseline_cpu": 9.081908777,
+      "candidate_cpu": 10.792640929,
+      "baseline_peak_rss_kib": 295408,
+      "candidate_peak_rss_kib": 168448
+    },
+    {
+      "source_as_of": "2026-10-06T13:21:30+00:00",
+      "raw_bytes": 265449928,
+      "sha256": "870b37d5b855160d9ede0dc040247974d7704e720281566e8727c1bc5fc1a4a2",
+      "baseline_cpu": 9.274795045000001,
+      "candidate_cpu": 9.568415077000001,
+      "baseline_peak_rss_kib": 296056,
+      "candidate_peak_rss_kib": 168448
+    },
+    {
+      "source_as_of": "2026-10-07T13:21:00+00:00",
+      "raw_bytes": 265449930,
+      "sha256": "77f4bcd8fff91c23de1fc03934f3687dc3e65add7fbcf34a2acee884ee756089",
+      "baseline_cpu": 11.090196695,
+      "candidate_cpu": 10.798397581999996,
+      "baseline_peak_rss_kib": 313592,
+      "candidate_peak_rss_kib": 181144
+    },
+    {
+      "source_as_of": "2026-10-07T13:21:30+00:00",
+      "raw_bytes": 265449928,
+      "sha256": "ec8b4e250b9c33c8dfb8ed9ad72dec8874cbb9fd03a77484a6c895f728d01b5e",
+      "baseline_cpu": 9.685605299999999,
+      "candidate_cpu": 9.704510994000003,
+      "baseline_peak_rss_kib": 313592,
+      "candidate_peak_rss_kib": 181144
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="0.383" timestamp="2026-10-18T15:01:11.724062+08:00" hostname="38ad2494d116"><testcase classname="tests.test_rc6_shadow_full_catalog" name="test_worker_peak_excludes_parent_highwater_but_retains_actual_peak[0]" time="0.044"><failure message="AssertionError: {'measured': 93876, 'actual': 8656}&#10;assert 85220 &lt;= (8 * 1024)&#10; +  where 85220 = abs((93876 - 8656))">allocation_mib = 0
+
+    @pytest.mark.parametrize('allocation_mib', [0, 208])
+    def test_worker_peak_excludes_parent_highwater_but_retains_actual_peak(allocation_mib):
+        # Linux preserves the fork parent's RSS highwater across exec. A large
+        # repository-wide pytest process must not become the worker's measured peak.
+        parent_allocation = bytearray(64 * 1024**2)
+        probe = """import json, resource, sys
+    from pathlib import Path
+    allocation = bytearray(int(sys.argv[1]) * 1024**2)
+    status = dict(line.split(':', 1) for line in Path('/proc/self/status').read_text().splitlines() if ':' in line)
+    print(json.dumps({'measured': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                      'actual': int(status['VmHWM'].split()[0])}))
+    """
+        run = _fresh_python([sys.executable, '-c', probe, str(allocation_mib)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30)
+        assert run.returncode == 0, run.stdout
+        peak = json.loads(run.stdout)
+&gt;       assert abs(peak['measured'] - peak['actual']) &lt;= 8 * 1024, peak
+E       AssertionError: {'measured': 93876, 'actual': 8656}
+E       assert 85220 &lt;= (8 * 1024)
+E        +  where 85220 = abs((93876 - 8656))
+
+tests/test_rc6_shadow_full_catalog.py:30: AssertionError</failure></testcase><testcase classname="tests.test_rc6_shadow_full_catalog" name="test_worker_peak_excludes_parent_highwater_but_retains_actual_peak[208]" time="0.266" /></testsuite></testsuites>

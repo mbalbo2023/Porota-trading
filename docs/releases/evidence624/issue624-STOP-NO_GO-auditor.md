@@ -1,0 +1,39 @@
+# RC6 #624 — cierre por orden del usuario y expediente técnico para auditor externo
+
+**Corte:** 18/10/2026 ~20:10 UTC. **Estado:** NO_GO. El usuario ordenó detener todas las acciones operativas y recibir un ZIP autocontenido; no se integró PR #637 ni se disparó otro Deploy. Esto es una orden de parada, además del bloqueo técnico anterior de cadencia nativa. No se declara aceptación del runtime.
+
+## Verdad de fuente, pipeline y host
+
+| Plano | Evidencia y estado |
+| --- | --- |
+| Rama productiva | `deploy/rc6-pr69-isolated-20260915` HEAD `5fe8a7f078d45d2aa502bbea255096e5c8561d4b`, merge normal de PR #635, árbol `eaa531a687edd72cfefffd977f7d8b8540b51088`. Main `5a87538d3816601a4fddf4aaafc975b4ebc674d7`. |
+| Fuente instalada | `97361c1ce3476465d267e9216e6bcc065696e72f`; imagen exacta de Predeploy `39151289967`, artefacto `12145644162`. El Deploy `39153740779` falló en el gate de dos generaciones a19:20:21Z. Instalado **NO ACEPTADO** / `FIX_FORWARD_VALIDATION_REQUIRED`. |
+| Nuevo código aislado | PR #637, source `fb83d3871b162f185bd007fe836cba06fbc43c86`, árbol `d82807bf0c00038a2c541334dab5286714735202`, padre productivo `5fe8a7f…`. **OPEN / NO MERGED / NO DEPLOYED** al corte. Cambia sólo `rc6_shadow_runtime/worker.py` y `tests/test_rc6_shadow_cold_audit.py`. |
+| Nuevo Predeploy | Run `39159451751`, job `117769478030` **SUCCESS**. Artefacto original `12148618862`, 435.608.977 bytes, SHA-256 `0bcafd248cac8ebe358b22a9299f1c27b135d1b96e1f770f7311a6ff2a7d79f4`. Log decodificado original 910.763 bytes/SHA-256 `57b17b3f1042ad294314fd711be0b20295a954609825cdef0ab3650b013e1c5b`. Imagen ID `sha256:a635a82c2f91401ff26712305556fb3303cbb4c2e8e7a72f1e3a92c1fbf0e139`. |
+| Revisión de bytes | ZIP y digest de GitHub verificados localmente; `unzip -t` GREEN. El verificador independiente produjo `byte-validation.json` de 61.926 bytes/SHA-256 `d09e822a4998e9eea5f86ad90e7898f965b6b70b58e555726b6331b97553f5f6`, `status=GREEN`, source/tree exactos, 513 miembros del bundle verificados, 4.236 root/186 native, ocho grupos1.087 casos/405 minutos virtuales CI, 12+12 cortes físicos CI, cinco sandboxes Exit0/OOMfalse, ABI/OCI/ELF. **Límite:** el usuario interrumpió la sesión de espera del proceso; se conserva el recibo final emitido tras sus aserciones, pero no se observó su exit code de shell. El primer intento del mismo verificador se detuvo por pasar por error el control ABI histórico `7ce` en vez del requerido `202e`; no fue un fallo del producto. |
+| Documentación GitHub | PR #627, rama documental separada, registra RCA, originales y hashes. PR #636 fue una única sonda read-only posterior al fallo. Issues #471/#473, #620 y #624 releídos abiertos sin cambio ajeno en el último control. |
+
+## RCA 1 — COLD (b346), ya corregido pero sin aceptación final
+
+Deploy `39141930791`/source `b346fcc8ae6edc51be20ac7325cd068cdeb60832` rechazó 90/90 lecturas nativas. El pack original inmutable de 110.327.496 bytes/SHA-256 `16bced23e0c4e5abfed908fb0185639c05e313fa0cbe166a6a9dcf1c0539d30e` obtuvo recibo FAILED **1,024 ms** después del deadline absoluto de30s. El COLD anterior decodificaba y recodificaba ~12.445 valores; el diagnóstico de fases midió expansión/canonización de254.820.078 bytes en25,118s pared. PR #635 movió la captura de bytes JSON canónicos originales a HOT y dejó a COLD verificar/comprimir/fsync/releer; archivó el pack FAILED exacto bajo quiescencia, sin promover el corte viejo. En el segundo Deploy el archivo de backlog, la conciliación contractual, tres auditorías de errores conocidos y cinco minutos de estabilidad fueron GREEN. Por eso el segundo RED es causalmente diferente.
+
+## RCA 2 — cadencia HOT del Droplet (97361c), aún NO probado en host con el fix
+
+El gate `rc6.deploy-generation-gate.v1` exigía dos generaciones coherentes y simultáneamente frescas con fuente máxima120s. El Deploy `39153740779` produjo tres generaciones individuales válidas y nueve rechazos `GENERATION_STALE_OR_FUTURE`. Primer/segundo corte: fuentes separadas78,826s, segunda edad52,988s al observar; edad del anterior **131,814s**. Segundo/tercero: separación82,485s, tercera edad46,997s; edad anterior **129,482s**. Los ticks observados duraron46,365–52,432s; SQL y transformación <2s. El worker aguardaba30s **después** de cada publicación, además del cómputo. Así agotaba la frescura anterior antes de terminar la siguiente publicación. El perfil read-only de PR #636 (18 muestras/92,9s) verificó un vCPU, ~41,687s CPU SHADOW, ~15,996s espera runqueue, swap/I/O y MemAvailable mínimo137.113.600B; sin OOM/restarts. No se adjudica causalidad exclusiva a un PID externo.
+
+PR #637 reemplaza la espera post-publicación por un período mínimo de30s **entre inicios de tick**. El COLD sigue drenándose antes de leer una nueva fuente. Si HOT+COLD tarda más de30s, no añade otros30s vacíos; una falla mantiene espera30 para no girar. Conserva techo120, COLD30, `nice(10)`, PAPER/SHADOW, outputs y órdenes0. Regresiones cubren HOT10+COLD12→8s de espera, HOT50+COLD5→0 y HOT75+COLD20→0, y orden predrain/publicación/COLD. La prueba local de catálogo14.611/9.902 pasó dos generaciones full >265MB. Predeploy exacto pasó; **no hay prueba en Droplet de que este fix sea suficiente bajo contención real** porque el usuario ordenó detener antes del merge/Deploy.
+
+## Trabas y obligaciones pendientes
+
+La carga del único vCPU y la presión de swap reducen el margen del techo120; un tick excepcional >60s puede volver a impedir dos fuentes frescas aunque se elimine la espera adicional. El CI usa fixtures y sandbox .75CPU/512MiB: su GREEN no sustituye la concurrencia real del Droplet. No corresponde relajar120/30, saltar COLD, cambiar relojes de fuente ni llamar virtual al tiempo físico.
+
+**NO EJECUTADO para PR #637:** merge normal de dos padres, Deploy V2 sobre nueva imagen exacta, gate nativo de dos generaciones, diez ciclos sostenidos, estrés integral de405 minutos virtuales **dentro del Droplet**, restauración verificable de los mismos IDs, gate nativo y diez ciclos postrestore, perfil independiente diferido y aceptación final. El último control host de `97361c` informó `real_orders_sent=0`, `ppi_watch_accessed=false`, cleanup GREEN, sin rollback; no se afirma lectura de host posterior al corte de este informe. Actividad real de mercado, ACK externo y otros sistemas no son hechos acreditados.
+
+## Guía de lectura del ZIP para auditor sin repositorio
+
+1. `HISTORICO-97361C/DOSSIER_RC6_624_NO_GO_v4.zip` contiene el dossier íntegro anterior, que anida v3/b346 y sus cuatro anexos, código histórico, pack PAPER original FAILED, informes, Predeploy/Deploy originales, perfil pasivo y manifest por archivo. Sus bytes SHA-256 son `27066c4f9132c8a54a08ee50d66ca4426139aad1284e00021e9741621fb1de74`.
+2. `FUENTE-FB83D/` es el checkout completo de la candidata nueva, incluidos ambos archivos modificados, workflows, política y tests; `EVIDENCIA-FB83D/` conserva ZIP Predeploy original, log, recibo independiente con su limitación de exit code y metadatos de Actions.
+3. `DOCUMENTACION-GITHUB/` copia el PR documental y recibos hasta la orden de parada; `DOCUMENTOS-PROYECTO/` incluye las once instrucciones/estado/runbooks adjuntos por el usuario, como contexto histórico (algunos anteriores a los runs aquí descritos). `MANIFEST-SHA256.json` contiene tamaño y hash por miembro. No se necesita GitHub para analizar el código, las fases y el artefacto.
+4. El pack PAPER del dossier anidado puede contener datos operativos sensibles. Entregar el ZIP sólo al auditor designado. No se exportaron DB ni secretos ni se tocó PPI Watch.
+
+**Regla de cierre:** no declarar GREEN ni `VALIDADO_RUNTIME` hasta que se cumplan todos los gates pendientes. La decisión actual es **NO_GO por orden de parada del usuario y aceptación nativa/estrés/restauración ausentes**. Se preserva PR #637 para revisión técnica, sin ejecutarlo.
