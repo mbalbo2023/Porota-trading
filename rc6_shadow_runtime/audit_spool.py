@@ -5,6 +5,7 @@ import re
 import shutil
 import tempfile
 import time
+from dataclasses import dataclass
 
 BLOCK = 65536
 RESERVE = 2 * 1024**3
@@ -14,6 +15,7 @@ DIRTY_BATCH = 8 * 1024**2
 
 class CanonicalJSONStream:
     """Internal ASCII canonical value whose iterator verifies actual bytes."""
+    __slots__ = ()
     def iter_bytes(self):
         raise NotImplementedError
 
@@ -108,12 +110,12 @@ class AuditSpool:
             self.stream = None
 
 
+@dataclass(frozen=True, slots=True)
 class SpoolValue(CanonicalJSONStream):
-    __slots__ = ('owner', 'offset', 'raw_bytes', 'sha256')
-
-    def __init__(self, owner, offset, raw_bytes, sha256):
-        self.owner, self.offset = owner, offset
-        self.raw_bytes, self.sha256 = raw_bytes, sha256
+    owner: object
+    offset: int
+    raw_bytes: int
+    sha256: str
 
     def iter_bytes(self):
         fd = self.owner._fd()

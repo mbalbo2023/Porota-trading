@@ -170,3 +170,65 @@ def test_incremental_json_rejects_invalid_or_trailing_tokens(raw):
     from rc6_shadow_runtime.checkpoint_parts import _JSONBlocks, funnel_metadata_decoder
     with pytest.raises(ValueError):
         _JSONBlocks((raw[i:i+2] for i in range(0, len(raw), 2)), funnel_metadata_decoder()).read()
+
+
+@pytest.mark.parametrize('encoding', ['utf-8', 'utf-8-sig', 'utf-16', 'utf-32'])
+def test_preopen_incremental_preserves_legacy_encoding_values_and_digest(tmp_path, encoding):
+    payload = {'rows': [{'identity': ['É', 'ACCIONES', 'BYMA', 'ARS', '24HS'],
+                        'metric': {'status': 'AVAILABLE', 'value': -0.0},
+                        'text': 'ñ'*20000}]*4}
+    envelope = {'payload': payload, 'digest': streamed_digest(payload)}
+    raw = json.dumps(envelope, ensure_ascii=False, separators=(',', ':')).encode(encoding)
+    with EvidenceFiles(tmp_path) as files:
+        path = files.path('preopen-2026-10-05.json.gz')
+        path.write_bytes(gzip.compress(raw))
+        normal = files.read(path.name)
+        compact = files.read(path.name, compact_preopen=True)
+        assert normal == compact and streamed_digest(compact) == envelope['digest']
+        assert compact['rows'][0]['metric'] is compact['rows'][1]['metric']
+        envelope['payload']['rows'][0]['identity'][0] = 'ALTERED'
+        path.write_bytes(gzip.compress(json.dumps(envelope, ensure_ascii=False).encode(encoding)))
+        with pytest.raises(ValueError, match='DIGEST_MISMATCH'):
+            files.read(path.name, compact_preopen=True)
+
+
+def test_stream_references_and_index_bindings_are_immutable_and_complete(tmp_path):
+    from dataclasses import FrozenInstanceError
+    with EvidenceFiles(tmp_path) as files:
+        with AuditSpool(files, maximum_bytes=100) as spool:
+            node = spool.stage('sample', [b'{}'])
+            with pytest.raises(FrozenInstanceError):
+                node.sha256 = '0'*64
+        files.write_checkpoint(_payload())
+        with CheckpointParts(files, canonical_ascii_chunks) as parts:
+            with pytest.raises(TypeError):
+                parts.roles['funnel'].info['raw_bytes'] = 0
+        path = files.path('checkpoint.json.gz')
+        raw = bytearray(path.read_bytes())
+        index = json.loads(raw[16:4108].rstrip(b'\0'))
+        del index['roles']['funnel']
+        changed = json.dumps(index, sort_keys=True, separators=(',', ':')).encode()
+        raw[16:4108] = changed+b'\0'*(4092-len(changed))
+        path.write_bytes(raw)
+        with pytest.raises(ValueError, match='ROLE_INDEX_INCOMPLETE'):
+            with CheckpointParts(files, canonical_ascii_chunks):
+                pass
+
+
+def test_funnel_projection_cannot_silently_drop_a_new_consumed_field():
+    import ast
+    import inspect
+    from rc6_shadow_runtime import funnel, worker
+    tree = ast.parse(inspect.getsource(funnel._planner_stages))
+    for variable, available in [('row', worker.FUNNEL_TELEMETRY_FIELDS),
+                                ('instrument', worker.FAMILY_FIELDS), ('catalog', worker.CATALOG_FIELDS)]:
+        required = set()
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name) and node.func.value.id == variable
+                    and node.func.attr == 'get' and node.args and isinstance(node.args[0], ast.Constant)):
+                required.add(node.args[0].value)
+            if (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name)
+                    and node.value.id == variable and isinstance(node.slice, ast.Constant)):
+                required.add(node.slice.value)
+        assert required <= available, (variable, required-available)

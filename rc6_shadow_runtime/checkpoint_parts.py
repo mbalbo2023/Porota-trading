@@ -13,6 +13,8 @@ import struct
 import sys
 import tempfile
 import zlib
+from dataclasses import dataclass
+from types import MappingProxyType
 
 from .audit_spool import BLOCK, CanonicalJSONStream
 
@@ -91,7 +93,7 @@ class _JSONBlocks:
         except StopIteration:
             self.eof = True
             return False
-        self.buffer = self.buffer[self.position:]+part.decode('ascii')
+        self.buffer = self.buffer[self.position:]+(part if type(part) is str else part.decode('ascii'))
         self.position = 0
         return True
 
@@ -377,7 +379,7 @@ class CheckpointParts:
                 if type(info.get(key)) is not int or info[key] < 0:
                     raise ValueError('SHADOW_CHECKPOINT_RANGE_INVALID')
             if (not re.fullmatch('[0-9a-f]{64}', str(info.get('sha256')))
-                    or not 0 < info['raw_bytes'] <= limit
+                    or not 0 < info['raw_bytes'] <= limit or not info['compressed_bytes']
                     or info['compressed_start'] < HEADER_BYTES
                     or info['compressed_start']+info['compressed_bytes'] > self.identity[2]-8
                     or info['raw_start'] < len(PREFIX)
@@ -387,6 +389,10 @@ class CheckpointParts:
         ranges.sort()
         if any(b[0] < a[1] for a, b in zip(ranges, ranges[1:])):
             raise ValueError('SHADOW_CHECKPOINT_RANGE_OVERLAP')
+        compressed = sorted((info['compressed_start'], info['compressed_start']+info['compressed_bytes'])
+                            for info in layout['roles'].values())
+        if any(b[0] < a[1] for a, b in zip(compressed, compressed[1:])):
+            raise ValueError('SHADOW_CHECKPOINT_COMPRESSED_RANGE_OVERLAP')
         envelope = _EnvelopeDigest(limit)
         metadata, position, index = bytearray(), 0, 0
         role_hashes = {role: hashlib.sha256() for role in layout['roles']}
@@ -425,6 +431,8 @@ class CheckpointParts:
         decoded = json.loads(metadata)
         if not isinstance(decoded, dict) or not isinstance(decoded.get('payload'), dict):
             raise ValueError('SHADOW_CHECKPOINT_OBJECT_REQUIRED')
+        if set(decoded['payload']) & ROLES != set(layout['roles']):
+            raise ValueError('SHADOW_CHECKPOINT_ROLE_INDEX_INCOMPLETE')
         self.head = {key: value for key, value in decoded['payload'].items() if key not in layout['roles']}
         self.roles = {role: DeflateRole(self, info) for role, info in layout['roles'].items()}
         composition = {**self.head, **self.roles}
@@ -459,11 +467,13 @@ class CheckpointParts:
             self.stream = None
 
 
+@dataclass(frozen=True, slots=True)
 class DeflateRole(CanonicalJSONStream):
-    __slots__ = ('owner', 'info')
+    owner: object
+    info: object
 
-    def __init__(self, owner, info):
-        self.owner, self.info = owner, info
+    def __post_init__(self):
+        object.__setattr__(self, 'info', MappingProxyType(dict(self.info)))
 
     def iter_bytes(self):
         fd, info = self.owner._fd(), self.info

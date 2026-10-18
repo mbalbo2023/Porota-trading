@@ -1,5 +1,6 @@
 """Exclusive bounded private files. Trading inputs are never writable outputs."""
 import fcntl
+import codecs
 import gzip
 import hashlib
 import json
@@ -475,7 +476,30 @@ class EvidenceFiles:
             return None
         if path.stat().st_size > self.payload_limit:
             raise EvidencePayloadLimit(name, path.stat().st_size, self.payload_limit)
+        if compact_preopen and not re.fullmatch(r"preopen-\d{4}-\d{2}-\d{2}\.json\.gz", name):
+            raise ValueError("SHADOW_COMPACT_PREOPEN_ROLE_REQUIRED")
         opener = gzip.open if name.endswith(".gz") else open
+        if compact_preopen:
+            from .checkpoint_parts import _JSONBlocks, funnel_metadata_decoder
+            keys, metrics = funnel_metadata_decoder(), _preopen_scalar_decoder()
+            def decode(value):
+                return metrics(keys(value))
+            def text_chunks(stream):
+                decoder, total = None, 0
+                while chunk := stream.read(65536):
+                    total += len(chunk)
+                    if total > self.payload_limit:
+                        raise EvidencePayloadLimit(name, total, self.payload_limit)
+                    if decoder is None:
+                        decoder = codecs.getincrementaldecoder(json.detect_encoding(chunk))('surrogatepass')
+                    yield decoder.decode(chunk)
+                if decoder is not None:
+                    yield decoder.decode(b'', final=True)
+            with opener(path, 'rb') as stream:
+                envelope = _JSONBlocks(text_chunks(stream), decode).read()
+            if envelope.get('digest') != streamed_digest(envelope.get('payload')):
+                raise ValueError('SHADOW_EVIDENCE_DIGEST_MISMATCH')
+            return envelope['payload']
         with opener(path, "rb") as stream:
             raw = stream.read(self.payload_limit + 1)
         if len(raw) > self.payload_limit:
