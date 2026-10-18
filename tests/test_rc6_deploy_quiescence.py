@@ -149,3 +149,12 @@ def test_pending_validation_option_is_for_failure_recovery_only(monkeypatch):
     with pytest.raises(SystemExit):
         q.main(['--candidate-sha',SHA,'--action','install','--allow-validation-pending'])
     assert calls==[]
+
+
+def test_failure_cleanup_wires_explicit_pending_classification_and_keeps_failure_condition():
+    source=(Path(__file__).resolve().parents[1]/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
+    block=source.split('- name: Failure-safe host cleanup',1)[1].split('- name:',1)[0]
+    assert "steps.promotion.outcome == 'failure'" in block
+    assert '--action recover --allow-validation-pending' in block
+    assert 'original_failure_preserved=true' in block
+    assert 'rc6_deploy_failure_cleanup.py' in block and 'test "$RECOVERY_RC" -eq 0' in block
