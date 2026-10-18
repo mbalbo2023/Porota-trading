@@ -3698,6 +3698,30 @@
       "source": "ACTUAL_97361C_DEPLOY_NATIVE_RED_AND_PASSIVE_HOST_PROFILE",
       "bytes": 1075,
       "sha256": "2811b337b42953632b1f1ad127c16f5d1d762b66959a3c1aa8c2e587674f9a5d"
+    },
+    {
+      "path": "docs/releases/evidence624/issue624-STOP-NO_GO-auditor.md",
+      "source": "USER_STOP_NO_GO_FINAL_AUDITOR_HANDBACK_FB83D_CI_ONLY",
+      "bytes": 7937,
+      "sha256": "4b8d924dbb5b13331257a88451f30f6ddc2c435a3ade44ed89a4051efc84573a"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-fb83d-original.log.gz",
+      "source": "USER_STOP_NO_GO_FINAL_AUDITOR_HANDBACK_FB83D_CI_ONLY",
+      "bytes": 187783,
+      "sha256": "5d9a2ad1584034b49c539e5dce66ea7e159b40c6ea3d0d72889d74516e791c1a"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-fb83d-independent-byte-validation.json",
+      "source": "USER_STOP_NO_GO_FINAL_AUDITOR_HANDBACK_FB83D_CI_ONLY",
+      "bytes": 61926,
+      "sha256": "d09e822a4998e9eea5f86ad90e7898f965b6b70b58e555726b6331b97553f5f6"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-fb83d-artifact-metadata.json",
+      "source": "USER_STOP_NO_GO_FINAL_AUDITOR_HANDBACK_FB83D_CI_ONLY",
+      "bytes": 907,
+      "sha256": "7b500dd50b33b6ec536a294d529758aa8869d4e41aadf82352722deed8be1880"
     }
   ]
 }

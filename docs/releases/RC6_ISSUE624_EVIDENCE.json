@@ -6,7 +6,7 @@
   "candidate_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
   "candidate_tree": "df970bae3415333d43c7c6a30442f6962188ae26",
   "pr": 631,
-  "runtime_state": "97361C_INSTALLED_NOT_ACCEPTED_NATIVE_CADENCE_RED_FIX_FORWARD_PR637_PREDEPLOY_RUNNING",
+  "runtime_state": "NO_GO_USER_STOP_97361C_INSTALLED_NOT_ACCEPTED_FB83D_CI_ONLY_OPEN_UNMERGED",
   "predeploy_run": 39113977768,
   "original_findings_count": 68,
   "original_findings_sha256": "a57b4beca7aae6c2235b87d0a5b992f0be3f24f0d0975207cf48afad7e2fa537",
@@ -1764,10 +1764,19 @@
       "cause": "On the one-vCPU Droplet the SHADOW worker waited the full 30s poll AFTER a 46-52s HOT publication. The next HOT could not publish while the previous immutable source clock remained <=120s; measured ages 131.814 and 129.482s. The prior COLD deadline RCA was fixed, and COLD archive/reconciliation/errors/soak were GREEN; this is a distinct cadence scheduling RCA. Passive profile found runqueue wait and swap pressure, not an OOM or changed source clock.",
       "evidence": "Deploy V2 run39153740779/job117752524813 exit42 at19:20:21Z; original log454172B SHA4b822cff114d69be7c158f244fe178b6ec15161fa4182228cf9bcd4fcf6e1aee, gate JSON SHAcb0e518b23844c081a6b062bc4702564c6c7218ca9728ee8a577d2c0277c0cdc. PR636 diagnostic run39158541022/artifact12148465104 ZIP SHA1a7c9a9e9b54ad0e1768fe28f9f9e4bc824c387c5401650459ecce1d713becdb, exact source97361/treeeaa and original image mapping d83a->loaded687a semantic rootfs identical, 18 host samples. PR637 isolated source fb83d3871b162f185bd007fe836cba06fbc43c86 tree d82807bf0c00038a2c541334dab5286714735202 schedules minimum 30s from tick start while COLD still precedes the next source read; local focal tests and two full-catalog generations GREEN.",
       "outcome": "Runtime installed NOT_ACCEPTED. Strict10/405 host virtual/restore/postrestore NOT EXECUTED. Await PR637 exact Predeploy V2, independent artifact certificate, normal merge, new Deploy/native validation. No same-SHA retry, rollback or resize. PAPER real orders0/PPI Watch untouched."
+    },
+    {
+      "id": "624-A3-FB83D-USER-STOP-AUDITOR-HANDBACK",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "STOP_CONTROL_AND_EXTERNAL_AUDITOR_SELF_CONTAINED_EVIDENCE",
+      "classification": "NO_GO_USER_STOP_RUNTIME_NOT_ACCEPTED",
+      "cause": "The 97361c Deploy native two-generation gate failed on actual host at 131.814/129.482s previous source ages. The user then explicitly ordered all operative work stopped and a complete auditor ZIP. Productive branch remains 5fe8a7f and proposed cadence scheduler fix PR637 remains open/unmerged; CI success is not host acceptance.",
+      "evidence": "Predeploy V2 39159451751/job117769478030 SUCCESS, artifact12148618862/435608977B/SHA0bcafd248cac8ebe358b22a9299f1c27b135d1b96e1f770f7311a6ff2a7d79f4, source fb83d387/tree d82807bf, original log910763B/SHA57b17b3f1042ad294314fd711be0b20295a954609825cdef0ab3650b013e1c5b. Independent receipt61926B/SHAd09e822a4998e9eea5f86ad90e7898f965b6b70b58e555726b6331b97553f5f6 reports GREEN 4236 root/186 native/1087 CI stress cases/24 physical cuts/513 bundle members, but shell exit not observed after user interruption. Detailed STOP report and four new receipts are byte-verified in evidence624.",
+      "outcome": "No merge/deploy after stop. 97361c installed NOT_ACCEPTED; native2+strict10, host405virtual, same-ID restore/postrestore and delayed profile not executed for fb83d. Auditor ZIP v5 includes full v4 history plus full proposed source and original CI artifact. PAPER orders0/PPI Watch untouched at last observed host receipt; no rollback."
     }
   ],
-  "findings_count": 129,
-  "predeploy_state": "GREEN_EXACT_IMAGE_INDEPENDENTLY_BYTE_VERIFIED",
+  "findings_count": 130,
+  "predeploy_state": "FB83D_EXACT_IMAGE_CI_GREEN_HOST_NOT_ACCEPTED",
   "historical_ci_995": {
     "run": 39061986441,
     "job": 117481988873,
