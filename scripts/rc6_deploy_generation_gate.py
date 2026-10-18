@@ -60,6 +60,7 @@ def receipt(cut, health, expected_sha, expected_tree, at):
         raise ValueError('NATIVE_RUNTIME_BUDGET_UNVERIFIED')
     return {'generation_id': pointer['generation_id'], 'sequence': pointer['sequence'],
             'manifest_sha256': pointer['manifest_sha256'], 'as_of': status['as_of'],
+            'freshness_budget_seconds': budget,
             'configuration_fingerprint': status['configuration_fingerprint'],
             'worker_status': status['status'], 'source_sha': health['source_sha'],
             'candidate_tree_sha': health['candidate_tree_sha'],
@@ -81,6 +82,7 @@ def advances(first, second):
 _SAFE_FAILURE_REASONS = {
     'GENERATION_PUBLICATION_COST_UNVERIFIED', 'GENERATION_ORDER_REGRESSION',
     'GENERATION_CLOCK_UNVERIFIED', 'GENERATION_STALE_OR_FUTURE',
+    'GENERATION_PREVIOUS_STALE_OR_FUTURE',
     'GENERATION_AUTHORITY_UNVERIFIED', 'GENERATION_HASH_UNVERIFIED',
     'GENERATION_SEQUENCE_UNVERIFIED', 'WORKER_SOURCE_IDENTITY_UNVERIFIED',
     'NATIVE_RUNTIME_BUDGET_UNVERIFIED', 'WORKER_HEALTH_UNVERIFIED',
@@ -175,6 +177,17 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
             if type(raced) is int and 0 < raced <= 10:
                 remember('BOUNDED_PUBLICATION_RACE',{'retries':raced,'sequence':current['sequence']})
             if first and advances(first, current):
+                # Both consecutive cuts must be fresh at the SAME observation.
+                # Keep the first cut's measured budget; the second cut cannot
+                # extend it or renew its original source clock.
+                first_stamp = datetime.fromisoformat(first['as_of'].replace('Z', '+00:00'))
+                first_age = (observed_at - first_stamp).total_seconds()
+                last_observation = {**last_observation,
+                    'previous_budget_seconds': first['freshness_budget_seconds']}
+                if math.isfinite(first_age) and abs(first_age) <= 86400:
+                    last_observation['previous_age_seconds'] = round(first_age, 6)
+                if not 0 <= first_age <= first['freshness_budget_seconds']:
+                    raise ValueError('GENERATION_PREVIOUS_STALE_OR_FUTURE')
                 remember('ADVANCING_GENERATION', {'sequence':current['sequence'], **last_observation})
                 generations.append(current)
                 first = current
