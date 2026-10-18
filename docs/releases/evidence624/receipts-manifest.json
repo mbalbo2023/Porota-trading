@@ -3674,6 +3674,30 @@
       "source": "ACTUAL_97361C_PREDEPLOY_ORIGINAL_AND_INDEPENDENT_BYTE_CERTIFICATE",
       "bytes": 61914,
       "sha256": "9491618bf943b05682ae4f5cc2007268cea1fd82192b971c36c37f5f79a7d6c3"
+    },
+    {
+      "path": "docs/releases/evidence624/deploy-97361c-native-red-original.log.gz",
+      "source": "ACTUAL_97361C_DEPLOY_NATIVE_RED_AND_PASSIVE_HOST_PROFILE",
+      "bytes": 74010,
+      "sha256": "47897a21143cb10c2baec022a5a76089401f73f83f7d675cea73f42db527e8ef"
+    },
+    {
+      "path": "docs/releases/evidence624/deploy-97361c-native-red-gate.json",
+      "source": "ACTUAL_97361C_DEPLOY_NATIVE_RED_AND_PASSIVE_HOST_PROFILE",
+      "bytes": 14946,
+      "sha256": "cb0e518b23844c081a6b062bc4702564c6c7218ca9728ee8a577d2c0277c0cdc"
+    },
+    {
+      "path": "docs/releases/evidence624/profile-97361c-native-red.json",
+      "source": "ACTUAL_97361C_DEPLOY_NATIVE_RED_AND_PASSIVE_HOST_PROFILE",
+      "bytes": 223867,
+      "sha256": "841ae9fda3d331baf3d51940a0135cc598d8f06ef8b0f87324c644c328c81e73"
+    },
+    {
+      "path": "docs/releases/evidence624/profile-97361c-native-red-image-mapping.json",
+      "source": "ACTUAL_97361C_DEPLOY_NATIVE_RED_AND_PASSIVE_HOST_PROFILE",
+      "bytes": 1075,
+      "sha256": "2811b337b42953632b1f1ad127c16f5d1d762b66959a3c1aa8c2e587674f9a5d"
     }
   ]
 }
