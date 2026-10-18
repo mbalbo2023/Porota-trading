@@ -42,6 +42,27 @@ def test_snapshot_original_values_and_backward_roles_survive_source_changes(tmp_
         assert receipt['computed_report']['sha256']==hashlib.sha256(original).hexdigest()
         assert c.resolve(files,ref)==receipt and c.drain(files)==receipt
 
+
+def test_new_capture_cold_replays_original_ascii_without_native_reencoding(tmp_path,codec,monkeypatch):
+    original={'rows':[{'ticker':'Ñandú\\n','amount':1.0,'ids':(n,n+1)}
+                      for n in range(800)],'empty':None}
+    expected=b''.join(p.canonical_ascii_chunks(original))
+    with p.EvidenceFiles(tmp_path/'shadow') as files:
+        with c.Snapshot(files) as snapshot:
+            rows=snapshot.stage('rows',original['rows'])
+            ref=snapshot.seal({'rows':rows,'empty':None},source_as_of='original',configuration='fixed')
+        original['rows'][0]['ticker']='MUTATED_AFTER_SEAL'
+        class NoColdDecode:
+            def snapshot_context(self,*args):return codec.snapshot_context(*args)
+            def snapshot_encode(self,*args):return codec.snapshot_encode(*args)
+            def snapshot_batch(self,*args):return codec.snapshot_batch(*args)
+            def snapshot_decode(self,*args):pytest.fail('new COLD cannot decode a captured value')
+        monkeypatch.setattr(p,'_native_json_bound',NoColdDecode())
+        receipt=c.drain(files)
+        assert receipt['state']=='COMPLETE'
+        assert gzip.open(files.root/receipt['computed_report']['file'],'rb').read()==expected
+        assert receipt['computed_report']['sha256']==hashlib.sha256(expected).hexdigest()
+
 def test_snapshot_is_durable_before_pointer_and_queue_blocks_replacement(tmp_path):
     with p.EvidenceFiles(tmp_path) as files:
         ref = seal(files)
@@ -551,10 +572,18 @@ def test_zero_progress_batch_cannot_loop_or_publish(tmp_path):
 
 def test_large_rows_use_bounded_prefix_frames_instead_of_rescanned_singletons(tmp_path,monkeypatch):
     from collections import Counter
+    from types import SimpleNamespace
     rows=[{'id':n,'payload':'x'*14000} for n in range(400)]
-    counts=Counter()
+    counts=Counter();batches=[]
     with p.EvidenceFiles(tmp_path) as files:
         with c.Snapshot(files) as snapshot:
+            native=snapshot.codec
+            def batch(group,context):
+                result=native.snapshot_batch(group,context)
+                if result is not None:batches.append(result[1])
+                return result
+            snapshot.codec=SimpleNamespace(snapshot_context=native.snapshot_context,
+                snapshot_encode=native.snapshot_encode,snapshot_batch=batch)
             frame=snapshot._frame
             def counted(kind,raw):counts[kind]+=1;return frame(kind,raw)
             monkeypatch.setattr(snapshot,'_frame',counted)
@@ -562,10 +591,11 @@ def test_large_rows_use_bounded_prefix_frames_instead_of_rescanned_singletons(tm
             actual=hashlib.sha256()
             for block in captured.iter_bytes():actual.update(block)
             assert actual.hexdigest()==p.streamed_digest(rows)
-            # Same64KiB budget accepts4 actual14KiB rows. The rejected fixed16
-            # attempt used400 singletons; the bounded prefix path emits100
-            # batches while preserving every canonical byte and budget.
-            assert counts[b'A']==100 and counts[b'P']==0,dict(counts)
+            # The native 64KiB prefix still consumes four 14KiB rows per
+            # batch; HOT seals canonical J frames, coalescing adjacent values
+            # while keeping their original bytes and the bounded walk.
+            assert batches==[4]*100,batches
+            assert 0<counts[b'J']<=100 and counts[b'A']==counts[b'P']==0,dict(counts)
 
 
 def test_storage_capture_has_one_actual_value_walk(codec):
