@@ -1260,7 +1260,7 @@
     }
   ],
   "findings_count": 87,
-  "predeploy_state": "IN_PROGRESS_NEW_CANDIDATE",
+  "predeploy_state": "GREEN_BYTES_VALIDATED",
   "historical_ci_995": {
     "run": 39061986441,
     "job": 117481988873,
@@ -1421,20 +1421,23 @@
     "promotable": false
   },
   "final_ci": {
-    "run": 39065412565,
-    "job": 117491921735,
-    "artifact": 12112809598,
-    "zip_sha256": "7a4161313698fc6f16b18a5eef22020fbe973ee4b50ae9510df775152395b4a9",
-    "image_id": "sha256:2d61b2bae12cc1ab164eb997ce187a450da6eb2438239be3e8b40d44fa15d2e3",
-    "root_cases": 4009,
-    "stress_cases": 845,
+    "run": 39090521551,
+    "job": 117566084772,
+    "source": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+    "tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
+    "artifact": 12123121595,
+    "zip_bytes": 414812982,
+    "zip_sha256": "511a06390863d6a987958e057d696a301614ba539d9d006f2fe729941e1208f7",
+    "image_id": "sha256:c3229770ff31728df35e9c6a803b7e59894461786b3a0f1299687bec16052596",
+    "image_tar_sha256": "1214dd4e4625435d63740c74cc1e982655116d4229579cc2b637f4d1701e0c11",
+    "root_cases": 4046,
+    "stress_cases": 898,
     "stress_simulated_minutes": 405,
     "groups": 8,
     "bundle_files": 509,
     "layers_validated": 25,
-    "byte_validation": "docs/releases/evidence624/ci-fe100-byte-validation.json",
-    "droplet_acceptance": false,
-    "historical_only_for_new_candidate": true
+    "byte_validation": "docs/releases/evidence624/ci-202e-byte-validation.json",
+    "droplet_acceptance": false
   },
   "deploy": {
     "run": 39083752998,
@@ -1498,14 +1501,19 @@
     "pr": 628,
     "predeploy_run": 39090521551,
     "predeploy_job": 117566084772,
-    "state": "IN_PROGRESS",
+    "state": "CERTIFIED_MERGED_DEPLOY_IN_PROGRESS",
     "local_paired_ab": "docs/releases/evidence624/paired-compact624-summary.json",
     "limited_image_ab_run": 39090738532,
-    "limited_image_ab_state": "IN_PROGRESS",
+    "limited_image_ab_state": "GREEN_EXPERIMENT",
     "previous_environment_red": 39090451993,
     "installed_runtime": "FE100_NATIVE_RAM_RED_NOT_ACCEPTED",
     "stress_droplet": "NOT_EXECUTED",
-    "restore_stress": "NOT_EXECUTED"
+    "restore_stress": "NOT_EXECUTED",
+    "predeploy_state": "GREEN_BYTES_VALIDATED",
+    "limited_image_ab_artifact": 12122716507,
+    "merge_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
+    "deploy_run": 39091864291,
+    "deploy_job": 117570122405
   },
   "historical_fe100_certificate": {
     "run": 39065412565,
@@ -1521,5 +1529,34 @@
     "layers_validated": 25,
     "byte_validation": "docs/releases/evidence624/ci-fe100-byte-validation.json",
     "droplet_acceptance": false
+  },
+  "current_deploy": {
+    "run": 39091864291,
+    "job": 117570122405,
+    "source": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+    "merge_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
+    "tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
+    "parents": [
+      "e636b3a20a408e0ff22089118634003e4de900f1",
+      "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f"
+    ],
+    "owner_comments": [
+      6244940237,
+      6244940346
+    ],
+    "status": "IN_PROGRESS",
+    "native_acceptance": false
+  },
+  "limited_image_ab": {
+    "run": 39090738532,
+    "job": 117566749927,
+    "status": "GREEN_EXPERIMENT_NOT_NATIVE_HOST",
+    "artifact": 12122716507,
+    "zip_sha256": "daefd25f2515423ab6ed4a292946fe475e1a7811a809d6a1f5d00597bf23aa0d",
+    "actual_focal_cases": 208,
+    "each_full_report_verified_before_retention": true,
+    "rss_ratio": 0.7402842616731771,
+    "cpu_ratio": 0.9206408039769379,
+    "retired_commit": "be78e6acb252202d2046ca8952787dfeea03b68e"
   }
 }

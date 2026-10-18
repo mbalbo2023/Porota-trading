@@ -1,0 +1,364 @@
+{
+  "schema": "rc6.checkpoint624.exact-resource-ab.v1",
+  "purpose": "EXPERIMENT_SOURCE_OVERLAY_NOT_RELEASE_IMAGE",
+  "native_host_acceptance": false,
+  "arm": "baseline",
+  "source_sha": "fe100cb337ba627e23aa4a006b6c30125e646ad7",
+  "python": "3.11.16 (main, Sep 19 2026, 01:04:43) [GCC 14.2.0]",
+  "database": "/evidence/fixture.db",
+  "database_sha256": "5831dc3c218de74a7118d5955ca6f6f63b11eaab558f18507402027a69159c73",
+  "inode": 9477009,
+  "backend_sha256": "e0eed2fc86dde099583e2635ae6c6e57b8a7f53124bb71a04bef11f026daac99",
+  "catalog_count": 14611,
+  "ready_fixture_count": 9902,
+  "ticks": [
+    {
+      "source_as_of": "2026-10-05T13:20:00+00:00",
+      "wall": 15.414451376000002,
+      "cpu": 10.950781738000002,
+      "peak_rss_kib": 382528,
+      "computed": {
+        "compressed_bytes": 3955576,
+        "file": "computed-fb8f720e08468462af4240e9b1c77a6dadb69ee8b47d0f56e29e2057a84cd737.json.gz",
+        "raw_bytes": 265449852,
+        "sha256": "fb8f720e08468462af4240e9b1c77a6dadb69ee8b47d0f56e29e2057a84cd737"
+      },
+      "full_report_bytes_independently_verified": true,
+      "timing": {
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 382528,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.582,
+          "economic_exit_lab": 0.004,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.26,
+          "operational_funnel": 2.521,
+          "planner_pipeline": 1.106,
+          "preopen": 2.444,
+          "state_and_inputs": 0.026
+        },
+        "stages_seconds": {
+          "durable_serialization": 5.085,
+          "economic_exit_lab": 0.004,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.684,
+          "operational_funnel": 3.612,
+          "planner_pipeline": 1.721,
+          "preopen": 3.269,
+          "state_and_inputs": 0.026
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7424,
+            "cpu_seconds": 0.655565,
+            "major_faults": 0,
+            "peak_rss_kib": 382528,
+            "wall_seconds": 1.056102
+          },
+          "computed": {
+            "block_outputs": 7728,
+            "compress_hash_cpu_seconds": 0.512549,
+            "compress_hash_seconds": 0.536904,
+            "compressed_bytes": 3955576,
+            "cpu_seconds": 2.886063,
+            "encode_cpu_seconds": 2.362017,
+            "encode_seconds": 2.612266,
+            "fsync_cpu_seconds": 0.00074,
+            "fsync_seconds": 0.127366,
+            "major_faults": 0,
+            "peak_rss_kib": 382528,
+            "raw_bytes": 265449852,
+            "wall_seconds": 3.98772
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.000952,
+            "major_faults": 0,
+            "peak_rss_kib": 382528,
+            "wall_seconds": 0.001268
+          }
+        },
+        "tick_cpu_seconds": 10.944,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 15.403
+      },
+      "funnel": {
+        "sha256": "056401db0c9076acc4a0242f49f6a52d0780bd449819495a2e8dad48ae09a6ee",
+        "reaches": 19804,
+        "cohorts": 19804,
+        "sessions": [
+          "2026-10-05"
+        ],
+        "gaps": {}
+      },
+      "idle": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 305520,
+        "rss_after_kib": 112432,
+        "elapsed_seconds": 0.392529
+      }
+    },
+    {
+      "source_as_of": "2026-10-05T13:20:30+00:00",
+      "wall": 12.782117306000004,
+      "cpu": 9.192587040000001,
+      "peak_rss_kib": 398724,
+      "computed": {
+        "compressed_bytes": 4560193,
+        "file": "computed-439f75546eef9b39a4da5613aef9366dccb06a109eb5fe31a723b4d6256325be.json.gz",
+        "raw_bytes": 265449890,
+        "sha256": "439f75546eef9b39a4da5613aef9366dccb06a109eb5fe31a723b4d6256325be"
+      },
+      "full_report_bytes_independently_verified": true,
+      "timing": {
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 398724,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.348,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.253,
+          "operational_funnel": 1.761,
+          "planner_pipeline": 1.058,
+          "preopen": 1.26,
+          "state_and_inputs": 0.503
+        },
+        "stages_seconds": {
+          "durable_serialization": 4.748,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.916,
+          "operational_funnel": 2.335,
+          "planner_pipeline": 1.408,
+          "preopen": 1.685,
+          "state_and_inputs": 0.678
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7424,
+            "cpu_seconds": 0.553794,
+            "major_faults": 0,
+            "peak_rss_kib": 398724,
+            "wall_seconds": 0.744069
+          },
+          "computed": {
+            "block_outputs": 8912,
+            "compress_hash_cpu_seconds": 0.524388,
+            "compress_hash_seconds": 0.523448,
+            "compressed_bytes": 4560193,
+            "cpu_seconds": 2.75443,
+            "encode_cpu_seconds": 2.218493,
+            "encode_seconds": 2.646254,
+            "fsync_cpu_seconds": 0.000786,
+            "fsync_seconds": 0.018691,
+            "major_faults": 0,
+            "peak_rss_kib": 398724,
+            "raw_bytes": 265449890,
+            "wall_seconds": 3.938556
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.000967,
+            "major_faults": 0,
+            "peak_rss_kib": 398724,
+            "wall_seconds": 0.001493
+          }
+        },
+        "tick_cpu_seconds": 9.187,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 12.774
+      },
+      "funnel": {
+        "sha256": "143eef236574dbc278d9684ebb6b8d26cc4c0ac48e8da4bc737c8c11acec4a17",
+        "reaches": 19804,
+        "cohorts": 19804,
+        "sessions": [
+          "2026-10-05"
+        ],
+        "gaps": {}
+      },
+      "idle": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 333540,
+        "rss_after_kib": 139160,
+        "elapsed_seconds": 0.336559
+      }
+    },
+    {
+      "source_as_of": "2026-10-06T13:20:00+00:00",
+      "wall": 17.42548016699999,
+      "cpu": 12.480509949999998,
+      "peak_rss_kib": 461828,
+      "computed": {
+        "compressed_bytes": 3955994,
+        "file": "computed-5178ca206d54a9983d7f3cf93f2bf22fd97409d5a8e301c3efcf38b3d0ab4444.json.gz",
+        "raw_bytes": 265449930,
+        "sha256": "5178ca206d54a9983d7f3cf93f2bf22fd97409d5a8e301c3efcf38b3d0ab4444"
+      },
+      "full_report_bytes_independently_verified": true,
+      "timing": {
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 461828,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.564,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.399,
+          "operational_funnel": 3.11,
+          "planner_pipeline": 0.996,
+          "preopen": 2.849,
+          "state_and_inputs": 0.553
+        },
+        "stages_seconds": {
+          "durable_serialization": 5.013,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 2.142,
+          "operational_funnel": 4.135,
+          "planner_pipeline": 1.321,
+          "preopen": 4.075,
+          "state_and_inputs": 0.728
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7432,
+            "cpu_seconds": 0.656728,
+            "major_faults": 0,
+            "peak_rss_kib": 461828,
+            "wall_seconds": 0.884251
+          },
+          "computed": {
+            "block_outputs": 7728,
+            "compress_hash_cpu_seconds": 0.512589,
+            "compress_hash_seconds": 0.537154,
+            "compressed_bytes": 3955994,
+            "cpu_seconds": 2.865268,
+            "encode_cpu_seconds": 2.341333,
+            "encode_seconds": 2.640938,
+            "fsync_cpu_seconds": 0.000658,
+            "fsync_seconds": 0.006518,
+            "major_faults": 0,
+            "peak_rss_kib": 461828,
+            "raw_bytes": 265449930,
+            "wall_seconds": 4.061092
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.000945,
+            "major_faults": 0,
+            "peak_rss_kib": 461828,
+            "wall_seconds": 0.001457
+          }
+        },
+        "tick_cpu_seconds": 12.474,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 17.417
+      },
+      "funnel": {
+        "sha256": "311f2e2a86c4326db411774b0f2f7e9ec86cb8d79250884b5638ee3141b8b5d9",
+        "reaches": 19804,
+        "cohorts": 19804,
+        "sessions": [
+          "2026-10-06"
+        ],
+        "gaps": {
+          "OLDER_SESSION_EVICTED_FOR_CAPACITY": 1
+        }
+      },
+      "idle": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 377216,
+        "rss_after_kib": 158396,
+        "elapsed_seconds": 0.455545
+      }
+    },
+    {
+      "source_as_of": "2026-10-06T13:20:30+00:00",
+      "wall": 12.453965627000002,
+      "cpu": 9.341811386000003,
+      "peak_rss_kib": 461828,
+      "computed": {
+        "compressed_bytes": 4560936,
+        "file": "computed-01db135012fcef2d8d307c50030ad9bd6aa354b7a9429dbb302e30d7f0b83be4.json.gz",
+        "raw_bytes": 265449928,
+        "sha256": "01db135012fcef2d8d307c50030ad9bd6aa354b7a9429dbb302e30d7f0b83be4"
+      },
+      "full_report_bytes_independently_verified": true,
+      "timing": {
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 461828,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.363,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.27,
+          "operational_funnel": 1.797,
+          "planner_pipeline": 1.103,
+          "preopen": 1.283,
+          "state_and_inputs": 0.516
+        },
+        "stages_seconds": {
+          "durable_serialization": 4.498,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.696,
+          "operational_funnel": 2.397,
+          "planner_pipeline": 1.453,
+          "preopen": 1.733,
+          "state_and_inputs": 0.665
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7432,
+            "cpu_seconds": 0.561706,
+            "major_faults": 0,
+            "peak_rss_kib": 461828,
+            "wall_seconds": 0.737963
+          },
+          "computed": {
+            "block_outputs": 8912,
+            "compress_hash_cpu_seconds": 0.524146,
+            "compress_hash_seconds": 0.523268,
+            "compressed_bytes": 4560936,
+            "cpu_seconds": 2.762313,
+            "encode_cpu_seconds": 2.226759,
+            "encode_seconds": 2.32637,
+            "fsync_cpu_seconds": 0.00067,
+            "fsync_seconds": 0.008765,
+            "major_faults": 0,
+            "peak_rss_kib": 461828,
+            "raw_bytes": 265449928,
+            "wall_seconds": 3.696418
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.000973,
+            "major_faults": 0,
+            "peak_rss_kib": 461828,
+            "wall_seconds": 0.001429
+          }
+        },
+        "tick_cpu_seconds": 9.336,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 12.446
+      },
+      "funnel": {
+        "sha256": "5ae46424314668b4714fb89dc9988ab050f1ec84625064f2d7617425eb108e76",
+        "reaches": 19804,
+        "cohorts": 19804,
+        "sessions": [
+          "2026-10-06"
+        ],
+        "gaps": {
+          "OLDER_SESSION_EVICTED_FOR_CAPACITY": 1
+        }
+      },
+      "idle": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 316472,
+        "rss_after_kib": 179188,
+        "elapsed_seconds": 0.379273
+      }
+    }
+  ]
+}

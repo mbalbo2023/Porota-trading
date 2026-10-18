@@ -1,0 +1,188 @@
+{
+  "actual_market_acceptance": false,
+  "catalog_count": 14611,
+  "cuts": [
+    {
+      "as_of": "2026-10-05T13:20:00.000163+00:00",
+      "computed_report_sha256": "2e4953dbce9d3b5f88247d06c1dda788848b8304afca5b5ae18bbfeeeb0fcf0e",
+      "freshness_budget_seconds": 90.918,
+      "generation_id": "0d364f47b8b868bec2bc9df58638fea12e7ae4759ef4b3a8cfad799d6a7d7c43",
+      "manifest_sha256": "fb4a08c559d5954f9ef348bb5fce389d42b660eef5b948afcdd83ce461342fe2",
+      "sequence": 1791206400000163,
+      "tick_seconds": 15.459,
+      "worker_timing": {
+        "allocator_phases": {
+          "planner_completed": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.095043,
+            "rss_after_kib": 171648,
+            "rss_before_kib": 171392
+          }
+        },
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 282284,
+        "stages_cpu_seconds": {
+          "durable_serialization": 4.459,
+          "economic_exit_lab": 0.004,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.319,
+          "operational_funnel": 2.581,
+          "planner_pipeline": 1.313,
+          "preopen": 1.875,
+          "state_and_inputs": 0.033
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 282284,
+          "economic_exit_lab": 251632,
+          "entry_signal_lab": 251632,
+          "family_routing": 251632,
+          "operational_funnel": 282284,
+          "planner_pipeline": 172376,
+          "preopen": 122808,
+          "state_and_inputs": 65680
+        },
+        "stages_seconds": {
+          "durable_serialization": 5.961,
+          "economic_exit_lab": 0.004,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.77,
+          "operational_funnel": 3.431,
+          "planner_pipeline": 1.736,
+          "preopen": 2.502,
+          "state_and_inputs": 0.053
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7448,
+            "cpu_seconds": 0.769832,
+            "major_faults": 0,
+            "peak_rss_kib": 282284,
+            "wall_seconds": 1.044412
+          },
+          "computed": {
+            "block_outputs": 7728,
+            "compress_hash_cpu_seconds": 0.615698,
+            "compress_hash_seconds": 0.614431,
+            "compressed_bytes": 3956050,
+            "cpu_seconds": 3.641969,
+            "encode_cpu_seconds": 3.013388,
+            "encode_seconds": 3.9093,
+            "fsync_cpu_seconds": 0.00076,
+            "fsync_seconds": 0.002352,
+            "major_faults": 0,
+            "peak_rss_kib": 282284,
+            "raw_bytes": 265641048,
+            "wall_seconds": 4.844324
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.001058,
+            "major_faults": 0,
+            "peak_rss_kib": 282284,
+            "wall_seconds": 0.001458
+          }
+        },
+        "tick_cpu_seconds": 11.585,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 15.459
+      }
+    },
+    {
+      "as_of": "2026-10-05T13:20:45.756135+00:00",
+      "computed_report_sha256": "de85f57b0426cdb6a5517e3ef76a0bc4732c6ba48c02a275ab670eb86cfaccb9",
+      "freshness_budget_seconds": 89.92,
+      "generation_id": "57035f2e68229d210469fba984825ddb23743c82a82cacc921bdc5a49d047479",
+      "manifest_sha256": "ec86c20e56f683de2e450dd73efd516852d6b2457047cb8b59dae9593522e193",
+      "previous_cut_age_seconds": 60.973196,
+      "previous_cut_freshness_budget_seconds": 90.918,
+      "sequence": 1791206445756135,
+      "tick_seconds": 14.96,
+      "worker_timing": {
+        "allocator_phases": {
+          "planner_completed": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.172891,
+            "rss_after_kib": 254516,
+            "rss_before_kib": 260152
+          }
+        },
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 329332,
+        "stages_cpu_seconds": {
+          "durable_serialization": 4.226,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.002,
+          "family_routing": 1.384,
+          "operational_funnel": 1.779,
+          "planner_pipeline": 1.373,
+          "preopen": 1.591,
+          "state_and_inputs": 0.887
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 329332,
+          "economic_exit_lab": 329332,
+          "entry_signal_lab": 329332,
+          "family_routing": 329332,
+          "operational_funnel": 329332,
+          "planner_pipeline": 291984,
+          "preopen": 291984,
+          "state_and_inputs": 282284
+        },
+        "stages_seconds": {
+          "durable_serialization": 5.628,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.002,
+          "family_routing": 1.834,
+          "operational_funnel": 2.379,
+          "planner_pipeline": 1.823,
+          "preopen": 2.141,
+          "state_and_inputs": 1.151
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7440,
+            "cpu_seconds": 0.68434,
+            "major_faults": 0,
+            "peak_rss_kib": 329332,
+            "wall_seconds": 0.908757
+          },
+          "computed": {
+            "block_outputs": 8912,
+            "compress_hash_cpu_seconds": 0.629297,
+            "compress_hash_seconds": 0.752783,
+            "compressed_bytes": 4562709,
+            "cpu_seconds": 3.495548,
+            "encode_cpu_seconds": 2.853175,
+            "encode_seconds": 3.400538,
+            "fsync_cpu_seconds": 0.000723,
+            "fsync_seconds": 0.002331,
+            "major_faults": 0,
+            "peak_rss_kib": 329332,
+            "raw_bytes": 265641086,
+            "wall_seconds": 4.647426
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.001145,
+            "major_faults": 0,
+            "peak_rss_kib": 329332,
+            "wall_seconds": 0.001549
+          }
+        },
+        "tick_cpu_seconds": 11.244,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 14.96
+      }
+    }
+  ],
+  "elapsed_seconds": 60.973,
+  "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+  "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+  "process_peak_rss_kib": 329332,
+  "production_data_mounted": false,
+  "provider_requests": 0,
+  "ready_fixture_count": 9902,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "schema": "rc6.synthetic-full-catalog.v1"
+}

@@ -1,0 +1,26 @@
+{
+  "catalog_count": 20001,
+  "shape": {
+    "BONOS": 4123,
+    "OBLIGACIONES": 6869,
+    "FCI": 1481,
+    "ACCIONES": 271,
+    "CEDEARS": 3341,
+    "LETRAS": 73,
+    "FUTUROS": 278,
+    "OPCIONES": 3425,
+    "CAUCIONES": 14,
+    "ON": 125,
+    "INDICES": 1
+  },
+  "ready_fixture_count": 13554,
+  "native_backend": true,
+  "import_root": "/workspace/scratch/88594b90c2a3/fix2-624",
+  "host_acceptance": false,
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "clocks": "PRE fixed; second PRE+30s; no physical cadence claim",
+  "boundary_status": "REJECTED",
+  "reason": "FULL_CATALOG_READ_TRUNCATED",
+  "elapsed": 0.010939733000668639
+}

@@ -1705,6 +1705,188 @@
       "sha256": "440705f35ee008113053e42e7d0109d5d16291a44fd31755b632aee224eb1eee",
       "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
       "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ab624-green-byte-validation.json",
+      "bytes": 2547,
+      "sha256": "26c7a7c3dd8c514a5a4842dfdbbd870cff870ba0bfc21f65cfb2d7e9253c8078",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ab624-env-red-byte-validation.json",
+      "bytes": 493,
+      "sha256": "930758237363ff114c8d53ba5ca0b809a31b06f39b47ba053d86efa8a155fdd1",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ab624-comparison.json",
+      "bytes": 2020,
+      "sha256": "3608f508692fecfe9e88afd29fed366fa2d26b0f3ffda38fcb9c7b96827921d1",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ab624-baseline.json",
+      "bytes": 11992,
+      "sha256": "0540d73fc111c62421c0d35a01903eea133d8b792c102d2bdc00686c5293d178",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ab624-candidate.json",
+      "bytes": 14375,
+      "sha256": "29dea532412272b81f3cc42667e956bc968bc297eeb9b3aa9b74e1e29dff8aaf",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ab624-green-focal.xml.gz",
+      "bytes": 5064,
+      "sha256": "d3da1a9ec368de1fc4e78a8bc7e51da0da61533e2de052afa9babc559f8b1ac9",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ab624-env-red-focal.xml.gz",
+      "bytes": 5918,
+      "sha256": "bfe38c664531bf10da2b83837ad77ed89be42ecc21bb7e045d66e6539e3ac300",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/d4-scale-1000.json",
+      "bytes": 6675,
+      "sha256": "b9df4b546ca5de730d935b023628b8a0fac4c0d81179d4f91559d631f137890c",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/d4-scale-5000.json",
+      "bytes": 6717,
+      "sha256": "278803743dcd47257c0f36a3f758fdabc7e11b0287568ee0aef53fc25426d686",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/d4-scale-20001.json",
+      "bytes": 641,
+      "sha256": "aa2266aa272cfbff13b755dbf8c7c4aa62dfad351ccf7b9067cb8c608149c0fa",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-byte-validation.json",
+      "bytes": 38158,
+      "sha256": "695db6065d38fd13cc89d7320e43e53ce60de6d3f49911f02191c57a5e638519",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-porota-frozen-candidate.json",
+      "bytes": 611,
+      "sha256": "5acef57eeabb3d914af3c655573bb6e3214b6b6d234ccf87707473e26093d32d",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-porota-governed-tests.json",
+      "bytes": 360,
+      "sha256": "171413360dc4e275589bf1ebadf19a43a810067d730923d980e1d2324686cf14",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-stress.json",
+      "bytes": 17991,
+      "sha256": "d4d278fbd337e3db3c2613d9e35745a130fc582193c398bd89d3a5b4b03b475b",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-full-catalog.json",
+      "bytes": 6516,
+      "sha256": "1ceb69543671df0f539ff9e4462c95a5fbb7d048173765e81a5a34654217abe6",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-native-bound.xml",
+      "bytes": 7163,
+      "sha256": "0715d5e321d62e10984097c46a49bbfe294a318397ce02f58aed2108f240ce20",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-root.xml.gz",
+      "bytes": 90574,
+      "sha256": "3a5e6613146c9b80920bec391f0b6bed2b18be068a245c3160b421f4e2f31935",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-raw.log.gz",
+      "bytes": 169250,
+      "sha256": "02972d29dab3e6e61d8ab5597fbb3941b4247c4effae300fc6ea8b78fc7a8396",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-sql_shadow_wal.xml.gz",
+      "bytes": 1431,
+      "sha256": "c70c1a04216262a36026a907250dfe9b266a9ee9f8e961a4e5aa6c764ffa229a",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-publication_io_identity.xml.gz",
+      "bytes": 4390,
+      "sha256": "eb124313530d4ad67bd41d35b6e0df811c4815e140976caba933aa0bb4609b70",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-signals_risk_exit_ledger.xml.gz",
+      "bytes": 4577,
+      "sha256": "9bb114bd294fdf9ee40a81339e94090517f505f2c5d81c36685b25d003174a3d",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-sources_readiness_network.xml.gz",
+      "bytes": 2660,
+      "sha256": "d6836e2091a36c4a04d6a7f505ece6d2c05188059c5a8bc043d6d5e90f0c3d75",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-scalping_capacity.xml.gz",
+      "bytes": 2940,
+      "sha256": "d7f4ea213e5435dda4b1ba0f11b0967c2c1bcb6739b4afb1aa8025c29d39b3bc",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-treasury_caucion.xml.gz",
+      "bytes": 1986,
+      "sha256": "ef6adbbf272e872719dae213f49415d93db3ac5fd94057354bb112f8cb50048d",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-dashboard_auth_52.xml.gz",
+      "bytes": 4844,
+      "sha256": "ed6cae43ff41ecead0345683460ee95126e32af5fa7414d4c51ac3f33c606fa7",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-202e-scheduler_monitor_backup.xml.gz",
+      "bytes": 1383,
+      "sha256": "8af42f0e085d6ecf2519cd50d26b1f6b742309e7b27990619afcc05dbe0e3632",
+      "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
+      "native_acceptance": false
     }
   ]
 }

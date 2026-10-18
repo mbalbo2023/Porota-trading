@@ -1,0 +1,68 @@
+{
+  "schema": "rc6.ab624.independent-artifact-validation.v1",
+  "artifact": 12122716507,
+  "zip_sha256": "daefd25f2515423ab6ed4a292946fe475e1a7811a809d6a1f5d00597bf23aa0d",
+  "zip_bytes": 32824,
+  "actual_focal_cases": 208,
+  "failure": 0,
+  "error": 0,
+  "skipped": 0,
+  "comparison": {
+    "schema": "rc6.checkpoint624.ab-comparison.v1",
+    "purpose": "EXPERIMENT_SOURCE_OVERLAY_NOT_RELEASE_IMAGE",
+    "native_host_acceptance": false,
+    "baseline_source": "fe100cb337ba627e23aa4a006b6c30125e646ad7",
+    "candidate_source": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+    "same_controls": true,
+    "all_full_report_hashes_equal": true,
+    "rss_ratio": 0.7402842616731771,
+    "cpu_ratio": 0.9206408039769379,
+    "rows": [
+      {
+        "as_of": "2026-10-05T13:20:00+00:00",
+        "raw_bytes": 265449852,
+        "sha256": "fb8f720e08468462af4240e9b1c77a6dadb69ee8b47d0f56e29e2057a84cd737",
+        "baseline_cpu": 10.950781738000002,
+        "candidate_cpu": 9.309088288000002,
+        "baseline_peak_rss_kib": 382528,
+        "candidate_peak_rss_kib": 279848
+      },
+      {
+        "as_of": "2026-10-05T13:20:30+00:00",
+        "raw_bytes": 265449890,
+        "sha256": "439f75546eef9b39a4da5613aef9366dccb06a109eb5fe31a723b4d6256325be",
+        "baseline_cpu": 9.192587040000001,
+        "candidate_cpu": 9.143247579999999,
+        "baseline_peak_rss_kib": 398724,
+        "candidate_peak_rss_kib": 326228
+      },
+      {
+        "as_of": "2026-10-06T13:20:00+00:00",
+        "raw_bytes": 265449930,
+        "sha256": "5178ca206d54a9983d7f3cf93f2bf22fd97409d5a8e301c3efcf38b3d0ab4444",
+        "baseline_cpu": 12.480509949999998,
+        "candidate_cpu": 10.910302677,
+        "baseline_peak_rss_kib": 461828,
+        "candidate_peak_rss_kib": 341884
+      },
+      {
+        "as_of": "2026-10-06T13:20:30+00:00",
+        "raw_bytes": 265449928,
+        "sha256": "01db135012fcef2d8d307c50030ad9bd6aa354b7a9429dbb302e30d7f0b83be4",
+        "baseline_cpu": 9.341811386000003,
+        "candidate_cpu": 9.272688140999996,
+        "baseline_peak_rss_kib": 461828,
+        "candidate_peak_rss_kib": 341884
+      }
+    ],
+    "acceptance": {
+      "max_rss_ratio": 0.85,
+      "max_total_cpu_ratio": 1.1,
+      "justification": "Bounded hashing may cost modest CPU; measured memory reduction is mandatory. Native120s/128MiB remain separate unchanged gates."
+    },
+    "status": "GREEN_EXPERIMENT"
+  },
+  "each_full_report_verified_before_retention": true,
+  "native_host_acceptance": false,
+  "status": "GREEN_BYTES_AND_EXPERIMENT"
+}
