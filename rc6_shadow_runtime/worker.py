@@ -833,6 +833,12 @@ def run_worker(database, stop, *, clock_fn=None):
             if getattr(worker, 'defer_audit', False):
                 with worker.files as files:
                     cold_audit.drain(files)
+            # POLL_SECONDS is a minimum start-to-start period. A slow HOT
+            # computation has already consumed that period; adding another
+            # full sleep after publication makes the previous immutable cut
+            # expire before the next one can be published on the one-vCPU
+            # host. COLD is still drained before each new source read.
+            tick_started = time.monotonic()
             report = worker.tick(clock_fn())
             try:
                 LOG.info("DYNAMIC_SHADOW_RUNTIME status=%s phase=%s real_orders_sent=0 provider_requests=0",
@@ -914,5 +920,5 @@ def run_worker(database, stop, *, clock_fn=None):
                     LOG.warning("DYNAMIC_SHADOW_STATUS_UNAVAILABLE")
         remaining = POLL_SECONDS
         if not tick_failed and worker is not None and getattr(worker, 'pointer_committed_monotonic', None) is not None:
-            remaining = max(0, worker.pointer_committed_monotonic + POLL_SECONDS - time.monotonic())
+            remaining = max(0, tick_started + POLL_SECONDS - time.monotonic())
         stop.wait(remaining)
