@@ -112,13 +112,17 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          # Resource fixtures exercise the mandatory 2GiB disk floor. Their
+          # basetemp uses the bound evidence filesystem, as in native V2 proof;
+          # the separate /tmp tmpfs remains bounded to 64MiB.
+          python3 -c 'import shutil,sys; free=shutil.disk_usage(sys.argv[1]).free; assert free>=2*1024**3; print("AB624_FIXTURE_DISK_RESERVE=GREEN|free="+str(free))' "$RUNNER_TEMP/ab624-evidence"
           docker run --rm --pull never --memory 512m --memory-swap 512m --cpus .75 \
             --network none --read-only --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 \
             --tmpfs /tmp:rw,nosuid,nodev,size=64m --workdir /experiment \
             --mount "type=bind,src=$GITHUB_WORKSPACE/candidate624,dst=/experiment,readonly" \
             --mount "type=bind,src=$RUNNER_TEMP/ab624-evidence,dst=/evidence" \
             --entrypoint python "porota-predeploy-v2:$AB_BASELINE" -B -m pytest -q -p no:cacheprovider \
-            --basetemp=/tmp/pytest --junitxml=/evidence/focal.xml \
+            --basetemp=/evidence/focal-tmp --junitxml=/evidence/focal.xml \
             tests/test_rc6_checkpoint_streaming.py tests/test_rc6_missing_view_sharing.py tests/test_rc6_owned_preopen.py \
             tests/test_rc6_dynamic_orchestrator.py tests/test_rc6_preopen_scalar_storage.py \
             tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_runtime_wiring.py \
