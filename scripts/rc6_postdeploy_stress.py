@@ -128,6 +128,9 @@ def full_catalog_replay(folder):
         runtime.run_worker(store.path,Stop(),clock_fn=lambda:(PRE+timedelta(seconds=time.monotonic()-started)).isoformat())
     peak=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     assert len(cuts)==2 and peak<=512*1024,('FULL_CATALOG_PEAK_RSS_OVER_512MIB',peak)
+    # #624's paired architecture admission removes overlapping audit graphs.
+    # Keep its absolute peak as a permanent gate, in addition to container cap.
+    assert peak<=192*1024,('FULL_CATALOG_PROGRESSIVE_RSS_OVER_192MIB',peak)
     return {'schema':'rc6.synthetic-full-catalog.v1','catalog_count':total,'ready_fixture_count':ready,
             'cuts':cuts,'elapsed_seconds':round(time.monotonic()-started,3),'process_peak_rss_kib':peak,
             'poll_sleep':'ACTUAL_WORKER_POLL_SECONDS','real_orders_sent':0,'real_routes':'NOT_CALLED',

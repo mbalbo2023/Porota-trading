@@ -219,7 +219,7 @@ def test_funnel_projection_cannot_silently_drop_a_new_consumed_field():
     import ast
     import inspect
     from rc6_shadow_runtime import funnel, worker
-    tree = ast.parse(inspect.getsource(funnel._planner_stages))
+    tree = ast.parse(inspect.getsource(funnel._planner_stages)+inspect.getsource(funnel._strategy))
     for variable, available in [('row', worker.FUNNEL_TELEMETRY_FIELDS),
                                 ('instrument', worker.FAMILY_FIELDS), ('catalog', worker.CATALOG_FIELDS)]:
         required = set()
@@ -232,3 +232,55 @@ def test_funnel_projection_cannot_silently_drop_a_new_consumed_field():
                     and node.value.id == variable and isinstance(node.slice, ast.Constant)):
                 required.add(node.slice.value)
         assert required <= available, (variable, required-available)
+
+
+def test_legacy_normalization_checks_original_digest_before_exposing_roles(tmp_path, monkeypatch):
+    from rc6_shadow_runtime import checkpoint_parts
+    opened = []
+    original = checkpoint_parts.tempfile.TemporaryFile
+    def observed(*args, **kwargs):
+        stream = original(*args, **kwargs)
+        opened.append(stream)
+        return stream
+    monkeypatch.setattr(checkpoint_parts.tempfile, 'TemporaryFile', observed)
+    with EvidenceFiles(tmp_path) as files:
+        files.write('CURRENT.json', {'prior': 'safe'})
+        files.write('checkpoint.json.gz', _payload())
+        path = files.path('checkpoint.json.gz')
+        envelope = json.loads(gzip.decompress(path.read_bytes()))
+        envelope['digest'] = '0'*64
+        path.write_bytes(gzip.compress(json.dumps(envelope).encode()))
+        before = set(tmp_path.iterdir())
+        with pytest.raises(ValueError, match='EVIDENCE_DIGEST_MISMATCH'):
+            with CheckpointParts(files, canonical_ascii_chunks):
+                pytest.fail('unverified legacy roles exposed')
+        assert opened and all(stream.closed for stream in opened)
+        assert files.read('CURRENT.json') == {'prior': 'safe'}
+        assert set(tmp_path.iterdir()) == before
+
+
+def test_direct_byte_replay_checks_ascii_and_joint_temporary_budget(tmp_path):
+    with EvidenceFiles(tmp_path) as files:
+        with AuditSpool(files, maximum_bytes=100) as spool:
+            spool.external_bytes = 90
+            spool.stage('valid', [b'0'*10])
+            with pytest.raises(ValueError, match='CAPACITY_REACHED'):
+                spool.stage('over_joint_budget', [b'0'])
+        with AuditSpool(files, maximum_bytes=100) as spool:
+            invalid = spool.stage('non_ascii', [b'\xff'])
+            with pytest.raises(ValueError, match='NOT_ASCII'):
+                files.write_streamed_report({'invalid': invalid})
+        assert not list(tmp_path.glob('computed-*')) and not list(tmp_path.glob('*.tmp'))
+
+
+def test_indexed_checkpoint_preserves_bounded_failure_context_and_old_target(tmp_path):
+    from rc6_shadow_runtime.persistence import EvidencePayloadLimit
+    with EvidenceFiles(tmp_path) as files:
+        files.write_checkpoint({'old': 'verified'})
+        original = files.path('checkpoint.json.gz').read_bytes()
+        files.payload_limit = 100
+        with pytest.raises(EvidencePayloadLimit) as failure:
+            files.write_checkpoint({'large': 'x'*1000})
+        assert failure.value.evidence_file == 'checkpoint.json.gz'
+        assert failure.value.limit_bytes == 100 < failure.value.measured_bytes
+        assert files.path('checkpoint.json.gz').read_bytes() == original

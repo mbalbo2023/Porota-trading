@@ -240,7 +240,7 @@ _SHARED_SNAPSHOT_COMPRESSED_LIMIT = 4 * 1024**2
 _SHARED_SNAPSHOT_RAW_LIMIT = 32 * 1024**2
 
 
-def _canonical_fragments(encoder, payload, *, immutable_shared_rows=()):
+def _canonical_fragments(encoder, payload, *, immutable_shared_rows=(), stream_bytes=False):
     """Encode actual values; memoize only explicitly owned immutable row lists.
 
     The private worker supplies shared preopen lists which cannot change during
@@ -358,7 +358,13 @@ def _canonical_fragments(encoder, payload, *, immutable_shared_rows=()):
             if (not encoder.ensure_ascii or not encoder.sort_keys or encoder.allow_nan
                     or encoder.item_separator != ',' or encoder.key_separator != ':'):
                 raise ValueError('SHADOW_STREAM_CANONICAL_ENCODER_REQUIRED')
-            yield from value.iter_ascii()
+            if stream_bytes:
+                for chunk in value.iter_bytes():
+                    if not chunk.isascii():
+                        raise ValueError('SHADOW_CANONICAL_STREAM_NOT_ASCII')
+                    yield chunk
+            else:
+                yield from value.iter_ascii()
             return
         container = isinstance(value, (dict, list, tuple))
         if not container or _small_json_tree(value):
@@ -395,9 +401,16 @@ def _canonical_chunks(encoder, payload, block_bytes=65536, *, immutable_shared_r
     # These canonical encoders escape non-ASCII characters, so character and
     # UTF-8 byte lengths agree. Join small tokens in C before encoding them.
     pending, pending_size = [], 0
-    fragments = (_canonical_fragments(encoder, payload, immutable_shared_rows=immutable_shared_rows)
-                 if immutable_shared_rows else _canonical_fragments(encoder, payload))
+    fragments = _canonical_fragments(encoder, payload,
+        immutable_shared_rows=immutable_shared_rows, stream_bytes=not bool(immutable_shared_rows))
     for fragment in fragments:
+        if type(fragment) is bytes:
+            if pending:
+                yield ''.join(pending).encode('ascii')
+                pending, pending_size = [], 0
+            for offset in range(0, len(fragment), block_bytes):
+                yield fragment[offset:offset+block_bytes]
+            continue
         size = len(fragment)
         if pending and pending_size + size > block_bytes:
             yield ''.join(pending).encode('ascii')
@@ -483,7 +496,8 @@ class EvidenceFiles:
             from .checkpoint_parts import _JSONBlocks, funnel_metadata_decoder
             keys, metrics = funnel_metadata_decoder(), _preopen_scalar_decoder()
             def decode(value):
-                return metrics(keys(value))
+                value = metrics(value)
+                return value if type(value) is FrozenJSONDict else keys(value)
             def text_chunks(stream):
                 decoder, total = None, 0
                 while chunk := stream.read(65536):
@@ -513,7 +527,7 @@ class EvidenceFiles:
         del raw
         if compact_checkpoint:
             from .checkpoint_parts import funnel_metadata_decoder
-            decoder = funnel_metadata_decoder()
+            decoder = funnel_metadata_decoder(share_keys=False)
         else:
             decoder = _preopen_scalar_decoder() if compact_preopen else None
         envelope = json.loads(text, object_hook=decoder)
@@ -523,9 +537,30 @@ class EvidenceFiles:
             raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
         return envelope["payload"]
 
+    def _checkpoint_normalization_envelope(self):
+        """Decode only; CheckpointParts verifies its digest while indexing.
+
+        The returned data is never an operational checkpoint until the exact
+        canonical writer has compared its actual SHA and validated the index.
+        A whole-document stdlib scan already shares keys within this read.
+        """
+        from .checkpoint_parts import funnel_metadata_decoder
+        if self.lock is None:
+            raise ValueError('SHADOW_WRITER_LOCK_REQUIRED')
+        path = self.path('checkpoint.json.gz')
+        if path.stat().st_size > self.payload_limit:
+            raise EvidencePayloadLimit(path.name, path.stat().st_size, self.payload_limit)
+        with gzip.open(path, 'rb') as stream:
+            raw = stream.read(self.payload_limit+1)
+        if len(raw) > self.payload_limit:
+            raise EvidencePayloadLimit(path.name, len(raw), self.payload_limit)
+        text = raw.decode(json.detect_encoding(raw), 'surrogatepass')
+        del raw
+        return json.loads(text, object_hook=funnel_metadata_decoder(share_keys=False))
+
     def write_checkpoint(self, payload):
         """Commit one indexed standard gzip with the original canonical envelope."""
-        from .checkpoint_parts import PREFIX, TAIL_BYTES, write_indexed
+        from .checkpoint_parts import PREFIX, TAIL_BYTES, CheckpointPayloadLimit, write_indexed
         if self.lock is None:
             raise ValueError('SHADOW_WRITER_LOCK_REQUIRED')
         target = self.path('checkpoint.json.gz')
@@ -536,8 +571,12 @@ class EvidenceFiles:
         with tempfile.NamedTemporaryFile(dir=self.root, prefix='.checkpoint.', suffix='.tmp', delete=False) as stream:
             tmp = Path(stream.name)
             try:
-                write_indexed(stream, payload, canonical_ascii_chunks,
-                              self.payload_limit-len(PREFIX)-TAIL_BYTES)
+                try:
+                    write_indexed(stream, payload, canonical_ascii_chunks,
+                                  self.payload_limit-len(PREFIX)-TAIL_BYTES)
+                except CheckpointPayloadLimit as exc:
+                    raise EvidencePayloadLimit('checkpoint.json.gz',
+                        exc.measured_bytes+len(PREFIX)+TAIL_BYTES, self.payload_limit) from exc
                 stream.flush()
                 os.fsync(stream.fileno())
                 if size+stream.tell() > self.maximum_bytes:

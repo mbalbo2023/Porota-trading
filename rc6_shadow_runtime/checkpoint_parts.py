@@ -26,7 +26,13 @@ TAIL_PREFIX = b',"digest":"'
 TAIL_BYTES = len(TAIL_PREFIX)+64+2
 
 
-def funnel_metadata_decoder():
+class CheckpointPayloadLimit(ValueError):
+    def __init__(self, measured_bytes, limit_bytes):
+        super().__init__('SHADOW_CHECKPOINT_PAYLOAD_LIMIT')
+        self.measured_bytes, self.limit_bytes = measured_bytes, limit_bytes
+
+
+def funnel_metadata_decoder(*, share_keys=True):
     """Share only equal immutable metadata in causal funnel rows, per read."""
     pool, charged = {}, 0
     keys, key_bytes = {}, 0
@@ -48,15 +54,16 @@ def funnel_metadata_decoder():
         nonlocal key_bytes
         # The stdlib scanner memoizes keys within one document. Incremental
         # record decoding must preserve that bounded sharing across blocks.
-        replacements = False
-        for key in value:
-            if key in keys:
-                replacements |= keys[key] is not key
-            elif len(key) <= 128 and len(key) != 64 and len(keys) < 512 and key_bytes+len(key)+128 <= 65536:
-                keys[key] = key
-                key_bytes += len(key)+128
-        if replacements:
-            value = {keys.get(key, key): item for key, item in value.items()}
+        if share_keys:
+            replacements = False
+            for key in value:
+                if key in keys:
+                    replacements |= keys[key] is not key
+                elif len(key) <= 128 and len(key) != 64 and len(keys) < 512 and key_bytes+len(key)+128 <= 65536:
+                    keys[key] = key
+                    key_bytes += len(key)+128
+            if replacements:
+                value = {keys.get(key, key): item for key, item in value.items()}
         if 'session' in value and 'strategy_id' in value:
             for name in names:
                 if name in value:
@@ -231,7 +238,7 @@ def write_indexed(stream, payload, encode, payload_limit):
         if body:
             payload_bytes += len(raw)
             if payload_bytes > payload_limit:
-                raise ValueError('SHADOW_CHECKPOINT_PAYLOAD_LIMIT')
+                raise CheckpointPayloadLimit(payload_bytes, payload_limit)
             digest.update(raw)
         crc = zlib.crc32(raw, crc)
         total += len(raw)
@@ -349,17 +356,20 @@ class CheckpointParts:
             layout = _index(self.stream)
             if layout is None:
                 # One legacy bootstrap, never a graph retained beside planners.
-                payload = self.files.read('checkpoint.json.gz', compact_checkpoint=True)
+                envelope = self.files._checkpoint_normalization_envelope()
+                payload = envelope.get('payload')
                 if type(payload) is not dict:
                     raise ValueError('SHADOW_CHECKPOINT_OBJECT_REQUIRED')
                 self.stream.close()
                 self.stream = tempfile.TemporaryFile(mode='w+b', dir=self.files.root)
                 layout = write_indexed(self.stream, payload, self.encode, self.files.payload_limit)
+                if layout['payload_sha256'] != envelope.get('digest'):
+                    raise ValueError('SHADOW_EVIDENCE_DIGEST_MISMATCH')
                 self.stream.flush()
                 self.temporary_bytes = self.stream.tell()
                 if self.temporary_bytes > self.files.payload_limit:
                     raise ValueError('SHADOW_CHECKPOINT_COMPRESSED_LIMIT')
-                del payload
+                del payload, envelope
             self.layout = layout
             stat = os.fstat(self.stream.fileno())
             self.identity = (stat.st_dev, stat.st_ino, stat.st_size)

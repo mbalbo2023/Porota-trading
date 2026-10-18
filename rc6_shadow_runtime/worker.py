@@ -610,7 +610,8 @@ class ShadowRuntime:
                 # family/funnel audit; lab/entry/funnel keep their own roles.
                 previous.pop("engines", None)
                 compatible = bundle = observations = source_reports = None
-                allocator_phases['planner_completed'] = release_idle_heap()
+                if not spool:
+                    allocator_phases['planner_completed'] = release_idle_heap()
             measured("planner_pipeline")
             hot = report
             if spool:
