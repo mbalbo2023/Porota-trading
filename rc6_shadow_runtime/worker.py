@@ -26,6 +26,7 @@ from rc6_dynamic_universe.sources import source_observations
 from .persistence import (EvidenceFiles, EvidencePayloadLimit, canonical_ascii_chunks,
                           checkpoint_ascii_chunks)
 from .audit_spool import AuditSpool
+from . import cold_audit
 from .checkpoint_parts import CheckpointParts
 from .timing import POLL_SECONDS
 
@@ -351,6 +352,11 @@ def _funnel_engine_views(engines):
             for engine, plan in engines.items()}
 
 
+def _stage_audit(spool, role, value):
+    return spool.stage(role, value if isinstance(spool, cold_audit.Snapshot)
+                       else canonical_ascii_chunks(value))
+
+
 def _stage_preopen_rows(report, spool):
     nodes = {}
     wrappers = [engine.get('payload', {}) for engine in report.get('frozen', {}).values()]
@@ -361,14 +367,21 @@ def _stage_preopen_rows(report, spool):
             continue
         key = id(rows)
         if key not in nodes:
-            nodes[key] = spool.stage('preopen_rows', canonical_ascii_chunks(rows))
+            nodes[key] = _stage_audit(spool, 'preopen_rows', rows)
         wrapper['rows'] = nodes[key]
 
 
 class ShadowRuntime:
     def __init__(self, database, *, evidence_root=None, history_database=None,
                  source_roots=None, capacity_path=None, policies=None,
-                 maximum_bytes=128 * 1024**2, row_limit=20000, spool_audit=False):
+                 maximum_bytes=128 * 1024**2, row_limit=20000, spool_audit=False, defer_audit=False, shutdown_requested=None):
+        if type(defer_audit) is not bool or (defer_audit and not spool_audit):
+            raise ValueError('SHADOW_DEFERRED_AUDIT_MODE_INVALID')
+        if shutdown_requested is not None and not callable(shutdown_requested):
+            raise ValueError('SHADOW_SHUTDOWN_CALLBACK_INVALID')
+        self.shutdown_requested = shutdown_requested
+        self.defer_audit = defer_audit
+        self.pointer_committed_monotonic = None
         if type(spool_audit) is not bool:
             raise ValueError('SHADOW_SPOOL_MODE_INVALID')
         self.spool_audit = spool_audit
@@ -539,7 +552,8 @@ class ShadowRuntime:
             measured_at, measured_cpu_at = ended, cpu_ended
         at = stamp(as_of)
         with self.files as files, ExitStack() as stack:
-            spool = stack.enter_context(AuditSpool(files)) if self.spool_audit else None
+            spool = (stack.enter_context(cold_audit.Snapshot(files, should_abort=self.shutdown_requested) if self.defer_audit else AuditSpool(files))
+                     if self.spool_audit else None)
             parts = stack.enter_context(CheckpointParts(files, checkpoint_ascii_chunks)) if spool else None
             if spool:
                 spool.external_bytes = parts.temporary_bytes
@@ -676,10 +690,10 @@ class ShadowRuntime:
                 checkpoint = durable_checkpoint_view(checkpoint)
                 result = compatible = bundle = external = observations = source_reports = None
                 _stage_preopen_rows(report, spool)
-                report['engines'] = spool.stage('engines', canonical_ascii_chunks(report['engines']))
+                report['engines'] = _stage_audit(spool, 'engines', report['engines'])
                 for key in ('source_reports', 'events'):
                     if key in report:
-                        report[key] = spool.stage(key, canonical_ascii_chunks(report[key]))
+                        report[key] = _stage_audit(spool, key, report[key])
                 frozen = pre = pre_report = None
                 allocator_phases['planner_staged'] = release_idle_heap()
             from .families import family_reports
@@ -694,8 +708,8 @@ class ShadowRuntime:
                 family_view = _durable_family_routing(family)
                 hot['family_routing'] = {'families': family.get('families', []),
                     'instruments': [_FamilyProjectionRow(row) for row in family.get('instruments', [])]}
-                report['family_routing'] = spool.stage('family_routing', canonical_ascii_chunks(family))
-                report['catalog_ready'] = spool.stage('catalog_ready', canonical_ascii_chunks(report['catalog_ready']))
+                report['family_routing'] = _stage_audit(spool, 'family_routing', family)
+                report['catalog_ready'] = _stage_audit(spool, 'catalog_ready', report['catalog_ready'])
                 family = inputs = sources = base = None
                 allocator_phases['family_staged'] = release_idle_heap()
             if parts and reuse:
@@ -738,6 +752,8 @@ class ShadowRuntime:
             previous = compatible = bundle = inputs = sources = source_reports = observations = None
             capacity = frozen = checkpoint = result = base = None
             audit = stored('computed', lambda: (
+                spool.seal(report, source_as_of=at.isoformat(), configuration=configuration)
+                if self.defer_audit else
                 files.write_streamed_report(report, immutable_shared_rows=reusable_rows)
                 if reusable_rows else files.write_streamed_report(report)))
             storage_profile['computed'].update(getattr(files,'report_write_profile',{}))
@@ -751,11 +767,13 @@ class ShadowRuntime:
             status.update(configuration_fingerprint=configuration,
                 preopen_digests=preopen_digests,
                 catalog_ready_count=ready_count, report_digest=digest(durable),
-                computed_report_digest=audit["sha256"], report_projection="SELECTION_CONTRACT_V1",
+                computed_report_digest=audit.get("sha256"), report_projection="SELECTION_CONTRACT_V1",
                 provider_capacity_open="NO_VERIFICADO", ppi_watch="UNTOUCHED",
                 capacity_policy_status=capacity_policy["status"],
                 entry_signal_lab_status=report["entry_signal_lab"]["status"],
                 operational_funnel_status=report["operational_funnel"]["status"])
+            if self.defer_audit:
+                status["computed_audit_contract"] = "rc6.computed-audit-reference.v2"
             status["runtime_sql_diagnostics"] = _runtime_sql_status(self.last_sqlite_diagnostics)
             status['generation_timing'] = {'poll_seconds':POLL_SECONDS,
                 'tick_seconds':round(time.monotonic()-tick_started,3),
@@ -773,7 +791,9 @@ class ShadowRuntime:
             files.write("status.json", status)
             committed = files.publish_generation(durable, status)
             publish_completed = time.monotonic()
-            files.prune_computed_reports(keep=audit["file"])
+            self.pointer_committed_monotonic = publish_completed
+            if not self.defer_audit:
+                files.prune_computed_reports(keep=audit["file"])
             # Separate receipt avoids a circular hash: the immutable cut is
             # already committed. These clocks never replace the source as_of.
             files.write("publication.json", {"schema":"rc6.publication-cost.v1",
@@ -798,13 +818,18 @@ def run_worker(database, stop, *, clock_fn=None):
         pass
     worker = None
     while not stop.is_set():
+        tick_failed = False
         try:
             if worker is None:
                 from cg_paper_workspace import artifact_root
                 history = Path(os.getenv("HIST_DB_PATH", str(Path(os.getenv("DATA_DIR", "data")) / "market_history.db")))
                 worker = ShadowRuntime(database,
                     evidence_root=artifact_root(database) / "dynamic-shadow",
-                    history_database=history if history.exists() else None, spool_audit=True)
+                    history_database=history if history.exists() else None, spool_audit=True, defer_audit=True, shutdown_requested=stop.is_set)
+            # Replay the original durable input before observing a new source.
+            if getattr(worker, 'defer_audit', False):
+                with worker.files as files:
+                    cold_audit.drain(files)
             report = worker.tick(clock_fn())
             try:
                 LOG.info("DYNAMIC_SHADOW_RUNTIME status=%s phase=%s real_orders_sent=0 provider_requests=0",
@@ -813,6 +838,10 @@ def run_worker(database, stop, *, clock_fn=None):
                 # The full audit already lives in private committed bytes.
                 # Do not retain it while the next tick allocates another one.
                 del report
+                if getattr(worker, 'defer_audit', False):
+                    with worker.files as files:
+                        cold_audit.drain(files)
+                        cold_audit.prune_completed(files)
                 try:
                     LOG.info("DYNAMIC_SHADOW_IDLE_MEMORY %s", json.dumps(release_idle_heap(), sort_keys=True))
                 except Exception as memory_error:
@@ -820,6 +849,7 @@ def run_worker(database, stop, *, clock_fn=None):
                     # financial cut or terminate the scanner's child loop.
                     LOG.warning("DYNAMIC_SHADOW_IDLE_MEMORY_UNAVAILABLE:%s", type(memory_error).__name__)
         except Exception as exc:
+            tick_failed = True
             # A bounded failed SHADOW read/write cannot stop the exit clock or
             # turn a stale prior report into current success. No source event.
             LOG.warning("DYNAMIC_SHADOW_RUNTIME_FAIL_CLOSED:%s", type(exc).__name__)
@@ -862,6 +892,7 @@ def run_worker(database, stop, *, clock_fn=None):
                             "rc6_shadow_runtime/source_reads.py": "source_reads",
                             "rc6_shadow_runtime/read_contract.py": "read_contract",
                             "rc6_shadow_runtime/persistence.py": "persistence",
+                            "rc6_shadow_runtime/cold_audit.py": "cold_audit",
                             "rc6_audit_evidence/sqlite_snapshot.py": "snapshot",
                             "rc6_dynamic_universe/common.py": "common",
                             "rc6_dynamic_universe/live.py": "live",
@@ -878,4 +909,7 @@ def run_worker(database, stop, *, clock_fn=None):
                         files.write("status.json", failure)
                 except (OSError, ValueError):
                     LOG.warning("DYNAMIC_SHADOW_STATUS_UNAVAILABLE")
-        stop.wait(POLL_SECONDS)
+        remaining = POLL_SECONDS
+        if not tick_failed and worker is not None and getattr(worker, 'pointer_committed_monotonic', None) is not None:
+            remaining = max(0, worker.pointer_committed_monotonic + POLL_SECONDS - time.monotonic())
+        stop.wait(remaining)

@@ -320,7 +320,7 @@ jobs:
           run_native_proof cases python -m pytest -q -p no:cacheprovider \
             tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_streaming_cost.py \
             tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_owned_state.py \
-            tests/test_rc6_shadow_report_lifetime.py --junitxml=/proof/native-bound.xml
+            tests/test_rc6_shadow_report_lifetime.py tests/test_rc6_shadow_cold_audit.py --junitxml=/proof/native-bound.xml
           # The generated catalogue runs inline without a pytest parent beside it.
           run_native_proof catalog python scripts/rc6_postdeploy_stress.py \
             --full-catalog-check --output /proof/catalog

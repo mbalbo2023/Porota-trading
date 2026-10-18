@@ -168,9 +168,12 @@ class ChildProcesses:
         for process in self.processes.values():
             if process.poll() is None:
                 process.terminate()
-        for process in self.processes.values():
+        for name, process in self.processes.items():
             try:
-                process.wait(timeout=5)
+                # A sealed audit must drain within30s before orderly stop.
+                # Signals were sent to ALL children above; financial readers
+                # retain their existing5s rule and are not held by SHADOW.
+                process.wait(timeout=35 if name == 'dynamic_shadow' else 5)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)

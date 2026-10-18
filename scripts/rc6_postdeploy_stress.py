@@ -31,7 +31,7 @@ GROUPS={
                    'tests/test_rc6_shadow_contract_projection.py'],
  'publication_io_identity':['tests/test_rc6_issue600_regressions.py','tests/test_rc6_issue603_regressions.py',
                             'tests/test_rc6_shadow_failure_context.py','tests/test_rc6_shadow_stage_reads.py',
-                            'tests/test_rc6_shadow_streaming_cost.py','tests/test_rc6_shadow_report_lifetime.py',
+                            'tests/test_rc6_shadow_streaming_cost.py','tests/test_rc6_shadow_report_lifetime.py','tests/test_rc6_shadow_cold_audit.py',
                             'tests/test_rc6_shadow_owned_state.py','tests/test_rc6_shadow_shared_audit.py',
                             'tests/test_rc6_shadow_native_bound.py',
                             'tests/test_rc6_issue620_temporal.py','tests/test_rc6_deploy_generation_gate.py',
@@ -92,7 +92,7 @@ def full_catalog_replay(folder):
         c.executemany('INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',rows)
     total=len(rows);del rows
     ready=sum(ready for _,ready in FULL_CATALOG_SHAPE.values())
-    worker=runtime.ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[],spool_audit=True)
+    worker=runtime.ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[],spool_audit=True,defer_audit=True)
     started=time.monotonic();cuts=[]
     class Stop:
         def is_set(self):return len(cuts)>=2
@@ -103,13 +103,28 @@ def full_catalog_replay(folder):
             assert status['real_orders_sent']==0 and status['real_routes']=='NOT_CALLED'
             assert report['family_routing']['instruments_total']==total
             assert all(p['telemetry_total']==ready for p in report['engines'].values())
-            assert report['computed_report']['raw_bytes']>100*1024**2
+            # S2 equivalence: the actual production drain has completed the
+            # FULL audit from its original durable input after HOT publication.
+            audit = cut['computed_audit']
+            assert audit['state'] == 'COMPLETE'
+            computed = audit['computed_report']
+            assert computed['raw_bytes']>100*1024**2
+            import gzip, hashlib
+            verified, raw_bytes = hashlib.sha256(), 0
+            with gzip.open(worker.root / computed['file'], 'rb') as stream:
+                while block := stream.read(65536):
+                    verified.update(block); raw_bytes += len(block)
+            assert raw_bytes == computed['raw_bytes'] and verified.hexdigest() == computed['sha256']
+            assert audit['wall_seconds'] <= 30
+            assert audit['source_as_of'] == status['as_of']
             receipt={'sequence':cut['pointer']['sequence'],'as_of':status['as_of'],
                      'generation_id':cut['pointer']['generation_id'],
                      'manifest_sha256':cut['pointer']['manifest_sha256'],
                      'tick_seconds':status['generation_timing']['tick_seconds'],
                      'worker_timing':status['generation_timing'],
-                     'computed_report_sha256':report['computed_report']['sha256'],
+                     'computed_report_sha256':computed['sha256'],
+                     'computed_report_raw_bytes':raw_bytes,
+                     'cold_audit':audit,
                      'freshness_budget_seconds':generation_budget(status)[0]}
             if cuts:
                 assert receipt['sequence']>cuts[-1]['sequence']
@@ -125,7 +140,11 @@ def full_catalog_replay(folder):
             cuts.append(receipt)
             if len(cuts)<2:
                 time.sleep(_seconds)
-    with patch.object(runtime,'ShadowRuntime',lambda *_args,**_kwargs:worker):
+    def actual_factory(*_args, **kwargs):
+        assert kwargs['spool_audit'] is True and kwargs['defer_audit'] is True
+        worker.shutdown_requested = kwargs['shutdown_requested']
+        return worker
+    with patch.object(runtime,'ShadowRuntime',actual_factory):
         runtime.run_worker(store.path,Stop(),clock_fn=lambda:(PRE+timedelta(seconds=time.monotonic()-started)).isoformat())
     peak=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     assert len(cuts)==2 and peak<=512*1024,('FULL_CATALOG_PEAK_RSS_OVER_512MIB',peak)
@@ -134,7 +153,7 @@ def full_catalog_replay(folder):
     assert peak<=192*1024,('FULL_CATALOG_PROGRESSIVE_RSS_OVER_192MIB',peak)
     return {'schema':'rc6.synthetic-full-catalog.v1','catalog_count':total,'ready_fixture_count':ready,
             'cuts':cuts,'elapsed_seconds':round(time.monotonic()-started,3),'process_peak_rss_kib':peak,
-            'poll_sleep':'ACTUAL_WORKER_POLL_SECONDS','real_orders_sent':0,'real_routes':'NOT_CALLED',
+            'poll_sleep':'REMAINING_NOMINAL_30S_AFTER_HOT_PUBLICATION','real_orders_sent':0,'real_routes':'NOT_CALLED',
             'provider_requests':0,'production_data_mounted':False,'actual_market_acceptance':False,
             'memory_measurement':'PROCESS_RSS; host launcher independently enforces container memory cap'}
 

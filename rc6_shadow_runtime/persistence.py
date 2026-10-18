@@ -826,6 +826,21 @@ def read_committed_generation(root, *, payload_limit=4 * 1024**2, require_curren
                 member.get("real_routes") != "NOT_CALLED"):
             raise ValueError("GENERATION_SAFETY_UNVERIFIED")
     result = {"pointer": pointer, "live_status_required":require_current_status, **cut}
+    reference = cut['report'].get('computed_report', {})
+    contract = status.get('computed_audit_contract')
+    if (not isinstance(reference, dict) or contract is not None and
+            contract != 'rc6.computed-audit-reference.v2' or
+            bool(contract) != (reference.get('schema') == 'rc6.computed-audit-reference.v2') or
+            ('snapshot_id' in reference and not contract)):
+        raise ValueError('GENERATION_COLD_CONTRACT_UNVERIFIED')
+    if reference.get('schema') == 'rc6.computed-audit-reference.v2':
+        from .cold_audit import resolve
+        if (reference.get('source_as_of') != status['as_of'] or
+                reference.get('configuration_fingerprint') != manifest['configuration_fingerprint'] or
+                status.get('computed_report_digest') is not None):
+            raise ValueError('GENERATION_COLD_SOURCE_OR_DIGEST_MISMATCH')
+        result['computed_audit'] = resolve(files, reference)
+
     # Measurement is outside the immutable generation hash to avoid recursion.
     # A missing/racing receipt is visible to strict deployment consumers;
     # ordinary report readers still validate the complete immutable cut above.

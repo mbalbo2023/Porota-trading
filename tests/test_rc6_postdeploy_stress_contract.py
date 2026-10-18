@@ -50,6 +50,9 @@ def installation(tmp_path,monkeypatch):
                               (datetime.now(timezone.utc).isoformat(),))
         return ''
     monkeypatch.setattr(host,'command',command)
+    # Lifecycle tests below mock unrelated audit contents. Dedicated A3 tests
+    # exercise the real stopped-audit reader and rejection before stress.
+    monkeypatch.setattr(host,'stopped_shadow_audit',lambda root:{'state':'COMPLETE','fixture':True})
     monkeypatch.setattr(host,'memory_available',lambda:1024**3)
     monkeypatch.setattr(host.shutil,'disk_usage',lambda path:SimpleNamespace(free=10*1024**3))
     monkeypatch.setattr(host,'urlopen',lambda *a,**k:SimpleContext())
@@ -261,3 +264,14 @@ def test_short_harness_requires_real_isolated_fills_and_eod(tmp_path,monkeypatch
     assert value['exit_reasons'].get('EOD_PAPER',0)>=1
     assert len(value['dashboard_routes'])==52 and value['local_eod_repeated_imported']==0
     assert value['actual_market_acceptance'] is False and value['provider_requests']==0
+
+
+def test_undrained_shadow_never_starts_stress_and_restores_same_ids(installation,monkeypatch):
+    root,db,calls,states=installation
+    monkeypatch.setattr(host,'stopped_shadow_audit',lambda root:(_ for _ in ()).throw(ValueError('STRESS_SHADOW_AUDIT_NOT_DRAINED')))
+    monkeypatch.setattr(host.subprocess,'Popen',lambda *a,**k:pytest.fail('pending audit allowed stress'))
+    assert host.run(SHA,'624')==2
+    report=json.loads((root/'data/deploy/stress'/SHA/'624/host-stress.json').read_text())
+    assert report['error_code']=='STRESS_SHADOW_AUDIT_NOT_DRAINED'
+    assert report['runtime_restore']=='GREEN' and all(s=='running' for s in states.values())
+    assert not any(c[:2]==['docker','run'] for c in calls)

@@ -73,6 +73,28 @@ def restored_state(before,current,image):
     return dict(lifecycle(current),RestartCount=observed)
 
 
+def stopped_shadow_audit(root):
+    """After owned processes stop, a pending input cannot expire during405.
+    Historical cut verification is deliberate here, never a live-health PASS.
+    """
+    from rc6_shadow_runtime.persistence import EvidenceFiles, read_committed_generation
+    from rc6_shadow_runtime.cold_audit import Directory
+    cut = read_committed_generation(root, require_current_status=False)
+    audit = cut.get('computed_audit')
+    reference = cut['report'].get('computed_report', {})
+    if not isinstance(audit, dict) or audit.get('state') != 'COMPLETE':
+        raise ValueError('STRESS_SHADOW_AUDIT_NOT_DRAINED')
+    with Directory(EvidenceFiles(root)) as directory:
+        queue = directory.read('queue.json')
+        if (not isinstance(queue, dict) or queue.get('state') != 'COMPLETE' or
+                queue.get('snapshot_id') != reference.get('snapshot_id') or
+                queue.get('manifest_sha256') != reference.get('manifest_sha256')):
+            raise ValueError('STRESS_SHADOW_BACKLOG_NOT_DRAINED')
+    return {'state': 'COMPLETE', 'generation_id': cut['pointer']['generation_id'],
+            'source_as_of': audit['source_as_of'], 'snapshot_id': audit['snapshot_id'],
+            'computed_report': audit['computed_report'], 'historical_after_stop': True}
+
+
 def run(candidate, run_id):
     if not re.fullmatch('[0-9a-f]{40}',candidate) or not re.fullmatch('[0-9]+',run_id):
         raise ValueError('STRESS_IDENTITY_INVALID')
@@ -118,6 +140,8 @@ def run(candidate, run_id):
             report['stop_evidence'][container]['classification']=clean_stop(before_details[container],value)
         database_state(ROOT/'data/paper_v17/observer_v17.db',require_waiting=False)
         report['inflight_evaluation_or_fill']='ABSENT_OWNED_RUNTIME_STOPPED'
+        report['shadow_audit_before_stress']=stopped_shadow_audit(
+            ROOT/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
         report['memory_available_after_quiesce']=memory_available()
         if memory_available()<MEMORY+128*1024**2:raise ValueError('STRESS_MEMORY_ADMISSION_BLOCKED')
         args=['docker','run','--name',name,'--network','none','--read-only',
