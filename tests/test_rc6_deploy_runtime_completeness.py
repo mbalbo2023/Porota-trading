@@ -62,6 +62,18 @@ def test_dashboard_is_recreated_directly_from_verified_candidate():
     assert 'test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"' in source
 
 
+def test_exact_failed_cold_receipt_is_archived_after_quiescence_before_new_runtime():
+    from scripts.porota_build_deploy_bundle_v2 import select_bundle_paths
+    source=_deploy()
+    script='scripts/rc6_failed_cold_fix_forward.py'
+    assert select_bundle_paths([script])==[script]
+    installed=source.index('POROTA_BUNDLE_INSTALL=GREEN')
+    recovered=source.index('RC6_FAILED_COLD_FIX_FORWARD=GREEN')
+    started=source.index('porota_mode_manager.py" simulation')
+    assert installed<recovered<started
+    assert 'sudo -n python3 "$REPO/'+script+'"' in source
+
+
 def test_all_verified_dashboard_modules_are_explicit_image_inputs():
     source = DOCKERFILE.read_text(encoding="utf-8")
     modules = (

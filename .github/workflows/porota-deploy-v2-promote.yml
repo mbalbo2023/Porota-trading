@@ -544,6 +544,18 @@ jobs:
           test "$MARKET_DIR_IDENTITY" = "1000:1000|750"
           echo "RC6_BYMA_SHARED_PATH_WRITABLE_GUARD=GREEN"
 
+          # The previous exact b346 image left one durable FAILED COLD input.
+          # Quiescence stopped both owned containers before installation. Move
+          # that exact failed namespace to the deploy archive, preserving its
+          # original pack/receipt and leaving the old cut revoked. A fresh
+          # candidate then creates its own active COLD namespace on first tick.
+          COLD_FIX_FORWARD="$(sudo -n python3 "$REPO/scripts/rc6_failed_cold_fix_forward.py" \
+            --candidate-sha "$CANDIDATE_SHA")"
+          echo "$COLD_FIX_FORWARD"
+          grep -Fq '"status": "GREEN"' <<< "$COLD_FIX_FORWARD"
+          grep -Fq '"old_cut_revoked": true' <<< "$COLD_FIX_FORWARD"
+          echo "RC6_FAILED_COLD_FIX_FORWARD=GREEN"
+
           MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
           echo "$MODE_OUTPUT"
           grep -q 'POROTA_MODE=OK' <<< "$MODE_OUTPUT"

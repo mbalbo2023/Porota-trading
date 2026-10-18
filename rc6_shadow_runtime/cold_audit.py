@@ -306,7 +306,12 @@ class Snapshot:
             return
         captured = self.codec.snapshot_encode(value, self.context)
         if captured is not None:
-            self.record(b'P', captured)
+            # Pay the canonical encoding cost while the original value is
+            # still owned by HOT. The durable frame remains the exact ASCII
+            # bytes of that value, so COLD need only verify/copy it. On the
+            # current shared Droplet, decoding and re-encoding 12k native
+            # frames consumed most of the original 30-second COLD budget.
+            self.record(b'J', ENCODER.encode(value).encode('ascii'))
             return
         if not isinstance(value, (dict, list, tuple)):
             # Preserve stdlib default=str and oversized leaf semantics before
@@ -340,7 +345,8 @@ class Snapshot:
                         raw, consumed = captured
                         if type(consumed) is not int or not 1 <= consumed <= len(group):
                             raise ValueError('SHADOW_COLD_BATCH_PROGRESS_REQUIRED')
-                        self.record(b'A', raw)
+                        canonical = ENCODER.encode(group[:consumed]).encode('ascii')
+                        self.record(b'J', canonical[1:-1])
                     else:
                         self.value(value[offset], depth+1)
                         consumed = 1
