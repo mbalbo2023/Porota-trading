@@ -1,0 +1,90 @@
+name: RC6 624 native cadence postfailure read-only profile
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-624-native-cadence-postfailure.yml'
+      - 'scripts/rc6_native624_profile.py'
+      - 'scripts/rc6_native624_image_mapping.py'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-624-postrestore-profile
+  cancel-in-progress: false
+
+jobs:
+  profile:
+    if: github.head_ref == 'diagnostic/rc6-624-native-cadence-20261018'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact canonical Deploy failure precondition
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json,os,urllib.request
+          url='https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/39153740779'
+          request=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request,timeout=15) as response: value=json.load(response)
+          assert value['status']=='completed' and value['conclusion']=='failure'
+          assert value['head_sha']=='5fe8a7f078d45d2aa502bbea255096e5c8561d4b'
+          print('RC6_624_EXACT_DEPLOY_PRECONDITION=GREEN')
+          PY
+          python3 -B -m py_compile scripts/rc6_native624_profile.py scripts/rc6_native624_image_mapping.py
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_624_profile"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_624_profile" "$HOME/.ssh/known_hosts"
+      - name: Capture one postfailure READ_ONLY cadence profile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/native624
+          timeout 240 ssh -i "$HOME/.ssh/rc6_624_profile" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
+            "$DO_USER@$DO_HOST" "sudo -n timeout 220 python3 -B - --sha 97361c1ce3476465d267e9216e6bcc065696e72f --tree eaa531a687edd72cfefffd977f7d8b8540b51088" \
+            < scripts/rc6_native624_profile.py > evidence/native624/profile.json
+          python3 -m json.tool evidence/native624/profile.json >/dev/null
+          python3 - <<'PY'
+          import json
+          value=json.load(open('evidence/native624/profile.json'))
+          assert value['status']=='OBSERVATION_COMPLETE' and len(value['samples'])==18
+          print('RC6_624_PASSIVE_OBSERVATION=GREEN')
+          PY
+      - name: Verify loaded image content against frozen archive
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -B scripts/rc6_native624_image_mapping.py \
+            --profile evidence/native624/profile.json --output evidence/native624/image-mapping.json \
+            --artifact-id 12145644162 --zip-bytes 435626045 \
+            --zip-sha256 eb85059a91f77eeb939ea32b9f5c4ccc3ed3713f72e3360b7e4a2027eeef54c8 \
+            --expected-image-id sha256:d83ab03030be37b6265f1cc691ceae2ebf36f45f2b61a4e4c6c269c05c52e07c
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-624-native-cadence-postfailure-${{ github.run_id }}
+          path: evidence/native624
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove credential
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_624_profile"
