@@ -10,6 +10,7 @@ def native_storage(folder):
     from rc6_shadow_runtime import persistence as p
     if p._native_json_bound is not None:
         assert callable(getattr(p._native_json_bound, 'snapshot_encode', None))
+        assert callable(getattr(p._native_json_bound, 'snapshot_batch', None))
         return p._native_json_bound
     binary = Path(folder) / '_rc6_json_bound.so'
     source = Path(p.__file__).with_name('_rc6_json_bound.c')

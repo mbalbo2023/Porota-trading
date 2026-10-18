@@ -485,3 +485,137 @@ def test_valid_hash_does_not_allow_nondictionary_queue_payload(tmp_path):
         with c.Directory(files,create=True) as directory:
             directory.write('queue.json',[])
             with pytest.raises(ValueError,match='MANIFEST_HASH'):directory.read('queue.json')
+
+
+def test_native_prefix_batch_preserves_actual_values_and_unchanged_json_bounds(codec):
+    rows=[{'id':n,'payload':'x'*14000} for n in range(16)]
+    encoder,decoder=codec.snapshot_context(),codec.snapshot_context()
+    raw,count=codec.snapshot_batch(rows,encoder)
+    assert count==4
+    actual=codec.snapshot_decode(raw,decoder)
+    assert actual==rows[:count] and len(c.ENCODER.encode(actual).encode('ascii'))<=65536
+    second,more=codec.snapshot_batch(rows[count:],encoder)
+    assert more==4 and codec.snapshot_decode(second,decoder)==rows[count:count+more]
+
+
+def test_encoded_string_memo_never_expands_batch_canonical_budget(codec):
+    rows=['x'*20000]*16
+    encoder,decoder=codec.snapshot_context(),codec.snapshot_context()
+    first,count=codec.snapshot_batch(rows,encoder)
+    second,again=codec.snapshot_batch(rows,encoder)
+    assert count==again==3
+    assert len(second)<len(first)
+    assert codec.snapshot_decode(first,decoder)==codec.snapshot_decode(second,decoder)==rows[:3]
+
+
+def test_unfitting_batch_item_does_not_mutate_string_memo(codec):
+    encoder,decoder=codec.snapshot_context(),codec.snapshot_context()
+    raw,count=codec.snapshot_batch([{'stable':'original'},{'new':object()}],encoder)
+    assert count==1 and codec.snapshot_decode(raw,decoder)==[{'stable':'original'}]
+    after=codec.snapshot_encode({'new':7},encoder)
+    assert codec.snapshot_decode(after,decoder)=={'new':7}
+    assert codec.snapshot_batch([{'not_inserted':object()}],encoder) is None
+    final=codec.snapshot_encode({'not_inserted':8},encoder)
+    assert codec.snapshot_decode(final,decoder)=={'not_inserted':8}
+
+
+def test_native_batch_bounds_and_nonfinite_error_poison_partial_context(codec):
+    assert codec.snapshot_batch([],codec.snapshot_context()) is None
+    with pytest.raises(ValueError,match='BATCH_BOUND'):codec.snapshot_batch(list(range(17)),codec.snapshot_context())
+    with pytest.raises(ValueError,match='BATCH_SEQUENCE'):codec.snapshot_batch({'not':'sequence'},codec.snapshot_context())
+    context=codec.snapshot_context()
+    with pytest.raises(ValueError,match='NONFINITE'):codec.snapshot_batch([{'already':'captured'},float('nan')],context)
+    with pytest.raises(ValueError,match='POISONED'):codec.snapshot_encode(None,context)
+
+
+def test_batch_oversized_first_item_uses_exact_recursive_fallback(tmp_path):
+    value=[{'huge':'x'*100000},*({'small':str(n)} for n in range(400))]
+    original=b''.join(p.canonical_ascii_chunks(value))
+    with p.EvidenceFiles(tmp_path) as files:
+        ref=seal(files,value);result=c.drain(files)
+        assert gzip.open(files.root/result['computed_report']['file'],'rb').read()==original
+        assert c.resolve(files,ref)==result
+
+
+def test_zero_progress_batch_cannot_loop_or_publish(tmp_path):
+    from types import SimpleNamespace
+    with p.EvidenceFiles(tmp_path) as files:
+        with c.Snapshot(files) as snapshot:
+            native=snapshot.codec
+            snapshot.codec=SimpleNamespace(snapshot_context=native.snapshot_context,
+                snapshot_encode=native.snapshot_encode,snapshot_batch=lambda *args:(b'not consumed',0))
+            with pytest.raises(ValueError,match='PROGRESS_REQUIRED'):
+                snapshot.stage('rows',list(range(400)))
+        assert not (tmp_path/'CURRENT.json').exists()
+
+
+def test_large_rows_use_bounded_prefix_frames_instead_of_rescanned_singletons(tmp_path,monkeypatch):
+    from collections import Counter
+    rows=[{'id':n,'payload':'x'*14000} for n in range(400)]
+    counts=Counter()
+    with p.EvidenceFiles(tmp_path) as files:
+        with c.Snapshot(files) as snapshot:
+            frame=snapshot._frame
+            def counted(kind,raw):counts[kind]+=1;return frame(kind,raw)
+            monkeypatch.setattr(snapshot,'_frame',counted)
+            captured=snapshot.stage('large_rows',rows)
+            actual=hashlib.sha256()
+            for block in captured.iter_bytes():actual.update(block)
+            assert actual.hexdigest()==p.streamed_digest(rows)
+            # Same64KiB budget accepts4 actual14KiB rows. The rejected fixed16
+            # attempt used400 singletons; the bounded prefix path emits100
+            # batches while preserving every canonical byte and budget.
+            assert counts[b'A']==100 and counts[b'P']==0,dict(counts)
+
+
+def test_storage_capture_has_one_actual_value_walk(codec):
+    rows=[{'amount':str(n),'source':'PPI','ready':bool(n%2)} for n in range(16)]
+    context=codec.snapshot_context(p.FrozenJSONDict,p._FrozenEmptyList,True)
+    raw=codec.snapshot_encode({'rows':rows},context)
+    bounds,encoded=codec._snapshot_capture_counts(context)
+    assert codec.snapshot_decode(raw,codec.snapshot_context())=={'rows':rows}
+    assert bounds==0 and encoded>0
+    context=codec.snapshot_context(p.FrozenJSONDict,p._FrozenEmptyList,True)
+    raw,count=codec.snapshot_batch(rows,context)
+    bounds,encoded=codec._snapshot_capture_counts(context)
+    assert bounds==0 and encoded>0 and count==16
+    assert codec.snapshot_decode(raw,codec.snapshot_context())==rows
+
+
+def test_soft_nonfit_restores_memo_after_encoding_actual_partial_values(codec):
+    encoder,decoder=codec.snapshot_context(),codec.snapshot_context()
+    first=codec.snapshot_encode({'retained':'value'},encoder)
+    assert codec.snapshot_decode(first,decoder)=={'retained':'value'}
+    for n in range(200):
+        # Keys and early strings enter the tentative memo before the late
+        # unsupported value. None must leave no ghost reference IDs behind.
+        assert codec.snapshot_encode({'partial_'+str(n):['new_'+str(n),object()]},encoder) is None
+        value={'accepted_'+str(n):'real_'+str(n)}
+        raw=codec.snapshot_encode(value,encoder)
+        assert codec.snapshot_decode(raw,decoder)==value
+
+
+def test_batch_nonfit_restores_only_failed_item_and_keeps_accepted_prefix(codec):
+    first={'retained':'a'*50000}
+    second={'temporary':'new','payload':'b'*20000}
+    encoder,decoder=codec.snapshot_context(),codec.snapshot_context()
+    raw,count=codec.snapshot_batch([first,second],encoder)
+    assert count==1 and codec.snapshot_decode(raw,decoder)==[first]
+    after=codec.snapshot_encode(second,encoder)
+    assert codec.snapshot_decode(after,decoder)==second
+
+
+def test_capture_fit_matches_original_bounds_at_byte_node_and_width_edges(codec):
+    cases=['x'*n for n in (0,65532,65533,65534,65535,65536)]
+    cases+=['😀'*n for n in (5460,5461,5462)]
+    cases += [[None]*n for n in (0,255,256,257)]
+    cases += [{str(n):None for n in range(width)} for width in (255,256,257)]
+    full={str(n):[None]*255 for n in range(16)}
+    near={**full,'15':[None]*254}
+    cases += [full,near]
+    for value in cases:
+        admitted=p._small_json_tree_python(value)
+        raw=codec.snapshot_encode(value,codec.snapshot_context())
+        assert (raw is not None)==admitted
+        if raw is not None:
+            assert c.ENCODER.encode(codec.snapshot_decode(raw,codec.snapshot_context()))==c.ENCODER.encode(value)

@@ -32,7 +32,7 @@ IDENT = re.compile('[a-f0-9]{32}')
 def _native():
     native = p._native_json_bound
     if native is None or any(not callable(getattr(native, name, None)) for name in
-            ('snapshot_context', 'snapshot_encode', 'snapshot_decode')):
+            ('snapshot_context', 'snapshot_encode', 'snapshot_decode', 'snapshot_batch')):
         raise ValueError('SHADOW_COLD_NATIVE_CODEC_REQUIRED')
     return native
 
@@ -330,18 +330,21 @@ class Snapshot:
                 self.literal('}')
             else:
                 self.literal('[')
-                for offset in range(0, len(value), 16):
+                offset = 0
+                while offset < len(value):
                     group = list(value[offset:offset+16])
-                    captured = self.codec.snapshot_encode(group, self.context)
+                    captured = self.codec.snapshot_batch(group, self.context)
+                    if offset:
+                        self.literal(',')
                     if captured is not None:
-                        if offset:
-                            self.literal(',')
-                        self.record(b'A', captured)
+                        raw, consumed = captured
+                        if type(consumed) is not int or not 1 <= consumed <= len(group):
+                            raise ValueError('SHADOW_COLD_BATCH_PROGRESS_REQUIRED')
+                        self.record(b'A', raw)
                     else:
-                        for index, item in enumerate(group, offset):
-                            if index:
-                                self.literal(',')
-                            self.value(item, depth+1)
+                        self.value(value[offset], depth+1)
+                        consumed = 1
+                    offset += consumed
                 self.literal(']')
         finally:
             self.active.remove(marker)

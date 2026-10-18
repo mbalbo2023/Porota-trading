@@ -1,6 +1,6 @@
 # ADR #624 — durable actual-value audit snapshot in the existing worker
 
-Status: PROPOSED FOR ISOLATED IMPLEMENTATION; not deployed or runtime accepted.
+Status: DEVELOPED in an isolated branch; exact release ABI, image and native acceptance remain pending.
 Base: deploy/rc6-pr69-isolated-20260915 @ 90dc852c36eaa95683db39ea1593cb6ff98bf202, tree df970bae3415333d43c7c6a30442f6962188ae26.
 Branch: work/rc6-624-durable-cold-audit-20261018. Workstream: WS-RC6-SHADOW-ARCH-REMEDIATION-20261017.
 
@@ -31,3 +31,11 @@ The first development A/B stopped before COLD/parity/capacity acceptance because
 ## Orderly stop and host-reader contract
 
 Host root readers may read checked UID1000-private Cold evidence; writing still requires the directory owner, and every file must match that owner. Production supplies the existing stop-event callback to anonymous capture: cancellation before seal creates no manifest/queue/CURRENT. Once sealed, the same worker completes COLD inside its original30s deadline even on SIGTERM. The parent sends termination to all children first and allows only dynamic_shadow up to35s (other children retain5s); Docker stop remains45s. After BOTH owned containers stop, the host stress harness verifies the historical immutable cut's actual COMPLETE receipt AND the same completed queue before starting405. No pending input may expire silently through maintenance. Restore still demands native readiness2+strict10 and delayed proof.
+
+## Actual engineering admissions and final encoder correction
+
+The first complete anonymous-snapshot control preserved all16 canonical audits/checkpoint/business outputs but failed the predeclared legacy HOT ratio:0.8410905>0.80. Native bounded-prefix batching removed the failed whole16 attempt/per-row frame fallback, with a permanent400row before-control400P+401J versus100A and identical canonical bytes. Its one isolated private/tmp control then preserved all16 full audits with freshHOT0.77790756/TOTAL1.16445243/RSS171960KiB and legacyHOT0.82947351>0.80/TOTAL1.24138269/RSS172600KiB;COLDmax4.40495s. Both legacy REDs remain RED; neither source is a release acceptance.
+
+Remaining C capture still walked each accepted actual tree once to bound it and again to encode it. The final encoder combines unchanged byte/node/container checks with actual primitive capture. An attempt that does not fit restores only its newly inserted string memo entries and buffer length; accepted batch prefixes remain valid. Errors poison their context. A fixed4096-entry insertion-order reference vector makes this operation linear in newly added strings, retaining rawUTF8memo<=256KiB,4096strings,64KiBJSON/4096nodes,256containerwidth,max16batch and128KiBbuffer. It stores no cached business values or constructor hints. Originalis_small and the decoder remain unchanged. Context-local optional traversal counters default todisabled and expose only counts; their deterministic regression proves the separate bounds walk is absent. Exact-image CPU/RSS gates still apply to the production default.
+
+Local workspace controls encountered an external byte-identical pack replacement with inode133045→134466 after completion/removal. The creating actor is NO_VERIFICADO; bounded inotify probes did not reproduce it, and ptrace was unavailable. Unknown-file rejection remains strict. A single serial control used0700 private/tmp on the same dev27 filesystem with immutable byte-verified export after every worker closed, preserving ownership and all limits. No more local benchmark loops substitute for the mandatory exactPython3.11/512MiB/.75CPU offhost control and the native Droplet gates.
