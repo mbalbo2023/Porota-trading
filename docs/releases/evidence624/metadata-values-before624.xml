@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="4" time="0.130" timestamp="2026-10-18T12:24:11.360060+08:00" hostname="38ad2494d116"><testcase classname="tests.test_rc6_metadata_value_memory" name="test_repeated_checkpoint_values_have_bounded_retained_copies[checkpoint.json.gz-False]" time="0.021"><failure message="AssertionError: ('configuration_fingerprint', 256)&#10;assert 256 == 1&#10; +  where 256 = len({140038400917664, 140038400917888, 140038400918112, 140038400918336, 140038400918560, 140038400918784, ...})">tmp_path = PosixPath('/tmp/pytest-of-root/pytest-10/test_repeated_checkpoint_value0')
+name = 'checkpoint.json.gz', compact = False
+
+    @pytest.mark.parametrize('name,compact', [
+        ('checkpoint.json.gz', False), ('preopen-2026-10-05.json.gz', True)])
+    def test_repeated_checkpoint_values_have_bounded_retained_copies(tmp_path, name, compact):
+        payload = metadata_rows()
+        with EvidenceFiles(tmp_path/'private') as files:
+            files.write(name, payload)
+            actual = files.read(name, compact_preopen=compact)
+        assert actual == payload
+        assert streamed_digest(actual) == streamed_digest(payload)
+        # These are the actual 64-character values duplicated in steady funnel
+        # state, not object keys already memoized by the stdlib JSON decoder.
+        for field in ('configuration_fingerprint', 'registry_sha256', 'session'):
+            copies = {id(row[field]) for row in actual['rows']}
+&gt;           assert len(copies) == 1, (field, len(copies))
+E           AssertionError: ('configuration_fingerprint', 256)
+E           assert 256 == 1
+E            +  where 256 = len({140038400917664, 140038400917888, 140038400918112, 140038400918336, 140038400918560, 140038400918784, ...})
+
+tests/test_rc6_metadata_value_memory.py:34: AssertionError</failure></testcase><testcase classname="tests.test_rc6_metadata_value_memory" name="test_repeated_checkpoint_values_have_bounded_retained_copies[preopen-2026-10-05.json.gz-True]" time="0.020"><failure message="AssertionError: ('configuration_fingerprint', 256)&#10;assert 256 == 1&#10; +  where 256 = len({140038399787168, 140038399787392, 140038399787728, 140038399787952, 140038399788176, 140038399788400, ...})">tmp_path = PosixPath('/tmp/pytest-of-root/pytest-10/test_repeated_checkpoint_value1')
+name = 'preopen-2026-10-05.json.gz', compact = True
+
+    @pytest.mark.parametrize('name,compact', [
+        ('checkpoint.json.gz', False), ('preopen-2026-10-05.json.gz', True)])
+    def test_repeated_checkpoint_values_have_bounded_retained_copies(tmp_path, name, compact):
+        payload = metadata_rows()
+        with EvidenceFiles(tmp_path/'private') as files:
+            files.write(name, payload)
+            actual = files.read(name, compact_preopen=compact)
+        assert actual == payload
+        assert streamed_digest(actual) == streamed_digest(payload)
+        # These are the actual 64-character values duplicated in steady funnel
+        # state, not object keys already memoized by the stdlib JSON decoder.
+        for field in ('configuration_fingerprint', 'registry_sha256', 'session'):
+            copies = {id(row[field]) for row in actual['rows']}
+&gt;           assert len(copies) == 1, (field, len(copies))
+E           AssertionError: ('configuration_fingerprint', 256)
+E           assert 256 == 1
+E            +  where 256 = len({140038399787168, 140038399787392, 140038399787728, 140038399787952, 140038399788176, 140038399788400, ...})
+
+tests/test_rc6_metadata_value_memory.py:34: AssertionError</failure></testcase><testcase classname="tests.test_rc6_metadata_value_memory" name="test_mutable_rows_and_lists_stay_independent_and_pool_does_not_survive_read" time="0.003" /><testcase classname="tests.test_rc6_metadata_value_memory" name="test_compaction_keeps_exact_unicode_numeric_types_and_distinct_clocks" time="0.003" /></testsuite></testsuites>

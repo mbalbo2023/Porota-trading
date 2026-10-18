@@ -1947,6 +1947,144 @@
       "source": "MEASURED_NATIVE_RCA_OR_EXPLICIT_LOCAL_ALLOCATION_ATTRIBUTION",
       "bytes": 1075,
       "sha256": "a41b1db121ac6c0edd5a2e6575a9b3d2684433d7742779734672720f22c80209"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-metadata624-baseline-receipt.json",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 15084,
+      "sha256": "7ddd38f67d11f8612f883e57bd1715eb9e9dfa266cf726fd128e59895873f0e8"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-metadata624-baseline-source-manifest.json.gz",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 35512,
+      "sha256": "f1d26eae11404021c8050a9a834ed55bfba84f3e53ed5f5171b793c8f3b94569"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-metadata624-baseline.log",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 9602,
+      "sha256": "684f54d141303c92b5490ea011e7e0678e836cf4501c0e15ea01944bc83daac1"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-metadata624-candidate-receipt.json",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 15100,
+      "sha256": "0217d4801e8a334b0135ff8d5dfdf1af2eac2ee62cb2588ecf625d901d231344"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-metadata624-candidate-source-manifest.json.gz",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 35566,
+      "sha256": "4b32a9004d0f7b5d98e2203bceb3e3031af357d4454443aae3f43d80895d68c9"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-metadata624-candidate.log",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 9618,
+      "sha256": "a5d4657a32c3256d7f1194524e8a87702fdb025d3c9986490b7b07ecd74b0750"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-metadata624-summary.json",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 1987,
+      "sha256": "739d8773a55ebf2652f956ab0b90562d12c240922447f91f4fcc1310cac63d54"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-records624-baseline-receipt.json",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 15128,
+      "sha256": "a79e0b121bd7bbce92975e1e3ad1f7fb6a9103922ac4274f557d9576c791577a"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-records624-baseline-source-manifest.json.gz",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 35512,
+      "sha256": "f1d26eae11404021c8050a9a834ed55bfba84f3e53ed5f5171b793c8f3b94569"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-records624-baseline.log",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 9605,
+      "sha256": "4c03063e348157381fc8063c6530428e4100a8e8a9e451421612fe1c5b679700"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-records624-candidate-receipt.json",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 15133,
+      "sha256": "df0c79d53bd18b0391b15606e320a9e55c16b51b07c3e1d2d7eb7cf7e97c00c8"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-records624-candidate-source-manifest.json.gz",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 35619,
+      "sha256": "2aa1e8f9d5295c943a2840835ebd2958b47405419240c95bab6969c91947acee"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-records624-candidate.log",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 9611,
+      "sha256": "be97b7c714c60efe51af24af142cedfb2b36f5facfc35ec0d28b70eff1e2df9c"
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-records624-summary.json",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 1985,
+      "sha256": "27507d03446661e09875e459204a3f51ca46605693b3e2f29824b09be1d51f0d"
+    },
+    {
+      "path": "docs/releases/evidence624/bench_metadata624.py",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 3779,
+      "sha256": "3b04c8217aa6725155d301e9db484babf0895e20bb95631d83ed25a47bc77db4"
+    },
+    {
+      "path": "docs/releases/evidence624/run_metadata624_ab.py",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 2937,
+      "sha256": "30bb7d2c5f1b3d88a2c65536772bbd6354fc4d8fc5218b422659f3c498d44a7e"
+    },
+    {
+      "path": "docs/releases/evidence624/bench_records624.py",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 3987,
+      "sha256": "1574b7dcedd86f893b6d632ebb45eaa14a5d89d216f78081161d707fcb6812dc"
+    },
+    {
+      "path": "docs/releases/evidence624/run_records624_ab.py",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 2932,
+      "sha256": "419643fef7c7faf8fe0acfbdbacdc0cd8afd67ca1ace8c743b3e36061b25429a"
+    },
+    {
+      "path": "docs/releases/evidence624/metadata-values-before624.xml",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 3990,
+      "sha256": "4e910dc037836284943bdf8088d5dbd499d85f4d69dff8f3e529af0972913833"
+    },
+    {
+      "path": "docs/releases/evidence624/metadata-values-focal624.xml",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 5271,
+      "sha256": "f72fefb9ececb16a6a6baa5ea6360eb72da3dc7656229b248acd13431c66ab1c"
+    },
+    {
+      "path": "docs/releases/evidence624/record-materialization-focal624.xml",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 7189,
+      "sha256": "0957cd2ce95b165e41502701bfa7e3d04660546cbb7911843bd5be89b27f542f"
+    },
+    {
+      "path": "docs/releases/evidence624/metadata-values-focal624.log",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 35,
+      "sha256": "c5a75fa1a4bb27a365319555e92dbae4683403443b01452195b8bbe007b6b5ad"
+    },
+    {
+      "path": "docs/releases/evidence624/record-materialization-focal624.log",
+      "source": "FINITE_REJECTED_HYPOTHESIS_ACTUAL_BYTES_NOT_NATIVE_ACCEPTANCE",
+      "bytes": 15,
+      "sha256": "03a77fc8fe616a35134e8c35e252aace6bea37480f6891a20d745ace74e35464"
     }
   ]
 }

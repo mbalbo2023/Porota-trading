@@ -1279,9 +1279,37 @@
       "runtime_state": "NO_ACEPTADO",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Every resource/freshness/identity failure remains RED; later observations never rewrite the failed deploy."
+    },
+    {
+      "id": "624-202E-REJECTED-METADATA",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_HYPOTHESIS_REJECTED",
+      "cause": "Actual four-cut paired test: RSS ratio 0.8844430299172502, totalCPU ratio 1.1092407716813708. All eight complete >100MiB audits independently verified before pruning; exact full/funnel/session parity. Insufficient physical resource admission.",
+      "fix": "No native promotion or identical retry. Preserved source and raw receipts. Change completed-section lifetimes and checkpoint role loading instead of repeating representation-only tweaks.",
+      "status": "RED_HYPOTHESIS_INSUFFICIENT",
+      "runtime_state": "NOT_DEPLOYED",
+      "source_sha": "8184e0c9437a263283d9c0b5a1a580583f2a89a4",
+      "source_tree": "ad30f235c95c0d7cc121a2ddc7d5f1f7aca98ca6",
+      "receipt": "docs/releases/evidence624/rejected-metadata624-summary.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Never relabel a rejected result or use its first-cut RSS as sustained capacity."
+    },
+    {
+      "id": "624-202E-REJECTED-RECORDS",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_HYPOTHESIS_REJECTED",
+      "cause": "Actual four-cut paired test: RSS ratio 0.9231767850324551, totalCPU ratio 1.1163793499402064. All eight complete >100MiB audits independently verified before pruning; exact full/funnel/session parity. Insufficient physical resource admission.",
+      "fix": "No native promotion or identical retry. Preserved source and raw receipts. Change completed-section lifetimes and checkpoint role loading instead of repeating representation-only tweaks.",
+      "status": "RED_HYPOTHESIS_INSUFFICIENT",
+      "runtime_state": "NOT_DEPLOYED",
+      "source_sha": "5480c3f3a28d66d0ef1fe113a6761c61eaff6796",
+      "source_tree": "8e6640296ad519bc86d2464a237d86601bf0b592",
+      "receipt": "docs/releases/evidence624/rejected-records624-summary.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Never relabel a rejected result or use its first-cut RSS as sustained capacity."
     }
   ],
-  "findings_count": 89,
+  "findings_count": 91,
   "predeploy_state": "GREEN_BYTES_VALIDATED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -1625,13 +1653,19 @@
   },
   "current_ownership": {
     "paired_comments": [
-      6245488041,
-      6245488155
+      6245927802,
+      6245927924
+    ],
+    "prior_plan": [
+      6245844575,
+      6245844684
     ],
     "readback": "EXACT",
     "state": "ACTIVE_WRITE_AND_GLOBAL_DEPLOY",
-    "new_local_branch": "work/rc6-624-native-peak-memory-20261018",
+    "new_local_branch": "work/rc6-624-progressive-audit-spool-20261018",
     "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
-    "new_runtime_code_written": false
+    "new_runtime_code_written": true,
+    "architecture": "PROGRESSIVE_CANONICAL_AUDIT_SPOOL_AND_LAZY_CHECKPOINT_ROLES",
+    "native_promotion": "NOT_AUTHORIZED_BY_EVIDENCE_YET"
   }
 }
