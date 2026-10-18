@@ -85,6 +85,35 @@ def test_stress_red_keeps_red_and_restores_same_containers(installation,monkeypa
     assert not any('watch' in str(c).lower() for c in calls)
 
 
+def test_python_temporary_files_use_isolated_bound_workspace_not_tmpfs(installation,monkeypatch):
+    import os
+    import sys
+    root,db,calls,states=installation
+    real_popen=subprocess.Popen
+    def spawn(args,**kwargs):
+        calls.append(args)
+        work=root/'data/deploy/stress'/SHA/'130'
+        (work/'stress.json').write_text(json.dumps({'status':'GREEN','smoke':False}))
+        return SimpleNamespace(returncode=0,poll=lambda:0)
+    monkeypatch.setattr(host.subprocess,'Popen',spawn)
+    assert host.run(SHA,'130')==0
+    docker=next(c for c in calls if c[:2]==['docker','run'])
+    environment=[docker[i+1] for i,item in enumerate(docker[:-1]) if item=='--env']
+    assert 'TMPDIR=/work' in environment
+    work=root/'data/deploy/stress'/SHA/'130'
+    assert 'type=bind,src='+str(work)+',dst=/work' in docker
+    assert docker[docker.index('--tmpfs')+1]=='/tmp:rw,nosuid,nodev,size=512m'
+    # Resolve the command's container mount in this test namespace and launch
+    # real Python, proving tempfile accepts the existing writable directory.
+    mapped=next(item.split('=',1)[1] for item in environment if item.startswith('TMPDIR='))
+    host_path=work/Path(mapped).relative_to('/work')
+    process=real_popen([sys.executable,'-B','-c','import tempfile;print(tempfile.gettempdir())'],
+        env=dict(os.environ,TMPDIR=str(host_path)),stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    output,error=process.communicate(timeout=5)
+    assert process.returncode==0 and Path(output.strip()).resolve()==work.resolve()
+    assert all(state=='running' for state in states.values())
+
+
 def test_memory_barrier_never_starts_stress_and_restores_runtime(installation,monkeypatch):
     root,db,calls,states=installation
     monkeypatch.setattr(host,'memory_available',lambda:100*1024**2)

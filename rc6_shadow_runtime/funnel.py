@@ -129,9 +129,10 @@ def _event(checkpoint, *, ident, strategy, stage, event_at, as_of, event_id, cha
     return True
 
 
-def _planner_stages(checkpoint, report, at):
+def _planner_stages(checkpoint, report, at, *, consume=False):
     session = report.get("session") or at.astimezone(ART).date().isoformat()
     observation_stats, reasons = [], Counter()
+    known = set() if consume else None
     for engine, plan in report.get("engines", {}).items():
         # Planner order differs from performance order. Build the exact
         # five-field index once, retaining currency/market/settlement distinctions.
@@ -139,6 +140,9 @@ def _planner_stages(checkpoint, report, at):
                                  for k in plan.get("opened_priority", [])}
         for row in plan.get("telemetry", []):
             ident = planner_identity(row["identity"])
+            if consume:
+                known.add((row['identity'][0], row['identity'][1], row['identity'][2],
+                           row['identity'][3], row['identity'][4]))
             strategy = _strategy(engine, row)
             pipeline = row.get("pipeline") or {}
             state = (plan.get("instruments") or {}).get(digest(row["identity"]), {})
@@ -186,10 +190,13 @@ def _planner_stages(checkpoint, report, at):
                 "warmup_seconds": row.get("time_to_warmup_seconds"), "event_to_promotion_seconds": row.get("event_to_promotion_seconds"),
                 "warmup_progress": row.get("warmup_progress"), "exclusion_reasons": exclusion,
                 "missed_late_discovery": "NO_VERIFICADO_EXTERNAL_RUNTIME_ONLY"})
+        if consume:
+            plan['telemetry'].clear()
     # Specialized families stay explicit even if they have no equity plan.
     family = report.get("family_routing") or {}
-    known = {(r["identity"][0], r["identity"][1], r["identity"][2], r["identity"][3], r["identity"][4])
-             for plan in report.get("engines", {}).values() for r in plan.get("telemetry", [])}
+    if not consume:
+        known = {(r["identity"][0], r["identity"][1], r["identity"][2], r["identity"][3], r["identity"][4])
+                 for plan in report.get("engines", {}).values() for r in plan.get("telemetry", [])}
     family_by_identity = {tuple(r.get("identity", [])): r for r in family.get("instruments", [])}
     for catalog in report.get("catalog_ready", []):
         raw = tuple(catalog.get(k) for k in ("ticker", "instrument_type", "market", "currency", "settlement"))
@@ -204,6 +211,9 @@ def _planner_stages(checkpoint, report, at):
             event_at=at, as_of=at, event_id="first-prospective-reach", channel="FAMILY_OBSERVE_ONLY", session=session,
             clock_basis="EXPLICIT_UNCHANGED_READY_CATALOG_OBSERVED_BY_RUNTIME", reasons=instrument.get("reason_codes", []),
             detail={"capability": catalog["capability"], "entry_authority": False})
+    if consume:
+        report.get('catalog_ready', []).clear()
+        family_by_identity = None
     for instrument in family.get("instruments", []):
         try:
             raw = instrument["identity"]
@@ -218,6 +228,8 @@ def _planner_stages(checkpoint, report, at):
                 stage="CATALOG_READY", event_at=at, as_of=at, event_id="first-prospective-reach", channel="FAMILY_OBSERVE_ONLY",
                 session=session, clock_basis="ACTUAL_RUNTIME_CATALOG_OBSERVATION", reasons=instrument.get("reason_codes", []))
         reasons.update(instrument.get("reason_codes", []))
+    if consume:
+        family.get('instruments', []).clear()
     return observation_stats, dict(reasons), family.get("families", [])
 
 
@@ -492,15 +504,20 @@ def _shadow_entries(checkpoint, report, at):
 
 
 def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_report=None,
-                            exit_lab_report=None, previous=None, row_limit=500, private_runtime=False):
+                            exit_lab_report=None, previous=None, row_limit=500, private_runtime=False,
+                            consume_planner=False):
     """Return report/state; caller owns the existing atomic evidence writer.
 
     private_runtime consumes the caller-owned checkpoint read for this tick.
     Its report shares causal containers until the atomic writer serializes it;
     the ordinary API continues to return an isolated JSON-normalized report.
+    consume_planner is only for a separately staged, caller-owned projection:
+    its engine/catalog/family input lists are released after their last read.
     """
     if type(private_runtime) is not bool:
         raise ValueError("FUNNEL_PRIVATE_RUNTIME_MODE_INVALID")
+    if type(consume_planner) is not bool or (consume_planner and not private_runtime):
+        raise ValueError('FUNNEL_OWNED_PROJECTION_REQUIRED')
     at = stamp(as_of)
     if not isinstance(planner_report, dict) or (planner_report.get("real_orders_sent", 0) != 0 or
             planner_report.get("real_routes", "NOT_CALLED") != "NOT_CALLED"):
@@ -545,7 +562,8 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
         _spot_fills(checkpoint, source, at)
         _future_events(checkpoint, source, at)
         _shadow_entries(checkpoint, entry_signal_report, at)
-    observations, exclusions, families = _planner_stages(checkpoint, planner_report, at)
+    observations, exclusions, families = _planner_stages(checkpoint, planner_report, at,
+                                                       consume=consume_planner)
     checkpoint["last_as_of"] = at.isoformat()
     # Retain at most two complete sessions. The oldest may already have been
     # evicted to make room for the current session; report that loss as a gap.

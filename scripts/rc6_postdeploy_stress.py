@@ -37,7 +37,7 @@ GROUPS={
                             'tests/test_rc6_issue620_temporal.py','tests/test_rc6_deploy_generation_gate.py',
                             'tests/test_rc6_preopen_scalar_storage.py','tests/test_rc6_native_soak.py',
                             'tests/test_rc6_checkpoint_streaming.py','tests/test_rc6_owned_preopen.py',
-                            'tests/test_rc6_missing_view_sharing.py'],
+                            'tests/test_rc6_missing_view_sharing.py','tests/test_rc6_progressive_audit.py'],
  'signals_risk_exit_ledger':['tests/test_rc6_convergence_core_admission.py','tests/test_exit_supervision_v17.py',
                            'tests/test_exit_ledger_isolation_v17.py','tests/test_rc6_future_programming_complete.py',
                            'tests/test_rc6_performance_runtime.py','tests/test_rc6_final_programming_runtime.py',
@@ -91,7 +91,7 @@ def full_catalog_replay(folder):
         c.executemany('INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',rows)
     total=len(rows);del rows
     ready=sum(ready for _,ready in FULL_CATALOG_SHAPE.values())
-    worker=runtime.ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[])
+    worker=runtime.ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[],spool_audit=True)
     started=time.monotonic();cuts=[]
     class Stop:
         def is_set(self):return len(cuts)>=2
@@ -128,6 +128,9 @@ def full_catalog_replay(folder):
         runtime.run_worker(store.path,Stop(),clock_fn=lambda:(PRE+timedelta(seconds=time.monotonic()-started)).isoformat())
     peak=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     assert len(cuts)==2 and peak<=512*1024,('FULL_CATALOG_PEAK_RSS_OVER_512MIB',peak)
+    # #624's paired architecture admission removes overlapping audit graphs.
+    # Keep its absolute peak as a permanent gate, in addition to container cap.
+    assert peak<=192*1024,('FULL_CATALOG_PROGRESSIVE_RSS_OVER_192MIB',peak)
     return {'schema':'rc6.synthetic-full-catalog.v1','catalog_count':total,'ready_fixture_count':ready,
             'cuts':cuts,'elapsed_seconds':round(time.monotonic()-started,3),'process_peak_rss_kib':peak,
             'poll_sleep':'ACTUAL_WORKER_POLL_SECONDS','real_orders_sent':0,'real_routes':'NOT_CALLED',
@@ -162,7 +165,7 @@ def session_replay(folder, *, minutes=405):
     supervisor=PositionExitSupervisor(broker,clock_fn=clock,
         session_policy=broker.session_policy,max_hold_minutes=30)
     candles=SampleMaterializer(store)
-    shadow=ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[])
+    shadow=ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[],spool_audit=True)
     shadow.tick(PRE)
     deliveries=[]
     def captured_transport(body):
@@ -207,7 +210,7 @@ def session_replay(folder, *, minutes=405):
             broker.store=type(store)(store.path)
             supervisor=PositionExitSupervisor(broker,clock_fn=clock,
                 session_policy=broker.session_policy,max_hold_minutes=30)
-            shadow=ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[])
+            shadow=ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[],spool_audit=True)
         durations.append(time.monotonic()-started)
     if minutes<380:
         # Harness smoke still reaches the actual EOD clock with fresh books;
