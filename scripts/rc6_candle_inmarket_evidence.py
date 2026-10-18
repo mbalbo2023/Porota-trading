@@ -12,13 +12,18 @@ import json
 import os
 import sqlite3
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 FRESHNESS_TTL_SECONDS = 900
 DEFAULT_DB_PATH = "/app/data/paper_v17/observer_v17.db"
+REQUIRED_CANDLE_TABLES = ("candle_dirty", "candle_worker_state")
+DELEGATED_CHECK = "DELEGATED_TO_RC6_FULL_DB_INTEGRITY"
+GLOBAL_INTEGRITY_OWNER = "porota-full-db-integrity-rc6.service"
+QUERY_BUDGET_SECONDS = 2.0
 
 
 def _as_nonnegative_int(value: Any, field: str) -> int:
@@ -50,20 +55,39 @@ def is_fresh(summary: dict[str, Any], *, now: datetime | None = None) -> bool:
     return 0 <= age <= ttl
 
 
-def collect_inputs(*, db_path: str, observed_at: str) -> dict[str, Any]:
-    """Collect the exact evidence inputs via schema-validated read-only SQLite."""
+def collect_inputs(*, db_path: str, observed_at: str,
+                   query_budget_seconds: float = QUERY_BUDGET_SECONDS) -> dict[str, Any]:
+    """Check the owned candle btrees and inputs in one bounded RO snapshot.
+
+    Global physical integrity belongs to the existing full-db audit. Repeating
+    that unrelated multi-GB scan in this ten-minute evidence producer evicts
+    the live PAPER working set; a candle proof must not claim global integrity.
+    """
+    if (type(query_budget_seconds) not in (int, float)
+            or not 0 < query_budget_seconds <= QUERY_BUDGET_SECONDS):
+        raise ValueError("CANDLE_EVIDENCE_QUERY_BUDGET_INVALID")
     observed = _parse_iso(observed_at).isoformat()
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=20)
+    deadline = time.monotonic() + query_budget_seconds
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True,
+                           timeout=min(query_budget_seconds, .25))
     try:
+        conn.set_progress_handler(lambda: int(time.monotonic() >= deadline), 100)
         conn.execute("PRAGMA query_only=ON")
+        conn.execute("BEGIN")
         tables = {row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         )}
-        required = {"candle_worker_state", "candle_dirty"}
+        required = set(REQUIRED_CANDLE_TABLES)
         missing = sorted(required - tables)
         if missing:
             raise RuntimeError("MISSING_REQUIRED_TABLES:" + ",".join(missing))
-        quick_check = conn.execute("PRAGMA quick_check").fetchone()[0]
+        table_checks = {}
+        for table in REQUIRED_CANDLE_TABLES:
+            # Names are fixed code-owned identifiers, never SQL/user input.
+            rows = conn.execute(f"PRAGMA quick_check('{table}')").fetchall()
+            table_checks[table] = "ok" if rows == [("ok",)] else "FAILED"
+        if any(value != "ok" for value in table_checks.values()):
+            raise sqlite3.DatabaseError("CANDLE_TABLE_INTEGRITY_UNVERIFIED")
         worker = conn.execute(
             "SELECT cursor,heartbeat_at,state FROM candle_worker_state WHERE id=1"
         ).fetchone()
@@ -86,7 +110,8 @@ def collect_inputs(*, db_path: str, observed_at: str) -> dict[str, Any]:
             "current_cursor": worker[0],
             "heartbeat_at": worker[1],
             "worker_state": worker[2],
-            "quick_check": quick_check,
+            "quick_check": DELEGATED_CHECK,
+            "table_quick_checks": table_checks,
             "dirty_due_bars": dirty_due_bars,
             "dirty_open_bars": dirty_open_bars,
             "invalid_dirty_timestamp_count": invalid_dirty_timestamp_count,
@@ -102,6 +127,7 @@ def build_summary(
     dirty_open_bars: Any, invalid_dirty_timestamp_count: Any,
     observed_at: str, collection_error: str | None = None,
     required_tables: list[str] | None = None,
+    table_quick_checks: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build fail-closed proof. Open bars are reported but never treated as dirty."""
     baseline = _as_nonnegative_int(baseline_cursor, "baseline_cursor")
@@ -110,11 +136,18 @@ def build_summary(
     open_bars = _as_nonnegative_int(dirty_open_bars, "dirty_open_bars")
     invalid = _as_nonnegative_int(invalid_dirty_timestamp_count, "invalid_dirty_timestamp_count")
     observed = _parse_iso(observed_at)
+    scoped = table_quick_checks is not None
+    integrity_ok = (
+        quick_check == DELEGATED_CHECK
+        and type(table_quick_checks) is dict
+        and set(table_quick_checks) == set(REQUIRED_CANDLE_TABLES)
+        and all(value == "ok" for value in table_quick_checks.values())
+    ) if scoped else quick_check == "ok"
     checks = {
         "schema_collected": not collection_error,
         "cursor_strictly_advanced": current > baseline,
         "candle_worker_running": worker_state == "RUNNING",
-        "sqlite_quick_check_ok": quick_check == "ok",
+        ("candle_tables_quick_check_ok" if scoped else "sqlite_quick_check_ok"): integrity_ok,
         "dirty_due_bars_zero": due == 0,
         "dirty_timestamps_valid": invalid == 0,
     }
@@ -131,6 +164,10 @@ def build_summary(
         "worker_state": worker_state,
         "heartbeat_at": heartbeat_at,
         "sqlite_quick_check": quick_check,
+        "integrity_scope": "CANDLE_EVIDENCE_TABLES" if scoped else "FULL_DATABASE_LEGACY_CALLER",
+        "table_quick_checks": dict(table_quick_checks) if type(table_quick_checks) is dict else None,
+        "global_database_integrity_owner": GLOBAL_INTEGRITY_OWNER,
+        "global_database_integrity_status": "NOT_ASSERTED_BY_THIS_EVIDENCE",
         "dirty_due_bars": due,
         "dirty_open_bars": open_bars,
         "invalid_dirty_timestamp_count": invalid,
@@ -180,6 +217,7 @@ def main() -> int:
             heartbeat_at="", quick_check="UNKNOWN", dirty_due_bars=0, dirty_open_bars=0,
             invalid_dirty_timestamp_count=0, observed_at=args.observed_at,
             collection_error=f"{type(exc).__name__}:{exc}",
+            table_quick_checks={},
         )
     atomic_write_json(args.summary_path, summary)
     print(f"INMARKET_CANDLE_EVIDENCE={summary['status']}|SUMMARY:{args.summary_path}")
