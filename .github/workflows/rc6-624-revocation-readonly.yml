@@ -1,0 +1,80 @@
+name: RC6 624 native revocation READ_ONLY
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-624-revocation-readonly.yml'
+      - 'scripts/rc6_624_revocation_readonly.py'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-624-revocation-readonly
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    if: github.head_ref == 'diagnostic/rc6-624-native-revocation-20261018'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact failed Deploy and source preconditions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -B -m py_compile scripts/rc6_624_revocation_readonly.py
+          python3 - <<'PY'
+          import json,os,urllib.request
+          url='https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/39141930791'
+          request=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request,timeout=15) as response:value=json.load(response)
+          assert value['status']=='completed' and value['conclusion']=='failure'
+          assert value['head_sha']=='95a530538223e89469c31182a78e5751807396d0'
+          print('RC6_624_EXACT_FAILED_DEPLOY_PRECONDITION=GREEN')
+          PY
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_624_revocation"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_624_revocation" "$HOME/.ssh/known_hosts"
+      - name: One bounded host READ_ONLY revocation snapshot
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/native624-revocation
+          timeout 95 ssh -i "$HOME/.ssh/rc6_624_revocation" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
+            "$DO_USER@$DO_HOST" 'sudo -n timeout 75 python3 -B -' \
+            < scripts/rc6_624_revocation_readonly.py > evidence/native624-revocation/host.json
+          python3 - <<'PY'
+          import json
+          value=json.load(open('evidence/native624-revocation/host.json'))
+          assert value['status']=='OBSERVED' and value['read_only'] is True
+          assert value['ppi_watch_accessed'] is False
+          print('RC6_624_READ_ONLY_SNAPSHOT=GREEN')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-624-native-revocation-${{ github.run_id }}
+          path: evidence/native624-revocation
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove credential
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_624_revocation"
