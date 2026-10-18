@@ -1,5 +1,5 @@
 """Bounded READ_ONLY RCA after native RAM-reserve rejection; never acceptance."""
-import argparse,hashlib,json,os,re,sqlite3,subprocess,sys,time
+import argparse,hashlib,json,os,re,shutil,sqlite3,subprocess,sys,time
 from datetime import datetime,timezone
 from pathlib import Path
 ROOT=Path('/opt/porota-trading');sys.path.insert(0,str(ROOT))
@@ -91,17 +91,17 @@ def main():
     assert len(rows)==2 and all(r['source_sha']==a.sha and r['source_tree']==a.tree and r['status']=='running' and not r['oom'] for r in rows)
     assert len({r['image'] for r in rows})==1
     image=docker_inspect('image',[rows[0]['image']])[0]
-    result={'schema':'rc6.native624.passive-profile.v2','purpose':'RCA_AFTER_RAM_RED_39083752998','read_only':True,'started_at':datetime.now(timezone.utc).isoformat(),'source_sha':a.sha,'source_tree':a.tree,'containers':rows,'clock_ticks_per_second':os.sysconf('SC_CLK_TCK'),'page_size_bytes':os.sysconf('SC_PAGE_SIZE'),'logical_cpu_count':os.cpu_count(),'samples':[],'loaded_image':{'id':image['Id'],'architecture':image.get('Architecture'),'os':image.get('Os'),'rootfs_diff_ids':image.get('RootFS',{}).get('Layers'),'semantic_config_sha256':semantic_config(image['Config'])}}
+    result={'schema':'rc6.native624.passive-profile.v2','purpose':'RCA_AFTER_RAM_RED_39091864291','read_only':True,'started_at':datetime.now(timezone.utc).isoformat(),'source_sha':a.sha,'source_tree':a.tree,'containers':rows,'clock_ticks_per_second':os.sysconf('SC_CLK_TCK'),'page_size_bytes':os.sysconf('SC_PAGE_SIZE'),'logical_cpu_count':os.cpu_count(),'samples':[],'loaded_image':{'id':image['Id'],'architecture':image.get('Architecture'),'os':image.get('Os'),'rootfs_diff_ids':image.get('RootFS',{}).get('Layers'),'semantic_config_sha256':semantic_config(image['Config'])}}
     for name in ('CURRENT_STATE_V2.json','porota-frozen-candidate.json'):
         path=ROOT/'data/deploy'/name
         value=json.loads(path.read_text())
-        result[name]={k:value.get(k) for k in ('candidate_sha','candidate_tree_sha','deploy_sha','image_id','image_tar_sha256','mode','real_orders_sent','validation_status')}
+        result[name]={k:value.get(k) for k in ('candidate_sha','candidate_tree_sha','deploy_sha','image_id','image_tar_sha256','mode','real_orders_sent','validation_status','real_order_routes','ppi_watch_untouched','build_once','dashboard_health_http','deployment_strategy')}
     root=ROOT/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow';ids=[r['id'] for r in rows]
     try:
         for _ in range(18):
-            sample={'at':datetime.now(timezone.utc).isoformat(),'monotonic':time.monotonic(),'memory':keyed(Path('/proc/meminfo'),{'MemTotal','MemAvailable','SwapTotal','SwapFree'}),'host':host_counters(rows),'processes':processes(ids),'safety':safety()}
+            sample={'at':datetime.now(timezone.utc).isoformat(),'monotonic':time.monotonic(),'memory':keyed(Path('/proc/meminfo'),{'MemTotal','MemAvailable','SwapTotal','SwapFree'}),'free_disk_bytes':shutil.disk_usage(ROOT).free,'host':host_counters(rows),'processes':processes(ids),'safety':safety()}
             try:
-                cut=read_committed_generation(root)
+                cut=read_committed_generation(root,payload_limit=4*1024**2,require_current_status=True)
                 sample.update(generation={k:cut['pointer'][k] for k in ('generation_id','sequence','manifest_sha256')},source_as_of=cut['status']['as_of'],worker_status=cut['status']['status'],timing=cut['status'].get('generation_timing'),publication=cut.get('publication'))
             except (OSError,ValueError,KeyError) as error:
                 sample.update(generation_read_race_or_failure=True,generation_error_class=type(error).__name__)

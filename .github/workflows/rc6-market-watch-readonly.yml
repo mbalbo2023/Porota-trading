@@ -57,7 +57,7 @@ jobs:
 
   watch:
     needs: contracts
-    if: false # native RAM RCA39088022968 captured; do not repeat host observation
+    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-624-consumer-profile-20261017' # one bounded RCA observation after completed RED; not an acceptance retry
     runs-on: ubuntu-24.04
     timeout-minutes: 7
     env:
@@ -79,7 +79,7 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_market_watch"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6_market_watch" "$HOME/.ssh/known_hosts"
-      - name: Capture native cost and working set after RAM rejection READ_ONLY
+      - name: Capture bounded RCA after native202e RAM reserve rejection READ_ONLY
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -87,16 +87,16 @@ jobs:
           timeout 240 ssh -i "$HOME/.ssh/rc6_market_watch" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
-            "$DO_USER@$DO_HOST" "sudo -n timeout 220 python3 -B - --sha fe100cb337ba627e23aa4a006b6c30125e646ad7 --tree 8a6fc95a80a02142a15c29c18e05e5f1036de27d" \
+            "$DO_USER@$DO_HOST" "sudo -n timeout 220 python3 -B - --sha 202e49c750ab0a69b5ba6790fcb14cc0c0d9039f --tree f3ddca733e40649c4e2605f69d5b7ec59dd839e8" \
             < scripts/rc6_native624_profile.py > evidence/native624/profile.json
           python3 -m json.tool evidence/native624/profile.json >/dev/null
           cat evidence/native624/profile.json
       - name: Verify loaded image content against frozen archive
-        run: python3 -B scripts/rc6_native624_image_mapping.py --profile evidence/native624/profile.json --output evidence/native624/image-mapping.json
+        run: python3 -B scripts/rc6_native624_image_mapping.py --profile evidence/native624/profile.json --output evidence/native624/image-mapping.json --artifact-id 12123121595 --zip-bytes 414812982 --zip-sha256 511a06390863d6a987958e057d696a301614ba539d9d006f2fe729941e1208f7 --expected-image-id sha256:c3229770ff31728df35e9c6a803b7e59894461786b3a0f1299687bec16052596
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-native624-ram-rca-${{ github.run_id }}
+          name: rc6-native624-202e-ram-rca-${{ github.run_id }}
           path: evidence/native624
           if-no-files-found: error
           retention-days: 14
