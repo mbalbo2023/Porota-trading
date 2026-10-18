@@ -149,3 +149,24 @@ def test_four_cuts_preserve_full_audit_latest_checkpoint_and_session(tmp_path):
             assert hashlib.sha256(full_after).hexdigest() == after['computed_report']['sha256']
         assert hot['operational_funnel'] == ordinary['operational_funnel']
         assert hot['real_orders_sent'] == 0 and hot['real_routes'] == 'NOT_CALLED'
+
+
+@pytest.mark.parametrize('block_size', [1, 2, 7, 31, 65536])
+def test_incremental_json_matches_stdlib_across_all_token_boundaries(block_size):
+    from rc6_shadow_runtime.checkpoint_parts import _JSONBlocks, funnel_metadata_decoder
+    payload = {'keys_order': {'b': 1, 'a': 2, 'unknown': 3},
+               'values': [True, False, None, -0.0, -12.3e20, 1234567890123456789,
+                          'é\x00\\"\ud800', ['nested', {'content': 'large'*20000}]],
+               'items': [{'session': 's', 'strategy_id': 't', 'extra': i} for i in range(3)]}
+    raw = json.dumps(payload, ensure_ascii=True, separators=(',', ':'), allow_nan=False).encode()
+    chunks = (raw[i:i+block_size] for i in range(0, len(raw), block_size))
+    parsed = _JSONBlocks(chunks, funnel_metadata_decoder()).read()
+    assert parsed == payload
+    assert json.dumps(parsed, ensure_ascii=True, separators=(',', ':')) == raw.decode()
+
+
+@pytest.mark.parametrize('raw', [b'{"a":1,}', b'[1,]', b'{"a":01}', b'12x', b'"unterminated', b'{"a":truefalse}'])
+def test_incremental_json_rejects_invalid_or_trailing_tokens(raw):
+    from rc6_shadow_runtime.checkpoint_parts import _JSONBlocks, funnel_metadata_decoder
+    with pytest.raises(ValueError):
+        _JSONBlocks((raw[i:i+2] for i in range(0, len(raw), 2)), funnel_metadata_decoder()).read()

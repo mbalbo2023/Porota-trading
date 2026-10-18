@@ -27,6 +27,7 @@ TAIL_BYTES = len(TAIL_PREFIX)+64+2
 def funnel_metadata_decoder():
     """Share only equal immutable metadata in causal funnel rows, per read."""
     pool, charged = {}, 0
+    keys, key_bytes = {}, 0
     names = ('session', 'strategy_id', 'strategy_version', 'configuration_fingerprint',
              'registry_sha256', 'family', 'currency', 'channel', 'market', 'settlement')
     def share(value):
@@ -42,6 +43,18 @@ def funnel_metadata_decoder():
             charged += cost
         return value
     def decode(value):
+        nonlocal key_bytes
+        # The stdlib scanner memoizes keys within one document. Incremental
+        # record decoding must preserve that bounded sharing across blocks.
+        replacements = False
+        for key in value:
+            if key in keys:
+                replacements |= keys[key] is not key
+            elif len(key) <= 128 and len(key) != 64 and len(keys) < 512 and key_bytes+len(key)+128 <= 65536:
+                keys[key] = key
+                key_bytes += len(key)+128
+        if replacements:
+            value = {keys.get(key, key): item for key, item in value.items()}
         if 'session' in value and 'strategy_id' in value:
             for name in names:
                 if name in value:
@@ -55,6 +68,138 @@ def funnel_metadata_decoder():
                 value[key] = share(item)
         return value
     return decode
+
+
+class _JSONBlocks:
+    """Decode actual role bytes without a document-sized bytes/text duplicate.
+
+    Complete bounded records use the stdlib C scanner. Larger containers are
+    traversed incrementally; strings and numbers retain normal JSON semantics.
+    No encoded content cache, skipped field or new scalar-size limit exists.
+    """
+    def __init__(self, chunks, hook):
+        self.chunks = iter(chunks)
+        self.buffer, self.position, self.eof = '', 0, False
+        self.hook = hook
+        self.decoder = json.JSONDecoder(object_hook=hook)
+
+    def more(self):
+        if self.eof:
+            return False
+        try:
+            part = next(self.chunks)
+        except StopIteration:
+            self.eof = True
+            return False
+        self.buffer = self.buffer[self.position:]+part.decode('ascii')
+        self.position = 0
+        return True
+
+    def peek(self):
+        while True:
+            while self.position < len(self.buffer):
+                char = self.buffer[self.position]
+                if char not in ' \t\r\n':
+                    return char
+                self.position += 1
+            if not self.more():
+                return ''
+
+    def take(self, char):
+        if self.peek() != char:
+            raise ValueError('SHADOW_CHECKPOINT_JSON_SYNTAX')
+        self.position += 1
+
+    def value(self):
+        char = self.peek()
+        if not char:
+            raise ValueError('SHADOW_CHECKPOINT_JSON_TRUNCATED')
+        if char not in '{["':
+            return self.scalar()
+        while True:
+            try:
+                result, end = self.decoder.raw_decode(self.buffer, self.position)
+                if end == len(self.buffer) and char not in '{["' and self.more():
+                    continue  # a number may continue in the next physical block
+                self.position = end
+                return result
+            except json.JSONDecodeError:
+                if char == '{':
+                    return self.object()
+                if char == '[':
+                    return self.array()
+                if char == '"':
+                    return self.string()
+                if not self.more():
+                    raise ValueError('SHADOW_CHECKPOINT_JSON_SYNTAX') from None
+
+    def scalar(self):
+        scan = self.position
+        while True:
+            delimiter = re.search('[ \\t\\r\\n,\\]}:]', self.buffer[scan:])
+            if delimiter is not None:
+                end = scan+delimiter.start()
+                break
+            scan = len(self.buffer)-self.position
+            if not self.more():
+                end = len(self.buffer)
+                break
+        result, consumed = self.decoder.raw_decode(self.buffer, self.position)
+        if consumed != end:
+            raise ValueError('SHADOW_CHECKPOINT_JSON_SYNTAX')
+        self.position = end
+        return result
+
+    def string(self):
+        scan = self.position+1
+        while True:
+            end = self.buffer.find('"', scan)
+            if end >= 0:
+                before = end-1
+                while before >= self.position and self.buffer[before] == '\\':
+                    before -= 1
+                if (end-before-1) % 2 == 0:
+                    result, self.position = self.decoder.raw_decode(self.buffer, self.position)
+                    return result
+                scan = end+1
+                continue
+            scan = len(self.buffer)-self.position
+            if not self.more():
+                raise ValueError('SHADOW_CHECKPOINT_JSON_SYNTAX')
+
+    def object(self):
+        self.take('{')
+        result = {}
+        if self.peek() != '}':
+            while True:
+                key = self.value()
+                if type(key) is not str:
+                    raise ValueError('SHADOW_CHECKPOINT_JSON_KEY')
+                self.take(':')
+                result[key] = self.value()
+                if self.peek() == '}':
+                    break
+                self.take(',')
+        self.take('}')
+        return self.hook(result)
+
+    def array(self):
+        self.take('[')
+        result = []
+        if self.peek() != ']':
+            while True:
+                result.append(self.value())
+                if self.peek() == ']':
+                    break
+                self.take(',')
+        self.take(']')
+        return result
+
+    def read(self):
+        value = self.value()
+        if self.peek():
+            raise ValueError('SHADOW_CHECKPOINT_JSON_TRAILING_DATA')
+        return value
 
 
 def _write_all(stream, data):
@@ -189,6 +334,7 @@ class CheckpointParts:
         self.source_sha = None
         self.identity = None
         self.layout = None
+        self.temporary_bytes = 0
 
     def __enter__(self):
         if not self.path.exists():
@@ -208,6 +354,9 @@ class CheckpointParts:
                 self.stream = tempfile.TemporaryFile(mode='w+b', dir=self.files.root)
                 layout = write_indexed(self.stream, payload, self.encode, self.files.payload_limit)
                 self.stream.flush()
+                self.temporary_bytes = self.stream.tell()
+                if self.temporary_bytes > self.files.payload_limit:
+                    raise ValueError('SHADOW_CHECKPOINT_COMPRESSED_LIMIT')
                 del payload
             self.layout = layout
             stat = os.fstat(self.stream.fileno())
@@ -302,14 +451,7 @@ class CheckpointParts:
         node = self.roles.get(role)
         if node is None:
             return None
-        raw = bytearray()
-        for chunk in node.iter_bytes():
-            raw.extend(chunk)
-        text = raw.decode('ascii')
-        del raw
-        value = json.loads(text, object_hook=funnel_metadata_decoder() if role == 'funnel' else None)
-        del text
-        return value
+        return _JSONBlocks(node.iter_bytes(), funnel_metadata_decoder()).read()
 
     def __exit__(self, *args):
         if self.stream is not None:

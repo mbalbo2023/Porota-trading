@@ -34,6 +34,7 @@ class AuditSpool:
         self.total_bytes, self.last_sync = 0, 0
         self.stream, self.identity = None, None
         self.profile = []
+        self.external_bytes = 0
 
     def __enter__(self):
         self.files.lock.fileno()
@@ -78,7 +79,8 @@ class AuditSpool:
                 raise TypeError('SHADOW_SPOOL_BYTES_REQUIRED')
             for at in range(0, len(chunk), BLOCK):
                 part = chunk[at:at+BLOCK]
-                if self.total_bytes+len(part) > self.maximum_bytes:
+                if (type(self.external_bytes) is not int or not 0 <= self.external_bytes <= 64*1024**2
+                        or self.total_bytes+len(part)+self.external_bytes > self.maximum_bytes):
                     raise ValueError('SHADOW_SPOOL_CAPACITY_REACHED')
                 if self.total_bytes-self.last_sync+len(part) > DIRTY_BATCH:
                     self._sync()

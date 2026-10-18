@@ -490,6 +490,8 @@ class ShadowRuntime:
         with self.files as files, ExitStack() as stack:
             spool = stack.enter_context(AuditSpool(files)) if self.spool_audit else None
             parts = stack.enter_context(CheckpointParts(files, canonical_ascii_chunks)) if spool else None
+            if spool:
+                spool.external_bytes = parts.temporary_bytes
             engine_views = family_view = None
             capacity_policy = self.capacity_controller.state(at)
             configuration = digest({"runtime": self.configuration,
