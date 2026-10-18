@@ -1516,6 +1516,48 @@
       "sha256": "f74920a2420f98bb88ca81aede565f5de4d7b9ab7f18562f086c301d56e95c25",
       "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
       "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/native-fe100-two-generations.json",
+      "bytes": 12580,
+      "sha256": "33e016f6379776a580408e347e21188b09237a65f615036c396e1069583aaa69",
+      "source": "ACTUAL_DROPLET_ACTIONS_39083752998_OR_PASSIVE_RCA_39088022968",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/native-fe100-soak-red.json",
+      "bytes": 9709,
+      "sha256": "b7d6b470b74f2c45d460165d6f30d74e37b425e1ae02d31892788f4a97c36d16",
+      "source": "ACTUAL_DROPLET_ACTIONS_39083752998_OR_PASSIVE_RCA_39088022968",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/native-fe100-ram-profile.json",
+      "bytes": 326045,
+      "sha256": "56d4920dca51a0aff9fda45269d552a1d5f7cc103d4f5f1864d8bf4329fd26e5",
+      "source": "ACTUAL_DROPLET_ACTIONS_39083752998_OR_PASSIVE_RCA_39088022968",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/native-fe100-image-mapping.json",
+      "bytes": 1020,
+      "sha256": "5f91c6518a169ce92059033f434961254fb9c93c0b5164191306756672544410",
+      "source": "ACTUAL_DROPLET_ACTIONS_39083752998_OR_PASSIVE_RCA_39088022968",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/native-fe100-pid-summary.json",
+      "bytes": 4478,
+      "sha256": "ef8dac47d0888fe68685f07a6aee7519a2ff5ba83150449313ee3d6065837343",
+      "source": "ACTUAL_DROPLET_ACTIONS_39083752998_OR_PASSIVE_RCA_39088022968",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/native-fe100-deploy-red-summary.json",
+      "bytes": 1477,
+      "sha256": "1987c1114b3f5994982e7cba4c786bf463413a840027574ac459ebce2ba94ab8",
+      "source": "ACTUAL_DROPLET_ACTIONS_39083752998_OR_PASSIVE_RCA_39088022968",
+      "native_acceptance": false
     }
   ]
 }

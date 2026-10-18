@@ -1,0 +1,214 @@
+[
+  {
+    "pid": 1611690,
+    "role": "SHADOW",
+    "cmd": [
+      "/app/bv_paper_runtime.py",
+      "--dynamic-shadow-worker"
+    ],
+    "nice": 10,
+    "max_rss": 330579968,
+    "max_pss": 327641088,
+    "max_swap": 270430208,
+    "end_rss": 252375040,
+    "end_pss": 249273344,
+    "end_swap": 85102592,
+    "cpu_seconds": 22.411605215,
+    "wait_seconds": 42.131364759,
+    "major_faults": 71296
+  },
+  {
+    "pid": 1611541,
+    "role": "OBSERVER",
+    "cmd": [
+      "/app/bf_production_paper_observer.py"
+    ],
+    "nice": 0,
+    "max_rss": 206397440,
+    "max_pss": 203376640,
+    "max_swap": 140521472,
+    "end_rss": 149659648,
+    "end_pss": 146514944,
+    "end_swap": 77119488,
+    "cpu_seconds": 16.062141797,
+    "wait_seconds": 21.786605425,
+    "major_faults": 39890
+  },
+  {
+    "pid": 1611462,
+    "role": "COORDINATOR",
+    "cmd": [
+      "python",
+      "bv_paper_runtime.py"
+    ],
+    "nice": 0,
+    "max_rss": 38031360,
+    "max_pss": 35214336,
+    "max_swap": 37744640,
+    "end_rss": 31916032,
+    "end_pss": 29070336,
+    "end_swap": 30912512,
+    "cpu_seconds": 4.913005023,
+    "wait_seconds": 8.084542676,
+    "major_faults": 3991
+  },
+  {
+    "pid": 1619019,
+    "role": "COORDINATOR",
+    "cmd": [
+      "python"
+    ],
+    "nice": 0,
+    "max_rss": 24256512,
+    "max_pss": 20685824,
+    "max_swap": 0,
+    "end_rss": 24256512,
+    "end_pss": 20685824,
+    "end_swap": 0,
+    "cpu_seconds": 0,
+    "wait_seconds": 0,
+    "major_faults": 0
+  },
+  {
+    "pid": 1611692,
+    "role": "NOTIFICATIONS",
+    "cmd": [
+      "/app/bv_paper_runtime.py",
+      "--notification-worker"
+    ],
+    "nice": 0,
+    "max_rss": 19718144,
+    "max_pss": 17328128,
+    "max_swap": 25497600,
+    "end_rss": 19304448,
+    "end_pss": 16899072,
+    "end_swap": 19849216,
+    "cpu_seconds": 0.802108955,
+    "wait_seconds": 2.426592878,
+    "major_faults": 4187
+  },
+  {
+    "pid": 1598198,
+    "role": "DASHBOARD",
+    "cmd": [
+      "python",
+      "o_dashboard.py"
+    ],
+    "nice": 0,
+    "max_rss": 13815808,
+    "max_pss": 10769408,
+    "max_swap": 77676544,
+    "end_rss": 13799424,
+    "end_pss": 10617856,
+    "end_swap": 70639616,
+    "cpu_seconds": 0.303847563,
+    "wait_seconds": 0.611010712,
+    "major_faults": 3090
+  },
+  {
+    "pid": 1611693,
+    "role": "CANDLES",
+    "cmd": [
+      "/app/bv_paper_runtime.py",
+      "--candle-worker"
+    ],
+    "nice": 0,
+    "max_rss": 13004800,
+    "max_pss": 10626048,
+    "max_swap": 21565440,
+    "end_rss": 12845056,
+    "end_pss": 10470400,
+    "end_swap": 15736832,
+    "cpu_seconds": 0.307759978,
+    "wait_seconds": 0.945050877,
+    "major_faults": 3088
+  },
+  {
+    "pid": 1611691,
+    "role": "EXITS",
+    "cmd": [
+      "/app/bv_paper_runtime.py",
+      "--exit-reader"
+    ],
+    "nice": 0,
+    "max_rss": 7712768,
+    "max_pss": 5186560,
+    "max_swap": 21798912,
+    "end_rss": 7340032,
+    "end_pss": 4789248,
+    "end_swap": 21774336,
+    "cpu_seconds": 0.102542582,
+    "wait_seconds": 0.304902806,
+    "major_faults": 153
+  },
+  {
+    "pid": 1611689,
+    "role": "PERFORMANCE",
+    "cmd": [
+      "/app/bv_paper_runtime.py",
+      "--performance-worker"
+    ],
+    "nice": 10,
+    "max_rss": 7729152,
+    "max_pss": 5015552,
+    "max_swap": 15491072,
+    "end_rss": 7385088,
+    "end_pss": 4619264,
+    "end_swap": 15310848,
+    "cpu_seconds": 0.200735716,
+    "wait_seconds": 1.107193568,
+    "major_faults": 185
+  },
+  {
+    "pid": 1611694,
+    "role": "SCALPING",
+    "cmd": [
+      "/app/bv_paper_runtime.py",
+      "--intraday-scalping-worker"
+    ],
+    "nice": 0,
+    "max_rss": 5840896,
+    "max_pss": 3324928,
+    "max_swap": 24932352,
+    "end_rss": 5742592,
+    "end_pss": 3225600,
+    "end_swap": 24739840,
+    "cpu_seconds": 0.050140179,
+    "wait_seconds": 0.46246573,
+    "major_faults": 201
+  },
+  {
+    "pid": 1611695,
+    "role": "TREASURY",
+    "cmd": [
+      "/app/bv_paper_runtime.py",
+      "--caucion-cash-sweep-worker"
+    ],
+    "nice": 0,
+    "max_rss": 5496832,
+    "max_pss": 3146752,
+    "max_swap": 26923008,
+    "end_rss": 4886528,
+    "end_pss": 2522112,
+    "end_swap": 24649728,
+    "cpu_seconds": 0.067617265,
+    "wait_seconds": 0.376559124,
+    "major_faults": 1045
+  },
+  {
+    "pid": 1619013,
+    "role": "COORDINATOR",
+    "cmd": [],
+    "nice": 0,
+    "max_rss": 1773568,
+    "max_pss": 854016,
+    "max_swap": 0,
+    "end_rss": 1773568,
+    "end_pss": 854016,
+    "end_swap": 0,
+    "cpu_seconds": 0,
+    "wait_seconds": 0,
+    "major_faults": 0
+  }
+]
+

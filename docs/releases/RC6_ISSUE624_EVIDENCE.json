@@ -6,7 +6,7 @@
   "candidate_sha": "fe100cb337ba627e23aa4a006b6c30125e646ad7",
   "candidate_tree": "8a6fc95a80a02142a15c29c18e05e5f1036de27d",
   "pr": 626,
-  "runtime_state": "DEPLOY_IN_PROGRESS",
+  "runtime_state": "DEPLOYED_VALIDATION_PENDING_NATIVE_RAM_RED",
   "predeploy_run": 39065412565,
   "original_findings_count": 68,
   "original_findings_sha256": "a57b4beca7aae6c2235b87d0a5b992f0be3f24f0d0975207cf48afad7e2fa537",
@@ -1158,9 +1158,42 @@
       "runtime_state": "NO_VERIFICADO",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Missing or partial helpertransport must fail both positive and negativefixtures."
+    },
+    {
+      "id": "624-NATIVE-RAM-RED",
+      "capability": "RC6_NATIVE_ACCEPTANCE",
+      "classification": "MEASURED_NATIVE_RCA_OPEN_FIX_FORWARD",
+      "cause": "Deployed A1 fails strict10 after54.6685s/1generation because host128MiB RAM reserve breached. Exact rejected sample was lost by collector; no invented value. Stress and restore skipped.",
+      "fix": "OPEN: bounded working-set correction and permanent retention of rejected resource sample, then new certificate/native gates.",
+      "status": "BLOQUEADO_HASTA_FIX_VALIDADO",
+      "runtime_state": "NO_ACEPTADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any repeated native resource/freshness/evidence failure remains RED."
+    },
+    {
+      "id": "624-NATIVE-COST-RCA",
+      "capability": "RC6_NATIVE_ACCEPTANCE",
+      "classification": "MEASURED_NATIVE_RCA_OPEN_FIX_FORWARD",
+      "cause": "Passive90s/18samples:11below128MiB,min49319936B; host swapin251772/swapout133871pages. Lasttick193.639wall/43.585CPU; funnel97.837/11.372, durable43.066/16.159; computedencode33.871/11.549, fsync0.024298wall.",
+      "fix": "OPEN: same-input causal A/B before next deploy. No fsync/nice/kernel speculation, no relaxedfloor.",
+      "status": "BLOQUEADO_HASTA_FIX_VALIDADO",
+      "runtime_state": "NO_ACEPTADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any repeated native resource/freshness/evidence failure remains RED."
+    },
+    {
+      "id": "624-CLEANUP-MARKER-CLASSIFICATION",
+      "capability": "RC6_NATIVE_ACCEPTANCE",
+      "classification": "MEASURED_NATIVE_RCA_OPEN_FIX_FORWARD",
+      "cause": "Failure-safe housekeeping actualGREEN/errors[]/147456Breclaimed, but stepRED because recoverexit2 means installedcandidate requiresfixforwardvalidation.",
+      "fix": "OPEN: preserve original nativeRED and explicitly classify installedvalidationpending marker; never convert failed deployment to success.",
+      "status": "BLOQUEADO_HASTA_FIX_VALIDADO",
+      "runtime_state": "NO_ACEPTADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any repeated native resource/freshness/evidence failure remains RED."
     }
   ],
-  "findings_count": 78,
+  "findings_count": 81,
   "predeploy_state": "GREEN_BYTES_VALIDATED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -1349,6 +1382,46 @@
       6243842309,
       6243842434
     ],
-    "status": "IN_PROGRESS"
+    "status": "FAILED",
+    "schema": "rc6.native624.deploy-red.v1",
+    "candidate_sha": "fe100cb337ba627e23aa4a006b6c30125e646ad7",
+    "candidate_tree": "8a6fc95a80a02142a15c29c18e05e5f1036de27d",
+    "native_two": "GREEN_WITH_8_PRIOR_STALE_OBSERVATIONS",
+    "native_ten": "RED_NATIVE_SOAK_RAM_RESERVE_BREACHED",
+    "rejected_resource_value": "NOT_RETAINED_BY_OLD_COLLECTOR",
+    "stress_droplet": "NOT_EXECUTED",
+    "stress_restore": "NOT_EXECUTED",
+    "runtime_acceptance": false,
+    "cleanup_actual": {
+      "status": "GREEN",
+      "errors": [],
+      "reclaimed_bytes": 147456
+    },
+    "cleanup_step_red": "quiescence recover returns2/FIX_FORWARD_VALIDATION_REQUIRED; original validation RED preserved",
+    "raw_log": {
+      "github_url": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39083752998/job/117545904511",
+      "local_bytes": 455602,
+      "sha256": "9b9b2150deafee2a27a00532ba67594ea8475f2003978945f82284757f7ee9bf"
+    },
+    "rca_run": 39088022968,
+    "rca_job": 117558606343,
+    "rca_artifact": {
+      "id": 12121632352,
+      "bytes": 26579,
+      "server_sha256": "559ad5632ff26e269b0f81a873eb4eb8415fa22d1c0e67ca9b28547a4bdd7d2f",
+      "independent_zip_validation": "PENDING"
+    },
+    "diagnostic_retired_commit": "0a1e6180d70c7b7afd172fe8dd234adaa75484a3",
+    "ownership": [
+      6244546905,
+      6244547022
+    ],
+    "new_branch": "work/rc6-624-checkpoint-working-set-20261018"
+  },
+  "native_cost_profile": {
+    "path": "docs/releases/evidence624/native-fe100-ram-profile.json",
+    "run": 39088022968,
+    "image_mapping": "GREEN_CONTENT_IDENTITY_25LAYERS_OPERATIVE_CONFIG_EQUAL",
+    "native_acceptance": false
   }
 }
