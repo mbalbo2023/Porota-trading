@@ -1,0 +1,78 @@
+name: RC6 624 failed immutable pack READ_ONLY
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-624-failed-pack-readonly.yml'
+      - 'scripts/rc6_624_failed_pack_verify.py'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-624-failed-pack-readonly
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: github.head_ref == 'diagnostic/rc6-624-native-revocation-20261018'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact failed Deploy precondition
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -B -m py_compile scripts/rc6_624_failed_pack_verify.py
+          python3 - <<'PY'
+          import json,os,urllib.request
+          request=urllib.request.Request(
+            'https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/39141930791',
+            headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request,timeout=15) as response:value=json.load(response)
+          assert value['status']=='completed' and value['conclusion']=='failure'
+          assert value['head_sha']=='95a530538223e89469c31182a78e5751807396d0'
+          print('RC6_624_EXACT_FAILED_DEPLOY_PRECONDITION=GREEN')
+          PY
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_624_failed_pack"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_624_failed_pack" "$HOME/.ssh/known_hosts"
+      - name: Stream one original immutable failed namespace READ_ONLY
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/native624-failed-pack
+          timeout 180 ssh -i "$HOME/.ssh/rc6_624_failed_pack" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 145 tar -C /opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/cold-audit -cf - -- 89e7f81dbc9b4a628bdc30edf86a17b0.pack manifest-89e7f81dbc9b4a628bdc30edf86a17b0.json receipt-89e7f81dbc9b4a628bdc30edf86a17b0.json queue.json' \
+            > evidence/native624-failed-pack/failed-input-original.tar
+          python3 scripts/rc6_624_failed_pack_verify.py \
+            evidence/native624-failed-pack/failed-input-original.tar \
+            evidence/native624-failed-pack/verification.json
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: rc6-624-original-failed-pack-${{ github.run_id }}
+          path: evidence/native624-failed-pack
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove credential
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_624_failed_pack"
