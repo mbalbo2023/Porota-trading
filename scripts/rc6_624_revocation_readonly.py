@@ -19,8 +19,10 @@ def read(path,max_bytes=131072,compressed=False):
         info=path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_size>max_bytes:raise ValueError('TYPE_OR_SIZE')
         raw=path.read_bytes()
-        value=json.loads(gzip.decompress(raw) if compressed else raw)
-        if not isinstance(value,dict):raise ValueError('JSON_OBJECT_REQUIRED')
+        envelope=json.loads(gzip.decompress(raw) if compressed else raw)
+        if not isinstance(envelope,dict) or not isinstance(envelope.get('payload'),dict):
+            raise ValueError('EVIDENCE_ENVELOPE_REQUIRED')
+        value=envelope['payload']
         return {'present':True,'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),
                 'mtime_ns':info.st_mtime_ns,'inode':info.st_ino,'value':value}
     except FileNotFoundError:return {'present':False}

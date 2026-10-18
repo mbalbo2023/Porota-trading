@@ -66,6 +66,8 @@ jobs:
           value=json.load(open('evidence/native624-revocation/host.json'))
           assert value['status']=='OBSERVED' and value['read_only'] is True
           assert value['ppi_watch_accessed'] is False
+          assert value['pointer']['selected'].get('file')
+          assert value['live_status']['selected'].get('status')
           print('RC6_624_READ_ONLY_SNAPSHOT=GREEN')
           PY
       - uses: actions/upload-artifact@v4
