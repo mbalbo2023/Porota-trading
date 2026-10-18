@@ -3554,6 +3554,66 @@
       "source": "ACTUAL_ABI_RED_S2_GOVERNANCE_8BF_NATIVE_RED_B346_PREDEPLOY_NOT_CERTIFIED",
       "bytes": 123378,
       "sha256": "517c67f8748e225843fdf75b4055eb49e66dd01fe22a7ac52daa622c2b99ab58"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-b346-cadence-fresh.json",
+      "source": "ACTUAL_EXACT_B346_PREDEPLOY_GREEN_CI_ONLY_NOT_HOST_ACCEPTANCE",
+      "bytes": 75867,
+      "sha256": "76483a4f8077d7d3d72650d93f2f8256647953cd737897302ffca723d226fec2"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-b346-cadence-legacy.json",
+      "source": "ACTUAL_EXACT_B346_PREDEPLOY_GREEN_CI_ONLY_NOT_HOST_ACCEPTANCE",
+      "bytes": 76681,
+      "sha256": "9567ed8b1ef86d7ba6d18b4589b95093c96f6a741851e2a401994b1535447699"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-b346-full-catalog.json",
+      "source": "ACTUAL_EXACT_B346_PREDEPLOY_GREEN_CI_ONLY_NOT_HOST_ACCEPTANCE",
+      "bytes": 11527,
+      "sha256": "f80179a4f39b72229bdfa6375110e9857a1e14b35df7614277b2be1b6ee8ac79"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-b346-independent-byte-validation.json",
+      "source": "ACTUAL_EXACT_B346_PREDEPLOY_GREEN_CI_ONLY_NOT_HOST_ACCEPTANCE",
+      "bytes": 61826,
+      "sha256": "3cf693e41ddc79f048c574ce1132379138e72077aa261b04686f611553575a60"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-b346-native-bound.xml.gz",
+      "source": "ACTUAL_EXACT_B346_PREDEPLOY_GREEN_CI_ONLY_NOT_HOST_ACCEPTANCE",
+      "bytes": 4240,
+      "sha256": "74d3e15a23f31c6205d03ed8593093037ff99760b727173a348ef52bd7853f19"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-b346-original-job.log.gz",
+      "source": "ACTUAL_EXACT_B346_PREDEPLOY_GREEN_CI_ONLY_NOT_HOST_ACCEPTANCE",
+      "bytes": 186535,
+      "sha256": "860a5ee587ad9687233b94f49dc4632f4b3d3f3ea64fb368a178eb05f601aa57"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-b346-porota-frozen-candidate.json",
+      "source": "ACTUAL_EXACT_B346_PREDEPLOY_GREEN_CI_ONLY_NOT_HOST_ACCEPTANCE",
+      "bytes": 611,
+      "sha256": "5318679c5e3e3d83d6371e22ef264741caa271910aac328248b0b25b51b5668b"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-b346-porota-governed-tests.json",
+      "source": "ACTUAL_EXACT_B346_PREDEPLOY_GREEN_CI_ONLY_NOT_HOST_ACCEPTANCE",
+      "bytes": 360,
+      "sha256": "2275cea0dbfaedb08d7a1933aa03a0cfe3e21ec0599fff06c755cf84f05b780b"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-b346-porota-governed-tests.xml.gz",
+      "source": "ACTUAL_EXACT_B346_PREDEPLOY_GREEN_CI_ONLY_NOT_HOST_ACCEPTANCE",
+      "bytes": 94353,
+      "sha256": "bc4ec4aafafff9879a23ceb8842107e01e89974e5b9d965fd6ec293cda47f549"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-b346-stress.json",
+      "source": "ACTUAL_EXACT_B346_PREDEPLOY_GREEN_CI_ONLY_NOT_HOST_ACCEPTANCE",
+      "bytes": 23309,
+      "sha256": "19ece72eabe37d44763e9bf2125e9118482cef60c8eb3e5f083c65c7349c5b42"
     }
   ]
 }

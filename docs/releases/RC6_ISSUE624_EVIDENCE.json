@@ -1719,9 +1719,18 @@
       "fix": "Isolated b346fcc8ae6edc51be20ac7325cd068cdeb60832/tree07feba46b15af29565a75787eec98bb9e6e3f6d9/parent8bf, only capability test path+permanent mkdtemp guard+ADR; 74 local GREEN. Same UID/CapEff0/O_TMPFILE/fsync/inode/link/nlink assertions. Paired frozen owner6251483754/6251483940 exact readback. Normal PR633, run39139165652 in progress; all Predeploy gates mandatory before merge.",
       "status": "FROZEN_NEW_PREDEPLOY_IN_PROGRESS_NOT_CERTIFIED",
       "receipt": "docs/releases/evidence624/a3-native-tmpdir-frozen624.json"
+    },
+    {
+      "id": "624-A3-B346-EXACT-CI-PREDEPLOY-GREEN",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "EXACT_IMAGE_CI_PHYSICAL_CADENCE_AND_AUDIT",
+      "classification": "GREEN_CI_ONLY_DEPLOY_IN_PROGRESS_NOT_HOST_ACCEPTANCE",
+      "cause": "The /tmp fixture failed in prior 8bf; fix13 used the existing writable /proof/tmp and required the actual UID/capability probe. New exact SHA b346 completed root, native and physical proofs. Reviewer-only parametrized JUnit name check was corrected to demand all 11 variants; no product or artifact change.",
+      "evidence": "Predeploy39139165652/job117709822871 SUCCESS; original artifact12141294611/435568162B/SHA2681ce8bac589386fbdd53668032bfb8c855306b1e47ed83e86976328af80cb0; decoded original log SHA925879a41715f2d1035e0370f12ae6f3cf7730ccc4d9a8bb42ee78dfd30e4297; independent byte certificate SHA3cf693e41ddc79f048c574ce1132379138e72077aa261b04686f611553575a60. Root4230, native182, stress1083, 12fresh+12legacy physical cuts, five sandboxes Exit0/OOMfalse, OCI/layers/C and512 bundle files verified.",
+      "reopen": "Canonical Deploy V2 39141930791 and host native2+strict10/405 minutes virtual inside Droplet/same-ID restore/new2+strict10/delayed profile remain unverified until actual receipts."
     }
   ],
-  "findings_count": 124,
+  "findings_count": 125,
   "predeploy_state": "GREEN_EXACT_IMAGE_INDEPENDENTLY_BYTE_VERIFIED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -1958,44 +1967,15 @@
     "native_acceptance": false
   },
   "current_candidate": {
-    "source_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
-    "source_tree": "df970bae3415333d43c7c6a30442f6962188ae26",
-    "base_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
-    "branch": "work/rc6-624-candle-integrity-scope-20261018",
-    "source_frozen": true,
-    "source_changes_after_freeze_allowed": false,
-    "release_artifact_frozen": true,
-    "status": "DEPLOYED_NOT_ACCEPTED_NO_UNCHANGED_RETRY",
-    "pr": 631,
-    "predeploy_run": 39113977768,
-    "native_promotion": true,
-    "all_worker_bytes_match_246ac_and_d1bd": true,
-    "global_full_auditor_and_units_unchanged": true,
-    "changed_paths": [
-      "scripts/rc6_candle_inmarket_evidence.py",
-      "tests/test_rc6_candle_inmarket_evidence.py",
-      "scripts/rc6_postdeploy_stress.py"
-    ],
-    "certificate": {
-      "run": 39113977768,
-      "job": 117635844897,
-      "source": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
-      "tree": "df970bae3415333d43c7c6a30442f6962188ae26",
-      "artifact": 12132052630,
-      "zip_bytes": 415101765,
-      "zip_sha256": "3d4599677ca814bd05a7249f78380e705bdd742dbb1a7bf7c86a689492021312",
-      "image_id": "sha256:29eff63d1d2abc9052f5d9596530b1a7c0edf88aa8252f0754a8d41dbf834e45",
-      "image_tar_sha256": "7bfb85cd4bb756dd421c8892fb7994aa7a3ba7f70ccb2e71d06ac5079136c311",
-      "root_cases": 4095,
-      "stress_cases": 949,
-      "stress_simulated_minutes": 405,
-      "groups": 8,
-      "bundle_files": 511,
-      "layers_validated": 25,
-      "native_bound_cases": 48,
-      "byte_validation": "docs/releases/evidence624/ci-7ce-byte-validation.json",
-      "droplet_acceptance": false
-    }
+    "source_sha": "b346fcc8ae6edc51be20ac7325cd068cdeb60832",
+    "source_tree": "07feba46b15af29565a75787eec98bb9e6e3f6d9",
+    "pr": 633,
+    "merge_sha": "95a530538223e89469c31182a78e5751807396d0",
+    "predeploy_run": 39139165652,
+    "predeploy_artifact": 12141294611,
+    "predeploy_status": "GREEN_EXACT_IMAGE_INDEPENDENTLY_VERIFIED",
+    "deploy_run": 39141930791,
+    "runtime_acceptance": "IN_PROGRESS_NOT_VERIFIED"
   },
   "historical_fe100_certificate": {
     "run": 39065412565,
@@ -2219,7 +2199,7 @@
     }
   ],
   "engineering_next": {
-    "state": "NEW_EXACT_SHA_PREDEPLOY_IN_PROGRESS_NO_RELEASE_CERTIFICATE",
+    "state": "EXACT_SHA_PREDEPLOY_GREEN_DEPLOY_IN_PROGRESS",
     "source_sha": "b346fcc8ae6edc51be20ac7325cd068cdeb60832",
     "tree": "07feba46b15af29565a75787eec98bb9e6e3f6d9",
     "branch": "work/rc6-624-native-proof-tmpdir-20261018",
@@ -2230,6 +2210,53 @@
     "pr": 633,
     "predeploy_run": 39139165652,
     "runtime": "7ce_INSTALLED_NOT_ACCEPTED",
-    "host_acceptance": "NOT_EXECUTED_FOR_NEW_SOURCE"
+    "host_acceptance": "DEPLOY_IN_PROGRESS_NO_CLAIM",
+    "predeploy_job": 117709822871,
+    "predeploy_artifact": 12141294611,
+    "predeploy_zip_sha256": "2681ce8bac589386fbdd53668032bfb8c855306b1e47ed83e86976328af80cb0",
+    "independent_certificate_sha256": "3cf693e41ddc79f048c574ce1132379138e72077aa261b04686f611553575a60",
+    "merge_sha": "95a530538223e89469c31182a78e5751807396d0",
+    "deploy_run": 39141930791,
+    "deploy_job": 117717947684
+  },
+  "historical_7ce_candidate": {
+    "source_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
+    "source_tree": "df970bae3415333d43c7c6a30442f6962188ae26",
+    "base_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
+    "branch": "work/rc6-624-candle-integrity-scope-20261018",
+    "source_frozen": true,
+    "source_changes_after_freeze_allowed": false,
+    "release_artifact_frozen": true,
+    "status": "DEPLOYED_NOT_ACCEPTED_NO_UNCHANGED_RETRY",
+    "pr": 631,
+    "predeploy_run": 39113977768,
+    "native_promotion": true,
+    "all_worker_bytes_match_246ac_and_d1bd": true,
+    "global_full_auditor_and_units_unchanged": true,
+    "changed_paths": [
+      "scripts/rc6_candle_inmarket_evidence.py",
+      "tests/test_rc6_candle_inmarket_evidence.py",
+      "scripts/rc6_postdeploy_stress.py"
+    ],
+    "certificate": {
+      "run": 39113977768,
+      "job": 117635844897,
+      "source": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
+      "tree": "df970bae3415333d43c7c6a30442f6962188ae26",
+      "artifact": 12132052630,
+      "zip_bytes": 415101765,
+      "zip_sha256": "3d4599677ca814bd05a7249f78380e705bdd742dbb1a7bf7c86a689492021312",
+      "image_id": "sha256:29eff63d1d2abc9052f5d9596530b1a7c0edf88aa8252f0754a8d41dbf834e45",
+      "image_tar_sha256": "7bfb85cd4bb756dd421c8892fb7994aa7a3ba7f70ccb2e71d06ac5079136c311",
+      "root_cases": 4095,
+      "stress_cases": 949,
+      "stress_simulated_minutes": 405,
+      "groups": 8,
+      "bundle_files": 511,
+      "layers_validated": 25,
+      "native_bound_cases": 48,
+      "byte_validation": "docs/releases/evidence624/ci-7ce-byte-validation.json",
+      "droplet_acceptance": false
+    }
   }
 }
