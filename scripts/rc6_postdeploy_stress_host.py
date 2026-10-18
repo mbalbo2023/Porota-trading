@@ -125,6 +125,7 @@ def run(candidate, run_id):
               '--memory','512m','--memory-swap','512m','--cpus','.75','--pids-limit','96',
               '--tmpfs','/tmp:rw,nosuid,nodev,size=512m',
               '--mount','type=bind,src='+str(work)+',dst=/work',
+              '--env','TMPDIR=/work',
               '--env','RC6_STRESS_EXECUTION_CONTEXT=DROPLET_ISOLATED_CONTAINER',
               '--env','PYTHONDONTWRITEBYTECODE=1',image,'python','-B','/app/scripts/rc6_postdeploy_stress.py',
               '--output','/work']
