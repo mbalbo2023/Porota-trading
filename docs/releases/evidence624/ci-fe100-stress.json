@@ -1,0 +1,609 @@
+{
+  "child_peak_rss_kib": 399568,
+  "elapsed_seconds": 261.541,
+  "evidence_kind": "LOCAL_HARNESS_CHECK",
+  "finished_at": "2026-10-17T20:20:31.600506+00:00",
+  "full_catalog": {
+    "actual_market_acceptance": false,
+    "catalog_count": 14611,
+    "cuts": [
+      {
+        "as_of": "2026-10-05T13:20:00.000138+00:00",
+        "computed_report_sha256": "8d636cf694c6f54a9a3bf9c1b1529e39c6b393cedcb5973abd294f834080e600",
+        "freshness_budget_seconds": 90.334,
+        "generation_id": "814ee72d12ab924f229c206d49531bb7bef93571b0233901c747da4518c4a519",
+        "manifest_sha256": "5a7b51fd9f434dc2ac1d9175f3d91661c17f5d1279079ebe501a649ee0de9dcc",
+        "sequence": 1791206400000138,
+        "tick_seconds": 15.167,
+        "worker_timing": {
+          "poll_seconds": 30,
+          "process_peak_rss_kib": 384272,
+          "stages_cpu_seconds": {
+            "durable_serialization": 3.624,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.321,
+            "operational_funnel": 2.658,
+            "planner_pipeline": 1.173,
+            "preopen": 2.566,
+            "state_and_inputs": 0.026
+          },
+          "stages_seconds": {
+            "durable_serialization": 4.845,
+            "economic_exit_lab": 0.004,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.746,
+            "operational_funnel": 3.558,
+            "planner_pipeline": 1.574,
+            "preopen": 3.412,
+            "state_and_inputs": 0.026
+          },
+          "storage_profile": {
+            "checkpoint": {
+              "block_outputs": 7448,
+              "cpu_seconds": 0.665725,
+              "major_faults": 0,
+              "peak_rss_kib": 384272,
+              "wall_seconds": 0.879188
+            },
+            "computed": {
+              "block_outputs": 7728,
+              "compress_hash_cpu_seconds": 0.513187,
+              "compress_hash_seconds": 0.512427,
+              "compressed_bytes": 3956152,
+              "cpu_seconds": 2.915701,
+              "encode_cpu_seconds": 2.390764,
+              "encode_seconds": 2.641071,
+              "fsync_cpu_seconds": 0.000736,
+              "fsync_seconds": 0.032201,
+              "major_faults": 0,
+              "peak_rss_kib": 384272,
+              "raw_bytes": 265641048,
+              "wall_seconds": 3.922864
+            },
+            "latest": {
+              "block_outputs": 8,
+              "cpu_seconds": 0.001073,
+              "major_faults": 0,
+              "peak_rss_kib": 384272,
+              "wall_seconds": 0.00155
+            }
+          },
+          "tick_cpu_seconds": 11.373,
+          "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+          "tick_seconds": 15.167
+        }
+      },
+      {
+        "as_of": "2026-10-05T13:20:45.725668+00:00",
+        "computed_report_sha256": "e41a7002cc56e4de5bd56006fbf19b4cfbc4adb120c2dc81cfb8e215bb0f7875",
+        "freshness_budget_seconds": 85.136,
+        "generation_id": "018dc6c2af21183b54aac61039db8099af5ad55791a37b6c1495b5e538b2d013",
+        "manifest_sha256": "ff7c77fc9a705d4737ae2408a1463540bd6d05f901a8f40012f4334b3547126c",
+        "previous_cut_age_seconds": 58.78236,
+        "previous_cut_freshness_budget_seconds": 90.334,
+        "sequence": 1791206445725668,
+        "tick_seconds": 12.568,
+        "worker_timing": {
+          "poll_seconds": 30,
+          "process_peak_rss_kib": 399568,
+          "stages_cpu_seconds": {
+            "durable_serialization": 3.341,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.308,
+            "operational_funnel": 1.853,
+            "planner_pipeline": 1.106,
+            "preopen": 1.291,
+            "state_and_inputs": 0.544
+          },
+          "stages_seconds": {
+            "durable_serialization": 4.454,
+            "economic_exit_lab": 0.002,
+            "entry_signal_lab": 0.001,
+            "family_routing": 1.732,
+            "operational_funnel": 2.479,
+            "planner_pipeline": 1.481,
+            "preopen": 1.716,
+            "state_and_inputs": 0.703
+          },
+          "storage_profile": {
+            "checkpoint": {
+              "block_outputs": 7448,
+              "cpu_seconds": 0.555153,
+              "major_faults": 0,
+              "peak_rss_kib": 399568,
+              "wall_seconds": 0.729902
+            },
+            "computed": {
+              "block_outputs": 8920,
+              "compress_hash_cpu_seconds": 0.525344,
+              "compress_hash_seconds": 0.575443,
+              "compressed_bytes": 4562411,
+              "cpu_seconds": 2.746274,
+              "encode_cpu_seconds": 2.209364,
+              "encode_seconds": 2.406905,
+              "fsync_cpu_seconds": 0.00052,
+              "fsync_seconds": 0.012961,
+              "major_faults": 0,
+              "peak_rss_kib": 399568,
+              "raw_bytes": 265641086,
+              "wall_seconds": 3.684036
+            },
+            "latest": {
+              "block_outputs": 8,
+              "cpu_seconds": 0.000965,
+              "major_faults": 0,
+              "peak_rss_kib": 399568,
+              "wall_seconds": 0.001412
+            }
+          },
+          "tick_cpu_seconds": 9.447,
+          "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+          "tick_seconds": 12.568
+        }
+      }
+    ],
+    "elapsed_seconds": 58.783,
+    "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+    "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+    "process_peak_rss_kib": 399568,
+    "production_data_mounted": false,
+    "provider_requests": 0,
+    "ready_fixture_count": 9902,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "schema": "rc6.synthetic-full-catalog.v1"
+  },
+  "limitations": [
+    "Real provider/network capacity and Android voice interaction are not simulated facts."
+  ],
+  "network": "NO_LIVE_TRANSPORT_CONFIGURED",
+  "ppi_watch_accessed": false,
+  "production_data_mounted": false,
+  "scenarios": [
+    {
+      "cases": 36,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "25932111d6ee249aaf383ae78be260c2cdab9a7e15de50220937ca5df1e0e5d9",
+      "name": "sql_shadow_wal",
+      "skipped": 0
+    },
+    {
+      "cases": 156,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "3ebaed246390e06fd0e684b260fb9eeaa145bfd433882bb66fc51aa7e25b712e",
+      "name": "publication_io_identity",
+      "skipped": 0
+    },
+    {
+      "cases": 160,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "be88f387820395f291f1fbb45970c9cb43c804e58e879e66bb8c2ab4f713d54f",
+      "name": "signals_risk_exit_ledger",
+      "skipped": 0
+    },
+    {
+      "cases": 99,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "9735406851fe3950cf062cbdeee8953d5c7bacd26f71f8df4f476437f423bf2a",
+      "name": "sources_readiness_network",
+      "skipped": 0
+    },
+    {
+      "cases": 106,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "ce060bd8039d4b340b7e38b48666125f73f4cbf0d8ff6b2c75b1f326a4ac59f8",
+      "name": "scalping_capacity",
+      "skipped": 0
+    },
+    {
+      "cases": 72,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "898139ab132363b17ac721cb8f34796c4ddda5013b65a015a235b6ba6bbc2d92",
+      "name": "treasury_caucion",
+      "skipped": 0
+    },
+    {
+      "cases": 198,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "79a45a645cc66e5e493b471b777c310bd01835821ef1b2eab2f497a284cd54b7",
+      "name": "dashboard_auth_52",
+      "skipped": 0
+    },
+    {
+      "cases": 18,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "af0539c7c3e0ca7654a4f437c505c996af27ca8399ce42ace7b6643de3b3ba43",
+      "name": "scheduler_monitor_backup",
+      "skipped": 0
+    }
+  ],
+  "schema": "rc6.postdeploy-stress.v1",
+  "self_peak_rss_kib": 399568,
+  "session": {
+    "actual_market_acceptance": false,
+    "captured_notification_count": 176,
+    "counts": {
+      "candle_versions": 1872,
+      "market_snapshots": 1560,
+      "paper_decisions": 876,
+      "paper_fills": 176,
+      "paper_positions": 88
+    },
+    "dashboard_routes": [
+      {
+        "bytes": 23260,
+        "elapsed_ms": 2.683,
+        "path": "/",
+        "read_queries": "21"
+      },
+      {
+        "bytes": 26265,
+        "elapsed_ms": 3.185,
+        "path": "/analitica",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23008,
+        "elapsed_ms": 2.452,
+        "path": "/analitica/anual",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22980,
+        "elapsed_ms": 1.645,
+        "path": "/analitica/cierre-diario",
+        "read_queries": "8"
+      },
+      {
+        "bytes": 24309,
+        "elapsed_ms": 4.294,
+        "path": "/analitica/contrafactuales",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22902,
+        "elapsed_ms": 1.355,
+        "path": "/analitica/experimentos",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22916,
+        "elapsed_ms": 1.456,
+        "path": "/analitica/historico",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22625,
+        "elapsed_ms": 1.34,
+        "path": "/analitica/reportes",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 57602,
+        "elapsed_ms": 5.108,
+        "path": "/analitica/salidas",
+        "read_queries": "11"
+      },
+      {
+        "bytes": 22898,
+        "elapsed_ms": 1.267,
+        "path": "/analitica/senales",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24202,
+        "elapsed_ms": 2.683,
+        "path": "/en-vivo",
+        "read_queries": "29"
+      },
+      {
+        "bytes": 22833,
+        "elapsed_ms": 1.238,
+        "path": "/en-vivo/capacidad",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23969,
+        "elapsed_ms": 1.562,
+        "path": "/en-vivo/cierres",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 111220,
+        "elapsed_ms": 5.368,
+        "path": "/en-vivo/decisiones",
+        "read_queries": "9"
+      },
+      {
+        "bytes": 40935,
+        "elapsed_ms": 4.658,
+        "path": "/en-vivo/fuentes",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 24320,
+        "elapsed_ms": 1.29,
+        "path": "/en-vivo/oportunidades",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23752,
+        "elapsed_ms": 1.48,
+        "path": "/en-vivo/posiciones",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 43934,
+        "elapsed_ms": 1.863,
+        "path": "/en-vivo/workers",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 56006,
+        "elapsed_ms": 2.35,
+        "path": "/instrumentos",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 46955,
+        "elapsed_ms": 2.018,
+        "path": "/instrumentos/contrato",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 46983,
+        "elapsed_ms": 1.973,
+        "path": "/instrumentos/evidencia",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 56015,
+        "elapsed_ms": 2.275,
+        "path": "/instrumentos/ficha",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22625,
+        "elapsed_ms": 1.507,
+        "path": "/instrumentos/mercado",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22732,
+        "elapsed_ms": 1.371,
+        "path": "/riesgo",
+        "read_queries": "7"
+      },
+      {
+        "bytes": 22705,
+        "elapsed_ms": 1.242,
+        "path": "/riesgo/event-risk",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23659,
+        "elapsed_ms": 1.471,
+        "path": "/riesgo/exposicion",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 22674,
+        "elapsed_ms": 1.314,
+        "path": "/riesgo/limites",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23697,
+        "elapsed_ms": 25.471,
+        "path": "/riesgo/liquidez",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 26073,
+        "elapsed_ms": 3.038,
+        "path": "/riesgo/pnl",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23655,
+        "elapsed_ms": 1.514,
+        "path": "/riesgo/posiciones",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 44621,
+        "elapsed_ms": 1.869,
+        "path": "/sistema",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 22552,
+        "elapsed_ms": 1.298,
+        "path": "/sistema/backups",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 37789,
+        "elapsed_ms": 1.52,
+        "path": "/sistema/configuracion",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23129,
+        "elapsed_ms": 1.266,
+        "path": "/sistema/evidencia",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 38089,
+        "elapsed_ms": 1.675,
+        "path": "/sistema/integraciones",
+        "read_queries": "8"
+      },
+      {
+        "bytes": 22495,
+        "elapsed_ms": 1.367,
+        "path": "/sistema/logs",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 44781,
+        "elapsed_ms": 1.86,
+        "path": "/sistema/salud",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 22726,
+        "elapsed_ms": 1.307,
+        "path": "/sistema/scheduler",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 48177,
+        "elapsed_ms": 1.97,
+        "path": "/sistema/workers",
+        "read_queries": "14"
+      },
+      {
+        "bytes": 22714,
+        "elapsed_ms": 1.255,
+        "path": "/trading",
+        "read_queries": "3"
+      },
+      {
+        "bytes": 24087,
+        "elapsed_ms": 1.398,
+        "path": "/trading/cauciones",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23799,
+        "elapsed_ms": 1.358,
+        "path": "/trading/derivados",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 68576,
+        "elapsed_ms": 2.505,
+        "path": "/trading/equity-spot",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23782,
+        "elapsed_ms": 1.384,
+        "path": "/trading/renta-fija",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 64713,
+        "elapsed_ms": 2.438,
+        "path": "/trading/scalping",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23818,
+        "elapsed_ms": 1.365,
+        "path": "/trading/tesoreria",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23150,
+        "elapsed_ms": 1.477,
+        "path": "/universo",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22721,
+        "elapsed_ms": 1.24,
+        "path": "/universo/coverage",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24005,
+        "elapsed_ms": 1.227,
+        "path": "/universo/discovery",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24005,
+        "elapsed_ms": 1.234,
+        "path": "/universo/excluidos",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22506,
+        "elapsed_ms": 1.241,
+        "path": "/universo/familias",
+        "read_queries": "3"
+      },
+      {
+        "bytes": 24026,
+        "elapsed_ms": 1.286,
+        "path": "/universo/tradeability",
+        "read_queries": "2"
+      }
+    ],
+    "decision_reasons": {
+      "Aprendiendo serie: 1/8 muestras": 4,
+      "Aprendiendo serie: 2/8 muestras": 4,
+      "Aprendiendo serie: 3/8 muestras": 4,
+      "Aprendiendo serie: 4/8 muestras": 4,
+      "Aprendiendo serie: 5/8 muestras": 4,
+      "Aprendiendo serie: 6/8 muestras": 4,
+      "Aprendiendo serie: 7/8 muestras": 4,
+      "EOD_NO_NEW_ENTRIES": 120,
+      "Momentum positivo y friccion admisible": 99,
+      "OPEN_POSITION_NEEDS_SUPERVISION_OR_EXIT": 144,
+      "Score paper debajo del umbral versionado": 485
+    },
+    "exit_reasons": {
+      "MAX_HOLD_PAPER": 1,
+      "STOP_PAPER": 16,
+      "TAKE_PROFIT_PAPER": 71
+    },
+    "local_eod_batches": 4,
+    "local_eod_repeated_imported": 0,
+    "provider_contracts": "SYNTHETIC_NOT_VALIDATED",
+    "provider_requests": 0,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "schema": "rc6.synthetic-full-session.v1",
+    "shadow_cuts": 16,
+    "simulated_minutes": 405,
+    "tick_max_seconds": 1.8335662279999951,
+    "tick_p95_seconds": 1.007783465999978,
+    "treasury_attempts": [
+      {
+        "code": "NO_ELIGIBLE_OFFER",
+        "minute": 365,
+        "status": "HOLD"
+      },
+      {
+        "code": "NO_ELIGIBLE_OFFER",
+        "minute": 375,
+        "status": "HOLD"
+      }
+    ]
+  },
+  "smoke": false,
+  "started_at": "2026-10-17T20:16:10.059713+00:00",
+  "status": "GREEN"
+}

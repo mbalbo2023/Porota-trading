@@ -1,0 +1,177 @@
+{
+  "catalog_count": 14611,
+  "shape": {
+    "BONOS": 3012,
+    "OBLIGACIONES": 5018,
+    "FCI": 1082,
+    "ACCIONES": 198,
+    "CEDEARS": 2441,
+    "LETRAS": 53,
+    "FUTUROS": 203,
+    "OPCIONES": 2502,
+    "CAUCIONES": 10,
+    "ON": 91,
+    "INDICES": 1
+  },
+  "ready_fixture_count": 9902,
+  "native_backend": true,
+  "import_root": "/workspace/scratch/88594b90c2a3/porota",
+  "host_acceptance": false,
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "clocks": "PRE fixed; second PRE+30s; no physical cadence claim",
+  "ticks": [
+    {
+      "wall": 10.074398340999323,
+      "cpu": 10.065829539,
+      "peak_rss_kib": 381412,
+      "engine_count": 2,
+      "report": {
+        "compressed_bytes": 3955575,
+        "file": "computed-b75ef2ca5ba236e4ba2db8953d70e8a62febe69b166c1854198acfc5992670f4.json.gz",
+        "raw_bytes": 265449852,
+        "sha256": "b75ef2ca5ba236e4ba2db8953d70e8a62febe69b166c1854198acfc5992670f4"
+      },
+      "timing": {
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 381412,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.475,
+          "economic_exit_lab": 0.003,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.428,
+          "operational_funnel": 2.142,
+          "planner_pipeline": 0.995,
+          "preopen": 1.989,
+          "state_and_inputs": 0.026
+        },
+        "stages_seconds": {
+          "durable_serialization": 3.479,
+          "economic_exit_lab": 0.003,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.428,
+          "operational_funnel": 2.142,
+          "planner_pipeline": 0.995,
+          "preopen": 1.991,
+          "state_and_inputs": 0.026
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7424,
+            "cpu_seconds": 0.638666,
+            "major_faults": 0,
+            "peak_rss_kib": 381412,
+            "wall_seconds": 0.640167
+          },
+          "computed": {
+            "block_outputs": 7728,
+            "compress_hash_cpu_seconds": 0.430173,
+            "compress_hash_seconds": 0.428775,
+            "compressed_bytes": 3955575,
+            "cpu_seconds": 2.79997,
+            "encode_cpu_seconds": 2.363919,
+            "encode_seconds": 2.361668,
+            "fsync_cpu_seconds": 0.000361,
+            "fsync_seconds": 0.001649,
+            "major_faults": 0,
+            "peak_rss_kib": 381412,
+            "raw_bytes": 265449852,
+            "wall_seconds": 2.801623
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.000994,
+            "major_faults": 0,
+            "peak_rss_kib": 381412,
+            "wall_seconds": 0.001684
+          }
+        },
+        "tick_cpu_seconds": 10.059,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 10.065
+      },
+      "idle_allocator": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 302852,
+        "rss_after_kib": 112896,
+        "elapsed_seconds": 0.295269
+      }
+    },
+    {
+      "wall": 8.652486773000419,
+      "cpu": 8.643908393,
+      "peak_rss_kib": 381412,
+      "engine_count": 2,
+      "report": {
+        "compressed_bytes": 4560183,
+        "file": "computed-f2df89a506cead33cee6d4265c0d63f5314f1dbb1afcc01df1f366fddf401f15.json.gz",
+        "raw_bytes": 265449890,
+        "sha256": "f2df89a506cead33cee6d4265c0d63f5314f1dbb1afcc01df1f366fddf401f15"
+      },
+      "timing": {
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 381412,
+        "stages_cpu_seconds": {
+          "durable_serialization": 3.158,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.303,
+          "operational_funnel": 1.334,
+          "planner_pipeline": 0.901,
+          "preopen": 1.428,
+          "state_and_inputs": 0.51
+        },
+        "stages_seconds": {
+          "durable_serialization": 3.163,
+          "economic_exit_lab": 0.002,
+          "entry_signal_lab": 0.001,
+          "family_routing": 1.303,
+          "operational_funnel": 1.334,
+          "planner_pipeline": 0.901,
+          "preopen": 1.428,
+          "state_and_inputs": 0.51
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 7424,
+            "cpu_seconds": 0.519204,
+            "major_faults": 0,
+            "peak_rss_kib": 381412,
+            "wall_seconds": 0.521332
+          },
+          "computed": {
+            "block_outputs": 8912,
+            "compress_hash_cpu_seconds": 0.435942,
+            "compress_hash_seconds": 0.436141,
+            "compressed_bytes": 4560183,
+            "cpu_seconds": 2.602267,
+            "encode_cpu_seconds": 2.160603,
+            "encode_seconds": 2.158242,
+            "fsync_cpu_seconds": 0.000323,
+            "fsync_seconds": 0.001813,
+            "major_faults": 0,
+            "peak_rss_kib": 381412,
+            "raw_bytes": 265449890,
+            "wall_seconds": 2.605331
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.000882,
+            "major_faults": 0,
+            "peak_rss_kib": 381412,
+            "wall_seconds": 0.001437
+          }
+        },
+        "tick_cpu_seconds": 8.637,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 8.643
+      },
+      "idle_allocator": {
+        "allocator_trim_available": true,
+        "rss_before_kib": 326764,
+        "rss_after_kib": 135372,
+        "elapsed_seconds": 0.262524
+      }
+    }
+  ]
+}

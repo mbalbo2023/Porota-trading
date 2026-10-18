@@ -1,0 +1,16 @@
+{
+  "artifact": 12112807824,
+  "zip_bytes": 96772,
+  "zip_sha256": "323f0136100815681c1586ca506135092bac3b97c6432b014ce5715c12782530",
+  "cases": 4009,
+  "failure": 1,
+  "error": 0,
+  "skipped": 0,
+  "failed_cases": [
+    {
+      "classname": "tests.test_rc6_disk_materialization_reserve",
+      "name": "test_preclean_only_defers_exact_residual_space_result_to_final_admission[0--0]",
+      "time": "0.009"
+    }
+  ]
+}

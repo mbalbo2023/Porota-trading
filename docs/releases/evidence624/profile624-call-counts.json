@@ -1,0 +1,430 @@
+{
+  "guard_only": [
+    {
+      "tick": 0,
+      "total_calls": 33832281,
+      "primitive_calls": 29707020,
+      "functions": [
+        {
+          "file": "<frozen os>",
+          "line": 791,
+          "function": "encode",
+          "primitive_calls": 17,
+          "total_calls": 17,
+          "self_cpu_seconds": 9.722000000000001e-06,
+          "cumulative_cpu_seconds": 1.5822000000000002e-05
+        },
+        {
+          "file": "json/__init__.py",
+          "line": 299,
+          "function": "loads",
+          "primitive_calls": 47961,
+          "total_calls": 47961,
+          "self_cpu_seconds": 0.032281415,
+          "cumulative_cpu_seconds": 0.5239743450000001
+        },
+        {
+          "file": "json/encoder.py",
+          "line": 205,
+          "function": "iterencode",
+          "primitive_calls": 419076,
+          "total_calls": 419076,
+          "self_cpu_seconds": 3.891113203,
+          "cumulative_cpu_seconds": 3.89111805
+        },
+        {
+          "file": "rc6_shadow_runtime/persistence.py",
+          "line": 267,
+          "function": "_canonical_chunks",
+          "primitive_calls": 5260,
+          "total_calls": 5260,
+          "self_cpu_seconds": 0.259693452,
+          "cumulative_cpu_seconds": 5.131640398
+        },
+        {
+          "file": "rc6_shadow_runtime/persistence.py",
+          "line": 123,
+          "function": "_canonical_fragments",
+          "primitive_calls": 565200,
+          "total_calls": 565200,
+          "self_cpu_seconds": 0.092120372,
+          "cumulative_cpu_seconds": 4.732212256
+        },
+        {
+          "file": "rc6_dynamic_universe/common.py",
+          "line": 15,
+          "function": "digest",
+          "primitive_calls": 26641,
+          "total_calls": 26641,
+          "self_cpu_seconds": 0.031538254,
+          "cumulative_cpu_seconds": 0.876538734
+        },
+        {
+          "file": "rc6_performance/common.py",
+          "line": 31,
+          "function": "digest",
+          "primitive_calls": 110464,
+          "total_calls": 110464,
+          "self_cpu_seconds": 0.09234745700000001,
+          "cumulative_cpu_seconds": 1.049056094
+        },
+        {
+          "file": "rc6_performance/common.py",
+          "line": 27,
+          "function": "canonical",
+          "primitive_calls": 133136,
+          "total_calls": 133136,
+          "self_cpu_seconds": 0.047539419000000006,
+          "cumulative_cpu_seconds": 1.230562058
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "function": "<built-in method rc6_shadow_runtime._rc6_json_bound.is_small>",
+          "primitive_calls": 190648,
+          "total_calls": 190648,
+          "self_cpu_seconds": 0.960922056,
+          "cumulative_cpu_seconds": 0.960922056
+        },
+        {
+          "file": "json/decoder.py",
+          "line": 344,
+          "function": "raw_decode",
+          "primitive_calls": 47961,
+          "total_calls": 47961,
+          "self_cpu_seconds": 0.36619854900000004,
+          "cumulative_cpu_seconds": 0.36619854900000004
+        },
+        {
+          "file": "json/encoder.py",
+          "line": 183,
+          "function": "encode",
+          "primitive_calls": 441956,
+          "total_calls": 441956,
+          "self_cpu_seconds": 0.335201399,
+          "cumulative_cpu_seconds": 4.3799330670000005
+        }
+      ]
+    },
+    {
+      "tick": 1,
+      "total_calls": 30107904,
+      "primitive_calls": 26254331,
+      "functions": [
+        {
+          "file": "<frozen os>",
+          "line": 791,
+          "function": "encode",
+          "primitive_calls": 15,
+          "total_calls": 15,
+          "self_cpu_seconds": 9.162000000000001e-06,
+          "cumulative_cpu_seconds": 1.4492000000000001e-05
+        },
+        {
+          "file": "json/__init__.py",
+          "line": 299,
+          "function": "loads",
+          "primitive_calls": 25300,
+          "total_calls": 25300,
+          "self_cpu_seconds": 0.017107413000000002,
+          "cumulative_cpu_seconds": 1.0421099630000001
+        },
+        {
+          "file": "json/encoder.py",
+          "line": 205,
+          "function": "iterencode",
+          "primitive_calls": 308557,
+          "total_calls": 308557,
+          "self_cpu_seconds": 3.0624580540000004,
+          "cumulative_cpu_seconds": 3.062463112
+        },
+        {
+          "file": "rc6_shadow_runtime/persistence.py",
+          "line": 267,
+          "function": "_canonical_chunks",
+          "primitive_calls": 4582,
+          "total_calls": 4582,
+          "self_cpu_seconds": 0.247135354,
+          "cumulative_cpu_seconds": 4.238275429000001
+        },
+        {
+          "file": "rc6_shadow_runtime/persistence.py",
+          "line": 123,
+          "function": "_canonical_fragments",
+          "primitive_calls": 525410,
+          "total_calls": 525410,
+          "self_cpu_seconds": 0.08637918,
+          "cumulative_cpu_seconds": 3.860358756
+        },
+        {
+          "file": "rc6_dynamic_universe/common.py",
+          "line": 15,
+          "function": "digest",
+          "primitive_calls": 26634,
+          "total_calls": 26634,
+          "self_cpu_seconds": 0.026642044,
+          "cumulative_cpu_seconds": 0.972833182
+        },
+        {
+          "file": "rc6_performance/common.py",
+          "line": 31,
+          "function": "digest",
+          "primitive_calls": 42478,
+          "total_calls": 42478,
+          "self_cpu_seconds": 0.031778166000000004,
+          "cumulative_cpu_seconds": 0.5449358980000001
+        },
+        {
+          "file": "rc6_performance/common.py",
+          "line": 27,
+          "function": "canonical",
+          "primitive_calls": 42491,
+          "total_calls": 42491,
+          "self_cpu_seconds": 0.014579371,
+          "cumulative_cpu_seconds": 0.733895415
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "function": "<built-in method rc6_shadow_runtime._rc6_json_bound.is_small>",
+          "primitive_calls": 170824,
+          "total_calls": 170824,
+          "self_cpu_seconds": 0.663891825,
+          "cumulative_cpu_seconds": 0.663891825
+        },
+        {
+          "file": "json/decoder.py",
+          "line": 344,
+          "function": "raw_decode",
+          "primitive_calls": 25300,
+          "total_calls": 25300,
+          "self_cpu_seconds": 0.940759808,
+          "cumulative_cpu_seconds": 0.940759808
+        },
+        {
+          "file": "json/encoder.py",
+          "line": 183,
+          "function": "encode",
+          "primitive_calls": 331415,
+          "total_calls": 331415,
+          "self_cpu_seconds": 0.236144195,
+          "cumulative_cpu_seconds": 3.407689843
+        }
+      ]
+    }
+  ],
+  "compact_preopen": [
+    {
+      "tick": 0,
+      "total_calls": 32005105,
+      "primitive_calls": 27879853,
+      "functions": [
+        {
+          "file": "<frozen os>",
+          "line": 791,
+          "function": "encode",
+          "primitive_calls": 17,
+          "total_calls": 17,
+          "self_cpu_seconds": 9.399000000000001e-06,
+          "cumulative_cpu_seconds": 1.5874e-05
+        },
+        {
+          "file": "json/__init__.py",
+          "line": 299,
+          "function": "loads",
+          "primitive_calls": 22674,
+          "total_calls": 22674,
+          "self_cpu_seconds": 0.016469476,
+          "cumulative_cpu_seconds": 0.45330242400000004
+        },
+        {
+          "file": "json/encoder.py",
+          "line": 205,
+          "function": "iterencode",
+          "primitive_calls": 419076,
+          "total_calls": 419076,
+          "self_cpu_seconds": 3.813651332,
+          "cumulative_cpu_seconds": 3.81365648
+        },
+        {
+          "file": "rc6_shadow_runtime/persistence.py",
+          "line": 310,
+          "function": "_canonical_chunks",
+          "primitive_calls": 5260,
+          "total_calls": 5260,
+          "self_cpu_seconds": 0.250029447,
+          "cumulative_cpu_seconds": 4.963793620000001
+        },
+        {
+          "file": "rc6_shadow_runtime/persistence.py",
+          "line": 166,
+          "function": "_canonical_fragments",
+          "primitive_calls": 565200,
+          "total_calls": 565200,
+          "self_cpu_seconds": 0.088825813,
+          "cumulative_cpu_seconds": 4.573962531
+        },
+        {
+          "file": "rc6_dynamic_universe/common.py",
+          "line": 15,
+          "function": "digest",
+          "primitive_calls": 26641,
+          "total_calls": 26641,
+          "self_cpu_seconds": 0.035498287,
+          "cumulative_cpu_seconds": 0.829632668
+        },
+        {
+          "file": "rc6_performance/common.py",
+          "line": 27,
+          "function": "canonical",
+          "primitive_calls": 133136,
+          "total_calls": 133136,
+          "self_cpu_seconds": 0.054069424000000005,
+          "cumulative_cpu_seconds": 1.2852829540000001
+        },
+        {
+          "file": "rc6_performance/common.py",
+          "line": 31,
+          "function": "digest",
+          "primitive_calls": 110464,
+          "total_calls": 110464,
+          "self_cpu_seconds": 0.09477154600000001,
+          "cumulative_cpu_seconds": 1.080476017
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "function": "<built-in method rc6_shadow_runtime._rc6_json_bound.is_small>",
+          "primitive_calls": 190648,
+          "total_calls": 190648,
+          "self_cpu_seconds": 0.9260263030000001,
+          "cumulative_cpu_seconds": 0.9260263030000001
+        },
+        {
+          "file": "json/decoder.py",
+          "line": 344,
+          "function": "raw_decode",
+          "primitive_calls": 22674,
+          "total_calls": 22674,
+          "self_cpu_seconds": 0.37060015700000004,
+          "cumulative_cpu_seconds": 0.37060015700000004
+        },
+        {
+          "file": "json/encoder.py",
+          "line": 183,
+          "function": "encode",
+          "primitive_calls": 441956,
+          "total_calls": 441956,
+          "self_cpu_seconds": 0.34428448500000003,
+          "cumulative_cpu_seconds": 4.307651822
+        }
+      ]
+    },
+    {
+      "tick": 1,
+      "total_calls": 31517796,
+      "primitive_calls": 27267057,
+      "functions": [
+        {
+          "file": "<frozen os>",
+          "line": 791,
+          "function": "encode",
+          "primitive_calls": 15,
+          "total_calls": 15,
+          "self_cpu_seconds": 8.626e-06,
+          "cumulative_cpu_seconds": 1.4050000000000001e-05
+        },
+        {
+          "file": "json/__init__.py",
+          "line": 299,
+          "function": "loads",
+          "primitive_calls": 13,
+          "total_calls": 13,
+          "self_cpu_seconds": 8.7274e-05,
+          "cumulative_cpu_seconds": 1.7002495590000002
+        },
+        {
+          "file": "json/encoder.py",
+          "line": 205,
+          "function": "iterencode",
+          "primitive_calls": 328433,
+          "total_calls": 328433,
+          "self_cpu_seconds": 3.114804963,
+          "cumulative_cpu_seconds": 3.11480966
+        },
+        {
+          "file": "rc6_shadow_runtime/persistence.py",
+          "line": 310,
+          "function": "_canonical_chunks",
+          "primitive_calls": 5261,
+          "total_calls": 5261,
+          "self_cpu_seconds": 0.24790088600000001,
+          "cumulative_cpu_seconds": 4.599344698
+        },
+        {
+          "file": "rc6_shadow_runtime/persistence.py",
+          "line": 166,
+          "function": "_canonical_fragments",
+          "primitive_calls": 565200,
+          "total_calls": 565200,
+          "self_cpu_seconds": 0.09380355500000001,
+          "cumulative_cpu_seconds": 4.217975265000001
+        },
+        {
+          "file": "rc6_dynamic_universe/common.py",
+          "line": 15,
+          "function": "digest",
+          "primitive_calls": 26633,
+          "total_calls": 26633,
+          "self_cpu_seconds": 0.023585037000000003,
+          "cumulative_cpu_seconds": 0.6145227120000001
+        },
+        {
+          "file": "rc6_performance/common.py",
+          "line": 27,
+          "function": "canonical",
+          "primitive_calls": 42491,
+          "total_calls": 42491,
+          "self_cpu_seconds": 0.016056110000000002,
+          "cumulative_cpu_seconds": 0.788399818
+        },
+        {
+          "file": "rc6_performance/common.py",
+          "line": 31,
+          "function": "digest",
+          "primitive_calls": 42478,
+          "total_calls": 42478,
+          "self_cpu_seconds": 0.034208976,
+          "cumulative_cpu_seconds": 0.589463876
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "function": "<built-in method rc6_shadow_runtime._rc6_json_bound.is_small>",
+          "primitive_calls": 190648,
+          "total_calls": 190648,
+          "self_cpu_seconds": 0.611126049,
+          "cumulative_cpu_seconds": 0.611126049
+        },
+        {
+          "file": "json/decoder.py",
+          "line": 344,
+          "function": "raw_decode",
+          "primitive_calls": 13,
+          "total_calls": 13,
+          "self_cpu_seconds": 0.541684063,
+          "cumulative_cpu_seconds": 1.671668882
+        },
+        {
+          "file": "json/encoder.py",
+          "line": 183,
+          "function": "encode",
+          "primitive_calls": 351313,
+          "total_calls": 351313,
+          "self_cpu_seconds": 0.25255556900000004,
+          "cumulative_cpu_seconds": 3.4755776760000003
+        }
+      ]
+    }
+  ]
+}

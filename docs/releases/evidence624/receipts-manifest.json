@@ -1,0 +1,1521 @@
+{
+  "schema": "rc6.causal-receipts.v1",
+  "workstream": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+  "original_receipts_preserved": 154,
+  "receipts": [
+    {
+      "path": "docs/releases/evidence603/issue603-before.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 4494,
+      "sha256": "75bd5b2111dc089b946bd43af9dfb9d7ef49ad3b8d632bfe830a16cb82cff124",
+      "cases": 10,
+      "failure": 4,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 10
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-first-after.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 21793,
+      "sha256": "ac086376f89f61c520727f492e93e40c9d51b1212a0a0a20292c448d4483aa72",
+      "cases": 114,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 114
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-after.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 18287,
+      "sha256": "fbb95cb6ac08fc6f61f6c9b97fd2f390e7f2f43f29b23762bf95e87b20bd7dfb",
+      "cases": 114,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 114
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-adversarial-before.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 2902,
+      "sha256": "82e01586debff23b2c843bb8dab61eae23f06053d4f60ed14c4bcf66274ea4c8",
+      "cases": 13,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 13
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-adversarial-after.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 5794,
+      "sha256": "dbd75ad1f1b4642edbd66d3f825b800663ac251b28687e265deebd110aa539c5",
+      "cases": 39,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 39
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-prepublish.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 3451,
+      "sha256": "93a581b43438510fe122eb286866e7b1ec1ddd4f039915f5461b3d8df632334b",
+      "cases": 23,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 23
+    },
+    {
+      "path": "docs/releases/evidence603/issue603-quiescence-final.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 9207,
+      "sha256": "1cca94530e343a508407a63552464c9dc304e87787978c6236a27cf85fdd4840",
+      "cases": 60,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 60
+    },
+    {
+      "path": "docs/releases/evidence603/drain-oom-before.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 3851,
+      "sha256": "57e75f498f44f3e4f587e3c68da3030a71df598a4a4443bfdcdb60ab78655d72",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 1
+    },
+    {
+      "path": "docs/releases/evidence603/drain-oom-after.xml",
+      "source": "LOCAL_CAUSAL_TEST_EXECUTION",
+      "bytes": 9958,
+      "sha256": "2745a98453471b98c82711d7eaf95ba2f39e35226b330a58867feebc57a67fc3",
+      "cases": 65,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 65
+    },
+    {
+      "path": "docs/releases/evidence603/local-harness-smoke4.json",
+      "source": "LOCAL_HARNESS_CHECK_NOT_DROPLET_STRESS",
+      "bytes": 8754,
+      "sha256": "d394acf359ca2d04e1508d48923d130d5d6370ecf42c2066e051eaeb5d183ba0"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-bdac26d-frozen.json",
+      "source": "NATIVE_PREDEPLOY_38981525324",
+      "bytes": 611,
+      "sha256": "8fe74b80b302c929ba2f2477b8954b23dfefbc20f87e7647adbf135be2cc069e"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-bdac26d-tests.json",
+      "source": "NATIVE_PREDEPLOY_38981525324",
+      "bytes": 360,
+      "sha256": "0bcb984e00ae090701a1ca78f459c9f6bf12823e13dda52a74b2c5e257212462"
+    },
+    {
+      "path": "docs/releases/RC6_ISSUE603_WIRING_RECONCILIATION.json",
+      "source": "STATIC_CANDIDATE_ANALYSIS_NOT_LIVE_TRACE",
+      "bytes": 234133,
+      "sha256": "e846d527802e73048c08400c8d92cb1363f87b8a3c97408ad9fee69decf7ec70"
+    },
+    {
+      "path": "docs/releases/evidence603/wiring_audit.py",
+      "source": "REPRODUCIBLE_STATIC_AUDIT_CODE",
+      "bytes": 7907,
+      "sha256": "bc8e38aa0b6aaa78635de3e1b39faca0bc9f5113bc7b81e4896b6d759bd28100"
+    },
+    {
+      "path": "docs/releases/evidence603/source-identity-after.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 5596,
+      "sha256": "be6faa96bc7cd61616bc4efa58357d2f1c7153b248e135cf09135a781ea22c56",
+      "cases": 35,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 35
+    },
+    {
+      "path": "docs/releases/evidence603/disk-reserve-before.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 13226,
+      "sha256": "6fc59378a4be57a812e088207aa25493632204c16392f543c97c4988477c6298",
+      "cases": 6,
+      "failure": 6,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 6
+    },
+    {
+      "path": "docs/releases/evidence603/disk-identity-after.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 9756,
+      "sha256": "067f68c589b53f4a27ca2f725bd5f91045335c60cf3b25d4d08d96400510cf9e",
+      "cases": 59,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 59
+    },
+    {
+      "path": "docs/releases/evidence603/consolidated-forward-after-final.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 14855,
+      "sha256": "b353600b9b13fe632f2b6cc9ab46a33ec3ddc3cc773b07c5250b8090040a430f",
+      "cases": 89,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 89
+    },
+    {
+      "path": "docs/releases/evidence603/disk-reserve-final.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 2367,
+      "sha256": "76695b3a06d340af46c5cd0b35528119cf5ff9d710d58145d1229f13757c8f3f",
+      "cases": 12,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 12
+    },
+    {
+      "path": "docs/releases/evidence603/shadow-contract-before-isolated.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 4319,
+      "sha256": "65b53f2678e01d514e3f26c3f13ddd9712cff2eae61b925721e388c25f1d7d88",
+      "cases": 7,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 7
+    },
+    {
+      "path": "docs/releases/evidence603/generation-gate-after.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 2895,
+      "sha256": "7402a8c99ed3d55c6164937861c02b6c766b1f3cb80db752ed3db20ceaf538c2",
+      "cases": 17,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 17
+    },
+    {
+      "path": "docs/releases/evidence603/final-batch-local.xml",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 21662,
+      "sha256": "6e0079abfe00c6d9bc3a7f6376dc50046128965a3087814ab8e954317093208d",
+      "cases": 142,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 142
+    },
+    {
+      "path": "docs/releases/evidence603/probe-38987351472-snapshot.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 5692,
+      "sha256": "7991a10611e4da60ee4b402da7e675cbc3e048b7d46c5835b1fb70d3a7281570"
+    },
+    {
+      "path": "docs/releases/evidence603/probe-38987351472-shadow_diagnostic.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 5293,
+      "sha256": "6c55a7daa9bd970ece9e96b5a16b19965ccfa81e120f3555ffef5d3a9e968eae"
+    },
+    {
+      "path": "docs/releases/evidence603/probe-38987351472-decision.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 984,
+      "sha256": "955de7840f22ae03aac2f49d69a37260ec6a01482f70287624b0674ae2a348b0"
+    },
+    {
+      "path": "docs/releases/evidence603/probe-38987351472-delivery.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 44,
+      "sha256": "5a8af2c817d0f12431bba9e6b3cf8d73f12469167c6b0135c325052454e4d881"
+    },
+    {
+      "path": "docs/releases/evidence603/image-source-env-bdac26d.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 709,
+      "sha256": "775d48b4be284aa7d83b8b21de0b8e9067af56ae384ee52d56f657e81b2d95c3"
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38982377181-failure.json",
+      "source": "CAUSAL_TEST_OR_CANONICAL_ACTION_RECEIPT",
+      "bytes": 1478,
+      "sha256": "fe52a5822a25c8dd71f9282b51c720a03df91fd1f4399152fdeacadf36b51b42"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988131821-red.xml",
+      "source": "NATIVE_PREDEPLOY_OR_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 1590594,
+      "sha256": "e1f35941ba2988b8233fbc2fdfb9e6ede18a18fdd68475d638dfc3e4da80e465",
+      "cases": 3756,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 3759
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988131821-red.json",
+      "source": "NATIVE_PREDEPLOY_OR_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 358,
+      "sha256": "63b5fb56f48bfb6dd4ccad974eefd9d41a396e3e75e609c6b8b4642c1b35741c"
+    },
+    {
+      "path": "docs/releases/evidence603/policy-regression-after.xml",
+      "source": "NATIVE_PREDEPLOY_OR_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 7598,
+      "sha256": "a3b5e1e75b698deb642daa9fc60d61b02af6ccb23dc78450501119e95347d07c",
+      "cases": 50,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 50
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38989417238-failure.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 896,
+      "sha256": "a2be2e3d5a8fac50fd92363ecd94e6fa7b6582fa09c0f2a4850dc25589f19e62"
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38989417238-selected-lines.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 938,
+      "sha256": "b20ee6927de1443037c432ced470963e1b04fc542614df4a344acd813ef3c50d"
+    },
+    {
+      "path": "docs/releases/evidence603/merge-608-exact-tree.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 199,
+      "sha256": "ee7965e96b6f0849e724561b44950f78c403230231dbc95cc3701ef0c7e15184"
+    },
+    {
+      "path": "docs/releases/evidence603/preclean-privileges-after.xml",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 14266,
+      "sha256": "bf151ecf5a1f96cb66387d9cb633eed4b6937a5b68c2817648d9c4ad1c028970",
+      "cases": 79,
+      "junit_summary_tests_attribute": 79,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/preclean-privileges-before.xml",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 3559,
+      "sha256": "f675449d2c7423ed3a46398318b0d71b10a4565f9fac2efc007eef0ffa83073f",
+      "cases": 3,
+      "junit_summary_tests_attribute": 3,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/preclean-privileges-causal-before.xml",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 6617,
+      "sha256": "fc1615b2690cfe37c0f9993996a97403891f4e4270fc1e0b85171af3c7a4b7fc",
+      "cases": 3,
+      "junit_summary_tests_attribute": 3,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/preclean-privileges-final-after.xml",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 12458,
+      "sha256": "29e3c5b629973bfc95454d5f7a900ecf0647e068a477275e4fb79afe17e5f9fe",
+      "cases": 79,
+      "junit_summary_tests_attribute": 79,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988534535-frozen.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 611,
+      "sha256": "cd582f900a4e8d287ea561839b713cccb680bb1545703217e66eec581a2ea4dd"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988534535-green.xml.gz",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 84949,
+      "sha256": "29d1076512207d3711c5b24479e93a530a10231f55f3f0d0053c9c25a8824d1d",
+      "cases": 3756,
+      "junit_summary_tests_attribute": 3759,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "uncompressed_sha256": "26fdbbe9ab99f311a165e3a250c6d66bd67d80539d1eb5084c3cd6489e33205f"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988534535-independent.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 1462,
+      "sha256": "420cfb4c0d635d0536a6bb3e42718832257b5c6aea9543c774a5966b7466473c"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38988534535-tests.json",
+      "source": "NATIVE_OR_LABELLED_LOCAL_CAUSAL_RECEIPT",
+      "bytes": 360,
+      "sha256": "64d5bf5b74233f330fdb21b54dfc8ecac174d30585b68b46d30675fe5750784f"
+    },
+    {
+      "path": "docs/releases/evidence603/stress-recovery-causal-before.xml",
+      "source": "LABELLED_PRIVATE_ADVERSARY_OR_CANONICAL_ACTION_LOG_RECEIPT",
+      "bytes": 4925,
+      "sha256": "c3ebd942a004c8d0d2e9c0e0bf769d94141bb53fde1cc0daf68cd4e9d2d85354",
+      "cases": 3,
+      "failure": 3,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 3
+    },
+    {
+      "path": "docs/releases/evidence603/stress-restart-causal-before.xml",
+      "source": "LABELLED_PRIVATE_ADVERSARY_OR_CANONICAL_ACTION_LOG_RECEIPT",
+      "bytes": 1964,
+      "sha256": "ca192cc5794b1929dc2d6c68f2d5bd663d86b5aa723d2297f1f4790ec756964a",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 1
+    },
+    {
+      "path": "docs/releases/evidence603/stress-recovery-final-after.xml",
+      "source": "LABELLED_PRIVATE_ADVERSARY_OR_CANONICAL_ACTION_LOG_RECEIPT",
+      "bytes": 7887,
+      "sha256": "5bcbc1d785cc1be09e858df9ca7232b0f5b7cc1d239f5608cce7ed25178c2bf3",
+      "cases": 48,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "junit_summary_tests_attribute": 48
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38989979153-superseded.json",
+      "source": "LABELLED_PRIVATE_ADVERSARY_OR_CANONICAL_ACTION_LOG_RECEIPT",
+      "bytes": 1417,
+      "sha256": "b8da22228e2a74209b7e75acb3f1c608625a4f7703db0ecf6836985ebe93de11"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38991326475-deadline.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 415,
+      "sha256": "89aeb1853ef219db06487426075fe5057c9f07a3e10bda01d2e932c4c0c50695"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38990671984-green.xml.gz",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 85112,
+      "sha256": "326034163b139669ad63ee3d7b6702d766957c24cf82f94e2ad5c0ae30feda87",
+      "cases": 3764,
+      "junit_summary_tests_attribute": 3767,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "uncompressed_sha256": "35c4e1de0e38fbd121a8bbfadd3bb2ccef97d350b37ab11e1a28e94cf50383ce"
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38991391810-failure.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 1390,
+      "sha256": "b19a11b16fd322e3a378286268f282ab553a58d62100150742e346a096968a82"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38990671984-frozen.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 611,
+      "sha256": "e206a66c89ea1478e7ddfe5eb869270ad5da7b06a0972dcd0d16125cadcca6d3"
+    },
+    {
+      "path": "docs/releases/evidence603/merge-610-exact-tree.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 205,
+      "sha256": "d0395e979f5d087bef77f052c07d8188454f2ba03ecdb0a79b5900a2e88d3d9b"
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38991391810-selected-lines.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 3853,
+      "sha256": "0095062397d1a46c92cb04025309d7cb099f5ca2005eb2a6ebc0b6d0f5279de5"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38990671984-tests.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 360,
+      "sha256": "5bbf0e6015d9c2011ba8e492cfe716be3d9530658aaac731b663a44a0a1ff072"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38990671984-independent.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 1647,
+      "sha256": "d9533a4f75907e58429bf1958053a320cdd119385f2872381bc9d9d1978ac987"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38990927608-unverified.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 254,
+      "sha256": "215a8388dfb73a7946f9c99116d5abba0d627a4b5c1d0f4473991d6ec008ef52"
+    },
+    {
+      "path": "docs/releases/evidence603/housekeeping-38991391810.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 5989,
+      "sha256": "566344888a0c10615614b70bf4edad035fb711692d6b8cfc2e18821fa576fd8a"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38993434968-deadline.json",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1395,
+      "sha256": "775c2db56c54639593587e8f77558cfb45f386cb8816363ae8b8997eb27d4b39"
+    },
+    {
+      "path": "docs/releases/evidence603/orphan-preclean-candidate.json",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 249,
+      "sha256": "cd7c136c4c8f578020fc244a7ad2f7031d68cfbaea51cc449286a0f95c6c09af"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-relations-candidate.json",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 192,
+      "sha256": "5e5c6f8797636d07faafdd9dffccde09ca4ffa4e110fc0ea1967562d2bdd7ba5"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-relations-local1-before.xml",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1563,
+      "sha256": "cd6ee8b4200a768a2aed68d4d45d0ff036b839fe95f0329039c8c37b4ee7ebc5",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/snapshot-38993434968-readonly.json",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 5613,
+      "sha256": "6f37577b4cf2ecec592b74038c4529ccf8f0ceb580d4cb9e7cd11bf774cd9a1d"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-relations-local66-after.xml",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 10697,
+      "sha256": "35892aea1cb776d6e4f87cb48b44d843580cdbcde4c1ff5a6a7adc8b564c3cd8",
+      "cases": 66,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/images-38993434968-readonly.json",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 963,
+      "sha256": "2814e9f79fd3d7faa53b413012ff88ff2b62444382906e3eb21b91dbb8ec2aea"
+    },
+    {
+      "path": "docs/releases/evidence603/orphan-preclean-local49-after.xml",
+      "source": "NATIVE_READONLY_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 8063,
+      "sha256": "2bfe428c60e17226d82eb4f1eff2899fe05f76a1bb884fc12c1ab4283e17dab1",
+      "cases": 49,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-digest-local56-after.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 9087,
+      "sha256": "83659b978ad5c835a312ec972852effb4e7ab31c205b99444cc24fa4311b1241",
+      "cases": 56,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38993352249-independent.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1647,
+      "sha256": "03aad4b55b4507873dd3870e81046e6e8c3be6c9178bb89965d88951ca17a8ee"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-covering-local2-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 2275,
+      "sha256": "5df31f951ff37fab14025cc3a3224687ae1b98502f5c8874420b1bd8357c0095",
+      "cases": 2,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38994065356-failure.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 751,
+      "sha256": "5e2b985282a3a84f68b6b8c0823f3b348e958fb06328ce59f0410b50c7e0875c"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-covering-candidate.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 192,
+      "sha256": "fec95a0236e7e1d77d2dd22bccf9bceb09868aba9faf94ea279842c07ea9a133"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38993352249-porota-frozen-candidate.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 611,
+      "sha256": "2e2f6c5a062c4f7efbae6848eed03de211b23fe3be940e5587d64cbfed7729ce"
+    },
+    {
+      "path": "docs/releases/evidence603/images-38994353621-canonical-digests.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1362,
+      "sha256": "d581464daa338755ab890f1ee06b31b8574e6bb3241ba5d9037a3f682f676b39"
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-covering-candidate.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 273,
+      "sha256": "371793c151d28a6ecd157153a698419d8bd1c1c8e1221e2fb03036a0ff3f9030"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38993352249-porota-governed-tests.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 360,
+      "sha256": "c82031e656660daa66243290cf40650949717fef295e4da0062f19f1f89bd1f3"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38993827055-nojoins-deadline.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1067,
+      "sha256": "732461f3c5ecc071274967644b00f659615081df499cc81d3f8e18181c0a20fb"
+    },
+    {
+      "path": "docs/releases/evidence603/monitor-covering-local69-after.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 11210,
+      "sha256": "7f37fcf1609dec4172de9526dcdbf20a913260f77036e58c266583890a8d8f45",
+      "cases": 69,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/merge-611-exact-tree.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 251,
+      "sha256": "86aea59f90447b3a26a4ce3911bd8f19f841c974e79366513b5d4d4ae4ad0234"
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-covering-local2-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 2885,
+      "sha256": "5167e8c2cfa3e9297374065b15d0e542675eb1e1e0422f11d416ecc8f6eea52b",
+      "cases": 2,
+      "failure": 2,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38993352249-green.xml.gz",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 85558,
+      "sha256": "bab211f6d870f0c7825a6a2952767c7ae4c865d07a830e957e96a20d6b3ac7fc",
+      "cases": 3784,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38994065356-selected-lines.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1347,
+      "sha256": "229a994ae8dc8c4d6ea2603ff55bd519ad8964ed0d84c9da85ac0757c420dc31"
+    },
+    {
+      "path": "docs/releases/evidence603/cleanup-digest-local2-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_FIXTURE",
+      "bytes": 1418,
+      "sha256": "007f6293237b52b93c6a759d31a9194d4819f1686d46c5ea3a00063238f21975",
+      "cases": 2,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38995165551-live-stage.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 1483,
+      "sha256": "b7a4c9a2073b5ccb738c604c453cbe0d69b812791cfb7e5c744ed8217ae6113f"
+    },
+    {
+      "path": "docs/releases/evidence603/merge-612-exact-tree.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 215,
+      "sha256": "5126718ee52e37459af99e49cc1b276b8cb1124e2fb37629221acb68cce5dc02"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38994512568-independent.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 1647,
+      "sha256": "d9b55c32f7ab22c4a3c13ac9df355a41a1601d2d013596cc4c1a868f15ab99ac"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38994512568-green.xml.gz",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 85643,
+      "sha256": "fad54ee736ca5ad25e5d0388199bd3b658bdff921f21c4d2418760a51b1bc7ee",
+      "cases": 3788,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38994512568-tests.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 360,
+      "sha256": "75c89cd51adb256c7c64988c7a45645340fcf907bf30eef67af1e114c98de505"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-38994512568-frozen.json",
+      "source": "NATIVE_ACTION_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 611,
+      "sha256": "50eca1e89477bc513787314688a3d9ff8b6aef335e29b363c12a94b456031bec"
+    },
+    {
+      "path": "docs/releases/evidence603/dashboard-clock-and-http-candidate.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 238,
+      "sha256": "bc7afc5183ea05f1d3480625745f389b7c5adbb274bd98a8a77c40e5ca60ada2"
+    },
+    {
+      "path": "docs/releases/evidence603/native-http-partial-local1-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 1205,
+      "sha256": "8341285c9cc1383566815c1cb91bb429803ccbc51eb790532c73a2b3695bb4e3",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38995874816-complete.json.gz",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 125052,
+      "sha256": "7194c1745c52991db11348f24dd98513e100c6aabc6f2d5c0ad22003c0fca783"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38995874816-summary.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 2220,
+      "sha256": "9ac7df4c5b1f48a46ef69885033b49b4ac9c4fbf681512894915f4ac59f81f5b"
+    },
+    {
+      "path": "docs/releases/evidence603/dashboard-38995874816-native500.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 19149,
+      "sha256": "294c04d1ba919fb6a03982bf7f8ac9484d19b67c4f180db957d4f381fa627cb0"
+    },
+    {
+      "path": "docs/releases/evidence603/dashboard-clock-local7-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 19441,
+      "sha256": "e462be0fe3371d88013ed54981f238c9d8358d75d9d794b11ac8ae8c95e0c52c",
+      "cases": 7,
+      "failure": 6,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/snapshot-38995874816-planned-pause.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 6132,
+      "sha256": "4bf4f5cd29d297d7702552622791f7659d0772052deecfc55c5bae7b672c95f8"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38995874816-e2e-matrix.csv.gz",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 121839,
+      "sha256": "b1b0f5650159c4bda8825d57e84f40c20313e717be4f0ee504d5519c49fd31bc"
+    },
+    {
+      "path": "docs/releases/evidence603/dashboard-clock-local160-after.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 1072952,
+      "sha256": "0f8b03a34f9479ec30e0573e5e40f6de680c4c48f53054518bf1839451d516bd",
+      "cases": 160,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-38995165551-startup.json",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 1463,
+      "sha256": "2249ac8efdc23c79773cfda3603af2b020c4473cf27db4cdeb6c7e5da1441c31"
+    },
+    {
+      "path": "docs/releases/evidence603/clock-native-http-local242-after.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 1086309,
+      "sha256": "0db1fe07c29c2db8c85165dc806d3c1e9121e4f3929e3da00ce6604bc08dbfb3",
+      "cases": 242,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/native-http-local53-before.xml",
+      "source": "NATIVE_ACTION_OR_EXPLICIT_LOCAL_CAUSAL_FIXTURE",
+      "bytes": 86270,
+      "sha256": "c8ebe454fef29bfa2fa58930649221b6882316382890934f3a7f241521cf2c9d",
+      "cases": 53,
+      "failure": 47,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/dashboard-clock-timestamp-candidate.json",
+      "source": "LOCAL_CAUSAL_TEST_OR_EXACT_SOURCE_COMMIT",
+      "bytes": 237,
+      "sha256": "b33ccce6885ddcecc130dde5118bb170dacc2365153a5a6655c4b89b55f48303"
+    },
+    {
+      "path": "docs/releases/evidence603/timestamp-atomicity-after.xml.gz",
+      "source": "LOCAL_CAUSAL_TEST_OR_EXACT_SOURCE_COMMIT",
+      "bytes": 4160,
+      "sha256": "b356f990a7561dd3f8657a115405c90df783b7e5c310d3be6020b4d988ce32ed",
+      "cases": 204,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/timestamp-atomicity-before.xml.gz",
+      "source": "LOCAL_CAUSAL_TEST_OR_EXACT_SOURCE_COMMIT",
+      "bytes": 1718,
+      "sha256": "b5e6ff995279498aeb3ee7fc6225afc9be647b19072d1b9b842a245b1843a376",
+      "cases": 18,
+      "failure": 12,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/boundary-callers-repro-before.json",
+      "source": "LOCAL_CAUSAL_TEST_OR_EXACT_SOURCE_COMMIT",
+      "bytes": 595,
+      "sha256": "f37b969393bc864b5940459d71b1ea620f89e228321943827b92169964d833ff"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-613-porota-deploy-bundle-v2-manifest.json.gz",
+      "source": "EXACT_NATIVE_PREDEPLOY_38997662394_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 28360,
+      "sha256": "7ec75e3b39269366987f4ede8dc114aca1171d1007909fca91d6aff5c31f6a6b"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-613-frozen.json",
+      "source": "EXACT_NATIVE_PREDEPLOY_38997662394_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 611,
+      "sha256": "557c9cca137ec5eb3f5cb0070a743b5abf1d31eaaaacacef583167cea1aec80e"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-613-tests.json",
+      "source": "EXACT_NATIVE_PREDEPLOY_38997662394_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 360,
+      "sha256": "ac308c59273783fd151358ee1eb26368f798d50632030597ca86a8684064b0a9"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-613-porota-governed-tests.xml.gz",
+      "source": "EXACT_NATIVE_PREDEPLOY_38997662394_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 86404,
+      "sha256": "c01c6aeab4ff6235cba989815e3eeb558971996745a40b9660651c88464b6ad2",
+      "cases": 3867,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-613-verification.json",
+      "source": "EXACT_NATIVE_PREDEPLOY_38997662394_OR_INDEPENDENT_BYTE_VERIFICATION",
+      "bytes": 1647,
+      "sha256": "a5a678bbb806bb332c0632753f85c489fe109b7aaff70174c0ed7eb8d8569991"
+    },
+    {
+      "path": "docs/releases/evidence603/inventory-38998730556-complete.json.gz",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 108306,
+      "sha256": "e4a6edc618315ffd49f83a3164ca5a4a8ffab185888211e8ddd3a950bff8bf80"
+    },
+    {
+      "path": "docs/releases/evidence603/snapshot-38998730556-startup.json",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 4185,
+      "sha256": "544d76aa119447ecdb9c1c2bcd662a19bd2d028b86428cf76df327915ebf336f"
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-startup-candidate.json",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 368,
+      "sha256": "f8d0722fcb4861bbf3abb13b21f770a7ab884b714a5ce67aaaa0e8612a52e8a0"
+    },
+    {
+      "path": "docs/releases/evidence603/readiness-delta-38998730556-complete.json",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 18803,
+      "sha256": "7f64534fb0a968d0dec7afc9c70bb37f0626dd41b33755d60383fd6cd42cdd76"
+    },
+    {
+      "path": "docs/releases/evidence603/go-startup-before.xml.gz",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 864,
+      "sha256": "15b994e2cc9ecb4001872b51c24ca1d46d028ac15c08cd30fbd209e82339d53b",
+      "cases": 6,
+      "failure": 4,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-publication-after.xml.gz",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 3704,
+      "sha256": "887d3b796566c8837233e51c7ebbf2e2288661f743a0a46dfe657f9dc139ffa3",
+      "cases": 176,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-and-go-after.xml.gz",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 4700,
+      "sha256": "aea19eb21be5f9e2b94ec4c0449fb67cb5734f6a8e14793570ce2a00ec721269",
+      "cases": 213,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/deploy-612-final-markers.json",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 10692,
+      "sha256": "1ddee0099cc7d3c99b11e4763570d85acadc8e2a0b057afc9b117b7ad1fff45a"
+    },
+    {
+      "path": "docs/releases/evidence603/catalog-publication-before.xml.gz",
+      "source": "EXPLICIT_LOCAL_CAUSAL_OR_NATIVE_ACTION_RECEIPT",
+      "bytes": 2111,
+      "sha256": "ac76cc4db079de6f4226aaaa1c0e09f379ca3fdffb7007cb3356f73778d57a50",
+      "cases": 9,
+      "failure": 8,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/audit-codec-benchmark-iterative.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 119,
+      "sha256": "85500f7a63568ba19bcb7d860e1711f1d3820a6819b8335ea20b6e248d7f1fbc"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-shadow-phases.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 5152,
+      "sha256": "00228997ff97fe1c4792f32556c46c5ed150c5092e055a0ed55ad51ed4336807"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-shadow-subtrees.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 7982,
+      "sha256": "f4ec7a0115f779aecf179cae0d971f6750cb7fab941e8ac9f0294849dea7aa12"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-compact-junit.xml.gz",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 266,
+      "sha256": "24aedfb5a248442652f1b707af854c8697959719f574ba42d50e1495dc7ad50c",
+      "cases": 1,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-shadow-released.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 7974,
+      "sha256": "dd3b9de1235fe38f2fb73a79b1d36fb8cd4d26a07155c05eb9f4cb50409f7475"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-guard-junit.xml.gz",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 1004,
+      "sha256": "24a68bfbafb8a1bd9122280e79cf86393f2dad751efe51bd5e2891e5f40f8226",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/shadow-bounded-candidate.json",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 606,
+      "sha256": "ab96ea8808790cd88af2e7a7a8a61c10f4e1bc5e0564387973ac519b3e0ffeb3"
+    },
+    {
+      "path": "docs/releases/evidence603/613-complete-focused.xml.gz",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 5704,
+      "sha256": "f2e9bdf917fad169b41b210bf6553b571719b3a8b6f76f041f06057d21bc16f0",
+      "cases": 248,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/frozen-missing-final.xml.gz",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 1477,
+      "sha256": "23fc2e505ec4bf8f695d6665d04b700c950462064846549d355992ad179fb115",
+      "cases": 37,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-shadow-owned.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 7990,
+      "sha256": "2d8e0812ca442b72e96f4089d1e6f868ce2f2ca5b8679907099277ab907f4380"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-shadow-shared.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 7990,
+      "sha256": "2efebfba5a7dc65f200a2b8e004939123c5609bdf1eeebdba13ed9398fe602d4"
+    },
+    {
+      "path": "docs/releases/evidence603/audit-codec-benchmark.txt",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 239,
+      "sha256": "4a80eddb47c5c84d876c1559e2adcbfe930d21204296b22f7a944809e0ebe884"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-final-receipt.json",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 1023,
+      "sha256": "34a7ef4b4dabde7fb761bfb0dc3e3a888a337af8d687732ecd974227c62b5331"
+    },
+    {
+      "path": "docs/releases/evidence603/native-readonly-39001580361.json",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 5173,
+      "sha256": "c89c76ec0ed831627e4f116e04d942f9c29fccb571d19e38bb0a1a09bce5d519"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy-f312-six-ast-failures.json",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 16990,
+      "sha256": "ca7fa8748e15e3442b6200175a3e7d4e5a896b686691c709f0a5ea8c0f464b4e"
+    },
+    {
+      "path": "docs/releases/evidence603/full-catalog-cadence-junit.xml.gz",
+      "source": "EXPLICIT_LOCAL_OR_NATIVE_CHECKPOINT_WITH_SCOPE_LABEL",
+      "bytes": 1199,
+      "sha256": "7d9e8cc531819ed278b724ae7aa92e03b2adc3f8b5cdbb8ec693201dbbcdb661",
+      "cases": 1,
+      "failure": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/native-compression-rca-39020921103.json",
+      "source": "READ_ONLY_NATIVE_RCA_RUN39020921103_JOB117362618438; NOT_FULL_STRESS; HASHED_SOURCE_ONLY; RESTORE_GREEN",
+      "bytes": 7385,
+      "sha256": "139fdfac084c34007e17d143c8109748d6b885a69ed76b6c5908af104aeb5d4a"
+    },
+    {
+      "path": "docs/releases/evidence603/shared-audit-development-39025376522.json",
+      "source": "EXACT_CI_ARTIFACT_BYTE_READBACK_RUN39025796758_JOB117376428207; NOT_NATIVE_ACCEPTANCE_OR_FULL_STRESS",
+      "bytes": 9058,
+      "sha256": "53d5c06377d8889aead1f75f366ccf18e8f24f59b3e3a8c34e2e48c7e1d759e5",
+      "junit_xmls": 12,
+      "cases": 168,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/releases/evidence603/exact618-ci-stress-39026405201.json",
+      "source": "CI_EXACT_IMAGE_PREFLIGHT_RUN39026405201_ARTIFACT_BYTE_READBACK39027150461; NOT_DROPLET_ACCEPTANCE_OR_RUNTIME_RESTORE",
+      "bytes": 14556,
+      "sha256": "e8d0fa8214934609b2d98c18cad2925ad41498fe46c74efc57daf27050e24c36",
+      "groups": 8,
+      "cases": 756,
+      "failure": 0,
+      "error": 0,
+      "skipped": 0,
+      "simulated_minutes": 405
+    },
+    {
+      "path": "docs/releases/evidence603/native618-gate-39026330767.json",
+      "source": "CURATED_COMPLETED_NATIVE_DEPLOY39026330767_JOB117377929224; BYTES_HASHED_CI117391807858; NOT_ACCEPTED_NOT_STRESSED",
+      "bytes": 3365,
+      "sha256": "2678d34aa90787a95b158da6ca1eb67ebf1dc335a5fa7012f644476986b4ca46"
+    },
+    {
+      "path": "docs/releases/evidence603/native-rowshape-blocked-39031183326.json",
+      "source": "READ_ONLY_NATIVE_RCA39031183326_JOB117392008708; BLOCKED_BEFORE_SERVICE_ACTION_OR_PROBE; EXACT_RUNTIME_UNCHANGED",
+      "bytes": 2858,
+      "sha256": "6de6daac2290480fd0411848250b07e7146bbf09da0f191cd77f7484785c1a46"
+    },
+    {
+      "path": "docs/releases/evidence603/native-rowshape-restore-unverified-39032009280.json",
+      "source": "NATIVE_ROW_SHAPE_RCA39032009280_JOB117394443292; PROBE_GREEN_RESTORE_RED_UNVERIFIED_WITHIN_120S; NOT_ACCEPTANCE_OR_STRESS",
+      "bytes": 7915,
+      "sha256": "e026027668cd651436d76b1d82492c515b1d56b63dd5da0693b7faf37b0595cb"
+    },
+    {
+      "path": "docs/releases/evidence603/post-rca-current-health-39033228076.json",
+      "source": "READ_ONLY_CURRENT_HEALTH39033228076_JOB117397840238; SAME_IDS_IMAGE_RESTART0_HEARTBEAT_ADVANCED_HEALTH200; ORIGINAL_RCA_RESTORE_RED_PRESERVED",
+      "bytes": 3655,
+      "sha256": "3f51b1f3b4a68e9046a59fe53f756f49fe8795dc30efef181c805f1ffab34a61"
+    },
+    {
+      "path": "docs/releases/evidence603/exact618-serializer-profile-39033636402.json",
+      "source": "CI_EXACT_IMAGE_SERIALIZER39033636402; ZIP_BYTES_READBACK39034187927; PSTATS_TIMER_LABEL_ERRATA_DEFAULT_WALL_NOT_CPU",
+      "bytes": 8011,
+      "sha256": "ffa44d512bb92064be6d5c48c18e4dfdaa6b25e2e2e57892a2af073c314ebd44"
+    },
+    {
+      "path": "docs/releases/evidence603/exact618-whole-worker-profile-39034187927.json",
+      "source": "CI_EXACT_IMAGE_WHOLE_WORKER39034187927; ZIP_BYTES_READBACK39034937972; DEFAULT_PROFILE_WALL_AND_PROCESS_CPU_AB_DISTINCT",
+      "bytes": 15305,
+      "sha256": "00d21151c1ee83994d212d17bb8634239fd093079e2c7ddeb0a0b96625bf3806"
+    },
+    {
+      "path": "docs/releases/evidence603/native-json-bound-research-39035338408.json",
+      "source": "CI_C_SIZING_RESEARCH39035338408_JOB117403914563; ACTUAL_ZIP_AND_BINARY_BYTES_READBACK39035894379; NOT_NATIVE_OR_FROZEN_PRODUCT",
+      "bytes": 6539,
+      "sha256": "bb88bdead696396c3a6030dffcddd3914920443cb92a1b7120131a822cbfe2dc"
+    },
+    {
+      "path": "docs/releases/evidence603/native-bound-development-39037003384.json",
+      "source": "CI_TARGETED_DEVELOPMENT39037003384_JOB117408782001; ACTUAL_ZIP_XML_JSON_BYTE_READBACK39037651489; NO_FROZEN_PRODUCT_IMAGE_OR_NATIVE_ACCEPTANCE",
+      "bytes": 4482,
+      "sha256": "cac37908639dc9fc95af8f95af0f2c38285250374477830e1c8d6b38e396568a"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy619-actual-byte-readback-39037517622.json",
+      "source": "ACTUAL_FROZEN_PREDEPLOY619_ZIP_TAR_XML_MANIFEST_READBACK39038468598;3950ROOT46EXACT_IMAGE;NOT_DROPLET_ACCEPTANCE",
+      "bytes": 5725,
+      "sha256": "1962f4ce67599a0f192cfb5efbe3664927e7910c8e6d0b54291f301de429fe63"
+    },
+    {
+      "path": "docs/releases/evidence603/exact619-ci-fullstress-readback-39038468598.json",
+      "source": "EXACT_FROZEN619_CI_FULL_SESSION39038468598;8XML771CASES_ACTUALLY_READBACK39039561890;NOT_DROPLET_STRESS_OR_PRODUCTION_RESTORE",
+      "bytes": 18382,
+      "sha256": "61c33e1b5b9cbec78e7844b3a7db1a5f0f7547a5a12913864a85cd2d175e2030"
+    },
+    {
+      "path": "docs/releases/evidence603/native619-deploy-red-39038259114.json",
+      "source": "ACTUAL_COMPLETED_NATIVE619_DEPLOY39038259114_RED;READBACK39042911561;ONE_COHERENT_GENERATION;FULL_DROPLET_STRESS_SKIPPED;MATERIAL_CLEANUP_GREEN_CONTROL_RED",
+      "bytes": 13195,
+      "sha256": "840ee5f9b137fc6f480739b16048e1e8368923a3bc45d60abd5326159c77c09a"
+    },
+    {
+      "path": "docs/releases/evidence603/native620-final-health-39047764577.json",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 1605,
+      "sha256": "6bc54f65c7848daf550e99b1233300fdd7af33eaa7ebed1dc9b08242db939fa3"
+    },
+    {
+      "path": "docs/releases/evidence603/native620-passive-39046830865.json",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 10644,
+      "sha256": "e1ed396f106acb7cb284ce095f740693b3a7c0372bbb3f7627e4e9f1c1a43cfb"
+    },
+    {
+      "path": "docs/releases/evidence603/native620-rejected-codec-experiment.json",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 1139,
+      "sha256": "530ca7e84ade1fb2dcf253ee1d0360dddfa7198095aaa4ab6b1f616821153847"
+    },
+    {
+      "path": "docs/releases/evidence603/native620-swap-39047388608.json",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 3885,
+      "sha256": "5785a49d83c214bc4b6e2547ecbce3ea2de0b1f23a64c841eb9935645ca00ecb"
+    },
+    {
+      "path": "docs/releases/evidence603/rc6-620-causal-after.xml.gz",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 292,
+      "sha256": "384d6fb84a324b1ac74279fcefaa8cf6353332fdad5cc40bc95fdce87941d85b"
+    },
+    {
+      "path": "docs/releases/evidence603/rc6-620-causal-before.xml.gz",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 519,
+      "sha256": "cfb8c9004eb9ab6d63ef0cfffb2781eca0d07f0bc5d131fc9de83e01e97e8d30"
+    },
+    {
+      "path": "docs/releases/evidence603/rc6-620-full-local.xml.gz",
+      "source": "ISSUE620_NATIVE_PASSIVE_OR_LOCAL_CAUSAL_NOT_HOST_STRESS",
+      "bytes": 89359,
+      "sha256": "effbbbc7cb54a2db33f6406aa7333126a8be8050fff262a05299213b5c00259d"
+    },
+    {
+      "path": "docs/releases/evidence603/predeploy620-39047648539-byte-validation.json",
+      "source": "CANONICAL_PREDEPLOY39047648539_SUCCESS_AND_LOCAL_BYTE_VALIDATION_NOT_DROPLET",
+      "bytes": 5738,
+      "sha256": "98c408929f0b8f550542f14448407bbf763a069a993e36e3c36356ab67820105"
+    },
+    {
+      "path": "docs/releases/evidence624/ab-compact-preopen.json",
+      "bytes": 6109,
+      "sha256": "852302960edfc8087ebf36eaa4592b3249f72e510581a97cd5016cb4d5eed69e",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ab-guard-only.json",
+      "bytes": 6113,
+      "sha256": "9865c2fa17e90bace28c83a42d94348e2be16b73cd92b1b5ce677d9df2b85e95",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/native-inventory-39060769025.json",
+      "bytes": 103260,
+      "sha256": "d8ff48831f59a2046067e652fda33e4643ada0bbbf27d7c9fd9448c7143ec6ac",
+      "source": "GITHUB_ACTIONS_NATIVE_READ_ONLY",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/profile-baseline.py",
+      "bytes": 2999,
+      "sha256": "8b77ef46ad71d7e81b7f0589a3551cea57acfde7147d1f245e29f4c7df5b03d2",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/root-local-red.xml.gz",
+      "bytes": 90086,
+      "sha256": "a0882f8179a9f8d37cf4d69c41e0eb2192e8f8031d887e46bc4fa6b2de410369",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/scale-probe.py",
+      "bytes": 3141,
+      "sha256": "ccad8eb7f4a53d8d1b3af1dacc639bb72a3618a1721d2a1a07831bd387138568",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/scaling-1000.json",
+      "bytes": 5501,
+      "sha256": "b8577490f73e4481f062af9640d345c0365ac89bb5bfa8358c4862d5d958aa6f",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/scaling-14611.json",
+      "bytes": 5536,
+      "sha256": "92a8d1c4245bc61ec75ebc56a86a161f922c84d66f0c1a3480bbeab298361ff5",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/scaling-20001.json",
+      "bytes": 639,
+      "sha256": "f3447ed139bc488a34f673579b099874c1c6cb6e8ea97e71496d5992731b1546",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/scaling-5000.json",
+      "bytes": 5522,
+      "sha256": "291d996a8817dd3a86c2783bc50abbc7ea69fce4a9b7e4fd3188691268fcbfa2",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-a1-995ddb7-summary.json",
+      "bytes": 3361,
+      "sha256": "3e0c091f87fc5a36c11b97b7ae68413e2660b3b9f8c255622617f95b2febe9ec",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/inventory624-byte-validation.json",
+      "bytes": 365,
+      "sha256": "e3e4ea52458bce2118f55a698a860f523b8321819d85011f778c3051b396ac64",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/junit_counts.py",
+      "bytes": 683,
+      "sha256": "aa38fb5908b51c148fbbf818989e1111d74bd964b69f2a06d32402c1f67245c5",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/local-root-actual-counts.json",
+      "bytes": 403,
+      "sha256": "1a4ea8106162707659af1de2a5b343542aed1b934e6170c1eae85936b1e05a4b",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/profile624-call-counts.json",
+      "bytes": 13360,
+      "sha256": "089e84371f83fac55dbada01dc82626d1690a35859e16fc99c114f83bc70882d",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-directory-final624.xml.gz",
+      "bytes": 1042,
+      "sha256": "c9c38cb72005f9111d47337a9879b8e6eda48b3c457448ffc74cb441d1f8ae3d",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-receipts-final624.xml.gz",
+      "bytes": 1756,
+      "sha256": "ab69bb779cc0242675992ffe6da9de103461f222019cbf354e3bc1d89ef03906",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-upload-after624.xml.gz",
+      "bytes": 1731,
+      "sha256": "8b8e4bddf17423f313afb50117e9e4477f089e4f1dd047fb1ecd70087456580d",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-upload-before624.xml.gz",
+      "bytes": 720,
+      "sha256": "c888f5a546813123e2fa1bb9e6527829b843184e1775edaedcdec66d1a54758f",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/validate-frozen-artifact.py",
+      "bytes": 8199,
+      "sha256": "17a49eebac4865a3009399471309fd8392354d747b5e002ad70c2a65f90c942f",
+      "source": "LOCAL_CONTROLLED_EXPERIMENT_OR_REVIEWED_RECEIPT",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/backup-preserve-before624.xml.gz",
+      "bytes": 1060,
+      "sha256": "9511eb4a398c6ac66b62ba7586856b0bea1fa32fdc15c221a918cdcf98f4e231",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/backup-preserve-after624.xml.gz",
+      "bytes": 1750,
+      "sha256": "1f16dcaa2338710b83e125349fb32cbd36645bfaf8a5edb2859c99b380ab2952",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-ownership-before624.xml.gz",
+      "bytes": 645,
+      "sha256": "f6ed5bbe8d3ba1ae4339eed55dc1fe036684a1738fe9a06638978310a2211fb9",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-ownership-after624.xml.gz",
+      "bytes": 1316,
+      "sha256": "90052a7f36ebb42b49cbd208f5ec29e1a2fef97d06fc9276de2175e886b80627",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/proof-ownership-permissions624.json",
+      "bytes": 429,
+      "sha256": "7242f7899fccc4ab5540dac84e2c44bee3e1ee0d324ba49d7ad2b03f0db4b81c",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy529-raw.log.gz",
+      "bytes": 166784,
+      "sha256": "38115ad09313077de24cc3319a177e2ca0c5cc0c4a56c724f44312819943f09b",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy529-red-summary.json",
+      "bytes": 708,
+      "sha256": "fb2186b95ddcd9e35a63b43c681f63509babe41e65cba4461c7f9e44888d32e6",
+      "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy538-red.xml.gz",
+      "bytes": 90840,
+      "sha256": "f595dff4e4d90cf3e1330cc9ff2ea1a6a3698232bb816c6a504af2ba8de6ea1c",
+      "source": "GITHUB_ACTIONS_RED_OR_CAUSAL_LOCAL_TEST",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/transport-fixture-after624.xml.gz",
+      "bytes": 2105,
+      "sha256": "77ca8eafc811d1e6e2386e0ace94035f415cf1062a9e0f58e465f6b80fd9051f",
+      "source": "GITHUB_ACTIONS_RED_OR_CAUSAL_LOCAL_TEST",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy538-raw.log.gz",
+      "bytes": 44854,
+      "sha256": "c923a911890671137769a866a9a7f8e182c5eaf5a1d7555d56952d9cd815596f",
+      "source": "GITHUB_ACTIONS_RED_OR_CAUSAL_LOCAL_TEST",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy538-red-validation.json",
+      "bytes": 420,
+      "sha256": "ea7c22d8b243d19a3c200f831fc70c5070cbcab7ca5f81a013d48331a1ab8ba5",
+      "source": "GITHUB_ACTIONS_RED_OR_CAUSAL_LOCAL_TEST",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-byte-validation.json",
+      "bytes": 35553,
+      "sha256": "4116f4f578bcf09def063e4dc2fdfea4fd0bc5c00d31763416e7089ab455dfe4",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-porota-frozen-candidate.json",
+      "bytes": 611,
+      "sha256": "d954266ac08097c92b19d60842ff6f07f1ab187da8d807d90803121b7b1b0887",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-porota-governed-tests.json",
+      "bytes": 360,
+      "sha256": "dea7622a4a3d9c8cce1a3136c00437c498dd35bcc05bc11051860726366e283a",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-stress.json",
+      "bytes": 16724,
+      "sha256": "508637f7a87bcfe14a2a00dd6e77c8a2fc78625c139108d16aeaa29a35158f26",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-full-catalog.json",
+      "bytes": 5322,
+      "sha256": "47180a0257a7643b60b18204385098a1e3ffc974389284b86a08d7af7f2ad42d",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-native-bound.xml",
+      "bytes": 7163,
+      "sha256": "0b513eeba67fba8dd6edf6028563b9064fa6959753bef14f26756f301d41ca43",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-root.xml.gz",
+      "bytes": 89690,
+      "sha256": "510ce52bbd4a335560533ae3f0a7aa922aaea5e462ac9b32a6807936f1d5dea1",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-raw.log.gz",
+      "bytes": 167913,
+      "sha256": "56a98565d2b2e33f1981bebd17f60a454bcf3335db0e3b228e6a7bc5fb308d3c",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-sql_shadow_wal.xml.gz",
+      "bytes": 1425,
+      "sha256": "bbaaa789b4234b900905ba221a32a5655b7f6b2aeee1912fe0ef6bb6c3aeb077",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-publication_io_identity.xml.gz",
+      "bytes": 3880,
+      "sha256": "deffcda32a344f0e9edb5cf767be0d48e29637c35f267d3ecf50f21c6d574d4a",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-signals_risk_exit_ledger.xml.gz",
+      "bytes": 4568,
+      "sha256": "8a45a90947cbcff8898ead8fb368a5bbd43e187d779a55ad9405cb5e912b8a48",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-sources_readiness_network.xml.gz",
+      "bytes": 2634,
+      "sha256": "566a3263efce6754be4a5dadfd9e993d1487e650ab7dc8de173ce8c9d90dfa16",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-scalping_capacity.xml.gz",
+      "bytes": 2916,
+      "sha256": "50a6a4467a784dfd3b81af054317835d83a08153f29068da1818d2fecb7bc52c",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-treasury_caucion.xml.gz",
+      "bytes": 1991,
+      "sha256": "0d9c1f1657e8ecdb88379ad48a3a0226228e0b353d5b53e9e03b2668a4bc24d7",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-dashboard_auth_52.xml.gz",
+      "bytes": 4819,
+      "sha256": "8acc2567cbe3818dae669f7b6b22ca3fc97afe95bbdf759f47cd5b41be2488fb",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-scheduler_monitor_backup.xml.gz",
+      "bytes": 852,
+      "sha256": "f74920a2420f98bb88ca81aede565f5de4d7b9ab7f18562f086c301d56e95c25",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    }
+  ]
+}

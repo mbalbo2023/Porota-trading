@@ -1,0 +1,13 @@
+{
+  "build_once": true,
+  "candidate_sha": "fe100cb337ba627e23aa4a006b6c30125e646ad7",
+  "candidate_tree_sha": "8a6fc95a80a02142a15c29c18e05e5f1036de27d",
+  "image_config_sha256": "a818bdceeee345987d4b24a90ff42579ac2c47f11d7fed1d87e4c52fd52a0c0d",
+  "image_id": "sha256:2d61b2bae12cc1ab164eb997ce187a450da6eb2438239be3e8b40d44fa15d2e3",
+  "image_size_bytes": 1176253308,
+  "image_tar_sha256": "0591558cba21a80d6baa327aefa53e3d98e253799b9c80a5dae1b1ff6e408855",
+  "paper_mode_required": "PRODUCTION_PAPER",
+  "real_order_capability_required": "BLOCKED",
+  "real_orders_sent_required": 0,
+  "schema_version": 1
+}

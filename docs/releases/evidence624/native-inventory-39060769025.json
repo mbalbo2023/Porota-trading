@@ -1,0 +1,2980 @@
+{
+  "collected_at": 1792263802.9959195,
+  "consumer_scan": {
+    "complete_within_roots": true,
+    "matches": [
+      {
+        "is_test": false,
+        "path": "/opt/porota-trading/rc6_shadow_runtime/worker.py",
+        "sha256": "364777147b7e687ebae021d10b0e00fb9e42295eae36d3352daed40b2b0cd5b0"
+      },
+      {
+        "is_test": false,
+        "path": "/opt/porota-trading/rc6_shadow_runtime/persistence.py",
+        "sha256": "2bd98d465b7f1a80c8c135fd6153e769e3f810f93bc34061b3781064ef4221b4"
+      },
+      {
+        "is_test": false,
+        "path": "/opt/porota-trading/scripts/rc6_postdeploy_stress.py",
+        "sha256": "13ac066e588b45ec855a59d9c30f217ba7643cf20e8b41eafc3aedb406fba3b1"
+      }
+    ],
+    "roots": [
+      "/opt/porota-trading",
+      "/etc/systemd/system",
+      "/etc/cron.d",
+      "/usr/local/bin"
+    ],
+    "scanned_bytes": 7959294,
+    "scanned_files": 944,
+    "skipped": [
+      "/etc/systemd/system/dbus-org.freedesktop.ModemManager1.service",
+      "/etc/systemd/system/vmtoolsd.service",
+      "/etc/systemd/system/porota-history-postclose-rc6.timer",
+      "/etc/systemd/system/syslog.service",
+      "/etc/systemd/system/dbus-org.freedesktop.resolve1.service",
+      "/etc/systemd/system/dbus-org.freedesktop.timesync1.service",
+      "/etc/systemd/system/iscsi.service",
+      "/etc/systemd/system/emergency.target.wants/grub-initrd-fallback.service",
+      "/etc/systemd/system/graphical.target.wants/udisks2.service",
+      "/etc/systemd/system/cloud-init.target.wants/cloud-final.service",
+      "/etc/systemd/system/cloud-init.target.wants/cloud-config.service",
+      "/etc/systemd/system/cloud-init.target.wants/cloud-init.service",
+      "/etc/systemd/system/cloud-init.target.wants/cloud-init-local.service",
+      "/etc/systemd/system/sleep.target.wants/grub-initrd-fallback.service",
+      "/etc/systemd/system/cloud-final.service.wants/snapd.seeded.service",
+      "/etc/systemd/system/mdmonitor.service.wants/mdcheck_continue.timer",
+      "/etc/systemd/system/mdmonitor.service.wants/mdmonitor-oneshot.timer",
+      "/etc/systemd/system/mdmonitor.service.wants/mdcheck_start.timer",
+      "/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service",
+      "/etc/systemd/system/open-vm-tools.service.requires/vgauth.service",
+      "/etc/systemd/system/multi-user.target.wants/containerd.service",
+      "/etc/systemd/system/multi-user.target.wants/fail2ban.service",
+      "/etc/systemd/system/multi-user.target.wants/console-setup.service",
+      "/etc/systemd/system/multi-user.target.wants/apport.service",
+      "/etc/systemd/system/multi-user.target.wants/snapd.service",
+      "/etc/systemd/system/multi-user.target.wants/snapd.seeded.service",
+      "/etc/systemd/system/multi-user.target.wants/rsyslog.service",
+      "/etc/systemd/system/multi-user.target.wants/cron.service",
+      "/etc/systemd/system/multi-user.target.wants/ModemManager.service",
+      "/etc/systemd/system/multi-user.target.wants/porota-critical-approval-rc6.service",
+      "/etc/systemd/system/multi-user.target.wants/snapd.apparmor.service",
+      "/etc/systemd/system/multi-user.target.wants/grub-initrd-fallback.service",
+      "/etc/systemd/system/multi-user.target.wants/snapd.recovery-chooser-trigger.service",
+      "/etc/systemd/system/multi-user.target.wants/ufw.service",
+      "/etc/systemd/system/multi-user.target.wants/open-vm-tools.service",
+      "/etc/systemd/system/multi-user.target.wants/snapd.core-fixup.service",
+      "/etc/systemd/system/multi-user.target.wants/systemd-networkd.service",
+      "/etc/systemd/system/multi-user.target.wants/e2scrub_reap.service",
+      "/etc/systemd/system/multi-user.target.wants/unattended-upgrades.service",
+      "/etc/systemd/system/multi-user.target.wants/grub-common.service",
+      "/etc/systemd/system/multi-user.target.wants/sysstat.service",
+      "/etc/systemd/system/multi-user.target.wants/secureboot-db.service",
+      "/etc/systemd/system/multi-user.target.wants/droplet-agent.service",
+      "/etc/systemd/system/multi-user.target.wants/pollinate.service",
+      "/etc/systemd/system/multi-user.target.wants/porota-critical-github-proxy-rc6.service",
+      "/etc/systemd/system/multi-user.target.wants/snapd.autoimport.service",
+      "/etc/systemd/system/multi-user.target.wants/networkd-dispatcher.service",
+      "/etc/systemd/system/multi-user.target.wants/porota-private-snapshot.service",
+      "/etc/systemd/system/multi-user.target.wants/dmesg.service",
+      "/etc/systemd/system/multi-user.target.wants/docker.service",
+      "/etc/systemd/system/multi-user.target.wants/ua-reboot-cmds.service",
+      "/etc/systemd/system/multi-user.target.wants/ubuntu-advantage.service",
+      "/etc/systemd/system/multi-user.target.wants/vpc-peering.service",
+      "/etc/systemd/system/hybrid-sleep.target.wants/grub-common.service",
+      "/etc/systemd/system/suspend-then-hibernate.target.wants/grub-common.service",
+      "/etc/systemd/system/final.target.wants/snapd.system-shutdown.service",
+      "/etc/systemd/system/rescue.target.wants/grub-initrd-fallback.service",
+      "/etc/systemd/system/timers.target.wants/porota-1016-github-verify.timer",
+      "/etc/systemd/system/timers.target.wants/porota-snapshot-preopen-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/porota-introspection-publish-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/apport-autoreport.timer",
+      "/etc/systemd/system/timers.target.wants/porota-rc6-candle-inmarket-verify.timer",
+      "/etc/systemd/system/timers.target.wants/porota-candle-integrity-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/porota-preopen-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/apt-daily-upgrade.timer",
+      "/etc/systemd/system/timers.target.wants/porota-local-eod-history-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/fwupd-refresh.timer",
+      "/etc/systemd/system/timers.target.wants/droplet-agent-update.timer",
+      "/etc/systemd/system/timers.target.wants/porota-introspection-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/porota-full-db-integrity-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/porota-a3-history-daily-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/porota-scheduler-export-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/logrotate.timer",
+      "/etc/systemd/system/timers.target.wants/apt-daily.timer",
+      "/etc/systemd/system/timers.target.wants/porota-a3-history-weekend-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/dpkg-db-backup.timer",
+      "/etc/systemd/system/timers.target.wants/porota-fast-functional-health-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/update-notifier-motd.timer",
+      "/etc/systemd/system/timers.target.wants/fstrim.timer",
+      "/etc/systemd/system/timers.target.wants/porota-snapshot-postclose-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/update-notifier-download.timer",
+      "/etc/systemd/system/timers.target.wants/porota-iol-shadow-collector-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/porota-byma-morning-watch-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/porota-market-watch-silence-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/porota-host-general-backup-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/porota-a3-history-reconcile-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/ua-timer.timer",
+      "/etc/systemd/system/timers.target.wants/porota-runtime-evidence-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/snapd.snap-repair.timer",
+      "/etc/systemd/system/timers.target.wants/porota-live-decision-cockpit-rc6.timer",
+      "/etc/systemd/system/timers.target.wants/motd-news.timer",
+      "/etc/systemd/system/timers.target.wants/e2scrub_all.timer",
+      "/etc/systemd/system/timers.target.wants/man-db.timer",
+      "/etc/systemd/system/timers.target.wants/porota-iol-oauth-health-rc6.timer",
+      "/etc/systemd/system/hibernate.target.wants/grub-common.service",
+      "/etc/systemd/system/sysstat.service.wants/sysstat-collect.timer",
+      "/etc/systemd/system/sysstat.service.wants/sysstat-summary.timer",
+      "/etc/systemd/system/sysinit.target.wants/systemd-pstore.service",
+      "/etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service",
+      "/etc/systemd/system/sysinit.target.wants/keyboard-setup.service",
+      "/etc/systemd/system/sysinit.target.wants/apparmor.service",
+      "/etc/systemd/system/sysinit.target.wants/lvm2-monitor.service",
+      "/etc/systemd/system/sysinit.target.wants/blk-availability.service",
+      "/etc/systemd/system/sysinit.target.wants/setvtrgb.service",
+      "/etc/systemd/system/sysinit.target.wants/open-iscsi.service",
+      "/etc/systemd/system/sysinit.target.wants/systemd-resolved.service",
+      "/etc/systemd/system/sysinit.target.wants/multipathd.service",
+      "/etc/systemd/system/sysinit.target.wants/finalrd.service",
+      "/etc/systemd/system/getty.target.wants/getty@tty1.service",
+      "/etc/systemd/system/suspend.target.wants/grub-common.service"
+    ]
+  },
+  "containers": [
+    {
+      "id": "3529fc76057a83b642555f4a027885a5484eb75c0aca2640c5155811ab01709a",
+      "image": "sha256:77e9e14083dd3f018ff55892457b854a9a9f3d249cfcdd0b6f9a416e812fcb8e",
+      "limits": {
+        "CpuShares": 0,
+        "Memory": 0,
+        "MemorySwap": 0,
+        "NanoCpus": 0
+      },
+      "name": "/porota_production_observer",
+      "restart_count": 0,
+      "state": {
+        "FinishedAt": "2026-10-17T13:56:42.813290005Z",
+        "OOMKilled": false,
+        "Pid": 1434134,
+        "Restarting": false,
+        "StartedAt": "2026-10-17T14:40:02.450601558Z",
+        "Status": "running"
+      }
+    },
+    {
+      "id": "223e9db3579160dd6f92848a8d0e1b54b227c23f93a128622f96ace24cc5dd30",
+      "image": "sha256:77e9e14083dd3f018ff55892457b854a9a9f3d249cfcdd0b6f9a416e812fcb8e",
+      "limits": {
+        "CpuShares": 0,
+        "Memory": 0,
+        "MemorySwap": 0,
+        "NanoCpus": 0
+      },
+      "name": "/porota_production_dashboard",
+      "restart_count": 0,
+      "state": {
+        "FinishedAt": "0001-01-01T00:00:00Z",
+        "OOMKilled": false,
+        "Pid": 1420857,
+        "Restarting": false,
+        "StartedAt": "2026-10-17T13:56:30.029963952Z",
+        "Status": "running"
+      }
+    }
+  ],
+  "end_memory": {
+    "MemAvailable": 139149312,
+    "MemTotal": 1008185344,
+    "SwapFree": 1074708480,
+    "SwapTotal": 2147479552
+  },
+  "processes": [
+    {
+      "cgroup": "0::/system.slice/docker-223e9db3579160dd6f92848a8d0e1b54b227c23f93a128622f96ace24cc5dd30.scope",
+      "pid": 1420857,
+      "role": "DASHBOARD",
+      "rss": "12296 kB",
+      "safe_cmdline": [
+        "python",
+        "o_dashboard.py"
+      ],
+      "schedstat": "53430476489 94114222529 513277",
+      "swap": "93004 kB"
+    },
+    {
+      "cgroup": "0::/system.slice/docker-3529fc76057a83b642555f4a027885a5484eb75c0aca2640c5155811ab01709a.scope",
+      "pid": 1434134,
+      "role": "SCANNER",
+      "rss": "41684 kB",
+      "safe_cmdline": [
+        "python",
+        "bv_paper_runtime.py"
+      ],
+      "schedstat": "1091911890969 1195430539191 3821113",
+      "swap": "32636 kB"
+    },
+    {
+      "cgroup": "0::/system.slice/docker-3529fc76057a83b642555f4a027885a5484eb75c0aca2640c5155811ab01709a.scope",
+      "pid": 1434228,
+      "role": "SCANNER",
+      "rss": "62320 kB",
+      "safe_cmdline": [
+        "/app/bf_production_paper_observer.py"
+      ],
+      "schedstat": "1390618067534 1519764638461 10541981",
+      "swap": "223340 kB"
+    },
+    {
+      "cgroup": "0::/system.slice/docker-3529fc76057a83b642555f4a027885a5484eb75c0aca2640c5155811ab01709a.scope",
+      "pid": 1434416,
+      "role": "SCANNER",
+      "rss": "6988 kB",
+      "safe_cmdline": [
+        "/app/bv_paper_runtime.py"
+      ],
+      "schedstat": "41981984364 238925726257 288982",
+      "swap": "15076 kB"
+    },
+    {
+      "cgroup": "0::/system.slice/docker-3529fc76057a83b642555f4a027885a5484eb75c0aca2640c5155811ab01709a.scope",
+      "pid": 1434417,
+      "role": "SHADOW",
+      "rss": "371012 kB",
+      "safe_cmdline": [
+        "/app/bv_paper_runtime.py",
+        "--dynamic-shadow-worker"
+      ],
+      "schedstat": "4690090619243 5246365918453 18683223",
+      "swap": "108440 kB"
+    },
+    {
+      "cgroup": "0::/system.slice/docker-3529fc76057a83b642555f4a027885a5484eb75c0aca2640c5155811ab01709a.scope",
+      "pid": 1434418,
+      "role": "SCANNER",
+      "rss": "6936 kB",
+      "safe_cmdline": [
+        "/app/bv_paper_runtime.py"
+      ],
+      "schedstat": "21041449127 55179353886 126311",
+      "swap": "21020 kB"
+    },
+    {
+      "cgroup": "0::/system.slice/docker-3529fc76057a83b642555f4a027885a5484eb75c0aca2640c5155811ab01709a.scope",
+      "pid": 1434419,
+      "role": "SCANNER",
+      "rss": "19956 kB",
+      "safe_cmdline": [
+        "/app/bv_paper_runtime.py"
+      ],
+      "schedstat": "139072200997 233369179912 923461",
+      "swap": "31180 kB"
+    },
+    {
+      "cgroup": "0::/system.slice/docker-3529fc76057a83b642555f4a027885a5484eb75c0aca2640c5155811ab01709a.scope",
+      "pid": 1434420,
+      "role": "SCANNER",
+      "rss": "6660 kB",
+      "safe_cmdline": [
+        "/app/bv_paper_runtime.py"
+      ],
+      "schedstat": "56683639147 146986767174 774852",
+      "swap": "24784 kB"
+    },
+    {
+      "cgroup": "0::/system.slice/docker-3529fc76057a83b642555f4a027885a5484eb75c0aca2640c5155811ab01709a.scope",
+      "pid": 1434421,
+      "role": "SCANNER",
+      "rss": "5132 kB",
+      "safe_cmdline": [
+        "/app/bv_paper_runtime.py"
+      ],
+      "schedstat": "8440596608 29963703122 107137",
+      "swap": "24192 kB"
+    },
+    {
+      "cgroup": "0::/system.slice/docker-3529fc76057a83b642555f4a027885a5484eb75c0aca2640c5155811ab01709a.scope",
+      "pid": 1434422,
+      "role": "SCANNER",
+      "rss": "5164 kB",
+      "safe_cmdline": [
+        "/app/bv_paper_runtime.py"
+      ],
+      "schedstat": "14050906593 58557564353 326799",
+      "swap": "27120 kB"
+    },
+    {
+      "cgroup": "0::/system.slice/docker-3529fc76057a83b642555f4a027885a5484eb75c0aca2640c5155811ab01709a.scope",
+      "pid": 1503823,
+      "role": "OTHER_OWNED",
+      "rss": "4868 kB",
+      "safe_cmdline": [
+        "python",
+        "/app/scripts/rc6_candle_inmarket_evidence.py"
+      ],
+      "schedstat": "17467354256 45797954167 317502",
+      "swap": "10040 kB"
+    }
+  ],
+  "read_only": true,
+  "samples": [
+    {
+      "memory": {
+        "MemAvailable": 118046720,
+        "MemTotal": 1008185344,
+        "SwapFree": 1071943680,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769244.258244651,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 148553728,
+        "MemTotal": 1008185344,
+        "SwapFree": 1075974144,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769249.261330627,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 132558848,
+        "MemTotal": 1008185344,
+        "SwapFree": 1073709056,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769254.263553109,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 112271360,
+        "MemTotal": 1008185344,
+        "SwapFree": 1073516544,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769259.265358018,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 97222656,
+        "MemTotal": 1008185344,
+        "SwapFree": 1077497856,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769264.26728801,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 93614080,
+        "MemTotal": 1008185344,
+        "SwapFree": 1074405376,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769269.269697768,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 70737920,
+        "MemTotal": 1008185344,
+        "SwapFree": 1074528256,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769274.271474775,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 57085952,
+        "MemTotal": 1008185344,
+        "SwapFree": 1074692096,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769279.277060683,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 97165312,
+        "MemTotal": 1008185344,
+        "SwapFree": 1075773440,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769284.279494943,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 57839616,
+        "MemTotal": 1008185344,
+        "SwapFree": 1074667520,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769289.28080807,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 62345216,
+        "MemTotal": 1008185344,
+        "SwapFree": 1083338752,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769294.282731899,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 80490496,
+        "MemTotal": 1008185344,
+        "SwapFree": 1074089984,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769299.285223404,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 78520320,
+        "MemTotal": 1008185344,
+        "SwapFree": 1088483328,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769304.289537745,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 96157696,
+        "MemTotal": 1008185344,
+        "SwapFree": 1078185984,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769309.294101306,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 65421312,
+        "MemTotal": 1008185344,
+        "SwapFree": 1074216960,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769314.29664236,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 110018560,
+        "MemTotal": 1008185344,
+        "SwapFree": 1074020352,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769319.297546231,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 116109312,
+        "MemTotal": 1008185344,
+        "SwapFree": 1076715520,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769324.299543443,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    },
+    {
+      "memory": {
+        "MemAvailable": 121303040,
+        "MemTotal": 1008185344,
+        "SwapFree": 1074495488,
+        "SwapTotal": 2147479552
+      },
+      "monotonic": 4769329.302822666,
+      "shadow": {
+        "as_of": "2026-10-17T18:59:11.368906+00:00",
+        "generation_timing": {
+          "poll_seconds": 30,
+          "stages_cpu_seconds": {
+            "durable_serialization": 13.232,
+            "economic_exit_lab": 0.009,
+            "entry_signal_lab": 0.269,
+            "family_routing": 4.36,
+            "operational_funnel": 5.803,
+            "planner_pipeline": 3.641,
+            "preopen": 3.699,
+            "state_and_inputs": 2.935
+          },
+          "stages_seconds": {
+            "durable_serialization": 17.164,
+            "economic_exit_lab": 0.016,
+            "entry_signal_lab": 0.271,
+            "family_routing": 7.161,
+            "operational_funnel": 7.898,
+            "planner_pipeline": 6.249,
+            "preopen": 5.382,
+            "state_and_inputs": 8.588
+          },
+          "tick_cpu_seconds": 33.95,
+          "tick_seconds": 52.73
+        },
+        "runtime_sql_diagnostics": {
+          "budget_ms": 2000,
+          "plans": {
+            "CATALOG_FULL": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN financial_instrument_catalog USING COVERING INDEX idx_shadow_catalog_order",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_CONTRACTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SCAN ppi_intraday_contract_state",
+              "SCAN (subquery-1)"
+            ],
+            "INTRADAY_POINTS": [
+              "CO-ROUTINE (subquery-1)",
+              "SEARCH ppi_intraday_points USING INDEX idx_shadow_intraday_event_jd (<expr>>? AND <expr><?)",
+              "SCAN (subquery-1)"
+            ],
+            "MARKET_SNAPSHOTS": [
+              "SEARCH market_snapshots USING INTEGER PRIMARY KEY (rowid>?)",
+              "SCALAR SUBQUERY 1",
+              "SEARCH market_snapshots USING INDEX idx_shadow_snapshot_observed_jd (<expr>>? AND <expr><?)"
+            ],
+            "OPEN_POSITIONS": [
+              "SCAN paper_positions USING INDEX sqlite_autoindex_paper_positions_1"
+            ],
+            "SCHEMA_TABLES": [
+              "SCAN sqlite_master"
+            ]
+          },
+          "sql_elapsed_ms": 144.119,
+          "sql_remaining_ms": 1855.879,
+          "stages": [
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 44.624,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1950.095,
+              "rows": 14611,
+              "stage": "CATALOG_FULL"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 2.418,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.634,
+              "rows": 0,
+              "stage": "OPEN_POSITIONS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.316,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1947.287,
+              "rows": 103,
+              "stage": "SCHEMA_TABLES"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 88.31,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1858.905,
+              "rows": 2424,
+              "stage": "INTRADAY_CONTRACTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 0.93,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1857.89,
+              "rows": 0,
+              "stage": "INTRADAY_POINTS"
+            },
+            {
+              "deadline_elapsed": false,
+              "elapsed_ms": 1.9,
+              "interrupted_by_deadline": false,
+              "remaining_ms": 1855.929,
+              "rows": 0,
+              "stage": "MARKET_SNAPSHOTS"
+            }
+          ],
+          "transform_elapsed_ms": 54.363,
+          "transform_expired_stage": null
+        },
+        "status": "SHADOW_OBSERVING"
+      }
+    }
+  ],
+  "schema": "rc6.native624.inventory.v1",
+  "timer_properties": [
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 19:02:41 UTC",
+        "NextElapseUSecRealtime": "",
+        "SubState": "waiting",
+        "Unit": "porota-scheduler-export-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-scheduler-export-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 19:02:15 UTC",
+        "NextElapseUSecRealtime": "",
+        "SubState": "waiting",
+        "Unit": "porota-fast-functional-health-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-fast-functional-health-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 18:58:02 UTC",
+        "NextElapseUSecRealtime": "",
+        "SubState": "waiting",
+        "Unit": "porota-candle-integrity-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-candle-integrity-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 18:57:20 UTC",
+        "NextElapseUSecRealtime": "Mon 2026-10-19 12:30:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-iol-oauth-health-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-iol-oauth-health-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 18:35:00 UTC",
+        "NextElapseUSecRealtime": "Sat 2026-10-17 19:35:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-introspection-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-introspection-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 18:42:19 UTC",
+        "NextElapseUSecRealtime": "Sat 2026-10-17 19:42:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-introspection-publish-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-introspection-publish-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 18:50:11 UTC",
+        "NextElapseUSecRealtime": "Sat 2026-10-17 19:50:08 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-runtime-evidence-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-runtime-evidence-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 06:00:20 UTC",
+        "NextElapseUSecRealtime": "Sun 2026-10-18 06:00:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-a3-history-rc6@WEEKEND_DEEP.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-a3-history-weekend-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 07:15:20 UTC",
+        "NextElapseUSecRealtime": "Sun 2026-10-18 07:17:06 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-host-general-backup-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-host-general-backup-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 02:50:05 UTC",
+        "NextElapseUSecRealtime": "Mon 2026-10-19 03:00:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-market-watch-silence-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-market-watch-silence-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Fri 2026-10-16 11:30:00 UTC",
+        "NextElapseUSecRealtime": "Mon 2026-10-19 11:30:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-byma-morning-watch-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-byma-morning-watch-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Fri 2026-10-16 13:20:00 UTC",
+        "NextElapseUSecRealtime": "Mon 2026-10-19 12:45:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-preopen-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-preopen-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Fri 2026-10-16 13:10:00 UTC",
+        "NextElapseUSecRealtime": "Mon 2026-10-19 13:10:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-snapshot-preopen-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-snapshot-preopen-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Fri 2026-10-16 20:01:23 UTC",
+        "NextElapseUSecRealtime": "Mon 2026-10-19 13:30:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-iol-shadow-collector-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-iol-shadow-collector-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Fri 2026-10-16 19:59:00 UTC",
+        "NextElapseUSecRealtime": "Mon 2026-10-19 13:30:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-live-decision-cockpit-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-live-decision-cockpit-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Fri 2026-10-16 20:08:08 UTC",
+        "NextElapseUSecRealtime": "Mon 2026-10-19 20:08:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-snapshot-postclose-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-snapshot-postclose-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 01:55:03 UTC",
+        "NextElapseUSecRealtime": "Mon 2026-10-19 20:15:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-local-eod-history-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-local-eod-history-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Fri 2026-10-16 20:20:49 UTC",
+        "NextElapseUSecRealtime": "Mon 2026-10-19 20:20:14 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-full-db-integrity-rc6.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-full-db-integrity-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Fri 2026-10-16 21:30:17 UTC",
+        "NextElapseUSecRealtime": "Mon 2026-10-19 21:30:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-a3-history-rc6@DAILY_INCREMENTAL.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-a3-history-daily-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 02:30:00 UTC",
+        "NextElapseUSecRealtime": "Tue 2026-10-20 02:30:00 UTC",
+        "SubState": "waiting",
+        "Unit": "porota-a3-history-rc6@RECONCILE.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-a3-history-reconcile-rc6.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Mon 2026-09-14 13:16:05 UTC",
+        "NextElapseUSecRealtime": "",
+        "SubState": "elapsed",
+        "Unit": "porota-1016-github-verify.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-1016-github-verify.timer"
+    },
+    {
+      "properties": {
+        "ActiveState": "active",
+        "LastTriggerUSec": "Sat 2026-10-17 19:00:40 UTC",
+        "NextElapseUSecRealtime": "",
+        "SubState": "running",
+        "Unit": "porota-rc6-candle-inmarket-verify.service",
+        "UnitFileState": "enabled"
+      },
+      "returncode": 0,
+      "unit": "porota-rc6-candle-inmarket-verify.timer"
+    }
+  ],
+  "timers": [
+    {
+      "activates": "porota-scheduler-export-rc6.service",
+      "last": 1792263761935818,
+      "left": 1792263822033739,
+      "next": 1792263822033739,
+      "passed": 4769200248452,
+      "unit": "porota-scheduler-export-rc6.timer"
+    },
+    {
+      "activates": "porota-fast-functional-health-rc6.service",
+      "last": 1792263735062555,
+      "left": 1792264035073880,
+      "next": 1792264035073880,
+      "passed": 4769173375185,
+      "unit": "porota-fast-functional-health-rc6.timer"
+    },
+    {
+      "activates": "porota-candle-integrity-rc6.service",
+      "last": 1792263482193589,
+      "left": 1792264082306032,
+      "next": 1792264082306032,
+      "passed": 4768920506219,
+      "unit": "porota-candle-integrity-rc6.timer"
+    },
+    {
+      "activates": "porota-iol-oauth-health-rc6.service",
+      "last": 1792263440868282,
+      "left": 1792265240884227,
+      "next": 1792265240884227,
+      "passed": 4768879180912,
+      "unit": "porota-iol-oauth-health-rc6.timer"
+    },
+    {
+      "activates": "porota-introspection-rc6.service",
+      "last": 1792262100244723,
+      "left": 1792265700000000,
+      "next": 1792265700000000,
+      "passed": 4767538557353,
+      "unit": "porota-introspection-rc6.timer"
+    },
+    {
+      "activates": "porota-introspection-publish-rc6.service",
+      "last": 1792262539059833,
+      "left": 1792266120967384,
+      "next": 1792266120967384,
+      "passed": 4767977372463,
+      "unit": "porota-introspection-publish-rc6.timer"
+    },
+    {
+      "activates": "porota-runtime-evidence-rc6.service",
+      "last": 1792263011611889,
+      "left": 1792266608816207,
+      "next": 1792266608816207,
+      "passed": 4768449924519,
+      "unit": "porota-runtime-evidence-rc6.timer"
+    },
+    {
+      "activates": "porota-a3-history-rc6@WEEKEND_DEEP.service",
+      "last": 1792216820810347,
+      "left": 1792303200000000,
+      "next": 1792303200000000,
+      "passed": 4722259122977,
+      "unit": "porota-a3-history-weekend-rc6.timer"
+    },
+    {
+      "activates": "porota-host-general-backup-rc6.service",
+      "last": 1792221320918233,
+      "left": 1792307826658670,
+      "next": 1792307826658670,
+      "passed": 4726759230863,
+      "unit": "porota-host-general-backup-rc6.timer"
+    },
+    {
+      "activates": "porota-market-watch-silence-rc6.service",
+      "last": 1792205405873784,
+      "left": 1792378800000000,
+      "next": 1792378800000000,
+      "passed": 4710844186418,
+      "unit": "porota-market-watch-silence-rc6.timer"
+    },
+    {
+      "activates": "porota-byma-morning-watch-rc6.service",
+      "last": 1792150200703066,
+      "left": 1792409400000000,
+      "next": 1792409400000000,
+      "passed": 4655639015696,
+      "unit": "porota-byma-morning-watch-rc6.timer"
+    },
+    {
+      "activates": "porota-preopen-rc6.service",
+      "last": 1792156800317724,
+      "left": 1792413900000000,
+      "next": 1792413900000000,
+      "passed": 4662238630354,
+      "unit": "porota-preopen-rc6.timer"
+    },
+    {
+      "activates": "porota-snapshot-preopen-rc6.service",
+      "last": 1792156200065778,
+      "left": 1792415400000000,
+      "next": 1792415400000000,
+      "passed": 4661638378408,
+      "unit": "porota-snapshot-preopen-rc6.timer"
+    },
+    {
+      "activates": "porota-iol-shadow-collector-rc6.service",
+      "last": 1792180883996838,
+      "left": 1792416600000000,
+      "next": 1792416600000000,
+      "passed": 4686322309468,
+      "unit": "porota-iol-shadow-collector-rc6.timer"
+    },
+    {
+      "activates": "porota-live-decision-cockpit-rc6.service",
+      "last": 1792180740057818,
+      "left": 1792416600000000,
+      "next": 1792416600000000,
+      "passed": 4686178370448,
+      "unit": "porota-live-decision-cockpit-rc6.timer"
+    },
+    {
+      "activates": "porota-snapshot-postclose-rc6.service",
+      "last": 1792181288229134,
+      "left": 1792440480000000,
+      "next": 1792440480000000,
+      "passed": 4686726541765,
+      "unit": "porota-snapshot-postclose-rc6.timer"
+    },
+    {
+      "activates": "porota-local-eod-history-rc6.service",
+      "last": 1792202103082900,
+      "left": 1792440900000000,
+      "next": 1792440900000000,
+      "passed": 4707541395530,
+      "unit": "porota-local-eod-history-rc6.timer"
+    },
+    {
+      "activates": "porota-full-db-integrity-rc6.service",
+      "last": 1792182049120958,
+      "left": 1792441214257718,
+      "next": 1792441214257718,
+      "passed": 4687487433588,
+      "unit": "porota-full-db-integrity-rc6.timer"
+    },
+    {
+      "activates": "porota-a3-history-rc6@DAILY_INCREMENTAL.service",
+      "last": 1792186217303132,
+      "left": 1792445400000000,
+      "next": 1792445400000000,
+      "passed": 4691655615763,
+      "unit": "porota-a3-history-daily-rc6.timer"
+    },
+    {
+      "activates": "porota-a3-history-rc6@RECONCILE.service",
+      "last": 1792204200287752,
+      "left": 1792463400000000,
+      "next": 1792463400000000,
+      "passed": 4709638600426,
+      "unit": "porota-a3-history-reconcile-rc6.timer"
+    },
+    {
+      "activates": "porota-1016-github-verify.service",
+      "last": 1789391765512284,
+      "left": null,
+      "next": null,
+      "passed": 1897203824920,
+      "unit": "porota-1016-github-verify.timer"
+    },
+    {
+      "activates": "porota-rc6-candle-inmarket-verify.service",
+      "last": 1792263640810983,
+      "left": null,
+      "next": null,
+      "passed": 4769079123613,
+      "unit": "porota-rc6-candle-inmarket-verify.timer"
+    }
+  ]
+}
