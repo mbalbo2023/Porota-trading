@@ -1,0 +1,285 @@
+{
+  "schema": "rc6.native624.measured-profile-summary.v1",
+  "source_receipt_sha256": "70f96ff4855fd61bc18fe0ae266b6566167a60bb2b0949ce91ea909cd97a672d",
+  "source_sha": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+  "source_tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
+  "purpose": "RCA_AFTER_RAM_RED_39091864291",
+  "samples": 18,
+  "elapsed_first_to_last_seconds": 86.95455475803465,
+  "memory_min_bytes": 91529216,
+  "memory_max_bytes": 272236544,
+  "memory_below_128mib_samples": 5,
+  "host_swap_pages_in_delta": 96769,
+  "host_swap_pages_out_delta": 66756,
+  "page_size_bytes": 4096,
+  "host_major_faults_delta": 63503,
+  "host_cpu_percent": {
+    "softirq": 0.0234,
+    "idle": 0.0,
+    "steal": 1.4876,
+    "user": 25.9342,
+    "iowait": 22.7598,
+    "nice": 31.381,
+    "system": 18.414,
+    "irq": 0.0
+  },
+  "owned_process_deltas": [
+    {
+      "pid": 1641022,
+      "role": "DASHBOARD",
+      "nice": 0,
+      "cpu_seconds": 0.167633096,
+      "runqueue_wait_seconds": 0.266424176,
+      "major_faults_delta": 46,
+      "rss_start_bytes": 13357056,
+      "rss_end_bytes": 13377536,
+      "pss_start_bytes": 10004480,
+      "pss_end_bytes": 10130432,
+      "swap_end_bytes": 73203712
+    },
+    {
+      "pid": 1655327,
+      "role": "COORDINATOR",
+      "nice": 0,
+      "cpu_seconds": 5.40343127,
+      "runqueue_wait_seconds": 5.742497188,
+      "major_faults_delta": 3683,
+      "rss_start_bytes": 27369472,
+      "rss_end_bytes": 32497664,
+      "pss_start_bytes": 23973888,
+      "pss_end_bytes": 29142016,
+      "swap_end_bytes": 27512832
+    },
+    {
+      "pid": 1655402,
+      "role": "OBSERVER",
+      "nice": 0,
+      "cpu_seconds": 4.429389288,
+      "runqueue_wait_seconds": 2.4825303,
+      "major_faults_delta": 15100,
+      "rss_start_bytes": 157495296,
+      "rss_end_bytes": 69992448,
+      "pss_start_bytes": 153725952,
+      "pss_end_bytes": 66291712,
+      "swap_end_bytes": 163528704
+    },
+    {
+      "pid": 1655612,
+      "role": "PERFORMANCE",
+      "nice": 10,
+      "cpu_seconds": 0.253343641,
+      "runqueue_wait_seconds": 0.978672149,
+      "major_faults_delta": 699,
+      "rss_start_bytes": 7962624,
+      "rss_end_bytes": 11837440,
+      "pss_start_bytes": 4762624,
+      "pss_end_bytes": 8674304,
+      "swap_end_bytes": 11321344
+    },
+    {
+      "pid": 1655613,
+      "role": "SHADOW",
+      "nice": 10,
+      "cpu_seconds": 29.339658642,
+      "runqueue_wait_seconds": 22.328209542,
+      "major_faults_delta": 18152,
+      "rss_start_bytes": 216834048,
+      "rss_end_bytes": 304275456,
+      "pss_start_bytes": 213188608,
+      "pss_end_bytes": 300797952,
+      "swap_end_bytes": 2863104
+    },
+    {
+      "pid": 1655614,
+      "role": "EXITS",
+      "nice": 0,
+      "cpu_seconds": 0.10262438,
+      "runqueue_wait_seconds": 0.173650737,
+      "major_faults_delta": 227,
+      "rss_start_bytes": 7864320,
+      "rss_end_bytes": 8163328,
+      "pss_start_bytes": 4927488,
+      "pss_end_bytes": 5200896,
+      "swap_end_bytes": 21405696
+    },
+    {
+      "pid": 1655615,
+      "role": "NOTIFICATIONS",
+      "nice": 0,
+      "cpu_seconds": 0.768991163,
+      "runqueue_wait_seconds": 0.867745818,
+      "major_faults_delta": 3128,
+      "rss_start_bytes": 11784192,
+      "rss_end_bytes": 20205568,
+      "pss_start_bytes": 9044992,
+      "pss_end_bytes": 17455104,
+      "swap_end_bytes": 19292160
+    },
+    {
+      "pid": 1655616,
+      "role": "CANDLES",
+      "nice": 0,
+      "cpu_seconds": 0.269219235,
+      "runqueue_wait_seconds": 1.427166639,
+      "major_faults_delta": 1888,
+      "rss_start_bytes": 14065664,
+      "rss_end_bytes": 14368768,
+      "pss_start_bytes": 11222016,
+      "pss_end_bytes": 11520000,
+      "swap_end_bytes": 14716928
+    },
+    {
+      "pid": 1655617,
+      "role": "SCALPING",
+      "nice": 0,
+      "cpu_seconds": 0.031378927,
+      "runqueue_wait_seconds": 0.03376809,
+      "major_faults_delta": 30,
+      "rss_start_bytes": 6086656,
+      "rss_end_bytes": 6205440,
+      "pss_start_bytes": 3185664,
+      "pss_end_bytes": 3299328,
+      "swap_end_bytes": 24707072
+    },
+    {
+      "pid": 1655618,
+      "role": "TREASURY",
+      "nice": 0,
+      "cpu_seconds": 0.041792077,
+      "runqueue_wait_seconds": 0.035537167,
+      "major_faults_delta": 417,
+      "rss_start_bytes": 5046272,
+      "rss_end_bytes": 6631424,
+      "pss_start_bytes": 2195456,
+      "pss_end_bytes": 3775488,
+      "swap_end_bytes": 23449600
+    },
+    {
+      "pid": 1661357,
+      "role": "COORDINATOR",
+      "nice": 0,
+      "cpu_seconds": 9.335169962,
+      "runqueue_wait_seconds": 14.927135187,
+      "major_faults_delta": 4,
+      "rss_start_bytes": 8155136,
+      "rss_end_bytes": 5410816,
+      "pss_start_bytes": 3909632,
+      "pss_end_bytes": 2821120,
+      "swap_end_bytes": 10280960
+    }
+  ],
+  "unique_generations": [
+    {
+      "generation_id": "0325785984c68955bd9463c1acc9ec6ccf4bc85b14d173065d62e5bb0e4a609d",
+      "manifest_sha256": "d0683818fca146dee38c834d8a424159ef97a3b2e43ef1326b53bf48a97b11a1",
+      "sequence": 1792296351524571,
+      "source_as_of": "2026-10-18T04:05:51.524571+00:00",
+      "worker_status": "SHADOW_OBSERVING",
+      "timing": {
+        "allocator_phases": {
+          "planner_completed": {
+            "allocator_trim_available": true,
+            "elapsed_seconds": 0.358954,
+            "rss_after_kib": 228492,
+            "rss_before_kib": 256712
+          }
+        },
+        "poll_seconds": 30,
+        "process_peak_rss_kib": 306296,
+        "stages_cpu_seconds": {
+          "durable_serialization": 16.172,
+          "economic_exit_lab": 0.011,
+          "entry_signal_lab": 0.253,
+          "family_routing": 3.321,
+          "operational_funnel": 5.744,
+          "planner_pipeline": 4.571,
+          "preopen": 4.615,
+          "state_and_inputs": 2.501
+        },
+        "stages_process_peak_rss_kib": {
+          "durable_serialization": 306296,
+          "economic_exit_lab": 306296,
+          "entry_signal_lab": 306296,
+          "family_routing": 306296,
+          "operational_funnel": 306296,
+          "planner_pipeline": 306296,
+          "preopen": 306296,
+          "state_and_inputs": 306296
+        },
+        "stages_seconds": {
+          "durable_serialization": 54.575,
+          "economic_exit_lab": 0.013,
+          "entry_signal_lab": 0.683,
+          "family_routing": 7.246,
+          "operational_funnel": 17.65,
+          "planner_pipeline": 8.226,
+          "preopen": 6.568,
+          "state_and_inputs": 3.077
+        },
+        "storage_profile": {
+          "checkpoint": {
+            "block_outputs": 8200,
+            "cpu_seconds": 2.218879,
+            "major_faults": 2126,
+            "peak_rss_kib": 306296,
+            "wall_seconds": 4.173577
+          },
+          "computed": {
+            "block_outputs": 11136,
+            "compress_hash_cpu_seconds": 2.383853,
+            "compress_hash_seconds": 6.057776,
+            "compressed_bytes": 5696129,
+            "cpu_seconds": 13.818875,
+            "encode_cpu_seconds": 11.376866,
+            "encode_seconds": 41.685845,
+            "fsync_cpu_seconds": 0.002271,
+            "fsync_seconds": 0.027871,
+            "major_faults": 19614,
+            "peak_rss_kib": 306296,
+            "raw_bytes": 254828638,
+            "wall_seconds": 49.929621
+          },
+          "latest": {
+            "block_outputs": 8,
+            "cpu_seconds": 0.009627,
+            "major_faults": 83,
+            "peak_rss_kib": 306296,
+            "wall_seconds": 0.111595
+          }
+        },
+        "tick_cpu_seconds": 37.19,
+        "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+        "tick_seconds": 98.049
+      },
+      "publication": {
+        "generation_id": "0325785984c68955bd9463c1acc9ec6ccf4bc85b14d173065d62e5bb0e4a609d",
+        "manifest_sha256": "d0683818fca146dee38c834d8a424159ef97a3b2e43ef1326b53bf48a97b11a1",
+        "pointer_committed_monotonic": 4801887.962137386,
+        "poll_seconds": 30,
+        "prune_seconds": 0.002857,
+        "publish_completed_at": "2026-10-18T04:07:29.652331+00:00",
+        "publish_seconds": 0.075258,
+        "schema": "rc6.publication-cost.v1",
+        "sequence": 1792296351524571,
+        "source_as_of": "2026-10-18T04:05:51.524571+00:00",
+        "start_compute_monotonic": 4801789.837255311,
+        "total_cpu_seconds": 37.209566,
+        "total_seconds": 98.124882
+      }
+    }
+  ],
+  "generation_read_observations": [],
+  "source_age_min_seconds": 115.457263,
+  "source_age_max_seconds": 202.411778,
+  "ppi_watch_accessed": false,
+  "real_orders_sent_all_integer_zero": true,
+  "limitations": [
+    "Passive observation is not matched-input native A/B.",
+    "Host swap counters do not attribute all swap IO to an individual process.",
+    "Major page faults are not synonymous with swap-in.",
+    "18 samples and the observed unique ticks do not establish P99.",
+    "Historical RSS highwater and cgroup peak are cumulative counters."
+  ],
+  "disk_samples": 18,
+  "disk_min_bytes": 4549267456
+}

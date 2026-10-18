@@ -1887,6 +1887,66 @@
       "sha256": "8af42f0e085d6ecf2519cd50d26b1f6b742309e7b27990619afcc05dbe0e3632",
       "source": "INDEPENDENT_EXACT_PREDEPLOY_39090521551_OR_CONTROLLED_AB_39090738532",
       "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/native-202e-deploy-red.json",
+      "source": "MEASURED_NATIVE_RCA_OR_EXPLICIT_LOCAL_ALLOCATION_ATTRIBUTION",
+      "bytes": 1390,
+      "sha256": "91e56be014cc54eed3e30261553c0e309e558b81046cbc86494029a5af5c9283"
+    },
+    {
+      "path": "docs/releases/evidence624/native-202e-two-gate.json",
+      "source": "MEASURED_NATIVE_RCA_OR_EXPLICIT_LOCAL_ALLOCATION_ATTRIBUTION",
+      "bytes": 19131,
+      "sha256": "897dc178029275dbeffd760e99eef0f85678dd295c4f8dbaa70808000c90a3c0"
+    },
+    {
+      "path": "docs/releases/evidence624/native-202e-ten-red.json",
+      "source": "MEASURED_NATIVE_RCA_OR_EXPLICIT_LOCAL_ALLOCATION_ATTRIBUTION",
+      "bytes": 9800,
+      "sha256": "959df365e4d78132a015eab1d5c36c62959cc18cfbe4793c975283c2de47dee6"
+    },
+    {
+      "path": "docs/releases/evidence624/native-202e-rca-byte-validation.json",
+      "source": "MEASURED_NATIVE_RCA_OR_EXPLICIT_LOCAL_ALLOCATION_ATTRIBUTION",
+      "bytes": 627,
+      "sha256": "75fb47b002eda4f4604323f6cb384cfb1d23190c59db4026a097951184df5d0d"
+    },
+    {
+      "path": "docs/releases/evidence624/native-202e-profile-summary624.json",
+      "source": "MEASURED_NATIVE_RCA_OR_EXPLICIT_LOCAL_ALLOCATION_ATTRIBUTION",
+      "bytes": 9008,
+      "sha256": "44b3b10f94c7d2b03c6d4a5808a510bccd7d3eebd2d0e81d116af1e878779bbd"
+    },
+    {
+      "path": "docs/releases/evidence624/profile624_retained_graph.py",
+      "source": "INDEPENDENT_REVIEW_TOOL_SOURCE",
+      "bytes": 3769,
+      "sha256": "59ca850f985397c014c20ae2a7af7fd6bb077824b902acb1723e295d3a14d3cf"
+    },
+    {
+      "path": "docs/releases/evidence624/summarize624_native_profile.py",
+      "source": "INDEPENDENT_REVIEW_TOOL_SOURCE",
+      "bytes": 5778,
+      "sha256": "fd2456b376abf97c6330f4b236888ea29471dd77b4800beaf453ffd76b481bf4"
+    },
+    {
+      "path": "docs/releases/evidence624/native-202e-retained-graphs.json",
+      "source": "MEASURED_NATIVE_RCA_OR_EXPLICIT_LOCAL_ALLOCATION_ATTRIBUTION",
+      "bytes": 15255,
+      "sha256": "23150be0625023ce297a7830d38289024a557ba0ccc8872845df626fd7e33298"
+    },
+    {
+      "path": "docs/releases/evidence624/native-202e-ram-profile.json.gz",
+      "source": "MEASURED_NATIVE_RCA_OR_EXPLICIT_LOCAL_ALLOCATION_ATTRIBUTION",
+      "bytes": 25915,
+      "sha256": "100939f47e7a1b01ad9ecdcb82497b20ebb90c645b6ea846f6496c50074aa92e"
+    },
+    {
+      "path": "docs/releases/evidence624/native-202e-image-mapping.json",
+      "source": "MEASURED_NATIVE_RCA_OR_EXPLICIT_LOCAL_ALLOCATION_ATTRIBUTION",
+      "bytes": 1075,
+      "sha256": "a41b1db121ac6c0edd5a2e6575a9b3d2684433d7742779734672720f22c80209"
     }
   ]
 }

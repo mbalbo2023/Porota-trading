@@ -6,7 +6,7 @@
   "candidate_sha": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
   "candidate_tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
   "pr": 628,
-  "runtime_state": "DEPLOYED_VALIDATION_PENDING_NATIVE_RAM_RED",
+  "runtime_state": "DEPLOYED_VALIDATION_PENDING_NATIVE_202E_RAM_RED",
   "predeploy_run": 39090521551,
   "original_findings_count": 68,
   "original_findings_sha256": "a57b4beca7aae6c2235b87d0a5b992f0be3f24f0d0975207cf48afad7e2fa537",
@@ -1257,9 +1257,31 @@
       "runtime_state": "NO_VERIFICADO",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Any parity, resource, sourceidentity or nativefreshness failure remainsRED; no threshold relaxation."
+    },
+    {
+      "id": "624-202E-NATIVE-RAM-RED",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_RCA_FIX_FORWARD_REQUIRED",
+      "cause": "Deploy39091864291 installed202e. Native2 GREEN after14 retained stale observations; strict10 RED at52.662122s/1generation. Rejected118923264B MemAvailable vs134217728B, disk4551827456B, services unchanged/OOMfalse/restarts0. Fresh observedcut91.134s. Stress/restore NOT_EXECUTED.",
+      "fix": "OPEN: profile39096006422 isolates remaining pressure. No identical rerun, threshold change or resize. New rejected-receipt guard and cleanup classification proved on actual RED.",
+      "status": "BLOQUEADO_HASTA_FIX_VALIDADO",
+      "runtime_state": "NO_ACEPTADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Every resource/freshness/identity failure remains RED; later observations never rewrite the failed deploy."
+    },
+    {
+      "id": "624-202E-RETAINED-GRAPH-RCA",
+      "capability": "RC6_NATIVE_ACCEPTANCE_AND_RETAINED_WORKING_SET",
+      "classification": "MEASURED_RCA_FIX_FORWARD_REQUIRED",
+      "cause": "Native18samples5 below128MiB/min91529216B; SHADOW290MiB RSS. Post-CURRENT receipt98.124882wall/37.209566CPU (before-pointer telemetry98.049/37.19), computed49.929621wall/13.818875CPU, fsync.027871wall. Local same-source two-cut retained-object attribution: steady funnel94625710B including40993446B immutable strings vs6736561B first cut; fullreport221706877B. Local traversal is not native heap/RSS/performance A/B.",
+      "fix": "OPEN: finite bounded scalar-value sharing and completed-input lifetime hypothesis, exact values/clocks/hashes mandatory. Reject as sufficient if controlled memory/CPU evidence does not provide a substantial margin; no third unchanged native attempt.",
+      "status": "BLOQUEADO_HASTA_FIX_VALIDADO",
+      "runtime_state": "NO_ACEPTADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Every resource/freshness/identity failure remains RED; later observations never rewrite the failed deploy."
     }
   ],
-  "findings_count": 87,
+  "findings_count": 89,
   "predeploy_state": "GREEN_BYTES_VALIDATED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -1501,12 +1523,12 @@
     "pr": 628,
     "predeploy_run": 39090521551,
     "predeploy_job": 117566084772,
-    "state": "CERTIFIED_MERGED_DEPLOY_IN_PROGRESS",
+    "state": "INSTALLED_NATIVE_RAM_RED_NOT_ACCEPTED",
     "local_paired_ab": "docs/releases/evidence624/paired-compact624-summary.json",
     "limited_image_ab_run": 39090738532,
     "limited_image_ab_state": "GREEN_EXPERIMENT",
     "previous_environment_red": 39090451993,
-    "installed_runtime": "FE100_NATIVE_RAM_RED_NOT_ACCEPTED",
+    "installed_runtime": "202E_NATIVE_RAM_RED_NOT_ACCEPTED",
     "stress_droplet": "NOT_EXECUTED",
     "restore_stress": "NOT_EXECUTED",
     "predeploy_state": "GREEN_BYTES_VALIDATED",
@@ -1544,8 +1566,50 @@
       6244940237,
       6244940346
     ],
-    "status": "IN_PROGRESS",
-    "native_acceptance": false
+    "status": "FAILED",
+    "native_acceptance": false,
+    "schema": "rc6.native624.202e-deploy-red.v1",
+    "candidate_sha": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+    "candidate_tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
+    "state": "DEPLOYED_VALIDATION_PENDING",
+    "native_two_status": "GREEN",
+    "native_two_prior_rejections": 14,
+    "native_ten_status": "RED",
+    "native_ten_generations": 1,
+    "native_ten_error": "NATIVE_SOAK_RAM_RESERVE_BREACHED",
+    "elapsed_seconds_at_rejection": 52.662122,
+    "rejected_resource_receipt": {
+      "accepted": false,
+      "at": "2026-10-18T04:04:58.217931+00:00",
+      "available_memory_bytes": 118923264,
+      "free_disk_bytes": 4551827456,
+      "rejection_reason": "NATIVE_SOAK_RAM_RESERVE_BREACHED",
+      "services_unchanged": true,
+      "swap_used_bytes": 807768064
+    },
+    "memory_deficit_bytes": 15294464,
+    "stress_droplet": "NOT_EXECUTED",
+    "stress_restore": "NOT_EXECUTED",
+    "raw_log_bytes": 460767,
+    "raw_log_sha256": "258646a5672c08ba03d4f9f28889c7c36efe0261a48a94f97662739c256a3c43",
+    "cleanup": {
+      "status": "GREEN",
+      "errors": [],
+      "reclaimed_bytes": 12288,
+      "disk_after": 4551835648
+    },
+    "quiescence_status": "FIX_FORWARD_VALIDATION_REQUIRED",
+    "rollback_performed": false,
+    "real_orders_sent": 0,
+    "scope": "RED preserved; later probe cannot change this outcome",
+    "rca": {
+      "run": 39096006422,
+      "job": 117582484029,
+      "artifact": 12124332880,
+      "zip_sha256": "ab1a34b693aa84a4177b61521a835734b8e13e8c1b978e0b834da1e5fdd72041",
+      "byte_validation": "docs/releases/evidence624/native-202e-rca-byte-validation.json",
+      "retired_commit": "51f504271deed6d565e98f81fc3ddcfd3c782c71"
+    }
   },
   "limited_image_ab": {
     "run": 39090738532,
@@ -1558,5 +1622,16 @@
     "rss_ratio": 0.7402842616731771,
     "cpu_ratio": 0.9206408039769379,
     "retired_commit": "be78e6acb252202d2046ca8952787dfeea03b68e"
+  },
+  "current_ownership": {
+    "paired_comments": [
+      6245488041,
+      6245488155
+    ],
+    "readback": "EXACT",
+    "state": "ACTIVE_WRITE_AND_GLOBAL_DEPLOY",
+    "new_local_branch": "work/rc6-624-native-peak-memory-20261018",
+    "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
+    "new_runtime_code_written": false
   }
 }
