@@ -41,13 +41,8 @@ concurrency:
 
 jobs:
   contracts:
-    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-624-consumer-profile-20261017'
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    env:
-      GH_TOKEN: ${{ github.token }}
-      AB_BASELINE: 7ce63ec6b3b65a0d39a93c11968d97dc510f1c02
-      AB_CANDIDATE: 5ed59faff3ace236098a05ecd777f07d444eddd1
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Compile and test isolated monitor without network
@@ -59,192 +54,10 @@ jobs:
           python3 -m py_compile scripts/rc6_operator_dashboard_readonly.py
           python3 -m unittest discover -s tests -p test_rc6_operator_dashboard_readonly.py -v
           git diff --check
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.AB_BASELINE }}
-          path: baseline624
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.AB_CANDIDATE }}
-          path: candidate624
-      - uses: actions/checkout@v4
-        with:
-          ref: b18f770a5a64067389e51f7373b3304c4975ceeb
-          path: frozen-docs624
-      - name: Independently validate frozen baseline artifact bytes
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p "$RUNNER_TEMP/ab624-validated"
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/12132052630/zip" > "$RUNNER_TEMP/ab624-frozen.zip"
-          python3 frozen-docs624/docs/releases/evidence624/validate-frozen-artifact.py \
-            --zip "$RUNNER_TEMP/ab624-frozen.zip" \
-            --digest 3d4599677ca814bd05a7249f78380e705bdd742dbb1a7bf7c86a689492021312 \
-            --sha "$AB_BASELINE" --tree df970bae3415333d43c7c6a30442f6962188ae26 \
-            --repo baseline624 --output "$RUNNER_TEMP/ab624-validated"
-          docker load -i "$RUNNER_TEMP/ab624-validated/porota-predeploy-image.tar.gz"
-      - name: Prepare same ABI and verified source overlays for isolated A/B
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          image="porota-predeploy-v2:$AB_BASELINE"
-          cid="$(docker create "$image")"
-          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
-          docker cp "$cid:/app/rc6_shadow_runtime" "$RUNNER_TEMP/ab624-native"
-          docker rm "$cid" >/dev/null
-          trap - EXIT
-          native=("$RUNNER_TEMP"/ab624-native/_rc6_json_bound*.so)
-          test "${#native[@]}" -eq 1
-          cp "${native[0]}" baseline624/rc6_shadow_runtime/
-          mkdir -p "$RUNNER_TEMP/ab624-build"
-          docker build --target rc6-json-bound-build --iidfile "$RUNNER_TEMP/ab624-build/image-id.txt" \
-            --tag "rc6-a3-codec-control:$GITHUB_RUN_ID" candidate624 > "$RUNNER_TEMP/ab624-build/build.log" 2>&1
-          cid="$(docker create "rc6-a3-codec-control:$GITHUB_RUN_ID")"
-          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
-          docker cp "$cid:/out/." "$RUNNER_TEMP/ab624-build/"
-          docker rm "$cid" >/dev/null
-          trap - EXIT
-          cp "$RUNNER_TEMP/ab624-build/_rc6_json_bound.so" candidate624/rc6_shadow_runtime/
-          test "$(sha256sum candidate624/rc6_shadow_runtime/_rc6_json_bound.so | cut -d' ' -f1)" = e75d99b260ee8af6af4147e6f0eb7c79d144ca1d9c9b312ac6499875cbe34c07
-          test "$(sha256sum baseline624/rc6_shadow_runtime/_rc6_json_bound.so | cut -d' ' -f1)" != "$(sha256sum candidate624/rc6_shadow_runtime/_rc6_json_bound.so | cut -d' ' -f1)"
-          cmp baseline624/requirements.lock.txt candidate624/requirements.lock.txt
-          install -d -m777 "$RUNNER_TEMP/ab624-evidence"
-          python3 - <<'PY'
-          import hashlib,json,subprocess
-          from pathlib import Path
-          for name in ('baseline624','candidate624'):
-              root=Path(name)
-              paths=subprocess.check_output(['git','-C',name,'ls-files','*.py'],text=True).splitlines()
-              paths += ['rc6_shadow_runtime/_rc6_json_bound.c','Dockerfile','requirements.lock.txt']
-              paths += [str(p.relative_to(root)) for p in (root/'rc6_shadow_runtime').glob('_rc6_json_bound*.so')]
-              rows=[{'path':p,'sha256':hashlib.sha256((root/p).read_bytes()).hexdigest()} for p in paths]
-              (root/'ab624-source-manifest.json').write_text(json.dumps(rows))
-          PY
-      - name: Candidate focal regressions inside frozen ABI without providers
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          # Resource fixtures exercise the mandatory 2GiB disk floor. Their
-          # basetemp uses the bound evidence filesystem, as in native V2 proof;
-          # the separate /tmp tmpfs remains bounded to 64MiB.
-          install -d -m777 "$RUNNER_TEMP/ab624-evidence/tmp"
-          python3 -c 'import shutil,sys; free=shutil.disk_usage(sys.argv[1]).free; assert free>=2*1024**3; print("AB624_FIXTURE_DISK_RESERVE=GREEN|free="+str(free))' "$RUNNER_TEMP/ab624-evidence"
-          name="rc6-ab624-focal-$GITHUB_RUN_ID"
-          docker create --name "$name" --pull never --memory 512m --memory-swap 512m --cpus .75 \
-            --network none --read-only --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 \
-            --pids-limit 128 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e TMPDIR=/evidence/tmp \
-            --tmpfs /tmp:rw,nosuid,nodev,size=64m --workdir /experiment \
-            --mount "type=bind,src=$GITHUB_WORKSPACE/candidate624,dst=/experiment,readonly" \
-            --mount "type=bind,src=$RUNNER_TEMP/ab624-evidence,dst=/evidence" \
-            --entrypoint python "porota-predeploy-v2:$AB_BASELINE" -B -m pytest -q -p no:cacheprovider \
-            --basetemp=/evidence/focal-tmp --junitxml=/evidence/focal.xml \
-            tests/test_rc6_progressive_audit.py tests/test_rc6_checkpoint_streaming.py tests/test_rc6_missing_view_sharing.py tests/test_rc6_owned_preopen.py \
-            tests/test_rc6_dynamic_orchestrator.py tests/test_rc6_preopen_scalar_storage.py \
-            tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_runtime_wiring.py \
-            tests/test_rc6_shadow_family_runtime.py tests/test_rc6_shadow_shared_audit.py \
-            tests/test_rc6_shadow_streaming_cost.py tests/test_rc6_native_soak.py \
-            tests/test_rc6_deploy_generation_gate.py tests/test_rc6_deploy_quiescence.py \
-            tests/test_rc6_shadow_cold_audit.py tests/test_rc6_postdeploy_stress_contract.py \
-            tests/test_rc6_shadow_full_catalog.py tests/test_rc6_owned_funnel_details.py tests/test_rc6_shadow_operational_funnel.py tests/test_exit_supervision_v17.py tests/test_rc6_convergence_core_admission.py
-          set +e
-          timeout 900 docker start -a "$name" > "$RUNNER_TEMP/ab624-evidence/focal.log" 2>&1
-          rc=$?
-          set -e
-          docker inspect "$name" > "$RUNNER_TEMP/ab624-evidence/focal-container.json"
-          cat "$RUNNER_TEMP/ab624-evidence/focal.log"
-          test "$rc" -eq 0
-          docker rm "$name" >/dev/null
-      - name: Sequential fresh and legacy-bootstrap full-catalog A/B at 512MiB and .75CPU
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          for mode in fresh legacy; do
-            for arm in baseline candidate; do
-              source_dir="$GITHUB_WORKSPACE/${arm}624"
-              if [ "$arm" = baseline ]; then source_sha="$AB_BASELINE"; else source_sha="$AB_CANDIDATE"; fi
-              prefix=""
-              legacy_args=()
-              if [ "$mode" = legacy ]; then prefix="legacy-"; legacy_args=(--legacy); fi
-              name="rc6-ab624-${prefix}$arm-$GITHUB_RUN_ID"
-              docker create --name "$name" --pull never --memory 512m --memory-swap 512m --cpus .75 \
-                --network none --read-only --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 \
-                --pids-limit 128 -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e TMPDIR=/tmp \
-                --tmpfs /tmp:rw,nosuid,nodev,size=64m --workdir /experiment -e PYTHONHASHSEED=0 \
-                --mount "type=bind,src=$source_dir,dst=/experiment,readonly" \
-                --mount "type=bind,src=$source_dir/ab624-source-manifest.json,dst=/probe/source-manifest.json,readonly" \
-                --mount "type=bind,src=$GITHUB_WORKSPACE/scripts/rc6_checkpoint624_ab.py,dst=/probe/ab.py,readonly" \
-                --mount "type=bind,src=$RUNNER_TEMP/ab624-evidence,dst=/evidence" \
-                --entrypoint python "porota-predeploy-v2:$AB_BASELINE" -B /probe/ab.py measure \
-                --arm "$arm" --source "$source_sha" "${legacy_args[@]}"
-              set +e
-              timeout 480 docker start -a "$name" > "$RUNNER_TEMP/ab624-evidence/${prefix}$arm.log" 2>&1
-              rc=$?
-              set -e
-              docker inspect "$name" > "$RUNNER_TEMP/ab624-evidence/${prefix}$arm-container.json"
-              test "$rc" -eq 0
-              docker rm "$name" >/dev/null
-            done
-          done
-          python3 scripts/rc6_checkpoint624_ab.py compare --directory "$RUNNER_TEMP/ab624-evidence"
-          python3 - <<'PY'
-          import hashlib,json,os,xml.etree.ElementTree as ET
-          from pathlib import Path
-          root=Path(os.environ['RUNNER_TEMP'])/'ab624-evidence'
-          values=[json.loads((root/(prefix+arm+'-container.json')).read_text())[0] for prefix in ('','legacy-') for arm in ('baseline','candidate')]
-          values += [json.loads((root/'focal-container.json').read_text())[0]]
-          assert len({v['Image'] for v in values})==1
-          for v in values:
-              h=v['HostConfig'];s=v['State']
-              assert h['Memory']==h['MemorySwap']==512*1024**2 and h['NanoCpus']==750000000
-              assert h['PidsLimit']==128 and set(h['CapDrop'])=={'ALL'}
-              assert h['NetworkMode']=='none' and h['ReadonlyRootfs'] is True and v['Config']['User']=='1000:1000'
-              assert s['ExitCode']==0 and s['OOMKilled'] is False
-          cases=list(ET.parse(root/'focal.xml').getroot().iter('testcase'))
-          assert len(cases)>300
-          assert not [c for c in cases if any(c.find(k) is not None for k in ('failure','error','skipped'))]
-          names=[c.attrib['name'] for c in cases]
-          assert 'test_storage_capture_has_one_actual_value_walk' in names, names
-          assert 'test_owned_batch_materializes_only_retained_detail_hashes_and_same_full_state' in names
-          build=root.parent/'ab624-build'
-          assert 'NEEDED' not in (build/'needed.txt').read_text()
-          assert 'GLIBC_' not in (build/'versions.txt').read_text()
-          symbols=[r.split()[7] for r in (build/'symbols.txt').read_text().splitlines() if len(r.split())>=8 and r.split()[6]=='UND']
-          assert symbols and all(n.startswith(('Py','_Py')) for n in symbols)
-          proof={'schema':'rc6.a3-624.exact-abi-control.v1','status':'GREEN','candidate_source':os.environ['AB_CANDIDATE'],'candidate_tree':'ba7bd625ac262eebe38fe039a28647a596bbcde5','c_source_sha256':'4710a658bbdeae55dc71437c57be6a9766a892d759b5815a4c2d4029a831440f','focal_cases':len(cases),
-              'failure':0,'error':0,'skipped':0,'native_cases':names,'undefined_symbols':symbols,
-              'native_sha256':hashlib.sha256((build/'_rc6_json_bound.so').read_bytes()).hexdigest(),
-              'five_sandboxes_exit0_oom_false':True,'same_original_runtime_image':values[0]['Image']}
-          (root/'abi-control.json').write_text(json.dumps(proof,indent=2)+'\n')
-          print('AB624_SANDBOX_AND_OOM_CONTROLS=GREEN')
-          PY
-      - name: Reclaim only runner experiment output after sandboxes
-        if: always()
-        run: sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/ab624-evidence"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: rc6-a3-624-owned-details-abi-ab-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/ab624-evidence/*.json
-            ${{ runner.temp }}/ab624-evidence/*.xml
-            ${{ runner.temp }}/ab624-evidence/*.log
-            ${{ runner.temp }}/ab624-evidence/baseline/receipt.json
-            ${{ runner.temp }}/ab624-evidence/candidate/receipt.json
-            ${{ runner.temp }}/ab624-evidence/legacy-baseline/receipt.json
-            ${{ runner.temp }}/ab624-evidence/legacy-candidate/receipt.json
-            ${{ runner.temp }}/ab624-validated/byte-validation.json
-            ${{ runner.temp }}/ab624-build/
-            baseline624/ab624-source-manifest.json
-            candidate624/ab624-source-manifest.json
-          if-no-files-found: error
-          retention-days: 14
-      - name: Remove experiment containers on failure
-        if: always()
-        run: docker rm -f "rc6-ab624-focal-$GITHUB_RUN_ID" "rc6-ab624-baseline-$GITHUB_RUN_ID" "rc6-ab624-candidate-$GITHUB_RUN_ID" "rc6-ab624-legacy-baseline-$GITHUB_RUN_ID" "rc6-ab624-legacy-candidate-$GITHUB_RUN_ID" >/dev/null 2>&1 || true
 
   watch:
     needs: contracts
-    if: false # A3 OFFHOST ABI control only; no Droplet action
+    if: false # captured5ed relative target RED; physical cadence admission is next isolated batch
     runs-on: ubuntu-24.04
     timeout-minutes: 7
     env:
@@ -256,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Compile bounded native RCA probes
-        run: python3 -B -m py_compile scripts/rc6_native624_profile.py scripts/rc6_native624_image_mapping.py
+        run: python3 -B -m py_compile scripts/rc6_native624_integrity_ownership.py
       - name: Prepare strict SSH
         shell: bash
         run: |
@@ -266,24 +79,22 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_market_watch"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6_market_watch" "$HOME/.ssh/known_hosts"
-      - name: Capture bounded RCA after native202e RAM reserve rejection READ_ONLY
+      - name: Read specific integrity owners and cache accounting once
         shell: bash
         run: |
           set -Eeuo pipefail
           mkdir -p evidence/native624
-          timeout 240 ssh -i "$HOME/.ssh/rc6_market_watch" -o BatchMode=yes -o ConnectTimeout=10 \
+          timeout 90 ssh -i "$HOME/.ssh/rc6_market_watch" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
-            "$DO_USER@$DO_HOST" "sudo -n timeout 220 python3 -B - --sha 7ce63ec6b3b65a0d39a93c11968d97dc510f1c02 --tree df970bae3415333d43c7c6a30442f6962188ae26" \
-            < scripts/rc6_native624_profile.py > evidence/native624/profile.json
-          python3 -m json.tool evidence/native624/profile.json >/dev/null
-          cat evidence/native624/profile.json
-      - name: Verify loaded image content against frozen archive
-        run: python3 -B scripts/rc6_native624_image_mapping.py --profile evidence/native624/profile.json --output evidence/native624/image-mapping.json --artifact-id 12132052630 --zip-bytes 414812982 --zip-sha256 3d4599677ca814bd05a7249f78380e705bdd742dbb1a7bf7c86a689492021312 --expected-image-id sha256:c3229770ff31728df35e9c6a803b7e59894461786b3a0f1299687bec16052596
+            "$DO_USER@$DO_HOST" "sudo -n timeout 75 python3 -B - --sha 246ac975ed527f40db496af47584c9dcdec933f8 --tree 05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb" \
+            < scripts/rc6_native624_integrity_ownership.py > evidence/native624/integrity-ownership.json
+          python3 -m json.tool evidence/native624/integrity-ownership.json >/dev/null
+          cat evidence/native624/integrity-ownership.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-native624-202e-ram-rca-${{ github.run_id }}
+          name: rc6-native624-integrity-ownership-${{ github.run_id }}
           path: evidence/native624
           if-no-files-found: error
           retention-days: 14
