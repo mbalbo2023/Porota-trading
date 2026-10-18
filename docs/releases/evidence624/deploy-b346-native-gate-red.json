@@ -1,0 +1,556 @@
+{
+  "error_class": "ValueError",
+  "error_reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS",
+  "generations": [],
+  "last_observation": {},
+  "minimum_generations": 2,
+  "observations": [
+    {
+      "elapsed_seconds": 0.005925,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 2.010344,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 4.024017,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 6.028945,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 8.039975,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 10.050963,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 12.059436,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 14.064202,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 16.138104,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 18.148026,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 20.153189,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 22.157641,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 24.163544,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 26.16796,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 28.176962,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 30.181312,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 32.185311,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 34.193891,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 36.203086,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 38.207727,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 40.212533,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 42.216928,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 44.22179,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 46.226103,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 48.23806,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 50.24289,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 52.247916,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 54.252431,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 56.256576,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 58.260999,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 60.271364,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 62.279939,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 64.284705,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 66.289384,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 68.296813,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 70.301494,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 72.311459,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 74.315955,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 76.32007,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 78.324627,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 80.329114,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 82.337921,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 84.342022,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 86.346619,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 88.354818,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 90.358848,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 92.363096,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 94.371606,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 96.376303,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 98.380505,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 100.398961,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 102.409037,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 104.414379,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 106.418403,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 108.423326,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 110.428017,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 112.432263,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 114.43941,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 116.444112,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 118.448421,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 120.452752,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 122.457089,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 124.46291,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 126.47337,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 128.477299,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 130.486336,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 132.489842,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 134.49434,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 136.505102,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 138.510867,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 140.52038,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 142.524552,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 144.528722,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 146.535742,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 148.540188,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 150.544325,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 152.548406,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 154.552379,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 156.556618,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 158.566194,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 160.570441,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 162.574506,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 164.581637,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 166.589857,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 168.598781,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 170.602638,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 172.60677,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 174.611622,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 176.64195,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    },
+    {
+      "elapsed_seconds": 178.646668,
+      "error_class": "ValueError",
+      "kind": "REJECTED",
+      "reason": "GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS"
+    }
+  ],
+  "read_only": true,
+  "reason": "TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED",
+  "rejection_count": 90,
+  "resources": [],
+  "schema": "rc6.deploy-generation-gate.v1",
+  "status": "RED",
+  "strict": false
+}

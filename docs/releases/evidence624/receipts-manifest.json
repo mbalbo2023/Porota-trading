@@ -3614,6 +3614,42 @@
       "source": "ACTUAL_EXACT_B346_PREDEPLOY_GREEN_CI_ONLY_NOT_HOST_ACCEPTANCE",
       "bytes": 23309,
       "sha256": "19ece72eabe37d44763e9bf2125e9118482cef60c8eb3e5f083c65c7349c5b42"
+    },
+    {
+      "path": "docs/releases/evidence624/deploy-b346-original-job.log.gz",
+      "source": "ACTUAL_B346_DEPLOY_NO_GO_AND_READ_ONLY_DIAGNOSTIC",
+      "bytes": 72030,
+      "sha256": "f23fefe7f5e2caac18237e5894776a07dc9b5eb9b99a5c0583c9ae23783e691a"
+    },
+    {
+      "path": "docs/releases/evidence624/deploy-b346-native-gate-red.json",
+      "source": "ACTUAL_B346_DEPLOY_NO_GO_AND_READ_ONLY_DIAGNOSTIC",
+      "bytes": 16091,
+      "sha256": "6d4d769f49b4f3d1b8ae4579c44ca4215631c967ba76f352d254accfc3316c2a"
+    },
+    {
+      "path": "docs/releases/evidence624/diagnostic-b346-revocation-host.json",
+      "source": "ACTUAL_B346_DEPLOY_NO_GO_AND_READ_ONLY_DIAGNOSTIC",
+      "bytes": 8810,
+      "sha256": "d82a48b999fd6b37957b09fa65013315267eefe01d79ca1cb67b1185d3b81ca7"
+    },
+    {
+      "path": "docs/releases/evidence624/diagnostic-b346-cold-profile.json",
+      "source": "ACTUAL_B346_DEPLOY_NO_GO_AND_READ_ONLY_DIAGNOSTIC",
+      "bytes": 582,
+      "sha256": "c07ad3a1f88549c41729aec8cab656d9361070352f0dccc8ca7164140f65b85e"
+    },
+    {
+      "path": "docs/releases/evidence624/diagnostic-b346-cold-components.json",
+      "source": "ACTUAL_B346_DEPLOY_NO_GO_AND_READ_ONLY_DIAGNOSTIC",
+      "bytes": 843,
+      "sha256": "7a6c637943894a6e114c796786eb54d628939fe16c9f763bb98b63edd49061fa"
+    },
+    {
+      "path": "docs/releases/evidence624/deploy-b346-no-go-auditor-report.md",
+      "source": "ACTUAL_B346_DEPLOY_NO_GO_AND_READ_ONLY_DIAGNOSTIC",
+      "bytes": 8973,
+      "sha256": "abc8932a1f15590a0464a0b1d3526e0a36d5fa17323c67638db4e66bc3f44e2d"
     }
   ]
 }

@@ -6,7 +6,7 @@
   "candidate_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
   "candidate_tree": "df970bae3415333d43c7c6a30442f6962188ae26",
   "pr": 631,
-  "runtime_state": "7CE_INSTALLED_NOT_ACCEPTED_FIX_FORWARD_VALIDATION_REQUIRED",
+  "runtime_state": "B346_INSTALLED_NOT_ACCEPTED_FAILED_COLD_BACKLOG_FIX_FORWARD_REQUIRED",
   "predeploy_run": 39113977768,
   "original_findings_count": 68,
   "original_findings_sha256": "a57b4beca7aae6c2235b87d0a5b992f0be3f24f0d0975207cf48afad7e2fa537",
@@ -1728,9 +1728,18 @@
       "cause": "The /tmp fixture failed in prior 8bf; fix13 used the existing writable /proof/tmp and required the actual UID/capability probe. New exact SHA b346 completed root, native and physical proofs. Reviewer-only parametrized JUnit name check was corrected to demand all 11 variants; no product or artifact change.",
       "evidence": "Predeploy39139165652/job117709822871 SUCCESS; original artifact12141294611/435568162B/SHA2681ce8bac589386fbdd53668032bfb8c855306b1e47ed83e86976328af80cb0; decoded original log SHA925879a41715f2d1035e0370f12ae6f3cf7730ccc4d9a8bb42ee78dfd30e4297; independent byte certificate SHA3cf693e41ddc79f048c574ce1132379138e72077aa261b04686f611553575a60. Root4230, native182, stress1083, 12fresh+12legacy physical cuts, five sandboxes Exit0/OOMfalse, OCI/layers/C and512 bundle files verified.",
       "reopen": "Canonical Deploy V2 39141930791 and host native2+strict10/405 minutes virtual inside Droplet/same-ID restore/new2+strict10/delayed profile remain unverified until actual receipts."
+    },
+    {
+      "id": "624-A3-B346-HOST-COLD-DEADLINE-NO_GO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "NATIVE_DEPLOY_AND_EXACT_COLD_RCA",
+      "classification": "NO_GO_DEPLOY_FAILED_FIX_FORWARD_IN_PROGRESS",
+      "cause": "On the current Droplet the first b346 COLD expansion/canonicalization of actual 254820078B exhausted the unchanged 30s absolute deadline; durable FAILED backlog revokes the previous immutable cut via live FAIL_CLOSED status. The original failed receipt has no internal phase text; read-only later phase profiles delimit cost but cannot reconstitute the first execution.",
+      "evidence": "Deploy39141930791/job117717947684 FAILED gate90/90 revoked; original log SHA5fa279d1faeb63f487e31b9655bcefb939a51213826ace4f509bf68865a95141. Read-only diagnostic39147118211/artifact12142874269 exact deadline1792341299.9241242 and failed_at1792341299.9251482. Profile39147597354/artifact12144410130 expansion25.118s wall; attribution39147772589/artifact12143509721 canonical encode9.960s, native decode4.853s, segment hashes. All selected original receipts and external NO_GO report in evidence624.",
+      "reopen": "PR635/source97361c1/treeeaa531a fixes HOT canonical capture and archives exact failed namespace; local two full cuts passed, but Predeploy39148589383 is in progress and full Deploy/native10/host405/restore/postrestore/independent profile mandatory."
     }
   ],
-  "findings_count": 125,
+  "findings_count": 126,
   "predeploy_state": "GREEN_EXACT_IMAGE_INDEPENDENTLY_BYTE_VERIFIED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -1975,7 +1984,9 @@
     "predeploy_artifact": 12141294611,
     "predeploy_status": "GREEN_EXACT_IMAGE_INDEPENDENTLY_VERIFIED",
     "deploy_run": 39141930791,
-    "runtime_acceptance": "IN_PROGRESS_NOT_VERIFIED"
+    "runtime_acceptance": "NO_GO_NOT_ACCEPTED",
+    "deploy_status": "FAILED_NATIVE_GATE_90_OF_90_REVOKED",
+    "host_stress_405": "NOT_EXECUTED"
   },
   "historical_fe100_certificate": {
     "run": 39065412565,
@@ -1993,18 +2004,25 @@
     "droplet_acceptance": false
   },
   "current_deploy": {
-    "run": 39115392916,
-    "job": 117640043081,
-    "merge_sha": "90dc852c36eaa95683db39ea1593cb6ff98bf202",
-    "source_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
-    "source_tree": "df970bae3415333d43c7c6a30442f6962188ae26",
+    "run": 39141930791,
+    "job": 117717947684,
+    "merge_sha": "95a530538223e89469c31182a78e5751807396d0",
+    "source_sha": "b346fcc8ae6edc51be20ac7325cd068cdeb60832",
+    "source_tree": "07feba46b15af29565a75787eec98bb9e6e3f6d9",
     "status": "FAILED",
-    "native_acceptance": "RED_TWO_COHERENT_GENERATIONS_NOT_OBSERVED",
-    "stale_rejections": 7,
-    "last_pair_seconds": 121.234,
+    "native_acceptance": "RED_90_OF_90_GENERATION_REVOKED",
+    "cold_audit_deadline_at": 1792341299.9241242,
+    "cold_audit_failed_at": 1792341299.9251482,
+    "failure_receipt": "FAILED",
     "host_stress_405": "NOT_EXECUTED",
     "restore": "NOT_EXECUTED",
-    "postprofile": "NOT_EXECUTED_NEW_MEASURED_PHASE_PROFILE_SUFFICIENT_FOR_DESIGN"
+    "postrestore_native": "NOT_EXECUTED",
+    "original_job_log_sha256": "5fa279d1faeb63f487e31b9655bcefb939a51213826ace4f509bf68865a95141",
+    "read_only_diagnostics": [
+      39147118211,
+      39147597354,
+      39147772589
+    ]
   },
   "limited_image_ab": {
     "run": 39090738532,
@@ -2161,6 +2179,27 @@
       "artifact_zip_sha256": "b83c4456d957ca5c37e3ba618ec885208c571fdc46cc9db70575413e722abf08",
       "image_id": "sha256:dbb0573f5f8abce78a6939319eaf3c502bda9b8e5f7bfcf2441896cd75315835",
       "promotion_workflow_active": false
+    },
+    {
+      "state": "EXACT_SHA_PREDEPLOY_GREEN_DEPLOY_IN_PROGRESS",
+      "source_sha": "b346fcc8ae6edc51be20ac7325cd068cdeb60832",
+      "tree": "07feba46b15af29565a75787eec98bb9e6e3f6d9",
+      "branch": "work/rc6-624-native-proof-tmpdir-20261018",
+      "paired_owners": [
+        6251483754,
+        6251483940
+      ],
+      "pr": 633,
+      "predeploy_run": 39139165652,
+      "runtime": "7ce_INSTALLED_NOT_ACCEPTED",
+      "host_acceptance": "DEPLOY_IN_PROGRESS_NO_CLAIM",
+      "predeploy_job": 117709822871,
+      "predeploy_artifact": 12141294611,
+      "predeploy_zip_sha256": "2681ce8bac589386fbdd53668032bfb8c855306b1e47ed83e86976328af80cb0",
+      "independent_certificate_sha256": "3cf693e41ddc79f048c574ce1132379138e72077aa261b04686f611553575a60",
+      "merge_sha": "95a530538223e89469c31182a78e5751807396d0",
+      "deploy_run": 39141930791,
+      "deploy_job": 117717947684
     }
   ],
   "historical_final_ci": [
@@ -2196,28 +2235,33 @@
       "host_stress_405": "NOT_EXECUTED",
       "restore": "NOT_EXECUTED",
       "postprofile": "RCA_ONLY_NOT_ACCEPTANCE"
+    },
+    {
+      "run": 39115392916,
+      "job": 117640043081,
+      "merge_sha": "90dc852c36eaa95683db39ea1593cb6ff98bf202",
+      "source_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
+      "source_tree": "df970bae3415333d43c7c6a30442f6962188ae26",
+      "status": "FAILED",
+      "native_acceptance": "RED_TWO_COHERENT_GENERATIONS_NOT_OBSERVED",
+      "stale_rejections": 7,
+      "last_pair_seconds": 121.234,
+      "host_stress_405": "NOT_EXECUTED",
+      "restore": "NOT_EXECUTED",
+      "postprofile": "NOT_EXECUTED_NEW_MEASURED_PHASE_PROFILE_SUFFICIENT_FOR_DESIGN"
     }
   ],
   "engineering_next": {
-    "state": "EXACT_SHA_PREDEPLOY_GREEN_DEPLOY_IN_PROGRESS",
-    "source_sha": "b346fcc8ae6edc51be20ac7325cd068cdeb60832",
-    "tree": "07feba46b15af29565a75787eec98bb9e6e3f6d9",
-    "branch": "work/rc6-624-native-proof-tmpdir-20261018",
-    "paired_owners": [
-      6251483754,
-      6251483940
-    ],
-    "pr": 633,
-    "predeploy_run": 39139165652,
-    "runtime": "7ce_INSTALLED_NOT_ACCEPTED",
-    "host_acceptance": "DEPLOY_IN_PROGRESS_NO_CLAIM",
-    "predeploy_job": 117709822871,
-    "predeploy_artifact": 12141294611,
-    "predeploy_zip_sha256": "2681ce8bac589386fbdd53668032bfb8c855306b1e47ed83e86976328af80cb0",
-    "independent_certificate_sha256": "3cf693e41ddc79f048c574ce1132379138e72077aa261b04686f611553575a60",
-    "merge_sha": "95a530538223e89469c31182a78e5751807396d0",
-    "deploy_run": 39141930791,
-    "deploy_job": 117717947684
+    "state": "ISOLATED_FIX_FORWARD_PREDEPLOY_IN_PROGRESS_NO_HOST_ACCEPTANCE",
+    "source_sha": "97361c1ce3476465d267e9216e6bcc065696e72f",
+    "tree": "eaa531a687edd72cfefffd977f7d8b8540b51088",
+    "base_merge": "95a530538223e89469c31182a78e5751807396d0",
+    "branch": "work/rc6-624-cold-throughput-fix-forward-20261018",
+    "pr": 635,
+    "predeploy_run": 39148589383,
+    "runtime": "B346_INSTALLED_NOT_ACCEPTED",
+    "host_acceptance": "NOT_VERIFIED",
+    "causal_change": "Canonical literal capture in HOT; exact failed COLD archive before new runtime, old cut remains revoked."
   },
   "historical_7ce_candidate": {
     "source_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
