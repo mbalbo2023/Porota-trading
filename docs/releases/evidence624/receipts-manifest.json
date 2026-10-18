@@ -3662,6 +3662,18 @@
       "source": "ACTUAL_B346_PACK_ACQUISITION_AUDITOR_REPORT_V2",
       "bytes": 10359,
       "sha256": "b0e87d6d7ed9ce80fb5ffed0066598376c480921a23dcb6f892db5fef7332686"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-97361c-original.log.gz",
+      "source": "ACTUAL_97361C_PREDEPLOY_ORIGINAL_AND_INDEPENDENT_BYTE_CERTIFICATE",
+      "bytes": 186906,
+      "sha256": "b9f031fc2f940a996bb455b665c327b7cbf2ad6e56f675cd7b52d440ccdb1b9d"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-97361c-byte-validation.json",
+      "source": "ACTUAL_97361C_PREDEPLOY_ORIGINAL_AND_INDEPENDENT_BYTE_CERTIFICATE",
+      "bytes": 61914,
+      "sha256": "9491618bf943b05682ae4f5cc2007268cea1fd82192b971c36c37f5f79a7d6c3"
     }
   ]
 }

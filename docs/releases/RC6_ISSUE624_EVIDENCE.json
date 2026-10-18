@@ -1746,9 +1746,18 @@
       "cause": "The severe external auditor lacks repository and host access; a hash-only diagnostic cannot reproduce the exact 254.8MB expansion. A single read-only host stream exported the original failed four-file namespace, leaving the FAILED queue and old cut untouched.",
       "evidence": "PR634 source adfb922387fefea37c0e1684fc3a53a5d57c0cdc run39149312859 artifact12145085023 original ZIP SHA7d95dc4d18cdd50d1240ee709f98a33de4308a57f1a9e5d7369903416b031f2c; original tar110336000B SHA6221688615328d20db6348bb16c9884dc3940c9cbffae5d2987e9a785a1c9915; pack110327496B SHA16bced23e0c4e5abfed908fb0185639c05e313fa0cbe166a6a9dcf1c0539d30e tied to manifest, FAILED receipt and queue, deadline+1.024ms. Independent verifier byte-identical to original receipt SHA44f9079c0e2ba21a6e0dc8eeacaed8ef1e8e2300befb1b58b9d43bb517ea0880. Raw pack is in user-scoped auditor ZIP, not Git source documentation due operational PAPER contents.",
       "reopen": "Do not infer a new COMPLETE receipt or native acceptance from offline replay. Predeploy635 and full Deploy/Droplet stress/restore still mandatory."
+    },
+    {
+      "id": "624-A3-97361C-PREDEPLOY-EXACT-CERTIFICATE",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "EXACT_IMAGE_ROOT_NATIVE_PHYSICAL_CADENCE_BYTE_ADMISSION",
+      "classification": "GREEN_CI_ONLY_DROPLET_NOT_YET_ACCEPTED",
+      "cause": "b346 native deployment failed because cold audit exhausted the unchanged absolute 30-second deadline; new 97361c source captures identical canonical bytes at original HOT sites and archives the exact failed pack under verified quiescence.",
+      "evidence": "Predeploy V2 39148589383/job117737418832 SUCCESS; artifact12144259138/435634104B/SHA3f677b804c37fecdfe310a2bccc77aaf04bbc724f89520c8bed5d718daf9959a. Independently validated 4233 root/183 native/1084 stress cases, CI405 virtual, 12 fresh+12 legacy physical, 513 bundle files, OCI/ELF/ABI/source and source-clock recomputation. Original log SHAa095cb09cca1ca87f6c3ae19d299d44128a68af5885eec8724ca4516287af7b8; receipt SHA9491618bf943b05682ae4f5cc2007268cea1fd82192b971c36c37f5f79a7d6c3.",
+      "outcome": "No host promotion yet; mandatory new same-SHA ready_for_review workflow39151289967 and normal merge then Deploy V2/native2+strict10/host405/restoration/postrestore/delayed profile. PAPER orders0/PPI Watch untouched."
     }
   ],
-  "findings_count": 127,
+  "findings_count": 128,
   "predeploy_state": "GREEN_EXACT_IMAGE_INDEPENDENTLY_BYTE_VERIFIED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -2261,7 +2270,7 @@
     }
   ],
   "engineering_next": {
-    "state": "ISOLATED_FIX_FORWARD_PREDEPLOY_IN_PROGRESS_NO_HOST_ACCEPTANCE",
+    "state": "EXACT_IMAGE_PREDEPLOY_INDEPENDENTLY_GREEN_READY_FOR_REVIEW_TRIGGER_RUNNING_NO_HOST_ACCEPTANCE",
     "source_sha": "97361c1ce3476465d267e9216e6bcc065696e72f",
     "tree": "eaa531a687edd72cfefffd977f7d8b8540b51088",
     "base_merge": "95a530538223e89469c31182a78e5751807396d0",
@@ -2270,7 +2279,12 @@
     "predeploy_run": 39148589383,
     "runtime": "B346_INSTALLED_NOT_ACCEPTED",
     "host_acceptance": "NOT_VERIFIED",
-    "causal_change": "Canonical literal capture in HOT; exact failed COLD archive before new runtime, old cut remains revoked."
+    "causal_change": "Canonical literal capture in HOT; exact failed COLD archive before new runtime, old cut remains revoked.",
+    "predeploy_status": "SUCCESS_GREEN_INDEPENDENT_BYTES",
+    "predeploy_artifact": 12144259138,
+    "predeploy_artifact_sha256": "3f677b804c37fecdfe310a2bccc77aaf04bbc724f89520c8bed5d718daf9959a",
+    "independent_certificate": "docs/releases/evidence624/predeploy-97361c-byte-validation.json",
+    "ready_for_review_run": 39151289967
   },
   "historical_7ce_candidate": {
     "source_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
