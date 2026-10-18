@@ -3,11 +3,11 @@
   "workstream": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
   "source_issue": 624,
   "product_baseline_sha": "47d949b72f0b3affffecdc6cc90d31ba1347d9b7",
-  "candidate_sha": "538677cdae30ca2b3609294e0cd835c8caefc4c1",
-  "candidate_tree": "60b578b7b8712ccdf5d2dce512b6801f5b7ee75a",
+  "candidate_sha": "fe100cb337ba627e23aa4a006b6c30125e646ad7",
+  "candidate_tree": "8a6fc95a80a02142a15c29c18e05e5f1036de27d",
   "pr": 626,
-  "runtime_state": "NO_VERIFICADO",
-  "predeploy_run": 39064838844,
+  "runtime_state": "DEPLOY_IN_PROGRESS",
+  "predeploy_run": 39065412565,
   "original_findings_count": 68,
   "original_findings_sha256": "a57b4beca7aae6c2235b87d0a5b992f0be3f24f0d0975207cf48afad7e2fa537",
   "findings": [
@@ -1146,10 +1146,22 @@
       "runtime_state": "NO_VERIFICADO",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Any backup deletion, artifact omission, safety or native acceptance failure reopens."
+    },
+    {
+      "id": "624-PRECLEAN-TEST-TRANSPORT",
+      "capability": "RELEASE_TEST_VALIDITY",
+      "classification": "TEST_FIX_TRANSPORT_PARITY",
+      "cause": "Preclean fixture omitted HOUSEKEEPING_B64; 0case failed, negative returncodes could pass without exercising stdin.",
+      "fix": "Fixture supplies actualscriptbase64, consumes and compares fullstdin bytes in all4exitbranches; codes and productionlogic unchanged.65neighborPASS.",
+      "test": "tests/test_rc6_disk_materialization_reserve.py",
+      "status": "EN_GITHUB",
+      "runtime_state": "NO_VERIFICADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Missing or partial helpertransport must fail both positive and negativefixtures."
     }
   ],
-  "findings_count": 77,
-  "predeploy_state": "IN_PROGRESS",
+  "findings_count": 78,
+  "predeploy_state": "GREEN_BYTES_VALIDATED",
   "historical_ci_995": {
     "run": 39061986441,
     "job": 117481988873,
@@ -1296,5 +1308,47 @@
     "local_cross_uid_fixture": "NOT_EXECUTED: uid_map only0; chown1000EINVAL",
     "new_predeploy": 39064838844,
     "new_sha": "538677cdae30ca2b3609294e0cd835c8caefc4c1"
+  },
+  "historical_ci_538": {
+    "run": 39064838844,
+    "job": 117490203005,
+    "cases": 4009,
+    "failures": 1,
+    "errors": 0,
+    "skipped": 0,
+    "xfail": 0,
+    "artifact": 12112807824,
+    "zip_sha256": "323f0136100815681c1586ca506135092bac3b97c6432b014ce5715c12782530",
+    "promotable": false
+  },
+  "final_ci": {
+    "run": 39065412565,
+    "job": 117491921735,
+    "artifact": 12112809598,
+    "zip_sha256": "7a4161313698fc6f16b18a5eef22020fbe973ee4b50ae9510df775152395b4a9",
+    "image_id": "sha256:2d61b2bae12cc1ab164eb997ce187a450da6eb2438239be3e8b40d44fa15d2e3",
+    "root_cases": 4009,
+    "stress_cases": 845,
+    "stress_simulated_minutes": 405,
+    "groups": 8,
+    "bundle_files": 509,
+    "layers_validated": 25,
+    "byte_validation": "docs/releases/evidence624/ci-fe100-byte-validation.json",
+    "droplet_acceptance": false
+  },
+  "deploy": {
+    "run": 39083752998,
+    "job": 117545904511,
+    "merge_sha": "e636b3a20a408e0ff22089118634003e4de900f1",
+    "merge_parents": [
+      "47d949b72f0b3affffecdc6cc90d31ba1347d9b7",
+      "fe100cb337ba627e23aa4a006b6c30125e646ad7"
+    ],
+    "tree_verified": true,
+    "owner_comments": [
+      6243842309,
+      6243842434
+    ],
+    "status": "IN_PROGRESS"
   }
 }

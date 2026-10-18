@@ -1376,6 +1376,146 @@
       "sha256": "fb2186b95ddcd9e35a63b43c681f63509babe41e65cba4461c7f9e44888d32e6",
       "source": "LOCAL_CAUSAL_REGRESSION_OR_GITHUB_ACTIONS_LOG",
       "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy538-red.xml.gz",
+      "bytes": 90840,
+      "sha256": "f595dff4e4d90cf3e1330cc9ff2ea1a6a3698232bb816c6a504af2ba8de6ea1c",
+      "source": "GITHUB_ACTIONS_RED_OR_CAUSAL_LOCAL_TEST",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/transport-fixture-after624.xml.gz",
+      "bytes": 2105,
+      "sha256": "77ca8eafc811d1e6e2386e0ace94035f415cf1062a9e0f58e465f6b80fd9051f",
+      "source": "GITHUB_ACTIONS_RED_OR_CAUSAL_LOCAL_TEST",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy538-raw.log.gz",
+      "bytes": 44854,
+      "sha256": "c923a911890671137769a866a9a7f8e182c5eaf5a1d7555d56952d9cd815596f",
+      "source": "GITHUB_ACTIONS_RED_OR_CAUSAL_LOCAL_TEST",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy538-red-validation.json",
+      "bytes": 420,
+      "sha256": "ea7c22d8b243d19a3c200f831fc70c5070cbcab7ca5f81a013d48331a1ab8ba5",
+      "source": "GITHUB_ACTIONS_RED_OR_CAUSAL_LOCAL_TEST",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-byte-validation.json",
+      "bytes": 35553,
+      "sha256": "4116f4f578bcf09def063e4dc2fdfea4fd0bc5c00d31763416e7089ab455dfe4",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-porota-frozen-candidate.json",
+      "bytes": 611,
+      "sha256": "d954266ac08097c92b19d60842ff6f07f1ab187da8d807d90803121b7b1b0887",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-porota-governed-tests.json",
+      "bytes": 360,
+      "sha256": "dea7622a4a3d9c8cce1a3136c00437c498dd35bcc05bc11051860726366e283a",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-stress.json",
+      "bytes": 16724,
+      "sha256": "508637f7a87bcfe14a2a00dd6e77c8a2fc78625c139108d16aeaa29a35158f26",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-full-catalog.json",
+      "bytes": 5322,
+      "sha256": "47180a0257a7643b60b18204385098a1e3ffc974389284b86a08d7af7f2ad42d",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-native-bound.xml",
+      "bytes": 7163,
+      "sha256": "0b513eeba67fba8dd6edf6028563b9064fa6959753bef14f26756f301d41ca43",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-root.xml.gz",
+      "bytes": 89690,
+      "sha256": "510ce52bbd4a335560533ae3f0a7aa922aaea5e462ac9b32a6807936f1d5dea1",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-raw.log.gz",
+      "bytes": 167913,
+      "sha256": "56a98565d2b2e33f1981bebd17f60a454bcf3335db0e3b228e6a7bc5fb308d3c",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-sql_shadow_wal.xml.gz",
+      "bytes": 1425,
+      "sha256": "bbaaa789b4234b900905ba221a32a5655b7f6b2aeee1912fe0ef6bb6c3aeb077",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-publication_io_identity.xml.gz",
+      "bytes": 3880,
+      "sha256": "deffcda32a344f0e9edb5cf767be0d48e29637c35f267d3ecf50f21c6d574d4a",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-signals_risk_exit_ledger.xml.gz",
+      "bytes": 4568,
+      "sha256": "8a45a90947cbcff8898ead8fb368a5bbd43e187d779a55ad9405cb5e912b8a48",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-sources_readiness_network.xml.gz",
+      "bytes": 2634,
+      "sha256": "566a3263efce6754be4a5dadfd9e993d1487e650ab7dc8de173ce8c9d90dfa16",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-scalping_capacity.xml.gz",
+      "bytes": 2916,
+      "sha256": "50a6a4467a784dfd3b81af054317835d83a08153f29068da1818d2fecb7bc52c",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-treasury_caucion.xml.gz",
+      "bytes": 1991,
+      "sha256": "0d9c1f1657e8ecdb88379ad48a3a0226228e0b353d5b53e9e03b2668a4bc24d7",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-dashboard_auth_52.xml.gz",
+      "bytes": 4819,
+      "sha256": "8acc2567cbe3818dae669f7b6b22ca3fc97afe95bbdf759f47cd5b41be2488fb",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ci-fe100-scheduler_monitor_backup.xml.gz",
+      "bytes": 852,
+      "sha256": "f74920a2420f98bb88ca81aede565f5de4d7b9ab7f18562f086c301d56e95c25",
+      "source": "EXACT_IMAGE_CI_39065412565_INDEPENDENT_BYTES",
+      "native_acceptance": false
     }
   ]
 }
