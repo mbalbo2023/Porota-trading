@@ -46,8 +46,11 @@ print(json.dumps({'measured': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 def test_full_catalog_two_committed_generations_under_process_memory_budget(tmp_path):
     root=Path(__file__).resolve().parents[1]
     env=dict(os.environ,PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
-    run=_fresh_python([sys.executable,str(root/'scripts/rc6_postdeploy_stress.py'),
-        '--output',str(tmp_path/'result'),'--full-catalog-check'],cwd=root,env=env,
+    from tests.rc6_native_storage import native_storage, native_command
+    native = native_storage(tmp_path)
+    command = native_command([sys.executable, str(root/'scripts/rc6_postdeploy_stress.py'),
+        '--output', str(tmp_path/'result'), '--full-catalog-check'], native)
+    run=_fresh_python(command,cwd=root,env=env,
         stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=240)
     assert run.returncode==0,run.stdout[-3000:]
     report=json.loads((tmp_path/'result/full-catalog.json').read_text())

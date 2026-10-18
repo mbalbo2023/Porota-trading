@@ -17,7 +17,8 @@ jobs:
   artifact-gate:
     name: Exact artifact predeploy gate
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    # Existing35min gates + two12*120+60s physical stages + cleanup5min.
+    timeout-minutes: 90
     env:
       CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
       IMAGE: porota-predeploy-v2:${{ github.event.pull_request.head.sha }}
@@ -298,7 +299,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           install -d -m 777 "$RUNNER_TEMP/porota-native-sizing-evidence" "$RUNNER_TEMP/porota-native-sizing-evidence/tmp"
-          trap 'docker rm -f "porota-native-cases-$GITHUB_RUN_ID" "porota-native-catalog-$GITHUB_RUN_ID" >/dev/null 2>&1 || true' EXIT
+          trap 'docker rm -f "porota-native-cases-$GITHUB_RUN_ID" "porota-native-catalog-$GITHUB_RUN_ID" "porota-native-session-$GITHUB_RUN_ID" "porota-native-cadence-fresh-$GITHUB_RUN_ID" "porota-native-cadence-legacy-$GITHUB_RUN_ID" >/dev/null 2>&1 || true' EXIT
           run_native_proof() {
             rc6_label="$1"; shift
             rc6_name="porota-native-$rc6_label-$GITHUB_RUN_ID"
@@ -308,7 +309,11 @@ jobs:
               -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e TMPDIR=/proof/tmp \
               -v "$RUNNER_TEMP/porota-native-sizing-evidence:/proof" "$IMAGE" "$@"
             set +e
-            timeout 480 docker start -a "$rc6_name"
+            rc6_timeout=480
+            case "$rc6_label" in
+              cadence-fresh|cadence-legacy) rc6_timeout=1500 ;;
+            esac
+            timeout "$rc6_timeout" docker start -a "$rc6_name"
             rc6_result=$?
             set -e
             rc6_state="$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$rc6_name")"
@@ -320,7 +325,7 @@ jobs:
           run_native_proof cases python -m pytest -q -p no:cacheprovider \
             tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_streaming_cost.py \
             tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_owned_state.py \
-            tests/test_rc6_shadow_report_lifetime.py --junitxml=/proof/native-bound.xml
+            tests/test_rc6_shadow_report_lifetime.py tests/test_rc6_shadow_cold_audit.py tests/test_rc6_owned_funnel_details.py tests/test_rc6_physical_cadence.py --junitxml=/proof/native-bound.xml
           # The generated catalogue runs inline without a pytest parent beside it.
           run_native_proof catalog python scripts/rc6_postdeploy_stress.py \
             --full-catalog-check --output /proof/catalog
@@ -328,6 +333,12 @@ jobs:
           # required on the Droplet. CI success never substitutes for that host.
           run_native_proof session python scripts/rc6_postdeploy_stress.py \
             --output /proof/session
+          # Independent processes preserve each existing additive nice10 call.
+          # Every stage physically waits30s and verifies12full original audits.
+          run_native_proof cadence-fresh python scripts/rc6_postdeploy_stress.py \
+            --cadence-stage fresh --output /proof/cadence
+          run_native_proof cadence-legacy python scripts/rc6_postdeploy_stress.py \
+            --cadence-stage legacy --output /proof/cadence
           echo 'POROTA_EXACT_IMAGE_NATIVE_SIZING=GREEN'
       - name: Exact image runtime smoke contract
         shell: bash

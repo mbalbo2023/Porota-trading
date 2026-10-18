@@ -1,7 +1,8 @@
 # ============================================================================
 # Dockerfile - Porota Trading v16.2
 # ============================================================================
-# Compile only the sizing predicate. The actual content remains encoded by
+# Compile the sizing predicate and bounded non-executable audit input codec.
+# Actual canonical audit content remains encoded by
 # stdlib JSON, and the final runtime dependencies/base stay unchanged.
 FROM python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9 AS rc6-python-headers
 FROM python:3.11-bookworm@sha256:5887f265d8d44d8b4734d3658b21d668edf5aaf92e4945bc0c984afbfab105d3 AS rc6-json-bound-build
@@ -61,7 +62,7 @@ RUN pip install --no-cache-dir -r requirements.lock.txt
 # entorno, la base de datos o el indice vectorial dentro de la imagen.
 COPY . .
 COPY --from=rc6-json-bound-build /out/_rc6_json_bound.so /app/rc6_shadow_runtime/_rc6_json_bound.so
-RUN python -c 'from rc6_shadow_runtime import persistence; assert persistence._native_json_bound is not None, "NATIVE_JSON_BOUND_REQUIRED"'
+RUN python -c 'from rc6_shadow_runtime import persistence; assert persistence._native_json_bound is not None, "NATIVE_JSON_BOUND_REQUIRED"; n=persistence._native_json_bound; c=n.snapshot_context(); assert n.snapshot_decode(n.snapshot_encode({"actual":1},c),n.snapshot_context()) == {"actual":1}, "NATIVE_AUDIT_CODEC_REQUIRED"; b=n.snapshot_batch([1,2],n.snapshot_context()); assert b[1]==2 and n.snapshot_decode(b[0],n.snapshot_context())==[1,2], "NATIVE_AUDIT_BATCH_REQUIRED"; q=n.snapshot_context(dict,list,True); n.snapshot_encode([1],q); assert n._snapshot_capture_counts(q)==(0,2), "NATIVE_SINGLE_VALUE_WALK_REQUIRED"'
 
 # Reassert every dashboard module verified by the RC6 deploy.  `COPY . .` is a
 # convenience layer, never the provenance authority for the live dashboard.
