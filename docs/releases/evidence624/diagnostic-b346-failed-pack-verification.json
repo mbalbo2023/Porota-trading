@@ -1,0 +1,16 @@
+{
+  "deadline_at": 1792341299.9241242,
+  "failed_at": 1792341299.9251482,
+  "manifest_sha256": "4d8e93f529e4c7385710dbcff58c52bea764762eafc0190907b63b1b214f1c6d",
+  "pack_bytes": 110327496,
+  "pack_sha256": "16bced23e0c4e5abfed908fb0185639c05e313fa0cbe166a6a9dcf1c0539d30e",
+  "ppi_watch_accessed": false,
+  "read_only": true,
+  "schema": "rc6.issue624.original-failed-pack-byte-verification.v1",
+  "secret_pattern_scan": "PASS_REVIEWED_SENTINELS",
+  "snapshot_id": "89e7f81dbc9b4a628bdc30edf86a17b0",
+  "state": "FAILED",
+  "status": "GREEN",
+  "tar_bytes": 110336000,
+  "tar_sha256": "6221688615328d20db6348bb16c9884dc3940c9cbffae5d2987e9a785a1c9915"
+}

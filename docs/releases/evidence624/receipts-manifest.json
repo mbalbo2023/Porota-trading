@@ -3650,6 +3650,18 @@
       "source": "ACTUAL_B346_DEPLOY_NO_GO_AND_READ_ONLY_DIAGNOSTIC",
       "bytes": 8973,
       "sha256": "abc8932a1f15590a0464a0b1d3526e0a36d5fa17323c67638db4e66bc3f44e2d"
+    },
+    {
+      "path": "docs/releases/evidence624/diagnostic-b346-failed-pack-verification.json",
+      "source": "ACTUAL_B346_READ_ONLY_FAILED_PACK_OR_AUDITOR_REPORT",
+      "bytes": 655,
+      "sha256": "44f9079c0e2ba21a6e0dc8eeacaed8ef1e8e2300befb1b58b9d43bb517ea0880"
+    },
+    {
+      "path": "docs/releases/evidence624/deploy-b346-no-go-auditor-report-v2.md",
+      "source": "ACTUAL_B346_PACK_ACQUISITION_AUDITOR_REPORT_V2",
+      "bytes": 10359,
+      "sha256": "b0e87d6d7ed9ce80fb5ffed0066598376c480921a23dcb6f892db5fef7332686"
     }
   ]
 }

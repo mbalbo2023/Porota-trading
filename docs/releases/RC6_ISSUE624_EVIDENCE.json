@@ -1737,9 +1737,18 @@
       "cause": "On the current Droplet the first b346 COLD expansion/canonicalization of actual 254820078B exhausted the unchanged 30s absolute deadline; durable FAILED backlog revokes the previous immutable cut via live FAIL_CLOSED status. The original failed receipt has no internal phase text; read-only later phase profiles delimit cost but cannot reconstitute the first execution.",
       "evidence": "Deploy39141930791/job117717947684 FAILED gate90/90 revoked; original log SHA5fa279d1faeb63f487e31b9655bcefb939a51213826ace4f509bf68865a95141. Read-only diagnostic39147118211/artifact12142874269 exact deadline1792341299.9241242 and failed_at1792341299.9251482. Profile39147597354/artifact12144410130 expansion25.118s wall; attribution39147772589/artifact12143509721 canonical encode9.960s, native decode4.853s, segment hashes. All selected original receipts and external NO_GO report in evidence624.",
       "reopen": "PR635/source97361c1/treeeaa531a fixes HOT canonical capture and archives exact failed namespace; local two full cuts passed, but Predeploy39148589383 is in progress and full Deploy/native10/host405/restore/postrestore/independent profile mandatory."
+    },
+    {
+      "id": "624-A3-B346-ORIGINAL-FAILED-PACK-EXTERNAL-AUDIT",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "ORIGINAL_IMMUTABLE_HOST_INPUT_OFFLINE_AUDIT",
+      "classification": "GREEN_READ_ONLY_BYTE_CAPTURE_NO_RUNTIME_ACCEPTANCE",
+      "cause": "The severe external auditor lacks repository and host access; a hash-only diagnostic cannot reproduce the exact 254.8MB expansion. A single read-only host stream exported the original failed four-file namespace, leaving the FAILED queue and old cut untouched.",
+      "evidence": "PR634 source adfb922387fefea37c0e1684fc3a53a5d57c0cdc run39149312859 artifact12145085023 original ZIP SHA7d95dc4d18cdd50d1240ee709f98a33de4308a57f1a9e5d7369903416b031f2c; original tar110336000B SHA6221688615328d20db6348bb16c9884dc3940c9cbffae5d2987e9a785a1c9915; pack110327496B SHA16bced23e0c4e5abfed908fb0185639c05e313fa0cbe166a6a9dcf1c0539d30e tied to manifest, FAILED receipt and queue, deadline+1.024ms. Independent verifier byte-identical to original receipt SHA44f9079c0e2ba21a6e0dc8eeacaed8ef1e8e2300befb1b58b9d43bb517ea0880. Raw pack is in user-scoped auditor ZIP, not Git source documentation due operational PAPER contents.",
+      "reopen": "Do not infer a new COMPLETE receipt or native acceptance from offline replay. Predeploy635 and full Deploy/Droplet stress/restore still mandatory."
     }
   ],
-  "findings_count": 126,
+  "findings_count": 127,
   "predeploy_state": "GREEN_EXACT_IMAGE_INDEPENDENTLY_BYTE_VERIFIED",
   "historical_ci_995": {
     "run": 39061986441,
