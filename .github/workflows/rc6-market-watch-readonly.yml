@@ -57,7 +57,7 @@ jobs:
 
   watch:
     needs: contracts
-    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-624-consumer-profile-20261017' # one bounded RCA observation after completed RED; not an acceptance retry
+    if: false # bounded native202e RCA39096006422 captured; no repeated host observation
     runs-on: ubuntu-24.04
     timeout-minutes: 7
     env:
