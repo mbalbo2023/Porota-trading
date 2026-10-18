@@ -1675,9 +1675,53 @@
       "fix": "Isolated5ed59faff3ace236098a05ecd777f07d444eddd1/treeba7bd625ac262eebe38fe039a28647a596bbcde5/parent889;5filesonly/C4710unchanged. ExistingPR625 diag93fdd45d/treeb9a54e17,run39133237208,425discoveredfocal+16fullcuts/original7ceimmutableimage/physicalDB/inode/SHA/clocks/commonlegacyseed/5fixedsandboxes. RequireexactSOe75; unchanged.80/1.30/192MiB/30s. watchFALSE/noSSH/Droplet. Owners6250684773/6250684936 EXACT.",
       "status": "CONTROL_IN_PROGRESS_NO_RELEASE_ACCEPTANCE",
       "receipt": "docs/releases/evidence624/a3-owned-details-frozen624.json"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "reopen": "Only complete new exact-image Predeploy and independent byte certificate permit normal merge; then native host acceptance, in-Droplet stress and restore remain.",
+      "id": "624-A3-OWNED-DETAIL-ABI-RED",
+      "classification": "ACTUAL_EXACT_RESOURCE_CONTROL_RED",
+      "cause": "5ed exactABI run39133237208/job117692502482 failed unchanged additional legacy HOT<=.80 surrogate: fresh .7845691477 GREEN, legacy .8680318664 RED; totals1.1948245869/1.2776148087, peaks193184/192880KiB, COLD4.26144/4.42115s. All16 actual full>100MiB/hash/business equal,425focal0FAILERRORSKIP/five fixed sandboxes Exit0/OOMfalse.",
+      "fix": "Preserve originalartifact12139470508/165098B/SHAf8d1a1... and byte-exact decodedlog75097B/SHA139d65...; nativeSOe75/Python3.11/Py-only ABI verified INDEPENDENTLY, not a release certificate. Historical ratio comparison remains RED and was not edited.",
+      "status": "RED_HISTORICAL_ABI_ONLY_NOT_ADMISSION",
+      "receipt": "docs/releases/evidence624/a3-owned-details-abi-red624.json"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "reopen": "Only complete new exact-image Predeploy and independent byte certificate permit normal merge; then native host acceptance, in-Droplet stress and restore remain.",
+      "id": "624-A3-GOVERNED-S2-PHYSICAL-REPLACEMENT",
+      "classification": "DESIGN_REVISION_WITH_CAUSAL_JUSTIFICATION_NOT_YET_NATIVE_ACCEPTED",
+      "cause": "Dimensionless HOT CPUratio .80 is neither sufficient nor necessary for actual<=120s CURRENT freshness; examples80+30+80=190 and35+30+35=100 are algebra only. A3 next-current gap is H1+max(30,COLD1)+H2, with actual scheduler overhead. Also a stale nested encode metric from previous COLD polluted deferred HOT profile (accurate global process totals unaffected).",
+      "fix": "Issue624 section6 S2 revision paired #4716250914849/#4736250914988 before code. Keep previous .80 RED and all S0/S1/SQL2/poll30/nice10/512MiB-.75CPU/RSS192/reserves and <=1.30 total. 8bf adds exact-image 12 fresh+12 standard-gzip legacy full-cut 30s physical waits, original budget<=120, DB/clock/SHA/inode unchanged; fresh/legacy separate process nice10. Telemetry-only conditional avoids previous COLD profile merge. Before1FAIL/after1GREEN telemetry, 42 cadence guards,154 integration,56 workflow contract GREEN overlapping; no release/native claim.",
+      "status": "LOCAL_GUARDS_GREEN_NEW_EXACT_IMAGE_PHYSICAL_PENDING",
+      "receipt": "docs/releases/evidence624/a3-cadence-tmpdir-engineering624.tar.gz"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "reopen": "Only complete new exact-image Predeploy and independent byte certificate permit normal merge; then native host acceptance, in-Droplet stress and restore remain.",
+      "id": "624-A3-8BF-NATIVE-TMPDIR-RED",
+      "classification": "ACTUAL_PREDEPLOY_HARNESS_RED",
+      "cause": "PR632/source8bf/tree8a17 run39137079334/job117703665637: automatic root4229/4229 zeroFAILERRORSKIPXFAIL; native181/180pass1FAIL, OSError30 on tempfile.mkdtemp(dir=/tmp) before actual capability probe because root read-only and writable TMPDIR=/proof/tmp.",
+      "fix": "Preserve ZIP12140033600/138555B/SHA00f37a... and original decodedlog622280B/SHAac63727...; no export of releaseimage, catalog/session/24cadence NOT_EXECUTED, no Droplet touch. Close PR632 superseded, no identical-SHA rerun, no tmpfs/permission/gate change.",
+      "status": "RED_PREDEPLOY_NO_RELEASE_IMAGE",
+      "receipt": "docs/releases/evidence624/predeploy-8bf-native-red624.json"
+    },
+    {
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "A3_DURABLE_ACTUAL_INPUT_ARCHITECTURE",
+      "reopen": "Only complete new exact-image Predeploy and independent byte certificate permit normal merge; then native host acceptance, in-Droplet stress and restore remain.",
+      "id": "624-A3-TMPDIR-FIX-FORWARD-FROZEN",
+      "classification": "NEW_SOURCE_PREDEPLOY_IN_PROGRESS_NOT_ACCEPTED",
+      "cause": "Test fixture hardcoded /tmp in image root-readonly; actual API was mkdtemp, so initial TemporaryDirectory observer and initial NameError guard setup were not valid native before proof. Authentic before is run39137079334; synthetic pre-collection old-function bootstrap actually reloaded fixed module and passed, explicitly not historic before.",
+      "fix": "Isolated b346fcc8ae6edc51be20ac7325cd068cdeb60832/tree07feba46b15af29565a75787eec98bb9e6e3f6d9/parent8bf, only capability test path+permanent mkdtemp guard+ADR; 74 local GREEN. Same UID/CapEff0/O_TMPFILE/fsync/inode/link/nlink assertions. Paired frozen owner6251483754/6251483940 exact readback. Normal PR633, run39139165652 in progress; all Predeploy gates mandatory before merge.",
+      "status": "FROZEN_NEW_PREDEPLOY_IN_PROGRESS_NOT_CERTIFIED",
+      "receipt": "docs/releases/evidence624/a3-native-tmpdir-frozen624.json"
     }
   ],
-  "findings_count": 120,
+  "findings_count": 124,
   "predeploy_state": "GREEN_EXACT_IMAGE_INDEPENDENTLY_BYTE_VERIFIED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -2175,17 +2219,17 @@
     }
   ],
   "engineering_next": {
-    "state": "FROZEN_FOR_NEW_EXACT_RESOURCE_CONTROL_NOT_RELEASE",
-    "source_sha": "5ed59faff3ace236098a05ecd777f07d444eddd1",
-    "tree": "ba7bd625ac262eebe38fe039a28647a596bbcde5",
-    "branch": "work/rc6-624-owned-funnel-details-20261018",
+    "state": "NEW_EXACT_SHA_PREDEPLOY_IN_PROGRESS_NO_RELEASE_CERTIFICATE",
+    "source_sha": "b346fcc8ae6edc51be20ac7325cd068cdeb60832",
+    "tree": "07feba46b15af29565a75787eec98bb9e6e3f6d9",
+    "branch": "work/rc6-624-native-proof-tmpdir-20261018",
     "paired_owners": [
-      6250684773,
-      6250684936
+      6251483754,
+      6251483940
     ],
-    "diagnostic_sha": "93fdd45d8cea9e2d4761f036649f9cda67b696ec",
-    "run": 39133237208,
+    "pr": 633,
+    "predeploy_run": 39139165652,
     "runtime": "7ce_INSTALLED_NOT_ACCEPTED",
-    "new_release_pr": null
+    "host_acceptance": "NOT_EXECUTED_FOR_NEW_SOURCE"
   }
 }

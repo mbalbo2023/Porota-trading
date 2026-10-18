@@ -3506,6 +3506,54 @@
       "source": "ACTUAL_ABI_RED_AND_NEXT_FROZEN_OWNED_DETAIL_BATCH_NOT_RELEASE",
       "bytes": 15549,
       "sha256": "e81ff329b67d5b5143149a180e77b4ff01f4ef9b93af9af4888f467b44c1eb89"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-cadence-tmpdir-engineering624.tar.gz",
+      "source": "ACTUAL_ABI_RED_S2_GOVERNANCE_8BF_NATIVE_RED_B346_PREDEPLOY_NOT_CERTIFIED",
+      "bytes": 84728,
+      "sha256": "6039e8c63efbc728459a839ffce21266086bf6f6bbfd9cfdbf94982b38fb5801"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-owned-details-abi624.zip",
+      "source": "ACTUAL_ABI_RED_S2_GOVERNANCE_8BF_NATIVE_RED_B346_PREDEPLOY_NOT_CERTIFIED",
+      "bytes": 165098,
+      "sha256": "f8d1a1affa1fd4ad1dcc6aea7ad13038d2cd48ae858b11a8da3a4dfa10932bef"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-owned-details-abi-red624.json",
+      "source": "ACTUAL_ABI_RED_S2_GOVERNANCE_8BF_NATIVE_RED_B346_PREDEPLOY_NOT_CERTIFIED",
+      "bytes": 8101,
+      "sha256": "3f1803ba910e467bfb333361c9b56f27bbc8a14b7126af686360cc891a076008"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-8bf-native-red624.zip",
+      "source": "ACTUAL_ABI_RED_S2_GOVERNANCE_8BF_NATIVE_RED_B346_PREDEPLOY_NOT_CERTIFIED",
+      "bytes": 138555,
+      "sha256": "00f37a3850b8e16452b6c2158da4a731ae1239db6f619c0667d93545065912ec"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-8bf-native-red624.json",
+      "source": "ACTUAL_ABI_RED_S2_GOVERNANCE_8BF_NATIVE_RED_B346_PREDEPLOY_NOT_CERTIFIED",
+      "bytes": 1673,
+      "sha256": "22f5ae8bd13d52dba6da1c12997a6adad1a3f65795a338e36554a60afb646e50"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-native-tmpdir-frozen624.json",
+      "source": "ACTUAL_ABI_RED_S2_GOVERNANCE_8BF_NATIVE_RED_B346_PREDEPLOY_NOT_CERTIFIED",
+      "bytes": 663,
+      "sha256": "bc2f70a8d95e6db8759ecc0c64f82307d2a66bf176c4e6b7938e3f012a11a186"
+    },
+    {
+      "path": "docs/releases/evidence624/a3-owned-details-abi624-raw.log.gz",
+      "source": "ACTUAL_ABI_RED_S2_GOVERNANCE_8BF_NATIVE_RED_B346_PREDEPLOY_NOT_CERTIFIED",
+      "bytes": 15696,
+      "sha256": "b447483d4cdf987f4b28ca81d03b130ce051f2ad789e1811037d9e858b99c8bf"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-8bf-native-red624-raw.log.gz",
+      "source": "ACTUAL_ABI_RED_S2_GOVERNANCE_8BF_NATIVE_RED_B346_PREDEPLOY_NOT_CERTIFIED",
+      "bytes": 123378,
+      "sha256": "517c67f8748e225843fdf75b4055eb49e66dd01fe22a7ac52daa622c2b99ab58"
     }
   ]
 }
