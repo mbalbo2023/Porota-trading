@@ -1,0 +1,745 @@
+{
+  "child_peak_rss_kib": 179360,
+  "elapsed_seconds": 340.987,
+  "evidence_kind": "LOCAL_HARNESS_CHECK",
+  "finished_at": "2026-10-18T09:20:29.829843+00:00",
+  "full_catalog": {
+    "actual_market_acceptance": false,
+    "catalog_count": 14611,
+    "cuts": [
+      {
+        "as_of": "2026-10-05T13:20:00.000163+00:00",
+        "computed_report_sha256": "d6a6e6e478876839410ba230e9dd3cb13ce84b3429aeaae027e4311d91b4fccd",
+        "freshness_budget_seconds": 91.108,
+        "generation_id": "e0776e8c68a361c60ac06d25107571577fcdebd49120c47582a4536db5f07d7c",
+        "manifest_sha256": "e05f2b01540b3090dfc952e0832b086222755545261a660392766c31591f8daa",
+        "sequence": 1791206400000163,
+        "tick_seconds": 15.554,
+        "worker_timing": {
+          "allocator_phases": {
+            "checkpoint_verified": {
+              "allocator_trim_available": true,
+              "elapsed_seconds": 0.013127,
+              "rss_after_kib": 55424,
+              "rss_before_kib": 55524
+            },
+            "family_staged": {
+              "allocator_trim_available": true,
+              "elapsed_seconds": 0.072053,
+              "rss_after_kib": 156012,
+              "rss_before_kib": 170388
+            },
+            "planner_staged": {
+              "allocator_trim_available": true,
+              "elapsed_seconds": 0.026678,
+              "rss_after_kib": 149516,
+              "rss_before_kib": 179568
+            }
+          },
+          "audit_staging": [
+            {
+              "cpu_seconds": 0.354162,
+              "raw_bytes": 21841767,
+              "role": "preopen_rows",
+              "wall_seconds": 0.480171
+            },
+            {
+              "cpu_seconds": 1.000001,
+              "raw_bytes": 64257360,
+              "role": "engines",
+              "wall_seconds": 1.350952
+            },
+            {
+              "cpu_seconds": 0.000236,
+              "raw_bytes": 2,
+              "role": "source_reports",
+              "wall_seconds": 0.000587
+            },
+            {
+              "cpu_seconds": 0.000144,
+              "raw_bytes": 895,
+              "role": "events",
+              "wall_seconds": 0.00037
+            },
+            {
+              "cpu_seconds": 1.155406,
+              "raw_bytes": 99854286,
+              "role": "family_routing",
+              "wall_seconds": 1.532332
+            },
+            {
+              "cpu_seconds": 0.046099,
+              "raw_bytes": 1711091,
+              "role": "catalog_ready",
+              "wall_seconds": 0.069778
+            }
+          ],
+          "poll_seconds": 30,
+          "process_peak_rss_kib": 179360,
+          "stages_cpu_seconds": {
+            "durable_serialization": 1.986,
+            "economic_exit_lab": 1.404,
+            "entry_signal_lab": 0.002,
+            "family_routing": 2.728,
+            "operational_funnel": 2.283,
+            "planner_pipeline": 1.3,
+            "preopen": 1.905,
+            "state_and_inputs": 0.048
+          },
+          "stages_process_peak_rss_kib": {
+            "durable_serialization": 179360,
+            "economic_exit_lab": 179360,
+            "entry_signal_lab": 179360,
+            "family_routing": 179360,
+            "operational_funnel": 179360,
+            "planner_pipeline": 173600,
+            "preopen": 125088,
+            "state_and_inputs": 67616
+          },
+          "stages_seconds": {
+            "durable_serialization": 2.664,
+            "economic_exit_lab": 1.879,
+            "entry_signal_lab": 0.002,
+            "family_routing": 3.628,
+            "operational_funnel": 3.033,
+            "planner_pipeline": 1.75,
+            "preopen": 2.53,
+            "state_and_inputs": 0.068
+          },
+          "storage_profile": {
+            "checkpoint": {
+              "block_outputs": 7448,
+              "cpu_seconds": 0.537884,
+              "major_faults": 0,
+              "peak_rss_kib": 179360,
+              "wall_seconds": 0.7157
+            },
+            "computed": {
+              "block_outputs": 7728,
+              "compress_hash_cpu_seconds": 0.609869,
+              "compress_hash_seconds": 0.608501,
+              "compressed_bytes": 3956055,
+              "cpu_seconds": 1.446243,
+              "encode_cpu_seconds": 0.824351,
+              "encode_seconds": 0.942636,
+              "fsync_cpu_seconds": 0.000754,
+              "fsync_seconds": 0.002355,
+              "major_faults": 0,
+              "peak_rss_kib": 179360,
+              "raw_bytes": 265641048,
+              "wall_seconds": 1.923697
+            },
+            "latest": {
+              "block_outputs": 8,
+              "cpu_seconds": 0.001356,
+              "major_faults": 0,
+              "peak_rss_kib": 179360,
+              "wall_seconds": 0.02479
+            }
+          },
+          "tick_cpu_seconds": 11.655,
+          "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+          "tick_seconds": 15.554
+        }
+      },
+      {
+        "as_of": "2026-10-05T13:20:45.651299+00:00",
+        "computed_report_sha256": "e00ac81a3464a63c351c4f733b43c4d6ffab8d9af4aa3842930f0008af46336c",
+        "freshness_budget_seconds": 91.196,
+        "generation_id": "b1cbb528984c942a5ef1d877433273ee0cfb7493636cb8ae966782afd6d9d191",
+        "manifest_sha256": "076c12784befba929d5e8c76adad488295fd5af232bf24c85c63ff5abd2a3f33",
+        "previous_cut_age_seconds": 61.309611,
+        "previous_cut_freshness_budget_seconds": 91.108,
+        "sequence": 1791206445651299,
+        "tick_seconds": 15.598,
+        "worker_timing": {
+          "allocator_phases": {
+            "checkpoint_verified": {
+              "allocator_trim_available": true,
+              "elapsed_seconds": 0.008547,
+              "rss_after_kib": 119436,
+              "rss_before_kib": 122516
+            },
+            "family_staged": {
+              "allocator_trim_available": true,
+              "elapsed_seconds": 0.076936,
+              "rss_after_kib": 160060,
+              "rss_before_kib": 175284
+            },
+            "planner_staged": {
+              "allocator_trim_available": true,
+              "elapsed_seconds": 0.032292,
+              "rss_after_kib": 137392,
+              "rss_before_kib": 167568
+            }
+          },
+          "audit_staging": [
+            {
+              "cpu_seconds": 0.333792,
+              "raw_bytes": 21841767,
+              "role": "preopen_rows",
+              "wall_seconds": 0.460892
+            },
+            {
+              "cpu_seconds": 0.950739,
+              "raw_bytes": 64257358,
+              "role": "engines",
+              "wall_seconds": 1.27524
+            },
+            {
+              "cpu_seconds": 0.000213,
+              "raw_bytes": 2,
+              "role": "source_reports",
+              "wall_seconds": 0.000525
+            },
+            {
+              "cpu_seconds": 0.00013,
+              "raw_bytes": 895,
+              "role": "events",
+              "wall_seconds": 0.000354
+            },
+            {
+              "cpu_seconds": 1.148994,
+              "raw_bytes": 99854286,
+              "role": "family_routing",
+              "wall_seconds": 1.551411
+            },
+            {
+              "cpu_seconds": 0.047616,
+              "raw_bytes": 1711091,
+              "role": "catalog_ready",
+              "wall_seconds": 0.048644
+            }
+          ],
+          "poll_seconds": 30,
+          "process_peak_rss_kib": 179360,
+          "stages_cpu_seconds": {
+            "durable_serialization": 1.9,
+            "economic_exit_lab": 1.416,
+            "entry_signal_lab": 0.005,
+            "family_routing": 2.719,
+            "operational_funnel": 2.1,
+            "planner_pipeline": 1.303,
+            "preopen": 2.029,
+            "state_and_inputs": 0.239
+          },
+          "stages_process_peak_rss_kib": {
+            "durable_serialization": 179360,
+            "economic_exit_lab": 179360,
+            "entry_signal_lab": 179360,
+            "family_routing": 179360,
+            "operational_funnel": 179360,
+            "planner_pipeline": 179360,
+            "preopen": 179360,
+            "state_and_inputs": 179360
+          },
+          "stages_seconds": {
+            "durable_serialization": 2.552,
+            "economic_exit_lab": 1.892,
+            "entry_signal_lab": 0.005,
+            "family_routing": 3.619,
+            "operational_funnel": 2.799,
+            "planner_pipeline": 1.728,
+            "preopen": 2.704,
+            "state_and_inputs": 0.298
+          },
+          "storage_profile": {
+            "checkpoint": {
+              "block_outputs": 7448,
+              "cpu_seconds": 0.460925,
+              "major_faults": 0,
+              "peak_rss_kib": 179360,
+              "wall_seconds": 0.635347
+            },
+            "computed": {
+              "block_outputs": 8928,
+              "compress_hash_cpu_seconds": 0.637044,
+              "compress_hash_seconds": 0.674981,
+              "compressed_bytes": 4571099,
+              "cpu_seconds": 1.437929,
+              "encode_cpu_seconds": 0.788575,
+              "encode_seconds": 0.957641,
+              "fsync_cpu_seconds": 0.000787,
+              "fsync_seconds": 0.002175,
+              "major_faults": 0,
+              "peak_rss_kib": 179360,
+              "raw_bytes": 265641086,
+              "wall_seconds": 1.915001
+            },
+            "latest": {
+              "block_outputs": 8,
+              "cpu_seconds": 0.001233,
+              "major_faults": 0,
+              "peak_rss_kib": 179360,
+              "wall_seconds": 0.001718
+            }
+          },
+          "tick_cpu_seconds": 11.71,
+          "tick_measurement_boundary": "BEFORE_STATUS_AND_CURRENT",
+          "tick_seconds": 15.598
+        }
+      }
+    ],
+    "elapsed_seconds": 61.31,
+    "memory_measurement": "PROCESS_RSS; host launcher independently enforces container memory cap",
+    "poll_sleep": "ACTUAL_WORKER_POLL_SECONDS",
+    "process_peak_rss_kib": 179360,
+    "production_data_mounted": false,
+    "provider_requests": 0,
+    "ready_fixture_count": 9902,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "schema": "rc6.synthetic-full-catalog.v1"
+  },
+  "limitations": [
+    "Real provider/network capacity and Android voice interaction are not simulated facts."
+  ],
+  "network": "NO_LIVE_TRANSPORT_CONFIGURED",
+  "ppi_watch_accessed": false,
+  "production_data_mounted": false,
+  "scenarios": [
+    {
+      "cases": 36,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "253bd2029037b0bbe5cf3a458dec8f5b7eedb20e3d14c616ffb6c92463679e11",
+      "name": "sql_shadow_wal",
+      "skipped": 0
+    },
+    {
+      "cases": 227,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "36199e358448bf3e43ea7b7962d4ceaca09da4d6b3c3cff35c845c7bc18950c6",
+      "name": "publication_io_identity",
+      "skipped": 0
+    },
+    {
+      "cases": 160,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "cc9e39ac58ebc6f385e7ae8b1ab8e7205a39954a4008aff8233384a36aff2b7f",
+      "name": "signals_risk_exit_ledger",
+      "skipped": 0
+    },
+    {
+      "cases": 99,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "d72565c51d9d96efe28863f54ce9bcb16da8374af8c6250d0b635a195ebc6d93",
+      "name": "sources_readiness_network",
+      "skipped": 0
+    },
+    {
+      "cases": 106,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "d46862208390af3a0825ea169b6a66cb5d5681362faf81d1d89b23c092d389f6",
+      "name": "scalping_capacity",
+      "skipped": 0
+    },
+    {
+      "cases": 72,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "e6b553a67ed532ddb99a152434e08712c883ff92c3b0c073cd87ccc0523a8b5c",
+      "name": "treasury_caucion",
+      "skipped": 0
+    },
+    {
+      "cases": 198,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "b8b010ab9b09e4b7463a1398811cc809c278c6ca5dfbf3d85616f7d88633a823",
+      "name": "dashboard_auth_52",
+      "skipped": 0
+    },
+    {
+      "cases": 51,
+      "error": 0,
+      "exit_code": 0,
+      "failure": 0,
+      "junit_sha256": "1320f448150eca28c018fe4d09334c2ca8eb747804ead8f0b4f2f8819c7ad8e6",
+      "name": "scheduler_monitor_backup",
+      "skipped": 0
+    }
+  ],
+  "schema": "rc6.postdeploy-stress.v1",
+  "self_peak_rss_kib": 179360,
+  "session": {
+    "actual_market_acceptance": false,
+    "captured_notification_count": 176,
+    "counts": {
+      "candle_versions": 1872,
+      "market_snapshots": 1560,
+      "paper_decisions": 876,
+      "paper_fills": 176,
+      "paper_positions": 88
+    },
+    "dashboard_routes": [
+      {
+        "bytes": 23260,
+        "elapsed_ms": 2.944,
+        "path": "/",
+        "read_queries": "21"
+      },
+      {
+        "bytes": 26265,
+        "elapsed_ms": 3.871,
+        "path": "/analitica",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23008,
+        "elapsed_ms": 2.737,
+        "path": "/analitica/anual",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22980,
+        "elapsed_ms": 1.98,
+        "path": "/analitica/cierre-diario",
+        "read_queries": "8"
+      },
+      {
+        "bytes": 24309,
+        "elapsed_ms": 4.989,
+        "path": "/analitica/contrafactuales",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22902,
+        "elapsed_ms": 1.465,
+        "path": "/analitica/experimentos",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22916,
+        "elapsed_ms": 1.655,
+        "path": "/analitica/historico",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22625,
+        "elapsed_ms": 1.594,
+        "path": "/analitica/reportes",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 57602,
+        "elapsed_ms": 6.253,
+        "path": "/analitica/salidas",
+        "read_queries": "11"
+      },
+      {
+        "bytes": 22898,
+        "elapsed_ms": 1.529,
+        "path": "/analitica/senales",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24202,
+        "elapsed_ms": 3.36,
+        "path": "/en-vivo",
+        "read_queries": "29"
+      },
+      {
+        "bytes": 22833,
+        "elapsed_ms": 1.502,
+        "path": "/en-vivo/capacidad",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23969,
+        "elapsed_ms": 1.947,
+        "path": "/en-vivo/cierres",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 111220,
+        "elapsed_ms": 7.759,
+        "path": "/en-vivo/decisiones",
+        "read_queries": "9"
+      },
+      {
+        "bytes": 40935,
+        "elapsed_ms": 5.858,
+        "path": "/en-vivo/fuentes",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 24320,
+        "elapsed_ms": 1.585,
+        "path": "/en-vivo/oportunidades",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23752,
+        "elapsed_ms": 1.771,
+        "path": "/en-vivo/posiciones",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 43934,
+        "elapsed_ms": 2.386,
+        "path": "/en-vivo/workers",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 56006,
+        "elapsed_ms": 3.166,
+        "path": "/instrumentos",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 46955,
+        "elapsed_ms": 2.553,
+        "path": "/instrumentos/contrato",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 46983,
+        "elapsed_ms": 2.557,
+        "path": "/instrumentos/evidencia",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 56015,
+        "elapsed_ms": 3.032,
+        "path": "/instrumentos/ficha",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22625,
+        "elapsed_ms": 1.833,
+        "path": "/instrumentos/mercado",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22732,
+        "elapsed_ms": 1.631,
+        "path": "/riesgo",
+        "read_queries": "7"
+      },
+      {
+        "bytes": 22705,
+        "elapsed_ms": 24.648,
+        "path": "/riesgo/event-risk",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23659,
+        "elapsed_ms": 1.802,
+        "path": "/riesgo/exposicion",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 22674,
+        "elapsed_ms": 1.599,
+        "path": "/riesgo/limites",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23697,
+        "elapsed_ms": 1.735,
+        "path": "/riesgo/liquidez",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 26073,
+        "elapsed_ms": 3.29,
+        "path": "/riesgo/pnl",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 23655,
+        "elapsed_ms": 1.759,
+        "path": "/riesgo/posiciones",
+        "read_queries": "5"
+      },
+      {
+        "bytes": 44621,
+        "elapsed_ms": 2.424,
+        "path": "/sistema",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 22552,
+        "elapsed_ms": 1.515,
+        "path": "/sistema/backups",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 37789,
+        "elapsed_ms": 1.865,
+        "path": "/sistema/configuracion",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 23129,
+        "elapsed_ms": 1.498,
+        "path": "/sistema/evidencia",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 38089,
+        "elapsed_ms": 2.073,
+        "path": "/sistema/integraciones",
+        "read_queries": "8"
+      },
+      {
+        "bytes": 22495,
+        "elapsed_ms": 1.605,
+        "path": "/sistema/logs",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 44781,
+        "elapsed_ms": 2.378,
+        "path": "/sistema/salud",
+        "read_queries": "12"
+      },
+      {
+        "bytes": 22726,
+        "elapsed_ms": 1.554,
+        "path": "/sistema/scheduler",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 48177,
+        "elapsed_ms": 2.482,
+        "path": "/sistema/workers",
+        "read_queries": "14"
+      },
+      {
+        "bytes": 22714,
+        "elapsed_ms": 1.499,
+        "path": "/trading",
+        "read_queries": "3"
+      },
+      {
+        "bytes": 24087,
+        "elapsed_ms": 1.637,
+        "path": "/trading/cauciones",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23799,
+        "elapsed_ms": 1.653,
+        "path": "/trading/derivados",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 68576,
+        "elapsed_ms": 3.459,
+        "path": "/trading/equity-spot",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23782,
+        "elapsed_ms": 1.664,
+        "path": "/trading/renta-fija",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 64713,
+        "elapsed_ms": 3.377,
+        "path": "/trading/scalping",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23818,
+        "elapsed_ms": 1.686,
+        "path": "/trading/tesoreria",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 23150,
+        "elapsed_ms": 1.745,
+        "path": "/universo",
+        "read_queries": "6"
+      },
+      {
+        "bytes": 22721,
+        "elapsed_ms": 1.457,
+        "path": "/universo/coverage",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24005,
+        "elapsed_ms": 1.466,
+        "path": "/universo/discovery",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 24005,
+        "elapsed_ms": 1.469,
+        "path": "/universo/excluidos",
+        "read_queries": "2"
+      },
+      {
+        "bytes": 22506,
+        "elapsed_ms": 1.475,
+        "path": "/universo/familias",
+        "read_queries": "3"
+      },
+      {
+        "bytes": 24026,
+        "elapsed_ms": 1.514,
+        "path": "/universo/tradeability",
+        "read_queries": "2"
+      }
+    ],
+    "decision_reasons": {
+      "Aprendiendo serie: 1/8 muestras": 4,
+      "Aprendiendo serie: 2/8 muestras": 4,
+      "Aprendiendo serie: 3/8 muestras": 4,
+      "Aprendiendo serie: 4/8 muestras": 4,
+      "Aprendiendo serie: 5/8 muestras": 4,
+      "Aprendiendo serie: 6/8 muestras": 4,
+      "Aprendiendo serie: 7/8 muestras": 4,
+      "EOD_NO_NEW_ENTRIES": 120,
+      "Momentum positivo y friccion admisible": 99,
+      "OPEN_POSITION_NEEDS_SUPERVISION_OR_EXIT": 144,
+      "Score paper debajo del umbral versionado": 485
+    },
+    "exit_reasons": {
+      "MAX_HOLD_PAPER": 1,
+      "STOP_PAPER": 16,
+      "TAKE_PROFIT_PAPER": 71
+    },
+    "local_eod_batches": 4,
+    "local_eod_repeated_imported": 0,
+    "provider_contracts": "SYNTHETIC_NOT_VALIDATED",
+    "provider_requests": 0,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "schema": "rc6.synthetic-full-session.v1",
+    "shadow_cuts": 16,
+    "simulated_minutes": 405,
+    "tick_max_seconds": 2.678929997999944,
+    "tick_p95_seconds": 1.516815645999941,
+    "treasury_attempts": [
+      {
+        "code": "NO_ELIGIBLE_OFFER",
+        "minute": 365,
+        "status": "HOLD"
+      },
+      {
+        "code": "NO_ELIGIBLE_OFFER",
+        "minute": 375,
+        "status": "HOLD"
+      }
+    ]
+  },
+  "smoke": false,
+  "started_at": "2026-10-18T09:14:48.842463+00:00",
+  "status": "GREEN"
+}

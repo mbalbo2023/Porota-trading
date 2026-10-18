@@ -3326,6 +3326,60 @@
       "source": "NATIVE_246AC_RED_MEASURED_COLLATERAL_RCA_AND_SCOPED_INTEGRITY_FIX",
       "bytes": 3512,
       "sha256": "3b7481c15e9ae83c176514360ef91f3b990636219d952871e7740e1f0ae0cc3d"
+    },
+    {
+      "path": "docs/releases/evidence624/ci-7ce-byte-validation.json",
+      "source": "FROZEN_7CE_NEW_FULL_CERTIFICATE_INDEPENDENTLY_VALIDATED",
+      "bytes": 45833,
+      "sha256": "88e5cee7fa9ca38e181835b4e1f682febacff378b3dc2266a07840ebc8811164"
+    },
+    {
+      "path": "docs/releases/evidence624/ci-7ce-frozen.json",
+      "source": "FROZEN_7CE_NEW_FULL_CERTIFICATE_INDEPENDENTLY_VALIDATED",
+      "bytes": 611,
+      "sha256": "4e5cddff12c6e4fb4a151d8f84b9af667d795db0855291e0fa9d8dbaf9bd02d9"
+    },
+    {
+      "path": "docs/releases/evidence624/ci-7ce-governed.xml",
+      "source": "FROZEN_7CE_NEW_FULL_CERTIFICATE_INDEPENDENTLY_VALIDATED",
+      "bytes": 1641562,
+      "sha256": "80629996096aa495fe5f8a0fa8e81040f2b4b9b3a98a359065237667f676844d"
+    },
+    {
+      "path": "docs/releases/evidence624/ci-7ce-governed.json",
+      "source": "FROZEN_7CE_NEW_FULL_CERTIFICATE_INDEPENDENTLY_VALIDATED",
+      "bytes": 360,
+      "sha256": "a311fb4706faebe3adb91b56cb059b30814811aafa7c8e5dc413f79924994192"
+    },
+    {
+      "path": "docs/releases/evidence624/ci-7ce-full-catalog.json",
+      "source": "FROZEN_7CE_NEW_FULL_CERTIFICATE_INDEPENDENTLY_VALIDATED",
+      "bytes": 9420,
+      "sha256": "9ddbc8edca6aa9b665dce386076a24c28be0d7c9d0d1c752c9e9a2b8dddc23ee"
+    },
+    {
+      "path": "docs/releases/evidence624/ci-7ce-stress.json",
+      "source": "FROZEN_7CE_NEW_FULL_CERTIFICATE_INDEPENDENTLY_VALIDATED",
+      "bytes": 21077,
+      "sha256": "7474bda44c0f83bebcab51d3a75b5ed2db80b5681b0547ce0b5f02344b608c86"
+    },
+    {
+      "path": "docs/releases/evidence624/ci-7ce-native-bound.xml",
+      "source": "FROZEN_7CE_NEW_FULL_CERTIFICATE_INDEPENDENTLY_VALIDATED",
+      "bytes": 7163,
+      "sha256": "069b69ed117d18f245aae5d10b3765b137143841c18bea6805a27f2740d6c074"
+    },
+    {
+      "path": "docs/releases/evidence624/ci-7ce-bundle-manifest.json",
+      "source": "FROZEN_7CE_NEW_FULL_CERTIFICATE_INDEPENDENTLY_VALIDATED",
+      "bytes": 85400,
+      "sha256": "47268b357a6846137fb2c694fa4af97181044d72bafc4eb4fdd6cc1bb64b59fc"
+    },
+    {
+      "path": "docs/releases/evidence624/ci-7ce-predeploy.log.gz",
+      "source": "FROZEN_7CE_NEW_FULL_CERTIFICATE_INDEPENDENTLY_VALIDATED",
+      "bytes": 169497,
+      "sha256": "71060b8cdd7ef32ede8b875487368a2dfb42490317b011abe32880777364d34e"
     }
   ]
 }

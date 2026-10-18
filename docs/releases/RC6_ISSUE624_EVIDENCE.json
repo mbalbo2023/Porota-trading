@@ -1543,10 +1543,21 @@
       "receipt": "docs/releases/evidence624/candle-scope-source-binding624.json",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Fullglobalcheckhasdifferentpurpose/scopeandremainsrequired;newactualnativeallgatesmustpass."
+    },
+    {
+      "id": "624-7CE-FULL-CERTIFICATE",
+      "capability": "EXACT_RELEASE_AND_FROZEN_SOURCE_IDENTITY",
+      "classification": "E06_GREEN_NOT_NATIVE_ACCEPTANCE",
+      "cause": "Each source correction needs its own complete image certificate; prior246ac and overlayABI evidence cannot substitute.",
+      "fix": "Predeploy39113977768/job117635844897 SUCCESS:4095 discovered=executed/0FAIL/ERROR/SKIP/XFAIL/onegovernedlegacyexclusion;48nativeC;949actualcases/405virtual/8groups. Fullcatalog14611/9902/twocuts/raw>100MiB preserved,177636/179360KiB<=192MiB. IndependentZIP415101765B/SHA3d4599677ca814bd05a7249f78380e705bdd742dbb1a7bf7c86a689492021312,511bundlefiles/source/tar/config/25layers/4authenticbaselayers/ABI buildinputs verified. Byte-review45833B/SHA88e5cee7fa9ca38e181835b4e1f682febacff378b3dc2266a07840ebc8811164. Originalrawlog803190B/SHA0afb743823abcc7e4efa55ede82bf6aab8d31a4cb307604a23dece1808ad2685 preservedgzip.",
+      "status": "GREEN_EXACT_CERTIFICATE_NATIVE_PENDING",
+      "receipt": "docs/releases/evidence624/ci-7ce-byte-validation.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Native2+strict10,405Droplet,sameIDsrestore2+strict10 andindependentprofile remainmandatory; runtime246acNOT_ACCEPTED."
     }
   ],
-  "findings_count": 108,
-  "predeploy_state": "IN_PROGRESS_NEW_SOURCE",
+  "findings_count": 109,
+  "predeploy_state": "GREEN_EXACT_IMAGE_INDEPENDENTLY_BYTE_VERIFIED",
   "historical_ci_995": {
     "run": 39061986441,
     "job": 117481988873,
@@ -1707,22 +1718,23 @@
     "promotable": false
   },
   "final_ci": {
-    "run": 39090521551,
-    "job": 117566084772,
-    "source": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
-    "tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
-    "artifact": 12123121595,
-    "zip_bytes": 414812982,
-    "zip_sha256": "511a06390863d6a987958e057d696a301614ba539d9d006f2fe729941e1208f7",
-    "image_id": "sha256:c3229770ff31728df35e9c6a803b7e59894461786b3a0f1299687bec16052596",
-    "image_tar_sha256": "1214dd4e4625435d63740c74cc1e982655116d4229579cc2b637f4d1701e0c11",
-    "root_cases": 4046,
-    "stress_cases": 898,
+    "run": 39113977768,
+    "job": 117635844897,
+    "source": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
+    "tree": "df970bae3415333d43c7c6a30442f6962188ae26",
+    "artifact": 12132052630,
+    "zip_bytes": 415101765,
+    "zip_sha256": "3d4599677ca814bd05a7249f78380e705bdd742dbb1a7bf7c86a689492021312",
+    "image_id": "sha256:29eff63d1d2abc9052f5d9596530b1a7c0edf88aa8252f0754a8d41dbf834e45",
+    "image_tar_sha256": "7bfb85cd4bb756dd421c8892fb7994aa7a3ba7f70ccb2e71d06ac5079136c311",
+    "root_cases": 4095,
+    "stress_cases": 949,
     "stress_simulated_minutes": 405,
     "groups": 8,
-    "bundle_files": 509,
+    "bundle_files": 511,
     "layers_validated": 25,
-    "byte_validation": "docs/releases/evidence624/ci-202e-byte-validation.json",
+    "native_bound_cases": 48,
+    "byte_validation": "docs/releases/evidence624/ci-7ce-byte-validation.json",
     "droplet_acceptance": false
   },
   "deploy": {
@@ -1787,8 +1799,8 @@
     "branch": "work/rc6-624-candle-integrity-scope-20261018",
     "source_frozen": true,
     "source_changes_after_freeze_allowed": false,
-    "release_artifact_frozen": false,
-    "status": "FROZEN_NEW_FULL_PREDEPLOY_IN_PROGRESS",
+    "release_artifact_frozen": true,
+    "status": "FULL_NEW_PREDEPLOY_GREEN_NATIVE_PENDING",
     "pr": 631,
     "predeploy_run": 39113977768,
     "native_promotion": false,
@@ -1798,7 +1810,27 @@
       "scripts/rc6_candle_inmarket_evidence.py",
       "tests/test_rc6_candle_inmarket_evidence.py",
       "scripts/rc6_postdeploy_stress.py"
-    ]
+    ],
+    "certificate": {
+      "run": 39113977768,
+      "job": 117635844897,
+      "source": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
+      "tree": "df970bae3415333d43c7c6a30442f6962188ae26",
+      "artifact": 12132052630,
+      "zip_bytes": 415101765,
+      "zip_sha256": "3d4599677ca814bd05a7249f78380e705bdd742dbb1a7bf7c86a689492021312",
+      "image_id": "sha256:29eff63d1d2abc9052f5d9596530b1a7c0edf88aa8252f0754a8d41dbf834e45",
+      "image_tar_sha256": "7bfb85cd4bb756dd421c8892fb7994aa7a3ba7f70ccb2e71d06ac5079136c311",
+      "root_cases": 4095,
+      "stress_cases": 949,
+      "stress_simulated_minutes": 405,
+      "groups": 8,
+      "bundle_files": 511,
+      "layers_validated": 25,
+      "native_bound_cases": 48,
+      "byte_validation": "docs/releases/evidence624/ci-7ce-byte-validation.json",
+      "droplet_acceptance": false
+    }
   },
   "historical_fe100_certificate": {
     "run": 39065412565,
@@ -1850,11 +1882,11 @@
     ],
     "readback": "EXACT",
     "state": "ACTIVE_WRITE_AND_GLOBAL_DEPLOY",
-    "new_local_branch": "work/rc6-624-progressive-audit-spool-20261018",
-    "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
+    "new_local_branch": "work/rc6-624-candle-integrity-scope-20261018",
+    "base_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
     "new_runtime_code_written": true,
-    "architecture": "PROGRESSIVE_CANONICAL_AUDIT_SPOOL_AND_LAZY_CHECKPOINT_ROLES",
-    "native_promotion": "NOT_AUTHORIZED_BY_EVIDENCE_YET"
+    "architecture": "MEASURED_COLLATERAL_GLOBAL_SCAN_SCOPE_CORRECTION_WITH_UNCHANGED_SHADOW",
+    "native_promotion": "EXACT_CERTIFICATE_GREEN_NORMAL_MERGE_PENDING_GOVERNED_ADMISSION"
   },
   "engineering_candidate": {
     "source_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
@@ -1863,8 +1895,8 @@
     "branch": "work/rc6-624-candle-integrity-scope-20261018",
     "source_frozen": true,
     "source_changes_after_freeze_allowed": false,
-    "release_artifact_frozen": false,
-    "status": "FROZEN_NEW_FULL_PREDEPLOY_IN_PROGRESS",
+    "release_artifact_frozen": true,
+    "status": "FULL_NEW_PREDEPLOY_GREEN_NATIVE_PENDING",
     "pr": 631,
     "predeploy_run": 39113977768,
     "native_promotion": false,
@@ -1874,7 +1906,27 @@
       "scripts/rc6_candle_inmarket_evidence.py",
       "tests/test_rc6_candle_inmarket_evidence.py",
       "scripts/rc6_postdeploy_stress.py"
-    ]
+    ],
+    "certificate": {
+      "run": 39113977768,
+      "job": 117635844897,
+      "source": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
+      "tree": "df970bae3415333d43c7c6a30442f6962188ae26",
+      "artifact": 12132052630,
+      "zip_bytes": 415101765,
+      "zip_sha256": "3d4599677ca814bd05a7249f78380e705bdd742dbb1a7bf7c86a689492021312",
+      "image_id": "sha256:29eff63d1d2abc9052f5d9596530b1a7c0edf88aa8252f0754a8d41dbf834e45",
+      "image_tar_sha256": "7bfb85cd4bb756dd421c8892fb7994aa7a3ba7f70ccb2e71d06ac5079136c311",
+      "root_cases": 4095,
+      "stress_cases": 949,
+      "stress_simulated_minutes": 405,
+      "groups": 8,
+      "bundle_files": 511,
+      "layers_validated": 25,
+      "native_bound_cases": 48,
+      "byte_validation": "docs/releases/evidence624/ci-7ce-byte-validation.json",
+      "droplet_acceptance": false
+    }
   },
   "historical_engineering_candidates": [
     {
@@ -1962,6 +2014,27 @@
       "artifact_zip_sha256": "b83c4456d957ca5c37e3ba618ec885208c571fdc46cc9db70575413e722abf08",
       "image_id": "sha256:dbb0573f5f8abce78a6939319eaf3c502bda9b8e5f7bfcf2441896cd75315835",
       "promotion_workflow_active": false
+    }
+  ],
+  "historical_final_ci": [
+    {
+      "run": 39090521551,
+      "job": 117566084772,
+      "source": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+      "tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
+      "artifact": 12123121595,
+      "zip_bytes": 414812982,
+      "zip_sha256": "511a06390863d6a987958e057d696a301614ba539d9d006f2fe729941e1208f7",
+      "image_id": "sha256:c3229770ff31728df35e9c6a803b7e59894461786b3a0f1299687bec16052596",
+      "image_tar_sha256": "1214dd4e4625435d63740c74cc1e982655116d4229579cc2b637f4d1701e0c11",
+      "root_cases": 4046,
+      "stress_cases": 898,
+      "stress_simulated_minutes": 405,
+      "groups": 8,
+      "bundle_files": 509,
+      "layers_validated": 25,
+      "byte_validation": "docs/releases/evidence624/ci-202e-byte-validation.json",
+      "droplet_acceptance": false
     }
   ]
 }
