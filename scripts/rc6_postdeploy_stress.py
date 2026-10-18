@@ -38,7 +38,7 @@ GROUPS={
                             'tests/test_rc6_preopen_scalar_storage.py','tests/test_rc6_native_soak.py',
                             'tests/test_rc6_checkpoint_streaming.py','tests/test_rc6_owned_preopen.py',
                             'tests/test_rc6_missing_view_sharing.py','tests/test_rc6_progressive_audit.py'],
- 'signals_risk_exit_ledger':['tests/test_rc6_convergence_core_admission.py','tests/test_exit_supervision_v17.py',
+ 'signals_risk_exit_ledger':['tests/test_rc6_owned_funnel_details.py','tests/test_rc6_convergence_core_admission.py','tests/test_exit_supervision_v17.py',
                            'tests/test_exit_ledger_isolation_v17.py','tests/test_rc6_future_programming_complete.py',
                            'tests/test_rc6_performance_runtime.py','tests/test_rc6_final_programming_runtime.py',
                            'tests/test_rc6_timestamp_atomicity.py',

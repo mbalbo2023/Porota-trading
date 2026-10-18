@@ -74,9 +74,64 @@ def _reclaim_oldest_session(checkpoint, current_session):
     return True
 
 
+class _OwnedEventDetail(dict):
+    """Transient current-call row; never returned or persisted without its SHA."""
+    __slots__ = ('_owner',)
+
+    def __init__(self, row, owner):
+        super().__init__(row)
+        self._owner = owner
+
+
+def _owned_scalar_detail(value):
+    """Copy only exact immutable scalars with identical JSON normalization.
+
+    Everything else keeps the ordinary roundtrip and immediate errors. ASCII
+    also preserves the original UTF-8 failure timing for lone surrogates.
+    """
+    if type(value) is not dict:
+        return None
+    for key, item in value.items():
+        if type(key) is not str or not key.isascii():
+            return None
+        if item is None or type(item) is bool:
+            continue
+        if type(item) is str and item.isascii():
+            continue
+        if type(item) is int and item.bit_length() <= 63:
+            continue
+        return None
+    return value.copy()
+
+
+def _owned_event_scalars(row):
+    strings = ('event_id', 'family', 'currency', 'strategy_id', 'stage', 'event_at',
+               'session', 'strategy_version', 'configuration_fingerprint',
+               'registry_sha256', 'channel', 'clock_basis')
+    for key in strings:
+        value = row[key]
+        if type(value) is not str or not value.isascii():
+            return False
+    for key in ('identity', 'reason_codes'):
+        for value in row[key]:
+            if type(value) is not str or not value.isascii():
+                return False
+    return True
+
+
+def _finish_owned_details(checkpoint, owner):
+    if owner is None:
+        return
+    for index, row in enumerate(checkpoint['details']):
+        if type(row) is _OwnedEventDetail and row._owner is owner:
+            actual = dict(row)
+            actual['evidence_sha256'] = digest(actual)
+            checkpoint['details'][index] = actual
+
+
 def _event(checkpoint, *, ident, strategy, stage, event_at, as_of, event_id, channel,
            clock_basis, reasons=(), detail=None, session=None, strategy_version=None,
-           configuration_fingerprint=None, registry_sha256=None):
+           configuration_fingerprint=None, registry_sha256=None, _detail_owner=None):
     if stage not in STAGES:
         raise ValueError("FUNNEL_UNKNOWN_STAGE")
     clock = stamp(event_at)
@@ -114,12 +169,17 @@ def _event(checkpoint, *, ident, strategy, stage, event_at, as_of, event_id, cha
     group["stages"][stage] = group["stages"].get(stage, 0) + 1
     for reason in set(reasons):
         group["reasons"][str(reason)] = group["reasons"].get(str(reason), 0) + 1
+    original_detail = detail or {}
+    copied_detail = _owned_scalar_detail(original_detail) if _detail_owner is not None else None
     row = {"event_id": str(event_id), "identity": list(ident), "family": ident[1], "currency": ident[3],
         "strategy_id": strategy, "stage": stage, "event_at": clock.isoformat(), "session": session,
         "strategy_version": version, "configuration_fingerprint": config, "registry_sha256": registry,
         "channel": channel, "clock_basis": clock_basis, "reason_codes": list(reasons),
-        "entry_authority": False, "detail": _json(detail or {})}
-    row["evidence_sha256"] = digest(row)
+        "entry_authority": False, "detail": copied_detail if copied_detail is not None else _json(original_detail)}
+    if copied_detail is not None and _owned_event_scalars(row):
+        row = _OwnedEventDetail(row, _detail_owner)
+    else:
+        row["evidence_sha256"] = digest(row)
     if stage == "NET_PNL":
         for target, field in (("net_pnl", "net"), ("gross_pnl", "gross"), ("costs", "costs")):
             group[target] = str(number(group[target]) + number(row["detail"][field]))
@@ -130,6 +190,18 @@ def _event(checkpoint, *, ident, strategy, stage, event_at, as_of, event_id, cha
 
 
 def _planner_stages(checkpoint, report, at, *, consume=False):
+    # One bounded owned batch. All causal events still run; only transient
+    # hashes of details outside the existing last512 retention are avoided.
+    detail_owner = object() if consume else None
+    try:
+        return _planner_stage_values(checkpoint, report, at, consume, detail_owner)
+    finally:
+        # Keep the original partial state on any later input error too. No
+        # unsigned current-call marker escapes this function or reaches disk.
+        _finish_owned_details(checkpoint, detail_owner)
+
+
+def _planner_stage_values(checkpoint, report, at, consume, detail_owner):
     session = report.get("session") or at.astimezone(ART).date().isoformat()
     observation_stats, reasons = [], Counter()
     known = set() if consume else None
@@ -150,7 +222,7 @@ def _planner_stages(checkpoint, report, at, *, consume=False):
             reasons.update(exclusion)
             for stage in ("CATALOG_READY", "STRATEGY_ELIGIBLE", "TRADEABLE"):
                 if pipeline.get(stage) is True:
-                    _event(checkpoint, ident=ident, strategy=strategy, stage=stage, event_at=at, as_of=at,
+                    _event(checkpoint, _detail_owner=detail_owner, ident=ident, strategy=strategy, stage=stage, event_at=at, as_of=at,
                         event_id="first-prospective-reach", channel="UNIVERSE_SHADOW", session=session,
                         clock_basis="ACTUAL_RUNTIME_STATE_OBSERVATION; frozen input cutoff preserved",
                         reasons=exclusion, detail={"preopen_digest": plan.get("preopen_digest"),
@@ -162,7 +234,7 @@ def _planner_stages(checkpoint, report, at, *, consume=False):
                 if stamp(touched) < stamp(checkpoint["started_at"]):
                     checkpoint["gaps"]["DISCOVERY_BEFORE_FUNNEL_WATERMARK"] = checkpoint["gaps"].get("DISCOVERY_BEFORE_FUNNEL_WATERMARK", 0) + 1
                 else:
-                    _event(checkpoint, ident=ident, strategy=strategy, stage="DISCOVERY_TOUCHED", event_at=touched,
+                    _event(checkpoint, _detail_owner=detail_owner, ident=ident, strategy=strategy, stage="DISCOVERY_TOUCHED", event_at=touched,
                         as_of=at, event_id="first-native-touch", channel="UNIVERSE_SHADOW", session=session,
                         clock_basis="NATIVE_SOURCE_RECEIPT; selection intent is separate", reasons=exclusion,
                         detail={"source_at": state.get("source_at"), "source": state.get("source")})
@@ -170,7 +242,7 @@ def _planner_stages(checkpoint, report, at, *, consume=False):
             if row.get("state") in {"WARM", "HOT"} and not opened_priority:
                 promotion = state.get("promoted_at") or row.get("promoted_at")
                 if promotion and stamp(promotion) >= stamp(checkpoint["started_at"]):
-                    _event(checkpoint, ident=ident, strategy=strategy, stage=row["state"], event_at=promotion,
+                    _event(checkpoint, _detail_owner=detail_owner, ident=ident, strategy=strategy, stage=row["state"], event_at=promotion,
                         as_of=at, event_id="first-state-reach", channel="UNIVERSE_SHADOW", session=session,
                         clock_basis="ACTUAL_PROSPECTIVE_PLANNER_TRANSITION", reasons=row.get("promotion_reasons", []),
                         detail={"warmup_complete_at": state.get("warmup_complete_at"), "opened_priority": False})
@@ -206,7 +278,7 @@ def _planner_stages(checkpoint, report, at, *, consume=False):
         if raw in known:
             continue
         instrument = family_by_identity.get(raw, {})
-        _event(checkpoint, ident=ident, strategy=instrument.get("strategy") or instrument.get("engine") or
+        _event(checkpoint, _detail_owner=detail_owner, ident=ident, strategy=instrument.get("strategy") or instrument.get("engine") or
             ("futures-dlr-paper-v1" if ident[1] == "FUTUROS" else "SPECIALIZED_LIFECYCLE"), stage="CATALOG_READY",
             event_at=at, as_of=at, event_id="first-prospective-reach", channel="FAMILY_OBSERVE_ONLY", session=session,
             clock_basis="EXPLICIT_UNCHANGED_READY_CATALOG_OBSERVED_BY_RUNTIME", reasons=instrument.get("reason_codes", []),
@@ -224,7 +296,7 @@ def _planner_stages(checkpoint, report, at, *, consume=False):
         if tuple(raw) in known:
             continue
         if instrument.get("catalog_ready") is True or instrument.get("readiness") == "READY_PAPER":
-            _event(checkpoint, ident=ident, strategy=instrument.get("strategy") or instrument.get("engine") or "SPECIALIZED_LIFECYCLE",
+            _event(checkpoint, _detail_owner=detail_owner, ident=ident, strategy=instrument.get("strategy") or instrument.get("engine") or "SPECIALIZED_LIFECYCLE",
                 stage="CATALOG_READY", event_at=at, as_of=at, event_id="first-prospective-reach", channel="FAMILY_OBSERVE_ONLY",
                 session=session, clock_basis="ACTUAL_RUNTIME_CATALOG_OBSERVATION", reasons=instrument.get("reason_codes", []))
         reasons.update(instrument.get("reason_codes", []))
