@@ -1,0 +1,22 @@
+{
+  "schema": "rc6.native624.rca-zip-independent-validation.v1",
+  "artifact": 12121632352,
+  "zip_sha256": "559ad5632ff26e269b0f81a873eb4eb8415fa22d1c0e67ca9b28547a4bdd7d2f",
+  "zip_bytes": 26579,
+  "members": [
+    {
+      "name": "image-mapping.json",
+      "bytes": 1019,
+      "sha256": "d8b2626ecc07ba639a3fe385999f4a02079127e13771ea3130fddb5a13e4e682",
+      "deep_equal_log_capture": true
+    },
+    {
+      "name": "profile.json",
+      "bytes": 197241,
+      "sha256": "1331fb613b5046339f963c4ff39eadbd911b3069b567a84b631f269d728157c5",
+      "deep_equal_log_capture": true
+    }
+  ],
+  "status": "GREEN_BYTES_ONLY",
+  "runtime_acceptance": false
+}

@@ -1558,6 +1558,153 @@
       "sha256": "1987c1114b3f5994982e7cba4c786bf463413a840027574ac459ebce2ba94ab8",
       "source": "ACTUAL_DROPLET_ACTIONS_39083752998_OR_PASSIVE_RCA_39088022968",
       "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/paired-compact624-summary.json",
+      "bytes": 1909,
+      "sha256": "7e88a70680c7b3ce2b5a8157265c62a28403870aedf336b07b95d1d8e3f3c47e",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/paired-compact624-independent-bytes.json",
+      "bytes": 2274,
+      "sha256": "66c15ba2db85ee69e8dbd85d8444e97b866a1868271064e046fa4276a93db92a",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/native-rca624-byte-validation.json",
+      "bytes": 659,
+      "sha256": "98df0614c5601a2bb38f3b437d5abc1a1b3343f1cb57e2752fcb238ac7a2d243",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ab624-env-red-summary.json",
+      "bytes": 886,
+      "sha256": "dd294968803424a27cc4fee6fb870600aa99c5c8ab9c0017b85c92a866c718fe",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/bench_checkpoint624.py",
+      "bytes": 2230,
+      "sha256": "9709654d66b29dbb9b749fb6b2f62dc9f00f6e4ff95f3eee7c00c4a35ffeb032",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/run_paired624.py",
+      "bytes": 2153,
+      "sha256": "f195bb141e516957fe2ead847f24677d3aea3ef0822feb4476fbaa7daf6196e3",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/paired-compact624-baseline.json",
+      "bytes": 11707,
+      "sha256": "e0a5bb3e4204fc6270e1036cc728de2aefa604b714d36cf2d21c78032d43d9a7",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/paired-compact624-candidate.json",
+      "bytes": 14087,
+      "sha256": "b2d180cc5f02d48b6d4919dd0079392322395af3e38a68160a6edb624829154a",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/d4-full-focal624.xml.gz",
+      "bytes": 2771,
+      "sha256": "608c6e69653f10e7441ce53f8b854e00543f35c69753c09b4d98fd164e36ff2f",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/sdk-focal-after624.xml.gz",
+      "bytes": 2162,
+      "sha256": "f5328390224d04f9ef7745e7da9dcb0a0ea0e6f6bef52b26ac5e72499565df16",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/native-evidence-guards-after624.xml.gz",
+      "bytes": 1589,
+      "sha256": "722e7f72025ea7e3012e000e8175ea424010e8f4bac71b152dc5bec2d792d8fb",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/rejected-sample-before624.xml.gz",
+      "bytes": 954,
+      "sha256": "6f6d3b65e8a12c1bb07e5c3ddbba4323badbeff8956e4c71ca45c0b1bea36c4c",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/cleanup-marker-before624.xml.gz",
+      "bytes": 922,
+      "sha256": "05f0b6d65f76ffc6a5a7372accfd6c8a1687f1c6a3abe33d5e295d521a613769",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/owned-preopen-after624.xml.gz",
+      "bytes": 3246,
+      "sha256": "b35167ea25aa7d60c878107b126cc4fcb28b136fff32df7502f395818a3360a5",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/consolidated-stress-guards624.xml.gz",
+      "bytes": 1738,
+      "sha256": "9f6da20047fc208cbebc74032c501243653afadbab2bdbc71bfff4097e84e9fb",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/orchestrator-env-baseline624.xml.gz",
+      "bytes": 1217,
+      "sha256": "9dcf0741005cc3cc753a47cfc8115b6185f9f2fa1cb33f2888a08d01f280e515",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/ab624-env-red.log.gz",
+      "bytes": 12479,
+      "sha256": "07e28433c7ac1c423952a94a32aafab803c145694d56a551ae59fbb64e822fc2",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/cp-stream624-intermediate.json",
+      "bytes": 11701,
+      "sha256": "193aeeab26fe665392b35988682f70c7b1817da908d4c8a4ac04d8431551f347",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/cp-lifetime624-intermediate.json",
+      "bytes": 11710,
+      "sha256": "749c7b5251fa8b15206ca60b6b154399742775d9cdc4da95d8be18eeec23e92f",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/cp-decoded624-intermediate.json",
+      "bytes": 13101,
+      "sha256": "6b6a3b22001ba5869f291b12002e1cb067042f07b642dc41d3afde213daae3de",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
+    },
+    {
+      "path": "docs/releases/evidence624/cp-owned624-intermediate.json",
+      "bytes": 14098,
+      "sha256": "440705f35ee008113053e42e7d0109d5d16291a44fd31755b632aee224eb1eee",
+      "source": "CONTROLLED_LOCAL_AB_OR_NATIVE_ENVIRONMENT_RCA",
+      "native_acceptance": false
     }
   ]
 }

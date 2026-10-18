@@ -3,11 +3,11 @@
   "workstream": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
   "source_issue": 624,
   "product_baseline_sha": "47d949b72f0b3affffecdc6cc90d31ba1347d9b7",
-  "candidate_sha": "fe100cb337ba627e23aa4a006b6c30125e646ad7",
-  "candidate_tree": "8a6fc95a80a02142a15c29c18e05e5f1036de27d",
-  "pr": 626,
+  "candidate_sha": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+  "candidate_tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
+  "pr": 628,
   "runtime_state": "DEPLOYED_VALIDATION_PENDING_NATIVE_RAM_RED",
-  "predeploy_run": 39065412565,
+  "predeploy_run": 39090521551,
   "original_findings_count": 68,
   "original_findings_sha256": "a57b4beca7aae6c2235b87d0a5b992f0be3f24f0d0975207cf48afad7e2fa537",
   "findings": [
@@ -1191,10 +1191,76 @@
       "runtime_state": "NO_ACEPTADO",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Any repeated native resource/freshness/evidence failure remains RED."
+    },
+    {
+      "id": "624-BOUNDED-CHECKPOINT-FIX",
+      "capability": "RC6_NATIVE_WORKING_SET_AND_RELEASE_EVIDENCE",
+      "classification": "FIX_FORWARD_RCA_GUARD_TEST_NOT_A_NEW_FEATURE",
+      "cause": "Previous full canonical hash/size copies amplify checkpoint memory; checkpoint-only experiment kept parity but did not improve worstcase enough.",
+      "fix": "Exact performancecanonical UTF8 digest/actualsize/signedsize in bounded pieces, same capacity/invalidation; tests/test_rc6_checkpoint_streaming.py.",
+      "status": "EN_GITHUB",
+      "runtime_state": "NO_VERIFICADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any parity, resource, sourceidentity or nativefreshness failure remainsRED; no threshold relaxation."
+    },
+    {
+      "id": "624-OWNED-PREOPEN-FIX",
+      "capability": "RC6_NATIVE_WORKING_SET_AND_RELEASE_EVIDENCE",
+      "classification": "FIX_FORWARD_RCA_GUARD_TEST_NOT_A_NEW_FEATURE",
+      "cause": "Private session freeze serialized and decoded two complete trees; each orchestrator validation also materialized full JSON+UTF8.",
+      "fix": "Private ownership transfer shares actual rankings with unchanged strict validation/hashes; publicAPI retains fresh independent copies. Bounded frozen hashing; tests/test_rc6_owned_preopen.py.",
+      "status": "EN_GITHUB",
+      "runtime_state": "NO_VERIFICADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any parity, resource, sourceidentity or nativefreshness failure remainsRED; no threshold relaxation."
+    },
+    {
+      "id": "624-PRIVATE-MISSING-VIEW-FIX",
+      "capability": "RC6_NATIVE_WORKING_SET_AND_RELEASE_EVIDENCE",
+      "classification": "FIX_FORWARD_RCA_GUARD_TEST_NOT_A_NEW_FEATURE",
+      "cause": "Missing quote/pipeline dictionaries and old planner/lab/entry state were duplicated beside full audit.",
+      "fix": "Immutable missing summaries shared only withinone validatedpass, neverfreshdata/crosstickcache. Release completed role references and onlyalready-freeheap. Exact fullreport4hashparity; tests/test_rc6_missing_view_sharing.py.",
+      "status": "EN_GITHUB",
+      "runtime_state": "NO_VERIFICADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any parity, resource, sourceidentity or nativefreshness failure remainsRED; no threshold relaxation."
+    },
+    {
+      "id": "624-REJECTED-RESOURCE-SAMPLE-FIX",
+      "capability": "RC6_NATIVE_WORKING_SET_AND_RELEASE_EVIDENCE",
+      "classification": "FIX_FORWARD_RCA_GUARD_TEST_NOT_A_NEW_FEATURE",
+      "cause": "NativeRAMRED retained only the last accepted resource sample, losing the actualrejectingvalue.",
+      "fix": "Attach actual safe resource receipt beforeexception, collectorallowlistedfields records acceptedfalse/reason. 3FAILbefore/57focalPASSafter;128MiB/2GiB/strictstop unchanged.",
+      "status": "EN_GITHUB",
+      "runtime_state": "NO_VERIFICADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any parity, resource, sourceidentity or nativefreshness failure remainsRED; no threshold relaxation."
+    },
+    {
+      "id": "624-FAILURE-CLEANUP-CLASSIFICATION-FIX",
+      "capability": "RC6_NATIVE_WORKING_SET_AND_RELEASE_EVIDENCE",
+      "classification": "FIX_FORWARD_RCA_GUARD_TEST_NOT_A_NEW_FEATURE",
+      "cause": "Installedpendingvalidation markerexit2 was reported ascleanupRED despite housekeepingGREEN.",
+      "fix": "Explicit--allow-validation-pending onlyrecover; RECOVERY_UNVERIFIED remains2, originalpromotionfailure preserved, actualcleanupstillblocking. CLIandworkflowwiringregressions in stress.",
+      "status": "EN_GITHUB",
+      "runtime_state": "NO_VERIFICADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any parity, resource, sourceidentity or nativefreshness failure remainsRED; no threshold relaxation."
+    },
+    {
+      "id": "624-AB-FIXTURE-DISK-ENVIRONMENT",
+      "capability": "RC6_NATIVE_WORKING_SET_AND_RELEASE_EVIDENCE",
+      "classification": "FIX_FORWARD_RCA_GUARD_TEST_NOT_A_NEW_FEATURE",
+      "cause": "Diagnosticfocal basetemp=/tmp/pytest selected64MiBtmpfs anddiskguardcorrectlyrejected2GiB inrun39090451993. PerformanceABnotexecuted.",
+      "fix": "Diagnostic220a68ceb69ced0490ca43f0a0c0fa077eb78914 uses bound/evidence/focal-tmp and explicit2GiB admission;tmpfs64MiB/cgroups/network/UID unchanged. Candidate202e unchanged,newAB39090738532. Noidenticalretry.",
+      "status": "EN_GITHUB",
+      "runtime_state": "NO_VERIFICADO",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any parity, resource, sourceidentity or nativefreshness failure remainsRED; no threshold relaxation."
     }
   ],
-  "findings_count": 81,
-  "predeploy_state": "GREEN_BYTES_VALIDATED",
+  "findings_count": 87,
+  "predeploy_state": "IN_PROGRESS_NEW_CANDIDATE",
   "historical_ci_995": {
     "run": 39061986441,
     "job": 117481988873,
@@ -1367,7 +1433,8 @@
     "bundle_files": 509,
     "layers_validated": 25,
     "byte_validation": "docs/releases/evidence624/ci-fe100-byte-validation.json",
-    "droplet_acceptance": false
+    "droplet_acceptance": false,
+    "historical_only_for_new_candidate": true
   },
   "deploy": {
     "run": 39083752998,
@@ -1423,5 +1490,36 @@
     "run": 39088022968,
     "image_mapping": "GREEN_CONTENT_IDENTITY_25LAYERS_OPERATIVE_CONFIG_EQUAL",
     "native_acceptance": false
+  },
+  "current_candidate": {
+    "source_sha": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
+    "tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
+    "base_product_sha": "e636b3a20a408e0ff22089118634003e4de900f1",
+    "pr": 628,
+    "predeploy_run": 39090521551,
+    "predeploy_job": 117566084772,
+    "state": "IN_PROGRESS",
+    "local_paired_ab": "docs/releases/evidence624/paired-compact624-summary.json",
+    "limited_image_ab_run": 39090738532,
+    "limited_image_ab_state": "IN_PROGRESS",
+    "previous_environment_red": 39090451993,
+    "installed_runtime": "FE100_NATIVE_RAM_RED_NOT_ACCEPTED",
+    "stress_droplet": "NOT_EXECUTED",
+    "restore_stress": "NOT_EXECUTED"
+  },
+  "historical_fe100_certificate": {
+    "run": 39065412565,
+    "job": 117491921735,
+    "artifact": 12112809598,
+    "zip_sha256": "7a4161313698fc6f16b18a5eef22020fbe973ee4b50ae9510df775152395b4a9",
+    "image_id": "sha256:2d61b2bae12cc1ab164eb997ce187a450da6eb2438239be3e8b40d44fa15d2e3",
+    "root_cases": 4009,
+    "stress_cases": 845,
+    "stress_simulated_minutes": 405,
+    "groups": 8,
+    "bundle_files": 509,
+    "layers_validated": 25,
+    "byte_validation": "docs/releases/evidence624/ci-fe100-byte-validation.json",
+    "droplet_acceptance": false
   }
 }
