@@ -3722,6 +3722,12 @@
       "source": "USER_STOP_NO_GO_FINAL_AUDITOR_HANDBACK_FB83D_CI_ONLY",
       "bytes": 907,
       "sha256": "7b500dd50b33b6ec536a294d529758aa8869d4e41aadf82352722deed8be1880"
+    },
+    {
+      "path": "docs/releases/evidence624/ISSUE624_HANDOFF_AUDITOR_INFRA_CODIGO_20261018.md",
+      "source": "AUDITOR_WITH_GITHUB_HOST_HANDOFF_NO_GO_USER_STOP",
+      "bytes": 20053,
+      "sha256": "3f7ed2399f07da74fc43d4f8738e6f4e826de1fab3978aa8284ead164736696b"
     }
   ]
 }

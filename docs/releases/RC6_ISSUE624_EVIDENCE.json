@@ -1773,9 +1773,18 @@
       "cause": "The 97361c Deploy native two-generation gate failed on actual host at 131.814/129.482s previous source ages. The user then explicitly ordered all operative work stopped and a complete auditor ZIP. Productive branch remains 5fe8a7f and proposed cadence scheduler fix PR637 remains open/unmerged; CI success is not host acceptance.",
       "evidence": "Predeploy V2 39159451751/job117769478030 SUCCESS, artifact12148618862/435608977B/SHA0bcafd248cac8ebe358b22a9299f1c27b135d1b96e1f770f7311a6ff2a7d79f4, source fb83d387/tree d82807bf, original log910763B/SHA57b17b3f1042ad294314fd711be0b20295a954609825cdef0ab3650b013e1c5b. Independent receipt61926B/SHAd09e822a4998e9eea5f86ad90e7898f965b6b70b58e555726b6331b97553f5f6 reports GREEN 4236 root/186 native/1087 CI stress cases/24 physical cuts/513 bundle members, but shell exit not observed after user interruption. Detailed STOP report and four new receipts are byte-verified in evidence624.",
       "outcome": "No merge/deploy after stop. 97361c installed NOT_ACCEPTED; native2+strict10, host405virtual, same-ID restore/postrestore and delayed profile not executed for fb83d. Auditor ZIP v5 includes full v4 history plus full proposed source and original CI artifact. PAPER orders0/PPI Watch untouched at last observed host receipt; no rollback."
+    },
+    {
+      "id": "624-AUDITOR-GITHUB-HOST-DETAILED-HANDOFF-COMPACT-ZIP",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "capability": "EXTERNAL_ARCHITECT_INFRASTRUCTURE_AND_CODE_AUDIT_HANDOFF",
+      "classification": "NO_GO_USER_STOP_RUNTIME_NOT_ACCEPTED",
+      "cause": "b346 COLD absolute 30s deadline RED was corrected in 97361c; then 97361c Deploy failed native dual-generation freshness at 131.814/129.482s because of post-publication 30s sleep plus 46–52s ticks under one-vCPU contention. fb83d start-to-start fix passed exact CI but has no host admission after the user stop.",
+      "evidence": "docs/releases/evidence624/ISSUE624_HANDOFF_AUDITOR_INFRA_CODIGO_20261018.md 20053B/SHA256 3f7ed2399f07da74fc43d4f8738e6f4e826de1fab3978aa8284ead164736696b; Deploy runs39141930791 and39153740779 FAILED; read-only profile39158541022; PR637 source fb83d387/tree d82807b, Predeploy39159451751 SUCCESS artifact12148618862; compact single ZIP23111517B/SHA1036b8bd6a2b9c85972572d7a3ae09f42b390e773fb59932a5259f7ad6449ec2 omits the three original OCI ZIPs explicitly.",
+      "outcome": "Auditor with GitHub/host access has chronological RCA, exact code/file/run map, open uncertainties, safety invariants, finite discrimination and acceptance plan. No product merge or Deploy; native2+strict10, host405virtual, same-ID restore and postrestore unexecuted for fb83d."
     }
   ],
-  "findings_count": 130,
+  "findings_count": 131,
   "predeploy_state": "FB83D_EXACT_IMAGE_CI_GREEN_HOST_NOT_ACCEPTED",
   "historical_ci_995": {
     "run": 39061986441,
