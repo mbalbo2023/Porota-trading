@@ -57,18 +57,19 @@ jobs:
 
   watch:
     needs: contracts
-    if: false # host inventory completed39060769025; do not repeat native observation
+    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/rc6-624-consumer-profile-20261017'
     runs-on: ubuntu-24.04
     timeout-minutes: 7
     env:
+      GH_TOKEN: ${{ github.token }}
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
       - uses: actions/checkout@v4
-      - name: Compile passive inventory
-        run: python3 -B -m py_compile scripts/rc6_native624_inventory.py
+      - name: Compile bounded native RCA probes
+        run: python3 -B -m py_compile scripts/rc6_native624_profile.py scripts/rc6_native624_image_mapping.py
       - name: Prepare strict SSH
         shell: bash
         run: |
@@ -78,7 +79,7 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_market_watch"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6_market_watch" "$HOME/.ssh/known_hosts"
-      - name: Inventory consumers and native competition READ_ONLY
+      - name: Capture native cost and working set after RAM rejection READ_ONLY
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -86,14 +87,16 @@ jobs:
           timeout 240 ssh -i "$HOME/.ssh/rc6_market_watch" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
-            "$DO_USER@$DO_HOST" "sudo -n timeout 220 python3 -B -" \
-            < scripts/rc6_native624_inventory.py > evidence/native624/inventory.json
-          python3 -m json.tool evidence/native624/inventory.json >/dev/null
-          cat evidence/native624/inventory.json
+            "$DO_USER@$DO_HOST" "sudo -n timeout 220 python3 -B - --sha fe100cb337ba627e23aa4a006b6c30125e646ad7 --tree 8a6fc95a80a02142a15c29c18e05e5f1036de27d" \
+            < scripts/rc6_native624_profile.py > evidence/native624/profile.json
+          python3 -m json.tool evidence/native624/profile.json >/dev/null
+          cat evidence/native624/profile.json
+      - name: Verify loaded image content against frozen archive
+        run: python3 -B scripts/rc6_native624_image_mapping.py --profile evidence/native624/profile.json --output evidence/native624/image-mapping.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-native624-inventory-${{ github.run_id }}
+          name: rc6-native624-ram-rca-${{ github.run_id }}
           path: evidence/native624
           if-no-files-found: error
           retention-days: 14
