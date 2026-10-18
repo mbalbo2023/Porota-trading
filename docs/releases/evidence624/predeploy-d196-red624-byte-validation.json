@@ -1,0 +1,20 @@
+{
+  "status": "RED_PRESERVED_ARTIFACT_VERIFIED",
+  "run": 39105637664,
+  "job": 117610752913,
+  "sha": "d196ffc5ceb04b9cb35832409cd864ad858464a5",
+  "tree": "88fffbbffdca81cc166072cf6c61b3c17d453a6e",
+  "artifact": 12128935125,
+  "zip_bytes": 99038,
+  "zip_sha256": "0110124cb3ff25d4c03be09e183729841ae18b8cd870d8167c0e91472f64f47b",
+  "actual_cases": 4087,
+  "failure": 1,
+  "error": 0,
+  "skipped": 0,
+  "failed_case": {
+    "class": "tests.test_rc6_shadow_full_catalog",
+    "name": "test_full_catalog_two_committed_generations_under_process_memory_budget"
+  },
+  "image_built": false,
+  "droplet_modified": false
+}

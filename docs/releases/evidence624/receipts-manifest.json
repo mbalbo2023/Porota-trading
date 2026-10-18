@@ -2919,6 +2919,76 @@
       "source": "EXACT_ABI_GREEN_OR_CAUSAL_STRESS_WORKSPACE_REGRESSION",
       "bytes": 38158,
       "sha256": "695db6065d38fd13cc89d7320e43e53ce60de6d3f49911f02191c57a5e638519"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-d196-red624.log.gz",
+      "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
+      "bytes": 40073,
+      "sha256": "574c2f4eea94adca0eb8152753549f97a042423c1d7afc86f8b023df19c564b3",
+      "raw_bytes": 248900,
+      "raw_sha256": "8c03978c8841b229438383abe8b719a500aee695537116a37fc76e51ca534ee3"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-d196-red624.xml.gz",
+      "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
+      "bytes": 93061,
+      "sha256": "3cd729905b523aedf97591bb9069e2ed160f7e5c813e5d20aa17df64936c79b1",
+      "raw_bytes": 1648757,
+      "raw_sha256": "d0223bbb976e2caa18590b39ca5ce6e1c7c8b6be7e678761a78941218756a39b"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-d196-red624.zip",
+      "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
+      "bytes": 99038,
+      "sha256": "0110124cb3ff25d4c03be09e183729841ae18b8cd870d8167c0e91472f64f47b"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-d196-red624-byte-validation.json",
+      "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
+      "bytes": 619,
+      "sha256": "2e45b1df9bc8793c90517b247ff6a56e5f5691d66b78cb7cdd094f186f8abf7b"
+    },
+    {
+      "path": "docs/releases/evidence624/inherited-hwm624.py",
+      "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
+      "bytes": 1167,
+      "sha256": "fd7a0a1e3488c89f5062b184c050044fdd6d30c0adcad367cfe8265e61be459b"
+    },
+    {
+      "path": "docs/releases/evidence624/inherited-hwm624.json",
+      "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
+      "bytes": 387,
+      "sha256": "59fe03ea0a9f13116d7589c79586115b88f20d33b16588708710a42b63712dea"
+    },
+    {
+      "path": "docs/releases/evidence624/rss-provenance-before624.xml",
+      "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
+      "bytes": 2035,
+      "sha256": "52070a40e930e2a3a1b313a8f728c19d35f04381b6a2264da1bf739aa59127b3"
+    },
+    {
+      "path": "docs/releases/evidence624/rss-provenance-after624.xml",
+      "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
+      "bytes": 548,
+      "sha256": "ea5120e736d9fb670d386522112f8a662ee71180e770c2941c30831e270bf401"
+    },
+    {
+      "path": "docs/releases/evidence624/rss-provenance-full-catalog624.xml",
+      "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
+      "bytes": 701,
+      "sha256": "82eb5659dfb317d8f13618e1209797f5e9d1f4e408ad91b59d4822a2556fd341"
+    },
+    {
+      "path": "docs/releases/evidence624/rss-provenance-full-catalog624-receipt.json",
+      "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
+      "bytes": 9394,
+      "sha256": "42811d77868f05900f9d3c97237ac4ad56f927b8cdf4da6b0cc292558b468c85"
+    },
+    {
+      "path": "docs/releases/evidence624/rss-provenance-source-binding624.json",
+      "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
+      "bytes": 2370,
+      "sha256": "07ad659933635688109ff1d14375bbcc9142f7dffbbfb6a9c8bf809dac8c0c09"
     }
   ]
 }

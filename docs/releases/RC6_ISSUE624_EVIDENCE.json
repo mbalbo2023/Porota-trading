@@ -1488,9 +1488,20 @@
       "receipt": "docs/releases/evidence624/stress-workspace-after624.xml",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Only full exact Predeploy and native405/restore receipts prove execution."
+    },
+    {
+      "id": "624-RSS-EXEC-PARENT-HIGHWATER",
+      "capability": "EXACT_FULL_CATALOG_RESOURCE_PROVENANCE",
+      "classification": "REPRODUCED_KERNEL_MEASUREMENT_CONTAMINATION",
+      "cause": "Predeploy39105637664 actual4087cases/1FAIL noERROR/SKIP/XFAIL. Fullcatalog child reported499576KiB from firstphase: Linux retains fork-parent pre-exec ru_maxrss. Independent parent240MiB ->childru_maxrss256128KiB vs/procVmHWM8668; minimalstdlibparent ->8448/8660. That receipt cannot attribute499MiB to actualworker. No imagebuilt/hostmutation.",
+      "fix": "Onlytestlauncher changes: minimalstdlibintermediary forks SAMEtargetcommand/env/cwd/outputs; no watermarkresetduring/afterwork, no subtraction or192MiBwaiver. Permanent parentpollution/208MiBrealchildprobes before2/1FAIL after2GREEN. Fullcatalog plusprobes3GREEN with300MiBpytestparent; actualworkerpeak165052KiB/all14611/9902/2cuts/raw100MiB/freshnessunchanged. Allothertrackedbytesincludingworker/nativeharnessunchanged.",
+      "status": "GREEN_CAUSAL_TEST_FIX_REQUIRES_NEW_PREDEPLOY",
+      "receipt": "docs/releases/evidence624/rss-provenance-source-binding624.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Only new full certificate plus actual native gates can authorize promotion. PriorREDpreserved."
     }
   ],
-  "findings_count": 103,
+  "findings_count": 104,
   "predeploy_state": "GREEN_BYTES_VALIDATED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -1834,8 +1845,8 @@
   },
   "current_ownership": {
     "paired_comments": [
-      6246688256,
-      6246688481
+      6246869446,
+      6246869666
     ],
     "prior_plan": [
       6245844575,
@@ -1850,14 +1861,14 @@
     "native_promotion": "NOT_AUTHORIZED_BY_EVIDENCE_YET"
   },
   "engineering_candidate": {
-    "source_sha": "d196ffc5ceb04b9cb35832409cd864ad858464a5",
-    "source_tree": "88fffbbffdca81cc166072cf6c61b3c17d453a6e",
+    "source_sha": "246ac975ed527f40db496af47584c9dcdec933f8",
+    "source_tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
     "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
-    "branch": "work/rc6-624-stress-workspace-20261018",
+    "branch": "work/rc6-624-rss-provenance-20261018",
     "source_frozen": true,
     "release_artifact_frozen": false,
     "source_changes_after_freeze_allowed": false,
-    "status": "FROZEN_REQUIRES_NEW_FULL_PREDEPLOY",
+    "status": "FROZEN_NEW_FULL_PREDEPLOY_REQUIRED",
     "controlled_abi_run": 39103911869,
     "controlled_abi_source": "4bf29e0755880f5d203e2a3d0fd0092b10793404",
     "native_promotion": false,
@@ -1867,7 +1878,15 @@
     "harness_only_delta": [
       "scripts/rc6_postdeploy_stress_host.py",
       "tests/test_rc6_postdeploy_stress_contract.py"
-    ]
+    ],
+    "predeploy_run": null,
+    "actual_root_cases": null,
+    "root_failures": null,
+    "image_built": false,
+    "test_only_delta": [
+      "tests/test_rc6_shadow_full_catalog.py"
+    ],
+    "worker_and_native_harness_bytes_match_d196": true
   },
   "historical_engineering_candidates": [
     {
@@ -1899,6 +1918,30 @@
       "native_promotion": false,
       "native_gate120s_128MiB": "UNCHANGED",
       "restore_readiness": "TWO_CURRENT_GENERATIONS_BEFORE_UNCHANGED_STRICT_TEN"
+    },
+    {
+      "source_sha": "d196ffc5ceb04b9cb35832409cd864ad858464a5",
+      "source_tree": "88fffbbffdca81cc166072cf6c61b3c17d453a6e",
+      "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
+      "branch": "work/rc6-624-stress-workspace-20261018",
+      "source_frozen": true,
+      "release_artifact_frozen": false,
+      "source_changes_after_freeze_allowed": false,
+      "status": "RED_PREDEPLOY_39105637664_INHERITED_EXEC_HIGHWATER",
+      "controlled_abi_run": 39103911869,
+      "controlled_abi_source": "4bf29e0755880f5d203e2a3d0fd0092b10793404",
+      "native_promotion": false,
+      "native_gate120s_128MiB": "UNCHANGED",
+      "restore_readiness": "TWO_CURRENT_GENERATIONS_BEFORE_UNCHANGED_STRICT_TEN",
+      "worker_bytes_match_abi_green_d1bd": true,
+      "harness_only_delta": [
+        "scripts/rc6_postdeploy_stress_host.py",
+        "tests/test_rc6_postdeploy_stress_contract.py"
+      ],
+      "predeploy_run": 39105637664,
+      "actual_root_cases": 4087,
+      "root_failures": 1,
+      "image_built": false
     }
   ]
 }
