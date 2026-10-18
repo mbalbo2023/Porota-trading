@@ -129,3 +129,32 @@ def test_new_or_unknown_stop_failure_remains_blocked_with_receipt(installation, 
     receipt = json.loads((root / 'data/deploy' / ('quiescence-' + SHA + '.json')).read_text())
     assert receipt['stop_evidence'][q.OWNED[0]]['after']['ExitCode'] == (137 if change == 'nonzero' else 0)
     assert not receipt['installation_started']
+
+
+@pytest.mark.parametrize('status,allow,expected', [
+    ('FIX_FORWARD_VALIDATION_REQUIRED',False,2),
+    ('FIX_FORWARD_VALIDATION_REQUIRED',True,0),
+    ('RECOVERY_UNVERIFIED',True,2),
+    ('ORIGINAL_RUNTIME_RESUMED',True,0),
+])
+def test_failure_cleanup_classifies_pending_installation_without_hiding_recovery_errors(monkeypatch,status,allow,expected):
+    monkeypatch.setattr(q,'run',lambda *args:{'status':status})
+    args=['--candidate-sha',SHA,'--action','recover']
+    if allow:args.append('--allow-validation-pending')
+    assert q.main(args)==expected
+
+
+def test_pending_validation_option_is_for_failure_recovery_only(monkeypatch):
+    calls=[];monkeypatch.setattr(q,'run',lambda *args:calls.append(args))
+    with pytest.raises(SystemExit):
+        q.main(['--candidate-sha',SHA,'--action','install','--allow-validation-pending'])
+    assert calls==[]
+
+
+def test_failure_cleanup_wires_explicit_pending_classification_and_keeps_failure_condition():
+    source=(Path(__file__).resolve().parents[1]/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
+    block=source.split('- name: Failure-safe host cleanup',1)[1].split('- name:',1)[0]
+    assert "steps.promotion.outcome == 'failure'" in block
+    assert '--action recover --allow-validation-pending' in block
+    assert 'original_failure_preserved=true' in block
+    assert 'rc6_deploy_failure_cleanup.py' in block and 'test "$RECOVERY_RC" -eq 0' in block

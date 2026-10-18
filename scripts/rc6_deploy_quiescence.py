@@ -173,10 +173,20 @@ def run(candidate, action):
         return receipt
 
 
-if __name__ == '__main__':
+def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
     parser.add_argument('--action', choices=['drain', 'install', 'recover'], required=True)
-    args = parser.parse_args()
+    parser.add_argument('--allow-validation-pending',action='store_true',
+                        help='classify installed validation pending during failure cleanup; never validates runtime')
+    args = parser.parse_args(argv)
+    if args.allow_validation_pending and args.action!='recover':
+        parser.error('--allow-validation-pending requires --action recover')
     receipt = run(args.candidate_sha, args.action)
-    raise SystemExit(2 if receipt['status'] in {'RECOVERY_UNVERIFIED', 'FIX_FORWARD_VALIDATION_REQUIRED'} else 0)
+    if receipt['status']=='RECOVERY_UNVERIFIED':return 2
+    if receipt['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and not args.allow_validation_pending:return 2
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

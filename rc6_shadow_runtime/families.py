@@ -321,6 +321,10 @@ def _quote(rows, at):
                     "quantity_unit": row.get("quantity_unit") or row.get("depth_unit")}
         normalized.append(row)
     normalized = _FieldRows(normalized,getattr(rows,"empty_fields",None))
+    empty_cache = normalized.empty_fields
+    missing_quote = not normalized and empty_cache is not None
+    if missing_quote and 'missing_quote' in empty_cache:
+        return empty_cache['missing_quote']
     fields = {name: _field(name, normalized, at=at, numeric=True)
               for name in ("price", "bid", "ask", "bid_size", "ask_size", "volume", "cash_volume")}
     price = fields["price"]["value"]
@@ -348,6 +352,8 @@ def _quote(rows, at):
               "bid": bid, "ask": ask, "bid_size": bid_size, "ask_size": ask_size, "spread_bps": spread,
               "volume": fields["volume"]["value"], "volume_unit": fields["volume"].get("unit"),
               "cash_volume": fields["cash_volume"]["value"], "cash_volume_unit": fields["cash_volume"].get("unit")}
+    if missing_quote:
+        result = empty_cache['missing_quote'] = FrozenJSONDict._from_owned_metadata_tree(result)
     return result
 
 

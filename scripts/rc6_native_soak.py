@@ -30,15 +30,18 @@ def resource_sample(root, baseline, *, state_fn=owned_state, memory_path=Path('/
             for line in memory_path.read_text().splitlines() if ':' in line}
     disk=shutil.disk_usage(root).free
     state=state_fn()
-    if state!=baseline or any(r['status']!='running' or r['oom'] for r in state):
-        raise ValueError('NATIVE_SOAK_SERVICE_CHANGED')
-    if memory.get('MemAvailable',0)<RAM_FLOOR:
-        raise ValueError('NATIVE_SOAK_RAM_RESERVE_BREACHED')
-    if disk<DISK_FLOOR:
-        raise ValueError('NATIVE_SOAK_DISK_RESERVE_BREACHED')
-    return {'at':datetime.now(timezone.utc).isoformat(),'available_memory_bytes':memory['MemAvailable'],
+    unchanged=state==baseline and all(r['status']=='running' and not r['oom'] for r in state)
+    observed={'at':datetime.now(timezone.utc).isoformat(),'available_memory_bytes':memory.get('MemAvailable',0),
             'free_disk_bytes':disk,'swap_used_bytes':memory.get('SwapTotal',0)-memory.get('SwapFree',0),
-            'services_unchanged':True}
+            'services_unchanged':unchanged}
+    reason=('NATIVE_SOAK_SERVICE_CHANGED' if not unchanged else
+            'NATIVE_SOAK_RAM_RESERVE_BREACHED' if observed['available_memory_bytes']<RAM_FLOOR else
+            'NATIVE_SOAK_DISK_RESERVE_BREACHED' if disk<DISK_FLOOR else None)
+    if reason:
+        error=ValueError(reason)
+        error.resource_receipt=observed
+        raise error
+    return observed
 
 def stable_reader(root, **kwargs):
     # A status write can precede CURRENT by milliseconds. Retry only this

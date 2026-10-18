@@ -11,10 +11,11 @@ import json
 from collections import Counter, defaultdict
 from decimal import Decimal
 
-from rc6_performance.common import canonical, digest, identity, number, stamp
+from rc6_performance.common import digest, identity, number, stamp
 from rc6_performance.costs import realized_round_trip_cost
 from rc6_performance.metrics import distribution
-from .entry_signals import ART, _fingerprint, _json, _native_payload, _read_rows, _signal_input_fingerprint
+from .entry_signals import ART, _json, _native_payload, _read_rows, _signal_input_fingerprint
+from .persistence import checkpoint_metrics
 
 SCHEMA = "rc6.prospective-operational-funnel.v1"
 DISCOVERY_EVIDENCE_SCHEMA = "rc6.causal-discovery-evidence.v1"
@@ -510,8 +511,9 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
         "distinct_input_contract": "PROVIDER_CLOCK_VALUES; receipt and decision clock churn excluded"})
     invalidation = None
     if previous:
-        if (len(canonical(previous).encode()) > MAX_CHECKPOINT_BYTES or previous.get("schema") != SCHEMA or
-                previous.get("checkpoint_sha256") != _fingerprint(previous)):
+        previous_metrics = checkpoint_metrics(previous)
+        if (previous_metrics["canonical_bytes"] > MAX_CHECKPOINT_BYTES or previous.get("schema") != SCHEMA or
+                previous.get("checkpoint_sha256") != previous_metrics["sha256"]):
             invalidation = "FUNNEL_CHECKPOINT_INVALID"
         elif previous.get("configuration_fingerprint") != fingerprint:
             invalidation = "FUNNEL_CONFIGURATION_CHANGED"
@@ -551,12 +553,14 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
                       {v["session"] for v in checkpoint["reaches"].values()})
     retained = set(sessions[-2:])
     _retain_sessions(checkpoint, retained)
-    checkpoint["checkpoint_sha256"] = _fingerprint(checkpoint)
-    while len(canonical(checkpoint).encode()) > MAX_CHECKPOINT_BYTES:
+    metrics = checkpoint_metrics(checkpoint)
+    checkpoint["checkpoint_sha256"] = metrics["sha256"]
+    while metrics["signed_canonical_bytes"] > MAX_CHECKPOINT_BYTES:
         if not _reclaim_oldest_session(checkpoint, at.astimezone(ART).date().isoformat()):
             raise ValueError("FUNNEL_CHECKPOINT_CAPACITY_EXCEEDED")
         retained = {v["session"] for v in checkpoint["reaches"].values()} | set(checkpoint["event_keys"].values())
-        checkpoint["checkpoint_sha256"] = _fingerprint(checkpoint)
+        metrics = checkpoint_metrics(checkpoint)
+        checkpoint["checkpoint_sha256"] = metrics["sha256"]
     cohorts = list(checkpoint["cohorts"].values())
     totals = defaultdict(lambda: {"stages": Counter(), "net_pnl": Decimal(0), "gross_pnl": Decimal(0), "costs": Decimal(0)})
     for group in cohorts:

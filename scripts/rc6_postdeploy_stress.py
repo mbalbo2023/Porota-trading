@@ -35,7 +35,9 @@ GROUPS={
                             'tests/test_rc6_shadow_owned_state.py','tests/test_rc6_shadow_shared_audit.py',
                             'tests/test_rc6_shadow_native_bound.py',
                             'tests/test_rc6_issue620_temporal.py','tests/test_rc6_deploy_generation_gate.py',
-                            'tests/test_rc6_preopen_scalar_storage.py','tests/test_rc6_native_soak.py'],
+                            'tests/test_rc6_preopen_scalar_storage.py','tests/test_rc6_native_soak.py',
+                            'tests/test_rc6_checkpoint_streaming.py','tests/test_rc6_owned_preopen.py',
+                            'tests/test_rc6_missing_view_sharing.py'],
  'signals_risk_exit_ledger':['tests/test_rc6_convergence_core_admission.py','tests/test_exit_supervision_v17.py',
                            'tests/test_exit_ledger_isolation_v17.py','tests/test_rc6_future_programming_complete.py',
                            'tests/test_rc6_performance_runtime.py','tests/test_rc6_final_programming_runtime.py',
@@ -52,7 +54,7 @@ GROUPS={
                       'tests/test_rc6_dashboard_clock_bounds.py','tests/test_rc6_runtime_all_routes_http.py'],
  'scheduler_monitor_backup':['tests/test_rc6_market_watch_silence.py','tests/test_host_general_backup_v17.py',
                              'tests/test_rc6_host_backup_symlink.py','tests/test_rc6_reader_status_connection_lifecycle.py',
-                             'tests/test_rc6_backup_preservation.py'],
+                             'tests/test_rc6_backup_preservation.py','tests/test_rc6_deploy_quiescence.py'],
 }
 
 

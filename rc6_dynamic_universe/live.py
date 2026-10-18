@@ -5,10 +5,12 @@ from .capacity import safe_capacity
 from .orchestrator import (EnginePolicy, UniverseOrchestrator,
     reconcile_endpoint_slots, apply_shared_allocation)
 from .sources import audit_sources, source_observations
-from .tradeability import rank_tradeability, freeze_preopen, anomaly_events
+from .tradeability import rank_tradeability, freeze_preopen, freeze_preopen_owned, anomaly_events
 from cf_intraday_scalping import shadow_sampling_plan
 
-def run_shadow(bundle, *, previous=None, frozen_only=False):
+def run_shadow(bundle, *, previous=None, frozen_only=False, owned_frozen=False):
+    if type(owned_frozen) is not bool or (owned_frozen and not frozen_only):
+        raise ValueError("OWNED_FREEZE_PRIVATE_BUILD_ONLY")
     safety = bundle.get("safety", {})
     if (safety.get("mode") not in {"PRODUCTION_PAPER", "SIMULATION"} or
             safety.get("real_orders_sent") != 0 or safety.get("real_routes") != "NOT_CALLED"):
@@ -75,8 +77,12 @@ def run_shadow(bundle, *, previous=None, frozen_only=False):
         # An existing preopen is immutable; never silently regenerate during wheel.
         frozen = bundle.get("frozen", {}).get(policy.engine) or (previous or {}).get("frozen", {}).get(policy.engine)
         if frozen is None:
-            frozen = freeze_preopen(rankings, frozen_at=bundle["frozen_at"], session_open=opening,
-                                    capacity_fingerprint=capacity["configuration_fingerprint"]).to_dict()
+            if owned_frozen:
+                frozen = freeze_preopen_owned(rankings, frozen_at=bundle["frozen_at"], session_open=opening,
+                                              capacity_fingerprint=capacity["configuration_fingerprint"])
+            else:
+                frozen = freeze_preopen(rankings, frozen_at=bundle["frozen_at"], session_open=opening,
+                                        capacity_fingerprint=capacity["configuration_fingerprint"]).to_dict()
             if at >= opening:
                 raise ValueError("PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION")
         frozen_reports[policy.engine] = frozen
