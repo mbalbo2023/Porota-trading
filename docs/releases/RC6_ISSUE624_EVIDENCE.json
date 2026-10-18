@@ -6,7 +6,7 @@
   "candidate_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
   "candidate_tree": "df970bae3415333d43c7c6a30442f6962188ae26",
   "pr": 631,
-  "runtime_state": "246AC_INSTALLED_NOT_ACCEPTED_NEW_7CE_CANDIDATE_NOT_DEPLOYED",
+  "runtime_state": "7CE_INSTALLED_NOT_ACCEPTED_FIX_FORWARD_VALIDATION_REQUIRED",
   "predeploy_run": 39113977768,
   "original_findings_count": 68,
   "original_findings_sha256": "a57b4beca7aae6c2235b87d0a5b992f0be3f24f0d0975207cf48afad7e2fa537",
@@ -1554,9 +1554,20 @@
       "receipt": "docs/releases/evidence624/ci-7ce-byte-validation.json",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Native2+strict10,405Droplet,sameIDsrestore2+strict10 andindependentprofile remainmandatory; runtime246acNOT_ACCEPTED."
+    },
+    {
+      "id": "624-7CE-NATIVE-PAIR-STILL-OVER-BUDGET",
+      "capability": "NATIVE_PHYSICAL_CRITICAL_PATH_AND_ARCHITECTURE_MARGIN",
+      "classification": "ACTUAL_NEW_SOURCE_NATIVE_RED_PERMANENT_GUARDS_RETAINED",
+      "cause": "Deploy39115392916/job117640043081 FAILED10:26:31; fullcontractEXIT0at10:13:20,safety/stability passed. Native2 sees44.927–49.789wall/31.183–33.697CPU; lastpair44.927+30+46.307=121.234>120 BEFOREpublicationoverhead.7stales/finalonecoherentcut. SQL127–649ms/transform44–102ms pass. Currentoptimizationnotaccepted; cannotcallnewwindowcontrollednativeAB.",
+      "fix": "Preserveoriginalraw449614B/SHA6541357eaf65c5ddd0faf4a55d332405e2b7dc0646901c8fa1f9c9a0372865d6+fullgate. CleanupGREEN/errors[]/tagsremoved[]/stagingremoved/newimagereferenced retained,147456Bpositive recovery. No samecandidate retry/no extra90sprofile: existingphaseevidenceisolatesremainingcriticalpath. NextA3durableversionedactual-valuessnapshot andHOT/COLDcontract design beforecode; allS0/S1 data/hash/clocks/identity/coverage/source reconstruction/replay/quota guards required. No globalauditorremoval/resize/priority/TTLchanges.",
+      "status": "RED_RUNTIME_7CE_NOT_ACCEPTED_ARCHITECTURE_DESIGN_CONTINUES",
+      "receipt": "docs/releases/evidence624/native-7ce-two-red624.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Strict10/405EN_DROPLET/restoreNOT_EXECUTED. Newarchitecturesource+allnewexactgatesmandatory; no marginaltuneandnative loop."
     }
   ],
-  "findings_count": 109,
+  "findings_count": 110,
   "predeploy_state": "GREEN_EXACT_IMAGE_INDEPENDENTLY_BYTE_VERIFIED",
   "historical_ci_995": {
     "run": 39061986441,
@@ -1800,10 +1811,10 @@
     "source_frozen": true,
     "source_changes_after_freeze_allowed": false,
     "release_artifact_frozen": true,
-    "status": "FULL_NEW_PREDEPLOY_GREEN_NATIVE_PENDING",
+    "status": "DEPLOYED_NOT_ACCEPTED_NO_UNCHANGED_RETRY",
     "pr": 631,
     "predeploy_run": 39113977768,
-    "native_promotion": false,
+    "native_promotion": true,
     "all_worker_bytes_match_246ac_and_d1bd": true,
     "global_full_auditor_and_units_unchanged": true,
     "changed_paths": [
@@ -1848,16 +1859,18 @@
     "droplet_acceptance": false
   },
   "current_deploy": {
-    "run": 39107582047,
-    "job": 117616663151,
-    "merge_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
-    "source_sha": "246ac975ed527f40db496af47584c9dcdec933f8",
-    "source_tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
+    "run": 39115392916,
+    "job": 117640043081,
+    "merge_sha": "90dc852c36eaa95683db39ea1593cb6ff98bf202",
+    "source_sha": "7ce63ec6b3b65a0d39a93c11968d97dc510f1c02",
+    "source_tree": "df970bae3415333d43c7c6a30442f6962188ae26",
     "status": "FAILED",
     "native_acceptance": "RED_TWO_COHERENT_GENERATIONS_NOT_OBSERVED",
+    "stale_rejections": 7,
+    "last_pair_seconds": 121.234,
     "host_stress_405": "NOT_EXECUTED",
     "restore": "NOT_EXECUTED",
-    "postprofile": "RCA_ONLY_NOT_ACCEPTANCE"
+    "postprofile": "NOT_EXECUTED_NEW_MEASURED_PHASE_PROFILE_SUFFICIENT_FOR_DESIGN"
   },
   "limited_image_ab": {
     "run": 39090738532,
@@ -1873,8 +1886,8 @@
   },
   "current_ownership": {
     "paired_comments": [
-      6248016216,
-      6248016333
+      6248788721,
+      6248788872
     ],
     "prior_plan": [
       6245844575,
@@ -1896,10 +1909,10 @@
     "source_frozen": true,
     "source_changes_after_freeze_allowed": false,
     "release_artifact_frozen": true,
-    "status": "FULL_NEW_PREDEPLOY_GREEN_NATIVE_PENDING",
+    "status": "DEPLOYED_NOT_ACCEPTED_NO_UNCHANGED_RETRY",
     "pr": 631,
     "predeploy_run": 39113977768,
-    "native_promotion": false,
+    "native_promotion": true,
     "all_worker_bytes_match_246ac_and_d1bd": true,
     "global_full_auditor_and_units_unchanged": true,
     "changed_paths": [
@@ -2036,5 +2049,26 @@
       "byte_validation": "docs/releases/evidence624/ci-202e-byte-validation.json",
       "droplet_acceptance": false
     }
-  ]
+  ],
+  "historical_deploys": [
+    {
+      "run": 39107582047,
+      "job": 117616663151,
+      "merge_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
+      "source_sha": "246ac975ed527f40db496af47584c9dcdec933f8",
+      "source_tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
+      "status": "FAILED",
+      "native_acceptance": "RED_TWO_COHERENT_GENERATIONS_NOT_OBSERVED",
+      "host_stress_405": "NOT_EXECUTED",
+      "restore": "NOT_EXECUTED",
+      "postprofile": "RCA_ONLY_NOT_ACCEPTANCE"
+    }
+  ],
+  "engineering_next": {
+    "phase": "DESIGN_ONLY_A3_DURABLE_HOT_COLD",
+    "source_written": false,
+    "new_candidate_frozen": false,
+    "target": "durableboundedactual-valuessnapshot; samefullcanonicalCOLDaudit/sourceclocks/everybusinessvalue; atomicHOT; oneexistingworker; boundedqueue/crashreplay/quotas/backpressure; no laterDBreconstruction",
+    "reason": "Measurednativepair121.234>120 afterA2; no further marginalnative retries."
+  }
 }

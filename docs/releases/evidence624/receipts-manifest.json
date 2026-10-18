@@ -3380,6 +3380,24 @@
       "source": "FROZEN_7CE_NEW_FULL_CERTIFICATE_INDEPENDENTLY_VALIDATED",
       "bytes": 169497,
       "sha256": "71060b8cdd7ef32ede8b875487368a2dfb42490317b011abe32880777364d34e"
+    },
+    {
+      "path": "docs/releases/evidence624/native-7ce-two-red624.json",
+      "source": "ACTUAL_NATIVE_7CE_RED_NOT_ACCEPTED_NO_RETRY",
+      "bytes": 13834,
+      "sha256": "d592eea57250a395482f4eb734ede4cc984eaf782fd5e3d57e165fbefe173eac"
+    },
+    {
+      "path": "docs/releases/evidence624/native-7ce-red-summary624.json",
+      "source": "ACTUAL_NATIVE_7CE_RED_NOT_ACCEPTED_NO_RETRY",
+      "bytes": 480,
+      "sha256": "ca34460f153a4d0948a96623ca37daa324afc002dee4b6a047126abfd0d06807"
+    },
+    {
+      "path": "docs/releases/evidence624/deploy-7ce-native-red624.log.gz",
+      "source": "ACTUAL_NATIVE_7CE_RED_NOT_ACCEPTED_NO_RETRY",
+      "bytes": 73163,
+      "sha256": "12c4b1a77e98a069c3c8d1491ed570d5001be3412a4b0e5c9c3d701ec2aed65d"
     }
   ]
 }
