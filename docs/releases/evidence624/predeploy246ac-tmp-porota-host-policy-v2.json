@@ -1,0 +1,9 @@
+{
+  "extra_policy_units": [],
+  "invalid_policy_units": [],
+  "missing_policy_units": [],
+  "policy_units": 44,
+  "schema_version": 1,
+  "status": "GREEN",
+  "tracked_rc6_units": 44
+}

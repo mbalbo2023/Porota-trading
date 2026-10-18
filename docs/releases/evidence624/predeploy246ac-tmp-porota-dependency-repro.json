@@ -1,0 +1,17 @@
+{
+  "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+  "base_image_digest_pinned": true,
+  "build_stage_images": [
+    "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "python:3.11-bookworm@sha256:5887f265d8d44d8b4734d3658b21d668edf5aaf92e4945bc0c984afbfab105d3",
+    "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9"
+  ],
+  "docker_uses_lock": true,
+  "lock_exact_requirements": 153,
+  "lock_non_exact_requirements": [],
+  "lock_requirements_total": 153,
+  "schema_version": 2,
+  "source_requirements_total": 24,
+  "status": "GREEN",
+  "unpinned_stage_images": []
+}

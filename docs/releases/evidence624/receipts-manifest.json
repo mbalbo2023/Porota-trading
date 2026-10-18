@@ -2989,6 +2989,195 @@
       "source": "PREDEPLOY_RED_AND_PROVEN_RSS_PROVENANCE_FIX",
       "bytes": 2370,
       "sha256": "07ad659933635688109ff1d14375bbcc9142f7dffbbfb6a9c8bf809dac8c0c09"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-byte-validation.json",
+      "source": "INDEPENDENT_EXACT_RELEASE_BYTE_REVIEW",
+      "bytes": 45827,
+      "sha256": "951715052d965e3d40fa8f110ba09fea2c45c080786e94bf19360c7a992e4bc1"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy-246ac624-raw.log.gz",
+      "source": "ORIGINAL_COMPLETED_PREDEPLOY_JOB_LOG",
+      "bytes": 169884,
+      "sha256": "8262a563758cc732c389a4f6aedc70333e96040eb1dc6fff84c7f1af56e0e5cf",
+      "raw_bytes": 801203,
+      "raw_sha256": "e6f4bd6b39a94eb5db74711d81915507dcab2c3ed8cf741ff900109293eb7dff"
+    },
+    {
+      "path": "docs/releases/evidence624/validate624_artifact.py",
+      "source": "INDEPENDENT_RELEASE_REVIEWER_USED",
+      "bytes": 10491,
+      "sha256": "cb5ceffde6ae8da0005d7ae52985355bf526c7c005a78fe0b60b75665889e762"
+    },
+    {
+      "path": "docs/releases/evidence624/baseline202e-oci-config.raw.json",
+      "source": "ORIGINAL_HASH_VERIFIED_REFERENCE_CONFIG",
+      "bytes": 13558,
+      "sha256": "c3229770ff31728df35e9c6a803b7e59894461786b3a0f1299687bec16052596"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-artifact-manifest.json",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 84400,
+      "sha256": "e34c6eb9f8a3c1d42f8b444a309b99abf3c3bc7367ba38175269061ea159fbf0",
+      "original_artifact_member": "tmp/porota-artifact-manifest.json"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-dependency-repro.json",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 712,
+      "sha256": "eca636810a100de6e1f5aa350cc757bc462c396bb9d0ef4c21ea4027be88496b",
+      "original_artifact_member": "tmp/porota-dependency-repro.json"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-host-control-plane.json",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 4807,
+      "sha256": "6f4a6089a8c14987a0c4f05abfe02403db89dfc567526573ad1fb658aca57577",
+      "original_artifact_member": "tmp/porota-host-control-plane.json"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-host-manifest-v2.json",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 33557,
+      "sha256": "7d7db83fed074990a89379c73ebe9f282af1bed7fdb6a8e7e561a7803afd5286",
+      "original_artifact_member": "tmp/porota-host-manifest-v2.json"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-host-policy-v2.json",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 184,
+      "sha256": "f0cab393771011e035654d390da85793ff55b70e82f7b9ffca0c121e086deec8",
+      "original_artifact_member": "tmp/porota-host-policy-v2.json"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-deploy-bundle-v2-manifest.json",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 85400,
+      "sha256": "eb3db425ab20420105019107579577ad9f4ff7b6ad36a39040976a5beaa0ed75",
+      "original_artifact_member": "tmp/porota-deploy-bundle-v2-manifest.json"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-frozen-candidate.json",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 611,
+      "sha256": "fad1afef1f0e4ff890a385a440303894bbfa6f078e82003a5a25ce72cd98719c",
+      "original_artifact_member": "tmp/porota-frozen-candidate.json"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-governed-tests.xml",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 1640443,
+      "sha256": "f798067ed5b5113d5fbd9d07f2e08c6a7041b1364d8ab115943932403a32acb7",
+      "original_artifact_member": "tmp/porota-governed-tests.xml"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-home-runner-work-_temp-porota-native-sizing-evidence-catalog-full-catalog.json",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 9408,
+      "sha256": "01576aabd238793d52fd6d9d330ba3013943e4eaf8ffba58001f3179c0cec235",
+      "original_artifact_member": "home/runner/work/_temp/porota-native-sizing-evidence/catalog/full-catalog.json"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-home-runner-work-_temp-porota-native-sizing-evidence-session-dashboard_auth_52.xml",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 1079934,
+      "sha256": "1912cb169a39b3615b6f7c7ff73de5cca1193f682f75eb273bd168b4855e6a97",
+      "original_artifact_member": "home/runner/work/_temp/porota-native-sizing-evidence/session/dashboard_auth_52.xml"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-home-runner-work-_temp-porota-native-sizing-evidence-native-bound.xml",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 7163,
+      "sha256": "4093ea7fb0fb58e17a8092d0a7eca1915c3b7f0a21f8730987a9893fc85d85d0",
+      "original_artifact_member": "home/runner/work/_temp/porota-native-sizing-evidence/native-bound.xml"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-home-runner-work-_temp-porota-native-sizing-evidence-session-publication_io_identity.xml",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 33192,
+      "sha256": "be1a7c05f3a1c010749c8d01458a0e74355cad4df306422dbe5274ad13acd7ca",
+      "original_artifact_member": "home/runner/work/_temp/porota-native-sizing-evidence/session/publication_io_identity.xml"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-home-runner-work-_temp-porota-native-sizing-evidence-session-scalping_capacity.xml",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 16674,
+      "sha256": "990a6bb2bfdc1b14b83e9ad3e20592f56705f6f0c97084fd2d82657f98a4adf6",
+      "original_artifact_member": "home/runner/work/_temp/porota-native-sizing-evidence/session/scalping_capacity.xml"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-home-runner-work-_temp-porota-native-sizing-evidence-session-signals_risk_exit_ledger.xml",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 25692,
+      "sha256": "4ffa856386b49bba8f55d7da40b21b6dea0c638992d92e776788826ea042d90f",
+      "original_artifact_member": "home/runner/work/_temp/porota-native-sizing-evidence/session/signals_risk_exit_ledger.xml"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-home-runner-work-_temp-porota-native-sizing-evidence-session-scheduler_monitor_backup.xml",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 6104,
+      "sha256": "6a0b417526d43ce6a357a25eb74354c0d3c2ef7d38604fd1c300c8ef2b5fcc13",
+      "original_artifact_member": "home/runner/work/_temp/porota-native-sizing-evidence/session/scheduler_monitor_backup.xml"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-home-runner-work-_temp-porota-native-sizing-evidence-session-sources_readiness_network.xml",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 15305,
+      "sha256": "eb9f456c3ba05ab4d4a7df28d1e94d209e279c608a8e0e1f7ebf83ebd23fa49b",
+      "original_artifact_member": "home/runner/work/_temp/porota-native-sizing-evidence/session/sources_readiness_network.xml"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-home-runner-work-_temp-porota-native-sizing-evidence-session-sql_shadow_wal.xml",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 5683,
+      "sha256": "31ea9e5c74cd5a7efb3b775d3a9a6c29afe137180fbe7962e02789f16c5be287",
+      "original_artifact_member": "home/runner/work/_temp/porota-native-sizing-evidence/session/sql_shadow_wal.xml"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-home-runner-work-_temp-porota-native-sizing-evidence-session-stress.json",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 21083,
+      "sha256": "d76dcb95842da35937c57b944a74c5e9a186f214e46309f2b053ace56d8a753f",
+      "original_artifact_member": "home/runner/work/_temp/porota-native-sizing-evidence/session/stress.json"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-home-runner-work-_temp-porota-native-sizing-evidence-session-treasury_caucion.xml",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 10936,
+      "sha256": "169636fb40d83efed7763a1952502b0f741f1e72c3c4dad52bb9b062d7a8f338",
+      "original_artifact_member": "home/runner/work/_temp/porota-native-sizing-evidence/session/treasury_caucion.xml"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-governed-tests.json",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 360,
+      "sha256": "50c30147e321a8e718d1ea185a83654bad973a82007d966845dd4e809ae99af9",
+      "original_artifact_member": "tmp/porota-governed-tests.json"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-test-collection.txt.gz",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 3529,
+      "sha256": "7f64aa69fca9ee54b3ab4850ea4ecb6800e6139db38cfa44bb0a37b149ac82f9",
+      "original_artifact_member": "tmp/porota-test-collection.txt",
+      "raw_bytes": 13605,
+      "raw_sha256": "108411c1aaede918e2965267172d4ad555e25e1743ba939f7bbc96712efb6049"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-test-exclusions.txt",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 98,
+      "sha256": "bdd48a5c799441805768e6f29b8ae4b7a032b67ff2572a5b21a8e23cfddc6393",
+      "original_artifact_member": "tmp/porota-test-exclusions.txt"
+    },
+    {
+      "path": "docs/releases/evidence624/predeploy246ac-tmp-porota-negative-fixtures.json",
+      "source": "ORIGINAL_PREDEPLOY_12129191130_MEMBER",
+      "bytes": 396,
+      "sha256": "3c4b2115f7eac8d4266d3c7a3f5c55c044f56778851c34a0651f5ee5184473c7",
+      "original_artifact_member": "tmp/porota-negative-fixtures.json"
     }
   ]
 }

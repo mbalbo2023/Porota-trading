@@ -3,11 +3,11 @@
   "workstream": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
   "source_issue": 624,
   "product_baseline_sha": "47d949b72f0b3affffecdc6cc90d31ba1347d9b7",
-  "candidate_sha": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
-  "candidate_tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
-  "pr": 628,
-  "runtime_state": "DEPLOYED_VALIDATION_PENDING_NATIVE_202E_RAM_RED",
-  "predeploy_run": 39090521551,
+  "candidate_sha": "246ac975ed527f40db496af47584c9dcdec933f8",
+  "candidate_tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
+  "pr": 630,
+  "runtime_state": "CANONICAL_DEPLOY_IN_PROGRESS_NATIVE_NOT_YET_ACCEPTED",
+  "predeploy_run": 39106366763,
   "original_findings_count": 68,
   "original_findings_sha256": "a57b4beca7aae6c2235b87d0a5b992f0be3f24f0d0975207cf48afad7e2fa537",
   "findings": [
@@ -1499,10 +1499,21 @@
       "receipt": "docs/releases/evidence624/rss-provenance-source-binding624.json",
       "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
       "reopen": "Only new full certificate plus actual native gates can authorize promotion. PriorREDpreserved."
+    },
+    {
+      "id": "624-CERT-246AC-EXACT-GREEN",
+      "capability": "BUILD_ONCE_EXACT_RELEASE",
+      "classification": "ACTUAL_NEW_PREDEPLOY_AND_INDEPENDENT_BYTE_VALIDATION",
+      "cause": "Frozen successor corrects proven rootpytest inherited exec highwater without changing worker/nativeharness or limits. All priorREDs preserved.",
+      "fix": "Predeploy39106366763/job117612958472SUCCESS;4089actualrootdiscovered=executed/0FAIL/ERROR/SKIP/XFAIL/onelegacyexclusion,48nativeC,405virtual/eightgroups938actualGREEN. ZIP12129191130/415025098B/SHAb83c4456d957ca5c37e3ba618ec885208c571fdc46cc9db70575413e722abf08 downloaded/independentlyverified511bundlefiles/25OCI layers/allXML/alltarconfigsource. Catalog177260/177320KiB<=192MiB. ActualPython3.11.16/base4layers derivedhistory equal202e; Dockerfile/Csource/lock unchanged. Fifthlayerisprojectbuild, notbase; planningproxy correctedbeforeproof.",
+      "status": "GREEN_RELEASE_CERTIFICATE_NATIVE_STILL_PENDING",
+      "receipt": "docs/releases/evidence624/predeploy246ac-byte-validation.json",
+      "owner": "WS-RC6-SHADOW-ARCH-REMEDIATION-20261017",
+      "reopen": "Any source/tree/image change requires newcertificate. NativeDeploy2+10/405Droplet/restore2+10/independentprofile remain mandatory."
     }
   ],
-  "findings_count": 104,
-  "predeploy_state": "GREEN_BYTES_VALIDATED",
+  "findings_count": 105,
+  "predeploy_state": "GREEN_EXACT_IMAGE_AND_INDEPENDENT_BYTES",
   "historical_ci_995": {
     "run": 39061986441,
     "job": 117481988873,
@@ -1737,25 +1748,13 @@
     "native_acceptance": false
   },
   "current_candidate": {
-    "source_sha": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
-    "tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
-    "base_product_sha": "e636b3a20a408e0ff22089118634003e4de900f1",
-    "pr": 628,
-    "predeploy_run": 39090521551,
-    "predeploy_job": 117566084772,
-    "state": "INSTALLED_NATIVE_RAM_RED_NOT_ACCEPTED",
-    "local_paired_ab": "docs/releases/evidence624/paired-compact624-summary.json",
-    "limited_image_ab_run": 39090738532,
-    "limited_image_ab_state": "GREEN_EXPERIMENT",
-    "previous_environment_red": 39090451993,
-    "installed_runtime": "202E_NATIVE_RAM_RED_NOT_ACCEPTED",
-    "stress_droplet": "NOT_EXECUTED",
-    "restore_stress": "NOT_EXECUTED",
-    "predeploy_state": "GREEN_BYTES_VALIDATED",
-    "limited_image_ab_artifact": 12122716507,
-    "merge_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
-    "deploy_run": 39091864291,
-    "deploy_job": 117570122405
+    "sha": "246ac975ed527f40db496af47584c9dcdec933f8",
+    "tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
+    "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
+    "merge_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
+    "pr": 630,
+    "predeploy_run": 39106366763,
+    "status": "FROZEN_CERTIFIED_DEPLOY_IN_PROGRESS"
   },
   "historical_fe100_certificate": {
     "run": 39065412565,
@@ -1773,63 +1772,16 @@
     "droplet_acceptance": false
   },
   "current_deploy": {
-    "run": 39091864291,
-    "job": 117570122405,
-    "source": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
-    "merge_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
-    "tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
-    "parents": [
-      "e636b3a20a408e0ff22089118634003e4de900f1",
-      "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f"
-    ],
-    "owner_comments": [
-      6244940237,
-      6244940346
-    ],
-    "status": "FAILED",
-    "native_acceptance": false,
-    "schema": "rc6.native624.202e-deploy-red.v1",
-    "candidate_sha": "202e49c750ab0a69b5ba6790fcb14cc0c0d9039f",
-    "candidate_tree": "f3ddca733e40649c4e2605f69d5b7ec59dd839e8",
-    "state": "DEPLOYED_VALIDATION_PENDING",
-    "native_two_status": "GREEN",
-    "native_two_prior_rejections": 14,
-    "native_ten_status": "RED",
-    "native_ten_generations": 1,
-    "native_ten_error": "NATIVE_SOAK_RAM_RESERVE_BREACHED",
-    "elapsed_seconds_at_rejection": 52.662122,
-    "rejected_resource_receipt": {
-      "accepted": false,
-      "at": "2026-10-18T04:04:58.217931+00:00",
-      "available_memory_bytes": 118923264,
-      "free_disk_bytes": 4551827456,
-      "rejection_reason": "NATIVE_SOAK_RAM_RESERVE_BREACHED",
-      "services_unchanged": true,
-      "swap_used_bytes": 807768064
-    },
-    "memory_deficit_bytes": 15294464,
-    "stress_droplet": "NOT_EXECUTED",
-    "stress_restore": "NOT_EXECUTED",
-    "raw_log_bytes": 460767,
-    "raw_log_sha256": "258646a5672c08ba03d4f9f28889c7c36efe0261a48a94f97662739c256a3c43",
-    "cleanup": {
-      "status": "GREEN",
-      "errors": [],
-      "reclaimed_bytes": 12288,
-      "disk_after": 4551835648
-    },
-    "quiescence_status": "FIX_FORWARD_VALIDATION_REQUIRED",
-    "rollback_performed": false,
-    "real_orders_sent": 0,
-    "scope": "RED preserved; later probe cannot change this outcome",
-    "rca": {
-      "run": 39096006422,
-      "job": 117582484029,
-      "artifact": 12124332880,
-      "zip_sha256": "ab1a34b693aa84a4177b61521a835734b8e13e8c1b978e0b834da1e5fdd72041",
-      "byte_validation": "docs/releases/evidence624/native-202e-rca-byte-validation.json",
-      "retired_commit": "51f504271deed6d565e98f81fc3ddcfd3c782c71"
-    }
+    "run": 39107582047,
+    "job": 117616663151,
+    "merge_sha": "7d0c4533497700d94790bc70be7c8d8473da8c4b",
+    "source_sha": "246ac975ed527f40db496af47584c9dcdec933f8",
+    "source_tree": "05accd1e3d5e9b246aa2a43b6a78cfa639cb74eb",
+    "status": "IN_PROGRESS",
+    "native_acceptance": "PENDING",
+    "host_stress_405": "NOT_YET_EXECUTED",
+    "restore": "NOT_YET_EXECUTED",
+    "postprofile": "NOT_YET_EXECUTED"
   },
   "limited_image_ab": {
     "run": 39090738532,
@@ -1845,8 +1797,8 @@
   },
   "current_ownership": {
     "paired_comments": [
-      6246869446,
-      6246869666
+      6247110038,
+      6247110202
     ],
     "prior_plan": [
       6245844575,
@@ -1866,9 +1818,9 @@
     "base_sha": "59d9e01834529c1646733f7d416c7567a8c6d2ca",
     "branch": "work/rc6-624-rss-provenance-20261018",
     "source_frozen": true,
-    "release_artifact_frozen": false,
+    "release_artifact_frozen": true,
     "source_changes_after_freeze_allowed": false,
-    "status": "FROZEN_NEW_FULL_PREDEPLOY_REQUIRED",
+    "status": "PREDEPLOY_GREEN_DEPLOY_IN_PROGRESS_RUNTIME_NOT_ACCEPTED",
     "controlled_abi_run": 39103911869,
     "controlled_abi_source": "4bf29e0755880f5d203e2a3d0fd0092b10793404",
     "native_promotion": false,
@@ -1879,14 +1831,18 @@
       "scripts/rc6_postdeploy_stress_host.py",
       "tests/test_rc6_postdeploy_stress_contract.py"
     ],
-    "predeploy_run": null,
-    "actual_root_cases": null,
-    "root_failures": null,
+    "predeploy_run": 39106366763,
+    "actual_root_cases": 4089,
+    "root_failures": 0,
     "image_built": false,
     "test_only_delta": [
       "tests/test_rc6_shadow_full_catalog.py"
     ],
-    "worker_and_native_harness_bytes_match_d196": true
+    "worker_and_native_harness_bytes_match_d196": true,
+    "artifact": 12129191130,
+    "artifact_zip_sha256": "b83c4456d957ca5c37e3ba618ec885208c571fdc46cc9db70575413e722abf08",
+    "image_id": "sha256:dbb0573f5f8abce78a6939319eaf3c502bda9b8e5f7bfcf2441896cd75315835",
+    "promotion_workflow_active": true
   },
   "historical_engineering_candidates": [
     {
