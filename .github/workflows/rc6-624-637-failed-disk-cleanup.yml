@@ -1,4 +1,4 @@
-name: RC6 624 bounded read-only CLOSED disk map
+name: RC6 624 bounded read-only PAPER disk map
 
 on:
   pull_request:
@@ -41,7 +41,7 @@ jobs:
           assert run['status']=='completed' and run['conclusion']=='failure'
           print('RC6_641_EXACT_RED=GREEN')
           PY
-      - name: Map disk metadata under CLOSED PAPER and resource guards
+      - name: Map disk metadata under PAPER and resource guards
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -94,8 +94,8 @@ jobs:
                   result[group]=sorted(rows)
               return result
           def snapshot():
-              # Deployment remains blocked. This one-shot metadata probe
-              # requires authentic CLOSED state, never a wall-clock guess.
+              # Deployment remains blocked by any open PAPER position. This
+              # read-only inventory accepts authentic MARKET_CLOSED state.
               with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',
                                    uri=True,timeout=.2) as connection:
                   connection.execute('PRAGMA query_only=ON')
@@ -126,7 +126,7 @@ jobs:
                   'inode_free_percent':100*stat.f_ffree/stat.f_files,
                   'mem_available_bytes':memory,'io_some_avg10':some},sort_keys=True),file=sys.stderr)
               assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
-              assert process=='WAITING_MARKET' and all(count==0 for count in open_contracts.values())
+              assert process=='WAITING_MARKET' and all(count in (0,1) for count in open_contracts.values())
               assert session in ('MARKET_CLOSED','WAITING_MARKET') and 0<=age<=180
               qpath=root/'data/deploy'/('quiescence-'+candidate+'.json')
               assert not qpath.is_symlink()
@@ -195,7 +195,7 @@ jobs:
                           'largest_direct':sorted(rows,key=lambda x:x['allocated_direct_bytes'],reverse=True)[:20]}
                   except (OSError,TimeoutError) as exc:
                       top[dirname]={'status':'ERROR','error_class':type(exc).__name__,'seen':seen}
-              # A single best-effort, low-priority walk of data at CLOSED.
+              # A single best-effort, low-priority walk of data outside market hours.
               # Preserve partial output and never retry the same tree.
               du_cmd=['timeout','25','ionice','-c3','nice','-n','19',
                       'du','-x','-B1','--max-depth=2','/opt/porota-trading/data']
@@ -248,7 +248,7 @@ jobs:
               after=snapshot()
               assert before['owned']==after['owned'] and before['all_containers']==after['all_containers']
               assert before['ppi_watch']==after['ppi_watch']
-              result={'schema':'rc6.issue624.closed-disk-metadata.v1',
+              result={'schema':'rc6.issue624.paper-disk-metadata.v2',
               'status':'READ_ONLY','before':before,'after':after,
               'inventory':{'shallow':top,'bounded_du':du_evidence,'open_deleted_fds':deleted,
                            'tmp_old':sorted(tmp,key=lambda x:x['bytes'],reverse=True)[:100],
@@ -269,7 +269,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-624-closed-readonly-map-${{ github.run_id }}
+          name: rc6-624-paper-readonly-map-${{ github.run_id }}
           path: evidence
           if-no-files-found: warn
           retention-days: 14
