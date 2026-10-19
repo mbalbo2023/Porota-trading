@@ -262,3 +262,5 @@ jobs:
           path: evidence
           if-no-files-found: warn
           retention-days: 14
+
+# RC6 624 inventory refresh 2026-10-19T01:27Z exact head 2601a910
