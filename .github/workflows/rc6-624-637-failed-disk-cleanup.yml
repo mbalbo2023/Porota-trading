@@ -113,6 +113,18 @@ jobs:
               print('RC6_624_ADMISSION_STATE='+json.dumps({'mode':mode,'orders':orders,
                     'process':process,'session':session,'heartbeat_age_seconds':round(age,2),
                     'open_contracts':open_contracts},sort_keys=True),file=sys.stderr)
+              # A bounded resource sample is safe even if the position gate is
+              # closed. It measures the new artifact floor without walking data.
+              stat=os.statvfs('/')
+              memory=next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines()
+                          if line.startswith('MemAvailable:'))
+              pressure=Path('/proc/pressure/io').read_text()[:512]
+              some=next(float(v.split('=',1)[1]) for v in pressure.splitlines()[0].split()
+                        if v.startswith('avg10='))
+              print('RC6_624_BOUNDED_RESOURCE_SAMPLE='+json.dumps({
+                  'free_bytes':stat.f_bavail*stat.f_frsize,
+                  'inode_free_percent':100*stat.f_ffree/stat.f_files,
+                  'mem_available_bytes':memory,'io_some_avg10':some},sort_keys=True),file=sys.stderr)
               assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
               assert process=='WAITING_MARKET' and all(count==0 for count in open_contracts.values())
               assert session in ('MARKET_CLOSED','WAITING_MARKET') and 0<=age<=180
@@ -131,13 +143,9 @@ jobs:
               assert len(allc)==3 and {v['id'] for v in allc.values()}==set(expected_ids)
               assert old not in {v['image'] for v in allc.values()}
               assert cmd('docker','image','inspect','-f','{{.Id}}','porota-trading-bot:17.0.0-rc6',timeout=15).strip()==current
-              stat=os.statvfs('/')
-              memory=next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))
               print('RC6_624_ADMISSION_RAM_BYTES='+str(memory),file=sys.stderr)
               assert memory>128*1024**2
               assert stat.f_bavail*stat.f_frsize>=2*1024**3
-              pressure=Path('/proc/pressure/io').read_text()[:512]
-              some=next(float(v.split('=',1)[1]) for v in pressure.splitlines()[0].split() if v.startswith('avg10='))
               print('RC6_624_ADMISSION_IO_SOME_AVG10='+str(some),file=sys.stderr)
               assert some<=5.0
               return {'free':shutil.disk_usage('/').free,'inodes_percent':100*stat.f_ffree/stat.f_files,
