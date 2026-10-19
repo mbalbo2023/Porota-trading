@@ -33,6 +33,7 @@ GROUPS={
  'publication_io_identity':['tests/test_rc6_issue600_regressions.py','tests/test_rc6_issue603_regressions.py',
                             'tests/test_rc6_shadow_failure_context.py','tests/test_rc6_shadow_stage_reads.py',
                             'tests/test_rc6_shadow_streaming_cost.py','tests/test_rc6_shadow_report_lifetime.py','tests/test_rc6_shadow_cold_audit.py',
+                            'tests/test_rc6_cold2_quarantine.py',
                             'tests/test_rc6_shadow_owned_state.py','tests/test_rc6_shadow_shared_audit.py',
                             'tests/test_rc6_shadow_native_bound.py',
                             'tests/test_rc6_issue620_temporal.py','tests/test_rc6_deploy_generation_gate.py',
