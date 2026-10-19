@@ -1,0 +1,176 @@
+name: RC6 624 failed promotion journal and oldest backup cleanup
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/rc6-624-637-failed-disk-stage2.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.head_ref == 'diagnostic/rc6-624-637-failed-disk-stage2-20261019'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ee938348e6486900dcd595275e25440a3983021c
+      - name: Exact RED and product identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = ee938348e6486900dcd595275e25440a3983021c
+          python3 - <<'PY'
+          import json,os,urllib.request
+          req=urllib.request.Request('https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/39180374877',
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(req,timeout=15) as response: run=json.load(response)
+          assert run['head_sha']=='ee938348e6486900dcd595275e25440a3983021c'
+          assert run['status']=='completed' and run['conclusion']=='failure'
+          print('EXACT_FAILED_DEPLOY=GREEN')
+          PY
+      - name: Rotate journal and conditionally remove one authorized oldest backup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/key"' EXIT
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n timeout 600 python3 -B -' <<'PY' > evidence/cleanup.json
+          import json,os,shutil,stat,subprocess,sys
+          from pathlib import Path
+          sys.path.insert(0,'/opt/porota-trading')
+          from scripts.rc6_deploy_quiescence import admit
+          from scripts.rc6_deploy_failure_cleanup import promotion_lock
+          from scripts.rc6_disk_housekeeping import all_backup_plans
+          root=Path('/opt/porota-trading')
+          candidate='38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1'
+          stable='sha256:084a73ba235d6bbaae2ebe0754bde68f122e6624f0332aceda63aad7aaa0523d'
+          previous='sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098'
+          names=('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6')
+          def cmd(*args,timeout=120):
+              return subprocess.check_output(args,text=True,stderr=subprocess.STDOUT,timeout=timeout)
+          def inspect(name):
+              row=json.loads(cmd('docker','inspect',name,timeout=15))[0]
+              return {'id':row['Id'],'image':row['Image'],'status':row['State']['Status'],
+                  'health':(row['State'].get('Health') or {}).get('Status'),
+                  'oom':row['State']['OOMKilled'],'restarts':row['RestartCount']}
+          def all_containers():
+              return {cid:inspect(cid) for cid in cmd('docker','ps','-aq','--no-trunc',timeout=15).splitlines()}
+          def watch():
+              lines=cmd('systemctl','list-unit-files','--no-legend',timeout=10).splitlines()
+              return {line.split()[0]:(
+                  subprocess.run(['systemctl','is-active',line.split()[0]],capture_output=True,text=True,timeout=5).stdout.strip(),
+                  subprocess.run(['systemctl','is-enabled',line.split()[0]],capture_output=True,text=True,timeout=5).stdout.strip())
+                  for line in lines if 'ppi' in line.split()[0].lower() and 'watch' in line.split()[0].lower()}
+          def backups(policy):
+              plans=all_backup_plans(policy)
+              assert all(len(p['delete'])==0 for p in plans.values()), 'BACKUP_RETENTION_EXCESS_UNEXPECTED'
+              assert len(plans['general']['kept'])>=2 and all(len(plans[n]['kept'])>=3 for n in ('paper','history'))
+              return {group:sorted((r.path,r.size_bytes,r.mtime) for r in plan['kept'])
+                  for group,plan in plans.items()}
+          def snapshot(policy):
+              admit(stopped=True)
+              q=json.loads((root/'data/deploy'/('quiescence-'+candidate+'.json')).read_text())
+              assert q['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and q['installation_started'] is True
+              assert q['candidate_sha']==candidate and q['real_orders_sent']==0 and q['ppi_watch_accessed'] is False
+              owned={name:inspect(name) for name in names}
+              for name in names[:2]:
+                  assert owned[name]['id']==q['containers'][name]['id']
+                  assert owned[name]['image']==q['containers'][name]['image']==previous
+                  assert owned[name]['status']=='exited' and not owned[name]['oom']
+              assert owned[names[2]]['status']=='running' and owned[names[2]]['health']=='healthy'
+              assert owned[names[2]]['image']==previous and not owned[names[2]]['oom']
+              assert cmd('docker','image','inspect','-f','{{.Id}}','porota-trading-bot:17.0.0-rc6',timeout=15).strip()==stable
+              allc=all_containers()
+              assert len(allc)==3 and all(x['image']==previous for x in allc.values())
+              free=shutil.disk_usage('/').free
+              stat=os.statvfs('/')
+              mem=next(int(x.split()[1])*1024 for x in Path('/proc/meminfo').read_text().splitlines()
+                  if x.startswith('MemAvailable:'))
+              return {'free':free,'inodes':100*stat.f_ffree/stat.f_files,
+                  'mem_available':mem,'owned':owned,'all_containers':allc,
+                  'ppi_watch':watch(),'backups':backups(policy),'quiescence':q}
+          policy=json.loads((root/'ops/policy/rc6-disk-housekeeping-v1.json').read_text())
+          assert policy['backups']['general']['keep_newest']==3
+          assert policy['backups']['paper']['keep_newest']==3
+          assert policy['backups']['history']['keep_newest']==3
+          assert policy['journal']['max_bytes']==536870912
+          with promotion_lock():
+              before=snapshot(policy)
+              assert len(before['backups']['general'])==3
+              oldest=root.parent/'porota-backups/porota-general-20261014T071805Z.tar.gz'
+              assert str(oldest)==before['backups']['general'][0][0]
+              assert oldest.name not in policy['backups']['general']['pinned_names']
+              info=oldest.lstat()
+              assert stat.S_ISREG(info.st_mode) and info.st_nlink==1 and not oldest.is_symlink()
+              assert info.st_size==239525888 and info.st_mtime_ns==1791962688240529955
+              actions={}
+              actions['journal_rotate']=cmd('journalctl','--rotate',timeout=120)[-2000:]
+              actions['journal_vacuum']=cmd('journalctl','--vacuum-size=67108864',timeout=120)[-2000:]
+              after_journal=snapshot(policy)
+              assert before['owned']==after_journal['owned'] and before['all_containers']==after_journal['all_containers']
+              assert before['ppi_watch']==after_journal['ppi_watch'] and before['backups']==after_journal['backups']
+              if after_journal['free']<4923067348:
+                  assert shutil.which('lsof'), 'LSOF_REQUIRED'
+                  refs=subprocess.run(['lsof','-nP','--',str(oldest)],capture_output=True,text=True,timeout=20)
+                  assert refs.returncode==1 and not refs.stdout.strip(), 'BACKUP_REFERENCED_OR_LSOF_FAILED'
+                  recheck=oldest.lstat()
+                  assert (recheck.st_dev,recheck.st_ino,recheck.st_size,recheck.st_mtime_ns)==(
+                      info.st_dev,info.st_ino,info.st_size,info.st_mtime_ns)
+                  oldest.unlink()
+                  actions['oldest_general_backup_deleted']={'name':oldest.name,
+                      'bytes':info.st_size,'mtime_ns':info.st_mtime_ns,'inode':info.st_ino}
+              after=snapshot(policy)
+              assert before['owned']==after['owned'] and before['all_containers']==after['all_containers']
+              assert before['ppi_watch']==after['ppi_watch']
+              assert all(before['backups'][n]==after['backups'][n] for n in ('paper','history'))
+              expected=before['backups']['general'][1:] if 'oldest_general_backup_deleted' in actions else before['backups']['general']
+              assert after['backups']['general']==expected
+              assert before['quiescence']==after['quiescence']
+              assert after['mem_available']>128*1024*1024 and after['inodes']>=10
+          result={'schema':'rc6.issue624.failed-disk-stage2.v1',
+              'status':'GREEN' if after['free']>=4923067348 else 'RED_DISK_BELOW_PRIOR_THRESHOLD',
+              'before':before,'after_journal':after_journal,'after':after,'actions':actions,
+              'required_prior_artifact_bytes':4923067348,
+              'required_next_artifact_bytes':'RECALCULATE_FROM_NEW_CERTIFICATE',
+              'space_recovered':after['free']-before['free'],
+              'candidate_image_tag':'PRESERVED',
+              'backup_exception':'OLDEST_GENERAL_ONLY_IF_REQUIRED_BY_AUTHORIZATION',
+              'ppi_watch_accessed':'READ_ONLY_STATE_ONLY','real_orders_sent':0}
+          print(json.dumps(result,sort_keys=True,separators=(',',':')))
+          if result['status']!='GREEN':sys.exit(2)
+          PY
+          python -m json.tool evidence/cleanup.json >/dev/null
+          python - <<'PY'
+          import json
+          x=json.load(open('evidence/cleanup.json'))
+          assert x['status']=='GREEN'
+          print('RC6_624_JOURNAL_BACKUP_CLEANUP=GREEN|before='+str(x['before']['free'])+
+              '|after='+str(x['after']['free'])+'|recovered='+str(x['space_recovered']))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-624-637-failed-disk-stage2-${{ github.run_id }}
+          path: evidence
+          if-no-files-found: warn
+          retention-days: 14
