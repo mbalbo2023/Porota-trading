@@ -225,7 +225,8 @@ jobs:
           (base/'summary.json').write_text(json.dumps(out,sort_keys=True,indent=2)+'\n')
           PY
           timeout 150 docker run --rm -i --network none --read-only --memory 512m --memory-swap 512m --cpus .75 \
-            --pids-limit 128 --user "$(id -u):$(id -g)" --mount "type=bind,source=$RUNNER_TEMP/cold-replay,target=/sandbox" \
+            --pids-limit 128 --user "$(id -u):$(id -g)" --env PYTHONPATH=/app \
+            --mount "type=bind,source=$RUNNER_TEMP/cold-replay,target=/sandbox" \
             "$image_id" python -B /sandbox/replay.py
           python3 -m json.tool "$RUNNER_TEMP/cold-replay/summary.json" >/dev/null
           cp "$RUNNER_TEMP/cold-replay/summary.json" "$RUNNER_TEMP/cold-summary.json"
