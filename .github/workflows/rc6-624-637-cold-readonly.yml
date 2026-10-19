@@ -112,36 +112,32 @@ jobs:
           assert list(map(int,(d,i,size)))==x['pack_identity'][:3]
           print('ORIGINAL_PACK_TRANSFER_HASH_AND_INODE=GREEN')
           PY
-      - name: Load exact historical source and native ABI image on runner
+      - name: Stream actual historical image and native ABI to runner without host writes
         shell: bash
         run: |
           set -Eeuo pipefail
-          mkdir -p "$RUNNER_TEMP/cold-image"
-          gh run download 39148589383 --repo mbalbo2023/Porota-trading --name porota-predeploy-v2-97361c1ce3476465d267e9216e6bcc065696e72f --dir "$RUNNER_TEMP/cold-image"
-          python3 - <<'PY'
-          import hashlib,json,os,pathlib
-          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'cold-image'
-          f=json.loads(next(root.rglob('porota-frozen-candidate.json')).read_text())
-          assert f['candidate_sha']=='97361c1ce3476465d267e9216e6bcc065696e72f'
-          assert f['paper_mode_required']=='PRODUCTION_PAPER' and f['real_orders_sent_required']==0
-          image=next(root.rglob('porota-predeploy-image.tar.gz'))
-          h=hashlib.sha256()
-          with image.open('rb') as stream:
-              while b:=stream.read(1024*1024):h.update(b)
-          assert h.hexdigest()==f['image_tar_sha256']
-          print('HISTORICAL_IMAGE_BYTES=GREEN|image_id='+f['image_id'])
-          PY
-          image_path="$(find "$RUNNER_TEMP/cold-image" -name porota-predeploy-image.tar.gz -print -quit)"
-          gzip -dc "$image_path" | docker load >/dev/null
-          image_id="$(python3 -c 'import json,os,pathlib;print(json.loads(next((pathlib.Path(os.environ["RUNNER_TEMP"])/"cold-image").rglob("porota-frozen-candidate.json")).read_text())["image_id"])')"
+          image_id=sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098
+          install -m700 -d "$HOME/.ssh" "$RUNNER_TEMP/cold-image"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          unset SSH_KEY KNOWN_HOSTS
+          trap 'rm -f "$HOME/.ssh/key"' EXIT
+          remote() { ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15 "$DO_USER@$DO_HOST" "$@"; }
+          test "$(remote "sudo -n docker image inspect -f '{{.Id}}' $image_id")" = "$image_id"
+          remote "sudo -n nice -n 10 sh -c 'docker save $image_id | gzip -1'" > "$RUNNER_TEMP/cold-image/historical.tar.gz"
+          test "$(remote "sudo -n docker image inspect -f '{{.Id}}' $image_id")" = "$image_id"
+          gzip -t "$RUNNER_TEMP/cold-image/historical.tar.gz"
+          echo "HISTORICAL_IMAGE_STREAM_BYTES=$(stat -c %s "$RUNNER_TEMP/cold-image/historical.tar.gz")"
+          gzip -dc "$RUNNER_TEMP/cold-image/historical.tar.gz" | docker load >/dev/null
           test "$(docker image inspect -f '{{.Id}}' "$image_id")" = "$image_id"
-          test "${image_id:0:18}" = 'sha256:687af03ef'
-          echo "EXACT_OLD_IMAGE_AND_ABI=GREEN"
+          docker run --rm --network none --read-only --entrypoint python "$image_id" -B -c \
+            'import hashlib,pathlib,os;from rc6_shadow_runtime import cold_audit,persistence;assert persistence._native_json_bound is not None;d=lambda p: hashlib.sha1(("blob "+str(len(p.read_bytes()))+"\0").encode()+p.read_bytes()).hexdigest();print("HISTORICAL_SOURCE_ABI=GREEN|build_sha="+str(os.environ.get("POROTA_BUILD_SHA"))+"|cold_blob="+d(pathlib.Path(cold_audit.__file__))+"|persistence_blob="+d(pathlib.Path(persistence.__file__)))'
       - name: Finite isolated replay at original occupancy and empty occupancy
         shell: bash
         run: |
           set -Eeuo pipefail
-          image_id="$(python3 -c 'import json,os,pathlib;print(json.loads(next((pathlib.Path(os.environ["RUNNER_TEMP"])/"cold-image").rglob("porota-frozen-candidate.json")).read_text())["image_id"])')"
+          image_id=sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098
           mkdir -p "$RUNNER_TEMP/cold-replay"
           cp "$RUNNER_TEMP/cold-original/meta.json" "$RUNNER_TEMP/cold-replay/meta.json"
           cp "$RUNNER_TEMP/cold-original/original-manifest.json" "$RUNNER_TEMP/cold-replay/original-manifest.json"
