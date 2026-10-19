@@ -3,9 +3,15 @@ import gzip
 import hashlib
 import json
 import os
+import io
+import builtins
 from pathlib import Path
+from types import SimpleNamespace
 import pytest
 from scripts import rc6_cold2_quarantine as q
+
+EXPECTED = {'porota_production_observer':'a'*64,
+            'porota_production_dashboard':'b'*64}
 
 
 def put(path, payload, *, cold=False, zipped=False):
@@ -51,7 +57,10 @@ def state(tmp_path,monkeypatch):
 
 def admitted():
     return {'status':'DRAINED','owned_stopped':True,'market_closed':True,
-            'no_positions':True,'lock_held':True,'ppi_watch_accessed':False,'real_orders_sent':0}
+            'no_positions':True,'lock_held':True,'ppi_watch_accessed':False,'real_orders_sent':0,
+            'mode':'PRODUCTION_PAPER','real_routes':'NOT_CALLED',
+            'order_routing_blocked':True,'inflight_absent':True,
+            'critical_healthy':True,'owned_ids':EXPECTED.copy()}
 
 
 def test_plan_then_archive_preserves_original_bytes_and_revocation(state):
@@ -60,7 +69,7 @@ def test_plan_then_archive_preserves_original_bytes_and_revocation(state):
     ino=(source/q.PACK).stat().st_ino
     before=q.inspect(root)
     assert before['queue_failed'] and not archive.exists()
-    result=q.quarantine(root,admission=admitted)
+    result=q.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)
     assert result['state']=='QUARANTINED_FAILED' and result['old_cut_revoked']
     assert (archive/q.PACK).read_bytes()==raw and (archive/q.PACK).stat().st_ino==ino
     assert {name:(archive/name).read_bytes() for name in q.FILES}==originals
@@ -68,7 +77,7 @@ def test_plan_then_archive_preserves_original_bytes_and_revocation(state):
     assert q.inspect(root)['archive_complete'] and not q.inspect(root)['queue_failed']
     assert q.envelope(root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/status.json')['status']=='FAIL_CLOSED'
     assert q.envelope(root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'/('cut-'+q.CUT+'.json.gz'),zipped=True)['report']['computed_report']['state']=='PENDING'
-    assert q.quarantine(root,admission=admitted)['state']=='ALREADY_QUARANTINED'
+    assert q.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)['state']=='ALREADY_QUARANTINED'
 
 
 @pytest.mark.parametrize('stage',['archive_'+name for name in q.FILES]+[
@@ -79,12 +88,12 @@ def test_every_crash_boundary_resumes_without_unblocking_early(state,stage):
     def crash(step):
         if step==stage:raise RuntimeError('simulated crash')
     with pytest.raises(RuntimeError,match='simulated crash'):
-        q.quarantine(root,admission=admitted,checkpoint=crash)
+        q.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED,checkpoint=crash)
     intermediate=q.inspect(root)
     if stage!='queue_removed':
         assert intermediate['queue_failed'] and (source/q.QUEUE).exists()
     else:assert intermediate['archive_complete']
-    assert q.quarantine(root,admission=admitted)['old_cut_revoked']
+    assert q.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)['old_cut_revoked']
     assert (archive/q.PACK).read_bytes()==raw
     assert q.envelope(archive/q.RECEIPT,cold=True)['state']=='FAILED'
 
@@ -102,7 +111,7 @@ def test_preflight_rejects_divergence_without_archive(state,change):
     elif change=='status':put(shadow/'status.json',{'status':'HEALTHY','real_orders_sent':0})
     admission=(lambda:{**admitted(),'real_orders_sent':1}) if change=='admission' else admitted
     with pytest.raises((ValueError,FileNotFoundError)):
-        q.quarantine(root,admission=admission)
+        q.quarantine(root,admission=admission,expected_owned_ids=EXPECTED)
     assert not archive.exists()
     assert (source/q.QUEUE).exists()
 
@@ -114,8 +123,54 @@ def test_market_window_change_after_durable_receipt_keeps_failed_queue(state):
     def checkpoint(stage):
         if stage=='receipt_durable':gate['open']=True
     with pytest.raises(ValueError,match='COLD2_QUIESCENCE_REQUIRED'):
-        q.quarantine(root,admission=admission,checkpoint=checkpoint)
+        q.quarantine(root,admission=admission,expected_owned_ids=EXPECTED,checkpoint=checkpoint)
     assert (source/q.QUEUE).exists()
     assert q.inspect(root)['queue_failed']
     gate['open']=False
-    assert q.quarantine(root,admission=admission)['old_cut_revoked']
+    assert q.quarantine(root,admission=admission,expected_owned_ids=EXPECTED)['old_cut_revoked']
+
+
+@pytest.mark.parametrize('key,value',[
+    ('mode','PRODUCTION_LIVE'), ('real_routes','CALLED'),
+    ('order_routing_blocked',False), ('inflight_absent',False),
+    ('critical_healthy',False), ('owned_ids',{'porota_production_observer':'a'*64}),
+    ('owned_stopped',False), ('market_closed',False), ('no_positions',False),
+    ('lock_held',False), ('ppi_watch_accessed',True), ('real_orders_sent',True),
+])
+def test_exact_live_admission_rejects_every_missing_safety_fact(state,key,value):
+    root,source,archive,_=state
+    gate=lambda:{**admitted(),key:value}
+    with pytest.raises(ValueError,match='COLD2_QUIESCENCE_REQUIRED'):
+        q.quarantine(root,admission=gate,expected_owned_ids=EXPECTED)
+    assert not archive.exists() and (source/q.QUEUE).exists()
+
+
+def test_expected_ids_are_mandatory_and_bound_to_exact_containers(state):
+    root,source,archive,_=state
+    with pytest.raises(ValueError,match='COLD2_EXPECTED_OWNED_IDS_REQUIRED'):
+        q.quarantine(root,admission=admitted,expected_owned_ids={})
+    with pytest.raises(ValueError,match='COLD2_QUIESCENCE_REQUIRED'):
+        q.quarantine(root,admission=admitted,expected_owned_ids={**EXPECTED,
+            'porota_production_dashboard':'c'*64})
+    assert not archive.exists() and (source/q.QUEUE).exists()
+
+
+@pytest.mark.parametrize('resource',['disk','inodes','memory'])
+def test_resource_reserve_blocks_before_archive(state,monkeypatch,resource):
+    root,source,archive,_=state
+    if resource=='disk':
+        monkeypatch.setattr(q.shutil,'disk_usage',lambda path:SimpleNamespace(free=q.RESERVE))
+        code='COLD2_DISK_RESERVE_BREACHED'
+    elif resource=='inodes':
+        monkeypatch.setattr(q.os,'statvfs',lambda path:SimpleNamespace(f_favail=15))
+        code='COLD2_INODE_RESERVE_BREACHED'
+    else:
+        original_open=builtins.open
+        def low_mem(path,*args,**kwargs):
+            if str(path)=='/proc/meminfo':return io.StringIO('MemAvailable: 131072 kB\n')
+            return original_open(path,*args,**kwargs)
+        monkeypatch.setattr(builtins,'open',low_mem)
+        code='COLD2_MEMORY_RESERVE_BREACHED'
+    with pytest.raises(ValueError,match=code):
+        q.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)
+    assert not archive.exists() and (source/q.QUEUE).exists()
