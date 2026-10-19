@@ -39,6 +39,11 @@ RUN pip install --no-cache-dir --no-compile -r requirements.lock.txt \
 
 FROM python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9
 
+# Native COLD ABI regression runs inside the frozen image and calls readelf.
+# Keep that inspection tool, without installing the compiler in runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends binutils \
+    && rm -rf /var/lib/apt/lists/*
+
 # Identity travels inside the frozen image to every runtime child. Labels
 # remain useful to the host, but are not visible through os.environ inside
 # the observer, scalping and performance processes.
@@ -69,6 +74,7 @@ from pathlib import Path
 import shutil
 import importlib.metadata
 assert shutil.which('gcc') is None, 'RUNTIME_COMPILER_PRESENT'
+assert shutil.which('readelf') is not None, 'NATIVE_ABI_INSPECTOR_MISSING'
 root = Path('/usr/local/lib/python3.11/site-packages')
 assert not any(root.rglob('*.pyc')), 'RUNTIME_BYTECODE_PRESENT'
 for package in ('chromadb', 'numpy', 'pandas', 'scipy', 'pytest'):
