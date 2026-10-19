@@ -180,7 +180,7 @@ def collect(path):
             report['stage'] = 'VALIDATE_POSITIONS'
             for ordinal, row in enumerate(c.execute('SELECT * FROM paper_positions ORDER BY opened_at,paper_id'), 1):
                 p = dict(row, **defaults)
-                states[p['status'] if p['status'] in {'OPEN','CLOSED'} else 'UNKNOWN'] += 1
+                states[p['status'] if p['status'] in {'OPEN','CLOSED','CANCELLED_ADMIN'} else 'UNKNOWN'] += 1
                 checked += 1
                 try:
                     ledger.partition(c, p)

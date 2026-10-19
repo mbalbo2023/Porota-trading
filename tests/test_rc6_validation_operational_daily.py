@@ -51,3 +51,30 @@ def test_fail_closed_if_real_orders_nonzero(tmp_path):
         assert 'PAPER_SAFETY_INVARIANT_FAILED' in str(exc)
     else:
         raise AssertionError('expected fail closed')
+
+
+def test_admin_cancellation_is_visible_without_a_sale_or_realized_pnl(tmp_path):
+    p=tmp_path/'paper.db'; _db(p)
+    with sqlite3.connect(p) as c:
+        c.execute("INSERT INTO paper_positions VALUES('SUPV','2026-10-19T18:51:58+00:00',"
+                  "'2026-10-19T23:55:00+00:00','CANCELLED_ADMIN',NULL,'ARS')")
+        c.execute("INSERT INTO paper_events VALUES(2,'2026-10-19T23:55:00+00:00',"
+                  "'PAPER_ADMIN_CANCELLED_NO_MARKET','SUPV')")
+    by_day={r['date_ar']:r for r in m.collect(db_path=str(p))['days']}
+    assert by_day['2026-10-19']['opened']==1
+    assert by_day['2026-10-19']['cancelled_admin']==1
+    assert by_day['2026-10-19']['closed']==0
+    assert by_day['2026-10-19']['realized_by_currency']=={}
+    assert by_day['2026-10-19']['event_types']['PAPER_ADMIN_CANCELLED_NO_MARKET']==1
+    assert by_day['2026-09-10']['closed']==1
+
+
+def test_unknown_closed_state_still_fails_closed(tmp_path):
+    p=tmp_path/'paper.db'; _db(p)
+    with sqlite3.connect(p) as c:
+        c.execute("INSERT INTO paper_positions VALUES('X','2026-10-19T18:00:00+00:00',"
+                  "'2026-10-19T23:00:00+00:00','UNRECOGNIZED',NULL,'ARS')")
+    try:m.collect(db_path=str(p))
+    except m.OperationalDailyEvidenceError as exc:
+        assert 'UNKNOWN_POSITION_STATE_WITH_CLOSED_AT' in str(exc)
+    else:raise AssertionError('unknown ledger state must fail closed')
