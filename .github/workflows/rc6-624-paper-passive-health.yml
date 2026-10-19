@@ -83,12 +83,17 @@ jobs:
                   [owned[n]['image'] for n in names]==list(images) and set(all_ids)==set(ids) and
                   all(x['state']=='running' and not x['oom'] and x['restarts']==0 for x in owned.values()))
           paper=(mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0)
+          free=shutil.disk_usage('/').free
+          status=('RED_ID_OR_PAPER' if not stable or not paper else
+                  'RED_RAM_RESERVE' if mem<=128*1024*1024 else
+                  'RED_DEPLOY_SPACE' if free<4923227373 else 'OBSERVED')
           print(json.dumps({'schema':'rc6.issue624.passive-health.v1','time_utc':now.isoformat(),
-              'status':'OBSERVED' if stable and paper else 'RED',
+              'status':status,'cold_ram_reserve_met':mem>128*1024*1024,
+              'prior_deploy_floor_met':free>=4923227373,
               'owned':owned,'mode':mode,'real_orders_sent':orders,'process':process,'session':session,
               'heartbeat_age_seconds':age,'heartbeat_fresh_180s':age is not None and 0<=age<=180,
               'shadow_status':payload.get('status'),'shadow_error_code':code,
-              'disk_free_bytes':shutil.disk_usage('/').free,'inode_free_percent':100*v.f_ffree/v.f_files,
+              'disk_free_bytes':free,'inode_free_percent':100*v.f_ffree/v.f_files,
               'mem_available_bytes':mem,'container_count':len(all_ids),'ppi_watch_accessed':False},
               sort_keys=True,separators=(',',':')))
           PY
