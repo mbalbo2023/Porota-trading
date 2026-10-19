@@ -25,14 +25,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ee938348e6486900dcd595275e25440a3983021c
+          ref: 2601a910f2997bd6a9d59dee81af2c3818c25a6c
       - name: Confirm exact failed promotion and diagnostic source
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = ee938348e6486900dcd595275e25440a3983021c
+          test "$(git rev-parse HEAD)" = 2601a910f2997bd6a9d59dee81af2c3818c25a6c
           python3 - <<'PY'
           import json,os,urllib.request
           req=urllib.request.Request('https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/39180374877',
@@ -221,7 +221,31 @@ jobs:
                   'large_logs':logs,'journal_usage':journal}}
           print(json.dumps(result,sort_keys=True,separators=(',',':')))
           PY
+          python3 - <<'PY' > "$RUNNER_TEMP/rc6_candidate_probe.py"
+          from pathlib import Path
+          cold=Path('scripts/rc6_failed_cold_fix_forward.py').read_text()
+          quiescence=Path('scripts/rc6_deploy_quiescence.py').read_text()
+          print('import json\nfrom pathlib import Path')
+          print('cold_ns={"__name__":"rc6_cold_diagnostic"}')
+          print('exec(compile('+repr(cold)+',"<exact-candidate-cold>","exec"),cold_ns)')
+          print('quiescence_ns={"__name__":"rc6_quiescence_diagnostic"}')
+          print('exec(compile('+repr(quiescence)+',"<exact-candidate-quiescence>","exec"),quiescence_ns)')
+          print("root=Path('/opt/porota-trading')")
+          print("shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'")
+          print("archive=root/'data/deploy/rc6-failed-cold-89e7f81dbc9b4a628bdc30edf86a17b0'")
+          print("proof=cold_ns['checked'](archive,shadow)")
+          print("owned={name:quiescence_ns['inspect'](name) for name in quiescence_ns['OWNED']}")
+          print("next_receipt=quiescence_ns['adopt_stopped_after_failed_install']('2601a910f2997bd6a9d59dee81af2c3818c25a6c',root/'data/deploy',owned)")
+          print("assert proof['pack_sha256']=='16bced23e0c4e5abfed908fb0185639c05e313fa0cbe166a6a9dcf1c0539d30e'")
+          print("assert proof['old_cut_gc_complete'] is True and next_receipt['status']=='DRAINED'")
+          print("print(json.dumps({'candidate':'2601a910f2997bd6a9d59dee81af2c3818c25a6c','cold':proof,'continuation':{'status':next_receipt['status'],'from':next_receipt['fix_forward_from'],'prior_receipt_sha256':next_receipt['prior_receipt_sha256']},'read_only':True},sort_keys=True))")
+          PY
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n python3 -B -' \
+            < "$RUNNER_TEMP/rc6_candidate_probe.py" > evidence/candidate-proof.json
           python -m json.tool evidence/inventory.json >/dev/null
+          python -m json.tool evidence/candidate-proof.json >/dev/null
           python - <<'PY'
           import json
           x=json.load(open('evidence/inventory.json'))
