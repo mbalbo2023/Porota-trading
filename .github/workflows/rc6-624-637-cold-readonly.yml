@@ -122,7 +122,7 @@ jobs:
                   'generation_id':payload.get('generation_id'),
                   'snapshot_id':report.get('snapshot_id'),
                   'state':report.get('state'),
-                  'status':payload.get('status'),
+                  'status':payload.get('status',{}).get('status'),
                   'manifest_generation_id':manifest.get('generation_id'),
                   'manifest_sequence':manifest.get('sequence'),
                   'manifest_sha256':hashlib.sha256(json.dumps(manifest,sort_keys=True,
@@ -149,6 +149,7 @@ jobs:
                   ppi[name]=[subprocess.run(['systemctl',cmd,name],capture_output=True,text=True,timeout=5).stdout.strip()
                              for cmd in ('is-active','is-enabled')]
           mem=next(int(x.split()[1])*1024 for x in Path('/proc/meminfo').read_text().splitlines()
+                   if x.startswith('MemAvailable:'))
           images=[]
           for line in subprocess.check_output(['docker','image','ls','--no-trunc','--format','{{json .}}'],
               text=True,timeout=15).splitlines():
@@ -171,7 +172,6 @@ jobs:
                   'rows':rows}
           usage={str(path):sum(p.stat().st_size for p in Path(path).rglob('*') if p.is_file() and not p.is_symlink())
               for path in ('/var/cache/apt','/var/log/journal') if Path(path).exists()}
-                   if x.startswith('MemAvailable:'))
           result={'schema':'rc6.issue624.cold-dual-namespace-readonly.v1',
               'observed_at':datetime.now(timezone.utc).isoformat(),'read_only':True,
               'source':directory(source),'archive':directory(archive),
