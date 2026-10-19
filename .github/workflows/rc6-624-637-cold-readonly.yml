@@ -172,6 +172,19 @@ jobs:
                   'rows':rows}
           usage={str(path):sum(p.stat().st_size for p in Path(path).rglob('*') if p.is_file() and not p.is_symlink())
               for path in ('/var/cache/apt','/var/log/journal') if Path(path).exists()}
+          disk_df=subprocess.check_output(['docker','system','df','--verbose'],text=True,timeout=30)
+          def du(path):
+              if not Path(path).exists():return None
+              return subprocess.check_output(['du','-sx','-B1',path],text=True,timeout=40).split()[0]
+          selected={p:du(p) for p in ('/tmp','/opt/porota-trading/data/deploy',
+              '/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db',
+              '/var/lib/docker/buildkit','/var/lib/docker/overlay2','/var/cache','/var/log')}
+          tmp=[]
+          for p in Path('/tmp').iterdir():
+              if not p.name.startswith(('porota','rc6')):continue
+              stat=p.lstat()
+              tmp.append({'name':p.name,'mode':oct(stat.st_mode&0o777),
+                  'mtime_ns':stat.st_mtime_ns,'size':du(str(p))})
           result={'schema':'rc6.issue624.cold-dual-namespace-readonly.v1',
               'observed_at':datetime.now(timezone.utc).isoformat(),'read_only':True,
               'source':directory(source),'archive':directory(archive),
@@ -185,7 +198,8 @@ jobs:
                   'porota_production_dashboard','porota_critical_approval_rc6')},
               'ppi_watch':ppi,'disk_free_bytes':shutil.disk_usage('/').free,
               'mem_available_bytes':mem,'disk_inventory':{'images':images,
-                  'containers':all_containers,'backups':backup,'cache_usage':usage}}
+                  'containers':all_containers,'backups':backup,'cache_usage':usage,
+                  'docker_df':disk_df,'selected_du':selected,'tmp':tmp}}
           print(json.dumps(result,sort_keys=True,separators=(',',':')))
           PY
           python -m json.tool evidence/inventory.json >/dev/null
