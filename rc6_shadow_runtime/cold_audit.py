@@ -706,6 +706,14 @@ def _drain(files):
         return receipt
 
 
+def _failure_code(exc):
+    """Persist only bounded internal error identifiers; never exception text."""
+    code = str(exc)
+    if isinstance(exc, ValueError) and re.fullmatch(r'SHADOW_[A-Z0-9_]{1,120}', code):
+        return code
+    return 'UNCLASSIFIED'
+
+
 def drain(files):
     """All failed transitions leave durable first-failure evidence, including
     invalid manifests, missing native APIs and COMPLETE receipt corruption.
@@ -723,7 +731,8 @@ def drain(files):
                     failure = {'state': 'FAILED', 'epoch': EPOCH,
                                'snapshot_id': queue['snapshot_id'],
                                'manifest_sha256': queue.get('manifest_sha256'),
-                               'failed_at': time.time(), 'error_class': type(exc).__name__}
+                               'failed_at': time.time(), 'error_class': type(exc).__name__,
+                               'error_code': _failure_code(exc)}
                     if prior is not None:
                         failure['previous_receipt'] = prior
                     directory.write(name, failure)
