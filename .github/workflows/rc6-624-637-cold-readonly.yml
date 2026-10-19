@@ -136,7 +136,18 @@ jobs:
           con.close()
           qpath=root/'data/deploy/quiescence-38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1.json'
           q=json.loads(qpath.read_text())
+          stop_checks={}
+          for name in ('porota_production_observer','porota_production_dashboard'):
+              docker=json.loads(subprocess.check_output(['docker','inspect',name],text=True,timeout=15))[0]
+              lifecycle={key:docker['State'].get(key) for key in ('Status','StartedAt','FinishedAt','ExitCode','OOMKilled')}
+              proof=q.get('stop_evidence',{}).get(name,{})
+              stop_checks[name]={'same_lifecycle':proof.get('after')==lifecycle,
+                  'classification':proof.get('classification'),
+                  'same_id':q.get('containers',{}).get(name,{}).get('id')==docker['Id'],
+                  'same_image':q.get('containers',{}).get(name,{}).get('image')==docker['Image'],
+                  'exit_code':lifecycle['ExitCode'],'status':lifecycle['Status']}
           q={k:q.get(k) for k in ('status','candidate_sha','installation_started','inflight','real_orders_sent','ppi_watch_accessed','containers')}
+          q['stop_checks']=stop_checks
           current=json.loads((shadow/'CURRENT.json').read_text())['payload']
           current_cut=cut_summary(current['file'])
           old_name='cut-b6687dbca06ab97bc9c93d3f7940c61bba577f68d4ff4b9f887332638c0b7cb8.json.gz'
