@@ -209,12 +209,8 @@ def _receipt(archive):
         if temp.exists():temp.unlink()
 
 
-def quarantine(root, *, admission, checkpoint=lambda step:None):
-    """Only a future authorized workflow may call this under its host lock.
-
-    admission() must verify exact quiescence, stopped owned IDs, CLOSED/no open
-    positions, PAPER/0, PPI preservation, and the caller's exclusive lock.
-    """
+def _admit(root, admission):
+    """Revalidate the live admission and reserve at every destructive boundary."""
     state=admission()
     if (type(state) is not dict or state.get('status') != 'DRAINED' or
             state.get('owned_stopped') is not True or state.get('market_closed') is not True or
@@ -222,30 +218,45 @@ def quarantine(root, *, admission, checkpoint=lambda step:None):
             state.get('ppi_watch_accessed') is not False or
             type(state.get('real_orders_sent')) is not int or state['real_orders_sent'] != 0):
         raise ValueError('COLD2_QUIESCENCE_REQUIRED')
-    before=inspect(root)
     if shutil.disk_usage(root).free < RESERVE+1024**2:
         raise ValueError('COLD2_DISK_RESERVE_BREACHED')
+
+
+def quarantine(root, *, admission, checkpoint=lambda step:None):
+    """Only a future authorized workflow may call this under its host lock.
+
+    admission() must verify exact quiescence, stopped owned IDs, CLOSED/no open
+    positions, PAPER/0, PPI preservation, and the caller's exclusive lock.
+    """
+    _admit(root, admission)
+    before=inspect(root)
     shadow,source,archive=paths(root)
     if before['archive_complete'] and QUEUE not in before['source_names']:
         return {'state':'ALREADY_QUARANTINED','old_cut_revoked':True}
     if not archive.exists():
+        _admit(root, admission)
         archive.mkdir(mode=0o700);fsync_dir(archive.parent)
     for name in FILES:
+        _admit(root, admission)
         src=source/name
         if src.exists():_atomic_copy(src,archive/name)
         else:regular(archive/name)
         checkpoint('archive_'+name)
     src, dst=source/PACK, archive/PACK
     if src.exists():
+        _admit(root, admission)
         if dst.exists():raise ValueError('COLD2_PACK_DUPLICATED')
         os.rename(src,dst);fsync_dir(source);fsync_dir(archive)
     inspect(root);checkpoint('pack_moved')
     for name in (MANIFEST,RECEIPT):
         src=source/name
+        _admit(root, admission)
         if src.exists():regular(src);src.unlink();fsync_dir(source)
         inspect(root);checkpoint('source_'+name+'_removed')
+    _admit(root, admission)
     _receipt(archive);inspect(root);checkpoint('receipt_durable')
     q=source/QUEUE
+    _admit(root, admission)
     if q.exists():regular(q);q.unlink();fsync_dir(source)
     final=inspect(root)
     if not final['archive_complete'] or final['queue_failed']:
