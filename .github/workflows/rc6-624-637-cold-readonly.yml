@@ -149,6 +149,28 @@ jobs:
                   ppi[name]=[subprocess.run(['systemctl',cmd,name],capture_output=True,text=True,timeout=5).stdout.strip()
                              for cmd in ('is-active','is-enabled')]
           mem=next(int(x.split()[1])*1024 for x in Path('/proc/meminfo').read_text().splitlines()
+          images=[]
+          for line in subprocess.check_output(['docker','image','ls','--no-trunc','--format','{{json .}}'],
+              text=True,timeout=15).splitlines():
+              row=json.loads(line)
+              images.append({k:row.get(k) for k in ('Repository','Tag','ID','Size')})
+          all_containers=[]
+          for cid in subprocess.check_output(['docker','ps','-aq','--no-trunc'],text=True,timeout=15).splitlines():
+              row=json.loads(subprocess.check_output(['docker','inspect',cid],text=True,timeout=15))[0]
+              all_containers.append({'id':row['Id'],'name':row['Name'],'image':row['Image'],
+                  'status':row['State']['Status']})
+          policy=json.loads((root/'ops/policy/rc6-disk-housekeeping-v1.json').read_text())
+          backup={}
+          for group,cfg in policy['backups'].items():
+              if group=='protected_paths':continue
+              base=Path(cfg['root'])
+              rows=sorted(({'name':p.name,'size':p.stat().st_size,'mtime_ns':p.stat().st_mtime_ns}
+                  for p in base.glob(cfg['glob']) if p.is_file() and not p.is_symlink()),
+                  key=lambda x:(x['mtime_ns'],x['name']),reverse=True)
+              backup[group]={'keep_newest':cfg['keep_newest'],'pinned_names':cfg.get('pinned_names',[]),
+                  'rows':rows}
+          usage={str(path):sum(p.stat().st_size for p in Path(path).rglob('*') if p.is_file() and not p.is_symlink())
+              for path in ('/var/cache/apt','/var/log/journal') if Path(path).exists()}
                    if x.startswith('MemAvailable:'))
           result={'schema':'rc6.issue624.cold-dual-namespace-readonly.v1',
               'observed_at':datetime.now(timezone.utc).isoformat(),'read_only':True,
@@ -162,7 +184,8 @@ jobs:
               'containers':{n:inspect(n) for n in ('porota_production_observer',
                   'porota_production_dashboard','porota_critical_approval_rc6')},
               'ppi_watch':ppi,'disk_free_bytes':shutil.disk_usage('/').free,
-              'mem_available_bytes':mem}
+              'mem_available_bytes':mem,'disk_inventory':{'images':images,
+                  'containers':all_containers,'backups':backup,'cache_usage':usage}}
           print(json.dumps(result,sort_keys=True,separators=(',',':')))
           PY
           python -m json.tool evidence/inventory.json >/dev/null
