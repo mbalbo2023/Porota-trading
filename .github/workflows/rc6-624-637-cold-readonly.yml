@@ -261,6 +261,54 @@ jobs:
           print('CONTAINERS='+','.join(n+':'+v['status'] for n,v in x['containers'].items()))
           print('DISK_FREE_BYTES='+str(x['disk_free_bytes']))
           PY
+      - name: Inspect preserved historical cold exception without changing host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/key"' EXIT
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \\
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \\
+            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n python3 -B -' <<'PY' > evidence/cold-historical-logs.json
+          import json,re,subprocess
+          from datetime import datetime,timezone
+          from pathlib import Path
+          start='2026-10-18 22:24:40 UTC'
+          end='2026-10-18 22:25:25 UTC'
+          pattern=re.compile(r'SHADOW_COLD_[A-Z0-9_]+|GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS')
+          result={'schema':'rc6.issue624.cold2-historical-readonly.v1',
+                  'observed_at':datetime.now(timezone.utc).isoformat(),
+                  'window_utc':[start,end],'read_only':True,'sources':{}}
+          commands={'journal':['journalctl','--since',start,'--until',end,'-o','short-iso-precise','--no-pager'],
+                    'observer':['docker','logs','--timestamps','--since','2026-10-18T22:24:40Z',
+                                '--until','2026-10-18T22:25:25Z','porota_production_observer'],
+                    'dashboard':['docker','logs','--timestamps','--since','2026-10-18T22:24:40Z',
+                                 '--until','2026-10-18T22:25:25Z','porota_production_dashboard']}
+          for name,cmd in commands.items():
+              try:
+                  proc=subprocess.run(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                                      timeout=25,check=False)
+                  raw=proc.stdout+proc.stderr
+                  result['sources'][name]={'exit_code':proc.returncode,'bytes':len(raw),
+                      'lines':len(raw.splitlines()),'codes':sorted(set(pattern.findall(
+                          raw.decode('utf-8','replace')))),'output_bounded':len(raw)<=8*1024*1024}
+              except (subprocess.TimeoutExpired,OSError) as exc:
+                  result['sources'][name]={'error_class':type(exc).__name__}
+          print(json.dumps(result,sort_keys=True))
+          PY
+          python -m json.tool evidence/cold-historical-logs.json >/dev/null
+          python - <<'PY'
+          import json
+          x=json.load(open('evidence/cold-historical-logs.json'))
+          assert x['read_only'] and x['schema']=='rc6.issue624.cold2-historical-readonly.v1'
+          print('COLD2_HISTORICAL_READONLY=GREEN')
+          print('HISTORICAL_CODES='+json.dumps({k:v.get('codes',[]) for k,v in x['sources'].items()},sort_keys=True))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
