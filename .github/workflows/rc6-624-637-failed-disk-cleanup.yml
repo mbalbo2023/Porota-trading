@@ -139,6 +139,41 @@ jobs:
                   'top_cpu_lifetime':sorted(rows,key=lambda x:x['cpu_lifetime_percent'],reverse=True)[:15],
                   'owned_containers':containers,'shallow_regular_files':direct,
                   'real_orders_sent':0,'ppi_watch_accessed':False}
+          # Link the largest Python child to its supervised role without argv/env.
+          health=Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/runtime-health.json')
+          if health.is_file() and not health.is_symlink() and health.stat().st_size<=32768:
+              children=json.loads(health.read_text()).get('children',{})
+              result['child_roles']={name:{k:row.get(k) for k in ('pid','state','restarts')}
+                  for name,row in children.items() if isinstance(row,dict)}
+          else:result['child_roles']={'status':'UNAVAILABLE'}
+          # One 1-second CPU delta; ps %cpu is a lifetime average.
+          watched={p['pid'] for p in result['top_rss'][:15]}
+          def cpu_ticks(pid):
+              raw=read('/proc/'+str(pid)+'/stat',4096)
+              tail=raw.rsplit(')',1)
+              if len(tail)!=2:return None
+              f=tail[1].split()
+              return int(f[11])+int(f[12]) if len(f)>12 else None
+          before={pid:cpu_ticks(pid) for pid in watched}
+          time.sleep(1)
+          after={pid:cpu_ticks(pid) for pid in watched}
+          hz=os.sysconf('SC_CLK_TCK')
+          result['one_second_cpu_percent']=[
+              {'pid':pid,'cpu_percent_one_core':round((after[pid]-before[pid])*100/hz,1)}
+              for pid in watched if before[pid] is not None and after[pid] is not None
+              and after[pid]>=before[pid]]
+          result['one_second_cpu_percent'].sort(key=lambda row:row['cpu_percent_one_core'],reverse=True)
+          details={}
+          for row in result['top_rss'][:5]:
+              data=read('/proc/'+str(row['pid'])+'/smaps_rollup',8192)
+              vals={}
+              for line in data.splitlines():
+                  if ':' not in line:continue
+                  k,v=line.split(':',1)
+                  if k in ('Rss','Pss','Private_Dirty','Anonymous','Swap'):
+                      vals[k]=int(v.strip().split()[0])*1024
+              details[str(row['pid'])]=vals
+          result['top_memory_breakdown_bytes']=details
           print(json.dumps(result,sort_keys=True,separators=(',',':')))
           PY
           python3 - <<'PY'
