@@ -309,7 +309,7 @@ jobs:
           print('COLD2_HISTORICAL_READONLY=GREEN')
           print('HISTORICAL_CODES='+json.dumps({k:v.get('codes',[]) for k,v in x['sources'].items()},sort_keys=True))
           PY
-      - name: Profile sealed cold2 frame integrity read only
+      - name: Measure cold2 original full report expansion without writing
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -322,101 +322,62 @@ jobs:
           mkdir -p evidence
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n nice -n 10 timeout 140 python3 -B -' <<'PY' > evidence/cold2-frame-profile.json
-          import collections,hashlib,json,os,shutil,sqlite3,struct,time
+            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n nice -n 10 timeout 80 python3 -B -' <<'PY' > evidence/cold2-expansion.json
+          import collections,json,shutil,sqlite3,struct
           from pathlib import Path
           root=Path('/opt/porota-trading')
           shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
           ident='7dc99ccd8f7c47849ca3705ae1cb2c49'
           cold=shadow/'cold-audit'
-          def payload(name):
-              x=json.loads((cold/name).read_text())
-              raw=json.dumps(x['payload'],sort_keys=True,separators=(',',':'),
-                             ensure_ascii=True,allow_nan=False,default=str).encode('ascii')
-              assert hashlib.sha256(raw).hexdigest()==x['sha256']
-              return x['payload']
-          manifest=payload('manifest-'+ident+'.json')
-          receipt=payload('receipt-'+ident+'.json')
-          queue=payload('queue.json')
-          assert manifest['snapshot_id']==receipt['snapshot_id']==queue['snapshot_id']==ident
-          assert receipt['state']==queue['state']=='FAILED'
-          assert manifest['pack_bytes']==211783290
-          assert shutil.disk_usage('/').free>2*1024**3
-          available=next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines()
-                         if line.startswith('MemAvailable:'))
-          assert available>200*1024**2
+          manifest=json.loads((cold/('manifest-'+ident+'.json')).read_text())['payload']
+          queue=json.loads((cold/'queue.json').read_text())['payload']
+          receipt=json.loads((cold/('receipt-'+ident+'.json')).read_text())['payload']
+          assert queue['state']==receipt['state']=='FAILED'
+          assert queue['snapshot_id']==receipt['snapshot_id']==manifest['snapshot_id']==ident
           con=sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True)
           con.execute('PRAGMA query_only=ON')
           mode,orders=con.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
           con.close()
           assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
-          pack=cold/(ident+'.pack')
-          info=pack.lstat()
-          assert info.st_nlink==1 and [info.st_dev,info.st_ino,info.st_size,
-                                      info.st_mtime_ns,info.st_ctime_ns]==manifest['pack_identity']
-          frame=struct.Struct('!cI')
-          reference=struct.Struct('!QQ32s')
-          counts=collections.Counter()
-          summaries=[]
-          start=time.monotonic()
-          try:
-              with pack.open('rb',buffering=0) as stream:
-                  for seg in manifest['segments']:
-                      pos,end=seg['offset'],seg['offset']+seg['length']
-                      stream.seek(pos)
-                      hashed=hashlib.sha256()
-                      local=collections.Counter()
-                      while pos<end:
-                          head=stream.read(frame.size)
-                          if len(head)!=frame.size:raise ValueError('SHADOW_COLD_HEADER_TRUNCATED')
-                          kind,size=frame.unpack(head)
-                          if not 0<size<=131072 or pos+frame.size+32+size>end:
-                              raise ValueError('SHADOW_COLD_FRAME_BOUND')
-                          expected=stream.read(32)
-                          raw=stream.read(size)
-                          if len(raw)!=size or hashlib.sha256(raw).digest()!=expected:
-                              raise ValueError('SHADOW_COLD_FRAME_HASH')
-                          if kind==b'R':
-                              if size!=reference.size:raise ValueError('SHADOW_COLD_REFERENCE_SHAPE')
-                              offset,length,digest=reference.unpack(raw)
-                              if offset+length>seg['offset'] or not any(
-                                  x['offset']==offset and x['length']==length and
-                                  x['sha256']==digest.hex() for x in manifest['segments']):
-                                  raise ValueError('SHADOW_COLD_REFERENCE_NOT_BACKWARD')
-                          elif kind==b'J':
-                              if not raw.isascii():raise ValueError('SHADOW_COLD_LITERAL_ASCII')
-                          elif kind not in (b'P',b'A'):
-                              raise ValueError('SHADOW_COLD_FRAME_TYPE')
-                          hashed.update(head);hashed.update(expected);hashed.update(raw)
-                          pos+=frame.size+32+size
-                          local[kind.decode('ascii')]+=1
-                      if hashed.hexdigest()!=seg['sha256']:
-                          raise ValueError('SHADOW_COLD_SEGMENT_HASH')
-                      counts.update(local)
-                      summaries.append({'role':seg['role'],'frames':sum(local.values()),
-                                        'kinds':dict(local),'bytes':seg['length'],'hash_valid':True})
-              error=None
-          except Exception as exc:
-              error={'class':type(exc).__name__,'code':str(exc) if str(exc).startswith('SHADOW_COLD_') else 'UNCLASSIFIED'}
-          reports=[]
-          for p in shadow.glob('computed-*.json.gz'):
-              stat=p.lstat()
-              reports.append({'name':p.name,'bytes':stat.st_size,'mtime_ns':stat.st_mtime_ns,
-                              'ctime_ns':stat.st_ctime_ns})
-          print(json.dumps({'schema':'rc6.issue624.cold2-frame-profile.v1','read_only':True,
-              'snapshot_id':ident,'error':error,'segments':summaries,'frame_kinds':dict(counts),
-              'seconds':round(time.monotonic()-start,6),'computed_reports':sorted(reports,key=lambda x:x['mtime_ns']),
-              'disk_free_bytes':shutil.disk_usage('/').free,'mem_available_before':available,
-              'mode':mode,'real_orders_sent':orders},sort_keys=True))
+          assert shutil.disk_usage('/').free>2*1024**3
+          desc=manifest['root']; targets={(s['offset'],s['length'],s['sha256']):s['role'] for s in manifest['segments']}
+          refs=collections.Counter()
+          kinds=collections.Counter()
+          header=struct.Struct('!cI');reference=struct.Struct('!QQ32s')
+          with (cold/(ident+'.pack')).open('rb',buffering=0) as stream:
+              stream.seek(desc['offset'])
+              remaining=desc['length']
+              while remaining:
+                  h=stream.read(header.size)
+                  kind,size=header.unpack(h)
+                  assert 0<size<=131072 and header.size+32+size<=remaining
+                  stream.read(32);raw=stream.read(size)
+                  if kind==b'R':
+                      offset,length,digest=reference.unpack(raw)
+                      refs[targets[(offset,length,digest.hex())]]+=1
+                  kinds[kind.decode('ascii')]+=1
+                  remaining-=header.size+32+size
+          # Previous exact frame profile 39197433904 certified all segment/frame hashes.
+          # J byte counts are derived from its per-segment frame counts (37 bytes/frame).
+          profile={'preopen_rows':330,'engines':971,'source_reports':1,'events':1,
+                   'family_routing':1380,'catalog_ready':25,'full_computed_root':542}
+          jbytes={s['role']:s['length']-37*profile[s['role']] for s in manifest['segments']}
+          jbytes['full_computed_root']-=48*kinds['R']
+          expanded=jbytes['full_computed_root']+sum(jbytes[k]*v for k,v in refs.items())
+          print(json.dumps({'schema':'rc6.issue624.cold2-expansion.v1','read_only':True,
+              'snapshot_id':ident,'references':dict(refs),'root_kinds':dict(kinds),
+              'expanded_raw_bytes_estimate':expanded,'raw_limit_bytes':512*1024**2,
+              'mode':mode,'real_orders_sent':orders,'disk_free_bytes':shutil.disk_usage('/').free},
+              sort_keys=True))
           PY
-          python -m json.tool evidence/cold2-frame-profile.json >/dev/null
+          python -m json.tool evidence/cold2-expansion.json >/dev/null
           python - <<'PY'
           import json
-          x=json.load(open('evidence/cold2-frame-profile.json'))
-          assert x['read_only'] and x['real_orders_sent']==0 and x['mode']=='PRODUCTION_PAPER'
-          print('COLD2_FRAME_PROFILE='+('RED' if x['error'] else 'GREEN')+
-                '|kinds='+json.dumps(x['frame_kinds'],sort_keys=True)+
-                '|seconds='+str(x['seconds']))
+          x=json.load(open('evidence/cold2-expansion.json'))
+          assert x['read_only'] and x['real_orders_sent']==0
+          print('COLD2_EXPANDED_BYTES='+str(x['expanded_raw_bytes_estimate'])+
+                '|RAW_LIMIT='+str(x['raw_limit_bytes'])+
+                '|REFERENCES='+json.dumps(x['references'],sort_keys=True))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
