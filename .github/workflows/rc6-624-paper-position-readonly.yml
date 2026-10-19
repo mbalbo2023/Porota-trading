@@ -40,9 +40,16 @@ jobs:
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n timeout 25 python3 -B -' <<'PY'
-          import datetime as dt, json, os, sqlite3, time
+          import datetime as dt, json, os, sqlite3, subprocess, time
           from pathlib import Path
 
+          # Docker metadata only: print an allowlist of clock settings, never Env.
+          raw=subprocess.check_output(['docker','inspect','--format','{{json .Config.Env}}',
+                                       'porota_production_observer'],text=True,timeout=5)
+          env={k:v for k,v in (item.split('=',1) for item in json.loads(raw) if '=' in item)
+               if k in {'MARKET_OPEN_HOUR','MARKET_OPEN_MINUTE','MARKET_CLOSE_HOUR',
+                        'MARKET_CLOSE_MINUTE','PAPER_EOD_POLICY'}}
+          print('RC6_624_CLOCK_ALLOWLIST='+json.dumps(env,sort_keys=True),flush=True)
           mem = next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines()
                      if line.startswith('MemAvailable:'))
           io = next(float(s.split('=',1)[1]) for s in Path('/proc/pressure/io').read_text().splitlines()[0].split()
