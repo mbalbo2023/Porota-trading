@@ -181,7 +181,7 @@ jobs:
           x=json.load(open('evidence/cleanup.json'))
           assert x['status']=='READ_ONLY'
           print('RC6_624_CAPACITY_INVENTORY=READ_ONLY|before='+str(x['before']['free'])+
-              '|after='+str(x['after']['free'])+'|recovered='+str(x['space_recovered']))
+              '|after='+str(x['after']['free'])+'|recovered='+str(x['after']['free']-x['before']['free']))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
