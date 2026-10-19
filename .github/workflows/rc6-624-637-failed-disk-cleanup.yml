@@ -105,11 +105,16 @@ jobs:
                   mode,orders,process,session,stamp=connection.execute(
                       'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at '
                       'FROM observer_state WHERE id=1').fetchone()
+                  open_contracts={table:int(connection.execute(
+                      'SELECT EXISTS(SELECT 1 FROM '+table+' WHERE status=? LIMIT 1)',(state,)).fetchone()[0])
+                      for table,state in (('paper_positions','OPEN'),('paper_future_positions','ACTIVE'),
+                                          ('paper_cauciones','OPEN'))}
               age=(dt.datetime.now(dt.timezone.utc)-dt.datetime.fromisoformat(stamp)).total_seconds()
               print('RC6_624_ADMISSION_STATE='+json.dumps({'mode':mode,'orders':orders,
-                    'process':process,'session':session,'heartbeat_age_seconds':round(age,2)},sort_keys=True),file=sys.stderr)
+                    'process':process,'session':session,'heartbeat_age_seconds':round(age,2),
+                    'open_contracts':open_contracts},sort_keys=True),file=sys.stderr)
               assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
-              assert process in ('RUNNING','WAITING_MARKET','DEGRADED')
+              assert process=='WAITING_MARKET' and all(count==0 for count in open_contracts.values())
               assert session in ('MARKET_CLOSED','WAITING_MARKET') and 0<=age<=180
               qpath=root/'data/deploy'/('quiescence-'+candidate+'.json')
               assert not qpath.is_symlink()
