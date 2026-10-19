@@ -102,6 +102,7 @@ def test_expired_original_input_is_failed_and_never_replaced_by_probe(tmp_path,m
             assert first['state']=='FAILED'
             assert first['error_class']=='ValueError'
             assert first['error_code']=='SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED'
+            assert first['error_phase']=='INPUT_CHECK'
         with pytest.raises(ValueError,match='REVOKED'):c.resolve(files,ref)
         for action in (lambda:c.drain(files),lambda:seal(files)):
             with pytest.raises(ValueError,match='FIX_FORWARD'):action()
@@ -166,10 +167,30 @@ def test_failed_receipt_retains_only_safe_first_reason(tmp_path,monkeypatch):
             first=directory.read('receipt-'+ref['snapshot_id']+'.json')
             assert first['error_class']=='ValueError'
             assert first['error_code']=='UNCLASSIFIED'
+            assert first['error_phase']=='INPUT_CHECK'
             assert secret not in (directory.root/('receipt-'+ref['snapshot_id']+'.json')).read_text()
         with pytest.raises(ValueError,match='FIX_FORWARD'):c.drain(files)
         with c.Directory(files) as directory:
             assert directory.read('receipt-'+ref['snapshot_id']+'.json')==first
+
+
+
+def test_streamed_report_failure_records_phase_without_secret_and_keeps_pack(tmp_path,monkeypatch):
+    secret='broker-account-private-value'
+    with p.EvidenceFiles(tmp_path/'shadow') as files:
+        ref=seal(files)
+        monkeypatch.setattr(files,'write_streamed_report',
+            lambda *a,**k:(_ for _ in ()).throw(ValueError(secret)))
+        with pytest.raises(ValueError,match='private-value'):c.drain(files)
+        with c.Directory(files) as directory:
+            receipt=directory.read('receipt-'+ref['snapshot_id']+'.json')
+            assert receipt['state']=='FAILED'
+            assert receipt['error_class']=='ValueError'
+            assert receipt['error_code']=='UNCLASSIFIED'
+            assert receipt['error_phase']=='REPORT_WRITE'
+            assert secret not in (directory.root/('receipt-'+ref['snapshot_id']+'.json')).read_text()
+            assert (directory.root/(ref['snapshot_id']+'.pack')).exists()
+        with pytest.raises(ValueError,match='REVOKED'):c.resolve(files,ref)
 
 
 def test_reserve_failure_rejects_before_complete_and_keeps_original_snapshot(tmp_path,monkeypatch):
