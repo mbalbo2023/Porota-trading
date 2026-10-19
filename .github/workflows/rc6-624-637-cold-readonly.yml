@@ -194,7 +194,9 @@ jobs:
               (cold/('manifest-'+ident+'.json')).write_text(json.dumps(envelope(manifest),sort_keys=True,separators=(',',':')))
               queue={'state':'PENDING','snapshot_id':ident,'manifest_sha256':p.digest(manifest)}
               (cold/'queue.json').write_text(json.dumps(envelope(queue),sort_keys=True,separators=(',',':')))
-              for file in cold.iterdir():file.chmod(0o600)
+              for file in cold.iterdir():
+                  if file!=pack:file.chmod(0o600)
+              assert c._identity(pack.stat())==manifest['pack_identity']
               stage=['admission'];orig=c._expand
               def expand(*a,**k):
                   stage[0]='expand';yield from orig(*a,**k)
