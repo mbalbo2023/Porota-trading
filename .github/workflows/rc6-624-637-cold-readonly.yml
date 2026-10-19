@@ -1,4 +1,4 @@
-name: RC6 624 PR637 failed COLD archive read-only inventory
+name: RC6 624 PR641 post-RED native generation read-only inventory
 
 on:
   pull_request:
@@ -35,12 +35,12 @@ jobs:
           test "$(git rev-parse HEAD)" = 2601a910f2997bd6a9d59dee81af2c3818c25a6c
           python3 - <<'PY'
           import json,os,urllib.request
-          req=urllib.request.Request('https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/39180374877',
+          req=urllib.request.Request('https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/39185545107',
               headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
           with urllib.request.urlopen(req,timeout=15) as response: run=json.load(response)
-          assert run['head_sha']=='ee938348e6486900dcd595275e25440a3983021c'
+          assert run['head_sha']=='d52e45fe85ed184a76d35120ca543f5d63f38b2c'
           assert run['status']=='completed' and run['conclusion']=='failure'
-          print('RC6_637_EXACT_RED_DEPLOY=GREEN')
+          print('RC6_641_EXACT_RED_DEPLOY=GREEN')
           PY
       - name: Inspect only exact namespace and current safety
         shell: bash
@@ -105,7 +105,7 @@ jobs:
               payload=value['payload']
               encoded=json.dumps(payload,sort_keys=True,separators=(',',':'),default=str,
                   ensure_ascii=True,allow_nan=False).encode('ascii')
-              return {'valid':hashlib.sha256(encoded).hexdigest()==value['digest'],
+              return {'valid':hashlib.sha256(encoded).hexdigest()==value['digest'],'payload':payload,
                   'generation_id':payload.get('generation_id'),'file':payload.get('file'),
                   'status':payload.get('status'),'real_orders_sent':payload.get('real_orders_sent')}
           def cut_summary(name):
@@ -134,7 +134,7 @@ jobs:
               'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1').fetchone()
           assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
           con.close()
-          qpath=root/'data/deploy/quiescence-38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1.json'
+          qpath=root/'data/deploy/quiescence-2601a910f2997bd6a9d59dee81af2c3818c25a6c.json'
           q=json.loads(qpath.read_text())
           stop_checks={}
           for name in ('porota_production_observer','porota_production_dashboard'):
@@ -208,6 +208,7 @@ jobs:
               'source':directory(source),'archive':directory(archive),
               'live':{'pointer':envelope(shadow/'CURRENT.json'),
                   'status':envelope(shadow/'status.json'),
+                  'publication':envelope(shadow/'publication.json'),
                   'pointer_payload':{k:current.get(k) for k in ('generation_id','file','sequence','manifest_sha256')},
                   'current_cut':current_cut,'old_cut':old_cut},
               'quiescence':q,'observer_db':{'mode':mode,'real_orders_sent':orders,'process_state':process,
@@ -221,36 +222,12 @@ jobs:
                   'large_logs':logs,'journal_usage':journal}}
           print(json.dumps(result,sort_keys=True,separators=(',',':')))
           PY
-          python3 - <<'PY' > "$RUNNER_TEMP/rc6_candidate_probe.py"
-          from pathlib import Path
-          cold=Path('scripts/rc6_failed_cold_fix_forward.py').read_text()
-          quiescence=Path('scripts/rc6_deploy_quiescence.py').read_text()
-          print('import json\nfrom pathlib import Path')
-          print('cold_ns={"__name__":"rc6_cold_diagnostic"}')
-          print('exec(compile('+repr(cold)+',"<exact-candidate-cold>","exec"),cold_ns)')
-          print('quiescence_ns={"__name__":"rc6_quiescence_diagnostic"}')
-          print('exec(compile('+repr(quiescence)+',"<exact-candidate-quiescence>","exec"),quiescence_ns)')
-          print("root=Path('/opt/porota-trading')")
-          print("shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'")
-          print("archive=root/'data/deploy/rc6-failed-cold-89e7f81dbc9b4a628bdc30edf86a17b0'")
-          print("proof=cold_ns['checked'](archive,shadow)")
-          print("owned={name:quiescence_ns['inspect'](name) for name in quiescence_ns['OWNED']}")
-          print("next_receipt=quiescence_ns['adopt_stopped_after_failed_install']('2601a910f2997bd6a9d59dee81af2c3818c25a6c',root/'data/deploy',owned)")
-          print("assert proof['pack_sha256']=='16bced23e0c4e5abfed908fb0185639c05e313fa0cbe166a6a9dcf1c0539d30e'")
-          print("assert proof['old_cut_gc_complete'] is True and next_receipt['status']=='DRAINED'")
-          print("print(json.dumps({'candidate':'2601a910f2997bd6a9d59dee81af2c3818c25a6c','cold':proof,'continuation':{'status':next_receipt['status'],'from':next_receipt['fix_forward_from'],'prior_receipt_sha256':next_receipt['prior_receipt_sha256']},'read_only':True},sort_keys=True))")
-          PY
-          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n python3 -B -' \
-            < "$RUNNER_TEMP/rc6_candidate_probe.py" > evidence/candidate-proof.json
           python -m json.tool evidence/inventory.json >/dev/null
-          python -m json.tool evidence/candidate-proof.json >/dev/null
           python - <<'PY'
           import json
           x=json.load(open('evidence/inventory.json'))
           assert x['read_only'] and x['observer_db']['mode']=='PRODUCTION_PAPER' and x['observer_db']['real_orders_sent']==0
-          print('RC6_637_DUAL_NAMESPACE_READONLY=GREEN')
+          print('RC6_641_POSTRED_READONLY=GREEN')
           print('SOURCE_PRESENT='+str(x['source']['exists'])+'|ARCHIVE_PRESENT='+str(x['archive']['exists']))
           print('CONTAINERS='+','.join(n+':'+v['status'] for n,v in x['containers'].items()))
           print('DISK_FREE_BYTES='+str(x['disk_free_bytes']))
@@ -258,7 +235,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-624-637-cold-inventory-${{ github.run_id }}
+          name: rc6-624-641-postred-inventory-${{ github.run_id }}
           path: evidence
           if-no-files-found: warn
           retention-days: 14
