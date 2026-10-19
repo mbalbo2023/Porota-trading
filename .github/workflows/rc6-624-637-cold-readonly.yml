@@ -1,4 +1,4 @@
-name: RC6 624 PR641 post-RED native generation read-only inventory
+name: RC6 624 COLD original-byte forensic replay
 
 on:
   pull_request:
@@ -7,17 +7,19 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: rc6-unified-paper-deploy
   cancel-in-progress: false
 
 jobs:
-  inventory:
+  replay:
     if: github.head_ref == 'diagnostic/rc6-624-637-cold-readonly-20261019'
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 20
     env:
+      GH_TOKEN: ${{ github.token }}
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
@@ -25,366 +27,200 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 2601a910f2997bd6a9d59dee81af2c3818c25a6c
-      - name: Confirm exact failed promotion and diagnostic source
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
+          ref: 97361c1ce3476465d267e9216e6bcc065696e72f
+      - name: Bind exact source and historical RED
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = 2601a910f2997bd6a9d59dee81af2c3818c25a6c
+          test "$(git rev-parse HEAD)" = 97361c1ce3476465d267e9216e6bcc065696e72f
           python3 - <<'PY'
           import json,os,urllib.request
-          req=urllib.request.Request('https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/39185545107',
-              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
-          with urllib.request.urlopen(req,timeout=15) as response: run=json.load(response)
-          assert run['head_sha']=='d52e45fe85ed184a76d35120ca543f5d63f38b2c'
+          root='https://api.github.com/repos/mbalbo2023/Porota-trading'
+          def get(path):
+              req=urllib.request.Request(root+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN']})
+              with urllib.request.urlopen(req,timeout=20) as stream:return json.load(stream)
+          assert get('/branches/deploy/rc6-pr69-isolated-20260915')['commit']['sha']=='d52e45fe85ed184a76d35120ca543f5d63f38b2c'
+          run=get('/actions/runs/39185545107')
           assert run['status']=='completed' and run['conclusion']=='failure'
-          print('RC6_641_EXACT_RED_DEPLOY=GREEN')
+          assert run['head_sha']=='d52e45fe85ed184a76d35120ca543f5d63f38b2c'
+          print('EXACT_PRODUCT_AND_RED=GREEN')
           PY
-      - name: Inspect only exact namespace and current safety
+      - name: Read original evidence into ephemeral runner, without host writes
         shell: bash
         run: |
           set -Eeuo pipefail
-          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
-          install -m700 -d "$HOME/.ssh"
+          install -m700 -d "$HOME/.ssh" "$RUNNER_TEMP/cold-original"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          unset SSH_KEY KNOWN_HOSTS
           trap 'rm -f "$HOME/.ssh/key"' EXIT
-          mkdir -p evidence
-          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n python3 -B -' <<'PY' > evidence/inventory.json
-          import hashlib,json,os,shutil,sqlite3,subprocess,time
-          from datetime import datetime,timezone
+          remote() { ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15 "$DO_USER@$DO_HOST" "$@"; }
+          remote 'sudo -n python3 -B -' <<'PY' > "$RUNNER_TEMP/cold-original/meta.json"
+          import hashlib,json,os,shutil,sqlite3,stat
           from pathlib import Path
           root=Path('/opt/porota-trading')
-          ident='89e7f81dbc9b4a628bdc30edf86a17b0'
-          source=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/cold-audit'
-          archive=root/'data/deploy'/('rc6-failed-cold-'+ident)
-          shadow=source.parent
-          names={ident+'.pack','manifest-'+ident+'.json','receipt-'+ident+'.json','queue.json'}
-          def sha(path):
-              h=hashlib.sha256()
-              with path.open('rb') as f:
-                  for chunk in iter(lambda:f.read(1024*1024),b''):h.update(chunk)
-              return h.hexdigest()
-          def directory(path):
-              out={'exists':path.exists(),'symlink':path.is_symlink()}
-              if not path.is_dir() or path.is_symlink():return out
-              actual={p.name for p in path.iterdir()}
-              out['names']=sorted(actual)
-              out['mode']=oct(path.lstat().st_mode&0o777)
-              out['exact_expected_names']=actual==names
-              out['files']={}
-              for name in sorted(actual&names):
-                  p=path/name
-                  st=p.lstat()
-                  out['files'][name]={'bytes':st.st_size,'sha256':sha(p) if p.is_file() and not p.is_symlink() else None,
-                      'inode':st.st_ino,'device':st.st_dev,'mtime_ns':st.st_mtime_ns,'ctime_ns':st.st_ctime_ns,
-                      'mode':oct(st.st_mode&0o777),'nlink':st.st_nlink}
-              qpath=path/'queue.json'
-              if qpath.is_file() and not qpath.is_symlink() and qpath.stat().st_size<=256*1024:
-                  envelope=json.loads(qpath.read_text())
-                  payload=envelope.get('payload',{})
-                  encoded=json.dumps(payload,sort_keys=True,separators=(',',':'),default=str,
-                      ensure_ascii=True,allow_nan=False).encode('ascii')
-                  out['queue']={'envelope_valid':hashlib.sha256(encoded).hexdigest()==envelope.get('sha256'),
-                      'snapshot_id':payload.get('snapshot_id'),'state':payload.get('state')}
-              return out
-          def inspect(name):
-              x=json.loads(subprocess.check_output(['docker','inspect',name],text=True,timeout=15))[0]
-              return {'id':x['Id'],'image':x['Image'],'status':x['State']['Status'],
-                  'health':(x['State'].get('Health') or {}).get('Status'),'restarts':x['RestartCount'],
-                  'oom':x['State']['OOMKilled']}
-          def envelope(path):
-              raw=path.read_bytes()
-              assert len(raw)<=256*1024
-              value=json.loads(raw)
-              payload=value['payload']
-              encoded=json.dumps(payload,sort_keys=True,separators=(',',':'),default=str,
-                  ensure_ascii=True,allow_nan=False).encode('ascii')
-              return {'valid':hashlib.sha256(encoded).hexdigest()==value['digest'],'payload':payload,
-                  'generation_id':payload.get('generation_id'),'file':payload.get('file'),
-                  'status':payload.get('status'),'real_orders_sent':payload.get('real_orders_sent')}
-          def cut_summary(name):
-              import gzip
-              assert name.startswith('cut-') and name.endswith('.json.gz') and '/' not in name
-              with gzip.open(shadow/name,'rb') as stream:raw=stream.read(4*1024*1024+1)
-              assert len(raw)<=4*1024*1024
-              value=json.loads(raw);payload=value['payload']
-              encoded=json.dumps(payload,sort_keys=True,separators=(',',':'),default=str,
-                  ensure_ascii=True,allow_nan=False).encode('ascii')
-              report=payload.get('report',{}).get('computed_report',{})
-              manifest=payload.get('manifest',{})
-              return {'valid':hashlib.sha256(encoded).hexdigest()==value['digest'],
-                  'generation_id':payload.get('generation_id'),
-                  'snapshot_id':report.get('snapshot_id'),
-                  'state':report.get('state'),
-                  'status':payload.get('status',{}).get('status'),
-                  'manifest_generation_id':manifest.get('generation_id'),
-                  'manifest_sequence':manifest.get('sequence'),
-                  'manifest_sha256':hashlib.sha256(json.dumps(manifest,sort_keys=True,
-                      separators=(',',':'),default=str,ensure_ascii=True,allow_nan=False).encode('ascii')).hexdigest()}
           db=root/'data/paper_v17/observer_v17.db'
-          con=sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=2)
-          con.execute('PRAGMA query_only=ON')
-          mode,orders,process,session,heartbeat=con.execute(
-              'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1').fetchone()
-          assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
-          con.close()
-          qpath=root/'data/deploy/quiescence-2601a910f2997bd6a9d59dee81af2c3818c25a6c.json'
-          q=json.loads(qpath.read_text())
-          stop_checks={}
-          for name in ('porota_production_observer','porota_production_dashboard'):
-              docker=json.loads(subprocess.check_output(['docker','inspect',name],text=True,timeout=15))[0]
-              lifecycle={key:docker['State'].get(key) for key in ('Status','StartedAt','FinishedAt','ExitCode','OOMKilled')}
-              proof=q.get('stop_evidence',{}).get(name,{})
-              stop_checks[name]={'same_lifecycle':proof.get('after')==lifecycle,
-                  'classification':proof.get('classification'),
-                  'same_id':q.get('containers',{}).get(name,{}).get('id')==docker['Id'],
-                  'same_image':q.get('containers',{}).get(name,{}).get('image')==docker['Image'],
-                  'exit_code':lifecycle['ExitCode'],'status':lifecycle['Status']}
-          q={k:q.get(k) for k in ('status','candidate_sha','installation_started','inflight','real_orders_sent','ppi_watch_accessed','containers')}
-          q['stop_checks']=stop_checks
-          current=json.loads((shadow/'CURRENT.json').read_text())['payload']
-          current_cut=cut_summary(current['file'])
-          old_name='cut-b6687dbca06ab97bc9c93d3f7940c61bba577f68d4ff4b9f887332638c0b7cb8.json.gz'
-          old_cut=cut_summary(old_name) if (shadow/old_name).exists() else {'exists':False}
-          units=subprocess.check_output(['systemctl','list-unit-files','--no-legend'],text=True,timeout=10).splitlines()
-          ppi={}
-          for line in units:
-              name=line.split()[0]
-              if 'ppi' in name.lower() and 'watch' in name.lower():
-                  ppi[name]=[subprocess.run(['systemctl',cmd,name],capture_output=True,text=True,timeout=5).stdout.strip()
-                             for cmd in ('is-active','is-enabled')]
-          mem=next(int(x.split()[1])*1024 for x in Path('/proc/meminfo').read_text().splitlines()
-                   if x.startswith('MemAvailable:'))
-          images=[]
-          for line in subprocess.check_output(['docker','image','ls','--no-trunc','--format','{{json .}}'],
-              text=True,timeout=15).splitlines():
-              row=json.loads(line)
-              images.append({k:row.get(k) for k in ('Repository','Tag','ID','Size')})
-          all_containers=[]
-          for cid in subprocess.check_output(['docker','ps','-aq','--no-trunc'],text=True,timeout=15).splitlines():
-              row=json.loads(subprocess.check_output(['docker','inspect',cid],text=True,timeout=15))[0]
-              all_containers.append({'id':row['Id'],'name':row['Name'],'image':row['Image'],
-                  'status':row['State']['Status']})
-          policy=json.loads((root/'ops/policy/rc6-disk-housekeeping-v1.json').read_text())
-          backup={}
-          for group,cfg in policy['backups'].items():
-              if group=='protected_paths':continue
-              base=Path(cfg['root'])
-              rows=sorted(({'name':p.name,'size':p.stat().st_size,'mtime_ns':p.stat().st_mtime_ns}
-                  for p in base.glob(cfg['glob']) if p.is_file() and not p.is_symlink()),
-                  key=lambda x:(x['mtime_ns'],x['name']),reverse=True)
-              backup[group]={'keep_newest':cfg['keep_newest'],'pinned_names':cfg.get('pinned_names',[]),
-                  'rows':rows}
-          usage={str(path):sum(p.stat().st_size for p in Path(path).rglob('*') if p.is_file() and not p.is_symlink())
-              for path in ('/var/cache/apt','/var/log/journal') if Path(path).exists()}
-          disk_df=subprocess.check_output(['docker','system','df','--verbose'],text=True,timeout=30)
-          def du(path):
-              if not Path(path).exists():return None
-              return subprocess.check_output(['du','-sx','-B1',path],text=True,timeout=40).split()[0]
-          selected={p:du(p) for p in ('/tmp','/opt/porota-trading/data/deploy',
-              '/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db',
-              '/var/lib/docker/buildkit','/var/lib/docker/overlay2','/var/cache','/var/log')}
-          tmp=[]
-          for p in Path('/tmp').iterdir():
-              if not p.name.startswith(('porota','rc6')):continue
-              stat=p.lstat()
-              tmp.append({'name':p.name,'mode':oct(stat.st_mode&0o777),
-                  'mtime_ns':stat.st_mtime_ns,'size':du(str(p))})
-          logs=[]
-          for p in Path('/var/log').rglob('*'):
-              if p.is_file() and not p.is_symlink():
-                  st=p.stat()
-                  logs.append({'path':str(p),'bytes':st.st_size,'mtime_ns':st.st_mtime_ns})
-          logs=sorted(logs,key=lambda row:row['bytes'],reverse=True)[:25]
-          journal=subprocess.check_output(['journalctl','--disk-usage'],text=True,timeout=20)
-          foreign_id='7dc99ccd8f7c47849ca3705ae1cb2c49'
-          foreign={}
-          for name in (foreign_id+'.pack','manifest-'+foreign_id+'.json',
-                       'receipt-'+foreign_id+'.json','queue.json'):
-              path=source/name
-              st=path.lstat()
-              assert path.is_file() and not path.is_symlink() and st.st_nlink==1
-              row={'bytes':st.st_size,'sha256':sha(path),'inode':st.st_ino,
-                   'device':st.st_dev,'mtime_ns':st.st_mtime_ns,'ctime_ns':st.st_ctime_ns}
-              if name!='queue.json' and not name.endswith('.pack') or name=='queue.json':
-                  envelope_value=json.loads(path.read_text())
-                  payload=envelope_value['payload']
-                  encoded=json.dumps(payload,sort_keys=True,separators=(',',':'),default=str,
-                      ensure_ascii=True,allow_nan=False).encode('ascii')
-                  row['envelope_valid']=hashlib.sha256(encoded).hexdigest()==envelope_value['sha256']
-                  row['payload']=payload
-              foreign[name]=row
-          import gzip
-          with gzip.open(shadow/current['file'],'rb') as stream:cut_bytes=stream.read(4*1024*1024+1)
-          assert len(cut_bytes)<=4*1024*1024
-          cut_envelope=json.loads(cut_bytes)
-          cut_payload=cut_envelope['payload']
-          encoded=json.dumps(cut_payload,sort_keys=True,separators=(',',':'),default=str,
-              ensure_ascii=True,allow_nan=False).encode('ascii')
-          foreign_cut={'valid':hashlib.sha256(encoded).hexdigest()==cut_envelope['digest'],
-                       'manifest':cut_payload.get('manifest'),
-                       'computed_report':cut_payload.get('report',{}).get('computed_report'),
-                       'status':cut_payload.get('status')}
-          result={'schema':'rc6.issue624.cold-dual-namespace-readonly.v1',
-              'observed_at':datetime.now(timezone.utc).isoformat(),'read_only':True,
-              'source':directory(source),'archive':directory(archive),
-              'foreign_failed':foreign,'foreign_current_cut':foreign_cut,
-              'live':{'pointer':envelope(shadow/'CURRENT.json'),
-                  'status':envelope(shadow/'status.json'),
-                  'publication':envelope(shadow/'publication.json'),
-                  'pointer_payload':{k:current.get(k) for k in ('generation_id','file','sequence','manifest_sha256')},
-                  'current_cut':current_cut,'old_cut':old_cut},
-              'quiescence':q,'observer_db':{'mode':mode,'real_orders_sent':orders,'process_state':process,
-                  'session_state':session,'heartbeat_at':heartbeat},
-              'containers':{n:inspect(n) for n in ('porota_production_observer',
-                  'porota_production_dashboard','porota_critical_approval_rc6')},
-              'ppi_watch':ppi,'disk_free_bytes':shutil.disk_usage('/').free,
-              'mem_available_bytes':mem,'disk_inventory':{'images':images,
-                  'containers':all_containers,'backups':backup,'cache_usage':usage,
-                  'docker_df':disk_df,'selected_du':selected,'tmp':tmp,
-                  'large_logs':logs,'journal_usage':journal}}
-          print(json.dumps(result,sort_keys=True,separators=(',',':')))
-          PY
-          python -m json.tool evidence/inventory.json >/dev/null
-          python - <<'PY'
-          import json
-          x=json.load(open('evidence/inventory.json'))
-          assert x['read_only'] and x['observer_db']['mode']=='PRODUCTION_PAPER' and x['observer_db']['real_orders_sent']==0
-          print('RC6_641_POSTRED_READONLY=GREEN')
-          print('SOURCE_PRESENT='+str(x['source']['exists'])+'|ARCHIVE_PRESENT='+str(x['archive']['exists']))
-          print('CONTAINERS='+','.join(n+':'+v['status'] for n,v in x['containers'].items()))
-          print('DISK_FREE_BYTES='+str(x['disk_free_bytes']))
-          PY
-      - name: Inspect preserved historical cold exception without changing host
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
-          install -m700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
-          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
-          trap 'rm -f "$HOME/.ssh/key"' EXIT
-          mkdir -p evidence
-          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n python3 -B -' <<'PY' > evidence/cold-historical-logs.json
-          import json,re,subprocess
-          from datetime import datetime,timezone
-          from pathlib import Path
-          start='2026-10-18 22:24:40 UTC'
-          end='2026-10-18 22:25:25 UTC'
-          pattern=re.compile(r'SHADOW_COLD_[A-Z0-9_]+|GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS')
-          result={'schema':'rc6.issue624.cold2-historical-readonly.v1',
-                  'observed_at':datetime.now(timezone.utc).isoformat(),
-                  'window_utc':[start,end],'read_only':True,'sources':{}}
-          commands={'journal':['journalctl','--since',start,'--until',end,'-o','short-iso-precise','--no-pager'],
-                    'observer':['docker','logs','--timestamps','--since','2026-10-18T22:24:40Z',
-                                '--until','2026-10-18T22:25:25Z','porota_production_observer'],
-                    'dashboard':['docker','logs','--timestamps','--since','2026-10-18T22:24:40Z',
-                                 '--until','2026-10-18T22:25:25Z','porota_production_dashboard']}
-          for name,cmd in commands.items():
-              try:
-                  proc=subprocess.run(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
-                                      timeout=25,check=False)
-                  raw=proc.stdout+proc.stderr
-                  result['sources'][name]={'exit_code':proc.returncode,'bytes':len(raw),
-                      'lines':len(raw.splitlines()),'codes':sorted(set(pattern.findall(
-                          raw.decode('utf-8','replace')))),'output_bounded':len(raw)<=8*1024*1024}
-              except (subprocess.TimeoutExpired,OSError) as exc:
-                  result['sources'][name]={'error_class':type(exc).__name__}
-          print(json.dumps(result,sort_keys=True))
-          PY
-          python -m json.tool evidence/cold-historical-logs.json >/dev/null
-          python - <<'PY'
-          import json
-          x=json.load(open('evidence/cold-historical-logs.json'))
-          assert x['read_only'] and x['schema']=='rc6.issue624.cold2-historical-readonly.v1'
-          print('COLD2_HISTORICAL_READONLY=GREEN')
-          print('HISTORICAL_CODES='+json.dumps({k:v.get('codes',[]) for k,v in x['sources'].items()},sort_keys=True))
-          PY
-      - name: Measure cold2 original full report expansion without writing
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
-          install -m700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
-          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
-          trap 'rm -f "$HOME/.ssh/key"' EXIT
-          mkdir -p evidence
-          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n nice -n 10 timeout 80 python3 -B -' <<'PY' > evidence/cold2-expansion.json
-          import collections,json,shutil,sqlite3,struct
-          from pathlib import Path
-          root=Path('/opt/porota-trading')
           shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
-          ident='7dc99ccd8f7c47849ca3705ae1cb2c49'
           cold=shadow/'cold-audit'
-          manifest=json.loads((cold/('manifest-'+ident+'.json')).read_text())['payload']
-          queue=json.loads((cold/'queue.json').read_text())['payload']
-          receipt=json.loads((cold/('receipt-'+ident+'.json')).read_text())['payload']
-          assert queue['state']==receipt['state']=='FAILED'
-          assert queue['snapshot_id']==receipt['snapshot_id']==manifest['snapshot_id']==ident
-          con=sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True)
-          con.execute('PRAGMA query_only=ON')
-          mode,orders=con.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
-          con.close()
+          ident='7dc99ccd8f7c47849ca3705ae1cb2c49'
+          pack=cold/(ident+'.pack')
+          def envelope(path):
+              e=json.loads(path.read_bytes());p=e['payload']
+              raw=json.dumps(p,sort_keys=True,separators=(',',':'),default=str,ensure_ascii=True,allow_nan=False).encode('ascii')
+              assert hashlib.sha256(raw).hexdigest()==e['sha256']
+              return p
+          manifest=envelope(cold/('manifest-'+ident+'.json'))
+          receipt=envelope(cold/('receipt-'+ident+'.json'))
+          queue=envelope(cold/'queue.json')
+          assert receipt['state']==queue['state']=='FAILED' and manifest['snapshot_id']==queue['snapshot_id']==ident
+          assert manifest['pack_sha256']=='d19b7e9062327a4f9d013b57cff9f2d1824f9dba386d9756bc0e2a0b3240cf0c'
+          st=pack.stat();assert stat.S_ISREG(st.st_mode) and st.st_nlink==1 and st.st_size==211783290
+          assert [st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns,st.st_ctime_ns]==manifest['pack_identity']
+          con=sqlite3.connect(db.as_uri()+'?mode=ro',uri=True);con.execute('PRAGMA query_only=ON')
+          mode,orders,process,session=con.execute('SELECT mode,real_orders_sent,process_state,session_state FROM observer_state WHERE id=1').fetchone();con.close()
           assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+          assert session=='MARKET_CLOSED' and process=='WAITING_MARKET'
+          rows=[]
+          for path in shadow.iterdir():
+              s=path.lstat();assert not stat.S_ISLNK(s.st_mode)
+              rows.append({'name':path.name,'bytes':s.st_size,'dir':stat.S_ISDIR(s.st_mode)})
           assert shutil.disk_usage('/').free>2*1024**3
-          desc=manifest['root']; targets={(s['offset'],s['length'],s['sha256']):s['role'] for s in manifest['segments']}
-          refs=collections.Counter()
-          kinds=collections.Counter()
-          header=struct.Struct('!cI');reference=struct.Struct('!QQ32s')
-          with (cold/(ident+'.pack')).open('rb',buffering=0) as stream:
-              stream.seek(desc['offset'])
-              remaining=desc['length']
-              while remaining:
-                  h=stream.read(header.size)
-                  kind,size=header.unpack(h)
-                  assert 0<size<=131072 and header.size+32+size<=remaining
-                  stream.read(32);raw=stream.read(size)
-                  if kind==b'R':
-                      offset,length,digest=reference.unpack(raw)
-                      refs[targets[(offset,length,digest.hex())]]+=1
-                  kinds[kind.decode('ascii')]+=1
-                  remaining-=header.size+32+size
-          # Previous exact frame profile 39197433904 certified all segment/frame hashes.
-          # J byte counts are derived from its per-segment frame counts (37 bytes/frame).
-          profile={'preopen_rows':330,'engines':971,'source_reports':1,'events':1,
-                   'family_routing':1380,'catalog_ready':25,'full_computed_root':542}
-          jbytes={s['role']:s['length']-37*profile[s['role']] for s in manifest['segments']}
-          jbytes['full_computed_root']-=48*kinds['R']
-          expanded=jbytes['full_computed_root']+sum(jbytes[k]*v for k,v in refs.items())
-          print(json.dumps({'schema':'rc6.issue624.cold2-expansion.v1','read_only':True,
-              'snapshot_id':ident,'references':dict(refs),'root_kinds':dict(kinds),
-              'expanded_raw_bytes_estimate':expanded,'raw_limit_bytes':512*1024**2,
-              'mode':mode,'real_orders_sent':orders,'disk_free_bytes':shutil.disk_usage('/').free},
-              sort_keys=True))
+          print(json.dumps({'schema':'rc6.cold2.replay-input.v1','id':ident,'pack_bytes':st.st_size,
+              'pack_sha256':manifest['pack_sha256'],'pack_identity':manifest['pack_identity'],
+              'manifest_sha256':queue['manifest_sha256'],'failed_at':receipt['failed_at'],
+              'sealed_at':manifest['sealed_at'],'deadline_at':manifest['deadline_at'],
+              'mode':mode,'orders':orders,'session':session,'process':process,
+              'disk_free':shutil.disk_usage('/').free,'root_rows':rows},sort_keys=True))
           PY
-          python -m json.tool evidence/cold2-expansion.json >/dev/null
-          python - <<'PY'
-          import json
-          x=json.load(open('evidence/cold2-expansion.json'))
-          assert x['read_only'] and x['real_orders_sent']==0
-          print('COLD2_EXPANDED_BYTES='+str(x['expanded_raw_bytes_estimate'])+
-                '|RAW_LIMIT='+str(x['raw_limit_bytes'])+
-                '|REFERENCES='+json.dumps(x['references'],sort_keys=True))
+          python3 - <<'PY'
+          import json,os
+          x=json.load(open(os.environ['RUNNER_TEMP']+'/cold-original/meta.json'))
+          assert x['pack_sha256']=='d19b7e9062327a4f9d013b57cff9f2d1824f9dba386d9756bc0e2a0b3240cf0c'
+          print('READ_ONLY_INPUT=GREEN|root_count='+str(len(x['root_rows']))+'|root_bytes='+str(sum(p['bytes'] for p in x['root_rows']))+'|free='+str(x['disk_free']))
           PY
-      - uses: actions/upload-artifact@v4
+          cold=/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/cold-audit
+          remote "sudo -n cat $cold/7dc99ccd8f7c47849ca3705ae1cb2c49.pack" > "$RUNNER_TEMP/cold-original/original.pack"
+          remote "sudo -n cat $cold/manifest-7dc99ccd8f7c47849ca3705ae1cb2c49.json" > "$RUNNER_TEMP/cold-original/original-manifest.json"
+          remote "sudo -n cat $cold/receipt-7dc99ccd8f7c47849ca3705ae1cb2c49.json" > "$RUNNER_TEMP/cold-original/original-receipt.json"
+          remote "sudo -n cat $cold/queue.json" > "$RUNNER_TEMP/cold-original/original-queue.json"
+          test "$(sha256sum "$RUNNER_TEMP/cold-original/original.pack" | cut -d' ' -f1)" = d19b7e9062327a4f9d013b57cff9f2d1824f9dba386d9756bc0e2a0b3240cf0c
+          remote 'sudo -n stat -c "%d:%i:%s:%Y:%Z" /opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/cold-audit/7dc99ccd8f7c47849ca3705ae1cb2c49.pack' > "$RUNNER_TEMP/cold-original/post-stat.txt"
+          python3 - <<'PY'
+          import json,os
+          x=json.load(open(os.environ['RUNNER_TEMP']+'/cold-original/meta.json'))
+          d,i,size,*_=open(os.environ['RUNNER_TEMP']+'/cold-original/post-stat.txt').read().strip().split(':')
+          assert list(map(int,(d,i,size)))==x['pack_identity'][:3]
+          print('ORIGINAL_PACK_TRANSFER_HASH_AND_INODE=GREEN')
+          PY
+      - name: Load exact historical source and native ABI image on runner
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/cold-image"
+          gh run download 39148589383 --repo mbalbo2023/Porota-trading --name porota-predeploy-v2-97361c1ce3476465d267e9216e6bcc065696e72f --dir "$RUNNER_TEMP/cold-image"
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'cold-image'
+          f=json.loads((root/'porota-frozen-candidate.json').read_text())
+          assert f['candidate_sha']=='97361c1ce3476465d267e9216e6bcc065696e72f'
+          assert f['paper_mode_required']=='PRODUCTION_PAPER' and f['real_orders_sent_required']==0
+          image=root/'porota-predeploy-image.tar.gz'
+          h=hashlib.sha256()
+          with image.open('rb') as stream:
+              while b:=stream.read(1024*1024):h.update(b)
+          assert h.hexdigest()==f['image_tar_sha256']
+          print('HISTORICAL_IMAGE_BYTES=GREEN|image_id='+f['image_id'])
+          PY
+          gzip -dc "$RUNNER_TEMP/cold-image/porota-predeploy-image.tar.gz" | docker load >/dev/null
+          image_id="$(python3 -c 'import json,os;print(json.load(open(os.environ["RUNNER_TEMP"]+"/cold-image/porota-frozen-candidate.json"))["image_id"])')"
+          test "$(docker image inspect -f '{{.Id}}' "$image_id")" = "$image_id"
+          test "${image_id:0:18}" = 'sha256:687af03ef'
+          echo "EXACT_OLD_IMAGE_AND_ABI=GREEN"
+      - name: Finite isolated replay at original occupancy and empty occupancy
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          image_id="$(python3 -c 'import json,os;print(json.load(open(os.environ["RUNNER_TEMP"]+"/cold-image/porota-frozen-candidate.json"))["image_id"])')"
+          mkdir -p "$RUNNER_TEMP/cold-replay"
+          cp "$RUNNER_TEMP/cold-original/meta.json" "$RUNNER_TEMP/cold-replay/meta.json"
+          cp "$RUNNER_TEMP/cold-original/original-manifest.json" "$RUNNER_TEMP/cold-replay/original-manifest.json"
+          cp "$RUNNER_TEMP/cold-original/original-receipt.json" "$RUNNER_TEMP/cold-replay/original-receipt.json"
+          cp "$RUNNER_TEMP/cold-original/original-queue.json" "$RUNNER_TEMP/cold-replay/original-queue.json"
+          cp "$RUNNER_TEMP/cold-original/original.pack" "$RUNNER_TEMP/cold-replay/original.pack"
+          cat > "$RUNNER_TEMP/cold-replay/replay.py" <<'PY'
+          import hashlib,json,os,re,shutil,stat,time,traceback
+          from pathlib import Path
+          from rc6_shadow_runtime import cold_audit as c,persistence as p
+          base=Path('/sandbox');meta=json.loads((base/'meta.json').read_text())
+          original=json.loads((base/'original-manifest.json').read_text())
+          assert p.digest(original['payload'])==original['sha256']==meta['manifest_sha256']
+          assert json.loads((base/'original-receipt.json').read_text())['payload']['state']=='FAILED'
+          assert c._native() is not None
+          print('NATIVE_ABI=GREEN',flush=True)
+          results=[]
+          for case in ('historical_occupancy','empty_occupancy'):
+              root=base/case;root.mkdir(mode=0o700)
+              cold=root/'cold-audit';cold.mkdir(mode=0o700)
+              if case=='historical_occupancy':
+                  for n,row in enumerate(meta['root_rows']):
+                      if row['dir'] or row['name']=='writer.lock':continue
+                      name=row['name'];assert '/' not in name and name not in ('.','..')
+                      with (root/name).open('wb') as stream:stream.truncate(row['bytes'])
+              ident=meta['id'];pack=cold/(ident+'.pack')
+              shutil.copyfile(base/'original.pack',pack);pack.chmod(0o600)
+              st=pack.stat()
+              manifest=dict(original['payload'])
+              # Only the disposable copy is re-bound to its own inode and live clock.
+              manifest['pack_identity']=c._identity(st)
+              manifest['sealed_at']=time.time()-2.28
+              manifest['deadline_at']=manifest['sealed_at']+c.DEADLINE
+              def envelope(payload):return {'payload':payload,'sha256':p.digest(payload)}
+              (cold/('manifest-'+ident+'.json')).write_text(json.dumps(envelope(manifest),sort_keys=True,separators=(',',':')))
+              queue={'state':'PENDING','snapshot_id':ident,'manifest_sha256':p.digest(manifest)}
+              (cold/'queue.json').write_text(json.dumps(envelope(queue),sort_keys=True,separators=(',',':')))
+              for file in cold.iterdir():file.chmod(0o600)
+              stage=['admission'];orig=c._expand
+              def expand(*a,**k):
+                  stage[0]='expand';yield from orig(*a,**k)
+              c._expand=expand
+              start=time.monotonic();code='SUCCESS';error_class='';receipt=''
+              try:
+                  with p.EvidenceFiles(root) as files:
+                      stage[0]='drain'
+                      c.drain(files)
+              except Exception as exc:
+                  error_class=type(exc).__name__
+                  message=str(exc)
+                  code=message if re.fullmatch(r'SHADOW_[A-Z0-9_]{1,120}',message) else 'UNCLASSIFIED'
+              finally:c._expand=orig
+              receipt=json.loads((cold/('receipt-'+ident+'.json')).read_text())['payload']['state'] if (cold/('receipt-'+ident+'.json')).exists() else 'MISSING'
+              results.append({'case':case,'code':code,'error_class':error_class,'phase':stage[0],
+                  'receipt':receipt,'elapsed_s':round(time.monotonic()-start,3),
+                  'root_count':len(list(root.iterdir())),'root_bytes':sum(x.lstat().st_size for x in root.iterdir())})
+              print('REPLAY='+case+'|'+code+'|'+str(results[-1]['elapsed_s']),flush=True)
+              if case=='historical_occupancy' and code not in ('SHADOW_EVIDENCE_CAPACITY_REACHED','SUCCESS'):
+                  break
+          out={'schema':'rc6.cold2.replay.v1','original_pack_sha256':meta['pack_sha256'],
+              'original_manifest_sha256':meta['manifest_sha256'],'image_sha':os.environ.get('POROTA_BUILD_SHA'),
+              'cgroup_memory_bytes':512*1024**2,'cpus':0.75,
+              'resource_model':'runner_cgroup; source/root occupancy measured after original failure',
+              'historical_deadline_remaining_s':round(meta['deadline_at']-meta['failed_at'],3),
+              'cases':results}
+          (base/'summary.json').write_text(json.dumps(out,sort_keys=True,indent=2)+'\n')
+          PY
+          timeout 150 docker run --rm -i --network none --read-only --memory 512m --memory-swap 512m --cpus .75 \
+            --pids-limit 128 --user "$(id -u):$(id -g)" --mount "type=bind,source=$RUNNER_TEMP/cold-replay,target=/sandbox" \
+            "$image_id" python -B /sandbox/replay.py
+          python3 -m json.tool "$RUNNER_TEMP/cold-replay/summary.json" >/dev/null
+          cp "$RUNNER_TEMP/cold-replay/summary.json" "$RUNNER_TEMP/cold-summary.json"
+      - name: Upload only sanitized summary, never original bytes
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: rc6-624-641-postred-inventory-${{ github.run_id }}
-          path: evidence
+          name: rc6-cold2-sanitized-replay-${{ github.run_id }}
+          path: ${{ runner.temp }}/cold-summary.json
           if-no-files-found: warn
           retention-days: 14
-
-# RC6 624 inventory refresh 2026-10-19T01:27Z exact head 2601a910
+      - name: Remove ephemeral sensitive bytes
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/cold-original" "$RUNNER_TEMP/cold-replay" "$RUNNER_TEMP/cold-image"
