@@ -1,4 +1,4 @@
-name: RC6 624 bounded read-only disk map during OPEN
+name: RC6 624 bounded read-only CLOSED disk map
 
 on:
   pull_request:
@@ -41,7 +41,7 @@ jobs:
           assert run['status']=='completed' and run['conclusion']=='failure'
           print('RC6_641_EXACT_RED=GREEN')
           PY
-      - name: Map disk metadata under exact PAPER and container guards
+      - name: Map disk metadata under CLOSED PAPER and resource guards
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -54,7 +54,7 @@ jobs:
           mkdir -p evidence
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n timeout 650 python3 -B -' <<'PY' > evidence/cleanup.json
+            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n timeout 125 python3 -B -' <<'PY' > evidence/cleanup.json
           import datetime as dt,hashlib,json,os,shutil,sqlite3,subprocess,sys,time
           from pathlib import Path
           sys.path.insert(0,'/opt/porota-trading')
@@ -64,8 +64,6 @@ jobs:
           current='sha256:2a12960d9ba5523bc494ac90dd3b7317e48a55ea54179353618246a248ea3280'
           critical='sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098'
           old='sha256:084a73ba235d6bbaae2ebe0754bde68f122e6624f0332aceda63aad7aaa0523d'
-          tags=('porota-predeploy-v2:38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1',
-              'porota-trading-bot:17.0.0-rc6-candidate-38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1')
           names=('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6')
           expected_ids=('4ce69d798f17a9086ec5ce0d2b523a89c2cf460aa5c17921d3c6fd962ba5defa',
               '29cc182672ea21ea3ceb0a892421f1e48998faf5f51ecf2f2872cb7672bf4ff5',
@@ -95,27 +93,9 @@ jobs:
                   assert len(rows)<=32
                   result[group]=sorted(rows)
               return result
-          def prune_backup_excess(before):
-              policy=json.loads((root/'ops/policy/rc6-disk-housekeeping-v1.json').read_text())
-              removed=[]
-              for group in ('general','paper','history'):
-                  cfg=policy['backups'][group]
-                  rows=sorted(before[group],key=lambda row:(row[2],row[0]),reverse=True)
-                  keep={row[0] for row in rows[:cfg['keep_newest']]}|set(cfg.get('pinned_names',[]))
-                  base=Path(cfg['root'])
-                  for name,size,mtime,ino in rows:
-                      if name in keep:continue
-                      path=base/name
-                      st=path.lstat()
-                      assert path.is_file() and not path.is_symlink() and st.st_nlink==1
-                      assert (st.st_size,st.st_mtime_ns,st.st_ino)==(size,mtime,ino)
-                      assert name not in cfg.get('pinned_names',[])
-                      path.unlink()
-                      removed.append((group,name,size))
-              return removed
           def snapshot():
-              # The deploy admission correctly rejects MARKET_OPEN. Inventory
-              # uses its own bounded read-only PAPER/OPEN observation instead.
+              # Deployment remains blocked. This one-shot metadata probe
+              # requires authentic CLOSED state, never a wall-clock guess.
               with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',
                                    uri=True,timeout=.2) as connection:
                   connection.execute('PRAGMA query_only=ON')
@@ -126,8 +106,11 @@ jobs:
                       'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at '
                       'FROM observer_state WHERE id=1').fetchone()
               age=(dt.datetime.now(dt.timezone.utc)-dt.datetime.fromisoformat(stamp)).total_seconds()
+              print('RC6_624_ADMISSION_STATE='+json.dumps({'mode':mode,'orders':orders,
+                    'process':process,'session':session,'heartbeat_age_seconds':round(age,2)},sort_keys=True),file=sys.stderr)
               assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
-              assert process=='RUNNING' and session=='MARKET_OPEN' and 0<=age<=180
+              assert process in ('RUNNING','WAITING_MARKET','DEGRADED')
+              assert session in ('MARKET_CLOSED','WAITING_MARKET') and 0<=age<=180
               qpath=root/'data/deploy'/('quiescence-'+candidate+'.json')
               assert not qpath.is_symlink()
               q=json.loads(qpath.read_text())
@@ -145,26 +128,41 @@ jobs:
               assert cmd('docker','image','inspect','-f','{{.Id}}','porota-trading-bot:17.0.0-rc6',timeout=15).strip()==current
               stat=os.statvfs('/')
               memory=next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))
+              print('RC6_624_ADMISSION_RAM_BYTES='+str(memory),file=sys.stderr)
               assert memory>128*1024**2
+              assert stat.f_bavail*stat.f_frsize>=2*1024**3
+              pressure=Path('/proc/pressure/io').read_text()[:512]
+              some=next(float(v.split('=',1)[1]) for v in pressure.splitlines()[0].split() if v.startswith('avg10='))
+              print('RC6_624_ADMISSION_IO_SOME_AVG10='+str(some),file=sys.stderr)
+              assert some<=5.0
               return {'free':shutil.disk_usage('/').free,'inodes_percent':100*stat.f_ffree/stat.f_files,
-                  'mem_available':memory,'mode':mode,'real_orders_sent':orders,
+                  'mem_available':memory,'io_some_avg10':some,'mode':mode,'real_orders_sent':orders,
                   'process':process,'session':session,'heartbeat_age_seconds':age,
                   'owned':owned,'all_containers':allc,
                   'ppi_watch':watch(),'backups':backups(),'quiescence':q,
                   'images':sorted((json.loads(x) for x in cmd('docker','image','ls','--no-trunc','--format','{{json .}}',timeout=20).splitlines()),key=lambda row:(row.get('ID',''),row.get('Repository',''),row.get('Tag',''))),
                   'docker_df':cmd('docker','system','df',timeout=30)[-2500:]}
-          # Bounded inventory only; no host deletion while the market window changes.
+          # One bounded inventory only. A failed guard emits no invented map.
           with promotion_lock():
               before=snapshot()
               now=time.time()
-              # One bounded metadata pass. st_blocks is a lower bound for a
-              # directory's subtree, not a fabricated recursive total.
+              def light_guard():
+                  available=next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines()
+                                 if line.startswith('MemAvailable:'))
+                  some=next(float(v.split('=',1)[1]) for v in Path('/proc/pressure/io').read_text().splitlines()[0].split()
+                            if v.startswith('avg10='))
+                  assert available>128*1024**2 and some<=5.0
+              # Direct st_blocks never represents a directory subtree.
               roots=('/opt/porota-trading/data','/opt/porota-trading/data/paper_v17',
                      '/opt/porota-trading/data/paper_v17/artifacts',
+                     '/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db',
+                     '/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow',
                      '/opt/porota-trading/data/deploy','/opt/porota-backups',
-                     '/var/lib/containerd','/var/lib/docker','/home','/var/log')
+                     '/var/lib/containerd','/var/lib/docker','/home','/var/log',
+                     '/var/log/journal','/tmp','/var/tmp','/var/cache/apt')
               top={}
               for dirname in roots:
+                  light_guard()
                   base=Path(dirname)
                   if not base.is_dir() or base.is_symlink():
                       top[dirname]={'status':'NOT_DIRECTORY'};continue
@@ -184,10 +182,43 @@ jobs:
                           'largest_direct':sorted(rows,key=lambda x:x['allocated_direct_bytes'],reverse=True)[:20]}
                   except (OSError,TimeoutError) as exc:
                       top[dirname]={'status':'ERROR','error_class':type(exc).__name__,'seen':seen}
-              pressure=Path('/proc/pressure/io').read_text()[:512]
-              # No unbounded walk or hashing of DB/pack in MARKET_OPEN.
+              # A single best-effort, low-priority walk of data at CLOSED.
+              # Preserve partial output and never retry the same tree.
+              du_cmd=['timeout','25','ionice','-c3','nice','-n','19',
+                      'du','-x','-B1','--max-depth=2','/opt/porota-trading/data']
+              light_guard()
+              du=subprocess.run(du_cmd,text=True,capture_output=True,timeout=28)
+              du_rows=[]
+              for line in du.stdout.splitlines()[:400]:
+                  if '\t' not in line:continue
+                  size,path=line.split('\t',1)
+                  if size.isdecimal():
+                      du_rows.append({'path_hash':hashlib.sha256(path.encode()).hexdigest()[:16],
+                                      'depth':path.count('/')-3,'allocated_bytes':int(size)})
+              du_evidence={'status':'COMPLETE' if du.returncode==0 else 'PARTIAL_OR_TIMEOUT',
+                           'return_code':du.returncode,'rows':du_rows,
+                           'note':'overlapping ancestor totals; never sum rows'}
+              # Open deleted files are retained until the owning process exits.
+              # Limit scans to the three exact owned container PIDs.
+              deleted=[]
+              for name in names:
+                  row=json.loads(cmd('docker','inspect',name,timeout=10))[0]
+                  pid=row['State']['Pid']
+                  assert type(pid) is int and pid>1
+                  fdroot=Path('/proc')/str(pid)/'fd'
+                  for fd in list(fdroot.iterdir())[:512]:
+                      try:
+                          target=os.readlink(fd)
+                          if not target.endswith(' (deleted)'):continue
+                          info=fd.stat()
+                          deleted.append({'container':name,'allocated_bytes':info.st_blocks*512,
+                              'logical_bytes':info.st_size,'dev':info.st_dev,'inode':info.st_ino,
+                              'path_hash':hashlib.sha256(target.encode()).hexdigest()[:16]})
+                      except (FileNotFoundError,PermissionError):pass
+              # No pack/DB content read and no filesystem writes.
               tmp=[]
-              for p in Path('/tmp').iterdir():
+              for index,p in enumerate(Path('/tmp').iterdir()):
+                  if index>=300:break
                   if not p.name.startswith(('porota','rc6')) or p.is_symlink():continue
                   st=p.stat()
                   if now-st.st_mtime<7*86400:continue
@@ -195,7 +226,8 @@ jobs:
                               'bytes':st.st_size,'age_days':int((now-st.st_mtime)/86400),
                               'inode':st.st_ino})
               deploy=[]
-              for p in Path('/opt/porota-trading/data/deploy').iterdir():
+              for index,p in enumerate(Path('/opt/porota-trading/data/deploy').iterdir()):
+                  if index>=300:break
                   if p.is_symlink():continue
                   st=p.stat()
                   deploy.append({'name':p.name,'kind':'dir' if p.is_dir() else 'file',
@@ -203,12 +235,12 @@ jobs:
               after=snapshot()
               assert before['owned']==after['owned'] and before['all_containers']==after['all_containers']
               assert before['ppi_watch']==after['ppi_watch']
-              result={'schema':'rc6.issue624.open-disk-metadata.v1',
+              result={'schema':'rc6.issue624.closed-disk-metadata.v1',
               'status':'READ_ONLY','before':before,'after':after,
-              'inventory':{'shallow':top,'io_pressure':pressure,
+              'inventory':{'shallow':top,'bounded_du':du_evidence,'open_deleted_fds':deleted,
                            'tmp_old':sorted(tmp,key=lambda x:x['bytes'],reverse=True)[:100],
                            'deploy_entries':sorted(deploy,key=lambda x:x['bytes'],reverse=True)[:100]},
-              'required_bytes_prior_artifact':4923227373,'green_policy_bytes':7516192768,
+              'required_bytes_candidate_artifact':4923725609,'green_policy_bytes':7516192768,
               'real_orders_sent':0,'ppi_watch_changed':False}
           print(json.dumps(result,sort_keys=True,separators=(',',':')))
           if result['status']!='READ_ONLY':raise SystemExit(42)
@@ -224,7 +256,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-624-641-postred-journal-cleanup-${{ github.run_id }}
+          name: rc6-624-closed-readonly-map-${{ github.run_id }}
           path: evidence
           if-no-files-found: warn
           retention-days: 14
