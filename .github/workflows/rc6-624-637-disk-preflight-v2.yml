@@ -1,0 +1,132 @@
+name: RC6 624 PR637 premerge disk admission
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/rc6-624-637-disk-preflight-v2.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: github.head_ref == 'diagnostic/rc6-624-637-disk-preflight-v2-20261019'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # This wrapper PR is based on main only to produce a mergeable PR
+          # event. Every cleanup helper and policy is the exact product source.
+          ref: 5fe8a7f078d45d2aa502bbea255096e5c8561d4b
+          fetch-depth: 0
+      - name: Fix exact scope and artifact-dependent threshold
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = 5fe8a7f078d45d2aa502bbea255096e5c8561d4b
+          required="$(python scripts/rc6_disk_space_guard.py --policy ops/policy/rc6-disk-housekeeping-v1.json --image-tar-bytes 416209212 --image-unpacked-bytes 1178138894 --bundle-bytes 1548350)"
+          test "$required" = RC6_DISK_REQUIRED_PRETRANSFER_FREE=4923067348
+          echo "RC6_DISK_THRESHOLD=$required"
+      - name: CLOSED PAPER admission and measured safe cleanup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_637"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_637" "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/rc6_637"' EXIT
+          SSH=(ssh -i "$HOME/.ssh/rc6_637" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15)
+          target="$DO_USER@$DO_HOST"
+          cat > "$RUNNER_TEMP/rc6_probe.py" <<'PY'
+          import json, os, shutil, subprocess, sys
+          from pathlib import Path
+          sys.path.insert(0, '/opt/porota-trading')
+          from scripts.rc6_deploy_quiescence import admit
+          admit()
+          mem = next(int(x.split()[1])*1024 for x in Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemAvailable:'))
+          stat = os.statvfs('/')
+          names = ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6')
+          containers = {}
+          for name in names:
+              value=json.loads(subprocess.check_output(['docker','inspect',name],text=True,timeout=10))[0]
+              assert value['State']['Status']=='running'
+              containers[name]={'id':value['Id'],'image':value['Image'],'restarts':value['RestartCount']}
+          units=subprocess.check_output(['systemctl','list-unit-files','--no-legend'],text=True,timeout=10).splitlines()
+          watch={}
+          for line in units:
+              name=line.split()[0]
+              if 'ppi' in name.lower() and 'watch' in name.lower():
+                  watch[name]=[subprocess.run(['systemctl',cmd,name],capture_output=True,text=True,timeout=5).stdout.strip()
+                               for cmd in ('is-active','is-enabled')]
+          print(json.dumps({'status':'CLOSED_PAPER_ADMITTED','disk_free':shutil.disk_usage('/').free,
+                            'inode_free_percent':100*stat.f_ffree/stat.f_files if stat.f_files else 100,
+                            'mem_available':mem,'containers':containers,'ppi_watch':watch},sort_keys=True))
+          PY
+          probe() {
+            "${SSH[@]}" "$target" 'sudo -n python3 -B -' < "$RUNNER_TEMP/rc6_probe.py"
+          }
+          probe > "$RUNNER_TEMP/before.json"
+          python -m json.tool "$RUNNER_TEMP/before.json" >/dev/null
+          initial="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["disk_free"])' "$RUNNER_TEMP/before.json")"
+          echo "RC6_PREFLIGHT_BEFORE_BYTES=$initial"
+          if [ "$initial" -lt 4923067348 ]; then
+            # The certified helper inventories every container reference, deletes
+            # only exclusively named unused candidate image tags, and holds the
+            # canonical host promotion lock. No forced image removal.
+            "${SSH[@]}" "$target" 'sudo -n python3 -B -' < scripts/rc6_pretransfer_image_cleanup.py > "$RUNNER_TEMP/image-cleanup.json"
+            python -c 'import json,sys; assert json.load(open(sys.argv[1]))["status"]=="GREEN"' "$RUNNER_TEMP/image-cleanup.json"
+            "${SSH[@]}" "$target" 'sudo -n docker image prune -f >/dev/null && sudo -n docker builder prune -af >/dev/null && if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af >/dev/null; fi'
+            probe > "$RUNNER_TEMP/after-image.json"
+            image_free="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["disk_free"])' "$RUNNER_TEMP/after-image.json")"
+            echo "RC6_PREFLIGHT_AFTER_IMAGE_BYTES=$image_free"
+            if [ "$image_free" -lt 4923067348 ]; then
+              # Policy keeps the newest three paper/history/general backups and
+              # the pinned general backup; only retention excess is eligible.
+              set +e
+              "${SSH[@]}" "$target" 'sudo -n python3 -B - --policy /opt/porota-trading/ops/policy/rc6-disk-housekeeping-v1.json --mode cleanup --json-out /tmp/rc6-637-premerge-cleanup.json' < scripts/rc6_disk_housekeeping.py > "$RUNNER_TEMP/housekeeping-output.json"
+              housekeeping_rc=$?
+              set -e
+              test "$housekeeping_rc" -eq 0
+              probe > "$RUNNER_TEMP/after-housekeeping.json"
+            fi
+          fi
+          probe > "$RUNNER_TEMP/final.json"
+          python - "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/final.json" <<'PY'
+          import json,sys
+          before,after=(json.load(open(p)) for p in sys.argv[1:])
+          assert before['status']==after['status']=='CLOSED_PAPER_ADMITTED'
+          assert before['containers']==after['containers'], 'RUNTIME_IDENTITY_CHANGED'
+          assert before['ppi_watch']==after['ppi_watch'], 'PPI_WATCH_CHANGED'
+          assert after['mem_available'] > 128*1024*1024, 'RAM_RESERVE_RED'
+          assert after['disk_free'] >= 4923067348, 'PRETRANSFER_DISK_RED'
+          assert after['inode_free_percent'] >= 10, 'INODE_RESERVE_RED'
+          print(f"RC6_637_PREMERGE_PREFLIGHT=GREEN|before={before['disk_free']}|after={after['disk_free']}|required=4923067348|mem={after['mem_available']}|inode={after['inode_free_percent']:.2f}|runtime_same=true|ppi_watch_same=true")
+          PY
+      - name: Emit sanitized evidence
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          for x in before after-image after-housekeeping final image-cleanup housekeeping-output; do
+            test ! -f "$RUNNER_TEMP/$x.json" || cp "$RUNNER_TEMP/$x.json" "evidence/$x.json"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-624-637-premerge-${{ github.run_id }}
+          path: evidence
+          if-no-files-found: warn
+          retention-days: 14
