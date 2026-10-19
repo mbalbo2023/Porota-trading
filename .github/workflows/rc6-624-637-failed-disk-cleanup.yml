@@ -1,4 +1,4 @@
-name: RC6 624 COLD2 safe post-RED capacity cleanup
+name: RC6 624 bounded read-only disk map during OPEN
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   cleanup:
-    if: github.head_ref == 'diagnostic/rc6-624-637-failed-disk-cleanup-20261019'
+    if: github.head_ref == 'diagnostic/rc6-624-safe-disk-map-20261019'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -41,7 +41,7 @@ jobs:
           assert run['status']=='completed' and run['conclusion']=='failure'
           print('RC6_641_EXACT_RED=GREEN')
           PY
-      - name: Recover journal space under exact PAPER and container guards
+      - name: Map disk metadata under exact PAPER and container guards
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -55,7 +55,7 @@ jobs:
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n timeout 650 python3 -B -' <<'PY' > evidence/cleanup.json
-          import json,os,shutil,subprocess,sys
+          import hashlib,json,os,shutil,subprocess,sys,time
           from pathlib import Path
           sys.path.insert(0,'/opt/porota-trading')
           from scripts.rc6_deploy_quiescence import admit
@@ -141,15 +141,36 @@ jobs:
           # Bounded inventory only; no host deletion while the market window changes.
           with promotion_lock():
               before=snapshot()
-              now=__import__('time').time()
-              dirs=('/tmp','/var/cache/apt','/var/log/journal','/opt/porota-trading/data/deploy',
-                    '/opt/porota-backups','/var/lib/docker/buildkit','/opt/porota-trading/data',
-                    '/var/lib/docker','/var/lib/containerd','/home','/root','/usr/local')
-              usage={}
-              for dirname in dirs:
-                  if Path(dirname).is_dir():
-                      p=subprocess.run(['nice','-n','19','ionice','-c','3','du','-sxB1','--',dirname],capture_output=True,text=True,timeout=40)
-                      usage[dirname]=int(p.stdout.split()[0]) if p.returncode==0 else 'UNAVAILABLE'
+              now=time.time()
+              # One bounded metadata pass. st_blocks is a lower bound for a
+              # directory's subtree, not a fabricated recursive total.
+              roots=('/opt/porota-trading/data','/opt/porota-trading/data/paper_v17',
+                     '/opt/porota-trading/data/paper_v17/artifacts',
+                     '/opt/porota-trading/data/deploy','/opt/porota-backups',
+                     '/var/lib/containerd','/var/lib/docker','/home','/var/log')
+              top={}
+              for dirname in roots:
+                  base=Path(dirname)
+                  if not base.is_dir() or base.is_symlink():
+                      top[dirname]={'status':'NOT_DIRECTORY'};continue
+                  rows=[];start=time.monotonic();seen=0
+                  try:
+                      for ent in os.scandir(base):
+                          if seen>=300 or time.monotonic()-start>2:
+                              break
+                          st=ent.stat(follow_symlinks=False);seen+=1
+                          rows.append({'name_hash':hashlib.sha256(ent.name.encode()).hexdigest()[:12],
+                              'is_dir':ent.is_dir(follow_symlinks=False),
+                              'is_regular':ent.is_file(follow_symlinks=False),
+                              'allocated_direct_bytes':st.st_blocks*512,'logical_direct_bytes':st.st_size,
+                              'dev':st.st_dev,'inode':st.st_ino,'nlink':st.st_nlink})
+                      top[dirname]={'status':'PARTIAL' if seen>=300 or time.monotonic()-start>2 else 'COMPLETE_SHALLOW',
+                          'seen':seen,'direct_allocated_lower_bound':sum(x['allocated_direct_bytes'] for x in rows),
+                          'largest_direct':sorted(rows,key=lambda x:x['allocated_direct_bytes'],reverse=True)[:20]}
+                  except (OSError,TimeoutError) as exc:
+                      top[dirname]={'status':'ERROR','error_class':type(exc).__name__,'seen':seen}
+              pressure=Path('/proc/pressure/io').read_text()[:512]
+              # No unbounded walk or hashing of DB/pack in MARKET_OPEN.
               tmp=[]
               for p in Path('/tmp').iterdir():
                   if not p.name.startswith(('porota','rc6')) or p.is_symlink():continue
@@ -167,9 +188,10 @@ jobs:
               after=snapshot()
               assert before['owned']==after['owned'] and before['all_containers']==after['all_containers']
               assert before['ppi_watch']==after['ppi_watch']
-          result={'schema':'rc6.issue624.cold2.capacity-inventory.v1',
+              result={'schema':'rc6.issue624.open-disk-metadata.v1',
               'status':'READ_ONLY','before':before,'after':after,
-              'inventory':{'directory_bytes':usage,'tmp_old':sorted(tmp,key=lambda x:x['bytes'],reverse=True)[:100],
+              'inventory':{'shallow':top,'io_pressure':pressure,
+                           'tmp_old':sorted(tmp,key=lambda x:x['bytes'],reverse=True)[:100],
                            'deploy_entries':sorted(deploy,key=lambda x:x['bytes'],reverse=True)[:100]},
               'required_bytes_prior_artifact':4923227373,'green_policy_bytes':7516192768,
               'real_orders_sent':0,'ppi_watch_changed':False}
