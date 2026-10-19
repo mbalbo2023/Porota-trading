@@ -209,54 +209,79 @@ def _receipt(archive):
         if temp.exists():temp.unlink()
 
 
-def _admit(root, admission):
+OWNED = ('porota_production_observer', 'porota_production_dashboard')
+
+
+def _admit(root, admission, expected_owned_ids):
     """Revalidate the live admission and reserve at every destructive boundary."""
     state=admission()
+    ids=state.get('owned_ids') if type(state) is dict else None
+    if (type(expected_owned_ids) is not dict or set(expected_owned_ids) != set(OWNED)
+            or any(type(value) is not str or re.fullmatch('[a-f0-9]{64}',value) is None
+                   for value in expected_owned_ids.values())):
+        raise ValueError('COLD2_EXPECTED_OWNED_IDS_REQUIRED')
     if (type(state) is not dict or state.get('status') != 'DRAINED' or
             state.get('owned_stopped') is not True or state.get('market_closed') is not True or
             state.get('no_positions') is not True or state.get('lock_held') is not True or
+            state.get('mode') != 'PRODUCTION_PAPER' or
+            state.get('real_routes') != 'NOT_CALLED' or
+            state.get('order_routing_blocked') is not True or
+            state.get('inflight_absent') is not True or
+            state.get('critical_healthy') is not True or
+            type(ids) is not dict or ids != expected_owned_ids or
             state.get('ppi_watch_accessed') is not False or
             type(state.get('real_orders_sent')) is not int or state['real_orders_sent'] != 0):
         raise ValueError('COLD2_QUIESCENCE_REQUIRED')
     if shutil.disk_usage(root).free < RESERVE+1024**2:
         raise ValueError('COLD2_DISK_RESERVE_BREACHED')
+    volume=os.statvfs(root)
+    if volume.f_favail < 16:
+        raise ValueError('COLD2_INODE_RESERVE_BREACHED')
+    available=None
+    with open('/proc/meminfo',encoding='ascii') as stream:
+        for line in stream:
+            if line.startswith('MemAvailable:'):
+                available=int(line.split()[1])*1024
+                break
+    if available is None or available <= 128*1024**2:
+        raise ValueError('COLD2_MEMORY_RESERVE_BREACHED')
 
 
-def quarantine(root, *, admission, checkpoint=lambda step:None):
+def quarantine(root, *, admission, expected_owned_ids, checkpoint=lambda step:None):
     """Only a future authorized workflow may call this under its host lock.
 
     admission() must verify exact quiescence, stopped owned IDs, CLOSED/no open
     positions, PAPER/0, PPI preservation, and the caller's exclusive lock.
     """
-    _admit(root, admission)
+    _admit(root, admission, expected_owned_ids)
     before=inspect(root)
     shadow,source,archive=paths(root)
     if before['archive_complete'] and QUEUE not in before['source_names']:
         return {'state':'ALREADY_QUARANTINED','old_cut_revoked':True}
     if not archive.exists():
-        _admit(root, admission)
+        _admit(root, admission, expected_owned_ids)
         archive.mkdir(mode=0o700);fsync_dir(archive.parent)
     for name in FILES:
-        _admit(root, admission)
+        _admit(root, admission, expected_owned_ids)
         src=source/name
         if src.exists():_atomic_copy(src,archive/name)
         else:regular(archive/name)
         checkpoint('archive_'+name)
     src, dst=source/PACK, archive/PACK
     if src.exists():
-        _admit(root, admission)
+        _admit(root, admission, expected_owned_ids)
         if dst.exists():raise ValueError('COLD2_PACK_DUPLICATED')
         os.rename(src,dst);fsync_dir(source);fsync_dir(archive)
     inspect(root);checkpoint('pack_moved')
     for name in (MANIFEST,RECEIPT):
         src=source/name
-        _admit(root, admission)
+        _admit(root, admission, expected_owned_ids)
         if src.exists():regular(src);src.unlink();fsync_dir(source)
         inspect(root);checkpoint('source_'+name+'_removed')
-    _admit(root, admission)
+    _admit(root, admission, expected_owned_ids)
     _receipt(archive);inspect(root);checkpoint('receipt_durable')
     q=source/QUEUE
-    _admit(root, admission)
+    _admit(root, admission, expected_owned_ids)
     if q.exists():regular(q);q.unlink();fsync_dir(source)
     final=inspect(root)
     if not final['archive_complete'] or final['queue_failed']:
